@@ -16,7 +16,6 @@ const make = () =>
   deriveRequest({
     kind: 'turn',
     merged: { tools: [], sections: [persona], runtimeContext: {}, conflicts: [] },
-    harnessEntries: [],
     surface: [
       {
         kind: 'user',

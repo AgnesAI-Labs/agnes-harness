@@ -1,8 +1,11 @@
 import type {
   BeforeCompactPayload,
   CompactionPlan,
+  DirectProposal,
   Enforcement,
   Operation,
+  RefinementOutcome,
+  RefinementPlanner,
   SandboxExecBackend,
   SandboxSeam,
   SandboxWorkspaceBackend,
@@ -132,7 +135,18 @@ export type SeamInitContext = {
   sandbox?: SandboxSeam
   /** Read-only refinement switch of this profile, supplied only where the release grants it. */
   refinementSettings?: RefinementSettingsPort
+  /**
+   * Connects the refinement tools to Core's managed refinement, supplied with the switch: the plugin
+   * hands over its planner and gets each session's runs, found by session key and lane.
+   */
+  refinementRuns?: (planner: RefinementPlanner) => RefinementRunsPort
 }
+
+/** A session's managed refinement as the refinement tools reach it. */
+export type RefinementRunsPort = Readonly<{
+  propose(session: { key: string; lane: string }, proposal: DirectProposal): Promise<RefinementOutcome>
+  request(session: { key: string; lane: string }, request: { focus?: string }): Promise<RefinementOutcome>
+}>
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>
 
 export type OperationDeps = {

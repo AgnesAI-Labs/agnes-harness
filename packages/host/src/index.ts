@@ -565,6 +565,7 @@ export {
   sessionKey,
 } from './runtime/sessions/session.js'
 export { readProfileTelemetryConsent } from './runtime/sessions/session-hooks.js'
+export { requestRefinement } from './runtime/sessions/session-refinement.js'
 export {
   askSideQuestion,
   SideQuestionError,

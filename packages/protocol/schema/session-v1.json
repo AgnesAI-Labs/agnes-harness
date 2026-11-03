@@ -2524,6 +2524,32 @@
         "outcome": {
           "enum": ["applied", "rejected:conflict", "rejected:limit", "rejected:evidence", "rejected:prefix"]
         },
+        "reason": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "runId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "rejectedEdits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["index", "reason"],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 128
+              }
+            }
+          }
+        },
         "rollbackOf": {
           "type": "integer",
           "minimum": 1

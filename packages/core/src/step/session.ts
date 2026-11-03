@@ -63,7 +63,7 @@ import { fillInlineNodes, fillInlinePage } from '@agnes/core-ledger/project/ui-i
 import { fillLiveSlots } from '@agnes/core-ledger/project/ui-live-slots'
 import { contextTokensAtCut, projectUsage } from '@agnes/core-ledger/project/usage'
 import type { Inbox, InboxItem } from '@agnes/core-ledger/reduce/shapes'
-import { type EffectTree, effectTree } from '@agnes/core-ledger/reduce/state'
+import { type EffectTree, effectTree, MAINTENANCE_LANE } from '@agnes/core-ledger/reduce/state'
 import { currentOp, type StateTracker } from '@agnes/core-ledger/reduce/tracker'
 import type {
   HookPayloadMap,
@@ -109,7 +109,7 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
-import { bestEffort } from '../best-effort.js'
+import { bestEffort, quietly } from '../best-effort.js'
 import {
   childLifecycle,
   childLifecycleRevoked,
@@ -132,6 +132,7 @@ import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
 import { settleSideCalls, sideCallInFlight } from '../loop/side-call-receipts.js'
+import { drainMaintenance } from '../maintenance/recovery.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -141,12 +142,14 @@ import type {
   RequestMediaArtifactReader,
   RequestMediaSurfaceLimits,
 } from '../orchestrator/request-media-surface.js'
+import { type RefinementDeps, recoverRefinement, refinementAfterTurn } from '../refinement/facade.js'
+import type { RefinementTriggerSink } from '../refinement/triggers.js'
 import { ResourceRegistry } from '../registry/resources.js'
 import { ToolRegistryView } from '../registry/tool-allow.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
 import { commitSessionAttachments, queuedInputSizeFloor } from '../request/attachment-admission.js'
 import type { PromptSection } from '../request/contribute.js'
-import { harnessSections, mergeContributions } from '../request/contribute.js'
+import { mergeContributions } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
 import { sanitize, UNTRUSTED_RULE_SECTION } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
@@ -528,6 +531,12 @@ export type SessionDeps = {
   compaction?: CompactionPort
   /** Host-private request contribution; never exposed through extension hook payloads. */
   runtimePromptPreloader?: RuntimePromptPreloader
+  /** Whether refinement experience is delivered to the next request; omitted means off. */
+  refinementEnabled?: () => boolean
+  /** Takes automatic refinement candidates (compaction, repeated failure); omitted means none. */
+  refinementTriggers?: RefinementTriggerSink
+  /** Runs refinement plans and applies them between turns; omitted means refinement is unavailable. */
+  refinement?: RefinementDeps
   agnesVersion?: string
   /**
    * Shared across every session the owning Kernel assembles; `@agnes/core`'s own checks are always
@@ -1059,11 +1068,7 @@ export class SessionImpl {
     )
     const sections = [
       UNTRUSTED_RULE_SECTION,
-      ...composeSystemPrompt(
-        this.d.systemPrompt,
-        merged.sections,
-        harnessSections([...this.state.registers.harnessEntries.values()].map((cell) => cell.value)),
-      ).map((section) => ({
+      ...composeSystemPrompt(this.d.systemPrompt, merged.sections).map((section) => ({
         ...section,
         text: sanitize(section.text),
         id: sanitize(section.id),
@@ -1234,10 +1239,7 @@ export class SessionImpl {
    */
   locked<T>(fn: () => Promise<T>): Promise<T> {
     const p = this.lock.then(fn, fn)
-    this.lock = p.then(
-      () => undefined,
-      () => undefined,
-    )
+    this.lock = quietly(p)
     return p
   }
 
@@ -1399,6 +1401,8 @@ export class SessionImpl {
       return result.seqs
     })
     this.turnEndError = extra.error
+    // Between turns: a proposed refinement is applied now, before any queued input opens a turn.
+    if (this.d.refinement) await refinementAfterTurn(this)
     // Observer failure cannot undo a committed turn ending.
     await this.loopEvents
       .dispatch(
@@ -1913,17 +1917,15 @@ export class SessionImpl {
     // Already restored and not running: restoring it again would replace the live turn.
     if (o.mode !== 'close' && op && this.turn)
       return Promise.resolve({ state: 'resumed', phase: op.phase.kind, actions: [] })
-    const resuming = this.active(
-      async () =>
-        o.mode !== 'close' && (await this.controls.paused())
-          ? { state: 'resumed' as const, phase: this.op()?.phase.kind ?? 'paused', actions: [] }
-          : resumeSession(this, o),
-      false,
-    )
-    const settled = resuming.then(
-      () => undefined,
-      () => undefined,
-    )
+    const resuming = this.active(async () => {
+      // Opening settles the maintenance calls a dead process left, whether or not a turn was open,
+      // then the refinement runs they belonged to.
+      await recoverRefinement(this, o.mode)
+      return o.mode !== 'close' && (await this.controls.paused())
+        ? { state: 'resumed' as const, phase: this.op()?.phase.kind ?? 'paused', actions: [] }
+        : resumeSession(this, o)
+    }, false)
+    const settled = quietly(resuming)
     this.resuming = settled
     void settled.then(() => {
       if (this.resuming === settled) this.resuming = undefined
@@ -2546,10 +2548,7 @@ export class SessionImpl {
    */
   private exclusively<T>(run: () => Promise<T>): Promise<T> {
     const result = this.projectionTail.then(run)
-    this.projectionTail = result.then(
-      () => undefined,
-      () => undefined,
-    )
+    this.projectionTail = quietly(result)
     return result
   }
 
@@ -2633,6 +2632,7 @@ export class SessionImpl {
       events,
       upto: cut,
       lane: this.lane,
+      lanes: [MAINTENANCE_LANE],
       route: target.route,
       model: {
         ...model,
@@ -2686,7 +2686,7 @@ export class SessionImpl {
   }
   exportRlaf = (range: RlafRange = {}) => exportVerifiedRlaf(this.d.log, range)
   pendingEffects(): EffectTree {
-    return effectTree(this.state)
+    return effectTree(this.state, this.lane)
   }
   private closePromise: Promise<void> | undefined
 
@@ -2720,7 +2720,8 @@ export class SessionImpl {
       await attempt(() => this.loopChildren?.close())
       // Keep hooks, log and lease alive while producers settle effects and final checkpoints. Work
       // that ignores its cancellation is left behind: it must not hold the log and the lease open.
-      await drainClosingWork(this, this.activeWork)
+      // Maintenance calls run outside any turn and have their own drain, within the same bound.
+      await Promise.all([attempt(() => drainMaintenance(this)), drainClosingWork(this, this.activeWork)])
       await attempt(() => this.loopDriver?.dispose())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.dispose())))
       if (this.loopContext) disposeLoopContext(this.loopContext)

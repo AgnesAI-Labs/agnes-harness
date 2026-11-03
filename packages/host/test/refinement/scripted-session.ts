@@ -55,6 +55,9 @@ function pinnedPlatform(): PlatformBackend {
 /** The clock the session sees; the time note in each request is derived from it. */
 const FIXED_NOW = Date.UTC(2026, 10, 3, 9, 0, 0)
 
+/** The profile the baseline session runs under; the refinement switch is saved per profile. */
+export const BASELINE_PROFILE = 'refinement-baseline'
+
 export const DATA_DIR_PLACEHOLDER = '<data-dir>'
 export const WORKSPACE_PLACEHOLDER = '<workspace>'
 
@@ -136,7 +139,7 @@ async function captureSession(opts: ScriptedSessionOptions): Promise<CapturedReq
       disableSessionTitle: true,
       profileInputs: {
         user: {
-          name: 'refinement-baseline',
+          name: BASELINE_PROFILE,
           provider: {
             package: '@agnes/ai',
             routes: [{ route: 'wire', api, baseUrl, credentialRef: 'secret://test/wire', models: [model] }],
@@ -229,4 +232,12 @@ export function maskVolatile(
         return `${prefix}-<call-${callIds.get(key)}>`
       }),
   )
+}
+
+/** The request bodies are one long line each, so name the first differing byte instead of dumping both. */
+export function firstDifference(expected: string, actual: string): string {
+  let at = 0
+  while (at < expected.length && at < actual.length && expected[at] === actual[at]) at++
+  const around = (text: string) => JSON.stringify(text.slice(Math.max(0, at - 80), at + 80))
+  return `first difference at byte ${at}\n  baseline: ${around(expected)}\n  actual:   ${around(actual)}`
 }

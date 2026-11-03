@@ -11,7 +11,7 @@ const root = repoRoot()
  * packages/code/src/prompts/sections.ts's own validateSections()); the 'context' hook
  * (packages/base/extensions/*'s escape hatch, which validateSections never sees because it sets
  * its order through a hook payload, not through that table); and packages/core's own hardcoded
- * orders (the untrusted-envelope rule section and the harness prompt/memory sections).
+ * orders (the untrusted-envelope rule section and Core's own sections and live notes).
  * This file is the one place the first two are checked against each other: base cannot import
  * code's module (no dependency edge runs that direction — packages/base/package.json names no
  * @agnes/code dependency, and packages/code's @agnes/base entry is a devDependency, never bundled
@@ -42,10 +42,10 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   order: number
   owner: 'code' | 'base' | 'core'
 }> = [
-  // packages/core/src/request/derive.ts's UNTRUSTED_RULE_SECTION. Prepended ahead of every sorted
+  // packages/core/src/request/envelope.ts's UNTRUSTED_RULE_SECTION. Prepended ahead of every sorted
   // section rather than sorted in with them, but it still occupies order 0 in the same numbering
   // space, so a future row claiming 0 would collide with it at the wire even though nothing here
-  // scans derive.ts to notice.
+  // scans envelope.ts to notice.
   { id: 'core:untrusted-envelope', order: 0, owner: 'core' },
   { id: 'persona', order: 1, owner: 'code' },
   { id: 'environment', order: 110, owner: 'code' },
@@ -72,10 +72,6 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'persistent-goal', order: 164, owner: 'base' },
   { id: 'session-query', order: 168, owner: 'base' },
   { id: 'channel-style', order: 170, owner: 'code' },
-  // packages/core/src/request/contribute.ts's harnessSections(), which folds harness register
-  // entries into the same sorted section list at these two fixed orders.
-  { id: 'harness:prompt', order: 180, owner: 'core' },
-  { id: 'harness:memory', order: 181, owner: 'core' },
   // packages/core/src/loop/request-options.ts: a loop's own system text, after everything else.
   { id: 'loop:system', order: 1000, owner: 'core' },
   // A context hook's additionalContext travels as a tail note, not a section.

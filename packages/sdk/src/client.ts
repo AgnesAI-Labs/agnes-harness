@@ -575,6 +575,9 @@ export class Client {
         { sessionId, question },
         { timeoutMs: Math.max(this.timeouts.request, 75_000), ...options },
       ),
+    /** Asks for a background refinement review of the session's latest task; returns the queued run. */
+    refine: (sessionId: string, focus?: string): Promise<import('@agnes/protocol').SessionRefineResult> =>
+      this.call('_agnes/v1/session.refine', { sessionId, ...(focus === undefined ? {} : { focus }) }),
     /** `additionalDirectories` are added to the parent's own for the child; the parent is unchanged. */
     fork: async (
       id: string,

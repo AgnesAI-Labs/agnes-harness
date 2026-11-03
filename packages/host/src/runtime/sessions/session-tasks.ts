@@ -130,7 +130,6 @@ export function createSessionTasks(
         let derived = deriveRequest({
           kind: 'summary',
           merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
-          harnessEntries: [],
           surface: [],
           disclosed: [],
           model: { slot: 'fast', route, model: modelId },

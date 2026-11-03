@@ -109,7 +109,11 @@ export function createEcosystemExtensions(init: SeamInitContext): {
         ...(deps.sandbox === undefined ? {} : { sandbox: deps.sandbox }),
         ...(deps.http === undefined ? {} : { http: deps.http }),
       }),
-    refine: () => createRefineExtension(init.refinementSettings ? { settings: init.refinementSettings } : {}),
+    refine: () =>
+      createRefineExtension({
+        ...(init.refinementSettings ? { settings: init.refinementSettings } : {}),
+        ...(init.refinementRuns ? { runs: init.refinementRuns } : {}),
+      }),
     subagent: () => defineSubagentExtension(init),
     skills: () => skillsExtension(init),
   }

@@ -1,5 +1,12 @@
-import { applyRefine, rollbackRefine } from '@agnes/core'
-import { actor, deferredResultProvenance, fakeProvider, textTurn, toolTurn } from '@agnes/core/testkit'
+import { rollbackRefine } from '@agnes/core'
+import {
+  actor,
+  applyRefine,
+  deferredResultProvenance,
+  fakeProvider,
+  textTurn,
+  toolTurn,
+} from '@agnes/core/testkit'
 import { describe, expect, it } from 'vitest'
 import { ledgerDir, longPreset, openOn, readRegistry } from '../../../host/test/scan-trunc/fixture.js'
 
@@ -64,11 +71,7 @@ describe('deferred result provenance over more than 500 markers', () => {
 })
 
 const SEP = String.fromCharCode(0)
-const limits = {
-  maxEntries: { prompt: 4, memory: 4, skill: 4, subagent: 4 },
-  maxCharsPerEntry: 50,
-  contractPrefixMarkers: [],
-}
+const limits = { maxEdits: 10, maxChars: 50, safetyCap: 4 }
 const entry = (id: string, content: string) => ({
   kind: 'memory' as const,
   id,
@@ -78,8 +81,10 @@ const entry = (id: string, content: string) => ({
   version: 1,
   source: 'refine',
 })
+let runCounter = 0
 const proposal = (edits: unknown[], baseline: Array<{ key: string; version: number }> = []) =>
   ({
+    runId: `scan-b4-${++runCounter}`,
     proposalId: 'p',
     trigger: 'manual' as const,
     edits,

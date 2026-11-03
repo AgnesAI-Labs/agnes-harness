@@ -17,6 +17,7 @@ import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '
 import { automaticPermissionDecision } from '@agnes/protocol'
 import { hardBlockedCall } from '../../command-table/floor.js'
 import { dispatchLoopEvent } from '../../loop/events.js'
+import { onToolSettled } from '../../refinement/triggers.js'
 import {
   hasAuthenticToolPolicyHash,
   hasCompleteToolPolicyEnvelope,
@@ -456,9 +457,7 @@ export async function approveAndExecute(
       return { result: await refuse(s, call.toolUseId, 'POLICY_HARD_BLOCKED', hardBlock.reason, decisionId) }
     if ((o.signal ?? s.ac.signal).aborted) {
       await s.transition([], (cur) => updateCall(cur, call.toolUseId, { status: 'approved' }))
-      return {
-        result: await refuse(s, call.toolUseId, 'CANCELLED', 'cancelled before dispatch', decisionId),
-      }
+      return { result: await refuse(s, call.toolUseId, 'CANCELLED', 'cancelled before dispatch', decisionId) }
     }
     if (call.executionDomain === 'workspace' && !policy.isReadOnly && !s.d.runtime.sandboxAllowed())
       return {
@@ -1647,6 +1646,7 @@ export async function approveAndExecute(
         },
       ])
     }
+    if (!deferred) onToolSettled(s, call.name, recordedResult, cancelled ? 'CANCELLED' : undefined)
     return {
       result: recordedResult,
       ...(await parkOutcome(s, nestedParks, updateCall)),

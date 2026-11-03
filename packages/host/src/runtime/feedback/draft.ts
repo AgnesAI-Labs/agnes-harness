@@ -116,7 +116,6 @@ export async function draftFeedbackSkill(
       const derived = deriveRequest({
         kind: 'summary',
         merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
-        harnessEntries: [],
         surface: [],
         disclosed: [],
         model: { slot: 'primary', ...route },

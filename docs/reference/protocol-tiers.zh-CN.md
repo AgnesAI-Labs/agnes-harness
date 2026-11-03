@@ -25,6 +25,7 @@
 - `_agnes/v1/session.activity`
 - `_agnes/v1/session.fork`
 - `_agnes/v1/session.btw`
+- `_agnes/v1/session.refine`
 - `_agnes/v1/session.voice.transcribe`
 - `_agnes/v1/session.voice.speak`
 - `_agnes/v1/voice.status`

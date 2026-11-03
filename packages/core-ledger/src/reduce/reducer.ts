@@ -4,6 +4,7 @@ import { isRegisterTombstone, registerKey } from '../log/storage.js'
 import { contextAnchorOf } from './anchor.js'
 import { ChunkedMap } from './chunked-map.js'
 import { reduceDecision } from './decision.js'
+import { foldRefinementRun, REFINEMENT_RUN_EVENT } from './refinement-run.js'
 import type {
   ArtifactJob,
   BudgetState,
@@ -13,9 +14,16 @@ import type {
   Inbox,
   PlanItems,
 } from './shapes.js'
-import { initialState, type LedgerState, type RegisterCell } from './state.js'
+import { initialState, type LedgerState, MAINTENANCE_LANE, type RegisterCell } from './state.js'
 
-type Tables = 'openTurn' | 'openStep' | 'lastTurn' | 'lastStep' | 'pendingEffects' | 'taint'
+type Tables =
+  | 'openTurn'
+  | 'openStep'
+  | 'lastTurn'
+  | 'lastStep'
+  | 'pendingEffects'
+  | 'taint'
+  | 'refinementRuns'
 type Registers = LedgerState['registers']
 type Writable<T> = T extends ReadonlyMap<infer K, infer V> ? Map<K, V> : never
 
@@ -179,6 +187,8 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         reset('pendingEffects')
         reset('resumedRequests')
         reset('taint')
+        // A child never takes over the parent's runs, planned or pending.
+        reset('refinementRuns')
         s.toolCalls = ChunkedMap.empty()
         s.creditsUsed = 0
         if (start.delegation?.kind === 'spawn') s.lastLedgerTokens = null
@@ -316,6 +326,12 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     case 'effect/settled':
       remove('pendingEffects', lifecycleId(d, 'effectId', e.type, e.seq))
       break
+    case REFINEMENT_RUN_EVENT: {
+      const runId = typeof d?.runId === 'string' ? d.runId : undefined
+      const run = runId === undefined ? undefined : foldRefinementRun(s.refinementRuns.get(runId), e)
+      if (run) table('refinementRuns').set(run.runId, run)
+      break
+    }
     case 'tool/call': {
       const step = s.openStep.get(lane)
       const turn = s.openTurn.get(lane)
@@ -331,7 +347,8 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
     case 'cost/ledger': {
       const c = d as unknown as CostLedger
       const inherited = s.session?.parent !== undefined && e.seq <= s.session.parent.boundarySeq
-      if (!inherited) {
+      // Background maintenance has its own budget root; its spend never counts against a turn's cap.
+      if (!inherited && lane !== MAINTENANCE_LANE) {
         if (!c.adjustment || !s.session?.parent || c.adjustment.of > s.session.parent.boundarySeq)
           s.creditsUsed += c.adjustment?.delta ?? c.credits ?? 0
       }

@@ -1,0 +1,186 @@
+import type { Event, Seq } from '@agnes/core-common/types'
+
+/** The Core row that records each step of a background refinement run. */
+export const REFINEMENT_RUN_EVENT = 'x/core/refinement-run'
+
+export type RefinementRunState =
+  | 'queued'
+  | 'planning'
+  | 'proposed'
+  | 'applied'
+  | 'no-op'
+  | 'rejected'
+  | 'superseded'
+  | 'cancelled'
+  | 'unknown'
+
+export type RefinementTriggerKind = 'manual' | 'model' | 'compaction' | 'repeated-failure'
+/** What asked for a run: who, at which seq, and an optional focus. */
+export type RefinementTrigger = { kind: RefinementTriggerKind; seq: Seq; focus?: string }
+
+export type RefinementEntryKind = 'prompt' | 'memory' | 'skill' | 'subagent'
+export type RefinementEntryRef = { kind: RefinementEntryKind; id: string }
+/**
+ * What a plan was built on and what must still hold when it is applied: every saved entry, by the
+ * seq of the row that last wrote its cell (a delete and a re-create give a new seq, so "gone" and
+ * "back again" both differ), and the settings revision.
+ */
+export type RefinementReadSet = {
+  settingsRevision: string
+  entries: (RefinementEntryRef & { seq: Seq; version: number })[]
+}
+/**
+ * One evidence id the planner saw, fixed to the ledger row it stands for, with what kind of fact it
+ * is: only `user` (the user's own, trusted request) can back a quoted lesson.
+ */
+export type RefinementEvidenceRef = {
+  id: string
+  lane: string
+  seq: Seq
+  kind: 'user' | 'external' | 'tool' | 'summary'
+}
+
+export type RefinementPlanEdit =
+  | {
+      op: 'upsert'
+      kind: RefinementEntryKind
+      id: string
+      title: string
+      content: string
+      applicability: 'task' | 'session'
+      evidenceSeqs: Seq[]
+      /** Kept only when the edit cites a request of the user's own; `quoteSeqs` are those requests. */
+      quote?: string
+      quoteSeqs?: Seq[]
+      /**
+       * A task-level lesson planned with no active goal: it would have expired with the goal it never
+       * had, so it stays on the plan as a record and is never applied.
+       */
+      expired?: true
+    }
+  | { op: 'delete'; kind: RefinementEntryKind; id: string; evidenceSeqs: Seq[] }
+/** A validated plan, with every evidence id already replaced by its fixed seq. */
+export type RefinementPlan = {
+  summary: string
+  rationale: string
+  expectedOutcome: string
+  edits: RefinementPlanEdit[]
+  confirmations: (RefinementEntryRef & { evidenceSeqs: Seq[]; quote?: string; quoteSeqs?: Seq[] })[]
+  evidenceSeqs: Seq[]
+  /** The version each touched existing entry had when it was shown in full. */
+  baseline: (RefinementEntryRef & { version: number })[]
+}
+
+/** A run as its rows fold: the latest state and every fact recorded on the way. */
+export type RefinementRunRecord = {
+  runId: string
+  trigger: RefinementTrigger
+  state: RefinementRunState
+  reason?: string
+  detail?: string
+  /** The row that queued the run, and the row that set its current state. */
+  queuedSeq: Seq
+  seq: Seq
+  settingsRevision?: string
+  evidenceHash?: string
+  readSet?: RefinementReadSet
+  /** Which planning attempt is current; each attempt sends at most one call. */
+  attempt?: number
+  evidence?: RefinementEvidenceRef[]
+  fullEntries?: RefinementEntryRef[]
+  shownEntries?: RefinementEntryRef[]
+  target?: { route: string; model: string }
+  plan?: RefinementPlan
+}
+
+export const TERMINAL_RUN_STATES: ReadonlySet<RefinementRunState> = new Set([
+  'applied',
+  'no-op',
+  'rejected',
+  'superseded',
+  'cancelled',
+  'unknown',
+])
+
+/**
+ * The edges a run may take. A planning run goes back to queued only when its call was never sent.
+ * Only a proposed plan is applied; a plan with nothing to change ends `no-op`, so `applied` always
+ * means entries changed.
+ */
+const NEXT: Readonly<Record<RefinementRunState, readonly RefinementRunState[]>> = {
+  queued: ['planning', 'superseded', 'cancelled', 'rejected'],
+  planning: ['queued', 'proposed', 'no-op', 'rejected', 'cancelled', 'unknown'],
+  proposed: ['applied', 'rejected', 'cancelled'],
+  applied: [],
+  'no-op': [],
+  rejected: [],
+  superseded: [],
+  cancelled: [],
+  unknown: [],
+}
+
+export const canMoveRun = (from: RefinementRunState, to: RefinementRunState): boolean =>
+  NEXT[from].includes(to)
+
+const STATES = new Set(Object.keys(NEXT))
+const KINDS = new Set(['manual', 'model', 'compaction', 'repeated-failure'])
+
+function triggerOf(raw: unknown): RefinementTrigger | undefined {
+  const t = raw as { kind?: unknown; seq?: unknown; focus?: unknown } | null
+  if (!t || typeof t !== 'object' || !KINDS.has(String(t.kind))) return undefined
+  if (!Number.isSafeInteger(t.seq) || (t.seq as number) < 0) return undefined
+  if (t.focus !== undefined && typeof t.focus !== 'string') return undefined
+  return {
+    kind: t.kind as RefinementTriggerKind,
+    seq: t.seq as Seq,
+    ...(t.focus === undefined ? {} : { focus: t.focus as string }),
+  }
+}
+
+const FACTS = [
+  'settingsRevision',
+  'evidenceHash',
+  'readSet',
+  'attempt',
+  'evidence',
+  'fullEntries',
+  'shownEntries',
+  'target',
+  'plan',
+] as const
+
+/**
+ * Folds one `x/core/refinement-run` row into the run it names, or returns undefined to leave the
+ * runs as they were. Only Core's own rows count (system, trusted, version 1), the first row of a run
+ * must queue it, refuse it or propose a plan, with a trigger, and a row that takes an edge the state
+ * machine does not have is ignored: a terminal run never moves again.
+ */
+export function foldRefinementRun(
+  prev: RefinementRunRecord | undefined,
+  e: Pick<Event, 'seq' | 'origin' | 'trust' | 'data'>,
+): RefinementRunRecord | undefined {
+  const d = e.data as Record<string, unknown> | null
+  if (e.origin !== 'system' || e.trust !== 'trusted' || !d || d.version !== 1) return undefined
+  const runId = d.runId
+  const state = d.state as RefinementRunState
+  if (typeof runId !== 'string' || runId.length === 0 || !STATES.has(state)) return undefined
+  let base: RefinementRunRecord
+  if (prev) {
+    if (!canMoveRun(prev.state, state)) return undefined
+    base = prev
+  } else {
+    const trigger = triggerOf(d.trigger)
+    // A direct proposal needs no planning: it opens already proposed, and only with its plan.
+    const opens = state === 'queued' || state === 'rejected' || (state === 'proposed' && d.plan !== undefined)
+    if (!trigger || !opens) return undefined
+    base = { runId, trigger, state, queuedSeq: e.seq, seq: e.seq }
+  }
+  const next: RefinementRunRecord = { ...base, state, seq: e.seq }
+  delete next.reason
+  delete next.detail
+  if (typeof d.reason === 'string') next.reason = d.reason
+  if (typeof d.detail === 'string') next.detail = d.detail
+  for (const fact of FACTS)
+    if (d[fact] !== undefined) (next as Record<string, unknown>)[fact] = structuredClone(d[fact])
+  return next
+}

@@ -75,7 +75,6 @@ it('propagates actual SDK changes through deriveRequest prompt hash without chan
         runtimeContext: {},
         conflicts: [],
       },
-      harnessEntries: [],
       surface: [],
       disclosed: [run],
       model: { slot: 'primary', route: 'default', model: 'm1' },

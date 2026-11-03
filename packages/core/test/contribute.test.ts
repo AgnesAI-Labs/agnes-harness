@@ -1,8 +1,7 @@
-import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { ToolDef } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { ToolRegistry } from '../src/registry/tools.js'
-import { harnessSections, mergeContributions } from '../src/request/contribute.js'
+import { mergeContributions } from '../src/request/contribute.js'
 
 const meta = {
   isReadOnly: true,
@@ -159,50 +158,9 @@ describe('mergeContributions', () => {
   })
 })
 
-const entry = (e: Partial<HarnessEntry> & Pick<HarnessEntry, 'kind' | 'id'>): HarnessEntry => ({
-  title: 'A',
-  content: 'c',
-  scope: 'local',
-  version: 1,
-  source: 'x',
-  ...e,
-})
-
-describe('harnessSections', () => {
-  it('lets local entries override global ones and skips skill/subagent kinds', () => {
-    const s = harnessSections([
-      entry({ kind: 'memory', id: 'm1', content: 'global', scope: 'global', version: 1 }),
-      entry({ kind: 'memory', id: 'm1', content: 'local', scope: 'local', version: 2 }),
-      entry({ kind: 'prompt', id: 'p1', title: 'P', content: 'note' }),
-      entry({ kind: 'skill', id: 's1', title: 'S' }),
-      entry({ kind: 'subagent', id: 'g1', title: 'G' }),
-    ])
-    expect(s.map((x) => [x.id, x.order])).toEqual([
-      ['harness:prompt', 180],
-      ['harness:memory', 181],
-    ])
-    expect(s[1]?.text).toContain('local')
-    expect(s[1]?.text).not.toContain('global')
-    // Neither excluded kind reached the prompt.
-    expect(s.map((x) => x.text).join('\n')).not.toMatch(/[SG]:/)
-  })
-
-  it('keeps the local entry when it arrives before the global one', () => {
-    const s = harnessSections([
-      entry({ kind: 'memory', id: 'm1', content: 'local', scope: 'local' }),
-      entry({ kind: 'memory', id: 'm1', content: 'global', scope: 'global' }),
-    ])
-    expect(s[0]?.text).toContain('local')
-    expect(s[0]?.text).not.toContain('global')
-  })
-
-  it('emits no section for a kind with no entries and sorts entries within a kind by id', () => {
-    expect(harnessSections([])).toEqual([])
-    const s = harnessSections([
-      entry({ kind: 'prompt', id: 'b', title: 'B', content: '2' }),
-      entry({ kind: 'prompt', id: 'a', title: 'A', content: '1' }),
-    ])
-    expect(s).toHaveLength(1)
-    expect(s[0]).toEqual({ id: 'harness:prompt', order: 180, text: '- A: 1\n- B: 2', source: 'harness' })
+describe('refinement entries', () => {
+  it('are not prompt sections: they travel as task-experience notes, never in the system prompt', async () => {
+    const contribute: Record<string, unknown> = await import('../src/request/contribute.js')
+    expect(Object.keys(contribute)).not.toContain('harnessSections')
   })
 })

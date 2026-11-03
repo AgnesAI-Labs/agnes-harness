@@ -17,6 +17,7 @@ import type {
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
 import type { EgressGate } from '../extensions/privacy/src/index.js'
+import type { ConnectRefinement } from '../extensions/refine/src/port.js'
 import type { SkillRuntimeDiscovery, SkillRuntimeInput } from '../extensions/skills/src/runtime.js'
 
 /**
@@ -226,6 +227,8 @@ export type SeamInitContext = {
   sandbox?: SandboxSeam
   /** The profile's refinement switch, read-only. The host supplies it only to agnes/refine. */
   refinementSettings?: RefinementSettingsView
+  /** Connects the refinement tools to the host's managed refinement; supplied only to agnes/refine. */
+  refinementRuns?: ConnectRefinement
 }
 
 /** A read of the profile's refinement settings: the switch and the trigger mode. */

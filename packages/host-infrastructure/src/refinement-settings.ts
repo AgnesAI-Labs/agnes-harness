@@ -8,9 +8,21 @@ import { MAX_SETTINGS_BYTES } from './settings-file.js'
 
 const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
 
-/** The version a client read, for a conditional save: it names the stored value. */
-export const refinementSettingsRevision = (settings: RefinementSettings): string =>
-  sha256(JSON.stringify({ enabled: settings.enabled, mode: settings.mode }))
+/**
+ * The version a client read, for a conditional save. A saved file carries a fresh nonce from each
+ * save, so every save gets a revision never seen before: switching off and on again does not bring
+ * back an old revision, and work begun under the old one can tell. Defaults and files written before
+ * the nonce existed name the value alone.
+ */
+export const refinementSettingsRevision = (settings: RefinementSettings, nonce?: string): string =>
+  sha256(
+    JSON.stringify({
+      enabled: settings.enabled,
+      mode: settings.mode,
+      ...(nonce === undefined ? {} : { nonce }),
+    }),
+  )
+const NONCE = /^[0-9a-f-]{36}$/
 
 const failure = (code: 'CONFIG_INVALID_INPUT' | 'CONFIG_REVISION_CONFLICT', extra: object = {}) =>
   Object.assign(new Error(code), { code, ...extra })
@@ -38,8 +50,9 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
   }
 
   read(): RefinementSettingsSnapshot {
-    const settings = this.stored() ?? structuredClone(DEFAULT_REFINEMENT_SETTINGS)
-    return { settings, revision: refinementSettingsRevision(settings) }
+    const stored = this.stored()
+    const settings = stored?.settings ?? structuredClone(DEFAULT_REFINEMENT_SETTINGS)
+    return { settings, revision: refinementSettingsRevision(settings, stored?.nonce) }
   }
 
   current(): RefinementSettingsSnapshot {
@@ -57,9 +70,10 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
     const current = this.read()
     if (current.revision !== expectedRevision) throw failure('CONFIG_REVISION_CONFLICT', { current })
     mkdirSync(this.dir, { recursive: true, mode: 0o700 })
+    const nonce = randomUUID()
     const temporary = `${this.file}.${randomUUID()}.tmp`
     try {
-      writeFileSync(temporary, JSON.stringify(clean), { mode: 0o600, flag: 'wx' })
+      writeFileSync(temporary, JSON.stringify({ settings: clean, nonce }), { mode: 0o600, flag: 'wx' })
       renameSync(temporary, this.file)
     } finally {
       try {
@@ -68,14 +82,23 @@ export class RefinementSettingsStore implements RefinementSettingsPort {
         // already renamed away
       }
     }
-    return { revision: refinementSettingsRevision(clean) }
+    return { revision: refinementSettingsRevision(clean, nonce) }
   }
 
-  private stored(): RefinementSettings | undefined {
+  /** The saved settings and the nonce of their save; a file from before the nonce holds the settings alone. */
+  private stored(): { settings: RefinementSettings; nonce?: string } | undefined {
     try {
       if (statSync(this.file).size > MAX_SETTINGS_BYTES) return undefined
-      const value: unknown = JSON.parse(readFileSync(this.file, 'utf8'))
-      return validateAgainst(Schema, value).ok ? { ...(value as RefinementSettings) } : undefined
+      const value = JSON.parse(readFileSync(this.file, 'utf8')) as Record<string, unknown> | null
+      if (value && typeof value === 'object' && 'nonce' in value) {
+        const keys = Object.keys(value)
+        if (keys.length !== 2 || typeof value.nonce !== 'string' || !NONCE.test(value.nonce)) return undefined
+        if (!validateAgainst(Schema, value.settings).ok) return undefined
+        return { settings: { ...(value.settings as RefinementSettings) }, nonce: value.nonce }
+      }
+      return validateAgainst(Schema, value).ok
+        ? { settings: { ...(value as RefinementSettings) } }
+        : undefined
     } catch {
       return undefined
     }

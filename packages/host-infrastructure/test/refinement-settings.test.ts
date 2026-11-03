@@ -71,7 +71,41 @@ describe('RefinementSettingsStore', () => {
     expect(readdirSync(join(dir, 'refinement'))).toEqual([
       `${createHash('sha256').update('a').digest('hex')}.json`,
     ])
-    expect(JSON.parse(readFileSync(fileOf(dir, 'a'), 'utf8'))).toEqual({ enabled: true, mode: 'manual' })
+    expect(JSON.parse(readFileSync(fileOf(dir, 'a'), 'utf8'))).toEqual({
+      settings: { enabled: true, mode: 'manual' },
+      nonce: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    })
+  })
+
+  it('every save gets a new revision: off and on again never brings back an old one', () => {
+    const store = new RefinementSettingsStore(dataDir(), 'p')
+    const seen = new Set([store.read().revision])
+    for (const enabled of [true, false, true, false, true]) {
+      const { revision } = store.save({ enabled, mode: 'auto' }, store.read().revision)
+      expect(seen.has(revision)).toBe(false)
+      seen.add(revision)
+      expect(store.read().revision).toBe(revision)
+    }
+    // Saving the same value again is a new revision too.
+    const same = store.save({ enabled: true, mode: 'auto' }, store.read().revision)
+    expect(seen.has(same.revision)).toBe(false)
+  })
+
+  it('a saved file with a bad nonce or extra keys reads as the default, and a file from before the nonce still reads', () => {
+    const dir = dataDir()
+    const off = { enabled: false, mode: 'manual' }
+    const settings = { enabled: true, mode: 'auto' }
+    for (const body of [
+      { settings, nonce: 'short' },
+      { settings, nonce: 7 },
+      { settings, nonce: '0e6f4c1a-6a46-4fb0-9a8b-0f5e9b1c2d3e', extra: 1 },
+      { settings: { enabled: 'yes', mode: 'auto' }, nonce: '0e6f4c1a-6a46-4fb0-9a8b-0f5e9b1c2d3e' },
+    ]) {
+      plant(dir, 'p', JSON.stringify(body))
+      expect(new RefinementSettingsStore(dir, 'p').read().settings, JSON.stringify(body)).toEqual(off)
+    }
+    plant(dir, 'p', JSON.stringify(settings))
+    expect(new RefinementSettingsStore(dir, 'p').read().settings).toEqual(settings)
   })
 
   it('a profile cannot inherit enabled from any legacy key', () => {

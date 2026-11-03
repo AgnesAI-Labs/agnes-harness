@@ -1,10 +1,12 @@
-import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
-import type { RefinementSettingsStore } from '@agnes/host'
+import type { CallContext, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import { type HostSession, type RefinementSettingsStore, requestRefinement } from '@agnes/host'
 import {
   type RefinementSettingsSaveParams,
   type RefinementSettingsSaveResult,
   type RefinementSettingsSnapshot,
   rpcError,
+  type SessionRefineParams,
+  type SessionRefineResult,
 } from '@agnes/protocol'
 
 const errorCode = (error: unknown): string | undefined => (error as { code?: string } | null)?.code
@@ -40,5 +42,24 @@ export function registerRefinement(
     local(c)
     const p = params as RefinementSettingsSaveParams
     return stored(() => deps.settings.save(p.settings, p.expectedRevision))
+  })
+}
+
+/** A worker-hosted session is a wire proxy; it asks the worker that holds the real session. */
+type RemoteRefine = { refine?: (focus: string | undefined) => Promise<SessionRefineResult> }
+
+/** The owner's manual refinement request: queues a background plan and returns the run at once. */
+export function registerSessionRefine(
+  ep: LocalEndpoint,
+  cx: { registry: { get(sessionId: string): { session: HostSession } | undefined } },
+  requireOwner: (method: string, sessionId: string, c: CallContext) => void,
+): void {
+  ep.register('_agnes/v1/session.refine', async (params, c): Promise<SessionRefineResult> => {
+    const p = params as SessionRefineParams
+    requireOwner('session.refine', p.sessionId, c)
+    const entry = cx.registry.get(p.sessionId)
+    if (!entry) throw rpcError('SESSION_NOT_FOUND', { sessionId: p.sessionId })
+    const remote = entry.session as unknown as RemoteRefine
+    return remote.refine ? remote.refine(p.focus) : requestRefinement(entry.session, p.focus)
   })
 }

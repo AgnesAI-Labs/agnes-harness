@@ -146,6 +146,7 @@ async function startCore(ctx: AssemblyContext, f: Foundation, t: Tree) {
     seamSet: t.seamSet,
     discoveredResources,
     extensionLeases,
+    refinement: t.ecosystem.refinement,
   })
   const capabilities = createCapabilities(ctx, {
     pkgs,

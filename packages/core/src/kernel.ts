@@ -49,6 +49,8 @@ import { bindChildFactory } from './child/sessions.js'
 import { bindChildSessionToolFilter, ChildToolRegistry } from './child/tool-filter.js'
 import { type DispatchContext, HookEngine } from './hooks/engine.js'
 import { LoopEventRegistry } from './loop/events.js'
+import type { RefinementDeps } from './refinement/scheduler.js'
+import type { RefinementTriggerSink } from './refinement/triggers.js'
 import { HookRegistry } from './registry/hooks.js'
 import { ResourceRegistry } from './registry/resources.js'
 import { SlotRegistry } from './registry/slots.js'
@@ -102,6 +104,7 @@ export const CORE_DIAG_NAMES = [
   'request-media-window',
   'tool-source-pending',
   'memory-external-change',
+  'refinement-prefix-change',
 ] as const
 export type CoreDiagName = (typeof CORE_DIAG_NAMES)[number]
 
@@ -141,6 +144,16 @@ export type KernelOptions = {
    * before request assembly; unlike an extension hook, no extension receives that raw prompt.
    */
   runtimePromptPreloader?: RuntimePromptPreloader
+  /**
+   * Whether the refinement experience (fixed guidance, entry snapshot, update notes) is delivered on
+   * the next primary request. Read before each request; omitted or false sends none of it and writes
+   * no row for it, so requests are exactly what they were without refinement.
+   */
+  refinementEnabled?: () => boolean
+  /** Takes automatic refinement candidates; read only while `refinementEnabled` is true. */
+  refinementTriggers?: RefinementTriggerSink
+  /** The refinement switch and the plugin planner each session's refinement facade runs with. */
+  refinement?: RefinementDeps
   /** Host-owned lookup of the generation currently published for an open session. */
   currentRuntime?: CurrentRuntimeLookup
   /** Host-owned overlay apply. Core setPreset calls this and never talks to Cordis. */
@@ -737,6 +750,9 @@ export class Kernel {
         ...(this.o.hooks ? { hooks: this.o.hooks } : {}),
         ...(this.o.compaction ? { compaction: this.o.compaction } : {}),
         ...(this.o.runtimePromptPreloader ? { runtimePromptPreloader: this.o.runtimePromptPreloader } : {}),
+        ...(this.o.refinementEnabled ? { refinementEnabled: this.o.refinementEnabled } : {}),
+        ...(this.o.refinementTriggers ? { refinementTriggers: this.o.refinementTriggers } : {}),
+        ...(this.o.refinement ? { refinement: this.o.refinement } : {}),
         ...(this.o.quiet ? { quiet: this.o.quiet } : {}),
         ...(this.o.quiet ? { quietGroup } : {}),
         agnesVersion: this.o.agnesVersion ?? '0.0.0',

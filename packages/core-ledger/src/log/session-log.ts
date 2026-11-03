@@ -188,6 +188,8 @@ export class SessionLogImpl {
   // which is what "drain the appends already admitted" means.
   private drain: Promise<void> = Promise.resolve()
   private timer: unknown
+  /** Work outside any turn that still needs the lease kept, such as a background model call. */
+  private renewalHolds = 0
   private leaseRenewedAt: number
   private integrityState: IntegrityState
   private readonly createdOnOpen: boolean
@@ -611,12 +613,30 @@ export class SessionLogImpl {
   }
 
   /**
-   * The timer runs while a turn is open on any lane: crash recovery treats an expired lease with a
-   * turn open as a dead writer, so a turn that writes nothing for a while must keep its lease. With
-   * no turn open every write renews the lease, or takes a lapsed one back.
+   * Keeps the lease renewed on its timer until the returned release runs, whether or not a turn is
+   * open: a call that writes its settlement long after its intent must still hold the lease then.
+   * Holds count; each release counts once.
+   */
+  holdRenewal(): () => void {
+    this.renewalHolds++
+    this.syncRenewal()
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.renewalHolds--
+      this.syncRenewal()
+    }
+  }
+
+  /**
+   * The timer runs while a turn is open on any lane, or while a hold asks for it: crash recovery
+   * treats an expired lease with a turn open as a dead writer, so a turn that writes nothing for a
+   * while must keep its lease. With no turn open every write renews the lease, or takes a lapsed one
+   * back.
    */
   private syncRenewal(): void {
-    const wanted = this.registersCache.hasOpLane
+    const wanted = !this.closed && (this.registersCache.hasOpLane || this.renewalHolds > 0)
     if (wanted && this.timer === undefined) this.scheduleRenew()
     if (!wanted && this.timer !== undefined) {
       this.timers().clearTimeout(this.timer)

@@ -138,7 +138,6 @@ export async function decideToolPolicy(
             deriveRequest({
               kind: 'summary',
               merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
-              harnessEntries: [],
               surface: [],
               disclosed: [],
               model: { slot: request.slot, ...target },

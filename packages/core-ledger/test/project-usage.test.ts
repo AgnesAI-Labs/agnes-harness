@@ -218,6 +218,32 @@ describe('projectUsage', () => {
     })
   })
 
+  it('projectUsage reports the refinement lane separately', () => {
+    const events = [
+      row(1, cost('inference-1', { input: 10, output: 2 }, { credits: 1 })),
+      row(2, cost('rsi-1', { input: 100, output: 20 }, { purpose: 'side-call', credits: 0.5 }), 'refinement'),
+      row(3, cost('other-1', { input: 7, output: 7 }, { credits: 9 }), 'side'),
+    ]
+    // One lane, as before: the refinement spend is not in it and no breakdown is given.
+    const one = projectUsage(input(events))
+    expect(one.totals).toMatchObject({ input: 10, output: 2 })
+    expect(one).not.toHaveProperty('byLane')
+    // The session view reads the refinement lane too: it counts in the total and has its own row.
+    const both = projectUsage({ ...input(events), lanes: ['refinement'] })
+    expect(both.totals).toMatchObject({ input: 110, output: 22 })
+    expect(both.credits).toMatchObject({ amount: 1.5 })
+    expect(both.byLane).toEqual({
+      main: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, reasoning: 0, credits: 1 },
+      refinement: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, reasoning: 0, credits: 0.5 },
+    })
+    // The context estimate is the conversation's alone.
+    expect(both.context.tokens).toBe(one.context.tokens)
+    // With nothing spent on the extra lane the view is exactly the one-lane view.
+    expect(projectUsage({ ...input(events.slice(0, 1)), lanes: ['refinement'] })).toEqual(
+      projectUsage(input(events.slice(0, 1))),
+    )
+  })
+
   it('reports cumulative cache hit rate alongside totals', () => {
     const events = [
       row(1, cost('e1', { input: 500, output: 10, cacheRead: 9000, cacheWrite: 0 })),

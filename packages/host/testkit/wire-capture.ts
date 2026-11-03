@@ -218,7 +218,14 @@ function replySse(api: WireApi, body: Record<string, unknown>, reply: WireReply)
   return `data: ${JSON.stringify(chunk)}\n\ndata: ${JSON.stringify(finish)}\n\ndata: [DONE]\n\n`
 }
 
-export async function startWireCapture(script: (body: unknown, api: WireApi) => WireReply) {
+/**
+ * A loopback provider that records every request and answers each from `script`. The script may
+ * answer later (a promise), which lets a test hold one call open while others go on: requests are
+ * served concurrently.
+ */
+export async function startWireCapture(
+  script: (body: unknown, api: WireApi) => WireReply | Promise<WireReply>,
+) {
   const requests: CapturedRequest[] = []
   const server: Server = createServer(async (request, response) => {
     const api = request.url?.split('/')[1] as WireApi
@@ -232,7 +239,7 @@ export async function startWireCapture(script: (body: unknown, api: WireApi) => 
     const raw = Buffer.concat(chunks).toString('utf8')
     const body = JSON.parse(raw) as Record<string, unknown>
     requests.push({ api, raw, body })
-    const reply = script(body, api)
+    const reply = await script(body, api)
     response.writeHead(200, { 'content-type': 'text/event-stream' })
     response.end(replySse(api, body, reply))
   })

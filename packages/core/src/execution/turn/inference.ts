@@ -55,6 +55,7 @@ import {
   SKILL_LOADED_PREFIX,
   TURN_TIME_PREFIX,
 } from '../../request/derive.js'
+import { experienceNotes, messageText, withExperienceDiag } from '../../request/experience.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
 import { promptLanguage, withNoteLanguage } from '../../request/note-language.js'
 import { toProviderRequest } from '../../request/to-provider.js'
@@ -251,16 +252,7 @@ async function currentPromptText(s: SessionImpl, triggerSeq: number): Promise<st
     lane: s.lane,
     limit: 1,
   })
-  if (row?.type !== 'user/message') return ''
-  const content = (row.data as { content?: unknown }).content
-  if (!Array.isArray(content)) return ''
-  return content
-    .filter(
-      (part): part is { type: 'text'; text: unknown } =>
-        !!part && typeof part === 'object' && (part as { type?: unknown }).type === 'text',
-    )
-    .map((part) => (typeof part.text === 'string' ? part.text : ''))
-    .join('\n')
+  return row?.type === 'user/message' ? messageText((row.data as { content?: unknown }).content) : ''
 }
 
 /** Each turn's prompt language, read once from the trigger row; null when it cannot be told. */
@@ -694,7 +686,6 @@ export async function prepareInferenceRequest(
       canRead: Boolean(s.d.requestMedia && disclosed.some((tool) => tool.name === 'read')),
     },
     merged,
-    harnessEntries: [...s.state.registers.harnessEntries.values()].map((c) => c.value),
     surface,
     disclosed,
     toolCalls: await surfaceToolCalls(s),
@@ -719,12 +710,16 @@ export async function prepareInferenceRequest(
             },
           ]
         : []),
+      // A loop that brings its own message list (`options.messages`) gets no task experience: that
+      // list is not the surface, so the frozen-snapshot check could never see a note it had sent.
+      ...(options.messages ? [] : await experienceNotes(s, surface)),
     ],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
     ...(turnTime ? { requestNotes: [{ prefix: TURN_TIME_PREFIX, text: turnTime }] } : {}),
     ...(tailNote ? { tailNote } : {}),
   })
+  out = withExperienceDiag(s, out)
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)
   if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
     const { request, derivedHash } = remintRequestWithMaxTokens(

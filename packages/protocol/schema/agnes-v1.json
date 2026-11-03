@@ -4337,6 +4337,23 @@
             }
           }
         },
+        "byLane": {
+          "description": "Spend per lane, present once a lane other than the conversation's own has spent anything (background refinement calls); the totals and credits above already include every lane.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["input", "output", "cacheRead", "cacheWrite", "reasoning"],
+            "properties": {
+              "input": { "type": "integer", "minimum": 0 },
+              "output": { "type": "integer", "minimum": 0 },
+              "cacheRead": { "type": "integer", "minimum": 0 },
+              "cacheWrite": { "type": "integer", "minimum": 0 },
+              "reasoning": { "type": "integer", "minimum": 0 },
+              "credits": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
         "cache": {
           "type": "object",
           "additionalProperties": false,
@@ -5361,6 +5378,33 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4000
+        }
+      }
+    },
+    "SessionRefineParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "focus": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        }
+      }
+    },
+    "SessionRefineResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId"],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         }
       }
     },

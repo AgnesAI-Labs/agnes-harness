@@ -18,6 +18,12 @@ export type TreePermit = {
 }
 export type TreeBudgetTarget = { route: string; model: string }
 export type TreeReservationIdentity = { effectId: string; requestHash: string }
+/**
+ * A reservation against a root of the caller's own rather than the open turn's. `rootTaskId` names
+ * the root, created with a cap of `rootCredits` the first time; the hold is quoted at
+ * `maxOutputTokens` output tokens instead of the catalogue's maximum.
+ */
+export type TreeRootOptions = { rootTaskId?: string; rootCredits?: number; maxOutputTokens?: number }
 
 declare const explicitTreeReservation: unique symbol
 export type TreeReservationHandle = TreePermit & {
@@ -87,6 +93,7 @@ async function reserveTreeBudgetPermit(
   endTurnOnBlocked: boolean,
   inputTokens = 0,
   quotedModel?: ReturnType<SessionImpl['d']['provider']['models']>[number] | null,
+  opts: TreeRootOptions = {},
 ): Promise<
   | 'unreserved'
   | { reason: TurnEndReason }
@@ -98,17 +105,21 @@ async function reserveTreeBudgetPermit(
     }
 > {
   const storage = s.d.log.storage
-  if (!(await treeBudgetApplies(s))) return 'unreserved'
+  // A root of the caller's own stands apart from the turn: no turn cap, no inherited child scope.
+  const own = opts.rootTaskId
+  if (own === undefined && !(await treeBudgetApplies(s))) return 'unreserved'
   if (!hasChildControl(storage)) {
     if (endTurnOnBlocked) await s.endTurn('budget')
     return { reason: 'budget' }
   }
-  const rec = await storage.lookupByKey(s.key)
-  const hardCap = s.turn?.hardBudgetCap
+  const rec = own === undefined ? await storage.lookupByKey(s.key) : null
+  const hardCap = own === undefined ? s.turn?.hardBudgetCap : undefined
   const treeCredits =
-    hardCap === undefined
-      ? s.preset.treeBudgetCredits
-      : Math.min(hardCap, s.preset.treeBudgetCredits ?? hardCap)
+    own !== undefined
+      ? (opts.rootCredits ?? null)
+      : hardCap === undefined
+        ? s.preset.treeBudgetCredits
+        : Math.min(hardCap, s.preset.treeBudgetCredits ?? hardCap)
   // A bounded ordinary turn owns its root. Never silently drop an inherited tree constraint.
   if (hardCap !== undefined && (rec || hardCap < 0.000001)) {
     if (endTurnOnBlocked) await s.endTurn('budget')
@@ -121,7 +132,7 @@ async function reserveTreeBudgetPermit(
   let scopeIds = rec?.ancestorScopeIds
   let rootTaskId = rec?.rootTaskId
   if (!rec && treeCredits !== null) {
-    rootTaskId = `${s.key}:${s.lane}:${s.state.openTurn.get(s.lane)?.startSeq ?? 0}`
+    rootTaskId = own ?? `${s.key}:${s.lane}:${s.state.openTurn.get(s.lane)?.startSeq ?? 0}`
     const root = await storage.ensureRootScope(rootTaskId, capToMicrocredits(treeCredits))
     scopeIds = [root.scopeId]
   }
@@ -159,7 +170,9 @@ async function reserveTreeBudgetPermit(
     return { reason: 'budget' }
   }
   const upper =
-    complete && recModel ? conservativeModelCredits(inputTokens, recModel.maxTokens, recModel.cost) : 0
+    complete && recModel
+      ? conservativeModelCredits(inputTokens, opts.maxOutputTokens ?? recModel.maxTokens, recModel.cost)
+      : 0
   const hold = Math.max(projectedCredits, upper)
   const requestHash =
     complete && recModel
@@ -230,6 +243,7 @@ export async function reserveTreeBudgetHandle(
   target: TreeBudgetTarget,
   identity: TreeReservationIdentity,
   inputTokens = 0,
+  opts: TreeRootOptions = {},
 ): Promise<TreeReservationResult> {
   if (
     !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}$/u.test(identity.effectId) ||
@@ -243,7 +257,7 @@ export async function reserveTreeBudgetHandle(
     throw new CoreError('E_BUDGET', 'explicit tree reservation input token quote is invalid')
   // A session outside any configured/inherited tree does not need a durable reservation backend.
   // Preserve legacy storage compatibility by deciding applicability before the narrow capability gate.
-  if (!(await treeBudgetApplies(s))) return { status: 'unreserved' }
+  if (opts.rootTaskId === undefined && !(await treeBudgetApplies(s))) return { status: 'unreserved' }
   if (!hasDurableReservations(s.d.log.storage))
     throw new CoreError('E_UNSUPPORTED', 'durable explicit tree reservations are unavailable')
   let recModel: ReturnType<typeof s.d.provider.models>[number] | undefined
@@ -258,6 +272,7 @@ export async function reserveTreeBudgetHandle(
       target,
       projectedCredits,
       inputTokens,
+      ...(opts.rootTaskId === undefined ? {} : { root: opts }),
       model: recModel
         ? {
             route: recModel.route,
@@ -304,6 +319,7 @@ export async function reserveTreeBudgetHandle(
       false,
       inputTokens,
       recModel ?? null,
+      opts,
     )
     if (reserved === 'unreserved') return { status: 'unreserved' }
     if ('reason' in reserved) return { status: 'blocked', reason: reserved.reason }

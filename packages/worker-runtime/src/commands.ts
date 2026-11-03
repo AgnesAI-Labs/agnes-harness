@@ -9,6 +9,7 @@ import {
   type HostSession,
   manageMemory,
   type ResolvedProfile,
+  requestRefinement,
   sessionPermissionCatalog,
   ToolFilterError,
   toolFilterRejection,
@@ -556,6 +557,8 @@ export async function handleCommand(
       o.host.validateModelSwitch(sel, session.key)
       return { effectiveFromSeq: await session.setModel(sel) }
     }
+    case 'refine':
+      return requestRefinement(session, typeof p.focus === 'string' ? p.focus : undefined)
     case 'setYolo': {
       if (typeof p.enabled !== 'boolean') throw new TypeError('invalid setYolo command')
       const computerUseSession = { key: session.key, lane: session.lane }
