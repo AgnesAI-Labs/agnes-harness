@@ -28,6 +28,11 @@ export function mountTranscriptRegion(
       sessionId: string,
       appliedSeq: number,
     ) => Promise<import('@agnes/web-ui/conversation').RefinementWithdrawOutcome>
+    onSaveRefinementEntry?: (
+      sessionId: string,
+      kind: 'memory' | 'prompt',
+      id: string,
+    ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
     session?: SessionService
     locale?: LocaleService
     resources?: ClientResourceService
@@ -77,6 +82,7 @@ export function mountTranscriptRegion(
           {...(options.onFork ? { onFork: options.onFork } : {})}
           {...(options.turnErrorActions ? { turnErrorActions: options.turnErrorActions } : {})}
           {...(options.onWithdrawRefinement ? { onWithdrawRefinement: options.onWithdrawRefinement } : {})}
+          {...(options.onSaveRefinementEntry ? { onSaveRefinementEntry: options.onSaveRefinementEntry } : {})}
           {...(options.session ? { session: options.session } : {})}
           {...(options.locale ? { locale: options.locale } : {})}
           {...(options.resources ? { resources: options.resources } : {})}

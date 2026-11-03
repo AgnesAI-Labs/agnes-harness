@@ -151,6 +151,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "readPreset",
   "readRoleDelegation",
   "recoverCreatingChildAttempts",
+  "redactEvidence",
   "reduce",
   "reduceDecision",
   "refinementFacade",
@@ -167,6 +168,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "runCompaction",
   "runToolsPhase",
   "sanitize",
+  "saveToWorkspace",
   "scanAll",
   "scanPages",
   "scanTruncated",
@@ -194,6 +196,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "verifyRegisters",
   "withPhase",
   "withTimeout",
+  "workspaceSaveRequest",
   "wrapUntrusted",
 ]
 `;

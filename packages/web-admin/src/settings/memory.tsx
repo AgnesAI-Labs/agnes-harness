@@ -19,6 +19,7 @@ import { captureRequest } from './async-request.js'
 import { contextRequest } from './context.js'
 import { memoryRequest } from './memory-api.js'
 import { memoryCatalog } from './memory-locale.js'
+import { SavedParagraphsBlock } from './memory-saved.js'
 
 const errorEnvelope = (error: unknown) => (error as { envelope?: unknown })?.envelope ?? true
 type Request = Parameters<typeof memoryRequest>[0]
@@ -249,6 +250,19 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
                 onChange={(event) => setContent(event.target.value)}
               />
             </SettingsBlock>
+          )}
+          {file && cwd && (
+            <SavedParagraphsBlock
+              key={cwd}
+              cwd={cwd}
+              canSave={canSave}
+              locale={locale}
+              t={t}
+              onFileChanged={() => {
+                if (file.path === 'MEMORY.md' && content === file.content)
+                  void request({ cwd, file: file.path })
+              }}
+            />
           )}
           <SettingsBlock data-testid="memory-usage">
             <SettingsItem label={t('used')}>

@@ -2086,7 +2086,7 @@ describe('runSlash', () => {
       }
     })
 
-    it('names other refusals and leaves the workspace form unavailable without a call', async () => {
+    it('names other refusals and refuses a too-long focus without a call', async () => {
       const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
       try {
         ep.on('_agnes/v1/session.refine', refusing('child-session'))
@@ -2094,15 +2094,73 @@ describe('runSlash', () => {
         ep.on('_agnes/v1/session.refine', refusing('some-new-reason'))
         expect((await runSlash(app, '/refine')).text).toContain('some-new-reason')
         const before = ep.calls.length
-        expect((await runSlash(app, '/refine --workspace the build')).text).toMatch(
-          /workspace.*not available/,
-        )
         expect((await runSlash(app, `/refine ${'x'.repeat(513)}`)).text).toMatch(/512/)
         // 300 emoji are 600 UTF-16 units, which the daemon counts: refused here, with the right reason.
         expect((await runSlash(app, `/refine ${'😀'.repeat(300)}`)).text).toMatch(/512/)
         expect(ep.calls.length).toBe(before)
       } finally {
         await client.close()
+      }
+    })
+
+    it('/refine on a model with no known price asks for agreement, and --unpriced gives it', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      const chinese = await unstartedApp()
+      try {
+        ep.on('_agnes/v1/session.refine', refusing('unpriced'))
+        const asked = await runSlash(app, '/refine the build')
+        expect(asked.text).toMatch(/no known price/)
+        expect(asked.text).toContain('/refine --unpriced')
+        ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-11' }))
+        expect((await runSlash(app, '/refine --unpriced  the build')).text).toContain('run-11')
+        const call = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(call?.params).toEqual({ sessionId: app.session.id, focus: 'the build', allowUnpriced: true })
+        await runSlash(app, '/refine --workspace --unpriced')
+        expect(ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)?.params).toEqual({
+          sessionId: app.session.id,
+          saveTo: 'workspace',
+          allowUnpriced: true,
+        })
+        await runSlash(app, '/refine --unpriced --workspace notes')
+        expect(ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)?.params).toEqual({
+          sessionId: app.session.id,
+          focus: 'notes',
+          saveTo: 'workspace',
+          allowUnpriced: true,
+        })
+        chinese.ep.on('_agnes/v1/session.refine', refusing('unpriced'))
+        expect((await runSlash(chinese.app, '/refine')).text).toContain('/refine --unpriced')
+      } finally {
+        await client.close()
+        await chinese.client.close()
+      }
+    })
+
+    it('/refine --workspace queues a saving review', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      const chinese = await unstartedApp()
+      try {
+        ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-9' }))
+        const r = await runSlash(app, '/refine --workspace  the build ')
+        expect(r.text).toContain('run-9')
+        expect(r.text).toMatch(/saved to this workspace/i)
+        expect(r.text).not.toMatch(/not available/)
+        const call = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(call?.params).toEqual({ sessionId: app.session.id, focus: 'the build', saveTo: 'workspace' })
+        await runSlash(app, '/refine --workspace')
+        const bare = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(bare?.params).toEqual({ sessionId: app.session.id, saveTo: 'workspace' })
+        // A word that only starts like the flag is focus text, not the flag.
+        await runSlash(app, '/refine --workspaces')
+        const word = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(word?.params).toEqual({ sessionId: app.session.id, focus: '--workspaces' })
+        chinese.ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-10' }))
+        expect((await runSlash(chinese.app, '/refine --workspace')).text).toContain('工作区')
+        chinese.ep.on('_agnes/v1/session.refine', refusing('refinement-off'))
+        expect((await runSlash(chinese.app, '/refine --workspace')).text).toContain('重启')
+      } finally {
+        await client.close()
+        await chinese.client.close()
       }
     })
   })

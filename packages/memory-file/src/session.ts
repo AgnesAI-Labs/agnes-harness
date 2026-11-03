@@ -1,5 +1,7 @@
 import { join, relative, resolve } from 'node:path'
 import type {
+  MemoryApprovalResult,
+  MemoryEffectAdmission,
   MemoryFile,
   MemoryFilePort,
   MemoryInspection,
@@ -7,21 +9,46 @@ import type {
   MemorySession,
   MemorySettings,
   MemorySnapshot,
+  MemorySource,
+  MemoryValidityView,
 } from '@agnes/extension-api'
 import { diff, fault, file, fit, hash, validateContent } from './content.js'
+import { paragraphPort } from './paragraph-port.js'
+import {
+  markerSet,
+  type ParagraphView,
+  paragraphTexts,
+  paragraphView,
+  parseParagraphs,
+  plainView,
+  replaceInView,
+  unfilteredIndexView,
+  validityOf,
+} from './paragraphs.js'
 import { canonical, inside, name, roots } from './paths.js'
 import { MemoryStore } from './store.js'
 
-type TurnSnapshot = { files: readonly MemoryFile[]; snapshot: MemorySnapshot }
+/**
+ * `files` is the stored text; `agent` is what the agent may see this turn, with the index's expired
+ * or unverifiable managed paragraphs left out.
+ */
+type TurnSnapshot = {
+  files: readonly MemoryFile[]
+  agent: readonly MemoryFile[]
+  index: ParagraphView
+  snapshot: MemorySnapshot
+}
 
 export function openMemory(input: {
   home: string
   workspaceRoot: string
   sessionKey: string
+  validity?: MemoryValidityView
 }): MemorySession {
   const paths = roots(input.home, input.workspaceRoot)
   const store = new MemoryStore(paths.protectedRoot, paths.root)
   const user = new MemoryStore(paths.protectedRoot, paths.userRoot)
+  const validity = validityOf(input.validity)
   let turnSnapshot: { turn: number; value: TurnSnapshot } | undefined
 
   const capture = (turn: number): TurnSnapshot => {
@@ -29,22 +56,29 @@ export function openMemory(input: {
     const config = store.configuration()
     const files = store.files()
     const index = files.find((entry) => entry.path === 'MEMORY.md') ?? file('MEMORY.md', '')
+    const indexValid = passes(index, config)
+    // An index already over its cap is never shown, so it is not parsed for paragraphs either.
+    const indexView = indexValid ? paragraphView(index.content, validity) : unfilteredIndexView(index.content)
+    const agent = files.map((entry) =>
+      entry.path === 'MEMORY.md' && indexView.content !== entry.content
+        ? file(entry.path, indexView.content)
+        : entry,
+    )
     const userIndex = config.userEnabled ? user.read('MEMORY.md') : file('MEMORY.md', '')
-    const revision = hash(JSON.stringify([files.map(({ path, hash }) => [path, hash]), userIndex.hash]))
-    let workspaceContent = index.content
-    let userContent = userIndex.content
-    for (const [entry, layer] of [
-      [index, 'workspace'],
-      [userIndex, 'user'],
-    ] as const) {
-      try {
-        validateContent(entry, config, true)
-      } catch {
-        if (layer === 'workspace')
-          workspaceContent = '[Memory omitted: consolidate the index or remove secret-like content.]'
-        else userContent = '[User memory omitted: consolidate the index or remove secret-like content.]'
-      }
-    }
+    // Without markers the hash input is exactly what it was before managed paragraphs existed.
+    const revision = hash(
+      JSON.stringify([
+        files.map(({ path, hash }) => [path, hash]),
+        userIndex.hash,
+        ...(indexView.managed ? [indexView.omittedIds, viewRevision(input.validity)] : []),
+      ]),
+    )
+    const workspaceContent = indexValid
+      ? indexView.content
+      : '[Memory omitted: consolidate the index or remove secret-like content.]'
+    const userContent = passes(userIndex, config)
+      ? userIndex.content
+      : '[User memory omitted: consolidate the index or remove secret-like content.]'
     const total = config.tokenBudget + (config.userEnabled ? config.userTokenBudget : 0)
     const workspace = fit(workspaceContent, config.tokenBudget)
     const userLayer = fit(userContent, config.userTokenBudget)
@@ -60,6 +94,8 @@ export function openMemory(input: {
     const bounded = fit(content, total)
     const value = {
       files,
+      agent,
+      index: indexView,
       snapshot: Object.freeze({
         revision,
         content: bounded.content,
@@ -110,11 +146,14 @@ export function openMemory(input: {
       const get = (path: string): MemoryFile => {
         active()
         signal.throwIfAborted()
-        const entry = capture(source.turn).files.find((entry) => entry.path === path)
+        const turn = capture(source.turn)
+        const entry = turn.files.find((entry) => entry.path === path)
         if (!entry) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
         validateContent(entry, store.configuration(), path === 'MEMORY.md')
-        return entry
+        return turn.agent.find((shown) => shown.path === path) ?? entry
       }
+      const submit = (leaf: string, before: MemoryFile, candidate: MemoryFile) =>
+        reviewAndCommit({ store, root: paths.root, source, signal, approve, active }, leaf, before, candidate)
       return Object.freeze<MemoryFilePort>({
         async read(path, options) {
           const leaf = target(path)
@@ -146,36 +185,43 @@ export function openMemory(input: {
         async write(path, content) {
           const leaf = target(path)
           if (leaf === undefined) return fallback.write(path, content)
-          const config = active()
+          active()
           signal.throwIfAborted()
-          const before = capture(source.turn).files.find((entry) => entry.path === leaf) ?? file(leaf, '')
+          const turn = capture(source.turn)
+          const before = turn.files.find((entry) => entry.path === leaf) ?? file(leaf, '')
+          // A whole file written from a view that leaves text out would silently drop that text.
+          if (leaf === 'MEMORY.md' && turn.index.hidden) throw fault('MEMORY_HIDDEN_PARAGRAPHS')
           const candidate = file(
             leaf,
             typeof content === 'string' ? content : Buffer.from(content).toString('utf8'),
           )
-          validateContent(candidate, config, leaf === 'MEMORY.md')
-          const proposal: MemoryProposal = Object.freeze({
-            path: join(paths.root, leaf),
-            baseHash: before.hash,
-            newHash: candidate.hash,
-            diff: diff(before.content, candidate.content),
-            source,
-          })
-          let admission: import('@agnes/extension-api').MemoryEffectAdmission | undefined
-          if (config.mode === 'ask') {
-            const result = await approve(proposal)
-            if (result.status === 'approved') admission = result.admission
-            if (result.status === 'rejected') throw fault('MEMORY_APPROVAL_REJECTED')
-            if (result.status !== 'approved')
-              throw Object.assign(fault('MEMORY_APPROVAL_UNANSWERED'), {
-                reason: result.reason,
-                message: `MEMORY_APPROVAL_UNANSWERED: ${result.reason}`,
-              })
+          if (
+            markerSet(candidate.content) !== markerSet(before.content) ||
+            (leaf === 'MEMORY.md' && parseParagraphs(candidate.content).anomalies.length)
+          )
+            throw fault('MEMORY_MARKER_CHANGED')
+          // A managed paragraph's text changes only by exact replacement or the paragraph port, so a
+          // rewrite cannot pull other lines inside a paragraph (they would expire with it).
+          if (leaf === 'MEMORY.md' && paragraphTexts(candidate.content) !== paragraphTexts(before.content))
+            throw fault('MEMORY_PARAGRAPH_TEXT_CHANGED')
+          await submit(leaf, before, candidate)
+        },
+        /**
+         * Exact replacement re-reads the stored file, so several replacements in one turn compose and a
+         * concurrent change is kept: the match must still be unique in the current view.
+         */
+        async replaceExact(path, oldText, newText) {
+          const leaf = target(path)
+          if (leaf === undefined) {
+            if (fallback.replaceExact) return fallback.replaceExact(path, oldText, newText)
+            throw fault('MEMORY_SCOPE_DENIED')
           }
+          active()
           signal.throwIfAborted()
-          // A policy change during approval cannot silently convert it into an auto write.
-          if (active().mode !== config.mode) throw fault('MEMORY_POLICY_CHANGED')
-          await store.commit(candidate, before.hash, source, config.mode, signal, admission)
+          const before = store.read(leaf)
+          const view =
+            leaf === 'MEMORY.md' ? paragraphView(before.content, validity) : plainView(before.content)
+          await submit(leaf, before, file(leaf, replaceInView(before.content, view, oldText, newText)))
         },
       })
     },
@@ -187,6 +233,9 @@ export function openMemory(input: {
     async readFile(path) {
       return store.read(name(path))
     },
+    paragraphs(source, signal) {
+      return paragraphPort(store, paths.root, input.validity, source, signal)
+    },
     async editFile(path, content, baseHash) {
       return store.commit(
         file(name(path), content),
@@ -196,4 +245,63 @@ export function openMemory(input: {
       )
     },
   })
+}
+
+function passes(entry: MemoryFile, config: MemorySettings): boolean {
+  try {
+    validateContent(entry, config, true)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function viewRevision(view: MemoryValidityView | undefined): string | null {
+  if (!view) return null
+  try {
+    return String(view.revision())
+  } catch {
+    return 'unavailable'
+  }
+}
+
+/** The shared agent write path: validate, review under ask, then compare-and-swap commit. */
+async function reviewAndCommit(
+  context: {
+    store: MemoryStore
+    root: string
+    source: MemorySource
+    signal: AbortSignal
+    approve: (proposal: MemoryProposal) => Promise<MemoryApprovalResult>
+    active: () => MemorySettings & { mode: 'ask' | 'auto' }
+  },
+  leaf: string,
+  before: MemoryFile,
+  candidate: MemoryFile,
+): Promise<void> {
+  const { store, source, signal, approve, active } = context
+  const config = active()
+  validateContent(candidate, config, leaf === 'MEMORY.md')
+  const proposal: MemoryProposal = Object.freeze({
+    path: join(context.root, leaf),
+    baseHash: before.hash,
+    newHash: candidate.hash,
+    diff: diff(before.content, candidate.content),
+    source,
+  })
+  let admission: MemoryEffectAdmission | undefined
+  if (config.mode === 'ask') {
+    const result = await approve(proposal)
+    if (result.status === 'approved') admission = result.admission
+    if (result.status === 'rejected') throw fault('MEMORY_APPROVAL_REJECTED')
+    if (result.status !== 'approved')
+      throw Object.assign(fault('MEMORY_APPROVAL_UNANSWERED'), {
+        reason: result.reason,
+        message: `MEMORY_APPROVAL_UNANSWERED: ${result.reason}`,
+      })
+  }
+  signal.throwIfAborted()
+  // A policy change during approval cannot silently convert it into an auto write.
+  if (active().mode !== config.mode) throw fault('MEMORY_POLICY_CHANGED')
+  await store.commit(candidate, before.hash, source, config.mode, signal, admission)
 }

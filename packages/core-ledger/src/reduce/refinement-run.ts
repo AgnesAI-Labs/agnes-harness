@@ -15,8 +15,18 @@ export type RefinementRunState =
   | 'unknown'
 
 export type RefinementTriggerKind = 'manual' | 'model' | 'compaction' | 'repeated-failure'
-/** What asked for a run: who, at which seq, and an optional focus. */
-export type RefinementTrigger = { kind: RefinementTriggerKind; seq: Seq; focus?: string }
+/**
+ * What asked for a run: who, at which seq, and an optional focus. `saveTo: 'workspace'` asks for the
+ * run's applied result to be saved to the session's workspace as well. `allowUnpriced` (the user's own
+ * request only) records that the user agreed to plan on a model with no known price.
+ */
+export type RefinementTrigger = {
+  kind: RefinementTriggerKind
+  seq: Seq
+  focus?: string
+  saveTo?: 'workspace'
+  allowUnpriced?: true
+}
 
 export type RefinementEntryKind = 'prompt' | 'memory' | 'skill' | 'subagent'
 export type RefinementEntryRef = { kind: RefinementEntryKind; id: string }
@@ -66,6 +76,28 @@ export type RefinementPlanEdit =
       usedEvidence?: string[]
     }
   | { op: 'delete'; kind: RefinementEntryKind; id: string; evidenceSeqs: Seq[] }
+/**
+ * An entry saved to the workspace, shown to a run's planner as confirm-only: its reference
+ * (`workspace-memory/<paragraph id>` or `workspace-skill/<name>`), the content version it was shown
+ * at, and, when it was saved from a session entry, that entry.
+ */
+export type RefinementWorkspaceRef = {
+  ref: string
+  version: string
+  source?: { sessionKey: string; kind: RefinementEntryKind; entryId: string }
+}
+/**
+ * A plan's report that new evidence bore out an entry saved to the workspace. It never changes the
+ * entry; once the plan is applied it renews the entry's review date.
+ */
+export type RefinementWorkspaceConfirmation = {
+  ref: string
+  evidenceSeqs: Seq[]
+  quote?: string
+  quoteSeqs?: Seq[]
+  /** The evidence that makes it count, checked when the plan settled; absent, it renews nothing. */
+  confirmedBy?: { identity: string; seq: Seq }
+}
 /** A validated plan, with every evidence id already replaced by its fixed seq. */
 export type RefinementPlan = {
   summary: string
@@ -91,6 +123,8 @@ export type RefinementPlan = {
    * ended). The apply refuses the plan if any of them is in force again.
    */
   lapsed?: RefinementEntryRef[]
+  /** Confirmations of entries saved to the workspace; absent when the plan has none. */
+  workspaceConfirmations?: RefinementWorkspaceConfirmation[]
 }
 
 /** A run as its rows fold: the latest state and every fact recorded on the way. */
@@ -111,6 +145,8 @@ export type RefinementRunRecord = {
   evidence?: RefinementEvidenceRef[]
   fullEntries?: RefinementEntryRef[]
   shownEntries?: RefinementEntryRef[]
+  /** Entries saved to the workspace the planner was shown, which it may only confirm. */
+  workspaceRefs?: RefinementWorkspaceRef[]
   target?: { route: string; model: string }
   plan?: RefinementPlan
 }
@@ -148,14 +184,24 @@ const STATES = new Set(Object.keys(NEXT))
 const KINDS = new Set(['manual', 'model', 'compaction', 'repeated-failure'])
 
 function triggerOf(raw: unknown): RefinementTrigger | undefined {
-  const t = raw as { kind?: unknown; seq?: unknown; focus?: unknown } | null
+  const t = raw as {
+    kind?: unknown
+    seq?: unknown
+    focus?: unknown
+    saveTo?: unknown
+    allowUnpriced?: unknown
+  } | null
   if (!t || typeof t !== 'object' || !KINDS.has(String(t.kind))) return undefined
   if (!Number.isSafeInteger(t.seq) || (t.seq as number) < 0) return undefined
   if (t.focus !== undefined && typeof t.focus !== 'string') return undefined
+  if (t.saveTo !== undefined && t.saveTo !== 'workspace') return undefined
+  if (t.allowUnpriced !== undefined && (t.allowUnpriced !== true || t.kind !== 'manual')) return undefined
   return {
     kind: t.kind as RefinementTriggerKind,
     seq: t.seq as Seq,
     ...(t.focus === undefined ? {} : { focus: t.focus as string }),
+    ...(t.saveTo === undefined ? {} : { saveTo: 'workspace' as const }),
+    ...(t.allowUnpriced === true ? { allowUnpriced: true as const } : {}),
   }
 }
 
@@ -167,6 +213,7 @@ const FACTS = [
   'evidence',
   'fullEntries',
   'shownEntries',
+  'workspaceRefs',
   'target',
   'plan',
 ] as const

@@ -46,3 +46,21 @@ it('renders an experience review by state, reason and changed entry names', () =
     }),
   ).toBe('Experience review (model) was not applied. Reason: no-evidence.')
 })
+
+it('save rows render initiator, outcome and reason without text', () => {
+  const save = (extra: object) =>
+    nodeText({ kind: 'refinement-save', id: 's', seq: 3, state: 'refused', ...extra } as never)
+  expect(save({ state: 'saved', initiator: 'auto', target: 'workspace-memory' })).toBe(
+    'Save to workspace: saved to workspace memory (asked by: automatic, after two confirmations).',
+  )
+  expect(save({ reason: 'memory-full', initiator: 'model' })).toMatch(
+    /not saved \(asked by: the model\)\. Reason: workspace memory is full.*free space/,
+  )
+  expect(save({ state: 'awaiting-approval', initiator: 'model' })).toMatch(/Needs attention.*7 days/)
+  expect(save({ state: 'unknown' })).toMatch(/hidden.*until you repair or remove it/)
+  expect(save({ reason: 'approval-expired' })).toMatch(/not answered within 7 days/)
+  expect(save({ reason: 'user-revoked' })).toMatch(/removed or withdrew this before/)
+  expect(save({ reason: 'conflict' })).toMatch(/nothing was overwritten/)
+  expect(save({ reason: 'unavailable' })).toMatch(/not available right now/)
+  expect(save({ reason: 'a-later-reason' })).toContain('Reason: a-later-reason.')
+})

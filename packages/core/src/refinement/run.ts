@@ -11,6 +11,7 @@ import {
   type RefinementRunRecord,
   type RefinementRunState,
   type RefinementTrigger,
+  type RefinementWorkspaceConfirmation,
 } from '@agnes/core-ledger/reduce/state'
 import { estimateTokens } from '../execution/model-tokens.js'
 import { resolveModel } from '../execution/turn/inference.js'
@@ -39,6 +40,14 @@ import {
   type RefinementPlanner,
 } from './types.js'
 import { type EntryView, entryValidity, grantLevels, lapsedKeys, validEntries } from './validity.js'
+import {
+  grantWorkspace,
+  isWorkspaceKind,
+  isWorkspaceRef,
+  plannerWorkspace,
+  shownWorkspaceRefs,
+  workspaceRefsOf,
+} from './workspace-refs.js'
 
 /** The Core row each step of a refinement run is recorded as, on the maintenance lane. */
 export const REFINEMENT_RUN = REFINEMENT_RUN_EVENT
@@ -120,7 +129,10 @@ export async function queueRefinementRun(
     !TRIGGERS.has(trigger?.kind) ||
     !Number.isSafeInteger(trigger.seq) ||
     trigger.seq < 0 ||
-    (trigger.focus !== undefined && (typeof trigger.focus !== 'string' || trigger.focus.length > MAX_FOCUS))
+    (trigger.focus !== undefined &&
+      (typeof trigger.focus !== 'string' || trigger.focus.length > MAX_FOCUS)) ||
+    (trigger.saveTo !== undefined && trigger.saveTo !== 'workspace') ||
+    (trigger.allowUnpriced !== undefined && (trigger.allowUnpriced !== true || trigger.kind !== 'manual'))
   )
     throw new CoreError('E_ENVELOPE', 'refinement trigger is invalid')
   const runId = s.d.ids.ulid()
@@ -128,6 +140,8 @@ export async function queueRefinementRun(
     kind: trigger.kind,
     seq: trigger.seq,
     ...(trigger.focus === undefined ? {} : { focus: trigger.focus }),
+    ...(trigger.saveTo === undefined ? {} : { saveTo: trigger.saveTo }),
+    ...(trigger.allowUnpriced === true ? { allowUnpriced: true } : {}),
   }
   const facts = { trigger: clean, ...(settingsRevision === undefined ? {} : { settingsRevision }) }
   await s.locked(() => s.append([refinementRunRow(s, runId, 'queued', facts)]))
@@ -242,6 +256,7 @@ export async function planRefinementRun(
       return await move(s, runId, 'rejected', { ...frozen, reason: 'no-evidence' }, queued)
     const { scope, readable } = await readTaskScope(s)
     const { entries, counts } = plannerEntries(snapshot, entryValidity(s.state, scope, readable).valid)
+    const workspace = await workspaceRefsOf(s)
     let prompt: PlannerPrompt
     try {
       prompt = deps.planner.buildPrompt(
@@ -256,6 +271,8 @@ export async function planRefinementRun(
           taskEnded: snapshot.taskEnded,
           activeGoal: scope !== null,
           counts,
+          ...(workspace.length ? { workspace: plannerWorkspace(workspace) } : {}),
+          ...(run.trigger.saveTo === 'workspace' ? { saveTo: 'workspace' as const } : {}),
         },
       )
     } catch {
@@ -263,6 +280,9 @@ export async function planRefinementRun(
     }
     const problem = promptProblem(prompt, snapshot, entries)
     if (problem) return await move(s, runId, 'rejected', { ...frozen, reason: problem }, queued)
+    const shownWorkspace = shownWorkspaceRefs(workspace, prompt.workspaceRefs)
+    if (shownWorkspace === 'invalid')
+      return await move(s, runId, 'rejected', { ...frozen, reason: 'invalid-prompt' }, queued)
 
     const attempt = (run.attempt ?? 0) + 1
     const byId = new Map(snapshot.items.map((item) => [item.id, item]))
@@ -280,6 +300,7 @@ export async function planRefinementRun(
         }),
         fullEntries: prompt.fullEntries.map(ref),
         shownEntries: [...prompt.fullEntries, ...prompt.referenceEntries].map(ref),
+        ...(shownWorkspace.length ? { workspaceRefs: shownWorkspace } : {}),
         target: { route: target.route, model: target.model },
       },
       queued,
@@ -337,7 +358,8 @@ export function settleRefinementRun(
     let [state, facts] = verdict(s, run, result, deps, lapsedKeys(await validEntries(s)))
     // A plan that holds is given its levels: each lesson as the evidence it cites allows, bound to the
     // current goal or recorded as expired without one.
-    if (state === 'proposed' && facts.plan) [state, facts] = await grantLevels(s, facts.plan)
+    if (state === 'proposed' && facts.plan)
+      [state, facts] = await grantWorkspace(s, run, await grantLevels(s, facts.plan))
     await s.append([refinementRunRow(s, runId, state, facts)])
     return s.state.refinementRuns.get(runId)
   })
@@ -368,6 +390,7 @@ function verdict(
       evidenceIds: (run.evidence ?? []).map((e) => e.id),
       fullEntries: run.fullEntries ?? [],
       shownEntries: run.shownEntries ?? [],
+      ...(run.workspaceRefs?.length ? { workspaceRefs: run.workspaceRefs.map((r) => r.ref) } : {}),
     })
   } catch {
     return ['rejected', { reason: 'invalid-output', detail: 'parser-failed' }]
@@ -377,7 +400,8 @@ function verdict(
     return ['rejected', { reason: 'invalid-output', detail: error.slice(0, 200) }]
   const plan = checkedPlan(parsed, run, lapsed)
   if ('error' in plan) return ['rejected', { reason: 'invalid-output', detail: plan.error }]
-  if (plan.edits.length === 0 && plan.confirmations.length === 0) return ['no-op', {}]
+  if (plan.edits.length === 0 && plan.confirmations.length === 0 && !plan.workspaceConfirmations)
+    return ['no-op', {}]
   return ['proposed', { plan }]
 }
 
@@ -438,6 +462,7 @@ function checkedPlan(
   )
   const full = new Set((run.fullEntries ?? []).map(refOf))
   const shown = new Set((run.shownEntries ?? []).map(refOf))
+  const shownWorkspace = new Set((run.workspaceRefs ?? []).map((r) => r.ref))
   try {
     if (
       !isObj(out) ||
@@ -455,6 +480,9 @@ function checkedPlan(
     const baseline: RefinementPlan['baseline'] = []
     const reused: RefinementPlan['baseline'] = []
     const edits = out.edits.map((raw, at): RefinementPlanEdit => {
+      // An entry saved to the workspace is only ever confirmed, never rewritten or deleted.
+      if (isObj(raw) && isWorkspaceKind(raw.kind))
+        invalid(`confirm-only: ${String(raw.kind)}/${String(raw.id)}`)
       const edit = checkedEdit(raw, at, seqs, quoted)
       const key = refOf(edit)
       if (touched.has(key)) invalid(`duplicate-entry: ${key}`)
@@ -474,7 +502,8 @@ function checkedPlan(
     const confirmations = out.confirmations.map((raw, at) => {
       if (!isObj(raw) || !only(raw, ['entryId', 'evidenceIds', 'quote']) || !str(raw.entryId, 160, 3))
         return invalid(`invalid-shape: confirmations[${at}]`)
-      if (!shown.has(raw.entryId)) invalid(`unknown-entry: ${raw.entryId}`)
+      const workspace = isWorkspaceRef(raw.entryId)
+      if (!(workspace ? shownWorkspace : shown).has(raw.entryId)) invalid(`unknown-entry: ${raw.entryId}`)
       if (confirmed.has(raw.entryId)) invalid(`duplicate-confirmation: ${raw.entryId}`)
       confirmed.add(raw.entryId)
       const [kind, ...rest] = raw.entryId.split('/')
@@ -485,19 +514,20 @@ function checkedPlan(
         typeof raw.quote === 'string'
           ? masked(raw.quote, 2000, `invalid-shape: confirmations[${at}]`, 1)
           : undefined
-      return {
-        kind: kind as HarnessEntry['kind'],
-        id: rest.join('/'),
-        evidenceSeqs,
-        ...quoted(quote, evidenceSeqs),
-      }
+      const checked = { evidenceSeqs, ...quoted(quote, evidenceSeqs) }
+      return workspace
+        ? { ref: raw.entryId, ...checked }
+        : { kind: kind as HarnessEntry['kind'], id: rest.join('/'), ...checked }
     })
+    const ofWorkspace = (c: (typeof confirmations)[number]) => 'ref' in c
+    const workspaceConfirmations = confirmations.filter(ofWorkspace) as RefinementWorkspaceConfirmation[]
     return {
       summary: masked(out.summary, 1000, 'invalid-shape: output'),
       rationale: masked(out.rationale, 4000, 'invalid-shape: output'),
       expectedOutcome: masked(out.expectedOutcome, 1000, 'invalid-shape: output'),
       edits,
-      confirmations,
+      confirmations: confirmations.filter((c) => !ofWorkspace(c)) as RefinementPlan['confirmations'],
+      ...(workspaceConfirmations.length ? { workspaceConfirmations } : {}),
       evidenceSeqs: seqs(out.evidenceIds, 4 * MAX_CITED_IDS),
       baseline,
       ...(reused.length ? { lapsed: reused.map(ref) } : {}),

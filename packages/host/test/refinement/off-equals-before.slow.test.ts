@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,6 +35,8 @@ async function record(): Promise<Baseline> {
       mkdirSync(dataDir)
       mkdirSync(workspace)
       const requests = await runScriptedSession({ dataDir, workspace, api })
+      // Off, nothing of saved task experience is touched: no workspace registry is ever created.
+      expect(existsSync(join(dataDir, 'refinement', 'workspaces'))).toBe(false)
       const volatileFree = maskVolatile(
         requests.map((request) => request.raw),
         { dataDir, workspace },

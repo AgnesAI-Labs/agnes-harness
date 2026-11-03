@@ -1,6 +1,6 @@
 import { defineTool } from '@agnes/plugin-runtime'
 import { type Static, Type } from '@sinclair/typebox'
-import { type RefinementToolPort, type SessionProposal, workspaceTargetUnavailable } from './port.js'
+import type { RefinementToolPort, SessionProposal } from './port.js'
 
 export const EntryKind = Type.Union([
   Type.Literal('prompt'),
@@ -9,7 +9,10 @@ export const EntryKind = Type.Union([
   Type.Literal('subagent'),
 ])
 
-/** Where a refinement lands: this session (the default) or the workspace. */
+/**
+ * Where a refinement lands: this session (the default) or, as well, the session's workspace. Saving to
+ * the workspace is always the model's own save: it states no one else, and the host decides the rest.
+ */
 export const Target = Type.Union([Type.Literal('session'), Type.Literal('workspace')])
 
 // The model states what to change and why, citing the events that justify it. It never states who
@@ -74,7 +77,7 @@ export function createProposeTool(port: Pick<RefinementToolPort, 'propose'>) {
       deferLoading: true,
     },
     async execute(args, ctx) {
-      if (args.target === 'workspace') return workspaceTargetUnavailable()
+      if (args.target === 'workspace') return port.propose(toProposal(args), ctx, 'workspace')
       return port.propose(toProposal(args), ctx)
     },
   })

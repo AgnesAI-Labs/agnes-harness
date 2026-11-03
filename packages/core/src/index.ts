@@ -263,6 +263,7 @@ export {
   type InspectAnswer,
   type InspectOutcome,
   type InspectRequest,
+  type ProposeOptions,
   type RefinementDeps,
   type RefinementFacade,
   type RefinementOutcome,
@@ -271,6 +272,7 @@ export {
   type RollbackResult,
   refinementFacade,
 } from './refinement/facade.js'
+export { redactEvidence } from './refinement/redact.js'
 export type { TaskScope } from './refinement/task-scope.js'
 export type { RefinementCandidate, RefinementTriggerSink } from './refinement/triggers.js'
 export type {
@@ -280,9 +282,20 @@ export type {
   PlannerParseContext,
   PlannerPrompt,
   PlannerSnapshot,
+  PlannerWorkspaceRef,
   RefinementPlanner,
   RefinementTrigger,
 } from './refinement/types.js'
+export {
+  type RefinementWorkspacePort,
+  type SaveReceipt,
+  saveToWorkspace,
+  type WorkspaceSaveInput,
+  type WorkspaceSaveOutcome,
+  type WorkspaceSaveRequest,
+  workspaceSaveRequest,
+} from './refinement/workspace.js'
+export type { RefinementWorkspaceRefs, WorkspaceReference } from './refinement/workspace-refs.js'
 export { HookRegistry, type HookSnapshot } from './registry/hooks.js'
 export { type RegisteredResource, ResourceRegistry } from './registry/resources.js'
 export { type RuntimeSlotFill, SlotRegistry } from './registry/slots.js'

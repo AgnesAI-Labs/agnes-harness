@@ -59,6 +59,22 @@ describe('harness_propose tool', () => {
     expect(Value.Check(ProposeParams, { ...proposal, target: 'global' })).toBe(false)
   })
 
+  it('the model cannot say who asks: an initiator, scope or user target in the arguments is rejected', async () => {
+    const { RefineParams } = await import('../src/refine-tool.js')
+    for (const extra of [
+      { initiator: 'user' },
+      { initiator: 'auto' },
+      { scope: 'global' },
+      { workspaceRoot: '/x' },
+    ])
+      expect(
+        Value.Check(ProposeParams, { ...proposal, target: 'workspace', ...extra }),
+        JSON.stringify(extra),
+      ).toBe(false)
+    expect(Value.Check(RefineParams, { target: 'workspace', initiator: 'user' })).toBe(false)
+    expect(Value.Check(RefineParams, { target: 'user' })).toBe(false)
+  })
+
   it('the model states no trigger, scope, version, baseline or rollback, and stays within the limits', () => {
     expect(Value.Check(ProposeParams, proposal)).toBe(true)
     for (const extra of [

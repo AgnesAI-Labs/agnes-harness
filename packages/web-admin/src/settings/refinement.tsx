@@ -28,6 +28,25 @@ export type RefinementSettingsApi = {
 const sameSettings = (a: RefinementSettings, b: RefinementSettings) =>
   a.enabled === b.enabled && a.mode === b.mode
 
+/** This viewer has dismissed the one-time notice about saving to the workspace (browser storage only). */
+const NOTICE_KEY = 'agnes.refinement.workspace-notice'
+const noticeDismissed = (): boolean => {
+  try {
+    return globalThis.localStorage?.getItem(NOTICE_KEY) === 'dismissed'
+  } catch {
+    return false
+  }
+}
+const dismissNotice = (): void => {
+  try {
+    globalThis.localStorage?.setItem(NOTICE_KEY, 'dismissed')
+  } catch {
+    // Without browser storage the notice only stays closed for this visit.
+  }
+}
+/** The skill grants arrive with workspace skills; the memory grant is in force. */
+const LATER = new Set(['install', 'skill'])
+
 /**
  * The experience-refinement section: the master switch (off by default), how reviews start, what
  * turning it on allows and what to expect. Every change saves itself against the revision last read;
@@ -40,13 +59,18 @@ export function RefinementSettingsPanel({ api }: { api: RefinementSettingsApi })
   const [reads, setReads] = useState(0)
   const [conflict, setConflict] = useState(false)
   const [generation, setGeneration] = useState(0)
+  // Shown once, to a profile that had refinement on when this section was first read: saving to the
+  // workspace now takes effect without asking again. Turning it on here shows the grants instead.
+  const [notice, setNotice] = useState<boolean>()
   // biome-ignore lint/correctness/useExhaustiveDependencies: reads is an explicit retry.
   useEffect(() => {
     let live = true
     setFailed(false)
     void api.read().then(
       (value) => {
-        if (live) setSnapshot(value)
+        if (!live) return
+        setSnapshot(value)
+        setNotice((shown) => shown ?? (value.settings.enabled && !noticeDismissed()))
       },
       () => {
         if (live) setFailed(true)
@@ -64,6 +88,19 @@ export function RefinementSettingsPanel({ api }: { api: RefinementSettingsApi })
     )
   return (
     <div className="refinement-settings" data-testid="refinement-settings">
+      {notice && (
+        <Banner
+          tone="info"
+          data-testid="refinement-workspace-notice"
+          dismissLabel={t('refinement.notice.dismiss')}
+          onDismiss={() => {
+            dismissNotice()
+            setNotice(false)
+          }}
+        >
+          {t('refinement.notice')}
+        </Banner>
+      )}
       {conflict && (
         <Banner tone="warning" data-testid="refinement-conflict">
           {t('refinement.conflict')}
@@ -175,7 +212,11 @@ function RefinementFields(props: {
             key={name}
             data-testid={`refinement-allows-${name}`}
             label={t(`refinement.allows.${name}`)}
-            description={`${t(`refinement.allows.${name}.hint`)} ${t('refinement.later')}`}
+            description={
+              LATER.has(name)
+                ? `${t(`refinement.allows.${name}.hint`)} ${t('refinement.later')}`
+                : t(`refinement.allows.${name}.hint`)
+            }
           />
         ))}
         <SettingsItem

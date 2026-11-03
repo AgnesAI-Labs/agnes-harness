@@ -569,6 +569,7 @@ export {
   refinementCommand,
   requestRefinement,
   rollbackRefinement,
+  saveEntryToWorkspace,
 } from './runtime/sessions/session-refinement.js'
 export {
   askSideQuestion,

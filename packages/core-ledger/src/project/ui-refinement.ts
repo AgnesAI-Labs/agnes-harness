@@ -1,13 +1,22 @@
 import type { Event, Seq } from '@agnes/core-common/types'
 import type { UINode } from '@agnes/protocol'
 import { REFINEMENT_RUN_EVENT } from '../reduce/refinement-run.js'
+import { REFINEMENT_SAVE_EVENT, SAVE_REFUSALS } from '../reduce/refinement-save.js'
 import type { LedgerState } from '../reduce/state.js'
 import { clipUtf16 as clip } from './clip.js'
 
 export type RefinementRunNode = Extract<UINode, { kind: 'refinement-run' }>
+export type RefinementSaveNode = Extract<UINode, { kind: 'refinement-save' }>
 type NodeEdit = NonNullable<RefinementRunNode['edits']>[number]
 
 const MAX_EDITS = 50
+/** The kind of workspace target a save goes to, by the kind of entry saved. */
+const TARGETS = {
+  prompt: 'workspace-memory',
+  memory: 'workspace-memory',
+  skill: 'workspace-skill',
+  subagent: 'workspace-agent',
+} as const satisfies Record<string, NonNullable<RefinementSaveNode['target']>>
 const KINDS = new Set(['prompt', 'memory', 'skill', 'subagent'])
 // A reason is one of Core's short names; anything else (free text, a path) is not shown.
 const REASON = /^[a-z0-9][a-z0-9._-]{0,63}$/u
@@ -53,12 +62,38 @@ export class RefinementProjection {
   private readonly byRefineSeq = new Map<Seq, string>()
   private readonly withdrawn = new Set<Seq>()
   private readonly nodes = new Map<string, RefinementRunNode>()
+  /** Where each save receipt's node was first placed, so a later outcome replaces it in place. */
+  private readonly saves = new Map<string, { id: string; seq: Seq }>()
 
   /** Applies one row and returns the nodes it created or changed, for the caller to place. */
-  apply(event: Event, state: LedgerState, lane: string): RefinementRunNode[] {
+  apply(event: Event, state: LedgerState, lane: string): (RefinementRunNode | RefinementSaveNode)[] {
     if (event.type === REFINEMENT_RUN_EVENT) return this.run(event, state)
+    if (event.type === REFINEMENT_SAVE_EVENT) return this.save(event, state)
     if (event.type === 'harness/refine' && (event.lane ?? 'main') === lane) return this.refine(event)
     return []
+  }
+
+  /** A save's node: who asked, how it ended and why, and the kind of target; nothing about what was saved or where. */
+  private save(event: Event, state: LedgerState): RefinementSaveNode[] {
+    const receiptId = (event.data as { receiptId?: unknown } | null)?.receiptId
+    const saved = typeof receiptId === 'string' ? state.refinementSaves.get(receiptId) : undefined
+    if (!saved || saved.seq !== event.seq) return []
+    const at = this.saves.get(saved.receiptId) ?? { id: event.id, seq: event.seq }
+    this.saves.set(saved.receiptId, at)
+    return [
+      {
+        kind: 'refinement-save',
+        id: at.id,
+        seq: at.seq,
+        state: saved.outcome,
+        // A reason a later build added is not one the timeline knows yet: the line says only how it ended.
+        ...(saved.reason === undefined || !SAVE_REFUSALS.includes(saved.reason)
+          ? {}
+          : { reason: saved.reason }),
+        initiator: saved.initiator,
+        target: TARGETS[saved.target?.kind === 'skill' ? 'skill' : saved.source.kind],
+      },
+    ]
   }
 
   private run(event: Event, state: LedgerState): RefinementRunNode[] {

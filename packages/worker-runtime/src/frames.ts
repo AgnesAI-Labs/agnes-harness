@@ -40,6 +40,7 @@ export type SessionMethod =
   | 'btw'
   | 'refine'
   | 'refineRollback'
+  | 'refineSave'
   | 'voice.transcribe'
   | 'voice.speak'
   | 'ui.action'

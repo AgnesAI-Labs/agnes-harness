@@ -3,6 +3,7 @@ import type { DecisionSnapshot, SessionStart } from '@agnes/protocol'
 import { ChunkedMap } from './chunked-map.js'
 import type { RefinementEntryMeta, RefinementEntryTombstone } from './refinement-entry-meta.js'
 import type { RefinementRunRecord } from './refinement-run.js'
+import type { RefinementSaveRecord } from './refinement-save.js'
 import type { ArtifactJob, BudgetState, EffectIntent, HarnessEntry, Inbox, PlanItems } from './shapes.js'
 
 export type {
@@ -22,8 +23,12 @@ export type {
   RefinementRunState,
   RefinementTrigger,
   RefinementTriggerKind,
+  RefinementWorkspaceConfirmation,
+  RefinementWorkspaceRef,
 } from './refinement-run.js'
 export { canMoveRun, REFINEMENT_RUN_EVENT, TERMINAL_RUN_STATES } from './refinement-run.js'
+export type { RefinementSaveRecord, SaveReceipt } from './refinement-save.js'
+export { REFINEMENT_SAVE_EVENT } from './refinement-save.js'
 
 export type RegisterCell<T> = { seq: Seq; value: T }
 
@@ -96,6 +101,11 @@ export type LedgerState = {
    * like the cells they were. A fork keeps them too.
    */
   refinementTombstones: ReadonlyMap<string, RefinementEntryTombstone>
+  /**
+   * Receipts of this session's saves of task experience into the workspace, by receipt id, folded from
+   * Core's `x/core/refinement-save` rows (structure and hashes only). A fork starts them over.
+   */
+  refinementSaves: ReadonlyMap<string, RefinementSaveRecord>
   // The most recent non-interrupted `cost/ledger` entry's token total, with the seq it landed at,
   // and that same entry's cache-read/input breakdown. `contextTokens` starts counting surface nodes
   // after this seq instead of from the top of the ledger, so a long session's preflight cost stays
@@ -128,6 +138,7 @@ export function initialState(): LedgerState {
     refinementRuns: new Map(),
     refinementEntryMeta: new Map(),
     refinementTombstones: new Map(),
+    refinementSaves: new Map(),
     lastLedgerTokens: null,
   }
 }

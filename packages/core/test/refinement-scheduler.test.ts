@@ -581,7 +581,7 @@ describe('scheduling plans', () => {
     await again.session.close()
   })
 
-  it('automatic triggers follow the mode and need a priced planner model; manual ones do not', async () => {
+  it('automatic triggers follow the mode and need a known price; manual ones need the user to accept an unknown one', async () => {
     const t = await open({ sw: { enabled: true, mode: 'manual', revision: 'r1' } })
     expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
     const seq = await t.lastUserSeq()
@@ -592,7 +592,27 @@ describe('scheduling plans', () => {
     const { target: _target, ...untargeted } = deps(t.sw)
     t.session.d.refinement = untargeted
     expect(await t.facade.request({ kind: 'compaction', seq })).toEqual({ refused: 'unpriced' })
-    expect(runId(await t.facade.request({ kind: 'manual', seq }))).toBeTruthy()
+    // The user's own request runs on an unknown price only once the user agreed to it.
+    expect(await t.facade.request({ kind: 'manual', seq })).toEqual({ refused: 'unpriced' })
+    const agreed = await t.facade.request({ kind: 'manual', seq, allowUnpriced: true })
+    expect(runId(agreed)).toBeTruthy()
+    expect(t.session.state.refinementRuns.get(runId(agreed) as string)?.trigger).toMatchObject({
+      kind: 'manual',
+      allowUnpriced: true,
+    })
+    await t.session.close()
+  })
+
+  it('a planner model priced at zero is a known price: automatic triggers plan with it', async () => {
+    const t = await open({ plans: [{ text: NOOP }] })
+    vi.spyOn(t.session.d.provider, 'models').mockReturnValue([
+      { ...plannerModel, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } },
+    ])
+    expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
+    const seq = await t.lastUserSeq()
+    const accepted = await t.facade.request({ kind: 'compaction', seq })
+    expect(runId(accepted)).toBeTruthy()
+    await vi.waitFor(() => expect(t.session.state.refinementRuns.get(runId(accepted))?.state).toBe('no-op'))
     await t.session.close()
   })
 

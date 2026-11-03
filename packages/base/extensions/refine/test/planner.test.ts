@@ -401,3 +401,95 @@ describe('the planner contract', () => {
     })
   })
 })
+
+describe('entries saved to the workspace', () => {
+  const saved = [
+    { ref: 'workspace-memory/p1', title: 'Use pnpm here', summary: 'Install with pnpm, never npm.' },
+    { ref: 'workspace-memory/p2', title: 'Tests need the build', summary: 'Run pnpm build first.' },
+  ]
+  const withSaved: PlannerGuidance = { ...guidance, workspace: saved }
+
+  it('workspace references are shown as confirm-only', () => {
+    const prompt = buildPlannerPrompt(
+      { items: [evidence('e1', 'please use pnpm for everything here')], omitted: 0 },
+      [entry('memory', 'build', 'Run the build.')],
+      withSaved,
+    )
+    const body = prompt.messages[0]?.content[0]?.text ?? ''
+    const section = body.indexOf('Workspace entries')
+    expect(section).toBeGreaterThan(-1)
+    expect(body.slice(section, body.indexOf('\n', section))).toContain('confirm only')
+    for (const s of saved)
+      expect(body.slice(section)).toContain(
+        JSON.stringify({ entryId: s.ref, title: s.title, summary: s.summary }),
+      )
+    expect(prompt.workspaceRefs).toEqual(saved.map((s) => s.ref))
+    // Never offered for rewriting.
+    expect(prompt.fullEntries).toEqual([{ kind: 'memory', id: 'build' }])
+    expect(prompt.referenceEntries).toEqual([])
+    // A confirmation of a shown reference is accepted; of one not shown it is not.
+    const confirm = (entryId: string) =>
+      plan({ edits: [], confirmations: [{ entryId, evidenceIds: ['e1'], quote: 'use pnpm for everything' }] })
+    const shown = { ...context, workspaceRefs: prompt.workspaceRefs ?? [] }
+    expect(parsePlannerOutput(confirm('workspace-memory/p1'), shown)).toMatchObject({
+      confirmations: [{ entryId: 'workspace-memory/p1' }],
+    })
+    expect(parsePlannerOutput(confirm('workspace-memory/p3'), shown)).toEqual({
+      error: 'unknown-entry: workspace-memory/p3',
+    })
+    expect(parsePlannerOutput(confirm('workspace-memory/p1'), context)).toEqual({
+      error: 'unknown-entry: workspace-memory/p1',
+    })
+  })
+
+  it('without workspace entries the prompt is byte for byte as before', () => {
+    const snapshot = { items: [evidence('e1', 'x')], omitted: 0 }
+    const before = buildPlannerPrompt(snapshot, [], guidance)
+    const after = buildPlannerPrompt(snapshot, [], { ...guidance, workspace: [] })
+    expect(after).toEqual(before)
+    expect(before).not.toHaveProperty('workspaceRefs')
+  })
+
+  it('an update or delete of a workspace reference rejects the plan', () => {
+    const shown = { ...context, workspaceRefs: ['workspace-memory/p1'] }
+    const upsert = {
+      op: 'upsert',
+      kind: 'workspace-memory',
+      id: 'p1',
+      title: 'Use pnpm',
+      content: 'Use pnpm.',
+      applicability: 'session',
+      evidenceIds: ['e1'],
+    }
+    expect(parsePlannerOutput(plan({ edits: [upsert] }), shown)).toEqual({
+      error: 'confirm-only: workspace-memory/p1',
+    })
+    const remove = { op: 'delete', kind: 'workspace-memory', id: 'p1', evidenceIds: ['e1'] }
+    expect(parsePlannerOutput(plan({ edits: [remove] }), shown)).toEqual({
+      error: 'confirm-only: workspace-memory/p1',
+    })
+  })
+
+  it('workspace references go before evidence when the input is over the target', () => {
+    const big = 'x'.repeat(200)
+    const many = Array.from({ length: 40 }, (_, i) => ({
+      ref: `workspace-memory/p${i}`,
+      title: big,
+      summary: big,
+    }))
+    const items = Array.from({ length: 120 }, (_, i) => evidence(`e${i + 1}`, big.repeat(2)))
+    const prompt = buildPlannerPrompt({ items, omitted: 0 }, [], { ...guidance, workspace: many })
+    expect(prompt.inputTokens).toBeLessThanOrEqual(PLANNER_INPUT_TOKENS)
+    expect(prompt.workspaceRefs ?? []).toEqual([])
+    expect(prompt.omitted.referenceEntries).toBe(40)
+  })
+
+  it('a saveTo run carries the fixed workspace line', () => {
+    const snapshot = { items: [evidence('e1', 'x')], omitted: 0 }
+    const line =
+      'The result will be saved to the workspace: only propose project conventions, reproducible environment facts or stable preferences that still hold across sessions.'
+    const saving = buildPlannerPrompt(snapshot, [], { ...guidance, saveTo: 'workspace' })
+    expect(saving.messages[0]?.content[0]?.text).toContain(line)
+    expect(buildPlannerPrompt(snapshot, [], guidance).messages[0]?.content[0]?.text).not.toContain(line)
+  })
+})

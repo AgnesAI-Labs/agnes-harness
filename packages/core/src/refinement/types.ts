@@ -67,12 +67,18 @@ export type EvidenceSnapshot = {
 export type PlannerEvidence = Omit<EvidenceItem, 'lane' | 'seq'>
 export type PlannerSnapshot = { items: readonly PlannerEvidence[]; omitted: number }
 export type PlannerEntry = RefinementEntryRef & { title: string; content: string; version: number }
+/** An entry saved to the workspace as the planner is shown it: confirm-only, by its reference. */
+export type PlannerWorkspaceRef = { ref: string; title: string; summary: string }
 export type PlannerGuidance = {
   trigger: RefinementTrigger['kind']
   focus?: string
   taskEnded: boolean
   activeGoal: boolean
   counts: Record<RefinementEntryKind, number>
+  /** Entries saved to this workspace, which a plan may only confirm; absent when there are none. */
+  workspace?: readonly PlannerWorkspaceRef[]
+  /** The run's result is saved to the workspace. */
+  saveTo?: 'workspace'
 }
 export type PlannerPrompt = {
   system: string
@@ -80,6 +86,8 @@ export type PlannerPrompt = {
   evidenceIds: string[]
   fullEntries: RefinementEntryRef[]
   referenceEntries: RefinementEntryRef[]
+  /** The workspace references the prompt shows; only these may be confirmed. Absent means none. */
+  workspaceRefs?: string[]
   omitted: { referenceEntries: number; evidence: number; fullEntries: number }
   inputTokens: number
 }
@@ -87,6 +95,8 @@ export type PlannerParseContext = {
   evidenceIds: readonly string[]
   fullEntries: readonly RefinementEntryRef[]
   shownEntries: readonly RefinementEntryRef[]
+  /** The workspace references the prompt showed. */
+  workspaceRefs?: readonly string[]
 }
 export type PlannerOutputEdit =
   | {

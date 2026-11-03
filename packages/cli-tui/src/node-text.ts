@@ -1,4 +1,5 @@
 import { storedAttachment, type UINode } from '@agnes/protocol'
+import { saveText } from './save-text.js'
 
 /** Text presentation while the richer cards are assembled around the same projected nodes. */
 export function nodeText(node: UINode): string {
@@ -39,6 +40,8 @@ export function nodeText(node: UINode): string {
       return `Memory ${node.paths.join(', ')} changed outside the memory provider and was loaded as is; review it with /memory`
     case 'refinement-run':
       return refinementRunText(node)
+    case 'refinement-save':
+      return saveText(node)
     case 'workspace-undo':
       return node.conflicts > 0
         ? `Undo of turn ${node.turn} refused: ${node.conflicts} file(s) changed since the turn`

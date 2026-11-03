@@ -27,6 +27,7 @@ describe('author API consistency', () => {
       'compactionConformance',
       'defineFixture',
       'loopConformance',
+      'memoryParagraphConformance',
       'modelAdapterConformance',
       'persistenceConformance',
       'projectionFixture',

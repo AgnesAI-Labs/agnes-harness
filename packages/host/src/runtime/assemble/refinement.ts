@@ -10,10 +10,16 @@ import {
   scanAll,
   type TaskScope,
 } from '@agnes/core'
-import type { TaskScopeSource } from '@agnes/extension-api'
+import type { MemorySession, TaskScopeSource } from '@agnes/extension-api'
 import type { SeamInitContext } from '@agnes/host-extensions/assemble/packages'
+import type { HostDecisionOwner } from '@agnes/host-extensions/profile/runtime'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import type { JsonValue, RefinementSettingsSnapshot } from '@agnes/protocol'
+import { createRefinementApprovals, REFINEMENT_DECISION_OWNER } from '../refinement/approvals.js'
+import { savedParagraphs } from '../refinement/saved-paragraphs.js'
+import { workspaceMemory } from '../refinement/workspace-memory.js'
+import { createWorkspaceRefs } from '../refinement/workspace-refs.js'
+import { createWorkspaceSave } from '../refinement/workspace-save.js'
 
 type RefinementRunsPort = ReturnType<NonNullable<SeamInitContext['refinementRuns']>>
 
@@ -63,7 +69,7 @@ const OFF: RefinementSettingsSnapshot = { settings: { enabled: false, mode: 'man
  * assembly, when the tools are registered too. Every read is cheap and never throws; a failed read
  * is off.
  */
-export function createRefinementHost(dataDir: string, profile: string) {
+export function createRefinementHost(dataDir: string, profile: string, clock: () => number = Date.now) {
   const store = new RefinementSettingsStore(dataDir, profile)
   const read = (): RefinementSettingsSnapshot => {
     try {
@@ -96,7 +102,69 @@ export function createRefinementHost(dataDir: string, profile: string) {
     const state = await readProjection(kernel.projections, session, offered.key)
     return state === undefined ? undefined : offered.source.reader(state).current()
   }
-  const refinement: RefinementDeps = { settings, planner: () => planner, taskScope }
+  // A session's memory note changed because saved paragraphs came into force or went past their review
+  // date: recorded like a rebuilt experience snapshot, as an expected change of what the request carries.
+  const memory = workspaceMemory({
+    dataDir,
+    clock,
+    enabled: () => settings().enabled,
+    viewChanged: (key, change) =>
+      void kernel?.sessions
+        .get(key)
+        ?.diag('refinement-prefix-change', { reason: 'workspace-memory', ...change })
+        .catch(() => undefined),
+  })
+  // Saves under ask wait in the profile decision journal, once the profile services hand it over.
+  let decisions: Parameters<typeof createRefinementApprovals>[0]['decisions'] | undefined
+  const approvals = createRefinementApprovals({
+    decisions: () =>
+      decisions ? decisions() : Promise.reject(new Error('profile decision journal unavailable')),
+    registry: memory.registry,
+    memory: memory.openWorkspaceMemory,
+    settings,
+    commit: (input) => saves.commitApproved(input),
+    clock,
+  })
+  // The one save-to-workspace path: memory and prompt entries become managed workspace memory paragraphs.
+  const saves = createWorkspaceSave({
+    registry: memory.registry,
+    settings,
+    memory: memory.openWorkspaceMemory,
+    approvals,
+    clock,
+  })
+  const workspace = {
+    ...memory,
+    saves,
+    /** A person's management of saved paragraphs on the memory page: list, renew, withdraw, convert. */
+    paragraphs: savedParagraphs({ registry: memory.registry, clock }),
+    /** A session's memory has just been opened: settle interrupted saves and reconcile, in the background. */
+    opened<T extends MemorySession | undefined>(workspaceRoot: string, opened: T): T {
+      void saves.resume(workspaceRoot)
+      return memory.opened(workspaceRoot, opened)
+    },
+  }
+  // Entries saved to the session's workspace, read for a plan and renewed when one confirms them.
+  const workspaceRefs = createWorkspaceRefs({
+    dataDir,
+    session: (at) => {
+      const session = sessionOf(at.key, at.lane)
+      return (
+        session && {
+          workspaceRoot: session.workspaceRoot,
+          ...(session.d.memory ? { memory: session.d.memory } : {}),
+        }
+      )
+    },
+    clock,
+  })
+  const refinement: RefinementDeps = {
+    settings,
+    planner: () => planner,
+    taskScope,
+    workspace: saves,
+    workspaceRefs,
+  }
   // Automatic candidates are wanted only in auto mode; Core drops child sessions before asking.
   const triggers: RefinementTriggerSink = {
     accepts: () => {
@@ -112,16 +180,20 @@ export function createRefinementHost(dataDir: string, profile: string) {
     },
   }
   const runs: RefinementRunsPort = Object.freeze({
-    propose: async (at, proposal) => {
+    // The tools speak for the model only: a save they ask for is always the model's (a `model` trigger).
+    propose: async (at, proposal, options) => {
       const session = sessionOf(at.key, at.lane)
-      return session ? refinementFacade(session).propose(proposal) : { refused: 'unavailable' as const }
+      if (!session) return { refused: 'unavailable' as const }
+      const saveTo = options?.saveTo === 'workspace' ? { saveTo: 'workspace' as const } : {}
+      return refinementFacade(session).propose(proposal, saveTo)
     },
     // The model asks about the work so far: the trigger falls at the last committed row.
     request: async (at, request) => {
       const session = sessionOf(at.key, at.lane)
       if (!session) return { refused: 'unavailable' as const }
       const focus = request.focus === undefined ? {} : { focus: request.focus }
-      return refinementFacade(session).request({ kind: 'model', seq: session.lastSeq, ...focus })
+      const saveTo = request.saveTo === 'workspace' ? { saveTo: 'workspace' as const } : {}
+      return refinementFacade(session).request({ kind: 'model', seq: session.lastSeq, ...focus, ...saveTo })
     },
     // Read-only, and only ever the session the tool ran in: Core reads that session's own entries.
     inspect: async (at, request) => {
@@ -133,10 +205,18 @@ export function createRefinementHost(dataDir: string, profile: string) {
   return {
     /** The switch as the tools see it: fixed at this assembly. */
     view: Object.freeze({ current: () => atAssembly }),
+    /** Saved task experience per workspace: registry, memory validity view, reconciliation, saves. */
+    workspace,
     /** What the kernel is created with. */
     kernelOptions: { refinementEnabled: () => settings().enabled, refinementTriggers: triggers, refinement },
     bindKernel(k: Kernel) {
       kernel = k
+    },
+    /** The Host parts that keep decisions in the profile decision journal, by owner name. */
+    decisionOwners: new Map<string, HostDecisionOwner>([[REFINEMENT_DECISION_OWNER, approvals.owner]]),
+    /** The profile decision journal, and the person its decisions are asked of, for saves under ask. */
+    bindDecisions(source: NonNullable<typeof decisions>) {
+      decisions = source
     },
     /** The refine plugin hands over its planner and gets the session runs its tools call. */
     connect(p: RefinementPlanner): RefinementRunsPort {

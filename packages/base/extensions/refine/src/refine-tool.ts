@@ -1,6 +1,6 @@
 import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { type RefinementToolPort, workspaceTargetUnavailable } from './port.js'
+import type { RefinementToolPort } from './port.js'
 import { Target } from './propose-tool.js'
 
 export const RefineParams = Type.Object(
@@ -27,9 +27,8 @@ export function createRefineTool(port: Pick<RefinementToolPort, 'refine'>) {
       deferLoading: true,
     },
     async execute(args, ctx) {
-      if (args.target === 'workspace') return workspaceTargetUnavailable()
       return port.refine(
-        { ...(args.focus === undefined ? {} : { focus: args.focus }), target: 'session' },
+        { ...(args.focus === undefined ? {} : { focus: args.focus }), target: args.target ?? 'session' },
         ctx,
       )
     },

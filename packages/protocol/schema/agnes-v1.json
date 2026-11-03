@@ -3644,6 +3644,43 @@
           }
         },
         {
+          "description": "One save of task experience into the workspace: how it ended and, when refused, why. Entry text, the target file and the content are never part of it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "state"],
+          "properties": {
+            "kind": { "const": "refinement-save" },
+            "id": { "type": "string" },
+            "seq": { "type": "integer" },
+            "state": { "enum": ["saved", "installed", "awaiting-approval", "refused", "unknown"] },
+            "reason": {
+              "enum": [
+                "refinement-off",
+                "user-revoked",
+                "unconfirmed",
+                "source-rules",
+                "static-check",
+                "memory-off",
+                "memory-full",
+                "unsupported-provider",
+                "subagent-review-unavailable",
+                "child-session",
+                "unavailable",
+                "conflict",
+                "approval-expired"
+              ]
+            },
+            "initiator": {
+              "description": "Who asked for the save: an automatic save after repeated confirmation, the user, or the model.",
+              "enum": ["auto", "user", "model"]
+            },
+            "target": {
+              "description": "Where the save goes: workspace memory, a workspace skill, or a workspace agent. Never a path.",
+              "enum": ["workspace-memory", "workspace-skill", "workspace-agent"]
+            }
+          }
+        },
+        {
           "description": "Memory files that changed outside the memory provider, for example through an unconfined shell under full access, since it last wrote or acknowledged them. The turn still injected them.",
           "type": "object",
           "additionalProperties": false,
@@ -5437,6 +5474,14 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512
+        },
+        "saveTo": {
+          "description": "`workspace` (`/refine --workspace`): the applied result is also saved to the session's workspace as the user's save. Local owner only.",
+          "const": "workspace"
+        },
+        "allowUnpriced": {
+          "description": "The owner agrees to plan on a model with no known price (`/refine --unpriced`); the cost is then unknown. Without it such a request is refused `unpriced`. A model priced at zero is a known price and needs no agreement. Local owner only.",
+          "const": true
         }
       }
     },
@@ -5475,6 +5520,99 @@
           "type": "integer",
           "minimum": 1
         }
+      }
+    },
+    "SessionRefineSaveParams": {
+      "description": "The owner's save of one refinement entry of the session into its workspace. No model is called. Local owner only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "kind", "id"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "kind": { "enum": ["prompt", "memory", "skill", "subagent"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "SessionRefineSaveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt"],
+      "properties": {
+        "receipt": { "$ref": "#/$defs/RefinementSaveReceipt" }
+      }
+    },
+    "RefinementSaveReceipt": {
+      "description": "What one save of task experience into the workspace came to, step by step: structure and hashes only, never the entry's text.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receiptId", "commandId", "initiator", "source", "outcome", "steps", "at"],
+      "properties": {
+        "receiptId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "initiator": { "enum": ["auto", "user", "model"] },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sessionKey", "kind", "entryId", "contentHash", "initiator"],
+          "properties": {
+            "sessionKey": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "kind": { "enum": ["prompt", "memory", "skill", "subagent"] },
+            "entryId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "contentHash": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "runId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "initiator": { "enum": ["auto", "user", "model"] }
+          }
+        },
+        "outcome": { "enum": ["saved", "installed", "awaiting-approval", "refused", "unknown"] },
+        "reason": {
+          "description": "Why a save was refused. Known values: refinement-off, user-revoked, unconfirmed, source-rules, static-check, memory-off, memory-full, unsupported-provider, subagent-review-unavailable, child-session, unavailable, conflict, approval-expired. Open: a later release may add reasons, so treat an unknown one as a refusal.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["step", "verdict"],
+            "properties": {
+              "step": {
+                "enum": ["switch", "revocation", "confirmations", "rules", "memory-mode", "capacity"]
+              },
+              "verdict": { "enum": ["pass", "fail", "skip"] }
+            }
+          }
+        },
+        "target": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "paragraphId", "fileHash"],
+              "properties": {
+                "kind": { "const": "memory-paragraph" },
+                "paragraphId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                "fileHash": { "type": "string", "minLength": 1, "maxLength": 4096 }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "name", "resourceId", "revision"],
+              "properties": {
+                "kind": { "const": "skill" },
+                "name": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                "resourceId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                "revision": { "type": "string", "minLength": 1, "maxLength": 4096 }
+              }
+            }
+          ]
+        },
+        "at": { "type": "number" }
       }
     },
     "SessionBtwResult": {

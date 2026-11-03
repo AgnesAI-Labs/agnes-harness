@@ -240,9 +240,11 @@ function publish(
     host: e.host,
     publishProfileCurrent: t.runtimeTarget.publishProfileCurrent,
     seams: t.seams,
+    refinement: t.ecosystem.refinement,
   })
   return {
     memory: c.kernelStage.memory,
+    savedParagraphs: t.ecosystem.refinement.workspace.paragraphs,
     activationBarrier: ctx.activationBarrier,
     approvalGrants: t.approvalGrantControl.management,
     profileServices,

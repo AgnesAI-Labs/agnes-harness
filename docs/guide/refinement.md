@@ -4,7 +4,7 @@ English | [简体中文](refinement.zh-CN.md)
 
 [Documentation](../README.md) · [CLI and TUI](cli.md) · [Web workbench](web.md) · [Sessions and recovery](sessions.md) · [Learned memory](memory.md)
 
-Task experience lets AGH review a session in the background and keep short lessons, called **entries**, for the rest of that session: a command that needs a flag, a file that lives somewhere unexpected, a rule the user stated. Later turns of the same session get the entries as notes.
+Task experience lets AGH review a session in the background and keep short lessons, called **entries**, for the rest of that session: a command that needs a flag, a file that lives somewhere unexpected, a rule the user stated. Later turns of the same session get the entries as notes. Memory and prompt entries can also be saved to the workspace memory, where later sessions of the workspace read them (see [Save to the workspace](#save-to-the-workspace)).
 
 It is **off by default**. A review is a separate model call on your account. It has not yet been shown to improve results.
 
@@ -24,20 +24,23 @@ Open **Settings → General → Task experience** in the Web workbench.
 
 ### What turning it on allows
 
-The settings panel lists what turning it on allows. All three items are **not available yet** and do nothing in this release:
+The settings panel lists what turning it on allows:
 
-1. Install proven skills in the workspace: a skill that was confirmed twice and is plain instructions or a sandboxed script would be installed without the usual install confirmation.
-2. Let the model save skills in the workspace without waiting for a second confirmation, if it cites evidence from the session and passes the static checks.
-3. Let the model save memory in the workspace. The workspace memory setting (off, ask or auto) would still decide what is written.
+1. Install proven skills in the workspace: a skill that was confirmed twice and is plain instructions would be installed without the usual install confirmation. **Not available yet**; skills arrive in a later release, and until then nothing is installed or saved as a skill.
+2. Let the model save skills in the workspace without waiting for a second confirmation, if it cites evidence from the session and passes the static checks. **Not available yet**, like item 1.
+3. Let the model save memory in the workspace. This one is in force: lessons confirmed twice, your own saves and the model's saves go into the workspace memory. The workspace memory setting (off, ask or auto) still decides what is written.
 
-None of them would bring back something you uninstalled, rolled back or deleted. Today every entry stays inside its session.
+None of them brings back something you uninstalled, rolled back or deleted.
+
+If task experience was already on before this release, the panel shows a one-time notice that saving to the workspace memory now takes effect without asking again here, and that turning off **Learn from finished work** stops it. Dismissing the notice is remembered by that browser only; nothing is saved to your profile.
 
 ## Manual and automatic reviews
 
 A **manual** review is one you ask for:
 
 - `/refine [focus]` in the TUI or the Web message box. The optional focus (at most 512 characters) tells the review what to look at. The reply says the review is queued; the result shows in the conversation.
-- `/refine --workspace` only answers that saving to the workspace is not available yet.
+- `/refine --workspace [focus]` queues the same review, and what it keeps is also saved to the workspace as your own save (see below).
+- `/refine --unpriced [focus]` (it combines with `--workspace`) runs a review on a model with no known price. Without it, `/refine` on such a model is refused and says so; see [Cost](#cost).
 
 With **Manual and automatic**, a review can also start by itself:
 
@@ -83,6 +86,64 @@ Every entry has a level:
 
 The model is told when a task entry expires.
 
+## Save to the workspace
+
+Entries live in their session. Saving one to the workspace writes it into the workspace memory index (`MEMORY.md`, see [Learned memory](memory.md#saved-task-experience)) as one **saved paragraph**: its title, a line break and its text. Every session of the workspace then reads it with the rest of the workspace memory.
+
+### Who saves what
+
+There are four ways in, and all go through the same checks:
+
+| Way | Who it counts as | Needs |
+| --- | --- | --- |
+| Automatic: an entry a later review confirmed for the second time | automatic | **Manual and automatic** mode; two separate confirmations of the same version of the entry |
+| `/refine --workspace [focus]` in the TUI or the Web message box | you | The review's applied result; each entry it wrote is saved |
+| **Save … to workspace** on an applied review line in the Web conversation | you | Nothing else; no model is called |
+| The model, with `target: 'workspace'` on `harness_propose` or `harness_refine` | the model | **Manual and automatic** mode; evidence from this session |
+
+Only **session** entries of the **memory** and **prompt** kinds are saved. Task entries stay in their session, skill entries arrive in a later release, and subagent entries are not saved to the workspace. A forked or child session saves nothing. An entry must rest on what happened in this session; a model save without evidence from the session is refused.
+
+Each save is judged in a fixed order, and the first check that fails ends it:
+
+1. Task experience is on.
+2. You have not taken the content back (see below); only your own save gets past this.
+3. An automatic save has two confirmations.
+4. The entry passes the source and safety rules (session level, evidence, length, no secret-like text).
+5. The workspace memory mode: **off** refuses; **ask** puts the save in the decision list; **auto** writes it.
+6. There is room in the workspace memory.
+
+### Approvals
+
+In **ask** mode, a save waits in **Needs attention** in the Web workbench, under **Task experience** (not under plugin requests). The request shows the exact change to `MEMORY.md` (a very long change is cut short on the card, with a note; the full change is in the request details) and the hashes of the file before and after. **Allow once** writes exactly that change, and only onto the file it was made for: if the file changed meanwhile, the save is asked again for the new file. **Reject** refuses it and counts as taking the content back. A request is open for **7 days**; after that it ends as `approval-expired`. Saves made in the background are never approved automatically, also not under full access.
+
+### When memory is full
+
+When the workspace memory has no room for the paragraph, the save ends with **memory full** in every mode. Nothing is merged or removed automatically. Free space yourself, by withdrawing or editing paragraphs on the memory page or editing the file, then save again.
+
+### Review date and renewal
+
+Every saved paragraph has a **review date 30 days** after it was saved. From that date the agent no longer sees it: the memory note of the next request leaves it out, while the system prompt stays the same. The text stays in the file.
+
+- A later review in any session of the workspace that confirms the paragraph with new evidence renews it for another 30 days, before the date passes. The evidence that led to the save does not count again.
+- On the memory page you can **Renew** a paragraph at any time, also after its date has passed.
+
+### Taking it back
+
+What you take back wins over automatic and model saves:
+
+- Deleting a saved paragraph from the file (the next session open records it), **Withdraw** on the memory page, or rejecting an approval records that you took it back. After that, automatic and model saves of the same entry, or of the same content under another entry id, are refused (`user-revoked`). Content that differs only in spacing or letter case counts as the same.
+- Your own save (`/refine --workspace` or the per-entry button) saves it again and clears the record.
+
+### Paragraphs a person edited
+
+A save never replaces a paragraph a person edited in place: an automatic or model save of a new version of the entry is refused as `conflict` and the person's text stays. Only your own save or an approved request replaces it. An edit that changes only spacing or letter case counts as untouched, so the next version may replace it. If a save that updated a paragraph in place was cut off by a crash and the file changed before it was settled, later automatic and model versions of that entry are refused `conflict` too, until you save the entry yourself or withdraw the paragraph.
+
+### Save lines in the conversation
+
+Every save gets a line in the conversation: who asked for it (automatic, you, or the model), how it ended (saved, waiting for your approval, not saved, unknown result) and, when refused, why: for example memory full, approval expired, taken back by you (`user-revoked`), edited by a person or the file changed (`conflict`), or not available right now (`unavailable`). The line never shows the entry's text or where it was written. The TUI shows the same as text.
+
+A save cut off by a crash is settled the next time the workspace is used. If the file changed in between so that it cannot tell what happened, the result is **unknown**: the paragraph, if it was written, stays hidden from the agent until you make it ordinary memory or withdraw it on the memory page.
+
 ## How entries reach the model
 
 Entries never change the system prompt. They reach the model as notes added to the conversation:
@@ -117,7 +178,9 @@ The TUI shows the same lines as text but has no withdraw action. A client can ca
 ## Cost
 
 - Each review is a model call billed to your account, from a token budget of its own: 65,536 tokens for all reviews of a session. It never draws on a turn's budget.
-- In the TUI, the footer, `/status` and the `/usage` figures leave review spend out, and `/usage` lists it on its own **RSI cost** line.
+- A model priced at zero (a free or local model) has a known price: reviews run on it, automatic ones included, cost nothing and are bounded by the token budget alone.
+- A model with no known price runs no automatic review. A review you ask for runs on it only once you agree to the unknown cost with `/refine --unpriced`; the token budget still bounds it, and its cost shows as unknown.
+- In the TUI, the footer, `/status` and the `/usage` figures leave review spend out, and `/usage` lists it on its own **RSI cost** line (a free model shows a zero cost, a model with no known price shows "price unknown").
 - The Web counts review spend in the session's usage totals.
 - The guidance and entry notes add tokens to every request of a session where task experience is on.
 
@@ -125,9 +188,11 @@ The TUI shows the same lines as text but has no withdraw action. A client can ca
 
 Turning the switch off stops new reviews, stops applying results that are waiting, and stops sending entries, at once. The model gets one note that task experience is switched off. The three tools stay listed until AGH restarts, but answer that it is off. Saved entries stay in the session's record and are sent again once it is on and active. If it was on when AGH started, turning it back on works at once; otherwise restart. Withdrawing still works while it is off.
 
+Nothing is saved to the workspace while it is off, and requests waiting for approval are withdrawn. Paragraphs saved earlier stay in the workspace memory and keep their review dates. You can still renew, withdraw or convert them on the memory page.
+
 ## Compared with Prime Agent
 
-- Prime Agent keeps session entries and global entries for every session (`/refine --global`). AGH keeps entries in the session only and promotes nothing to the workspace.
+- Prime Agent keeps session entries and global entries for every session (`/refine --global`). AGH keeps entries in the session and saves memory and prompt entries to the workspace memory as paragraphs with a 30-day review date, after two confirmations, on your request (`/refine --workspace`, per entry) or the model's.
 - Prime Agent applies a review edit by edit. AGH applies the whole review or nothing.
 - Prime Agent starts automatic reviews only after a compaction, with a 20-minute cooldown. AGH also starts them after repeated failures and on the model's request, within the limits above.
 - AGH delivers entries as untrusted data, and the feature is off until you turn on the switch of your profile.
@@ -135,13 +200,15 @@ Turning the switch off stops new reviews, stops applying results that are waitin
 ## Known limits
 
 - Forks are child sessions. A fork, a rewind and a subagent get no reviews and no entry notes, and cannot withdraw.
-- Entries are kept per session. A new session starts empty.
-- Saving to the workspace is not available yet.
+- Entries are kept per session. A new session starts with no entries; what was saved to the workspace reaches it through the workspace memory.
+- Saving to the workspace covers memory and prompt entries only. Skills arrive in a later release.
+- The checks on a save are about structure: the source, the length, secret-like text, the size of memory. They do not judge whether a lesson is right. Review what is saved on the memory page.
+- On a platform without a system sandbox (for example Windows, or a container without bubblewrap under full access), the agent's shell can read and change the memory files directly, including paragraphs it is not shown. A shell that takes the two marker lines off a paragraph turns it into ordinary memory at the next session open. See [Learned memory](memory.md#approval-and-privacy).
 - A terminal started with `--standalone` runs its own embedded host, which does not serve `/refine`: it answers that the command is not supported. Automatic reviews still run there.
-- No review runs on a main model with no price, or with a zero input or output price: automatic reviews do not start, and a review you ask for ends without a model call.
+- On a planning model with no known price, automatic reviews do not start, and a review you ask for needs `/refine --unpriced`. A model priced at zero counts as known. A model added in the model settings without a price is recorded with a zero price, so it counts as free.
 - Turns that carry an entry note may ask you to approve more commands. The note is untrusted content, so approval rules that would allow a command in a clean turn may not apply. The same is true for turns that read entries with `harness_inspect`.
 - Obvious credentials in tool output are masked before the review model sees it. The masking is not complete.
 
 ## Diagnostics and exports
 
-Diagnostics bundles, diagnostic event exports and session exports contain the conversation as it was written, including the entry notes the model received and the text of the experience tools. Review them before you share them.
+Diagnostics bundles, diagnostic event exports and session exports contain the conversation as it was written, including the entry notes the model received and the text of the experience tools. Review them before you share them. The save lines and the workspace's save records hold no entry text, but the conversation around them does.
