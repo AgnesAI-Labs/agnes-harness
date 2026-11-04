@@ -73,8 +73,8 @@ export function selectSkillSource(
   const walk = (path: string, relative: string, depth: number) => {
     if (depth > 6) return
     for (const entry of readdirSync(path, { withFileTypes: true })) {
-      if (isSkillBundleIgnored(entry.name)) continue
       if (++visited > SKILL_BUNDLE_LIMITS.entries) return refused('SKILL_SIZE_LIMIT')
+      if (isSkillBundleIgnored(entry.name)) continue
       const name = relative ? `${relative}/${entry.name}` : entry.name
       if (!isSkillBundlePath(name) || entry.isSymbolicLink()) continue
       if (entry.isFile() && entry.name === 'SKILL.md') {

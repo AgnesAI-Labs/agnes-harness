@@ -45,8 +45,8 @@ export async function collectSkillBundle(
   let visits = 0
   const walk = async (relative: string) => {
     for (const entry of await fs.list(join(directory, relative))) {
-      if (isSkillBundleIgnored(entry.name)) continue
       if (++visits > SKILL_BUNDLE_LIMITS.entries) fail()
+      if (isSkillBundleIgnored(entry.name)) continue
       const name = relative ? `${relative}/${entry.name}` : entry.name
       if (!isSkillBundlePath(name) || seen.has(name.normalize('NFKC').toLowerCase())) fail()
       seen.add(name.normalize('NFKC').toLowerCase())
