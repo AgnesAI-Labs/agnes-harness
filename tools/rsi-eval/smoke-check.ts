@@ -208,9 +208,9 @@ export const firstSessionCheck = (runDir: string, oracle: string, off: string): 
   }
 }
 
-/** Said with the skill-offer checks: they fail until the embedded host offers skills from disk. */
+/** Said with the skill-offer checks when they fail. */
 export const SKILL_OFFER_NOTE =
-  'expected to FAIL until the embedded host offers skills it finds on disk (a product fix is on its way); a skill folder alone is not a saved skill'
+  'a saved skill must be offered to the agent from the next request; a skill folder alone is not a saved skill'
 
 /** The skill names a request's instructions offer (`<available_skills>`, one `name<TAB>description` per line), if it has a catalogue. */
 export const catalogueOf = (instructions: string): string[] | undefined => {
@@ -376,7 +376,7 @@ const main = (): void => {
   const warned = checks.filter((c) => c.status === 'WARN').length
   console.log(`\n${checks.length - failed - warned} passed, ${failed} failed, ${warned} warnings`)
   if (checks.some((c) => c.status === 'FAIL' && c.detail.includes(SKILL_OFFER_NOTE)))
-    console.log(`The skill-offer checks are ${SKILL_OFFER_NOTE}.`)
+    console.log(`The skill-offer checks failed: ${SKILL_OFFER_NOTE}.`)
   if (failed > 0) process.exitCode = 1
 }
 

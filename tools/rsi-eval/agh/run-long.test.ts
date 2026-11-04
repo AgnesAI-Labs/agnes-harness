@@ -224,6 +224,42 @@ describe('long tasks and the frozen arm in the runner', () => {
       expect(calls.some((c) => c.op === 'seed')).toBe(false)
     })
 
+    it('runs a long task of several sessions in one workspace, each a new session, the lesson before the second', async () => {
+      const m = (name: string) => ({ ...prompt(name), milestone: name })
+      const t = staged({
+        sessions: [{ prompts: [m('a'), m('b')] }, { prompts: [m('c')] }, { prompts: [m('d')] }],
+      })
+      expect(oracleApplies(t)).toBe(true)
+      const outcome = await run(t, 'oracle')
+      expect(ops().filter((op) => op.startsWith('prompt') || op === 'seed' || op === 'open')).toEqual([
+        'open',
+        'prompt:a',
+        'prompt:b',
+        'seed',
+        'open',
+        'prompt:c',
+        'open',
+        'prompt:d',
+      ])
+      const opened = calls.flatMap((c) => (c.op === 'open' ? [c] : []))
+      expect(new Set(opened.map((c) => c.key)).size).toBe(3)
+      expect(new Set(opened.map((c) => c.workspace)).size).toBe(1)
+      expect(calls.find((c) => c.op === 'seed')).toMatchObject({ workspace: opened[0]?.workspace })
+      expect(outcome.checks.map((c) => [c.session, c.prompt, c.passed])).toEqual([
+        [0, 0, true],
+        [0, 1, true],
+        [1, 0, true],
+        [2, 0, true],
+      ])
+      // A failed milestone ends the run: no later session opens.
+      calls = []
+      failing.add('check c')
+      const stopped = await run(t, 'off')
+      expect(stopped.stopped).toEqual({ reason: 'milestone-failed', session: 1, prompt: 0 })
+      expect(calls.filter((c) => c.op === 'open')).toHaveLength(2)
+      expect(calls.some((c) => c.op === 'seed')).toBe(false)
+    })
+
     it('refuses the oracle arm for a single-session task without a seeding point', async () => {
       await expect(run(staged(), 'oracle')).rejects.toThrow(/no oracle arm/)
     })

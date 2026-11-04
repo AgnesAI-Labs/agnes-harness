@@ -255,12 +255,28 @@ describe('loadSuite', () => {
       { ...staged, sessions: [{ prompts: [{ ...prompt(1), milestone: '' }, prompt(2), prompt(3)] }] },
       /milestone/,
     )
-    // A long task has one or two sessions.
+    // A long task has up to ten sessions in its workspace, and a session of a long task may be short.
     const session = { prompts: [prompt(1), prompt(2), prompt(3)] }
-    bad({ ...staged, sessions: [session, session, session] }, /one or two sessions/)
+    const short = {
+      prompts: [
+        { ...prompt(4), milestone: 'm4' },
+        { ...prompt(5), milestone: 'm5' },
+      ],
+    }
+    bad({ ...staged, sessions: Array.from({ length: 11 }, () => short) }, /at most 10 sessions/)
     expect(
       loadSuite(writeSuite([{ dir: 'long-1', json: { ...staged, sessions: [session, session] } }]), relaxed),
     ).toHaveLength(1)
+    const [five] = loadSuite(
+      writeSuite([{ dir: 'long-1', json: { ...staged, sessions: [session, short, short, short, short] } }]),
+      relaxed,
+    )
+    expect(five?.sessions.map((s) => s.prompts.length)).toEqual([3, 2, 2, 2, 2])
+    // Other categories keep their floor of three prompts per session.
+    bad(
+      sampleTask('cross-1', { category: 'cross-session', sessions: [session, short] }),
+      /at least 3 prompts/,
+    )
     // Workflow tasks have no oracle arm.
     bad(
       sampleTask('long-1', {

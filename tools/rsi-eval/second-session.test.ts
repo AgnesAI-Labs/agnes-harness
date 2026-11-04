@@ -107,7 +107,7 @@ describe('the second-session section of the report', () => {
     expect(m.denominator).toBe(18)
     expect(m.captureCi95).not.toBeNull()
     expect(second?.measures.tokens.mean.off).toBe(23 * 6000)
-    expect(markdown).toContain('### 4. Second-session cost and capture rate')
+    expect(markdown).toContain('### 4. Cost after the first session and capture rate')
     // Never a bare number: the parts, the task count and the interval stand next to the rate.
     expect(markdown).toMatch(/0\.000 = 0\.0 \/ 18\.0 over 2 of 2 tasks; 95% CI /)
   })
@@ -167,6 +167,38 @@ describe('the second-session section of the report', () => {
       sessionCosts: [cost(r.setting === 'on' ? 90 : 30), r.sessionCosts?.[1] as SessionCost],
     }))
     expect(section(heavyFirst).second?.measures.requests.captureRate).toBe(0)
+  })
+
+  it('sums every session after the first for a long task of several, and leaves out a run that stopped early', () => {
+    // Five sessions in one workspace: what sessions 2 to 5 cost together is what a lesson can change.
+    const long = (
+      setting: RunRecord['setting'],
+      rep: number,
+      later: number[],
+      over: Partial<RunRecord> = {},
+    ) =>
+      run('long-a', setting, rep, [cost(30), ...later.map((n) => cost(n))], {
+        category: 'long',
+        windows: [0, 1, 2, 3, 4].flatMap((s) => [0, 1].map((p) => win(s, p))),
+        ...over,
+      })
+    const runs = [1, 2, 3].flatMap((rep) => [
+      long('off', rep, [10, 10, 10, 10 + rep]),
+      long('on', rep, [9, 9, 9, 9 + rep]),
+      long('oracle', rep, [5, 5, 5, 5 + rep]),
+    ])
+    // Stopped at a milestone of session 3: sessions 4 and 5 never ran, so it says nothing about the cost.
+    const stopped = long('off', 4, [2, 2], {
+      exit: 'error',
+      windows: [0, 1, 2, 3, 4].flatMap((s) => [0, 1].map((p) => win(s, p, s < 3 ? {} : { ran: false }))),
+    })
+    const { second } = section([...runs, stopped])
+    const m = second?.measures.requests as Measure
+    expect(m.mean).toEqual({ off: 42, on: 38, oracle: 22 })
+    expect(m.offMinusOracle.estimate).toBe(20)
+    expect(m.captureRate).toBeCloseTo(0.2)
+    expect(second?.runs).toEqual({ off: 3, on: 3, oracle: 3 })
+    expect(second?.leftOut.off['exit-error']).toBe(1)
   })
 
   it('shows the main-lane figures apart from the review calls of the on arm', () => {

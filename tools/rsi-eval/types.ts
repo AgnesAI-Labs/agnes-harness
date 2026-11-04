@@ -220,7 +220,7 @@ export type RunRecord = {
   infraFailed?: InfraFailure
   /** The run reached its request cap; such records are listed apart, not in the means. */
   capped?: Capped
-  /** AGH runs: what the session had spent at the end of each prompt, with the milestone results. */
+  /** AGH runs: what the run had spent at the end of each prompt, with the milestone results. */
   progress?: PromptProgress[]
   /** AGH runs: where the trap was hit and where the context was compacted, per session (ledger seqs). */
   trapEvents?: { session: number; hits: number[]; compactions: number[] }[]
@@ -228,11 +228,11 @@ export type RunRecord = {
   frozenFrom?: FrozenSeed
 }
 
-/** What a session had spent when one of its prompts ended, and whether that prompt's milestone passed. */
+/** What the run had spent when one of its prompts ended, and whether that prompt's milestone passed. */
 export type PromptProgress = {
   session: number
   prompt: number
-  /** Main-lane tool calls of the session so far. */
+  /** Main-lane tool calls of the run so far (every session up to this prompt). */
   toolCalls: number
   /** All lanes, as `SessionCost`; `main*` leave the refinement lane out. */
   requests: number
