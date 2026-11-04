@@ -75,6 +75,7 @@ describe('PM4 management contracts', () => {
       'not-plugin',
       'git-ref',
       'git-fetch',
+      'source-not-found',
     ])
       expect(validatePackageAdminData('PackageAdminError', { ...failure, sourceFailure }).ok).toBe(true)
     expect(
