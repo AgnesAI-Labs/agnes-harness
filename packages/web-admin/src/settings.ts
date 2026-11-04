@@ -656,7 +656,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
           ...(accountName && editingId ? { label: accountName.value.trim() } : {}),
           model: modelId,
           networkTimeouts,
-          ...(isCompatible() ? { models: compatible.models() } : {}),
+          ...(isCompatible() ? { models: compatible.models(modelDrafts) } : {}),
           ...(defaultSettings === undefined ? {} : { defaultSettings }),
           ...(configuration ? { expectedRevision: configuration.revision } : {}),
         }))
