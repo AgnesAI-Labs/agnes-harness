@@ -10,6 +10,7 @@
   "packages/web-ui/src/first-run.tsx": 1,
   "packages/web-units/src/workspace-dialog.tsx": 1,
   "packages/web/src/pages/plugins/capabilities.tsx": 1,
+  "packages/web/src/pages/plugins/community-market.tsx": 1,
   "packages/web/src/pages/plugins/skill-run.tsx": 1,
   "packages/web/src/regions/profile-approvals.tsx": 1,
   "packages/web/src/session-actions.tsx": 1,

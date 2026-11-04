@@ -202,8 +202,15 @@ export function localPackageAdmin(
           params as import('@agnes/protocol').AuthoringWriteParams,
         )
 
-      case 'catalog/list':
-        return client.packages.catalog.list(params as PackageCatalogListParams)
+      case 'catalog/list': {
+        const { includeCommunity, ...legacy } = params as PackageCatalogListParams
+        const features = (await client.initialize()).features ?? []
+        return client.packages.catalog.list(
+          features.includes('packages.community-discovery.v1') && includeCommunity !== undefined
+            ? { ...legacy, includeCommunity }
+            : legacy,
+        )
+      }
       case 'catalog/get':
         return client.packages.catalog.get(params as PackageCatalogGetParams)
       case 'provenance':
@@ -266,6 +273,7 @@ export function localPackageAdmin(
     }
   }
   const surface = createAdminSurface({
+    backendFeatures: async () => (await client.initialize()).features ?? [],
     credentials: {
       async call(action, input) {
         await initialize()

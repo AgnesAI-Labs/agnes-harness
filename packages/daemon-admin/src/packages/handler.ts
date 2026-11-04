@@ -62,6 +62,7 @@ import { pluginTreeList } from '../plugin-tree-surface.js'
 import { type Applications, createApplications } from './applications.js'
 import { createAuthoringTestRunner, runAuthoringTests } from './authoring-tests.js'
 import { callBuiltinClientQuery } from './builtin-client-services.js'
+import { queryCatalog, sortCatalog } from './catalog-query.js'
 import {
   type ClientModuleRegistry,
   type ClientModulesChanged,
@@ -160,6 +161,7 @@ export type RuntimePinsAdapter = Readonly<{
 }>
 
 export type PackageAdminService = Readonly<{
+  features?: readonly string[]
   candidateForCommand?(
     profile: string,
     commandId: string,
@@ -445,15 +447,10 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
   return projected
 }
 
-function sortCatalog(entries: readonly PackageCatalogDescriptor[]): PackageCatalogDescriptor[] {
-  return [...entries].sort((left, right) => {
-    const a = `${left.id}\u0000${left.version}\u0000${left.sourceId}`
-    const b = `${right.id}\u0000${right.version}\u0000${right.sourceId}`
-    return a < b ? -1 : a > b ? 1 : 0
-  })
-}
-
 class Service implements PackageAdminService {
+  get features(): readonly string[] {
+    return this.options.community ? ['packages.community-discovery.v1'] : []
+  }
   private readonly applications: Applications
   private readonly configuration: PluginConfiguration
   private readonly candidates: AuthoringCandidates
@@ -473,6 +470,7 @@ class Service implements PackageAdminService {
       profileDirectory: PackageProfileDirectory
       operations: PackageOperationStore
       catalog?: Catalog
+      community?: (profile: string) => import('./community-discovery.js').CommunitySnapshot | undefined
       activation?: PackageActivationAdapter
       runtimePins?: RuntimePinsAdapter
       clientModules?: ClientModuleRegistry
@@ -1024,44 +1022,26 @@ class Service implements PackageAdminService {
     return { rolledBack: true, desiredDigest: previous.digest }
   }
 
-  private async catalogList(params: { profile: string; query?: string; cursor?: string; limit?: number }) {
+  private async catalogList(params: {
+    profile: string
+    query?: string
+    cursor?: string
+    limit?: number
+    includeCommunity?: boolean
+  }) {
     await this.options.profileDirectory(params.profile)
     const read = this.options.catalog ? await this.options.catalog.read({ offline: true }) : { entries: [] }
-    const entries = sortCatalog(read.entries.map(projectCatalogDescriptor))
-    const query = params.query?.toLowerCase()
-    const visible = query
-      ? entries.filter((entry) => {
-          const metadata = entry.metadata
-          const text = [
-            entry.id,
-            metadata?.displayName,
-            metadata?.summary,
-            ...Object.values(metadata?.locales ?? {}).flatMap((value) => [value.displayName, value.summary]),
-            ...entry.contributions.map((value) => value.id),
-            ...(entry.presentation?.rows ?? []).flatMap((row) => [
-              row.id,
-              row.metadata?.displayName,
-              row.metadata?.summary,
-              ...Object.values(row.metadata?.locales ?? {}).flatMap((value) => [
-                value.displayName,
-                value.summary,
-              ]),
-            ]),
-          ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase()
-          return text.includes(query)
-        })
-      : entries
+    const visible = queryCatalog(read.entries.map(projectCatalogDescriptor), params.query)
     const cursor = params.cursor
     const start = cursor ? visible.findIndex((entry) => `${entry.id}@${entry.version}` === cursor) + 1 : 0
     const limit = params.limit ?? 50
     const items = visible.slice(Math.max(0, start), Math.max(0, start) + limit)
     const last = items.at(-1)
+    const community = params.includeCommunity ? this.options.community?.(params.profile) : undefined
     return {
       items,
       nextCursor: last && start + items.length < visible.length ? `${last.id}@${last.version}` : null,
+      ...(community ? { community } : {}),
     }
   }
 
@@ -2128,6 +2108,7 @@ export function createPackageAdminService(options: {
   profileDirectory: PackageProfileDirectory
   operations: PackageOperationStore
   catalog?: Catalog
+  community?: (profile: string) => import('./community-discovery.js').CommunitySnapshot | undefined
   activation?: PackageActivationAdapter
   runtimePins?: RuntimePinsAdapter
   clientModules?: ClientModuleRegistry

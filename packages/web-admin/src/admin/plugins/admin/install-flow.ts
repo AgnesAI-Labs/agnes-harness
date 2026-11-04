@@ -2,6 +2,15 @@ import type { PackageInstalledDescriptor, PackageOperation, PackagePreview } fro
 import type { AdminError, InstallReviewState } from '../types.js'
 import type { PreviewMode } from './operation-storage.js'
 
+/** Unknown sources acquire their package identity only after the ordinary backend inspection. */
+export function resolvedPreviewMode(
+  mode: PreviewMode,
+  preview: PackagePreview,
+  installed: readonly PackageInstalledDescriptor[],
+): PreviewMode {
+  return mode === 'install' && installed.some((row) => row.id === preview.id) ? 'update' : mode
+}
+
 /** Why an operation stopped, as the page shows it. */
 export const operationFailure = (operation: PackageOperation): AdminError => ({
   code: operation.error?.code ?? 'E_PACKAGE_STATE',

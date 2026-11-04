@@ -55,6 +55,8 @@ export type AdminSurfaceOptions = {
   clientId: string
   permissions?: readonly PackageAdminPermission[]
   features?: readonly string[]
+  /** Reads the currently connected backend; static presentation never grants backend capability. */
+  backendFeatures?: () => Promise<readonly string[]>
   /** Stable opaque scope minted by the trusted launcher. Never accepts request data. */
   authScope?: string
   /** The trusted launcher binds this to the private Node SDK, never to request-selected RPC. */
@@ -885,12 +887,15 @@ export function createAdminSurface(options: AdminSurfaceOptions) {
         // One verified inventory provides both the live health decision and the page's data.
         // Do not cache a completed authorization decision across requests.
         let inventory: unknown
+        let backendFeatures: readonly string[] = []
         readOnly = await configurationReadOnly(async () => {
           inventory = await options.invoke('list', { profile: options.profile })
+          backendFeatures = (await options.backendFeatures?.()) ?? []
           return inventory
         })
         const context: PackageAdminContext = {
           ...configuredContext,
+          features: [...new Set([...(configuredContext.features ?? []), ...backendFeatures])],
           permissions: readOnly
             ? configuredPermissions.filter(
                 (permission) => permission === 'packages.read' || permission === 'credentials.read',

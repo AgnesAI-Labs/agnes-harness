@@ -55,6 +55,8 @@ export type AdminPageState = {
   installed: readonly PackageInstalledDescriptor[]
   surfaceLinks: readonly AdminSurfaceLink[]
   catalog: readonly PackageCatalogDescriptor[]
+  community?: PackageCatalogPage['community']
+  communityReadFailed?: boolean
   nextCursor: string | null
   selectedId?: string | undefined
   selectedCatalog?: PackageCatalogDescriptor | undefined

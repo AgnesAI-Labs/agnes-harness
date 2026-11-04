@@ -8,6 +8,7 @@ import type { LocalBackend } from './backend.js'
 const mocks = vi.hoisted(() => {
   const request = vi.fn(async () => ({ schemaVersion: 1 }))
   const catalogList = vi.fn(async () => ({ items: [], nextCursor: null }))
+  const initialize = vi.fn(async (): Promise<{ features?: string[] }> => ({}))
   const close = vi.fn(async () => undefined)
   const surfaceClose = vi.fn()
   const createAdminSurface = vi.fn((options: Record<string, unknown>) => ({
@@ -59,6 +60,7 @@ const mocks = vi.hoisted(() => {
     sessionSelection,
     request,
     catalogList,
+    initialize,
     close,
     surfaceClose,
     createAdminSurface,
@@ -81,7 +83,7 @@ vi.mock('@agnes/sdk', () => ({
   createClient: vi.fn(() => ({
     request: mocks.request,
     call: mocks.request,
-    initialize: vi.fn(async () => ({})),
+    initialize: mocks.initialize,
     close: mocks.close,
     packages: {
       catalog: { list: mocks.catalogList, get: vi.fn() },
@@ -141,6 +143,7 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
     | {
         diagnostics: { export(input: unknown): Promise<unknown>; doctor?: () => Promise<unknown> }
         features: string[]
+        backendFeatures(): Promise<readonly string[]>
         invoke(action: string, params: unknown): Promise<unknown>
         surfaceLinks(): Promise<unknown>
       }
@@ -160,6 +163,16 @@ it('advertises exactly the frozen hot-update features and forwards catalog reads
   expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/doctor.run', {})
   await options?.invoke('catalog/list', { profile: 'local-dev', limit: 50 })
   expect(mocks.catalogList).toHaveBeenCalledWith({ profile: 'local-dev', limit: 50 })
+  await options?.invoke('catalog/list', { profile: 'local-dev', includeCommunity: true })
+  expect(mocks.catalogList).toHaveBeenLastCalledWith({ profile: 'local-dev' })
+  mocks.initialize.mockResolvedValueOnce({ features: ['packages.community-discovery.v1'] })
+  await options?.invoke('catalog/list', { profile: 'local-dev', includeCommunity: true })
+  expect(mocks.catalogList).toHaveBeenLastCalledWith({ profile: 'local-dev', includeCommunity: true })
+  mocks.initialize.mockResolvedValueOnce({ features: ['packages.community-discovery.v1'] })
+  await expect(options?.backendFeatures()).resolves.toEqual(['packages.community-discovery.v1'])
+  await expect(options?.backendFeatures()).resolves.toEqual([])
+  await options?.invoke('catalog/list', { profile: 'local-dev', includeCommunity: true })
+  expect(mocks.catalogList).toHaveBeenLastCalledWith({ profile: 'local-dev' })
   await options?.invoke('tree/list', { profile: 'local-dev' })
   expect(mocks.treeList).toHaveBeenCalledWith({ profile: 'local-dev' })
   await options?.invoke('tree/get', { profile: 'local-dev' })

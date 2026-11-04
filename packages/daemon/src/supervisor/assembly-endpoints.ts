@@ -134,7 +134,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
   const factRead: (key: string) => ScanRead<import('@agnes/protocol').EventEnvelope> =
     o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query))
   const cx: AgnesContext = {
-    profileFeatures: profilePorts.features,
+    profileFeatures: [...profilePorts.features, ...(effectivePackageAdmin?.service.features ?? [])],
     sessionServices: {
       activationBarrier,
       journal,

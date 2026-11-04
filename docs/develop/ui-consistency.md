@@ -24,6 +24,8 @@ The built-in sidebar renders workspace headings, session buttons and action menu
 
 ## Controls and forms
 
+Marketplace community details are a scoped exception to in-place detail navigation: one shared `Drawer` presents read-only repository information, full tags and source links while preserving the unified gallery. Closing restores focus to the triggering card; installation checks leave the drawer and use the existing review page. No cache or synchronization implementation details appear in the marketplace. This exception does not authorize form drawers elsewhere.
+
 | Need | Public web-ui component | Contract to retain |
 | --- | --- | --- |
 | Text, search, URL, password, numeric input | `SettingsInput` | `type`, ID, ref, autocomplete, limits, validation and change handler |

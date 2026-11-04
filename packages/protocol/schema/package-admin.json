@@ -1762,6 +1762,65 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "community": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "enum": ["disabled", "pending", "syncing", "ready", "failed"] },
+            "lastSuccessAt": { "type": ["string", "null"], "maxLength": 32 },
+            "nextAttemptAt": { "type": ["string", "null"], "maxLength": 32 },
+            "error": {
+              "oneOf": [
+                { "enum": ["network", "rate-limit", "invalid-data", "storage", "configuration"] },
+                { "type": "null" }
+              ]
+            },
+            "totalReported": { "type": "integer", "minimum": 0 },
+            "items": {
+              "type": "array",
+              "maxItems": 400,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "type": "integer", "minimum": 1 },
+                  "fullName": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                    "maxLength": 256
+                  },
+                  "description": { "type": "string", "maxLength": 2048 },
+                  "topics": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": { "type": "string", "maxLength": 64 }
+                  },
+                  "ecosystem": { "enum": ["agh", "dsh"] },
+                  "stars": { "type": "integer", "minimum": 0 },
+                  "forks": { "type": "integer", "minimum": 0 },
+                  "issues": { "type": "integer", "minimum": 0 },
+                  "language": { "type": "string", "maxLength": 100 },
+                  "license": { "type": "string", "maxLength": 100 },
+                  "pushedAt": { "type": ["string", "null"], "maxLength": 32 }
+                },
+                "required": [
+                  "id",
+                  "fullName",
+                  "description",
+                  "topics",
+                  "ecosystem",
+                  "stars",
+                  "forks",
+                  "issues",
+                  "language",
+                  "license",
+                  "pushedAt"
+                ]
+              }
+            }
+          },
+          "required": ["state", "lastSuccessAt", "nextAttemptAt", "error", "totalReported", "items"]
+        },
         "items": {
           "type": "array",
           "items": {
@@ -1957,6 +2016,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "includeCommunity": { "type": "boolean" },
         "profile": {
           "type": "string",
           "minLength": 1,

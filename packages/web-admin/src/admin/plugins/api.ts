@@ -539,6 +539,9 @@ export class PluginAdminApi {
       ...(query ? { query } : {}),
       ...(cursor ? { cursor } : {}),
       limit: 50,
+      ...(this.#context.features?.includes('packages.community-discovery.v1')
+        ? { includeCommunity: true }
+        : {}),
     })
   }
 
