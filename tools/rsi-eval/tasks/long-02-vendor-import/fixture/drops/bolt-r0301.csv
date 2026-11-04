@@ -1,4 +1,4 @@
-order,refund,amount,reason
-100612,900601,15.00,damaged
-100612,900602,486.20,wrong-item
-100623,900604,152.25,late
+order;refund;amount;reason
+100620;900601;100,00;wrong-item
+100612;900602;379,45;cancelled
+100613;900604;737,58;cancelled

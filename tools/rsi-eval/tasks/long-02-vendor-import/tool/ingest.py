@@ -20,8 +20,8 @@ HELP = """usage: bin/ingest <command> [args]
   help                   show this text"""
 
 TABLES = {
-    "orders": [("id", "int"), ("placed", "date"), ("amount_cents", "int"), ("region", "text")],
-    "refunds": [("id", "int"), ("order_id", "int"), ("amount_cents", "int"), ("reason", "text")],
+    "orders": [("id", "int"), ("placed", "date"), ("amount", "int"), ("region", "text")],
+    "refunds": [("id", "int"), ("order_id", "int"), ("amount", "int"), ("reason", "text")],
 }
 ID_RANGE = {"orders": (100000, 199999), "refunds": (900000, 999999)}
 
@@ -97,9 +97,7 @@ def load(name, path):
         if not values:
             continue
         values = [v.strip() for v in values]
-        if len(values) != len(columns):
-            fail("batch rejected at line %d: %d values, the table has %d columns" % (number, len(values), len(columns)))
-        if not all(fits(kind, value) for (_, kind), value in zip(columns, values)):
+        if len(values) != len(columns) or not all(fits(kind, value) for (_, kind), value in zip(columns, values)):
             fail("batch rejected at line %d: a value does not fit the table" % number)
         row = [convert(kind, value) for (_, kind), value in zip(columns, values)]
         if not low <= row[0] <= high:
@@ -155,7 +153,7 @@ def main(argv):
     if command == "tables" and not args:
         print(" ".join(sorted(TABLES)))
     elif command == "schema" and len(args) == 1:
-        print("%s: %s" % (args[0], ", ".join("%s %s" % c for c in table_of(args[0]))))
+        print("%s: %s" % (args[0], ", ".join("%s %s" % c for c in sorted(table_of(args[0])))))
     elif command == "load" and len(args) == 2:
         load(args[0], args[1])
     elif command == "batches" and not args:

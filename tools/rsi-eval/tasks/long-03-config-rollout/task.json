@@ -1,16 +1,13 @@
 {
   "id": "long-03-config-rollout",
   "category": "long",
-  "description": "Ten config changes to three services, deployed with a rollout tool that only lets into prod a change shadow is running.",
+  "description": "Ten config changes to three services over five sessions, deployed with a rollout tool that only lets into prod a change shadow is running.",
   "trap": {
     "signatures": ["prod refused: change [0-9a-f]+ of \\w+ is unproven"],
     "reproduce": "perl -pi -e 's/^timeout = .*/timeout = 45/' services/web.conf && bin/rollout apply web prod",
     "note": "bin/rollout apply <service> prod only takes a change that shadow runs right now, with the same values (canary does not count): deploy the edited config to shadow first, then to prod, and do not edit it in between. Steps for a prod change: edit services/<service>.conf, `bin/rollout lint <service>`, apply it to shadow, then to prod, then check with `bin/rollout get <service> prod <key>`. Other environments take a change directly."
   },
   "maxRequests": 250,
-  "oracle": {
-    "afterPrompt": 0
-  },
   "sessions": [
     {
       "prompts": [
@@ -43,24 +40,14 @@
             "bin/rollout apply api shadow",
             "bin/rollout apply api prod"
           ]
-        },
-        {
-          "milestone": "worker-canary",
-          "text": "Try a worker `concurrency` of 6 on canary only; leave the other environments as they are.",
-          "checks": [
-            {
-              "command": "bin/rollout get worker canary concurrency",
-              "contains": "worker@canary concurrency=6"
-            }
-          ],
-          "solution": [
-            "perl -pi -e 's/^concurrency = .*/concurrency = 6/' services/worker.conf",
-            "bin/rollout apply worker canary"
-          ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "web-workers",
-          "text": "Give the web service 12 `workers` in prod.",
+          "text": "Give the web service 12 `workers` in prod. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/rollout get web prod workers",
@@ -74,8 +61,26 @@
           ]
         },
         {
+          "milestone": "worker-canary",
+          "text": "Try a worker `concurrency` of 6 on canary only (deploy the config file there); leave the other environments as they are.",
+          "checks": [
+            {
+              "command": "bin/rollout get worker canary concurrency",
+              "contains": "worker@canary concurrency=6"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^concurrency = .*/concurrency = 6/' services/worker.conf",
+            "bin/rollout apply worker canary"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
           "milestone": "api-logging",
-          "text": "Set the api's `log_level` to warn, on dev and in prod.",
+          "text": "Set the api's `log_level` to warn and deploy the config file to dev and to prod. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/rollout get api dev log_level",
@@ -112,10 +117,14 @@
             "bin/rollout apply worker shadow",
             "bin/rollout apply worker prod"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "web-cache",
-          "text": "Turn the web cache off (`cache = off`) on canary and in prod.",
+          "text": "Turn the web cache off (`cache = off`) and deploy the config file to canary and to prod. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/rollout get web canary cache",
@@ -147,10 +156,14 @@
             "bin/rollout apply api shadow",
             "bin/rollout apply api prod"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "worker-queue",
-          "text": "Move the worker to the queue `jobs-v2` in prod.",
+          "text": "Move the worker to the queue `jobs-v2` in prod. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/rollout get worker prod queue",

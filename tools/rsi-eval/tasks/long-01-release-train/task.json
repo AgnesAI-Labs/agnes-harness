@@ -1,16 +1,13 @@
 {
   "id": "long-01-release-train",
   "category": "long",
-  "description": "Ten releases of four small packages with the repository's release tool, which only publishes a release note that names the build being published.",
+  "description": "Ten releases of four small packages over five sessions with the repository's release tool, which only publishes a release note that names the build being published.",
   "trap": {
     "signatures": ["publish refused: the release note is not tied to this build"],
     "reproduce": "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"alpha ready\"/' packages/alpha/src/alpha.py && perl -pi -e 's/^version = .*/version = 1.4.0/' packages/alpha/pkg.ini && bin/ship build alpha && printf 'Alpha now reports ready.\\n' > packages/alpha/NEXT.md && bin/ship publish alpha",
-    "note": "bin/ship publish only takes a release note that names the build being published: after the last change to the package's sources and pkg.ini, run `bin/ship build <name>`, read the id on the `build` line of `bin/ship inspect <name>`, and put that id in packages/<name>/NEXT.md together with the note; then `bin/ship publish <name>`. Any later change to the sources or the version changes the id, so build again and update the note. Release steps: change the code, set the version in pkg.ini, build, inspect, write NEXT.md with the note and the build id, publish, add `- <name> <version>: <note>` at the top of the list in CHANGELOG.md."
+    "note": "bin/ship publish only takes a release note that names the build being published: after the last change to the package's sources and pkg.ini, run `bin/ship build <name>`, read the id on the `build` line of `bin/ship inspect <name> --verbose` (plain `inspect` does not show it), and put that id in packages/<name>/NEXT.md together with the note; then `bin/ship publish <name>`. Any later change to the sources or the version changes the id, so build again and update the note. Release steps: change the code, set the version in pkg.ini, build, inspect, write NEXT.md with the note and the build id, publish, add `- <name> <version>: <note>` at the top of the list in CHANGELOG.md."
   },
   "maxRequests": 250,
-  "oracle": {
-    "afterPrompt": 0
-  },
   "sessions": [
     {
       "prompts": [
@@ -35,7 +32,7 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"alpha ready\"/' packages/alpha/src/alpha.py",
             "perl -pi -e 's/^version = .*/version = 1.4.0/' packages/alpha/pkg.ini",
             "bin/ship build alpha",
-            "printf '%s\\n\\nbuild %s\\n' 'Alpha now reports ready.' \"$(bin/ship inspect alpha | sed -n 's/^build //p')\" > packages/alpha/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Alpha now reports ready.' \"$(bin/ship inspect alpha --verbose | sed -n 's/^build //p')\" > packages/alpha/NEXT.md",
             "bin/ship publish alpha",
             "perl -0pi -e 's/\\n\\n/\\n\\n- alpha 1.4.0: Alpha now reports ready.\\n/' CHANGELOG.md"
           ]
@@ -61,14 +58,18 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"beta online\"/' packages/beta/src/beta.py",
             "perl -pi -e 's/^version = .*/version = 2.1.0/' packages/beta/pkg.ini",
             "bin/ship build beta",
-            "printf '%s\\n\\nbuild %s\\n' 'Beta reports online.' \"$(bin/ship inspect beta | sed -n 's/^build //p')\" > packages/beta/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Beta reports online.' \"$(bin/ship inspect beta --verbose | sed -n 's/^build //p')\" > packages/beta/NEXT.md",
             "bin/ship publish beta",
             "perl -0pi -e 's/\\n\\n/\\n\\n- beta 2.1.0: Beta reports online.\\n/' CHANGELOG.md"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "gamma-steady",
-          "text": "Gamma should print `gamma steady` (`python3 packages/gamma/src/gamma.py`). Release gamma 0.9.0 with the release note `Gamma reports steady.`.",
+          "text": "Gamma should print `gamma steady` (`python3 packages/gamma/src/gamma.py`). Release gamma 0.9.0 with the release note `Gamma reports steady.`. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/ship log",
@@ -87,7 +88,7 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"gamma steady\"/' packages/gamma/src/gamma.py",
             "perl -pi -e 's/^version = .*/version = 0.9.0/' packages/gamma/pkg.ini",
             "bin/ship build gamma",
-            "printf '%s\\n\\nbuild %s\\n' 'Gamma reports steady.' \"$(bin/ship inspect gamma | sed -n 's/^build //p')\" > packages/gamma/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Gamma reports steady.' \"$(bin/ship inspect gamma --verbose | sed -n 's/^build //p')\" > packages/gamma/NEXT.md",
             "bin/ship publish gamma",
             "perl -0pi -e 's/\\n\\n/\\n\\n- gamma 0.9.0: Gamma reports steady.\\n/' CHANGELOG.md"
           ]
@@ -113,14 +114,18 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"delta live\"/' packages/delta/src/delta.py",
             "perl -pi -e 's/^version = .*/version = 3.2.0/' packages/delta/pkg.ini",
             "bin/ship build delta",
-            "printf '%s\\n\\nbuild %s\\n' 'Delta reports live.' \"$(bin/ship inspect delta | sed -n 's/^build //p')\" > packages/delta/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Delta reports live.' \"$(bin/ship inspect delta --verbose | sed -n 's/^build //p')\" > packages/delta/NEXT.md",
             "bin/ship publish delta",
             "perl -0pi -e 's/\\n\\n/\\n\\n- delta 3.2.0: Delta reports live.\\n/' CHANGELOG.md"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "alpha-patch",
-          "text": "A small follow-up for alpha: it should print `alpha set`. Release it as 1.4.1 with the note `Alpha reports set.`.",
+          "text": "A small follow-up for alpha: it should print `alpha set`. Release it as 1.4.1 with the note `Alpha reports set.`. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/ship log",
@@ -139,7 +144,7 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"alpha set\"/' packages/alpha/src/alpha.py",
             "perl -pi -e 's/^version = .*/version = 1.4.1/' packages/alpha/pkg.ini",
             "bin/ship build alpha",
-            "printf '%s\\n\\nbuild %s\\n' 'Alpha reports set.' \"$(bin/ship inspect alpha | sed -n 's/^build //p')\" > packages/alpha/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Alpha reports set.' \"$(bin/ship inspect alpha --verbose | sed -n 's/^build //p')\" > packages/alpha/NEXT.md",
             "bin/ship publish alpha",
             "perl -0pi -e 's/\\n\\n/\\n\\n- alpha 1.4.1: Alpha reports set.\\n/' CHANGELOG.md"
           ]
@@ -165,14 +170,18 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"beta warm\"/' packages/beta/src/beta.py",
             "perl -pi -e 's/^version = .*/version = 2.1.1/' packages/beta/pkg.ini",
             "bin/ship build beta",
-            "printf '%s\\n\\nbuild %s\\n' 'Beta reports warm.' \"$(bin/ship inspect beta | sed -n 's/^build //p')\" > packages/beta/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Beta reports warm.' \"$(bin/ship inspect beta --verbose | sed -n 's/^build //p')\" > packages/beta/NEXT.md",
             "bin/ship publish beta",
             "perl -0pi -e 's/\\n\\n/\\n\\n- beta 2.1.1: Beta reports warm.\\n/' CHANGELOG.md"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "gamma-one",
-          "text": "Gamma is ready for 1.0.0: make it print `gamma stable` and release it with the note `Gamma reaches its first stable release.`.",
+          "text": "Gamma is ready for 1.0.0: make it print `gamma stable` and release it with the note `Gamma reaches its first stable release.`. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/ship log",
@@ -191,7 +200,7 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"gamma stable\"/' packages/gamma/src/gamma.py",
             "perl -pi -e 's/^version = .*/version = 1.0.0/' packages/gamma/pkg.ini",
             "bin/ship build gamma",
-            "printf '%s\\n\\nbuild %s\\n' 'Gamma reaches its first stable release.' \"$(bin/ship inspect gamma | sed -n 's/^build //p')\" > packages/gamma/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Gamma reaches its first stable release.' \"$(bin/ship inspect gamma --verbose | sed -n 's/^build //p')\" > packages/gamma/NEXT.md",
             "bin/ship publish gamma",
             "perl -0pi -e 's/\\n\\n/\\n\\n- gamma 1.0.0: Gamma reaches its first stable release.\\n/' CHANGELOG.md"
           ]
@@ -217,14 +226,18 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"delta calm\"/' packages/delta/src/delta.py",
             "perl -pi -e 's/^version = .*/version = 3.2.1/' packages/delta/pkg.ini",
             "bin/ship build delta",
-            "printf '%s\\n\\nbuild %s\\n' 'Delta reports calm.' \"$(bin/ship inspect delta | sed -n 's/^build //p')\" > packages/delta/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Delta reports calm.' \"$(bin/ship inspect delta --verbose | sed -n 's/^build //p')\" > packages/delta/NEXT.md",
             "bin/ship publish delta",
             "perl -0pi -e 's/\\n\\n/\\n\\n- delta 3.2.1: Delta reports calm.\\n/' CHANGELOG.md"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "alpha-minor",
-          "text": "Alpha gets a minor release, 1.5.0: make it print `alpha go`, release note `Alpha reports go.`.",
+          "text": "Alpha gets a minor release, 1.5.0: make it print `alpha go`, release note `Alpha reports go.`. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/ship log",
@@ -243,7 +256,7 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"alpha go\"/' packages/alpha/src/alpha.py",
             "perl -pi -e 's/^version = .*/version = 1.5.0/' packages/alpha/pkg.ini",
             "bin/ship build alpha",
-            "printf '%s\\n\\nbuild %s\\n' 'Alpha reports go.' \"$(bin/ship inspect alpha | sed -n 's/^build //p')\" > packages/alpha/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Alpha reports go.' \"$(bin/ship inspect alpha --verbose | sed -n 's/^build //p')\" > packages/alpha/NEXT.md",
             "bin/ship publish alpha",
             "perl -0pi -e 's/\\n\\n/\\n\\n- alpha 1.5.0: Alpha reports go.\\n/' CHANGELOG.md"
           ]
@@ -281,13 +294,13 @@
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"beta done\"/' packages/beta/src/beta.py",
             "perl -pi -e 's/^version = .*/version = 2.2.0/' packages/beta/pkg.ini",
             "bin/ship build beta",
-            "printf '%s\\n\\nbuild %s\\n' 'Beta reports done.' \"$(bin/ship inspect beta | sed -n 's/^build //p')\" > packages/beta/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Beta reports done.' \"$(bin/ship inspect beta --verbose | sed -n 's/^build //p')\" > packages/beta/NEXT.md",
             "bin/ship publish beta",
             "perl -0pi -e 's/\\n\\n/\\n\\n- beta 2.2.0: Beta reports done.\\n/' CHANGELOG.md",
             "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"delta done\"/' packages/delta/src/delta.py",
             "perl -pi -e 's/^version = .*/version = 3.3.0/' packages/delta/pkg.ini",
             "bin/ship build delta",
-            "printf '%s\\n\\nbuild %s\\n' 'Delta reports done.' \"$(bin/ship inspect delta | sed -n 's/^build //p')\" > packages/delta/NEXT.md",
+            "printf '%s\\n\\nbuild %s\\n' 'Delta reports done.' \"$(bin/ship inspect delta --verbose | sed -n 's/^build //p')\" > packages/delta/NEXT.md",
             "bin/ship publish delta",
             "perl -0pi -e 's/\\n\\n/\\n\\n- delta 3.3.0: Delta reports done.\\n/' CHANGELOG.md"
           ]

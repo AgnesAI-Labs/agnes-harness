@@ -1,3 +1,3 @@
-reason,amount,order,refund
-wrong-item,679.94,100232,900207
-cancelled,818.32,100225,900210
+reason,amount,order,refund,note,agent
+wrong-item,609.37,100216,900208,photo sent,ana
+cancelled,454.35,100230,900211,box crushed,kim

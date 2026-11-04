@@ -238,8 +238,8 @@ prompt. The category has no floor of five tasks; the categories of the first sui
 
 ### The long tasks
 
-`tasks/long-01-release-train` to `tasks/long-04-test-harness` are four such tasks of ten milestones each, in
-four domains (a release tool, a vendor data import, a config deployer, a test harness). Each tool enforces
+`tasks/long-01-release-train` to `tasks/long-04-test-harness` are four such tasks of ten milestones each, five
+sessions of two milestones over one workspace, in four domains (a release tool, a vendor data import, a config deployer, a test harness). Each tool enforces
 one rule that no prompt states, that its error does not spell out and that nothing in the workspace shows:
 the tool's source (`tool/<name>.py`, outside the fixture) is packed into `fixture/bin/<name>` by
 `long-tools.ts`, so reading the launcher shows neither its checks nor its messages. Each task repeats one

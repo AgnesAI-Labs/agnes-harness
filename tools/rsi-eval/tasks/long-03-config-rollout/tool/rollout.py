@@ -175,7 +175,7 @@ def main(argv):
         live = load_state()["live"].get(args[0], {})
         for env in ENVS:
             if env in live:
-                print("%-7s %s  %s" % (env, change_id(live[env]), shown(live[env])))
+                print("%-7s %s" % (env, shown(live[env])))
             else:
                 print("%-7s -" % env)
     elif command == "get" and len(args) == 3:

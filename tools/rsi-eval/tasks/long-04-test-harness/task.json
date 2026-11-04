@@ -1,16 +1,13 @@
 {
   "id": "long-04-test-harness",
   "category": "long",
-  "description": "Ten test cases added to four small text helpers, each fixed and recorded with a harness that only records a run made with the suite's own seed.",
+  "description": "Ten test cases added to four small text helpers over five sessions, each fixed and recorded with a harness that only records a run made with the suite's own seed.",
   "trap": {
     "signatures": ["record refused: run \\d+ of \\w+ is not reproducible"],
     "reproduce": "bin/harness run slug && bin/harness record slug",
-    "note": "bin/harness record only takes a run made with the suite's own seed, the one `bin/harness suites` lists for it; a run without --seed, or with another seed, is refused. So run `bin/harness run <suite> --seed <that seed>`, then `bin/harness record <suite>`. Recording takes the suite's latest run, so the seeded run must be the last one, with nothing changed after it. Steps for a new case: add tests/<suite>/<name>.case (an `input:` and an `expect:` line), fix src/textkit/<suite>.py, run the suite with its seed until it passes, record it, check `bin/harness dashboard`."
+    "note": "bin/harness record only takes a run made with the suite's own seed: the seed of the runs that are on the dashboard (`bin/harness dashboard` names the recorded run, `bin/harness runs <suite>` shows each run's seed; `suites` does not show it). Each suite has its own seed, and a run without --seed, or with another seed, is refused. So run `bin/harness run <suite> --seed <that seed>`, then `bin/harness record <suite>`. Recording takes the suite's latest run, so the seeded run must be the last one, with nothing changed after it. Steps for a new case: add tests/<suite>/<name>.case (an `input:` and an `expect:` line), fix src/textkit/<suite>.py, run the suite with its seed until it passes, record it, check `bin/harness dashboard`."
   },
   "maxRequests": 250,
-  "oracle": {
-    "afterPrompt": 0
-  },
   "sessions": [
     {
       "prompts": [
@@ -53,10 +50,14 @@
             "bin/harness run roman --seed 4441",
             "bin/harness record roman"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "wrap-long-word",
-          "text": "Add a wrap case `long-word`: `extraordinarily long` must give `extraordinarily|long`. Fix wrap so the suite passes and record it.",
+          "text": "Add a wrap case `long-word`: `extraordinarily long` must give `extraordinarily|long`. Fix wrap so the suite passes and record it. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/harness dashboard",
@@ -93,10 +94,14 @@
             "bin/harness run plural --seed 3089",
             "bin/harness record plural"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "slug-spacing",
-          "text": "Slug should cope with extra spaces: add a case `extra-spaces` where `  Hello,   World!  ` (two spaces before, three in the middle, two after) gives `hello-world`. Fix it and record the suite.",
+          "text": "Slug should cope with extra spaces: add a case `extra-spaces` where `  Hello,   World!  ` (two spaces before, three in the middle, two after) gives `hello-world`. Fix it and record the suite. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/harness dashboard",
@@ -133,10 +138,14 @@
             "bin/harness run roman --seed 4441",
             "bin/harness record roman"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "wrap-spaces",
-          "text": "Add a wrap case `many-spaces`: `a  b   c` (two and three spaces) gives `a b c`. Fix wrap and record the suite.",
+          "text": "Add a wrap case `many-spaces`: `a  b   c` (two and three spaces) gives `a b c`. Fix wrap and record the suite. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/harness dashboard",
@@ -173,10 +182,14 @@
             "bin/harness run plural --seed 3089",
             "bin/harness record plural"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "prompts": [
         {
           "milestone": "slug-ampersand",
-          "text": "Add a slug case `ampersand`: `Rock & Roll` gives `rock-and-roll`. Fix slug and record it.",
+          "text": "Add a slug case `ampersand`: `Rock & Roll` gives `rock-and-roll`. Fix slug and record it. Just run the tools; don't read their source.",
           "checks": [
             {
               "command": "bin/harness dashboard",

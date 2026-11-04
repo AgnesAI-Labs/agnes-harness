@@ -14,7 +14,7 @@ HELP = """usage: bin/harness <command> [args]
   run <suite> [options]   run a suite's cases against src/textkit/<suite>.py
       --seed N            shuffle the cases with seed N (default: a fresh seed)
       --verbose           print every case
-  runs                    list the recent runs
+  runs [<suite>]          list the runs, of one suite or of all
   record <suite>          put the suite's latest run on the dashboard
   dashboard               show what is on the dashboard
   help                    show this text"""
@@ -165,11 +165,13 @@ def main(argv):
     command, args = argv[0], argv[1:]
     if command == "suites" and not args:
         for suite in sorted(SUITES):
-            print("%-7s %d cases   seed %d" % (suite, len(case_files(suite)), SUITES[suite]))
+            print("%-7s %d cases   src/textkit/%s.py" % (suite, len(case_files(suite)), suite))
     elif command == "run" and args:
         run(suite_of(args[0]), args[1:])
-    elif command == "runs" and not args:
-        for r in load_state()["runs"][-12:]:
+    elif command == "runs" and len(args) <= 1:
+        for r in load_state()["runs"]:
+            if args and r["suite"] != suite_of(args[0]):
+                continue
             print("run %-3d %-7s %d/%d  seed %s" % (r["n"], r["suite"], r["passed"], r["total"], "fresh" if r["seed"] is None else r["seed"]))
     elif command == "record" and len(args) == 1:
         record(suite_of(args[0]))

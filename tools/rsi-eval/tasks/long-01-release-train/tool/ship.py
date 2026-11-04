@@ -9,7 +9,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0])))
 STATE = os.path.join(ROOT, ".ship", "state")
 HELP = """usage: bin/ship <command> [args]
   build <name>     build packages/<name> into dist/
-  inspect <name>   show what dist/ holds for the package's current version
+  inspect <name> [--verbose]
+                   show what dist/ holds for the package's current version
   publish <name>   publish the built package with its release note (packages/<name>/NEXT.md)
   log              list the published releases
   help             show this text"""
@@ -106,12 +107,15 @@ def build(name):
     print("built dist/%s-%s.pkg" % (name, version))
 
 
-def inspect(name):
+def inspect(name, verbose):
     version = read_version(name)
     built = read_dist(name, version)
     if built is None:
         fail("nothing is built for %s %s" % (name, version))
-    print("package %s\nversion %s\nbuild %s\nfiles %d" % (built["name"], built["version"], built["build"], built["files"]))
+    current = fingerprint(name, version)[0] == built["build"]
+    print("package %s\nversion %s\nfiles %d\nstate %s" % (built["name"], built["version"], built["files"], "current" if current else "out of date"))
+    if verbose:
+        print("build %s\nformat 2\ncompression zlib" % built["build"])
 
 
 def publish(name):
@@ -150,8 +154,10 @@ def main(argv):
         print(HELP)
         return
     command, args = argv[0], argv[1:]
-    one = {"build": build, "inspect": inspect, "publish": publish}
-    if command in one and len(args) == 1:
+    one = {"build": build, "publish": publish}
+    if command == "inspect" and len(args) in (1, 2) and args[1:] in ([], ["--verbose"]):
+        inspect(args[0], args[1:] == ["--verbose"])
+    elif command in one and len(args) == 1:
         one[command](args[0])
     elif command == "log" and not args:
         log()

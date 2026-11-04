@@ -4,9 +4,13 @@ This file is for people reviewing the tasks. It sits beside the task folders, no
 runner and the self-check copy a task's `fixture/` only, so no agent ever sees it
 (`long-tasks.test.ts` checks that no fixture holds it or a tool's source).
 
-Each long task is one session of ten milestones, one prompt each, with checks run right after it. Every
-task has one hidden rule that its tool enforces and a release-like procedure that repeats at every
-milestone, which a saved skill could do in one go. No prompt states the rule. The trap's error says that
+Each long task is ten milestones, one prompt each, with checks run right after it, in five sessions of two
+milestones over the same workspace. Each session is a new conversation, so an agent that learnt the rule in
+one session does not have it in context in the next; only memory, skills or files carry it over. The
+oracle's lesson is written after the first session, so its gap to `off` leaves out the first discovery.
+Every task has one hidden rule that its tool enforces, met again at the first milestone of every session,
+and a procedure that repeats at every milestone, which a saved skill could do in one go. No prompt states
+the rule. The trap's error says that
 something is wrong, not what to do: it names no value, flag or file of the fix, and finding the fix takes
 a few steps of using the tool (another subcommand, a second try, comparing what it shows).
 
@@ -36,25 +40,33 @@ Ten releases of four packages with `bin/ship` (build, inspect, publish, log).
 
 - **Rule:** `bin/ship publish` takes a release note only when `packages/<name>/NEXT.md` contains the id of
   the build being published. The id is a hash of the package's name, version and sources; only
-  `bin/ship inspect <name>` shows it (`build <id>`). Any change to the sources or the version after the
+  `bin/ship inspect <name> --verbose` shows it (`build <id>`); plain `inspect` does not. Any change to the sources or the version after the
   build changes the id, so the note must be written after the last build.
 - **Error:** `publish refused: the release note is not tied to this build`. Rebuilding does not help; the
-  agent has to find `inspect` and see that its `build` line is what the note lacks.
+  agent has to find `inspect`, then its `--verbose` form, and see that its `build` line is what the note
+  lacks.
 - **Procedure:** change the code, set the version in `pkg.ini`, build, inspect, write the note with the
   id, publish, add the line to `CHANGELOG.md`. Every milestone releases a package (the last one two), each
   with a new id.
 
 ## long-02-vendor-import
 
-Ten vendor CSV files (two vendors, orders and refunds) imported into a warehouse with `bin/ingest`.
+Ten vendor files (two vendors, orders and refunds) imported into a warehouse with `bin/ingest`.
 
-- **Rule:** the importer ignores the header's names and reads columns by position, in the table's order
-  (`bin/ingest schema <table>`: orders `id, placed, amount_cents, region`; refunds `id, order_id,
-  amount_cents, reason`), and amounts must be whole cents. The vendors' files have other column orders
-  (acme and bolt differ, and orders and refunds differ) and decimal amounts.
+- **Rule:** the importer reads a comma-separated file by position and ignores the header's names. The
+  columns must come in the table's own order (orders `id, placed, amount, region`; refunds `id, order_id,
+  amount, reason`), amounts must be whole cents and dates ISO. `bin/ingest schema` lists the columns in
+  alphabetical order and names no unit; the order shows in `bin/ingest peek` (values in table order), the
+  unit in `bin/ingest total` (`… cents`).
+- **The formats change.** From the third milestone on, every milestone brings a format not seen before: `;` with
+  decimal commas, an extra `note` column, `.` thousands, renamed columns with `$1,253.48` amounts, a tab
+  file, a second extra column, day-first dates. A converter written for the first file does not do a later
+  one; the lesson ("by position, table order, cents, read each file's header") still does. Every amount
+  converts exactly with `int(float(x) * 100)` too, so an agent's float conversion never commits a wrong
+  total by a cent.
 - **Error:** `batch rejected at line N: a value does not fit the table`, the same message for a value in
-  the wrong column, a decimal amount and a refund of an unknown order. Fixing the order alone gives the
-  same error again on the amount, so it takes the schema and a second try.
+  the wrong column, a wrong number of values, a decimal amount and a refund of an unknown order. Fixing the
+  order alone gives the same error again on the amount, so it takes `peek`, `total` and a second try.
 - **Procedure:** read the vendor's header, write a copy in the table's order with amounts in cents, load
   the copy, commit the batch it prints, check the total. Every milestone imports a file whose layout
   differs from the table's.
@@ -66,22 +78,24 @@ Ten config changes to three services, deployed with `bin/rollout` to dev, canary
 - **Rule:** `bin/rollout apply <service> prod` takes a change only when shadow runs exactly those values
   right now. Canary, the usual guess, does not count.
 - **Error:** `prod refused: change <hash> of <service> is unproven`. Deploying to canary first gives the
-  same error; `bin/rollout history <service>` shows that every past prod deploy followed a shadow deploy
-  of the same change, which is how the agent can find it.
+  same error. `bin/rollout status` shows the values each environment runs and no change ids;
+  `bin/rollout history <service>` shows that every past prod deploy followed a shadow deploy of the same
+  change, which is how the agent can find it.
 - **Procedure:** edit the config, lint, apply to shadow, apply to prod, check with `get`. Nine of the ten
-  milestones go to prod (one is canary only); the last moves all three services.
+  milestones go to prod; the one that is canary only is the second of its session, so every session starts
+  with a prod deploy. The last moves all three services.
 
 ## long-04-test-harness
 
 Ten test cases added to four small text helpers, each fixed and recorded on a dashboard with
 `bin/harness`.
 
-- **Rule:** `bin/harness record <suite>` records only a run made with the suite's own seed (`--seed N`,
-  where N is the seed `bin/harness suites` lists for that suite; slug, roman, wrap and plural each have a
-  different one). A run without a seed, or with another seed, is refused.
+- **Rule:** `bin/harness record <suite>` records only a run made with the suite's own seed (`--seed N`; slug,
+  roman, wrap and plural each have a different one). A run without a seed, or with another seed, is refused.
+  No command lists the seeds: `bin/harness dashboard` names the run each suite has on the dashboard, and
+  `bin/harness runs [<suite>]` lists every run with its seed, so the agent has to match the two.
 - **Error:** `record refused: run N of <suite> is not reproducible`. The help lists `--seed`, but any seed
-  but the suite's own is refused too; `bin/harness runs` and `bin/harness dashboard` show which seeds the
-  recorded runs used, and `bin/harness suites` shows each suite's.
+  but the suite's own is refused too.
 - **Procedure:** add the case file, fix the helper, run the suite with its seed until it passes, record,
   check the dashboard. Every milestone records a suite (the last one two), mostly a different suite with a
   different seed than the one before.
@@ -90,9 +104,11 @@ Ten test cases added to four small text helpers, each fixed and recorded on a da
 
 - `self-check.ts`: each milestone's checks fail before its reference solution and pass right after it,
   with every earlier solution applied; the trap's `reproduce` (the natural first step) hits the signature.
-- `long-tasks.test.ts`: the shape (one session, 8 to 12 milestones with checks, `maxRequests`, the oracle
-  after the first milestone, the prompt that says not to read the tools' source); no prompt states a
-  rule; the workspace and help show none; the natural solution fails the first milestone with an error
-  that says no part of the fix, and fails at least three later milestones on the same rule.
+- `long-tasks.test.ts`: the shape (five sessions of two milestones with checks in one workspace,
+  `maxRequests`, the oracle before the second session, each session's first prompt saying not to read the
+  tools' source); no prompt states a rule; the workspace, the help and the looks a careful agent takes
+  before failing (`inspect`, `schema`, `status`, `suites`) show none; the natural solution fails the first
+  milestone with an error that says no part of the fix, and fails the first milestone of every session on
+  the same rule.
 - `agh/run-agh.test.ts`: no `trap.note` (the oracle's lesson) contains what a check expects or a whole
   solution step.
