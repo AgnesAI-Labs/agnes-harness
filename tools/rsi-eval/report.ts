@@ -649,6 +649,10 @@ const systemMarkdown = (name: string, r: SystemReport, infra?: InfraExcluded): s
   return lines
 }
 
+/** The report header line for runs whose on arm was left to refinement's own triggers. */
+export const TRIGGERS_HEADER =
+  "Some on runs were driven by refinement's own triggers only (`--on-protocol triggers`): they sent no manual review and none of the end-of-session saves, neither the workflow task's save to the workspace nor the cross-workspace task's save to user memory. What reached their second session came from automatic saves alone, so their workflow reuse and cross-workspace results are not comparable with runs that sent those saves."
+
 /** The sections for long tasks, capped runs, the frozen arm and rule forgetting; each only when it has data. */
 const longSections = (records: RunRecord[], options: ReportOptions) => {
   const milestones = milestonesReport(records)
@@ -757,6 +761,7 @@ export const buildReport = (
     '# Evaluation report',
     '',
     ...(options.run ? runMarkdown(options.run) : []),
+    ...(records.some((r) => r.setting === 'on' && r.onProtocol === 'triggers') ? [TRIGGERS_HEADER, ''] : []),
     'Aggregate numbers only. Each metric states its own direction; they are not all "on minus off".',
     '',
     "A trap hit is a command run that failed with the task's signature (on stderr, or in the output of a run that exited non-zero). Reading the tool's source or docs never counts.",

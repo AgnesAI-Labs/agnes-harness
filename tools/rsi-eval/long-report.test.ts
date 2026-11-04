@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { reachedMilestones, ruleForgetting, runStatus } from './long-report.js'
 import { progressOf, sessionCostOfLedger, toRunRecord } from './metrics.js'
-import { buildReport } from './report.js'
+import { buildReport, TRIGGERS_HEADER } from './report.js'
 import { defaultTasksDir, loadSuite } from './suite.js'
 import type { EvalTask, PromptProgress, RunOutcome, RunRecord, SessionCost } from './types.js'
 
@@ -341,6 +341,20 @@ describe('the frozen arm in the report', () => {
   it('is absent without frozen runs', () => {
     expect(buildReport(records.filter((r) => r.setting !== 'frozen')).markdown).not.toContain(
       'Frozen lessons',
+    )
+  })
+})
+
+describe("the report header of runs left to refinement's own triggers", () => {
+  it('says that they sent none of the end-of-session saves, and only when such runs are there', () => {
+    const triggers = record('on', 1, { onProtocol: 'triggers' })
+    const header = (records: RunRecord[]) =>
+      buildReport(records, { resamples: 20 }).markdown.split('## ')[0] ?? ''
+    expect(header([triggers, record('off', 1)])).toContain(TRIGGERS_HEADER)
+    expect(TRIGGERS_HEADER).toContain("workflow task's save to the workspace")
+    expect(TRIGGERS_HEADER).toContain("cross-workspace task's save to user memory")
+    expect(header([record('on', 1, { onProtocol: 'reviews' }), record('off', 1)])).not.toContain(
+      TRIGGERS_HEADER,
     )
   })
 })

@@ -1,6 +1,9 @@
-// The checklist of the v2 smoke run: reads the run folders of one two-session task (arms off, on and
-// oracle) and one workflow task (arm on), and says for each behaviour that only a real run can show
+// The checklist of the v2 smoke run: reads the run folders of one two-session task (arms off, on, oracle
+// and frozen) and one workflow task (arm on), and says for each behaviour that only a real run can show
 // whether it happened. Read only; no model call. `scripts/smoke-v2.sh` runs the runner and then this.
+//
+// A skill folder on disk is not enough: a skill counts as saved only when a later model request of the run
+// offers it to the agent, in the skill catalogue of the request the host captured (`home/data/model-requests`).
 //
 // Usage: pnpm exec tsx tools/rsi-eval/smoke-check.ts --run-dir <out> --two-session <task> --workflow <task> [--rep 1] [--suite <dir>]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
@@ -205,6 +208,115 @@ export const firstSessionCheck = (runDir: string, oracle: string, off: string): 
   }
 }
 
+/** Said with the skill-offer checks: they fail until the embedded host offers skills from disk. */
+export const SKILL_OFFER_NOTE =
+  'expected to FAIL until the embedded host offers skills it finds on disk (a product fix is on its way); a skill folder alone is not a saved skill'
+
+/** The skill names a request's instructions offer (`<available_skills>`, one `name<TAB>description` per line), if it has a catalogue. */
+export const catalogueOf = (instructions: string): string[] | undefined => {
+  const start = instructions.indexOf('<available_skills>')
+  if (start < 0) return undefined
+  const end = instructions.indexOf('</available_skills>', start)
+  return instructions
+    .slice(start + '<available_skills>'.length, end < 0 ? undefined : end)
+    .split('\n')
+    .map((line) => line.split('\t')[0]?.trim() ?? '')
+    .filter((name) => name !== '')
+}
+
+/** The model requests the host captured for a run, oldest first, with the skills each one's instructions offered. */
+const capturedRequests = (runDir: string, run: string): { at: number; skills: string[] | undefined }[] => {
+  const root = join(runDir, run, 'home', 'data', 'model-requests')
+  if (!existsSync(root)) return []
+  const out: { at: number; skills: string[] | undefined }[] = []
+  for (const store of readdirSync(root, { withFileTypes: true })) {
+    if (!store.isDirectory()) continue
+    const dir = join(root, store.name)
+    for (const name of readdirSync(dir)) {
+      if (!name.endsWith('.call.json')) continue
+      const call = JSON.parse(readFileSync(join(dir, name), 'utf8')) as {
+        createdAt?: string
+        systemHash?: string
+      }
+      const blob = join(dir, `${call.systemHash}.blob.json`)
+      const instructions = existsSync(blob) ? JSON.parse(readFileSync(blob, 'utf8')) : undefined
+      out.push({
+        at: Date.parse(call.createdAt ?? ''),
+        skills: typeof instructions === 'string' ? catalogueOf(instructions) : undefined,
+      })
+    }
+  }
+  return out.sort((a, b) => a.at - b.at)
+}
+
+/** The skills the run's workspace registries record as installed, with when. */
+const installedSkills = (runDir: string, run: string): { name: string; at: number }[] => {
+  const root = join(runDir, run, 'home', 'data', 'refinement', 'workspaces')
+  if (!existsSync(root)) return []
+  return readdirSync(root)
+    .filter((name) => name.endsWith('.json'))
+    .flatMap((name) => {
+      const registry = JSON.parse(readFileSync(join(root, name), 'utf8')) as {
+        receipts?: { source?: { kind?: string }; outcome?: string; target?: { name?: string }; at?: number }[]
+      }
+      return (registry.receipts ?? []).flatMap((r) =>
+        r.source?.kind === 'skill' && r.outcome === 'installed' && typeof r.target?.name === 'string'
+          ? [{ name: r.target.name, at: r.at ?? 0 }]
+          : [],
+      )
+    })
+}
+
+/**
+ * A skill an `on` run installed is offered to the agent: it is in the catalogue of a model request the run
+ * made after the install. WARN when no later request with a catalogue was captured (nothing to judge by).
+ */
+export const skillsOfferedCheck = (runDir: string, runs: string[]): Check => {
+  const verdicts = runs.flatMap((run) => {
+    const requests = capturedRequests(runDir, run).filter((r) => r.skills !== undefined)
+    return installedSkills(runDir, run).map((skill) => {
+      const later = requests.filter((r) => r.at > skill.at)
+      const offered = later.some((r) => r.skills?.includes(skill.name))
+      return { label: `${run}: ${skill.name}`, later: later.length, offered }
+    })
+  })
+  const name = 'a skill an on run saved is offered in a later request of that run'
+  if (verdicts.length === 0) return { name, status: 'WARN', detail: 'no on run recorded an installed skill' }
+  const judged = verdicts.filter((v) => v.later > 0)
+  const failed = judged.filter((v) => !v.offered)
+  const detail = verdicts
+    .map(
+      (v) =>
+        `${v.label}: ${v.later === 0 ? 'no later request was captured' : v.offered ? 'offered' : `not offered in any of ${v.later} later requests`}`,
+    )
+    .join('; ')
+  if (failed.length > 0) return { name, status: 'FAIL', detail: `${detail} (${SKILL_OFFER_NOTE})` }
+  return { name, status: judged.length === 0 ? 'WARN' : 'PASS', detail }
+}
+
+/** The skills a frozen run was seeded with are offered in its first request that has a catalogue. */
+export const frozenSkillsOfferedCheck = (runDir: string, run: string): Check => {
+  const name = 'a frozen run is offered the skills it was seeded with from its first request'
+  const file = join(runDir, run, 'outcome.json')
+  if (!existsSync(file)) return { name, status: 'WARN', detail: `no frozen run ${run}` }
+  const outcome = JSON.parse(readFileSync(file, 'utf8')) as {
+    frozenFrom?: { skills?: Record<string, string[]> }
+  }
+  const seeded = Object.values(outcome.frozenFrom?.skills ?? {}).flat()
+  if (seeded.length === 0) return { name, status: 'WARN', detail: `${run} was seeded with no skill` }
+  const first = capturedRequests(runDir, run).find((r) => r.skills !== undefined)
+  if (!first)
+    return { name, status: 'FAIL', detail: `no request of ${run} with a skill catalogue was captured` }
+  const missing = seeded.filter((skill) => !first.skills?.includes(skill))
+  return missing.length === 0
+    ? { name, status: 'PASS', detail: `${seeded.join(', ')} offered from the first request` }
+    : {
+        name,
+        status: 'FAIL',
+        detail: `not offered in the first request: ${missing.join(', ')}; it offered ${first.skills?.join(', ') || 'nothing'} (${SKILL_OFFER_NOTE})`,
+      }
+}
+
 export function smokeChecklist(input: {
   runDir: string
   twoSession: EvalTask
@@ -223,6 +335,8 @@ export function smokeChecklist(input: {
       { id: id(t, 'off'), task: t },
       { id: id(t, 'oracle'), task: t },
     ]),
+    skillsOfferedCheck(input.runDir, [id(t, 'on'), id(w, 'on')]),
+    frozenSkillsOfferedCheck(input.runDir, id(t, 'frozen')),
     workflowCheck(input.runDir, [t, w], id(w, 'on')),
     ...oracleMemoryChecks(input.runDir, t, id(t, 'oracle'), id(t, 'off')),
     firstSessionCheck(input.runDir, id(t, 'oracle'), id(t, 'off')),
@@ -261,6 +375,8 @@ const main = (): void => {
   const failed = checks.filter((c) => c.status === 'FAIL').length
   const warned = checks.filter((c) => c.status === 'WARN').length
   console.log(`\n${checks.length - failed - warned} passed, ${failed} failed, ${warned} warnings`)
+  if (checks.some((c) => c.status === 'FAIL' && c.detail.includes(SKILL_OFFER_NOTE)))
+    console.log(`The skill-offer checks are ${SKILL_OFFER_NOTE}.`)
   if (failed > 0) process.exitCode = 1
 }
 

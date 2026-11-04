@@ -62,6 +62,26 @@ failed call, so in any unattended session (`agh -p`, `agh run`, a scheduled run,
 workflow that ran to the end is reported to the model as an unknown outcome. `deliverables` guards the same call by checking
 that `ui_render` exists; `workflow` and `workflow_status` do not.
 
+### Saved skills are not offered to the agent in the eval host (still open)
+
+Saving a skill now works (it lands in the workspace's skills folder, above), but the embedded host never
+scans skills on disk, so a saved skill is never offered to the agent: not to a later session, and not to
+the session that saved it. Evidence from a smoke run's own captured requests (`home/data/model-requests`):
+the workflow task's `on` run installed `release-request-workflow` at the end of its first session, and all
+161 requests it made after that offered only the bundled `remembering` skill in their `<available_skills>`.
+A product fix is being made separately.
+
+Until skills are offered in the embedded host, these results are invalid and must not be reported as
+findings:
+
+- the `on` arm's results that depend on a saved skill, in any category, and every result of the workflow
+  tasks (workflow reuse runs through the skill the first session saves);
+- the skill part of the frozen arm (its memory part stands).
+
+`smoke-check.ts` therefore does not accept a skill folder on disk as a saved skill: it also requires the
+skill in the catalogue of a later request of the `on` run, and a frozen run's seeded skills in its first
+request's catalogue. Those two checks are expected to FAIL until the fix lands, and say so.
+
 ## The oracle arm and the capture rate
 
 `agh/run-agh.ts --arms off,on,oracle` adds a third arm to the runs. The default is still `on,off`, and
@@ -95,8 +115,8 @@ call. A run folder made before this section existed shows the off and on columns
 ## Smoke run of the evaluation changes
 
 `scripts/smoke-v2.sh` runs the minimum real runs into a new folder, one repetition each: one two-session
-task (default `cross-01-build-subdir`) with `--arms off,on,oracle`, and one workflow task (default
-`wf-01-release-channel`) with `--arms on`, after a preflight call. It then prints the checklist of
+task (default `cross-01-build-subdir`) with `--arms off,on,oracle` and then `frozen` from that `on` run,
+and one workflow task (default `wf-01-release-channel`) with `--arms on`, after a preflight call. It then prints the checklist of
 `smoke-check.ts` as PASS, FAIL or WARN lines and exits non-zero if any check failed. It spends model calls.
 
 ```
@@ -111,6 +131,9 @@ The checklist:
 
 - no skill save is refused `unavailable`, and a skill the review proposed is in the workspace's skills
   folder (WARN when the model proposed no skill: run again);
+- a skill an `on` run installed is offered in the skill catalogue of a later request of that run, and the
+  frozen run is offered its seeded skills from its first request (both expected to FAIL for now, see the
+  known limits; WARN when there is nothing to judge by);
 - the off and oracle runs wrote no skill;
 - the workflow run of the first session is counted as finished;
 - the oracle run's workspace memory holds the lesson, the off run's does not, and it was written
@@ -260,10 +283,8 @@ those too) and not the work it left in the files. The runner refuses a missing s
   to the agent only while the host's registry vouches for it, and the fresh run's registry knows nothing of
   another run's saves.
 - The skills are copied into the workspace's skills folder before the host starts, where the `on` run left
-  them. Not verified: whether the embedded host offers a workspace skill to the agent at all. In every
-  request captured in the smoke runs the skill catalogue listed only the bundled `remembering` skill, but
-  every saved skill in those runs was saved after the last captured request, so this is not settled. Until a
-  run shows a seeded skill in the catalogue, read the frozen arm as a test of the saved memory.
+  them. The embedded host does not offer skills it finds on disk (see the known limits), so until that is
+  fixed the skill part of the frozen arm is invalid and the arm is a test of the saved memory only.
 - The runner records which throwaway workspace each fixture used (`workspaces` in the outcome), so a later
   frozen run can find each workspace's memory. A source recorded before that is accepted only for a task of
   one workspace.
@@ -274,8 +295,9 @@ those too) and not the work it left in the files. The runner refuses a missing s
 
 ## Driving the on arm by refinement's own triggers
 
-`--on-protocol triggers` sends no manual review after the prompts (and no end-of-session saves) and leaves
-refinement to its own triggers (compaction, repeated failure, the model's own request). The manual reviews
+`--on-protocol triggers` sends no manual review after the prompts and none of the end-of-session saves
+(the workflow task's save to the workspace, the cross-workspace task's save to user memory; the report
+header says so for such runs) and leaves refinement to its own triggers (compaction, repeated failure, the model's own request). The manual reviews
 were also the runner's only sign that refinement was live, so the runner then reads the session's experience
 entries once per session (no model call): it is refused exactly when a review would be, and a dead
 refinement stops the run. The default stays `reviews`. The report says how many `on` runs used each; do not

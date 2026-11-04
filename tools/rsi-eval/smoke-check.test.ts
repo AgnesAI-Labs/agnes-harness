@@ -5,10 +5,14 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AGH_DIR } from '../../packages/protocol/src/constants.js'
 import {
+  catalogueOf,
   firstSessionCheck,
+  frozenSkillsOfferedCheck,
   offWritesNoSkill,
   oracleMemoryChecks,
+  SKILL_OFFER_NOTE,
   skillChecks,
+  skillsOfferedCheck,
   workflowCheck,
 } from './smoke-check.js'
 import { defaultTasksDir, loadSuite } from './suite.js'
@@ -170,5 +174,103 @@ describe('the skill checks', () => {
     expect(offWritesNoSkill(dir, [{ id: run, task: cross }]).status).toBe('PASS')
     put(join(dir, run, 'work', AGH_DIR, 'skills', 'x', 'SKILL.md'), 'x')
     expect(offWritesNoSkill(dir, [{ id: run, task: cross }]).status).toBe('FAIL')
+  })
+})
+
+describe('the skill-offer checks', () => {
+  // A real on run of the workflow task (fixtures/real/offered): its registry says the skill
+  // `release-request-workflow` was installed at the end of its first session, and these are real requests the
+  // host captured before and after that, with the instructions they carried. Every one offered only `remembering`.
+  const offered = join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'real', 'offered')
+  const instructions = JSON.parse(readFileSync(join(offered, 'instructions.blob.json'), 'utf8')) as string
+  const calls = JSON.parse(readFileSync(join(offered, 'calls.json'), 'utf8')) as {
+    id: string
+    createdAt: string
+    systemHash: string
+  }[]
+  const withSkill = (text: string, skill: string) =>
+    text.replace('</available_skills>', `${skill}\tSaved by refinement.\n</available_skills>`)
+  /** A run folder holding the registry and the captured requests; `text` is what their instructions say. */
+  const runFolder = (
+    run: string,
+    text: string,
+    opts: { registry?: boolean; keep?: (createdAt: string) => boolean } = {},
+  ) => {
+    const dir = runDir()
+    const home = join(dir, run, 'home', 'data')
+    if (opts.registry !== false)
+      put(
+        join(home, 'refinement', 'workspaces', 'w.json'),
+        readFileSync(join(offered, 'registry.json'), 'utf8'),
+      )
+    const store = join(home, 'model-requests', 'store')
+    for (const call of calls.filter((c) => opts.keep?.(c.createdAt) ?? true))
+      put(join(store, `${call.id}.call.json`), JSON.stringify(call))
+    put(join(store, `${calls[0]?.systemHash}.blob.json`), JSON.stringify(text))
+    return dir
+  }
+
+  it('reads the catalogue of a request', () => {
+    expect(catalogueOf(instructions)).toEqual(['remembering'])
+    expect(catalogueOf(withSkill(instructions, 'release-request-workflow'))).toEqual([
+      'remembering',
+      'release-request-workflow',
+    ])
+    expect(catalogueOf('no catalogue here')).toBeUndefined()
+  })
+
+  it('fails for the real run: the installed skill is in no later request, and says it is expected for now', () => {
+    const dir = runFolder('wf.on.r1', instructions)
+    const check = skillsOfferedCheck(dir, ['wf.on.r1'])
+    expect(check.status).toBe('FAIL')
+    expect(check.detail).toContain(
+      'wf.on.r1: release-request-workflow: not offered in any of 3 later requests',
+    )
+    expect(check.detail).toContain(SKILL_OFFER_NOTE)
+  })
+
+  it('passes once a later request offers it, and cannot judge without a later request', () => {
+    expect(
+      skillsOfferedCheck(runFolder('wf.on.r1', withSkill(instructions, 'release-request-workflow')), [
+        'wf.on.r1',
+      ]).status,
+    ).toBe('PASS')
+    const early = runFolder('wf.on.r1', instructions, { keep: (at) => at < '2026-11-04T03:57' })
+    expect(skillsOfferedCheck(early, ['wf.on.r1'])).toMatchObject({
+      status: 'WARN',
+      detail: expect.stringContaining('no later request'),
+    })
+    expect(
+      skillsOfferedCheck(runFolder('wf.on.r1', instructions, { registry: false }), ['wf.on.r1']).status,
+    ).toBe('WARN')
+  })
+
+  it("checks a frozen run's seeded skills against its first request with a catalogue", () => {
+    const frozen = (text: string, skills: string[]) => {
+      const dir = runFolder('t.frozen.r1', text, { registry: false })
+      put(
+        join(dir, 't.frozen.r1', 'outcome.json'),
+        JSON.stringify({
+          runId: 't.frozen.r1',
+          frozenFrom: { runId: 't.on.r1', paragraphs: {}, skills: { fixture: skills }, userSections: 0 },
+        }),
+      )
+      return dir
+    }
+    const failing = frozenSkillsOfferedCheck(
+      frozen(instructions, ['release-request-workflow']),
+      't.frozen.r1',
+    )
+    expect(failing.status).toBe('FAIL')
+    expect(failing.detail).toContain('it offered remembering')
+    expect(failing.detail).toContain(SKILL_OFFER_NOTE)
+    expect(
+      frozenSkillsOfferedCheck(
+        frozen(withSkill(instructions, 'release-request-workflow'), ['release-request-workflow']),
+        't.frozen.r1',
+      ).status,
+    ).toBe('PASS')
+    expect(frozenSkillsOfferedCheck(frozen(instructions, []), 't.frozen.r1').status).toBe('WARN')
+    expect(frozenSkillsOfferedCheck(runDir(), 't.frozen.r1').status).toBe('WARN')
   })
 })

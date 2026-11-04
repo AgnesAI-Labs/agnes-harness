@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke run of the evaluation changes: skill saves in the eval host, workflow runs counted as finished, the
 # oracle arm. The minimum real runs, one repetition each, into a new folder:
-#   - one two-session task with the arms off, on and oracle (3 runs)
+#   - one two-session task with the arms off, on and oracle (3 runs), then frozen from that on run (1 run)
 #   - one workflow task with the arm on (1 run)
 # then a PASS/FAIL checklist (smoke-check.ts) of what only a real run can show. It makes real model calls,
 # about as many as four pilot runs, after one tiny preflight call.
@@ -29,6 +29,8 @@ mise exec -- pnpm --filter @agnes/system-node build:native
 mkdir -p "$RSI_EVAL_OUT"
 mise exec -- pnpm exec tsx tools/rsi-eval/agh/run-agh.ts --config "$RSI_EVAL_CONFIG" --out "$RSI_EVAL_OUT" --tasks "$TWO" --reps 1 --arms off,on,oracle
 mise exec -- pnpm exec tsx tools/rsi-eval/agh/run-agh.ts --config "$RSI_EVAL_CONFIG" --out "$RSI_EVAL_OUT" --tasks "$WF" --reps 1 --arms on
+# The frozen arm: the two-session task again, refinement off, starting with what its on run above saved.
+mise exec -- pnpm exec tsx tools/rsi-eval/agh/run-agh.ts --config "$RSI_EVAL_CONFIG" --out "$RSI_EVAL_OUT" --tasks "$TWO" --reps 1 --arms frozen --frozen-from "$RSI_EVAL_OUT"
 mise exec -- pnpm exec tsx tools/rsi-eval/report.ts --run-dir "$RSI_EVAL_OUT" --config "$RSI_EVAL_CONFIG"
 echo
 echo "== checklist =="
