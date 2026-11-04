@@ -5,6 +5,13 @@ AGH is `agh/run-agh.ts` (its header comment lists the options and the cost warni
 builds the report from a run folder; `recompute.ts` recomputes the numbers of finished runs offline
 and never calls a model.
 
+The bundled suite (`tasks/`) is the four long tasks (see "The long tasks" below). The 30 short tasks of the
+first evaluation (one to two sessions of three prompts each, in six categories) were removed: their rules
+were learnt in the first session and leaked from the workspace, so they could not show what a saved lesson
+saves. The runner still reads task folders of those categories (two sessions, a second workspace,
+workflow tasks), which its tests use; the definitions of the three old tasks whose recorded runs the tests
+read are kept as data in `fixtures/tasks/`.
+
 ## Known limits of the first evaluation
 
 These were found by reading the ledgers of the first full AGH run (180 runs, 30 tasks, one model); no
@@ -117,9 +124,10 @@ call. A run folder made before this section existed shows the off and on columns
 
 ## Smoke run of the evaluation changes
 
-`scripts/smoke-v2.sh` runs the minimum real runs into a new folder, one repetition each: one two-session
-task (default `cross-01-build-subdir`) with `--arms off,on,oracle` and then `frozen` from that `on` run,
-and one workflow task (default `wf-01-release-channel`) with `--arms on`, after a preflight call. It then prints the checklist of
+`scripts/smoke-v2.sh` runs the minimum real runs into a new folder, one repetition each: one long task
+(default `long-01-release-train`) with `--arms off,on,oracle,frozen`, the frozen run copying that `on` run,
+and, when `SMOKE_WORKFLOW_TASK` names one, a workflow task with `--arms on` (the suite holds none now), after
+a preflight call. It then prints the checklist of
 `smoke-check.ts` as PASS, FAIL or WARN lines and exits non-zero if any check failed. It spends model calls.
 
 ```
@@ -137,7 +145,7 @@ The checklist:
 - a skill an `on` run installed is offered in the skill catalogue of a later request of that run, and the
   frozen run is offered its seeded skills from its first request (WARN when there is nothing to judge by);
 - the off and oracle runs wrote no skill;
-- the workflow run of the first session is counted as finished;
+- with a workflow task, its first session's workflow run is counted as finished;
 - the oracle run's workspace memory holds the lesson, the off run's does not, and it was written
   between the two sessions;
 - the oracle run's first session matches the off run's: the same prompts, system prompt, tool schema and
@@ -224,7 +232,7 @@ A task of the category `long` is a run of many stages, one prompt each, in one s
 sessions over the same workspace. Each session is a new conversation that picks the work up where the last
 one left it, so what the agent learnt in an earlier session is not in its context any more; only what was
 saved (memory, skills) or left in the files carries over. A session of a long task may hold a single
-prompt. The category has no floor of five tasks; the categories of the first suite keep theirs.
+prompt. No category has a floor of tasks.
 
 - **Milestones.** A prompt with `"milestone": "<name>"` has its checks run right after it, in the live
   workspace, before any review. The run stops at the first milestone whose checks fail (`stopped` in the

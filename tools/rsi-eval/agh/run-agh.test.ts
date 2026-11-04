@@ -515,11 +515,8 @@ describe('run-agh', () => {
 
     it('takes the lesson from the note, and no note gives away what the checks expect or a whole solution step', () => {
       const tasks = loadSuite(defaultTasksDir)
-      expect(tasks.filter(oracleApplies).length).toBeGreaterThan(0)
-      // A note may state its rule with an example command (`ACME_PROFILE=dev bin/acme build about`), so a
-      // solution command inside a note is allowed only here, by name; every other note stays clear of the
-      // solutions' commands of any length that is a step by itself.
-      const MAY_QUOTE_A_COMMAND = new Set(['xws-01-profile-env'])
+      // Every bundled task has the arm; no note quotes a solution command of any length that is a step by itself.
+      expect(tasks.filter(oracleApplies)).toEqual(tasks)
       const MIN_STEP = 15
       for (const t of tasks) {
         const note = t.trap.note.trim()
@@ -529,7 +526,7 @@ describe('run-agh', () => {
             expect(note, `${t.id}: what a check expects`).not.toContain(check.contains)
           for (const command of p.solution) {
             expect(note, `${t.id}: the note is a whole solution step`).not.toBe(command.trim())
-            if (!MAY_QUOTE_A_COMMAND.has(t.id) && command.trim().length >= MIN_STEP)
+            if (command.trim().length >= MIN_STEP)
               expect(note, `${t.id}: the note quotes the solution step ${command}`).not.toContain(
                 command.trim(),
               )

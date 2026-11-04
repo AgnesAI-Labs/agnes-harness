@@ -170,57 +170,30 @@ describe('loadSuite', () => {
     expect(() => loadSuite(root, relaxed)).toThrow(/missing fixture/)
   })
 
-  it('enforces the size floors, and a smaller minTasks relaxes both floors', () => {
+  it('needs one task by default and no category a floor of its own; minTasks still sets the total', () => {
     const root = writeSuite([{ dir: 'a', json: sampleTask('a') }])
-    expect(() => loadSuite(root)).toThrow(/at least 20 tasks/)
-    expect(() => loadSuite(root, { minTasks: 1 })).not.toThrow()
-
-    const prompts = [prompt(1), prompt(2), prompt(3)]
-    const lopsided = writeSuite(
-      Array.from({ length: 20 }, (_, index) => {
-        const id = `t${String(index).padStart(2, '0')}`
-        return { dir: id, json: sampleTask(id, { category: 'directory', sessions: [{ prompts }] }) }
-      }),
-    )
-    expect(() => loadSuite(lopsided)).toThrow(/at least 5 .* tasks/)
+    expect(loadSuite(root).map((t) => t.id)).toEqual(['a'])
+    expect(() => loadSuite(root, { minTasks: 2 })).toThrow(/at least 2 tasks/)
+    expect(() => loadSuite(writeSuite([]))).toThrow(/at least 1 tasks/)
+    // Every category is still read, for the runner's two-session, cross-workspace and workflow features.
+    const two = { prompts: [prompt(1), prompt(2), prompt(3)] }
+    const mixed = writeSuite([
+      { dir: 'cross-1', json: sampleTask('cross-1', { category: 'cross-session', sessions: [two, two] }) },
+      { dir: 'wf-1', json: sampleTask('wf-1', { category: 'workflow', sessions: [two, two] }) },
+      { dir: 'long-1', json: sampleTask('long-1', { category: 'long' }) },
+    ])
+    expect(loadSuite(mixed).map((t) => t.category)).toEqual(['cross-session', 'long', 'workflow'])
   })
 
-  it('takes a long category of a few tasks into a full suite, and keeps the floors of the others', () => {
-    const categories = ['directory', 'command-args', 'convention'] as const
-    const twoSessions = ['cross-session', 'cross-workspace', 'workflow'] as const
-    const full = [
-      ...categories.flatMap((category) =>
-        [0, 1, 2, 3, 4].map((n) => ({
-          dir: `${category}-${n}`,
-          json: sampleTask(`${category}-${n}`, { category }),
-        })),
-      ),
-      ...twoSessions.flatMap((category) =>
-        [0, 1, 2, 3, 4].map((n) => {
-          const id = `${category}-${n}`
-          const sessions =
-            category === 'cross-workspace'
-              ? [
-                  { prompts: [prompt(1), prompt(2), prompt(3)] },
-                  { prompts: [prompt(4), prompt(5), prompt(6)], fixture: 'fixture-b' },
-                ]
-              : [
-                  { prompts: [prompt(1), prompt(2), prompt(3)] },
-                  { prompts: [prompt(4), prompt(5), prompt(6)] },
-                ]
-          return { dir: id, json: sampleTask(id, { category, sessions }) }
-        }),
-      ),
-    ]
-    // No long task yet: the suite loads.
-    expect(loadSuite(writeSuite(full))).toHaveLength(30)
-    // One long task: it loads too, below the floor of five the other categories keep.
-    const long = sampleTask('long-1', { category: 'long' })
-    expect(loadSuite(writeSuite([...full, { dir: 'long-1', json: long }])).map((t) => t.category)).toContain(
-      'long',
-    )
-    // The others still need five.
-    expect(() => loadSuite(writeSuite(full.slice(1)))).toThrow(/at least 5 directory tasks/)
+  it('bundles the long tasks alone', () => {
+    const bundled = loadSuite(defaultTasksDir)
+    expect(bundled.map((t) => t.id)).toEqual([
+      'long-01-release-train',
+      'long-02-vendor-import',
+      'long-03-config-rollout',
+      'long-04-test-harness',
+    ])
+    expect(new Set(bundled.map((t) => t.category))).toEqual(new Set(['long']))
   })
 
   it('reads milestones, a request cap and the oracle seeding point, and refuses bad ones', () => {
