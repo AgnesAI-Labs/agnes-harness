@@ -14,3 +14,116 @@ it('renders original file and image reference metadata in terminal history witho
   expect(text).toContain('[file: report.pdf (application/pdf, 200 B)]')
   expect(text).not.toContain('base64')
 })
+
+it('renders an experience review by state, reason and changed entry names', () => {
+  expect(
+    nodeText({
+      kind: 'refinement-run',
+      id: 'r',
+      seq: 2,
+      runId: 'run-1',
+      state: 'applied',
+      trigger: 'manual',
+      edits: [
+        { op: 'upsert', kind: 'memory', id: 'build' },
+        { op: 'delete', kind: 'skill', id: 'old' },
+      ],
+      appliedSeq: 4,
+      withdrawn: true,
+    }),
+  ).toBe(
+    'Experience review (manual) saved changes. Saved: memory/build. Removed: skill/old. Withdrawn since.',
+  )
+  expect(
+    nodeText({
+      kind: 'refinement-run',
+      id: 'r2',
+      seq: 6,
+      runId: 'run-2',
+      state: 'rejected',
+      trigger: 'model',
+      reason: 'no-evidence',
+    }),
+  ).toBe('Experience review (model) was not applied. Reason: no-evidence.')
+})
+
+it('names the skills a review made from a finished workflow run', () => {
+  expect(
+    nodeText({
+      kind: 'refinement-run',
+      id: 'r',
+      seq: 2,
+      runId: 'run-1',
+      state: 'applied',
+      trigger: 'manual',
+      edits: [
+        { op: 'upsert', kind: 'skill', id: 'ship-flow', workflow: true },
+        { op: 'upsert', kind: 'skill', id: 'plain' },
+      ],
+      appliedSeq: 4,
+    }),
+  ).toBe(
+    'Experience review (manual) saved changes. Saved: skill/ship-flow, skill/plain. Based on a finished workflow run: skill/ship-flow.',
+  )
+})
+
+it('says in words why a workflow run was not made into a skill', () => {
+  for (const reason of [
+    'workflow-run-unavailable',
+    'workflow-run-not-completed',
+    'workflow-definition-too-large',
+    'workflow-already-saved',
+  ])
+    expect(
+      nodeText({
+        kind: 'refinement-save',
+        id: 's',
+        seq: 3,
+        state: 'refused',
+        reason,
+        target: 'workspace-skill',
+      } as never),
+    ).toMatch(/Reason: (the workflow|a skill with this workflow)/u)
+})
+
+it('save rows render initiator, outcome and reason without text', () => {
+  const save = (extra: object) =>
+    nodeText({ kind: 'refinement-save', id: 's', seq: 3, state: 'refused', ...extra } as never)
+  expect(save({ state: 'saved', initiator: 'auto', target: 'workspace-memory' })).toBe(
+    'Save to workspace: saved to workspace memory (asked by: automatic).',
+  )
+  expect(save({ reason: 'memory-full', initiator: 'model' })).toMatch(
+    /not saved \(asked by: the model\)\. Reason: workspace memory is full.*free space/,
+  )
+  expect(save({ state: 'awaiting-approval', initiator: 'model' })).toMatch(/Needs attention.*7 days/)
+  expect(save({ state: 'unknown' })).toMatch(/hidden.*until you repair or remove it/)
+  expect(save({ reason: 'approval-expired' })).toMatch(/not answered within 7 days/)
+  expect(save({ reason: 'user-revoked' })).toMatch(/removed or withdrew this before/)
+  expect(save({ reason: 'conflict' })).toMatch(/nothing was overwritten/)
+  expect(save({ reason: 'unavailable' })).toMatch(/not available right now/)
+  expect(save({ reason: 'a-later-reason' })).toContain('Reason: a-later-reason.')
+  // A promotion to user memory: what it reaches, where to withdraw it, and whether this workspace reads it.
+  const user = { initiator: 'auto', target: 'user-memory' }
+  expect(save({ ...user, state: 'saved', userMemoryRead: true })).toMatch(
+    /^Task experience: saved to user memory \(all workspaces\) \(asked by: automatic.*withdraw it in the Web memory settings/,
+  )
+  expect(save({ ...user, state: 'saved', userMemoryRead: true })).not.toMatch(/does not read user memory/)
+  expect(save({ ...user, state: 'saved', userMemoryRead: false })).toMatch(
+    /This workspace does not read user memory/,
+  )
+  expect(save({ ...user, reason: 'user-memory-budget' })).toMatch(
+    /not saved to user memory.*Reason: user memory has no room for it/,
+  )
+  expect(save({ ...user, reason: 'model-cannot-write-user' })).toMatch(
+    /an earlier version did not let the model write user memory/,
+  )
+  // At a person's request: the line says so, with the same notes.
+  const asked = { initiator: 'user', target: 'user-memory' }
+  expect(save({ ...asked, state: 'saved', userMemoryRead: false })).toMatch(
+    /^Task experience: saved to user memory at your request \(all workspaces\)\. .*withdraw it in the Web memory settings.*does not read user memory/,
+  )
+  expect(save({ ...asked, state: 'saved' })).not.toMatch(/asked by/)
+  expect(save({ ...asked, reason: 'user-revoked' })).toMatch(
+    /this was withdrawn before; it is not saved again/,
+  )
+})

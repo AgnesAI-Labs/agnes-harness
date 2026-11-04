@@ -8,6 +8,27 @@
 
 Skill 提供任务说明与资源，不等于执行权限。AGH 发现候选、审核版本、选择同名胜出项，再向会话暴露可用内容；不能只因磁盘上存在文件就声称模型已读取。
 
+## 导入完整 Skill
+
+在 **插件 → 市场** 打开社区仓库详情，点击“检查并安装”。安装窗口会自动启动后台检查，展示当前阶段、内容审查和安装结果；只有一个技能时自动选择，多个时由你选择。确认审查内容后才会安装。打开社区详情不会下载或执行来源；仓库标签不代表兼容性认证。CLI 还支持本地目录、归档和 `git:` / `url:` 来源。
+
+审查页展示完整文件列表、固定来源身份及已知解释器要求。这条路径保留 `scripts/` 外的脚本、模板、HTML、图片和许可证。上限为 2048 个文件、总量 32 MiB、单文件 8 MiB、16 层路径，并受来源获取层更严格的限制约束。链接、原生可执行文件、原生扩展、WASM 和不支持的文件会明确拒绝，不静默丢弃。请选择通用技能目录，不要导入其他宿主的激活 patch。
+
+安装不会执行包脚本、安装依赖或授予命令权限。新技能保持停用，请到 **插件 → 技能** 审查并启用。后端只探测固定解释器版本，未知依赖明确展示；环境检查通过不代表全部功能可用。脚本使用会话现有命令权限和沙箱，产物应写入任务工作区，不应修改已安装技能目录。
+
+完整导入的 frontmatter 支持 `name`、`description`、`license`、`metadata`、`compatibility` 及 AGH 既有调用标志。外部工具限制、模型、Hook 等未知行为字段会被拒绝，不静默删除，也不模拟其宿主。
+
+Node SDK 的 `client.packages.skillImport(...)` 对应 `_agnes/v1/packages.skillImport`；先检查 `initialize().features` 是否包含 `packages.skill-import.v1`。prepare 返回提案与摘要，commit 必须携带同一摘要；每个请求绑定当前初始化后的 clientId、profile 和 commandId，同一已认证操作者可以从同一 profile 的新 CLI 连接继续该提案。CLI 使用相同审查边界：
+
+```sh
+agh plugins skill-import prepare path:/absolute/path/to/repository skill-subdirectory
+agh plugins skill-import commit PROPOSAL_ID SHA256_FROM_PREPARE
+agh plugins skill-import status PROPOSAL_ID
+agh plugins skill-import cancel PROPOSAL_ID
+```
+
+SDK 本地来源 ref 使用正斜杠；CLI 和 Web 会转换 Windows 路径分隔符。以 `.` 开头的条目（如 `.git*`、`.DS_Store`）、`Thumbs.db` 和 `desktop.ini` 会被忽略，不会保留。完整导入会记录 `AGH-SKILL.json`，请将其与目录一同保留。所有保留资源参与审查修订，修改脚本、模板或标记都需要重新信任；普通本地维护技能保留原有编辑规则。同名替换会被拒绝；更换安装请使用既有受审查删除流程，此入口暂不执行原地升级，也不承诺运行中命令的版本租约。
+
 ## 让 Agent 创作 Skill
 
 例如：“创建一个简单的技能，叫数学老师skill。”Agent 使用 `math-teacher` 等 ASCII 目录标识；`SKILL.md` frontmatter 可以保留中文显示名，必须提供 `name` 和 `description`。
@@ -15,6 +36,12 @@ Skill 提供任务说明与资源，不等于执行权限。AGH 发现候选、�
 纯说明草稿（`SKILL.md` 及可选的 `.md`、`.txt`、`.json`、`.yaml`、`.yml`、`.csv` 资源，资源不能位于 `scripts/`）只做静态验证。AGH 检查 frontmatter 与调用开关、名称及冲突、文件数量和大小、相对路径及资源完整性，不生成 JavaScript 插件，也不运行 Node 作者测试。安装确认中可审阅名称、描述、文件清单、目标和 SHA256 摘要。完全访问下自动允许冻结修订的安装、信任和启用，也自动允许导入时的来源读取裁决；其他权限级别仍需一次确认。默认安装到工作区，也可选择用户范围或仅安装。等待 `ready` 后在下一轮使用；`installed` 表示仅安装。
 
 脚本、包清单及其他文件类型继续走插件候选 → 作者测试 → 人工发布流程。安装不执行其中脚本，也不授予执行权限。导入已有本地来源仍保留独立的来源读取审批。无效或冲突草稿会被拒绝，不覆盖文件；拒绝、取消、归属失效或 lease 变化都不能授权安装。私有收据保留创作会话、插件快照、内容摘要和资源修订。已安装的 Skill Helper 需要更新后才能使用此流程，助手包不会自动升级。
+
+## 任务经验保存的技能
+
+开启[任务经验](refinement.zh-CN.md)后，智能体在会话里学到的技能可以保存到工作区成为技能：复盘应用后自动保存、由你保存（`/refine --workspace`，或复盘记录上的**把 … 保存到工作区**），或由模型保存。AGH 把它安装到工作区的 `.agh/skills` 文件夹，受信并启用，不需要上面的安装确认，也不占用一轮对话。这类技能**只有指令**：一个 `SKILL.md`，没有脚本或可执行文件。需要脚本时，技能正文会让智能体用自己的文件工具、按它原有的权限去写。
+
+它们和其他工作区技能一样出现在技能列表里。**设置 → 通用 → 任务经验 → 保存的技能**列出它们：已启用，或**待复核**（被 30 天复核停用；在技能列表里重新启用即续期 30 天），保存方式，**卸载**和**回滚到上一版**，以及当一次保存本会改动你写的或改过的技能时留给你的草稿。你写的或改过的技能永远不会被覆盖。在这里或设置里移除保存的技能、回滚它，或删除它的文件夹，都会被记住：自动保存和模型保存都不会再把它装回来。规则和限制见[保存的技能](refinement.zh-CN.md#保存的技能)，导出包含什么见[诊断与导出](refinement.zh-CN.md#诊断与导出)。
 
 ## 创建一个工作区 Skill
 
@@ -44,7 +71,7 @@ node /path/to/agnes-harness/agnes.mjs skills list
 
 ## 来源与冲突
 
-默认磁盘来源是工作区 `.agh/skills`（也支持工作区 `.agents/skills`、`.claude/skills`）和 `$AGH_HOME/skills`；包也可以贡献 Skill。操作系统用户的 `~/.agents/skills`、`~/.claude/skills`、`~/.codex/skills` 默认不导入，包括全新或隔离的 AGH_HOME。只有启动 daemon 时显式设置部署配置 `AGNES_SKILLS_IMPORT_USER=1` 才导入；导入的用户技能同样自动信任，因此只对可信目录开启。`AGH_HOME` 不会重定位其他工具的用户目录。多工作区按会话自己的工作区读取，不以 worker 启动目录替代。
+默认磁盘来源是工作区 `.agh/skills`（也支持工作区 `.agents/skills`、`.claude/skills`）和 `$AGH_HOME/skills`；包也可以贡献 Skill。操作系统用户的 `~/.agents/skills`、`~/.claude/skills`、`~/.codex/skills` 默认不导入，包括全新或隔离的 AGH_HOME。只有启动 daemon 时显式设置部署配置 `AGNES_SKILLS_IMPORT_USER=1` 才导入；导入的用户技能同样自动信任，因此只对可信目录开启。`AGH_HOME` 不会重定位其他工具的用户目录。多工作区按会话自己的工作区读取，不以 worker 启动目录替代。CLI 自己启动的宿主（`--standalone`、`--ephemeral`、`agh run`、`agh import`）读取同样的技能文件夹，并沿用 daemon 为该安装保存的启用与信任决定（`--ephemeral` 从真实的 home 读取）：daemon 从未保存过资源状态时，所有技能都按新技能处理；保存过之后，决定文件缺失或无法读取时不提供任何磁盘技能。每个会话保留它开始时的技能列表，`--safe-mode` 只提供插件技能。
 
 默认优先级如下，数字越大越优先：
 
@@ -98,7 +125,7 @@ node /path/to/agnes-harness/agnes.mjs skills list
 3. 保存 operation ID，等待状态 `succeeded`，核对列表/目录与剩余同名候选。API 返回 receipt 仅表示受理；部分删除后仍可能失败。
 4. 若报告 `SKILL_REMOVAL_PENDING`，条目已被阻止重新启用。保留状态，排除文件占用等原因后显式重试删除；不要将失败理解为已恢复原文件。删除操作受理后不支持取消，重启也不是撤销。
 
-后台不接受调用者提供的任意删除路径：从已登记来源与 resourceId 推导目标，核对 workspace 身份、revision、目录与文件身份。过期扫描、符号链接/目录连接、硬链接或路径替换等情况会拒绝；预检失败不会先写删除标记。执行中途失败会保留身份进度与删除标记供受限重试，进度不保存文件内容，不是备份。删除标记跨重启保留，刷新不会把同一个被删 resourceId 自动复活；当前没有恢复已删除 Skill 的接口。
+后台不接受调用者提供的任意删除路径：从已登记来源与 resourceId 推导目标，核对 workspace 身份、revision、目录与文件身份。过期扫描、符号链接/目录连接、硬链接或路径替换等情况会拒绝；预检失败不会先写删除标记。执行中途失败会保留身份进度与删除标记供受限重试，进度不保存文件内容，不是备份。删除标记跨重启保留，刷新不会把同一个被删 resourceId 自动复活；当前没有恢复已删除 Skill 的接口。任务经验保存的技能会把旧版本保存在 profile 的数据目录里，可以在**设置 → 通用 → 任务经验 → 保存的技能**里回滚；这不能恢复已删除的技能。
 
 ## API、权限与 CLI 边界
 
@@ -131,6 +158,6 @@ ctx.skills.register({
 
 实现依据：[发现根](../../packages/base/extensions/skills/src/discover.ts)、[候选注册表](../../packages/resource-control-runtime/src/skills.ts)、[Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts)、[会话预加载](../../packages/host-extensions/src/resources/skill-preload.ts)、[Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md)。
 
-在 Web 或 TUI 中使用 `/skill invoke NAME ARGUMENTS` 调用允许用户调用的 Skill；上下文页面也提供调用表单。Host 只加载唯一、可信且启用的胜出项；未知、停用或禁止用户调用的 Skill 会被拒绝。参数保留在用户消息中。
+在 Web 或 TUI 中使用 `/skill invoke NAME ARGUMENTS` 调用允许用户调用的 Skill；Web 输入框中输入 `$` 会打开已安装技能菜单，可点击条目（或用方向键与 Enter）把 `$NAME` 插入草稿。该菜单只帮助插入，发送时仍由 Host 复核：只加载唯一、可信且启用的胜出项；未知、停用或禁止用户调用的 Skill 会被拒绝。参数保留在用户消息中。
 
 包内 Skill 的附件会随获准的运行快照保存。现有规则不支持的文件类型仍会忽略。创作测试在提交审核前，按实际加载器的限制检查支持的附件。已安装的某个 Skill 文档无效、附件无法读取或超过预算时，只将该 Skill 标记为不可用：插件 → 技能页显示原因，不开放残缺正文或附件，服务启动时其他正常 Skill 继续加载。请通过原有审核流程修复并更新包，再重新加载。包完整性校验和快照发布失败仍按原有安全规则拒绝。插件 → 技能页里的运行时 Skill 先按当前插件组合和注册实例筛选，再处理同名竞争。它们由所属插件管理，不能在 Skill 页单独编辑或开关；旧会话仍保留自己固定的插件版本。

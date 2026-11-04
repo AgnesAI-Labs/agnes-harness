@@ -60,6 +60,7 @@ export type Assembled = {
   inspectPreparedService: ReturnType<typeof serviceInvoker>['inspectPrepared']
   kernel: Kernel
   memory(workspaceRoot: string, sessionKey: string): MemorySession | undefined
+  savedParagraphs: import('../refinement/saved-paragraphs.js').SavedParagraphs
   seams: SeamImplementations
   provider: Awaited<ReturnType<typeof buildProvider>>['provider']
   providerFingerprint: string | null

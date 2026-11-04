@@ -138,11 +138,23 @@ export class SessionLogImpl {
     }
   }
 
-  private markFaulted(cause: unknown): void {
+  /** Redacted first fault, for evidence outside this sealed ledger. */
+  private faultValue:
+    | Readonly<{ reason: 'renew' | 'commit' | 'integrity' | 'open'; code: string }>
+    | undefined
+  get fault(): typeof this.faultValue {
+    return this.faultValue
+  }
+
+  private markFaulted(
+    cause: unknown,
+    reason: NonNullable<SessionLogImpl['fault']>['reason'] = 'integrity',
+  ): void {
     if (this.faultedValue) return
     this.faultedValue = true
     this.faultCause =
       cause instanceof CoreError ? cause : new CoreError('E_STORAGE_FAULT', 'session is faulted; reopen')
+    this.faultValue = Object.freeze({ reason, code: this.faultCause.code })
     const listeners = [...this.faultListeners]
     this.faultListeners.clear()
     for (const fn of listeners) {
@@ -176,6 +188,8 @@ export class SessionLogImpl {
   // which is what "drain the appends already admitted" means.
   private drain: Promise<void> = Promise.resolve()
   private timer: unknown
+  /** Work outside any turn that still needs the lease kept, such as a background model call. */
+  private renewalHolds = 0
   private leaseRenewedAt: number
   private integrityState: IntegrityState
   private readonly createdOnOpen: boolean
@@ -599,12 +613,30 @@ export class SessionLogImpl {
   }
 
   /**
-   * The timer runs while a turn is open on any lane: crash recovery treats an expired lease with a
-   * turn open as a dead writer, so a turn that writes nothing for a while must keep its lease. With
-   * no turn open every write renews the lease, or takes a lapsed one back.
+   * Keeps the lease renewed on its timer until the returned release runs, whether or not a turn is
+   * open: a call that writes its settlement long after its intent must still hold the lease then.
+   * Holds count; each release counts once.
+   */
+  holdRenewal(): () => void {
+    this.renewalHolds++
+    this.syncRenewal()
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.renewalHolds--
+      this.syncRenewal()
+    }
+  }
+
+  /**
+   * The timer runs while a turn is open on any lane, or while a hold asks for it: crash recovery
+   * treats an expired lease with a turn open as a dead writer, so a turn that writes nothing for a
+   * while must keep its lease. With no turn open every write renews the lease, or takes a lapsed one
+   * back.
    */
   private syncRenewal(): void {
-    const wanted = this.registersCache.hasOpLane
+    const wanted = !this.closed && (this.registersCache.hasOpLane || this.renewalHolds > 0)
     if (wanted && this.timer === undefined) this.scheduleRenew()
     if (!wanted && this.timer !== undefined) {
       this.timers().clearTimeout(this.timer)
@@ -627,7 +659,7 @@ export class SessionLogImpl {
             this.leaseRenewedAt = this.o.clock()
           })
           .catch((error: unknown) => {
-            this.markFaulted(error)
+            this.markFaulted(error, 'renew')
           })
         this.scheduleRenew()
       },
@@ -717,7 +749,7 @@ export class SessionLogImpl {
         // A failed CAS means this batch was refused and the ledger is intact. A refused claim means
         // another writer has the session for good, and any other failure leaves the outcome
         // unknown, which is not survivable for an append-only log.
-        if (!(err instanceof CoreError && err.code === 'E_CAS')) this.markFaulted(err)
+        if (!(err instanceof CoreError && err.code === 'E_CAS')) this.markFaulted(err, 'commit')
         throw err
       }
       this.leaseRenewedAt = writtenAt
@@ -728,7 +760,7 @@ export class SessionLogImpl {
         (op !== undefined && committed.opState?.seq !== stamped.at(-1)?.seq)
       ) {
         const fault = new CoreError('E_STORAGE_FAULT', 'storage assigned unexpected ledger sequence')
-        this.markFaulted(fault)
+        this.markFaulted(fault, 'commit')
         throw fault
       }
       for (const e of stamped) {
@@ -794,7 +826,7 @@ export class SessionLogImpl {
       try {
         await this.o.storage.renew(this.o.key, this.o.writerRunId, claim)
       } catch (err) {
-        this.markFaulted(err)
+        this.markFaulted(err, 'renew')
         throw err
       }
       this.leaseRenewedAt = claimedAt
@@ -892,7 +924,7 @@ export class SessionLogImpl {
   /** Gives up a log whose opening could not be completed: marks it faulted, stops renewing its lease,
    * then closes it and hands the lease back. */
   async abandon(): Promise<void> {
-    this.markFaulted(new CoreError('E_STORAGE_FAULT', 'session open was abandoned'))
+    this.markFaulted(new CoreError('E_STORAGE_FAULT', 'session open was abandoned'), 'open')
     await this.close()
   }
 

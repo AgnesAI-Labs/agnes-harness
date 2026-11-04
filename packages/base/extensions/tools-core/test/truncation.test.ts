@@ -32,10 +32,44 @@ describe('looksTruncated', () => {
     expect(looksTruncated('a'.repeat(100), 'b'.repeat(30))).toMatchObject({ kind: 'shrink' })
   })
 
+  it.each([
+    String.raw`pattern = r"Overfull \hbox \(([0-9.]+)pt..."`,
+    String.raw`pattern = r"Overfull \\hbox \\(([0-9.]+)pt..."`,
+    `pattern = /Overfull \\hbox \\(([0-9.]+)pt/`,
+    `message = "it's an unmatched ( in text"`,
+    `message = '" unmatched [ in text'`,
+    'message = `unmatched { in text`',
+    "Remember: don't skip tests",
+    'Use the ` key to open the console',
+    'const get = () => /[(]/;',
+    'function* patterns() { yield /[)]/; }',
+    'if (ok) /[(]/.test(s);',
+    String.raw`escaped \( outside a literal`,
+    "Theorem plus : forall n' m, S (n' + m) = S n' + m. (* induction *)\nProof. intros n' m. reflexivity. Qed.",
+    `def insert(seq):\n    '''Insert at the 3' end (after checking).'''\n    return seq + 'A'`,
+    `def dimer_len(a, b):\n    """Run between the 3' end of a and anywhere in b."""\n    return len(a)`,
+    `fn borrow<'a>(s: &'a str) -> &'a str { s }`,
+    "let n' = List.map (fun x -> x + 1) xs (* primed *)",
+    "(define quoted '(a b c))",
+    "cat <<'EOF'\nThis isn't a shell ( expression.\nEOF\n",
+    "# Notes\nA primed n' and an example (with parentheses).",
+  ])('accepts literal delimiters: %s', (text) => {
+    expect(looksTruncated('original content', text)).toEqual({ truncated: false })
+    expect(looksTruncated('x'.repeat(text.length), text)).toEqual({ truncated: false })
+  })
+
   it('rejects newly unbalanced brackets', () => {
     expect(looksTruncated('f(){ return 1 }', 'f(){ return 1')).toMatchObject({
       truncated: true,
       reason: 'unbalanced {',
+    })
+    expect(looksTruncated('value = "done"', 'value = "unfinished')).toMatchObject({
+      truncated: true,
+      reason: 'unbalanced "',
+    })
+    expect(looksTruncated('const x = a / (b / c)', 'const x = a / (b / c')).toMatchObject({
+      truncated: true,
+      reason: 'unbalanced (',
     })
   })
 

@@ -1693,7 +1693,7 @@ describe('web session selection', () => {
         route: 'local',
         model: 'model-a',
         thinking: 'off',
-        contextWindow: 128000,
+        contextWindow: null,
       }),
     )
 

@@ -29,14 +29,14 @@ const WORKER_RUNTIME_TARGET = `${fixtures}worker/runtime-target.jsonl`
 const COUNTS = {
   envelope: 6,
   i1Types: 23,
-  i2Types: 39,
+  i2Types: 42,
   requestMedia: 12,
   methods: 65,
   tooldef: 3,
   hooks: 32,
   slots: 8,
   model: 8,
-  preset: 149,
+  preset: 150,
   task20: 207,
   task21: 178,
   migrate: 1,
@@ -44,7 +44,7 @@ const COUNTS = {
   workerRuntimeTarget: 8,
 } as const
 // Includes generation status, capability/source authoring and permission-profile fixtures.
-const ALL_FIXTURE_COUNT = 1604
+const ALL_FIXTURE_COUNT = 1616
 
 describe('conformance fixtures', () => {
   it('all checked-in fixtures across the complete fixture tree pass', () => {

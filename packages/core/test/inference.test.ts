@@ -1,5 +1,6 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { presetDefaults } from '@agnes/core-common/step/preset'
+import { CoreError } from '@agnes/core-common/types'
 import type { HostToolDispatchPort } from '@agnes/core-effects/effects/tool-dispatch'
 import type { ToolDef } from '@agnes/extension-api'
 import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
@@ -1297,19 +1298,109 @@ describe('Inference segment', () => {
     })
   })
 
-  it('a retryable error past maxAttempts drains instead of retrying forever', async () => {
-    const err: Script = [
-      sent(),
-      { type: 'error', reason: 'error', code: 'RATE_LIMIT', message: 'slow', retryable: true },
-    ]
-    let now = 1_757_203_200_000
-    const s = await openSession({ provider: fakeProvider([err]), clock: () => now })
-    await s.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
-    await s.session.acceptInput()
-    await s.session.runInference()
-    now += 10_000
-    expect(await s.session.runInference()).toEqual({ phase: 'failure_drain' })
-  })
+  it.each([
+    ['TIMEOUT', false],
+    ['TIMEOUT', true],
+    ['TRANSPORT', false],
+    ['TRANSPORT', true],
+  ] as const)(
+    'recovers a mid-stream %s (visible output: %s) with feedback and no replay of partial work',
+    async (code, visible) => {
+      const partial: Script = [
+        sent(),
+        { type: 'thinking_delta', delta: 'discard this private reasoning' },
+        ...(visible
+          ? ([
+              { type: 'text_delta', delta: 'unfinished answer' },
+              {
+                type: 'toolcall_end',
+                call: { toolUseId: 'unfinished', name: 'read', args: { path: 'a' }, ordinal: 0 },
+                via: 'native',
+              },
+            ] satisfies Script)
+          : []),
+        {
+          type: 'error',
+          reason: 'error',
+          code,
+          message: code === 'TIMEOUT' ? 'total timeout' : 'status=?',
+          retryable: true,
+        },
+      ]
+      const { session, provider, log } = await primed([partial, textTurn('recovered')], readRegistry())
+      session.preset.model.retry.baseDelayMs = 0
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'completed',
+      )
+      expect(provider.requests).toHaveLength(2)
+      const retry = JSON.stringify(provider.requests[1]?.messages)
+      expect(retry).toContain('interrupted')
+      expect(retry).toContain(code)
+      expect(retry).not.toContain('discard this private reasoning')
+      expect(retry).not.toContain('unfinished answer')
+      expect(await log.scan({ type: 'tool/call', limit: 10 })).toEqual([])
+      expect((await log.scan({ type: 'assistant/output', limit: 10 })).map((e) => e.data)).toContainEqual(
+        expect.objectContaining({ state: 'interrupted' }),
+      )
+      expect(await log.scan({ type: 'cost/ledger', limit: 10 })).toHaveLength(2)
+      expect(session.pendingEffects()).toEqual([])
+    },
+  )
+
+  it.each(['RATE_LIMIT', 'TIMEOUT', 'TRANSPORT'] as const)(
+    'a retryable %s past maxAttempts drains instead of retrying forever',
+    async (code) => {
+      const err: Script = [
+        sent(),
+        { type: 'thinking_delta', delta: 'partial reasoning' },
+        { type: 'error', reason: 'error', code, message: 'slow', retryable: true },
+      ]
+      let now = 1_757_203_200_000
+      const provider = fakeProvider([err])
+      const s = await openSession({ provider, clock: () => now })
+      await s.session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      await s.session.acceptInput()
+      await s.session.runInference()
+      now += 10_000
+      expect(await s.session.runInference()).toEqual({ phase: 'failure_drain' })
+      expect((await s.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        'error',
+      )
+      expect(provider.requests).toHaveLength(2)
+      expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({
+        reason: 'error',
+        error: { code, message: expect.stringContaining('retries exhausted after 2 attempts') },
+      })
+      expect(s.session.pendingEffects()).toEqual([])
+    },
+  )
+
+  it.each(['budget', 'max_steps', 'abort'] as const)(
+    'does not dispatch a scheduled retry after %s wins',
+    async (stop) => {
+      const { session, provider } = await primed([
+        [
+          sent(),
+          { type: 'thinking_delta', delta: 'partial' },
+          usage(),
+          { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'total timeout', retryable: true },
+        ],
+        textTurn('must not run'),
+      ])
+      session.preset.model.retry.baseDelayMs = 0
+      expect(await session.runInference()).toEqual({ phase: 'inference' })
+      if (stop === 'budget') {
+        session.preset.budget.perRequestCap = 0
+        session.preset.budget.onExceed = 'deny'
+      } else if (stop === 'max_steps') session.preset.budget.maxSteps = 1
+      else await session.abort(actor)
+      expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+        stop === 'abort' ? 'aborted' : stop,
+      )
+      expect(provider.requests).toHaveLength(1)
+      expect(session.pendingEffects()).toEqual([])
+    },
+  )
 
   it('an overflow becomes a compaction only when the port asks for one', async () => {
     const over: Script = [
@@ -1762,6 +1853,157 @@ describe('the request precedes what it produced (C-24)', () => {
     expect((await log.scan({ type: 'request/header', limit: 20 })).length).toBe(1)
   })
 
+  it.each(['healthy', 'response', 'long-message', 'invalid-usage', 'renew', 'commit', 'refusal'] as const)(
+    'preserves the step error and settles inference atomically with a %s writer',
+    async (fault) => {
+      const evidence: unknown[] = []
+      const billing: unknown[] = []
+      const script = textTurn('partial private-content-canary')
+      const provider = fakeProvider([
+        fault === 'invalid-usage'
+          ? script.map((event) => (event.type === 'usage' ? { ...event, credits: -1 } : event))
+          : script,
+      ])
+      const preset = presetDefaults()
+      preset.treeBudgetCredits = 10
+      const { session, log, storage } = await openSession({
+        provider,
+        preset,
+        onRunFailure: (failure) => evidence.push(failure),
+        seams: fakeSeams({
+          billing: {
+            record: async (row) => {
+              billing.push(row)
+            },
+          },
+        }),
+      })
+      await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      const original = new CoreError(
+        'E_REQUEST_FROZEN',
+        fault === 'long-message' ? 'x'.repeat(6000) : 'private-error-canary',
+      )
+      if (fault === 'response') {
+        const ev = session.ev.bind(session)
+        vi.spyOn(session, 'ev').mockImplementation((type, data, meta) => {
+          if (type === 'assistant/message') throw original
+          return ev(type, data, meta)
+        })
+      }
+      const transition = session.transition.bind(session)
+      vi.spyOn(session, 'transition').mockImplementation(async (rows, next, opts) => {
+        if (
+          fault !== 'invalid-usage' &&
+          Array.isArray(rows) &&
+          rows.some((row) => row.type === 'assistant/message')
+        ) {
+          if (fault === 'renew') {
+            vi.spyOn(storage, 'renew').mockRejectedValue(new CoreError('E_WRITER_LEASE', 'private-renew'))
+            await log.claimLease().catch(() => undefined)
+          }
+          throw original
+        }
+        return transition(rows, next, opts)
+      })
+      const committed: string[][] = []
+      const commit = storage.commit.bind(storage)
+      vi.spyOn(storage, 'commit').mockImplementation(async (key, tx) => {
+        if (tx.events.some((row) => row.type === 'turn/end') && (fault === 'commit' || fault === 'refusal'))
+          throw new CoreError(fault === 'refusal' ? 'E_CAS' : 'E_STORAGE_FAULT', 'private-commit')
+        const result = await commit(key, tx)
+        committed.push(tx.events.map((row) => row.type))
+        return result
+      })
+      const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(out).toMatchObject({
+        reason: 'error',
+        error:
+          fault === 'invalid-usage'
+            ? { code: 'E_ENVELOPE' }
+            : { code: original.code, message: original.message },
+      })
+      expect(provider.calls).toBe(1)
+      expect(JSON.stringify(evidence)).not.toMatch(/private-/)
+      if (
+        fault === 'healthy' ||
+        fault === 'response' ||
+        fault === 'long-message' ||
+        fault === 'invalid-usage'
+      ) {
+        expect(out.error).not.toHaveProperty('closeError')
+        const ends = await log.scan({ type: 'turn/end', limit: 10 })
+        expect(ends).toHaveLength(1)
+        expect(ends[0]?.data).toMatchObject({
+          reason: 'error',
+          error: { code: fault === 'invalid-usage' ? 'E_ENVELOPE' : original.code },
+        })
+        if (fault === 'long-message')
+          expect(
+            (ends[0]?.data as { error?: { message?: string } } | undefined)?.error?.message,
+          ).toHaveLength(4096)
+        expect(committed.at(-1)).toEqual(
+          expect.arrayContaining(['cost/ledger', 'effect/settled', 'step/end', 'turn/end']),
+        )
+        expect(session.op()).toBeNull()
+        expect(billing).toHaveLength(1)
+        const cost = (await log.scan({ type: 'cost/ledger', limit: 10 }))[0]?.data
+        const [start] = await log.scan({ type: 'turn/start', limit: 1 })
+        if (fault === 'invalid-usage') {
+          expect(cost).toMatchObject({ interrupted: true, tokens: { input: 0 } })
+          expect(cost).not.toHaveProperty('credits')
+          expect(await storage.projectTree(`${session.key}:main:${start?.seq}`)).toMatchObject({
+            unknownHeld: true,
+          })
+        } else {
+          expect(cost).toMatchObject({
+            tokens: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 },
+            credits: 1,
+          })
+          expect(billing[0]).toMatchObject({ tokens: { input: 10, output: 5 }, credits: 1 })
+          expect(await storage.projectTree(`${session.key}:main:${start?.seq}`)).toMatchObject({
+            settledMicro: 1_000_000n,
+            heldMicro: 0n,
+            unknownHeld: false,
+          })
+        }
+      } else {
+        expect(out.error?.closeError?.code).toBe(fault === 'refusal' ? 'E_CAS' : 'E_STORAGE_FAULT')
+        expect(await storage.scan(session.key, { type: 'turn/end', limit: 10 })).toHaveLength(0)
+        expect(evidence).toEqual([
+          expect.objectContaining({
+            code: original.code,
+            phase: 'inference',
+            lastSeq: log.lastSeq,
+            ...(fault === 'refusal'
+              ? {}
+              : { fault: { reason: fault, code: fault === 'renew' ? 'E_WRITER_LEASE' : 'E_STORAGE_FAULT' } }),
+          }),
+        ])
+        expect(log.faulted).toBe(fault !== 'refusal')
+        if (log.faulted)
+          await expect(
+            session.append([session.ev('x/test/no-bypass', {}, { ignorable: true })]),
+          ).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
+      }
+      vi.mocked(storage.commit).mockRestore()
+      if (fault === 'renew') vi.mocked(storage.renew).mockRestore()
+      await log.close()
+      const reopenedProvider = fakeProvider([])
+      const reopened = await openSession({ storage, provider: reopenedProvider, writerRunId: 'reopened' })
+      await reopened.session.resume({ mode: 'close' })
+      const settledSeq = reopened.log.lastSeq
+      expect(await reopened.session.resume({ mode: 'close' })).toEqual({ state: 'idle', actions: [] })
+      expect(reopened.log.lastSeq).toBe(settledSeq)
+      expect(await reopened.log.scan({ type: 'cost/ledger', limit: 10 })).toHaveLength(1)
+      expect(await reopened.log.scan({ type: 'effect/settled', limit: 10 })).toHaveLength(1)
+      expect(await reopened.log.scan({ type: 'turn/end', limit: 10 })).toHaveLength(1)
+      expect(reopened.session.pendingEffects()).toEqual([])
+      await reopened.session.exportRlaf()
+      expect(reopenedProvider.calls).toBe(0)
+      await reopened.log.close()
+    },
+  )
+
   it('durably appends the header before invoking a provider that throws before sending', async () => {
     let headerCommitted = false
     let headerSeenAtCall = false
@@ -2021,4 +2263,43 @@ it('persists reported request timing and restores the same usage details in UI p
     totals: { input: 10, output: 5, reasoning: 2 },
     context: { source: 'estimated' },
   })
+})
+
+it.each(['', '   ', 'private reasoning'])(
+  're-prompts a reply without visible output: %s',
+  async (thinking) => {
+    const silent: Script = [
+      sent(),
+      { type: 'thinking_delta', delta: thinking },
+      usage(),
+      { type: 'done', reason: 'stop' },
+    ]
+    const { session, provider, log } = await primed([silent, textTurn('finished')])
+    expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+      'completed',
+    )
+    expect(provider.requests).toHaveLength(2)
+    expect(JSON.stringify(provider.requests[1]?.messages)).toContain('No visible answer or tool call')
+    expect((await log.scan({ type: 'x/core/empty-response', limit: 10 })).map((e) => e.data)).toEqual([
+      { attempt: 0, exhausted: false },
+    ])
+    expect(session.pendingEffects()).toEqual([])
+  },
+)
+
+it('exhausts the empty-output retry budget without claiming completion', async () => {
+  const { session, provider, log } = await primed([
+    [sent(), { type: 'thinking_delta', delta: 'reasoning' }, usage(), { type: 'done', reason: 'stop' }],
+  ])
+  session.preset.model.retry.maxAttempts = 2
+  expect((await session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
+    'error',
+  )
+  expect(provider.requests).toHaveLength(2)
+  expect((await log.scan({ type: 'x/core/empty-response', limit: 10 })).map((e) => e.data)).toEqual([
+    { attempt: 0, exhausted: false },
+    { attempt: 1, exhausted: true },
+  ])
+  expect(session.pendingEffects()).toEqual([])
+  expect((await log.scan({ type: 'cost/ledger', limit: 10 })).length).toBe(2)
 })

@@ -103,7 +103,7 @@ export function openClientServices(
       const link = await pool.acquireSharedWorker()
       return (await link.command('memory.manage', input)) as Pick<
         import('@agnes/protocol/gen/app-server').AdminMemoryResult,
-        'inspection' | 'file'
+        'inspection' | 'file' | 'saved'
       >
     },
   })

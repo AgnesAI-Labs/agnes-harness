@@ -155,6 +155,27 @@ function writeState(s: RuntimeSnapshotStore, state: RuntimeState): void {
   writeFileSync(tmp, serialized, { mode: 0o600, flush: true })
   renameWriteThroughSync(resolve(tmp), resolve(file))
 }
+
+/** Roll forward source metadata only after the package journal has published the reviewed entry.
+ * The journal retains both entries until this succeeds, so replay accepts exactly old or next.
+ * Snapshot identity, archive bytes and pins are unchanged; binding checks remain strict. */
+export function rebindRuntimeSnapshotSource(
+  s: RuntimeSnapshotStore,
+  id: string,
+  old: LockEntry | null,
+  next: LockEntry | null,
+): void {
+  if (!old?.contributions || !next?.contributions || canonical(old.source) === canonical(next.source)) return
+  const before = recordFromEntry(id, old),
+    after = recordFromEntry(id, next)
+  if (before.snapshotId !== after.snapshotId) return
+  const { state } = readVerifiedState(s)
+  const existing = state.snapshots[before.snapshotId]
+  if (!existing || canonical(existing) === canonical(after)) return
+  if (canonical(existing) !== canonical(before)) integrityFailure('snapshot-installed-binding')
+  state.snapshots[after.snapshotId] = after
+  writeState(s, state)
+}
 function* verifyRecordSteps(
   s: RuntimeSnapshotStore,
   record: SnapshotRecord,
@@ -462,8 +483,16 @@ function* runtimeRecoverySteps(s: RuntimeSnapshotStore): ReadSteps<void> {
 export function recoverRuntimeSnapshotStore(s: RuntimeSnapshotStore): void {
   collectRead(runtimeRecoverySteps(s))
 }
+/**
+ * A journal means a crash interrupted a snapshot publication or collection; recovery rolls it
+ * forward or back with the transaction's synchronous verification, exactly as the synchronous
+ * recovery does. Without one, recovery only drops temporaries and re-verifies the known snapshot
+ * directories: the same read the asynchronous pin readers run under the same Profile lock, so it
+ * hashes asynchronously too. Those directories change only under that lock; a worker's unlocked
+ * hard link moves a file's ctime, which the asynchronous walk retries rather than refusing at once.
+ */
 export function recoverRuntimeSnapshotStoreAsync(s: RuntimeSnapshotStore): Promise<void> {
-  return collectReadAsync(runtimeRecoverySteps(s), false)
+  return collectReadAsync(runtimeRecoverySteps(s), !present(journalPath(s)))
 }
 
 function readVerifiedState(s: RuntimeSnapshotStore) {
@@ -531,7 +560,16 @@ export function pinRuntimeSnapshotsStore(
       }
     const existing = state.snapshots[selected.record.snapshotId]
     if (existing) {
-      if (canonical(existing) !== canonical(selected.record)) integrityFailure('snapshot-id-collision')
+      if (canonical(existing) !== canonical(selected.record)) {
+        // A verified previous entry may name the same reviewed bytes at their old source. The
+        // archive now binds the current source after relocation; never accept arbitrary sources.
+        const current = own(lock.packages, request.packageId)
+        if (request.selector.kind !== 'previous' || current?.integrity !== existing.integrity)
+          integrityFailure('snapshot-id-collision')
+        assertCurrentBinding(existing, current)
+        if (canonical(existing) !== canonical({ ...selected.record, source: existing.source }))
+          integrityFailure('snapshot-id-collision')
+      }
       state.pins[pin.pinId] = pin
       writeState(s, state)
       return pinView(s, state, pin)

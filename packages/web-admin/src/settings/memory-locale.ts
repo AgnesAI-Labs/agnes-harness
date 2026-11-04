@@ -34,6 +34,26 @@ export const memoryCatalog: LocaleCatalog = {
     failed: 'Memory could not be loaded or saved.',
     filesHelp: 'View and edit what the agent remembers.',
     usedShort: '{used} / {limit} KB used',
+    'saved.title': 'Saved task experience',
+    'saved.help':
+      'Paragraphs saved to MEMORY.md from task experience. Each has a 30-day review date; past it the agent no longer sees the paragraph until it is renewed. Withdrawing one removes it and stops automatic and model saves of the same content; making it ordinary keeps the text without a review date. When workspace memory is full, saves stop and nothing is merged automatically: free space here or in the file.',
+    'saved.valid': 'The agent sees it. Review by {date}.',
+    'saved.expired': 'Past its review date ({date}): the agent no longer sees it. Renew it to bring it back.',
+    'saved.unknown':
+      'Not confirmed: the agent does not see it until you make it ordinary memory or withdraw it.',
+    'saved.by': 'Saved by: {who}.',
+    'saved.initiator.auto': 'automatic',
+    'saved.initiator.user': 'you',
+    'saved.initiator.model': 'the model',
+    'saved.renew': 'Renew',
+    'saved.convert': 'Make ordinary',
+    'saved.withdraw': 'Withdraw',
+    'saved.user.title': 'Task experience in user memory',
+    'saved.user.help':
+      'Lessons that hold in every workspace, written to user memory automatically. Every workspace that reads user memory sees them, after your own text. Each has a 30-day review date; past it the agent no longer sees it until it is renewed. Withdrawing one removes it and stops the same content being written again.',
+    'saved.user.read': 'This workspace reads user memory.',
+    'saved.user.unread':
+      'This workspace does not read user memory (memory off, or user memory not turned on here); other workspaces that read it do.',
   },
   'zh-CN': {
     title: '记忆',
@@ -66,5 +86,24 @@ export const memoryCatalog: LocaleCatalog = {
     failed: '无法载入或保存记忆。',
     filesHelp: '查看和编辑智能体记住的内容。',
     usedShort: '已用 {used} / {limit} KB',
+    'saved.title': '已保存的任务经验',
+    'saved.help':
+      '从任务经验保存到 MEMORY.md 的段落。每段有一个 30 天的复核日期，过期后智能体就看不到它，直到续期。撤回会删除这一段，并阻止自动和模型再次保存同样的内容；转为普通记忆会保留文字、不再有复核日期。工作区记忆写满时保存会停止，不会自动合并：请在这里或文件里腾出空间。',
+    'saved.valid': '智能体能看到它。复核日期：{date}。',
+    'saved.expired': '已过复核日期（{date}）：智能体不再看到它。续期后恢复。',
+    'saved.unknown': '未确认：在你把它转为普通记忆或撤回之前，智能体看不到它。',
+    'saved.by': '保存方：{who}。',
+    'saved.initiator.auto': '自动',
+    'saved.initiator.user': '你',
+    'saved.initiator.model': '模型',
+    'saved.renew': '续期',
+    'saved.convert': '转为普通记忆',
+    'saved.withdraw': '撤回',
+    'saved.user.title': '用户记忆中的任务经验',
+    'saved.user.help':
+      '适用于所有工作区的经验，会自动写入用户记忆。所有读取用户记忆的工作区都会看到它们，排在你自己写的内容之后。每条有 30 天的复核日期，过期后智能体看不到，直到续期。撤回后会删除它，并且相同内容不会再被写入。',
+    'saved.user.read': '本工作区读取用户记忆。',
+    'saved.user.unread':
+      '本工作区不读取用户记忆（记忆已关闭，或这里没有开启用户记忆）；读取它的其他工作区会看到。',
   },
 }

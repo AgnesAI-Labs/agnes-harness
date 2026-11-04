@@ -1,3 +1,4 @@
+import { execFile } from 'node:child_process'
 import { statSync } from 'node:fs'
 import { win32 } from 'node:path'
 
@@ -46,4 +47,43 @@ export function gitCommand(cwd: string, io: GitCommandIo = {}): string | undefin
     }
   }
   return undefined
+}
+
+/**
+ * Runs `git` with fixed arguments and no shell, in `cwd`; any failure, timeout or abort reads as no
+ * answer. It settles only once the child has exited, so an aborted call leaves nothing running in
+ * `cwd` (Windows cannot remove a folder some process runs in).
+ *
+ * The abort is handled here rather than through execFile's own `signal`: when the spawn itself fails
+ * (a `cwd` that does not exist), Node keeps a handle whose pid is 0 until it reports the error, and an
+ * abort in that window kills pid 0, which is this process's whole process group.
+ */
+export function execGit(
+  cwd: string,
+  args: readonly string[],
+  options: { signal?: AbortSignal; timeout?: number; maxBuffer: number },
+): Promise<string | undefined> {
+  const program = gitCommand(cwd)
+  if (!program || options.signal?.aborted) return Promise.resolve(undefined)
+  return new Promise((resolve) => {
+    const child = execFile(
+      program,
+      [...args],
+      {
+        cwd,
+        encoding: 'utf8',
+        windowsHide: true,
+        maxBuffer: options.maxBuffer,
+        ...(options.timeout === undefined ? {} : { timeout: options.timeout }),
+      },
+      (error, out) => {
+        options.signal?.removeEventListener('abort', stop)
+        resolve(error || options.signal?.aborted ? undefined : out)
+      },
+    )
+    function stop(): void {
+      if (Number.isSafeInteger(child.pid) && (child.pid ?? 0) > 0) child.kill()
+    }
+    options.signal?.addEventListener('abort', stop, { once: true })
+  })
 }

@@ -46,6 +46,12 @@
     font-size: var(--font-size-body);
     line-height: 1.6;
   }
+  /* A structured reference already has its own card treatment. Avoid wrapping a reference-only
+     message in a second, visually redundant user bubble. */
+  .agh-bubble-user:has(.reference-only-user-message) > .ant-bubble-body > .ant-bubble-content {
+    padding: 0;
+    background: transparent;
+  }
   .agh-bubble-user .timeline-node.user {
     width: auto;
     max-width: none;

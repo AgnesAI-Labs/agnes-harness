@@ -148,11 +148,13 @@ describe('createJitiPackageLoader', () => {
     const l: PackageLoader = loader()
     const m = await l.importPackage('acme/pkg', d)
     expect(m.id).toBe('acme/pkg')
-    expect(realpathSync(m.extensionEntry as string)).toBe(realpathSync(join(d, 'index.ts')))
+    expect(realpathSync.native(m.extensionEntry as string)).toBe(realpathSync.native(join(d, 'index.ts')))
 
     const example = fileURLToPath(new URL('../../../../examples/third-party-plugin', import.meta.url))
     const shipped = await l.importPackage('@example/agnes-echo-plugin', example)
-    expect(realpathSync(shipped.extensionEntry as string)).toBe(realpathSync(join(example, 'echo.js')))
+    expect(realpathSync.native(shipped.extensionEntry as string)).toBe(
+      realpathSync.native(join(example, 'echo.js')),
+    )
     expect(shipped.plugins).toHaveLength(1)
     for (const row of shipped.plugins!) expect(row.declaration.provide).toEqual(row.entry.provides)
   })
@@ -163,7 +165,9 @@ describe('createJitiPackageLoader', () => {
     mkdirSync(join(d, 'lib'), { recursive: true })
     writeFileSync(join(d, 'lib', 'entry.ts'), 'export const marker = true')
     const m = await loader().importPackage('acme/main-pkg', d)
-    expect(realpathSync(m.extensionEntry as string)).toBe(realpathSync(join(d, 'lib', 'entry.ts')))
+    expect(realpathSync.native(m.extensionEntry as string)).toBe(
+      realpathSync.native(join(d, 'lib', 'entry.ts')),
+    )
   })
 
   it('refuses a package directory with no package.json', async () => {

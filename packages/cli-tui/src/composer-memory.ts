@@ -11,6 +11,7 @@ import {
   resolveNewSessionSelection,
 } from '@agnes/sdk/composer-selection'
 import { tt } from './locale-extended.js'
+import { modelLabel, rememberAccounts } from './model-label.js'
 
 export function readComposerMemoryFile(path: string | undefined): ComposerMemory | undefined {
   if (!path) return undefined
@@ -55,6 +56,7 @@ export async function inheritFreshSession(
     const listed = (await session.client.apis()).profile.models ?? []
     const models: ComposerModelRef[] = listed.map(({ route, id }) => ({ route, id }))
     const snapshot = await session.client.config.get()
+    const labels = rememberAccounts(session.client, snapshot.accounts)
     const accountDefault = accountDefaultModel(models, snapshot.provider)
     const resolved = resolveNewSessionSelection({
       remembered,
@@ -71,7 +73,9 @@ export async function inheritFreshSession(
       })
     if (resolved.permission === 'full') await session.setYolo(true)
     const notice = [
-      model ? `${model.route}/${model.id}${model.thinking ? ` · ${model.thinking}` : ''}` : undefined,
+      model
+        ? `${modelLabel(labels, model.route, model.id)}${model.thinking ? ` · ${model.thinking}` : ''}`
+        : undefined,
       resolved.permission === 'full' ? tt('memory.permissionFull', locale) : undefined,
     ]
       .filter((part) => part !== undefined)

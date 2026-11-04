@@ -1,4 +1,4 @@
-import { escapeControl } from '@agnes/cli-tui'
+import { escapeControl, PackageOperationFailure } from '@agnes/cli-tui'
 import { AGNES_ERRORS, JSONRPC_ERRORS, publicErrorHelp } from '@agnes/protocol'
 import {
   isResourceOperationFailure,
@@ -27,6 +27,31 @@ export function safeDaemonDisconnectLine(error: unknown): string | undefined {
   if (cause?.code === AGNES_ERRORS.OVERLOADED && cause.data?.code === 'OVERLOADED')
     return 'DAEMON_OVERLOADED: local Daemon closed the connection because this command fell behind reading it; retry the command, and report it if it persists.'
   return 'DAEMON_CONNECTION_CLOSED: local Daemon connection closed; retry the command.'
+}
+
+// Fixed text per package error code; the daemon's message, hint and references never reach stderr.
+const PACKAGE_FAILURES: Readonly<Record<string, string>> = {
+  E_PACKAGE_SOURCE: 'the package source was rejected. Check the path or URL and retry.',
+  E_PACKAGE_INTEGRITY: 'the package bytes do not match the reviewed integrity. Inspect the package again.',
+  E_PACKAGE_TRUST:
+    'the package capabilities are not trusted. Review and trust them with `agh package trust <id>`.',
+  E_PACKAGE_STATE: 'the package cannot run this operation in its current state. Check `agh package status`.',
+  E_PACKAGE_BLOCKED: 'the package is blocked by policy or its blockers. Resolve them, then inspect again.',
+  E_PACKAGE_PREVIEW_STALE: 'the reviewed preview is out of date. Inspect the package again.',
+  E_PACKAGE_CANCELLED: 'the package operation was cancelled. Retry it if still needed.',
+  E_PACKAGE_PROVENANCE: 'the package provenance check failed. Inspect the package again.',
+  E_PACKAGE_SOURCE_POLICY:
+    'the source policy does not allow this package source. See `agh package source-policy`.',
+  E_PACKAGE_BUSY: 'another operation is running on this package. Wait for it to finish, then retry.',
+}
+
+/** A failed package operation: map its known code (and the running-package blocker) to fixed text. */
+export function safePackageFailureLine(error: unknown): string | undefined {
+  if (!(error instanceof PackageOperationFailure) || !error.code) return undefined
+  if (error.code === 'E_PACKAGE_STATE' && error.blockerReferences.includes('package-running'))
+    return 'E_PACKAGE_STATE: the package is still running. Run `agh package disable <id>`, wait until it stops, then retry.'
+  const reason = Object.hasOwn(PACKAGE_FAILURES, error.code) ? PACKAGE_FAILURES[error.code] : undefined
+  return reason && `${error.code}: ${reason}`
 }
 
 type RpcFailureShape = Readonly<{
@@ -73,7 +98,17 @@ export function reportCommandFailure(
   e: unknown,
   command: string | undefined,
   io: { env: NodeJS.ProcessEnv; stderr: NodeJS.WritableStream },
+  json = false,
 ): number {
+  const packageFailure = safePackageFailureLine(e)
+  if (packageFailure !== undefined && e instanceof PackageOperationFailure) {
+    io.stderr.write(
+      json
+        ? `${JSON.stringify({ error: { code: e.code, blockers: e.blockerCodes, operationId: e.operationId } })}\n`
+        : `${packageFailure}\n`,
+    )
+    return ExitCode.ERROR
+  }
   const help = publicErrorHelp(e, resolveLocale(io.env))
   if (help) {
     io.stderr.write(`${help.code}: ${help.reason} ${help.action}\n`)

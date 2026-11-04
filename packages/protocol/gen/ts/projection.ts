@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const JsonValue = Type.Recursive((This) => Type.Union([Type.Null(), Type.Boolean(), Type.Number(), Type.String(), Type.Array(This), Type.Record(Type.String(), This)]))
 export type JsonValue = Static<typeof JsonValue>
@@ -9,9 +9,11 @@ export const ProjectionSchema = Type.Module({
   "ProjectionReadResult": Type.Union([Type.Object({ "status": Type.Literal('available'), "name": Type.String({ maxLength: 128, pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$" }), "asOfSeq": Type.Integer({ minimum: 0 }), "stateVersion": Type.Integer({ minimum: 1 }), "value": JsonValue }, { additionalProperties: false }), Type.Object({ "status": Type.Literal('unavailable'), "name": Type.String({ maxLength: 128, pattern: "^[a-z][a-z0-9]*(\\.[a-z][a-z0-9]*)*$" }), "error": Type.Object({ "code": Type.Literal('E_PROJECTION_STATE'), "safeMessage": Type.String({ maxLength: 256 }) }, { additionalProperties: false }) }, { additionalProperties: false })]),
 })
 
-export const ProjectionCapability = ProjectionSchema.Import('ProjectionCapability')
+export type ProjectionSchemaDefinitions = typeof ProjectionSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const ProjectionCapability: TImport<ProjectionSchemaDefinitions, 'ProjectionCapability'> = ProjectionSchema.Import('ProjectionCapability')
 export type ProjectionCapability = Static<typeof ProjectionCapability>
-export const ProjectionReadResult = ProjectionSchema.Import('ProjectionReadResult')
+export const ProjectionReadResult: TImport<ProjectionSchemaDefinitions, 'ProjectionReadResult'> = ProjectionSchema.Import('ProjectionReadResult')
 export type ProjectionReadResult = Static<typeof ProjectionReadResult>
 export const Root = ProjectionCapability
 export type Root = ProjectionCapability

@@ -29,7 +29,7 @@ afterEach(async () => {
 })
 
 async function fixture(
-  model: string | string[],
+  model: string | (string | Record<string, unknown>)[],
   status = 200,
 ): Promise<{ baseUrl: string; requests: IncomingMessage[] }> {
   const requests: IncomingMessage[] = []
@@ -41,7 +41,12 @@ async function fixture(
       return
     }
     response.writeHead(status, { 'content-type': 'application/json' })
-    response.end(JSON.stringify({ object: 'list', data: [model].flat().map((id) => ({ id })) }))
+    response.end(
+      JSON.stringify({
+        object: 'list',
+        data: [model].flat().map((row) => (typeof row === 'string' ? { id: row } : row)),
+      }),
+    )
   })
   servers.push(server)
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
@@ -278,6 +283,61 @@ it('keeps the payload-only provider out of the chat account form projection', as
   const { providers } = await service.providers()
   expect(providers.some((provider) => provider.id === 'typesafe-systemone')).toBe(false)
   expect(getApiKeyProvider('typesafe-systemone')?.capabilities?.payloadOnly).toBe(true)
+})
+
+it('uses endpoint context limits over saved fallbacks and preserves them in runtime routes', async () => {
+  const server = await fixture([
+    { id: 'kimi-k3', context_length: 1048576 },
+    { id: 'nested', limit: { context: 262144 } },
+    { id: 'invalid', context_length: -1 },
+    { id: 'missing' },
+  ])
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const account = { providerId: 'openai-compatible', baseUrl: server.baseUrl, accountId: 'relay' }
+  await service.save({
+    ...account,
+    model: 'kimi-k3',
+    models: [{ id: 'kimi-k3', name: 'K3', contextWindow: 128000 }],
+  })
+  const result = await service.test(account)
+  expect(result.models.map(({ id, contextWindow }) => [id, contextWindow])).toEqual([
+    ['kimi-k3', 1048576],
+    ['nested', 262144],
+    ['invalid', 128000],
+    ['missing', 128000],
+  ])
+  await service.save({ ...account, model: 'kimi-k3', models: result.models })
+  const reopened = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect((await reopened.get()).accounts?.[0]?.models[0]?.contextWindow).toBe(1048576)
+  expect((await reopened.profileInput()).provider?.routes?.[0]?.models?.[0]?.contextWindow).toBe(1048576)
+})
+
+it('allows correcting a saved budget after the endpoint context limit shrinks', async () => {
+  const server = await fixture([{ id: 'shrinking', context_length: 32768 }])
+  const service = createConfigurationService({ home: await home(), profile: 'local-dev' })
+  const account = {
+    providerId: 'openai-compatible',
+    baseUrl: server.baseUrl,
+    accountId: 'relay',
+    model: 'shrinking',
+  }
+  await service.save({
+    ...account,
+    models: [{ id: 'shrinking', name: 'Shrinking', contextWindow: 128000 }],
+    defaultSettings: { contextWindow: 64000 },
+  })
+  const result = await service.test(account)
+  expect(result.models[0]?.contextWindow).toBe(32768)
+  const saved = await service.save({
+    ...account,
+    models: result.models,
+    defaultSettings: { contextWindow: 32000 },
+  })
+  expect(saved.accounts?.[0]?.models[0]).toMatchObject({
+    contextWindow: 32768,
+    defaultSettings: { contextWindow: 32000 },
+  })
 })
 
 it('connects an OpenAI-compatible endpoint with its own model ids, with or without a key, over chat completions', async () => {

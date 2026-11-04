@@ -167,6 +167,76 @@ function setup(enable = true) {
 }
 
 describe('controlled Skill installer', () => {
+  it('installs a complete code-bearing Skill without executing its scripts and hashes every resource', async () => {
+    const s = setup()
+    mkdirSync(join(s.source, 'bin'))
+    mkdirSync(join(s.source, 'renderers'))
+    writeFileSync(
+      join(s.source, 'bin', 'fixture.mjs'),
+      "import '../renderers/render.mjs'; throw Error('must not execute during installation')",
+    )
+    writeFileSync(
+      join(s.source, 'renderers', 'render.mjs'),
+      'export const separator = "\0"; export const version = 1',
+    )
+    writeFileSync(join(s.source, 'LICENSE'), 'Synthetic fixture license')
+    mkdirSync(join(s.source, 'src'))
+    writeFileSync(join(s.source, 'src', 'a.tsx'), 'export const A = () => null')
+    // VCS and OS metadata never block or enter the bundle, even when unreadable as a Skill file.
+    mkdirSync(join(s.source, '.github', 'workflows'), { recursive: true })
+    writeFileSync(join(s.source, '.github', 'workflows', 'x.yml'), 'on: push')
+    writeFileSync(join(s.source, '.gitignore'), 'node_modules')
+    writeFileSync(join(s.source, '.DS_Store'), '\0\0')
+    const first = await s.prepare({
+      action: 'prepare-bundle',
+      sourceDirectory: s.source,
+      scope: 'user',
+      enable: true,
+    })
+    expect(first.files).toEqual(
+      expect.arrayContaining([
+        'AGH-SKILL.json',
+        'LICENSE',
+        'bin/fixture.mjs',
+        'renderers/render.mjs',
+        'src/a.tsx',
+      ]),
+    )
+    expect((first.files ?? []).filter((file) => file.includes('.git') || file.includes('.DS_Store'))).toEqual(
+      [],
+    )
+    writeFileSync(join(s.source, 'renderers', 'render.mjs'), 'export const version = 2')
+    const second = await s.prepare({
+      action: 'prepare-bundle',
+      sourceDirectory: s.source,
+      scope: 'user',
+      enable: true,
+    })
+    expect(second.revision).not.toBe(first.revision)
+    await s.request({ action: 'commit', proposalId: second.proposalId })
+    expect(await s.done(second.proposalId)).toMatchObject({ state: 'ready' })
+    expect(readFileSync(join(s.home, 'skills/demo/bin/fixture.mjs'), 'utf8')).toContain('must not execute')
+  })
+
+  it.each(['payload.exe', 'escape.node', 'payload.wasm'])(
+    'refuses unsupported complete bundle resource %s',
+    async (name) => {
+      const s = setup()
+      writeFileSync(join(s.source, name), 'not a supported script')
+      await expect(
+        s.prepare({ action: 'prepare-bundle', sourceDirectory: s.source, scope: 'user', enable: true }),
+      ).rejects.toThrow('SKILL_FILE_REFUSED')
+      expect(existsSync(join(s.home, 'skills/demo'))).toBe(false)
+    },
+  )
+  it('refuses an unsupported file nested in a complete bundle', async () => {
+    const s = setup()
+    mkdirSync(join(s.source, 'bin'))
+    writeFileSync(join(s.source, 'bin', 'tool.exe'), 'not a supported script')
+    await expect(
+      s.prepare({ action: 'prepare-bundle', sourceDirectory: s.source, scope: 'user', enable: true }),
+    ).rejects.toThrow('SKILL_FILE_REFUSED')
+  })
   it.each(['workspace', 'user'] as const)(
     'statically prepares authored instructions in %s and installs after exactly one content-bound confirmation',
     async (scope) => {

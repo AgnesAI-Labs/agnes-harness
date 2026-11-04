@@ -1,11 +1,35 @@
+import { releaseInput } from './pointer.mjs'
 import { failure } from './policy.mjs'
 import { selectView } from './streams.mjs'
+
+// Native grants can outlive a managed-resource restart. Only an effect executed
+// by this runtime may open its input channel; the broker still owns authorization.
+
+export function admitInteraction(runtime, grant) {
+  runtime.guard()
+  const now = runtime.now()
+  if (!grant?.grantId || !Number.isSafeInteger(grant.expiresAt) || grant.expiresAt <= now)
+    throw failure('DENIED', 'Current native connection admission required.')
+  // Session services and profile streams may load separate module copies.
+  // Their existing managed runtime is the shared authority/lifetime boundary.
+  const records = runtime.interactionAdmissions
+  for (const [id, expiresAt] of records) if (expiresAt <= now) records.delete(id)
+  // Match the native service-control bound, without evicting a live grant.
+  if (!records.has(grant.grantId) && records.size >= 1024)
+    throw failure('CAPACITY', 'Too many active browser connections.')
+  records.set(grant.grantId, grant.expiresAt)
+  return { status: 'ok' }
+}
 
 // The native broker owns actor/session admission, revocation, rate limits and lease expiry.
 // This plugin channel routes gestures; opening it never takes a page away from the agent.
 export function interact(runtime, _input, context) {
   if (context.scope.kind !== 'session' || context.scope.laneId !== 'main' || !context.control)
     throw failure('DENIED', 'Native session control admission required.')
+  runtime.guard()
+  const admittedUntil = runtime.interactionAdmissions.get(context.control.grantId)
+  if (!admittedUntil || admittedUntil <= runtime.now() || context.control.expiresAt > admittedUntil)
+    throw failure('DENIED', 'Connection admission belongs to a previous plugin run or has expired.')
   const session = { key: context.scope.sessionId, lane: 'main' }
   const actor = JSON.stringify([context.actor.id, context.actor.org ?? ''])
   const owned = new Map()
@@ -21,9 +45,8 @@ export function interact(runtime, _input, context) {
           item.mode = 'agent'
           item.control = undefined
           runtime.clearRefs(item)
-          for (const key of ['Shift', 'Control', 'Alt', 'Meta'])
-            void item.page.keyboard.up(key).catch(() => {})
-          void item.page.mouse.up().catch(() => {})
+          item.controlEpoch++
+          void releaseInput(item)
         }
         if (reason !== 'renewed') context.stream.send({ type: 'controlLost', pageId: item.id })
       },

@@ -147,7 +147,7 @@ describe('session-v1 I2: every closed-set type has a data schema', () => {
       .filter(Boolean)
     // Exact, not a lower bound: a loose lower bound would let half the fixtures be deleted without
     // going red.
-    expect(lines.length).toBe(39) // prior 37 plus subagent/cost valid+invalid
+    expect(lines.length).toBe(42) // prior 39 plus refine partial/capacity valid and rejected-edit invalid
     for (const line of lines) {
       const f = JSON.parse(line) as { id: string; kind: 'valid' | 'invalid'; payload: unknown }
       expect(validateEvent(f.payload).ok, f.id).toBe(f.kind === 'valid')

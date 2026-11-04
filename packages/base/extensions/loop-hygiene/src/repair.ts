@@ -14,9 +14,8 @@ export const repairPolicy: SeamFactory<RepairSeam> = async (ctx) => {
   const escalateAfter = rp.escalate_after ?? 3
   return {
     async decide(view, verdict) {
-      if (view.round >= maxRounds) return 'park'
       if (verdict.verdict === 'pass') {
-        const plan = (view as { plan?: { items: Array<{ status: string }> } }).plan
+        const plan = view.plan
         const open = plan?.items.some((i) => i.status !== 'done') ?? false
         // min_items guards against a gate that fires on a plan too small to say anything: a
         // one-item plan pending is not the same signal as a five-item plan half-open.
@@ -24,6 +23,7 @@ export const repairPolicy: SeamFactory<RepairSeam> = async (ctx) => {
           return 'repair'
         return 'complete'
       }
+      if (view.round >= maxRounds) return 'park'
       return view.round >= escalateAfter ? 'escalate' : 'repair'
     },
   }

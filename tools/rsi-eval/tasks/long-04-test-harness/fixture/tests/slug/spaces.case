@@ -1,0 +1,2 @@
+input: Hello World
+expect: hello-world

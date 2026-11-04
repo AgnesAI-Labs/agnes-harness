@@ -21,6 +21,7 @@ export function toolCallLimits(s: SessionImpl, t: TurnMemory | null, timeoutMs: 
       : timeoutMs,
     defaultTimeoutMs: s.preset.tools.timeoutMs,
     outputMaxBytes: s.preset.tools.outputMaxBytes,
+    collapseRepeatedOutput: s.preset.tools.collapseRepeatedOutput,
     ...(limit ? { turnTimeLimit: limit } : {}),
   }
 }

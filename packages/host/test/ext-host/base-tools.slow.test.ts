@@ -229,6 +229,38 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       await host.close()
     }
   })
+  it('exposes the refinement switch only to the exact refine extension id, read-only', async () => {
+    let refine: unknown
+    let sibling: unknown
+    const { host } = await createTestHost({
+      dataDir: scratch(),
+      packageDirs: { '@agnes/base': baseDir },
+      packages: {
+        '@agnes/base': {
+          ecosystem: {
+            ...baseEcosystem,
+            'agnes/refine': (context) => {
+              refine = context.refinementSettings
+              return baseEcosystem['agnes/refine'](context)
+            },
+            'agnes/privacy': (context) => {
+              sibling = context.refinementSettings
+              return baseEcosystem['agnes/privacy'](context)
+            },
+          },
+        },
+      },
+    })
+    try {
+      expect(sibling).toBeUndefined()
+      expect(Object.keys(refine as object)).toEqual(['current'])
+      expect((refine as { current(): unknown }).current()).toMatchObject({
+        settings: { enabled: false, mode: 'manual' },
+      })
+    } finally {
+      await host.close()
+    }
+  })
   it('gives the child-control port to @agnes/base only, and Base forwards it only to agnes/subagent', async () => {
     const observed = new Map<string, boolean>()
     const { host } = await createTestHost({
@@ -303,6 +335,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         const slot = ui.slots?.find((fill) => fill.extId === 'agnes/goal')
         return slot ? (slot.payload as import('@agnes/protocol/gen/slots').StatusLinePayload).goal : undefined
       }
+      // Core reads the same goal as the session's task, through the scope the goal plugin offers.
+      const scope = () => session.d.refinement?.taskScope?.({ key: session.key, lane: session.lane })
+      expect(await scope()).toBeNull()
       await prompt('/goal create --max-rounds 1 Deliver')
       await run()
       expect(await goal()).toMatchObject({
@@ -310,6 +345,8 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         rounds: 1,
         reason: 'Maximum automatic rounds reached',
       })
+      const blocked = await goal()
+      expect(await scope()).toEqual({ id: blocked?.id, revision: blocked?.revision, phase: 'blocked' })
       expect(provider.calls).toHaveLength(2)
       const turns = await session.scan({ type: 'turn/end', toSeq: session.lastSeq })
       expect(turns.filter((row) => (row.data as { reason: string }).reason === 'completed')).toHaveLength(2)
@@ -324,6 +361,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(provider.calls).toHaveLength(5)
       await prompt('/goal pause')
       expect(await goal()).toMatchObject({ phase: 'paused' })
+      expect(await scope()).toMatchObject({ id: blocked?.id, phase: 'paused' })
       await prompt('/goal edit --max-rounds 2 Deliver a patch')
       expect(await goal()).toMatchObject({ phase: 'paused', objective: 'Deliver a patch', maxRounds: 2 })
       expect(provider.calls).toHaveLength(5)
@@ -364,12 +402,10 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         source: 'agnes/compaction',
         trust: 'builtin',
       })
-      // agnes/refine ships harness_propose (base plan Task 18); the trusted ecosystem factory binds
-      // it to the same durable queue consumed by the assembled Task 19 operation.
-      expect(host.kernel.tools.resolve('harness_propose')?.source).toEqual({
-        source: 'agnes/refine',
-        trust: 'builtin',
-      })
+      // agnes/refine registers its tools only when the profile's refinement switch is on, and it is
+      // off by default (test/refinement/switch.slow.test.ts covers the on side).
+      for (const name of ['harness_propose', 'harness_refine', 'harness_inspect'])
+        expect(host.kernel.tools.resolve(name), name).toBeUndefined()
       expect(host.kernel.tools.resolve('subagent_spawn')?.source).toEqual({
         source: 'agnes/subagent',
         trust: 'builtin',
@@ -461,7 +497,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'pty_signal',
       ])
       expect(namesFrom('agnes/compaction')).toEqual(['compact'])
-      expect(namesFrom('agnes/refine')).toEqual(['harness_propose'])
+      expect(namesFrom('agnes/refine')).toEqual([])
       expect(namesFrom('agnes/subagent')).toEqual([
         'list_subagent_models',
         'subagent_cancel',
@@ -1259,11 +1295,11 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     })
     // The skills extension is loaded but inert until a daemon worker supplies a private runtime
     // snapshot, and this host does not load code-mode. Count: tools-core 5, tools-search 3,
-    // tools-web 2, interaction 1, deliverables 1, jobs 10, compaction 1, refine 1, subagent 8,
+    // tools-web 2, interaction 1, deliverables 1, jobs 10, compaction 1, refine 0 (off), subagent 8,
     // mcp-search 2, computer-use 1, plugin-creator 6, exit_plan_mode, and the three stable MCP
     // resource tools, workflow and workflow_status, session-query 5, two goal tools, and the four
     // schedule reminders, plus the LSP diagnostics tool.
-    expect(host.kernel.tools.size).toBe(64)
+    expect(host.kernel.tools.size).toBe(63)
     for (const name of [
       'lsp_diagnostics',
       'subagent_list',

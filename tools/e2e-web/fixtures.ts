@@ -15,8 +15,9 @@ export const test = base.extend<{
       info.title.startsWith('guided first run zh-CN') ? 'installed' : 'root',
       {
         localExamples: info.file.endsWith('/ui-gate.spec.ts'),
-        ...(info.file.replaceAll('\\', '/').endsWith('/browser.spec.ts') &&
-        process.env.AGH_BROWSER_TEST_ARCHIVE
+        ...(['/browser.spec.ts', '/browser-layout.spec.ts'].some((file) =>
+          info.file.replaceAll('\\', '/').endsWith(file),
+        ) && process.env.AGH_BROWSER_TEST_ARCHIVE
           ? { browserArchive: process.env.AGH_BROWSER_TEST_ARCHIVE }
           : {}),
         realModel:

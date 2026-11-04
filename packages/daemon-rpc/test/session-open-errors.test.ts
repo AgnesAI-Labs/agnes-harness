@@ -28,6 +28,20 @@ describe('throwSessionOpenRpcError', () => {
     expect(caught(error)).toMatchObject(unconfigured)
   })
 
+  it('preserves the safe native GLIBC cause from both host and worker', () => {
+    for (const error of [
+      new HostError('E_SEAM_INIT', 'private loader path', {
+        detail: { reason: 'native-glibc-incompatible' },
+      }),
+      { code: 'E_SEAM_INIT', reason: 'native-glibc-incompatible' },
+    ]) {
+      const normalized = normalizeRpcError(caught(error) as RpcError)
+      expect(normalized.data.publicReason).toContain('system-node native addon failed to load')
+      expect(normalized.data.publicReason).toContain('GLIBC')
+      expect(JSON.stringify(normalized)).not.toContain('private loader path')
+    }
+  })
+
   it('maps the same refusal as a worker returns it, by reason and without reading the message', () => {
     const error = {
       code: 'E_PRESET_UNRESOLVED',

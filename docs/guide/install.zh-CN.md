@@ -78,19 +78,28 @@ Linux 可由系统包管理器安装 bubblewrap（例如 Debian/Ubuntu 的 `apt 
 
 ## 在 Linux 构建与验证
 
-准备 Node 及其对应的 `include/node/node_api.h` 头文件、C/C++ 工具链、Python 3 和 Git。Debian/Ubuntu 示例：
+准备固定版本的 Node 及匹配的头文件、宿主 C/C++ 编译器、Python 3 和 Git。开发构建不要求 Docker。Debian/Ubuntu 示例：
 
 ```sh
 sudo apt-get update
-sudo apt-get install -y build-essential libssl-dev python3 git bubblewrap
+sudo apt-get install -y build-essential python3 git bubblewrap
 mise exec -- node tools/toolchain/run.mjs install --frozen-lockfile
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/host build:native
 mise exec -- node tools/toolchain/run.mjs --filter @agnes/system-node build:native
-mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
-node agnes.mjs doctor
+# 原生产物已可用于源码测试。
 ```
 
-PTY relay 链接 `libutil`，system helper 使用 Linux 内核接口与系统 OpenSSL 3 `libcrypto`，从同一已打开文件句柄计算 artifact 摘要。构建时安装 OpenSSL 开发头文件，搬运运行目录时仍须安装匹配的共享库。更换 Node 或架构后须重建 helper，安装 npm 依赖不能替代原生构建。
+普通 `build:native` 使用宿主编译器和匹配的 Node 头文件，不需要 Docker。addon 从加载它的 Node runtime 解析 EVP SHA-256，不需要系统 OpenSSL 开发包或另一份 libcrypto（参见[原生运行时依赖](../../third-party/native-system-dependencies.md)）。开发产物导入高于基线的符号时只警告，仍可在本机使用。
+
+CI、release、SEA 或 eval 分发构建需要先安装 Docker，再显式选择 glibc 2.28 builder：
+
+```sh
+AGNES_NATIVE_BUILDER=glibc228 mise exec -- node tools/toolchain/run.mjs --filter @agnes/cli build:local
+node packages/cli/dist/local/agnes.mjs doctor
+# build:native、build:sea 或 release:pack 使用同一个环境选项。
+```
+
+Docker sysroot 在不依赖宿主 libc 的环境中编译 addon 与 PTY 辅助程序。分发 staging 始终拒绝导入高于 GLIBC_2.28 的符号，包括宿主构建的对象，并提示 `AGNES_NATIVE_BUILDER=glibc228`。CI 显式设置该选项。Linux 发行包要求 glibc 2.28 或更新版本。更换 Node 或架构后须重建 helper；安装 npm 依赖不能替代原生构建。
 
 Linux L1 命令隔离使用 bubblewrap，并验证文件、进程与网络的完整边界。版本检查或可用的 Landlock ABI 不能证明隔离有效：目前 Landlock 仅用于诊断，并非 AGH 命令后端。用户命名空间限制（包括容器 seccomp 或发行版安全策略）可能阻止 bubblewrap 运行。默认在 L1 不可用时拒绝命令；明确选择 **full-access** 后，命令不受操作系统隔离。不要为消除诊断而绕过锁或修改系统安全策略。
 
@@ -103,7 +112,7 @@ mise exec -- node tools/toolchain/run.mjs exec playwright install --with-deps ch
 mise exec -- node tools/toolchain/run.mjs e2e:web
 ```
 
-准备依赖时使用网络；gate 使用缓存 Chromium、全新隔离 home 和本地模拟服务。已评审 Linux 基线与 macOS 基线分别保存，详见[维护中的 gate](../../tools/e2e-web/README.md)。
+准备依赖时使用网络；gate 使用缓存 Chromium、全新隔离 home 和本地模拟服务。任何操作系统上都没有像素门禁：macOS 与 Linux 运行功能、无障碍与布局断言，截图只作为证据。详见[维护中的 gate](../../tools/e2e-web/README.md)。
 
 ## Windows 构建
 

@@ -17,10 +17,46 @@ export function registerWorkspaceFiles(
   cx: SessionSource,
   requireOwner: (method: string, sessionId: string, call: CallContext) => void,
 ): void {
-  ep.register('_agnes/v1/session.references.search', async (params, call) => {
-    const p = params as { sessionId: string; query: string }
-    requireOwner('session.references.search', p.sessionId, call)
-    return callReferences(cx.registry.require(p.sessionId).session, 'search', p.query)
+  const active = new WeakMap<object, Map<string, AbortController>>()
+  for (const cancellable of [false, true]) {
+    ep.register(
+      cancellable ? '_agnes/v1/session.references.searchCancelable' : '_agnes/v1/session.references.search',
+      async (params, call) => {
+        const p = params as { sessionId: string; query: string; requestId?: string }
+        requireOwner(
+          cancellable ? 'session.references.searchCancelable' : 'session.references.search',
+          p.sessionId,
+          call,
+        )
+        const session = cx.registry.require(p.sessionId).session
+        if (!cancellable) return callReferences(session, 'search', p.query, call.signal)
+        let requests = active.get(call.conn)
+        if (!requests) {
+          requests = new Map()
+          active.set(call.conn, requests)
+        }
+        const key = `${p.sessionId}\0${p.requestId}`
+        if (requests.has(key)) throw new Error('Duplicate reference request id')
+        const controller = new AbortController()
+        requests.set(key, controller)
+        try {
+          return await callReferences(
+            session,
+            'search',
+            p.query,
+            AbortSignal.any([call.signal, controller.signal]),
+          )
+        } finally {
+          requests.delete(key)
+        }
+      },
+    )
+  }
+  ep.register('_agnes/v1/session.references.cancel', async (params, call) => {
+    const p = params as { sessionId: string; requestId: string }
+    requireOwner('session.references.cancel', p.sessionId, call)
+    active.get(call.conn)?.get(`${p.sessionId}\0${p.requestId}`)?.abort()
+    return {}
   })
   ep.register('_agnes/v1/session.workspace.changes', async (params, call) => {
     const p = params as {
@@ -35,17 +71,18 @@ export function registerWorkspaceFiles(
     const remote = session as unknown as { workspaceChanges?: (request: typeof input) => Promise<unknown> }
     return remote.workspaceChanges ? remote.workspaceChanges(input) : sessionWorkspaceChanges(session, input)
   })
-  for (const operation of ['list', 'read'] as const) {
+  for (const operation of ['list', 'browse', 'read'] as const) {
     ep.register(`_agnes/v1/session.workspace.${operation}`, async (params, call) => {
       const p = params as { sessionId: string; path?: string }
       requireOwner(`session.workspace.${operation}`, p.sessionId, call)
       const session = cx.registry.require(p.sessionId).session
+      const filesOperation = operation === 'browse' ? 'list' : operation
       const remote = session as unknown as {
-        workspaceFiles?: (operation: 'list' | 'read', path: string) => Promise<unknown>
+        workspaceFiles?: (operation: 'list' | 'read', path: string, browse?: boolean) => Promise<unknown>
       }
       return remote.workspaceFiles
-        ? remote.workspaceFiles(operation, p.path ?? '')
-        : sessionWorkspaceFiles(session, operation, p.path ?? '')
+        ? remote.workspaceFiles(filesOperation, p.path ?? '', operation === 'browse')
+        : sessionWorkspaceFiles(session, filesOperation, p.path ?? '', operation === 'browse')
     })
   }
 }

@@ -71,6 +71,8 @@ export type ChildrenFactory = {
   collected?(childKey: string, completionId: string, resultSeq: Seq): Promise<void>
   /** Backend recovery on an explicit owning-session run; not a model operation. */
   recover?(): Promise<void>
+  /** Release owned child instances when the parent session closes. */
+  dispose?(): Promise<void>
   resume?(childKey: string): Promise<ChildHandle>
   cancel?(childKey: string): Promise<void>
   list?(): Promise<readonly ChildAgentListing[]>
@@ -180,6 +182,7 @@ export function buildToolContext(
     timeoutMs: number
     defaultTimeoutMs?: number
     outputMaxBytes: number
+    collapseRepeatedOutput?: boolean
     turnTimeLimit?: { timeLimitMs: number; deadlineAt: number }
   },
 ): ToolContext {
@@ -530,6 +533,7 @@ export function buildToolContext(
     timeoutMs: call.timeoutMs,
     ...(call.defaultTimeoutMs === undefined ? {} : { defaultTimeoutMs: call.defaultTimeoutMs }),
     outputMaxBytes: call.outputMaxBytes,
+    collapseRepeatedOutput: call.collapseRepeatedOutput ?? false,
     ...(call.turnTimeLimit ? { turnTimeLimit: { ...call.turnTimeLimit } } : {}),
     lease: {
       expiresAt: new Date(Date.now() + d.lease.remainingMs()).toISOString(),
@@ -566,6 +570,12 @@ export function buildToolContext(
       list: (path) => files.list(path),
       stat: (path) => files.stat(path),
       ...(files.revision ? { revision: (path: string) => files.revision!(path) } : {}),
+      ...(files.replaceExact
+        ? {
+            replaceExact: (path: string, oldText: string, newText: string) =>
+              effects.write(() => files.replaceExact!(path, oldText, newText)),
+          }
+        : {}),
       checkpointOf: (path) => checkpoints.get(path),
     },
     net: effects.guard(context.net),

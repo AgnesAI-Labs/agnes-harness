@@ -44,8 +44,6 @@ subagent: { max_depth: 0 }
 verifier: { default_tier: 0 }
 # enabled: NOT CONSUMED. readPreset reads completion_gate.min_items and nothing else.
 completion_gate: { enabled: false }
-# NOT CONSUMED. No self-refinement loop reads this yet; `false` is the intent for a baseline.
-harness: { auto_refine: { enabled: false } }
 # consent: NOT CONSUMED. readPreset reads telemetry.invariants and telemetry.timing, neither of
 # which is written here, so both take their defaults of false. DISABLED is the stated intent.
 telemetry: { consent: DISABLED }

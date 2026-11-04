@@ -13,10 +13,13 @@ import type {
   Logger,
   PersistenceMetadataNamespace,
   SessionRef,
+  TaskScopeSource,
+  WorkflowRunSource,
 } from '@agnes/extension-api'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
 import type { EgressGate } from '../extensions/privacy/src/index.js'
+import type { ConnectRefinement } from '../extensions/refine/src/port.js'
 import type { SkillRuntimeDiscovery, SkillRuntimeInput } from '../extensions/skills/src/runtime.js'
 
 /**
@@ -224,6 +227,25 @@ export type SeamInitContext = {
   childControl?: ChildWorktreePort
   /** Present only after seam assembly; ecosystem extensions must not substitute adapters.exec. */
   sandbox?: SandboxSeam
+  /** The profile's refinement switch, read-only. The host supplies it only to agnes/refine. */
+  refinementSettings?: RefinementSettingsView
+  /** Connects the refinement tools to the host's managed refinement; supplied only to agnes/refine. */
+  refinementRuns?: ConnectRefinement
+  /**
+   * Offers the session's current task to the host as a projection and its reader; supplied only to
+   * agnes/goal. Returns what withdraws the offer.
+   */
+  provideTaskScope?: (source: TaskScopeSource) => () => void
+  /**
+   * Offers the session's workflow runs to the host as a projection and its reader; supplied only to
+   * agnes/workflow. Returns what withdraws the offer.
+   */
+  provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
 }
+
+/** A read of the profile's refinement settings: the switch and the trigger mode. */
+export type RefinementSettingsView = Readonly<{
+  current(): { settings: { enabled: boolean; mode: 'manual' | 'auto' }; revision: string }
+}>
 
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>

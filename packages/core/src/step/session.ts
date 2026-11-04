@@ -63,7 +63,7 @@ import { fillInlineNodes, fillInlinePage } from '@agnes/core-ledger/project/ui-i
 import { fillLiveSlots } from '@agnes/core-ledger/project/ui-live-slots'
 import { contextTokensAtCut, projectUsage } from '@agnes/core-ledger/project/usage'
 import type { Inbox, InboxItem } from '@agnes/core-ledger/reduce/shapes'
-import { type EffectTree, effectTree } from '@agnes/core-ledger/reduce/state'
+import { type EffectTree, effectTree, MAINTENANCE_LANE } from '@agnes/core-ledger/reduce/state'
 import { currentOp, type StateTracker } from '@agnes/core-ledger/reduce/tracker'
 import type {
   HookPayloadMap,
@@ -109,7 +109,8 @@ import {
   validateAgainst,
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
-import { bestEffort } from '../best-effort.js'
+import { bestEffort, quietly } from '../best-effort.js'
+import { forgetIdleChild, idleChildReady } from '../child/idle-retirement.js'
 import {
   childLifecycle,
   childLifecycleRevoked,
@@ -123,6 +124,7 @@ import { unbindChildFactory } from '../child/sessions.js'
 import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
+import { turnWaitEvent } from '../execution/turn-wait.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
 import { LoopChildren } from '../loop/children.js'
@@ -131,6 +133,7 @@ import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
 import { settleSideCalls, sideCallInFlight } from '../loop/side-call-receipts.js'
+import { drainMaintenance } from '../maintenance/recovery.js'
 import type {
   AuxiliaryVisionAssemblyInput,
   AuxiliaryVisionProductionAdmission,
@@ -140,12 +143,14 @@ import type {
   RequestMediaArtifactReader,
   RequestMediaSurfaceLimits,
 } from '../orchestrator/request-media-surface.js'
+import { type RefinementDeps, recoverRefinement, refinementAfterTurn } from '../refinement/facade.js'
+import type { RefinementTriggerSink } from '../refinement/triggers.js'
 import { ResourceRegistry } from '../registry/resources.js'
 import { ToolRegistryView } from '../registry/tool-allow.js'
 import type { RegistrySnapshot, ToolRegistry, ToolSource } from '../registry/tools.js'
 import { commitSessionAttachments, queuedInputSizeFloor } from '../request/attachment-admission.js'
 import type { PromptSection } from '../request/contribute.js'
-import { harnessSections, mergeContributions } from '../request/contribute.js'
+import { mergeContributions } from '../request/contribute.js'
 import type { ContractRef, DeriveOutput, RequestHeaderData } from '../request/derive.js'
 import { sanitize, UNTRUSTED_RULE_SECTION } from '../request/derive.js'
 import { createEnvelopeCache, type EnvelopeCache } from '../request/envelope-cache.js'
@@ -165,7 +170,6 @@ import {
   type AbortResult,
   abortSession,
   cancelSessionRuntimes,
-  closeTurn,
   drainClosingWork,
   finishAborted,
 } from './control.js'
@@ -180,11 +184,21 @@ import { claimFrom, type EnqueueMsg, inboxEvent, inputMessageEvents, inputTainte
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { LoopScope, stepWithinLoopDeadline } from './loop-deadline.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
+import type { OperationCommon } from './operation-common.js'
 import { operationDecisionPort } from './operation-decisions.js'
 import { continueParked } from './parked.js'
 import { type PreviewDelta, PreviewHub, type PreviewSnapshot } from './preview.js'
 import { type CoreOpName, invokeTool, runCoreReplacement, setModel, setPreset } from './reentry.js'
 import { type ResumeMode, type ResumeReport, resumeSession } from './resume.js'
+import { assertRetiredReviewSettled } from './retired-review.js'
+import {
+  abandonTurn,
+  FailureReceipts,
+  type InferenceFailureSettlement,
+  type RunError,
+  type RunFailureSink,
+  stepFailure,
+} from './run-failure.js'
 import {
   permissionOperator,
   SessionPermissionAuthority,
@@ -205,20 +219,6 @@ import { effectiveToolPolicy } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
-
-type OperationCommon = {
-  name: string
-  order?: number
-  replay: 'safe' | 'never'
-  applicable(ctx: OpContext): Promise<'applied' | 'skip' | 'not-applicable'>
-  /** Additive-slot entry point retained for existing package/host operation factories. */
-  run(ctx: OpContext): Promise<OperationEffectResult>
-  contribute?(ctx: OpContext): {
-    tools?: string[]
-    promptSections?: PromptSection[]
-    runtimeContext?: Record<string, unknown>
-  }
-}
 
 /**
  * One phase edge of a chain committed as a single append. `nextSeq` is the seq this step's first row
@@ -424,7 +424,7 @@ export type TurnEndReason =
   | 'budget'
   | 'max_steps'
   | 'interrupted'
-export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: { code: string; message: string } }
+export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: RunError }
 
 export type SessionDeps = {
   roleDelegation?: RoleDelegation
@@ -522,6 +522,7 @@ export type SessionDeps = {
   /** Host-private attestation boundary for host-computer-use dispatches. */
   hostToolDispatch?: HostToolDispatchPort
   logger: Logger
+  onRunFailure?: RunFailureSink
   timers?: Timers
   /** How long one `loopDriver.step` may stay silent, with no progress and no platform-owned wait in flight, before the turn ends as an error. Defaults to 30 minutes, and is never below the model timeout. */
   loopStepTimeoutMs?: number
@@ -531,6 +532,12 @@ export type SessionDeps = {
   compaction?: CompactionPort
   /** Host-private request contribution; never exposed through extension hook payloads. */
   runtimePromptPreloader?: RuntimePromptPreloader
+  /** Whether refinement experience is delivered to the next request; omitted means off. */
+  refinementEnabled?: () => boolean
+  /** Takes automatic refinement candidates (compaction, repeated failure); omitted means none. */
+  refinementTriggers?: RefinementTriggerSink
+  /** Runs refinement plans and applies them between turns; omitted means refinement is unavailable. */
+  refinement?: RefinementDeps
   agnesVersion?: string
   /**
    * Shared across every session the owning Kernel assembles; `@agnes/core`'s own checks are always
@@ -641,6 +648,16 @@ export class SessionImpl {
     return this.activeOps > 0
   }
   private readonly activeWork = new Set<Promise<unknown>>()
+  private retirementClaimed = false
+  /** Reserves idle admission until its terminal CAS commits or loses; invoked under the writer gate. */
+  claimIdleRetirement(): (() => void) | undefined {
+    if (!idleChildReady(this, this.activeWork.size > 0)) return
+    this.retirementClaimed = true
+    return () => {
+      this.retirementClaimed = false
+    }
+  }
+  private readonly effectReceipts = new FailureReceipts()
   loopScope = new LoopScope()
   private resuming: Promise<unknown> | undefined
   private running: Promise<TurnOutcome> | undefined
@@ -717,7 +734,7 @@ export class SessionImpl {
   private closing = false
 
   get closingOrClosed(): boolean {
-    return this.closing
+    return this.closing || this.retirementClaimed
   }
 
   private readonly authorization: SessionPermissionAuthority
@@ -951,6 +968,7 @@ export class SessionImpl {
     return this.d.tracker.state
   }
 
+  readonly inferenceFailureSettlements = new Map<string, InferenceFailureSettlement>()
   readonly loopEvents: LoopEventRegistryPort
   private readonly toolRuntimes: ToolRuntimeRegistryPort
   private readonly toolPolicies: ToolPolicyRegistryPort
@@ -1001,6 +1019,7 @@ export class SessionImpl {
     if (this.loopDriver) return
     const done = this.beginLoopOperation()
     try {
+      if (resumed) await assertRetiredReviewSettled(this)
       this.toolPolicy()
       await this.toolRuntime()
       const factory = this.d.loopFactory
@@ -1059,11 +1078,7 @@ export class SessionImpl {
     )
     const sections = [
       UNTRUSTED_RULE_SECTION,
-      ...composeSystemPrompt(
-        this.d.systemPrompt,
-        merged.sections,
-        harnessSections([...this.state.registers.harnessEntries.values()].map((cell) => cell.value)),
-      ).map((section) => ({
+      ...composeSystemPrompt(this.d.systemPrompt, merged.sections).map((section) => ({
         ...section,
         text: sanitize(section.text),
         id: sanitize(section.id),
@@ -1105,15 +1120,13 @@ export class SessionImpl {
       const record = records.find((m) => m.route === target.route && m.id === target.model)
       if (!record) continue
       const thinking = this.preset.model.thinking[slot] ?? record.defaultSettings?.thinking
+      const contextWindow = this.preset.model.contextWindow?.[slot] ?? record.defaultSettings?.contextWindow
       modelSettings.push({
         slot,
         ...target,
         settings: {
           ...(thinking === undefined ? {} : { thinking }),
-          contextWindow:
-            this.preset.model.contextWindow?.[slot] ??
-            record.defaultSettings?.contextWindow ??
-            record.contextWindow,
+          ...(contextWindow === undefined ? {} : { contextWindow }),
         },
       })
     }
@@ -1234,10 +1247,7 @@ export class SessionImpl {
    */
   locked<T>(fn: () => Promise<T>): Promise<T> {
     const p = this.lock.then(fn, fn)
-    this.lock = p.then(
-      () => undefined,
-      () => undefined,
-    )
+    this.lock = quietly(p)
     return p
   }
 
@@ -1264,7 +1274,7 @@ export class SessionImpl {
   transition(
     events: EventInput[] | ((nextSeq: Seq) => EventInput[]),
     next: OpStateObj | null | ((cur: OpStateObj | null, nextSeq: Seq) => OpStateObj | null),
-    opts: { refineCaller?: boolean } = {},
+    opts: { refineCaller?: boolean; commitCheck?: () => void } = {},
   ): Promise<Seq[]> {
     const expected = this.opSeq()
     const step: ChainStep = {
@@ -1348,12 +1358,13 @@ export class SessionImpl {
     extra: {
       error?: { code: string; message: string }
       lastAssistantSeq?: Seq | null
+      sideCallsDrained?: boolean
       events?: EventInput[] | ((nextSeq: Seq) => EventInput[])
     } = {},
   ): Promise<Seq> {
     const expected = this.opSeq()
     const turnNumber = this.op()?.meta.turn ?? 0
-    if (sideCallInFlight(this)) await settleSideCalls(this, expected)
+    if (!extra.sideCallsDrained && sideCallInFlight(this)) await settleSideCalls(this, expected)
     // Serialize completion with pause admission; whichever fact commits first wins.
     const seqs = await this.locked(async () => {
       if (reason === 'completed' && (await this.controls.paused()))
@@ -1389,6 +1400,7 @@ export class SessionImpl {
           end,
         ]
       })()
+      rows.splice(rows.length - 1, 0, await turnWaitEvent(this, rows))
       const result = await this.d.log.append(rows, {
         expectedRegisterSeq: { register: 'op.state', key: this.lane, seq: expected },
         opState: { lane: this.lane, data: null },
@@ -1397,6 +1409,8 @@ export class SessionImpl {
       return result.seqs
     })
     this.turnEndError = extra.error
+    // Between turns: a proposed refinement is applied now, before any queued input opens a turn.
+    if (this.d.refinement) await refinementAfterTurn(this)
     // Observer failure cannot undo a committed turn ending.
     await this.loopEvents
       .dispatch(
@@ -1438,6 +1452,7 @@ export class SessionImpl {
     if (target === 'next-step' || msg.kind === 'steer') await this.controls.require('steer', msg.actor)
     return this.locked(async () => {
       // Backend lifecycle checks must share the inbox writer lock with result collection.
+      if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
       if (await options.skipIf?.()) return this.lastSeq
       if (options.dedupeByCommandId) {
         if (!msg.commandId) throw new CoreError('E_ENVELOPE', 'input deduplication requires commandId')
@@ -1911,17 +1926,15 @@ export class SessionImpl {
     // Already restored and not running: restoring it again would replace the live turn.
     if (o.mode !== 'close' && op && this.turn)
       return Promise.resolve({ state: 'resumed', phase: op.phase.kind, actions: [] })
-    const resuming = this.active(
-      async () =>
-        o.mode !== 'close' && (await this.controls.paused())
-          ? { state: 'resumed' as const, phase: this.op()?.phase.kind ?? 'paused', actions: [] }
-          : resumeSession(this, o),
-      false,
-    )
-    const settled = resuming.then(
-      () => undefined,
-      () => undefined,
-    )
+    const resuming = this.active(async () => {
+      // Opening settles the maintenance calls a dead process left, whether or not a turn was open,
+      // then the refinement runs they belonged to.
+      await recoverRefinement(this, o.mode)
+      return o.mode !== 'close' && (await this.controls.paused())
+        ? { state: 'resumed' as const, phase: this.op()?.phase.kind ?? 'paused', actions: [] }
+        : resumeSession(this, o)
+    }, false)
+    const settled = quietly(resuming)
     this.resuming = settled
     void settled.then(() => {
       if (this.resuming === settled) this.resuming = undefined
@@ -1934,14 +1947,18 @@ export class SessionImpl {
    * resume in progress first, and counts while it waits, so no second resume can start before it.
    */
   /** Public-port invocation ownership: close waits even when a driver forgets to await a call. */
-  trackEffectReceipt(work: Promise<void>): void {
-    this.activeWork.add(work)
-    void work.finally(() => this.activeWork.delete(work)).catch(() => undefined)
+  trackEffectReceipt(work: Promise<void>, freeze?: () => void): boolean {
+    return this.effectReceipts.track(work, this.activeWork, freeze)
+  }
+
+  /** Revoke detached producers without waiting on this run itself. */
+  drainFailureReceipts(freezeOnly = false): Promise<void> {
+    return this.effectReceipts.drain(this, freezeOnly)
   }
 
   beginLoopOperation(): () => void {
     this.loopScope.assertAlive()
-    if (this.closing) throw new CoreError('E_CLOSED', 'session closed')
+    if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
     let done!: () => void
     const work = new Promise<void>((resolve) => {
       done = resolve
@@ -1954,7 +1971,7 @@ export class SessionImpl {
   }
 
   private active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
-    if (this.closing) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
+    if (this.closingOrClosed) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
     this.activeOps++
     const work = (async () => {
       while (afterResume && this.resuming) await this.resuming
@@ -2009,6 +2026,7 @@ export class SessionImpl {
     disposeLoopContext(ctx)
     this.decisions.renewScope()
     this.loopScope = new LoopScope()
+    this.effectReceipts.reset()
     const fresh = await createLoopContext(this, true)
     this.loopContext = fresh
     this.loopDriver = await this.d.loopFactory.resume(fresh, checkpoint, this.ac.signal)
@@ -2116,7 +2134,7 @@ export class SessionImpl {
           const phase = this.op()?.phase.kind ?? null
           const error = { code: 'E_RELATION', message: `run loop made no progress at phase ${phase}` }
           await this.diag('invariant', { kind: 'run-no-progress', edges, phase })
-          if (this.op()) await this.abandon('run-no-progress', error)
+          if (this.op()) await abandonTurn(this, 'run-no-progress', error)
           return { reason: 'error', lastSeq: this.lastSeq, error }
         }
         // A cancel that arrived while no turn was open (a Stop sent right behind a Send) could only
@@ -2143,11 +2161,7 @@ export class SessionImpl {
           // it, and the diagnostic row keeps the original findable. A direct `step()` call still
           // throws, so a bug is not hidden from whoever is debugging one.
           const phase = this.op()?.phase.kind ?? null
-          const error = {
-            // Integrity refusals must remain recognizable in turn/end and client outcomes.
-            code: err instanceof CoreError && err.code === 'E_LEDGER_INTEGRITY' ? err.code : 'E_STEP_FAILED',
-            message: err instanceof Error ? err.message : String(err),
-          }
+          const error = stepFailure(err)
           // A fail-closed hook or request stage that the cancel cut off throws like a failure, but
           // the user asked for the stop. End the turn as the stop it was, with no invariant row for
           // what the cancel itself caused; if even that cannot be written, the failure path below
@@ -2163,7 +2177,7 @@ export class SessionImpl {
             }
           }
           await this.diag('invariant', { kind: 'step-threw', phase, message: error.message })
-          if (this.op()) await this.abandon('step-threw', error)
+          await abandonTurn(this, 'step-threw', error)
           return { reason: 'error', lastSeq: this.lastSeq, error }
         } finally {
           this.d.quiet?.leave(this.d.quietGroup ?? this.key)
@@ -2192,25 +2206,6 @@ export class SessionImpl {
     } finally {
       opts.signal.removeEventListener('abort', onAbort)
       await this.d.quiet?.yieldPoint('turn', this.d.quietGroup ?? this.key)
-    }
-  }
-
-  /**
-   * The last resort of the two paths that have already given up on the turn. It writes the step's
-   * close alongside the turn's, because the situations that reach it are the ones with a step still
-   * open — and it is the only place allowed to keep going after a failed close, so the failure is
-   * written down rather than dropped. A closer that fails silently is worse than none, because the
-   * caller is told the turn ended.
-   */
-  private async abandon(kind: string, error: { code: string; message: string }): Promise<void> {
-    try {
-      await closeTurn(this, 'error', { error })
-    } catch (err) {
-      await this.diag('invariant', {
-        kind: 'turn-close-failed',
-        after: kind,
-        message: err instanceof Error ? err.message : String(err),
-      })
     }
   }
 
@@ -2562,10 +2557,7 @@ export class SessionImpl {
    */
   private exclusively<T>(run: () => Promise<T>): Promise<T> {
     const result = this.projectionTail.then(run)
-    this.projectionTail = result.then(
-      () => undefined,
-      () => undefined,
-    )
+    this.projectionTail = quietly(result)
     return result
   }
 
@@ -2583,6 +2575,15 @@ export class SessionImpl {
     if (this.closingOrClosed || this.d.log.isClosed) throw new CoreError('E_CLOSED', 'session closed')
   }
 
+  private primaryModelSettings() {
+    const thinking = this.preset.model.thinking.primary
+    const contextWindow = this.preset.model.contextWindow?.primary
+    return {
+      ...(thinking === undefined ? {} : { thinking }),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+    }
+  }
+
   private headProjectionUsage() {
     const target = resolveModel(this, 'primary')
     const model = this.d.provider
@@ -2595,12 +2596,7 @@ export class SessionImpl {
         id: target.model,
         contextWindow: contextWindowFor(this, target.route, target.model),
       },
-      settings: {
-        ...(this.preset.model.thinking.primary === undefined
-          ? {}
-          : { thinking: this.preset.model.thinking.primary }),
-        contextWindow: contextWindowFor(this, target.route, target.model),
-      },
+      settings: this.primaryModelSettings(),
       thinking: this.preset.model.thinking.primary ?? 'off',
       autoCompact: this.preset.compaction.enabled,
       ...this.compactAt(contextWindowFor(this, target.route, target.model)),
@@ -2649,18 +2645,14 @@ export class SessionImpl {
       events,
       upto: cut,
       lane: this.lane,
+      lanes: [MAINTENANCE_LANE],
       route: target.route,
       model: {
         ...model,
         id: target.model,
         contextWindow: contextWindowFor(this, target.route, target.model),
       },
-      settings: {
-        ...(this.preset.model.thinking.primary === undefined
-          ? {}
-          : { thinking: this.preset.model.thinking.primary }),
-        contextWindow: contextWindowFor(this, target.route, target.model),
-      },
+      settings: this.primaryModelSettings(),
       thinking: this.preset.model.thinking.primary ?? 'off',
       contextTokens: contextTokensAtCut(events, this.lane, cut),
       autoCompact: this.preset.compaction.enabled,
@@ -2702,7 +2694,7 @@ export class SessionImpl {
   }
   exportRlaf = (range: RlafRange = {}) => exportVerifiedRlaf(this.d.log, range)
   pendingEffects(): EffectTree {
-    return effectTree(this.state)
+    return effectTree(this.state, this.lane)
   }
   private closePromise: Promise<void> | undefined
 
@@ -2734,9 +2726,11 @@ export class SessionImpl {
       await attempt(() => this.loopDriver?.cancel())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
       await attempt(() => this.loopChildren?.close())
+      await attempt(() => this.d.children.dispose?.())
       // Keep hooks, log and lease alive while producers settle effects and final checkpoints. Work
       // that ignores its cancellation is left behind: it must not hold the log and the lease open.
-      await drainClosingWork(this, this.activeWork)
+      // Maintenance calls run outside any turn and have their own drain, within the same bound.
+      await Promise.all([attempt(() => drainMaintenance(this)), drainClosingWork(this, this.activeWork)])
       await attempt(() => this.loopDriver?.dispose())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.dispose())))
       if (this.loopContext) disposeLoopContext(this.loopContext)
@@ -2748,6 +2742,7 @@ export class SessionImpl {
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')
+      forgetIdleChild(this)
     })
     return this.closePromise
   }

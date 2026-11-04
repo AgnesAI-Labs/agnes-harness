@@ -28,7 +28,8 @@ export function checkedSkillScanObservation(value: unknown): SkillScanObservatio
   return structuredClone(scan)
 }
 
-/** Recent diagnostics, never an authority for catalog contents and never serialized to a journal. */
+/** Recent diagnostics, never an authority for catalog contents and never serialized to a journal.
+ *  Each scope reports the most recently admitted scan that has finished. */
 export class SkillScanReports {
   private generation = 0
   private readonly latest = new Map<string, SkillScanToken>()
@@ -50,7 +51,13 @@ export class SkillScanReports {
   }
 
   publish(token: SkillScanToken, observation: SkillScanObservation): void {
-    if (this.latest.get(token.key) !== token) return
+    // A scope that was evicted, or a scan older than the one already reported, publishes nothing.
+    // A later scan still running does not void this one: a person's rescan overlapped by a watcher
+    // refresh of the same folders must still report what it read.
+    const latest = this.latest.get(token.key)
+    if (!latest || latest.generation < token.generation) return
+    const current = this.published.get(token.key)
+    if (current && current.generation >= token.generation) return
     this.published.set(token.key, {
       ...checkedSkillScanObservation(observation),
       operationId: token.operationId,

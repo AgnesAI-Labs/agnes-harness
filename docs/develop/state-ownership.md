@@ -47,6 +47,7 @@ File references use `path:line` and were checked against commit `a6bf884c2`. A l
 
 The session ledger is the only authority for what happened in a session. Models propose; the ledger records. Core folds the ledger into state; no module keeps a competing record of an outcome.
 
+
 | State | Authority (location, format) | Mutation port | Readers | Copies (kind) | Disagreement rule | Recovery |
 | --- | --- | --- | --- | --- | --- | --- |
 | A1 Session events | `events` table, one hash-chained row per event, keyed `(session_key, seq)` (`packages/host-infrastructure/src/adapters/ddl.ts:7`; chain in `packages/core-ledger/src/log/integrity.ts:101`) | `SessionLogImpl` append under a writer claim (`packages/core-ledger/src/log/session-log.ts:168`) | Core, daemon listers, history index, clients through events | Everything below in this table (projections) | Ledger wins; a broken chain fails the open (`E_LEDGER_INTEGRITY`) rather than serving state | `SessionLogImpl.open` verifies the full chain before exposing replayed state (`session-log.ts:176-186`) |

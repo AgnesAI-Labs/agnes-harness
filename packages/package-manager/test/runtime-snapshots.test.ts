@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -703,6 +704,52 @@ it('fails closed and preserves unknown or damaged runtime directories', async ()
   })
   expect(existsSync(unknown)).toBe(true)
   expect(existsSync(pin.snapshot.directory)).toBe(true)
+})
+
+it('hashes known snapshots asynchronously in recovery without a journal and refuses changed or partial trees', async () => {
+  const m = await installTrusted(),
+    expected = await identity(),
+    pin = await m.pinRuntimeSnapshot(profile, {
+      pinId: 'active-v1',
+      operationId: 'enable-v1',
+      packageId: id,
+      purpose: 'active',
+      selector: {
+        kind: 'installed',
+        expectedIntegrity: expected.integrity,
+        expectedTreeIntegrity: expected.treeIntegrity,
+      },
+    })
+  const directory = realpathSync.native(pin.snapshot.directory)
+  const syncHash = vi.spyOn(sourceModule, 'hashDirectory')
+  const asyncHash = vi.spyOn(sourceModule, 'hashDirectoryAsync')
+  try {
+    await m.recover(profile)
+    const hashed = (spy: typeof syncHash | typeof asyncHash) =>
+      spy.mock.calls.filter(([dir]) => realpathSync.native(dir) === directory).length
+    expect(existsSync(join(profile, '.agnes-runtime-transaction.json'))).toBe(false)
+    expect([hashed(syncHash), hashed(asyncHash) > 0]).toEqual([0, true])
+  } finally {
+    syncHash.mockRestore()
+    asyncHash.mockRestore()
+  }
+  const dataFile = join(pin.snapshot.directory, 'data.json'),
+    nested = join(pin.snapshot.directory, 'nested.mjs'),
+    original = readFileSync(dataFile, 'utf8'),
+    stamp = statSync(dataFile)
+  // Same size and restored timestamps: only the bytes tell the change.
+  writeFileSync(dataFile, original.replace('v1-json', 'v2-json'))
+  utimesSync(dataFile, stamp.atime, stamp.mtime)
+  await expect(m.recover(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  writeFileSync(dataFile, original)
+  utimesSync(dataFile, stamp.atime, stamp.mtime)
+  await m.recover(profile)
+  const nestedBytes = readFileSync(nested)
+  rmSync(nested)
+  await expect(m.recover(profile)).rejects.toMatchObject({ code: 'E_PACKAGE_INTEGRITY' })
+  writeFileSync(nested, nestedBytes)
+  await m.recover(profile)
+  expect((await m.listRuntimePins(profile)).map((row) => row.snapshot)).toEqual([pin.snapshot])
 })
 
 it('only exposes a rollback target after verifying the retained previous tree', async () => {

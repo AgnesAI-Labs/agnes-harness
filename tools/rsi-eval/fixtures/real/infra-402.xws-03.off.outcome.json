@@ -1,0 +1,35 @@
+{
+  "runId": "xws-03-day-first-dates.off.r2",
+  "system": "agh",
+  "sessions": [
+    {
+      "exitCode": 0,
+      "timedOut": false,
+      "stdoutFile": "session1.turns.jsonl",
+      "sessionFiles": ["sessions/s1.events.jsonl"]
+    },
+    {
+      "exitCode": 1,
+      "timedOut": false,
+      "stdoutFile": "session2.turns.jsonl",
+      "sessionFiles": ["sessions/s2.events.jsonl"]
+    }
+  ],
+  "checks": [
+    {
+      "session": 0,
+      "prompt": 0,
+      "passed": true
+    },
+    {
+      "session": 0,
+      "prompt": 1,
+      "passed": true
+    },
+    {
+      "session": 0,
+      "prompt": 2,
+      "passed": true
+    }
+  ]
+}

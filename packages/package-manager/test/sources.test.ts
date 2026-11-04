@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+  cpSync,
   existsSync,
   linkSync,
   lstatSync,
@@ -275,7 +276,7 @@ describe('hashDirectory', () => {
   it.each(['failure', 'cancellation'] as const)(
     'bounds directory reads and drains started siblings before returning a %s',
     async (mode) => {
-      const canonicalRoot = realpathSync(root)
+      const canonicalRoot = realpathSync.native(root)
       for (let index = 0; index < 8; index++) {
         const directory = join(root, `branch-${index}`)
         mkdirSync(directory)
@@ -376,8 +377,8 @@ describe('hashDirectory', () => {
       writeFileSync(file, 'first')
       writeFileSync(tail, 'tail')
       const before = statSync(file)
-      const canonicalFile = realpathSync(file),
-        canonicalTail = realpathSync(tail)
+      const canonicalFile = realpathSync.native(file),
+        canonicalTail = realpathSync.native(tail)
       const change = () => {
         writeFileSync(file, 'other')
         utimesSync(file, before.atime, before.mtime)
@@ -412,7 +413,7 @@ describe('hashDirectory', () => {
     const expected = hashDirectory(root)
     // Walk the tree for real: a reused digest would never open the file this test links.
     forgetDirectoryDigests()
-    const canonicalFile = realpathSync(file)
+    const canonicalFile = realpathSync.native(file)
     const open = asyncFs.open
     let linked = false
     const spy = vi.spyOn(asyncFs, 'open').mockImplementation(async (...args) => {
@@ -581,7 +582,7 @@ describe('fetchSource', () => {
   it('names the resolution root when a file source is missing there, not the process cwd', async () => {
     const cwd = join(dir, 'daemon-workspace')
     mkdirSync(cwd)
-    const resolvedRoot = realpathSync(cwd)
+    const resolvedRoot = realpathSync.native(cwd)
     let caught: unknown
     try {
       await fetchSource(parseSource('file:./missing-pkg'), join(dir, 'installed'), { cwd })
@@ -591,6 +592,32 @@ describe('fetchSource', () => {
     expect(caught).toBeInstanceOf(Error)
     expect((caught as Error).message).toContain(resolvedRoot)
     expect((caught as { detail?: { workspaceRoot?: string } }).detail?.workspaceRoot).toBe(resolvedRoot)
+    expect((caught as { detail?: { reason?: string } }).detail?.reason).toBe('source-not-found')
+  })
+
+  it('expands a leading ~/ to the home directory for file: and path: only', async () => {
+    const home = join(dir, 'home')
+    mkdirSync(join(home, 'dl'), { recursive: true })
+    cpSync(join(fixtures, 'pkg-a'), join(home, 'dl', 'pkg-a'), { recursive: true })
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE }
+    process.env.HOME = home
+    process.env.USERPROFILE = home
+    try {
+      const expected = hashDirectory(join(fixtures, 'pkg-a'))
+      for (const prefix of ['file:', 'path:']) {
+        const into = join(dir, `into-${prefix.slice(0, -1)}`)
+        const fetched = await fetchSource(parseSource(`${prefix}~/dl/pkg-a`), into, { cwd: dir })
+        expect(fetched.integrity).toBe(expected)
+      }
+      for (const ref of ['file:~other/dl/pkg-a', 'file:./~/dl/pkg-a', 'file:dl/~/pkg-a'])
+        await expect(fetchSource(parseSource(ref), join(dir, 'no'), { cwd: dir })).rejects.toMatchObject({
+          detail: { reason: 'source-not-found' },
+        })
+    } finally {
+      for (const [key, value] of Object.entries(saved))
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+    }
   })
 
   it('does not copy excluded local trees', async () => {
@@ -766,13 +793,21 @@ describe('fetchSource', () => {
     },
   )
 
-  it.each(['valid', 'manifest-missing', 'manifest-invalid', 'git-fetch'] as const)(
+  it.each(['valid', 'manifest-missing', 'manifest-invalid', 'git-fetch', 'cancelled'] as const)(
     'fetches a pinned Git source or classifies its refusal (%s)',
     async (outcome) => {
       const commit = '0123456789012345678901234567890123456789'
       const calls: string[][] = []
-      const exec: ExecFn = async (_command, args) => {
+      const controller = new AbortController()
+      const exec: ExecFn = async (_command, args, options) => {
         calls.push([...args])
+        if (outcome === 'cancelled' && args.includes('fetch')) {
+          if (!options.signal) throw new Error('Git cancellation was not connected')
+          return new Promise((_, reject) => {
+            options.signal?.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })
+            queueMicrotask(() => controller.abort())
+          })
+        }
         if (outcome === 'git-fetch' && args.includes('fetch')) throw new Error('private Git stderr')
         const at = args.indexOf('-C')
         const checkout = args.includes('checkout')
@@ -790,8 +825,14 @@ describe('fetchSource', () => {
       const fetching = fetchSource(parseSource(`git:https://example.com/x.git#${commit}`), into, {
         cwd: dir,
         exec,
+        signal: controller.signal,
         npmProvenance: async () => undefined,
       })
+      if (outcome === 'cancelled') {
+        await expect(fetching).rejects.toMatchObject({ code: 'E_PACKAGE_CANCELLED' })
+        expect(existsSync(into)).toBe(false)
+        return
+      }
       if (outcome !== 'valid') {
         await expect(fetching).rejects.toMatchObject({
           code: 'E_PACKAGE_SOURCE',

@@ -1,0 +1,2 @@
+input: the quick brown fox
+expect: the quick|brown fox

@@ -38,6 +38,7 @@ async function server(
     factChain?: NonNullable<AdminSurfaceOptions['factChain']>
     runtimeAdmin?: NonNullable<AdminSurfaceOptions['runtimeAdmin']>
     available?: NonNullable<AdminSurfaceOptions['available']>
+    backendFeatures?: NonNullable<AdminSurfaceOptions['backendFeatures']>
   } = {},
 ) {
   let now = Date.now()
@@ -196,6 +197,11 @@ describe('local package admin surface trust boundary', () => {
       features: [],
     })
     expect(context.authScope).toMatch(/^auth\.[a-f0-9]{32}$/)
+    let features = ['packages.community-discovery.v1']
+    const dynamic = await server(undefined, undefined, { backendFeatures: async () => features })
+    expect((await (await dynamic.request('context')).json()).features).toEqual(features)
+    features = []
+    expect((await (await dynamic.request('context')).json()).features).toEqual([])
   })
 
   it('returns one freshly verified inventory with the matching context and fails closed on recovery', async () => {
@@ -384,6 +390,7 @@ describe('local package admin surface trust boundary', () => {
   // this list.
   it('keeps the BFF route allowlist in lockstep with the Web admin API client route map', () => {
     const expectedPaths = [
+      'skills/import',
       'application/get',
       'application/preview',
       'application/adopt',

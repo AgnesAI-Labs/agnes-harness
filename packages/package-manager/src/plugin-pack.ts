@@ -1,7 +1,16 @@
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CLIENT_PLATFORM_IMPORTS } from '@agnes/protocol'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
@@ -10,13 +19,54 @@ import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
 import { inspectStaged } from './inspect.js'
 import { readStaticJson } from './integrity.js'
-import { defaultExec, fetchSource, hashDirectory, readPackageJson } from './sources.js'
+import { defaultExec, hashDirectory, readPackageJson } from './sources.js'
 
 function entryTarget(value: unknown): string | undefined {
   if (typeof value === 'string') return value
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
   const row = value as Record<string, unknown>
   return entryTarget(row.import) ?? entryTarget(row.node) ?? entryTarget(row.default)
+}
+
+const SECRET_FILE = /^(\.env(\..*)?|.*\.pem|.*\.key|id_rsa.*|id_ed25519.*)$/
+
+/** Files npm itself would publish from the folder (`files`, .npmignore, .gitignore), validated defensively. */
+async function packlist(source: string): Promise<string[]> {
+  const fail = (): never => {
+    throw new PackageError(
+      'E_DEP_MISSING',
+      'Plugin file list could not be read from npm. See docs/guide/packages.md#sharing',
+    )
+  }
+  let value: unknown
+  try {
+    value = JSON.parse(
+      (await defaultExec('npm', ['pack', '--dry-run', '--json', '--ignore-scripts'], { cwd: source })).stdout,
+    )
+  } catch {
+    return fail()
+  }
+  const files =
+    Array.isArray(value) && value.length === 1 ? (value[0] as { files?: unknown })?.files : undefined
+  if (!Array.isArray(files)) return fail()
+  const paths = files.map((row) => (row as { path?: unknown } | null)?.path)
+  for (const path of paths)
+    if (
+      typeof path !== 'string' ||
+      !path ||
+      path.includes('\0') ||
+      path.includes('\\') ||
+      isAbsolute(path) ||
+      path.split('/').some((part) => part === '..' || part === '')
+    )
+      return fail()
+  const secrets = (paths as string[]).filter((path) => SECRET_FILE.test(basename(path)))
+  if (secrets.length)
+    throw new PackageError(
+      'E_EXT_LOAD',
+      `Refusing to pack likely secret files: ${secrets.join(', ')}. Remove them from package.json "files" or add them to .npmignore. See docs/guide/packages.md#sharing`,
+    )
+  return paths as string[]
 }
 
 /** Bundle third-party dependencies, retain Host SDK imports, then validate the distributable tree. */
@@ -43,7 +93,16 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
   const work = mkdtempSync(join(tmpdir(), 'agh-plugin-pack-'))
   try {
     const tree = join(work, 'package')
-    await fetchSource({ type: 'file', ref: sourceRef }, tree, { cwd: source })
+    for (const path of await packlist(source)) {
+      const from = join(source, path)
+      if (!lstatSync(from).isFile())
+        throw new PackageError(
+          'E_DEP_MISSING',
+          `Pack refuses non-regular file ${path}. See docs/guide/packages.md#sharing`,
+        )
+      mkdirSync(dirname(join(tree, path)), { recursive: true })
+      copyFileSync(from, join(tree, path))
+    }
     const manifest = readStaticJson(join(tree, 'package.json'))
     const agnes = manifest.agnes as
       | {
@@ -189,7 +248,7 @@ export async function packPlugin(folder: string, output?: string): Promise<strin
     if (result.preview.blockers.length)
       throw new PackageError(
         'E_EXT_LOAD',
-        'Plugin manifest is blocked; fix declarations before packing. See docs/guide/packages.md#sharing',
+        'Plugin manifest is blocked; fix declarations before packing, and list every declared file (client descriptor, entry, assets) in package.json "files". See docs/guide/packages.md#sharing',
       )
     mkdirSync(dirname(target), { recursive: true })
     const archive = join(work, 'plugin.tgz')

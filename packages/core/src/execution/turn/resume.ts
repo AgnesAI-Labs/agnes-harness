@@ -3,6 +3,7 @@ import type { EventInput, Seq } from '@agnes/core-common/types'
 import { isNestedCall } from '@agnes/core-ledger'
 import { scanAll, scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { EffectNode } from '@agnes/core-ledger/reduce/state'
+import { settleSideCalls, sideCallInFlight } from '../../loop/side-call-receipts.js'
 import { readSideCallBinding } from '../../orchestrator/side-call-effect-port.js'
 import {
   hasCompleteToolPolicyEnvelope,
@@ -13,6 +14,7 @@ import {
 import { closeTurn } from '../../step/control.js'
 import type { SessionImpl } from '../../step/session.js'
 import { classifyToolRecovery, type ToolRecoveryDecision } from '../../step/tool-recovery.js'
+import { interruptedRequestNote } from './inference-failure.js'
 import { failureNotes, recoveryNotes } from './nested-note.js'
 import { unknownOutcomeRows } from './unknown-outcome.js'
 
@@ -216,6 +218,36 @@ function actionForDecision(decision: ToolRecoveryDecision, replay?: string): Res
   return 'unknown'
 }
 
+/** Recover interrupted spend from the last durable output count, never the discarded text. */
+async function interruptedInferenceCost(
+  s: SessionImpl,
+  root: EffectNode,
+): Promise<{ cost: EventInput; output: number }> {
+  // The ledger holds counts, not the streamed text: the last output row for this effect is the
+  // best record of what the dead request had produced.
+  const outputs = await scanAll((q) => s.d.log.scan(q), {
+    fromSeq: root.intentSeq,
+    toSeq: s.lastSeq,
+    type: 'assistant/output',
+    lane: s.lane,
+  })
+  const last = outputs.findLast(
+    (row) => (row.data as { effectId?: unknown } | null)?.effectId === root.effectId,
+  )
+  const output = (last?.data as { estimatedTokens?: number } | undefined)?.estimatedTokens ?? 0
+  const cost = s.ev('cost/ledger', {
+    purpose: 'inference',
+    effectId: root.effectId,
+    tokens: { input: 0, output, cacheRead: 0, cacheWrite: 0 },
+    creditSource: 'estimated',
+    // 'unknown', not 'primary': an effect that named no slot cannot be attributed, and naming
+    // the primary slot writes a spend into that slot's account that nobody made there.
+    model: root.slot ?? 'unknown',
+    interrupted: true,
+  })
+  return { cost, output }
+}
+
 /**
  * Reconciles what the ledger says was in flight when the process died. It reads the program counter
  * and the effects that were announced and never settled; it never folds history back, because the
@@ -247,28 +279,7 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
     const cur = s.op()
     if (!cur) break
     if (root.kind === 'inference') {
-      // The ledger holds counts, not the streamed text: the last output row for this effect is the
-      // best record of what the dead request had produced.
-      const outputs = await scanAll((q) => s.d.log.scan(q), {
-        fromSeq: root.intentSeq,
-        toSeq: s.lastSeq,
-        type: 'assistant/output',
-        lane: s.lane,
-      })
-      const last = outputs.findLast(
-        (row) => (row.data as { effectId?: unknown } | null)?.effectId === root.effectId,
-      )
-      const output = (last?.data as { estimatedTokens?: number } | undefined)?.estimatedTokens ?? 0
-      const cost = s.ev('cost/ledger', {
-        purpose: 'inference',
-        effectId: root.effectId,
-        tokens: { input: 0, output, cacheRead: 0, cacheWrite: 0 },
-        creditSource: 'estimated',
-        // 'unknown', not 'primary': an effect that named no slot cannot be attributed, and naming
-        // the primary slot writes a spend into that slot's account that nobody made there.
-        model: root.slot ?? 'unknown',
-        interrupted: true,
-      })
+      const { cost, output } = await interruptedInferenceCost(s, root)
       if (cur.control.status === 'cancel_requested') {
         await s.transition(
           [cost, s.ev('effect/settled', { effectId: root.effectId, outcome: 'aborted' }), ...stepEnd()],
@@ -293,7 +304,12 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
         })
       if (attempt !== undefined && attempt + 1 < s.preset.model.retry.maxAttempts) {
         await s.transition(
-          [cost, s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' }), ...stepEnd()],
+          [
+            cost,
+            s.ev('effect/settled', { effectId: root.effectId, outcome: 'error' }),
+            ...(output > 0 ? [interruptedRequestNote(s, 'INTERRUPTED')] : []),
+            ...stepEnd(),
+          ],
           withPhase(cur, { kind: 'inference', gen: { status: 'ready', attempt: attempt + 1 } }),
         )
         actions.push({ effectId: root.effectId, action: 'retry' })
@@ -540,19 +556,27 @@ export async function resumeSession(s: SessionImpl, o: { mode?: ResumeMode } = {
 /**
  * The other resume mode: not a continuation, a closing. Every effect still open anywhere in the
  * turn - inference, tool, compaction, job, and each still-pending child under any of them - is
- * settled in place (an inference-kind node as `error`, since nobody is going to retry it; a
+ * settled in place (an inference-kind node as `error`, after its durable-output cost estimate; a
  * tool-kind node as `unknown`, with its own `TOOL_OUTCOME_UNKNOWN` closer, for the same reason a
  * plain resume writes one; a side-call node as `unknown`, after its estimated cost row). A call that
  * had not even reached that far - still `planned` or `awaiting_approval` in the batch, with no
  * `effect/intent` on the ledger at all - gets `TOOL_NOT_STARTED` instead: there is no effect to
  * settle, only a call to close. All of it lands
  * in the one transaction `endTurn` writes: the settlements, the synthesized results, the step's own
- * close if one was open, and `turn/end{ reason: 'interrupted' }` tombstoning `op.state`. Nothing
+ * close if one was open, and `turn/end` tombstoning `op.state`. A live step failure supplies its
+ * original error and ends as `error`; an explicit recovery close ends as `interrupted`. Nothing
  * here is resumed and nothing is re-run; a session closed this way is done, not paused.
  */
-export async function closeInterrupted(s: SessionImpl): Promise<ResumeReport> {
+export async function closeInterrupted(
+  s: SessionImpl,
+  error?: { code: string; message: string },
+): Promise<ResumeReport> {
   const op = s.op()
   if (!op) return { state: 'idle', actions: [] }
+  // Freeze inference first so it cannot settle separately while live side calls drain.
+  if (error) await s.drainFailureReceipts(true)
+  if (sideCallInFlight(s)) await settleSideCalls(s, s.opSeq())
+  if (error) await s.drainFailureReceipts()
   const events: EventInput[] = []
   const actions: ResumeReport['actions'] = []
   const priorResults = await scanAll((q) => s.d.log.scan(q), {
@@ -609,14 +633,19 @@ export async function closeInterrupted(s: SessionImpl): Promise<ResumeReport> {
     )
     closedCalls.add(toolUseId)
   }
-  // Reading a side call's binding row is asynchronous and the settlement below is not, so the rows
-  // of every side call still open anywhere in the tree are read first.
+  // Read estimates before assembling the single terminal transaction, including nested effects.
   const sideCallRows = new Map<string, EventInput[]>()
-  const readSideCalls = async (n: EffectNode): Promise<void> => {
-    for (const c of n.children) await readSideCalls(c)
+  const inferenceCosts = new Map<string, EventInput>()
+  const readCosts = async (n: EffectNode): Promise<void> => {
+    for (const c of n.children) await readCosts(c)
     if (n.kind === 'side-call') sideCallRows.set(n.effectId, await interruptedSideCallRows(s, n))
+    if (n.kind === 'inference')
+      inferenceCosts.set(
+        n.effectId,
+        s.inferenceFailureSettlements.get(n.effectId)?.cost ?? (await interruptedInferenceCost(s, n)).cost,
+      )
   }
-  for (const root of s.pendingEffects()) await readSideCalls(root)
+  for (const root of s.pendingEffects()) await readCosts(root)
   const settleAll = (n: EffectNode): void => {
     for (const c of n.children) settleAll(c)
     if (n.kind === 'side-call') {
@@ -664,6 +693,8 @@ export async function closeInterrupted(s: SessionImpl): Promise<ResumeReport> {
       actions.push({ effectId: n.effectId, action: settled ? 'settle' : 'unknown' })
       return
     }
+    const cost = inferenceCosts.get(n.effectId)
+    if (cost) events.push(cost)
     const unknown = n.kind === 'job' || n.kind === 'media'
     events.push(s.ev('effect/settled', { effectId: n.effectId, outcome: unknown ? 'unknown' : 'error' }))
     actions.push({ effectId: n.effectId, action: unknown ? 'unknown' : 'error' })
@@ -725,6 +756,29 @@ export async function closeInterrupted(s: SessionImpl): Promise<ResumeReport> {
   events.push(
     s.ev('x/core/resume-closed', { turn: op.meta.turn, effects: actions.length }, { ignorable: true }),
   )
-  await closeTurn(s, 'interrupted', { events })
+  const committedCosts = new Map<string, Seq>()
+  await closeTurn(s, error ? 'error' : 'interrupted', {
+    sideCallsDrained: true,
+    events: (nextSeq) => {
+      // A bounded drain may leave a producer running. Recheck under the terminal writer lock: a
+      // side call that settled while recovery read its binding must not get a second settlement.
+      const rows = events.filter((row) => {
+        const effectId = (row.data as { effectId?: string } | null)?.effectId
+        return !effectId || !sideCallRows.has(effectId) || s.state.pendingEffects.has(effectId)
+      })
+      for (const [effectId, cost] of inferenceCosts) {
+        const index = rows.indexOf(cost)
+        if (index >= 0) committedCosts.set(effectId, nextSeq + index)
+      }
+      return rows
+    },
+    ...(error ? { error } : {}),
+  })
+  for (const [effectId, seq] of committedCosts) {
+    const settlement = s.inferenceFailureSettlements.get(effectId)
+    s.inferenceFailureSettlements.delete(effectId)
+    const cost = inferenceCosts.get(effectId)
+    if (cost) await settlement?.committed(cost, seq)
+  }
   return { state: 'resumed', phase: 'terminal', actions }
 }

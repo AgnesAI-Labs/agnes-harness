@@ -8,6 +8,7 @@ const reasons = {
   'package-license': 'manifest-invalid',
   'package-dependencies': 'manifest-invalid',
   'static-declaration-required': 'not-plugin',
+  'source-not-found': 'source-not-found',
   'git-ref': 'git-ref',
   'git-fetch': 'git-fetch',
 } as const

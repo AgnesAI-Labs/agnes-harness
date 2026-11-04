@@ -23,6 +23,7 @@ import { PlanModeRequestError, submitPlanCommand } from '@agnes/web-conversation
 import { canSubmitComposer } from '@agnes/web-conversation/presentation'
 import type { AppSessionContext } from '../app.js'
 import { showCommandFeedback } from './command-feedback.js'
+import { isRefineCommand, runRefineCommand } from './refine-command.js'
 
 export function createSubmissionController(
   context: Pick<
@@ -218,6 +219,16 @@ export function createSubmissionController(
         return
       }
     }
+    if (
+      !selectedReferences.length &&
+      context.composerRuntime.getAttachmentBlocks().length === 0 &&
+      isRefineCommand(input)
+    ) {
+      context.composerRuntime.setDraft('')
+      sessionStorage.removeItem(context.composerDraftKey)
+      void runRefineCommand(context, input)
+      return
+    }
     if (!selectedReferences.length && isPlanCommand(input)) {
       const cwd = context.selectedWorkspace?.path
       if (!cwd) {
@@ -289,7 +300,10 @@ export function createSubmissionController(
       })
       return
     }
-    const text = input || referenceSelections.map(({ source, id }) => `@${source} ${id}`).join('\n')
+    // References travel in their own structured field.  Do not manufacture a visible
+    // `@source id` body when the composer contains only references: the daemon records
+    // the resolved reference block as well, so doing both makes the transcript show it twice.
+    const text = input
     const sentText = encodeApplicationWork(text, applicationWorkDraft.read(session?.id))
     const content: ContentBlock[] = [
       ...(sentText ? [{ type: 'text' as const, text: sentText }] : []),

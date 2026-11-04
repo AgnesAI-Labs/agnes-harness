@@ -5,6 +5,7 @@
  * Without a real roster source, the reconciler stays idle and loads no modules (fail-closed).
  */
 import { Context } from '@agnes/cordis'
+import { registerRefinementSettingsSection } from '@agnes/web-admin/settings/refinement'
 import {
   type AgnesClient,
   AgnesClientService,
@@ -62,6 +63,8 @@ import {
 import { traceCatalog } from '@agnes/web-units/trace-locale'
 import { LoopPicker } from '../loop-picker.js'
 import { businessAgentSuggestions } from '../pages/business-agents.js'
+import { saveRefinementEntry } from '../refine-save.js'
+import { withdrawRefinement } from '../refine-withdraw.js'
 import type {
   ApprovalRegionMount,
   ComposerRegionMount,
@@ -206,6 +209,17 @@ export async function startClientModules(options: {
     ctx.effect(() => voice.bindSession(session))
     ctx.effect(() => () => voice.dispose())
   }
+  // The experience-refinement section reads and saves the daemon's switch over this connection.
+  ctx.effect(() =>
+    registerRefinementSettingsSection({
+      read: () => options.agnes.refinement.get(),
+      save: (settings, expectedRevision) => options.agnes.refinement.save({ settings, expectedRevision }),
+      savedSkills: {
+        workspaces: async () => (await options.agnes.workspace.list()).items,
+        skills: (input) => options.agnes.refinement.skills(input),
+      },
+    }),
+  )
   const storedLocale = readLocalePreference(safeThemeStorage())
   applyDocumentLocale(document.documentElement, storedLocale)
   const locale = new LocaleService(ctx, storedLocale)
@@ -387,6 +401,7 @@ export async function startClientModules(options: {
   let composerDraft = options.composer?.initialDraft ?? ''
   let composerImages: ReturnType<ComposerRegionMount['getImageBlocks']> = []
   let composerAttachments: ReturnType<ComposerRegionMount['getAttachmentBlocks']> = []
+  let composerReferences: ReturnType<ComposerRegionMount['getDraftReferences']> = { files: [], skills: [] }
   let composerSessionId = session.getSnapshot()
   ctx.effect(() =>
     session.subscribe(() => {
@@ -416,12 +431,14 @@ export async function startClientModules(options: {
         handle.setDraft(composerDraft)
         handle.restoreImageBlocks(composerImages)
         handle.restoreAttachmentBlocks(composerAttachments)
+        handle.restoreDraftReferences(composerReferences)
         if (composerState) handle.render(composerState)
         return () => {
           if (composerView !== attached) return
           composerDraft = handle.getDraft()
           composerImages = handle.getImageBlocks()
           composerAttachments = handle.getAttachmentBlocks()
+          composerReferences = handle.getDraftReferences()
           composerView = undefined
         }
       },
@@ -430,6 +447,7 @@ export async function startClientModules(options: {
     ? {
         focus: () => composerView?.focus(),
         getDraft: () => composerView?.getDraft() ?? composerDraft,
+        getDraftReferences: () => composerView?.getDraftReferences() ?? composerReferences,
         getImageBlocks: () => composerView?.getImageBlocks() ?? composerImages,
         getAttachmentBlocks: () => composerView?.getAttachmentBlocks() ?? composerAttachments,
         hasPendingImages: () => composerView?.hasPendingImages() ?? false,
@@ -453,6 +471,10 @@ export async function startClientModules(options: {
         restoreAttachmentBlocks(value) {
           composerAttachments = value
           composerView?.restoreAttachmentBlocks(value)
+        },
+        restoreDraftReferences(value) {
+          composerReferences = value
+          composerView?.restoreDraftReferences(value)
         },
         mention: (value) => composerView?.mention(value),
         dispose() {},
@@ -534,6 +556,10 @@ export async function startClientModules(options: {
       ? mountTranscriptRegion(registry, options.transcriptContainer, {
           ...options.transcript,
           ...(options.claim ? { claim: options.claim } : {}),
+          onWithdrawRefinement: (sessionId, appliedSeq) =>
+            withdrawRefinement(options.agnes, sessionId, appliedSeq),
+          onSaveRefinementEntry: (sessionId, kind, id, target) =>
+            saveRefinementEntry(options.agnes, sessionId, kind, id, target),
           session,
           locale,
           resources,

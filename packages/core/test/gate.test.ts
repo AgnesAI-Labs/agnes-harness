@@ -1,5 +1,8 @@
+import { presetDefaults, readPreset } from '@agnes/core-common/step/preset'
+import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
+import { ToolRegistry } from '../src/registry/tools.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import {
   compactionSettingsFor,
@@ -7,9 +10,9 @@ import {
   contextTokens,
   nearlyFull,
 } from '../src/step/gate.js'
-import { fakeProvider, textTurn } from './helpers/fake-provider.js'
+import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, openSession } from './helpers/open-session.js'
+import { actor, openSession, writeTool } from './helpers/open-session.js'
 
 const sig = () => new AbortController().signal
 
@@ -28,6 +31,140 @@ const modelRecord = (route: string, id: string, contextWindow: number): ModelRec
   toolCallFormats: ['native'],
   thinkingReplay: 'native',
   contract_id: null,
+})
+
+describe('retired contract review', () => {
+  it.each(
+    ['main', 'secondary'].flatMap((lane) =>
+      [
+        { status: 'ran', trusted: true, ending: 'open', refused: true },
+        { status: 'ran', trusted: true, ending: 'parked', refused: true },
+        { status: 'ran', trusted: true, ending: 'parked-then-unrelated', refused: true },
+        { status: 'ran', trusted: true, ending: 'completed', refused: false },
+        { status: 'ran', trusted: true, ending: 'next-turn', refused: false },
+        { status: 'ran', trusted: false, ending: 'open', refused: false },
+        { status: 'skipped:disabled', trusted: true, ending: 'open', refused: false },
+      ].map((row) => ({ ...row, lane })),
+    ),
+  )('restores historical review records safely: %j', async ({ status, trusted, ending, refused, lane }) => {
+    const h = await openSession({ provider: fakeProvider([textTurn('done')]), lane })
+    try {
+      await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'work' }] })
+      await h.session.step()
+      await h.log.append([
+        h.session.ev(
+          'x/core/completion-gate',
+          {
+            diagnostic: 'completion_gate_contract_review',
+            status,
+          },
+          {
+            ignorable: true,
+            ...(trusted ? {} : { origin: 'principal' as const, trust: 'untrusted' as const }),
+          },
+        ),
+      ])
+      if (ending === 'parked' || ending === 'parked-then-unrelated') await h.session.endTurn('parked')
+      if (ending === 'parked-then-unrelated') {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'unrelated' }] })
+        expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+      }
+      if (ending === 'completed' || ending === 'next-turn') {
+        expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+      }
+      if (ending === 'next-turn') {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'new work' }] })
+        await h.session.step()
+      }
+      const otherLane = lane === 'main' ? 'secondary' : 'main'
+      await h.session.append([
+        h.session.ev('turn/start', { turn: 1, trigger: 'prompt' }, { lane: otherLane }),
+        h.session.ev('turn/end', { reason: 'completed', lastAssistantSeq: null }, { lane: otherLane }),
+      ])
+      const rows = await h.log.scan({ limit: 1000 })
+      const storage = MemoryStorage.fromEvents('k', rows, {
+        opCells: h.log.allRegisters().filter((row) => row.register === 'op.state'),
+      })
+      const provider = fakeProvider([textTurn('must not run during open')])
+      if (refused) {
+        await expect(openSession({ storage, provider, lane })).rejects.toMatchObject({
+          code: 'E_UNSUPPORTED',
+        })
+        expect(await storage.scan('k', { limit: 1000 })).toEqual(rows)
+      } else {
+        const reopened = await openSession({ storage, provider, lane })
+        await reopened.session.close()
+      }
+      expect(provider.calls).toBe(0)
+    } finally {
+      await h.session.close()
+    }
+  })
+  it.each([false, true])(
+    'finishes a mutating task without an extra review (legacy flag %s)',
+    async (enabled) => {
+      const registry = new ToolRegistry()
+      registry.add(writeTool(), { source: 'test', trust: 'builtin' })
+      const provider = fakeProvider([toolTurn('write_note', {}), textTurn('done')])
+      const preset = readPreset({ completion_gate: { contract_review: enabled } }, 'legacy')
+      const h = await openSession({ provider, registry, preset })
+      try {
+        await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'Write a note.' }] })
+        expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+        expect(provider.calls).toBe(2)
+        expect(await h.log.scan({ type: 'x/core/completion-gate', limit: 20 })).toEqual([])
+      } finally {
+        await h.session.close()
+      }
+    },
+  )
+})
+
+describe('ordinary plan completion gate', () => {
+  it.each([
+    { enabled: true, minItems: 3, count: 3, repair: true },
+    { enabled: false, minItems: 3, count: 3, repair: false },
+    { enabled: true, minItems: 4, count: 3, repair: false },
+  ])('preserves the configured plan gate: %j', async ({ enabled, minItems, count, repair }) => {
+    const provider = fakeProvider([textTurn('draft'), textTurn('done')])
+    const h = await openSession({
+      provider,
+      preset: { ...presetDefaults(), completionGate: { enabled, minItems } },
+    })
+    try {
+      await h.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'work' }] })
+      await h.session.acceptInput()
+      await h.session.append([
+        h.session.ev(
+          'plan.items',
+          {
+            items: Array.from({ length: count }, (_, id) => ({
+              id: String(id),
+              text: 'requirement',
+              status: 'todo',
+            })),
+          },
+          { register: 'plan.items' },
+        ),
+      ])
+      expect((await h.session.run({ until: 'turn-end', signal: sig() })).reason).toBe('completed')
+      expect(provider.calls).toBe(repair ? 2 : 1)
+      expect(
+        (await h.log.scan({ type: 'repair/decision', limit: 10 })).map(
+          (row) => (row.data as { decision: string }).decision,
+        ),
+      ).toEqual(repair ? ['repair', 'complete'] : [])
+      const recovery = await h.log.scan({ type: 'x/core/verifier-recovery', limit: 10 })
+      expect(
+        recovery.some(
+          (row) => (row.data as { diagnostic?: string }).diagnostic === 'completion_gate_stale_plan',
+        ),
+      ).toBe(repair)
+      expect(await h.log.scan({ type: 'x/core/completion-gate', limit: 10 })).toEqual([])
+    } finally {
+      await h.session.close()
+    }
+  })
 })
 
 describe('contextTokens', () => {

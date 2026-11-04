@@ -45,6 +45,7 @@ export function usage(locale = 'en'): string {
     'agh dev <plugin-folder> [--profile <p>]   agh plugins reload [id] [--profile <p>]',
     'agh plugins candidates list | show|approve|reject <id> [--candidate-hash <sha256>] [--review-hash <sha256>]',
     'agh plugins provenance <id> [--profile <p>] [--json]',
+    'agh plugins skill-import prepare <source> [subdirectory] | commit <proposalId> <digest> | status|cancel <proposalId>',
     'agh plugins config get <id> | validate|set <id> [<row>] --file <f|-> [--json]',
     'agh plugins tree [list] | show | apply --file <artifact|-> [--yes] | rollback [--yes]   agh plugins generations [--json]',
     'agh plugins publication-status [--profile <p>] [--json]',

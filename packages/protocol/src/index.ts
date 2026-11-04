@@ -4,6 +4,16 @@ export type { DecisionPresentation, ToolPresentation } from '../gen/ts/session-v
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
 export {
+  isSkillBundleIgnored,
+  isSkillBundleMarker,
+  isSkillBundlePath,
+  SKILL_BUNDLE_FRONTMATTER_KEYS,
+  SKILL_BUNDLE_LIMITS,
+  SKILL_BUNDLE_MARKER,
+  SKILL_BUNDLE_VERSION,
+  skillBundleFileKind,
+} from './skill-bundle.js'
+export {
   boundedUiJson,
   componentDataValid,
   uiDataBinding,
@@ -130,6 +140,15 @@ export type {
   PluginRuntimeStatusResult,
   PluginStreamsEndpointParams,
   PluginStreamsEndpointResult,
+  RefinementSavedSkill,
+  RefinementSaveReceipt,
+  RefinementSettings,
+  RefinementSettingsSaveParams,
+  RefinementSettingsSaveResult,
+  RefinementSettingsSnapshot,
+  RefinementSkillDraft,
+  RefinementSkillsParams,
+  RefinementSkillsResult,
   SeqResult,
   SessionActivity,
   SessionActivityParams,
@@ -182,8 +201,16 @@ export type {
   SessionQueuedControlInput,
   SessionReadToolDetailParams,
   SessionReadToolDetailResult,
+  SessionReferenceCancelParams,
+  SessionReferenceSearchCancelableParams,
   SessionReferenceSearchParams,
   SessionReferenceSearchResult,
+  SessionRefineParams,
+  SessionRefineResult,
+  SessionRefineRollbackParams,
+  SessionRefineRollbackResult,
+  SessionRefineSaveParams,
+  SessionRefineSaveResult,
   SessionRemoveQueuedParams,
   SessionRenameParams,
   SessionRevealWorkspaceParams,
@@ -476,6 +503,9 @@ export type {
   RuntimePinReleaseResult,
   SessionGenerationMigrationParams,
   SessionGenerationMigrationResult,
+  SkillEnvironmentRequirement,
+  SkillImportParams,
+  SkillImportResult,
   SkinListResult,
   SkinReadParams,
   SkinReadResult,
@@ -741,11 +771,14 @@ export { validateProjectionCapability, validateProjectionReadResult } from './pr
 export * from './provider.js'
 export * from './public-errors.js'
 export {
+  fileReferenceBrowse,
+  parentFileReferenceBrowse,
   type ReferenceCandidate,
   type ReferenceSearchResult,
   type ReferenceSelection,
   validateReferenceSelections,
 } from './references.js'
+export * from './refinement.js'
 export * from './resource-control.js'
 export * from './runtime-admin.js'
 export * from './runtime-target-artifact.js'

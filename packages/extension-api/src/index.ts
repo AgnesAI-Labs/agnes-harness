@@ -68,12 +68,14 @@ export {
   type SystemPromptProvider,
   systemPromptKind,
 } from './system-prompt.js'
+export type { TaskScope, TaskScopePhase, TaskScopeReader, TaskScopeSource } from './task-scope.js'
 export * from './tool.js'
 export * from './tool-policy.js'
 export * from './tool-references.js'
 export * from './tool-runtime.js'
 export * from './version.js'
 export * from './webhook-trigger.js'
+export * from './workflow-run.js'
 export * from './workspace-hooks.js'
 
 export * from './workspace-state.js'

@@ -13,6 +13,8 @@ import {
   refBlock,
   spillLocator,
 } from '../src/guards/output.js'
+import { collapseRepeatedLines } from '../src/guards/repeated-output.js'
+import { readTool } from '../src/tools/read.js'
 
 // These cases were written against an 8 KiB limit, and the sizes below are built from it, so they
 // ask for that limit explicitly instead of taking the deployment default.
@@ -27,6 +29,51 @@ const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
 const NOTE_ROOM = 320
 
 describe('guardOutput', () => {
+  it('collapses only adjacent numeric variants, retaining errors, status and the final screen with one-call recovery', async () => {
+    const tail = Array.from({ length: 40 }, (_, i) => `tail ${i}中\r\n`).join('')
+    const text =
+      'Error E1\nError E2\nError E2\n' +
+      'build 1 at 12:30:01 50%\n'.repeat(70) +
+      'different\n[exit 1]\n' +
+      tail
+    const ctx = ctxOf({ collapseRepeatedOutput: true })
+    const result = await guardOutput(ctx, text, { collapse: true })
+    expect(result.text).toContain('Error E1\nError E2\n')
+    expect(result.text).toContain('… repeated 69 times …')
+    expect(result.text).toContain('different\n[exit 1]\n')
+    expect(result.text.endsWith(tail)).toBe(true)
+    expect(result.truncated).toBe(false)
+    const read = await readTool.execute({ path: spillLocator(result.ref!) }, ctx)
+    const restored = (read.content[0] as { text: string }).text
+    expect(restored).toContain('build 1 at 12:30:01 50%')
+    expect(restored).toContain('tail 39中')
+    expect(restored).not.toContain('call read again')
+    const numbered = restored
+      .split('\n')
+      .filter((line) => /^\d+\t/.test(line))
+      .map((line) => line.replace(/^\d+\t/, ''))
+    expect(numbered.join('\n')).toBe(text.replace(/\n$/, ''))
+    expect(new TextDecoder().decode(await ctx.artifacts.get(result.ref!))).toBe(text)
+    expect(await guardOutput(ctxOf(), text, { collapse: true })).toEqual({ text, truncated: false })
+    expect(
+      collapseRepeatedLines('compiling source 1\ncompiling source 2\ncompiling source 3\n' + tail),
+    ).toContain('… repeated 2 times …')
+    const distinct = 'alpha\nbeta\ngamma\n' + tail
+    expect(collapseRepeatedLines(distinct)).toBe(distinct)
+    const failed = ctxOf({ collapseRepeatedOutput: true, artifactsFail: 'offline' })
+    expect(await guardOutput(failed, text, { collapse: true })).toEqual({ text, truncated: false })
+  })
+
+  it('collapses before truncation and stores the original rather than the collapsed view', async () => {
+    const text = 'compiling source\n'.repeat(1000) + 'x'.repeat(10000) + '\n[exit 0]'
+    const ctx = ctxOf({ collapseRepeatedOutput: true })
+    const result = await guardOutput(ctx, text, { collapse: true })
+    expect(result.truncated).toBe(true)
+    expect(result.text).toContain('… repeated')
+    expect(result.text.endsWith('[exit 0]')).toBe(true)
+    expect(new TextDecoder().decode(await ctx.artifacts.get(result.ref!))).toBe(text)
+  })
+
   it('passes small output through without touching the artifact store', async () => {
     const ctx = ctxOf()
     const r = await guardOutput(ctx, 'hello')

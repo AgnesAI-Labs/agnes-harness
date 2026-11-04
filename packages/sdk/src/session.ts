@@ -1,6 +1,7 @@
 import type { ReferenceSearchResult, ReferenceSelection } from '@agnes/protocol'
 import { PermissionGate, type PermissionHandler, type PermissionRequest } from './permission.js'
 import { checkTurnLimits, promptMetadata, type TurnOptions, toContentBlocks } from './prompt-budget.js'
+import { listSessionWorkspace, searchSessionReferences } from './reference-search.js'
 
 export type { PermissionOption, PermissionOutcome, PermissionRequest } from './permission.js'
 export { toContentBlocks } from './prompt-budget.js'
@@ -597,17 +598,15 @@ export class Session {
   }
 
   workspaceList(path = ''): Promise<SessionWorkspaceListResult> {
-    return this.client.call<SessionWorkspaceListResult>('_agnes/v1/session.workspace.list', {
-      sessionId: this.id,
-      ...(path ? { path } : {}),
-    })
+    return listSessionWorkspace(this.client, this.id, path, false)
   }
 
-  searchReferences(query: string): Promise<ReferenceSearchResult> {
-    return this.client.call<ReferenceSearchResult>('_agnes/v1/session.references.search', {
-      sessionId: this.id,
-      query,
-    })
+  workspaceBrowse(path = '', options: { signal?: AbortSignal } = {}): Promise<SessionWorkspaceListResult> {
+    return listSessionWorkspace(this.client, this.id, path, true, options.signal)
+  }
+
+  searchReferences(query: string, options: { signal?: AbortSignal } = {}): Promise<ReferenceSearchResult> {
+    return searchSessionReferences(this.client, this.id, query, options.signal)
   }
 
   workspaceRead(path: string): Promise<SessionWorkspaceReadResult> {

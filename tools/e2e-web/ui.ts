@@ -1,5 +1,5 @@
 import { realpath } from 'node:fs/promises'
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { expect } from './fixtures.js'
 import { settled } from './quality.js'
 import type { Runtime } from './runtime.js'
@@ -142,6 +142,9 @@ export async function homePage(page: Page, id: string, tab?: string) {
   await sidebar(page)
   await page.getByTestId(`home-entry-${id}`).click()
   await expect(page.getByTestId(`home-page-${id}`)).toBeVisible()
+  // The page reopens where it was left; a pushed page (a candidate review) shows once its read
+  // returns. Settle before deciding whether there is a level to go back from.
+  await settled(page)
   const back = page.getByTestId('push-back')
   for (let level = 0; level < 8 && (await back.isVisible()); level++) {
     const previous = page.url()
@@ -324,13 +327,40 @@ export async function openGoal(page: Page) {
   await expect(page.getByTestId('goal-objective')).toBeVisible()
 }
 
-/** Select the stable record-order view through the trace's actual menu. */
-export async function traceSequence(page: Page) {
-  await page.getByTestId('trace-toolbar-more').click()
+/**
+ * Open a shared menu and wait until antd has placed it under its trigger. A menu opened while the
+ * view still moves (a fading view, a finishing turn) follows its trigger, and a scroll that
+ * carries the trigger away rightly dismisses it; the popup also mounts off-screen and is aligned
+ * a frame later. Open it on the settled view and use its items once they are in place.
+ */
+export async function openMenu(page: Page, trigger: Locator, item: Locator) {
+  await settled(page)
+  await trigger.click()
+  await expect(item).toBeInViewport()
+  await settled(page)
+}
+
+async function traceMenu(page: Page) {
+  await openMenu(page, page.getByTestId('trace-toolbar-more'), page.getByTestId('trace-timeline-sequence'))
+}
+
+/** Choose the record-order timeline through the trace's actual menu. */
+export async function chooseTraceSequence(page: Page) {
+  await traceMenu(page)
   await page.getByTestId('trace-timeline-sequence').click()
-  await page.getByTestId('trace-toolbar-more').click()
+  await expect(page.getByTestId('trace-toolbar-more')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('trace-timeline-sequence')).toBeHidden()
+}
+
+/** Select the stable record-order view through the trace's actual menu and confirm it. */
+export async function traceSequence(page: Page) {
+  await chooseTraceSequence(page)
+  await traceMenu(page)
   await expect(page.getByTestId('trace-timeline-sequence')).toHaveText(/^✓ /)
-  await page.keyboard.press('Escape')
+  // Close it as a person would here: choose the checked view again.
+  await page.getByTestId('trace-timeline-sequence').click()
+  await expect(page.getByTestId('trace-toolbar-more')).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByTestId('trace-timeline-sequence')).toBeHidden()
 }
 
 /** Open a dock panel through its tab or the real overflow menu when the strip folds it. */

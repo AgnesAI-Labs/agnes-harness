@@ -12,9 +12,9 @@ export type ProviderCatalogueFailure = Readonly<{
   status?: number
 }>
 
-/** IDs returned by a bounded provider model-list request, or why there were none. */
+/** IDs and valid context limits from a bounded model-list request, or why there were none. */
 export type ProviderModels =
-  | Readonly<{ ids: readonly string[] }>
+  | Readonly<{ ids: readonly string[]; contextWindows?: Readonly<Record<string, number>> }>
   | Readonly<{ failure: ProviderCatalogueFailure }>
 
 const failed = (reason: ProviderCatalogueFailure['reason'], status?: number): ProviderModels => ({
@@ -63,7 +63,7 @@ async function boundedJson(response: Response): Promise<{ value: unknown } | Pro
 
 /**
  * Performs the provider-owned part of configuration testing. It requests a bounded model catalogue
- * and returns IDs only, or the reason it could not; Host decides what those IDs may become. A
+ * and returns IDs and context limits, or the reason it could not; Host decides what those IDs may become. A
  * missing credential sends no authentication header at all.
  * Authentication/access refusals with a supplied credential throw a fixed-message ApiKeyProviderError carrying only HTTP status.
  */
@@ -137,6 +137,7 @@ export async function fetchProviderModels(options: {
   if (Array.isArray(data) && data.length === 0) return failed('empty')
   if (!Array.isArray(data) || data.length > MAX_MODELS) return failed('invalid')
   const ids: string[] = []
+  const contexts: [string, number][] = []
   for (const item of data) {
     if (!object(item)) return failed('invalid')
     // Gemini lists resource names (models/{id}); OpenAI/Anthropic list plain ids.
@@ -148,9 +149,18 @@ export async function fetchProviderModels(options: {
     if (typeof id !== 'string' || !MODEL_ID.test(id) || (credential !== undefined && id.includes(credential)))
       return failed('invalid')
     ids.push(id)
+    const contextWindow = [
+      item.context_length,
+      object(item.limit) ? item.limit.context : undefined,
+      item.context_window,
+    ].find((value): value is number => typeof value === 'number' && Number.isSafeInteger(value) && value > 0)
+    if (contextWindow !== undefined) contexts.push([id, contextWindow])
   }
   if (new Set(ids).size !== ids.length) return failed('invalid')
-  return { ids: Object.freeze(ids) }
+  return {
+    ids: Object.freeze(ids),
+    ...(contexts.length ? { contextWindows: Object.freeze(Object.fromEntries(contexts)) } : {}),
+  }
 }
 
 /** Reachability only. Response contents never become catalogue or capability evidence. */

@@ -1,0 +1,2 @@
+input: one two three four
+expect: one two|three four

@@ -1,4 +1,4 @@
-import { type HarnessMeta, setHarnessMeta } from '@agnes/protocol'
+import { type AssistantMessage, type HarnessMeta, setHarnessMeta } from '@agnes/protocol'
 import type { JsonRpcMessage, JsonRpcNotification, RpcEndpoint } from '@agnes/sdk'
 import { pendingDecision } from '../../core-ledger/testkit/decision.js'
 
@@ -188,6 +188,12 @@ export function scriptedEndpoint(
     toolCall?: { toolUseId: string; name: string; durationMs?: number; outcome?: 'ok' | 'error' | 'aborted' }
     /** The `error` a failed turn's turn/end row carries. */
     turnEndError?: { code: string; message: string }
+    /** A review may end after an assistant message containing only tool calls. */
+    trailingEmptyAssistant?: boolean
+    /** A review tool request may carry progress text after the earlier candidate. */
+    trailingAssistantText?: string
+    replyStopReason?: AssistantMessage['stopReason']
+    trailingAssistantStopReason?: AssistantMessage['stopReason']
     /** What the handshake advertises under `agentCapabilities._meta['ai.agnes.harness']`; none by default, like an older daemon. */
     harnessCapabilities?: {
       hardTurnBudget?: boolean
@@ -292,9 +298,34 @@ export function scriptedEndpoint(
         }
         ep.pushEvent(
           FAKE_SESSION_ID,
-          ev('assistant/message', { content: [{ type: 'text', text: reply }], stopReason: 'end_turn' }),
+          ev('assistant/message', {
+            content: [{ type: 'text', text: reply }],
+            stopReason: opts.replyStopReason ?? 'end_turn',
+          }),
           meta('responseBoundary'),
         )
+        if (opts.trailingEmptyAssistant || opts.trailingAssistantText !== undefined) {
+          ep.pushEvent(
+            FAKE_SESSION_ID,
+            ev('assistant/message', {
+              content:
+                opts.trailingAssistantText === undefined
+                  ? []
+                  : [{ type: 'text', text: opts.trailingAssistantText }],
+              stopReason: opts.trailingAssistantStopReason ?? 'tool_use',
+            }),
+            meta('event'),
+          )
+          if (
+            opts.trailingAssistantText !== undefined &&
+            (opts.trailingAssistantStopReason ?? 'tool_use') === 'tool_use'
+          )
+            ep.pushEvent(
+              FAKE_SESSION_ID,
+              ev('tool/call', { toolUseId: 'review-tc', name: 'read', args: {}, ordinal: 0 }),
+              meta('event'),
+            )
+        }
         if (opts.parkedTicket !== undefined)
           ep.pushEvent(
             FAKE_SESSION_ID,

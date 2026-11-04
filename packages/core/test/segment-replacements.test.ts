@@ -245,7 +245,7 @@ describe('typed core segment replacements', () => {
     })
     await failed.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
     const outcome = await failed.session.run({ until: 'turn-end', signal: new AbortController().signal })
-    expect(outcome).toMatchObject({ reason: 'error', error: { code: 'E_STEP_FAILED' } })
+    expect(outcome).toMatchObject({ reason: 'error', error: { code: 'E_RELATION' } })
     expect(failed.session.pendingEffects()).toEqual([])
     expect(await failed.log.scan({ type: 'x/core/operation-failed', limit: 5 })).toHaveLength(1)
   })
@@ -298,7 +298,7 @@ describe('typed core segment replacements', () => {
     await opened.session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'go' }] })
     expect(
       await opened.session.run({ until: 'turn-end', signal: new AbortController().signal }),
-    ).toMatchObject({ reason: 'error', error: { code: 'E_STEP_FAILED' } })
+    ).toMatchObject({ reason: 'error', error: { code: 'E_ENVELOPE' } })
     expect(opened.session.pendingEffects()).toEqual([])
     const intents = await opened.log.scan({ type: 'effect/intent', limit: 20 })
     expect(intents.some((row) => (row.data as { effectId?: string }).effectId === 'rogue')).toBe(false)

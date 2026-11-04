@@ -98,7 +98,6 @@ describe('minimal-rl freeze gate', () => {
       'subagent',
       'verifier',
       'completion_gate',
-      'harness',
       'telemetry',
       'hooks',
       'locale',
@@ -110,7 +109,7 @@ describe('minimal-rl freeze gate', () => {
     const doc = loadPreset('minimal-rl')
     expect((doc.tools as { core: string[] }).core).toEqual(['shell', 'edit'])
     expect((doc.model as { prompt_sections: string[] }).prompt_sections).toEqual([])
-    expect((doc.harness as { auto_refine: { enabled: boolean } }).auto_refine.enabled).toBe(false)
+    expect(doc.harness).toBeUndefined()
     expect((doc.subagent as { max_depth: number }).max_depth).toBe(0)
     expect((doc.telemetry as { consent: string }).consent).toBe('DISABLED')
     // Nothing is pre-approved: every destructive call reaches a human, and with nobody connected
@@ -120,7 +119,7 @@ describe('minimal-rl freeze gate', () => {
     expect(approval.on_unavailable).toBe('deny')
   })
 
-  // Nine keys in this file have no reader. They are kept - the baseline states its whole intent,
+  // Eight keys in this file have no reader. They are kept - the baseline states its whole intent,
   // including the parts the kernel has not been taught to honour - and each one says so in the file,
   // so nobody reads `consent: DISABLED` as a setting that is in force. This is what stops the
   // annotations being quietly deleted.
@@ -134,15 +133,14 @@ describe('minimal-rl freeze gate', () => {
       'skills_roots',
       'attribution',
       'completion_gate',
-      'auto_refine',
       'consent',
       'hooks',
       'locale',
     ])
       expect(text, key).toContain(key)
-    // One marker per unread key. A count, not a mere presence, so deleting eight of the nine
+    // One marker per unread key. A count, not a mere presence, so deleting seven of the eight
     // annotations while leaving one is still a failure.
-    expect(text.match(/NOT CONSUMED/g)?.length ?? 0).toBeGreaterThanOrEqual(9)
+    expect(text.match(/NOT CONSUMED/g)?.length ?? 0).toBeGreaterThanOrEqual(8)
     // And the recipe says how to re-sign itself, which is the only supported way to change it.
     expect(text).toContain('pnpm --filter @agnes/code')
   })

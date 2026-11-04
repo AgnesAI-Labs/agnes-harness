@@ -164,7 +164,10 @@ export type RefineProposal = {
   // applied refine; it is not a trigger the Harness seam's own callers pick.
   trigger: 'auto' | 'manual' | 'compact' | 'rollback'
   edits: HarnessEdit[]
-  baseline: { key: string; version: number }[]
+  // `seq`, when present, is the entry's mutation token as the proposal saw it: the seq of the row that
+  // last set the cell, or of the row that recorded its removal, 0 for an id never written. It is
+  // checked, not recorded: the `harness/refine` row keeps the key and version.
+  baseline: { key: string; version: number; seq?: Seq }[]
   rationale: string
   evidenceSeqs: Seq[]
   // Set only on a `trigger: 'rollback'` proposal: the seq of the `harness/refine` event being undone.

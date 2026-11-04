@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 import { FormatRegistry } from '@sinclair/typebox'
 
 if (!FormatRegistry.Has('date-time')) FormatRegistry.Set('date-time', (value) => { const parts = value.split(/t/i); if (parts.length !== 2) return false; const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(parts[0] ?? ''); const time = /^(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)(z|([+-])(\d{2}):(\d{2}))$/i.exec(parts[1] ?? ''); if (!date || !time) return false; const year = Number(date[1]), month = Number(date[2]), day = Number(date[3]); const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0); const days = [0, 31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; if (month < 1 || month > 12 || day < 1 || day > (days[month] ?? 0)) return false; const hour = Number(time[1]), minute = Number(time[2]), second = Number(time[3]); const offsetHour = Number(time[6] || 0), offsetMinute = Number(time[7] || 0); if (hour > 23 || minute > 59 || offsetHour > 23 || offsetMinute > 59) return false; if (second < 60) return true; const sign = time[5] === '-' ? -1 : 1; const utcMinute = minute - offsetMinute * sign; const utcHour = hour - offsetHour * sign - (utcMinute < 0 ? 1 : 0); return (utcHour === 23 || utcHour === -1) && (utcMinute === 59 || utcMinute === -1) && second < 61; })
@@ -19,27 +19,29 @@ export const ChannelSchema = Type.Module({
   "ChannelCredential": Type.Object({ "kind": Type.Literal('channel'), "channel": Type.String({ maxLength: 32 }), "accountId": Type.String({ maxLength: 128 }), "userId": Type.String({ maxLength: 256 }), "unionId": Type.Optional(Type.String({ maxLength: 256 })), "chatId": Type.String({ maxLength: 256 }), "chatType": Type.Union([Type.Literal('dm'), Type.Literal('group'), Type.Literal('thread')]), "displayName": Type.Optional(Type.String({ maxLength: 256 })), "raw": Type.Optional(Type.Record(Type.String(), Type.String({ maxLength: 1024 }))) }, { additionalProperties: false }),
 })
 
-export const Credential = ChannelSchema.Import('Credential')
+export type ChannelSchemaDefinitions = typeof ChannelSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const Credential: TImport<ChannelSchemaDefinitions, 'Credential'> = ChannelSchema.Import('Credential')
 export type Credential = Static<typeof Credential>
-export const ApprovalAction = ChannelSchema.Import('ApprovalAction')
+export const ApprovalAction: TImport<ChannelSchemaDefinitions, 'ApprovalAction'> = ChannelSchema.Import('ApprovalAction')
 export type ApprovalAction = Static<typeof ApprovalAction>
-export const DirectoryEntry = ChannelSchema.Import('DirectoryEntry')
+export const DirectoryEntry: TImport<ChannelSchemaDefinitions, 'DirectoryEntry'> = ChannelSchema.Import('DirectoryEntry')
 export type DirectoryEntry = Static<typeof DirectoryEntry>
-export const ChannelCapabilities = ChannelSchema.Import('ChannelCapabilities')
+export const ChannelCapabilities: TImport<ChannelSchemaDefinitions, 'ChannelCapabilities'> = ChannelSchema.Import('ChannelCapabilities')
 export type ChannelCapabilities = Static<typeof ChannelCapabilities>
-export const ChannelManifest = ChannelSchema.Import('ChannelManifest')
+export const ChannelManifest: TImport<ChannelSchemaDefinitions, 'ChannelManifest'> = ChannelSchema.Import('ChannelManifest')
 export type ChannelManifest = Static<typeof ChannelManifest>
-export const JwtCredential = ChannelSchema.Import('JwtCredential')
+export const JwtCredential: TImport<ChannelSchemaDefinitions, 'JwtCredential'> = ChannelSchema.Import('JwtCredential')
 export type JwtCredential = Static<typeof JwtCredential>
-export const SourceAuthCredential = ChannelSchema.Import('SourceAuthCredential')
+export const SourceAuthCredential: TImport<ChannelSchemaDefinitions, 'SourceAuthCredential'> = ChannelSchema.Import('SourceAuthCredential')
 export type SourceAuthCredential = Static<typeof SourceAuthCredential>
-export const PortalIdentityCredential = ChannelSchema.Import('PortalIdentityCredential')
+export const PortalIdentityCredential: TImport<ChannelSchemaDefinitions, 'PortalIdentityCredential'> = ChannelSchema.Import('PortalIdentityCredential')
 export type PortalIdentityCredential = Static<typeof PortalIdentityCredential>
-export const LocalCredential = ChannelSchema.Import('LocalCredential')
+export const LocalCredential: TImport<ChannelSchemaDefinitions, 'LocalCredential'> = ChannelSchema.Import('LocalCredential')
 export type LocalCredential = Static<typeof LocalCredential>
-export const SurfaceAuthCredential = ChannelSchema.Import('SurfaceAuthCredential')
+export const SurfaceAuthCredential: TImport<ChannelSchemaDefinitions, 'SurfaceAuthCredential'> = ChannelSchema.Import('SurfaceAuthCredential')
 export type SurfaceAuthCredential = Static<typeof SurfaceAuthCredential>
-export const Auth = ChannelSchema.Import('Auth')
+export const Auth: TImport<ChannelSchemaDefinitions, 'Auth'> = ChannelSchema.Import('Auth')
 export type Auth = Static<typeof Auth>
-export const ChannelCredential = ChannelSchema.Import('ChannelCredential')
+export const ChannelCredential: TImport<ChannelSchemaDefinitions, 'ChannelCredential'> = ChannelSchema.Import('ChannelCredential')
 export type ChannelCredential = Static<typeof ChannelCredential>

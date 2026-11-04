@@ -138,8 +138,8 @@ export function pinPresetModelDefaults(
     const record = records.find((entry) => entry.route === target.route && entry.id === target.model)
     if (!record) bad('model-unserved', 'the reviewed model is unavailable', { slot, ...target })
     model.thinking[slot] = pinned.model.thinking[slot] ?? record.defaultSettings?.thinking
-    model.contextWindow[slot] =
-      pinned.model.contextWindow?.[slot] ?? record.defaultSettings?.contextWindow ?? record.contextWindow
+    const contextWindow = pinned.model.contextWindow?.[slot] ?? record.defaultSettings?.contextWindow
+    if (contextWindow !== undefined) model.contextWindow[slot] = contextWindow
   }
   return { ...pinned, model }
 }

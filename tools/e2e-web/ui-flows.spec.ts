@@ -158,6 +158,9 @@ test('UI first run, Agent selection, demo read/cancel, account save and restart 
     await dialog.getByRole('textbox', { name: 'Account name', exact: true }).fill('Offline UI account')
     await dialog.getByRole('textbox', { name: 'Base URL', exact: true }).fill(provider.baseUrl)
     await dialog.locator('#config-api-key').fill(provider.apiKey)
+    // The new key is tested once typing settles, and the form is locked while that runs; an open
+    // timeout picker closes when it is. Edit the timeouts after the connection test.
+    await expect(dialog.locator('#config-state')).toContainText('Connected.')
     for (const [key, seconds] of [
       ['requestMs', '90'],
       ['connectMs', '4'],

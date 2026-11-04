@@ -27,6 +27,10 @@ vi.mock('@agnes/system-node', async (importOriginal) => {
       recorded.events.push(`publish ${basename(path)}`)
       return (actual.publishFileDurablySync as (...args: unknown[]) => boolean)(path, ...rest)
     }),
+    removeFileDurablySync: vi.fn((path: string) => {
+      recorded.events.push(`remove ${relative(recorded.root, path).split(sep).slice(1).join('/')}`)
+      actual.removeFileDurablySync(path)
+    }),
   }
 })
 
@@ -156,4 +160,26 @@ it('captures cooperative publication inputs before the caller can change its sou
   expect(created.sources.map((entry) => entry.snapshot.packageId)).toEqual(['first', 'second'])
   expect(created.sources.map((entry) => entry.snapshot.version)).toEqual(['1.0.0', '1.0.0'])
   expect(await store.readAsync(created.id)).toEqual(created)
+})
+
+it('flushes the removal of its own adopter record once, not on every collection that passes it', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'agh-generation-release-'))
+  homes.push(home)
+  const store = new RuntimeGenerationSnapshotStore(join(home, 'profile'))
+  recorded.root = store.root
+  const target = buildRuntimeTarget({
+    rows: [],
+    resources: { mcp: [], skills: {} },
+    resourceRevision: 'a'.repeat(64),
+    compositeRevision: 'b'.repeat(64),
+  })
+  const created = store.create(target, [source(home, 'first')], 'compat')
+  // The pin keeps the generation, so every later collection still visits it.
+  store.pin('session-a', created.id, [])
+  recorded.events.length = 0
+  for (let pass = 0; pass < 3; pass++) expect(await store.collect(new Set())).toEqual([])
+  expect(recorded.events.filter((event) => event.startsWith('remove '))).toEqual([
+    expect.stringMatching(/^remove adopters\//),
+  ])
+  expect(readdirSync(join(store.root, created.id, 'adopters'))).toEqual([])
 })

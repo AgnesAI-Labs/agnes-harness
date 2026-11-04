@@ -1,7 +1,7 @@
 import type { HookContext, HookPayloadMap, HookReturnMap } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { guardedResult } from '../../tools-core/src/guards/output.js'
+import { guardedCommandResult, guardedResult } from '../../tools-core/src/guards/output.js'
 import { deadlineWait } from '../../tools-core/src/shell-guidance.js'
 import { createPtyTools } from './pty-tools.js'
 import { type ShellJobs, standaloneShellJobs } from './registry.js'
@@ -32,26 +32,31 @@ export function createJobTools(jobs: ShellJobs) {
     defineTool({
       name: 'job_output',
       description:
-        'Read captured output and status of a background shell job. Long output spills to a readable artifact. waitMs optionally waits, without stopping the job.',
+        'Read captured output and status of a background shell job. Long output spills to a readable artifact. waitMs optionally waits, without stopping the job. Pass the returned cursor to read only new output; gaps are reported. Cursors are session/lane/job scoped and invalid after restart.',
       parameters: Type.Object(
-        { jobId: Type.String(), waitMs: Type.Optional(Type.Integer({ minimum: 0, maximum: 60000 })) },
+        {
+          jobId: Type.String(),
+          cursor: Type.Optional(Type.String({ maxLength: 4096 })),
+          waitMs: Type.Optional(Type.Integer({ minimum: 0, maximum: 60000 })),
+        },
         { additionalProperties: false },
       ),
       meta,
       async execute(args, ctx) {
         try {
           await jobs.syncChildren(ctx)
-          const job = await jobs.wait(
+          await jobs.wait(
             ctx,
             args.jobId,
             // A wait never runs into the turn's deadline; the job itself keeps running.
             deadlineWait(ctx, Math.min(args.waitMs ?? 0, ctx.timeoutMs)).waitMs,
           )
+          const job = jobs.output(ctx, args.jobId, args.cursor)
           return {
-            structured: { jobId: job.id, status: job.status },
-            ...(await guardedResult(
+            structured: { jobId: job.id, status: job.status, cursor: job.cursor, gap: job.gap },
+            ...(await guardedCommandResult(
               ctx,
-              `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n[${job.status}; exit ${job.code ?? 'pending'}]${job.truncated ? ' [capture limit reached]' : ''}`,
+              `${job.gap ? '[output gap: job buffer discarded unread output]\n' : ''}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n[${job.status}; exit ${job.code ?? 'pending'}]${job.truncated ? ' [capture limit reached]' : ''}`,
             )),
             details: { jobId: job.id, status: job.status, code: job.code, truncated: job.truncated },
           }

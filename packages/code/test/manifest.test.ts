@@ -119,7 +119,7 @@ describe('code-mode extension entry', () => {
     expect(registeredHooks).toEqual(['session_start'])
     // Let the handler's microtask (the awaited events.append call) settle.
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(appended).toEqual([{ name: 'kernel', data: { alive: false } }])
+    expect(appended).toEqual([{ name: 'kernel', data: { alive: false, reason: 'session-start' } }])
     expect(typeof dispose).toBe('function')
     dispose()
     expect(disposed).toBe(2)

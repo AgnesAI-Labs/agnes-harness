@@ -50,6 +50,7 @@ import type { SessionEntry } from '../sessions.js'
 // from this file is `import type`, which the compiler erases entirely, so nothing here ever has to
 // load agnes.ts back at runtime in the other direction.
 import { mapCore } from './agnes.js'
+import { authPromptError } from './prompt-error.js'
 import { registerSessionIntegrity } from './session-integrity.js'
 import { admitSystemPromptAppend } from './session-prompt-append.js'
 import { applyOpenToolFilter, parseOpenToolFilter } from './session-switches.js'
@@ -440,7 +441,7 @@ export function throwSessionOpenRpcError(error: unknown, sessionId = ''): never 
         : undefined
     throw rpcError('INTERNAL_ERROR', {
       code: cause ?? 'E_SEAM_INIT',
-      reason: cause ? reason : 'session-initialization-failed',
+      reason: cause || reason === 'native-glibc-incompatible' ? reason : 'session-initialization-failed',
     })
   }
   if (e?.code === 'E_SANDBOX_WORKSPACE') {
@@ -869,18 +870,8 @@ export function registerAcp(
       completed = out.reason === 'completed'
       // Not before terminalQuiescence: the response is the turn's last word to this client.
       await feedFor(entry).pushed(out.lastSeq, { timeoutMs: cx.quiescenceWaitMs })
-      if (out.reason === 'error' && out.error?.code === 'AUTH') {
-        // The worker supplies account identity; only an in-process session owns a local preset.
-        const modelRoute =
-          (out.error as { modelRoute?: string }).modelRoute ?? entry.session.preset?.model.route.primary
-        throw rpcError('SEMANTIC_REJECTED', {
-          code: 'CONFIG_CREDENTIAL_REJECTED',
-          turnEnd: { reason: 'error' },
-          ...(modelRoute ? { modelRoute } : {}),
-          retryable: false,
-          error: { code: 'AUTH' },
-        })
-      }
+      if (out.reason === 'error' && out.error?.code === 'AUTH')
+        throw authPromptError(out.error, entry.session.preset?.model.route.primary)
       if (out.reason === 'error')
         throw rpcError('INTERNAL_ERROR', {
           code: 'TURN_ERROR',

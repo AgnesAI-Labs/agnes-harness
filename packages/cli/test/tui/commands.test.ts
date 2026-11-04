@@ -44,7 +44,7 @@ async function unstartedApp(
   ],
   composerSelectionPath?: string,
   themePreferencePath?: string,
-  appOptions: { cwd?: string; remote?: boolean } = {},
+  appOptions: { cwd?: string; remote?: boolean; locale?: 'en' | 'zh-CN' } = {},
 ) {
   const ep = scriptedEndpoint()
     .on('_agnes/v1/session.budget', () => ({
@@ -899,7 +899,9 @@ describe('runSlash', () => {
         expect(ok.switchSession?.id).toBeDefined()
         expect(
           ep.calls.find(
-            (c) => c.method === '_agnes/v1/workspace.add' && JSON.stringify(c.params).includes(target),
+            (c) =>
+              c.method === '_agnes/v1/workspace.add' &&
+              JSON.stringify(c.params).includes(JSON.stringify(target)),
           ),
         ).toBeDefined()
         expect(ep.calls.filter((c) => c.method === 'session/new').at(-1)?.params).toMatchObject({
@@ -1931,6 +1933,59 @@ describe('runSlash', () => {
     }
   })
 
+  it('/model labels choices with the account label, disambiguating duplicates, and tolerates a failed config read', async () => {
+    const acct = (accountId: string, label: string) => ({
+      accountId,
+      providerId: 'deepseek',
+      route: `account-${accountId}`,
+      label,
+      baseUrl: 'https://api.deepseek.com/v1',
+      model: 'deepseek-flash',
+      models: [{ id: 'deepseek-flash', name: 'deepseek-flash' }],
+      enabled: true,
+      credentialConfigured: true,
+    })
+    const { app, ep, client } = await unstartedApp([
+      { route: 'account-acct-3a4e775a-1', id: 'deepseek-flash' },
+      { route: 'account-acct-9f00aaaa-2', id: 'deepseek-flash' },
+      { route: 'account-acct-bbbb0000-3', id: 'kimi' },
+      { route: 'legacy-route', id: 'x' },
+    ])
+    try {
+      ep.on('_agnes/v1/config.get', () => ({
+        profile: 'local-dev',
+        revision: 1,
+        configured: true,
+        effect: 'new-sessions',
+        provider: {
+          id: 'deepseek',
+          route: 'deepseek',
+          baseUrl: 'https://api.deepseek.com/v1',
+          model: 'deepseek-v4-flash',
+          credentialConfigured: true,
+        },
+        accounts: [
+          acct('acct-3a4e775a-1', 'DeepSeek'),
+          acct('acct-9f00aaaa-2', 'DeepSeek'),
+          acct('acct-bbbb0000-3', 'Kimi'),
+        ],
+      }))
+      const choices = (await runSlash(app, '/model')).modelChoices
+      expect(choices?.map((c) => [c.route, c.label])).toEqual([
+        ['account-acct-3a4e775a-1', 'DeepSeek #3a4e'],
+        ['account-acct-9f00aaaa-2', 'DeepSeek #9f00'],
+        ['account-acct-bbbb0000-3', 'Kimi'],
+        ['legacy-route', undefined],
+      ])
+      ep.on('_agnes/v1/config.get', () => {
+        throw new Error('down')
+      })
+      expect((await runSlash(app, '/model')).modelChoices).toHaveLength(4)
+    } finally {
+      await client.close()
+    }
+  })
+
   it('/model does not open an empty picker when the current profile publishes no models', async () => {
     const { app, client } = await unstartedApp([])
     try {
@@ -1987,19 +2042,168 @@ describe('runSlash', () => {
     }
   })
 
-  // Honesty note: `harness/refine` is a raw ledger event type with no projected UINode kind, so
-  // this reports the gap directly rather than silently returning "no proposals" forever by
-  // filtering a UINode kind that can never match.
-  it('/refine reports the real gap instead of a silently-always-empty search', async () => {
-    const { app, ep, client } = await unstartedApp()
-    try {
-      const before = ep.calls.length
-      const r = await runSlash(app, '/refine')
-      expect(r.text).toMatch(/not projected/)
-      expect(ep.calls.length).toBe(before)
-    } finally {
-      await client.close()
+  describe('/refine', () => {
+    const refusing = (reason: string) => () => {
+      throw rpcError('SEMANTIC_REJECTED', { reason })
     }
+
+    it('is refused with one hint when refinement is off or not yet active', async () => {
+      const { app, ep, client } = await unstartedApp()
+      const english = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      try {
+        ep.on('_agnes/v1/session.refine', refusing('refinement-off'))
+        const r = await runSlash(app, '/refine')
+        expect(r.text).toContain('RSI')
+        expect(r.text).toContain('设置')
+        expect(r.text).toContain('重启')
+        expect(ep.calls.some((call) => call.method === '_agnes/v1/session.refine')).toBe(true)
+        for (const reason of ['refinement-off', 'unavailable']) {
+          english.ep.on('_agnes/v1/session.refine', refusing(reason))
+          const en = await runSlash(english.app, '/refine the build')
+          expect(en.text).toBe(
+            'Experience refinement (RSI) is not active. Turn it on in settings; if you just did, restart to apply it.',
+          )
+        }
+      } finally {
+        await client.close()
+        await english.client.close()
+      }
+    })
+
+    it('queues a review with the focus and reports the run', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      try {
+        ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-7' }))
+        const r = await runSlash(app, '/refine  the build setup ')
+        expect(r.text).toContain('run-7')
+        const call = ep.calls.find((c) => c.method === '_agnes/v1/session.refine')
+        expect(call?.params).toEqual({ sessionId: app.session.id, focus: 'the build setup' })
+        await runSlash(app, '/refine')
+        const bare = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(bare?.params).toEqual({ sessionId: app.session.id })
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('names other refusals and refuses a too-long focus without a call', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      try {
+        ep.on('_agnes/v1/session.refine', refusing('child-session'))
+        expect((await runSlash(app, '/refine')).text).toMatch(/forked or child session/)
+        ep.on('_agnes/v1/session.refine', refusing('some-new-reason'))
+        expect((await runSlash(app, '/refine')).text).toContain('some-new-reason')
+        const before = ep.calls.length
+        expect((await runSlash(app, `/refine ${'x'.repeat(513)}`)).text).toMatch(/512/)
+        // 300 emoji are 600 UTF-16 units, which the daemon counts: refused here, with the right reason.
+        expect((await runSlash(app, `/refine ${'😀'.repeat(300)}`)).text).toMatch(/512/)
+        expect(ep.calls.length).toBe(before)
+      } finally {
+        await client.close()
+      }
+    })
+
+    it('/refine on a model with no known price asks for agreement, and --unpriced gives it', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      const chinese = await unstartedApp()
+      try {
+        ep.on('_agnes/v1/session.refine', refusing('unpriced'))
+        const asked = await runSlash(app, '/refine the build')
+        expect(asked.text).toMatch(/no known price/)
+        expect(asked.text).toContain('/refine --unpriced')
+        ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-11' }))
+        expect((await runSlash(app, '/refine --unpriced  the build')).text).toContain('run-11')
+        const call = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(call?.params).toEqual({ sessionId: app.session.id, focus: 'the build', allowUnpriced: true })
+        await runSlash(app, '/refine --workspace --unpriced')
+        expect(ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)?.params).toEqual({
+          sessionId: app.session.id,
+          saveTo: 'workspace',
+          allowUnpriced: true,
+        })
+        await runSlash(app, '/refine --unpriced --workspace notes')
+        expect(ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)?.params).toEqual({
+          sessionId: app.session.id,
+          focus: 'notes',
+          saveTo: 'workspace',
+          allowUnpriced: true,
+        })
+        chinese.ep.on('_agnes/v1/session.refine', refusing('unpriced'))
+        expect((await runSlash(chinese.app, '/refine')).text).toContain('/refine --unpriced')
+      } finally {
+        await client.close()
+        await chinese.client.close()
+      }
+    })
+
+    it('/refine --user queues a review saved to user memory', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      const chinese = await unstartedApp()
+      try {
+        ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-11' }))
+        const sent = () => ep.calls.filter((c) => c.method === '_agnes/v1/session.refine')
+        const r = await runSlash(app, '/refine --user  my style ')
+        expect(r.text).toContain('run-11')
+        expect(r.text).toMatch(/saved to user memory/i)
+        expect(sent().at(-1)?.params).toEqual({
+          sessionId: app.session.id,
+          focus: 'my style',
+          saveTo: 'user',
+        })
+        await runSlash(app, '/refine --user')
+        expect(sent().at(-1)?.params).toEqual({ sessionId: app.session.id, saveTo: 'user' })
+        await runSlash(app, '/refine --unpriced --user notes')
+        expect(sent().at(-1)?.params).toEqual({
+          sessionId: app.session.id,
+          focus: 'notes',
+          saveTo: 'user',
+          allowUnpriced: true,
+        })
+        // A word that only starts like the flag is focus text; both targets together are not taken.
+        await runSlash(app, '/refine --users')
+        expect(sent().at(-1)?.params).toEqual({ sessionId: app.session.id, focus: '--users' })
+        const before = sent().length
+        expect((await runSlash(app, '/refine --user --workspace')).text).toMatch(
+          /either --workspace or --user/,
+        )
+        expect(sent()).toHaveLength(before)
+        chinese.ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-12' }))
+        expect((await runSlash(chinese.app, '/refine --user')).text).toContain('用户记忆')
+        chinese.ep.on('_agnes/v1/session.refine', refusing('refinement-off'))
+        expect((await runSlash(chinese.app, '/refine --user')).text).toContain('重启')
+      } finally {
+        await client.close()
+        await chinese.client.close()
+      }
+    })
+
+    it('/refine --workspace queues a saving review', async () => {
+      const { app, ep, client } = await unstartedApp(undefined, undefined, undefined, { locale: 'en' })
+      const chinese = await unstartedApp()
+      try {
+        ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-9' }))
+        const r = await runSlash(app, '/refine --workspace  the build ')
+        expect(r.text).toContain('run-9')
+        expect(r.text).toMatch(/saved to this workspace/i)
+        expect(r.text).not.toMatch(/not available/)
+        const call = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(call?.params).toEqual({ sessionId: app.session.id, focus: 'the build', saveTo: 'workspace' })
+        await runSlash(app, '/refine --workspace')
+        const bare = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(bare?.params).toEqual({ sessionId: app.session.id, saveTo: 'workspace' })
+        // A word that only starts like the flag is focus text, not the flag.
+        await runSlash(app, '/refine --workspaces')
+        const word = ep.calls.filter((c) => c.method === '_agnes/v1/session.refine').at(-1)
+        expect(word?.params).toEqual({ sessionId: app.session.id, focus: '--workspaces' })
+        chinese.ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-10' }))
+        expect((await runSlash(chinese.app, '/refine --workspace')).text).toContain('工作区')
+        chinese.ep.on('_agnes/v1/session.refine', refusing('refinement-off'))
+        expect((await runSlash(chinese.app, '/refine --workspace')).text).toContain('重启')
+      } finally {
+        await client.close()
+        await chinese.client.close()
+      }
+    })
   })
 })
 
@@ -2555,7 +2759,9 @@ it('uploads a CLI path with spaces through bounded original intake and preserves
     const home = join(dir, 'home')
     await mkdir(home)
     await writeFile(join(home, 'h.txt'), bytes)
+    // os.homedir() reads HOME on POSIX and USERPROFILE on Windows.
     vi.stubEnv('HOME', home)
+    vi.stubEnv('USERPROFILE', home)
     calls.length = 0
     await runSlash(app, '/attach ~/h.txt')
     vi.unstubAllEnvs()

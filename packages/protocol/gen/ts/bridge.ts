@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const JsonValue = Type.Recursive((This) => Type.Union([Type.Null(), Type.Boolean(), Type.Number(), Type.String(), Type.Array(This), Type.Record(Type.String(), This)]))
 export type JsonValue = Static<typeof JsonValue>
@@ -11,13 +11,15 @@ export const BridgeSchema = Type.Module({
   "ToolsInvokeParams": Type.Object({ "name": Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]{0,63}$" }), "args": JsonValue }, { additionalProperties: false }),
 })
 
-export const BridgeMethod = BridgeSchema.Import('BridgeMethod')
+export type BridgeSchemaDefinitions = typeof BridgeSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const BridgeMethod: TImport<BridgeSchemaDefinitions, 'BridgeMethod'> = BridgeSchema.Import('BridgeMethod')
 export type BridgeMethod = Static<typeof BridgeMethod>
-export const BridgeRequest = BridgeSchema.Import('BridgeRequest')
+export const BridgeRequest: TImport<BridgeSchemaDefinitions, 'BridgeRequest'> = BridgeSchema.Import('BridgeRequest')
 export type BridgeRequest = Static<typeof BridgeRequest>
-export const BridgeResponse = BridgeSchema.Import('BridgeResponse')
+export const BridgeResponse: TImport<BridgeSchemaDefinitions, 'BridgeResponse'> = BridgeSchema.Import('BridgeResponse')
 export type BridgeResponse = Static<typeof BridgeResponse>
-export const ToolsInvokeParams = BridgeSchema.Import('ToolsInvokeParams')
+export const ToolsInvokeParams: TImport<BridgeSchemaDefinitions, 'ToolsInvokeParams'> = BridgeSchema.Import('ToolsInvokeParams')
 export type ToolsInvokeParams = Static<typeof ToolsInvokeParams>
 export const X_AGNES_BRIDGE_ERRORS = {
   "1001": "BUDGET_EXCEEDED",

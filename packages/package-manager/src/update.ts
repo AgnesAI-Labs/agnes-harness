@@ -2,7 +2,7 @@ import { satisfiesApiRange } from '@agnes/extension-api'
 import { PackageError } from './errors.js'
 import { exampleParentBlockers } from './example-parent.js'
 import { inspectStaged } from './inspect.js'
-import { own } from './integrity.js'
+import { canonical, capabilityHash, own } from './integrity.js'
 import { readInventory } from './inventory.js'
 import {
   assertNoReferences,
@@ -56,7 +56,7 @@ export async function updatePackages(deps: {
     (op.dependents?.length && !op.activation)
   )
     throw new PackageError('E_EXT_LOAD', 'group update requires unique reviewed packages and activation')
-  const changes: (PackageChange & { next: LockEntry; stage: string })[] = []
+  const changes: (PackageChange & { next: LockEntry; stage: string; sourceOnly: boolean })[] = []
   const stages: string[] = []
   try {
     for (const request of requests) {
@@ -120,7 +120,20 @@ export async function updatePackages(deps: {
         entry.declaredCapabilities = preview.declaredCapabilities
       entry.treeIntegrity = treeIntegrity
       entry.surfaces = preview.contributions.flatMap((c) => (c.kind === 'surface' ? [c.descriptor] : []))
-      entry.previous = previousSnapshot(current)
+      const sourceOnly =
+        current.integrity === entry.integrity &&
+        current.version === entry.version &&
+        current.treeIntegrity === entry.treeIntegrity &&
+        capabilityHash(current) === capabilityHash(entry) &&
+        (canonical(current.source) !== canonical(entry.source) ||
+          current.provenance?.resolvedLocation !== entry.provenance?.resolvedLocation)
+      // A relocation keeps the installed bytes and the existing rollback target. Publishing only
+      // metadata under the ordinary journal also preserves its retained previous directory.
+      entry.previous = sourceOnly ? structuredClone(current.previous) : previousSnapshot(current)
+      if (sourceOnly) {
+        entry.state = structuredClone(current.state)
+        if (current.trustDecision) entry.trustDecision = structuredClone(current.trustDecision)
+      }
       if (request.activation) {
         if (current.state.trusted === null)
           throw new PackageError('E_WORKSPACE_UNTRUSTED', 'untrusted package cannot activate during update')
@@ -136,7 +149,7 @@ export async function updatePackages(deps: {
         trusted.state.enabled = request.id === id ? true : current.state.enabled
         Object.assign(entry, trusted)
       }
-      changes.push({ id: request.id, next: entry, stage, operation: 'update' })
+      changes.push({ id: request.id, next: entry, stage, sourceOnly, operation: 'update' })
     }
     const candidates = Object.fromEntries(changes.map((c) => [c.id, c.next]))
     const inventory = readInventory(lock, store).packages.map((row) => {
@@ -162,8 +175,11 @@ export async function updatePackages(deps: {
       )
         throw new PackageError('E_LOCK_MISMATCH', 'staging changed before commit')
     checkCancelled(op.signal)
-    if (store.admission) await commitPackagesAdmitted(store, lock, changes)
-    else commitPackages(store, lock, changes)
+    const commits = changes.map(({ sourceOnly, stage, ...change }) =>
+      sourceOnly ? change : { ...change, stage },
+    )
+    if (store.admission) await commitPackagesAdmitted(store, lock, commits)
+    else commitPackages(store, lock, commits)
     try {
       op.onProgress?.(Object.freeze({ phase: 'completed', percent: 100 }))
     } catch {}

@@ -10,6 +10,27 @@ Capture project conventions, checks, and common methods as a Skill for agents to
 
 A Skill provides instructions and resources; it does not grant execution permission. AGH discovers candidates, reviews revisions, resolves same-name candidates, and exposes usable content to a session. A file's existence does not prove that the model has read it.
 
+## Import a complete Skill
+
+Open a community repository in **Plugins → Market** and choose **Check and install**. The installation window starts a background check and shows its current stage, content review and installation result. A single Skill is selected automatically; choose one when several are found. Confirm the reviewed content before installation. Opening community details does not download or execute source. A repository topic does not certify compatibility. The CLI also accepts local directories, archives and `git:` / `url:` sources.
+
+The review shows the complete file list, immutable source identity and known interpreter requirements. This path retains scripts outside `scripts/`, templates, HTML, images and license notices. It supports up to 2048 files, 32 MiB total, 8 MiB per file and 16 path segments, subject to stricter acquisition limits. Links, native executables, native extensions, WASM and unsupported files are refused rather than silently omitted. Entries whose names start with `.` (such as `.git*` and `.DS_Store`), `Thumbs.db` and `desktop.ini` are ignored and never retained. Install from the common Skill directory, not a foreign host's activation patch.
+
+Installation does not execute package scripts, install dependencies or grant command permissions. New imports remain disabled; review and enable them under **Plugins → Skills**. The backend checks fixed interpreter versions and reports unknown dependencies explicitly. These checks do not prove that the Skill's full functionality works. Script execution uses the session's ordinary command and sandbox policy; output belongs in the task workspace, not the installed Skill directory.
+
+The complete-import frontmatter profile accepts `name`, `description`, `license`, `metadata`, `compatibility` and AGH's invocation flags. Foreign tool restrictions, models, hooks and other unknown behavior fields are refused; AGH does not silently remove them or emulate their host.
+
+Node SDK: `client.packages.skillImport(...)` uses `_agnes/v1/packages.skillImport`; check `initialize().features` for `packages.skill-import.v1`. Prepare returns a proposal and digest; commit requires that exact digest. Each call binds the initialized client ID, profile and command ID; the same authenticated principal can continue a proposal from another CLI connection in the same profile. The CLI exposes the same review boundary:
+
+```sh
+agh plugins skill-import prepare path:/absolute/path/to/repository skill-subdirectory
+agh plugins skill-import commit PROPOSAL_ID SHA256_FROM_PREPARE
+agh plugins skill-import status PROPOSAL_ID
+agh plugins skill-import cancel PROPOSAL_ID
+```
+
+Use forward slashes in SDK local source refs; CLI and Web convert native Windows path separators. Complete imports record `AGH-SKILL.json`; keep it with the directory. All retained resources affect the reviewed revision. Editing scripts, templates or the marker requires fresh trust; ordinary user-maintained disk Skills retain their existing edit semantics. Same-name replacements are refused. Use the existing reviewed removal flow when replacing an installation; this entry does not perform in-place upgrades or promise running-command version leases.
+
 ## Ask the agent to create a Skill
 
 For example: “Create a simple skill called 数学老师skill.” The agent uses an ASCII directory identifier such as `math-teacher`; `SKILL.md` frontmatter can keep the Chinese display name and must provide `name` and `description`.
@@ -17,6 +38,12 @@ For example: “Create a simple skill called 数学老师skill.” The agent use
 Instruction-only drafts (`SKILL.md` plus optional `.md`, `.txt`, `.json`, `.yaml`, `.yml` or `.csv` resources outside `scripts/`) use static validation. AGH checks frontmatter and invocation flags, names and collisions, file counts and sizes, relative paths and resource integrity. It does not generate a JavaScript plugin or run Node author tests. Review the name, description, file list, target and SHA256 digest in the install confirmation. Full access automatically allows installation, trust and enablement of the frozen revision, including the source-read decision for an import. Other permission levels retain the single confirmation. The default scope is the workspace; user scope and install-only are also supported. Wait for `ready` before using it on the next turn (`installed` means install-only).
 
 Scripts, package manifests and other file types keep the plugin candidate → author tests → human publication path. Installation does not execute those scripts or grant them execution permission. Existing local-source imports retain their separate source-read approval. An invalid or conflicting draft is refused without overwriting files; denial, cancellation, expired ownership or a changed lease cannot authorize installation. The private receipt retains the authoring session, plugin snapshot, content digest and resource revision. Update an already installed Skill Helper to receive this flow; installed helper packages are not automatically upgraded.
+
+## Skills saved by task experience
+
+With [task experience](refinement.md) on, a skill the agent learned in a session can be saved into the workspace as a skill: automatically when a review applies it, by you (`/refine --workspace`, or **Save … to workspace** on a review line), or by the model. AGH installs it in the workspace's `.agh/skills` folder, trusted and switched on, without the install confirmation above and without a turn. Such skills are **instructions only**: one `SKILL.md`, no scripts or executable files. When a script would help, the skill tells the agent to write it with its own file tools, under its usual permissions.
+
+They appear in the skill list like any other workspace skill. **Settings → General → Task experience → Saved skills** lists them as on or **awaiting review** (switched off by the 30-day review; switching it back on in the skill list renews it for 30 days), with who saved them, **Uninstall** and **Roll back to the previous version**, and the drafts kept for you when a save would have changed a skill you wrote or changed. A skill you wrote or changed is never overwritten. Removing a saved skill here or under Settings, rolling it back, or deleting its folder is remembered: automatic and model saves never bring it back. See [Saved skills](refinement.md#saved-skills) for the rules and limits, and [Diagnostics and exports](refinement.md#diagnostics-and-exports) for what exports contain.
 
 <a id="创建一个工作区-skill"></a>
 
@@ -50,7 +77,7 @@ Confirm `trust=trusted`, `desired=enabled`, `actual=ready`, and `winner`, then e
 
 ## Sources and conflicts
 
-Default disk sources are workspace `.agh/skills` (also workspace `.agents/skills` and `.claude/skills`) and `$AGH_HOME/skills`; packages can also contribute Skills. Importing the OS user's `~/.agents/skills`, `~/.claude/skills`, and `~/.codex/skills` requires explicit deployment configuration `AGNES_SKILLS_IMPORT_USER=1` when starting the daemon. It is off by default, including for a fresh or isolated AGH_HOME. Imported user Skills use the same automatic trust policy; opt in only for trusted folders. `AGH_HOME` does not relocate those other tools' user directories. Each session reads its own workspace rather than substituting the worker's startup directory.
+Default disk sources are workspace `.agh/skills` (also workspace `.agents/skills` and `.claude/skills`) and `$AGH_HOME/skills`; packages can also contribute Skills. Importing the OS user's `~/.agents/skills`, `~/.claude/skills`, and `~/.codex/skills` requires explicit deployment configuration `AGNES_SKILLS_IMPORT_USER=1` when starting the daemon. It is off by default, including for a fresh or isolated AGH_HOME. Imported user Skills use the same automatic trust policy; opt in only for trusted folders. `AGH_HOME` does not relocate those other tools' user directories. Each session reads its own workspace rather than substituting the worker's startup directory. Hosts the CLI runs itself (`--standalone`, `--ephemeral`, `agh run`, `agh import`) read the same Skill folders under the enable and trust decisions the daemon saved for the installation (`--ephemeral` reads them from the real home): where the daemon never kept resource state every Skill counts as new, and once it has, a missing or unreadable decisions file offers no disk Skill. Each session keeps the Skill list it started with, and `--safe-mode` offers plugin Skills only.
 
 Default priorities, with higher values taking precedence:
 
@@ -108,7 +135,7 @@ Use Disable for a temporary change. **Permanent deletion removes the entire sele
 3. Save the operation ID, wait for `succeeded`, and inspect the list, directory, and remaining candidates. A receipt only acknowledges acceptance; an operation can fail after partially deleting files.
 4. `SKILL_REMOVAL_PENDING` means the item is blocked from re-enabling. Preserve the state, address causes such as file locks, then explicitly retry deletion. Failure does not mean files were restored. Once accepted, deletion cannot be canceled; restarting is not undo.
 
-The backend does not accept arbitrary caller-supplied deletion paths. It derives the target from the registered source and resourceId, then verifies workspace identity, revision, and directory/file identity. Stale scans, symbolic links/junctions, hard links, or path replacement are rejected. A failed preflight does not write a deletion marker. Failure during execution retains identity progress and deletion markers for a constrained retry. Progress contains no file contents and is not a backup. Markers survive restarts, and refresh does not revive the same deleted resourceId. There is currently no API to restore a deleted Skill.
+The backend does not accept arbitrary caller-supplied deletion paths. It derives the target from the registered source and resourceId, then verifies workspace identity, revision, and directory/file identity. Stale scans, symbolic links/junctions, hard links, or path replacement are rejected. A failed preflight does not write a deletion marker. Failure during execution retains identity progress and deletion markers for a constrained retry. Progress contains no file contents and is not a backup. Markers survive restarts, and refresh does not revive the same deleted resourceId. There is currently no API to restore a deleted Skill. A skill saved by task experience keeps its earlier versions in the profile's data directory and can be rolled back under **Settings → General → Task experience → Saved skills**; that does not restore a deleted one.
 
 <a id="api权限与-cli-边界"></a>
 
@@ -145,6 +172,6 @@ The bundled Skill Helper has its own installation request flow. A tool may reque
 
 Implementation: [discovery roots](../../packages/base/extensions/skills/src/discover.ts), [candidate registry](../../packages/resource-control-runtime/src/skills.ts), [Cordis service](../../packages/resource-control-runtime/src/skills-cordis.ts), [session preloading](../../packages/host-extensions/src/resources/skill-preload.ts), [Skill Helper](../../packages/package-manager/bundled-plugins/skill-helper/README.md).
 
-Invoke a user-invocable Skill in Web or TUI with `/skill invoke NAME ARGUMENTS`. The Context page also offers an invocation form. The Host loads only a unique trusted, enabled winner; unknown, disabled or user-hidden Skills are refused. Arguments remain in the user message.
+Invoke a user-invocable Skill in Web or TUI with `/skill invoke NAME ARGUMENTS`. In the Web composer, type `$` to open the installed-Skills picker, then click a row (or use the arrow keys and Enter) to insert `$NAME` into the draft. The picker is an insertion aid only: on send, the Host still loads only a unique trusted, enabled winner; unknown, disabled or user-hidden Skills are refused. Arguments remain in the user message.
 
 Packaged Skill attachments are copied into the approved runtime snapshot. Unsupported file types are omitted by the existing attachment rules. The authoring test runner checks supported attachments against the loader's limits before review. If an installed Skill has an invalid document, unreadable attachments or exceeds the attachment budget, only that Skill becomes unavailable: Plugins → Skills shows the reason, no partial content is exposed, and healthy Skills continue loading during service startup. Repair and update the package through the existing review flow, then reload it. Package integrity checks and snapshot publication failures still fail closed. Runtime-registered Skills on Plugins → Skills are scoped to the current plugin composition and registration owner, then undergo name arbitration. They are managed through their plugin, so the Skill page cannot edit or toggle them independently. Old sessions keep their pinned plugin versions.

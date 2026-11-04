@@ -13,6 +13,14 @@ import {
 import { BrowserAudio } from './browser-audio.js'
 import type { BrowserPage } from './browser-client.js'
 import type { BrowserInteraction } from './browser-interaction.js'
+import {
+  flushText,
+  forwardShortcut,
+  isNativeTextKey,
+  mergeInput,
+  restoreDragFocus,
+  useBrowserPointer,
+} from './browser-interaction.js'
 
 type Stream = Awaited<ReturnType<ClientContext['sessionStreams']['open']>>
 export type HumanControl = {
@@ -90,6 +98,7 @@ export const BrowserScreen = forwardRef<
     pageEpoch: number
     agentRevision?: number
   }>()
+  const dragTarget = useRef<BrowserPage>()
   const [inputPoint, setInputPoint] = useState({ x: 0, y: 0 })
   const hintId = useId()
   const [connected, setConnected] = useState(false)
@@ -408,14 +417,16 @@ export const BrowserScreen = forwardRef<
       const next = queued.shift()
       if (!next) return
       // Keep the captured target; never rebase queued gestures onto newer pixels.
-      if (
-        geometryPending.current ||
-        target.current !== control.pageId ||
-        next.pageEpoch !== meta.current.pageEpoch ||
-        next.agentRevision !== meta.current.agentRevision
-      ) {
-        queued.length = 0
-        return
+      if (next.type !== 'pointer' || next.phase !== 'cancel') {
+        if (
+          geometryPending.current ||
+          target.current !== control.pageId ||
+          next.pageEpoch !== meta.current.pageEpoch ||
+          next.agentRevision !== meta.current.agentRevision
+        ) {
+          queued.length = 0
+          return
+        }
       }
       waiting = next
       receipt = setTimeout(
@@ -426,33 +437,10 @@ export const BrowserScreen = forwardRef<
         complete(next.seq, 'Input was not delivered. Reconnect and inspect before retrying.')
     }
     const enqueue = (input: Record<string, string | number>) => {
-      const tail = queued.at(-1)
-      if (
-        tail?.type === 'scroll' &&
-        input.type === 'scroll' &&
-        tail.pageEpoch === input.pageEpoch &&
-        tail.controlEpoch === input.controlEpoch &&
-        tail.agentRevision === input.agentRevision &&
-        ['x', 'y'].every((key) => {
-          const before = Number(tail[key]),
-            after = Number(input[key])
-          return before * after >= 0 && Math.abs(before + after) <= 4000
-        })
-      ) {
-        input = { ...input, x: Number(tail.x) + Number(input.x), y: Number(tail.y) + Number(input.y) }
+      const merged = mergeInput(queued.at(-1), input)
+      if (merged) {
         queued.pop()
-      } else if (
-        tail?.type === 'text' &&
-        input.type === 'text' &&
-        tail.pageEpoch === input.pageEpoch &&
-        tail.controlEpoch === input.controlEpoch &&
-        tail.agentRevision === input.agentRevision &&
-        typeof tail.text === 'string' &&
-        typeof input.text === 'string' &&
-        new TextEncoder().encode(JSON.stringify(tail.text + input.text)).length <= 3400
-      ) {
-        input = { ...input, text: tail.text + input.text }
-        queued.pop()
+        input = merged
       }
       if (queued.length >= 64) {
         queued.length = 0
@@ -567,6 +555,12 @@ export const BrowserScreen = forwardRef<
       if (input.type !== 'scroll') flushWheel.current?.()
       const pending = pendingInput.current
       if (!controlling && pending) {
+        // Nothing from this drag has reached the website while admission is
+        // pending. A cancelled drag must not become a delayed down/up pair.
+        if (input.type === 'pointer' && input.phase === 'cancel' && pending.input.gesture === input.gesture) {
+          pendingInput.current = undefined
+          return
+        }
         if (connected && pending.pageId === target.current && pending.pageEpoch === meta.current.pageEpoch) {
           if (pending.following.length < 32) pending.following.push(input)
           else {
@@ -578,7 +572,7 @@ export const BrowserScreen = forwardRef<
       }
       if (
         !connected ||
-        geometryPending.current ||
+        (geometryPending.current && !(input.type === 'pointer' && input.phase === 'cancel')) ||
         !controlling ||
         !control ||
         meta.current.pageId !== control.pageId ||
@@ -632,6 +626,14 @@ export const BrowserScreen = forwardRef<
     },
     [connected, controlling, control, onError, send],
   )
+  const pointer = useBrowserPointer({
+    enabled: connected && page.pointerInput === true,
+    pageId: page.pageId,
+    width: () => meta.current.viewportWidth ?? 1280,
+    height: () => meta.current.viewportHeight ?? 800,
+    send,
+    interact,
+  })
   useImperativeHandle(ref, () => ({ interact }))
   useEffect(() => {
     if (!connected || !controlling || !control) return
@@ -706,13 +708,6 @@ export const BrowserScreen = forwardRef<
       element.removeEventListener('wheel', wheel)
     }
   }, [connected, controlling, send, interact])
-  const flushText = (element: HTMLTextAreaElement) => {
-    if (composing.current) return
-    const characters = Array.from(element.value)
-    element.value = ''
-    for (let i = 0; i < characters.length; i += 500)
-      send({ type: 'text', text: characters.slice(i, i + 500).join('') })
-  }
   return (
     <div
       className="agh-browser-screen"
@@ -731,7 +726,7 @@ export const BrowserScreen = forwardRef<
               ? 'connecting'
               : 'disconnected'
             : taking
-              ? 'requestingControl'
+              ? 'connectingInput'
               : control && !controlling
                 ? 'connectingInput'
                 : 'connected',
@@ -755,7 +750,34 @@ export const BrowserScreen = forwardRef<
           if (controlling) text.current?.focus({ preventScroll: true })
           else interact({ type: 'key', key: 'Tab' })
         }}
+        onPointerDown={(event) => {
+          if (pointer.onPointerDown(event)) dragTarget.current = { ...meta.current }
+        }}
+        onPointerMove={pointer.onPointerMove}
+        onPointerUp={(event) => {
+          const gesture = pointer.onPointerUp(event)
+          if (!gesture) return
+          // Never refocus later from an admission reply.
+          restoreDragFocus(
+            event,
+            text.current,
+            dragTarget.current,
+            meta.current,
+            connected &&
+              !geometryPending.current &&
+              !composing.current &&
+              meta.current.pageId === target.current &&
+              meta.current.pageEpoch >= expectedEpoch.current &&
+              ((controlling && control?.pageId === target.current) ||
+                pendingInput.current?.input.gesture === gesture),
+            setInputPoint,
+          )
+          dragTarget.current = undefined
+        }}
+        onPointerCancel={pointer.onPointerCancel}
+        onLostPointerCapture={pointer.onLostPointerCapture}
         onClick={(event) => {
+          if (pointer.consumeClick()) return
           if (!connected) return
           audio.resume()
           const box = event.currentTarget.getBoundingClientRect()
@@ -785,25 +807,13 @@ export const BrowserScreen = forwardRef<
         }}
         onCompositionEnd={(event) => {
           composing.current = false
-          flushText(event.currentTarget)
+          flushText(event.currentTarget, composing.current, send)
         }}
-        onInput={(event) => flushText(event.currentTarget)}
+        onInput={(event) => flushText(event.currentTarget, composing.current, send)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing || composing.current) return
           audio.resume()
-          // Keep native composition and layout-specific text on the input path.
-          // macOS Option characters and Windows AltGr are not remote shortcuts.
-          if (
-            event.key === 'Dead' ||
-            event.key === 'Process' ||
-            event.getModifierState('AltGraph') ||
-            (navigator.platform.includes('Mac') &&
-              event.altKey &&
-              !event.ctrlKey &&
-              !event.metaKey &&
-              event.key.length === 1)
-          )
-            return
+          if (isNativeTextKey(event)) return
           if (event.key === 'Escape') {
             event.preventDefault()
             send({ type: 'key', key: 'Escape' })
@@ -814,20 +824,7 @@ export const BrowserScreen = forwardRef<
             return
           }
           if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') return
-          if (event.ctrlKey || event.metaKey || event.altKey || event.key.length > 1) {
-            if (['Shift', 'Control', 'Alt', 'Meta'].includes(event.key)) return
-            event.preventDefault()
-            // Resolve the user's primary shortcut on the backend OS too: WebUI may
-            // be on a Mac while Chromium runs on Windows, or the other way round.
-            const mac = navigator.platform.includes('Mac')
-            const prefix = [
-              event.ctrlKey && (mac ? 'Control' : 'ControlOrMeta'),
-              event.metaKey && (mac ? 'ControlOrMeta' : 'Meta'),
-              event.altKey && 'Alt',
-              event.shiftKey && 'Shift',
-            ].filter(Boolean)
-            send({ type: 'key', key: [...prefix, event.key === ' ' ? 'Space' : event.key].join('+') })
-          }
+          forwardShortcut(event, send)
         }}
       />
     </div>

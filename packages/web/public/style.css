@@ -20,6 +20,7 @@
 @import "./styles/23-plugin-review.css";
 @import "./styles/24-request-trace.css";
 @import "./styles/26-references.css";
+@import "./styles/26-skills.css";
 @import "./styles/27-conversation-stream.css";
 @import "./styles/28-settings-template.css";
 @import "./styles/29-home.css";
@@ -29,3 +30,4 @@
 @import "./styles/33-application-workbench.css";
 @import "./styles/34-recovery.css";
 @import "./styles/35-voice.css";
+@import "./styles/36-mhs.css";

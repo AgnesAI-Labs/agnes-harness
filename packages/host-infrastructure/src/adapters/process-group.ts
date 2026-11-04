@@ -6,7 +6,7 @@ export function stopProcessGroup(pid: number): number | undefined {
   try {
     process.kill(-pid, 0)
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return 0
+    if (groupAlreadyGone(pid, error)) return 0
     throw error
   }
   // Counting is optional; cleanup is mandatory even if no process table can be read.
@@ -14,10 +14,21 @@ export function stopProcessGroup(pid: number): number | undefined {
   try {
     process.kill(-pid, 'SIGKILL')
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return 0
+    if (groupAlreadyGone(pid, error)) return 0
     throw error
   }
   return count
+}
+
+/**
+ * ESRCH: no such group. macOS also answers EPERM for a group whose remaining members are all
+ * zombies or already exiting - the moment right after a timeout's SIGKILL, before launchd reaps the
+ * orphans. That is a group with nothing left to stop, not a refusal, but only a process table that
+ * shows no live member says so; an unreadable table keeps the refusal.
+ */
+function groupAlreadyGone(pid: number, error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code
+  return code === 'ESRCH' || (code === 'EPERM' && countGroupMembers(pid) === 0)
 }
 
 /**
@@ -38,7 +49,10 @@ function countGroupMembers(pid: number): number | undefined {
     })
     return table.split('\n').filter((row) => {
       const [member, group, state] = row.trim().split(/\s+/)
-      return Number(group) === pid && Number(member) !== pid && !state?.startsWith('Z')
+      // `Z` leads a zombie's state; BSD `ps` adds `E` to a process that is already exiting.
+      return (
+        Number(group) === pid && Number(member) !== pid && !state?.startsWith('Z') && !state?.includes('E')
+      )
     }).length
   } catch {
     return undefined

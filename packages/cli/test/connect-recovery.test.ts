@@ -66,7 +66,15 @@ it.skipIf(!windows).each(['automatic', 'manual'])(
   async (mode) => {
     const name = `cli-recovery-${randomUUID()}`
     const path = `\\\\.\\pipe\\${name}`
-    const scope = { scopeID: 'selected', dataDir: '/backend-override' } as DaemonScope
+    // The scope names its home, profile and workspace, as resolveDaemonScope does: a manual connect
+    // reads that profile's (here absent) inputs before it trusts the discovery record.
+    const scope = {
+      scopeID: 'selected',
+      dataDir: '/backend-override',
+      home: '/home',
+      profile: 'local-dev',
+      workspace: '/test',
+    } as DaemonScope
     vi.mocked(resolveDaemonScope).mockResolvedValue(scope)
     const first = await server(path)
     const discovery = { socketPath: path, owner: first.owner } as NonNullable<

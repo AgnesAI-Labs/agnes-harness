@@ -33,6 +33,8 @@ import type {
   PluginTreeView,
   SessionGenerationMigrationParams,
   SessionGenerationMigrationResult,
+  SkillImportParams,
+  SkillImportResult,
 } from '@agnes/protocol'
 export type PackageAdminRpc = Readonly<{
   call<T>(method: string, params: unknown): Promise<T>
@@ -47,6 +49,7 @@ export type PackageOperationSubscriptionOptions = {
 }
 
 export type PackageAdminClient = Readonly<{
+  skillImport(params: SkillImportParams): Promise<SkillImportResult>
   catalog: Readonly<{
     list(params: PackageCatalogListParams): Promise<PackageCatalogPage>
     get(params: PackageCatalogGetParams): Promise<PackageCatalogDescriptor>
@@ -119,6 +122,8 @@ export function createPackageAdminClient(client: PackageAdminRpc): PackageAdminC
     client.call('_agnes/v1/packages.operation.get', params)
 
   return Object.freeze({
+    skillImport: (params: SkillImportParams): Promise<SkillImportResult> =>
+      client.call('_agnes/v1/packages.skillImport', params),
     catalog: Object.freeze({
       list: (params: PackageCatalogListParams): Promise<PackageCatalogPage> =>
         client.call('_agnes/v1/packages.catalog.list', params),

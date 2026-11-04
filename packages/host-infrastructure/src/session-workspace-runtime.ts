@@ -274,6 +274,21 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
     )
   }
 
+  /** Trusted maintenance observation, keyed independently of inherited runtime callbacks. */
+  retirementStatus(sessionKey: string): 'idle' | 'busy' | undefined {
+    const entry = this.entries.get(sessionKey)
+    const pending =
+      this.opening.has(sessionKey) ||
+      this.closingOpenings.has(sessionKey) ||
+      this.closing.has(sessionKey) ||
+      this.reservations.has(sessionKey)
+    const processes = this.activeProcesses.get(sessionKey) ?? 0
+    if (!entry && !pending && processes === 0) return undefined
+    return !this.tableClosing && entry?.state === 'ready' && entry.leases === 0 && !pending && processes === 0
+      ? 'idle'
+      : 'busy'
+  }
+
   open(
     binding: WorkspaceBinding,
     create: (invocation: WorkspaceInvocationPort) => Promise<SessionWorkspaceRuntime>,

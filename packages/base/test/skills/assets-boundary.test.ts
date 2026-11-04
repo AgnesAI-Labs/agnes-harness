@@ -1,6 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { isSkillBundleIgnored, skillBundleFileKind } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { collectSkillFiles } from '../../extensions/skills/src/assets.js'
 import type { SkillFs } from '../../extensions/skills/src/discover.js'
@@ -38,6 +39,52 @@ describe('Skill attachment canonical path boundaries', () => {
     } finally {
       await rm(directory, { recursive: true, force: true })
     }
+  })
+  it('keeps an installed complete bundle discoverable and unchanged when OS metadata appears', async () => {
+    const directory = await realpath(await mkdtemp(join(tmpdir(), 'agh-skill-bundle-')))
+    const fs: SkillFs = {
+      list: async (path) =>
+        (await readdir(path, { withFileTypes: true })).map((entry) => ({
+          name: entry.name,
+          kind: entry.isDirectory() ? 'dir' : entry.isFile() ? 'file' : 'other',
+        })),
+      realpath: async (path) => realpath(path),
+      stat: async (path) => {
+        const s = await lstat(path)
+        return { kind: s.isFile() ? 'file' : 'other', size: s.size, mtimeMs: s.mtimeMs }
+      },
+      read: async (path) => new Uint8Array(await readFile(path)),
+    }
+    try {
+      await writeFile(join(directory, 'AGH-SKILL.json'), '{"version":1}')
+      await writeFile(join(directory, 'SKILL.md'), '---\nname: demo\n---\nbody')
+      await writeFile(join(directory, 'view.tsx'), 'export const V = 1')
+      const before = await collectSkillFiles(fs, directory)
+      await writeFile(join(directory, '.DS_Store'), '\0\0')
+      await mkdir(join(directory, '.vscode'))
+      await writeFile(join(directory, '.vscode', 'x.bin'), '\0')
+      await writeFile(join(directory, 'Thumbs.db'), '\0\0')
+      const after = await collectSkillFiles(fs, directory)
+      expect(before.map((f) => f.relativePath)).toEqual(['AGH-SKILL.json', 'view.tsx'])
+      expect(after.map((f) => [f.relativePath, f.sha256])).toEqual(
+        before.map((f) => [f.relativePath, f.sha256]),
+      )
+      await writeFile(join(directory, 'tool.exe'), 'x')
+      await expect(collectSkillFiles(fs, directory)).rejects.toMatchObject({
+        code: 'SKILL_ATTACHMENTS_UNREADABLE',
+      })
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+  it('classifies common source and document files and ignores VCS and OS metadata', () => {
+    for (const name of ['a.tsx', 'x/main.go', 'README', 'makefile', 'Dockerfile', 'schema.xsd'])
+      expect(skillBundleFileKind(name)).toBe('text')
+    for (const name of ['a.pdf', 'b.docx', 'c.avif']) expect(skillBundleFileKind(name)).toBe('binary')
+    for (const name of ['tool.exe', 'x.node', '.gitignore']) expect(skillBundleFileKind(name)).toBeUndefined()
+    for (const name of ['.gitignore', '.github', '.DS_Store', 'Thumbs.db', 'DESKTOP.INI'])
+      expect(isSkillBundleIgnored(name)).toBe(true)
+    expect(isSkillBundleIgnored('README')).toBe(false)
   })
   const root = resolve('fixture-root')
   const directory = join(root, 'demo')

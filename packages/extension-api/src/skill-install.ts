@@ -1,6 +1,13 @@
 /** A request-only capability. Host approval, not plugin metadata, authorizes installation. */
 export type SkillInstallRequest =
   | Readonly<{ action: 'prepare'; sourceDirectory: string; scope: 'workspace' | 'user'; enable: boolean }>
+  /** Complete code-bearing directory, reviewed separately from authored instruction data. */
+  | Readonly<{
+      action: 'prepare-bundle'
+      sourceDirectory: string
+      scope: 'workspace' | 'user'
+      enable: boolean
+    }>
   /** Authored instruction data: statically validated without reading a local source or executing code. */
   | Readonly<{
       action: 'prepare-content'

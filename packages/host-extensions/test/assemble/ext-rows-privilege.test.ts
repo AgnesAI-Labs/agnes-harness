@@ -68,6 +68,25 @@ describe('verified ext: row privilege grants', () => {
       },
       { sessionTasks: true, childControl: true, skillDiscovery: true, hookRank: 18 },
     ])
+    // The task scope goes to the goal plugin alone; the refine plugin gets the refinement switch.
+    expect(h.authority.extension(h.pkg.id, 'agnes/goal', h.modules.get(h.pkg.id))).toMatchObject({
+      taskScope: true,
+    })
+    expect(h.authority.extension(h.pkg.id, 'agnes/refine', h.modules.get(h.pkg.id))).not.toHaveProperty(
+      'taskScope',
+    )
+    for (const id of ['agnes/goals', 'agnes/goal/x', 'goal', 'agnes/Goal'])
+      expect(h.authority.extension(h.pkg.id, id, h.modules.get(h.pkg.id)), id).not.toHaveProperty('taskScope')
+    // The workflow run records go to the workflow plugin alone.
+    expect(h.authority.extension(h.pkg.id, 'agnes/workflow', h.modules.get(h.pkg.id))).toMatchObject({
+      workflowRuns: true,
+    })
+    for (const id of ['agnes/workflows', 'agnes/workflow/x', 'workflow', 'agnes/goal', 'agnes/refine'])
+      expect(h.authority.extension(h.pkg.id, id, h.modules.get(h.pkg.id)), id).not.toHaveProperty(
+        'workflowRuns',
+      )
+    expect(h.authority.extension('@acme/package', 'agnes/workflow', { id: '@acme/package' })).toEqual({})
+    expect(h.authority.extension('@acme/package', 'agnes/goal', { id: '@acme/package' })).toEqual({})
     expect(h.authority.seam(h.pkg.id, 'artifacts', h.modules.get(h.pkg.id))).toEqual({
       privateArtifactStore: true,
     })

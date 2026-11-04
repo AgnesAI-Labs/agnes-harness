@@ -9,6 +9,7 @@ import { computerUseUiCatalog } from '../src/locales/computer-use.js'
 import { configFormCatalog } from '../src/locales/config-form.js'
 import { conversationLocaleCatalog } from '../src/locales/conversation.js'
 import { firstRunCatalog } from '../src/locales/first-run.js'
+import { refinementLocaleCatalog } from '../src/locales/refinement.js'
 import { resourceDetailLocaleCatalog } from '../src/locales/resource-detail.js'
 import { resourceListLocaleCatalog } from '../src/locales/resource-list.js'
 
@@ -21,6 +22,7 @@ const catalogs = [
   ['admin detail', adminDetailLocaleCatalog],
   ['admin list', adminListLocaleCatalog],
   ['conversation', conversationLocaleCatalog],
+  ['refinement run line', refinementLocaleCatalog],
   ['base tool titles', baseToolCatalog],
   ['admin aggregate', adminLocaleCatalog],
   ['resource detail', resourceDetailLocaleCatalog],

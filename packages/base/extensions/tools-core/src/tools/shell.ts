@@ -3,7 +3,7 @@ import { defineTool } from '@agnes/plugin-runtime'
 import { type ShellJobs, standaloneShellJobs } from '../../../jobs/src/registry.js'
 import { runShellJob } from '../../../jobs/src/shell.js'
 import { failureCode, toolFailure } from '../guards/feedback.js'
-import { guardedResult } from '../guards/output.js'
+import { guardedCommandResult } from '../guards/output.js'
 import {
   DEADLINE_ADVICE,
   deadlineStop,
@@ -18,11 +18,19 @@ export { SHELL_SENTINEL }
 // Used only when the host states no default, so an older host keeps the default it always had.
 const DEFAULT_FOREGROUND_MS = 120_000
 
-export function createShellTool(jobs?: ShellJobs) {
+export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
+  if (
+    observationMs !== undefined &&
+    (!Number.isInteger(observationMs) || observationMs < 1000 || observationMs > 30000)
+  )
+    throw new Error('shell observation window must be an integer from 1000 to 30000 ms')
   return defineTool({
     name: 'shell',
     description:
-      'Run a command line in the session shell (the runtime context tells you which shell dialect is active). Output is captured; long output is stored as an artifact. timeoutMs sets how long the call may run: without it a default applies, a longer value is granted up to a maximum the deployment sets, and a larger request is capped there. background starts a session-owned job. A foreground wait ends at the timeout or after 2 minutes, whichever is first, and the same process then continues as a background job unless timeoutToBackground is false (then it is killed at the timeout). Processes the command starts with & or nohup keep running as its job after the command ends; any other process it leaves behind is stopped with it. Use job_output, job_list and job_kill to monitor or stop jobs. Set persistent to preserve cwd/env/variables across calls; choose a supported interpreter. sessionId selects an existing persistent shell. A busy shell refuses another command until the previous job finishes. Killing a persistent command closes its shell.',
+      'Run a command line in the session shell (the runtime context tells you which shell dialect is active). Output is captured; long output is stored as an artifact. timeoutMs sets how long the call may run: without it a default applies, a longer value is granted up to a maximum the deployment sets, and a larger request is capped there. background starts a session-owned job. A foreground wait ends at the timeout or after 2 minutes, whichever is first, and the same process then continues as a background job unless timeoutToBackground is false (then it is killed at the timeout). Processes the command starts with & or nohup keep running as its job after the command ends; any other process it leaves behind is stopped with it. Use job_output, job_list and job_kill to monitor or stop jobs. Set persistent to preserve cwd/env/variables across calls; choose a supported interpreter. sessionId selects an existing persistent shell. A busy shell refuses another command until the previous job finishes. Killing a persistent command closes its shell.'.replace(
+        'after 2 minutes',
+        observationMs === undefined ? 'after 2 minutes' : `after ${observationMs}ms`,
+      ),
     parameters: ShellParams,
     meta: {
       isReadOnly: false,
@@ -36,7 +44,7 @@ export function createShellTool(jobs?: ShellJobs) {
     },
     async execute(args, ctx): Promise<ToolResult> {
       if (jobs && (ctx.platform.shell === 'posix' || ctx.sandbox.openProcess)) {
-        const result = await runShellJob(jobs, args, ctx)
+        const result = await runShellJob(jobs, args, ctx, observationMs)
         const details = result.details
         const unavailable =
           details &&
@@ -103,7 +111,7 @@ export function createShellTool(jobs?: ShellJobs) {
             `[${deadlineStop(ctx, timeoutMs)}. The command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. ${DEADLINE_ADVICE}]`,
           )
           return {
-            ...(await guardedResult(ctx, parts.join('\n'))),
+            ...(await guardedCommandResult(ctx, parts.join('\n'))),
             isError: true,
             details: { code: 'SHELL_TURN_DEADLINE' },
           }
@@ -113,7 +121,7 @@ export function createShellTool(jobs?: ShellJobs) {
           `[timed out after ${timeoutMs}ms${requested !== undefined && requested > timeoutMs ? ` (requested ${requested}ms, capped)` : ''}: the command and the processes in its process group were killed; the output above is what was captured, and the command may have taken partial effect. Check the current state before retrying, and split the work into shorter steps or ask for a longer timeoutMs (capped by the deployment).]`,
         )
         return {
-          ...(await guardedResult(ctx, parts.join('\n'))),
+          ...(await guardedCommandResult(ctx, parts.join('\n'))),
           isError: true,
           details: { code: 'SHELL_TIMEOUT' },
         }
@@ -123,7 +131,7 @@ export function createShellTool(jobs?: ShellJobs) {
           'Command failed; inspect the output and current state, correct the command/arguments, then retry.',
         )
       parts.push(`[exit ${r.code}]${r.truncated ? ' [output truncated by sandbox]' : ''}`)
-      const out = await guardedResult(ctx, parts.join('\n'))
+      const out = await guardedCommandResult(ctx, parts.join('\n'))
       // Strictly zero, not "not positive": a process killed by a signal is reported with a negative
       // code, and `> 0` would call that a success.
       return r.code === 0 ? out : { ...out, isError: true, details: { code: 'SHELL_EXIT', exitCode: r.code } }

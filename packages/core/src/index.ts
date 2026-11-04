@@ -210,6 +210,11 @@ export {
 export { DEFAULT_LOOP } from '@agnes/extension-api'
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+export {
+  type IdleChildRetirementOptions,
+  type IdleChildRetirementResult,
+  retireIdleChildren,
+} from './child/idle-retirement.js'
 export { bindChildAgentSession } from './child/loop-port.js'
 export { type ChildModelScope, setChildModelScope } from './child/model-scope.js'
 export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
@@ -255,8 +260,55 @@ export {
   executeAuxiliaryVision,
 } from './orchestrator/auxiliary-vision-executor.js'
 export { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from './orchestrator/request-media-surface.js'
-export type { RefineLimits } from './refine/apply.js'
-export { applyRefine, rollbackRefine } from './refine/apply.js'
+export type { ApplyLimits } from './refine/apply.js'
+// Applying a refinement is the facade's job alone, between turns under the session lock.
+export { rollbackRefine } from './refine/apply.js'
+export {
+  type DirectProposal,
+  type InspectAnswer,
+  type InspectOutcome,
+  type InspectRequest,
+  type ProposeOptions,
+  type RefinementDeps,
+  type RefinementFacade,
+  type RefinementOutcome,
+  type RefinementRefusal,
+  type RefinementSettingsView,
+  type RollbackResult,
+  refinementFacade,
+} from './refinement/facade.js'
+export { namesWorkspace, type RefinementReach } from './refinement/reach.js'
+export { redactEvidence } from './refinement/redact.js'
+export type {
+  ReferencedSkill,
+  ReferenceSession,
+  RefinementReferences,
+} from './refinement/references.js'
+export type { TaskScope } from './refinement/task-scope.js'
+export type { RefinementCandidate, RefinementTriggerSink } from './refinement/triggers.js'
+export type {
+  PlannerEntry,
+  PlannerGuidance,
+  PlannerOutput,
+  PlannerParseContext,
+  PlannerPrompt,
+  PlannerSnapshot,
+  PlannerWorkspaceRef,
+  RefinementPlanner,
+  RefinementTrigger,
+} from './refinement/types.js'
+export type { RefinementWorkflowRuns, WorkflowRunView } from './refinement/workflow-runs.js'
+export { WORKFLOW_RUN_LOOKUP_MS } from './refinement/workflow-runs.js'
+export {
+  type RefinementWorkspacePort,
+  type SaveReceipt,
+  saveToWorkspace,
+  type WorkspaceSaveInput,
+  type WorkspaceSaveOutcome,
+  type WorkspaceSaveRequest,
+  workspaceSaveRequest,
+} from './refinement/workspace.js'
+export type { RefinementWorkspaceRefs, WorkspaceReference } from './refinement/workspace-refs.js'
 export { HookRegistry, type HookSnapshot } from './registry/hooks.js'
 export { type RegisteredResource, ResourceRegistry } from './registry/resources.js'
 export { type RuntimeSlotFill, SlotRegistry } from './registry/slots.js'
@@ -272,7 +324,7 @@ export type {
 } from './registry/tools.js'
 export { ToolRegistry } from './registry/tools.js'
 export type { Conflict, Contribution, Merged, PromptSection } from './request/contribute.js'
-export { harnessSections, mergeContributions } from './request/contribute.js'
+export { mergeContributions } from './request/contribute.js'
 export type { ContractRef, DeriveInput, DeriveOutput, RequestHeaderData } from './request/derive.js'
 export { deriveRequest, headerEquals, sanitize, wrapUntrusted } from './request/derive.js'
 export type { EnvelopeCache } from './request/envelope-cache.js'

@@ -346,7 +346,8 @@ async function fixture(selected: string, missingCredential = false) {
     import: async (file: string) => {
       imported.push(file)
       // The copied snapshot has no node_modules; import the original so the kind token resolves like a Host-provided external.
-      const root = realpathSync(directory)
+      // The loader hands over native paths (Windows expands 8.3 names), so compare in that spelling.
+      const root = realpathSync.native(directory)
       const origin = file.startsWith(root)
         ? fileURLToPath(new URL(`../fixtures/model-adapter${file.slice(root.length)}`, import.meta.url))
         : file

@@ -41,7 +41,7 @@ worker 的运行来源读取显式启用进程内例外：安装目录、内置�
 
 只有 Worker 运行来源读取可消费此保留摘要例外，generation 写入和发布不得使用。创建 generation 会使旧证据失效，将各包克隆为独立文件 inode（支持时采用写时复制，否则普通复制），并在发布前重新哈希目的树。创建回读检查记录和资源，不重复已完成的包哈希；独立归档读取和导入仍校验字节。未变化的 composition 只有在后端重新检查运行来源的当前信任和能力绑定后，才可保留 generation。
 
-inventory、应用、客户端模块、皮肤、模型目录、运行快照读取，以及新会话 Bundle 检查的纯读取阶段，在 daemon/worker 事件循环上异步计算哈希。同一操作内完全相同的并发哈希共享进行中的工作；失效或操作结束后，晚完成的结果不能写回 memo，失败会重新校验。每次访问仍检查根目录类型和规范路径。异步遍历保留文件句柄与根目录检查，返回前复核文件身份、大小、mtime 和 ctime。事务、恢复、复制、激活与导入/执行门沿用原有校验路径。
+inventory、应用、客户端模块、皮肤、模型目录、运行快照读取，以及新会话 Bundle 检查的纯读取阶段，在 daemon/worker 事件循环上异步计算哈希。同一操作内完全相同的并发哈希共享进行中的工作；失效或操作结束后，晚完成的结果不能写回 memo，失败会重新校验。每次访问仍检查根目录类型和规范路径。异步遍历保留文件句柄与根目录检查，返回前复核文件身份、大小、mtime 和 ctime。没有崩溃日志时，运行快照恢复只重新校验已知快照目录，也以异步方式计算哈希；事务、按日志恢复、复制、激活与导入/执行门沿用原有校验路径。
 
 模型选择器读取当前路由和发行版模型目录，不启动 worker，也不准备会话。已有 worker 时仅读取实时注册/模型描述和激活来源身份，与本次已验证授权匹配，不调用会话组合/准入。Host 成功组装或发布时，在 profile 旁写入仅用于展示的第三方适配器目录，包含模型 id/路由及精确来源身份。每次查询重新验证包/快照字节与当前授权；profile 或来源版本改变、撤权、投影缺失或损坏时不提供对应第三方选项。投影不存工厂、凭据或权限决定，也不能授权执行；第三方注册信息在正常激活/组装成功后可见。会话创建和智能体启动仍执行完整准入；运行方式及完整运行管理保留运行时目录路径。
 
@@ -160,7 +160,7 @@ Node SDK 提供 `client.packages.migrateSession({ profile, clientId, commandId, 
 
 ## Provider 合同与迁移
 
-每种 kind 都使用其精确的不变 token，`register`/`resolve` 从 token 推断 provider 类型；自定义 kind 使用 `defineKind<T>()` 创建并由服务安装的同一个 token，同名但不同身份的 token 会被拒绝。provider version 必须是 semver，内置 persistence 从 `1` 改为 `1.0.0`；package version、契约 apiRange、checkpoint codecVersion 与代码摘要各自独立。Extension API 为 `5.0.0`；声明 `^4` 的插件会以 `E_API_RANGE` 被拒绝，须先迁移其范围与已删除的作者入口。
+每种 kind 都使用其精确的不变 token，`register`/`resolve` 从 token 推断 provider 类型；自定义 kind 使用 `defineKind<T>()` 创建并由服务安装的同一个 token，同名但不同身份的 token 会被拒绝。provider version 必须是 semver，内置 persistence 从 `1` 改为 `1.0.0`；package version、契约 apiRange、checkpoint codecVersion 与代码摘要各自独立。Extension API 为 `5.4.0`；声明 `^4` 的插件会以 `E_API_RANGE` 被拒绝，须先迁移其范围与已删除的作者入口。5.1.0 新增 `TaskScopeReader`：拥有任务的插件以自己的一个投影加该状态的读取函数，提供会话当前任务的只读视图（`{ id, revision, phase }` 或 `null`）。Host 只把它授予内置 goal 插件，用来把 task 级的 refinement 条目绑定到当前 goal；goal 完成、清除或被替换时这些条目失效。5.2.0 只新增可选的记忆成员：传给 `MemoryProvider.open` 的只读 `validity` 有效期视图；在 turn 之外写受管段落的 `MemorySession.paragraphs?`（有这个方法即表示支持，Host 只向有它的 provider 保存受管段落）；记忆文件端口与 `ToolContext.fs` 上的 `replaceExact?`。协议 `MemorySource` 新增可选的 `maintenance` 运行 id。不实现这些成员的 provider 行为不变。5.3.0 再为用户记忆新增两个可选记忆成员：传给 `MemoryProvider.open` 的 `userValidity` 视图，以及 `MemorySession.userParagraphs?`（与段落端口同形，作用于用户记忆索引，受用户记忆预算约束）；Host 只通过有它的 provider 把任务经验晋升到用户记忆。5.4.0 新增 `WorkflowRunSource`：运行工作流的插件提供其 `runs` 投影及该状态的读取器，Host 因此能读出某个会话中已跑完的一次运行的定义（名称与任务，不含成员的回答）并把它保存为技能；Host 只把这项授权给内置的工作流插件。`isWorkflowRunId` 是运行 id 格式的唯一规则。
 
 服务提供者共用这套注册表。`defineKind({ bind })` 增加基数、实例作用域和最大端口授权（`ledger`、`input`、`projections`）。Host 安装一份只能缩小授权的描述，并通过 `ctx.providers` 准入当前 callback。包身份来自加载器，owner 来自清单。每次获准的调用各自打开实例。callback、generation 或 dispose 之后继续使用句柄会失败关闭。进程级共享仍留在已经做引用计数的功能里。
 

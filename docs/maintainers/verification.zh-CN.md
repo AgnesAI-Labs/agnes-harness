@@ -95,7 +95,7 @@ node --import tsx tools/public-docs/smoke.mjs
 
 smoke 使用隔离的临时 home、本机回环模型夹具与真实 CLI/daemon/worker，检查会话、默认助手、插件、Web 接口以及更新和清理；结束后停止自行启动的服务。它通过 HTTP/WebSocket 客户端访问 Web 接口，不代表真实浏览器视觉验收。
 
-持续维护的 `pnpm e2e:web` 检查在 [CI](../../.github/workflows/e2e-web.yml) 的 macOS 与 Linux 上运行。它构建或校验可复用运行目录，从 `agnes.mjs serve` 启动隔离 daemon/Web，验证页面交互、持久化变更、语言/无障碍及经审阅的平台截图。Chromium 单独预装。[Web 检查指南](../../tools/e2e-web/README.md)维护 spec 清单、产物、零重试规则和基线审阅。合成场景覆盖不证明所有浏览器或部署均可用。
+持续维护的 `pnpm e2e:web` 检查在 [CI](../../.github/workflows/e2e-web.yml) 的 macOS 与 Linux 上运行。它构建或校验可复用运行目录，从 `agnes.mjs serve` 启动隔离 daemon/Web，验证页面交互、持久化变更、语言/无障碍，截图只作为证据上传；任何操作系统上都没有像素门禁。Chromium 单独预装。[Web 检查指南](../../tools/e2e-web/README.md)维护 spec 清单、产物和零重试规则。合成场景覆盖不证明所有浏览器或部署均可用。
 
 构建到独立输出目录或执行 PowerShell 步骤见[安装指南](../guide/install.zh-CN.md)，手动体验见[演示指南](../guide/demo.zh-CN.md)。
 

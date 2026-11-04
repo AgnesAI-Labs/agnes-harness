@@ -316,6 +316,29 @@ describe('turn timeline', () => {
     expect(retry).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'turn:2' }))
   })
 
+  it.each([
+    'COMPLETION_REVIEW_REQUEST_LIMIT',
+    'COMPLETION_REVIEW_TIME_LIMIT',
+    'COMPLETION_REVIEW_UNAVAILABLE',
+  ])('keeps existing answer and artifact links without a retry for %s', async (code) => {
+    const retry = vi.fn()
+    const nodes = [user, say('answer', 'Candidate result: [deliverable](artifact://existing-result)')]
+    const failed = turn(nodes, {
+      status: 'failed',
+      reason: 'blocked',
+      error: { code, message: 'safe review stop' },
+      finalAssistantId: 'answer',
+      endedAt: '2026-10-01T00:00:01.000Z',
+    })
+    await render(nodes, failed, { turnErrorActions: { onRetry: retry } })
+    expect(host.querySelector('.turn-error-sentence')?.textContent).toContain('附加核对')
+    expect(host.querySelector('.turn-error-sentence')?.textContent).toContain('未完成')
+    expect(host.textContent).toContain('Candidate result')
+    expect(host.textContent).toContain('deliverable')
+    expect([...host.querySelectorAll('button')].some((button) => button.textContent === '重试')).toBe(false)
+    expect(retry).not.toHaveBeenCalled()
+  })
+
   it('disables the retry while the host says it cannot send', async () => {
     const retry = vi.fn()
     const nodes = [user, say('answer', 'Available answer.')]

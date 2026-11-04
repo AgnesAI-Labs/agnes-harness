@@ -20,6 +20,8 @@ The contracts live in `@agnes/extension-api/seams`. `sandbox` is the existing [s
 
 Checkpoint `snapshot` receives an optional `owner` session key; wrappers must preserve it for per-session retention. A verified `list` row may include `owner` and the complete canonical `paths` restored by that checkpoint. Session undo requires that owner and an exact single workspace-relative path matching its receipt, in addition to the turn binding. Missing metadata, an outside path, or a larger restore scope makes undo unavailable before any file is changed. Existing checkpoint storage is unchanged.
 
+`RepairSeam.decide` receives the candidate turn, round, prior decisions and an optional read-only backend `plan` snapshot (`items` with canonical `todo`, `doing`, `done`, `blocked` states and optional `customInstructions`). On a verifier pass, the default stop path consults repair when an enabled completion gate finds a sufficiently large unfinished plan; Core bounds review to one extra round. Existing providers may ignore the additive plan field.
+
 ## Register an implementation
 
 Register from an ordinary Cordis plugin that injects `providers`, exactly like any other provider:

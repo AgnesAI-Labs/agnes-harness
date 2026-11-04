@@ -64,3 +64,35 @@ it('counts the group from /proc on Linux, where minimal images ship no ps', () =
   ps.mockReturnValue('100 100 S\n101 100 S\n')
   expect(stopProcessGroup(100)).toBe(1)
 })
+
+it('treats a macOS EPERM for a group with only zombie or exiting members as already gone', () => {
+  fs.readdirSync.mockImplementation(() => {
+    throw Object.assign(new Error('no /proc'), { code: 'ENOENT' })
+  })
+  // Right after the timeout's SIGKILL the reaped leader is gone and its orphans wait for launchd.
+  const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+    throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' })
+  })
+  ps.mockReturnValue('101 100 Z\n102 100 RE\n200 200 S\n')
+  expect(stopProcessGroup(100)).toBe(0)
+  expect(kill).toHaveBeenCalledTimes(1)
+  // The same answer while the SIGKILL itself races the last member's exit.
+  kill.mockReset()
+  kill.mockImplementationOnce(() => true)
+  kill.mockImplementationOnce(() => {
+    throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' })
+  })
+  ps.mockReturnValueOnce('101 100 S\n').mockReturnValueOnce('101 100 Z\n')
+  expect(stopProcessGroup(100)).toBe(0)
+  // A live member, or a table that cannot be read, keeps the refusal.
+  kill.mockReset()
+  kill.mockImplementation(() => {
+    throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' })
+  })
+  ps.mockReturnValue('101 100 S\n')
+  expect(() => stopProcessGroup(100)).toThrow('kill EPERM')
+  ps.mockImplementation(() => {
+    throw new Error('ps unavailable')
+  })
+  expect(() => stopProcessGroup(100)).toThrow('kill EPERM')
+})

@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const SurfaceConfigValue = Type.Recursive((This) => Type.Union([Type.Null(), Type.Boolean(), Type.Number(), Type.String({ maxLength: 16384, pattern: "^(?!secret://)" }), Type.Array(This, { maxItems: 256 }), Type.Record(Type.String({ pattern: '^(?!(?:[A-Za-z0-9]+[_.-])*(?:[sS][eE][cC][rR][eE][tT]|[sS][eE][cC][rR][eE][tT][sS]|[tT][oO][kK][eE][nN]|[tT][oO][kK][eE][nN][sS]|[pP][aA][sS][sS][wW][oO][rR][dD]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]|[aA][uU][tT][hH][oO][rR][iI][zZ][aA][tT][iI][oO][nN]|[aA][pP][iI][_.-]?[kK][eE][yY]|[pP][rR][iI][vV][aA][tT][eE][_.-]?[kK][eE][yY]|[aA][cC][cC][eE][sS][sS][_.-]?[tT][oO][kK][eE][nN]|[rR][eE][fF][rR][eE][sS][hH][_.-]?[tT][oO][kK][eE][nN]|[cC][lL][iI][eE][nN][tT][_.-]?[sS][eE][cC][rR][eE][tT])$)[A-Za-z][A-Za-z0-9_.-]{0,63}$' }), This, { additionalProperties: false })]))
 export type SurfaceConfigValue = Static<typeof SurfaceConfigValue>
@@ -13,17 +13,19 @@ export const SurfaceSchema = Type.Module({
   "SecretRef": Type.String({ pattern: "^secret://[a-z0-9-]+/[a-z0-9._-]+$" }),
 })
 
-export const SurfaceServiceGrant = SurfaceSchema.Import('SurfaceServiceGrant')
+export type SurfaceSchemaDefinitions = typeof SurfaceSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const SurfaceServiceGrant: TImport<SurfaceSchemaDefinitions, 'SurfaceServiceGrant'> = SurfaceSchema.Import('SurfaceServiceGrant')
 export type SurfaceServiceGrant = Static<typeof SurfaceServiceGrant>
-export const SurfaceArtifact = SurfaceSchema.Import('SurfaceArtifact')
+export const SurfaceArtifact: TImport<SurfaceSchemaDefinitions, 'SurfaceArtifact'> = SurfaceSchema.Import('SurfaceArtifact')
 export type SurfaceArtifact = Static<typeof SurfaceArtifact>
-export const SurfaceDescriptor = SurfaceSchema.Import('SurfaceDescriptor')
+export const SurfaceDescriptor: TImport<SurfaceSchemaDefinitions, 'SurfaceDescriptor'> = SurfaceSchema.Import('SurfaceDescriptor')
 export type SurfaceDescriptor = Static<typeof SurfaceDescriptor>
-export const SurfaceInstance = SurfaceSchema.Import('SurfaceInstance')
+export const SurfaceInstance: TImport<SurfaceSchemaDefinitions, 'SurfaceInstance'> = SurfaceSchema.Import('SurfaceInstance')
 export type SurfaceInstance = Static<typeof SurfaceInstance>
-export const SurfacePackageMetadata = SurfaceSchema.Import('SurfacePackageMetadata')
+export const SurfacePackageMetadata: TImport<SurfaceSchemaDefinitions, 'SurfacePackageMetadata'> = SurfaceSchema.Import('SurfacePackageMetadata')
 export type SurfacePackageMetadata = Static<typeof SurfacePackageMetadata>
-export const SecretRef = SurfaceSchema.Import('SecretRef')
+export const SecretRef: TImport<SurfaceSchemaDefinitions, 'SecretRef'> = SurfaceSchema.Import('SecretRef')
 export type SecretRef = Static<typeof SecretRef>
 export const Root = SurfaceDescriptor
 export type Root = SurfaceDescriptor

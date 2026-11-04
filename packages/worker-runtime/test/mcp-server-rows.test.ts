@@ -1,8 +1,9 @@
-import { isMcpServerRowId, mcpPublicToolName, mcpStablePrefix } from '@agnes/base'
+import { isMcpServerRowId, type McpConnection, mcpPublicToolName, mcpStablePrefix } from '@agnes/base'
 import { MemNamespace, MemTable } from '@agnes/base/testkit'
 import type { McpServerDefinitionInput } from '@agnes/protocol'
 import * as workerResources from '@agnes/resource-control-worker'
 import { describe, expect, it, vi } from 'vitest'
+import { withMcpCatalogReadScope } from '../src/mcp-catalog-scope.js'
 import { leaseMcpConnection } from '../src/mcp-connection-pool.js'
 import { type McpServerSnapshotEntry, mcpServerRowsFromDefinitions } from '../src/mcp-server-rows.js'
 import { generationExtensionRestorer } from '../src/runtime-generation-restore.js'
@@ -299,4 +300,305 @@ it('shares effective MCP boundaries across generations and releases independent 
   await three.close()
   await three.close()
   expect(closed).toEqual(['first', 'rotated'])
+})
+
+function catalogFixture() {
+  const toolsChanged = new Set<() => void>()
+  const resourcesChanged = new Set<() => void>()
+  const transportClosed = new Set<() => void>()
+  let reads = 0
+  let closes = 0
+  let load: McpConnection['listTools'] = async () => [
+    { name: 'first', description: 'first', inputSchema: { type: 'object' } },
+  ]
+  const opener = {
+    connect: async () => ({
+      id: 'catalog',
+      listTools: (options?: Parameters<McpConnection['listTools']>[0]) => {
+        reads++
+        return load(options)
+      },
+      callTool: async () => ({ content: [] }),
+      close: async () => {
+        closes++
+      },
+      onToolsChanged: (listener: () => void) => {
+        toolsChanged.add(listener)
+        return () => {
+          toolsChanged.delete(listener)
+        }
+      },
+      onResourcesChanged: (listener: () => void) => {
+        resourcesChanged.add(listener)
+        return () => {
+          resourcesChanged.delete(listener)
+        }
+      },
+      onClose: (listener: () => void) => {
+        transportClosed.add(listener)
+        return () => {
+          transportClosed.delete(listener)
+        }
+      },
+    }),
+  }
+  const definition = { ...stdioEntry('catalog').definition, secretBinding: { kind: 'none' as const } }
+  return {
+    opener,
+    definition,
+    toolsChanged,
+    resourcesChanged,
+    transportClosed,
+    reads: () => reads,
+    closes: () => closes,
+    load: (next: McpConnection['listTools']) => {
+      load = next
+    },
+    lease: () => leaseMcpConnection(opener, 'revision', definition, new AbortController().signal),
+  }
+}
+
+describe('publication-scoped MCP catalogs', () => {
+  it('isolates each Host result and expires the result at the publication boundary', async () => {
+    const f = catalogFixture(),
+      one = await f.lease(),
+      two = await f.lease()
+    try {
+      await withMcpCatalogReadScope(async () => {
+        const result = await one.listTools({})
+        if (!result[0]) throw new Error('missing first tool')
+        result[0].inputSchema.changed = true
+        expect((await two.listTools())[0]?.inputSchema).toEqual({ type: 'object' })
+        expect(f.reads()).toBe(1)
+      })()
+      await withMcpCatalogReadScope(async () => {
+        await two.listTools()
+      })()
+      expect(f.reads()).toBe(2)
+      await one.close()
+      expect(f.closes()).toBe(0)
+      await two.listTools()
+      expect(f.reads()).toBe(3)
+    } finally {
+      await Promise.all([one.close(), two.close()])
+    }
+    expect(f.closes()).toBe(1)
+    expect(f.toolsChanged.size).toBe(0)
+    expect(f.resourcesChanged.size).toBe(0)
+  })
+
+  it('invalidates once before all Host listeners handle the same change notification', async () => {
+    const f = catalogFixture(),
+      one = await f.lease(),
+      two = await f.lease()
+    const pending: Promise<unknown>[] = []
+    one.onToolsChanged?.(() => {
+      pending.push(one.listTools())
+    })
+    two.onToolsChanged?.(() => {
+      pending.push(two.listTools())
+    })
+    try {
+      await withMcpCatalogReadScope(async () => {
+        await one.listTools()
+        f.load(async () => [{ name: 'updated', description: 'updated', inputSchema: {} }])
+        for (const listener of [...f.toolsChanged]) listener()
+        await Promise.all(pending)
+        expect(f.reads()).toBe(2)
+        expect((await one.listTools())[0]?.name).toBe('updated')
+        for (const listener of [...f.resourcesChanged]) listener()
+        await two.listTools()
+        expect(f.reads()).toBe(3)
+      })()
+    } finally {
+      await Promise.all([one.close(), two.close()])
+    }
+  })
+
+  it('does not publish a stale in-flight result into a newer notification epoch', async () => {
+    const f = catalogFixture(),
+      one = await f.lease(),
+      two = await f.lease()
+    let release!: (tools: Awaited<ReturnType<McpConnection['listTools']>>) => void
+    f.load(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        }),
+    )
+    try {
+      await withMcpCatalogReadScope(async () => {
+        const old = one.listTools()
+        await vi.waitFor(() => expect(release).toBeTypeOf('function'))
+        for (const listener of [...f.toolsChanged]) listener()
+        f.load(async () => [{ name: 'new', description: 'new', inputSchema: {} }])
+        expect((await two.listTools())[0]?.name).toBe('new')
+        release([{ name: 'old', description: 'old', inputSchema: {} }])
+        expect((await old)[0]?.name).toBe('old')
+        expect((await one.listTools())[0]?.name).toBe('new')
+        expect(f.reads()).toBe(2)
+      })()
+    } finally {
+      release?.([])
+      await Promise.all([one.close(), two.close()])
+    }
+  })
+
+  it('retries failed reads and does not reuse a disconnected connection catalog', async () => {
+    const f = catalogFixture(),
+      one = await f.lease()
+    try {
+      await withMcpCatalogReadScope(async () => {
+        f.load(async () => {
+          throw new Error('network failed')
+        })
+        await expect(one.listTools()).rejects.toThrow('network failed')
+        f.load(async () => [])
+        expect(await one.listTools()).toEqual([])
+        expect(f.reads()).toBe(2)
+        for (const listener of [...f.transportClosed]) listener()
+        f.load(async () => {
+          throw new Error('closed transport')
+        })
+        await expect(one.listTools()).rejects.toThrow('closed transport')
+      })()
+    } finally {
+      await one.close()
+    }
+  })
+
+  it('does not cache a failed catalog validation or retain a failed publication scope', async () => {
+    const f = catalogFixture(),
+      one = await f.lease()
+    try {
+      await expect(
+        withMcpCatalogReadScope(async () => {
+          f.load(async () => null as never)
+          await expect(one.listTools()).rejects.toThrow('tool catalog is not an array')
+          f.load(async () => [])
+          expect(await one.listTools()).toEqual([])
+          throw new Error('publication failed')
+        })(),
+      ).rejects.toThrow('publication failed')
+      f.load(async () => [{ name: 'fresh', description: 'fresh', inputSchema: {} }])
+      expect((await one.listTools())[0]?.name).toBe('fresh')
+      expect(f.reads()).toBe(3)
+    } finally {
+      await one.close()
+    }
+  })
+
+  it('never shares catalogs between different revisions or opener boundaries', async () => {
+    const f = catalogFixture(),
+      other = catalogFixture(),
+      one = await f.lease()
+    const two = await leaseMcpConnection(
+      f.opener,
+      'other-revision',
+      f.definition,
+      new AbortController().signal,
+    )
+    const third = await other.lease()
+    try {
+      await withMcpCatalogReadScope(async () => {
+        await one.listTools()
+        await two.listTools()
+        await third.listTools()
+        expect(f.reads()).toBe(2)
+        expect(other.reads()).toBe(1)
+      })()
+    } finally {
+      await Promise.all([one.close(), two.close(), third.close()])
+    }
+  })
+
+  it('keeps explicit deadlines and cancellation independent from the default catalog', async () => {
+    const f = catalogFixture(),
+      one = await f.lease(),
+      controller = new AbortController()
+    try {
+      await withMcpCatalogReadScope(async () => {
+        await one.listTools()
+        f.load(async (options) => {
+          expect(options?.timeoutMs).toBe(5)
+          return []
+        })
+        expect(await one.listTools({ timeoutMs: 5 })).toEqual([])
+        f.load(
+          (options) =>
+            new Promise((_, reject) => {
+              options?.signal?.addEventListener(
+                'abort',
+                () => reject(new DOMException('aborted', 'AbortError')),
+                { once: true },
+              )
+            }),
+        )
+        const cancelled = one.listTools({ signal: controller.signal })
+        controller.abort()
+        await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' })
+        expect((await one.listTools())[0]?.name).toBe('first')
+        expect(f.reads()).toBe(3)
+      })()
+    } finally {
+      await one.close()
+    }
+  })
+
+  it('does not retain cached authority in tasks that outlive their apply scope', async () => {
+    const f = catalogFixture(),
+      one = await f.lease()
+    let resume!: () => void
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve
+    })
+    let late!: Promise<unknown>
+    try {
+      await withMcpCatalogReadScope(async () => {
+        await one.listTools()
+        late = (async () => {
+          await gate
+          return one.listTools()
+        })()
+      })()
+      f.load(async () => [{ name: 'after', description: 'after', inputSchema: {} }])
+      resume()
+      expect(await late).toMatchObject([{ name: 'after' }])
+      expect(f.reads()).toBe(2)
+    } finally {
+      resume()
+      await one.close()
+    }
+  })
+})
+
+it('refuses a lease and cleans up when internal catalog listener setup fails', async () => {
+  let stopped = 0
+  let closed = 0
+  const definition = {
+    ...stdioEntry('listener-failure').definition,
+    secretBinding: { kind: 'none' as const },
+  }
+  const opener = {
+    connect: async () => ({
+      id: 'listener-failure',
+      listTools: async () => [],
+      callTool: async () => ({ content: [] }),
+      close: async () => {
+        closed++
+        throw new Error('close failed')
+      },
+      onToolsChanged: () => () => {
+        stopped++
+      },
+      onResourcesChanged: () => {
+        throw new Error('listener failed')
+      },
+    }),
+  }
+  await expect(
+    leaseMcpConnection(opener, 'revision', definition, new AbortController().signal),
+  ).rejects.toThrow('listener failed')
+  expect(stopped).toBe(1)
+  expect(closed).toBe(1)
 })

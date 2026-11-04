@@ -20,7 +20,7 @@ import type {
   SessionImpl,
   SlotOperation,
 } from './session.js'
-import { toolArgumentError } from './tool-args.js'
+import { toolArgumentError, toolArgumentFeedback } from './tool-args.js'
 import { recordToolArgumentCheck, restoreToolArgumentRecovery } from './tool-argument-recovery.js'
 import { toolCallPayload } from './tool-call.js'
 import { toolFilterRule } from './tool-filter.js'
@@ -116,9 +116,12 @@ export async function validatedCallPolicy(
   if (check.events.length) await s.d.log.append(check.events)
   const argumentError = check.error
   if (argumentError)
-    throw Object.assign(new Error(argumentError), {
-      code: 'TOOL_ARGS_INVALID',
-    })
+    throw Object.assign(
+      new Error(`${argumentError}\n${JSON.stringify(toolArgumentFeedback(argumentError))}`),
+      {
+        code: 'TOOL_ARGS_INVALID',
+      },
+    )
   return resolveValidatedToolCallPolicy(def, args as JsonValue)
 }
 
@@ -543,16 +546,13 @@ export async function setModel(
           (thinkingCarriesForward ? priorThinking : sameModel ? undefined : known.defaultSettings?.thinking))
     const contextWindow =
       sel.contextWindow === null
-        ? known.contextWindow
-        : (sel.contextWindow ??
-          (sameModel && priorWindow !== undefined
-            ? priorWindow
-            : (known.defaultSettings?.contextWindow ?? known.contextWindow)))
+        ? undefined
+        : (sel.contextWindow ?? (sameModel ? priorWindow : known.defaultSettings?.contextWindow))
     const to = {
       route: sel.route,
       model: sel.model,
       ...(effectiveThinking === undefined ? {} : { thinking: effectiveThinking }),
-      contextWindow,
+      ...(contextWindow === undefined ? {} : { contextWindow }),
     }
     const r = await s.d.log.append([
       s.ev('x/core/model-switch', { slot: sel.slot, from, to }, { ignorable: true }),

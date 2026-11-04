@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { join, sep } from 'node:path'
+import { collectSkillBundle } from './bundle-files.js'
 import type { SkillFs } from './discover.js'
 import { skillSha256 } from './frontmatter.js'
 
@@ -126,6 +127,8 @@ export async function collectSkillFiles(
   skillReal?: string,
   options: Readonly<{ complete?: boolean }> = {},
 ): Promise<readonly SkillFile[]> {
+  const bundle = await collectSkillBundle(fs, skillDir)
+  if (bundle) return bundle
   const files: SkillFile[] = []
   let visited = 0
   let bytesTotal = 0

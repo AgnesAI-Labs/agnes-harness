@@ -100,7 +100,12 @@ it('builds local web assets with the shared platform vendor modules', async () =
       for (const file of assets) {
         const response = await fetch(`${server.url}/${file}`)
         expect(response.status, file).toBe(200)
-        expect(Buffer.from(await response.arrayBuffer()), file).toEqual(await readFile(join(output, file)))
+        // Byte equality through Buffer.equals: a deep toEqual walks every byte of these megabyte
+        // bundles, which took most of this case's 30 s budget on a hosted runner.
+        const served = Buffer.from(await response.arrayBuffer())
+        expect(served.equals(await readFile(join(output, file))), `${file} is served byte for byte`).toBe(
+          true,
+        )
       }
     } finally {
       await server.close()

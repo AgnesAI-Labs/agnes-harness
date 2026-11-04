@@ -97,8 +97,8 @@ describe('Core quiet gate', () => {
     await kernel.close()
   })
 
-  it.each([false, true])(
-    'balances a thrown step and surfaces integrity errors (integrity=%s)',
+  it.each([false, true, 'domain', 'unknown'] as const)(
+    'balances a thrown step and preserves declared errors (failure=%s)',
     async (integrity) => {
       const calls: string[] = []
       let stepping = 0
@@ -121,24 +121,42 @@ describe('Core quiet gate', () => {
       await session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
       await session.step()
       calls.length = 0
-      const failure = integrity
-        ? new CoreError(
-            'E_LEDGER_INTEGRITY',
-            'deferred chain: session=s lane=main invocation=test seq=9 previous-seq-mismatch',
-          )
-        : new Error('broken phase')
+      const failure =
+        integrity === true
+          ? new CoreError(
+              'E_LEDGER_INTEGRITY',
+              'deferred chain: session=s lane=main invocation=test seq=9 previous-seq-mismatch',
+            )
+          : Object.assign(new Error('broken phase'), {
+              ...(typeof integrity === 'string'
+                ? { code: integrity === 'domain' ? 'TOOL_NOT_FOUND' : 'PRIVATE_SECRET_CANARY' }
+                : {}),
+            })
       session.step = async () => {
         throw failure
       }
 
       await expect(session.run({ until: 'turn-end', signal: signal() })).resolves.toMatchObject({
         reason: 'error',
-        error: { code: integrity ? 'E_LEDGER_INTEGRITY' : 'E_STEP_FAILED', message: failure.message },
+        error: {
+          code:
+            integrity === true
+              ? 'E_LEDGER_INTEGRITY'
+              : integrity === 'domain'
+                ? 'TOOL_NOT_FOUND'
+                : 'E_STEP_FAILED',
+          message: failure.message,
+        },
       })
       const ends = await session.scan({ type: 'turn/end', limit: 10 })
       expect(ends.at(-1)?.data).toMatchObject({
         error: {
-          code: integrity ? 'E_LEDGER_INTEGRITY' : 'E_STEP_FAILED',
+          code:
+            integrity === true
+              ? 'E_LEDGER_INTEGRITY'
+              : integrity === 'domain'
+                ? 'TOOL_NOT_FOUND'
+                : 'E_STEP_FAILED',
           message: failure.message,
         },
       })

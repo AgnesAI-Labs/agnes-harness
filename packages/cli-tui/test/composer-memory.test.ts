@@ -91,6 +91,29 @@ describe('TUI composer memory', () => {
     expect(inherited.modelId).toBe('deepseek-v4-flash')
   })
 
+  it('names the account label, not its raw route, in the new-session notice', async () => {
+    const path = join(mkdtempSync(join(tmpdir(), 'agh-composer-')), 'composer-selection.json')
+    writeComposerMemoryFile(path, { model: { route: 'account-acct-1', id: 'flash' } })
+    const session = sessionDouble()
+    const client = session.client as unknown as {
+      apis: () => Promise<unknown>
+      config: { get: () => Promise<unknown> }
+    }
+    client.apis = async () => ({ profile: { models: [{ route: 'account-acct-1', id: 'flash' }] } })
+    client.config.get = async () => ({
+      provider: { id: 'deepseek', route: 'account-acct-1', model: 'flash' },
+      accounts: [{ accountId: 'acct-1', label: 'DeepSeek', route: 'account-acct-1' }],
+    })
+    const inherited = await inheritFreshSession(session, path, undefined, 'en')
+    expect(inherited.notice).toContain('DeepSeek / flash')
+    expect(inherited.notice).not.toContain('account-acct-1')
+    expect(session.setModel).toHaveBeenCalledWith({
+      slot: 'primary',
+      route: 'account-acct-1',
+      model: 'flash',
+    })
+  })
+
   it('does nothing when no preference file is configured', async () => {
     const session = sessionDouble()
     await expect(inheritFreshSession(session, undefined, undefined, 'zh-CN')).resolves.toEqual({})

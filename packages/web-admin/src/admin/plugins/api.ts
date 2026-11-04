@@ -41,6 +41,7 @@ const pendingContexts = new WeakMap<FetchLike, Promise<AdminContext>>()
 type AdminOverview = { context: AdminContext; inventory?: PackageListResult }
 const pendingOverviews = new WeakMap<FetchLike, Promise<AdminOverview>>()
 const METHOD_BY_PATH = {
+  'skills/import': '_agnes/v1/packages.skillImport',
   'candidates/list': '_agnes/v1/plugins.candidates.list',
   'candidates/show': '_agnes/v1/plugins.candidates.show',
   'candidates/create': '_agnes/v1/plugins.candidates.create',
@@ -232,7 +233,7 @@ export class PluginAdminApi {
   static async overview(fetcher: FetchLike = fetch): Promise<AdminOverview> {
     let pending = pendingOverviews.get(fetcher)
     if (!pending) {
-      pending = (async () => {
+      const request: Promise<AdminOverview> = (async () => {
         const response = await fetcher(`${ADMIN_API_ROOT}/overview`, {
           method: 'GET',
           credentials: 'same-origin',
@@ -257,10 +258,18 @@ export class PluginAdminApi {
             message: 'The backend returned data that cannot be verified.',
           })
         return value
-      })().finally(() => pendingOverviews.delete(fetcher))
-      pendingOverviews.set(fetcher, pending)
+      })().finally(() => {
+        if (pendingOverviews.get(fetcher) === request) pendingOverviews.delete(fetcher)
+      })
+      pendingOverviews.set(fetcher, request)
+      pending = request
     }
     return structuredClone(await pending)
+  }
+
+  /** A read asked for after a change must not join one sent before it; the next read is sent anew. */
+  static forgetPendingOverview(fetcher: FetchLike = fetch): void {
+    pendingOverviews.delete(fetcher)
   }
 
   application(): Promise<import('@agnes/protocol').ApplicationState> {
@@ -531,6 +540,9 @@ export class PluginAdminApi {
       ...(query ? { query } : {}),
       ...(cursor ? { cursor } : {}),
       limit: 50,
+      ...(this.#context.features?.includes('packages.community-discovery.v1')
+        ? { includeCommunity: true }
+        : {}),
     })
   }
 
@@ -544,6 +556,14 @@ export class PluginAdminApi {
 
   async inspect(source: PackageSource): Promise<PackageOperationReceipt> {
     return this.#effect('inspect', { source })
+  }
+
+  async skillImport(
+    input: Omit<import('@agnes/protocol').SkillImportParams, 'profile' | 'clientId' | 'commandId'>,
+  ): Promise<import('@agnes/protocol').SkillImportResult> {
+    if (!this.#context.features?.includes('packages.skill-import.v1'))
+      throw new Error('SKILL_IMPORT_UNAVAILABLE')
+    return this.#effect('skills/import', input)
   }
 
   async install(source: PackageSource, expectedIntegrity: string): Promise<PackageOperationReceipt> {

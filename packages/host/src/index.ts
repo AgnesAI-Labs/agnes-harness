@@ -346,6 +346,16 @@ export type {
   PluginManageInvocation,
 } from '@agnes/host-extensions/resources/plugin-manage-port'
 export {
+  createRefinementSkillInstallers,
+  type RefinementSkillDeps,
+  type RefinementSkillInstallContext,
+  type RefinementSkillInstalled,
+  type RefinementSkillInstaller,
+  type RefinementSkillInstallers,
+  type RefinementSkillReplaceOptions,
+  refinementSkillRefusal,
+} from '@agnes/host-extensions/resources/refinement-skill-install'
+export {
   createSkillInstaller,
   type SkillInstallAuthority,
 } from '@agnes/host-extensions/resources/skill-install'
@@ -437,7 +447,14 @@ export {
   type SessionDefaultsConfigurationService,
 } from '@agnes/host-infrastructure/configuration'
 export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-infrastructure/doctor'
+export { REVIEW_AFTER_MS, RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
+export {
+  type RefinementSettingsPort,
+  RefinementSettingsStore,
+  refinementSettingsRevision,
+} from '@agnes/host-infrastructure/refinement-settings'
 export { RequestTraceStore } from '@agnes/host-infrastructure/request-traces'
+export { sandboxReadPaths } from '@agnes/host-infrastructure/sandbox-read-paths'
 export * from '@agnes/host-infrastructure/sandbox-readiness-manager'
 export { createSandboxSeam } from '@agnes/host-infrastructure/sandbox-seam'
 export { prepareSandboxWorkspaceAncestor } from '@agnes/host-infrastructure/sandbox-workspace-ancestor'
@@ -551,6 +568,16 @@ export {
   readConfigurationProfileInputs,
 } from './runtime/profile/inputs.js'
 export * from './runtime/profile/session-capabilities.js'
+export { createSkillDraftStore } from './runtime/refinement/skill-drafts.js'
+export {
+  recordSkillRevocation,
+  renewSkillForUser,
+  reviewSkills,
+  rollbackSkillForUser,
+  type SkillReviewInstaller,
+  type UserSkillRevocation,
+  uninstallSkillForUser,
+} from './runtime/refinement/skill-review.js'
 export { readFactChainBinding } from './runtime/sessions/fact-chain-binding.js'
 export {
   type CreateSessionOptions,
@@ -559,6 +586,12 @@ export {
   sessionKey,
 } from './runtime/sessions/session.js'
 export { readProfileTelemetryConsent } from './runtime/sessions/session-hooks.js'
+export {
+  refinementCommand,
+  requestRefinement,
+  rollbackRefinement,
+  saveEntryToWorkspace,
+} from './runtime/sessions/session-refinement.js'
 export {
   askSideQuestion,
   SideQuestionError,

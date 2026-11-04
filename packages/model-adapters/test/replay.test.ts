@@ -75,7 +75,8 @@ it('records private responses and replays with independent session cursors, mism
   const recorder = await recordModelResponses(source, path)
   expect(await collect(recorder)).toEqual(events)
   await recorder.dispose?.()
-  expect((await stat(path)).mode & 0o777).toBe(0o600)
+  // Windows has no POSIX permission bits (Node reports 0o666 for any writable file).
+  if (process.platform !== 'win32') expect((await stat(path)).mode & 0o777).toBe(0o600)
   expect(await readModelResponses(path)).toHaveLength(1)
   expect(await readFile(path, 'utf8')).not.toContain('credential')
   const replay = await replayAdapter.create(config(path))

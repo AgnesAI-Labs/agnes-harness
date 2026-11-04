@@ -223,7 +223,6 @@ function mint(
   const derived = deriveRequest({
     kind,
     merged: { tools: [], sections: [], runtimeContext: {}, conflicts: [] },
-    harnessEntries: [],
     surface,
     disclosed: [],
     toolCalls: calls,

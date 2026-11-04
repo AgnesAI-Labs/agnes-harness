@@ -1965,6 +1965,12 @@
           "type": "string",
           "maxLength": 1024
         },
+        "workflowRun": {
+          "description": "A skill generated from a finished `workflow` run of this session: the run's id.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
         "arguments": {
           "$ref": "#/$defs/JsonValue"
         }
@@ -2523,6 +2529,32 @@
         },
         "outcome": {
           "enum": ["applied", "rejected:conflict", "rejected:limit", "rejected:evidence", "rejected:prefix"]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "runId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "rejectedEdits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["index", "reason"],
+            "properties": {
+              "index": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reason": {
+                "type": "string",
+                "maxLength": 128
+              }
+            }
+          }
         },
         "rollbackOf": {
           "type": "integer",

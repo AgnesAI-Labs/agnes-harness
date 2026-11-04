@@ -7,7 +7,7 @@ import type {
   SkillRootStatus,
   SkillScanObservation,
 } from '@agnes/protocol'
-import { validateResourceControlData } from '@agnes/protocol'
+import { rpcError, validateResourceControlData } from '@agnes/protocol'
 import type { ResourceControlStore } from '@agnes/resource-control-store'
 
 type ResourceHello = Readonly<{
@@ -35,6 +35,9 @@ export type ResourceAdapterOptions = Readonly<{
   resolveWorkspace?: (workspaceId?: string) => Promise<{ workspaceId: string; path: string }>
   refreshPackageSkills(): Promise<void>
 }>
+
+/** Reads of the runtime Skill view that may each be overtaken by a publish before one is refused. */
+export const SKILL_VIEW_READS = 3
 
 /** Owns per-resource candidate generations. A candidate is published only after validation. */
 export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
@@ -213,19 +216,31 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
     skills: {
       view: async ({ profile, skills, signal }) => {
         if (profile !== o.profile.name) throw new Error('resource profile mismatch')
-        const snapshotRevision = await currentSnapshotRevision()
-        const link = await sharedWorker(signal)
-        const raw = await link.command(
-          'resourceSkillView',
-          { skills, snapshotRevision },
-          { timeoutMs: 31_000 },
-        )
-        if (
-          link.alive === false ||
-          (await pool.acquireSharedWorker()) !== link ||
-          (await currentSnapshotRevision()) !== snapshotRevision
-        )
-          throw new Error('runtime Skill view changed during read')
+        // A publish or worker replacement during the read leaves a view of neither snapshot. Read
+        // again against the new one; a resource that keeps changing gets a typed, retryable refusal.
+        let read: Readonly<{ raw: unknown; snapshotRevision: string }> | undefined
+        for (let attempt = 0; attempt < SKILL_VIEW_READS && !read; attempt++) {
+          const snapshotRevision = await currentSnapshotRevision()
+          const link = await sharedWorker(signal)
+          const raw = await link.command(
+            'resourceSkillView',
+            { skills, snapshotRevision },
+            { timeoutMs: 31_000 },
+          )
+          if (
+            link.alive !== false &&
+            (await pool.acquireSharedWorker()) === link &&
+            (await currentSnapshotRevision()) === snapshotRevision
+          )
+            read = { raw, snapshotRevision }
+        }
+        if (!read)
+          throw rpcError('GENERATION_STALE', {
+            code: 'RESOURCE_SKILL_VIEW_CHANGING',
+            retryable: true,
+            reason: 'Skills changed during every read; try again',
+          })
+        const { raw, snapshotRevision } = read
         if (
           !raw ||
           typeof raw !== 'object' ||

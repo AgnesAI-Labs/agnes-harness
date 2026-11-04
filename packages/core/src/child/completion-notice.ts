@@ -6,6 +6,7 @@ import type { SystemInput } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { childResultCollected, childResultSequence } from './collected-result.js'
+import { retiredCompletionIdentity } from './idle-retirement-fact.js'
 import { recordedChildRole } from './roles.js'
 
 export const CHILD_COMPLETION_SOURCE = 'agnes/child'
@@ -118,10 +119,16 @@ export async function childCompletionInput(
   }
   // A terminal notice is keyed by the durable outcome alone: the child's last turn/end may still land
   // after a cancel, so a ledger-derived sequence would differ between live delivery and recovery.
+  const resultSeq = await childResultSequence(parent, record)
+  const retiredId =
+    outcome === 'completed' && !options.continuable
+      ? await retiredCompletionIdentity(parent, record, resultSeq)
+      : undefined
   return {
     system,
-    resultSeq: await childResultSequence(parent, record),
-    commandId: childCompletionId(record.childKey, outcome, options.continuable ? endSeq : undefined),
+    resultSeq,
+    commandId:
+      retiredId ?? childCompletionId(record.childKey, outcome, options.continuable ? endSeq : undefined),
   }
 }
 

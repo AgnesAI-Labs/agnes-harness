@@ -29,12 +29,14 @@ import { jobsSlash } from './job-commands.js'
 import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
 import { memorySlash } from './memory-command.js'
+import { accountLabels } from './model-label.js'
 import { parseNotifyMode } from './notify.js'
 import { permissionsSlash } from './permissions-command.js'
 import { providerSlash } from './provider-command.js'
 import { queueSlash } from './queue-commands.js'
 import { rateSlash } from './rate-command.js'
 import { recapSlash } from './recap-command.js'
+import { refineSlash } from './refine-command.js'
 import type { ResourceCommandKind } from './resource-controller.js'
 import { scheduleSlash } from './schedule-commands.js'
 import { forkAt, forkSlash, oneLine, rewindChoices, rewindPrompt, sessionSlash } from './session-commands.js'
@@ -102,6 +104,8 @@ export function slashCommandFor(
 
 export type ModelChoice = {
   route: string
+  /** Account label shown instead of the raw route; absent when no account is known for it. */
+  label?: string
   model: string
   reasoning: boolean
   thinkingLevelMap?: Record<string, string>
@@ -590,12 +594,14 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/model': {
       if (args.length === 0) {
         const models = (await c.apis()).profile.models ?? []
+        const labels = await accountLabels(c, true)
         const unique = new Map<string, ModelChoice>()
         for (const item of models) {
           const key = `${item.route}/${item.id}`
           if (!unique.has(key))
             unique.set(key, {
               route: item.route,
+              ...(labels.get(item.route) ? { label: labels.get(item.route) as string } : {}),
               model: item.id,
               reasoning: item.reasoning ?? false,
               ...(item.thinkingLevelMap ? { thinkingLevelMap: item.thinkingLevelMap } : {}),
@@ -670,12 +676,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
     case '/terminal-setup':
       return terminalSetupSlash(app, line)
     case '/refine':
-      // `harness/refine` exists as a raw ledger event type (protocol session-v1 schema), but
-      // UITimeline/UINode has no kind that projects it -- there is no 'notice' or 'refine' UINode
-      // kind today, so filtering a projected timeline for one would just always return nothing,
-      // silently, forever. Reporting the gap directly is the honest behaviour; it is not this
-      // command's job to make projectUI() show something it structurally cannot show yet.
-      return { text: 'refine proposals are not projected into the TUI timeline yet' }
+      return refineSlash(app, line)
     case '/packages':
       if (args.length > 0) return { text: 'usage: /packages' }
       return { text: await app.packages.packages(), presentation: 'transcript' }

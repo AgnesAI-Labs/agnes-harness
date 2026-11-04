@@ -462,6 +462,8 @@ describe('SessionLogImpl push and fault notice', () => {
     expect(log.faulted).toBe(true)
     expect(faults).toHaveLength(1)
     expect(faults[0]).toMatchObject({ code: 'E_WRITER_LEASE' })
+    expect(log.fault).toEqual({ reason: 'renew', code: 'E_WRITER_LEASE' })
+    await expect(log.append([note()])).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
   })
 
   it('notifies a fault once when a commit outcome is unknown, and not for a refusal', async () => {
@@ -482,6 +484,7 @@ describe('SessionLogImpl push and fault notice', () => {
     await expect(log.append([user('b')])).rejects.toThrow(/disk full/)
     await expect(log.append([user('c')])).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
     expect(faults).toHaveLength(1)
+    expect(log.fault).toEqual({ reason: 'commit', code: 'E_STORAGE_FAULT' })
   })
 
   it('calls a listener registered after the fault once, on the next microtask', async () => {
@@ -595,6 +598,36 @@ describe('SessionLogImpl renews its lease during turns and on writes', () => {
     expect(armed()).toHaveLength(1)
     await log.append([note('side')], op(null, 'side'))
     expect(armed()).toHaveLength(0)
+  })
+
+  it('renewal continues while a hold is active and stops after release', async () => {
+    const storage = fresh()
+    let renewals = 0
+    const counted = Object.assign(Object.create(storage) as MemoryStorage, {
+      renew: async (k: string, r: string) => {
+        renewals++
+        await storage.renew(k, r)
+      },
+    })
+    const { log, t, armed } = await openAt(counted)
+    const release = log.holdRenewal()
+    expect(armed()).toHaveLength(1)
+    t.flush()
+    t.flush()
+    expect(renewals).toBe(2)
+    // A turn opening and closing meanwhile does not stop a renewal the hold still needs.
+    await log.append([note()], op(1))
+    await log.append([note()], op(null))
+    expect(armed()).toHaveLength(1)
+    // Two holds: the timer runs until the last one is released, and a release counts once.
+    const second = log.holdRenewal()
+    release()
+    release()
+    expect(armed()).toHaveLength(1)
+    second()
+    expect(armed()).toHaveLength(0)
+    t.flush()
+    expect(renewals).toBe(2)
   })
 
   it('renews at once when it opens on a turn left open', async () => {

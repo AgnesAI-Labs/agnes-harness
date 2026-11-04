@@ -123,6 +123,9 @@ it('opens no terminal until asked, lists Agent jobs read-only, retains completed
   agent.status = 'failed'
   agent.code = 1
   agent.stdout = 'retained output'
+  // The panel polls once a second after each read, as long as waitFor's own deadline; ask for the
+  // catch-up read a returning window gets instead of racing the next tick.
+  window.dispatchEvent(new Event('focus'))
   await vi.waitFor(() => expect(host.textContent).toContain('退出 1'))
   await vi.waitFor(() => expect(host.textContent).toContain('retained output'))
   listed.splice(0, 1) // The backend registry can evict a completed job; the followed output remains available.
@@ -191,6 +194,9 @@ it('closes a finished child report with the state it ended in', async () => {
   await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(1))
   child.status = 'failed'
   child.code = -1
+  // The panel polls once a second after each read, as long as waitFor's own deadline; ask for the
+  // catch-up read a returning window gets instead of racing the next tick.
+  window.dispatchEvent(new Event('focus'))
   await vi.waitFor(() => expect(host.querySelector('.workbench-child-report-foot')?.textContent).toBe('失败'))
   expect(host.querySelector('.workbench-child-report-foot')?.getAttribute('data-tone')).toBe('danger')
 })
@@ -492,4 +498,30 @@ it('opens the child job tab the composer asks for and follows a later request', 
     '子智能体',
   )
   expect(host.querySelectorAll('[data-testid=terminal-tab]')).toHaveLength(2)
+})
+
+it('gives terminal screens that mount together the same screen module', async () => {
+  // Switching tabs mounts screens at once. They must share one import: concurrent dynamic imports of
+  // a mocked module can hand some callers the real one, which renders out of step with the fixture.
+  const host = document.createElement('div')
+  document.body.append(host)
+  hosts.push(host)
+  const screen = (stdout: string) => (
+    <TerminalView
+      key={stdout}
+      failure="failed"
+      loading="loading"
+      stdout={stdout}
+      stderr=""
+      writable={false}
+      label="Terminal"
+      onData={() => {}}
+      onResize={() => {}}
+    />
+  )
+  renderRegion(host, <>{['one', 'two', 'three', 'four', 'five', 'six'].map(screen)}</>)
+  await vi.waitFor(() => expect(host.querySelectorAll('[data-testid=terminal-fixture-raw]')).toHaveLength(6))
+  expect(
+    [...host.querySelectorAll('[data-testid=terminal-fixture-raw]')].map((node) => node.textContent),
+  ).toEqual(['one', 'two', 'three', 'four', 'five', 'six'])
 })

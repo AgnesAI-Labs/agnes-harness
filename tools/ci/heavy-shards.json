@@ -1,0 +1,29 @@
+{
+  "about": "Heavy-tier files run by the first CI heavy shards, one list per shard, balanced from measured Linux file durations. The last shard runs every other heavy file, so a new heavy file needs no entry here.",
+  "lists": [
+    [
+      "packages/cli/test/app-server.e2e.test.ts",
+      "packages/cli/test/built-resource-mcp.e2e.test.ts",
+      "packages/cli/test/local.e2e.test.ts",
+      "packages/daemon/test/example-loop-turn.e2e.test.ts",
+      "packages/daemon/test/production-storage.e2e.test.ts",
+      "packages/daemon/test/unified-app-server.e2e.test.ts",
+      "packages/daemon/test/worker-pool.e2e.test.ts",
+      "packages/host/test/profile/role-escalation.e2e.test.ts",
+      "packages/loop-jev/test/bench-runner.e2e.test.ts",
+      "packages/loop-jev/test/market-install.e2e.test.ts"
+    ],
+    [
+      "examples/demos/test/demos.e2e.test.ts",
+      "packages/batch/test/process-crash.e2e.test.ts",
+      "packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts",
+      "packages/daemon/test/client-contributions.e2e.test.ts",
+      "packages/daemon/test/local-plugin-trust.e2e.test.ts",
+      "packages/daemon/test/supervisor.e2e.test.ts",
+      "packages/host-infrastructure/test/scan-trunc/resume.slow.test.ts",
+      "packages/host/test/assemble/incremental-apply.slow.test.ts",
+      "packages/web/test/app.slow.test.ts",
+      "tools/e2e-web/agent-sweep.e2e.test.ts"
+    ]
+  ]
+}

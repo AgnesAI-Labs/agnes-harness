@@ -19,6 +19,10 @@ export function thinkingLevelsOf(choice: Pick<ModelChoice, 'thinkingLevelMap'>):
     : THINKING_FALLBACK
 }
 
+/** Shown name: the account label when known, else the raw route. Ids and submitted values stay route/model. */
+const label = (choice: ModelChoice) =>
+  choice.label ? `${choice.label} / ${choice.model}` : `${choice.route}/${choice.model}`
+
 /** Transient, connection-local model chooser. It owns all input while open and never writes UI rows. */
 export class ModelPicker implements Component {
   private box: Box | undefined
@@ -42,7 +46,7 @@ export class ModelPicker implements Component {
     this.choices = choices
     const byId = new Map(choices.map((choice) => [`${choice.route}/${choice.model}`, { ...choice }]))
     const select = new FilterSelect({
-      options: [...byId.keys()].map((id) => ({ id, label: id })),
+      options: [...byId].map(([id, choice]) => ({ id, label: label(choice) })),
       locale: this.o.locale ?? 'en',
       ansi: this.o.ansi,
       maxRows: () => Math.max(1, this.o.maxRows() - 3),
@@ -93,7 +97,7 @@ export class ModelPicker implements Component {
     })
     this.box = dialogBox(select, {
       title: tt('picker.reasoningTitle', this.o.locale ?? 'en', {
-        model: `${choice.route}/${choice.model}`,
+        model: label(choice),
       }),
       ansi: this.o.ansi,
       hints: this.hints('dialog.back'),

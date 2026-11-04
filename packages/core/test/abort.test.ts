@@ -121,7 +121,7 @@ describe('abort during the tools phase', () => {
     expect(cancelSeq).toBeGreaterThan(-1)
 
     // The terminal rows the next reader needs: the step closes, then the turn.
-    expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
+    expect(t.slice(-3)).toEqual(['step/end', 'x/core/turn-wait', 'turn/end'])
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'aborted' })
     expect(session.op()).toBeNull()
   })
@@ -261,6 +261,7 @@ describe('abort during inference', () => {
       error: { code: 'ABORTED' },
     })
     expect(session.op()).toBeNull()
+    expect(await log.scan({ type: 'effect/intent', limit: 10 })).toHaveLength(1)
   })
 
   it('leaves a ledger a fresh process can carry on from', async () => {
@@ -321,12 +322,17 @@ describe('abort while a hook is running', () => {
     async (which) => {
       let entered: () => void = () => undefined
       const inHook = new Promise<void>((resolve) => (entered = resolve))
-      let signal: AbortSignal | undefined
+      // run() gives each run a fresh scope, so the signal that cuts the hook is the one the session
+      // holds once the hook is entered; one read before run() opens its scope is never aborted.
+      let scope: (() => AbortSignal) | undefined
       const cut = async (): Promise<void> => {
+        const signal = scope?.()
+        if (!signal) throw new Error('hook entered before the session was opened')
         entered()
-        await new Promise<void>((resolve) =>
-          signal?.addEventListener('abort', () => resolve(), { once: true }),
-        )
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve()
+          else signal.addEventListener('abort', () => resolve(), { once: true })
+        })
       }
       const hooks: HookPort = {
         ...noopHooks,
@@ -347,8 +353,8 @@ describe('abort while a hook is running', () => {
       const ac = new AbortController()
       const { session, log } = await openSession({ provider: hangingProvider(), hooks })
       await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+      scope = () => session.ac.signal
       const run = session.run({ until: 'turn-end', signal: ac.signal })
-      signal = session.ac.signal
       await inHook
       ac.abort()
       const out = await run
@@ -385,7 +391,7 @@ describe('the run loop bounds', () => {
     const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
     expect(out.reason).toBe('error')
     const t = await types(log as never)
-    expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
+    expect(t.slice(-3)).toEqual(['step/end', 'x/core/turn-wait', 'turn/end'])
     expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'error' })
     expect(session.op()).toBeNull()
   })
@@ -407,7 +413,7 @@ describe('the run loop bounds', () => {
     expect(out.reason).toBe('error')
     expect(out.error?.message).toContain('boom')
     const t = await types(log as never)
-    expect(t.slice(-2)).toEqual(['step/end', 'turn/end'])
+    expect(t.slice(-3)).toEqual(['step/end', 'x/core/turn-wait', 'turn/end'])
     expect(session.op()).toBeNull()
   })
 })

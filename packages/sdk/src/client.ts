@@ -101,7 +101,7 @@ export type {
 type InitializeResponseBody = {
   protocolVersion: number
   agentCapabilities?: Record<string, unknown>
-  _meta?: { agnes?: { agnesVersion?: string; platform?: string } }
+  _meta?: { agnes?: { agnesVersion?: string; platform?: string; features?: unknown } }
 }
 
 function knownMethod(method: string): method is MethodName {
@@ -294,6 +294,20 @@ export class Client {
     save: (
       config: import('@agnes/protocol').AutoReviewConfig,
     ): Promise<import('@agnes/protocol').AutoReviewConfig> => this.call('_agnes/v1/autoReview.save', config),
+  }
+  /** The profile's refinement switch (off by default), saved against the revision last read. */
+  readonly refinement = {
+    get: (): Promise<import('@agnes/protocol').RefinementSettingsSnapshot> =>
+      this.call('_agnes/v1/refinement.get', {}),
+    save: (
+      input: import('@agnes/protocol').RefinementSettingsSaveParams,
+    ): Promise<import('@agnes/protocol').RefinementSettingsSaveResult> =>
+      this.call('_agnes/v1/refinement.save', input),
+    /** The skills refinement saved in a workspace and the drafts kept for a person; uninstall or roll one back. */
+    skills: (
+      input: import('@agnes/protocol').RefinementSkillsParams,
+    ): Promise<import('@agnes/protocol').RefinementSkillsResult> =>
+      this.call('_agnes/v1/refinement.skills', input),
   }
   readonly systemPrompt = {
     get: (
@@ -566,6 +580,46 @@ export class Client {
         { sessionId, question },
         { timeoutMs: Math.max(this.timeouts.request, 75_000), ...options },
       ),
+    /**
+     * Asks for a background refinement review of the session's latest task; returns the queued run.
+     * `saveTo: 'workspace'` (`/refine --workspace`, local owner only) also saves the applied result to
+     * the session's workspace; `saveTo: 'user'` (`/refine --user`) saves it to user memory instead, without
+     * waiting for two confirmations. `allowUnpriced: true` (`/refine --unpriced`, local owner only) is the
+     * owner's agreement to plan on a model with no known price; without it such a request is refused
+     * `unpriced`.
+     */
+    refine: (
+      sessionId: string,
+      focus?: string,
+      options: { saveTo?: 'workspace' | 'user'; allowUnpriced?: true } = {},
+    ): Promise<import('@agnes/protocol').SessionRefineResult> =>
+      this.call('_agnes/v1/session.refine', {
+        sessionId,
+        ...(focus === undefined ? {} : { focus }),
+        ...(options.saveTo === undefined ? {} : { saveTo: options.saveTo }),
+        ...(options.allowUnpriced === true ? { allowUnpriced: true } : {}),
+      }),
+    /**
+     * Saves one refinement entry of the session to its workspace (or with `target: 'user'`, to user
+     * memory) without calling a model (local owner only). The receipt says how it ended; a refusal (refinement off, taken back before by the user
+     * is overridden here, memory off, ...) is a receipt too.
+     */
+    refineSave: (
+      sessionId: string,
+      kind: import('@agnes/protocol').SessionRefineSaveParams['kind'],
+      id: string,
+      target?: 'user',
+    ): Promise<import('@agnes/protocol').SessionRefineSaveResult> =>
+      this.call('_agnes/v1/session.refine.save', { sessionId, kind, id, ...(target ? { target } : {}) }),
+    /**
+     * Withdraws an applied refinement of the session (`appliedSeq`, as the timeline shows it). Refused
+     * (`SEMANTIC_REJECTED`) with reason `changed-since` when a later change touched one of its entries.
+     */
+    refineRollback: (
+      sessionId: string,
+      appliedSeq: number,
+    ): Promise<import('@agnes/protocol').SessionRefineRollbackResult> =>
+      this.call('_agnes/v1/session.refine.rollback', { sessionId, appliedSeq }),
     /** `additionalDirectories` are added to the parent's own for the child; the parent is unchanged. */
     fork: async (
       id: string,
@@ -768,6 +822,9 @@ export class Client {
       if (r.protocolVersion !== 1) throw new ProtocolViolation('unsupported negotiated protocol version')
       return {
         agnesVersion: r._meta?.agnes?.agnesVersion ?? 'unknown',
+        ...(Array.isArray(r._meta?.agnes?.features)
+          ? { features: r._meta.agnes.features.filter((value): value is string => typeof value === 'string') }
+          : {}),
         ...(typeof r._meta?.agnes?.platform === 'string' ? { platform: r._meta.agnes.platform } : {}),
         capabilities: r.agentCapabilities ?? {},
       }

@@ -1,5 +1,6 @@
 import { captureAudio } from './audio.mjs'
 import { viewportInput } from './contracts.mjs'
+import { releaseInput } from './pointer.mjs'
 import { failure } from './policy.mjs'
 
 const identity = (scope) => {
@@ -68,6 +69,11 @@ function validateViewport(viewport) {
     throw failure('INVALID_INPUT', 'Invalid browser viewport.')
 }
 
+/** How long a (re)started screencast may take to deliver its first frame before a surface capture. */
+const FIRST_FRAME_MS = 1000
+/** How long input may take to paint through the screencast before a surface capture. */
+const INPUT_PAINT_MS = 600
+
 async function resizeViewport(runtime, session, item, view, viewport) {
   if (viewport === undefined) return
   validateViewport(viewport)
@@ -84,11 +90,24 @@ async function resizeViewport(runtime, session, item, view, viewport) {
     item.humanRevision++
     runtime.clearRefs(item)
     try {
+      if (item.gesture) {
+        await item.page.mouse.up()
+        item.gesture = undefined
+      }
       await item.capture?.pause()
       view.signal.throwIfAborted()
       runtime.get(session, item.id)
-      await item.page.setViewportSize(viewport)
+      await runtime.applyViewport(item, viewport)
       item.viewport = { ...viewport }
+      // Geometry invalidates the page epoch too. Reuse the audio tap with the
+      // new epoch; accepting old packets would weaken navigation isolation.
+      const capture = item.capture
+      if (capture?.stopAudio) {
+        await capture.stopAudio()
+        capture.stopAudio = undefined
+        if (item.capture === capture && item.modernViewers?.size)
+          capture.stopAudio = await captureAudio(runtime, item, capture).catch(() => undefined)
+      }
       await item.capture?.resume()
     } catch (error) {
       item.uncertain = true
@@ -248,6 +267,7 @@ export async function showPage(runtime, input, context) {
       capture.cdp.off('Page.screencastFrame', capture.onFrame)
       runtime.listeners.delete(capture.broadcast)
       await capture.stopAudio?.()
+      capture.releaseAcks?.()
       await capture.cdp.send('Page.stopScreencast').catch(() => {})
       await capture.cdp.detach().catch(() => {})
     })
@@ -275,11 +295,13 @@ export async function showPage(runtime, input, context) {
         }
         let paintVersion = 0,
           snapshotting = false
-        const settle = (first = false) => {
+        const settle = (first = false, delay = undefined) => {
           clearTimeout(capture.settle)
+          capture.awaitingPaint = false
           capture.settle = setTimeout(
             async () => {
               capture.settle = undefined
+              capture.awaitingPaint = false
               if (
                 snapshotting ||
                 item.resizing ||
@@ -288,6 +310,46 @@ export async function showPage(runtime, input, context) {
                 !item.viewers.size
               )
                 return
+              // A current, full-density lossless live frame needs no second
+              // surface capture. Keep the fallback for missing frames, JPEG,
+              // legacy viewers and input that has not produced new pixels yet.
+              if (
+                capture.mime === 'image/png' &&
+                capture.bytes === capture.liveBytes &&
+                capture.bytes?.length >= 24 &&
+                capture.bytes.readUInt32BE(0) === 0x89504e47 &&
+                capture.bytes.readUInt32BE(4) === 0x0d0a1a0a &&
+                capture.liveEpoch === item.epoch &&
+                capture.liveInputVersion === item.inputVersion &&
+                item.modernViewers.size === item.viewers.size
+              )
+                return
+              // A started screencast delivers its first frame by itself. A surface capture started
+              // before that frame only delays it and the next input's paint: on software
+              // compositing one capture took 0.4-1.2 s. Capture only if no frame comes.
+              const waited = performance.now() - (capture.awaitingFrame ?? -Infinity)
+              if (
+                capture.liveFormat === 'png' &&
+                item.modernViewers.size === item.viewers.size &&
+                waited < FIRST_FRAME_MS
+              ) {
+                settle(false, FIRST_FRAME_MS - waited)
+                return
+              }
+              // Input on the shown document likewise paints through the screencast, and a capture
+              // started first delays that paint. A new document still needs its capture at once.
+              const sinceInput = runtime.now() - (item.lastInputAt ?? -Infinity)
+              if (
+                capture.liveInputVersion !== item.inputVersion &&
+                capture.liveEpoch === item.epoch &&
+                capture.pageEpoch === item.epoch &&
+                item.modernViewers.size === item.viewers.size &&
+                sinceInput < INPUT_PAINT_MS
+              ) {
+                settle(false, INPUT_PAINT_MS - sinceInput)
+                capture.awaitingPaint = true
+                return
+              }
               const epoch = item.epoch,
                 version = paintVersion,
                 inputVersion = item.inputVersion,
@@ -304,11 +366,7 @@ export async function showPage(runtime, input, context) {
                   ...(item.modernViewers.size === item.viewers.size ? [{ type: 'png' }] : []),
                   ...[90, 65, 35, 15].map((quality) => ({ type: 'jpeg', quality })),
                 ]) {
-                  bytes = await item.page.screenshot({
-                    ...options,
-                    fullPage: false,
-                    scale: 'device',
-                  })
+                  bytes = await runtime.screenshot(item, { ...options, scale: 'device' })
                   mime = options.type === 'png' ? 'image/png' : 'image/jpeg'
                   if (bytes.length <= 1_000_000) break
                   if (item.capture !== capture || item.epoch !== epoch || item.inputVersion !== inputVersion)
@@ -354,10 +412,15 @@ export async function showPage(runtime, input, context) {
                 )
                   settle(item.epoch !== epoch || !capture.bytes)
               }
-              // Static tabs may not emit a screencast paint. Supply their first image
-              // immediately; only sharpening an already visible page waits for idle.
+              // Allow one compositor frame to supply lossless pixels before a
+              // fallback screenshot. Legacy/JPEG still gets an immediate fallback.
             },
-            first ? 0 : 250,
+            delay ??
+              (first
+                ? capture.liveFormat === 'png' && item.modernViewers.size === item.viewers.size
+                  ? 16
+                  : 0
+                : 250),
           )
         }
         const publish = () => {
@@ -388,7 +451,7 @@ export async function showPage(runtime, input, context) {
             if (capture.pageEpoch !== item.epoch) {
               // History restoration can change documents without a screencast paint.
               // Capture new pixels; never relabel the old image with the new epoch.
-              if (!snapshotting && !capture.settle) settle(true)
+              if (!snapshotting && (!capture.settle || capture.awaitingPaint)) settle(true)
               return
             }
             if (!capture.bytes) return
@@ -446,8 +509,26 @@ export async function showPage(runtime, input, context) {
               capture.tuning = undefined
             })
         }
+        const acknowledgements = new Map()
+        capture.releaseAcks = () => {
+          for (const [ack, timer] of acknowledgements) {
+            clearTimeout(timer)
+            void cdp.send('Page.screencastFrameAck', { sessionId: ack.id }).catch(() => {})
+          }
+          acknowledgements.clear()
+        }
         capture.onFrame = (frame) => {
-          void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {})
+          // Chromium bounds in-flight screencast frames. Delay acknowledgement
+          // instead of throwing away every Nth paint (which loses final updates).
+          const ackDelay = runtime.now() - (item.lastInputAt ?? -Infinity) < 600 ? 30 : 100
+          const ack = { id: frame.sessionId }
+          acknowledgements.set(
+            ack,
+            setTimeout(() => {
+              acknowledgements.delete(ack)
+              void cdp.send('Page.screencastFrameAck', { sessionId: ack.id }).catch(() => {})
+            }, ackDelay),
+          )
           if (item.capture !== capture || capture.paused || item.resizing) return
           // The compositor can deliver the previous surface after a resize.
           // Its pixels must never acquire the new viewport's epoch or coordinates.
@@ -459,7 +540,7 @@ export async function showPage(runtime, input, context) {
             return
           const bytes = Buffer.from(frame.data, 'base64')
           if (!matchesRaster(bytes, item.viewport)) {
-            if (!snapshotting && !capture.settle) settle(true)
+            if (!snapshotting && (!capture.settle || capture.awaitingPaint)) settle(true)
             return
           }
           // Keep 2x resolution while scrolling. Compress photo-heavy scenes rather
@@ -487,6 +568,8 @@ export async function showPage(runtime, input, context) {
           }
           capture.liveBytes = bytes
           capture.liveEpoch = item.epoch
+          capture.liveInputVersion = item.inputVersion
+          capture.awaitingFrame = undefined
           // Surface screenshots can briefly repaint before restoring the exact
           // prior live pixels. Coalesce that repaint pair:
           // retain the sharp image when the final pixels are unchanged. Genuine
@@ -522,6 +605,7 @@ export async function showPage(runtime, input, context) {
         }
         capture.pause = async () => {
           capture.paused = true
+          capture.releaseAcks?.()
           cdp.off('Page.screencastFrame', capture.onFrame)
           for (const timer of ['timer', 'retry', 'settle']) {
             clearTimeout(capture[timer])
@@ -538,12 +622,6 @@ export async function showPage(runtime, input, context) {
           quality = 90,
         ) => {
           if (item.capture !== capture || !item.viewers.size) return
-          // The secondary CDP session needs the same CSS viewport and 2x density.
-          await cdp.send('Emulation.setDeviceMetricsOverride', {
-            ...item.viewport,
-            deviceScaleFactor: 2,
-            mobile: false,
-          })
           capture.liveFormat = format
           capture.liveQuality = quality
           capture.averageBytes = 0
@@ -557,6 +635,7 @@ export async function showPage(runtime, input, context) {
             maxHeight: item.viewport.height * 2,
             everyNthFrame: 1,
           })
+          capture.awaitingFrame = performance.now()
           settle(true)
         }
         capture.retune = retune
@@ -572,6 +651,7 @@ export async function showPage(runtime, input, context) {
           clearTimeout(capture.settle)
           runtime.listeners.delete(capture.broadcast)
           capture.paused = true
+          capture.releaseAcks?.()
           cdp.off('Page.screencastFrame', capture.onFrame)
           item.capture = undefined
           await capture.stopAudio?.()
@@ -607,8 +687,7 @@ export function acceptInput(runtime, input, context) {
     if (item.inputStream === context.stream) {
       item.inputStream = undefined
       item.mode = 'paused'
-      for (const key of ['Shift', 'Control', 'Alt', 'Meta']) void item.page.keyboard.up(key).catch(() => {})
-      void item.page.mouse.up().catch(() => {})
+      void releaseInput(item)
     }
   }
   const previous = item.inputStream

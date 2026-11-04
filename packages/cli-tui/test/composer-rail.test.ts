@@ -134,6 +134,18 @@ describe('composer rail top edge', () => {
     expect(line).toMatch(/^╭─ ~\/agnes-harness\/packages\/web › ⌥ lane-a › ⎇ feat\/agh-plugin-core ─+╮$/)
   })
 
+  // The git answer arrives after the first frame. Where its labels cannot fit they are dropped whole,
+  // and then the rail must be the one drawn before they arrived, not a path clipped for their room.
+  it('draws the same rail with or without git labels that do not fit', () => {
+    const bare = { root: '~/agnes-harness', subpath: 'packages/web' }
+    for (const git of [{ detached: '4a3894b0b' }, { worktree: 'lane-a', branch: 'feat/agh-plugin-core' }])
+      for (let width = 200; width >= 39; width--) {
+        const line = topRail(state({ workspace: { ...bare, ...git } }), width, PLAIN)
+        if (/[⌥⎇]/.test(line)) continue
+        expect(line, `${width}`).toBe(topRail(state({ workspace: bare }), width, PLAIN))
+      }
+  })
+
   it('shows a detached HEAD as its short commit in the warning tone, and no git as the bare path', () => {
     const detached = state({ workspace: { root: '~/agnes-harness', subpath: '', detached: '16f42a3' } })
     expect(topRail(detached, 120, PLAIN)).toContain('› ~/agnes-harness › ⎇ @16f42a3 ─')

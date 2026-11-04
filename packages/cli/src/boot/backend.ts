@@ -109,6 +109,8 @@ export type SpawnDaemonInput = {
 
 const DEFAULT_READINESS_TIMEOUT_MS = 30_000
 const DEFAULT_READINESS_POLL_MS = 50
+// One message whichever check sees the deadline pass first: the poll loop, or a read cut short by it.
+const NOT_READY = 'local daemon did not become ready within the readiness deadline'
 /** Cleanup is best effort after a bounded startup failure; it must not defeat the readiness bound. */
 const CLIENT_CLEANUP_TIMEOUT_MS = 250
 
@@ -171,14 +173,14 @@ async function withinDeadline<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const left = deadlineAt - Date.now()
-  if (left <= 0) throw new BootError('local daemon readiness deadline exceeded')
+  if (left <= 0) throw new BootError(NOT_READY)
   const cancelled = signalError(signal)
   if (cancelled) throw cancelled
   let timer: ReturnType<typeof setTimeout> | undefined
   let onAbort: (() => void) | undefined
   const operation = Promise.resolve().then(work)
   const timeout = new Promise<T>((_, reject) => {
-    timer = setTimeout(() => reject(new BootError('local daemon readiness deadline exceeded')), left)
+    timer = setTimeout(() => reject(new BootError(NOT_READY)), left)
   })
   const aborted = signal
     ? new Promise<T>((_, reject) => {
@@ -287,7 +289,7 @@ async function waitReady(
   }
   const childError = childFailure()
   if (childError) throw asBootError('startup', childError)
-  throw new BootError('local daemon did not become ready within the readiness deadline')
+  throw new BootError(NOT_READY)
 }
 
 function productionResources(options: EnsureLocalBackendOptions): LaunchResources {
@@ -481,7 +483,7 @@ async function discoverOrStart(
       if (discovery) return { discovery }
     }
   }
-  if (!startup) throw new BootError('local daemon did not become ready within the readiness deadline')
+  if (!startup) throw new BootError(NOT_READY)
   const startupLock = startup
   let child: DetachedChild | undefined
   let childStartId: string | undefined

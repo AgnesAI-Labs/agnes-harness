@@ -170,14 +170,23 @@ export function topRail(state: RailState, frameWidth: number, ansi: ThemedAnsi):
     () => {
       if (chip.path !== undefined) chip.path = clip(chip.path, LABEL_MIN)
     },
-    () => {
-      delete chip.branch
-      delete chip.worktree
-    },
   ]
-  for (const step of steps) {
-    if (over() <= 0) break
-    step()
+  const fit = () => {
+    for (const step of steps) {
+      if (over() <= 0) break
+      step()
+    }
+  }
+  const full = { ...chip }
+  fit()
+  if (over() > 0 && (chip.branch !== undefined || chip.worktree !== undefined)) {
+    // Dropping the git labels whole, fit again without them: a label that is not shown takes no
+    // room, so a late git answer cannot shorten the path or model it no longer competes with.
+    Object.assign(chip, full)
+    delete chip.branch
+    delete chip.worktree
+    if (gauge) gauge.showTokens = true
+    fit()
   }
   const bar = Math.max(0, frameWidth - width(line(0)))
   const painted = paint(line(bar), ansi)

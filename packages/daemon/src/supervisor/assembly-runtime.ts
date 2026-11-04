@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import { runningPackageIdentity } from '@agnes/daemon-admin/package-actual-identity'
+import { openCommunityDiscovery } from '@agnes/daemon-admin/packages/community-discovery'
 import { activateDefaultHelpers, refreshDefaultHelpers } from '@agnes/daemon-admin/packages/default-helpers'
 import {
   createClientModuleRegistry,
@@ -43,6 +44,7 @@ import {
 import { createTargetReverter } from './publication/composite-target-revert.js'
 import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinator.js'
 import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
+import { createManagementSkillImports } from './skill-install-requests.js'
 
 const DAEMON_SURFACE_API_VERSION = '1.0.0'
 export async function initializeRuntime(
@@ -64,6 +66,22 @@ export async function initializeRuntime(
   } = state
   if (o.packageRuntime) {
     const packageRuntime = o.packageRuntime
+    const skillImport = createManagementSkillImports({
+      directory: join(ownerHome, 'skill-imports', o.profile.name),
+      home: ownerHome,
+      profile: o.profile.name,
+      workspace: o.workspaceRoot ?? process.cwd(),
+      resources: state.resourceControl.service,
+    })
+    lifetime.own({ stop: () => skillImport.close(), dispose: () => skillImport.close() })
+    const community =
+      !o.packageAdmin || packageRuntime.embeddedAdmin
+        ? await openCommunityDiscovery({ directory: await packageRuntime.profileDirectory(o.profile.name) })
+        : undefined
+    if (community) {
+      lifetime.own({ stop: () => community.close(), dispose: () => community.close() })
+      community.start()
+    }
     const surfaces = await openRuntimeSurfaces({ ...state, packageRuntime }, lifetime)
     const activation = await openRuntimeActivation({ ...state, packageRuntime, ...surfaces }, lifetime)
     const { pluginTreePublisher } = createRuntimePublisher(
@@ -78,11 +96,18 @@ export async function initializeRuntime(
         ? o.packageAdmin
         : {
             service: createPackageAdminService({
+              skillImport,
               resolveAgent: hostFacade.resolveApplicationAgent,
               authoringHome: ownerHome,
               manager: o.packageRuntime.manager,
               profileDirectory: o.packageRuntime.profileDirectory,
               operations: o.packageRuntime.operations,
+              ...(community
+                ? {
+                    community: (profile: string) =>
+                      profile === o.profile.name ? community.read() : undefined,
+                  }
+                : {}),
               ...(o.packageRuntime.catalog ? { catalog: o.packageRuntime.catalog } : {}),
               ...(compositeActivation ? { activation: compositeActivation } : {}),
               ...(compositePins ? { runtimePins: compositePins } : {}),

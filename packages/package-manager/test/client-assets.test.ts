@@ -82,9 +82,9 @@ describe('client asset resolution', () => {
     const dir = makePackage()
     const { entry, styles } = writeClientFiles(dir, { styles: { 'index.css': 32, 'theme.css': 16 } })
     const resolved = resolveClientAssets(dir, manifestWith({ entry, styles }))
-    expect(resolved?.entryPath).toBe(realpathSync(join(dir, 'dist', 'client', 'index.js')))
+    expect(resolved?.entryPath).toBe(realpathSync.native(join(dir, 'dist', 'client', 'index.js')))
     // styles 保序，与声明顺序一致。
-    expect(resolved?.stylePaths).toEqual(styles.map((p) => realpathSync(join(dir, p))))
+    expect(resolved?.stylePaths).toEqual(styles.map((p) => realpathSync.native(join(dir, p))))
   })
   it('validates declared scene resources without accepting traversal, scripts as models or oversized assets', () => {
     const dir = makePackage()
@@ -104,7 +104,7 @@ describe('client asset resolution', () => {
       dir,
       manifestWith({ entry: './dist/client/index.js', styles: ['./dist/client/index.css'] }),
     )
-    expect(resolved?.entryPath).toBe(realpathSync(join(dir, 'dist', 'client', 'index.js')))
+    expect(resolved?.entryPath).toBe(realpathSync.native(join(dir, 'dist', 'client', 'index.js')))
     expect(resolveClientAssets(dir, manifestWith(undefined, []))).toBeUndefined()
   })
   it('rejects paths that are absolute, escaping, or not portable', () => {
@@ -315,12 +315,14 @@ describe('client module request resolution', () => {
   it('serves entry and styles for one-segment and two-segment package ids', () => {
     const root = snapshotRoot()
     const entry = resolveClientModuleAsset(root, `/plugins/acme/panel/${revision}/dist/client/index.js`)
-    expect(entry).toBe(realpathSync(join(root, 'acme', 'panel', revision, 'dist', 'client', 'index.js')))
+    expect(entry).toBe(
+      realpathSync.native(join(root, 'acme', 'panel', revision, 'dist', 'client', 'index.js')),
+    )
     expect(
       resolveClientModuleAsset(root, `/plugins/acme/panel/${revision}/dist/client/index.css`),
     ).not.toBeNull()
     expect(resolveClientModuleAsset(root, `/plugins/@scope/pkg/${revision}/index.mjs`)).toBe(
-      realpathSync(join(root, '@scope', 'pkg', revision, 'index.mjs')),
+      realpathSync.native(join(root, '@scope', 'pkg', revision, 'index.mjs')),
     )
   })
   it('strictly decodes URL path segments without allowing encoded separators or traversal', () => {
@@ -334,7 +336,7 @@ describe('client module request resolution', () => {
         root,
         `/plugins/acme/panel/${revision}/dist/client/${encodeURIComponent(name)}`,
       ),
-    ).toBe(realpathSync(join(base, name)))
+    ).toBe(realpathSync.native(join(base, name)))
     for (const encoded of ['%2e%2e', '%2Fetc', '%5Cetc', '%00'])
       expect(
         resolveClientModuleAsset(root, `/plugins/acme/panel/${revision}/dist/client/${encoded}/x.js`),

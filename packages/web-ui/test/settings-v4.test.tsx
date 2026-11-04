@@ -465,6 +465,24 @@ it.each([undefined, 'settings:coalescing-failure'])(
   },
 )
 
+it('saves an edit back to the old value made between a save settling and its stored value rendering', async () => {
+  const { calls, save } = deferredSaves()
+  const host = await render(createElement(AutosaveChoice, { save, resourceKey: 'settings:settled-window' }))
+  await act(async () => $<HTMLButtonElement>(host, '[data-testid="pick-on"]').click())
+  expect(calls.map((call) => call.value)).toEqual(['on'])
+  // The save settles; its microtasks finish before React renders the new stored value.
+  calls[0]!.resolve()
+  for (let tick = 0; tick < 20; tick++) await Promise.resolve()
+  expect($(host, '[data-testid="stored"]').textContent).toBe('off')
+  // The person reverts the edit in that window. The server now holds 'on', so this must be sent.
+  $<HTMLButtonElement>(host, '[data-testid="pick-off"]').click()
+  await act(async () => {})
+  expect(calls.map((call) => call.value)).toEqual(['on', 'off'])
+  await act(async () => calls[1]!.resolve())
+  expect($(host, '[data-testid="stored"]').textContent).toBe('off')
+  expect($(host, '[data-testid="shown"]').textContent).toBe('off')
+})
+
 it('does not let an older success clear the failure of the newest edit', async () => {
   const { calls, save } = deferredSaves()
   const host = await render(createElement(AutosaveChoice, { save }))

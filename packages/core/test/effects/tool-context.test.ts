@@ -381,6 +381,7 @@ describe('ToolContext platform view and sandbox enforcement (spec 2026-09-15 §4
       'actor',
       'artifacts',
       'authorize',
+      'collapseRepeatedOutput',
       'cwd',
       'decisions',
       'exec',

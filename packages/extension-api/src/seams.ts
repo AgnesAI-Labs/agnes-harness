@@ -4,7 +4,7 @@ import type { Logger, Seq } from './common.js'
 import type { DecisionHandle } from './decisions.js'
 import type { PersistenceMetadataNamespace } from './persistence.js'
 import { defineKind, type ProviderIdentity } from './provider-kind.js'
-import type { FsEntry, FsStat, ToolMeta } from './tool.js'
+import type { FsEntry, FsStat, PlanItem, ToolMeta } from './tool.js'
 import type { ApprovalConstraints } from './tool-policy.js'
 
 // The contracts of the runtime capabilities the kernel consumes as one typed object each. A seam
@@ -136,7 +136,13 @@ export type RepairDecision = {
 }
 export interface RepairSeam {
   decide(
-    view: { turn: number; round: number; history: RepairDecision[] },
+    view: {
+      turn: number
+      round: number
+      history: RepairDecision[]
+      /** Backend plan snapshot at the candidate stop; absent when no plan exists. */
+      plan?: { readonly items: readonly Readonly<PlanItem>[]; readonly customInstructions?: string }
+    },
     verdict: VerifierVerdict,
   ): Promise<'repair' | 'park' | 'escalate' | 'complete'>
 }

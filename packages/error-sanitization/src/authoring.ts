@@ -74,7 +74,9 @@ export function safeAuthoringOutput(value: string, maxBytes = 16384, directory?:
     // Stay browser-safe: encode only the known candidate directory, never arbitrary output.
     const urlPath = path.startsWith('//') ? path.slice(2) : path.startsWith('/') ? path : `/${path}`
     const url = `file://${encodeURI(urlPath).replace(/[?#]/g, encodeURIComponent)}`
-    const prefixes = [url, `file://${path}`, path, directory.replace(/[\\/]$/, '')]
+    // pathToFileURL also encodes '~', which every Windows 8.3 short name carries (RUNNER~1).
+    const tildeUrl = url.replaceAll('~', '%7E')
+    const prefixes = [url, tildeUrl, `file://${path}`, path, directory.replace(/[\\/]$/, '')]
     // Node's TAP reporter quotes Windows locations with doubled backslashes.
     if (windows) prefixes.push(directory.replace(/[\\/]$/, '').replace(/\\/g, '\\\\'))
     for (const prefix of new Set(prefixes)) {

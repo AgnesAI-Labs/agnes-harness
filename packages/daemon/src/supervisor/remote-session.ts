@@ -177,6 +177,39 @@ export class RemoteSession {
     }
   }
 
+  /** `session.refine` on the worker that holds the real session: it only queues, so it returns at once. */
+  async refine(
+    focus: string | undefined,
+    saveTo?: 'workspace' | 'user',
+    allowUnpriced?: true,
+  ): Promise<import('@agnes/protocol').SessionRefineResult> {
+    return (await this.link.command('refine', {
+      ...(focus === undefined ? {} : { focus }),
+      ...(saveTo === undefined ? {} : { saveTo }),
+      ...(allowUnpriced === true ? { allowUnpriced } : {}),
+    })) as import('@agnes/protocol').SessionRefineResult
+  }
+
+  /** `session.refine.save` on the worker that holds the real session: one entry, no model call. */
+  async refineSave(
+    kind: import('@agnes/protocol').SessionRefineSaveParams['kind'],
+    id: string,
+    target?: 'user',
+  ): Promise<import('@agnes/protocol').SessionRefineSaveResult> {
+    return (await this.link.command('refineSave', {
+      kind,
+      id,
+      ...(target === undefined ? {} : { target }),
+    })) as import('@agnes/protocol').SessionRefineSaveResult
+  }
+
+  /** `session.refine.rollback` on the worker that holds the real session. */
+  async refineRollback(appliedSeq: number): Promise<import('@agnes/protocol').SessionRefineRollbackResult> {
+    return (await this.link.command('refineRollback', {
+      appliedSeq,
+    })) as import('@agnes/protocol').SessionRefineRollbackResult
+  }
+
   /** One voice call on the worker that holds the real session; the daemon's abort reaches it by run id. */
   async voice(
     method: 'voice.transcribe' | 'voice.speak',
@@ -214,12 +247,23 @@ export class RemoteSession {
     return this.link.command('undo', input)
   }
 
-  references(operation: 'search' | 'resolve', input: unknown): Promise<unknown> {
-    return this.link.command('references', { operation, input })
+  async references(operation: 'search' | 'resolve', input: unknown, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted()
+    const runId = signal ? `reference:${randomUUID()}` : undefined
+    const abort = () => {
+      if (runId) void this.link.command('abort', { runId }).catch(() => undefined)
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    try {
+      return await this.link.command('references', { operation, input, ...(runId ? { runId } : {}) })
+    } finally {
+      signal?.removeEventListener('abort', abort)
+      abort()
+    }
   }
 
-  workspaceFiles(operation: 'list' | 'read', path: string): Promise<unknown> {
-    return this.link.command('workspaceFiles', { operation, path })
+  workspaceFiles(operation: 'list' | 'read', path: string, browse = false): Promise<unknown> {
+    return this.link.command('workspaceFiles', { operation, path, browse })
   }
 
   readonly controls = {

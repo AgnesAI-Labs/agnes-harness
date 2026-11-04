@@ -1,9 +1,17 @@
 /** @vitest-environment happy-dom */
+
+import type {
+  PackageCatalogPage,
+  PackageInstalledDescriptor,
+  PackageOperation,
+  PackagePreview,
+} from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { forgetInventory } from '../src/admin/plugins/admin/inventory-cache.js'
 import { OperationBackoff, withOperationDesired } from '../src/admin/plugins/admin/operation-refresh.js'
 import { PluginAdminPage } from '../src/admin/plugins/admin/page.js'
 import { PluginAdminApi } from '../src/admin/plugins/api.js'
+import { ADMIN_FEATURES } from '../src/admin/plugins/types.js'
 import { visibleRefresh } from '../src/visible-refresh.js'
 
 afterEach(() => {
@@ -13,6 +21,153 @@ afterEach(() => {
   document.body.replaceChildren()
   sessionStorage.clear()
 })
+
+it('keeps newer catalog community data when an older background read finishes last', async () => {
+  const context = {
+    profile: 'community-refresh',
+    clientId: 'web',
+    permissions: ['packages.read'] as const,
+    readOnly: false,
+  }
+  const community = (totalReported: number): NonNullable<PackageCatalogPage['community']> => ({
+    state: 'ready',
+    error: null,
+    items: [],
+    totalReported,
+    lastSuccessAt: '2026-11-04T00:00:00.000Z',
+    nextAttemptAt: null,
+  })
+  vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({ context, inventory: { packages: [] } })
+  vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+  vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
+  vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
+  vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
+  const catalog = vi
+    .spyOn(PluginAdminApi.prototype, 'catalog')
+    .mockResolvedValue({ items: [], nextCursor: null, community: community(1) })
+  for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+    const dialog = document.createElement('dialog')
+    dialog.id = id
+    document.body.append(dialog)
+  }
+  const page = new PluginAdminPage({
+    surface: { host: document.body.appendChild(document.createElement('div')), render: () => null },
+  })
+  try {
+    await page.start()
+    await page.selectTab('discover')
+    let complete!: (result: PackageCatalogPage) => void
+    catalog.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve
+        }),
+    )
+    const pending = page.viewContext().refreshCommunity()
+    catalog.mockResolvedValueOnce({ items: [], nextCursor: null, community: community(2) })
+    await page.loadCatalog()
+    complete({ items: [], nextCursor: null, community: community(1) })
+    await pending
+    expect(page.viewContext().state.community?.totalReported).toBe(2)
+    catalog.mockRejectedValueOnce(new Error('offline'))
+    await page.viewContext().refreshCommunity()
+    expect(page.viewContext().state.community?.totalReported).toBe(2)
+    expect(page.viewContext().state.communityReadFailed).toBe(true)
+    catalog.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve
+        }),
+    )
+    const leaving = page.viewContext().refreshCommunity()
+    await page.selectTab('installed')
+    complete({ items: [], nextCursor: null, community: community(3) })
+    await leaving
+    expect(page.viewContext().state.community?.totalReported).toBe(2)
+  } finally {
+    page.dispose()
+  }
+})
+
+it.each(['new-content', 'same-content', 'blocked', 'trusted'] as const)(
+  'reviews an installed source as an update: %s',
+  async (mode) => {
+    const row = {
+      id: '@fixture/community',
+      version: '1.0.0',
+      integrity: `sha256-${'a'.repeat(64)}`,
+      contributions: [],
+      desired: 'installed-disabled',
+      actual: 'not-running',
+      trusted: mode === 'trusted',
+      capabilityHash: 'c'.repeat(64),
+    } as unknown as PackageInstalledDescriptor
+    const context = {
+      profile: 'source-update',
+      clientId: 'web',
+      permissions: ['packages.read', 'packages.install', 'packages.trust', 'packages.activate'] as const,
+      features: Object.values(ADMIN_FEATURES),
+      readOnly: false,
+    }
+    vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({ context, inventory: { packages: [row] } })
+    vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+    vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
+    vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
+    vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
+    vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
+    const source = { type: 'git' as const, ref: 'git:https://github.com/fixture/community.git' }
+    const preview = {
+      ...row,
+      source,
+      version: '2.0.0',
+      integrity: mode === 'same-content' ? row.integrity : `sha256-${'b'.repeat(64)}`,
+      warnings: [],
+      blockers:
+        mode === 'blocked' ? [{ code: 'unsupported-manifest', safeMessage: 'Unsupported format' }] : [],
+      capabilityDiff: { added: [], removed: [] },
+    } as unknown as PackagePreview
+    vi.spyOn(PluginAdminApi.prototype, 'inspect').mockResolvedValue({
+      operationId: 'inspect-community',
+      profile: context.profile,
+    })
+    vi.spyOn(PluginAdminApi.prototype, 'operation').mockResolvedValue({
+      operationId: 'inspect-community',
+      operation: 'inspect',
+      state: 'completed',
+      preview,
+    } as PackageOperation)
+    const update = vi
+      .spyOn(PluginAdminApi.prototype, 'update')
+      .mockResolvedValue({ operationId: 'update-community', profile: context.profile })
+    const install = vi.spyOn(PluginAdminApi.prototype, 'install')
+    for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+      const dialog = document.createElement('dialog')
+      dialog.id = id
+      document.body.append(dialog)
+    }
+    const page = new PluginAdminPage({
+      surface: { host: document.body.appendChild(document.createElement('div')), render: () => null },
+    })
+    try {
+      await page.start()
+      await page.inspect(source, 'install', document.createElement('button'))
+      await vi.waitFor(() => expect(page.viewContext().state.preview).toBeDefined())
+      expect(page.viewContext().state.previewMode).toBe('update')
+      await page.confirmReview()
+      if (mode === 'blocked') expect(update).not.toHaveBeenCalled()
+      else if (mode === 'trusted')
+        expect(update).toHaveBeenCalledWith(row.id, source, preview.integrity, {
+          expectedInstalledIntegrity: row.integrity,
+          expectedActiveIntegrity: null,
+          trust: { integrity: preview.integrity, capabilityHash: preview.capabilityHash },
+        })
+      else expect(update).toHaveBeenCalledWith(row.id, source, preview.integrity, undefined)
+      expect(install).not.toHaveBeenCalled()
+    } finally {
+      page.dispose()
+    }
+  },
+)
 
 it('reads the plugin tree on mount, real changes and one explicit refresh, and rests when idle or hidden', async () => {
   vi.useFakeTimers()

@@ -514,9 +514,17 @@ export function renderConfirmPluginView(this: PluginAdminViewContext): void {
           if (!this.pendingConfirm) return
           this.confirmActionDisabled = true
           this.renderConfirm()
-          void (secondary ? (this.pendingConfirm.secondary ?? this.pendingConfirm) : this.pendingConfirm)
-            .run()
-            .then(() => this.closeConfirm())
+          const asked = this.pendingConfirm
+          const confirmed = secondary ? (asked.secondary ?? asked) : asked
+          // A background inventory read in flight leaves the page not yet authoritative, which would
+          // refuse the effect and close this dialog as if it had run. Decide after that read settles,
+          // unless the person cancelled (or another confirmation replaced this one) meanwhile.
+          void this.inventoryIdle()
+            .then(async () => {
+              if (this.pendingConfirm !== asked) return
+              await confirmed.run()
+              this.closeConfirm()
+            })
             .catch((error: unknown) => this.showError(error))
             .finally(() => {
               // Keep confirmation open on failure: restore the button for retry rather than leaving it disabled.

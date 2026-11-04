@@ -60,8 +60,15 @@ async function answerControls(page: Page) {
     if (await choices.count()) await choices.first().check()
     const next = question.getByTestId('question-next')
     if (await next.isVisible()) await next.click()
-    else if (await question.getByTestId('question-submit').isEnabled())
+    else if (await question.getByTestId('question-submit').isEnabled()) {
+      // The card stays on screen while its answer is sent. Wait for it to leave, so the next pass
+      // never answers a submitted card that is about to be replaced.
+      const surface = await question.getAttribute('data-surface-id')
       await question.getByTestId('question-submit').click()
+      await expect(
+        surface ? page.locator(`[data-testid="question-card"][data-surface-id="${surface}"]`) : question,
+      ).toHaveCount(0)
+    }
     return
   }
   // Finance's declared interactive review has its own ordinary, permission-checked action.
@@ -100,6 +107,10 @@ async function adopt(page: Page, packageId: string) {
   await confirm.click()
   await reload
 }
+
+// Evidence names become CI artifact paths: upload-artifact and NTFS refuse `:` (builtin:general) and similar.
+const evidenceName = (ref: string) =>
+  (ref.split('/').at(-1)?.split('#')[0] ?? ref).replace(/[":<>|*?\\]/g, '-')
 
 const catalog = agents()
 catalog.push({
@@ -275,7 +286,7 @@ test.describe('shipped agent acceptance', () => {
           })
           row.review = await review.innerText()
           await page.screenshot({
-            path: info.outputPath(`${agent.ref.split('/').at(-1)?.split('#')[0]}-review.png`),
+            path: info.outputPath(`${evidenceName(agent.ref)}-review.png`),
           })
           await page.getByTestId('agent-launch-confirm').click()
         } else
@@ -372,7 +383,7 @@ test.describe('shipped agent acceptance', () => {
         if (row.status !== 'pass' && session) await session.cancel()
         row.browserErrors = browserErrors.slice(errorOffset)
         await page.screenshot({
-          path: info.outputPath(`${agent.ref.split('/').at(-1)?.split('#')[0]}-result.png`),
+          path: info.outputPath(`${evidenceName(agent.ref)}-result.png`),
         })
         const close = page.getByTestId('agent-launch-close')
         if (await close.isVisible()) await close.click()

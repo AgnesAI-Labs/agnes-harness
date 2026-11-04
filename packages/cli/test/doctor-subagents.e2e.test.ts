@@ -30,6 +30,28 @@ function runCli(home: string, args: string[]): Promise<{ code: number; stdout: s
   })
 }
 
+it('exits quietly when the stdout reader has already closed the pipe', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'agnes-epipe-'))
+  try {
+    const child = spawn(process.execPath, ['--import', 'tsx', bin, '--help'], {
+      windowsHide: true,
+      env: { ...process.env, AGH_HOME: home },
+      cwd: fileURLToPath(new URL('../../..', import.meta.url)),
+    })
+    let stderr = ''
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString()
+    })
+    // The runtime needs far longer than this to start, so the first write meets a closed pipe.
+    child.stdout.destroy()
+    const code = await new Promise((resolve) => child.on('close', resolve))
+    expect(stderr).not.toMatch(/EPIPE|Unhandled 'error'/)
+    expect(code).toBe(0)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
+
 describe('doctor subagents', () => {
   const dirs: string[] = []
   afterEach(() => {

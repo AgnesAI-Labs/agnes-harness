@@ -1,5 +1,5 @@
 import { empty, managed, parameters, readActions, services } from './src/contracts.mjs'
-import { interact } from './src/interaction.mjs'
+import { admitInteraction, interact } from './src/interaction.mjs'
 import { createLauncher } from './src/launcher.mjs'
 import { browserInstructions } from './src/policy.mjs'
 import { BrowserRuntime } from './src/runtime.mjs'
@@ -62,8 +62,7 @@ export const main = {
             case 'browser.view':
               return selectView(runtime, input, context)
             case 'browser.connect':
-              if (!context.controlGrant) throw new Error('Native control admission missing.')
-              return { status: 'ok' }
+              return admitInteraction(runtime, context.controlGrant)
             case 'browser.close':
               return browserEffect(runtime, () =>
                 runtime.closePage(context.session, input.pageId, context.signal),
@@ -131,7 +130,7 @@ export const main = {
     ctx.tools.register({
       name: 'browser',
       description:
-        "An optional background browser, sharing the SAME page with the workbench. Choose suitable tools for the task; always respect the user's specified browser or tool. It does not open a desktop window or expand the panel. Start local projects with shell/Jobs and open the actual URL. open also accepts workspace paths or file URLs; previewRoot optionally selects the permitted asset directory within the workspace. Browser-native files use their content types; unsupported formats are reported. status/tabs list pages; inspect returns current refs and pageEpoch for mutations; screenshot returns an image; events reads console/network errors. Use another tab when the user is working. Never silently switch a specified browser or replay uncertain actions.",
+        "An optional background browser, sharing the SAME page with the workbench. Choose suitable tools for the task; always respect the user's specified browser or tool. It does not open a desktop window or expand the panel. Start local projects with shell/Jobs and open the actual URL. open also accepts workspace paths or file URLs; previewRoot optionally selects the permitted asset directory within the workspace. Browser-native files use their content types; unsupported formats are reported. status/tabs list pages; inspect returns a hierarchical snapshot, current refs and pageEpoch. Optional query searches literal text case-insensitively with ancestor context; ref plus pageEpoch reads only that region; depth (0–20) limits relative levels. Use cursor for more snapshot nodes and scopeRef for continued local reads; every inspect invalidates earlier refs. hover/drag (targetRef)/select (values) operate current refs. upload accepts path and requires explicit file consent. dialog binds exact type/message and accept/dismiss response to one action; screenshot returns an image; events reads console/network errors. Use another tab when the user is working. Never silently switch a specified browser or replay uncertain actions.",
       parameters,
       meta: {
         isReadOnly: false,
@@ -142,7 +141,7 @@ export const main = {
         requiresApproval: 'destructive',
         deferLoading: 'auto',
       },
-      policyVersion: 'browser.v1',
+      policyVersion: 'browser.v2',
       classify(input) {
         const read = readActions.has(input.action)
         return {
@@ -172,6 +171,7 @@ export const main = {
           const result = await runtime.act(context.session, input, context.signal, {
             files: context.sessionFiles,
             root: context.session.workspaceRoot,
+            decisions: context.decisions,
           })
           const content = []
           if (result.bytes) {

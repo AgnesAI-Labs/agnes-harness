@@ -92,6 +92,21 @@ function renderNode(node: UINode): string {
       }</section>`
     case 'ledger-recovery':
       return `<section class="node recovery"><div class="content">Recovered through event ${node.validThroughSeq}; damaged tail quarantined. Diagnostic ID: ${escapeHtml(node.diagnosticId)}</div></section>`
+    case 'refinement-run': {
+      const names = (op: 'upsert' | 'delete') =>
+        (node.edits ?? []).filter((edit) => edit.op === op).map((edit) => `${edit.kind}/${edit.id}`)
+      const saved = names('upsert')
+      const removed = names('delete')
+      return `<section class="node minor">Experience review · ${escapeHtml(node.trigger)} · ${escapeHtml(node.state)}${
+        node.reason ? ` · ${escapeHtml(node.reason)}` : ''
+      }${saved.length > 0 ? ` · saved ${escapeHtml(saved.join(', '))}` : ''}${
+        removed.length > 0 ? ` · removed ${escapeHtml(removed.join(', '))}` : ''
+      }${node.withdrawn ? ' · withdrawn' : ''}</section>`
+    }
+    case 'refinement-save':
+      return `<section class="node minor">Save to workspace · ${escapeHtml(node.state)}${
+        node.reason ? ` · ${escapeHtml(node.reason)}` : ''
+      }</section>`
     case 'contribute-conflict':
       return `<section class="node minor">Contribute conflict · ${escapeHtml(node.key)}: ${escapeHtml(node.ops.join(', '))}</section>`
   }

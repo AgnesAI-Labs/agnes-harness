@@ -111,6 +111,43 @@ const production = (u: UsageView, width: number, locale = 'en', ansi = PLAIN) =>
 const aligned = (left: string, right: string, width: number) =>
   `${left}${' '.repeat(width - displayWidth(left) - displayWidth(right))}${right}`
 
+describe('usage footer and background refinement', () => {
+  // The view's totals count every lane; the footer is the conversation's own figure.
+  const withRefinement = () =>
+    usage({
+      totals: { input: 11_600, output: 258, cacheRead: 20, cacheWrite: 0, reasoning: 12 },
+      cost: { usdMicros: 41_000, source: 'gateway', subscription: true },
+      byLane: {
+        main: { input: 1_600, output: 58, cacheRead: 20, cacheWrite: 0, reasoning: 12, usdMicros: 1_000 },
+        refinement: {
+          input: 10_000,
+          output: 200,
+          cacheRead: 0,
+          cacheWrite: 0,
+          reasoning: 0,
+          usdMicros: 40_000,
+        },
+      } as NonNullable<UsageView['byLane']>,
+    })
+
+  it('does not count refinement spend as session spend', () => {
+    expect(formatUsageLine(withRefinement(), 120, PLAIN, false, false)).toBe(
+      formatUsageLine(usage(), 120, PLAIN, false, false),
+    )
+    expect(formatUsageLine(withRefinement(), 80, PLAIN)).toBe(formatUsageLine(usage(), 80, PLAIN))
+  })
+
+  it('shows the same footer when refinement has spent nothing', () => {
+    const quiet = usage({
+      byLane: {
+        main: { input: 1_600, output: 58, cacheRead: 20, cacheWrite: 0, reasoning: 12 },
+        refinement: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      } as NonNullable<UsageView['byLane']>,
+    })
+    expect(formatUsageLine(quiet, 120, PLAIN)).toBe(formatUsageLine(usage(), 120, PLAIN))
+  })
+})
+
 describe('usage footer degradation', () => {
   const MODEL = 'deepseek-v4-pro'
 

@@ -225,7 +225,18 @@ export function createLauncher({ cacheRoot, fetchArchive = fetch } = {}) {
         headless: true,
         chromiumSandbox: true,
         // Headless screencasts use the native display density, not only context emulation.
-        args: ['--force-device-scale-factor=2'],
+        // Sound is played by the workbench. Use Chromium's internal output
+        // clock instead of requiring a working backend speaker/driver. Unlike
+        // AudioContext.sinkId, this also covers ordinary HTTP documents.
+        args: [
+          '--force-device-scale-factor=2',
+          '--disable-audio-output',
+          // In pinned Chromium, Windows shared-mode parameter discovery can
+          // block before the fake output stream is selected. Use its fixed
+          // 48 kHz/256-frame parameter path instead. Keep this paired with
+          // disable-audio-output: no exclusive hardware stream is opened.
+          ...(platform() === 'win32' ? ['--enable-exclusive-audio'] : []),
+        ],
         env,
         timeout: 30_000,
         handleSIGINT: false,

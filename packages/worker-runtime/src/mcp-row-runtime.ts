@@ -7,6 +7,7 @@ import {
   validateResourceControlData,
 } from '@agnes/protocol'
 import { mcpConnectionFailure } from '@agnes/resource-control-runtime'
+import { withMcpCatalogReadScope } from './mcp-catalog-scope.js'
 import {
   type McpServerRowsResult,
   type McpServerSnapshotEntry,
@@ -201,77 +202,79 @@ export function createMcpRowRuntime(
   const cap = deps.firstAttemptTimeoutMs ?? FIRST_ATTEMPT_TIMEOUT_MS
   const attempts = new Map<Promise<unknown>, number>()
   return Object.freeze({
-    async apply(entries: readonly McpServerSnapshotEntry[]): Promise<McpRowApplyResult> {
-      await deps.beforeApply?.(entries)
-      const present = new Set(entries.map((entry) => entry.definition.serverId))
-      for (const serverId of [...revisions.keys()])
-        if (!present.has(serverId)) {
-          revisions.delete(serverId)
-          statuses.delete(serverId)
-          catalogs.delete(serverId)
-          epochs.delete(serverId)
-          for (const notify of statusChanged) notify()
+    apply: withMcpCatalogReadScope(
+      async (entries: readonly McpServerSnapshotEntry[]): Promise<McpRowApplyResult> => {
+        await deps.beforeApply?.(entries)
+        const present = new Set(entries.map((entry) => entry.definition.serverId))
+        for (const serverId of [...revisions.keys()])
+          if (!present.has(serverId)) {
+            revisions.delete(serverId)
+            statuses.delete(serverId)
+            catalogs.delete(serverId)
+            epochs.delete(serverId)
+            for (const notify of statusChanged) notify()
+          }
+        displayNames.clear()
+        for (const entry of entries) {
+          revisions.set(entry.definition.serverId, entry.revision)
+          displayNames.set(entry.definition.serverId, entry.definition.displayName)
         }
-      displayNames.clear()
-      for (const entry of entries) {
-        revisions.set(entry.definition.serverId, entry.revision)
-        displayNames.set(entry.definition.serverId, entry.definition.displayName)
-      }
-      // A row's extension starts while Host applies it, so by the time Host's apply resolves this
-      // holds exactly the rows Host (re)mounted in this call -- never an unchanged row.
-      const started: Promise<unknown>[] = []
-      const mounting = entries.map((entry) => {
-        const epoch = epochs.get(entry.definition.serverId)
-        return epoch === undefined ? entry : { ...entry, revision: `${entry.revision}#${epoch}` }
-      })
-      const { rows, skipped } = mcpServerRowsFromDefinitions(mounting, deps.opener, {
-        onFirstAttempt: (_serverId, ready) => {
-          started.push(ready)
-          attempts.set(ready, Date.now() + cap)
-          const settled = () => attempts.delete(ready)
-          void ready.then(settled, settled)
-        },
-        onStatus: (serverId, event) => {
-          const revision = revisions.get(serverId)
-          if (revision === undefined) return
-          const status = toMcpStatus(serverId, revision, event)
+        // A row's extension starts while Host applies it, so by the time Host's apply resolves this
+        // holds exactly the rows Host (re)mounted in this call -- never an unchanged row.
+        const started: Promise<unknown>[] = []
+        const mounting = entries.map((entry) => {
+          const epoch = epochs.get(entry.definition.serverId)
+          return epoch === undefined ? entry : { ...entry, revision: `${entry.revision}#${epoch}` }
+        })
+        const { rows, skipped } = mcpServerRowsFromDefinitions(mounting, deps.opener, {
+          onFirstAttempt: (_serverId, ready) => {
+            started.push(ready)
+            attempts.set(ready, Date.now() + cap)
+            const settled = () => attempts.delete(ready)
+            void ready.then(settled, settled)
+          },
+          onStatus: (serverId, event) => {
+            const revision = revisions.get(serverId)
+            if (revision === undefined) return
+            const status = toMcpStatus(serverId, revision, event)
+            statuses.set(serverId, status)
+            if (event.state === 'ready')
+              catalogs.set(serverId, { revision, catalogRevision: event.catalogRevision, tools: event.tools })
+            deps.onStatus?.(serverId, status)
+            for (const notify of statusChanged) notify()
+          },
+        })
+        const others = deps.host.extensionRows.current().filter((row) => !owned.has(row.id))
+        const prepared = rows.map((dynamic) =>
+          deps.host.extensionRows.prepare({ extensionId: dynamic.spec.id, dynamic }),
+        )
+        // A composition may apply only part of this desired set. Retain ownership of attempted ids
+        // too, so retry/replacement cannot mistake partially published MCP rows for unrelated code.
+        // A fresh empty MCP set owns nothing to publish. Keep policy/status synchronization, but
+        // do not re-verify and republish the entire ordinary Host tree just to add zero rows.
+        if (owned.size || prepared.length) {
+          owned = new Set([...owned, ...prepared.map((row) => row.id)])
+          const report = await deps.host.extensionRows.apply([...others, ...prepared])
+          assertHostPublication(report.publication)
+        }
+        const rowIds = Object.freeze(prepared.map((row) => row.id))
+        owned = new Set(rowIds)
+        await settledWithin(started, cap)
+        for (const { serverId, reason } of skipped) {
+          const status = statusForSkip(serverId, reason)
           statuses.set(serverId, status)
-          if (event.state === 'ready')
-            catalogs.set(serverId, { revision, catalogRevision: event.catalogRevision, tools: event.tools })
+          catalogs.delete(serverId)
           deps.onStatus?.(serverId, status)
           for (const notify of statusChanged) notify()
-        },
-      })
-      const others = deps.host.extensionRows.current().filter((row) => !owned.has(row.id))
-      const prepared = rows.map((dynamic) =>
-        deps.host.extensionRows.prepare({ extensionId: dynamic.spec.id, dynamic }),
-      )
-      // A composition may apply only part of this desired set. Retain ownership of attempted ids
-      // too, so retry/replacement cannot mistake partially published MCP rows for unrelated code.
-      // A fresh empty MCP set owns nothing to publish. Keep policy/status synchronization, but
-      // do not re-verify and republish the entire ordinary Host tree just to add zero rows.
-      if (owned.size || prepared.length) {
-        owned = new Set([...owned, ...prepared.map((row) => row.id)])
-        const report = await deps.host.extensionRows.apply([...others, ...prepared])
-        assertHostPublication(report.publication)
-      }
-      const rowIds = Object.freeze(prepared.map((row) => row.id))
-      owned = new Set(rowIds)
-      await settledWithin(started, cap)
-      for (const { serverId, reason } of skipped) {
-        const status = statusForSkip(serverId, reason)
-        statuses.set(serverId, status)
-        catalogs.delete(serverId)
-        deps.onStatus?.(serverId, status)
-        for (const notify of statusChanged) notify()
-      }
-      const settled = new Map<string, McpStatus>()
-      for (const serverId of present) {
-        const status = statuses.get(serverId)
-        if (status) settled.set(serverId, status)
-      }
-      return Object.freeze({ rowIds, skipped, statuses: settled })
-    },
+        }
+        const settled = new Map<string, McpStatus>()
+        for (const serverId of present) {
+          const status = statuses.get(serverId)
+          if (status) settled.set(serverId, status)
+        }
+        return Object.freeze({ rowIds, skipped, statuses: settled })
+      },
+    ),
     async prepareTurn(signal) {
       // A composition can mount these factories after apply() has returned. Its first model
       // request must join those attempts too, without restarting an expired connection budget.

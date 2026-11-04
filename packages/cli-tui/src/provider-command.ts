@@ -3,6 +3,7 @@ import type { TuiApp } from './app.js'
 import type { SlashResult } from './commands.js'
 import { formatTuiErrorNotice } from './error-notice.js'
 import { tt } from './locale-extended.js'
+import { rememberAccounts } from './model-label.js'
 import type { ThemedAnsi } from './theme.js'
 import { type ProviderPort, ProviderSetup } from './views/provider-setup.js'
 
@@ -27,6 +28,7 @@ export async function providerSlash(app: TuiApp): Promise<SlashResult> {
   let providers: ConfigProvider[]
   try {
     snapshot = await client.config.get()
+    rememberAccounts(client, snapshot.accounts)
     providers = apiKeyProviders((await client.config.providers()).providers)
   } catch (error) {
     return { text: tt('provider.loadFailed', locale, { error: formatTuiErrorNotice(error, locale) }) }
@@ -36,6 +38,7 @@ export async function providerSlash(app: TuiApp): Promise<SlashResult> {
     test: (input) => client.config.test(input),
     save: (input) => client.config.save(input),
     published: async (saved, providerId, model) => {
+      rememberAccounts(client, saved.accounts)
       const accounts = saved.accounts ?? []
       const account =
         accounts.find((a) => a.accountId === `legacy-${providerId}`) ??

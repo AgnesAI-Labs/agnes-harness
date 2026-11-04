@@ -603,6 +603,7 @@ export class PiAdapter extends WireAdapter {
         let ordinal = 0
         const nextOrdinal = () => ordinal++
         let emitted = false
+        let contentSeen = false
         const wire: ResponseMeta = {}
         let endpoint: string | null = null
         try {
@@ -725,10 +726,22 @@ export class PiAdapter extends WireAdapter {
             if (next === ABORTED || next.done) break
             for (const translated of translateEvent(next.value, requestModel, nextOrdinal, wire)) {
               const failure = failures.get(wire)
-              const w =
+              let w =
                 translated.type === 'error' && translated.reason !== 'aborted' && failure
                   ? { ...translated, ...networkEvent(failure) }
                   : translated
+              // A route that already produced model content was configured well enough to run.
+              // An otherwise unclassified stream failure may be a dropped connection. Surface it
+              // to Core for a bounded retry; never override known network or permanent errors.
+              if (
+                w.type === 'error' &&
+                w.reason !== 'aborted' &&
+                w.code === 'TRANSPORT' &&
+                !failure &&
+                contentSeen
+              )
+                w = { ...w, retryable: true }
+              if (('delta' in w && w.delta.length > 0) || w.type === 'toolcall_end') contentSeen = true
               if (
                 w.type === 'usage' &&
                 Object.values(w.tokens).some((value) => typeof value === 'number' && value > 0)
@@ -811,7 +824,7 @@ export class PiAdapter extends WireAdapter {
                   reason: 'error',
                   code: 'TRANSPORT',
                   message: 'unclassified transport failure',
-                  retryable: false,
+                  retryable: contentSeen,
                 }
           if (
             !emitted &&

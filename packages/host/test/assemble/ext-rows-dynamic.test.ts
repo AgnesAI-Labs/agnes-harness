@@ -77,6 +77,8 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
     'agnes/privacy',
     'agnes/mcp-search',
     'agnes/tools-web',
+    'agnes/goal',
+    'agnes/refine',
   ])('does not grant a dynamic extension the identity of %s even with builtin Base metadata', async (id) => {
     const h = await createTestHost({ dataDir: scratch(), packageDirs })
     let context: SeamInitContext | undefined
@@ -121,6 +123,10 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
         'trustedHookCommands',
         'skillDiscovery',
         'privacyTrajectory',
+        'provideTaskScope',
+        'provideWorkflowRuns',
+        'refinementSettings',
+        'refinementRuns',
         'computerUseBackendProvider',
         'privateArtifactStore',
       ]) {

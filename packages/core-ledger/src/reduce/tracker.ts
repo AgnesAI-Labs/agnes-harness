@@ -281,6 +281,6 @@ export function currentOp(log: SessionLogImpl, lane: string): OpState {
   return (log.registerRow('op.state', lane)?.data as OpState | undefined) ?? null
 }
 
-export function pendingEffects(tracker: StateTracker): EffectTree {
-  return effectTree(tracker.state)
+export function pendingEffects(tracker: StateTracker, lane?: string): EffectTree {
+  return effectTree(tracker.state, lane)
 }

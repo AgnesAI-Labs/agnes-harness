@@ -61,6 +61,53 @@ type N = {
 }
 
 describe('local endpoint: ACP round trip', () => {
+  it.each(['AUTH', 'TOOL_ARGS_INVALID'] as const)(
+    'returns original %s and close codes through prompt errors',
+    async (code) => {
+      const h = await openTestHost()
+      const ep = h.endpoint({ clock: Date.now, pollMs: 5 })
+      try {
+        await ep.handle(init)
+        await addWorkspace(ep, h.dataDir)
+        const created = (await ep.handle({
+          jsonrpc: '2.0',
+          id: 200,
+          method: 'session/new',
+          params: { cwd: h.dataDir, mcpServers: [] },
+        })) as { result: { sessionId: string } }
+        const session = h.host.kernel.get(created.result.sessionId)
+        if (!session) throw new Error('missing session')
+        vi.spyOn(session, 'run').mockResolvedValue({
+          reason: 'error',
+          lastSeq: session.lastSeq,
+          error: {
+            code,
+            message: 'private-original',
+            closeError: { code: 'E_STORAGE_FAULT', message: 'private-close' },
+          },
+        })
+        const reply = await ep.handle({
+          jsonrpc: '2.0',
+          id: 201,
+          method: 'session/prompt',
+          params: { sessionId: session.key, prompt: [{ type: 'text', text: 'fail' }] },
+        })
+        expect(reply).toMatchObject({
+          error: {
+            data: {
+              code: code === 'AUTH' ? 'CONFIG_CREDENTIAL_REJECTED' : 'TURN_ERROR',
+              error: { code, closeError: { code: 'E_STORAGE_FAULT' } },
+            },
+          },
+        })
+        if (code === 'AUTH') expect(JSON.stringify(reply)).not.toContain('private-')
+      } finally {
+        await ep.close()
+        await h.close()
+      }
+    },
+  )
+
   it('audits a real SQLite session through the owner RPC, including corruption before its checkpoint', async () => {
     const h = await openTestHost({ provider: new ScriptedProvider({ scripts: [say('evidence')] }) })
     let ep = h.endpoint({ clock: Date.now, pollMs: 5 })

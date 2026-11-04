@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 import { FormatRegistry } from '@sinclair/typebox'
 
 if (!FormatRegistry.Has('date-time')) FormatRegistry.Set('date-time', (value) => { const parts = value.split(/t/i); if (parts.length !== 2) return false; const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(parts[0] ?? ''); const time = /^(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)(z|([+-])(\d{2}):(\d{2}))$/i.exec(parts[1] ?? ''); if (!date || !time) return false; const year = Number(date[1]), month = Number(date[2]), day = Number(date[3]); const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0); const days = [0, 31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; if (month < 1 || month > 12 || day < 1 || day > (days[month] ?? 0)) return false; const hour = Number(time[1]), minute = Number(time[2]), second = Number(time[3]); const offsetHour = Number(time[6] || 0), offsetMinute = Number(time[7] || 0); if (hour > 23 || minute > 59 || offsetHour > 23 || offsetMinute > 59) return false; if (second < 60) return true; const sign = time[5] === '-' ? -1 : 1; const utcMinute = minute - offsetMinute * sign; const utcHour = hour - offsetHour * sign - (utcMinute < 0 ? 1 : 0); return (utcHour === 23 || utcHour === -1) && (utcMinute === 59 || utcMinute === -1) && second < 61; })
@@ -40,63 +40,65 @@ export const ModelV1 = Type.Module({
   "ToolPresentation": Type.Object({ "title": Type.String({ minLength: 1, maxLength: 256 }), "description": Type.String({ minLength: 1, maxLength: 4096 }), "summary": Type.Optional(Type.String({ minLength: 1, maxLength: 1024 })) }, { additionalProperties: false }),
 })
 
-export const ContentBlock = ModelV1.Import('ContentBlock')
+export type ModelV1Definitions = typeof ModelV1 extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const ContentBlock: TImport<ModelV1Definitions, 'ContentBlock'> = ModelV1.Import('ContentBlock')
 export type ContentBlock = Static<typeof ContentBlock>
-export const ToolCall = ModelV1.Import('ToolCall')
+export const ToolCall: TImport<ModelV1Definitions, 'ToolCall'> = ModelV1.Import('ToolCall')
 export type ToolCall = Static<typeof ToolCall>
-export const SlotName = ModelV1.Import('SlotName')
+export const SlotName: TImport<ModelV1Definitions, 'SlotName'> = ModelV1.Import('SlotName')
 export type SlotName = Static<typeof SlotName>
-export const ThinkingLevel = ModelV1.Import('ThinkingLevel')
+export const ThinkingLevel: TImport<ModelV1Definitions, 'ThinkingLevel'> = ModelV1.Import('ThinkingLevel')
 export type ThinkingLevel = Static<typeof ThinkingLevel>
-export const ModelSettings = ModelV1.Import('ModelSettings')
+export const ModelSettings: TImport<ModelV1Definitions, 'ModelSettings'> = ModelV1.Import('ModelSettings')
 export type ModelSettings = Static<typeof ModelSettings>
-export const AiErrorCode = ModelV1.Import('AiErrorCode')
+export const AiErrorCode: TImport<ModelV1Definitions, 'AiErrorCode'> = ModelV1.Import('AiErrorCode')
 export type AiErrorCode = Static<typeof AiErrorCode>
-export const DecodeRule = ModelV1.Import('DecodeRule')
+export const DecodeRule: TImport<ModelV1Definitions, 'DecodeRule'> = ModelV1.Import('DecodeRule')
 export type DecodeRule = Static<typeof DecodeRule>
-export const Sha256 = ModelV1.Import('Sha256')
+export const Sha256: TImport<ModelV1Definitions, 'Sha256'> = ModelV1.Import('Sha256')
 export type Sha256 = Static<typeof Sha256>
-export const ToolSchema = ModelV1.Import('ToolSchema')
+export const ToolSchema: TImport<ModelV1Definitions, 'ToolSchema'> = ModelV1.Import('ToolSchema')
 export type ToolSchema = Static<typeof ToolSchema>
-export const RequestMessage = ModelV1.Import('RequestMessage')
+export const RequestMessage: TImport<ModelV1Definitions, 'RequestMessage'> = ModelV1.Import('RequestMessage')
 export type RequestMessage = Static<typeof RequestMessage>
-export const RequestBody = ModelV1.Import('RequestBody')
+export const RequestBody: TImport<ModelV1Definitions, 'RequestBody'> = ModelV1.Import('RequestBody')
 export type RequestBody = Static<typeof RequestBody>
-export const ModelCost = ModelV1.Import('ModelCost')
+export const ModelCost: TImport<ModelV1Definitions, 'ModelCost'> = ModelV1.Import('ModelCost')
 export type ModelCost = Static<typeof ModelCost>
-export const ModelInputLimits = ModelV1.Import('ModelInputLimits')
+export const ModelInputLimits: TImport<ModelV1Definitions, 'ModelInputLimits'> = ModelV1.Import('ModelInputLimits')
 export type ModelInputLimits = Static<typeof ModelInputLimits>
-export const ModelRecord = ModelV1.Import('ModelRecord')
+export const ModelRecord: TImport<ModelV1Definitions, 'ModelRecord'> = ModelV1.Import('ModelRecord')
 export type ModelRecord = Static<typeof ModelRecord>
-export const ContractStamp = ModelV1.Import('ContractStamp')
+export const ContractStamp: TImport<ModelV1Definitions, 'ContractStamp'> = ModelV1.Import('ContractStamp')
 export type ContractStamp = Static<typeof ContractStamp>
-export const TokenCounts = ModelV1.Import('TokenCounts')
+export const TokenCounts: TImport<ModelV1Definitions, 'TokenCounts'> = ModelV1.Import('TokenCounts')
 export type TokenCounts = Static<typeof TokenCounts>
-export const Billing = ModelV1.Import('Billing')
+export const Billing: TImport<ModelV1Definitions, 'Billing'> = ModelV1.Import('Billing')
 export type Billing = Static<typeof Billing>
-export const ResponseMeta = ModelV1.Import('ResponseMeta')
+export const ResponseMeta: TImport<ModelV1Definitions, 'ResponseMeta'> = ModelV1.Import('ResponseMeta')
 export type ResponseMeta = Static<typeof ResponseMeta>
-export const Timing = ModelV1.Import('Timing')
+export const Timing: TImport<ModelV1Definitions, 'Timing'> = ModelV1.Import('Timing')
 export type Timing = Static<typeof Timing>
-export const CountResult = ModelV1.Import('CountResult')
+export const CountResult: TImport<ModelV1Definitions, 'CountResult'> = ModelV1.Import('CountResult')
 export type CountResult = Static<typeof CountResult>
-export const InferenceEvent = ModelV1.Import('InferenceEvent')
+export const InferenceEvent: TImport<ModelV1Definitions, 'InferenceEvent'> = ModelV1.Import('InferenceEvent')
 export type InferenceEvent = Static<typeof InferenceEvent>
-export const RouteDecl = ModelV1.Import('RouteDecl')
+export const RouteDecl: TImport<ModelV1Definitions, 'RouteDecl'> = ModelV1.Import('RouteDecl')
 export type RouteDecl = Static<typeof RouteDecl>
-export const RouteTarget = ModelV1.Import('RouteTarget')
+export const RouteTarget: TImport<ModelV1Definitions, 'RouteTarget'> = ModelV1.Import('RouteTarget')
 export type RouteTarget = Static<typeof RouteTarget>
-export const RouteTable = ModelV1.Import('RouteTable')
+export const RouteTable: TImport<ModelV1Definitions, 'RouteTable'> = ModelV1.Import('RouteTable')
 export type RouteTable = Static<typeof RouteTable>
-export const ProbeReport = ModelV1.Import('ProbeReport')
+export const ProbeReport: TImport<ModelV1Definitions, 'ProbeReport'> = ModelV1.Import('ProbeReport')
 export type ProbeReport = Static<typeof ProbeReport>
-export const ContractManifest = ModelV1.Import('ContractManifest')
+export const ContractManifest: TImport<ModelV1Definitions, 'ContractManifest'> = ModelV1.Import('ContractManifest')
 export type ContractManifest = Static<typeof ContractManifest>
-export const SystemPromptSection = ModelV1.Import('SystemPromptSection')
+export const SystemPromptSection: TImport<ModelV1Definitions, 'SystemPromptSection'> = ModelV1.Import('SystemPromptSection')
 export type SystemPromptSection = Static<typeof SystemPromptSection>
-export const ResolvedToolCallPolicy = ModelV1.Import('ResolvedToolCallPolicy')
+export const ResolvedToolCallPolicy: TImport<ModelV1Definitions, 'ResolvedToolCallPolicy'> = ModelV1.Import('ResolvedToolCallPolicy')
 export type ResolvedToolCallPolicy = Static<typeof ResolvedToolCallPolicy>
-export const ExecutionDomain = ModelV1.Import('ExecutionDomain')
+export const ExecutionDomain: TImport<ModelV1Definitions, 'ExecutionDomain'> = ModelV1.Import('ExecutionDomain')
 export type ExecutionDomain = Static<typeof ExecutionDomain>
-export const ToolPresentation = ModelV1.Import('ToolPresentation')
+export const ToolPresentation: TImport<ModelV1Definitions, 'ToolPresentation'> = ModelV1.Import('ToolPresentation')
 export type ToolPresentation = Static<typeof ToolPresentation>

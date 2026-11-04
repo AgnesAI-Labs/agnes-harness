@@ -12,6 +12,10 @@ export type EncodedLedgerState = Omit<
   | 'resumedRequests'
   | 'taint'
   | 'toolCalls'
+  | 'refinementRuns'
+  | 'refinementEntryMeta'
+  | 'refinementTombstones'
+  | 'refinementSaves'
 > & {
   registers: {
     [K in keyof LedgerState['registers']]: Array<
@@ -28,6 +32,18 @@ export type EncodedLedgerState = Omit<
   resumedRequests: string[]
   taint: Array<[string, boolean]>
   toolCalls: Array<[string, LedgerState['toolCalls'] extends ReadonlyMap<string, infer V> ? V : never]>
+  refinementRuns: Array<
+    [string, LedgerState['refinementRuns'] extends ReadonlyMap<string, infer V> ? V : never]
+  >
+  refinementEntryMeta: Array<
+    [string, LedgerState['refinementEntryMeta'] extends ReadonlyMap<string, infer V> ? V : never]
+  >
+  refinementTombstones: Array<
+    [string, LedgerState['refinementTombstones'] extends ReadonlyMap<string, infer V> ? V : never]
+  >
+  refinementSaves: Array<
+    [string, LedgerState['refinementSaves'] extends ReadonlyMap<string, infer V> ? V : never]
+  >
 }
 
 /** The state as plain data, maps and sets as entry arrays, so two states compare by content. */
@@ -50,5 +66,9 @@ export function encodeLedgerState(state: LedgerState): EncodedLedgerState {
     resumedRequests: [...state.resumedRequests],
     taint: [...state.taint],
     toolCalls: [...state.toolCalls],
+    refinementRuns: [...state.refinementRuns],
+    refinementEntryMeta: [...state.refinementEntryMeta],
+    refinementTombstones: [...state.refinementTombstones],
+    refinementSaves: [...state.refinementSaves],
   }
 }

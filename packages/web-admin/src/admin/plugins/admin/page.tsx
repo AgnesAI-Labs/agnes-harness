@@ -51,11 +51,12 @@ import {
   type InstallReviewState,
   type PluginRuntimeSource,
 } from '../types.js'
+import { type CatalogPublish, CatalogReads } from './catalog-read.js'
 import { confirmEnable, confirmSimple, offeredActions, PreviewFacts, RollbackFacts } from './confirms.js'
 import { blockedDependents, startDependentReview } from './dependent-update.js'
 import { adminErrorKey, element, markSettingsPage, setDialog } from './dom.js'
 import { manageExample } from './example-parent.js'
-import { InstallFlow, operationFailure } from './install-flow.js'
+import { InstallFlow, operationFailure, resolvedPreviewMode } from './install-flow.js'
 import {
   INVENTORY_FRESH_MS,
   readInventorySnapshot,
@@ -297,6 +298,8 @@ export class PluginAdminPage {
       nameOf: page.nameOf.bind(page),
       openOperations: page.openOperations.bind(page),
       closeConfirm: page.closeConfirm.bind(page),
+      /** Settles once no inventory read is in flight: an effect is decided on the finished inventory. */
+      inventoryIdle: () => page.#refresh.idle(),
       closeDetail: page.closeDetail.bind(page),
       closeSourceDialog: page.closeSourceDialog.bind(page),
       configureConfirm: page.configureConfirm.bind(page),
@@ -312,6 +315,8 @@ export class PluginAdminPage {
       presentationOf: page.presentationOf.bind(page),
       hasDetail: page.hasDetail.bind(page),
       loadCatalog: page.loadCatalog.bind(page),
+      refreshCommunity: page.refreshCommunity.bind(page),
+      inspect: page.inspect.bind(page),
       noticeText: page.noticeText.bind(page),
       openSourceDialog: page.openSourceDialog.bind(page),
       packageBusy: page.packageBusy.bind(page),
@@ -390,6 +395,11 @@ export class PluginAdminPage {
   #query = ''
   #queryRaw = ''
   #generation = 0
+  readonly #catalogReads = new CatalogReads()
+  readonly #publishCatalog: CatalogPublish = (update) => {
+    this.#state = update(this.#state)
+    this.render()
+  }
   #inventoryGeneration = 0
   #pendingConfirm: PendingConfirm | undefined
   #confirmActionDisabled = false
@@ -532,9 +542,16 @@ export class PluginAdminPage {
     () => (this.#surface ? INVENTORY_FRESH_MS : 0),
   )
 
-  refresh(options: { preserveError?: boolean } = {}): Promise<void> {
+  /**
+   * `settled`: an operation has just finished. A read already in flight was answered before that, so
+   * it is dropped (as is an overview another view has in flight) and the inventory is read again.
+   */
+  refresh(options: { preserveError?: boolean; settled?: boolean } = {}): Promise<void> {
     this.#refreshOptions = options
-    return this.#refresh.request()
+    if (!options.settled) return this.#refresh.request()
+    this.#inventoryGeneration++
+    PluginAdminApi.forgetPendingOverview()
+    return this.#refresh.reread()
   }
 
   private async readInventory(): Promise<boolean> {
@@ -543,6 +560,7 @@ export class PluginAdminPage {
     this.#reuseInventory = false
     const generation = ++this.#inventoryGeneration
     this.#generation++
+    this.#catalogReads.invalidate()
     const current = () => !this.#lifetime.signal.aborted && generation === this.#inventoryGeneration
     this.#state = {
       ...this.#state,
@@ -644,6 +662,7 @@ export class PluginAdminPage {
   async selectTab(tab: 'installed' | 'discover'): Promise<void> {
     if (this.#tab === tab) return
     this.#tab = tab
+    this.#catalogReads.invalidate()
     this.#query = ''
     this.#queryRaw = ''
     this.#state = {
@@ -655,31 +674,26 @@ export class PluginAdminPage {
     if (tab === 'discover') await this.loadCatalog()
   }
 
-  async loadCatalog(cursor?: string): Promise<void> {
-    if (!this.#api || !this.can('packages.read')) return
+  loadCatalog(cursor?: string): Promise<void> {
+    if (!this.#api || !this.can('packages.read')) return Promise.resolve()
     const generation = ++this.#generation
-    this.#state = { ...this.#state, loading: true, error: undefined }
-    this.render()
-    try {
-      const page = await this.#api.catalog(this.#query, cursor)
-      if (generation !== this.#generation || this.#tab !== 'discover') return
-      this.#state = {
-        ...this.#state,
-        catalog: cursor ? [...this.#state.catalog, ...page.items] : page.items,
-        nextCursor: page.nextCursor,
-        loading: false,
-        connection: 'connected',
-      }
-    } catch (error) {
-      if (generation !== this.#generation) return
-      this.#state = {
-        ...this.#state,
-        loading: false,
-        error: safeMessage(error),
-        connection: 'offline',
-      }
-    }
-    this.render()
+    return this.#catalogReads.catalog(
+      this.#api,
+      this.#query,
+      cursor,
+      () => generation === this.#generation && this.#tab === 'discover' && !this.#lifetime.signal.aborted,
+      this.#publishCatalog,
+    )
+  }
+
+  refreshCommunity(): Promise<void> {
+    if (!this.#api || !this.can('packages.read') || this.#tab !== 'discover') return Promise.resolve()
+    const api = this.#api
+    return this.#catalogReads.community(
+      api,
+      () => api === this.#api && this.#tab === 'discover' && !this.#lifetime.signal.aborted,
+      this.#publishCatalog,
+    )
   }
 
   async inspect(
@@ -972,13 +986,14 @@ export class PluginAdminPage {
     if (this.#lifetime.signal.aborted || !terminal(operation)) return
     const completion = this.#operationCompletions.get(operation.operationId)
     this.#operationCompletions.delete(operation.operationId)
-    const previewMode = this.#operationModes.get(operation.operationId)
+    let previewMode = this.#operationModes.get(operation.operationId)
     const packageId = operation.packageId ?? this.#operationPackages.get(operation.operationId)
     const inspectKey = this.#flow.settle(operation.operationId)
     this.forgetOperation(operation.operationId)
     if (operation.operation === 'inspect') await this.#refresh.flush()
     if (operation.operation === 'inspect') {
       if (operation.state === 'completed' && operation.preview && previewMode) {
+        previewMode = resolvedPreviewMode(previewMode, operation.preview, this.#state.installed)
         this.#state = {
           ...this.#state,
           preview: operation.preview,
@@ -1047,7 +1062,9 @@ export class PluginAdminPage {
         error: undefined,
       }
     }
-    await this.refresh({ preserveError: operation.state === 'failed' })
+    // Draw the result now; a read already in flight must not hold it back.
+    this.render()
+    await this.refresh({ preserveError: operation.state === 'failed', settled: true })
     if (this.#lifetime.signal.aborted) return
     window.dispatchEvent(new CustomEvent('agnes:packages-changed'))
     if (operation.state === 'completed' && packageId) {

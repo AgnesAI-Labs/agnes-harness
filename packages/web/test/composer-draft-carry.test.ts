@@ -113,6 +113,73 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
+it('can clear the currently selected saved draft', () => {
+  const storage = new Map<string, string>()
+  const persistent = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  }
+  const drafts = new ComposerDrafts(persistent, 'http://synthetic')
+  drafts.select('profile', undefined, '')
+  expect(drafts.select('profile', undefined, '@', { preserve: true })).toBe('@')
+  drafts.clear()
+  expect(new ComposerDrafts(persistent, 'http://synthetic').select('profile', undefined, '')).toBe('')
+})
+
+it('restores saved file and skill references with their draft', () => {
+  const storage = new Map<string, string>()
+  const persistent = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => storage.set(key, value),
+  }
+  const drafts = new ComposerDrafts(persistent, 'http://synthetic')
+  drafts.select('profile', 'session', '')
+  drafts.setReferences({
+    files: [{ path: '/synthetic/brief.md', name: 'brief.md', directory: false }],
+    skills: [{ name: 'review-brief', description: 'Review a product brief.', priority: 3 }],
+  })
+
+  const restored = new ComposerDrafts(persistent, 'http://synthetic')
+  restored.select('profile', 'session', '')
+  expect(restored.readReferences()).toEqual({
+    files: [{ path: '/synthetic/brief.md', name: 'brief.md', directory: false }],
+    skills: [{ name: 'review-brief', description: 'Review a product brief.', priority: 3 }],
+  })
+})
+
+it('switches drafts with their references, carries them on request and drops a lone @', () => {
+  const storage = new Map<string, string>()
+  const drafts = new ComposerDrafts(
+    { getItem: (key: string) => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+    'http://synthetic',
+  )
+  const brief = {
+    files: [{ path: '/synthetic/brief.md', name: 'brief.md', directory: false }],
+    skills: [{ name: 'review-brief' }],
+  }
+  drafts.select('profile', 'one', '')
+  expect(drafts.selectWithReferences('profile', 'two', { text: '@brief.md', references: brief })).toEqual({
+    text: '',
+    references: { files: [], skills: [] },
+  })
+  expect(drafts.selectWithReferences('profile', 'one', { text: '', references: brief })).toEqual({
+    text: '@brief.md',
+    references: brief,
+  })
+  expect(
+    drafts.selectWithReferences(
+      'profile',
+      'three',
+      { text: '$review-brief', references: brief },
+      { carry: true },
+    ),
+  ).toEqual({ text: '$review-brief', references: brief })
+  expect(
+    drafts.selectWithReferences('profile', 'four', { text: '@', references: brief }, { carry: true }),
+  ).toEqual({ text: '', references: { files: [], skills: [] } })
+  expect(drafts.read()).toBe('')
+})
+
 it('keeps typed text when an upload opens the session and persists it under the new key', async () => {
   const handle = createRef<ComposerHandle>()
   const storage = new Map<string, string>()

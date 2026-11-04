@@ -1,8 +1,13 @@
 import type {
   BeforeCompactPayload,
   CompactionPlan,
+  DirectProposal,
   Enforcement,
+  InspectOutcome,
+  InspectRequest,
   Operation,
+  RefinementOutcome,
+  RefinementPlanner,
   SandboxExecBackend,
   SandboxSeam,
   SandboxWorkspaceBackend,
@@ -17,12 +22,15 @@ import type {
   Logger,
   PersistenceProvider,
   SandboxProvider,
+  TaskScopeSource,
+  WorkflowRunSource,
 } from '@agnes/extension-api'
 import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajectory-contract'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import type { ComputerUseBackendProvider } from '@agnes/host-computer-use/computer-use/windows-driver-backend'
+import type { RefinementSettingsPort } from '@agnes/host-infrastructure/refinement-settings'
 import type { AgnesPluginManifestEntry, RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { PackageSnapshotCandidateRef, VerifiedRowEntry } from '@agnes/plugin-runtime/host'
 import type { JsonValue } from '@agnes/protocol'
@@ -129,7 +137,44 @@ export type SeamInitContext = {
   }>
   /** Available to ecosystem extensions after the seam phase, never a raw exec substitute. */
   sandbox?: SandboxSeam
+  /** Read-only refinement switch of this profile, supplied only where the release grants it. */
+  refinementSettings?: RefinementSettingsPort
+  /**
+   * Connects the refinement tools to Core's managed refinement, supplied with the switch: the plugin
+   * hands over its planner and gets each session's runs, found by session key and lane.
+   */
+  refinementRuns?: (planner: RefinementPlanner) => RefinementRunsPort
+  /**
+   * Offers the session's current task to the host as one of the plugin's projections and a reader of
+   * its state; supplied only to the plugin that owns tasks. Returns what withdraws the offer.
+   */
+  provideTaskScope?: (source: TaskScopeSource) => () => void
+  /**
+   * Offers the session's workflow runs to the host as one of the plugin's projections and a reader of
+   * its state, so a finished run can be kept as a skill; supplied only to the plugin that runs
+   * workflows. Returns what withdraws the offer.
+   */
+  provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
 }
+
+/**
+ * A session's managed refinement as the refinement tools reach it. `saveTo` asks for what is applied
+ * to be saved to the session's workspace (`'workspace'`) or to user memory (`'user'`) too, always as the
+ * model's save.
+ */
+export type RefinementRunsPort = Readonly<{
+  propose(
+    session: { key: string; lane: string },
+    proposal: DirectProposal,
+    options?: { saveTo?: 'workspace' | 'user' },
+  ): Promise<RefinementOutcome>
+  request(
+    session: { key: string; lane: string },
+    request: { focus?: string; saveTo?: 'workspace' | 'user' },
+  ): Promise<RefinementOutcome>
+  /** Reads that session's own entries in force; nothing is written. */
+  inspect(session: { key: string; lane: string }, request: InspectRequest): Promise<InspectOutcome>
+}>
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>
 
 export type OperationDeps = {

@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 
 export const JsonValue = Type.Recursive((This) => Type.Union([Type.Null(), Type.Boolean(), Type.Number(), Type.String(), Type.Array(This), Type.Record(Type.String(), This)]))
 export type JsonValue = Static<typeof JsonValue>
@@ -15,21 +15,23 @@ export const PluginStreamSchema = Type.Module({
   "ParametersSchema": Type.Object({ "type": Type.Literal('object'), "properties": Type.Record(Type.String(), JsonValue), "required": Type.Optional(Type.Array(Type.String())), "additionalProperties": Type.Literal(false), "description": Type.Optional(Type.String({ maxLength: 2048 })) }, { additionalProperties: false }),
 })
 
-export const StreamScope = PluginStreamSchema.Import('StreamScope')
+export type PluginStreamSchemaDefinitions = typeof PluginStreamSchema extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const StreamScope: TImport<PluginStreamSchemaDefinitions, 'StreamScope'> = PluginStreamSchema.Import('StreamScope')
 export type StreamScope = Static<typeof StreamScope>
-export const StreamDeclaration = PluginStreamSchema.Import('StreamDeclaration')
+export const StreamDeclaration: TImport<PluginStreamSchemaDefinitions, 'StreamDeclaration'> = PluginStreamSchema.Import('StreamDeclaration')
 export type StreamDeclaration = Static<typeof StreamDeclaration>
-export const PluginStreamOpen = PluginStreamSchema.Import('PluginStreamOpen')
+export const PluginStreamOpen: TImport<PluginStreamSchemaDefinitions, 'PluginStreamOpen'> = PluginStreamSchema.Import('PluginStreamOpen')
 export type PluginStreamOpen = Static<typeof PluginStreamOpen>
-export const PluginStreamGrant = PluginStreamSchema.Import('PluginStreamGrant')
+export const PluginStreamGrant: TImport<PluginStreamSchemaDefinitions, 'PluginStreamGrant'> = PluginStreamSchema.Import('PluginStreamGrant')
 export type PluginStreamGrant = Static<typeof PluginStreamGrant>
-export const PluginStreamClose = PluginStreamSchema.Import('PluginStreamClose')
+export const PluginStreamClose: TImport<PluginStreamSchemaDefinitions, 'PluginStreamClose'> = PluginStreamSchema.Import('PluginStreamClose')
 export type PluginStreamClose = Static<typeof PluginStreamClose>
-export const PluginStreamHello = PluginStreamSchema.Import('PluginStreamHello')
+export const PluginStreamHello: TImport<PluginStreamSchemaDefinitions, 'PluginStreamHello'> = PluginStreamSchema.Import('PluginStreamHello')
 export type PluginStreamHello = Static<typeof PluginStreamHello>
-export const PluginStreamJsonFrame = PluginStreamSchema.Import('PluginStreamJsonFrame')
+export const PluginStreamJsonFrame: TImport<PluginStreamSchemaDefinitions, 'PluginStreamJsonFrame'> = PluginStreamSchema.Import('PluginStreamJsonFrame')
 export type PluginStreamJsonFrame = Static<typeof PluginStreamJsonFrame>
-export const ParametersSchema = PluginStreamSchema.Import('ParametersSchema')
+export const ParametersSchema: TImport<PluginStreamSchemaDefinitions, 'ParametersSchema'> = PluginStreamSchema.Import('ParametersSchema')
 export type ParametersSchema = Static<typeof ParametersSchema>
 export const Root = StreamScope
 export type Root = StreamScope

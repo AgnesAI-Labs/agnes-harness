@@ -11,6 +11,7 @@ export {
   Composer,
   type ComposerAttachmentBlock,
   type ComposerDependencies,
+  type ComposerDraftReferences,
   type ComposerHandle,
   type ComposerRegionOptions,
   type ComposerSlots,
@@ -363,4 +364,5 @@ for (const definition of BUILTIN_WEB_UNITS) assertBuiltinWebUnitContract(definit
 
 export { attachmentErrorMessage } from './composer-errors.js'
 export { type ComposerReferences, createComposerReferences } from './reference-picker.js'
+export type { ComposerSkill, ComposerSkills } from './skill-picker.js'
 export { WorkspaceDialog, type WorkspaceDialogState } from './workspace-dialog.js'

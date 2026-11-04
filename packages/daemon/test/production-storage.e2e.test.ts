@@ -37,6 +37,7 @@ import {
   type StartSupervisorOptions,
   startProductionSupervisor,
 } from '../src/supervisor/supervisor.js'
+import { sourceTranspileCache } from './source-transpile-cache.js'
 
 // These workers assemble the production package graph from TypeScript source before they say
 // hello. Cold assembly exceeded 90 s in the Windows regression run; a 180 s diagnostic window
@@ -326,7 +327,7 @@ describe('production supervisor storage', () => {
       const resourceProfile = await resolveProfile(
         {
           builtin: 'local-dev',
-          user: { name: 'local-dev', dataDir: join(dir, 'data'), cacheDir: join(dir, 'cache') },
+          user: { name: 'local-dev', dataDir: join(dir, 'data'), cacheDir: sourceTranspileCache() },
         },
         { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
       )
@@ -503,7 +504,7 @@ describe('production supervisor storage', () => {
       const resourceProfile = await resolveProfile(
         {
           builtin: 'local-dev',
-          user: { name: 'local-dev', dataDir: dir, cacheDir: join(dir, 'cache') },
+          user: { name: 'local-dev', dataDir: dir, cacheDir: sourceTranspileCache() },
         },
         { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
       )
@@ -538,11 +539,26 @@ describe('production supervisor storage', () => {
         }
         throw new Error('health operation did not settle')
       }
+      // A Linux workspace-write server runs in a bubblewrap PID namespace and publishes that
+      // namespace's pid. Signal the host process whose innermost NSpid it is.
+      const hostPid = (file: string, inner: number): number => {
+        if (!existsSync('/proc/self/status')) return inner
+        for (const entry of readdirSync('/proc').filter((name) => /^\d+$/.test(name))) {
+          try {
+            if (!readFileSync(`/proc/${entry}/cmdline`, 'utf8').split('\0').includes(file)) continue
+            const ids = /^NSpid:\s+(.+)$/m.exec(readFileSync(`/proc/${entry}/status`, 'utf8'))?.[1]
+            if (ids?.trim().split(/\s+/).map(Number).at(-1) === inner) return Number(entry)
+          } catch {
+            // The process exited while it was being read.
+          }
+        }
+        throw new Error(`no host process publishes ${inner} in ${file}`)
+      }
       const pid = async (file: string): Promise<number> => {
         for (let attempt = 0; attempt < 100; attempt++) {
           if (existsSync(file)) {
             const value = Number(readFileSync(file, 'utf8'))
-            if (Number.isSafeInteger(value) && value > 0) return value
+            if (Number.isSafeInteger(value) && value > 0) return hostPid(file, value)
           }
           await new Promise<void>((resolve) => setTimeout(resolve, 20))
         }
@@ -682,7 +698,7 @@ describe('production supervisor storage', () => {
         const resourceProfile = await resolveProfile(
           {
             builtin: 'local-dev',
-            user: { name: 'local-dev', dataDir: dir, cacheDir: join(dir, 'cache') },
+            user: { name: 'local-dev', dataDir: dir, cacheDir: sourceTranspileCache() },
           },
           { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
         )

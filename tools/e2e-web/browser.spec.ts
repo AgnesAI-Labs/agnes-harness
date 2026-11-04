@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
+import { writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
-import { PLUGIN_STREAM_OPEN_PATH, rpcError } from '@agnes/protocol'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { PLUGIN_STREAM_OPEN_PATH, PLUGIN_STREAM_PATH, rpcError } from '@agnes/protocol'
 import { expect, test } from './fixtures.js'
 import { complete, prompt, toolResult } from './sdk.js'
 import { closeSettings, homePage, preferences, settings, workbenchTab } from './ui.js'
@@ -150,15 +153,16 @@ test('built-in browser displays the agent page, admits human input and refuses c
     await page.getByTestId('workbench-right-toggle').click()
     await workbenchTab(page, 'browser')
     await expect(page.locator('.agh-browser-panel')).toBeVisible({ timeout: 60_000 })
-    await expect(page.getByRole('textbox', { name: 'Web address in the AGH runtime' })).toBeVisible()
-    const address = page.getByRole('textbox', { name: 'Web address in the AGH runtime' })
+    const address = page.getByRole('textbox', { name: 'URL or file path on the AGH runtime' })
+    await expect(address).toBeVisible()
     await expect(page.getByRole('button', { name: 'Open', exact: true })).toBeEnabled({ timeout: 60_000 })
+    await expect(page.getByRole('button', { name: 'Load browser', exact: true })).toHaveCount(0)
+    expect(timings.filter((entry) => entry.service === 'browser.connect')).toHaveLength(0)
     await address.fill(runtime.url)
     await address.press('Enter')
-    await expect(page.getByRole('alert')).toHaveText(
-      'AGH management and cloud metadata addresses cannot be opened here.',
-      { timeout: 30_000 },
-    )
+    await expect(page.getByRole('alert')).toHaveText('AGH management and cloud metadata URLs are blocked.', {
+      timeout: 30_000,
+    })
     await expect(page.getByRole('button', { name: 'Check previous action', exact: true })).toHaveCount(0)
     const callBrowser = async (input: Record<string, unknown>) => {
       await prompt(session, 'call browser ' + JSON.stringify(input))
@@ -175,9 +179,38 @@ test('built-in browser displays the agent page, admits human input and refuses c
     const hiddenRequests = timings.length
     await page.waitForTimeout(3500)
     expect(timings).toHaveLength(hiddenRequests)
+    // Empty history has no input admission. Refuse it only when a real page is shown.
+    expectedBrowserErrors.push(
+      'console: Failed to load resource: the server responded with a status of 503 (Service Unavailable)',
+    )
+    await page.route(
+      '**/api/client-modules/effect',
+      (route) =>
+        route.fulfill({
+          status: 503,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: rpcError('CAPABILITY_DENIED') }),
+        }),
+      { times: 1 },
+    )
+    const refused = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/client-modules/effect') &&
+        response.request().postDataJSON()?.service === 'browser.connect' &&
+        response.status() === 503,
+    )
     await workbenchTab(page, 'browser')
+    await refused
     await expect(page.locator('.agh-browser-panel')).toBeVisible()
     await expect(page.locator('.agh-browser-screen')).toContainText('Live', { timeout: 30_000 })
+    await page.reload()
+    await expect(page.locator('.agh-browser-screen')).toContainText('Live')
+    await expect(page.getByRole('button', { name: 'Load browser', exact: true })).toHaveCount(0)
+    await expect(page.locator('.agh-browser-panel [role="alert"]')).toHaveCount(0)
+    // This flow measures legacy desktop-sized coordinates. Adaptive sizing is
+    // the default and is exercised by the selection and multi-tab flows below.
+    await page.getByRole('button', { name: 'Browser options', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Use fixed desktop size (1280 × 800)', exact: true }).click()
     let observed = await callBrowser({ action: 'inspect', pageId: opened.pageId })
     const input = observed.elements.find((entry: { label: string }) => entry.label === 'Name')
     await callBrowser({
@@ -218,31 +251,16 @@ test('built-in browser displays the agent page, admits human input and refuses c
       )
       .toBe(2560)
     const typing = page.getByRole('textbox', { name: 'Type into the web page', exact: true })
-    await expect(typing).toBeDisabled()
+    const screen = page.locator('.agh-browser-screen')
+    await expect(screen).toHaveAttribute('data-controlling', 'false')
     const canvas = page.getByRole('img', { name: 'Live browser page' })
     const box = await canvas.boundingBox()
     if (!box) throw new Error('Canvas is not visible')
-    // A definite pre-dispatch refusal must not permanently lock subsequent human input.
-    expectedBrowserErrors.push(
-      'console: Failed to load resource: the server responded with a status of 503 (Service Unavailable)',
-    )
-    await page.route(
-      '**/api/client-modules/effect',
-      (route) =>
-        route.fulfill({
-          status: 503,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: rpcError('CAPABILITY_DENIED') }),
-        }),
-      { times: 1 },
-    )
-    await canvas.click({ position: { x: (box.width * 40) / 1280, y: (box.height * 96) / 800 } })
-    await expect(page.getByRole('alert')).toContainText('plugin command', { timeout: 30_000 })
-    await expect(page.getByRole('button', { name: 'Check previous action', exact: true })).toHaveCount(0)
     const takeoverStart = performance.now()
     await canvas.click({ position: { x: (box.width * 40) / 1280, y: (box.height * 96) / 800 } })
     // The first click requests native control. Type on the page, without targeting a separate editor.
     await expect(typing).toBeFocused({ timeout: 30_000 })
+    await expect(screen).toHaveAttribute('data-controlling', 'true')
     await test.info().attach('browser-takeover-timing.json', {
       body: JSON.stringify({ firstClickToInputReadyMs: performance.now() - takeoverStart }),
       contentType: 'application/json',
@@ -260,7 +278,7 @@ test('built-in browser displays the agent page, admits human input and refuses c
     expect(same.pageId).toBe(opened.pageId)
     expect(same.text).toContain('人工接管')
     await page.keyboard.press('Escape')
-    await expect(page.getByRole('button', { name: 'Return to AGH', exact: true })).toBeFocused()
+    await expect(typing).toBeFocused()
     await test.info().attach('shared-page.png', { body: await page.screenshot(), contentType: 'image/png' })
     await canvas.hover()
     await page.mouse.wheel(0, 240)
@@ -296,18 +314,21 @@ test('built-in browser displays the agent page, admits human input and refuses c
     expect(
       (await open(session.id, 'browser.input', { pageId: opened.pageId, mode: 'human' }, 'forged')).status,
     ).toBe(403)
-    await page.getByRole('button', { name: 'Return to AGH', exact: true }).click()
-    await expect(typing).toBeDisabled({ timeout: 30_000 })
-    // Input can stop before the handover is acknowledged (for example during lease renewal).
-    // Wait for the completed native handover before asking the agent to target another page.
-    await expect(page.getByRole('button', { name: 'Take control', exact: true })).toBeEnabled({
-      timeout: 30_000,
+    // Modern input shares the page after an idle gap; no manual return is needed.
+    const fresh = await callBrowser({ action: 'inspect', pageId: opened.pageId })
+    const submissions = received.length
+    await callBrowser({
+      action: 'click',
+      pageId: opened.pageId,
+      pageEpoch: fresh.pageEpoch,
+      ref: fresh.elements.find((entry: { label: string }) => entry.label === 'Confirm').ref,
     })
+    await expect.poll(() => received.length).toBe(submissions + 1)
     const secondTab = await callBrowser({ action: 'open', url: url + '/second' })
     const tabs = page.locator('.agh-browser-tabs').getByRole('tab')
     await expect(tabs).toHaveCount(2)
-    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true')
-    await callBrowser({ action: 'inspect', pageId: opened.pageId })
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true')
+    await callBrowser({ action: 'inspect', pageId: secondTab.pageId })
     await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true')
     await tabs.nth(1).click()
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true')
@@ -320,23 +341,17 @@ test('built-in browser displays the agent page, admits human input and refuses c
     }
     expect(timings.filter((entry) => entry.service === 'stream:browser.frames')).toHaveLength(displayOpens)
     expect(timings.filter((entry) => entry.status === 429)).toEqual([])
-    await expect(page.getByRole('button', { name: 'Take control', exact: true })).toBeEnabled({
-      timeout: 30_000,
-    })
-    await page.getByRole('button', { name: 'Take control', exact: true }).click()
-    await expect(typing).toBeEnabled({ timeout: 30_000 })
+    await canvas.click({ position: { x: 40, y: 40 } })
+    await expect(screen).toHaveAttribute('data-controlling', 'true')
     await callBrowser({ action: 'inspect', pageId: opened.pageId })
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true')
-    await page.getByRole('button', { name: 'Return to AGH', exact: true }).click()
-    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true', { timeout: 30_000 })
-    await expect(page.getByRole('button', { name: 'Take control', exact: true })).toBeEnabled({
-      timeout: 30_000,
-    })
-    await page.getByRole('button', { name: 'Take control', exact: true }).click()
-    await expect(typing).toBeEnabled({ timeout: 30_000 })
+    await tabs.nth(0).click()
+    await expect(screen).toHaveAttribute('data-controlling', 'false')
+    await canvas.click({ position: { x: 40, y: 40 } })
+    await expect(screen).toHaveAttribute('data-controlling', 'true')
     await tabs.nth(1).click()
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true')
-    await expect(typing).toBeDisabled()
+    await expect(screen).toHaveAttribute('data-controlling', 'false')
     await page.setViewportSize({ width: 980, height: 900 })
     await expect
       .poll(() =>
@@ -347,6 +362,10 @@ test('built-in browser displays the agent page, admits human input and refuses c
     await test
       .info()
       .attach('browser-compact.png', { body: await page.screenshot(), contentType: 'image/png' })
+    // Resizing can move the tab-overflow trigger under the stationary pointer.
+    // Leave its hover menu before targeting the toolbar below it.
+    await page.locator('#prompt').hover()
+    await expect(page.getByRole('menu')).toHaveCount(0)
     await page.getByRole('button', { name: 'Browser options', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Show at 100%', exact: true }).click()
     await expect(page.locator('.agh-browser-screen')).toHaveAttribute('data-scale', 'actual')
@@ -362,6 +381,32 @@ test('built-in browser displays the agent page, admits human input and refuses c
       body: await page.screenshot({ animations: 'disabled' }),
       contentType: 'image/png',
     })
+    const restoredUrl = page.url()
+    await page.goto('about:blank')
+    await runtime.restart()
+    const beforeRestartView = timings.length
+    await page.goto(restoredUrl)
+    // Use the existing cold-start readiness contract before checking a plugin panel.
+    await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible({ timeout: 60_000 })
+    await expect(address).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Load browser', exact: true })).toHaveCount(0)
+    await page.waitForTimeout(3500)
+    expect(timings.slice(beforeRestartView).map((entry) => entry.service)).not.toContain('browser.connect')
+    expect(timings.slice(beforeRestartView).map((entry) => entry.service)).not.toContain(
+      'stream:browser.frames',
+    )
+    await expect(page.locator('.agh-browser-screen')).toHaveCount(0)
+    await expect(page.locator('.agh-browser-panel [role="alert"]')).toHaveCount(0)
+    await test.info().attach('browser-restored-passive.png', {
+      body: await page.screenshot({ animations: 'disabled' }),
+      contentType: 'image/png',
+    })
+    await expect(page.getByRole('button', { name: 'Open', exact: true })).toBeEnabled()
+    const restored = await (await runtime.connect()).session.open(session.id, { cwd: runtime.workspace })
+    await prompt(restored, 'call browser ' + JSON.stringify({ action: 'open', url }))
+    await toolResult(restored, 'browser')
+    await expect(page.locator('.agh-browser-screen')).toContainText('Live')
+    await expect(page.locator('.agh-browser-panel [role="alert"]')).toHaveCount(0)
   } finally {
     let timer: ReturnType<typeof setTimeout> | undefined
     const details = await Promise.race([
@@ -381,6 +426,88 @@ test('built-in browser displays the agent page, admits human input and refuses c
     })
     site.closeAllConnections()
     await new Promise<void>((resolve) => site.close(() => resolve()))
+  }
+})
+
+test('text-only tabs stay responsive through large pages, input and continuous frames without opening audio', async ({
+  page,
+  runtime,
+}) => {
+  const client = await runtime.connect()
+  const session = await client.session.new({
+    sessionKey: randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'standard',
+    permission: 'full-access',
+  })
+  await prompt(session, 'call tool_describe {"name":"browser"}')
+  for (const count of [1, 100, 10000]) {
+    const file = join(runtime.workspace, `buttons-${count}.html`)
+    await writeFile(
+      file,
+      `<!doctype html><meta charset="utf-8"><style>body{margin:20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px}button{height:30px}</style><h1>Buttons ${count}</h1><p id="status">Ready</p><div class="grid"></div><script>
+      const grid=document.querySelector('.grid'),fragment=document.createDocumentFragment();
+      for(let n=0;n<${count};n++){const button=document.createElement('button');button.textContent='Item '+n;fragment.append(button)}grid.append(fragment);
+      grid.onclick=e=>{if(e.target.tagName==='BUTTON')document.querySelector('#status').textContent=e.target.textContent};
+      let tick=0;setInterval(()=>document.title='Frame '+tick++,33);
+      setInterval(()=>document.querySelector('h1').style.color=tick%2?'#111':'#333',100);
+    </script>`,
+    )
+    await prompt(session, 'call browser ' + JSON.stringify({ action: 'open', url: pathToFileURL(file).href }))
+    await toolResult(session, 'browser')
+  }
+  await page.addInitScript(() => {
+    const state = { audioOpened: false, maxGap: 0, last: performance.now() }
+    ;(window as unknown as { browserHealth: typeof state }).browserHealth = state
+    const Context = window.AudioContext
+    window.AudioContext = new Proxy(Context, {
+      construct(target, args) {
+        state.audioOpened = true
+        return Reflect.construct(target, args)
+      },
+    })
+    setInterval(() => {
+      const now = performance.now()
+      state.maxGap = Math.max(state.maxGap, now - state.last)
+      state.last = now
+    }, 100)
+  })
+  await preferences(page)
+  const skip = page.getByTestId('first-run-skip')
+  await page.addLocatorHandler(skip, () => skip.click(), { times: 1 })
+  await page.goto(runtime.url + '/?session=' + session.id)
+  await page.locator('#prompt').waitFor({ timeout: 60_000 })
+  await workbenchTab(page, 'browser')
+  const connected = page.locator('.agh-browser-connection[data-connected="true"]')
+  await expect(connected).toHaveCount(1)
+  await page.evaluate(() => {
+    const state = (window as unknown as { browserHealth: { maxGap: number; last: number } }).browserHealth
+    state.maxGap = 0
+    state.last = performance.now()
+  })
+  for (let round = 0; round < 4; round++) {
+    for (const count of [1, 100, 10000]) {
+      // Keyboard selection also works when the native tabs overflow a narrow panel.
+      const tab = page
+        .locator('.agh-browser-tabs')
+        .getByRole('tab')
+        .filter({ hasText: `/buttons-${count}.html` })
+      await tab.focus()
+      await page.keyboard.press('Enter')
+      await expect(tab).toHaveAttribute('aria-selected', 'true')
+      await expect(connected).toHaveCount(1)
+      await page.locator('.agh-browser-screen canvas').click({ position: { x: 40, y: 40 } })
+      await page.keyboard.press('ArrowDown')
+      await page.mouse.wheel(0, 120)
+      await page.locator('#prompt').fill(`responsive-${round}-${count}`)
+      await expect(page.locator('#prompt')).toHaveValue(`responsive-${round}-${count}`)
+      const health = await page.evaluate(
+        () =>
+          (window as unknown as { browserHealth: { audioOpened: boolean; maxGap: number } }).browserHealth,
+      )
+      expect(health.audioOpened).toBe(false)
+      expect(health.maxGap).toBeLessThan(2000)
+    }
   }
 })
 
@@ -463,25 +590,25 @@ test('one plugin switch enables the browser, revokes old control, and stays off 
   if (!address || typeof address === 'string') throw new Error('Fixture did not start')
   const url = 'http://127.0.0.1:' + address.port
   try {
-    const opened = await callBrowser({ action: 'open', url })
+    const [interactionRequest, opened] = await Promise.all([
+      page.waitForRequest(
+        (request) =>
+          request.url().endsWith(PLUGIN_STREAM_OPEN_PATH) &&
+          request.postDataJSON()?.name === 'browser.interaction',
+      ),
+      callBrowser({ action: 'open', url }),
+    ])
     await expect(page.locator('.agh-browser-screen')).toContainText('Live')
-    const inputRequest = page.waitForRequest(
-      (request) =>
-        request.url().endsWith(PLUGIN_STREAM_OPEN_PATH) && request.postDataJSON()?.name === 'browser.input',
-    )
-    await page.getByRole('button', { name: 'Take control', exact: true }).click()
-    await expect(page.getByRole('textbox', { name: 'Type into the web page', exact: true })).toBeEnabled({
-      timeout: 30_000,
-    })
-    const priorInput = (await inputRequest).postDataJSON()
-    const openOldInput = () =>
+    await page.locator('.agh-browser-screen canvas').click({ position: { x: 40, y: 40 } })
+    await expect(page.locator('.agh-browser-screen')).toHaveAttribute('data-controlling', 'true')
+    const priorInteraction = interactionRequest.postDataJSON()
+    const openOldInteraction = () =>
       fetch(runtime.url + PLUGIN_STREAM_OPEN_PATH, {
         method: 'POST',
         headers: { Origin: runtime.url, 'content-type': 'application/json', 'x-agnes-stream-open': '1' },
-        body: JSON.stringify({
-          ...priorInput,
-          client: { rowId: row!.rowId, revision: row!.revision, contentDigest: row!.contentDigest },
-        }),
+        // Replay the captured request unchanged. Replacing its client revision
+        // would test a current client opening a transport, not a stale request.
+        body: JSON.stringify(priorInteraction),
       })
     const plugin = page.locator('.plugin-row[data-plugin-id="@agnes/browser"]')
     const toggle = plugin.getByRole('switch')
@@ -518,7 +645,7 @@ test('one plugin switch enables the browser, revokes old control, and stays off 
         .toBe(enabled ? 'enabled' : 'installed-disabled')
     }
     await switchPlugin(false)
-    expect((await openOldInput()).status).toBe(403)
+    expect((await openOldInteraction()).status).toBe(403)
     await page.locator(`.session[data-session="${session.id}"]`).click()
     await expect(page.getByTestId('workbench-tab-browser')).toHaveCount(0)
     const fallback = await client.session.new({
@@ -543,7 +670,15 @@ test('one plugin switch enables the browser, revokes old control, and stays off 
       (entry) => entry.packageId === '@agnes/browser',
     )
     expect(row?.phase).toBe('ready')
-    expect((await openOldInput()).status).toBe(403)
+    await prompt(session, 'call browser ' + JSON.stringify({ action: 'inspect', pageId: opened.pageId }))
+    const timeline = await session.projectUI(undefined, { surface: 'web' })
+    const refused = timeline.nodes.findLast((node) => node.kind === 'tool' && node.name === 'browser')
+    if (refused?.kind !== 'tool' || refused.resultSeq === undefined) throw new Error('Missing refusal')
+    const detail = await session.readToolDetail(refused.seq, refused.resultSeq)
+    expect(detail.result?.isError).toBe(true)
+    const refusal = detail.result?.content?.find((item) => item.type === 'text')
+    if (!refusal || refusal.type !== 'text') throw new Error('Missing refusal content')
+    expect(JSON.parse(refusal.text)).toMatchObject({ code: 'PAGE_UNAVAILABLE' })
     await page.locator(`.session[data-session="${session.id}"]`).click()
     await workbenchTab(page, 'browser')
     await expect(page.locator('.agh-browser-panel')).toBeVisible({ timeout: 60_000 })
@@ -551,7 +686,66 @@ test('one plugin switch enables the browser, revokes old control, and stays off 
     const freshPage = await callBrowser({ action: 'open', url })
     expect(freshPage.pageId).not.toBe(opened.pageId)
     await expect(page.locator('.agh-browser-screen')).toContainText('Live')
-    await expect(page.getByRole('textbox', { name: 'Type into the web page', exact: true })).toBeDisabled()
+    // HTTP admission issues a ticket before the plugin's channel handler runs.
+    // Exercise the ticket and a real control request, not just its HTTP status.
+    const stale = await page.evaluate(
+      async ({ request, openPath, streamPath, target }) => {
+        const response = await fetch(openPath, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-agnes-stream-open': '1' },
+          body: JSON.stringify(request),
+        })
+        if (!response.ok) return { status: response.status }
+        const grant = await response.json()
+        const url = new URL(streamPath, location.href)
+        url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+        return new Promise<{ code?: number; reply?: unknown }>((resolve, reject) => {
+          const socket = new WebSocket(url)
+          const timer = setTimeout(() => {
+            socket.close()
+            reject(new Error('Stale connection was not refused'))
+          }, 5000)
+          socket.onopen = () => socket.send(JSON.stringify({ ticket: grant.ticket }))
+          socket.onmessage = (event) => {
+            const frame = JSON.parse(event.data)
+            if (frame.ready) {
+              socket.send(
+                JSON.stringify({
+                  version: 1,
+                  streamId: grant.streamId,
+                  sequence: 0,
+                  kind: 'json',
+                  data: { id: 1, type: 'control', mode: 'human', ...target },
+                }),
+              )
+            } else if (frame.data?.id === 1) {
+              clearTimeout(timer)
+              socket.close()
+              resolve({ reply: frame.data })
+            }
+          }
+          socket.onerror = () => {
+            clearTimeout(timer)
+            socket.close()
+            reject(new Error('Stale-connection probe failed before refusal'))
+          }
+          socket.onclose = (event) => {
+            clearTimeout(timer)
+            resolve({ code: event.code })
+          }
+        })
+      },
+      {
+        request: priorInteraction,
+        openPath: PLUGIN_STREAM_OPEN_PATH,
+        streamPath: PLUGIN_STREAM_PATH,
+        target: { pageId: freshPage.pageId, pageEpoch: freshPage.pageEpoch },
+      },
+    )
+    expect(stale).toEqual({ code: 1011 })
+    await expect(page.locator('.agh-browser-screen')).toHaveAttribute('data-controlling', 'false')
+    await page.locator('.agh-browser-screen canvas').click({ position: { x: 40, y: 40 } })
+    await expect(page.locator('.agh-browser-screen')).toHaveAttribute('data-controlling', 'true')
     await test
       .info()
       .attach('single-plugin-switch.png', { body: await page.screenshot(), contentType: 'image/png' })

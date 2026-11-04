@@ -151,8 +151,11 @@ export type MethodName =
   | '_agnes/v1/session.jobs.read'
   | '_agnes/v1/session.jobs.control'
   | '_agnes/v1/session.workspace.list'
+  | '_agnes/v1/session.workspace.browse'
   | '_agnes/v1/session.fileUpload'
   | '_agnes/v1/session.references.search'
+  | '_agnes/v1/session.references.searchCancelable'
+  | '_agnes/v1/session.references.cancel'
   | '_agnes/v1/session.workspace.read'
   | '_agnes/v1/session.workspace.changes'
   | '_agnes/v1/session.undo.preview'
@@ -161,11 +164,17 @@ export type MethodName =
   | '_agnes/v1/session.deliverables'
   | '_agnes/v1/session.fork'
   | '_agnes/v1/session.btw'
+  | '_agnes/v1/session.refine'
+  | '_agnes/v1/session.refine.rollback'
+  | '_agnes/v1/session.refine.save'
   | '_agnes/v1/session.voice.transcribe'
   | '_agnes/v1/session.voice.speak'
   | '_agnes/v1/voice.status'
   | '_agnes/v1/voice.settings.get'
   | '_agnes/v1/voice.settings.save'
+  | '_agnes/v1/refinement.get'
+  | '_agnes/v1/refinement.save'
+  | '_agnes/v1/refinement.skills'
   | '_agnes/v1/session.rename'
   | '_agnes/v1/session.archive'
   | '_agnes/v1/session.pin'
@@ -396,11 +405,20 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     A.SessionWorkspaceListParams,
     A.SessionWorkspaceListResult,
   ),
+  '_agnes/v1/session.workspace.browse': clientRequest(
+    A.SessionWorkspaceListParams,
+    A.SessionWorkspaceListResult,
+  ),
   '_agnes/v1/session.fileUpload': clientRequest(A.FileUploadParams, A.FileUploadResultSchema),
   '_agnes/v1/session.references.search': clientRequest(
     A.SessionReferenceSearchParams,
     A.SessionReferenceSearchResult,
   ),
+  '_agnes/v1/session.references.searchCancelable': clientRequest(
+    A.SessionReferenceSearchCancelableParams,
+    A.SessionReferenceSearchResult,
+  ),
+  '_agnes/v1/session.references.cancel': clientRequest(A.SessionReferenceCancelParams, A.Empty),
   '_agnes/v1/session.workspace.read': clientRequest(
     A.SessionWorkspaceReadParams,
     A.SessionWorkspaceReadResult,
@@ -423,6 +441,12 @@ export const METHODS: Record<MethodName, MethodSpec> = {
     result: A.SessionIdParams,
   },
   '_agnes/v1/session.btw': clientRequest(A.SessionBtwParams, A.SessionBtwResult),
+  '_agnes/v1/session.refine': clientRequest(A.SessionRefineParams, A.SessionRefineResult),
+  '_agnes/v1/session.refine.save': clientRequest(A.SessionRefineSaveParams, A.SessionRefineSaveResult),
+  '_agnes/v1/session.refine.rollback': clientRequest(
+    A.SessionRefineRollbackParams,
+    A.SessionRefineRollbackResult,
+  ),
   '_agnes/v1/session.voice.transcribe': clientRequest(
     A.SessionVoiceTranscribeParams,
     A.SessionVoiceTranscribeResult,
@@ -431,6 +455,9 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/voice.status': clientRequest(A.ConfigEmptyParams, A.VoiceStatusResult),
   '_agnes/v1/voice.settings.get': clientRequest(A.ConfigEmptyParams, A.VoiceSettingsSnapshot),
   '_agnes/v1/voice.settings.save': clientRequest(A.VoiceSettingsSaveParams, A.VoiceSettingsSnapshot),
+  '_agnes/v1/refinement.get': clientRequest(A.ConfigEmptyParams, A.RefinementSettingsSnapshot),
+  '_agnes/v1/refinement.save': clientRequest(A.RefinementSettingsSaveParams, A.RefinementSettingsSaveResult),
+  '_agnes/v1/refinement.skills': clientRequest(A.RefinementSkillsParams, A.RefinementSkillsResult),
   '_agnes/v1/session.rename': clientRequest(A.SessionRenameParams, A.SessionPreferences),
   '_agnes/v1/session.archive': clientRequest(A.SessionArchiveParams, A.SessionPreferences),
   '_agnes/v1/session.pin': clientRequest(A.SessionPinParams, A.SessionPreferences),

@@ -1,0 +1,193 @@
+{
+  "id": "long-02-vendor-import",
+  "category": "long",
+  "description": "Ten imports of vendor files over five sessions into a small warehouse whose importer reads comma-separated columns by position in the table's order and takes amounts in whole cents; the vendors' formats change along the way.",
+  "trap": {
+    "signatures": [
+      "batch rejected at line \\d+: value \\d+ \\(.*\\) does not fit the table",
+      "batch rejected at line \\d+: \\d+ values, the table takes \\d+"
+    ],
+    "reproduce": "bin/ingest load orders drops/acme-0301.csv",
+    "note": "bin/ingest reads a comma-separated file by position and ignores the header names: the columns must come in the table's own order, which is the order `bin/ingest peek <table>` prints values in (orders: id, placed date as YYYY-MM-DD, amount, region; refunds: id, order id, amount, reason), not the alphabetical order `bin/ingest schema` lists, and amounts must be whole cents as `bin/ingest total` counts them (a vendor's 12.50 is 1250). The error names the line and the position of the value that does not fit. The vendors' files differ from that and from each other, and change over time: other column orders and names, extra columns to drop, `;` or tab separators, decimal commas with `.` for thousands, `$` and `,` thousands, day-first dates. So for every vendor file: look at its header and a few rows, write a comma-separated copy with one header line, the table's column order, amounts in cents (convert exactly, not through a float) and ISO dates, load that copy with `bin/ingest load <table> <copy>`, commit the batch number it prints, and check `bin/ingest total <table>`."
+  },
+  "maxRequests": 250,
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "milestone": "first-import",
+          "text": "Import the vendor file `drops/acme-0301.csv` into the `orders` table and commit it. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 11 rows, 383663 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-0301.csv orders drops/acme-0301.ready.csv comma std iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load orders drops/acme-0301.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "second-acme",
+          "text": "Acme sent another drop: import `drops/acme-0302.csv` into `orders` and commit it.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 16 rows, 560835 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-0302.csv orders drops/acme-0302.ready.csv comma std iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load orders drops/acme-0302.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "milestone": "first-bolt",
+          "text": "Bolt sends its first file: import `drops/bolt-0301.csv` into the `orders` table and commit it. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 22 rows, 848226 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-0301.csv orders drops/bolt-0301.ready.csv semicolon eu iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load orders drops/bolt-0301.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "acme-refunds",
+          "text": "Acme's refunds for the month are in `drops/acme-r0301.csv`; import them into the `refunds` table and commit.",
+          "checks": [
+            {
+              "command": "bin/ingest total refunds",
+              "contains": "refunds: 4 rows, 129928 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-r0301.csv refunds drops/acme-r0301.ready.csv comma std iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load refunds drops/acme-r0301.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "milestone": "bolt-big-orders",
+          "text": "Bolt's second file, `drops/bolt-0302.csv`, has some large orders. Import it into `orders` and commit it. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 27 rows, 1844537 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-0302.csv orders drops/bolt-0302.ready.csv semicolon eu iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load orders drops/bolt-0302.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "acme-new-export",
+          "text": "Acme moved to a new export tool; its file `drops/acme-0303.csv` goes into `orders`. Import and commit it.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 33 rows, 2558233 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-0303.csv orders drops/acme-0303.ready.csv comma usd iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load orders drops/acme-0303.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "milestone": "bolt-refunds",
+          "text": "Bolt's refunds are in `drops/bolt-r0301.csv`. Import them into the `refunds` table and commit. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/ingest total refunds",
+              "contains": "refunds: 7 rows, 251631 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-r0301.csv refunds drops/bolt-r0301.ready.csv semicolon eu iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load refunds drops/bolt-r0301.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "bolt-tab-file",
+          "text": "Import and commit bolt's `drops/bolt-0303.tsv` into `orders`.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 38 rows, 2816648 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-0303.tsv orders drops/bolt-0303.ready.csv tab std iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load orders drops/bolt-0303.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "milestone": "month-end-acme",
+          "text": "Month end for acme: import `drops/acme-0304.csv` into `orders` and `drops/acme-r0302.csv` into `refunds`, and commit both. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 44 rows, 3179863 cents"
+            },
+            {
+              "command": "bin/ingest total refunds",
+              "contains": "refunds: 9 rows, 358003 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-0304.csv orders drops/acme-0304.ready.csv comma std iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load orders drops/acme-0304.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')",
+            "python3 - drops/acme-r0302.csv refunds drops/acme-r0302.ready.csv comma std iso <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load refunds drops/acme-r0302.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "last-bolt",
+          "text": "Last one: import bolt's `drops/bolt-0304.csv` into `orders` and commit it.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 50 rows, 4231060 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-0304.csv orders drops/bolt-0304.ready.csv semicolon eu dmy <<'EOF'\nimport csv, sys\nfrom decimal import Decimal\nsrc, table, dst, delim, amount, date = sys.argv[1:]\nnames = {'orders': {'order': 'id', 'order_no': 'id', 'date': 'placed', 'day': 'placed', 'total': 'amount',\n                    'gross': 'amount', 'region': 'region', 'zone': 'region'},\n         'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount', 'reason': 'reason'}}[table]\ncols = {'orders': ['id', 'placed', 'amount', 'region'], 'refunds': ['id', 'order_id', 'amount', 'reason']}[table]\nrows = list(csv.reader(open(src, newline=''), delimiter={'comma': ',', 'semicolon': ';', 'tab': '\\t'}[delim]))\nout = []\nfor r in rows[1:]:\n    if not r:\n        continue\n    v = {names[h]: x for h, x in zip(rows[0], r) if h in names}\n    a = v['amount'].replace('$', '')\n    a = a.replace('.', '').replace(',', '.') if amount == 'eu' else a.replace(',', '')\n    v['amount'] = str(int(Decimal(a) * 100))\n    if 'placed' in v and date == 'dmy':\n        d, m, y = v['placed'].split('.')\n        v['placed'] = '%s-%s-%s' % (y, m, d)\n    out.append([v[c] for c in cols])\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows(out)\nEOF",
+            "bin/ingest load orders drops/bolt-0304.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        }
+      ]
+    }
+  ]
+}

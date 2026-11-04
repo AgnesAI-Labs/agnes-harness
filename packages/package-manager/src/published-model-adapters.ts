@@ -1,4 +1,13 @@
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, type Stats } from 'node:fs'
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  readSync,
+  type Stats,
+} from 'node:fs'
 import { join } from 'node:path'
 import { type AdminModelAdapter, isAdminModelAdapter } from '@agnes/protocol'
 import { publishFileDurablySync } from '@agnes/system-node'
@@ -28,9 +37,20 @@ export function publishModelAdapterCatalog(
     const source = sources.find((s) => s.trusted && s.snapshot.packageId === adapter.sourcePackage)
     return source ? [{ adapter, source: identity(source) }] : []
   })
-  publishFileDurablySync(join(profileDir, fileName), JSON.stringify({ version: 1, profileHash, entries }), {
-    replace: true,
-  })
+  const file = join(profileDir, fileName),
+    bytes = JSON.stringify({ version: 1, profileHash, entries })
+  // Every Host assembly publishes the projection; an unchanged one is not written and flushed again.
+  if (published(file, bytes)) return
+  publishFileDurablySync(file, bytes, { replace: true })
+}
+
+function published(file: string, bytes: string): boolean {
+  try {
+    const stat = lstatSync(file)
+    return stat.isFile() && stat.size === Buffer.byteLength(bytes) && readFileSync(file, 'utf8') === bytes
+  } catch {
+    return false
+  }
 }
 
 /** Caller supplies freshly verified sources for THIS query. Recheck trust and exact bindings on

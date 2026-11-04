@@ -12,9 +12,47 @@ Files live under `$AGH_HOME/memory/workspaces/<sha256-of-canonical-workspace-pat
 
 Default storage limits are 16 KiB / 200 lines for the index, 32 KiB per topic and 256 KiB per workspace. The independent context allocation is 2,048 tokens for workspace memory and 512 for optional user memory, including the contribution header. The provider uses UTF-8 bytes as a conservative token upper bound; each layer keeps its own upper bound, even when the other is shorter. An omission marker says content was left out of the request; the stored file is never silently truncated. Over-cap writes return `MEMORY_CONSOLIDATION_REQUIRED` and leave the file intact. Consolidate repeated or obsolete preferences, rather than appending indefinitely.
 
-For optional read-only user preferences, create `$AGH_HOME/memory/user/MEMORY.md` yourself and enable `userEnabled` via the [SDK](../reference/api.md) admin method. User memory uses the same index storage limits and its separate context budget. Agent tools cannot change it or read another workspace's memory.
+For optional read-only user preferences, create `$AGH_HOME/memory/user/MEMORY.md` yourself and enable `userEnabled` via the [SDK](../reference/api.md) admin method. User memory uses the same index storage limits and its separate context budget. Agent tools cannot change it or read another workspace's memory. With [Task experience](refinement.md#save-to-user-memory) on, lessons that hold in every workspace can be added to it automatically, as saved sections with marker lines like the paragraphs below; your own text always comes first in what the agent is shown, and a lesson that does not fit is not written.
 
-The supported SDK request `_agnes/v1/admin.memory` accepts `cwd`, an optional settings patch, or `file`, `content` and `baseHash` for an explicit human edit. Configure `indexMaxBytes`, `indexMaxLines`, `topicMaxBytes`, `totalMaxBytes`, `tokenBudget`, `userTokenBudget` and `userEnabled` here. Select an available workspace returned by `_agnes/v1/admin.context`. Settings and editor operations require local owner administration; plugin tools cannot self-enable memory.
+The supported SDK request `_agnes/v1/admin.memory` accepts `cwd`, an optional settings patch, or `file`, `content` and `baseHash` for an explicit human edit, or `saved` to manage saved task experience paragraphs (`{ action: 'list' | 'renew' | 'withdraw' | 'convert', paragraphId?, layer? }`, see below; `layer: 'user'` manages the lessons in user memory, without `convert`). Configure `indexMaxBytes`, `indexMaxLines`, `topicMaxBytes`, `totalMaxBytes`, `tokenBudget`, `userTokenBudget` and `userEnabled` here. Select an available workspace returned by `_agnes/v1/admin.context`. Settings and editor operations require local owner administration; plugin tools cannot self-enable memory.
+
+## Saved task experience
+
+With [Task experience](refinement.md#save-to-the-workspace) on, lessons can be saved into `MEMORY.md` as **saved paragraphs**. Each one sits between two marker lines that hold its id:
+
+```markdown
+<!-- refinement:r0a1b2c3d4e -->
+Lint first
+Run pnpm lint before committing; the hook rejects unformatted files.
+<!-- /refinement:r0a1b2c3d4e -->
+```
+
+The id is `r` and ten lower-case letters or digits. The marker lines are how the agent's view and the records of the workspace find a paragraph; leave them as they are. Text outside marker lines is ordinary memory and is never changed by a save.
+
+Do not start a line of your own with `<!-- refinement:` or `<!-- /refinement:`. A marker line that is damaged, repeated or on its own hides the text after it from the agent (up to the next marker line, or to the end of the file) until you fix it in the editor; the Saved task experience section does not list it. The agent cannot add, remove or change marker-like lines, in `MEMORY.md` or in topic files.
+
+**Review date.** Each saved paragraph is in force for **30 days**. From then on the agent no longer sees it, until a later review confirms it again or you renew it. Its text stays in the file. The workspace's records of saved paragraphs (review dates, who saved them, what was taken back) live in the data directory, not in the memory file.
+
+**What the agent sees.** The memory note and the agent's own reads of `MEMORY.md` leave out paragraphs past their review date and paragraphs nothing vouches for (for example damaged markers, or a save whose result is unknown). You see the whole file in the editor. Because the agent's view is filtered:
+
+- the agent changes memory paragraph by paragraph: an edit is applied as exact replacements one at a time (under ask, one approval each);
+- a write of the whole file is refused while some text is hidden from the agent, or when it would change or drop a saved paragraph's text.
+
+**On the memory page.** In **Memory files**, the **Saved task experience** section lists each saved paragraph with whether the agent sees it, its review date and who saved it. For each one:
+
+- **Renew** starts a new 30-day review period. The file is not changed.
+- **Withdraw** removes the paragraph from the file and records that you took it back: automatic and model saves of the same content are refused from then on. Only your own save brings it back.
+- **Make ordinary** takes the marker lines off and keeps the text as ordinary memory, with no review date.
+
+These work in every memory mode, like the editor, and also while task experience is off. Deleting a saved paragraph in the editor, markers and all, counts as taking it back as well; removing only the marker lines makes it ordinary memory. Both are recorded the next time a session opens in the workspace.
+
+**In user memory.** The same page shows **Task experience in user memory**: the lessons written to user memory, read in every workspace that turns user memory on, with their review dates and whether this workspace reads user memory. **Renew** and **Withdraw** work as above; there is no **Make ordinary** (write the text by hand if you want to keep it). Deleting a lesson from the user memory file by hand, or taking off or damaging its marker lines, counts as taking it back.
+
+**Edits by a person.** A save never replaces a paragraph a person edited in place; an automatic or model save of a new version is refused and your text stays. A change of spacing or letter case only counts as untouched.
+
+**When memory is full.** A save that would go past the limits above ends with **memory full**, in every mode. Nothing is merged or dropped automatically: free space by withdrawing or editing paragraphs, then save again.
+
+**Limits.** The checks on a saved paragraph are about structure (source, size, marker lines, secret-like text); they do not judge whether the lesson is right. Where the agent's shell is not confined (see below), it can read and change the memory file directly, including paragraphs it is not shown; a shell that takes a paragraph's marker lines off turns it into ordinary memory at the next session open.
 
 ## Approval and privacy
 

@@ -9,6 +9,7 @@ import {
   type HostSession,
   manageMemory,
   type ResolvedProfile,
+  refinementCommand,
   sessionPermissionCatalog,
   ToolFilterError,
   toolFilterRejection,
@@ -16,14 +17,7 @@ import {
 import { exporterHealth } from '@agnes/observability'
 import { withPackageVerification } from '@agnes/package-manager'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
-import {
-  type Actor,
-  MAX_FRAME_BYTES,
-  type McpStatus,
-  rpcError,
-  type SkillDescriptor,
-  type WorkerGeneration,
-} from '@agnes/protocol'
+import { type Actor, MAX_FRAME_BYTES, type McpStatus, rpcError, type WorkerGeneration } from '@agnes/protocol'
 import {
   bootstrapWorkerResources,
   type WorkerResourceBootstrapInput,
@@ -36,7 +30,7 @@ import { GRANT_COMMANDS, grantCommand } from './grant-commands.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { noticeConnectingMcp } from './mcp-turn-notice.js'
 import { deliverBoundSystemInput, isProfileCommand, profileServiceCommand } from './profile-commands.js'
-import { sessionReferences } from './references.js'
+import { commandReferences } from './references.js'
 import { sessionServiceCommand } from './service-commands.js'
 import { auditSessionHistory } from './session-integrity.js'
 import { SIDE_CALL_COMMANDS, workerSideCall } from './side-question.js'
@@ -373,9 +367,7 @@ export async function handleCommand(
     case 'fileUpload':
       return sessionFileUpload(session, p as import('@agnes/protocol').FileUploadRequest)
     case 'references':
-      if (p.operation !== 'search' && p.operation !== 'resolve')
-        throw new Error('Invalid reference operation')
-      return sessionReferences(session, p.operation, p.input as never)
+      return commandReferences(session, p.operation, p.input, p.runId, o.aborts)
     case 'workspaceChanges':
       return sessionWorkspaceChanges(session, p as Parameters<typeof sessionWorkspaceChanges>[1])
     case 'undoPreview':
@@ -384,7 +376,7 @@ export async function handleCommand(
       return sessionUndo(session, p as Parameters<typeof sessionUndo>[1])
     case 'workspaceFiles':
       if (p.operation !== 'list' && p.operation !== 'read') throw new Error('Invalid workspace operation')
-      return sessionWorkspaceFiles(session, p.operation, String(p.path ?? ''))
+      return sessionWorkspaceFiles(session, p.operation, String(p.path ?? ''), p.browse === true)
     case 'permissionContext':
       return session.permissionContext
     case 'ping':
@@ -558,6 +550,10 @@ export async function handleCommand(
       o.host.validateModelSwitch(sel, session.key)
       return { effectiveFromSeq: await session.setModel(sel) }
     }
+    case 'refine':
+    case 'refineRollback':
+    case 'refineSave':
+      return refinementCommand(session, cmd.method, p)
     case 'setYolo': {
       if (typeof p.enabled !== 'boolean') throw new TypeError('invalid setYolo command')
       const computerUseSession = { key: session.key, lane: session.lane }
@@ -808,7 +804,7 @@ export async function handleServiceCommand(
     case 'memory.manage': {
       if (!host) throw new Error('memory requires an assembled Host')
       const input = p as import('@agnes/protocol/gen/app-server').AdminMemoryParams
-      return manageMemory(host.memory(input.cwd, 'human-editor'), input)
+      return manageMemory(host.memory(input.cwd, 'human-editor'), input, host.savedParagraphs)
     }
     case 'systemPrompt.defaults':
       if (!host) throw new Error('system prompt requires an assembled Host')

@@ -44,12 +44,21 @@ test('human controls queue, interrupt, persist pause and stop/continue a child',
   const id = new URL(page.url()).searchParams.get('session')!
   const session = await client.session.load(id, { cwd: runtime.workspace })
   await session.attach()
-  await page.getByTestId('composer-pause-resume').click()
+  const pauseResume = page.getByTestId('composer-pause-resume')
+  await pauseResume.click()
   await expect.poll(async () => (await session.controls()).paused).toBe(true)
+  // The daemon applies the pause before this page reads its acknowledgement. Reloading before then
+  // leaves the command in the page's journal as unresolved, and that blocks the next send until the
+  // user checks it. The button turns into an enabled resume only after the page settles the command.
+  await expect(pauseResume).toHaveAttribute('aria-pressed', 'true')
+  await expect(pauseResume).toBeEnabled()
   await page.reload()
   await expect(page.getByTestId('composer-paused')).toBeVisible()
-  await page.getByTestId('composer-pause-resume').click()
+  await pauseResume.click()
   await expect.poll(async () => (await session.controls()).paused).toBe(false)
+  // Likewise, guidance sent while the resume command is still unresolved in the page is refused.
+  await expect(pauseResume).toHaveAttribute('aria-pressed', 'false')
+  await expect(pauseResume).toBeEnabled()
   // Stop returns queued guidance to the draft (a queued follow-up stays queued), so this is sent as guidance.
   await composer.fill('return this to my draft')
   await composer.press('ControlOrMeta+Enter')

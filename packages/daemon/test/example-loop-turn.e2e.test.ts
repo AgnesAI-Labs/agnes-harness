@@ -17,6 +17,7 @@ import { HARNESS_VERSION, type PackageOperationReceipt, type RuntimeAdminSnapsho
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { startLoopProvider } from './fixtures/loop-provider.js'
+import { sourceTranspileCache } from './source-transpile-cache.js'
 
 const sourceDaemon = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
 const examples = fileURLToPath(new URL('../../../examples/loops/', import.meta.url))
@@ -143,6 +144,8 @@ async function runExample(kind: 'react' | 'dag') {
     join(profileDir, 'profile.yaml'),
     JSON.stringify({
       name: 'local-dev',
+      // Source workers transpile every official plugin; share that cache, not this home.
+      cacheDir: sourceTranspileCache(),
       computerUse: { enabled: false },
       adapters: { secrets: { kind: 'file', path: secretDir } },
       provider: {

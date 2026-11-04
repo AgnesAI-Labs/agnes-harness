@@ -28,12 +28,19 @@ import { registerFactChain } from '@agnes/daemon-rpc/local/methods/fact-chain'
 import { registerFeedback } from '@agnes/daemon-rpc/local/methods/feedback'
 import { registerProfileServices } from '@agnes/daemon-rpc/local/methods/profile-services'
 import { registerPromptTrace } from '@agnes/daemon-rpc/local/methods/prompt-trace'
+import { registerRefinement, registerSessionRefine } from '@agnes/daemon-rpc/local/methods/refinement'
 import * as sessionPrefs from '@agnes/daemon-rpc/local/methods/session-preferences'
 import { registerSessionSelection } from '@agnes/daemon-rpc/local/methods/session-selection'
 import { registerVoice } from '@agnes/daemon-rpc/local/methods/session-voice'
 import { registerSurfaces } from '@agnes/daemon-rpc/local/methods/surfaces'
 import { registerWorkspaces } from '@agnes/daemon-rpc/local/methods/workspaces'
-import { RequestTraceStore, readFactChainBinding, type ScanRead, VoiceSettingsStore } from '@agnes/host'
+import {
+  RefinementSettingsStore,
+  RequestTraceStore,
+  readFactChainBinding,
+  type ScanRead,
+  VoiceSettingsStore,
+} from '@agnes/host'
 import { telemetrySnapshot } from '@agnes/observability'
 import { rpcError } from '@agnes/protocol'
 import type { DispatchState } from './assembly-client-dispatch.js'
@@ -127,7 +134,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
   const factRead: (key: string) => ScanRead<import('@agnes/protocol').EventEnvelope> =
     o.sessionFactRead ?? ((key) => (query) => cx.registry.require(key).session.scan(query))
   const cx: AgnesContext = {
-    profileFeatures: profilePorts.features,
+    profileFeatures: [...profilePorts.features, ...(effectivePackageAdmin?.service.features ?? [])],
     sessionServices: {
       activationBarrier,
       journal,
@@ -305,6 +312,12 @@ function registerSessionEndpoints(
     settings: new VoiceSettingsStore(o.config.dataDir, o.profile.name),
     log: console,
   })
+  registerRefinement(ep, {
+    settings: new RefinementSettingsStore(o.config.dataDir, o.profile.name),
+    switchedOn: () => state.savedSkills.switchedOn(),
+    skills: (params, actor) => state.savedSkills.manage(params, actor),
+  })
+  registerSessionRefine(ep, cx, requireSessionOwner(cx))
   registerDoctor(ep, {
     home: o.config.home ?? dirname(dirname(o.profileDir)),
     profile: o.profile.name,
@@ -587,9 +600,10 @@ function registerAdminEndpoints(
       },
     },
   )
+  // The skills pages' calls: passed through, and a user's change to a saved skill is recorded.
   registerResourceControl(
     ep,
-    resourceControl.service,
+    state.savedSkills.endpoint,
     transport === 'unix'
       ? (resourceControl.unixAuthority ?? localResourceAuthority())
       : (resourceControl.webAuthority ?? denyResourceAuthority),

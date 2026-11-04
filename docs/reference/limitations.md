@@ -11,7 +11,7 @@ Use this page to decide whether AGH fits your trial or integration. It distingui
 | Area | Current boundary |
 | --- | --- |
 | Release | Pre-alpha; project-authored code uses [Apache-2.0](../../LICENSE), with third-party exceptions in [NOTICE](../../NOTICE). No public npm release, consumer installer, or automatic-update commitment |
-| Platforms | macOS and Linux have maintained native, process and Chromium gates with platform baselines. Windows end-to-end acceptance is unverified; clean-machine installers, signing and upgrade delivery remain separate release gates |
+| Platforms | macOS and Linux have maintained native, process and Chromium gates; neither has a pixel gate, and screenshots are evidence only. Windows end-to-end acceptance is unverified; clean-machine installers, signing and upgrade delivery remain separate release gates |
 | Windows Web assets | Mainline uses posix URL-path normalization to fix vendor asset routing. Passing related tests on macOS does not establish a real Windows browser pass |
 | Windows security | No verified L1 command sandbox; restricted-token and network isolation remain unavailable. Private credential ACLs do not establish command confinement or macOS/Linux parity |
 | Web | A local loopback workbench, without a verified public-service remote-login/reverse-proxy deployment. Validate browser capabilities separately |

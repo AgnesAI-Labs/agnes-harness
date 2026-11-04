@@ -33,6 +33,10 @@ The gallery promotes showcase applications. Missing flagship packages produce no
 
 ## Start and connect
 
+The **MHS** sidebar entry opens a three-page presentation: product overview with a localized robotic-arm demo, device capability workflow, and sales contact. The contact form prepares an email in your configured mail application; review and send it there. Harness does not send or store the inquiry. The recipient is `support@agnes-ai.cn` in Simplified Chinese and `support@agnes-ai.com` in English.
+
+The demo video and cover load over HTTPS from `cos-agent-default.agnes-ai.cn` in Simplified Chinese and `cos-agent-default.agnes-ai.com` in English. They require network access and are not bundled with Harness. The main Web page permits these two origins only for images and media; scripts and API connections retain their existing policy.
+
 ```sh
 node agnes.mjs serve
 ```
@@ -137,6 +141,8 @@ On narrow screens, select timeline events from the record list. The chart remain
 <a id="日常管理"></a>
 
 For [voice input, voice conversation and read-aloud](voice.md), add a Voice side-model account in Models, then use **Settings → General → Voice**. Speech uses that account’s provider; the conversation still uses its selected chat model.
+
+[Task experience](refinement.md) is off by default; turn it on in **Settings → General → Task experience** and restart. Then `/refine [focus]` in the message box asks for a background review of the session, and each review gets a line in the conversation with a **Withdraw** action once it is applied. An applied review also offers **Save … to workspace** for each memory, prompt or skill entry it kept, and `/refine --workspace [focus]` saves what the review keeps; for each memory or prompt entry it also offers **Save … to user memory**, and `/refine --user [focus]` saves what the review keeps to user memory (read in every workspace). Each save gets its own line. Saves that wait for approval appear in **Needs attention** under **Task experience**, saved paragraphs are managed in **Settings → General → Personalization → Memory → Memory files**, and saved skills under **Settings → General → Task experience → Saved skills**.
 
 ## Everyday management
 

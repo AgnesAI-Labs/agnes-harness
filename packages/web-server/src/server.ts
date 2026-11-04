@@ -547,10 +547,14 @@ void poll();\n`,
           html.replace(marker, '<script type="module" src="/__agnes/dev/reload.js"></script></body>'),
         )
       }
-      // Only the workbench consumes local image/PDF resource URLs; other pages keep the base policy.
+      // The main page admits workbench previews and the two MHS media origins. Other pages keep
+      // the base policy; CDN access does not extend to scripts or API connections.
       const documentCsp =
         file === 'index.html'
-          ? `${contentSecurityPolicy}; img-src 'self' blob:; frame-src 'self' blob:`
+          ? `${contentSecurityPolicy.replace(
+              "media-src 'self' blob:",
+              "media-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com",
+            )}; img-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com; frame-src 'self' blob:`
           : contentSecurityPolicy
       const responseCsp = documentNonce
         ? documentCsp.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)

@@ -1,7 +1,7 @@
 import { join, sep } from 'node:path'
 import { Writable } from 'node:stream'
 import { parseSource } from '@agnes/package-manager'
-import type { PackageOperationGetParams } from '@agnes/protocol'
+import { type PackageOperationGetParams, validatePackageAdminData } from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
@@ -114,6 +114,7 @@ function client(options: { installed?: unknown[]; preview?: unknown; updated?: u
           throw new Error('unused')
         },
         async update(params: unknown) {
+          expect(validatePackageAdminData('PackageUpdateParams', params).ok).toBe(true)
           updates.push(params)
           return { operationId: 'update', profile }
         },
@@ -235,7 +236,7 @@ describe('plugins add on an installed package', () => {
     desired: 'enabled' as const,
     actual: 'running' as const,
   }
-  const running = { ...installed, version: '1.0.0', integrity }
+  const running = { ...installed, version: '1.0.0', integrity, capabilityHash: preview.capabilityHash }
   const run = async (argv: string[], options: Parameters<typeof client>[0], confirm = async () => true) => {
     const fixture = client(options)
     const written: string[] = []
@@ -296,6 +297,58 @@ describe('plugins add on an installed package', () => {
     expect(written.join('\n')).toContain('nothing to do')
   })
 
+  it.each([false, true])(
+    'reviews an identical package moved to a new source (same ref: %s)',
+    async (sameRef) => {
+      const oldSource = { type: 'file' as const, ref: 'file:./checkout-a/plugin' }
+      const nextSource = sameRef ? oldSource : { ...oldSource, ref: 'file:./checkout-b/plugin' }
+      const current = {
+        ...running,
+        source: oldSource,
+        provenance: { ...preview.provenance, resolvedLocation: '/checkout-a/plugin' },
+      }
+      const next = {
+        ...preview,
+        source: nextSource,
+        provenance: { ...preview.provenance, resolvedLocation: '/checkout-b/plugin' },
+      }
+      for (const accepted of [false, true]) {
+        const confirm = vi.fn(async () => accepted)
+        const { fixture, written, result } = await run(
+          ['plugins', 'add', nextSource.ref],
+          {
+            installed: [current],
+            preview: next,
+            updated: { ...current, source: nextSource, provenance: next.provenance },
+          },
+          confirm,
+        )
+        await result
+        expect(confirm.mock.calls).toHaveLength(1)
+        expect(confirm).toHaveBeenCalledWith(next, 'update source and enable')
+        expect(written.join('\n')).toContain('/checkout-a/plugin → /checkout-b/plugin')
+        expect(written.join('\n')).toContain('existing trust')
+        expect(fixture.trusts).toEqual([])
+        expect(fixture.enables).toEqual([])
+        expect(fixture.updates).toEqual(
+          accepted
+            ? [
+                expect.objectContaining({
+                  source: nextSource,
+                  expectedIntegrity: integrity,
+                  activation: {
+                    expectedInstalledIntegrity: integrity,
+                    expectedActiveIntegrity: integrity,
+                    trust: { integrity, capabilityHash: preview.capabilityHash },
+                  },
+                }),
+              ]
+            : [],
+        )
+      }
+    },
+  )
+
   it.each([
     ['untrusted', { trusted: false, desired: 'installed-disabled', actual: 'not-running' }, 1, 1],
     ['failed', { actual: 'failed' }, 0, 1],
@@ -314,6 +367,24 @@ describe('plugins add on an installed package', () => {
         expect.objectContaining({ expectedInstalledIntegrity: integrity }),
       ),
     )
+  })
+
+  it('updates a moved untrusted package before the reviewed trust and enable steps', async () => {
+    const next = { ...preview, source: { type: 'file' as const, ref: 'file:./checkout-b/plugin' } }
+    const { fixture, result } = await run(['plugins', 'add', next.source.ref, '--yes'], {
+      installed: [{ ...running, trusted: false, desired: 'installed-disabled', actual: 'not-running' }],
+      preview: next,
+    })
+    await result
+    expect(fixture.updates).toEqual([
+      expect.objectContaining({
+        source: next.source,
+        expectedIntegrity: integrity,
+      }),
+    ])
+    expect(fixture.updates[0]).not.toHaveProperty('activation')
+    expect(fixture.trusts).toHaveLength(1)
+    expect(fixture.enables).toHaveLength(1)
   })
 
   it.each([
@@ -495,4 +566,72 @@ it('trusts the installed hashes with --yes and refuses wrong hashes with expecte
     expect(fixture.enables).toEqual([expect.objectContaining({ expectedInstalledIntegrity: integrity })])
     expect(written.join('')).toContain('Requested capabilities: {"exec":["node"]}')
   }
+})
+
+describe('failed package operation reporting', () => {
+  const failedRemove = (error: Record<string, unknown>) =>
+    ({
+      clientId: async () => 'client',
+      packages: {
+        remove: async () => ({ operationId: 'op-remove', profile }),
+        operation: {
+          get: async () => ({
+            ...operation('enable'),
+            operationId: 'op-remove',
+            operation: 'remove',
+            state: 'failed',
+            error,
+          }),
+        },
+      },
+    }) as unknown as NodeClient
+  async function failure(error: Record<string, unknown>, json = false) {
+    const caught = await runPackageCommand(
+      parseArgs(['package', 'remove', 'example', '--yes']),
+      failedRemove(error),
+      { write: () => {}, confirm: async () => false },
+    ).catch((e: unknown) => e)
+    let stderr = ''
+    const sink = new Writable({
+      write(chunk, _encoding, done) {
+        stderr += String(chunk)
+        done()
+      },
+    })
+    const code = reportCommandFailure(caught, 'package', { env: {}, stderr: sink }, json)
+    return { code, stderr }
+  }
+  const running = {
+    code: 'E_PACKAGE_STATE',
+    safeMessage: 'SERVER TEXT /private/path',
+    blockers: [{ code: 'generation', references: ['redacted', 'package-running'] }],
+    fixHint: 'SERVER HINT',
+  }
+
+  it('names the package code and the disable step for a running package, never server text', async () => {
+    const { code, stderr } = await failure(running)
+    expect(code).toBe(1)
+    expect(stderr).toBe(
+      'E_PACKAGE_STATE: the package is still running. Run `agh package disable <id>`, wait until it stops, then retry.\n',
+    )
+  })
+
+  it('renders other known package codes with fixed text', async () => {
+    const { stderr } = await failure({ code: 'E_PACKAGE_SOURCE', safeMessage: '/secret', blockers: [] })
+    expect(stderr).toMatch(/^E_PACKAGE_SOURCE: .+\n$/)
+    expect(stderr).not.toContain('/secret')
+  })
+
+  it('emits structured JSON with code, blocker codes and operation id only', async () => {
+    const { code, stderr } = await failure(running, true)
+    expect(code).toBe(1)
+    expect(JSON.parse(stderr)).toEqual({
+      error: { code: 'E_PACKAGE_STATE', blockers: ['generation'], operationId: 'op-remove' },
+    })
+  })
+
+  it('keeps the generic fallback for an unknown package error code', async () => {
+    const { stderr } = await failure({ code: 'E_SOMETHING_NEW', safeMessage: '/secret', blockers: [] })
+    expect(stderr).toBe('agh: The request failed. Inspect its status with agh doctor.\n')
+  })
 })

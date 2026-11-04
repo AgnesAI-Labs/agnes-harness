@@ -24,6 +24,16 @@ export function mountTranscriptRegion(
     newContentButton?: HTMLButtonElement
     onFork?: (turn: import('@agnes/protocol').UITurn) => Promise<void>
     turnErrorActions?: import('@agnes/web-ui/conversation').TurnErrorActions
+    onWithdrawRefinement?: (
+      sessionId: string,
+      appliedSeq: number,
+    ) => Promise<import('@agnes/web-ui/conversation').RefinementWithdrawOutcome>
+    onSaveRefinementEntry?: (
+      sessionId: string,
+      kind: 'memory' | 'prompt' | 'skill',
+      id: string,
+      target?: 'user',
+    ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
     session?: SessionService
     locale?: LocaleService
     resources?: ClientResourceService
@@ -72,6 +82,8 @@ export function mountTranscriptRegion(
           {...(options.newContentButton ? { newContentButton: options.newContentButton } : {})}
           {...(options.onFork ? { onFork: options.onFork } : {})}
           {...(options.turnErrorActions ? { turnErrorActions: options.turnErrorActions } : {})}
+          {...(options.onWithdrawRefinement ? { onWithdrawRefinement: options.onWithdrawRefinement } : {})}
+          {...(options.onSaveRefinementEntry ? { onSaveRefinementEntry: options.onSaveRefinementEntry } : {})}
           {...(options.session ? { session: options.session } : {})}
           {...(options.locale ? { locale: options.locale } : {})}
           {...(options.resources ? { resources: options.resources } : {})}

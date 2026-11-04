@@ -60,6 +60,7 @@ export type FakeToolContextOpts = {
   defaultTimeoutMs?: number
   /** The `tools.output_max_bytes` a tool sees; a test that needs a small page or cut sets it. */
   outputMaxBytes?: number
+  collapseRepeatedOutput?: boolean
   /** The turn's wall-clock limit a tool sees; omitted leaves the field absent (a turn without one). */
   turnTimeLimit?: { timeLimitMs: number; deadlineAt: number }
   /** Makes `artifacts.put` fail, which is how a tool's behaviour with no artifact store is tested. */
@@ -252,6 +253,7 @@ export function fakeToolContext(opts: FakeToolContextOpts = {}): FakeToolContext
     timeoutMs: opts.timeoutMs ?? 120000,
     ...(opts.defaultTimeoutMs === undefined ? {} : { defaultTimeoutMs: opts.defaultTimeoutMs }),
     outputMaxBytes: opts.outputMaxBytes ?? DEFAULT_OUTPUT_MAX_BYTES,
+    collapseRepeatedOutput: opts.collapseRepeatedOutput ?? false,
     ...(opts.turnTimeLimit === undefined ? {} : { turnTimeLimit: opts.turnTimeLimit }),
     lease: { expiresAt: '2999-01-01T00:00:00Z', scope: {}, budget: { remaining: 1e9 } },
     log: { debug() {}, info() {}, warn() {}, error() {} },

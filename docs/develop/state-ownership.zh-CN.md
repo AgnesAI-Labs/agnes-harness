@@ -47,6 +47,7 @@
 
 会话账本是“会话里发生了什么”的唯一权威。模型提出建议，账本做记录。Core 把账本折叠成状态；没有任何模块保存与之竞争的结果记录。
 
+
 | 状态 | 权威（位置、格式） | 修改端口 | 读取方 | 副本（类别） | 不一致规则 | 恢复 |
 | --- | --- | --- | --- | --- | --- | --- |
 | A1 会话事件 | `events` 表，每个事件一行、哈希链接，键 `(session_key, seq)`（`packages/host-infrastructure/src/adapters/ddl.ts:7`；链校验在 `packages/core-ledger/src/log/integrity.ts:101`） | 持有写者声明（writer claim）的 `SessionLogImpl` 追加（`packages/core-ledger/src/log/session-log.ts:168`） | Core、daemon 列表、历史索引、经事件读取的客户端 | 本表以下各项（投影） | 账本说了算；链断裂时打开失败（`E_LEDGER_INTEGRITY`），不对外提供状态 | `SessionLogImpl.open` 在暴露重放状态前校验整条链（`session-log.ts:176-186`） |

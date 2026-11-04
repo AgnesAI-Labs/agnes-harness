@@ -1,4 +1,7 @@
+import type { ContextBreakdownDiag } from '@agnes/core-common/context-diagnostics'
+import { canonicalJson } from '@agnes/core-common/request/hash'
 import { describe, expect, it } from 'vitest'
+import { estimateTokens } from '../src/execution/model-tokens.js'
 import type { Operation } from '../src/step/session.js'
 import { fakeProvider, textTurn } from './helpers/fake-provider.js'
 import { actor, openSession } from './helpers/open-session.js'
@@ -83,6 +86,33 @@ describe('runtime context notification', () => {
     expect(
       new Set(headers.map((row) => (row.data as { prompt_prefix_hash: string }).prompt_prefix_hash)).size,
     ).toBe(1)
+    const diagnostics = await opened.log.scan({ type: 'x/core/context-breakdown', limit: 100 })
+    expect(diagnostics).toHaveLength(provider.requests.length)
+    for (const [index, row] of diagnostics.entries()) {
+      const composition = (row.data as ContextBreakdownDiag).composition
+      const request = provider.requests[index]
+      if (!composition || !request) throw new Error('Missing request diagnostic')
+      expect(composition.total).toBe(
+        estimateTokens(
+          canonicalJson({
+            system: request.system,
+            messages: request.messages,
+            tools: request.tools,
+          }),
+        ),
+      )
+      expect(composition.tokens.runtimeNotes).toBeGreaterThan(0)
+      expect(JSON.stringify(composition)).not.toContain('[live context')
+    }
+    const waits = await opened.log.scan({ type: 'x/core/turn-wait', limit: 100 })
+    expect(waits).toHaveLength(4)
+    expect(waits.map((row) => row.data)).toEqual(
+      [1, 2, 3, 4].map((turn) => ({
+        turn,
+        model: { count: 1, ms: 0, missing: 0 },
+        tools: [],
+      })),
+    )
     await opened.session.close()
   })
 

@@ -225,3 +225,30 @@ it.each(['E_PRESET_UNSUPPORTED', 'E_PACKAGE_INTEGRITY', 'E_RELATION', 'E_HOME_IN
     expect(JSON.stringify(serialized)).not.toContain('private implementation log')
   },
 )
+
+it('exposes a fixed native GLIBC load cause without forwarding loader prose', () => {
+  const error = normalizeRpcError(
+    rpcError('INTERNAL_ERROR', { code: 'E_SEAM_INIT', reason: 'native-glibc-incompatible' }),
+  )
+  expect(error.data.publicReason).toContain('system-node native addon failed to load')
+  expect(error.data.publicReason).toContain('GLIBC')
+  expect(publicErrorHelp(error, 'zh-CN')?.action).toContain('glibc 2.28')
+})
+
+it.each(['COMPLETION_REVIEW_REQUEST_LIMIT', 'COMPLETION_REVIEW_TIME_LIMIT', 'COMPLETION_REVIEW_UNAVAILABLE'])(
+  'preserves the schema-owned additional-review reason for %s without accepting forged copy',
+  (code) => {
+    const error = publicRejectionRpc({ code, message: 'private provider detail', reason: 'private reason' })
+    expect(publicErrorHelp(JSON.parse(JSON.stringify(error)))).toMatchObject({
+      code,
+      reason: expect.stringContaining('Additional completion review'),
+      action: expect.stringContaining('existing answer and artifacts'),
+    })
+    expect(publicErrorHelp({ code }, 'zh-CN')).toMatchObject({
+      reason: expect.stringContaining('附加核对'),
+      action: expect.stringContaining('新的明确请求'),
+    })
+    expect(JSON.stringify(error)).not.toContain('private')
+    expect(publicErrorHelp({ code: 'UNKNOWN_REVIEW', data: { reason: code } })).toBeUndefined()
+  },
+)

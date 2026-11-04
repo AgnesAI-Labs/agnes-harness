@@ -1,7 +1,6 @@
-import { execFile } from 'node:child_process'
 import { homedir } from 'node:os'
 import { basename, dirname, sep } from 'node:path'
-import { gitCommand } from './git-command.js'
+import { execGit } from './git-command.js'
 
 /** What the composer rail says about where the CLI runs. Raw text: the renderer sanitizes it. */
 export type WorkspaceInfo = {
@@ -18,7 +17,8 @@ export type WorkspaceInfo = {
   ahead?: number
 }
 
-export type WorkspaceProbe = (cwd: string) => Promise<WorkspaceInfo>
+/** `signal` aborts when the asker stops; a probe should end its child processes then. */
+export type WorkspaceProbe = (cwd: string, signal?: AbortSignal) => Promise<WorkspaceInfo>
 
 const TIMEOUT_MS = 1_000
 
@@ -34,16 +34,7 @@ export function tildePath(path: string, home = homedir()): string {
 /** One fixed-argument git call without a shell; any failure, timeout or missing git reads as no answer. */
 function git(cwd: string, args: string[], signal: AbortSignal): Promise<string | undefined> {
   // A bare `git` on Windows would first run any git.exe in the folder being shown.
-  const program = gitCommand(cwd)
-  if (!program) return Promise.resolve(undefined)
-  return new Promise((resolve) => {
-    execFile(
-      program,
-      args,
-      { cwd, signal, encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 },
-      (error, out) => resolve(error ? undefined : out),
-    )
-  })
+  return execGit(cwd, args, { signal, maxBuffer: 64 * 1024 })
 }
 
 /** Reads the repository facts for `cwd`, degrading to the bare directory whenever git cannot answer. */
@@ -52,7 +43,9 @@ export async function readWorkspaceInfo(
   options: { home?: string; signal?: AbortSignal } = {},
 ): Promise<WorkspaceInfo> {
   const home = options.home ?? homedir()
-  const signal = options.signal ?? AbortSignal.timeout(TIMEOUT_MS)
+  // A caller's signal (the app stopping) ends the probe early; the timeout always applies.
+  const timeout = AbortSignal.timeout(TIMEOUT_MS)
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout
   const fallback = { root: tildePath(cwd, home), subpath: '' }
   // Absolute paths make the git dirs comparable; --show-prefix stays relative, which is what we show.
   const paths = await git(
@@ -88,31 +81,49 @@ export async function readWorkspaceInfo(
   }
 }
 
+/** The real probe, as the app runs it. */
+export const probeWorkspace: WorkspaceProbe = (cwd, signal) =>
+  readWorkspaceInfo(cwd, signal ? { signal } : {})
+
 /**
  * Keeps at most one probe in flight. A refresh asked for mid-read runs once more after it, so the
- * last request always sees the state it was asked about.
+ * last request always sees the state it was asked about. `dispose` stops the probe in flight and
+ * settles once its git children have exited: they run in the workspace, and Windows cannot remove a
+ * folder some process runs in.
  */
 export function workspaceRefresher(
   cwd: string | (() => string),
   probe: WorkspaceProbe,
   apply: (info: WorkspaceInfo) => void,
-): () => void {
-  let running = false
+): (() => void) & { dispose(): Promise<void> } {
+  const stopping = new AbortController()
+  let running: Promise<void> | undefined
   let again = false
   const run = (): void => {
-    running = true
-    void probe(typeof cwd === 'string' ? cwd : cwd())
-      .then(apply, () => {})
+    running = probe(typeof cwd === 'string' ? cwd : cwd(), stopping.signal)
+      .then(
+        (info) => {
+          if (!stopping.signal.aborted) apply(info)
+        },
+        () => {},
+      )
       .finally(() => {
-        running = false
-        if (again) {
+        running = undefined
+        if (again && !stopping.signal.aborted) {
           again = false
           run()
         }
       })
   }
-  return () => {
+  const refresh = () => {
+    if (stopping.signal.aborted) return
     if (running) again = true
     else run()
   }
+  return Object.assign(refresh, {
+    dispose: async () => {
+      stopping.abort()
+      await running
+    },
+  })
 }

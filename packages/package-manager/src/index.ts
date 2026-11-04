@@ -83,6 +83,7 @@ export {
   type RuntimeGenerationResourceInput,
   type RuntimeGenerationResourceSnapshot,
 } from './runtime-snapshots-resources.js'
+export { selectSkillSource } from './skill-source.js'
 export * from './skin-assets.js'
 export * from './sources.js'
 export type { PackageCommitPoint, RuntimeSnapshotCommitPoint } from './store.js'

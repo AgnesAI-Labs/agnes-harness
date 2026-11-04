@@ -616,8 +616,8 @@ describe('tools phase', () => {
       }),
     )
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
-    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 2, limit: 3 })).map((e) => e.type)
-    expect(tail).toEqual(['x/core/decision-delivery', 'step/end', 'turn/end'])
+    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 3, limit: 4 })).map((e) => e.type)
+    expect(tail).toEqual(['x/core/decision-delivery', 'step/end', 'x/core/turn-wait', 'turn/end'])
     expect(s.session.op()).toBeNull()
     expect((await s.session.decisions.list())[0]?.result).toBeNull()
     expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
@@ -909,16 +909,22 @@ describe('tools phase', () => {
     })
   })
 
-  it('hands each tool the output limit the preset resolved', async () => {
+  it('hands each tool the output settings the preset resolved', async () => {
     let seen = 0
+    let collapse: boolean | undefined
     const tool = readTool(async (_args, ctx) => {
       seen = ctx.outputMaxBytes
+      collapse = ctx.collapseRepeatedOutput
       return { content: [{ type: 'text' as const, text: 'ok' }] }
     })
     const s = await atTools([toolTurn('read', {})], withTool(tool))
-    s.session.preset = { ...s.session.preset, tools: { ...s.session.preset.tools, outputMaxBytes: 9000 } }
+    s.session.preset = {
+      ...s.session.preset,
+      tools: { ...s.session.preset.tools, outputMaxBytes: 9000, collapseRepeatedOutput: true },
+    }
     await s.session.runToolsPhase()
     expect(seen).toBe(9000)
+    expect(collapse).toBe(true)
   })
 
   it('a per-tool timeout overrides the default', async () => {
@@ -1283,8 +1289,14 @@ describe('tools phase — approval escalation, parking and failure (fix round 1)
     )
     expect(await s.session.runToolsPhase()).toEqual({ phase: 'terminal', reason: 'parked' })
     expect(s.session.op()).toBeNull()
-    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 3, limit: 4 })).map((e) => e.type)
-    expect(tail).toEqual(['x/core/decision-delivery', 'x/core/decision-delivery', 'step/end', 'turn/end'])
+    const tail = (await s.log.scan({ fromSeq: s.log.lastSeq - 4, limit: 5 })).map((e) => e.type)
+    expect(tail).toEqual([
+      'x/core/decision-delivery',
+      'x/core/decision-delivery',
+      'step/end',
+      'x/core/turn-wait',
+      'turn/end',
+    ])
     expect((await s.log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({ reason: 'parked' })
     // Exactly one step/end and one turn/end: the batch is closed once, not once per member.
     expect(await s.log.scan({ type: 'step/end', limit: 10 })).toHaveLength(1)

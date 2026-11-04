@@ -1,17 +1,18 @@
 import { attachmentOmittedThrough, attachmentSurface } from '../../request/attachment-surface.js'
 import { estimateTokens } from '../model-tokens.js'
+import { recordRequestComposition } from '../request-composition.js'
 
 export { estimateTokens } from '../model-tokens.js'
 
 import { conservativeSerializedTokens } from '@agnes/core-child-control/child/credits'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
-import { type OpStateObj, type ToolCallState, withPhase } from '@agnes/core-common/step/op-state'
+import { type OpStateObj, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type Event, type EventInput, type Seq } from '@agnes/core-common/types'
 import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
 import { isNestedCall } from '@agnes/core-ledger/project/surface'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
-import type { InferenceEvent, JsonValue, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
+import type { InferenceEvent, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { childReceiptNarrative } from '../../child/receipts.js'
 import {
   releaseTreeReservation,
@@ -39,12 +40,7 @@ import {
   restoreRequestMediaFromLedger,
 } from '../../orchestrator/request-media-surface.js'
 import { prepareAuxiliaryVisionDerivedText } from '../../request/auxiliary-vision-derived-text.js'
-import type {
-  ContextBreakdownDiag,
-  ContextSectionSummary,
-  Contribution,
-  Merged,
-} from '../../request/contribute.js'
+import type { Contribution, Merged } from '../../request/contribute.js'
 import { mergeContributions } from '../../request/contribute.js'
 import { deferredToolsSection } from '../../request/deferred-tools.js'
 import {
@@ -59,6 +55,9 @@ import {
   SKILL_LOADED_PREFIX,
   TURN_TIME_PREFIX,
 } from '../../request/derive.js'
+import { experienceChanged, messageText, withExperienceDiag } from '../../request/experience.js'
+import { experienceCommitCheck } from '../../request/experience-dispatch.js'
+import { experienceForRequest } from '../../request/experience-room.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
 import { promptLanguage, withNoteLanguage } from '../../request/note-language.js'
 import { toProviderRequest } from '../../request/to-provider.js'
@@ -68,25 +67,23 @@ import {
   type ProviderCountAttempt,
   quoteBudget,
 } from '../../step/calibrate.js'
-import { finishAborted } from '../../step/control.js'
 import {
   modelVisibleTool,
-  resolvedModelRecord,
-  supportsComputerUse,
+  requestModelInput,
   toolNamesForModel,
   toolsForModel,
 } from '../../step/model-tools.js'
 import { runSlot } from '../../step/reentry.js'
 import type { OpContext, SessionImpl, StepOutcome, TurnMemory } from '../../step/session.js'
 import { restoreToolArgumentRecovery, toolArgumentsDisabled } from '../../step/tool-argument-recovery.js'
-import { toolCallPayload } from '../../step/tool-call.js'
 import { isUnattended } from '../../step/turn-restore.js'
 import { ModelExecution } from '../model-execution.js'
 import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './gate.js'
 import { appendHookData } from './hook-data-note.js'
+import { settleInferenceFailure } from './inference-failure.js'
+import { planModelToolCalls } from './inference-tools.js'
 import { progressCheckNote } from './progress-check.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
-import { checkModelToolCall } from './tool-call-check.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
 import { turnLimitSection, turnTimeNote } from './turn-limits.js'
 
@@ -96,7 +93,7 @@ import { turnLimitSection, turnTimeNote } from './turn-limits.js'
  */
 export const unattendedNote = (language?: string): string =>
   withNoteLanguage(
-    'Unattended run\nThis run is unattended: nobody can answer questions, review a plan or look at a UI surface before it ends, and your final reply is all that is returned. Do not ask the user or wait for input. Finish the task end to end on your own best judgment: where it is ambiguous, choose the most reasonable interpretation, carry it out, and state the assumptions you made in the final reply.',
+    'Unattended run\nThis run is unattended: nobody can answer questions, review a plan or look at a UI surface before it ends, and your final reply is all that is returned. Do not ask the user or wait for input. Finish the task end to end on your own best judgment: where it is ambiguous, choose the least destructive reasonable interpretation, make reversible changes, and state assumptions and any further steps in the final reply. Do not take irreversible actions the user did not explicitly request (rewriting or pruning version-control history, gc or reflog expiry, force-pushing, or deleting unnamed data).',
     language,
   )
 
@@ -256,16 +253,7 @@ async function currentPromptText(s: SessionImpl, triggerSeq: number): Promise<st
     lane: s.lane,
     limit: 1,
   })
-  if (row?.type !== 'user/message') return ''
-  const content = (row.data as { content?: unknown }).content
-  if (!Array.isArray(content)) return ''
-  return content
-    .filter(
-      (part): part is { type: 'text'; text: unknown } =>
-        !!part && typeof part === 'object' && (part as { type?: unknown }).type === 'text',
-    )
-    .map((part) => (typeof part.text === 'string' ? part.text : ''))
-    .join('\n')
+  return row?.type === 'user/message' ? messageText((row.data as { content?: unknown }).content) : ''
 }
 
 /** Each turn's prompt language, read once from the trigger row; null when it cannot be told. */
@@ -523,9 +511,12 @@ export async function surfaceToolCalls(s: SessionImpl): Promise<NonNullable<Deri
   return out
 }
 
+/** The options of the primary turn's own request, told apart from a loop's by identity. */
+const PRIMARY: import('@agnes/extension-api').LoopRequestOptions = Object.freeze({})
+
 export async function prepareInferenceRequest(
   s: SessionImpl,
-  options: import('@agnes/extension-api').LoopRequestOptions = {},
+  options: import('@agnes/extension-api').LoopRequestOptions = PRIMARY,
 ): Promise<DeriveOutput | StepOutcome> {
   const op = s.op()
   const t = s.turn
@@ -540,10 +531,8 @@ export async function prepareInferenceRequest(
   // Computer Use depends on the primary model seeing each returned screenshot itself. An
   // auxiliary image model cannot safely steer the primary model's next pointer/keyboard action,
   // so withhold the tool unless this exact primary model advertises native image input. Unknown,
-  // duplicate, or malformed catalogue entries resolve to text-only above and therefore fail closed.
-  const inlineImageModel = resolvedModelRecord(s.d.provider, target)
-  const modelInput = inlineImageModel?.input ?? (['text'] as const)
-  const computerUseAllowed = supportsComputerUse(modelInput)
+  // duplicate, or malformed catalogue entries resolve to text-only and therefore fail closed.
+  const { inlineImageModel, modelInput, computerUseAllowed } = requestModelInput(s.d.provider, target)
   // Freeze the selected model's contract before asynchronous contribution hooks can run.
   const contract = Object.freeze({ ...(s.d.contractForModel?.(target) ?? s.d.contract) })
   const coreTools = toolNamesForModel(
@@ -689,6 +678,10 @@ export async function prepareInferenceRequest(
   const language = await turnLanguage(s, t, op.meta.triggerSeq)
   const turnTime = turnTimeNote(s, t, language)
   const progressCheck = await progressCheckNote(s, t, op, language)
+  // A loop that brings its own message list (`options.messages`) gets no task experience: that list
+  // is not the surface, so the frozen-snapshot check could never see a note it had sent.
+  const experience = options.messages ? [] : await experienceForRequest(s, surface, options === PRIMARY)
+  if (!Array.isArray(experience)) return experience
   let out = deriveRequest({
     ...(memoryRevision === undefined ? {} : { memoryRevision }),
     ...(s.d.systemPrompt ? { systemPrompt: s.d.systemPrompt } : {}),
@@ -699,7 +692,6 @@ export async function prepareInferenceRequest(
       canRead: Boolean(s.d.requestMedia && disclosed.some((tool) => tool.name === 'read')),
     },
     merged,
-    harnessEntries: [...s.state.registers.harnessEntries.values()].map((c) => c.value),
     surface,
     disclosed,
     toolCalls: await surfaceToolCalls(s),
@@ -724,12 +716,14 @@ export async function prepareInferenceRequest(
             },
           ]
         : []),
+      ...experience,
     ],
     ...(requestMedia ? { media: requestMedia, mediaSessionKey: s.key } : {}),
     ...(auxiliaryVision ? { auxiliaryVision } : {}),
     ...(turnTime ? { requestNotes: [{ prefix: TURN_TIME_PREFIX, text: turnTime }] } : {}),
     ...(tailNote ? { tailNote } : {}),
   })
+  out = withExperienceDiag(s, out)
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)
   if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
     const { request, derivedHash } = remintRequestWithMaxTokens(
@@ -969,21 +963,6 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     model: out.request.model,
     ...(out.request.samplingParams ? { samplingParams: out.request.samplingParams } : {}),
   }
-  // Cheap and unconditional: section text never leaves process memory (to-provider.ts flattens it
-  // away before the wire body exists), so this is the only point that can ever record what the
-  // request's system prefix was actually made of. Written every turn, not deduplicated against the
-  // previous one -- a `/context` reader always wants the latest snapshot, and the event itself is a
-  // few hundred bytes at most (order/source/token count only, no text).
-  await s.diag('context-breakdown', {
-    sections: out.request.sections.map(
-      (section): ContextSectionSummary => ({
-        id: section.id,
-        order: section.order,
-        source: section.source,
-        tokens: estimateTokens(section.text),
-      }),
-    ),
-  } satisfies ContextBreakdownDiag)
   // Converted here rather than at the call to `infer`, because the recount below has to be given the
   // body that will actually be sent: counting the derived shape would bill against a request the
   // provider never sees. Tools, system, and messages are all on that wire; omitting any of them
@@ -993,6 +972,13 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   out = admitted.output
   const wire = admitted.wire
   const cal = admitted.calibration
+  // Prepared before task experience changed (an entry withdrawn, the switch turned off): not sent.
+  // A fast path; the dispatch commit checks again under the lock (`experienceCommitCheck`).
+  if (experienceChanged(s)) {
+    await releaseTreeReservation(s)
+    return { phase: 'inference' }
+  }
+  await releaseTreeReservationOnError(s, () => recordRequestComposition(s, out, wire, step))
   const offered = new Set(wire.tools.map((tool) => tool.name))
   const { effect, header, effectIntentSeq, headerSeq } = await releaseTreeReservationOnError(s, async () => {
     const effect = s.effects.start({ kind: 'inference', replay: 'never', slot })
@@ -1020,6 +1006,7 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
         },
         { step },
       ),
+      experienceCommitCheck(s),
     )
     // Update the in-memory dedup key only after the atomic transition committed the header. A retry
     // that derives the same request reuses that durable header; each actual dispatch still gets its
@@ -1260,77 +1247,21 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
       // can outlast a close, and close only drains what was admitted before it sealed the log.
       const cut = cutRow()
       if (cut.length > 0) void s.d.log.append(cut).catch(() => undefined)
-      // Observe category, mode 'parallel': HookDispatch already contains a failing handler internally
-      // (it reports and moves on rather than rejecting), so this cannot itself throw into the retry/
-      // drain/compaction decisions that follow. `attempt` is the same retry counter those decisions
-      // read below, not the request's own id — there is no request id to report here.
-      if (s.hooks.requestError)
-        await s.hooks.requestError({
-          code: error.code,
-          message: error.message,
-          attempt,
-          retryable: error.retryable,
-        })
-      if (error.reason === 'aborted') {
-        await execution.commit(
-          [...execution.rows('aborted', true), stepEnd()],
-          withPhase(cur, {
-            kind: 'failure_drain',
-            error: { code: 'ABORTED', message: error.message },
-            provenance: { kind: 'inference' },
-          }),
-        )
-        // The settlement and the step's close are already written; what is missing is the turn's own
-        // terminal row, and the drain phase is where `step()` writes it. Reporting `terminal` here
-        // ended the run with the turn still open, which is a ledger the next reader has to repair
-        // before it can do anything else.
-        return { phase: 'failure_drain' }
-      }
-      if (
-        error.code === 'OVERFLOW' &&
-        s.preset.compaction.enabled &&
-        s.compaction.onOverflow() === 'compaction'
-      ) {
-        await execution.commit(
-          [...execution.rows('error', true), stepEnd()],
-          withPhase(cur, {
-            kind: 'compaction',
-            reason: 'overflow',
-            resumeAfter: {
-              kind: 'checkpoint',
-              continuation: 'need_assistant',
-              triggerSeq: op.meta.triggerSeq,
-            },
-          }),
-        )
-        return { phase: 'compaction' }
-      }
-      if (error.retryable && attempt + 1 < s.preset.model.retry.maxAttempts) {
-        const notBefore = new Date(
-          s.d.clock() + s.preset.model.retry.baseDelayMs * 2 ** attempt,
-        ).toISOString()
-        await execution.commit(
-          [...execution.rows('error', true), stepEnd()],
-          withPhase(cur, {
-            kind: 'inference',
-            gen: { status: 'retry_wait', attempt: attempt + 1, notBefore, code: error.code },
-          }),
-        )
-        return { phase: 'inference' }
-      }
-      await execution.commit(
-        [...execution.rows('error', true), stepEnd()],
-        withPhase(cur, {
-          kind: 'failure_drain',
-          error: { code: error.code, message: error.message },
-          provenance: { kind: 'inference' },
-        }),
+      return settleInferenceFailure(
+        s,
+        execution,
+        cur,
+        error,
+        attempt,
+        stepEnd(),
+        outputStarted || calls.length > 0,
       )
-      return { phase: 'failure_drain' }
     }
 
     const events: EventInput[] = []
     const truncated = done?.reason === 'length'
+    const empty = !truncated && !unparsed && !calls.length && !text.trim()
+    const exhausted = empty && attempt + 1 >= s.preset.model.retry.maxAttempts
     // An empty text block is not shipped. It is content the model never produced, it goes back to the
     // provider on the next request as part of the assistant turn, and a provider that rejects empty
     // text blocks refuses the whole request over a block core invented.
@@ -1347,55 +1278,23 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     events.push(
       s.ev('assistant/message', { content, stopReason, requestSeq: s.lastSeq }, { origin: 'model' }),
     )
-    const planned: ToolCallState[] = []
-    const refusedCalls: EventInput[] = []
-    // A truncated answer's tool calls are dropped rather than run: the arguments were cut off
-    // mid-serialisation, so what survives is a call the model did not finish asking for.
-    if (!truncated)
-      for (const c of calls) {
-        const ordinal = t.ordinal++
-        const toolUseId = s.d.ids.toolUseId(ordinal)
-        const { refusal, policy, events: validationEvents } = checkModelToolCall(s, c, offered, toolUseId)
-        refusedCalls.push(...validationEvents)
+    const planned = planModelToolCalls(s, t, calls, offered, truncated, events)
+    events.push(...deviations, ...execution.rows('ok', false))
+    if (empty) {
+      events.push(s.ev('x/core/empty-response', { attempt, exhausted }, { ignorable: true }))
+      if (!exhausted)
         events.push(
-          s.ev(
-            'tool/call',
-            toolCallPayload(
-              { toolUseId, name: c.name, args: c.args, ordinal },
-              t.snapshot.byName.get(c.name)?.meta.presentation,
-              policy,
-            ),
-            { origin: 'model' },
-          ),
+          s.ev('user/message', {
+            content: [
+              {
+                type: 'text',
+                text: 'No visible answer or tool call was returned. Continue the task with a visible answer or a tool call.',
+              },
+            ],
+            kind: 'runtime_context',
+          }),
         )
-        if (refusal)
-          refusedCalls.push(
-            s.ev('tool/result', {
-              toolUseId,
-              isError: true,
-              code: refusal.code,
-              content: [{ type: 'text', text: refusal.text }],
-              enforcement: s.d.runtime.enforcement(),
-              authz: { decisionId: 'n/a' },
-            }),
-          )
-        const baseCall = {
-          ordinal,
-          toolUseId,
-          name: c.name,
-          argsSeq: 1,
-          replay: policy?.resolvedPolicy.replay ?? 'never',
-        }
-        if (refusal) {
-          planned.push(
-            policy ? { ...baseCall, status: 'completed', ...policy } : { ...baseCall, status: 'completed' },
-          )
-        } else {
-          if (!policy) throw new Error('validated tool call lacks resolved policy')
-          planned.push({ ...baseCall, status: 'planned', ...policy })
-        }
-      }
-    events.push(...refusedCalls, ...deviations, ...execution.rows('ok', false))
+    }
     if (truncated || unparsed)
       events.push(
         s.ev('user/message', {
@@ -1434,25 +1333,44 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
           )
         : withPhase(
             base,
-            truncated
+            exhausted
               ? {
                   kind: 'failure_drain',
                   error: {
-                    code: 'OUTPUT_LIMIT',
-                    message:
-                      'Model output limit reached. Use smaller requests or increase model.max_tokens before continuing.',
+                    code: 'FORMAT',
+                    message: 'Model returned no visible answer or tool call; retries exhausted.',
                   },
                   provenance: { kind: 'inference' },
                 }
-              : {
-                  kind: 'checkpoint',
-                  continuation: unparsed ? 'need_assistant' : 'may_finish',
-                  triggerSeq: op.meta.triggerSeq,
-                },
+              : empty
+                ? { kind: 'inference', gen: { status: 'ready', attempt: attempt + 1 } }
+                : truncated
+                  ? {
+                      kind: 'failure_drain',
+                      error: {
+                        code: 'OUTPUT_LIMIT',
+                        message:
+                          'Model output limit reached. Use smaller requests or increase model.max_tokens before continuing.',
+                      },
+                      provenance: { kind: 'inference' },
+                    }
+                  : {
+                      kind: 'checkpoint',
+                      continuation: unparsed ? 'need_assistant' : 'may_finish',
+                      triggerSeq: op.meta.triggerSeq,
+                    },
             { latestAssistantSeq: assistantSeq },
           )
     })
-    return { phase: planned.length ? 'tools' : truncated ? 'failure_drain' : 'checkpoint' }
+    return {
+      phase: planned.length
+        ? 'tools'
+        : truncated || exhausted
+          ? 'failure_drain'
+          : empty
+            ? 'inference'
+            : 'checkpoint',
+    }
   }
   let settlement: { ok: true; result: StepOutcome } | { ok: false; error: unknown }
   try {
@@ -1462,14 +1380,13 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
   } finally {
     sessionSignal.removeEventListener('abort', onSessionAbort)
   }
-  if (!execution.settled) {
-    try {
-      await execution.commit(execution.rows(execution.outcome, execution.outcome !== 'ok'), (cur) => cur)
-    } catch (error) {
-      // Preserve the original failure if both settlement and its fallback fail.
-      if (settlement.ok) throw error
-    }
+  if (!settlement.ok) {
+    // run() owns the terminal transaction. A separate fallback settlement here would split cost
+    // and effect from step/end + turn/end; direct step callers leave the same facts for resume.
+    execution.deferSettlement()
+    throw settlement.error
   }
-  if (!settlement.ok) throw settlement.error
+  if (!execution.settled)
+    await execution.commit(execution.rows(execution.outcome, execution.outcome !== 'ok'), (cur) => cur)
   return settlement.result
 }

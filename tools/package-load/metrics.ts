@@ -1,4 +1,4 @@
-import { performance } from 'node:perf_hooks'
+import { PerformanceObserver, performance } from 'node:perf_hooks'
 
 export const dataset: Readonly<{ packages: number; files: number; bytesPerFile: number; runs: number }> =
   Object.freeze({ packages: 20, files: 200, bytesPerFile: 1024, runs: 3 })
@@ -21,6 +21,9 @@ export type Sample = Readonly<{
   loopLagMs: number
   peakRssMiB: number
   rssGrowthMiB: number
+  /** Reported beside loopLagMs, not budgeted: the longest and total garbage-collection pause. */
+  gcMaxMs: number
+  gcTotalMs: number
 }>
 export const resourceBudget = Object.freeze({ loopLagMs: 250, peakRssMiB: 1536, rssGrowthMiB: 256 })
 
@@ -37,11 +40,18 @@ export async function measure<T>(work: () => Promise<T>): Promise<{ value: T; sa
     peakRss = Math.max(peakRss, process.memoryUsage().rss)
   }
   const probe = setInterval(observe, 1)
+  // A loop-lag spike is either this stage's synchronous work or a collector pause; record both.
+  const pauses: number[] = []
+  const collector = new PerformanceObserver((list) => {
+    for (const entry of list.getEntries()) pauses.push(entry.duration)
+  })
+  collector.observe({ entryTypes: ['gc'] })
   const start = performance.now()
   try {
     const value = await work()
     const wallMs = performance.now() - start
     observe()
+    for (const entry of collector.takeRecords()) pauses.push(entry.duration)
     return {
       value,
       sample: {
@@ -50,17 +60,20 @@ export async function measure<T>(work: () => Promise<T>): Promise<{ value: T; sa
         // maxRSS is KiB on Node's supported platforms; includes setup/import high water too.
         peakRssMiB: Math.max(peakRss / 1024 / 1024, process.resourceUsage().maxRSS / 1024),
         rssGrowthMiB: Math.max(0, peakRss - startRss) / 1024 / 1024,
+        gcMaxMs: Math.max(0, ...pauses),
+        gcTotalMs: pauses.reduce((sum, pause) => sum + pause, 0),
       },
     }
   } finally {
     clearInterval(probe)
+    collector.disconnect()
   }
 }
 
 /** Reject missing/invalid measurements as well as every individual over-budget run. */
 export function assertBudget(stage: Stage, sample: Sample): void {
   const limits = { wallMs: budgets[stage], ...resourceBudget }
-  for (const key of Object.keys(limits) as (keyof Sample)[]) {
+  for (const key of Object.keys(limits) as (keyof typeof limits)[]) {
     const value = sample[key]
     if (!Number.isFinite(value) || value < 0 || value > limits[key])
       throw new Error(`${stage}.${key}: ${value} exceeds or invalidates budget ${limits[key]}`)

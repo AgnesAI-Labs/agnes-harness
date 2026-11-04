@@ -106,7 +106,10 @@ describe('real shells load the script', () => {
     expect(bash('agh resume ', fake)).toEqual(['agnes:local:p:1', 'agnes:local:p:2'])
   })
 
-  it('zsh completes commands and session keys', () => {
+  // zsh is not a Windows shell: Git for Windows (the bash the case above runs in there) ships
+  // none, and the Windows runner has none. The script is the same text on every OS, so Linux and
+  // macOS, where CI provides zsh, load it for real. guards-allow-platform: zsh is POSIX-only.
+  it.skipIf(process.platform === 'win32')('zsh completes commands and session keys', () => {
     const zsh = (words: string, current: number, extra = '') =>
       spawnSync(
         'zsh',

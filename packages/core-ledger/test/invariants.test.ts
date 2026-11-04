@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { CORE_CHECKS } from '../src/invariants/core-checks.js'
 import { InvariantRegistry } from '../src/invariants/registry.js'
 import { foldEvents } from '../src/reduce/reducer.js'
+import { MAINTENANCE_LANE } from '../src/reduce/state.js'
 
 const actor = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
 let seq = 0
@@ -219,6 +220,29 @@ describe('invariants', () => {
       ev('step/start', { turn: 1, step: 1 }),
     ]
     expect(r.run(fixed, foldEvents([]))).toEqual([])
+  })
+
+  it('refinement lane effects are valid with no open turn', () => {
+    seq = 0
+    const lane = { lane: MAINTENANCE_LANE }
+    const events = [
+      ev('effect/intent', { effectId: 'rsi', kind: 'side-call', replay: 'never' }, lane),
+      ev(
+        'cost/ledger',
+        {
+          purpose: 'side-call',
+          effectId: 'rsi',
+          model: 'm',
+          tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+          creditSource: 'estimated',
+        },
+        lane,
+      ),
+      ev('effect/settled', { effectId: 'rsi', outcome: 'ok' }, lane),
+    ]
+    const r = new InvariantRegistry()
+    r.register('@agnes/core', CORE_CHECKS)
+    expect(r.run(events, foldEvents([]))).toEqual([])
   })
 
   it('flags a replace whose sourceEventSeqs miss its range', () => {

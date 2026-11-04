@@ -131,7 +131,9 @@ describe('createClient', () => {
       initialize: () => ({
         protocolVersion: 1,
         agentCapabilities: { loadSession: true },
-        _meta: { agnes: { agnesVersion: '9.9.9', platform: 'linux' } },
+        _meta: {
+          agnes: { agnesVersion: '9.9.9', platform: 'linux', features: ['packages.community-discovery.v1'] },
+        },
       }),
     })
     const c = createClient({
@@ -141,6 +143,7 @@ describe('createClient', () => {
     })
     expect(await c.initialize()).toEqual({
       agnesVersion: '9.9.9',
+      features: ['packages.community-discovery.v1'],
       capabilities: { loadSession: true },
       platform: 'linux',
     })

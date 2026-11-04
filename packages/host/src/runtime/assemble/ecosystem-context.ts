@@ -1,3 +1,4 @@
+import { dirname } from 'node:path'
 import { hasChildControl, type SeamImplementations } from '@agnes/core'
 import type { PackageModule, SeamInitContext } from '@agnes/host-extensions/assemble/packages'
 import { bindSkillRuntimeToWorkspace } from '@agnes/host-extensions/resources/skill-preload'
@@ -6,6 +7,7 @@ import type { ComputerUseHost } from '../computer-use/index.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
 import type { ProcessServices } from './process-services.js'
+import { createRefinementHost } from './refinement.js'
 import type { SeamContexts } from './seam-contexts.js'
 import type { SkillState } from './skills.js'
 import { trustedHookCommands } from './trusted-hooks.js'
@@ -41,6 +43,18 @@ export function createEcosystemContexts(
           updateWorkspace: storage.updateWorkspace.bind(storage),
         })
       : undefined
+  // The profile's refinement switch (the file the settings RPC writes), read once per container
+  // assembly and fixed for the container's life: a factory runs again on every row load, and a
+  // value read then would let a running session gain or lose tools mid-conversation. A new process,
+  // worker or generation assembles again and reads it fresh. This view decides tool registration
+  // only; what Core reads is live as well (see createRefinementHost).
+  const refinement = createRefinementHost(ctx.dataDir, ctx.profile.name, ctx.clock, {
+    // The home memory is opened with (kernel-stage): user memory and its registry live there.
+    home: dirname(dirname(deps.profileDir)),
+    skills: () => skillState.discovery,
+    ...(deps.refinementSave ? { refinementSave: deps.refinementSave } : {}),
+  })
+  const refinementView: SeamInitContext['refinementSettings'] = refinement.view
   const hookCommands =
     adapters.platform.os === 'win32'
       ? trustedHookCommands(ctx.profile.commandHooks, workspaceRoot, adapters.platform.fs())
@@ -65,6 +79,15 @@ export function createEcosystemContexts(
       ...(grant.trustedHookCommands && hookCommands ? { trustedHookCommands: hookCommands } : {}),
       ...(liveResources?.includes('skills') && skills ? { skillResources: skills } : {}),
       ...(grant.skillDiscovery ? { skillDiscovery: skillState.discovery } : {}),
+      ...(grant.refinementSettings
+        ? { refinementSettings: refinementView, refinementRuns: (planner) => refinement.connect(planner) }
+        : {}),
+      ...(grant.taskScope
+        ? { provideTaskScope: (source) => refinement.provideTaskScope(extensionId, source) }
+        : {}),
+      ...(grant.workflowRuns
+        ? { provideWorkflowRuns: (source) => refinement.provideWorkflowRuns(extensionId, source) }
+        : {}),
       ...(grant.privacyTrajectory && privacyTrajectory.current
         ? { privacyTrajectory: privacyTrajectory.current }
         : {}),
@@ -73,5 +96,5 @@ export function createEcosystemContexts(
   }
   const ecosystemContext = (owner: string, extensionId: string): SeamInitContext =>
     buildEcosystemContext(owner, extensionId, deps, undefined, pkgs.modules.get(owner))
-  return { buildEcosystemContext, ecosystemContext, privacyTrajectory, sessionTasks }
+  return { buildEcosystemContext, ecosystemContext, privacyTrajectory, sessionTasks, refinement }
 }

@@ -138,6 +138,12 @@ describe('apis.list / auth.claim', () => {
     // ApisListResult sets additionalProperties:false and an explicit undefined does not serialise.
     expect(Object.hasOwn(r.result.profile, 'branding')).toBe(false)
     expect(r.result.families.find((f) => f.name === 'session')?.methods).toContain('_agnes/v1/session.attach')
+    for (const method of [
+      '_agnes/v1/session.workspace.browse',
+      '_agnes/v1/session.references.searchCancelable',
+      '_agnes/v1/session.references.cancel',
+    ])
+      expect(r.result.families.find((f) => f.name === 'session')?.methods).toContain(method)
     expect(methodsOf(r.result.families)).toContain('_agnes/v1/jobs.enqueue') // local ⇒ protected submit
     await ep.close()
     await h.close()

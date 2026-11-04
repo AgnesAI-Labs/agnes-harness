@@ -22,6 +22,7 @@ export type SkillCandidate = Readonly<{
   description: string
   revision: string
   capabilityHash: string
+  reviewRequired?: boolean
   sourceIdentity: SkillSourceIdentity
   priority: number
   body: string
@@ -245,6 +246,7 @@ const safe = (candidate: SkillCandidate) =>
     name: candidate.name,
     description: candidate.description,
     revision: candidate.revision,
+    ...(candidate.reviewRequired ? { reviewRequired: true } : {}),
     sourceIdentity: Object.freeze({ ...candidate.sourceIdentity }),
     priority: candidate.priority,
     ...(candidate.workspaceId ? { workspaceId: candidate.workspaceId } : {}),

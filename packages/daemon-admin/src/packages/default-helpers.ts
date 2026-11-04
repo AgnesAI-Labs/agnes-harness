@@ -14,6 +14,7 @@ import {
   parseSource,
 } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { withDefaultHelperState } from './default-helper-state.js'
 
 /** Provision missing release-owned defaults once; preserve installed packages and later user choices. */
@@ -165,12 +166,15 @@ export async function refreshDefaultHelpers(options: {
       continue
     const bundled = bundledPluginSource(helper.ref)
     if (!bundled) throw new Error('Bundled helper source unavailable')
-    // An unchanged release needs no staging copy or candidate inspection. This is a byte hash,
+    // An unchanged release at the same source needs no staging copy or candidate inspection. This is a byte hash,
     // not a version/mtime shortcut; installed trust and policy came from the verified inventory.
     // The build-time digest stands in for hashing the shipped source; update still verifies it.
     const release = bundledPluginDigest(bundled) ?? hashDirectory(join(bundled.root, bundled.path))
     if (outdated && release === current.entry.integrity) continue
-    if (release !== current.entry.integrity) {
+    if (
+      release !== current.entry.integrity ||
+      current.entry.provenance?.resolvedLocation !== nativeRealpathSync(join(bundled.root, bundled.path))
+    ) {
       const source = parseSource(helper.ref)
       const preview = await options.manager.inspect(options.profileDir, source)
       if (

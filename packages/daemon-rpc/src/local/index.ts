@@ -418,7 +418,10 @@ export function createLocalEndpoint(
   const cx = {
     host,
     registry,
-    profileFeatures: host.profileServices ? ['services.profile.v1', 'store.owned.v1'] : [],
+    profileFeatures: [
+      ...(host.profileServices ? ['services.profile.v1', 'store.owned.v1'] : []),
+      ...(opts.packageAdmin?.service.features ?? []),
+    ],
     prompter,
     clock,
     agnesVersion: opts.agnesVersion ?? '0.0.0',

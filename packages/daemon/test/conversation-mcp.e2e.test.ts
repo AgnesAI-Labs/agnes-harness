@@ -212,7 +212,10 @@ it('a conversation approves registration and calls the real stdio server on its 
     await session.run({ until: 'turn-end', signal: AbortSignal.timeout(10_000) })
     expect(permission).toHaveBeenCalledTimes(1)
     expect(JSON.stringify(permission.mock.calls[0])).toContain('Sandbox:')
-    expect(JSON.stringify(permission.mock.calls[0])).toContain(definition.workspacePath)
+    // The call is compared as JSON, so a Windows path's backslashes appear escaped.
+    expect(JSON.stringify(permission.mock.calls[0])).toContain(
+      JSON.stringify(definition.workspacePath).slice(1, -1),
+    )
     expect((await store.mcp.workerManaged('local-dev'))[0]?.desired).toBe('enabled')
     release()
     await vi.waitFor(() => expect(rows?.status('fixture')?.connectionState).toBe('ready'), {

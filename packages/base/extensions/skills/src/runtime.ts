@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { Disposer, Logger, ToolDef } from '@agnes/extension-api'
 import { type Context, defineAgnesPlugin, defineTool } from '@agnes/plugin-runtime'
+import { isSkillBundlePath } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import type { SeamInitContext } from '../../../src/seam-init.js'
 import { isSkillRelativePath } from './assets.js'
@@ -273,7 +274,10 @@ function fileTool(runtime: SkillRuntimeInput): ToolDef {
     meta,
     async execute(args, ctx) {
       return inWorkspace(runtime, ctx.session.key, async () => {
-        if (!isSkillRelativePath(args.relativePath) || !modelVisibleSkill(runtime, args.resourceId))
+        if (
+          (!isSkillRelativePath(args.relativePath) && !isSkillBundlePath(args.relativePath)) ||
+          !modelVisibleSkill(runtime, args.resourceId)
+        )
           return {
             content: [{ type: 'text', text: 'Skill file is unavailable: NOT_FOUND' }],
             isError: true,

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { createSkillImportService } from '@agnes/daemon-admin/packages/skill-import'
 import { type ConnectionState, connActor, type LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import {
   type AskOutcome,
@@ -21,6 +22,16 @@ import {
 } from '@agnes/resource-control-store'
 import { discoverSkillRoot, skillRoots } from '@agnes/resource-control-worker'
 import { managementConnection } from './management-connection.js'
+
+/** Keep static discovery ownership with the existing Skill-install composition boundary. */
+export function createManagementSkillImports(
+  options: Omit<Parameters<typeof createSkillImportService>[0], 'discovery'>,
+) {
+  return createSkillImportService({
+    ...options,
+    discovery: { roots: skillRoots, discover: discoverSkillRoot },
+  })
+}
 
 /** This receiver is only reached over the authenticated worker channel, never a public model RPC. */
 export function createSkillInstallRequests(options: {

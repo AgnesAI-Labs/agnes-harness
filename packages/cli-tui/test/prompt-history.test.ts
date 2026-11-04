@@ -18,7 +18,8 @@ describe('PromptHistory', () => {
     const first = new PromptHistory(path)
     for (const text of ['one', 'two', 'two', '/help', 'multi\nline']) first.add(text)
     expect(first.entries).toEqual(['multi\nline', '/help', 'two', 'one'])
-    expect(statSync(path).mode & 0o777).toBe(0o600)
+    // Windows has no POSIX permission bits (Node reports 0o666 for any writable file).
+    if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600)
     expect(new PromptHistory(path).entries).toEqual(first.entries)
   })
 
@@ -27,7 +28,8 @@ describe('PromptHistory', () => {
     writeFileSync(path, '{"text":"old"}\n', { mode: 0o644 })
     chmodSync(path, 0o644)
     new PromptHistory(path).add('new')
-    expect(statSync(path).mode & 0o777).toBe(0o600)
+    // Windows has no POSIX permission bits (Node reports 0o666 for any writable file).
+    if (process.platform !== 'win32') expect(statSync(path).mode & 0o777).toBe(0o600)
   })
 
   it('keeps prompts another process appended when it rewrites a full file', () => {

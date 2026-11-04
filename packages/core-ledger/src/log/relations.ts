@@ -1,7 +1,7 @@
 import { CoreError, type Event, type PreparedEvent, type Seq } from '@agnes/core-common/types'
 import { type SurfaceCache, validateReplace } from '../project/surface.js'
 import { reduce } from '../reduce/reducer.js'
-import type { LedgerState } from '../reduce/state.js'
+import { type LedgerState, MAINTENANCE_LANE } from '../reduce/state.js'
 import type { StateTracker } from '../reduce/tracker.js'
 import type { SessionLogImpl } from './session-log.js'
 import type { OpWrite } from './storage.js'
@@ -24,6 +24,12 @@ const IN_TURN = new Set([
   'format/deviation',
   'x/core/op-mark',
 ])
+
+/**
+ * Rows the maintenance lane may write with no turn open. A maintenance call is an effect of the
+ * session, not of a turn: its intent and settlement are the only in-turn rows it needs.
+ */
+const MAINTENANCE_EFFECTS = new Set(['effect/intent', 'effect/settled'])
 
 /** Codes that mark a synthetic result written to close a call whose outcome nobody observed. */
 const CLOSER_CODES = new Set(['TOOL_NOT_STARTED', 'TOOL_OUTCOME_UNKNOWN'])
@@ -56,7 +62,7 @@ export function checkRelations(
     const turn = s.openTurn.get(lane)
     if (e.type === 'turn/start' && turn)
       throw new CoreError('E_LANE_BUSY', 'turn already open', { lane, seq })
-    if (IN_TURN.has(e.type) && !turn)
+    if (IN_TURN.has(e.type) && !turn && !(lane === MAINTENANCE_LANE && MAINTENANCE_EFFECTS.has(e.type)))
       throw new CoreError('E_RELATION', `${e.type} outside an open turn`, { lane, seq })
     if (e.type === 'step/start') {
       if (s.openStep.has(lane)) throw new CoreError('E_RELATION', 'step already open', { lane, seq })

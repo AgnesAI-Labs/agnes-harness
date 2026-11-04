@@ -1,8 +1,9 @@
-import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { stampFor } from '@agnes/ai/testkit'
+import { CoreError } from '@agnes/core'
 import { testFsPolicy } from '@agnes/core/testkit'
 import type { ToolContext } from '@agnes/extension-api'
 import { PINNED_SEAM_KINDS } from '@agnes/extension-api/seams'
@@ -67,6 +68,92 @@ describe('createSession', () => {
   afterEach(() => {
     for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
   })
+
+  it.each(['renew', 'commit'] as const)(
+    'journals a %s-sealed step failure outside the ledger',
+    async (fault) => {
+      const dataDir = tmp()
+      let calls = 0
+      const provider: Provider = {
+        models: () => [],
+        async *infer(req) {
+          calls++
+          yield { type: 'sent', stamp: stampFor(req) }
+          yield { type: 'text_delta', delta: 'private-response-canary' }
+          yield { type: 'done', reason: 'stop' }
+        },
+      }
+      const first = await createTestHost({ dataDir, provider, fileAudit: true, disableSessionTitle: true })
+      const session = await first.host.createSession({ cwd: dataDir })
+      const original = new CoreError('E_REQUEST_FROZEN', 'private-error-canary')
+      const transition = session.transition.bind(session)
+      vi.spyOn(session, 'transition').mockImplementation(async (rows, next, opts) => {
+        if (Array.isArray(rows) && rows.some((row) => row.type === 'assistant/message')) {
+          if (fault === 'renew') {
+            vi.spyOn(first.host.kernel.o.storage, 'renew').mockRejectedValue(
+              new CoreError('E_WRITER_LEASE', 'private-renew'),
+            )
+            await session.d.log.claimLease().catch(() => undefined)
+          }
+          throw original
+        }
+        return transition(rows, next, opts)
+      })
+      const commit = first.host.kernel.o.storage.commit.bind(first.host.kernel.o.storage)
+      vi.spyOn(first.host.kernel.o.storage, 'commit').mockImplementation(async (key, tx) => {
+        if (fault === 'commit' && tx.events.some((row) => row.type === 'turn/end'))
+          throw new CoreError('E_STORAGE_FAULT', 'private-commit')
+        return commit(key, tx)
+      })
+      try {
+        await session.enqueue('next-turn', {
+          content: [{ type: 'text', text: 'hi' }],
+          actor: session.d.actor,
+        })
+        const out = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+        expect(out.error).toMatchObject({ code: original.code, closeError: { code: 'E_STORAGE_FAULT' } })
+        expect(session.d.log.faulted).toBe(true)
+        const failures = readFileSync(join(dataDir, 'audit', 'host.jsonl'), 'utf8')
+          .trim()
+          .split('\n')
+          .map((line) => JSON.parse(line))
+          .filter((row) => row.kind === 'session.run_failed')
+        expect(failures).toHaveLength(1)
+        expect(failures[0].detail).toEqual({
+          session: expect.stringMatching(/^sha256-[a-f0-9]{64}$/),
+          code: original.code,
+          phase: 'inference',
+          lastSeq: session.lastSeq,
+          closeCode: 'E_STORAGE_FAULT',
+          fault: { reason: fault, code: fault === 'renew' ? 'E_WRITER_LEASE' : 'E_STORAGE_FAULT' },
+        })
+        expect(JSON.stringify(failures)).not.toMatch(/private-|hi/)
+        await expect(
+          session.append([session.ev('x/test/seal', {}, { ignorable: true })]),
+        ).rejects.toMatchObject({ code: 'E_STORAGE_FAULT' })
+      } finally {
+        await first.host.close()
+      }
+      const second = await createTestHost({ dataDir, provider, disableSessionTitle: true })
+      try {
+        const reopened = await second.host.createSession({ key: session.key, cwd: dataDir })
+        // Audit evidence is not yet a durable recovery command. Explicit close uses the existing
+        // INTERRUPTED path; opening, exporting and closing never invoke the provider.
+        await reopened.exportRlaf()
+        await reopened.resume({ mode: 'close' })
+        const settledSeq = reopened.lastSeq
+        await reopened.resume({ mode: 'close' })
+        await reopened.exportRlaf()
+        expect(reopened.lastSeq).toBe(settledSeq)
+        expect(await reopened.scan({ type: 'turn/end', limit: 10 })).toHaveLength(1)
+        expect(await reopened.scan({ type: 'cost/ledger', limit: 10 })).toHaveLength(1)
+        expect(await reopened.scan({ type: 'effect/settled', limit: 10 })).toHaveLength(1)
+        expect(calls).toBe(1)
+      } finally {
+        await second.host.close()
+      }
+    },
+  )
 
   it('opens a session with the default preset and a host-minted actor', async () => {
     const dataDir = tmp()
@@ -145,6 +232,26 @@ describe('createSession', () => {
       await third.host.createSession({ key, cwd: dataDir })
     } finally {
       await third.host.close()
+    }
+  })
+  // A workspace's case semantics are measured from the names in its root. An empty root gives no
+  // signal, so the measurement must not change once the first open has put Host's own `.agh` there:
+  // the execution record pins the policy digest, and a changed digest locks the session's history.
+  it('reopens a session that began in an empty workspace', async () => {
+    const dataDir = tmp()
+    const root = realpathSync.native(tmp('agnes-empty-ws-'))
+    const key = 'empty-workspace-session'
+    const first = await createTestHost({ dataDir, workspaceRoot: root, disableSessionTitle: true })
+    try {
+      await first.host.createSession({ key, cwd: root })
+    } finally {
+      await first.host.close()
+    }
+    const second = await createTestHost({ dataDir, workspaceRoot: root, disableSessionTitle: true })
+    try {
+      await expect(second.host.createSession({ key, cwd: root })).resolves.toMatchObject({ key })
+    } finally {
+      await second.host.close()
     }
   })
   // The view the session runs on must not carry the sentinel: core's resolveModel reads

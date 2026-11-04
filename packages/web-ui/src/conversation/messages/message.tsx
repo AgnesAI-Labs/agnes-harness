@@ -11,6 +11,8 @@ import { approvalStatus } from './approval-labels.js'
 import { AssistantMessage } from './assistant-message.js'
 import { type ApprovalNode, type ConversationMessagesProps, fallbackT } from './context.js'
 import { markdownState } from './markdown-state.js'
+import { RefinementRunNote } from './refinement-run.js'
+import { RefinementSaveNote } from './refinement-save.js'
 import { ConversationToolCard, toolOutcome } from './tool-card.js'
 import { UserMessage } from './user-message.js'
 
@@ -156,6 +158,17 @@ export function nativeContent(
           {t('timeline.memoryExternalChange', { names: node.paths.join(t('timeline.conflictOpsJoiner')) })}
         </div>
       )
+    case 'refinement-run':
+      return (
+        <RefinementRunNote
+          node={node}
+          t={t}
+          withdraw={props.withdrawRefinement}
+          save={props.saveRefinementEntry}
+        />
+      )
+    case 'refinement-save':
+      return <RefinementSaveNote node={node} t={t} />
     case 'workspace-undo':
       return (
         <div className="node-body" role="status" data-testid="workspace-undo-notice">
@@ -223,9 +236,13 @@ function MessageView({
 }) {
   const content = nativeContent(node, props, hideThinking, turnStatus, thinkingHost)
   const systemInput = isSystemInput(node)
+  const referenceOnly =
+    node.kind === 'user' &&
+    node.content.length > 0 &&
+    node.content.every((block) => block.type === 'text' && block.reference !== undefined)
   return (
     <article
-      className={`timeline-node ${systemInput ? 'system-input' : node.kind}`}
+      className={`timeline-node ${systemInput ? 'system-input' : node.kind}${referenceOnly ? ' reference-only-user-message' : ''}`}
       data-node-id={node.id}
       data-node-kind={systemInput ? 'system-input' : node.kind}
       hidden={isEmptyStreamingAssistant(node)}

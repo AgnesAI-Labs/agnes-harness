@@ -61,6 +61,8 @@ export type HarnessEntry = {
   version: number
   source: string
   reference?: string
+  /** A skill generated from a finished `workflow` run of this session: the run's id. */
+  workflowRun?: string
   arguments?: unknown
 }
 /**
@@ -100,8 +102,14 @@ export type HarnessRefine = {
   proposalId: string
   trigger: 'auto' | 'manual' | 'rollback' | 'compact'
   outcome: 'applied' | 'rejected:conflict' | 'rejected:limit' | 'rejected:evidence' | 'rejected:prefix'
+  // Why a rejection happened, e.g. `capacity` when a kind is at its safety cap.
+  reason?: string
+  // The run that produced this proposal; one run is applied at most once per session.
+  runId?: string
   edits: HarnessEdit[]
   baseline: { key: string; version: number }[]
+  // On a stale-edit conflict: the indices into `edits` whose own baseline had moved (diagnostic only).
+  rejectedEdits?: { index: number; reason: string }[]
   rollbackOf?: Seq
   rationale: string
 }

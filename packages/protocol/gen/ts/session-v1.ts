@@ -1,5 +1,5 @@
 // generated from schema by tools/gen.ts — do not edit
-import { Type, type Static } from '@sinclair/typebox'
+import { Type, type Static, type TImport, type TModule, type TProperties } from '@sinclair/typebox'
 import { importValidationSchema, prepareValidationSchemas } from '@agnes/protocol-validation'
 import { FormatRegistry } from '@sinclair/typebox'
 
@@ -46,7 +46,7 @@ export const SessionV1 = Type.Module({
   "ArtifactJob": Type.Union([Type.Null(), Type.Object({ "jobId": Type.String({ maxLength: 128 }), "status": Type.Union([Type.Literal('queued'), Type.Literal('running'), Type.Literal('done'), Type.Literal('failed'), Type.Literal('cancelled')]), "ref": Type.Optional(Type.Ref('ArtifactRef')), "error": Type.Optional(Type.String({ maxLength: 4096 })) }, { additionalProperties: false })]),
   "InboxItem": Type.Object({ "system": Type.Optional(Type.Ref('SystemInput')), "itemId": Type.String({ maxLength: 128 }), "target": Type.Union([Type.Literal('next-turn'), Type.Literal('next-step')]), "content": Type.Array(Type.Ref('ContentBlock'), { minItems: 1 }), "actor": Type.Ref('Actor'), "commandId": Type.Optional(Type.String({ maxLength: 128 })), "admissionId": Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })), "enqueuedAt": Type.String(), "titleLocale": Type.Optional(Type.Union([Type.Literal('en'), Type.Literal('zh-CN')])), "kind": Type.Optional(Type.Union([Type.Literal('prompt'), Type.Literal('steer'), Type.Literal('follow_up')])), "origin": Type.Optional(Type.Union([Type.Literal('principal'), Type.Literal('system')])), "trust": Type.Optional(Type.Union([Type.Literal('trusted'), Type.Literal('untrusted')])) }, { additionalProperties: false }),
   "Inbox": Type.Union([Type.Null(), Type.Object({ "items": Type.Array(Type.Ref('InboxItem')) }, { additionalProperties: false })]),
-  "HarnessEntryValue": Type.Object({ "kind": Type.Union([Type.Literal('prompt'), Type.Literal('memory'), Type.Literal('skill'), Type.Literal('subagent')]), "id": Type.String({ maxLength: 128 }), "title": Type.String({ maxLength: 256 }), "content": Type.String({ maxLength: 65536 }), "scope": Type.Union([Type.Literal('local'), Type.Literal('global')]), "version": Type.Integer({ minimum: 1 }), "source": Type.String({ maxLength: 256 }), "reference": Type.Optional(Type.String({ maxLength: 1024 })), "arguments": Type.Optional(JsonValue) }, { additionalProperties: false }),
+  "HarnessEntryValue": Type.Object({ "kind": Type.Union([Type.Literal('prompt'), Type.Literal('memory'), Type.Literal('skill'), Type.Literal('subagent')]), "id": Type.String({ maxLength: 128 }), "title": Type.String({ maxLength: 256 }), "content": Type.String({ maxLength: 65536 }), "scope": Type.Union([Type.Literal('local'), Type.Literal('global')]), "version": Type.Integer({ minimum: 1 }), "source": Type.String({ maxLength: 256 }), "reference": Type.Optional(Type.String({ maxLength: 1024 })), "workflowRun": Type.Optional(Type.String({ minLength: 1, maxLength: 128 })), "arguments": Type.Optional(JsonValue) }, { additionalProperties: false }),
   "HarnessEntry": Type.Union([Type.Null(), Type.Object({ "kind": Type.Union([Type.Literal('prompt'), Type.Literal('memory'), Type.Literal('skill'), Type.Literal('subagent')]), "id": Type.String({ maxLength: 128 }), "tombstone": Type.Literal(true) }, { additionalProperties: false }), Type.Ref('HarnessEntryValue')]),
   "EffectIntent": Type.Intersect([Type.Object({ "effectId": Type.String({ maxLength: 128 }), "parentEffectId": Type.Optional(Type.String({ maxLength: 128 })), "kind": Type.Union([Type.Literal('inference'), Type.Literal('tool'), Type.Literal('compaction'), Type.Literal('job'), Type.Literal('media'), Type.Literal('side-call')]), "tool": Type.Optional(Type.Object({ "toolUseId": Type.String({ maxLength: 128 }), "name": Type.String({ maxLength: 64 }) }, { additionalProperties: false })), "replay": Type.Union([Type.Literal('safe'), Type.Literal('never'), Type.Literal('idempotent')]), "argsSeq": Type.Optional(Type.Integer({ minimum: 1 })), "slot": Type.Optional(Type.String({ maxLength: 32 })), "idempotencyKey": Type.Optional(Type.String({ maxLength: 256 })) }, { additionalProperties: false }), Type.Not(Type.Object({ "kind": Type.Union([Type.Literal('media'), Type.Literal('side-call')]), "replay": Type.Union([Type.Literal('safe'), Type.Literal('idempotent')]) }))]),
   "EffectSettled": Type.Object({ "effectId": Type.String({ maxLength: 128 }), "outcome": Type.Union([Type.Literal('ok'), Type.Literal('error'), Type.Literal('aborted'), Type.Literal('unknown')]), "code": Type.Optional(Type.String({ maxLength: 64 })), "durationMs": Type.Optional(Type.Integer({ minimum: 0 })) }, { additionalProperties: false }),
@@ -60,7 +60,7 @@ export const SessionV1 = Type.Module({
   "FeedbackRating": Type.Object({ "targetSeq": Type.Integer({ minimum: 1 }), "rating": Type.Union([Type.Literal('up'), Type.Literal('down')]), "comment": Type.Optional(Type.String({ maxLength: 4096 })) }, { additionalProperties: false }),
   "FeedbackImplicit": Type.Object({ "targetSeq": Type.Integer({ minimum: 1 }), "kind": Type.Union([Type.Literal('regenerate'), Type.Literal('edit-resend'), Type.Literal('reaction'), Type.Literal('copy'), Type.Literal('abort')]), "value": Type.Optional(Type.String({ maxLength: 256 })) }, { additionalProperties: false }),
   "Participant": Type.Object({ "action": Type.Union([Type.Literal('join'), Type.Literal('leave')]), "participant": Type.Ref('Actor'), "surface": Type.String({ maxLength: 64 }), "credentialKind": Type.Optional(Type.String({ maxLength: 32 })) }, { additionalProperties: false }),
-  "HarnessRefine": Type.Object({ "trigger": Type.Union([Type.Literal('auto'), Type.Literal('manual'), Type.Literal('compact'), Type.Literal('rollback')]), "proposalId": Type.String({ maxLength: 128 }), "rationale": Type.String({ maxLength: 4096 }), "edits": Type.Array(Type.Union([Type.Object({ "op": Type.Literal('upsert'), "entry": Type.Ref('HarnessEntryValue') }, { additionalProperties: false }), Type.Object({ "op": Type.Literal('delete'), "kind": Type.Union([Type.Literal('prompt'), Type.Literal('memory'), Type.Literal('skill'), Type.Literal('subagent')]), "id": Type.String({ maxLength: 128 }) }, { additionalProperties: false })])), "baseline": Type.Array(Type.Object({ "key": Type.String({ maxLength: 258 }), "version": Type.Integer({ minimum: 0 }) }, { additionalProperties: false })), "expectedOutcome": Type.Optional(Type.String({ maxLength: 2048 })), "outcome": Type.Union([Type.Literal('applied'), Type.Literal('rejected:conflict'), Type.Literal('rejected:limit'), Type.Literal('rejected:evidence'), Type.Literal('rejected:prefix')]), "rollbackOf": Type.Optional(Type.Integer({ minimum: 1 })), "evidenceSeqs": Type.Optional(Type.Array(Type.Integer({ minimum: 1 }))) }, { additionalProperties: false }),
+  "HarnessRefine": Type.Object({ "trigger": Type.Union([Type.Literal('auto'), Type.Literal('manual'), Type.Literal('compact'), Type.Literal('rollback')]), "proposalId": Type.String({ maxLength: 128 }), "rationale": Type.String({ maxLength: 4096 }), "edits": Type.Array(Type.Union([Type.Object({ "op": Type.Literal('upsert'), "entry": Type.Ref('HarnessEntryValue') }, { additionalProperties: false }), Type.Object({ "op": Type.Literal('delete'), "kind": Type.Union([Type.Literal('prompt'), Type.Literal('memory'), Type.Literal('skill'), Type.Literal('subagent')]), "id": Type.String({ maxLength: 128 }) }, { additionalProperties: false })])), "baseline": Type.Array(Type.Object({ "key": Type.String({ maxLength: 258 }), "version": Type.Integer({ minimum: 0 }) }, { additionalProperties: false })), "expectedOutcome": Type.Optional(Type.String({ maxLength: 2048 })), "outcome": Type.Union([Type.Literal('applied'), Type.Literal('rejected:conflict'), Type.Literal('rejected:limit'), Type.Literal('rejected:evidence'), Type.Literal('rejected:prefix')]), "reason": Type.Optional(Type.String({ maxLength: 128 })), "runId": Type.Optional(Type.String({ maxLength: 128 })), "rejectedEdits": Type.Optional(Type.Array(Type.Object({ "index": Type.Integer({ minimum: 0 }), "reason": Type.String({ maxLength: 128 }) }, { additionalProperties: false }))), "rollbackOf": Type.Optional(Type.Integer({ minimum: 1 })), "evidenceSeqs": Type.Optional(Type.Array(Type.Integer({ minimum: 1 }))) }, { additionalProperties: false }),
   "DecisionPresentation": Type.Record(Type.String({ pattern: '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$' }), Type.Object({ "title": Type.String({ minLength: 1, maxLength: 1024 }), "fields": Type.Array(Type.Object({ "label": Type.String({ minLength: 1, maxLength: 256 }), "value": Type.String({ maxLength: 8192 }), "href": Type.Optional(Type.String({ maxLength: 2048, pattern: "^/([^/\\\\\\u0000-\\u0020\\u007f][^\\\\\\u0000-\\u0020\\u007f]*)?$" })) }, { additionalProperties: false }), { maxItems: 16 }), "responseValue": Type.Optional(Type.String({ maxLength: 8192 })) }, { additionalProperties: false }), { additionalProperties: false, maxProperties: 16 }),
   "DecisionSpec": Type.Object({ "key": Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000]+$" }), "purpose": Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000]+$" }), "subject": JsonValue, "presentation": Type.Optional(Type.Ref('DecisionPresentation')), "prompt": Type.String({ minLength: 1, maxLength: 65536 }), "options": Type.Array(Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000]+$" }), { minItems: 1, maxItems: 16, uniqueItems: true }), "responseSchema": Type.Optional(Type.Record(Type.String(), JsonValue)) }, { additionalProperties: false }),
   "DecisionHandle": Type.Union([Type.Object({ "id": Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000]+$" }), "sessionId": Type.String({ minLength: 1, maxLength: 512, pattern: "^[^\\u0000]+$" }), "profileId": Type.Optional(Type.Null()) }, { additionalProperties: false }), Type.Object({ "id": Type.String({ minLength: 1, maxLength: 256, pattern: "^[^\\u0000]+$" }), "sessionId": Type.Null(), "profileId": Type.String({ minLength: 1, maxLength: 512, pattern: "^[^\\u0000]+$" }) }, { additionalProperties: false })]),
@@ -75,133 +75,135 @@ export const SessionV1 = Type.Module({
   "SystemPromptConfig": Type.Object({ "personaPrefix": Type.Optional(Type.String({ maxLength: 8192 })), "personaSuffix": Type.Optional(Type.String({ maxLength: 8192 })), "replyStyle": Type.Optional(Type.String({ maxLength: 8192 })), "fullOverride": Type.Optional(Type.String({ maxLength: 65536 })), "provider": Type.Optional(Type.Object({ "id": Type.String({ maxLength: 256 }), "version": Type.String({ maxLength: 64 }) }, { additionalProperties: false })) }, { additionalProperties: false }),
 })
 
-export const Actor = importValidationSchema(SessionV1, 'Actor')
+export type SessionV1Definitions = typeof SessionV1 extends TModule<TProperties, infer Definitions> ? Definitions : never
+
+export const Actor: TImport<SessionV1Definitions, 'Actor'> = importValidationSchema(SessionV1, 'Actor')
 export type Actor = Static<typeof Actor>
-export const ContentBlock = importValidationSchema(SessionV1, 'ContentBlock')
+export const ContentBlock: TImport<SessionV1Definitions, 'ContentBlock'> = importValidationSchema(SessionV1, 'ContentBlock')
 export type ContentBlock = Static<typeof ContentBlock>
-export const SurfaceOp = importValidationSchema(SessionV1, 'SurfaceOp')
+export const SurfaceOp: TImport<SessionV1Definitions, 'SurfaceOp'> = importValidationSchema(SessionV1, 'SurfaceOp')
 export type SurfaceOp = Static<typeof SurfaceOp>
-export const ExtensionEventType = importValidationSchema(SessionV1, 'ExtensionEventType')
+export const ExtensionEventType: TImport<SessionV1Definitions, 'ExtensionEventType'> = importValidationSchema(SessionV1, 'ExtensionEventType')
 export type ExtensionEventType = Static<typeof ExtensionEventType>
-export const EventEnvelope = importValidationSchema(SessionV1, 'EventEnvelope')
+export const EventEnvelope: TImport<SessionV1Definitions, 'EventEnvelope'> = importValidationSchema(SessionV1, 'EventEnvelope')
 export type EventEnvelope = Static<typeof EventEnvelope>
-export const SessionModelSelection = importValidationSchema(SessionV1, 'SessionModelSelection')
+export const SessionModelSelection: TImport<SessionV1Definitions, 'SessionModelSelection'> = importValidationSchema(SessionV1, 'SessionModelSelection')
 export type SessionModelSelection = Static<typeof SessionModelSelection>
-export const SessionStart = importValidationSchema(SessionV1, 'SessionStart')
+export const SessionStart: TImport<SessionV1Definitions, 'SessionStart'> = importValidationSchema(SessionV1, 'SessionStart')
 export type SessionStart = Static<typeof SessionStart>
-export const SubagentCost = importValidationSchema(SessionV1, 'SubagentCost')
+export const SubagentCost: TImport<SessionV1Definitions, 'SubagentCost'> = importValidationSchema(SessionV1, 'SubagentCost')
 export type SubagentCost = Static<typeof SubagentCost>
-export const TurnStart = importValidationSchema(SessionV1, 'TurnStart')
+export const TurnStart: TImport<SessionV1Definitions, 'TurnStart'> = importValidationSchema(SessionV1, 'TurnStart')
 export type TurnStart = Static<typeof TurnStart>
-export const TurnEnd = importValidationSchema(SessionV1, 'TurnEnd')
+export const TurnEnd: TImport<SessionV1Definitions, 'TurnEnd'> = importValidationSchema(SessionV1, 'TurnEnd')
 export type TurnEnd = Static<typeof TurnEnd>
-export const StepStart = importValidationSchema(SessionV1, 'StepStart')
+export const StepStart: TImport<SessionV1Definitions, 'StepStart'> = importValidationSchema(SessionV1, 'StepStart')
 export type StepStart = Static<typeof StepStart>
-export const StepEnd = importValidationSchema(SessionV1, 'StepEnd')
+export const StepEnd: TImport<SessionV1Definitions, 'StepEnd'> = importValidationSchema(SessionV1, 'StepEnd')
 export type StepEnd = Static<typeof StepEnd>
-export const SystemInputPresentation = importValidationSchema(SessionV1, 'SystemInputPresentation')
+export const SystemInputPresentation: TImport<SessionV1Definitions, 'SystemInputPresentation'> = importValidationSchema(SessionV1, 'SystemInputPresentation')
 export type SystemInputPresentation = Static<typeof SystemInputPresentation>
-export const SystemInput = importValidationSchema(SessionV1, 'SystemInput')
+export const SystemInput: TImport<SessionV1Definitions, 'SystemInput'> = importValidationSchema(SessionV1, 'SystemInput')
 export type SystemInput = Static<typeof SystemInput>
-export const UserMessage = importValidationSchema(SessionV1, 'UserMessage')
+export const UserMessage: TImport<SessionV1Definitions, 'UserMessage'> = importValidationSchema(SessionV1, 'UserMessage')
 export type UserMessage = Static<typeof UserMessage>
-export const AssistantMessage = importValidationSchema(SessionV1, 'AssistantMessage')
+export const AssistantMessage: TImport<SessionV1Definitions, 'AssistantMessage'> = importValidationSchema(SessionV1, 'AssistantMessage')
 export type AssistantMessage = Static<typeof AssistantMessage>
-export const ResolvedToolCallPolicy = importValidationSchema(SessionV1, 'ResolvedToolCallPolicy')
+export const ResolvedToolCallPolicy: TImport<SessionV1Definitions, 'ResolvedToolCallPolicy'> = importValidationSchema(SessionV1, 'ResolvedToolCallPolicy')
 export type ResolvedToolCallPolicy = Static<typeof ResolvedToolCallPolicy>
-export const ExecutionDomain = importValidationSchema(SessionV1, 'ExecutionDomain')
+export const ExecutionDomain: TImport<SessionV1Definitions, 'ExecutionDomain'> = importValidationSchema(SessionV1, 'ExecutionDomain')
 export type ExecutionDomain = Static<typeof ExecutionDomain>
-export const DispatchPhase = importValidationSchema(SessionV1, 'DispatchPhase')
+export const DispatchPhase: TImport<SessionV1Definitions, 'DispatchPhase'> = importValidationSchema(SessionV1, 'DispatchPhase')
 export type DispatchPhase = Static<typeof DispatchPhase>
-export const ToolPresentation = importValidationSchema(SessionV1, 'ToolPresentation')
+export const ToolPresentation: TImport<SessionV1Definitions, 'ToolPresentation'> = importValidationSchema(SessionV1, 'ToolPresentation')
 export type ToolPresentation = Static<typeof ToolPresentation>
-export const ToolCall = importValidationSchema(SessionV1, 'ToolCall')
+export const ToolCall: TImport<SessionV1Definitions, 'ToolCall'> = importValidationSchema(SessionV1, 'ToolCall')
 export type ToolCall = Static<typeof ToolCall>
-export const ToolResult = importValidationSchema(SessionV1, 'ToolResult')
+export const ToolResult: TImport<SessionV1Definitions, 'ToolResult'> = importValidationSchema(SessionV1, 'ToolResult')
 export type ToolResult = Static<typeof ToolResult>
-export const RequestMediaManifestEntry = importValidationSchema(SessionV1, 'RequestMediaManifestEntry')
+export const RequestMediaManifestEntry: TImport<SessionV1Definitions, 'RequestMediaManifestEntry'> = importValidationSchema(SessionV1, 'RequestMediaManifestEntry')
 export type RequestMediaManifestEntry = Static<typeof RequestMediaManifestEntry>
-export const RequestMediaManifest = importValidationSchema(SessionV1, 'RequestMediaManifest')
+export const RequestMediaManifest: TImport<SessionV1Definitions, 'RequestMediaManifest'> = importValidationSchema(SessionV1, 'RequestMediaManifest')
 export type RequestMediaManifest = Static<typeof RequestMediaManifest>
-export const RequestMediaHeader = importValidationSchema(SessionV1, 'RequestMediaHeader')
+export const RequestMediaHeader: TImport<SessionV1Definitions, 'RequestMediaHeader'> = importValidationSchema(SessionV1, 'RequestMediaHeader')
 export type RequestMediaHeader = Static<typeof RequestMediaHeader>
-export const RequestHeader = importValidationSchema(SessionV1, 'RequestHeader')
+export const RequestHeader: TImport<SessionV1Definitions, 'RequestHeader'> = importValidationSchema(SessionV1, 'RequestHeader')
 export type RequestHeader = Static<typeof RequestHeader>
-export const RequestSent = importValidationSchema(SessionV1, 'RequestSent')
+export const RequestSent: TImport<SessionV1Definitions, 'RequestSent'> = importValidationSchema(SessionV1, 'RequestSent')
 export type RequestSent = Static<typeof RequestSent>
-export const OpState = importValidationSchema(SessionV1, 'OpState')
+export const OpState: TImport<SessionV1Definitions, 'OpState'> = importValidationSchema(SessionV1, 'OpState')
 export type OpState = Static<typeof OpState>
-export const ToolCallState = importValidationSchema(SessionV1, 'ToolCallState')
+export const ToolCallState: TImport<SessionV1Definitions, 'ToolCallState'> = importValidationSchema(SessionV1, 'ToolCallState')
 export type ToolCallState = Static<typeof ToolCallState>
-export const ArtifactRef = importValidationSchema(SessionV1, 'ArtifactRef')
+export const ArtifactRef: TImport<SessionV1Definitions, 'ArtifactRef'> = importValidationSchema(SessionV1, 'ArtifactRef')
 export type ArtifactRef = Static<typeof ArtifactRef>
-export const Verdict = importValidationSchema(SessionV1, 'Verdict')
+export const Verdict: TImport<SessionV1Definitions, 'Verdict'> = importValidationSchema(SessionV1, 'Verdict')
 export type Verdict = Static<typeof Verdict>
-export const AssistantOutput = importValidationSchema(SessionV1, 'AssistantOutput')
+export const AssistantOutput: TImport<SessionV1Definitions, 'AssistantOutput'> = importValidationSchema(SessionV1, 'AssistantOutput')
 export type AssistantOutput = Static<typeof AssistantOutput>
-export const PlanItems = importValidationSchema(SessionV1, 'PlanItems')
+export const PlanItems: TImport<SessionV1Definitions, 'PlanItems'> = importValidationSchema(SessionV1, 'PlanItems')
 export type PlanItems = Static<typeof PlanItems>
-export const BudgetState = importValidationSchema(SessionV1, 'BudgetState')
+export const BudgetState: TImport<SessionV1Definitions, 'BudgetState'> = importValidationSchema(SessionV1, 'BudgetState')
 export type BudgetState = Static<typeof BudgetState>
-export const ArtifactJob = importValidationSchema(SessionV1, 'ArtifactJob')
+export const ArtifactJob: TImport<SessionV1Definitions, 'ArtifactJob'> = importValidationSchema(SessionV1, 'ArtifactJob')
 export type ArtifactJob = Static<typeof ArtifactJob>
-export const InboxItem = importValidationSchema(SessionV1, 'InboxItem')
+export const InboxItem: TImport<SessionV1Definitions, 'InboxItem'> = importValidationSchema(SessionV1, 'InboxItem')
 export type InboxItem = Static<typeof InboxItem>
-export const Inbox = importValidationSchema(SessionV1, 'Inbox')
+export const Inbox: TImport<SessionV1Definitions, 'Inbox'> = importValidationSchema(SessionV1, 'Inbox')
 export type Inbox = Static<typeof Inbox>
-export const HarnessEntryValue = importValidationSchema(SessionV1, 'HarnessEntryValue')
+export const HarnessEntryValue: TImport<SessionV1Definitions, 'HarnessEntryValue'> = importValidationSchema(SessionV1, 'HarnessEntryValue')
 export type HarnessEntryValue = Static<typeof HarnessEntryValue>
-export const HarnessEntry = importValidationSchema(SessionV1, 'HarnessEntry')
+export const HarnessEntry: TImport<SessionV1Definitions, 'HarnessEntry'> = importValidationSchema(SessionV1, 'HarnessEntry')
 export type HarnessEntry = Static<typeof HarnessEntry>
-export const EffectIntent = importValidationSchema(SessionV1, 'EffectIntent')
+export const EffectIntent: TImport<SessionV1Definitions, 'EffectIntent'> = importValidationSchema(SessionV1, 'EffectIntent')
 export type EffectIntent = Static<typeof EffectIntent>
-export const EffectSettled = importValidationSchema(SessionV1, 'EffectSettled')
+export const EffectSettled: TImport<SessionV1Definitions, 'EffectSettled'> = importValidationSchema(SessionV1, 'EffectSettled')
 export type EffectSettled = Static<typeof EffectSettled>
-export const VerifierSignal = importValidationSchema(SessionV1, 'VerifierSignal')
+export const VerifierSignal: TImport<SessionV1Definitions, 'VerifierSignal'> = importValidationSchema(SessionV1, 'VerifierSignal')
 export type VerifierSignal = Static<typeof VerifierSignal>
-export const RepairDecision = importValidationSchema(SessionV1, 'RepairDecision')
+export const RepairDecision: TImport<SessionV1Definitions, 'RepairDecision'> = importValidationSchema(SessionV1, 'RepairDecision')
 export type RepairDecision = Static<typeof RepairDecision>
-export const FormatDeviation = importValidationSchema(SessionV1, 'FormatDeviation')
+export const FormatDeviation: TImport<SessionV1Definitions, 'FormatDeviation'> = importValidationSchema(SessionV1, 'FormatDeviation')
 export type FormatDeviation = Static<typeof FormatDeviation>
-export const Billing = importValidationSchema(SessionV1, 'Billing')
+export const Billing: TImport<SessionV1Definitions, 'Billing'> = importValidationSchema(SessionV1, 'Billing')
 export type Billing = Static<typeof Billing>
-export const ResponseMeta = importValidationSchema(SessionV1, 'ResponseMeta')
+export const ResponseMeta: TImport<SessionV1Definitions, 'ResponseMeta'> = importValidationSchema(SessionV1, 'ResponseMeta')
 export type ResponseMeta = Static<typeof ResponseMeta>
-export const CostLedger = importValidationSchema(SessionV1, 'CostLedger')
+export const CostLedger: TImport<SessionV1Definitions, 'CostLedger'> = importValidationSchema(SessionV1, 'CostLedger')
 export type CostLedger = Static<typeof CostLedger>
-export const ApprovalGrant = importValidationSchema(SessionV1, 'ApprovalGrant')
+export const ApprovalGrant: TImport<SessionV1Definitions, 'ApprovalGrant'> = importValidationSchema(SessionV1, 'ApprovalGrant')
 export type ApprovalGrant = Static<typeof ApprovalGrant>
-export const FeedbackRating = importValidationSchema(SessionV1, 'FeedbackRating')
+export const FeedbackRating: TImport<SessionV1Definitions, 'FeedbackRating'> = importValidationSchema(SessionV1, 'FeedbackRating')
 export type FeedbackRating = Static<typeof FeedbackRating>
-export const FeedbackImplicit = importValidationSchema(SessionV1, 'FeedbackImplicit')
+export const FeedbackImplicit: TImport<SessionV1Definitions, 'FeedbackImplicit'> = importValidationSchema(SessionV1, 'FeedbackImplicit')
 export type FeedbackImplicit = Static<typeof FeedbackImplicit>
-export const Participant = importValidationSchema(SessionV1, 'Participant')
+export const Participant: TImport<SessionV1Definitions, 'Participant'> = importValidationSchema(SessionV1, 'Participant')
 export type Participant = Static<typeof Participant>
-export const HarnessRefine = importValidationSchema(SessionV1, 'HarnessRefine')
+export const HarnessRefine: TImport<SessionV1Definitions, 'HarnessRefine'> = importValidationSchema(SessionV1, 'HarnessRefine')
 export type HarnessRefine = Static<typeof HarnessRefine>
-export const DecisionPresentation = importValidationSchema(SessionV1, 'DecisionPresentation')
+export const DecisionPresentation: TImport<SessionV1Definitions, 'DecisionPresentation'> = importValidationSchema(SessionV1, 'DecisionPresentation')
 export type DecisionPresentation = Static<typeof DecisionPresentation>
-export const DecisionSpec = importValidationSchema(SessionV1, 'DecisionSpec')
+export const DecisionSpec: TImport<SessionV1Definitions, 'DecisionSpec'> = importValidationSchema(SessionV1, 'DecisionSpec')
 export type DecisionSpec = Static<typeof DecisionSpec>
-export const DecisionHandle = importValidationSchema(SessionV1, 'DecisionHandle')
+export const DecisionHandle: TImport<SessionV1Definitions, 'DecisionHandle'> = importValidationSchema(SessionV1, 'DecisionHandle')
 export type DecisionHandle = Static<typeof DecisionHandle>
-export const DecisionResponse = importValidationSchema(SessionV1, 'DecisionResponse')
+export const DecisionResponse: TImport<SessionV1Definitions, 'DecisionResponse'> = importValidationSchema(SessionV1, 'DecisionResponse')
 export type DecisionResponse = Static<typeof DecisionResponse>
-export const DecisionRequest = importValidationSchema(SessionV1, 'DecisionRequest')
+export const DecisionRequest: TImport<SessionV1Definitions, 'DecisionRequest'> = importValidationSchema(SessionV1, 'DecisionRequest')
 export type DecisionRequest = Static<typeof DecisionRequest>
-export const DecisionResult = importValidationSchema(SessionV1, 'DecisionResult')
+export const DecisionResult: TImport<SessionV1Definitions, 'DecisionResult'> = importValidationSchema(SessionV1, 'DecisionResult')
 export type DecisionResult = Static<typeof DecisionResult>
-export const DecisionConsumption = importValidationSchema(SessionV1, 'DecisionConsumption')
+export const DecisionConsumption: TImport<SessionV1Definitions, 'DecisionConsumption'> = importValidationSchema(SessionV1, 'DecisionConsumption')
 export type DecisionConsumption = Static<typeof DecisionConsumption>
-export const DecisionCommandReceipt = importValidationSchema(SessionV1, 'DecisionCommandReceipt')
+export const DecisionCommandReceipt: TImport<SessionV1Definitions, 'DecisionCommandReceipt'> = importValidationSchema(SessionV1, 'DecisionCommandReceipt')
 export type DecisionCommandReceipt = Static<typeof DecisionCommandReceipt>
-export const DecisionSnapshot = importValidationSchema(SessionV1, 'DecisionSnapshot')
+export const DecisionSnapshot: TImport<SessionV1Definitions, 'DecisionSnapshot'> = importValidationSchema(SessionV1, 'DecisionSnapshot')
 export type DecisionSnapshot = Static<typeof DecisionSnapshot>
-export const ModelSettings = importValidationSchema(SessionV1, 'ModelSettings')
+export const ModelSettings: TImport<SessionV1Definitions, 'ModelSettings'> = importValidationSchema(SessionV1, 'ModelSettings')
 export type ModelSettings = Static<typeof ModelSettings>
-export const ThinkingLevel = importValidationSchema(SessionV1, 'ThinkingLevel')
+export const ThinkingLevel: TImport<SessionV1Definitions, 'ThinkingLevel'> = importValidationSchema(SessionV1, 'ThinkingLevel')
 export type ThinkingLevel = Static<typeof ThinkingLevel>
-export const SystemPromptConfig = importValidationSchema(SessionV1, 'SystemPromptConfig')
+export const SystemPromptConfig: TImport<SessionV1Definitions, 'SystemPromptConfig'> = importValidationSchema(SessionV1, 'SystemPromptConfig')
 export type SystemPromptConfig = Static<typeof SystemPromptConfig>
 export const Root = EventEnvelope
 export type Root = EventEnvelope

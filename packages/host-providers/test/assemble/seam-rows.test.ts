@@ -78,33 +78,40 @@ describe('seam binding', () => {
     await root.fiber.dispose()
   })
 
-  it('maps a throwing factory to E_SEAM_INIT and refuses a non-object or an instance missing methods', async () => {
-    const { root, input, register } = rig()
-    const failing = verifier({
-      create: async () => {
-        throw new Error('db down')
-      },
-    })
-    register('@agnes/base', failing)
-    await expect.poll(() => root.providers.catalog().length).toBe(1)
-    await expect(seamBinding('verifier', { provider: 'alt' }, input)(root, preset)).rejects.toMatchObject({
-      code: 'E_SEAM_INIT',
-      message: expect.stringContaining('db down'),
-    })
-    const nonObject = rig()
-    nonObject.register('@agnes/base', verifier({ create: async () => 'nope' as never }))
-    await expect.poll(() => nonObject.root.providers.catalog().length).toBe(1)
-    await expect(
-      seamBinding('verifier', { provider: 'alt' }, nonObject.input)(nonObject.root, preset),
-    ).rejects.toThrow(/non-object/)
-    const hollow = rig()
-    hollow.register('@agnes/base', verifier({ instance: {} }))
-    await expect.poll(() => hollow.root.providers.catalog().length).toBe(1)
-    await expect(
-      seamBinding('verifier', { provider: 'alt' }, hollow.input)(hollow.root, preset),
-    ).rejects.toThrow(/lacks verify/)
-    await Promise.all([root, nonObject.root, hollow.root].map((r) => r.fiber.dispose()))
-  })
+  it.each([false, true])(
+    'maps a throwing factory to E_SEAM_INIT (native GLIBC: %s) and refuses invalid instances',
+    async (native) => {
+      const { root, input, register } = rig()
+      const failing = verifier({
+        create: async () => {
+          throw Object.assign(
+            new Error('db down'),
+            native ? { detail: { reason: 'native-glibc-incompatible' } } : {},
+          )
+        },
+      })
+      register('@agnes/base', failing)
+      await expect.poll(() => root.providers.catalog().length).toBe(1)
+      await expect(seamBinding('verifier', { provider: 'alt' }, input)(root, preset)).rejects.toMatchObject({
+        code: 'E_SEAM_INIT',
+        message: expect.stringContaining('db down'),
+        detail: { reason: native ? 'native-glibc-incompatible' : 'reject' },
+      })
+      const nonObject = rig()
+      nonObject.register('@agnes/base', verifier({ create: async () => 'nope' as never }))
+      await expect.poll(() => nonObject.root.providers.catalog().length).toBe(1)
+      await expect(
+        seamBinding('verifier', { provider: 'alt' }, nonObject.input)(nonObject.root, preset),
+      ).rejects.toThrow(/non-object/)
+      const hollow = rig()
+      hollow.register('@agnes/base', verifier({ instance: {} }))
+      await expect.poll(() => hollow.root.providers.catalog().length).toBe(1)
+      await expect(
+        seamBinding('verifier', { provider: 'alt' }, hollow.input)(hollow.root, preset),
+      ).rejects.toThrow(/lacks verify/)
+      await Promise.all([root, nonObject.root, hollow.root].map((r) => r.fiber.dispose()))
+    },
+  )
 
   it('times out a hung factory and closes an instance that arrives late', async () => {
     const closed = vi.fn()

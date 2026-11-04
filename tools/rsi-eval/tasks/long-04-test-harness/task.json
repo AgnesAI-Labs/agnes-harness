@@ -1,0 +1,240 @@
+{
+  "id": "long-04-test-harness",
+  "category": "long",
+  "description": "Ten test cases added to four small text helpers over five sessions, each fixed and recorded with a harness that only records a run made with the suite's own seed.",
+  "trap": {
+    "signatures": ["record refused: run \\d+ of \\w+ is not reproducible"],
+    "reproduce": "bin/harness run slug && bin/harness record slug",
+    "note": "bin/harness record only takes a run made with the suite's own seed: the seed of the runs that are on the dashboard (`bin/harness dashboard` names the recorded run, `bin/harness runs <suite>` shows each run's seed; `suites` does not show it). Each suite has its own seed, and a run without --seed, or with another seed, is refused. So run `bin/harness run <suite> --seed <that seed>`, then `bin/harness record <suite>`. Recording takes the suite's latest run, so the seeded run must be the last one, with nothing changed after it. Steps for a new case: add tests/<suite>/<name>.case (an `input:` and an `expect:` line), fix src/textkit/<suite>.py, run the suite with its seed until it passes, record it, check `bin/harness dashboard`."
+  },
+  "maxRequests": 250,
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "milestone": "first-record",
+          "text": "Add a case named `accents` to the slug suite: `Crème Brûlée` must give `creme-brulee`. Fix src/textkit/slug.py so the whole suite passes, then put the suite's result on the dashboard. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "slug: 5/5 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from slug import run; print(\"[%s]\" % run(sys.argv[1]))' 'Crème Brûlée'",
+              "contains": "[creme-brulee]"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' 'Crème Brûlée' 'creme-brulee' > tests/slug/accents.case",
+            "cat > src/textkit/slug.py <<'EOF'\nimport unicodedata\n\n\ndef run(text):\n    text = \"\".join(c for c in unicodedata.normalize(\"NFKD\", text) if not unicodedata.combining(c))\n    out = []\n    for ch in text.lower():\n        if ch == \" \":\n            out.append(\"-\")\n        elif ch.isascii() and (ch.isalnum() or ch == \"-\"):\n            out.append(ch)\n    return \"\".join(out)\nEOF",
+            "bin/harness run slug --seed 1307",
+            "bin/harness record slug"
+          ]
+        },
+        {
+          "milestone": "roman-subtractive",
+          "text": "The roman suite needs a case `nineteen-ninety-four`: `1994` gives `MCMXCIV`. Make it pass and record the suite on the dashboard.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "roman: 5/5 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from roman import run; print(\"[%s]\" % run(sys.argv[1]))' '1994'",
+              "contains": "[MCMXCIV]"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' '1994' 'MCMXCIV' > tests/roman/nineteen-ninety-four.case",
+            "cat > src/textkit/roman.py <<'EOF'\nPAIRS = [(1000, \"M\"), (900, \"CM\"), (500, \"D\"), (400, \"CD\"), (100, \"C\"), (90, \"XC\"), (50, \"L\"), (40, \"XL\"),\n         (10, \"X\"), (9, \"IX\"), (5, \"V\"), (4, \"IV\"), (1, \"I\")]\n\n\ndef run(text):\n    n = int(text)\n    out = \"\"\n    for value, letters in PAIRS:\n        while n >= value:\n            out += letters\n            n -= value\n    return out\nEOF",
+            "bin/harness run roman --seed 4441",
+            "bin/harness record roman"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "milestone": "wrap-long-word",
+          "text": "Add a wrap case `long-word`: `extraordinarily long` must give `extraordinarily|long`. Fix wrap so the suite passes and record it. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "wrap: 5/5 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from wrap import run; print(\"[%s]\" % run(sys.argv[1]))' 'extraordinarily long'",
+              "contains": "[extraordinarily|long]"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' 'extraordinarily long' 'extraordinarily|long' > tests/wrap/long-word.case",
+            "cat > src/textkit/wrap.py <<'EOF'\nWIDTH = 10\n\n\ndef run(text):\n    lines, line = [], \"\"\n    for word in text.split(\" \"):\n        if line and len(line) + 1 + len(word) > WIDTH:\n            lines.append(line)\n            line = word\n        else:\n            line = word if not line else line + \" \" + word\n    lines.append(line)\n    return \"|\".join(lines)\nEOF",
+            "bin/harness run wrap --seed 2213",
+            "bin/harness record wrap"
+          ]
+        },
+        {
+          "milestone": "plural-y",
+          "text": "Add a plural case `city` (`city` gives `cities`), fix plural, and get the suite recorded.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "plural: 5/5 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from plural import run; print(\"[%s]\" % run(sys.argv[1]))' 'city'",
+              "contains": "[cities]"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' 'city' 'cities' > tests/plural/city.case",
+            "cat > src/textkit/plural.py <<'EOF'\ndef run(word):\n    if word.endswith((\"s\", \"x\", \"ch\", \"sh\")):\n        return word + \"es\"\n    if word.endswith(\"y\") and word[-2:-1] not in \"aeiou\":\n        return word[:-1] + \"ies\"\n    return word + \"s\"\nEOF",
+            "bin/harness run plural --seed 3089",
+            "bin/harness record plural"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "milestone": "slug-spacing",
+          "text": "Slug should cope with extra spaces: add a case `extra-spaces` where `  Hello,   World!  ` (two spaces before, three in the middle, two after) gives `hello-world`. Fix it and record the suite. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "slug: 6/6 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from slug import run; print(\"[%s]\" % run(sys.argv[1]))' '  Hello,   World!  '",
+              "contains": "[hello-world]"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' '  Hello,   World!  ' 'hello-world' > tests/slug/extra-spaces.case",
+            "cat > src/textkit/slug.py <<'EOF'\nimport re\nimport unicodedata\n\n\ndef run(text):\n    text = \"\".join(c for c in unicodedata.normalize(\"NFKD\", text) if not unicodedata.combining(c))\n    out = []\n    for ch in text.lower():\n        if ch == \" \":\n            out.append(\"-\")\n        elif ch.isascii() and (ch.isalnum() or ch == \"-\"):\n            out.append(ch)\n    return re.sub(\"-+\", \"-\", \"\".join(out)).strip(\"-\")\nEOF",
+            "bin/harness run slug --seed 1307",
+            "bin/harness record slug"
+          ]
+        },
+        {
+          "milestone": "roman-zero",
+          "text": "Roman numerals have no zero; the team writes `nulla`. Add a case `zero` (`0` gives `nulla`), make it pass and record roman.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "roman: 6/6 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from roman import run; print(\"[%s]\" % run(sys.argv[1]))' '0'",
+              "contains": "[nulla]"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' '0' 'nulla' > tests/roman/zero.case",
+            "cat > src/textkit/roman.py <<'EOF'\nPAIRS = [(1000, \"M\"), (900, \"CM\"), (500, \"D\"), (400, \"CD\"), (100, \"C\"), (90, \"XC\"), (50, \"L\"), (40, \"XL\"),\n         (10, \"X\"), (9, \"IX\"), (5, \"V\"), (4, \"IV\"), (1, \"I\")]\n\n\ndef run(text):\n    n = int(text)\n    if n == 0:\n        return \"nulla\"\n    out = \"\"\n    for value, letters in PAIRS:\n        while n >= value:\n            out += letters\n            n -= value\n    return out\nEOF",
+            "bin/harness run roman --seed 4441",
+            "bin/harness record roman"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "milestone": "wrap-spaces",
+          "text": "Add a wrap case `many-spaces`: `a  b   c` (two and three spaces) gives `a b c`. Fix wrap and record the suite. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "wrap: 6/6 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from wrap import run; print(\"[%s]\" % run(sys.argv[1]))' 'a  b   c'",
+              "contains": "[a b c]"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' 'a  b   c' 'a b c' > tests/wrap/many-spaces.case",
+            "cat > src/textkit/wrap.py <<'EOF'\nWIDTH = 10\n\n\ndef run(text):\n    lines, line = [], \"\"\n    for word in text.split():\n        if line and len(line) + 1 + len(word) > WIDTH:\n            lines.append(line)\n            line = word\n        else:\n            line = word if not line else line + \" \" + word\n    lines.append(line)\n    return \"|\".join(lines)\nEOF",
+            "bin/harness run wrap --seed 2213",
+            "bin/harness record wrap"
+          ]
+        },
+        {
+          "milestone": "plural-irregular",
+          "text": "Plural should know irregular words: add a case `child` (`child` gives `children`), make it pass, record plural.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "plural: 6/6 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from plural import run; print(\"[%s]\" % run(sys.argv[1]))' 'child'",
+              "contains": "[children]"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' 'child' 'children' > tests/plural/child.case",
+            "cat > src/textkit/plural.py <<'EOF'\nIRREGULAR = {\"child\": \"children\", \"person\": \"people\", \"mouse\": \"mice\"}\n\n\ndef run(word):\n    if word in IRREGULAR:\n        return IRREGULAR[word]\n    if word.endswith((\"s\", \"x\", \"ch\", \"sh\")):\n        return word + \"es\"\n    if word.endswith(\"y\") and word[-2:-1] not in \"aeiou\":\n        return word[:-1] + \"ies\"\n    return word + \"s\"\nEOF",
+            "bin/harness run plural --seed 3089",
+            "bin/harness record plural"
+          ]
+        }
+      ]
+    },
+    {
+      "prompts": [
+        {
+          "milestone": "slug-ampersand",
+          "text": "Add a slug case `ampersand`: `Rock & Roll` gives `rock-and-roll`. Fix slug and record it. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "slug: 7/7 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from slug import run; print(\"[%s]\" % run(sys.argv[1]))' 'Rock & Roll'",
+              "contains": "[rock-and-roll]"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' 'Rock & Roll' 'rock-and-roll' > tests/slug/ampersand.case",
+            "cat > src/textkit/slug.py <<'EOF'\nimport re\nimport unicodedata\n\n\ndef run(text):\n    text = \"\".join(c for c in unicodedata.normalize(\"NFKD\", text) if not unicodedata.combining(c))\n    text = text.replace(\"&\", \" and \")\n    out = []\n    for ch in text.lower():\n        if ch == \" \":\n            out.append(\"-\")\n        elif ch.isascii() and (ch.isalnum() or ch == \"-\"):\n            out.append(ch)\n    return re.sub(\"-+\", \"-\", \"\".join(out)).strip(\"-\")\nEOF",
+            "bin/harness run slug --seed 1307",
+            "bin/harness record slug"
+          ]
+        },
+        {
+          "milestone": "two-suites",
+          "text": "Two more cases, each in its own suite: plural `hero` (`hero` gives `heroes`) and roman `four` (`4` gives `IV`). Make both suites pass and record both.",
+          "checks": [
+            {
+              "command": "bin/harness dashboard",
+              "contains": "plural: 7/7 recorded"
+            },
+            {
+              "command": "cd src/textkit && python3 -c 'import sys; from plural import run; print(\"[%s]\" % run(sys.argv[1]))' 'hero'",
+              "contains": "[heroes]"
+            },
+            {
+              "command": "bin/harness dashboard",
+              "contains": "roman: 7/7 recorded"
+            }
+          ],
+          "solution": [
+            "printf 'input: %s\\nexpect: %s\\n' 'hero' 'heroes' > tests/plural/hero.case",
+            "cat > src/textkit/plural.py <<'EOF'\nIRREGULAR = {\"child\": \"children\", \"person\": \"people\", \"mouse\": \"mice\"}\n\n\ndef run(word):\n    if word in IRREGULAR:\n        return IRREGULAR[word]\n    if word.endswith((\"s\", \"x\", \"ch\", \"sh\")):\n        return word + \"es\"\n    if word.endswith(\"y\") and word[-2:-1] not in \"aeiou\":\n        return word[:-1] + \"ies\"\n    if word.endswith(\"o\") and word[-2:-1] not in \"aeiou\":\n        return word + \"es\"\n    return word + \"s\"\nEOF",
+            "bin/harness run plural --seed 3089",
+            "bin/harness record plural",
+            "printf 'input: %s\\nexpect: %s\\n' '4' 'IV' > tests/roman/four.case",
+            "bin/harness run roman --seed 4441",
+            "bin/harness record roman"
+          ]
+        }
+      ]
+    }
+  ]
+}

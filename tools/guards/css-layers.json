@@ -137,7 +137,7 @@
       "layer": "skin",
       "reason": "SkinSheet wraps the authored CSS in the skin layer."
     },
-    "tools/e2e-web/baselines/screenshot.css": {
+    "tools/e2e-web/screenshot.css": {
       "count": 1,
       "layer": "ui",
       "reason": "Visual test normalization is injected only by browser fixtures."

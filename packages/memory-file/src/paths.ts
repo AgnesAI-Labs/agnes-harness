@@ -1,5 +1,6 @@
-import { lstatSync, realpathSync } from 'node:fs'
+import { lstatSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { fault, hash } from './content.js'
 
 const fold = (path: string): string => path.toLowerCase()
@@ -10,10 +11,14 @@ export function inside(root: string, path: string): boolean {
 export function missing(error: unknown): boolean {
   return (error as { code?: string }).code === 'ENOENT'
 }
+/**
+ * The native resolver, as the Host spells a session's workspace root: the portable one keeps
+ * Windows 8.3 short names, so two spellings of one workspace would hash to two memory trees.
+ */
 export function canonical(path: string): string {
   const absolute = resolve(path)
   try {
-    return realpathSync(absolute)
+    return nativeRealpathSync(absolute)
   } catch (error) {
     if (!missing(error)) throw error
     const parent = dirname(absolute)

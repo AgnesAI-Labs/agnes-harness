@@ -20,6 +20,7 @@ import { baseToolCatalog } from './base-tools.js'
 import { conversationLocaleCatalog } from './conversation.js'
 import { firstRunCatalog } from './first-run.js'
 import { modelSettingsLocaleCatalog } from './model-settings.js'
+import { refinementLocaleCatalog } from './refinement.js'
 
 const primitiveCatalog: LocaleCatalog = {
   en: {
@@ -132,6 +133,7 @@ const DICTS = [
   baseToolCatalog,
   conversationLocaleCatalog,
   modelSettingsLocaleCatalog,
+  refinementLocaleCatalog,
   primitiveCatalog,
 ] as const
 

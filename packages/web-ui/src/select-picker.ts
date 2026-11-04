@@ -42,6 +42,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
   let typed = ''
   let typedAt = 0
   let syncedState = ''
+  let syncedValue: string | undefined
   let anchor: DOMRect | undefined
   let openedAt = 0
   const available = (item: HTMLOptionElement) =>
@@ -75,6 +76,10 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
     ])
     if (state === syncedState) return
     syncedState = state
+    // A late read can replace the options while the menu is open. Keep it open and current when
+    // the value stayed; a programmatic value change still closes it.
+    const reopen = !!panel && select.value === syncedValue && !select.disabled
+    syncedValue = select.value
     close()
     const selected = select.options[select.selectedIndex]
     const selectedLabel = selected ? optionLabel(selected) : undefined
@@ -98,6 +103,7 @@ export function createSelectPicker(select: HTMLSelectElement, options: SelectPic
     if (description) trigger.setAttribute('aria-describedby', description)
     else trigger.removeAttribute('aria-describedby')
     trigger.disabled = select.disabled || !Array.from(select.options).some(available)
+    if (reopen) open()
   }
 
   function outside(event: Event): void {

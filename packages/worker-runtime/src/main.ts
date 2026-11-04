@@ -196,6 +196,10 @@ export async function runWorker(
       ReturnType<NonNullable<HostOptions['skillInstall']>>
     >
   }
+  // A saved skill is installed where resource control lives, for the session that saved it; the
+  // save can run after the turn, so the session is named here rather than taken from the context.
+  const refinementSave: NonNullable<HostOptions['refinementSave']> = (sessionKey, params, signal) =>
+    sharedChannel.run(sessionKey, () => sharedChannel.request('refinement-save', params, signal))
   const mcpManage: NonNullable<HostOptions['mcpManage']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('MCP management session mismatch')
@@ -397,6 +401,7 @@ export async function runWorker(
           boundWakes,
           scheduling,
           skillInstall,
+          refinementSave,
           mcpManage,
           pluginManage,
           requestMedia,
@@ -437,6 +442,7 @@ export async function runWorker(
             boundWakes,
             scheduling,
             skillInstall,
+            refinementSave,
             mcpManage,
             pluginManage,
             requestMedia,

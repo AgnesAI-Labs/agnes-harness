@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { dirname } from 'node:path'
 import { type ApprovalGrantsPort, type HookPort, Kernel, type SessionImpl } from '@agnes/core'
 import {
@@ -29,6 +30,7 @@ import type { AssemblyContext } from './context.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import type { ProviderStage } from './provider-stage.js'
+import type { RefinementHost } from './refinement.js'
 import type { RuntimeTargetHost } from './runtime-target.js'
 import type { SeamSet } from './seam-set.js'
 import type { SkillState } from './skills.js'
@@ -95,10 +97,15 @@ async function selectCoreProviders(
   return { compaction, loop, systemPromptProvider }
 }
 
-/** Pin memory to the selected provider while keeping its settings live per workspace. */
-function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase) {
+/**
+ * Pin memory to the selected provider while keeping its settings live per workspace. Every open gets the
+ * workspace's validity view for saved task experience, and the one for sections of user memory, with
+ * refinement on or off (a provider that does not know the fields ignores them); the same opener serves
+ * background work on workspace and user memory.
+ */
+function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase, refinement: RefinementHost) {
   const { providerSelections, deps } = ctx
-  return (workspaceRoot: string, sessionKey: string): MemorySession | undefined => {
+  const open = (workspaceRoot: string, sessionKey: string): MemorySession | undefined => {
     const selection = providerSelections.memory ?? { provider: 'file', version: '1.0.0' }
     if (
       !providerSelections.memory &&
@@ -109,8 +116,12 @@ function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase) {
       home: dirname(dirname(deps.profileDir)),
       workspaceRoot,
       sessionKey,
+      validity: refinement.workspace.validity(workspaceRoot, sessionKey),
+      userValidity: refinement.workspace.userValidity(sessionKey),
     })
   }
+  refinement.workspace.bindMemory(open)
+  return open
 }
 
 /**
@@ -132,6 +143,7 @@ export async function createKernel(
     seamSet: SeamSet
     discoveredResources: WeakMap<SessionImpl, readonly ResourceEntry[]>
     extensionLeases: ExtensionLeases
+    refinement: RefinementHost
   }>,
 ) {
   const { deps, rollback, clock, activationBarrier } = ctx
@@ -168,7 +180,7 @@ export async function createKernel(
     : undefined
   const extensionSessions = new ExtensionSessions<HookPort>()
   const { compaction, loop, systemPromptProvider } = await selectCoreProviders(ctx, pluginTree, view)
-  const memory = sessionMemory(ctx, pluginTree)
+  const memory = sessionMemory(ctx, pluginTree, input.refinement)
   const toolProviderCatalog = (kind: 'tool-runtime' | 'tool-policy') =>
     Object.freeze(
       pluginTree.root.providers
@@ -178,6 +190,7 @@ export async function createKernel(
     )
   const kernel = Kernel.create({
     ...(deps.childRoles ? { childRoles: deps.childRoles } : {}),
+    ...input.refinement.kernelOptions,
     ...(systemPromptProvider
       ? {
           systemPrompt: {
@@ -232,7 +245,8 @@ export async function createKernel(
       ...adapters.fs,
       read: (path, opts) => adapters.fs.read(path, { ...opts, unit: 'bytes' }),
     },
-    memoryFor: ({ key, workspaceRoot }) => memory(workspaceRoot, key),
+    memoryFor: ({ key, workspaceRoot }) =>
+      input.refinement.workspace.opened(workspaceRoot, memory(workspaceRoot, key)),
     commandPathScopeFor: hostCommandPathScope,
     netFetch: deps.netFetch ?? createNetFetch(),
     publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
@@ -250,6 +264,11 @@ export async function createKernel(
     ...(computerUse.hostToolDispatch ? { hostToolDispatch: computerUse.hostToolDispatch } : {}),
     ...(ctx.profile.reconcile.point === 'immediate' ? {} : { quiet: quietState }),
     ...(deps.log ? { logger: correlatedLogger(deps.log) } : {}),
+    onRunFailure: ({ session, ...failure }) =>
+      deps.audit.write({
+        kind: 'session.run_failed',
+        detail: { session: `sha256-${createHash('sha256').update(session).digest('hex')}`, ...failure },
+      }),
     clock,
     agnesVersion: deps.agnesVersion ?? '0.0.0',
     hookLeaseFor: (source) =>
@@ -313,5 +332,6 @@ export async function createKernel(
   })
   ctx.live.kernel.set(kernel)
   rollback.push('kernel', () => kernel.close())
+  input.refinement.bindKernel(kernel)
   return { kernel, extensionSessions, compositionLease, systemPromptProvider, memory }
 }

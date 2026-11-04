@@ -62,6 +62,7 @@ import { pluginTreeList } from '../plugin-tree-surface.js'
 import { type Applications, createApplications } from './applications.js'
 import { createAuthoringTestRunner, runAuthoringTests } from './authoring-tests.js'
 import { callBuiltinClientQuery } from './builtin-client-services.js'
+import { queryCatalog, sortCatalog } from './catalog-query.js'
 import {
   type ClientModuleRegistry,
   type ClientModulesChanged,
@@ -74,7 +75,7 @@ import {
   reviewedUpdateOptions,
 } from './dependent-updates.js'
 import { metadataView } from './metadata-view.js'
-import { failureHelp, operationError } from './operation-error.js'
+import { failureHelp, operationError, removalRefusal } from './operation-error.js'
 import {
   type PackageOperationKind,
   type PackageOperationRecovery,
@@ -160,6 +161,7 @@ export type RuntimePinsAdapter = Readonly<{
 }>
 
 export type PackageAdminService = Readonly<{
+  features?: readonly string[]
   candidateForCommand?(
     profile: string,
     commandId: string,
@@ -274,7 +276,12 @@ function packageError(error: unknown): PackageAdminError {
       : 'E_PACKAGE_STATE'
   const detail =
     raw.detail && typeof raw.detail === 'object' ? (raw.detail as Record<string, unknown>) : undefined
-  const blockers = safeBlockers(detail?.blockers)
+  const blockers = safeBlockers(
+    detail?.blockers ??
+      (detail?.reason === 'residue'
+        ? [{ code: 'generation', references: ['live-extension-resources'] }]
+        : []),
+  )
   const sourceFailure = packageSourceFailure(code, detail?.reason)
   return {
     code,
@@ -440,15 +447,13 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
   return projected
 }
 
-function sortCatalog(entries: readonly PackageCatalogDescriptor[]): PackageCatalogDescriptor[] {
-  return [...entries].sort((left, right) => {
-    const a = `${left.id}\u0000${left.version}\u0000${left.sourceId}`
-    const b = `${right.id}\u0000${right.version}\u0000${right.sourceId}`
-    return a < b ? -1 : a > b ? 1 : 0
-  })
-}
-
 class Service implements PackageAdminService {
+  get features(): readonly string[] {
+    return [
+      ...(this.options.community ? ['packages.community-discovery.v1'] : []),
+      ...(this.options.skillImport ? ['packages.skill-import.v1'] : []),
+    ]
+  }
   private readonly applications: Applications
   private readonly configuration: PluginConfiguration
   private readonly candidates: AuthoringCandidates
@@ -462,12 +467,14 @@ class Service implements PackageAdminService {
   constructor(
     private readonly options: {
       manager: PackageManager
+      skillImport?: ReturnType<typeof import('./skill-import.js').createSkillImportService>
       authoringTestRunner?: AuthoringTestRunner
       resolveAgent?(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
       authoringHome?: string
       profileDirectory: PackageProfileDirectory
       operations: PackageOperationStore
       catalog?: Catalog
+      community?: (profile: string) => import('./community-discovery.js').CommunitySnapshot | undefined
       activation?: PackageActivationAdapter
       runtimePins?: RuntimePinsAdapter
       clientModules?: ClientModuleRegistry
@@ -598,6 +605,10 @@ class Service implements PackageAdminService {
       const checked = validatePackageAdminCall(method, 'params', params)
       if (!checked.ok) throw rpcError('INVALID_PARAMS', { code: 'INVALID' })
       const data = checked.value as Record<string, unknown>
+      if (method === '_agnes/v1/packages.skillImport') {
+        if (!this.options.skillImport || granted.installer === 'agent') throw rpcError('CAPABILITY_DENIED')
+        return this.options.skillImport.call(data as import('@agnes/protocol').SkillImportParams, granted)
+      }
       if (method === '_agnes/v1/packages.update' && ('activation' in data || 'dependents' in data))
         requirePackageAdminPermissions(method, granted, [
           'packages.install',
@@ -1019,44 +1030,26 @@ class Service implements PackageAdminService {
     return { rolledBack: true, desiredDigest: previous.digest }
   }
 
-  private async catalogList(params: { profile: string; query?: string; cursor?: string; limit?: number }) {
+  private async catalogList(params: {
+    profile: string
+    query?: string
+    cursor?: string
+    limit?: number
+    includeCommunity?: boolean
+  }) {
     await this.options.profileDirectory(params.profile)
     const read = this.options.catalog ? await this.options.catalog.read({ offline: true }) : { entries: [] }
-    const entries = sortCatalog(read.entries.map(projectCatalogDescriptor))
-    const query = params.query?.toLowerCase()
-    const visible = query
-      ? entries.filter((entry) => {
-          const metadata = entry.metadata
-          const text = [
-            entry.id,
-            metadata?.displayName,
-            metadata?.summary,
-            ...Object.values(metadata?.locales ?? {}).flatMap((value) => [value.displayName, value.summary]),
-            ...entry.contributions.map((value) => value.id),
-            ...(entry.presentation?.rows ?? []).flatMap((row) => [
-              row.id,
-              row.metadata?.displayName,
-              row.metadata?.summary,
-              ...Object.values(row.metadata?.locales ?? {}).flatMap((value) => [
-                value.displayName,
-                value.summary,
-              ]),
-            ]),
-          ]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase()
-          return text.includes(query)
-        })
-      : entries
+    const visible = queryCatalog(read.entries.map(projectCatalogDescriptor), params.query)
     const cursor = params.cursor
     const start = cursor ? visible.findIndex((entry) => `${entry.id}@${entry.version}` === cursor) + 1 : 0
     const limit = params.limit ?? 50
     const items = visible.slice(Math.max(0, start), Math.max(0, start) + limit)
     const last = items.at(-1)
+    const community = params.includeCommunity ? this.options.community?.(params.profile) : undefined
     return {
       items,
       nextCursor: last && start + items.length < visible.length ? `${last.id}@${last.version}` : null,
+      ...(community ? { community } : {}),
     }
   }
 
@@ -1791,7 +1784,7 @@ class Service implements PackageAdminService {
   }
 
   private async assertRemovalReady(profile: string, packageId: string): Promise<void> {
-    if (!this.options.activation) throw { code: 'E_PACKAGE_STATE' }
+    if (!this.options.activation) throw removalRefusal('activation-unavailable', packageId)
     const observed = normalizeObservation(await this.options.activation.actual(profile, packageId))
     // `stopped()` is the adapter's precise assertion that nothing is running *or about to run*.
     // Client-only modules can remain visually `starting` while their roster settles, even after
@@ -1799,7 +1792,7 @@ class Service implements PackageAdminService {
     // removal instead of retaining an inert package forever on its presentation state alone.
     const stopped = (await this.options.activation.stopped?.(profile, packageId)) === true
     if ((observed?.actual !== 'not-running' && !stopped) || observed?.cleanupPending === true)
-      throw { code: 'E_PACKAGE_STATE' }
+      throw removalRefusal(observed?.cleanupPending ? 'cleanup-pending' : 'package-running', packageId)
   }
 
   private startState(kind: PackageOperationKind): PackageOperation['state'] {
@@ -2116,6 +2109,7 @@ class Service implements PackageAdminService {
 }
 
 export function createPackageAdminService(options: {
+  skillImport?: ReturnType<typeof import('./skill-import.js').createSkillImportService>
   manager: PackageManager
   authoringTestRunner?: AuthoringTestRunner
   resolveAgent?(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
@@ -2123,6 +2117,7 @@ export function createPackageAdminService(options: {
   profileDirectory: PackageProfileDirectory
   operations: PackageOperationStore
   catalog?: Catalog
+  community?: (profile: string) => import('./community-discovery.js').CommunitySnapshot | undefined
   activation?: PackageActivationAdapter
   runtimePins?: RuntimePinsAdapter
   clientModules?: ClientModuleRegistry

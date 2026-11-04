@@ -15,7 +15,7 @@ import { chooseWorkspace, fresh, openGoal, turn, workbenchTab } from './ui.js'
 async function workbenchScreen(page: Page, info: TestInfo, name: string, folder?: string) {
   for (const label of await page.locator('.workspace-name').allTextContents())
     expect(label.trim(), 'Every registered workspace identifies its folder').not.toBe('')
-  // The consolidated visual gate owns PNG comparisons; retain every behavioural assertion here.
+  // Screenshots are evidence only; a behaviour-only run skips them and keeps every assertion here.
   if (process.env.AGH_WEB_BEHAVIOUR_ONLY === '1') return
   await screen(page, info, `workbench-${name}`)
   if (folder) await copyFile(info.outputPath(`workbench-${name}.png`), join(folder, `${name}.png`))
@@ -76,7 +76,7 @@ test('workspace dock previews and mentions a file that the agent reads', async (
   await expect(page.getByTestId('file-tab')).toHaveCount(1)
   await expect(page.getByTestId('file-tab-select')).toHaveAttribute('aria-pressed', 'true')
   await page.getByTestId('file-mention').click()
-  await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toHaveValue('@report.md ')
+  await expect(page.getByRole('textbox', { name: 'Task content', exact: true })).toHaveValue('@report.md  ')
   await turn(page, 'call read {"path":"report.md"}')
   const client = await runtime.connect()
   const id = new URL(page.url()).searchParams.get('session')
@@ -340,15 +340,18 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await expect(terminalInput).toBeEditable()
   await terminalInput.pressSequentially("printf 'E2E_TERMINAL_OK\\n'")
   await terminalInput.press('Enter')
+  // The output must start its own line; the echoed command never does. Readline (bash >= 5.1)
+  // leaves bracketed-paste mode with `ESC[?2004l` + CR before the command runs, so after VT
+  // stripping a line can begin at CR as well as at LF.
   await expect
     .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
-    .toMatch(/\nE2E_TERMINAL_OK\r?\n/)
+    .toMatch(/[\r\n]E2E_TERMINAL_OK\r?\n/)
   await expect(terminalText).toContainText('E2E_TERMINAL_OK')
   await terminalInput.pressSequentially("PS1='wb1$ '; printf '\\033[2J\\033[H'; printf 'WB1_TERMINAL_OK\\n'")
   await terminalInput.press('Enter')
   await expect
     .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
-    .toMatch(/\nWB1_TERMINAL_OK\r?\n/)
+    .toMatch(/[\r\n]WB1_TERMINAL_OK\r?\n/)
   await expect(terminalText).toContainText('WB1_TERMINAL_OK')
   await panel.getByTestId('terminal-new').click()
   await expect(panel.getByTestId('terminal-tab')).toHaveCount(2)
@@ -375,7 +378,7 @@ test('session terminal survives UI detachment, follows agent output and honors p
   await terminalInput.press('Enter')
   await expect
     .poll(async () => stripVTControlCharacters((await session.jobsRead(human.id)).job?.stdout ?? ''))
-    .toMatch(/\nWB1_AFTER_INTERRUPT\r?\n/)
+    .toMatch(/[\r\n]WB1_AFTER_INTERRUPT\r?\n/)
   await expect(terminalText).toContainText('WB1_AFTER_INTERRUPT')
   await translated(page)
   await accessible(page, info, 'workbench-terminal')
@@ -717,7 +720,7 @@ test('changed files review follows confirmed agent effects and preserves current
   expect(newer.selected?.diff).toContain('+export const answer = 2\n')
   expect(newer.selected?.diff).not.toContain('answer = 99')
   await panel.getByTestId('changes-mention').click()
-  await expect(composer).toHaveValue('@review.ts ')
+  await expect(composer).toHaveValue('@review.ts  ')
   await expect(page.getByTestId('composer-file-mention')).toContainText('review.ts')
   expect(await readFile(join(runtime.workspace, 'review.ts'), 'utf8')).toBe('export const answer = 99\n')
   await panel.locator('.workbench-change-evidence > :is(summary, .agh-disclosure-summary)').click()

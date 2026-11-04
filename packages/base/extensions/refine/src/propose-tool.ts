@@ -1,106 +1,81 @@
-import type { HarnessEntry, HarnessSeam, RefineProposal } from '@agnes/core'
 import { defineTool } from '@agnes/plugin-runtime'
 import { type Static, Type } from '@sinclair/typebox'
+import type { RefinementToolPort, SessionProposal } from './port.js'
 
-// Every entry this tool proposes is stamped with this fixed provenance. `source` is a required
-// HarnessEntry field stamped here by execute(), not accepted as tool input.
-// A model proposing a change to its own prompts/
-// memory/skills/subagents has no legitimate claim to make about that entry's *provenance* - letting
-// the caller supply an arbitrary `source` string would let a proposal assert a provenance it did
-// not have. Substantive justification (which events motivated the proposal) is a separate thing the
-// model *does* have first-hand knowledge of, so that lives in `evidenceSeqs` as real, required input
-// instead (see ProposeParams below).
-const PROPOSAL_SOURCE = 'harness_propose'
+export const EntryKind = Type.Union([
+  Type.Literal('prompt'),
+  Type.Literal('memory'),
+  Type.Literal('skill'),
+  Type.Literal('subagent'),
+])
 
-const Entry = Type.Object(
-  {
-    kind: Type.Union([
-      Type.Literal('prompt'),
-      Type.Literal('memory'),
-      Type.Literal('skill'),
-      Type.Literal('subagent'),
-    ]),
-    id: Type.String({ maxLength: 128 }),
-    title: Type.String({ maxLength: 256 }),
-    content: Type.String({ maxLength: 8192 }),
-    scope: Type.Optional(Type.Union([Type.Literal('local'), Type.Literal('global')])),
-  },
-  { additionalProperties: false },
-)
+/**
+ * Where a refinement lands: this session (the default) or, as well, the session's workspace or user memory
+ * (read in every workspace). Saving is always the model's own save: it states no one else, and the host
+ * decides the rest.
+ */
+export const Target = Type.Union([Type.Literal('session'), Type.Literal('workspace'), Type.Literal('user')], {
+  description:
+    '"session" (default) keeps it in this session; "workspace" also saves it to this workspace; "user" also saves it to user memory, read in every workspace, so only a lesson that holds in every project and names no project, path or repository. Both saving targets need automatic refinement.',
+})
 
+// The model states what to change and why, citing the events that justify it. It never states who
+// asked, the scope, an entry version or the trigger: the host stamps those, and a rollback is a
+// control operation of its own, never a proposal.
 export const ProposeParams = Type.Object(
   {
-    proposalId: Type.String({ maxLength: 128 }),
-    trigger: Type.Union([
-      Type.Literal('auto'),
-      Type.Literal('manual'),
-      Type.Literal('compact'),
-      Type.Literal('rollback'),
-    ]),
-    rationale: Type.String({ maxLength: 2048 }),
-    rollbackOf: Type.Optional(Type.Integer({ minimum: 1 })),
-    // RefineProposal.evidenceSeqs (seams.ts:145) is required, and gateT0 rejects an empty
-    // one as `no_evidence`. Required and non-empty here, rather than defaulted: an ungrounded self-modification
-    // proposal is exactly what evidence-citing exists to prevent, so there is no safe default.
-    evidenceSeqs: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1, maxItems: 50 }),
-    // Also required on RefineProposal, but - unlike evidenceSeqs - an add-only proposal has no
-    // existing entry version to cite, so an absent baseline is a legitimate "asserts no version
-    // dependency" rather than an omission to reject. Defaulted to [] in toRealProposal below.
-    baseline: Type.Optional(
-      Type.Array(
-        Type.Object({ key: Type.String({ maxLength: 128 }), version: Type.Integer({ minimum: 0 }) }),
-        { maxItems: 20 },
-      ),
-    ),
+    rationale: Type.String({ minLength: 1, maxLength: 2048 }),
+    // Required and non-empty: an ungrounded self-modification proposal is exactly what citing
+    // evidence exists to prevent, so there is no safe default.
+    evidenceSeqs: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1, maxItems: 20 }),
     edits: Type.Array(
       Type.Union([
-        Type.Object({ op: Type.Literal('upsert'), entry: Entry }, { additionalProperties: false }),
-        // REAL HarnessEdit (core/src/reduce/shapes.ts:129-131) spells the delete variant `op:
-        // 'delete'`. The plan's own Step 7 sample used `op: Type.Literal('remove')` here - an
-        // internal inconsistency in the plan's own text, since its Step 3 seam.ts sample correctly
-        // imports the real HarnessEdit type and would already expect 'delete'. Corrected to the
-        // real value; see test/propose-tool.test.ts for the schema-level regression pin.
         Type.Object(
-          { op: Type.Literal('delete'), kind: Entry.properties.kind, id: Type.String({ maxLength: 128 }) },
+          {
+            op: Type.Literal('upsert'),
+            kind: EntryKind,
+            id: Type.String({ minLength: 1, maxLength: 128 }),
+            title: Type.String({ minLength: 1, maxLength: 256 }),
+            content: Type.String({ minLength: 1, maxLength: 2000 }),
+            // Skill and subagent only, checked by the host: never a grant of tools, models or access.
+            reference: Type.Optional(
+              Type.String({
+                minLength: 1,
+                maxLength: 512,
+                description:
+                  'Skill or subagent only: the approved resource this entry uses, as "<resourceId>@<revision>" of an enabled, trusted Skill or the role ref subagent_spawn takes.',
+              }),
+            ),
+          },
+          { additionalProperties: false },
+        ),
+        // The real HarnessEdit spells the delete variant `op: 'delete'`; see
+        // test/propose-tool.test.ts for the schema-level regression pin.
+        Type.Object(
+          { op: Type.Literal('delete'), kind: EntryKind, id: Type.String({ minLength: 1, maxLength: 128 }) },
           { additionalProperties: false },
         ),
       ]),
-      { minItems: 1, maxItems: 20 },
+      { minItems: 1, maxItems: 5 },
     ),
+    target: Type.Optional(Target),
   },
   { additionalProperties: false },
 )
 
 type ProposeArgs = Static<typeof ProposeParams>
 
-/** Fills the required RefineProposal/HarnessEntry fields the input schema deliberately leaves out
- * or optional - see the doc comments on PROPOSAL_SOURCE and ProposeParams above for why each one
- * is a stamped default rather than caller input. */
-function toRealProposal(args: ProposeArgs): RefineProposal {
-  return {
-    proposalId: args.proposalId,
-    trigger: args.trigger,
-    rationale: args.rationale,
-    ...(args.rollbackOf !== undefined ? { rollbackOf: args.rollbackOf } : {}),
-    evidenceSeqs: args.evidenceSeqs,
-    baseline: args.baseline ?? [],
-    edits: args.edits.map((e): RefineProposal['edits'][number] =>
-      e.op === 'upsert'
-        ? {
-            op: 'upsert',
-            entry: { ...e.entry, scope: e.entry.scope ?? 'local', source: PROPOSAL_SOURCE } as HarnessEntry,
-          }
-        : e,
-    ),
-  }
+/** The proposal as the port receives it: the target routes the call and is not part of it. */
+function toProposal(args: ProposeArgs): SessionProposal {
+  return { rationale: args.rationale, evidenceSeqs: args.evidenceSeqs, edits: args.edits }
 }
 
 // 拍板 Q2（2026-09-08）：模型面入口是普通工具，不给 ToolContext 加 harness 成员。
-export function createProposeTool(seam: Pick<HarnessSeam, 'propose'>) {
+export function createProposeTool(port: Pick<RefinementToolPort, 'propose'>) {
   return defineTool({
     name: 'harness_propose',
     description:
-      'Propose a change to prompts, memory, skills or subagent specs. Proposals are queued and reviewed; there is no direct write path.',
+      "Submit a structured change to this session's prompts, memory, Skills or child-agent definitions (at most 5 entries of at most 2,000 characters each), citing the event seqs that justify it. A new id adds an entry; to replace or delete a saved entry, first read it in full with harness_inspect (op 'get'). The change is checked and, if accepted, takes effect from a later turn (a deleted entry is withdrawn there); there is no direct write path.",
     parameters: ProposeParams,
     meta: {
       isReadOnly: false,
@@ -108,34 +83,16 @@ export function createProposeTool(seam: Pick<HarnessSeam, 'propose'>) {
       isConcurrencySafe: false,
       isOpenWorld: false,
       replay: 'idempotent',
-
-      // THIRD self-discovered correction (see task report): the plan's own Step 7 sample wrote
-      // `deferLoading: undefined` here, which core's discloseTools (core/src/step/inference.ts:50,
-      // `d.meta.deferLoading !== true`) treats as eager - shown in every request's system prompt by
-      // default, the same as read/write/edit/shell/etc. Measured against the real replay corpus
-      // (packages/host/test/replay.test.ts, fixtures 0001-read-note and
-      // 0100-killed-mid-inference-resumes both hardcode the exact eager-tool count):
-      // registering harness_propose as eager changed that count and broke both. `true` here is both
-      // the fix and a defensible standalone call - a self-modification tool should not be advertised
-      // alongside every ordinary coding tool; a caller that specifically needs it can still reach it
-      // through the deferred-tools listing (registry/tools.ts's `list({ deferred: true })`).
+      // Deferred, never eager: core's discloseTools (core/src/execution/turn/inference.ts) treats
+      // `deferLoading !== true` as eager and lists the tool in every request's system prompt, which
+      // also changes the eager-tool count the host replay fixtures pin. A self-modification tool is
+      // not advertised beside every ordinary coding tool; it is reachable through the deferred list.
       deferLoading: true,
     },
-    async execute(args) {
-      const verdict = await seam.propose(toRealProposal(args))
-      return {
-        content: [
-          {
-            type: 'text',
-            text:
-              verdict === 'queued'
-                ? 'proposal queued for review'
-                : 'proposal rejected (queue full or unknown kind)',
-          },
-        ],
-        structured: { verdict },
-        isError: verdict === 'rejected',
-      }
+    async execute(args, ctx) {
+      if (args.target === 'workspace' || args.target === 'user')
+        return port.propose(toProposal(args), ctx, args.target)
+      return port.propose(toProposal(args), ctx)
     },
   })
 }

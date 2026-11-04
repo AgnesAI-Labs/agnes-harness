@@ -9,7 +9,7 @@ import { createComputerUseExtension } from '../extensions/computer-use/src/index
 import contextRulesExtension from '../extensions/context-rules/src/index.js'
 import deliverablesExtension from '../extensions/deliverables/src/index.js'
 import { createFollowUpHintExtension } from '../extensions/follow-up-hint/src/index.js'
-import goalExtension from '../extensions/goal/src/index.js'
+import { createGoalExtension } from '../extensions/goal/src/index.js'
 import { createHeadsUpExtension } from '../extensions/heads-up/src/index.js'
 import {
   type CcHookMap,
@@ -29,8 +29,6 @@ import planModeExtension from '../extensions/plan-mode/src/index.js'
 import pluginCreatorExtension from '../extensions/plugin-creator/src/index.js'
 import { createPrivacyExtension, sessionEgressAuthority } from '../extensions/privacy/src/index.js'
 import { createRefineExtension } from '../extensions/refine/src/index.js'
-import { RefineQueue } from '../extensions/refine/src/queue.js'
-import { createRefineHarness } from '../extensions/refine/src/seam.js'
 import { createScheduleExtension } from '../extensions/schedule/src/index.js'
 import { createSessionQueryExtension } from '../extensions/session-query/src/index.js'
 import { skillsExtension } from '../extensions/skills/src/runtime.js'
@@ -41,7 +39,7 @@ import { createToolsCoreExtension } from '../extensions/tools-core/src/index.js'
 import toolsSearchExtension from '../extensions/tools-search/src/index.js'
 import { createToolsWebExtension } from '../extensions/tools-web/src/index.js'
 import { createOfficialSearchProvider } from '../extensions/tools-web/src/search/index.js'
-import workflowExtension from '../extensions/workflow/src/index.js'
+import { createWorkflowExtension } from '../extensions/workflow/src/index.js'
 import type { ChildWorktreePort, SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed generated asset by the CLI SEA build. */
@@ -111,13 +109,11 @@ export function createEcosystemExtensions(init: SeamInitContext): {
         ...(deps.sandbox === undefined ? {} : { sandbox: deps.sandbox }),
         ...(deps.http === undefined ? {} : { http: deps.http }),
       }),
-    refine: () => {
-      const queue = new RefineQueue(init.adapters.storage.namespace('refine_queue'))
-      const rawMax = (init.profile.preset.harness as { queue_max?: unknown } | undefined)?.queue_max ?? 20
-      if (!Number.isSafeInteger(rawMax) || (rawMax as number) < 0)
-        throw new Error('harness.queue_max must be a non-negative safe integer')
-      return createRefineExtension(createRefineHarness(queue, rawMax as number))
-    },
+    refine: () =>
+      createRefineExtension({
+        ...(init.refinementSettings ? { settings: init.refinementSettings } : {}),
+        ...(init.refinementRuns ? { runs: init.refinementRuns } : {}),
+      }),
     subagent: () => defineSubagentExtension(init),
     skills: () => skillsExtension(init),
   }
@@ -184,19 +180,23 @@ function defineSubagentExtension(init: SeamInitContext): BundledPlugin {
 
 const bundled = {
   'agnes/intelligent-ui': (): BundledPlugin => intelligentUiExtension,
-  'agnes/workflow': (): BundledPlugin => workflowExtension,
+  'agnes/workflow': (init: SeamInitContext): BundledPlugin =>
+    createWorkflowExtension(
+      init.provideWorkflowRuns ? { provideWorkflowRuns: init.provideWorkflowRuns } : {},
+    ),
   'agnes/context-rules': (): BundledPlugin => contextRulesExtension,
   'agnes/follow-up-hint': (init: SeamInitContext): BundledPlugin =>
     createFollowUpHintExtension(init.sessionTasks),
   'agnes/heads-up': (init: SeamInitContext): BundledPlugin => createHeadsUpExtension(init.sessionTasks),
   'agnes/time-context': (): BundledPlugin => timeContextExtension,
 
-  'agnes/goal': (): BundledPlugin => goalExtension,
+  'agnes/goal': (init: SeamInitContext): BundledPlugin =>
+    createGoalExtension(init.provideTaskScope ? { provideTaskScope: init.provideTaskScope } : {}),
   'agnes/interaction': (): BundledPlugin => interactionExtension,
   'agnes/deliverables': (): BundledPlugin => deliverablesExtension,
   'agnes/plugin-creator': (): BundledPlugin => pluginCreatorExtension,
   'agnes/tools-core': (init: SeamInitContext): BundledPlugin =>
-    createToolsCoreExtension(shellJobsFor(init.signal), lspFor(init.signal)),
+    createToolsCoreExtension(shellJobsFor(init.signal), lspFor(init.signal), init.profile.preset),
   // Shares one registry with tools-core (as jobs does): applying this extension is what turns the
   // language servers on for the write/edit results too.
   'agnes/lsp': (init: SeamInitContext): BundledPlugin => createLspExtension(lspFor(init.signal)),

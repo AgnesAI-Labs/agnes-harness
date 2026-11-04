@@ -4,6 +4,7 @@ import type { Session } from '@agnes/sdk'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures.js'
 import { accessible, screen, translated } from './quality.js'
+import type { Runtime } from './runtime.js'
 import { describingFirst, install, prompt, toolResult } from './sdk.js'
 import {
   chooseWorkspace,
@@ -25,12 +26,11 @@ async function latestTurnShown(page: Page, session: Session) {
   await expect(page.getByTestId('conversation-turn').last()).toHaveAttribute('data-turn-id', latest.id)
 }
 
-test('agent candidate review binds exact tests and hashes, refuses edited approval, publishes only for new sessions', async ({
-  page,
-  runtime,
-  expectedBrowserErrors,
-}, info) => {
-  test.setTimeout(300_000)
+/**
+ * The authoring workshop both review tests start from: a workspace-write session, titled for stable
+ * screens, whose permission requests are allowed once, after reading the on-demand plugin guide.
+ */
+async function workshop(page: Page, runtime: Runtime) {
   const pluginPage = page.getByTestId('home-page-plugins')
   const skillReview = page.getByTestId('candidate-review')
   async function reviewType(kind: 'plugin' | 'skill') {
@@ -89,6 +89,22 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
       ? ((await toolResult(old, 'plugin_helper_guide'))!.content[0] as { text: string }).text
       : '{}',
   ) as { files: { path: string; content: string }[] }
+  // The review loops reload the page in the locale and theme they store first.
+  await page.addInitScript(() => {
+    if (location.protocol !== 'http:') return
+    localStorage.setItem('agnes-locale', localStorage.getItem('e2e-authoring-locale') ?? 'en')
+    localStorage.setItem('agnes-theme', localStorage.getItem('e2e-authoring-theme') ?? 'light')
+  })
+  return { pluginPage, skillReview, reviewType, client, old, authoringIdle, promptOld, guide }
+}
+
+test('agent candidate review binds exact tests and hashes, refuses edited approval, publishes only for new sessions', async ({
+  page,
+  runtime,
+  expectedBrowserErrors,
+}, info) => {
+  test.setTimeout(300_000)
+  const { pluginPage, skillReview, reviewType, client, old, promptOld, guide } = await workshop(page, runtime)
   await promptOld('call plugin_helper_create ' + JSON.stringify({ files: guide.files }))
   const createdResult = (await toolResult(old, 'plugin_helper_create'))!.content[0] as { text: string }
   const draft = JSON.parse(createdResult.text) as import('@agnes/protocol').AuthoringCandidate
@@ -108,11 +124,6 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     candidateId: draft.candidateId,
   })
   expect(reviewed).toMatchObject({ state: 'review', tests: { state: 'passed', hash: draft.candidateHash } })
-  await page.addInitScript(() => {
-    if (location.protocol !== 'http:') return
-    localStorage.setItem('agnes-locale', localStorage.getItem('e2e-authoring-locale') ?? 'en')
-    localStorage.setItem('agnes-theme', localStorage.getItem('e2e-authoring-theme') ?? 'light')
-  })
   await page.goto(runtime.url)
   await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
   await expect(page.locator('.workspace-heading .workspace-name').filter({ hasText: /^w$/ })).toHaveCount(1)
@@ -309,8 +320,75 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
   expect((await freshSession.tools()).tools.some((t) => t.name === 'my_text_stats')).toBe(true)
   await prompt(freshSession, 'call my_text_stats {"text":"hello world"}')
   expect((await toolResult(freshSession, 'my_text_stats'))!.structured).toEqual({ characters: 11, words: 2 })
+  await info.attach('reviewed-publication.json', {
+    body: JSON.stringify({ reviewed, provenance }),
+    contentType: 'application/json',
+  })
+})
+
+test('agent candidate inbox rejects a skill, reviews an update diff and publishes a skill for new sessions', async ({
+  page,
+  runtime,
+}, info) => {
+  test.setTimeout(300_000)
+  const { pluginPage, skillReview, reviewType, client, old, authoringIdle, promptOld, guide } =
+    await workshop(page, runtime)
+  // The first test covers the human review, stale-approval refusal and publication in the page. Here the
+  // same plugin, with the line edited after review, is published through the admin approval with its
+  // exact review hashes, so the update below replaces a published human-reviewed version.
+  const reviewedFiles = guide.files.map((f) =>
+    f.path === 'index.mjs' ? { ...f, content: f.content + '\n// Edited after review\n' } : f,
+  )
+  // Escape template text so the demo's natural-language authoring shortcut does not replace this explicit call.
+  await promptOld(
+    'call plugin_helper_create ' +
+      JSON.stringify({ files: reviewedFiles }).replace(/[Pp]/g, (letter) =>
+        letter === 'P' ? '\\u0050' : '\\u0070',
+      ),
+  )
+  const draft = JSON.parse(
+    ((await toolResult(old, 'plugin_helper_create'))!.content[0] as { text: string }).text,
+  ) as import('@agnes/protocol').AuthoringCandidate
+  await promptOld(
+    'call plugin_helper_install ' + JSON.stringify({ action: 'test', proposalId: draft.candidateId }),
+  )
+  await promptOld(
+    'call plugin_helper_install ' + JSON.stringify({ action: 'commit', proposalId: draft.candidateId }),
+  )
+  const reviewed = await client.request('_agnes/v1/plugins.candidates.show', {
+    profile: 'local-dev',
+    candidateId: draft.candidateId,
+  })
+  expect(reviewed).toMatchObject({
+    state: 'review',
+    tests: { state: 'passed', hash: reviewed.candidateHash },
+  })
+  expect(
+    await client.request('_agnes/v1/plugins.candidates.approve', {
+      profile: 'local-dev',
+      candidateId: draft.candidateId,
+      expectedHash: reviewed.candidateHash,
+      reviewHash: reviewed.reviewHash!,
+      clientId: await client.clientId(),
+      commandId: `candidate-review-${crypto.randomUUID().replaceAll('-', '')}`,
+    }),
+  ).toMatchObject({ state: 'published' })
+  // Keep the sidebar as the first test leaves it for the review screenshots below.
+  const freshSession = await client.session.new({
+    sessionKey: crypto.randomUUID(),
+    cwd: runtime.workspace,
+    preset: 'standard',
+    permission: 'full-access',
+  })
+  await client.session.rename(freshSession.id, 'Published plugin check')
+  // The workshop's newest turn makes it the session the page opens.
   await promptOld('call read {"path":"report.md"}')
   expect(JSON.stringify(await toolResult(old, 'read'))).toContain('Synthetic delivery')
+  await page.goto(runtime.url)
+  await latestTurnShown(page, old)
+  await expect(page.getByRole('button', { name: 'Settings', exact: true })).toBeVisible()
+  if (!(await page.getByTestId('settings-navigation').isVisible())) await settings(page)
+  await reviewType('plugin')
   // Authored Markdown and adjacent scripts stay inert, and rejection never publishes a Skill.
   const skillBody =
     '---\nname: Reviewed method\ndescription: Synthetic reusable workflow.\n---\n\nUse the normal approved shell tool for scripts.\n'
@@ -619,10 +697,6 @@ test('agent candidate review binds exact tests and hashes, refuses edited approv
     candidates: { state: string }[]
   }
   expect(list.candidates.some((c) => c.state === 'published')).toBe(true)
-  await info.attach('reviewed-publication.json', {
-    body: JSON.stringify({ reviewed, provenance }),
-    contentType: 'application/json',
-  })
   await section(page, 'plugins')
   // Installed provenance opens the retained published candidate, not the pending replacement.
   await page.getByRole('button', { name: `View details for ${draft.packageId}`, exact: true }).click()

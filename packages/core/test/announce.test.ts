@@ -92,6 +92,7 @@ function setup(
     seams?: Seams
     ids?: IdMinter
     clock?: () => number
+    contextWindow?: number
   } = {},
 ) {
   const provider = fakeProvider(o.scripts ?? [textTurn('answer')])
@@ -101,11 +102,13 @@ function setup(
   loops.register('@test/announce', loop)
   const storage = o.storage ?? new MemoryStorage()
   const seams = o.seams ?? fakeSeams()
+  const preset = presetDefaults()
+  if (o.contextWindow !== undefined) preset.model.contextWindow = { primary: o.contextWindow }
   const k = Kernel.create({
     storage,
     loops,
     provider,
-    preset: presetDefaults(),
+    preset,
     seams,
     contract: { contract_id: null, parser_version: '1' },
     fsOps: testFsOps(),
@@ -1483,45 +1486,55 @@ describe('without announce', () => {
     return value
   }
   async function ledger(options: Parameters<LoopContext['tools']['execute']>[2] | 'omitted') {
+    const returned: ToolResult[] = []
     const f = setup(
       perTurn(async (ctx, s) => {
         if (options === 'omitted') {
-          await ctx.tools.execute({ name: 'read', args: { n: 1 } }, s)
-          await ctx.tools.batch(
+          returned.push(await ctx.tools.execute({ name: 'read', args: { n: 1 } }, s))
+          returned.push(
+            ...(await ctx.tools.batch(
+              [
+                { name: 'read', args: { n: 2 } },
+                { name: 'read', args: { n: 3 } },
+              ],
+              s,
+            )),
+          )
+          return
+        }
+        returned.push(await ctx.tools.execute({ name: 'read', args: { n: 1 } }, s, options))
+        returned.push(
+          ...(await ctx.tools.batch(
             [
               { name: 'read', args: { n: 2 } },
               { name: 'read', args: { n: 3 } },
             ],
             s,
-          )
-          return
-        }
-        await ctx.tools.execute({ name: 'read', args: { n: 1 } }, s, options)
-        await ctx.tools.batch(
-          [
-            { name: 'read', args: { n: 2 } },
-            { name: 'read', args: { n: 3 } },
-          ],
-          s,
-          options,
+            options,
+          )),
         )
       }),
-      { ids: stableIds(), clock: () => 1_757_203_200_000 },
+      // This byte fixture fixes its budget explicitly; automatic budgets are tested separately.
+      { ids: stableIds(), clock: () => 1_757_203_200_000, contextWindow: 100000 },
     )
     f.k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
     const session = await f.open('bytes')
     await enqueue(session)
     expect(await run(session)).toMatchObject({ reason: 'completed' })
+    expect(returned.map((result) => result.content)).toEqual(
+      [1, 2, 3].map((n) => [{ type: 'text', text: `read:${JSON.stringify({ n })}` }]),
+    )
     const rows = await session.scan({ fromSeq: 1, limit: 10000 })
     const cells = (await f.storage.registers(session.key)).filter((row) => row.register === 'op.state')
     return withoutDurations({ rows, cells })
   }
 
-  it('writes the same ledger as before the option existed', async () => {
+  it('keeps omitted, empty and false announce options byte-identical', async () => {
     const omitted = await ledger('omitted')
-    // Recorded from the implementation before tools.execute and tools.batch took a third argument.
+    // Ledger includes request composition and the atomic turn wait summary.
+    // Keep full byte equivalence across all omitted forms and input-ordered results.
     expect(sha256Hex(canonicalJson(omitted as never))).toBe(
-      'd017318d877e97479929865147de03287c5e4a59ed7e288d03fe58f29ae1ffca',
+      '416868be3b0f1bedc305e5644eff3a999f97a82d968d95541489c84138cbbca9',
     )
     expect(await ledger(undefined)).toEqual(omitted)
     expect(await ledger({})).toEqual(omitted)

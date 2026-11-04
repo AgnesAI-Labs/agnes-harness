@@ -7,6 +7,12 @@ const literals = (schema: TSchema): unknown[] =>
   schema.enum ??
   (Object.hasOwn(schema, 'const') ? [schema.const] : (schema.anyOf ?? schema.oneOf ?? []).flatMap(literals))
 
+/** Schema refusals precede execute. Array indices are zero-based; null names the whole call. */
+export function toolArgumentFeedback(hint: string) {
+  const item = hint.match(/\/(\d+)(?:\/|:)/)?.[1]
+  return { category: 'invalid_args', index: item === undefined ? null : Number(item), written: false, hint }
+}
+
 /** Explain schema refusals without echoing supplied values or unknown property names. */
 export function toolArgumentError(schema: ToolDef['parameters'], args: unknown): string | undefined {
   const prefix = 'tool arguments do not match the registered schema'

@@ -1,0 +1,2 @@
+input: a b c
+expect: a b c

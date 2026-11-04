@@ -338,6 +338,11 @@ export interface ToolContext {
     revision?(path: string): Promise<string | undefined>
     /** Id of the checkpoint taken before this call's latest write to `path`, when the host keeps one. */
     checkpointOf?(path: string): string | undefined
+    /**
+     * Replace the one exact occurrence of oldText in the stored file; keep every other byte. Offered
+     * for managed memory files and may refuse any other path.
+     */
+    replaceExact?(path: string, oldText: string, newText: string): Promise<void>
   }
   readonly net: {
     fetch(url: string, init?: FetchInit): Promise<Response>
@@ -437,6 +442,8 @@ export interface ToolContext {
   readonly defaultTimeoutMs?: number
   /** Bytes of one result's text the model sees before the output guard cuts it (preset `tools.output_max_bytes`). */
   readonly outputMaxBytes: number
+  /** Collapse repeated command output before truncation; omitted means false. */
+  readonly collapseRepeatedOutput?: boolean
   /**
    * The wall-clock limit of the turn this call runs in, present only when the turn's prompt set one
    * (`agh -p --timeout`, SDK `prompt({ timeLimitMs })`): the limit's length and its deadline in epoch

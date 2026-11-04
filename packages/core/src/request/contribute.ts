@@ -1,5 +1,4 @@
 import type { Conflict } from '@agnes/core-common/context-diagnostics'
-import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import type { RegistrySnapshot } from '../registry/tools.js'
 
 // Owned here: the author-facing package does not publish this name, and every core module that
@@ -113,34 +112,4 @@ export function mergeContributions(contribs: Contribution[], snapshot: RegistryS
     runtimeContext,
     conflicts: [...conflicts].map(([key, ops]) => ({ key, ops: [...ops] })),
   }
-}
-
-/**
- * The prompt-visible half of the harness register. `skill` and `subagent` entries are deliberately
- * absent: they take effect through the resource library and the subagent spec, and pasting them
- * into the prompt would both duplicate them and grow the prefix every session.
- */
-export function harnessSections(entries: Iterable<HarnessEntry>): PromptSection[] {
-  const chosen = new Map<string, HarnessEntry>()
-  for (const e of entries) {
-    if (e.kind !== 'prompt' && e.kind !== 'memory') continue
-    const k = `${e.kind}/${e.id}`
-    const cur = chosen.get(k)
-    if (!cur || (cur.scope === 'global' && e.scope === 'local')) chosen.set(k, e)
-  }
-  const out: PromptSection[] = []
-  for (const [kind, order] of [
-    ['prompt', 180],
-    ['memory', 181],
-  ] as const) {
-    const items = [...chosen.values()].filter((e) => e.kind === kind).sort((a, b) => a.id.localeCompare(b.id))
-    if (items.length)
-      out.push({
-        id: `harness:${kind}`,
-        order,
-        text: items.map((e) => `- ${e.title}: ${e.content}`).join('\n'),
-        source: 'harness',
-      })
-  }
-  return out
 }

@@ -9,6 +9,7 @@ import { HEADS_UP_DICT, type HeadsUpKey } from './locale-heads-up.js'
 import { MEMORY_DICT, type MemoryKey } from './locale-memory.js'
 import { PROMPT_CLICK_DICT, type PromptClickKey } from './locale-prompt-click.js'
 import { PROVIDER_DICT, type ProviderKey } from './locale-provider.js'
+import { REFINE_DICT, type RefineKey } from './locale-refine.js'
 import { SESSION_ACTION_DICT, type SessionActionKey } from './locale-session-actions.js'
 import { SESSION_VIEW_DICT, type SessionViewKey } from './locale-session-view.js'
 import { SHELL_UX_DICT, type ShellUxKey } from './locale-shell-ux.js'
@@ -150,6 +151,7 @@ export type TerminalKey =
   | CdKey
   | DaltonizedKey
   | ProviderKey
+  | RefineKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
   en: {
@@ -162,6 +164,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...SESSION_VIEW_DICT.en,
     ...TREE_DICT.en,
     ...HANDOFF_DICT.en,
+    ...REFINE_DICT.en,
     ...BANG_DICT.en,
     ...WORKTREE_DICT.en,
     ...ADD_DIR_DICT.en,
@@ -296,6 +299,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...SESSION_VIEW_DICT['zh-CN'],
     ...TREE_DICT['zh-CN'],
     ...HANDOFF_DICT['zh-CN'],
+    ...REFINE_DICT['zh-CN'],
     ...BANG_DICT['zh-CN'],
     ...WORKTREE_DICT['zh-CN'],
     ...ADD_DIR_DICT['zh-CN'],

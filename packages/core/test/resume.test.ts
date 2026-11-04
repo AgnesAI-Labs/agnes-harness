@@ -666,25 +666,44 @@ describe('resume', () => {
   // What the interrupted request cost is estimated from the words that actually arrived, not from
   // nothing and not from the whole answer that never came. Charging zero for a stream that had
   // already run would let a route that dies late be retried for free.
-  it('an interrupted inference is charged for the output that had already arrived', async () => {
-    const storage = new MemoryStorage()
-    const a = await openSession({ provider: hangingModelAfter('x'.repeat(600)), storage })
-    await a.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
-    await a.session.step()
-    await a.session.step()
-    void a.session.step().catch(() => undefined)
-    await new Promise((r) => setTimeout(r, 10))
-    await a.log.close()
-    const { session, log } = await reopen(storage)
-    // The output count the dying process had already written is the only evidence of what was
-    // produced: the text itself was never a ledger row.
-    expect(await log.scan({ type: 'assistant/output', limit: 5 })).toHaveLength(1)
-    expect((await session.resume()).actions[0]?.action).toBe('retry')
-    expect((await log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data).toMatchObject({
-      interrupted: true,
-      tokens: { input: 0, output: 150, cacheRead: 0, cacheWrite: 0 },
-    })
-  })
+  it.each(['continue', 'close'] as const)(
+    'an interrupted inference is charged for durable output in %s mode',
+    async (mode) => {
+      const storage = new MemoryStorage()
+      const a = await openSession({ provider: hangingModelAfter('x'.repeat(600)), storage })
+      await a.session.enqueue('next-turn', { content: [{ type: 'text', text: 'go' }], actor })
+      await a.session.step()
+      await a.session.step()
+      void a.session.step().catch(() => undefined)
+      await new Promise((r) => setTimeout(r, 10))
+      await a.log.close()
+      const { session, log } = await reopen(storage)
+      // The output count the dying process had already written is the only evidence of what was
+      // produced: the text itself was never a ledger row.
+      expect(await log.scan({ type: 'assistant/output', limit: 5 })).toHaveLength(1)
+      expect((await session.resume({ mode })).actions[0]?.action).toBe(
+        mode === 'continue' ? 'retry' : 'error',
+      )
+      expect((await log.scan({ type: 'cost/ledger', limit: 5 }))[0]?.data).toMatchObject({
+        interrupted: true,
+        tokens: { input: 0, output: 150, cacheRead: 0, cacheWrite: 0 },
+      })
+      if (mode === 'continue')
+        expect(
+          JSON.stringify((await log.scan({ type: 'user/message', limit: 10 })).map((e) => e.data)),
+        ).toContain('interrupted (INTERRUPTED)')
+      else {
+        expect((await log.scan({ type: 'turn/end', limit: 5 }))[0]?.data).toMatchObject({
+          reason: 'interrupted',
+        })
+        const terminalSeq = log.lastSeq
+        expect(await session.resume({ mode })).toEqual({ state: 'idle', actions: [] })
+        await session.exportRlaf()
+        expect(log.lastSeq).toBe(terminalSeq)
+        expect(await log.scan({ type: 'cost/ledger', limit: 5 })).toHaveLength(1)
+      }
+    },
+  )
 
   it('an interrupted compaction is settled as failed and the phase it was to resume into is kept', async () => {
     const { storage } = await crashInInference({
@@ -1067,6 +1086,7 @@ describe('resume of an interrupted side call', () => {
     ])
     expect((await costsOf(log)).map((row) => (row.data as { purpose: string }).purpose)).toEqual([
       'side-call',
+      'inference',
     ])
   })
 

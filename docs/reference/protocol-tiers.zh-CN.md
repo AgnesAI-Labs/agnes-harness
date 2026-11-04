@@ -25,6 +25,9 @@
 - `_agnes/v1/session.activity`
 - `_agnes/v1/session.fork`
 - `_agnes/v1/session.btw`
+- `_agnes/v1/session.refine`
+- `_agnes/v1/session.refine.rollback`
+- `_agnes/v1/session.refine.save`
 - `_agnes/v1/session.voice.transcribe`
 - `_agnes/v1/session.voice.speak`
 - `_agnes/v1/voice.status`
@@ -101,11 +104,14 @@
 - `_agnes/v1/session.jobs.read`
 - `_agnes/v1/session.jobs.control`
 - `_agnes/v1/session.workspace.list`
+- `_agnes/v1/session.workspace.browse`
 - `_agnes/v1/session.workspace.read`
 - `_agnes/v1/session.workspace.changes`
 - `_agnes/v1/session.undo.preview`
 - `_agnes/v1/session.undo`
 - `_agnes/v1/session.references.search`
+- `_agnes/v1/session.references.searchCancelable`
+- `_agnes/v1/session.references.cancel`
 - `_agnes/v1/session.fileUpload`
 - `_agnes/v1/session.projectUI`
 - `_agnes/v1/session.projectUIPatch`
@@ -193,6 +199,7 @@
 - `_agnes/v1/packages.catalog.get`
 - `_agnes/v1/packages.provenance`
 - `_agnes/v1/packages.sourcePolicy`
+- `_agnes/v1/packages.skillImport`
 - `_agnes/v1/applications.get`
 - `_agnes/v1/applications.preview`
 - `_agnes/v1/applications.adopt`
@@ -278,6 +285,9 @@
 - `_agnes/v1/systemPrompt.save`
 - `_agnes/v1/voice.settings.get`
 - `_agnes/v1/voice.settings.save`
+- `_agnes/v1/refinement.get`
+- `_agnes/v1/refinement.save`
+- `_agnes/v1/refinement.skills`
 
 ### 配置
 

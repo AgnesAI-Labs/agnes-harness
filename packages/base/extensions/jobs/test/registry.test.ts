@@ -33,12 +33,31 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   expect(JSON.stringify(await list!.execute({}, ctx))).toContain('child:child-1')
   const running = await output!.execute({ jobId: 'child:child-1' }, ctx)
   expect(JSON.stringify(running)).toContain('child output')
-  expect(running.structured).toEqual({ jobId: 'child:child-1', status: 'running' })
+  expect(running.structured).toMatchObject({
+    jobId: 'child:child-1',
+    status: 'running',
+    cursor: expect.any(String),
+    gap: false,
+  })
   // A child republishes only its newest message: the same message still growing appends its tail, and a
   // new message keeps the earlier one above it instead of replacing it.
   latest = 'child output, and more'
   expect(JSON.stringify(await output!.execute({ jobId: 'child:child-1' }, ctx))).toContain(
     'child output, and more',
+  )
+  const firstCursor = (running.structured as { cursor: string }).cursor
+  const incremental = await output!.execute({ jobId: 'child:child-1', cursor: firstCursor }, ctx)
+  expect(incremental.content[0]).toEqual({ type: 'text', text: ', and more\n[running; exit pending]' })
+  latest += '中😀'
+  const utf8 = await output!.execute(
+    { jobId: 'child:child-1', cursor: (incremental.structured as { cursor: string }).cursor },
+    ctx,
+  )
+  expect(utf8.content[0]).toEqual({ type: 'text', text: '中😀\n[running; exit pending]' })
+  const foreign = { ...fakeToolContext({ sessionKey: 'cursor-foreign' }), subagent: ctx.subagent }
+  expect((await output!.execute({ jobId: 'child:child-1', cursor: firstCursor }, foreign)).isError).toBe(true)
+  expect((await output!.execute({ jobId: 'child:child-1', cursor: firstCursor + 'x' }, ctx)).isError).toBe(
+    true,
   )
   latest = 'second message'
   const transcript = JSON.stringify(await output!.execute({ jobId: 'child:child-1' }, ctx))
@@ -53,6 +72,28 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   })
   expect(cancelled).toBe(true)
   expect(jobs.completions(ctx)).toMatchObject([{ id: 'child:child-1', kind: 'child', status: 'killed' }])
+  latest = '中😀'.repeat(23000)
+  const gap = await output!.execute({ jobId: 'child:child-1', cursor: firstCursor }, ctx)
+  expect(gap.structured).toMatchObject({ gap: true })
+  expect(JSON.stringify(gap.content)).toContain('output gap')
+  const ownCursor = (gap.structured as { cursor: string }).cursor
+  const another = {
+    ...ctx,
+    subagent: {
+      ...ctx.subagent,
+      list: async () => [{ id: 'child-2', providerId: 'acp', status: 'running' as const, continuable: true }],
+    },
+  }
+  expect((await output!.execute({ jobId: 'child:child-2', cursor: ownCursor }, another)).isError).toBe(true)
+  await jobs.closeSession(ctx.session.key)
+  expect((await output!.execute({ jobId: 'child:child-1', cursor: ownCursor }, ctx)).isError).toBe(true)
+  const replacement = new ShellJobs()
+  try {
+    const restarted = createJobTools(replacement)[1]!
+    expect((await restarted.execute({ jobId: 'child:child-1', cursor: firstCursor }, ctx)).isError).toBe(true)
+  } finally {
+    await replacement.dispose()
+  }
   await jobs.dispose()
 })
 it('refuses a query-side launch or a service without Host session identity', async () => {

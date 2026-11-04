@@ -228,6 +228,22 @@ it('fences A-to-B-to-A scans, bounds retained scopes, and returns immutable copi
   expect(reports.read(profile)).toBeUndefined()
 })
 
+it('publishes a scan that finishes while a later scan of the same scope is still running', () => {
+  const reports = new SkillScanReports()
+  const previous = reports.begin(profile, undefined, 'previous')
+  reports.publish(previous, observation())
+  // A person's rescan begins; a watcher refresh of the same folders begins while it runs.
+  const rescan = reports.begin(profile, undefined, 'rescan')
+  const watcher = reports.begin(profile, undefined, 'watcher')
+  reports.publish(rescan, observation('b'))
+  expect(reports.read(profile)).toMatchObject({ operationId: 'rescan', generation: rescan.generation })
+  reports.publish(watcher, observation('c'))
+  expect(reports.read(profile)).toMatchObject({ operationId: 'watcher', generation: watcher.generation })
+  // An earlier scan that settles last never replaces a later one.
+  reports.publish(rescan, observation('b'))
+  expect(reports.read(profile)?.operationId).toBe('watcher')
+})
+
 it('rejects excessive cross-directory detail, unsafe counts and false complete observations', () => {
   const issue = { code: 'invalid-frontmatter' as const, stage: 'parse' as const }
   const dir = {

@@ -16,6 +16,7 @@ export class LoopScope {
   private activity = 0
   private expired = false
   private revoked = false
+  failed = false
 
   get alive(): boolean {
     return !this.revoked
@@ -64,6 +65,12 @@ export class LoopScope {
   /** The revoked scope owns nothing any more: close must not wait on calls it left hanging. */
   expire(): void {
     this.expired = true
+    this.revoke()
+  }
+
+  /** A failed step leaves its producers to the single terminal settlement. */
+  fail(): void {
+    this.failed = true
     this.revoke()
   }
 

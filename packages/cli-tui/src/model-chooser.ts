@@ -3,6 +3,7 @@ import { escapeControl } from './component.js'
 import { writeComposerMemoryFile } from './composer-memory.js'
 import { tt } from './locale-extended.js'
 import { nextModel } from './model-cycle.js'
+import { accountLabels, modelLabel } from './model-label.js'
 import { nextThinkingLevel } from './thinking-cycle.js'
 import type { ModelSelection } from './views/model-picker.js'
 
@@ -41,7 +42,7 @@ export class ModelChooser {
       app.statusBar.setNotice(
         thinkingOnly
           ? tt('thinking.level', app.locale, { level: choice.thinking ?? '', seq: result.effectiveFromSeq })
-          : `model ${escapeControl(choice.route)}/${escapeControl(choice.model)} from seq ${result.effectiveFromSeq}`,
+          : `model ${escapeControl(modelLabel(await accountLabels(app.session.client), choice.route, choice.model))} from seq ${result.effectiveFromSeq}`,
         'success',
       )
       if (!this.stopped()) app.renderer.requestRender()

@@ -14,6 +14,7 @@ import {
 } from '@agnes/package-manager'
 import { AGH_DIR } from '@agnes/protocol'
 import { type BuildOptions, type BuildResult, build, type Plugin } from 'esbuild'
+import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
 import { buildPresentations, verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { collectThirdPartyNotices } from '../../../tools/third-party-notices.mjs'
 import { productionWebOptions } from '../../../tools/web-build-options.mjs'
@@ -491,6 +492,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     await withBuiltSystemRuntime(repoPackages, (native) =>
       buildLocal(transaction.staging, native, parsed.version),
     )
+    if (process.platform === 'linux') checkGlibc(transaction.staging) // guards-allow-platform: Linux distribution ABI gate.
     await transaction.commit()
     process.stdout.write(`built local launch output at ${out}\n`)
   } finally {

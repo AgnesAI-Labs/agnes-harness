@@ -26,7 +26,6 @@ harness:
   max_entries: { prompt: 10, memory: 50, skill: 30, subagent: 10 }
   max_chars_per_entry: 2000
   queue_max: 20
-  auto_refine: { enabled: true, gate: verifier, global_needs_human: true, cooldown_turns: 5 }
 telemetry: { consent: DISABLED, invariants: false, timing: false }
 recovery: { unknown_child: model }
 ext: { events_per_turn: 200 }

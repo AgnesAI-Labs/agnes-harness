@@ -37,6 +37,30 @@
         "code": {
           "anyOf": [
             {
+              "const": "COMPLETION_REVIEW_REQUEST_LIMIT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "completionReviewRequests"
+              }
+            },
+            {
+              "const": "COMPLETION_REVIEW_TIME_LIMIT",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "completionReviewTime"
+              }
+            },
+            {
+              "const": "COMPLETION_REVIEW_UNAVAILABLE",
+              "x-public-error": {
+                "rpc": "SEMANTIC_REJECTED",
+                "messageKey": "appServer.errors.unavailable",
+                "copy": "completionReviewUnavailable"
+              }
+            },
+            {
               "const": "CONFIG_AUTH_BUSY",
               "x-public-error": {
                 "rpc": "AUTH_INVALID",
@@ -762,7 +786,8 @@
                   "provider-invalid": "provider",
                   "provider-incompatible": "provider",
                   "provider-unavailable": "provider",
-                  "provider-duplicate": "provider"
+                  "provider-duplicate": "provider",
+                  "native-glibc-incompatible": "nativeGlibc"
                 }
               }
             },
@@ -2938,6 +2963,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
+        },
+        "maintenance": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Run id of a background write made outside any turn; turn then names the turn the evidence came from."
         }
       },
       "required": ["sessionKey", "turn"],
@@ -3044,9 +3075,60 @@
         "baseHash": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
+        },
+        "saved": {
+          "$ref": "#/$defs/SavedParagraphRequest"
         }
       },
       "required": ["cwd"],
+      "additionalProperties": false
+    },
+    "SavedParagraphRequest": {
+      "description": "A person's management of saved task experience paragraphs in the workspace memory index: list them, renew one's review date, withdraw one (cut from the file and recorded so the same content is not saved back automatically or by the model) or convert one to ordinary memory (markers taken off, text kept). Every action except list names the paragraph.",
+      "type": "object",
+      "properties": {
+        "action": {
+          "enum": ["list", "renew", "withdraw", "convert"]
+        },
+        "paragraphId": {
+          "type": "string",
+          "pattern": "^r[0-9a-z]{10}$"
+        },
+        "layer": {
+          "description": "user: the task experience promoted to user memory, read in every workspace that turns user memory on, instead of this workspace's. Convert is not offered there.",
+          "const": "user"
+        }
+      },
+      "required": ["action"],
+      "additionalProperties": false
+    },
+    "SavedParagraph": {
+      "description": "One saved task experience paragraph: its text, whether the agent sees it (valid), it is past its review date (expired) or nothing vouches for it (unknown), and, when recorded, its review date (epoch milliseconds), who saved it and the kind of entry it came from.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^r[0-9a-z]{10}$"
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 1048576
+        },
+        "validity": {
+          "enum": ["valid", "expired", "unknown"]
+        },
+        "reviewAfter": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "initiator": {
+          "enum": ["auto", "user", "model"]
+        },
+        "kind": {
+          "enum": ["prompt", "memory", "skill", "subagent"]
+        }
+      },
+      "required": ["id", "text", "validity"],
       "additionalProperties": false
     },
     "AdminMemoryResult": {
@@ -3076,6 +3158,20 @@
         },
         "file": {
           "$ref": "#/$defs/MemoryFile"
+        },
+        "saved": {
+          "type": "object",
+          "properties": {
+            "paragraphs": {
+              "type": "array",
+              "maxItems": 4096,
+              "items": {
+                "$ref": "#/$defs/SavedParagraph"
+              }
+            }
+          },
+          "required": ["paragraphs"],
+          "additionalProperties": false
         }
       },
       "required": ["workspaces", "inspection"],
@@ -3834,6 +3930,46 @@
     }
   },
   "x-public-error-copy": {
+    "completionReviewRequests": {
+      "en": {
+        "reason": "Additional completion review is incomplete because its request limit was reached.",
+        "action": "Inspect the existing answer and artifacts yourself. Send a new explicit request if more work is needed."
+      },
+      "zh-CN": {
+        "reason": "附加核对因达到请求次数上限而未完成。",
+        "action": "请自行检查已有回答和产物；如需继续工作，请发起新的明确请求。"
+      }
+    },
+    "completionReviewTime": {
+      "en": {
+        "reason": "Additional completion review is incomplete because its time limit was reached.",
+        "action": "Inspect the existing answer and artifacts yourself. Send a new explicit request if more work is needed."
+      },
+      "zh-CN": {
+        "reason": "附加核对因达到时间上限而未完成。",
+        "action": "请自行检查已有回答和产物；如需继续工作，请发起新的明确请求。"
+      }
+    },
+    "completionReviewUnavailable": {
+      "en": {
+        "reason": "Additional completion review could not safely continue and is incomplete.",
+        "action": "Inspect the existing answer and artifacts yourself. Send a new explicit request if more work is needed."
+      },
+      "zh-CN": {
+        "reason": "附加核对无法安全继续，尚未完成。",
+        "action": "请自行检查已有回答和产物；如需继续工作，请发起新的明确请求。"
+      }
+    },
+    "nativeGlibc": {
+      "en": {
+        "reason": "The system-node native addon failed to load: a required GLIBC version is unavailable.",
+        "action": "Install a Linux build targeting glibc 2.28, or rebuild with the supported native builder."
+      },
+      "zh-CN": {
+        "reason": "system-node 原生模块加载失败：系统缺少所需的 GLIBC 版本。",
+        "action": "请安装以 glibc 2.28 为基线的 Linux 构建，或使用受支持的原生构建环境重新编译。"
+      }
+    },
     "internal": {
       "en": {
         "reason": "The operation could not be confirmed.",

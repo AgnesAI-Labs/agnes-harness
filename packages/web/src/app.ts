@@ -36,7 +36,7 @@ import { bindTerminalNavigation } from './app/terminal-navigation.js'
 import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
-import { ComposerDrafts } from './composer-drafts.js'
+import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
 import '@agnes/web-admin/settings/registry'
 import type {
   ConfigSnapshot,
@@ -55,7 +55,6 @@ import {
   type PermissionRequest,
   type Session,
 } from '@agnes/sdk/browser'
-
 import { type PermissionMode, permissionLabel, yoloEnabled } from '@agnes/web-admin/permission-picker'
 import { createSettingsController } from '@agnes/web-admin/settings'
 import { loadAuxiliaryModelDefaults, loadRuntimeCatalog } from '@agnes/web-admin/settings/api'
@@ -77,7 +76,7 @@ import { startPluginHotReload } from './client-modules/hot-reload.js'
 import { bindJobsClient } from './client-modules/jobs.js'
 import type { RosterSource } from './client-modules/reconcile.js'
 import { readWebComposerMemory, rememberWebComposer, selectionFromMemory } from './composer-memory.js'
-import { composerReferences } from './composer-references.js'
+import { composerReferences, composerSkills } from './composer-references.js'
 import { createDiagnosticsDialog } from './diagnostics-dialog.js'
 import {
   type LoopSelection,
@@ -669,7 +668,7 @@ const readOnlyController = createReadOnlyController(appSessionContext, {
 
 const composerDrafts = new ComposerDrafts(sessionStorage, location.origin)
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
-const savedComposerDraft = composerDrafts.read()
+const savedComposerDraft = { text: composerDrafts.read(), references: composerDrafts.readReferences() }
 const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
@@ -740,7 +739,6 @@ const rosterSource: RosterSource = {
 const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const references = composerReferences(prepareComposerSession, renderControls)
-
 // Reserve host entries before installed modules can register their reviewed declarations.
 const removeHomeEntries = registerBuiltinHomeEntries()
 homeEntries.subscribe(openApplicationHome)
@@ -901,7 +899,9 @@ const clientModules = await startClientModules({
   composerContainer: hosts.composer,
   composer: {
     references,
-    initialDraft: savedComposerDraft ?? '',
+    skills: composerSkills(() => selectedWorkspace?.workspaceId),
+    initialDraft: savedComposerDraft.text,
+    initialDraftReferences: savedComposerDraft.references,
     onAttachmentsChange: renderControls,
     prepareUploadSession: prepareAttachmentSession,
     onCancel: handleComposerCancel,
@@ -1846,8 +1846,7 @@ async function beginNewDraft(showWorkspacePicker = true, workspace?: WorkspaceEn
   if (cleanupError) throw cleanupError
 }
 function selectComposerDraft(id?: string, options: { preserve?: boolean; carry?: boolean } = {}): void {
-  composerRuntime.setDraft(composerDrafts.select(profileName, id, composerRuntime.getDraft(), options))
-  if (!options.preserve) composerRuntime.clearImageBlocks()
+  switchComposerDraft(composerDrafts, composerRuntime, profileName, id, options)
 }
 let modelReadGeneration = 0
 let modelAppliedGeneration = 0
@@ -1983,9 +1982,6 @@ function modelDefaults(option: ModelPickerOption): KnownSessionModel {
     id: option.id,
     settings: {
       ...record?.defaultSettings,
-      ...(record?.contextWindow
-        ? { contextWindow: record.defaultSettings?.contextWindow ?? record.contextWindow }
-        : {}),
     },
   }
 }
@@ -2029,9 +2025,6 @@ async function selectModelSettings(settings: ModelSettings): Promise<boolean> {
 }
 async function selectModel(option: ModelPickerOption, settings?: ModelSettings): Promise<boolean> {
   const sameModel = knownSessionModel?.route === option.route && knownSessionModel.id === option.id
-  const window =
-    settings?.contextWindow ??
-    runtimeModels.find((m) => m.route === option.route && m.id === option.id)?.contextWindow
   const selected: KnownSessionModel =
     settings === undefined
       ? sameModel && knownSessionModel
@@ -2040,7 +2033,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
       : {
           route: option.route,
           id: option.id,
-          settings: { ...settings, ...(window === undefined ? {} : { contextWindow: window }) },
+          settings: { ...settings },
         }
   const session = sessionBinding.session
   if (sessionPending || modelChangePending || auxiliaryModelPending) return false
@@ -2162,6 +2155,7 @@ function handleEditQueued(itemId: string, text: string): Promise<void> {
 }
 
 function handleComposerDraftChange(value: string): void {
+  composerDrafts.setReferences(composerRuntime.getDraftReferences())
   composerController.handleComposerDraftChange(value)
 }
 function prepareComposerSession(): Promise<Session> {

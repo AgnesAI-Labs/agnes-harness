@@ -125,7 +125,7 @@ it('preserves errors and session boundaries without opening the browser dock', a
   })
   sessionQuery.mockRejectedValueOnce(new Error('Pages temporarily unavailable'))
   await client.refresh()
-  expect(client.getSnapshot()).toMatchObject({ sessionId: 'one', pages })
+  expect(client.getSnapshot()).toMatchObject({ sessionId: 'one', pages, pagesUnavailable: true })
   selected.sessionId = 'two'
   selected.epoch++
   profileQuery.mockRejectedValueOnce(new Error('Profile read failed after selection changed'))
@@ -133,7 +133,25 @@ it('preserves errors and session boundaries without opening the browser dock', a
   expect(client.getSnapshot()).toMatchObject({ sessionId: 'two', pages: [] })
   sessionQuery.mockRejectedValueOnce(new Error('Other session is unavailable'))
   await client.refresh()
-  expect(client.getSnapshot()).toMatchObject({ sessionId: 'two', pages: [] })
+  expect(client.getSnapshot()).toMatchObject({ sessionId: 'two', pages: [], pagesUnavailable: true })
+  expect(client.getSnapshot().error).toBeUndefined()
+  await client.refresh()
+  expect(client.getSnapshot()).toMatchObject({ sessionId: 'two', pages: [], pagesUnavailable: false })
+  // A status read started in the previous attachment cannot query the new session.
+  profileQuery.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve
+      }),
+  )
+  const stale = client.refresh()
+  selected.epoch++
+  client.clearSession()
+  sessionQuery.mockClear()
+  release({ enabled: true, state: 'ready' })
+  await stale
+  expect(sessionQuery).not.toHaveBeenCalled()
+  expect(client.getSnapshot()).toMatchObject({ sessionId: 'two', state: 'preparing', pages: [] })
   client.close()
 })
 

@@ -1,0 +1,4 @@
+reason,amount,order,refund,note
+cancelled,77.14,100102,900201,duplicate
+late,728.08,100102,900202,photo sent
+damaged,474.07,100209,900205,late courier

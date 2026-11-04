@@ -366,6 +366,7 @@ it('keeps input bound to displayed pixels when navigation acknowledgement preced
     pageEpoch: 0,
     controlEpoch: 7,
     mode: 'human' as const,
+    pointerInput: true,
   }
   const pixels = (pageEpoch: number) => {
     const metadata = new TextEncoder().encode(JSON.stringify({ ...page, pageEpoch }))
@@ -413,6 +414,35 @@ it('keeps input bound to displayed pixels when navigation acknowledgement preced
     input.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中文输入' }))
     expect(send.mock.lastCall?.[0]).toMatchObject({ type: 'text', text: '中文输入', pageEpoch: 1 })
     expect(input.value).toBe('')
+    // A real pointer press focuses the canvas. Drag selection must return the
+    // local keyboard target without emitting a second website click.
+    canvas.setPointerCapture = vi.fn()
+    canvas.hasPointerCapture = () => true
+    canvas.releasePointerCapture = vi.fn()
+    vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+    vi.spyOn(document, 'elementFromPoint').mockReturnValue(canvas)
+    const pointer = (type: string, x: number, y = 30) =>
+      canvas.dispatchEvent(
+        new PointerEvent(type, {
+          bubbles: true,
+          isPrimary: true,
+          pointerId: 1,
+          button: 0,
+          clientX: x,
+          clientY: y,
+        }),
+      )
+    const beforeDrag = send.mock.calls.length
+    canvas.focus()
+    pointer('pointerdown', 20)
+    pointer('pointermove', 100)
+    pointer('pointerup', 100)
+    canvas.click()
+    expect(document.activeElement).toBe(input)
+    expect(
+      send.mock.calls.slice(beforeDrag).some(([frame]) => (frame as { type: string }).type === 'click'),
+    ).toBe(false)
+    expect(send.mock.lastCall?.[0]).toMatchObject({ type: 'pointer', phase: 'up' })
     // Option on macOS and AltGr on Windows produce text through native input/IME events.
     for (const { platform, ...init } of [
       { platform: 'MacIntel', key: 'Dead', altKey: true },
@@ -451,6 +481,36 @@ it('keeps input bound to displayed pixels when navigation acknowledgement preced
         type: 'key',
         key: expected,
       })
+    }
+    const other = document.createElement('input')
+    host.appendChild(other)
+    for (const outcome of [
+      'blur',
+      'cancel',
+      'lost-capture',
+      'outside',
+      'other-editor',
+      'hidden',
+      'stale-page',
+    ]) {
+      canvas.focus()
+      pointer('pointerdown', 20)
+      pointer('pointermove', 100)
+      if (outcome === 'blur') window.dispatchEvent(new Event('blur'))
+      if (outcome === 'cancel') pointer('pointercancel', 100)
+      if (outcome === 'lost-capture') pointer('lostpointercapture', 100)
+      if (outcome === 'outside') vi.mocked(document.elementFromPoint).mockReturnValue(other)
+      if (outcome === 'other-editor') other.focus()
+      if (outcome === 'hidden') vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+      if (outcome === 'stale-page') {
+        pixels(2)
+        await vi.waitFor(() => expect(draw).toHaveBeenCalledTimes(3))
+      }
+      pointer('pointerup', 100)
+      canvas.click()
+      expect(document.activeElement).toBe(outcome === 'other-editor' ? other : canvas)
+      vi.mocked(document.elementFromPoint).mockReturnValue(canvas)
+      vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
     }
   } finally {
     flushSync(() => root.unmount())
@@ -654,9 +714,23 @@ it.each(['native', 'legacy'] as const)(
   },
 )
 
-it.each(['granted', 'denied', 'navigated', 'agent-changed', 'wheel'] as const)(
-  'admits the first page click through native control and handles %s handover',
-  async (outcome) => {
+it.each([
+  'granted',
+  'denied',
+  'navigated',
+  'agent-changed',
+  'wheel',
+  'drag-granted',
+  'drag-denied',
+  'drag-navigated',
+  'drag-agent-changed',
+  'drag-focus-moved',
+  'drag-cancelled',
+] as const)(
+  'admits the first page gesture through native control and handles %s handover',
+  async (scenario) => {
+    const dragging = scenario.startsWith('drag-')
+    const outcome = scenario.replace(/^drag-/, '')
     const callbacks = new Map<string, (value: unknown) => void>()
     const send = vi.fn((frame: unknown) => {
       callbacks.get('browser.input')?.({ status: 'ok', seq: (frame as { seq: number }).seq })
@@ -688,6 +762,7 @@ it.each(['granted', 'denied', 'navigated', 'agent-changed', 'wheel'] as const)(
       pageEpoch: 0,
       controlEpoch: 0,
       mode: 'agent' as const,
+      pointerInput: true,
     }
     const grant = { pageId: 'one', controlEpoch: 1, operationId: 'native-effect' }
     let resolve!: (value: typeof grant | undefined) => void
@@ -726,12 +801,37 @@ it.each(['granted', 'denied', 'navigated', 'agent-changed', 'wheel'] as const)(
       await vi.waitFor(() => expect(host.querySelector('[data-connected="true"]')).not.toBeNull())
       const canvas = host.querySelector('canvas')!
       vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 640, 400))
+      const other = document.createElement('input')
+      host.appendChild(other)
       if (outcome === 'wheel')
         canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 240, cancelable: true }))
-      else canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 40, clientY: 50 }))
+      else if (dragging) {
+        canvas.setPointerCapture = vi.fn()
+        canvas.hasPointerCapture = () => true
+        canvas.releasePointerCapture = vi.fn()
+        vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+        vi.spyOn(document, 'elementFromPoint').mockReturnValue(canvas)
+        const pointer = (type: string, x: number) =>
+          canvas.dispatchEvent(
+            new PointerEvent(type, {
+              bubbles: true,
+              isPrimary: true,
+              pointerId: 1,
+              button: 0,
+              clientX: x,
+              clientY: 50,
+            }),
+          )
+        canvas.focus()
+        pointer('pointerdown', 40)
+        pointer('pointermove', 80)
+        if (outcome === 'cancelled') window.dispatchEvent(new Event('blur'))
+        pointer('pointerup', 80)
+        canvas.click()
+      } else canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 40, clientY: 50 }))
       expect(request).toHaveBeenCalledTimes(1)
       expect(send).not.toHaveBeenCalled()
-      if (outcome !== 'wheel') {
+      if (outcome !== 'wheel' && outcome !== 'cancelled') {
         const editor = host.querySelector('textarea')!
         expect(editor.disabled).toBe(false)
         expect(document.activeElement).toBe(editor)
@@ -740,6 +840,7 @@ it.each(['granted', 'denied', 'navigated', 'agent-changed', 'wheel'] as const)(
         editor.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true }))
         expect(send).not.toHaveBeenCalled()
       }
+      if (outcome === 'focus-moved' || outcome === 'cancelled') other.focus()
       if (outcome === 'navigated' || outcome === 'agent-changed') {
         pixels(outcome === 'navigated' ? 1 : 0, 1)
         // Let the replacement frame decode before the native admission resolves.
@@ -753,21 +854,35 @@ it.each(['granted', 'denied', 'navigated', 'agent-changed', 'wheel'] as const)(
       } else if (outcome === 'navigated' || outcome === 'agent-changed') {
         await vi.waitFor(() => expect(onError).toHaveBeenCalledWith('pageChanged'))
         expect(send).not.toHaveBeenCalled()
+      } else if (outcome === 'cancelled') {
+        await vi.waitFor(() => expect(callbacks.has('browser.input')).toBe(true))
+        expect(send).not.toHaveBeenCalled()
+        expect(document.activeElement).toBe(other)
       } else {
         await vi.waitFor(() => expect(send).toHaveBeenCalled())
         expect(send.mock.calls[0]?.[0]).toMatchObject({
-          type: outcome === 'wheel' ? 'scroll' : 'click',
+          type: outcome === 'wheel' ? 'scroll' : dragging ? 'pointer' : 'click',
           x: outcome === 'wheel' ? 0 : 80,
           y: outcome === 'wheel' ? 240 : 100,
           pageEpoch: 0,
           controlEpoch: 1,
         })
-        if (outcome === 'granted')
-          expect(send.mock.calls.slice(1).map(([frame]) => frame)).toMatchObject([
+        if (outcome === 'granted') {
+          expect(send.mock.calls.slice(-2).map(([frame]) => frame)).toMatchObject([
             { type: 'text', text: 'first-characters', pageEpoch: 0 },
             { type: 'key', key: 'Backspace', pageEpoch: 0 },
           ])
-        if (outcome !== 'wheel') expect(document.activeElement).toBe(host.querySelector('textarea'))
+          if (dragging) {
+            expect(send.mock.calls.at(-3)?.[0]).toMatchObject({ type: 'pointer', phase: 'up' })
+            expect(send.mock.calls.some(([frame]) => (frame as { type: string }).type === 'click')).toBe(
+              false,
+            )
+          }
+        }
+        if (outcome !== 'wheel')
+          expect(document.activeElement).toBe(
+            outcome === 'focus-moved' ? other : host.querySelector('textarea'),
+          )
         if (outcome === 'granted') {
           send.mockClear()
           canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 240, cancelable: true }))

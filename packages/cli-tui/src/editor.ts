@@ -1,3 +1,4 @@
+import { parentFileReferenceBrowse } from '@agnes/protocol'
 import { type Component, CURSOR_MARKER } from './component.js'
 import { fitLine } from './components/line.js'
 import {
@@ -80,7 +81,7 @@ export type EditorOptions = {
     name: string,
   ): { args?: string; summary?: string; aliasOf?: string; aliases?: readonly string[] } | undefined
   /** Workspace paths for the `@` menu; without it `@` is plain text. */
-  mentions?: { get(query: string): MentionState }
+  mentions?: { get(query: string): MentionState; cancel?(): void }
   /** The `@` menu's status rows, shown when it has nothing to choose. */
   mentionNotes?: { loading: string; empty: string; failed: string }
   /** The vim mode of the prompt (`/vim`); without it the editor has no modes. */
@@ -265,6 +266,14 @@ export class Editor implements Component, VimTarget {
         return true
       case 'delete-back': {
         const before = this.text.slice(0, this.cursor)
+        const token = mentionToken(before)
+        const parent = token && parentFileReferenceBrowse(before.slice(token.start + 1))
+        if (token && parent !== undefined) {
+          const replacement = `@${parent}`
+          this.text = this.text.slice(0, token.start) + replacement + this.text.slice(this.cursor)
+          this.cursor = token.start + replacement.length
+          return true
+        }
         const chip = [...this.pastes.keys()].find((c) => before.endsWith(c))
         if (chip) {
           this.text = before.slice(0, before.length - chip.length) + this.text.slice(this.cursor)
@@ -640,6 +649,7 @@ export class Editor implements Component, VimTarget {
     const before = this.text.slice(0, this.cursor)
     if (before !== this.dismissed) this.dismissed = undefined
     const token = this.o.mentions && this.dismissed === undefined ? mentionToken(before) : undefined
+    if (!token) this.o.mentions?.cancel?.()
     const state = token && this.o.mentions?.get(token.query)
     if (!token || !state) {
       // Nothing open: the next menu to open starts at its top.

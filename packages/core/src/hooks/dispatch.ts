@@ -107,7 +107,7 @@ export class HookDispatch {
     } catch (error) {
       const failure = boundaryFailure ?? 'execution'
       // Only the bundled prompt adapter may turn a context-first denial into a normal blocked turn.
-      // Timeouts, other extensions, and every other context exception retain the fail-closed path.
+      // The context adapter can drop failed guidance; a deliberate policy block must survive it.
       if (event === 'context' && entry.contextBlocking && error instanceof HookBlockedError)
         return { ok: false, failure, blocked: error }
       // Error text can contain extension credentials or input; record only trusted attribution.

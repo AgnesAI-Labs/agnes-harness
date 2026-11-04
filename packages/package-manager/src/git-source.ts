@@ -31,7 +31,7 @@ export async function checkoutGitSource(
   ]
   const git = async (args: string[]): Promise<{ stdout: string }> => {
     try {
-      return await exec('git', [...prefix, ...args], { cwd })
+      return await exec('git', [...prefix, ...args], { cwd, ...(signal ? { signal } : {}) })
     } catch {
       checkCancelled(signal)
       throw sourceError('Git source could not be downloaded or checked out', 'git-fetch')

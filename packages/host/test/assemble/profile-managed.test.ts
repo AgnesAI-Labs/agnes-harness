@@ -12,6 +12,7 @@ import {
   emptyLock,
   hashDirectory,
   parseSource,
+  type RuntimePin,
   type RuntimePluginSnapshot,
   readLock,
   writeLock,
@@ -44,11 +45,37 @@ it('binds the actual browser package to one current resource across plugin activ
       "prepare(runtime) { runtime.state = 'ready'; runtime.notify() },",
       `async launch() {
         const browser = new EventEmitter(), contexts = []
+        // Model the public CDP transport used by the plugin's request guard.
+        // Website request-policy behavior is covered by the real-browser suites.
+        const root = new EventEmitter()
+        root.send = async (method, params) => {
+          if (method === 'Target.attachToTarget') return { sessionId: params.targetId }
+          if (method === 'Target.sendMessageToTarget') {
+            const message = JSON.parse(params.message)
+            const result = message.method === 'Page.getFrameTree'
+              ? { frameTree: { frame: { id: params.sessionId, url: 'about:blank' } } } : {}
+            root.emit('Target.receivedMessageFromTarget', {
+              sessionId: params.sessionId, message: JSON.stringify({ id: message.id, result }),
+            })
+          }
+          return {}
+        }
+        browser.newBrowserCDPSession = async () => root
         browser.newContext = async () => {
           const context = new EventEmitter(), pages = []
           context.route = context.routeWebSocket = async () => {}
           context.newPage = async () => {
             const page = new EventEmitter(), frame = {}
+            const targetId = 'page-' + contexts.length + '-' + pages.length
+            page.context = () => context
+            context.newCDPSession = async (selected) => ({
+              send: async () => ({ targetInfo: { targetId: selected.targetId } }),
+              detach: async () => {},
+            })
+            page.targetId = targetId
+            root.emit('Target.attachedToTarget', {
+              sessionId: 'auto-' + targetId, targetInfo: { targetId, type: 'page' },
+            })
             let url = 'about:blank', closed = false
             page.url = () => url
             page.mainFrame = () => frame
@@ -461,20 +488,29 @@ it('upgrades the pre-stream-normalization snapshot, reviews current code, reconc
   const oldHash = capabilityHash(entry)
   await manager.trust(profileDir, packageId, { integrity: entry.integrity, capabilityHash: oldHash })
   await manager.enable(profileDir, packageId, true)
+  // The daemon pins an installed snapshot once, at activation. The Host reads its sources many times
+  // (opening, every target, every session); re-pinning on each read only repeats durable writes.
+  const pins = new Map<string, Promise<RuntimePin>>()
   const sources = async (): Promise<readonly RuntimePluginSnapshot[]> => {
-    const installed = (await manager.inventory(profileDir)).packages.find((row) => row.id === packageId)
+    const installed = (await manager.inventory(profileDir, { settled: true })).packages.find(
+      (row) => row.id === packageId,
+    )
     assert(installed?.entry.treeIntegrity)
-    const pin = await manager.pinRuntimeSnapshot(profileDir, {
-      pinId: `upgrade-${installed.entry.integrity}`,
-      operationId: `activate-${installed.entry.integrity}`,
-      packageId,
-      purpose: 'active',
-      selector: {
-        kind: 'installed',
-        expectedIntegrity: installed.entry.integrity,
-        expectedTreeIntegrity: installed.entry.treeIntegrity,
-      },
-    })
+    const integrity = installed.entry.integrity,
+      treeIntegrity = installed.entry.treeIntegrity
+    if (!pins.has(integrity))
+      pins.set(
+        integrity,
+        manager.pinRuntimeSnapshot(profileDir, {
+          pinId: `upgrade-${integrity}`,
+          operationId: `activate-${integrity}`,
+          packageId,
+          purpose: 'active',
+          selector: { kind: 'installed', expectedIntegrity: integrity, expectedTreeIntegrity: treeIntegrity },
+        }),
+      )
+    const pin = await pins.get(integrity)
+    assert(pin)
     return [{ snapshot: pin.snapshot, generation: 1, trusted: installed.trusted }]
   }
   const target = async () => {

@@ -41,6 +41,82 @@ function io(o: { stderrTTY?: boolean; stdoutTTY?: boolean; stdin?: string } = {}
 }
 
 describe('runPrint in text mode', () => {
+  it.each([
+    'COMPLETION_REVIEW_REQUEST_LIMIT',
+    'COMPLETION_REVIEW_TIME_LIMIT',
+    'COMPLETION_REVIEW_UNAVAILABLE',
+  ])('retains the candidate and safe blocked reason in every print format (%s)', async (code) => {
+    const candidate = 'candidate result\n[report](artifacts/report.txt)'
+    for (const tail of ['empty', 'tool_use', 'max_tokens', 'refusal', 'error'] as const)
+      for (const mode of ['text', 'json', 'stream-json'])
+        for (const locale of ['en', 'zh-CN']) {
+          const o = { ...io(), locale }
+          const ep = scriptedEndpoint({
+            reason: 'blocked',
+            reply: candidate,
+            trailingEmptyAssistant: true,
+            ...(tail === 'empty'
+              ? {}
+              : { trailingAssistantText: 'Checking the remaining item.', trailingAssistantStopReason: tail }),
+            turnEndError: { code, message: 'private implementation detail' },
+          })
+          expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', mode]), o)).toBe(4)
+          if (mode === 'text') expect(o.out()).toBe(`${candidate}\n`)
+          else {
+            const line = JSON.parse(o.out().trim().split('\n').at(-1)!)
+            expect(line).toMatchObject({
+              reason: 'blocked',
+              exitCode: 4,
+              error: { code },
+              text: candidate,
+            })
+            expect(line.error).toEqual({ code })
+          }
+          expect(o.err()).toContain(code)
+          expect(o.err()).toContain(locale === 'en' ? 'Additional completion review' : '附加核对')
+          expect(o.err()).not.toContain('private')
+        }
+  })
+  it.each(['text', 'json', 'stream-json'])(
+    'retains visible review text when older events have no completed candidate (%s)',
+    async (mode) => {
+      const o = io()
+      const ep = scriptedEndpoint({
+        reason: 'blocked',
+        reply: 'earlier progress',
+        replyStopReason: 'tool_use',
+        trailingAssistantText: 'latest visible text',
+        turnEndError: { code: 'COMPLETION_REVIEW_TIME_LIMIT', message: 'private' },
+      })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', mode]), o)).toBe(4)
+      if (mode === 'text') expect(o.out()).toBe('latest visible text\n')
+      else
+        expect(JSON.parse(o.out().trim().split('\n').at(-1)!)).toMatchObject({
+          text: 'latest visible text',
+          reason: 'blocked',
+          error: { code: 'COMPLETION_REVIEW_TIME_LIMIT' },
+        })
+    },
+  )
+  it.each(['text', 'json', 'stream-json'])(
+    'preserves ordinary blocked selection of nonempty tool progress (%s)',
+    async (mode) => {
+      const o = io()
+      const ep = scriptedEndpoint({
+        reason: 'blocked',
+        reply: 'candidate',
+        trailingAssistantText: 'existing progress',
+      })
+      expect(await runPrint(await booted(ep), parseArgs(['-p', 'q', '--mode', mode]), o)).toBe(4)
+      if (mode === 'text') expect(o.out()).toBe('existing progress\n')
+      else
+        expect(JSON.parse(o.out().trim().split('\n').at(-1)!)).toMatchObject({
+          text: 'existing progress',
+          reason: 'blocked',
+          exitCode: 4,
+        })
+    },
+  )
   it('prints the last assistant text and identifies the session on stderr', async () => {
     const o = io()
     const code = await runPrint(
@@ -230,14 +306,18 @@ describe('runPrint in text mode', () => {
         data: {
           code: 'TURN_ERROR',
           turnEnd: { reason: 'error' },
-          error: { code: 'AUTH', message: 'status=401' },
+          error: {
+            code: 'AUTH',
+            message: 'status=401',
+            closeError: { code: 'E_STORAGE_FAULT', message: 'private-close' },
+          },
         },
       })
     })
     const o = io()
     expect(await runPrint(await booted(ep), parseArgs(['-p', 'q']), o)).toBe(1)
     expect(o.err()).toBe(
-      `Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1): AUTH: The provider refused this model or its credentials. Pick another model or sign in again.\n`,
+      `Session: ${FAKE_SESSION_ID}\nagh: turn ended: error (exit 1): AUTH: The provider refused this model or its credentials. Pick another model or sign in again.; terminal close failed: E_STORAGE_FAULT\n`,
     )
   })
 
@@ -701,7 +781,11 @@ describe('runPrint in json mode', () => {
             data: {
               code: 'TURN_ERROR',
               turnEnd: { reason: 'error' },
-              error: { code: 'E_STEP_FAILED', message: 'private detail' },
+              error: {
+                code: 'E_REQUEST_FROZEN',
+                message: 'private detail',
+                closeError: { code: 'E_STORAGE_FAULT', message: 'private close detail' },
+              },
             },
           })
         })
@@ -711,7 +795,10 @@ describe('runPrint in json mode', () => {
     expect(line).toMatchObject({
       reason: 'error',
       exitCode: 1,
-      error: { code: turnEndError ? 'TRANSPORT' : 'E_STEP_FAILED' },
+      error: {
+        code: turnEndError ? 'TRANSPORT' : 'E_REQUEST_FROZEN',
+        ...(turnEndError ? {} : { closeError: { code: 'E_STORAGE_FAULT' } }),
+      },
     })
     expect(o.out()).not.toContain('private')
     expect(o.err()).toBe(`Session: ${FAKE_SESSION_ID}\n`)
@@ -871,13 +958,13 @@ describe('result line helpers', () => {
     expect(findParkedTicket([decision(1, '')])).toBeUndefined()
   })
 
-  const message = (seq: number, content: unknown) =>
+  const message = (seq: number, content: unknown, stopReason: string | null = 'end_turn') =>
     ({
       seq,
       ts: 't',
       id: `01J6ZM2Q3R4S5T6V7W8X9Y0${String(seq).padStart(3, '0')}`,
       type: 'assistant/message',
-      data: { content, stopReason: 'end_turn' },
+      data: { content, ...(stopReason === null ? {} : { stopReason }) },
       actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
       origin: 'model',
       trust: 'trusted',
@@ -904,6 +991,23 @@ describe('result line helpers', () => {
     ).toBe('the answer')
     expect(lastAssistantText([])).toBe('')
     expect(lastAssistantText([message(1, [])])).toBe('')
+    const candidate = message(1, [{ type: 'text', text: '[candidate](artifact://report)' }])
+    const revised = message(3, [
+      { type: 'thinking', text: 'private reasoning' },
+      { type: 'text', text: 'revised final' },
+    ])
+    expect(
+      lastAssistantText(
+        [candidate, revised, message(4, [{ type: 'text', text: 'progress' }], 'tool_use')],
+        true,
+      ),
+    ).toBe('revised final')
+    expect(lastAssistantText([message(1, [{ type: 'text', text: 'legacy text' }], null)], true)).toBe(
+      'legacy text',
+    )
+    expect(
+      lastAssistantText([message(1, [{ type: 'thinking', text: 'private reasoning' }], 'tool_use')], true),
+    ).toBe('')
   })
 })
 

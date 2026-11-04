@@ -28,6 +28,8 @@ import {
   ConversationToolCard,
   ConversationTurnActions,
   interactionToolPresentation,
+  type RefinementSaveEntry,
+  type RefinementWithdraw,
   type TurnErrorActions,
 } from '@agnes/web-ui/conversation'
 import { MessageFeedback } from '@agnes/web-units/message-feedback'
@@ -228,6 +230,18 @@ type WebConversationMessagesProps = {
   onFork?: (turn: UITurn) => Promise<void>
   /** Host operations a failed turn's error row can offer; the adapter adds availability. */
   turnErrorActions?: TurnErrorActions
+  /** Withdraws an applied experience review of a session; the adapter binds the session shown. */
+  onWithdrawRefinement?: (
+    sessionId: string,
+    appliedSeq: number,
+  ) => Promise<import('@agnes/web-ui/conversation').RefinementWithdrawOutcome>
+  /** Saves one entry a review kept to a session's workspace; the adapter binds the session shown. */
+  onSaveRefinementEntry?: (
+    sessionId: string,
+    kind: 'memory' | 'prompt' | 'skill',
+    id: string,
+    target?: 'user',
+  ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
   /** Compatibility selector; both values now use the same React-owned Markdown. */
   markdownRenderer?: 'legacy' | 'xmarkdown'
   /** The host's voice port: the settled final reply gets a read-aloud button. */
@@ -254,6 +268,8 @@ function ScopedConversationMessages({
   visibleNodeIds,
   onFork,
   turnErrorActions: hostTurnErrorActions,
+  onWithdrawRefinement,
+  onSaveRefinementEntry,
   voice,
   sessionScope,
 }: WebConversationMessagesProps & { sessionScope: string | undefined }) {
@@ -321,6 +337,21 @@ function ScopedConversationMessages({
     if (sessionScope) next.sessionId = sessionScope
     return next
   }, [hostTurnErrorActions, readiness, retryDisabledReason, sessionScope])
+  // The transcript is keyed by its session, so a review line withdraws in the session it belongs to.
+  const withdrawRefinement = useMemo<RefinementWithdraw | undefined>(
+    () =>
+      onWithdrawRefinement && sessionScope
+        ? (appliedSeq) => onWithdrawRefinement(sessionScope, appliedSeq)
+        : undefined,
+    [onWithdrawRefinement, sessionScope],
+  )
+  const saveRefinementEntry = useMemo<RefinementSaveEntry | undefined>(
+    () =>
+      onSaveRefinementEntry && sessionScope
+        ? (kind, id, target) => onSaveRefinementEntry(sessionScope, kind, id, target)
+        : undefined,
+    [onSaveRefinementEntry, sessionScope],
+  )
   const shownNodeIds = folded.size
     ? (visibleNodeIds ?? (nodes ?? []).map((node) => node.id)).filter((id) => !folded.has(id))
     : visibleNodeIds
@@ -409,6 +440,8 @@ function ScopedConversationMessages({
       renderTurnAttribution: () => <ApplicationAttribution session={session} />,
       t: translate,
       ...(turnErrorActions ? { turnErrorActions } : {}),
+      ...(withdrawRefinement ? { withdrawRefinement } : {}),
+      ...(saveRefinementEntry ? { saveRefinementEntry } : {}),
       processStep: (node) => workflowStepRecord(node.text),
       renderMarkdown: (text, part, state) => (
         <SelectedContribution
@@ -638,6 +671,8 @@ function ScopedConversationMessages({
     sessionScope,
     onFork,
     turnErrorActions,
+    withdrawRefinement,
+    saveRefinementEntry,
     voice,
   ])
   const messages = (
