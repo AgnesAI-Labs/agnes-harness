@@ -200,7 +200,7 @@ Some lessons hold in every workspace: a preference you stated yourself, such as 
 
 Entries never change the system prompt. They reach the model as notes added to the conversation:
 
-- At the start of a session, and after a compaction, a **snapshot**: a fixed short guidance text, then the entries. Prompt and memory entries are given in full. Skill and subagent entries are given as one line of metadata each, only the 3 most relevant of each kind; the note says how many more are saved.
+- At the start of a session, and after a compaction, a **snapshot**: a fixed short guidance text, then the entries. Prompt and memory entries are given in full, at most the 3 most relevant of each kind. Skill and subagent entries are given as one line of metadata each, only the 3 most relevant of each kind. For every kind the note says how many more are saved.
 - After a review is applied, an **update** with the entries it added or changed.
 - Withdrawals, deletions and expiries are announced first, before any new entry text.
 
