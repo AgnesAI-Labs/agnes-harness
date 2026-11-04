@@ -2,6 +2,7 @@ import type { EventInput, Seq } from '@agnes/core-common/types'
 import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import { estimateTokens } from '../execution/model-tokens.js'
+import { refinementMarker } from '../refinement/capture.js'
 import { deliveredReferences } from '../refinement/references.js'
 import { handedOffRefs, validEntries } from '../refinement/validity.js'
 import { isChildSession } from '../step/child-session.js'
@@ -474,24 +475,36 @@ export async function deriveExperienceNotes(
 }
 
 /**
- * A rebuilt snapshot is an expected change of what the request carries, recorded as a
- * `refinement-prefix-change` row. It joins the request's written rows -- the dispatch transaction
- * that also commits the note and the request header, on the stepper and the loop path alike -- and
- * only when derive really produced the snapshot note, so a request prepared and never sent records
- * nothing.
+ * The rows task experience adds to a request's written rows -- the dispatch transaction that also
+ * commits the notes and the request header, on the stepper and the loop path alike -- so a request
+ * prepared and never sent records nothing. A rebuilt snapshot is an expected change of what the
+ * request carries, recorded as a `refinement-prefix-change` row, only when derive really produced
+ * the snapshot note. The first request of a session that runs task experience also records that it
+ * does (`refinementMarker`).
  */
-export function withExperienceDiag<T extends { notes: EventInput[] }>(s: SessionImpl, out: T): T {
+export function withExperienceRows<T extends { notes: EventInput[] }>(s: SessionImpl, out: T): T {
+  const marker = refinementMarker(s)
   const prefix = `${EXPERIENCE_PREFIX}${SNAPSHOT_FORMAT_LINE}`
   const snapshot = out.notes
     .map((event) =>
       event.type === 'user/message' ? messageText((event.data as { content?: unknown }).content) : '',
     )
     .find((text) => text.startsWith(prefix))
-  if (snapshot === undefined) return out
-  const data = {
-    reason: 'experience-snapshot',
-    entries: s.state.registers.harnessEntries.size,
-    tokens: estimateTokens(snapshot.slice(EXPERIENCE_PREFIX.length)),
-  }
-  return { ...out, notes: [...out.notes, s.ev('x/core/refinement-prefix-change', data, { ignorable: true })] }
+  const rows = [
+    ...(marker ? [marker] : []),
+    ...(snapshot === undefined
+      ? []
+      : [
+          s.ev(
+            'x/core/refinement-prefix-change',
+            {
+              reason: 'experience-snapshot',
+              entries: s.state.registers.harnessEntries.size,
+              tokens: estimateTokens(snapshot.slice(EXPERIENCE_PREFIX.length)),
+            },
+            { ignorable: true },
+          ),
+        ]),
+  ]
+  return rows.length === 0 ? out : { ...out, notes: [...out.notes, ...rows] }
 }

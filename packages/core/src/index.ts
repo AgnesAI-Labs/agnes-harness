@@ -263,6 +263,7 @@ export { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from './orchestrator/request-media-s
 export type { ApplyLimits } from './refine/apply.js'
 // Applying a refinement is the facade's job alone, between turns under the session lock.
 export { rollbackRefine } from './refine/apply.js'
+export { newSessionVisibleTools, sessionVisibleTools } from './refinement/capture.js'
 export {
   type DirectProposal,
   type InspectAnswer,

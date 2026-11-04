@@ -5,11 +5,29 @@ import { fileURLToPath } from 'node:url'
 import { ecosystem as baseEcosystem } from '@agnes/base'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import { afterAll, describe, expect, it } from 'vitest'
+import type { Host } from '../../src/runtime/lifecycle/host.js'
 import { createTestHost } from '../../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const REFINEMENT_TOOLS = ['harness_inspect', 'harness_propose', 'harness_refine']
 const PROFILE = 'local-dev'
+
+/** The refinement tools a session's capability set lists (what the TUI `/tools` shows), with their state. */
+const capabilityTools = (host: Pick<Host, 'sessionCapabilities'>, key: string) =>
+  (host.sessionCapabilities?.(key).tools ?? [])
+    .filter((tool) => REFINEMENT_TOOLS.includes(tool.id))
+    .map(({ id, enabled }) => ({ id, enabled }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+
+/** The refine plugin's tools a session is offered, as its tool catalog lists them. */
+const offered = (session: {
+  toolCatalog(): { tools: { name: string; source: string; deferred: boolean }[] }
+}) =>
+  session
+    .toolCatalog()
+    .tools.filter((tool) => tool.source === 'agnes/refine')
+    .map(({ name, deferred }) => ({ name, deferred }))
+    .sort((a, b) => a.name.localeCompare(b.name))
 
 const dirs: string[] = []
 afterAll(() => {
@@ -59,38 +77,37 @@ async function refinementTools(dataDir: string) {
   try {
     // Guard against a vacuous pass: the refine factory really saw the legacy key, enabled.
     expect(seenPreset?.harness).toMatchObject({ auto_refine: { enabled: true }, queue_max: 5 })
-    const tools = [...host.kernel.tools.snapshot(0).byName.values()]
+    const registered = [...host.kernel.tools.snapshot(0).byName.values()]
       .filter((tool) => tool.source.source === 'agnes/refine')
-      .map((tool) => ({ name: tool.name, deferLoading: tool.meta.deferLoading }))
-      .sort((a, b) => a.name.localeCompare(b.name))
-    return { tools, registrations: host.kernel.registrations('agnes/refine'), loaded: host.extensions() }
+      .map((tool) => tool.name)
+      .sort()
+    const session = await host.createSession({ cwd: dataDir, key: 'switch-assembly' })
+    return { registered, offered: offered(session) }
   } finally {
     await host.close()
   }
 }
 
 describe('the refinement switch at host assembly', () => {
-  it('a preset carrying the legacy auto_refine key registers no refinement tool', async () => {
-    const { tools, registrations, loaded } = await refinementTools(scratch())
+  it('a preset carrying the legacy auto_refine key offers no session a refinement tool', async () => {
+    const { registered, offered: tools } = await refinementTools(scratch())
+    // The tools are registered with the host whatever the switch says; a session that is off is offered none.
+    expect(registered).toEqual(REFINEMENT_TOOLS)
     expect(tools).toEqual([])
-    expect(registrations).toEqual([])
-    // The extension still loads; it just registers nothing.
-    expect(loaded.find((entry) => entry.id === 'agnes/refine')?.loaded).toBe(true)
   })
 
   it('only the settings file turns the tools on, harness_refine always loaded and the others deferred', async () => {
     const dataDir = scratch()
     enable(dataDir)
-    const { tools, registrations } = await refinementTools(dataDir)
-    expect(tools).toEqual(REFINEMENT_TOOLS.map((name) => ({ name, deferLoading: name !== 'harness_refine' })))
-    expect(registrations).toEqual(['tool:harness_propose', 'tool:harness_refine', 'tool:harness_inspect'])
+    const { offered: tools } = await refinementTools(dataDir)
+    expect(tools).toEqual(REFINEMENT_TOOLS.map((name) => ({ name, deferred: name !== 'harness_refine' })))
   })
 
   it('a settings file for another profile does not turn the tools on', async () => {
     const dataDir = scratch()
     const other = new RefinementSettingsStore(dataDir, 'another-profile')
     other.save({ enabled: true, mode: 'auto' }, other.read().revision)
-    expect((await refinementTools(dataDir)).tools).toEqual([])
+    expect((await refinementTools(dataDir)).offered).toEqual([])
   })
 })
 
@@ -118,20 +135,40 @@ describe('what Core reads of the switch in a running host', () => {
       save(dataDir, false)
       expect(session.d.refinementEnabled?.()).toBe(false)
       expect(session.d.refinementTriggers?.accepts?.(session.key)).toBe(false)
-      expect(host.kernel.registrations('agnes/refine')).toHaveLength(REFINEMENT_TOOLS.length)
+      // The session's tool list does not change: the tools answer that refinement is off.
+      expect(offered(session)).toHaveLength(REFINEMENT_TOOLS.length)
     } finally {
       await host.close()
     }
   })
 
-  it('off at assembly: a later switch-on waits for the next assembly, like the tools', async () => {
+  it('off at assembly: turning it on reaches the sessions opened after it, not the open ones', async () => {
     const dataDir = scratch()
-    const { host, session } = await opened(dataDir)
+    const { host, session: before } = await opened(dataDir)
     try {
       save(dataDir, true)
-      expect(session.d.refinementEnabled?.()).toBe(false)
-      expect(session.d.refinement?.settings().enabled).toBe(false)
-      expect(host.kernel.registrations('agnes/refine')).toEqual([])
+      // The session that was already open runs as before: off, without the tools.
+      expect(before.d.refinementEnabled?.()).toBe(false)
+      expect(before.d.refinement?.settings().enabled).toBe(false)
+      expect(offered(before)).toEqual([])
+      // Nor does its capability set list them, so a tool filter cannot name what it does not have.
+      expect(capabilityTools(host, before.key)).toEqual([])
+      // A launch review (no session yet) lists what a session opening now gets: the tools, now on.
+      expect(capabilityTools(host, '')).toEqual(REFINEMENT_TOOLS.map((id) => ({ id, enabled: true })))
+      const after = await host.createSession({ cwd: dataDir, key: 'switch-after' })
+      expect(after.d.refinementEnabled?.()).toBe(true)
+      expect(after.d.refinement?.settings()).toMatchObject({ enabled: true, mode: 'auto' })
+      expect(after.d.refinementTriggers?.accepts?.(after.key)).toBe(true)
+      expect(offered(after).map((tool) => tool.name)).toEqual(REFINEMENT_TOOLS)
+      expect(capabilityTools(host, after.key)).toEqual(REFINEMENT_TOOLS.map((id) => ({ id, enabled: true })))
+      // Off reaches every session at once; the newer one keeps its tool list, which now answers off.
+      save(dataDir, false)
+      expect(after.d.refinementEnabled?.()).toBe(false)
+      expect(after.d.refinement?.settings().enabled).toBe(false)
+      expect(offered(after)).toHaveLength(REFINEMENT_TOOLS.length)
+      expect(before.d.refinementEnabled?.()).toBe(false)
+      expect(offered(before)).toEqual([])
+      expect(capabilityTools(host, '')).toEqual([])
     } finally {
       await host.close()
     }

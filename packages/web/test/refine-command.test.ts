@@ -46,7 +46,7 @@ describe('the composer /refine command', () => {
     expect(refine).toHaveBeenCalledWith('session-1', undefined)
     expect(lines).toHaveLength(1)
     expect(lines[0]).toBe(
-      'Experience refinement (RSI) is not active. Turn it on in Settings; if you just did, restart to apply it.',
+      'Experience refinement (RSI) is not active in this session. Turn it on in Settings; it applies to sessions opened after that, so start a new session.',
     )
     const chinese = setup(
       async () => {
@@ -64,7 +64,7 @@ describe('the composer /refine command', () => {
       throw rejected('unavailable')
     })
     await runRefineCommand(context, '/refine')
-    expect(lines[0]).toMatch(/not active.*restart/s)
+    expect(lines[0]).toMatch(/not active.*new session/s)
   })
 
   it('queues a review with the focus', async () => {

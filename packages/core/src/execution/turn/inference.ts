@@ -55,7 +55,7 @@ import {
   SKILL_LOADED_PREFIX,
   TURN_TIME_PREFIX,
 } from '../../request/derive.js'
-import { experienceChanged, messageText, withExperienceDiag } from '../../request/experience.js'
+import { experienceChanged, messageText, withExperienceRows } from '../../request/experience.js'
 import { experienceCommitCheck } from '../../request/experience-dispatch.js'
 import { experienceForRequest } from '../../request/experience-room.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
@@ -723,7 +723,7 @@ export async function prepareInferenceRequest(
     ...(turnTime ? { requestNotes: [{ prefix: TURN_TIME_PREFIX, text: turnTime }] } : {}),
     ...(tailNote ? { tailNote } : {}),
   })
-  out = withExperienceDiag(s, out)
+  out = withExperienceRows(s, out)
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)
   if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
     const { request, derivedHash } = remintRequestWithMaxTokens(

@@ -1,6 +1,8 @@
 import {
   NO_TOOL_FILTER,
+  newSessionVisibleTools,
   type SessionImpl,
+  sessionVisibleTools,
   type ToolRegistry,
   type WorkspaceInvocationPort,
 } from '@agnes/core'
@@ -83,12 +85,15 @@ export function createCapabilities(
         ],
       },
     })
-  const sessionCapabilities: SessionCapabilitiesFn = (
-    sessionKey,
-    tools = runtimeTarget.rawSessionRuntime(sessionKey).tools,
-    call,
-  ) => {
-    const session = call?.session ?? ctx.live.kernel.get().get(sessionKey)
+  const sessionCapabilities: SessionCapabilitiesFn = (sessionKey, given, call) => {
+    const kernel = ctx.live.kernel.get()
+    const session = call?.session ?? kernel.get(sessionKey)
+    // An open session's own tools are listed as Core offers them: without the refinement tools of a
+    // session opened while task experience was off. With no session open (an agent launch review),
+    // as a session opening now would get them. Tools handed in (composition) are taken as they are.
+    const own = () => runtimeTarget.rawSessionRuntime(sessionKey).tools
+    const tools =
+      given ?? (session ? sessionVisibleTools(session, own()) : newSessionVisibleTools(kernel.o, own()))
     // Preview admission uses the same primary-model gate as a live session. Unknown or
     // ambiguous models expose no image tools, just as Core's session gate does.
     const primary = providerStage.routes?.primary
