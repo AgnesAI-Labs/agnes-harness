@@ -4444,11 +4444,12 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'a skill refinement installed: its state, review date, who asked and the revisions it can go back to',
   },
   RefinementSkillDraft: {
-    valid: { id: rep64, name: 'lint-fixer', reason: 'changed-since', diff: '--- a\n+++ b\n', at: 1 },
+    valid: { id: rep(32), name: 'lint-fixer', reason: 'changed-since', diff: '--- a\n+++ b\n', at: 1 },
     invalid: [
       { name: 'lint-fixer', reason: 'changed-since', diff: '', at: 1 }, // missing required id
-      { id: rep64, name: 'lint-fixer', reason: '', diff: '', at: 1 }, // boundary: one below minLength:1
-      { id: rep64, name: 'lint-fixer', reason: 'x', diff: '', at: 1, proposed: 'y' }, // additionalProperties:false
+      { id: rep(32), name: 'lint-fixer', reason: '', diff: '', at: 1 }, // boundary: one below minLength:1
+      { id: rep(64), name: 'lint-fixer', reason: 'x', diff: '', at: 1 }, // pattern: a draft id is 32 hex digits
+      { id: rep(32), name: 'lint-fixer', reason: 'x', diff: '', at: 1, proposed: 'y' }, // additionalProperties:false
     ],
     note: 'a change kept for a person: the skill, why, and a whole-file diff',
   },
