@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./packages/skill-import": "./src/packages/skill-import.ts",
     ".": "./src/index.ts",
     "./index": "./src/index.ts",
     "./package-actual-identity": "./src/package-actual-identity.ts",

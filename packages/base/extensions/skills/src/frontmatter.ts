@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { SKILL_BUNDLE_FRONTMATTER_KEYS } from '@agnes/protocol'
 import { isMap, isScalar, isSeq, parseDocument } from 'yaml'
 
 /** Explicit SKILL.md invocation. Omitted flags permit both surfaces. */
@@ -79,6 +80,7 @@ function canonical(value: unknown): string {
 export function parseSkillDocument(
   source: string,
   flatName?: string,
+  complete = false,
 ): Readonly<{ frontmatter: SkillFrontmatter; body: string }> | undefined {
   if (!source.startsWith('---\n') && !source.startsWith('---\r\n')) {
     if (flatName === undefined) return undefined
@@ -111,6 +113,8 @@ export function parseSkillDocument(
   const data = doc.toJS({ mapAsMap: false })
   if (typeof data !== 'object' || data === null || Array.isArray(data)) return undefined
   const raw = data as Record<string, unknown>
+  if (complete && Object.keys(raw).some((key) => !SKILL_BUNDLE_FRONTMATTER_KEYS.includes(key)))
+    return undefined
   const name = raw.name
   const description = raw.description
   if (

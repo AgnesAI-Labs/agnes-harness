@@ -28,6 +28,7 @@ import {
   useCommunityDiscovery,
 } from './community-market.js'
 import { matchesPluginFilters, type PluginSource, PluginSourceFilter, PluginToolbar } from './plugins-tab.js'
+import { SkillInstallDialog } from './skill-import.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
@@ -151,6 +152,7 @@ function MarketCard({
 
 /** Today's plugin catalog; a real marketplace later replaces the data source, not the page. */
 export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
+  const [importSource, setImportSource] = useState<string | null>(null)
   const [source, setSource] = useState<PluginSource | ''>('')
   const { snapshot, failed } = useCommunityDiscovery(view)
   const [selected, setSelected] = useState<CommunityRepository | null>(null)
@@ -197,6 +199,18 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
         onQuery={() => void view.loadCatalog()}
         leading={<PluginSourceFilter value={source} onChange={setSource} t={t} />}
       />
+      {importSource !== null && (
+        <SkillInstallDialog
+          key={importSource}
+          view={view}
+          initialSource={importSource}
+          t={t}
+          onClose={() => {
+            setImportSource(null)
+            requestAnimationFrame(() => detailTrigger.current?.focus())
+          }}
+        />
+      )}
       <div className="plugins-page-callout">
         <IconTile name="bot" />
         <div>
@@ -256,7 +270,16 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
           {t('market.more')}
         </Button>
       )}
-      <CommunityDetails row={selected} view={view} t={t} onClose={closeDetail} />
+      <CommunityDetails
+        row={selected}
+        view={view}
+        t={t}
+        onClose={closeDetail}
+        onSkillImport={(url) => {
+          setSelected(null)
+          setImportSource(`git:${url}.git`)
+        }}
+      />
     </>
   )
 }

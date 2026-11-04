@@ -449,7 +449,10 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
 
 class Service implements PackageAdminService {
   get features(): readonly string[] {
-    return this.options.community ? ['packages.community-discovery.v1'] : []
+    return [
+      ...(this.options.community ? ['packages.community-discovery.v1'] : []),
+      ...(this.options.skillImport ? ['packages.skill-import.v1'] : []),
+    ]
   }
   private readonly applications: Applications
   private readonly configuration: PluginConfiguration
@@ -464,6 +467,7 @@ class Service implements PackageAdminService {
   constructor(
     private readonly options: {
       manager: PackageManager
+      skillImport?: ReturnType<typeof import('./skill-import.js').createSkillImportService>
       authoringTestRunner?: AuthoringTestRunner
       resolveAgent?(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>
       authoringHome?: string
@@ -601,6 +605,10 @@ class Service implements PackageAdminService {
       const checked = validatePackageAdminCall(method, 'params', params)
       if (!checked.ok) throw rpcError('INVALID_PARAMS', { code: 'INVALID' })
       const data = checked.value as Record<string, unknown>
+      if (method === '_agnes/v1/packages.skillImport') {
+        if (!this.options.skillImport || granted.installer === 'agent') throw rpcError('CAPABILITY_DENIED')
+        return this.options.skillImport.call(data as import('@agnes/protocol').SkillImportParams, granted)
+      }
       if (method === '_agnes/v1/packages.update' && ('activation' in data || 'dependents' in data))
         requirePackageAdminPermissions(method, granted, [
           'packages.install',
@@ -2101,6 +2109,7 @@ class Service implements PackageAdminService {
 }
 
 export function createPackageAdminService(options: {
+  skillImport?: ReturnType<typeof import('./skill-import.js').createSkillImportService>
   manager: PackageManager
   authoringTestRunner?: AuthoringTestRunner
   resolveAgent?(profile: string, ref: string): Promise<import('@agnes/protocol').AgentPlan>

@@ -44,6 +44,7 @@ import {
 import { createTargetReverter } from './publication/composite-target-revert.js'
 import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinator.js'
 import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
+import { createManagementSkillImports } from './skill-install-requests.js'
 
 const DAEMON_SURFACE_API_VERSION = '1.0.0'
 export async function initializeRuntime(
@@ -65,6 +66,14 @@ export async function initializeRuntime(
   } = state
   if (o.packageRuntime) {
     const packageRuntime = o.packageRuntime
+    const skillImport = createManagementSkillImports({
+      directory: join(ownerHome, 'skill-imports', o.profile.name),
+      home: ownerHome,
+      profile: o.profile.name,
+      workspace: o.workspaceRoot ?? process.cwd(),
+      resources: state.resourceControl.service,
+    })
+    lifetime.own({ stop: () => skillImport.close(), dispose: () => skillImport.close() })
     const community =
       !o.packageAdmin || packageRuntime.embeddedAdmin
         ? await openCommunityDiscovery({ directory: await packageRuntime.profileDirectory(o.profile.name) })
@@ -87,6 +96,7 @@ export async function initializeRuntime(
         ? o.packageAdmin
         : {
             service: createPackageAdminService({
+              skillImport,
               resolveAgent: hostFacade.resolveApplicationAgent,
               authoringHome: ownerHome,
               manager: o.packageRuntime.manager,

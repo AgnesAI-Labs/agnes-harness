@@ -10,6 +10,27 @@ Capture project conventions, checks, and common methods as a Skill for agents to
 
 A Skill provides instructions and resources; it does not grant execution permission. AGH discovers candidates, reviews revisions, resolves same-name candidates, and exposes usable content to a session. A file's existence does not prove that the model has read it.
 
+## Import a complete Skill
+
+Open a community repository in **Plugins → Market** and choose **Check and install**. The installation window starts a background check and shows its current stage, content review and installation result. A single Skill is selected automatically; choose one when several are found. Confirm the reviewed content before installation. Opening community details does not download or execute source. A repository topic does not certify compatibility. The CLI also accepts local directories, archives and `git:` / `url:` sources.
+
+The review shows the complete file list, immutable source identity and known interpreter requirements. This path retains scripts outside `scripts/`, templates, HTML, images and license notices. It supports up to 2048 files, 32 MiB total, 8 MiB per file and 16 path segments, subject to stricter acquisition limits. Links, native executables, native extensions, WASM and unsupported files are refused rather than silently omitted. Install from the common Skill directory, not a foreign host's activation patch.
+
+Installation does not execute package scripts, install dependencies or grant command permissions. New imports remain disabled; review and enable them under **Plugins → Skills**. The backend checks fixed interpreter versions and reports unknown dependencies explicitly. These checks do not prove that the Skill's full functionality works. Script execution uses the session's ordinary command and sandbox policy; output belongs in the task workspace, not the installed Skill directory.
+
+The complete-import frontmatter profile accepts `name`, `description`, `license`, `metadata`, `compatibility` and AGH's invocation flags. Foreign tool restrictions, models, hooks and other unknown behavior fields are refused; AGH does not silently remove them or emulate their host.
+
+Node SDK: `client.packages.skillImport(...)` uses `_agnes/v1/packages.skillImport`; check `initialize().features` for `packages.skill-import.v1`. Prepare returns a proposal and digest; commit requires that exact digest. Each call binds the initialized client ID, profile and command ID; the same authenticated principal can continue a proposal from another CLI connection in the same profile. The CLI exposes the same review boundary:
+
+```sh
+agh plugins skill-import prepare path:/absolute/path/to/repository skill-subdirectory
+agh plugins skill-import commit PROPOSAL_ID SHA256_FROM_PREPARE
+agh plugins skill-import status PROPOSAL_ID
+agh plugins skill-import cancel PROPOSAL_ID
+```
+
+Use forward slashes in SDK local source refs; CLI and Web convert native Windows path separators. Complete imports record `AGH-SKILL.json`; keep it with the directory. All retained resources affect the reviewed revision. Editing scripts, templates or the marker requires fresh trust; ordinary user-maintained disk Skills retain their existing edit semantics. Same-name replacements are refused. Use the existing reviewed removal flow when replacing an installation; this entry does not perform in-place upgrades or promise running-command version leases.
+
 ## Ask the agent to create a Skill
 
 For example: “Create a simple skill called 数学老师skill.” The agent uses an ASCII directory identifier such as `math-teacher`; `SKILL.md` frontmatter can keep the Chinese display name and must provide `name` and `description`.

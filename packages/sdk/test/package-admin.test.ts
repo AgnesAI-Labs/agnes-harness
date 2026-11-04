@@ -73,6 +73,11 @@ describe('Node package admin client', () => {
       }),
       '_agnes/v1/packages.list': () => ({ packages: [] }),
       '_agnes/v1/packages.inspect': () => receipt,
+      '_agnes/v1/packages.skillImport': () => ({
+        state: 'prepared',
+        proposalId: 'skill-install-fixture',
+        digest: 'a'.repeat(64),
+      }),
       '_agnes/v1/packages.install': () => receipt,
       '_agnes/v1/packages.trust': () => receipt,
       '_agnes/v1/packages.untrust': () => receipt,
@@ -92,6 +97,15 @@ describe('Node package admin client', () => {
       await client.packages.catalog.list({ profile })
       await client.packages.catalog.get({ profile, id: 'example' })
       await client.packages.list({ profile })
+      expect(
+        await client.packages.skillImport({
+          profile,
+          clientId: 'sdk-admin',
+          commandId: 'skill-prepare-1',
+          action: 'prepare',
+          source: { type: 'path', ref: 'path:./skill' },
+        }),
+      ).toMatchObject({ state: 'prepared', proposalId: 'skill-install-fixture' })
       await client.packages.inspect({ profile, clientId: 'sdk-admin', commandId: 'inspect-1', source })
       await client.packages.install({
         profile,
@@ -163,6 +177,7 @@ describe('Node package admin client', () => {
         '_agnes/v1/packages.catalog.list',
         '_agnes/v1/packages.catalog.get',
         '_agnes/v1/packages.list',
+        '_agnes/v1/packages.skillImport',
         '_agnes/v1/packages.inspect',
         '_agnes/v1/packages.install',
         '_agnes/v1/packages.trust',

@@ -21,6 +21,7 @@ export interface AppServerMethods {
   "_agnes/v1/admin.memory": { params: Static<typeof import("./app-server.js").AdminMemoryParams>; result: Static<typeof import("./app-server.js").AdminMemoryResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.observability": { params: Static<typeof import("./app-server.js").AdminObservabilityParams>; result: Static<typeof import("./app-server.js").AdminObservabilityResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.triggers": { params: Static<typeof import("./app-server.js").WebhookRequest>; result: Static<typeof import("./app-server.js").WebhookResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/packages.skillImport": { params: Static<typeof import("./package-admin.js").SkillImportParams>; result: Static<typeof import("./package-admin.js").SkillImportResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/applications.get": { params: Static<typeof import("./package-admin.js").PackageListParams>; result: Static<typeof import("./package-admin.js").ApplicationState>; direction: "c2s"; kind: "request" }
   "_agnes/v1/applications.preview": { params: Static<typeof import("./package-admin.js").ApplicationPreviewParams>; result: Static<typeof import("./package-admin.js").ApplicationPreview>; direction: "c2s"; kind: "request" }
   "_agnes/v1/applications.adopt": { params: Static<typeof import("./package-admin.js").ApplicationAdoptParams>; result: Static<typeof import("./package-admin.js").ApplicationState>; direction: "c2s"; kind: "request" }

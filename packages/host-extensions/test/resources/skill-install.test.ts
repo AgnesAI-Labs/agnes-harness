@@ -167,6 +167,52 @@ function setup(enable = true) {
 }
 
 describe('controlled Skill installer', () => {
+  it('installs a complete code-bearing Skill without executing its scripts and hashes every resource', async () => {
+    const s = setup()
+    mkdirSync(join(s.source, 'bin'))
+    mkdirSync(join(s.source, 'renderers'))
+    writeFileSync(
+      join(s.source, 'bin', 'fixture.mjs'),
+      "import '../renderers/render.mjs'; throw Error('must not execute during installation')",
+    )
+    writeFileSync(
+      join(s.source, 'renderers', 'render.mjs'),
+      'export const separator = "\0"; export const version = 1',
+    )
+    writeFileSync(join(s.source, 'LICENSE'), 'Synthetic fixture license')
+    const first = await s.prepare({
+      action: 'prepare-bundle',
+      sourceDirectory: s.source,
+      scope: 'user',
+      enable: true,
+    })
+    expect(first.files).toEqual(
+      expect.arrayContaining(['AGH-SKILL.json', 'LICENSE', 'bin/fixture.mjs', 'renderers/render.mjs']),
+    )
+    writeFileSync(join(s.source, 'renderers', 'render.mjs'), 'export const version = 2')
+    const second = await s.prepare({
+      action: 'prepare-bundle',
+      sourceDirectory: s.source,
+      scope: 'user',
+      enable: true,
+    })
+    expect(second.revision).not.toBe(first.revision)
+    await s.request({ action: 'commit', proposalId: second.proposalId })
+    expect(await s.done(second.proposalId)).toMatchObject({ state: 'ready' })
+    expect(readFileSync(join(s.home, 'skills/demo/bin/fixture.mjs'), 'utf8')).toContain('must not execute')
+  })
+
+  it.each(['payload.exe', 'escape.node', 'payload.wasm'])(
+    'refuses unsupported complete bundle resource %s',
+    async (name) => {
+      const s = setup()
+      writeFileSync(join(s.source, name), 'not a supported script')
+      await expect(
+        s.prepare({ action: 'prepare-bundle', sourceDirectory: s.source, scope: 'user', enable: true }),
+      ).rejects.toThrow('SKILL_FILE_REFUSED')
+      expect(existsSync(join(s.home, 'skills/demo'))).toBe(false)
+    },
+  )
   it.each(['workspace', 'user'] as const)(
     'statically prepares authored instructions in %s and installs after exactly one content-bound confirmation',
     async (scope) => {

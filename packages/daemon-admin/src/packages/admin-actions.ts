@@ -4,6 +4,7 @@ import type { PackageAdminMethodName } from '@agnes/protocol'
 // route map (packages/web-admin/src/admin/plugins/api.ts METHOD_BY_PATH) — see
 // admin-surface.test.ts's "route allowlist" coverage.
 export const ACTIONS = {
+  'skills/import': '_agnes/v1/packages.skillImport',
   'candidates/list': '_agnes/v1/plugins.candidates.list',
   'candidates/show': '_agnes/v1/plugins.candidates.show',
   'candidates/create': '_agnes/v1/plugins.candidates.create',

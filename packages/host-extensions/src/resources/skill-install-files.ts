@@ -13,7 +13,15 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { decideFsPath, validateFsPolicy } from '@agnes/core'
 import type { FsEntry, FsStat } from '@agnes/extension-api'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
-import type { SkillRootKey, SkillSourceIdentity } from '@agnes/protocol'
+import {
+  isSkillBundleMarker,
+  SKILL_BUNDLE_LIMITS,
+  SKILL_BUNDLE_MARKER,
+  SKILL_BUNDLE_VERSION,
+  type SkillRootKey,
+  type SkillSourceIdentity,
+  skillBundleFileKind,
+} from '@agnes/protocol'
 import type { SkillInstallInvocation } from './skill-install-port.js'
 
 export type InstallSkillRoot = Readonly<{
@@ -177,6 +185,7 @@ export async function readInstallBundle(
   root: InstallSkillRoot,
   denied: readonly string[] | ((path: string) => void),
   discovery: Pick<SkillDiscovery, 'discover'>,
+  complete = false,
 ): Promise<InstallBundle> {
   const checkPath = (path: string) => {
     if (typeof denied === 'function') denied(path)
@@ -193,11 +202,11 @@ export async function readInstallBundle(
   let bytes = 0
   let entries = 0
   const walk = (path: string, depth: number) => {
-    if (depth > 4) throw installError('SKILL_SIZE_LIMIT')
+    if (depth > (complete ? SKILL_BUNDLE_LIMITS.depth - 1 : 4)) throw installError('SKILL_SIZE_LIMIT')
     const directory = opendirSync(path)
     try {
       for (let entry = directory.readSync(); entry; entry = directory.readSync()) {
-        if (++entries > 128) throw installError('SKILL_SIZE_LIMIT')
+        if (++entries > (complete ? SKILL_BUNDLE_LIMITS.entries : 128)) throw installError('SKILL_SIZE_LIMIT')
         if (!safeName(entry.name)) throw installError('SKILL_FILE_REFUSED')
         const full = join(path, entry.name)
         checkPath(full)
@@ -207,10 +216,20 @@ export async function readInstallBundle(
           walk(full, depth + 1)
         } else if (entry.isFile()) {
           const name = relative(source, full).split(sep).join('/')
-          if (files.size >= MAX_FILES) throw installError('SKILL_SIZE_LIMIT')
-          const content = boundedInstallFile(full)
+          if (files.size >= (complete ? SKILL_BUNDLE_LIMITS.files - 1 : MAX_FILES))
+            throw installError('SKILL_SIZE_LIMIT')
+          if (complete && !skillBundleFileKind(name)) throw installError('SKILL_FILE_REFUSED')
+          const content = boundedInstallFile(full, complete ? SKILL_BUNDLE_LIMITS.fileBytes : undefined)
+          if (complete && name === SKILL_BUNDLE_MARKER) {
+            if (content.length > 256 || !isSkillBundleMarker(JSON.parse(content.toString('utf8'))))
+              throw installError('SKILL_FILE_REFUSED')
+            continue
+          }
           bytes += content.length
-          if (bytes > MAX_BYTES) throw installError('SKILL_SIZE_LIMIT')
+          if (bytes > (complete ? SKILL_BUNDLE_LIMITS.bytes - 256 : MAX_BYTES))
+            throw installError('SKILL_SIZE_LIMIT')
+          if ([...files.keys()].some((path) => path.toLowerCase() === name.toLowerCase()))
+            throw installError('SKILL_FILE_CONFLICT')
           files.set(name, content)
         } else throw installError('SKILL_FILE_REFUSED')
       }
@@ -219,6 +238,7 @@ export async function readInstallBundle(
     }
   }
   walk(source, 0)
+  if (complete) files.set(SKILL_BUNDLE_MARKER, Buffer.from(JSON.stringify({ version: SKILL_BUNDLE_VERSION })))
   return buildInstallBundle(directoryName, files, root, discovery)
 }
 
@@ -268,6 +288,8 @@ export async function buildInstallBundle(
   const scan = await discovery.discover(fs, root)
   const candidate = scan.ok ? scan.candidates[0] : undefined
   if (!candidate) throw installError('SKILL_DOCUMENT_INVALID')
+  if (files.has(SKILL_BUNDLE_MARKER) && candidate.files?.length !== files.size - 1)
+    throw installError('SKILL_BUNDLE_INCOMPLETE')
   const digest = installDigest(
     JSON.stringify(
       [...files]

@@ -61,6 +61,13 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
+        'SKILL_BUNDLE_LIMITS',
+        'SKILL_BUNDLE_FRONTMATTER_KEYS',
+        'SKILL_BUNDLE_MARKER',
+        'SKILL_BUNDLE_VERSION',
+        'isSkillBundleMarker',
+        'isSkillBundlePath',
+        'skillBundleFileKind',
         'PROFILE_DECISION_JOURNAL_PREFIX',
         'isProfileDecisionJournal',
         'profileDecisionJournalKey',

@@ -352,6 +352,26 @@ function localSource(src: PackageSource, cwd: string): string {
   return from
 }
 
+/** Validate a static local acquisition before copying any private installation state. */
+export function assertSkillSourceLocation(
+  source: PackageSource,
+  cwd: string,
+  deniedPaths: readonly string[],
+): void {
+  if (!['path', 'file', 'workspace'].includes(source.type)) return
+  const from = localSource(source, cwd)
+  for (const denied of deniedPaths) {
+    let target = resolve(denied)
+    try {
+      target = nativeRealpathSync(target)
+    } catch {
+      /* A not-yet-created private root is still protected. */
+    }
+    if (contained(target, from) || contained(from, target))
+      throw sourceError('Skill source overlaps protected installation state', 'skill-private-source')
+  }
+}
+
 /** A bundled package whose entry is generated says how to build it when a checkout has not yet. */
 export function requireGeneratedEntry(ref: string, directory: string): void {
   const build = OPTIONAL_BUNDLED_PACKAGES.find((item) => item.ref === ref)?.build
@@ -411,11 +431,15 @@ export async function fetchSource(
     npmProvenance?: typeof fetchNpmProvenance
     extract?: (tarball: string, into: string, signal?: AbortSignal) => Promise<void>
     signal?: AbortSignal
+    /** Static Skill acquisition; never enters npm installation or package activation. */
+    contentOnly?: boolean
   },
 ): Promise<FetchedSource> {
   checkCancelled(opts.signal)
   // Never trust a hand-built PackageSource that bypassed parseSource.
   const checked = parseSource(src.ref)
+  if (opts.contentOnly && !['file', 'path', 'workspace', 'git', 'url'].includes(checked.type))
+    throw sourceError('Skill source type is unsupported', 'skill-source-type')
   if (checked.type !== src.type) throw sourceError('package source type differs from its ref', 'source-type')
   if (src.type === 'local')
     throw sourceError('Local plugins are discovered from configured roots', 'local-discovery-only')
@@ -462,7 +486,9 @@ export async function fetchSource(
           await extractPluginArchive(from, payload, exec, opts.signal)
           integrity = hashDirectory(payload)
         } else integrity = await copyLocal(from, payload, opts.signal)
-        pkg = metadata(payload)
+        pkg = opts.contentOnly
+          ? { name: 'skill-source', version: '0.0.0', dependencies: {} }
+          : metadata(payload)
         break
       }
       case 'npm': {
@@ -534,7 +560,9 @@ export async function fetchSource(
       }
       case 'git': {
         resolvedSource = await checkoutGitSource(checked.ref, payload, opts.cwd, exec, opts.signal)
-        pkg = metadata(payload)
+        pkg = opts.contentOnly
+          ? { name: 'skill-source', version: '0.0.0', dependencies: {} }
+          : metadata(payload)
         integrity = hashDirectory(payload)
         break
       }
@@ -555,7 +583,9 @@ export async function fetchSource(
         const archive = join(work, 'download')
         writeFileSync(archive, Buffer.concat(chunks))
         await extractPluginArchive(archive, payload, exec, opts.signal)
-        pkg = metadata(payload)
+        pkg = opts.contentOnly
+          ? { name: 'skill-source', version: '0.0.0', dependencies: {} }
+          : metadata(payload)
         integrity = hashDirectory(payload)
         break
       }

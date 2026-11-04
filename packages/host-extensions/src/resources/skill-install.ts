@@ -43,6 +43,8 @@ export type SkillInstallAuthority = Readonly<{
   background?(task: Promise<void>): void
   ask(summary: string, bindingHash: string, signal: AbortSignal): Promise<boolean>
   resources(method: ResourceControlMethodName, params: Record<string, unknown>): Promise<unknown>
+  /** Static provenance supplied by the trusted source-acquisition coordinator. */
+  provenance?: Readonly<{ sourceDigest: string; resolvedSource: import('@agnes/protocol').PackageSource }>
 }>
 type Proposal = {
   owner: string
@@ -59,6 +61,7 @@ type Proposal = {
   signal?: AbortSignal
   cancelled: boolean
   review?: Readonly<{ principalId: string; digest: string; at: string }>
+  provenance?: SkillInstallAuthority['provenance']
 }
 
 /** All filesystem effects are behind a server-authenticated authority and a content-bound approval. */
@@ -90,6 +93,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
             owner: p.owner,
             result,
             ...(p.review ? { review: p.review } : {}),
+            ...(p.provenance ? { provenance: p.provenance } : {}),
             origin: {
               sessionKey: p.invocation.sessionKey,
               packageId: p.invocation.packageId,
@@ -180,7 +184,13 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
           })
           .find((r) => r.rootKey === p.rootKey)
         if (!root) throw installError('SKILL_ROOT_UNAVAILABLE')
-        const current = await readInstallBundle(p.target, root, [], discovery).catch(() => {
+        const current = await readInstallBundle(
+          p.target,
+          root,
+          [],
+          discovery,
+          p.bundle.files.has('AGH-SKILL.json'),
+        ).catch(() => {
           throw installError('SKILL_TARGET_CONFLICT')
         })
         if (current.digest !== p.bundle.digest) throw installError('SKILL_TARGET_CONFLICT')
@@ -262,7 +272,11 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
       signal.throwIfAborted()
       const input = parseInstallInput(invocation.input)
       const owner = ownerOf(invocation, authority)
-      if (input.action === 'prepare' || input.action === 'prepare-content') {
+      if (
+        input.action === 'prepare' ||
+        input.action === 'prepare-bundle' ||
+        input.action === 'prepare-content'
+      ) {
         for (const [id, proposal] of proposals)
           if (!proposal.busy && proposal.expires < Date.now()) proposals.delete(id)
         if (proposals.size >= 16 || [...proposals.values()].filter((p) => p.owner === owner).length >= 2)
@@ -301,6 +315,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
             root,
             (path) => assertInstallPath(invocation, path),
             discovery,
+            input.action === 'prepare-bundle',
           )
         }
         signal.throwIfAborted()
@@ -328,6 +343,7 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
           result,
           busy: false,
           cancelled: false,
+          ...(authority.provenance ? { provenance: authority.provenance } : {}),
         }
         // Approval and validation yield: reserve again before writing a receipt.
         if (proposals.size >= 16 || [...proposals.values()].filter((p) => p.owner === owner).length >= 2)
@@ -393,7 +409,9 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
       try {
         const enabled = 'enable' in p.invocation.input && p.invocation.input.enable
         const source =
-          p.invocation.input.action === 'prepare' ? p.invocation.input.sourceDirectory : undefined
+          p.invocation.input.action === 'prepare' || p.invocation.input.action === 'prepare-bundle'
+            ? p.invocation.input.sourceDirectory
+            : undefined
         if (source) {
           assertInstallPath(invocation, source)
           for (const name of p.bundle.files.keys()) assertInstallPath(invocation, join(source, name))

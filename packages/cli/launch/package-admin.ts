@@ -230,6 +230,8 @@ export function localPackageAdmin(
         return client.packages.list(params as PackageListParams)
       case 'inspect':
         return client.packages.inspect(params as PackageInspectParams)
+      case 'skills/import':
+        return client.packages.skillImport(params as import('@agnes/protocol').SkillImportParams)
       case 'install':
         return client.packages.install(params as PackageInstallParams)
       case 'trust':

@@ -19,6 +19,8 @@ export async function runPluginDevelopmentCommand(
   write: (text: string) => void,
 ): Promise<number | undefined> {
   const profile = p.profile ?? 'local-dev'
+  if (p.command === 'plugins' && p.positional[0] === 'skill-import')
+    return (await import('./skill-import.js')).skillImportCommand(p, client, write)
   if (p.command === 'app') return (await import('./app-admin.js')).appAdminCommand(p, client, write)
   if (p.command === 'plugins' && p.positional[0] === 'config')
     return (await import('./plugin-config.js')).pluginConfigCommand(p, client, write)

@@ -1,8 +1,7 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as P from '../gen/ts/package-admin.js'
-import { contract } from './admin-contract.js'
-import { inspectJsonData } from './json-data.js'
-import { type ValidationResult, validateAgainst } from './validate.js'
+import { checkAdminData as check, contract } from './admin-contract.js'
+import type { ValidationResult } from './validate.js'
 
 /** Browser client-module slots currently backed by a real Web host outlet. */
 export const WEB_CLIENT_MODULE_SLOT_NAMES = Object.freeze([
@@ -344,6 +343,12 @@ export type PackageAdminAccessPolicy = Readonly<{
   identity: 'none' | 'principal-client-command'
 }>
 export const PACKAGE_ADMIN_METHODS = Object.freeze({
+  '_agnes/v1/packages.skillImport': contract(
+    P.SkillImportParams,
+    P.SkillImportResult,
+    'effect',
+    'packages.install',
+  ),
   '_agnes/v1/applications.get': contract(P.PackageListParams, P.ApplicationState, 'read', 'packages.read'),
   '_agnes/v1/applications.preview': contract(
     P.ApplicationPreviewParams,
@@ -819,12 +824,6 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PluginTreeRollbackResult: P.PluginTreeRollbackResult,
   ClientModuleRosterRow: P.ClientModuleRosterRow,
   ClientModuleEffectCallParams: P.ClientModuleEffectCallParams,
-}
-function check(schema: TSchema, value: unknown, maxBytes = 1048576): ValidationResult<unknown> {
-  const inspected = inspectJsonData(value, maxBytes)
-  if (!inspected.ok)
-    return { ok: false, errors: [{ path: '', code: 'TYPE', message: 'expected bounded strict JSON data' }] }
-  return validateAgainst(schema, inspected.value)
 }
 export function validatePackageAdminData(
   name: PackageAdminDataName,

@@ -11,7 +11,7 @@ import {
 import type { SkillCatalogAdapter } from './adapters.js'
 import type { ResourceAuthority, ResourceEffectAdmission } from './permissions.js'
 import type { ResourceProfileScope } from './profile-scope.js'
-import { type ResourceOperationRecord, SkillJournalStore, type SkillTrustDecision } from './skill-journal.js'
+import { type ResourceOperationRecord, SkillJournalStore } from './skill-journal.js'
 import { readSkillView, skillListPage } from './skill-list.js'
 import { checkedSkillScanObservation, SkillScanReports, type SkillScanToken } from './skill-scan-reports.js'
 import {
@@ -26,6 +26,7 @@ import {
   observeSkills,
   projected,
   prune,
+  rebindSkillTrust,
   receipt,
   reconcileSkillObservations,
   replaceOperation,
@@ -660,7 +661,11 @@ export class SkillResourceStore {
         const incomingIds = new Set(values.map((item) => item.resourceId))
         const discovered = [
           ...retained.filter((item) => !incomingIds.has(item.resourceId)),
-          ...values,
+          ...values.map((item) =>
+            journal.discovered.find((previous) => previous.resourceId === item.resourceId)?.reviewRequired
+              ? { ...item, reviewRequired: true }
+              : item,
+          ),
         ].filter((item) => !removed.includes(item.resourceId))
         discovered.push(...journal.discovered.filter((item) => removed.includes(item.resourceId)))
         const ids = new Set(discovered.map((item) => item.resourceId))
@@ -677,15 +682,9 @@ export class SkillResourceStore {
         // The worker that produced this scan still has the deletion barrier in its snapshot.
         // Publish the cleared barrier before reconcile can establish the new winner/actual state.
         let controlChanged = !!reinstall && journal.removed.includes(reinstall.resourceId)
-        const trust: Record<string, SkillTrustDecision> = {}
-        for (const [id, decision] of Object.entries(journal.trust)) {
-          const descriptor = discovered.find((item) => item.resourceId === id)
-          const capabilityHash = capability[id]
-          if (!descriptor || !capabilityHash) continue
-          if (decision.revision !== descriptor.revision || decision.capabilityHash !== capabilityHash)
-            controlChanged = true
-          trust[id] = { ...decision, revision: descriptor.revision, capabilityHash }
-        }
+        const rebound = rebindSkillTrust(journal, discovered, capability)
+        const trust = rebound.trust
+        controlChanged ||= rebound.changed
         const desired: Record<string, 'enabled' | 'disabled'> = Object.fromEntries(
           Object.entries(journal.desired).filter(([id]) => ids.has(id)),
         )
@@ -698,8 +697,12 @@ export class SkillResourceStore {
         for (const item of values) {
           const capabilityHash = capability[item.resourceId]
           if (known.has(item.resourceId) || removed.includes(item.resourceId) || !capabilityHash) continue
-          trust[item.resourceId] = { revision: item.revision, capabilityHash, state: 'trusted' }
-          desired[item.resourceId] = 'enabled'
+          trust[item.resourceId] = {
+            revision: item.revision,
+            capabilityHash,
+            state: item.reviewRequired ? 'untrusted' : 'trusted',
+          }
+          desired[item.resourceId] = item.reviewRequired ? 'disabled' : 'enabled'
           controlChanged = true
         }
         return {

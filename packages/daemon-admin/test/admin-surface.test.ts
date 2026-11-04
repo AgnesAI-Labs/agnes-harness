@@ -390,6 +390,7 @@ describe('local package admin surface trust boundary', () => {
   // this list.
   it('keeps the BFF route allowlist in lockstep with the Web admin API client route map', () => {
     const expectedPaths = [
+      'skills/import',
       'application/get',
       'application/preview',
       'application/adopt',

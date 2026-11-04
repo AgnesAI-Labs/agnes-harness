@@ -83,11 +83,13 @@ export function CommunityDetails({
   view,
   t,
   onClose,
+  onSkillImport,
 }: {
   row: CommunityRepository | null
   view: PluginView
   t: Text
   onClose(): void
+  onSkillImport?(url: string): void
 }) {
   const url = row ? repositoryUrl(row) : ''
   return (
@@ -118,6 +120,13 @@ export function CommunityDetails({
                 {t('community.check')}
               </Button>
             )}
+            {row.ecosystem !== 'agh' &&
+              onSkillImport &&
+              view.state.context?.features?.includes('packages.skill-import.v1') && (
+                <Button disabled={!view.canEffect('packages.install')} onClick={() => onSkillImport(url)}>
+                  {t('skill.import.check')}
+                </Button>
+              )}
           </div>
         )
       }
@@ -164,7 +173,7 @@ export function CommunityDetails({
           )}
           <div className="community-market-compatibility">
             <Tag tone="info">{t('community.unverified')}</Tag>
-            <p>{t(row.ecosystem === 'dsh' ? 'community.dshUnsupported' : 'community.reviewRequired')}</p>
+            <p>{t('community.reviewRequired')}</p>
           </div>
         </div>
       )}

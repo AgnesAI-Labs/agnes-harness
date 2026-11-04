@@ -18,18 +18,18 @@ export function parseInstallInput(value: unknown): SkillInstallRequest {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw installError('SKILL_INSTALL_INVALID')
   const input = value as Record<string, unknown>
   const keys =
-    input.action === 'prepare'
+    input.action === 'prepare' || input.action === 'prepare-bundle'
       ? ['action', 'sourceDirectory', 'scope', 'enable']
       : input.action === 'prepare-content'
         ? ['action', 'name', 'files', 'scope', 'enable']
         : ['action', 'proposalId']
   if (Object.keys(input).length !== keys.length || Object.keys(input).some((key) => !keys.includes(key)))
     throw installError('SKILL_INSTALL_INVALID')
-  if (input.action === 'prepare' || input.action === 'prepare-content') {
+  if (input.action === 'prepare' || input.action === 'prepare-bundle' || input.action === 'prepare-content') {
     if ((input.scope !== 'workspace' && input.scope !== 'user') || typeof input.enable !== 'boolean')
       throw installError('SKILL_INSTALL_INVALID')
     if (
-      input.action === 'prepare' &&
+      (input.action === 'prepare' || input.action === 'prepare-bundle') &&
       (typeof input.sourceDirectory !== 'string' || input.sourceDirectory.length > 4096)
     )
       throw installError('SKILL_INSTALL_INVALID')

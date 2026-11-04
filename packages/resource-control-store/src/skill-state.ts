@@ -8,7 +8,32 @@ import {
   validateResourceControlData,
 } from '@agnes/protocol'
 import type { ResourceAuthority } from './permissions.js'
-import type { SkillJournal } from './skill-journal.js'
+import type { SkillJournal, SkillTrustDecision } from './skill-journal.js'
+
+/** Managed imports keep decisions bound to the observed revision without inheriting old trust. */
+export function rebindSkillTrust(
+  journal: SkillJournal,
+  discovered: readonly SkillDescriptor[],
+  capability: Readonly<Record<string, string>>,
+) {
+  const trust: Record<string, SkillTrustDecision> = {}
+  let changed = false
+  for (const [id, decision] of Object.entries(journal.trust)) {
+    const descriptor = discovered.find((item) => item.resourceId === id)
+    const capabilityHash = capability[id]
+    if (!descriptor || !capabilityHash) continue
+    const edited = decision.revision !== descriptor.revision || decision.capabilityHash !== capabilityHash
+    changed ||= edited
+    const reviewed =
+      descriptor.reviewRequired || journal.discovered.find((item) => item.resourceId === id)?.reviewRequired
+    trust[id] = {
+      revision: descriptor.revision,
+      capabilityHash,
+      state: reviewed && edited ? 'untrusted' : decision.state,
+    }
+  }
+  return { trust, changed }
+}
 export const terminal = new Set<ResourceOperation['state']>(['succeeded', 'failed', 'cancelled'])
 export const hash = (value: unknown) => createHash('sha256').update(jcs(value), 'utf8').digest('hex')
 export const rootTarget = (rootKey: string | undefined) =>

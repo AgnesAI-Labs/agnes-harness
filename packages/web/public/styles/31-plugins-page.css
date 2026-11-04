@@ -702,3 +702,35 @@
     background: var(--agnes-bg-app-content);
   }
 }
+/* The explicit install window shares the same theme and content review primitives. */
+@layer app {
+  .skill-install-dialog .ant-modal-body {
+    max-height: 70dvh;
+    overflow: auto;
+    overflow-wrap: anywhere;
+  }
+  .skill-install-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s12);
+    padding: 0;
+    list-style: none;
+    color: var(--agnes-text-secondary);
+  }
+  .skill-install-steps li {
+    flex: 1;
+    padding-block: var(--s8);
+    text-align: center;
+    border-bottom: 2px solid var(--agnes-line-primary);
+  }
+  .skill-install-steps [aria-current="step"] {
+    color: var(--agnes-brand-primary);
+    border-color: var(--agnes-brand-primary);
+    font-weight: 600;
+  }
+  .skill-import-files {
+    max-height: 16rem;
+    overflow: auto;
+    overflow-wrap: anywhere;
+  }
+}
