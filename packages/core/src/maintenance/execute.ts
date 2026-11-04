@@ -301,7 +301,13 @@ export async function invokeMaintenance(
     if (!record) return refused('target-unknown')
     const messages = structuredClone([...req.messages])
     const target = { route: record.route, model: record.id }
-    const subject = { system: req.system, messages, maxOutputTokens: req.maxOutputTokens }
+    // A model that allows fewer output tokens than the caller asked for is asked for what it allows; the
+    // hold, the request and the recorded intent all use that same number.
+    const maxOutputTokens =
+      Number.isSafeInteger(record.maxTokens) && record.maxTokens > 0
+        ? Math.min(req.maxOutputTokens, record.maxTokens)
+        : req.maxOutputTokens
+    const subject = { system: req.system, messages, maxOutputTokens }
     const derivedHash = digest({ purpose: 'maintenance', target, ...subject, deadlineMs: req.deadlineMs })
     const wire: RequestBody = {
       kind: 'inference',
@@ -314,13 +320,13 @@ export async function invokeMaintenance(
       system: req.system,
       messages,
       tools: [],
-      sampling: { maxTokens: req.maxOutputTokens },
+      sampling: { maxTokens: maxOutputTokens },
       timeoutMs: { firstToken: req.deadlineMs, total: req.deadlineMs },
     }
     const inputTokens = estimateTokens(canonicalJson({ system: req.system, messages }))
     let projected: number | undefined
     try {
-      projected = conservativeModelCredits(inputTokens, req.maxOutputTokens, record.cost)
+      projected = conservativeModelCredits(inputTokens, maxOutputTokens, record.cost)
     } catch {
       projected = undefined
     }
@@ -329,7 +335,7 @@ export async function invokeMaintenance(
       effectId,
       requestHash: derivedHash,
       inputTokens,
-      maxOutputTokens: req.maxOutputTokens,
+      maxOutputTokens,
       projectedCredits: projected,
       budgetTokens,
       allowUnpriced: req.allowUnpriced === true,
@@ -355,7 +361,7 @@ export async function invokeMaintenance(
               model: record.id,
               inputTokens,
               projectedCredits: projected ?? null,
-              maxOutputTokens: req.maxOutputTokens,
+              maxOutputTokens,
               deadlineMs: req.deadlineMs,
               requestHash: derivedHash,
             },

@@ -32,6 +32,7 @@ import { data, ofType, record, violations } from './helpers/side-call-session.js
 const plannerModel = record({
   id: 'planner',
   route: 'rsi',
+  maxTokens: 8192,
   cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
 })
 const target = { route: 'rsi', model: 'planner' }
