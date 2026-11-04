@@ -1582,7 +1582,14 @@
       "properties": {
         "sourceFailure": {
           "description": "Closed source refusal reason; never raw filesystem or Git diagnostics.",
-          "enum": ["manifest-missing", "manifest-invalid", "not-plugin", "git-ref", "git-fetch"]
+          "enum": [
+            "manifest-missing",
+            "manifest-invalid",
+            "not-plugin",
+            "git-ref",
+            "git-fetch",
+            "source-not-found"
+          ]
         },
         "diagnostics": {
           "type": "array",

@@ -32,19 +32,23 @@ describe('adminErrorKey for a refused package source', () => {
   })
 })
 
-it.each(['manifest-missing', 'manifest-invalid', 'not-plugin', 'git-ref', 'git-fetch'] as const)(
-  'shows the fixed source reason %s on the install form',
-  (sourceFailure) => {
-    const error = operationFailure({
-      error: { code: 'E_PACKAGE_SOURCE', safeMessage: 'Generic', sourceFailure },
-    } as never)
-    const key = adminErrorKey(error.code, undefined, error.sourceFailure)
-    expect(key).toBe(`error.source.${sourceFailure}`)
-    for (const locale of ['en', 'zh-CN'] as const) {
-      expect(pluginAdminLocaleCatalog[locale]?.[key]).toBeTruthy()
-      expect(pluginAdminLocaleCatalog[locale]?.[key]).not.toBe(
-        pluginAdminLocaleCatalog[locale]?.['error.source-rejected'],
-      )
-    }
-  },
-)
+it.each([
+  'manifest-missing',
+  'manifest-invalid',
+  'not-plugin',
+  'git-ref',
+  'git-fetch',
+  'source-not-found',
+] as const)('shows the fixed source reason %s on the install form', (sourceFailure) => {
+  const error = operationFailure({
+    error: { code: 'E_PACKAGE_SOURCE', safeMessage: 'Generic', sourceFailure },
+  } as never)
+  const key = adminErrorKey(error.code, undefined, error.sourceFailure)
+  expect(key).toBe(`error.source.${sourceFailure}`)
+  for (const locale of ['en', 'zh-CN'] as const) {
+    expect(pluginAdminLocaleCatalog[locale]?.[key]).toBeTruthy()
+    expect(pluginAdminLocaleCatalog[locale]?.[key]).not.toBe(
+      pluginAdminLocaleCatalog[locale]?.['error.source-rejected'],
+    )
+  }
+})
