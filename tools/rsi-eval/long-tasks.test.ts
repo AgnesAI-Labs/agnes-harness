@@ -115,12 +115,17 @@ const prompts = (task: EvalTask) => task.sessions.flatMap((session) => session.p
 const signatures = (task: EvalTask) => task.trap.signatures.map((s) => new RegExp(s))
 const run = (command: string, cwd: string, home: string) => runCommand(command, cwd, home, 20_000)
 
+// The task tools are bash launchers that run python3, written for the Linux container the tasks run in,
+// and the checks below that run them, or read their executable bit, need a POSIX host. The checks of
+// the task files themselves run everywhere.
+const posixIt = it.skipIf(process.platform === 'win32')
+
 describe('the long tasks', () => {
   it('are the four tasks the rules above cover', () => {
     expect(longTasks.map((task) => task.id).sort()).toEqual(Object.keys(RULES).sort())
   })
 
-  it('run their tools packed: every launcher runs exactly its source and is executable', () => {
+  posixIt('run their tools packed: every launcher runs exactly its source and is executable', () => {
     const tools = longTools()
     expect(tools.map((t) => relative(defaultTasksDir, t.launcher)).sort()).toEqual(
       longTasks.map((task) => `${task.id}/fixture/${RULES[task.id]?.tool}`).sort(),
@@ -174,7 +179,7 @@ describe('the long tasks', () => {
         }
       })
 
-      it('shows the rule nowhere in the workspace: no file, no help text', async () => {
+      posixIt('shows the rule nowhere in the workspace: no file, no help text', async () => {
         const fixture = join(defaultTasksDir, task.id, 'fixture')
         const home = scratch()
         const help = await run(`${rules.tool} help`, fixture, home)
@@ -195,7 +200,7 @@ describe('the long tasks', () => {
             expect(text, `${where}: ${pattern.source}`).not.toMatch(pattern)
       })
 
-      it('gives the rule away in none of the looks a careful agent takes before its first failure', async () => {
+      posixIt('gives the rule away in none of the looks a careful agent takes before its first failure', async () => {
         for (const probe of rules.probes) {
           const work = join(scratch(), 'work')
           const home = scratch()
@@ -208,7 +213,7 @@ describe('the long tasks', () => {
         }
       })
 
-      it('trips the natural approach at the first milestone with an error that does not say the fix', async () => {
+      posixIt('trips the natural approach at the first milestone with an error that does not say the fix', async () => {
         const work = join(scratch(), 'work')
         const home = scratch()
         cpSync(join(defaultTasksDir, task.id, 'fixture'), work, { recursive: true })
@@ -227,7 +232,7 @@ describe('the long tasks', () => {
         expect(results.some((r, i) => !checkPasses(r, first?.checks[i]?.contains ?? ''))).toBe(true)
       })
 
-      it('meets the rule at the first milestone of every session, where the natural solution trips it', async () => {
+      posixIt('meets the rule at the first milestone of every session, where the natural solution trips it', async () => {
         const root = scratch()
         const home = scratch()
         const work = join(root, 'work')
