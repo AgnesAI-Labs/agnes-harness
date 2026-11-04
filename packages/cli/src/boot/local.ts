@@ -103,6 +103,12 @@ export type LocalBootDeps = BootDeps & {
   /** Internal ledger/ownership-bound media port composed by bootLocal. */
   requestMedia?: NonNullable<HostOptions['requestMedia']>
   /**
+   * How a saved skill reaches the process that holds resource control. An embedded host has none of
+   * its own, so without this a skill entry is refused `unavailable`; a caller that runs resource
+   * control itself (an evaluation harness) passes it here. Absent: unchanged.
+   */
+  refinementSave?: NonNullable<HostOptions['refinementSave']>
+  /**
    * Where the default loader keeps transpiled plugin source, instead of the profile's cacheDir (an
    * isolated one-shot run otherwise starts cold). Entries are checked against the current source.
    */
@@ -201,6 +207,7 @@ export async function assembleLocalHost(
     skillContribution: createSkillCordisService(skills),
     skillResources: skills.snapshot(),
     ...(deps.requestMedia ? { requestMedia: deps.requestMedia } : {}),
+    ...(deps.refinementSave ? { refinementSave: deps.refinementSave } : {}),
     agnesVersion: deps.agnesVersion,
     ...(windowsNodeExecutable !== undefined ? { windowsNodeExecutable } : {}),
     ...(deps.extensionIsolation ? { extensionIsolation: deps.extensionIsolation } : {}),

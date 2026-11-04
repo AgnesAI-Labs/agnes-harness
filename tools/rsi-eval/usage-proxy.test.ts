@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { UsageRow } from './types.js'
-import { startUsageProxy, summarizeUsage } from './usage-proxy.js'
+import { CAP_STATUS, startUsageProxy, summarizeUsage, type UsageProxy } from './usage-proxy.js'
 
 type Seen = { method: string; url: string; headers: http.IncomingHttpHeaders; body: string }
 type Upstream = { port: number; seen: Seen[]; close(): Promise<void> }
@@ -71,7 +71,7 @@ describe('usage proxy', () => {
   let dir: string
   let logFile: string
   let upstream: Upstream
-  let proxy: { port: number; close(): Promise<void> } | undefined
+  let proxy: UsageProxy | undefined
 
   const rows = (): UsageRow[] =>
     readFileSync(logFile, 'utf8')
@@ -79,9 +79,28 @@ describe('usage proxy', () => {
       .filter((line) => line !== '')
       .map((line) => JSON.parse(line) as UsageRow)
 
-  const start = async (handler: (req: http.IncomingMessage, res: http.ServerResponse) => void) => {
+  const errors = (): { runId: string; status: number; body: string }[] => {
+    try {
+      return readFileSync(join(dir, 'errors.jsonl'), 'utf8')
+        .split('\n')
+        .filter((line) => line !== '')
+        .map((line) => JSON.parse(line))
+    } catch {
+      return []
+    }
+  }
+
+  const start = async (
+    handler: (req: http.IncomingMessage, res: http.ServerResponse) => void,
+    redact?: string[],
+  ) => {
     upstream = await startUpstream(handler)
-    proxy = await startUsageProxy({ upstream: `http://127.0.0.1:${upstream.port}`, port: 0, logFile })
+    proxy = await startUsageProxy({
+      upstream: `http://127.0.0.1:${upstream.port}`,
+      port: 0,
+      logFile,
+      ...(redact ? { redact } : {}),
+    })
     return proxy
   }
 
@@ -381,6 +400,165 @@ describe('usage proxy', () => {
     expect(rows()).toEqual([
       expect.objectContaining({ runId: 'run-i', status: 502, usage: 'unknown', input: null }),
     ])
+  })
+
+  describe('responses that are not a 200', () => {
+    const post = (port: number, runId: string) =>
+      fetch(`http://127.0.0.1:${port}/run/${runId}/v1/messages`, {
+        method: 'POST',
+        headers: { 'x-api-key': 'k-test-456', 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt: 'request-body-marker-xyz' }),
+      })
+
+    it('keeps the status in the usage log and a preview of the body in the error log', async () => {
+      const p = await start((_req, res) => {
+        res.writeHead(402, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ error: { message: 'Insufficient Balance', type: 'unknown_error' } }))
+      })
+      expect((await post(p.port, 'run-402')).status).toBe(402)
+      await p.close()
+      expect(rows()).toEqual([expect.objectContaining({ runId: 'run-402', status: 402, usage: 'unknown' })])
+      expect(errors()).toEqual([
+        {
+          ts: expect.any(String),
+          runId: 'run-402',
+          status: 402,
+          body: '{"error":{"message":"Insufficient Balance","type":"unknown_error"}}',
+        },
+      ])
+      // The usage log itself still holds no body.
+      expect(readFileSync(logFile, 'utf8')).not.toContain('Insufficient')
+    })
+
+    it('cuts a long body and removes the key, bearer tokens and header values', async () => {
+      const key = 'sk-live-abcdef0123456789'
+      const p = await start(
+        (_req, res) => {
+          res.writeHead(400, {
+            'content-type': 'application/json',
+            'set-cookie': 'session=cookie-marker-789',
+          })
+          res.end(
+            JSON.stringify({
+              error: {
+                message: `bad request for ${key} Bearer tok-9988776655 ${'detail '.repeat(200)}`,
+                authorization: 'Bearer abc',
+              },
+            }),
+          )
+        },
+        [key],
+      )
+      await post(p.port, 'run-400')
+      await p.close()
+      const [row] = errors()
+      expect(row?.status).toBe(400)
+      expect(row?.body.length).toBeLessThanOrEqual(503)
+      for (const secret of [
+        key,
+        'tok-9988776655',
+        'k-test-456',
+        'request-body-marker-xyz',
+        'cookie-marker-789',
+      ])
+        expect(row?.body, secret).not.toContain(secret)
+      expect(row?.body).toContain('bad request for')
+    })
+
+    it('reads a gzip body', async () => {
+      const p = await start((_req, res) => {
+        res.writeHead(429, { 'content-type': 'application/json', 'content-encoding': 'gzip' })
+        res.end(gzipSync(JSON.stringify({ error: { message: 'Rate limit reached' } })))
+      })
+      await post(p.port, 'run-429')
+      await p.close()
+      expect(errors()[0]?.body).toContain('Rate limit reached')
+    })
+
+    it('keeps nothing for a 200, and lists the statuses a run was answered with', async () => {
+      let n = 0
+      const p = await start((_req, res) => {
+        res.writeHead(n++ < 2 ? 200 : 503, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ model: 'm', usage: { input_tokens: 1, output_tokens: 2 } }))
+      })
+      for (let i = 0; i < 3; i++) await post(p.port, 'run-s')
+      await post(p.port, 'other')
+      await p.close()
+      expect(p.statuses('run-s')).toEqual([200, 200, 503])
+      expect(p.statuses('nobody')).toEqual([])
+      expect(errors().map((e) => [e.runId, e.status])).toEqual([
+        ['run-s', 503],
+        ['other', 503],
+      ])
+    })
+
+    it('says so when the upstream cannot be reached', async () => {
+      upstream = await startUpstream((_req, res) => res.end('{}'))
+      const deadPort = upstream.port
+      await upstream.close()
+      proxy = await startUsageProxy({ upstream: `http://127.0.0.1:${deadPort}`, port: 0, logFile })
+      await rawGet(proxy.port, '/run/run-i/v1/messages', {})
+      await proxy.close()
+      expect(errors()).toEqual([
+        expect.objectContaining({
+          runId: 'run-i',
+          status: 502,
+          body: expect.stringContaining('unreachable'),
+        }),
+      ])
+    })
+  })
+
+  describe('a request cap', () => {
+    const post = (port: number, runId: string) =>
+      fetch(`http://127.0.0.1:${port}/run/${runId}/v1/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      })
+
+    it('forwards up to the cap, refuses the rest without sending them, and tells the runner once', async () => {
+      const p = await start((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ model: 'm', usage: { input_tokens: 1, output_tokens: 1 } }))
+      })
+      let reached = 0
+      p.limit('run-c', 2, () => reached++)
+      const answers = []
+      for (let i = 0; i < 4; i++) answers.push(await post(p.port, 'run-c'))
+      expect(answers.map((a) => a.status)).toEqual([200, 200, CAP_STATUS, CAP_STATUS])
+      expect(await answers[2]?.json()).toMatchObject({
+        error: { message: expect.stringContaining('cap of 2') },
+      })
+      expect(reached).toBe(1)
+      expect(p.forwarded('run-c')).toBe(2)
+      // Another run is not capped by it.
+      expect((await post(p.port, 'other')).status).toBe(200)
+      await p.close()
+      // Only what reached the upstream is usage; the refusals are noted with the error bodies.
+      expect(upstream.seen).toHaveLength(3)
+      expect(rows().map((r) => [r.runId, r.status])).toEqual([
+        ['run-c', 200],
+        ['run-c', 200],
+        ['other', 200],
+      ])
+      expect(
+        errors()
+          .filter((e) => e.runId === 'run-c')
+          .map((e) => e.status),
+      ).toEqual([CAP_STATUS, CAP_STATUS])
+    })
+
+    it('is not an infrastructure status, and is lifted with unlimit', async () => {
+      const { isInfraStatus } = await import('./infra.js')
+      expect(isInfraStatus(CAP_STATUS)).toBe(false)
+      const p = await start((_req, res) => res.end('{}'))
+      p.limit('run-u', 0, () => undefined)
+      expect((await post(p.port, 'run-u')).status).toBe(CAP_STATUS)
+      p.unlimit('run-u')
+      expect((await post(p.port, 'run-u')).status).toBe(200)
+      await p.close()
+    })
   })
 })
 

@@ -103,6 +103,11 @@ const docFiles = (root: string, dir = root): string[] =>
  * So a last step makes a fresh copy of each fixture, runs the solutions of every prompt that uses it in
  * order, and requires every one of those prompts' checks to pass in that final state: a later prompt
  * or session must not undo what an earlier check looks for.
+ *
+ * A milestone prompt is different: the runner checks it right after it, in the workspace as the earlier
+ * prompts left it. So its checks are judged in that same order instead, before and after its own solution,
+ * with every earlier prompt's solution applied; they are not judged in the final state, and a milestone
+ * is not solved from the untouched fixture on its own.
  */
 export const selfCheckTask = async (
   task: EvalTask,
@@ -152,6 +157,7 @@ export const selfCheckTask = async (
 
     for (const [sessionIndex, session] of task.sessions.entries()) {
       for (const [promptIndex, prompt] of session.prompts.entries()) {
+        if (prompt.milestone !== undefined) continue
         const label = `session ${sessionIndex} prompt ${promptIndex}`
         const work = freshCopy(sessionFixture(session))
         const runChecks = (): Promise<CommandResult[]> =>
@@ -202,14 +208,39 @@ export const selfCheckTask = async (
             }))
           : [],
       )
-      if (prompts.length < 2) continue
+      const milestones = prompts.some(({ prompt }) => prompt.milestone !== undefined)
+      if (prompts.length < 2 && !milestones) continue
       const work = freshCopy(fixture)
       let solved = true
-      for (const { prompt } of prompts) {
+      const judge = async (
+        prompt: EvalTask['sessions'][number]['prompts'][number],
+        label: string,
+        after: boolean,
+      ) => {
+        for (const [index, check] of prompt.checks.entries()) {
+          const result = await runCommand(check.command, work, home, timeoutMs)
+          if (result.timedOut) problems.push(`${label} check ${index} timed out after ${timeoutMs} ms`)
+          else if (checkPasses(result, check.contains) !== after)
+            problems.push(
+              after
+                ? `${label} milestone check ${index} fails right after its solution, with every earlier solution applied: ${result.output.trim().slice(0, 200)}`
+                : `${label} milestone check ${index} passes before its solution`,
+            )
+        }
+      }
+      for (const { prompt, label } of prompts) {
+        if (prompt.milestone !== undefined && solved) await judge(prompt, label, false)
         for (const command of prompt.solution) {
           const result = await runCommand(command, work, home, timeoutMs)
-          if (result.timedOut || result.code !== 0) solved = false
+          if (result.timedOut || result.code !== 0) {
+            if (solved && prompt.milestone !== undefined)
+              problems.push(
+                `${label} solution command failed (exit ${result.code}): ${command}: ${result.output.trim().slice(0, 200)}`,
+              )
+            solved = false
+          }
         }
+        if (prompt.milestone !== undefined && solved) await judge(prompt, label, true)
       }
       // A solution that fails on its own is reported above; here only the final state matters.
       if (!solved) {
@@ -219,6 +250,7 @@ export const selfCheckTask = async (
         continue
       }
       for (const { prompt, label } of prompts) {
+        if (prompt.milestone !== undefined) continue
         for (const [index, check] of prompt.checks.entries()) {
           const result = await runCommand(check.command, work, home, timeoutMs)
           if (!checkPasses(result, check.contains)) {

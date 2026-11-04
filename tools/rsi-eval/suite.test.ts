@@ -184,6 +184,93 @@ describe('loadSuite', () => {
     )
     expect(() => loadSuite(lopsided)).toThrow(/at least 5 .* tasks/)
   })
+
+  it('takes a long category of a few tasks into a full suite, and keeps the floors of the others', () => {
+    const categories = ['directory', 'command-args', 'convention'] as const
+    const twoSessions = ['cross-session', 'cross-workspace', 'workflow'] as const
+    const full = [
+      ...categories.flatMap((category) =>
+        [0, 1, 2, 3, 4].map((n) => ({
+          dir: `${category}-${n}`,
+          json: sampleTask(`${category}-${n}`, { category }),
+        })),
+      ),
+      ...twoSessions.flatMap((category) =>
+        [0, 1, 2, 3, 4].map((n) => {
+          const id = `${category}-${n}`
+          const sessions =
+            category === 'cross-workspace'
+              ? [
+                  { prompts: [prompt(1), prompt(2), prompt(3)] },
+                  { prompts: [prompt(4), prompt(5), prompt(6)], fixture: 'fixture-b' },
+                ]
+              : [
+                  { prompts: [prompt(1), prompt(2), prompt(3)] },
+                  { prompts: [prompt(4), prompt(5), prompt(6)] },
+                ]
+          return { dir: id, json: sampleTask(id, { category, sessions }) }
+        }),
+      ),
+    ]
+    // No long task yet: the suite loads.
+    expect(loadSuite(writeSuite(full))).toHaveLength(30)
+    // One long task: it loads too, below the floor of five the other categories keep.
+    const long = sampleTask('long-1', { category: 'long' })
+    expect(loadSuite(writeSuite([...full, { dir: 'long-1', json: long }])).map((t) => t.category)).toContain(
+      'long',
+    )
+    // The others still need five.
+    expect(() => loadSuite(writeSuite(full.slice(1)))).toThrow(/at least 5 directory tasks/)
+  })
+
+  it('reads milestones, a request cap and the oracle seeding point, and refuses bad ones', () => {
+    const staged = sampleTask('long-1', {
+      category: 'long',
+      maxRequests: 120,
+      oracle: { afterPrompt: 0 },
+      sessions: [
+        {
+          prompts: [
+            { ...prompt(1), milestone: 'stage 1' },
+            { ...prompt(2), milestone: 'stage 2' },
+            prompt(3),
+          ],
+        },
+      ],
+    })
+    const [task] = loadSuite(writeSuite([{ dir: 'long-1', json: staged }]), relaxed)
+    expect(task?.maxRequests).toBe(120)
+    expect(task?.oracle).toEqual({ afterPrompt: 0 })
+    expect(task?.sessions[0]?.prompts.map((p) => p.milestone)).toEqual(['stage 1', 'stage 2', undefined])
+
+    const bad = (json: object, message: RegExp) =>
+      expect(() => loadSuite(writeSuite([{ dir: 'long-1', json }]), relaxed)).toThrow(message)
+    bad({ ...staged, maxRequests: 0 }, /maxRequests/)
+    bad({ ...staged, maxRequests: 2.5 }, /maxRequests/)
+    // The lesson must land before a prompt of the first session that can use it.
+    bad({ ...staged, oracle: { afterPrompt: 2 } }, /afterPrompt/)
+    bad({ ...staged, oracle: { afterPrompt: -1 } }, /afterPrompt/)
+    bad({ ...staged, oracle: { afterPrompt: 0, extra: 1 } }, /unknown key/)
+    bad(
+      { ...staged, sessions: [{ prompts: [{ ...prompt(1), milestone: '' }, prompt(2), prompt(3)] }] },
+      /milestone/,
+    )
+    // A long task has one or two sessions.
+    const session = { prompts: [prompt(1), prompt(2), prompt(3)] }
+    bad({ ...staged, sessions: [session, session, session] }, /one or two sessions/)
+    expect(
+      loadSuite(writeSuite([{ dir: 'long-1', json: { ...staged, sessions: [session, session] } }]), relaxed),
+    ).toHaveLength(1)
+    // Workflow tasks have no oracle arm.
+    bad(
+      sampleTask('long-1', {
+        category: 'workflow',
+        oracle: { afterPrompt: 0 },
+        sessions: [session, session],
+      }),
+      /workflow tasks have no oracle arm/,
+    )
+  })
 })
 
 // The task commands are bash, make and python3 scripts: they are written for the Linux container the
@@ -280,6 +367,46 @@ posixDescribe('selfCheckTask', () => {
       ],
     })
     expect(await selfCheckTask(kept, taskDirFor(kept))).toEqual({ ok: true, problems: [] })
+  })
+
+  it('judges a milestone right after its own solution, with the earlier stages applied', async () => {
+    // Stage 2 builds on stage 1, and stage 3 changes what stage 1 left: a final-state check of stage 1 would
+    // fail, a check right after it holds.
+    const stage = (n: number, solution: string[], contains: string) => ({
+      text: `stage ${n}`,
+      milestone: `stage ${n}`,
+      checks: [{ command: 'cat state.txt', contains }],
+      solution,
+    })
+    const staged = sampleTask('staged', {
+      category: 'long',
+      sessions: [
+        {
+          prompts: [
+            stage(1, ['echo one > state.txt'], 'one'),
+            stage(2, ['grep -q one state.txt', 'echo two >> state.txt'], 'two'),
+            stage(3, ['echo three > state.txt'], 'three'),
+          ],
+        },
+      ],
+    })
+    expect(await selfCheckTask(staged, taskDirFor(staged))).toEqual({ ok: true, problems: [] })
+
+    // A milestone whose check already holds before its solution measures nothing.
+    const early = sampleTask('early', {
+      category: 'long',
+      sessions: [
+        {
+          prompts: [
+            stage(1, ['echo one-two > state.txt'], 'one'),
+            stage(2, ['echo two >> state.txt'], 'two'),
+            stage(3, ['echo three >> state.txt'], 'three'),
+          ],
+        },
+      ],
+    })
+    const result = await selfCheckTask(early, taskDirFor(early))
+    expect(result.problems).toEqual(['session 0 prompt 1 milestone check 0 passes before its solution'])
   })
 
   it('flags a second fixture whose documentation gives the trap away', async () => {

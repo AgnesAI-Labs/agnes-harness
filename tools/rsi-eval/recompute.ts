@@ -13,7 +13,7 @@ import { writeFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildReport, readRunRecords } from './report.js'
-import type { EvalTask, PromptWindow, RunRecord, Setting } from './types.js'
+import type { EvalTask, PromptWindow, RunRecord } from './types.js'
 
 export type ArmCounts = { runs: number; sessions: number; firstFailure: number; recurs: number }
 export type TaskRow = { taskId: string; on: ArmCounts; off: ArmCounts }
@@ -31,9 +31,11 @@ const emptyArm = (): ArmCounts => ({ runs: 0, sessions: 0, firstFailure: 0, recu
 export const taskRows = (records: RunRecord[]): TaskRow[] => {
   const rows = new Map<string, TaskRow>()
   for (const record of records) {
+    // Oracle and frozen runs have their own sections in the report; this table is the on/off pair.
+    if (record.setting !== 'on' && record.setting !== 'off') continue
     const row = rows.get(record.taskId) ?? { taskId: record.taskId, on: emptyArm(), off: emptyArm() }
     rows.set(record.taskId, row)
-    const arm = row[record.setting as Setting]
+    const arm = row[record.setting]
     arm.runs++
     for (const windows of sessionsOf(record)) {
       const ran = windows.filter((w) => w.ran)
@@ -88,7 +90,8 @@ const main = async (): Promise<void> => {
     loadSuite(suiteDir ? resolve(suiteDir) : defaultTasksDir, { minTasks: 1 }).map((t) => [t.id, t]),
   )
   const records = readRunRecords(runDir, tasks)
-  const rows = taskRows(records)
+  // A run the upstream ended says nothing about the system under test (the report counts and names them).
+  const rows = taskRows(records.filter((r) => !r.infraFailed))
   const unmatched = records.filter((r) => r.exit === 'ok' && r.windows.some((w) => !w.ran)).length
   if (unmatched > 0)
     console.error(
