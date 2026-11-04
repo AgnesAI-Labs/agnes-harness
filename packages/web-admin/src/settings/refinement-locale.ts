@@ -7,13 +7,14 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.group.main': 'Task experience (RSI)',
     'refinement.enabled': 'Learn from finished work',
     'refinement.enabled.hint':
-      'Off by default. When on, Agnes reviews your sessions in the background and keeps useful lessons as experience for later turns. Turning it on reaches the tools the next time the host starts, so restart to use it. Turning it off takes effect at once.',
+      'Off by default. When on, Agnes reviews your sessions in the background and keeps useful lessons as experience for later turns.',
+    'refinement.enabled.info':
+      'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once.',
     'refinement.mode': 'How reviews start',
     'refinement.mode.hint':
       'Manual: a review runs only when you ask with /refine. Automatic: reviews can also start by themselves, within spending limits.',
     'refinement.mode.manual': 'Manual only',
     'refinement.mode.auto': 'Manual and automatic',
-    'refinement.restart': 'Saved. Restart Agnes for the experience tools to appear.',
     'refinement.group.allows': 'What turning it on allows',
     'refinement.allows.install': 'Install proven skills in the workspace',
     'refinement.allows.install.hint':
@@ -46,13 +47,12 @@ export const refinementSettingsCatalog: LocaleCatalog = {
   'zh-CN': {
     'refinement.group.main': '任务经验（RSI）',
     'refinement.enabled': '从完成的工作中学习',
-    'refinement.enabled.hint':
-      '默认关闭。开启后，Agnes 会在后台复盘你的会话，把有用的经验留给之后的轮次。开启要等宿主下次启动才会让工具出现，所以需要重启；关闭则立即生效。',
+    'refinement.enabled.hint': '默认关闭。开启后，Agnes 会在后台复盘你的会话，把有用的经验留给之后的轮次。',
+    'refinement.enabled.info': '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。',
     'refinement.mode': '复盘如何开始',
     'refinement.mode.hint': '手动：只有你用 /refine 提出时才复盘。自动：也会在费用限额内自行开始复盘。',
     'refinement.mode.manual': '仅手动',
     'refinement.mode.auto': '手动和自动',
-    'refinement.restart': '已保存。重启 Agnes 后经验工具才会出现。',
     'refinement.group.allows': '开启即表示允许',
     'refinement.allows.install': '把已证实的技能安装到工作区',
     'refinement.allows.install.hint':

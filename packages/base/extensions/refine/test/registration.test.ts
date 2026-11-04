@@ -2,7 +2,7 @@ import type { ToolDef } from '@agnes/extension-api'
 import type { Context } from '@agnes/plugin-runtime'
 import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
-import refineDefault, { createRefineExtension, type RefinementSwitch } from '../src/index.js'
+import refineDefault, { createRefineExtension } from '../src/index.js'
 import type { RefinementOutcome, RefinementRuns, RefinementToolPort } from '../src/port.js'
 
 type Registered = { tools: ToolDef[]; hooks: string[]; dispose(): void }
@@ -29,10 +29,6 @@ function applyPlugin(plugin: ReturnType<typeof createRefineExtension>): Register
   const dispose = plugin.apply(ctx) as (() => void) | undefined
   return { tools, hooks, dispose: () => dispose?.() }
 }
-
-const settings = (enabled: boolean): RefinementSwitch => ({
-  current: () => ({ settings: { enabled, mode: 'manual' }, revision: 'r' }),
-})
 
 const byName = (registered: Registered, name: string): ToolDef => {
   const def = registered.tools.find((tool) => tool.name === name)
@@ -78,68 +74,37 @@ function fakeRuns(answer: RefinementOutcome = { runId: 'run-1' }) {
 }
 
 describe('refine extension registration', () => {
-  it('registers no tools and no hooks when refinement is off', () => {
-    for (const plugin of [
-      createRefineExtension({ settings: settings(false) }),
-      // No switch handed in (the default export, or a host that grants none) reads as off.
-      createRefineExtension(),
-      refineDefault,
-    ]) {
+  it('registers no tools and no hooks when the host runs no refinement: they could only fail', () => {
+    // The default export, or a host that grants nothing, has nothing to run the tools with.
+    for (const plugin of [createRefineExtension(), refineDefault]) {
       const registered = applyPlugin(plugin)
       expect(registered.tools).toEqual([])
       expect(registered.hooks).toEqual([])
     }
   })
 
-  it('registers no tools when on but the host runs no refinement: they could only fail', () => {
-    expect(applyPlugin(createRefineExtension({ settings: settings(true) })).tools).toEqual([])
-  })
-
-  it('registers harness_propose, harness_refine and harness_inspect when on, harness_refine always loaded', () => {
-    const registered = applyPlugin(
-      createRefineExtension({ settings: settings(true), runs: fakeRuns().connect }),
-    )
+  it('registers harness_propose, harness_refine and harness_inspect whenever the host runs refinement', () => {
+    // The plugin reads no switch: which sessions are offered the tools is decided per session in Core.
+    const runs = fakeRuns()
+    const registered = applyPlugin(createRefineExtension({ runs: runs.connect }))
     expect(registered.tools.map((tool) => tool.name)).toEqual([
       'harness_propose',
       'harness_refine',
       'harness_inspect',
     ])
+    expect(runs.planner()).toBeDefined()
     // The model's own request for a review is always loaded, so it can be called when the guidance says to.
     for (const tool of registered.tools)
       expect(tool.meta.deferLoading, tool.name).toBe(tool.name !== 'harness_refine')
     expect(registered.hooks).toEqual([])
     registered.dispose()
     expect(registered.tools).toEqual([])
-  })
-
-  it('takes the switch from the view it is handed: a view pinned per assembly keeps every remount alike', () => {
-    // The host hands over the value it read once when it assembled the container, so a later save
-    // (here: `stored` flipping) must not change what a remount registers.
-    let stored = true
-    const read = () => ({ settings: { enabled: stored, mode: 'manual' as const }, revision: String(stored) })
-    const atAssembly = read()
-    const runs = fakeRuns().connect
-    const plugin = createRefineExtension({ settings: { current: () => atAssembly }, runs })
-    expect(applyPlugin(plugin).tools).toHaveLength(3)
-    stored = false
-    expect(applyPlugin(plugin).tools).toHaveLength(3)
-    // A new assembly reads again and sees the change.
-    const next = read()
-    expect(applyPlugin(createRefineExtension({ settings: { current: () => next }, runs })).tools).toEqual([])
-  })
-
-  it('mode does not stand in for the switch: auto with enabled false registers nothing', () => {
-    const plugin = createRefineExtension({
-      settings: { current: () => ({ settings: { enabled: false, mode: 'auto' }, revision: 'r' }) },
-      runs: fakeRuns().connect,
-    })
-    expect(applyPlugin(plugin).tools).toEqual([])
+    // A remount registers the same set.
+    expect(applyPlugin(createRefineExtension({ runs: runs.connect })).tools).toHaveLength(3)
   })
 
   it('describes the tools without the retired review queue', () => {
-    const registered = applyPlugin(
-      createRefineExtension({ settings: settings(true), runs: fakeRuns().connect }),
-    )
+    const registered = applyPlugin(createRefineExtension({ runs: fakeRuns().connect }))
     for (const tool of registered.tools) {
       expect(tool.description, tool.name).not.toMatch(/queue/i)
       expect(tool.description.length, tool.name).toBeGreaterThan(40)
@@ -152,7 +117,7 @@ describe('the tools backed by the host runs', () => {
     const runs = fakeRuns(answer)
     return {
       runs,
-      registered: applyPlugin(createRefineExtension({ settings: settings(true), runs: runs.connect })),
+      registered: applyPlugin(createRefineExtension({ runs: runs.connect })),
     }
   }
 
@@ -242,7 +207,7 @@ describe('saving to the workspace from the tools', () => {
     const runs = fakeRuns(answer)
     return {
       runs,
-      registered: applyPlugin(createRefineExtension({ settings: settings(true), runs: runs.connect })),
+      registered: applyPlugin(createRefineExtension({ runs: runs.connect })),
     }
   }
 
@@ -318,7 +283,7 @@ describe('tools forward to an injected port', () => {
 
   it('harness_refine hands the focus and the session target to the port', async () => {
     const p = port()
-    const registered = applyPlugin(createRefineExtension({ settings: settings(true), port: p }))
+    const registered = applyPlugin(createRefineExtension({ port: p }))
     const ctx = fakeToolContext()
     expect(await byName(registered, 'harness_refine').execute({ focus: 'flaky tests' } as never, ctx)).toBe(
       ok,
@@ -330,7 +295,7 @@ describe('tools forward to an injected port', () => {
 
   it('harness_inspect hands its query to the port unchanged', async () => {
     const p = port()
-    const registered = applyPlugin(createRefineExtension({ settings: settings(true), port: p }))
+    const registered = applyPlugin(createRefineExtension({ port: p }))
     const ctx = fakeToolContext()
     const args = { op: 'list', kind: 'skill', cursor: 'c1' }
     expect(await byName(registered, 'harness_inspect').execute(args as never, ctx)).toBe(ok)
@@ -339,7 +304,7 @@ describe('tools forward to an injected port', () => {
 
   it('a workspace target reaches the port as the target, never as part of the proposal', async () => {
     const p = port()
-    const registered = applyPlugin(createRefineExtension({ settings: settings(true), port: p }))
+    const registered = applyPlugin(createRefineExtension({ port: p }))
     const ctx = fakeToolContext()
     await byName(registered, 'harness_propose').execute({ ...proposal, target: 'workspace' } as never, ctx)
     expect(p.propose).toHaveBeenCalledWith(proposal, ctx, 'workspace')

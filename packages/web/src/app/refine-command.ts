@@ -52,7 +52,7 @@ export async function runRefineCommand(context: RefineContext, input: string): P
     const data = (error as { data?: { code?: unknown; reason?: unknown } } | null)?.data
     if ((error as { code?: unknown } | null)?.code === -32601) return say('app.refine.unsupported')
     if (data?.code !== 'SEMANTIC_REJECTED' || typeof data.reason !== 'string') return context.showError(error)
-    // Off, switched on after this host started, or not connected to this session: one hint covers them.
+    // Off, switched on after this session opened, or not connected to this session: one hint covers them.
     if (data.reason === 'refinement-off' || data.reason === 'unavailable') return say('app.refine.off')
     if (data.reason === 'unpriced') return say('app.refine.unpriced')
     const reason = REASONS.has(data.reason) ? context.t(`app.refine.reason.${data.reason}`) : data.reason

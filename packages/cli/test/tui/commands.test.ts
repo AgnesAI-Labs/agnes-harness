@@ -2055,13 +2055,13 @@ describe('runSlash', () => {
         const r = await runSlash(app, '/refine')
         expect(r.text).toContain('RSI')
         expect(r.text).toContain('设置')
-        expect(r.text).toContain('重启')
+        expect(r.text).toContain('新开一个会话')
         expect(ep.calls.some((call) => call.method === '_agnes/v1/session.refine')).toBe(true)
         for (const reason of ['refinement-off', 'unavailable']) {
           english.ep.on('_agnes/v1/session.refine', refusing(reason))
           const en = await runSlash(english.app, '/refine the build')
           expect(en.text).toBe(
-            'Experience refinement (RSI) is not active. Turn it on in settings; if you just did, restart to apply it.',
+            'Experience refinement (RSI) is not active in this session. Turn it on in settings; it applies to sessions opened after that, so start a new session.',
           )
         }
       } finally {
@@ -2170,7 +2170,7 @@ describe('runSlash', () => {
         chinese.ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-12' }))
         expect((await runSlash(chinese.app, '/refine --user')).text).toContain('用户记忆')
         chinese.ep.on('_agnes/v1/session.refine', refusing('refinement-off'))
-        expect((await runSlash(chinese.app, '/refine --user')).text).toContain('重启')
+        expect((await runSlash(chinese.app, '/refine --user')).text).toContain('新开一个会话')
       } finally {
         await client.close()
         await chinese.client.close()
@@ -2198,7 +2198,7 @@ describe('runSlash', () => {
         chinese.ep.on('_agnes/v1/session.refine', () => ({ runId: 'run-10' }))
         expect((await runSlash(chinese.app, '/refine --workspace')).text).toContain('工作区')
         chinese.ep.on('_agnes/v1/session.refine', refusing('refinement-off'))
-        expect((await runSlash(chinese.app, '/refine --workspace')).text).toContain('重启')
+        expect((await runSlash(chinese.app, '/refine --workspace')).text).toContain('新开一个会话')
       } finally {
         await client.close()
         await chinese.client.close()

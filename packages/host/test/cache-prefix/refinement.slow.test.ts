@@ -207,6 +207,53 @@ describe('refinement experience on the provider wire', () => {
     })
   })
 
+  it.each(apis)(
+    '%s turning it on reaches the sessions opened after it; one already open keeps its bytes, also reopened',
+    async (api) => {
+      let dataDir = ''
+      const switchTo = (enabled: boolean) => {
+        const settings = new RefinementSettingsStore(dataDir, 'wire-refinement')
+        settings.save({ enabled, mode: 'manual' }, settings.read().revision)
+      }
+      await fixture(
+        api,
+        async (open, requests, restart, host) => {
+          await turn(open, 'First question')
+          switchTo(true)
+          await turn(open, 'Second question')
+          const fresh = await host.createSession({ cwd: open.d.cwd, key: 'wire-refinement-after' })
+          await turn(fresh, 'First question')
+          switchTo(false)
+          await turn(fresh, 'Second question')
+          switchTo(true)
+          const reopened = await restart()
+          await turn(reopened, 'Third question')
+          expect(requests).toHaveLength(5)
+          const [first, second, newFirst, newSecond, third] = requests
+          if (!first || !second || !newFirst || !newSecond || !third)
+            throw new Error('missing loopback request')
+          // The session open before the switch went on: the same prefix, no refinement tool and no note,
+          // and so after a restart, since its first requests went out without task experience.
+          expectExtends(first, second)
+          expectExtends(second, third)
+          for (const request of [first, second, third]) {
+            expect(notesIn(request)).toBe(1)
+            expect(request.raw).not.toContain('harness_')
+          }
+          // The session opened after it: the tools and the experience note.
+          expect(newFirst.raw).toContain('harness_refine')
+          expect(notesIn(newFirst)).toBe(2)
+          // Turning it off stops it at once: one notice, and the tool list stays as it was.
+          expectExtends(newFirst, newSecond)
+          expect(newSecond.raw).toContain('Task experience is switched off')
+        },
+        (dir) => {
+          dataDir = dir
+        },
+      )
+    },
+  )
+
   it.each(apis)('%s turns with no change keep a byte-identical prefix', async (api) => {
     await fixture(api, async (session, requests) => {
       // Stands in for the Host switch, which the refinement settings port supplies.
@@ -288,12 +335,18 @@ describe('refinement experience on the provider wire', () => {
       const DAY = 86_400_000
       const LESSON = 'Saved lesson: run pnpm build before the tests.'
       const ID = 'ra000000001'
+      let switchTo: (enabled: boolean) => void = () => undefined
       vi.useFakeTimers({ toFake: ['Date'] })
       vi.setSystemTime(T0)
       try {
         await fixture(
           api,
           async (session, requests, _restart, host) => {
+            // A session opened while the switch was off runs without task experience: its memory note
+            // changes too, but nothing is recorded for it.
+            switchTo(false)
+            const older = await host.createSession({ cwd: session.d.cwd, key: 'wire-refinement-older' })
+            switchTo(true)
             const root = session.workspaceRoot
             const admin = host.memory(root, 'admin')
             if (!admin) throw new Error('no memory provider assembled')
@@ -308,11 +361,17 @@ describe('refinement experience on the provider wire', () => {
             const probe = host.memory(root, 'probe')
             const before = (await probe?.snapshot(1))?.revision
             await turn(session, 'First question')
+            await turn(older, 'First question')
             vi.setSystemTime(T0 + 2 * DAY)
             const after = (await host.memory(root, 'probe-later')?.snapshot(1))?.revision
             await turn(session, 'Second question')
-            expect(requests).toHaveLength(2)
-            const [first, second] = requests
+            await turn(older, 'Second question')
+            expect(requests).toHaveLength(4)
+            const [first, olderFirst, second, olderSecond] = requests
+            if (!olderFirst || !olderSecond) throw new Error('missing loopback request')
+            expect(memoryNote(olderFirst)).toContain(LESSON)
+            expect(memoryNote(olderSecond)).not.toContain(LESSON)
+            expect(await older.d.log.scan({ type: 'x/core/refinement-prefix-change', limit: 10 })).toEqual([])
             if (!first || !second) throw new Error('missing loopback request')
             // The paragraph reaches the model while it is in force, and is left out once its date passed.
             expect(memoryNote(first)).toContain(LESSON)
@@ -331,8 +390,11 @@ describe('refinement experience on the provider wire', () => {
             expect(changes[1]).toEqual({ reason: 'workspace-memory', inForce: 0, expired: 1 })
           },
           (dataDir) => {
-            const settings = new RefinementSettingsStore(dataDir, 'wire-refinement')
-            settings.save({ enabled: true, mode: 'manual' }, settings.read().revision)
+            switchTo = (enabled) => {
+              const settings = new RefinementSettingsStore(dataDir, 'wire-refinement')
+              settings.save({ enabled, mode: 'manual' }, settings.read().revision)
+            }
+            switchTo(true)
             seed = (root) => {
               const registry = new RefinementRegistry(dataDir, root, Date.now)
               registry.update((draft) => {

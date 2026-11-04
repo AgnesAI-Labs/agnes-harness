@@ -46,9 +46,10 @@ import { KernelChildren } from './child/factory.js'
 import { readRoleDelegation } from './child/role-snapshot.js'
 import { type ChildRolePort, ROLE_DELEGATION, type RoleDelegation } from './child/roles.js'
 import { bindChildFactory } from './child/sessions.js'
-import { bindChildSessionToolFilter, ChildToolRegistry } from './child/tool-filter.js'
+import { bindChildSessionToolFilter, narrowedRuntime, sessionToolView } from './child/tool-filter.js'
 import { type DispatchContext, HookEngine } from './hooks/engine.js'
 import { LoopEventRegistry } from './loop/events.js'
+import { bindRefinement, captureRefinement } from './refinement/capture.js'
 import type { RefinementDeps } from './refinement/scheduler.js'
 import type { RefinementTriggerSink } from './refinement/triggers.js'
 import { HookRegistry } from './registry/hooks.js'
@@ -58,6 +59,7 @@ import { ToolRegistry } from './registry/tools.js'
 import type { ContractRef } from './request/derive.js'
 import { APPEND_REFUSED, appendToSystemPromptConfig } from './request/system-prompt.js'
 import type { CurrentRuntimeLookup, RuntimePromptPreloader } from './runtime/current.js'
+import { opensAsChild } from './step/child-session.js'
 import { CORE_OPS, type CoreOpName, replacementFor, validateReplacements } from './step/reentry.js'
 import {
   type CompactionPort,
@@ -147,7 +149,9 @@ export type KernelOptions = {
   /**
    * Whether the refinement experience (fixed guidance, entry snapshot, update notes) is delivered on
    * the next primary request. Read before each request; omitted or false sends none of it and writes
-   * no row for it, so requests are exactly what they were without refinement.
+   * no row for it, so requests are exactly what they were without refinement. Also read as each
+   * session opens: a session opened while it is false keeps running without refinement and is never
+   * offered the refinement tools, even after it turns true (`refinement/capture.ts`).
    */
   refinementEnabled?: () => boolean
   /** Takes automatic refinement candidates; read only while `refinementEnabled` is true. */
@@ -646,7 +650,14 @@ export class Kernel {
       const capturedRole = await readRoleDelegation(this.o.storage, key)
       if (capturedRole) so = { ...so, actor: capturedRole.actor, roleDelegation: capturedRole }
       const children = this.o.children ?? new KernelChildren(this, () => session)
-      const toolFilter = so.toolFilter
+      // Whether this session runs task experience, decided once as it opens (refinement/capture.ts).
+      const refinement = await captureRefinement(this.o, {
+        parent: so.parent ? this.sessions.get(so.parent.key) : undefined,
+        child: opensAsChild(log, tracker.state, so.roleDelegation),
+        reopened: !forked && Boolean(tracker.state.session),
+        scan: (q) => log.scan(q),
+      })
+      const sessionTools = sessionToolView(so.toolFilter, refinement.hiddenTools)
       const workspaceRoot = workspaceIdentity?.canonicalRoot ?? so.cwd
       memory = this.o.memoryFor?.({ key, workspaceRoot })
       session = new SessionImpl({
@@ -688,19 +699,12 @@ export class Kernel {
         loopEvents: this.loopEvents,
         loopResume: !forked && Boolean(tracker.state.session),
         ...(this.o.withModelSnapshot ? { withModelSnapshot: this.o.withModelSnapshot } : {}),
-        registry: so.toolFilter ? new ChildToolRegistry(this.tools, so.toolFilter) : this.tools,
+        registry: sessionTools ? sessionTools(this.tools) : this.tools,
         resources: this.resources,
         ...(this.o.currentRuntime
           ? {
-              currentRuntime: so.toolFilter
-                ? {
-                    current: (key: string) => {
-                      const current = this.o.currentRuntime?.current(key)
-                      return current && toolFilter
-                        ? { ...current, tools: new ChildToolRegistry(current.tools, toolFilter) }
-                        : undefined
-                    },
-                  }
+              currentRuntime: sessionTools
+                ? narrowedRuntime(this.o.currentRuntime, sessionTools)
                 : this.o.currentRuntime,
             }
           : {}),
@@ -750,13 +754,12 @@ export class Kernel {
         ...(this.o.hooks ? { hooks: this.o.hooks } : {}),
         ...(this.o.compaction ? { compaction: this.o.compaction } : {}),
         ...(this.o.runtimePromptPreloader ? { runtimePromptPreloader: this.o.runtimePromptPreloader } : {}),
-        ...(this.o.refinementEnabled ? { refinementEnabled: this.o.refinementEnabled } : {}),
-        ...(this.o.refinementTriggers ? { refinementTriggers: this.o.refinementTriggers } : {}),
-        ...(this.o.refinement ? { refinement: this.o.refinement } : {}),
+        ...refinement.deps,
         ...(this.o.quiet ? { quiet: this.o.quiet } : {}),
         ...(this.o.quiet ? { quietGroup } : {}),
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
       })
+      bindRefinement(session, refinement.on)
       await this.bindSessionScope(session, so)
       if (children instanceof KernelChildren) bindChildFactory(session.key, children)
       const sessionHooks = this.createHookEngine(logger, preset)

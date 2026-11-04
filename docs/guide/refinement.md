@@ -17,7 +17,7 @@ Open **Settings → General → Task experience** in the Web workbench.
 | Learn from finished work | Off | The switch for this profile |
 | How reviews start | Manual only | **Manual only** or **Manual and automatic** |
 
-- Turning it **on** takes effect the next time AGH starts. Restart AGH (the daemon, or the TUI that runs it) before you use it. Until then `/refine` says it is not active.
+- Turning it **on** applies to the sessions opened from then on; no restart is needed. Sessions that are already open are not affected: they keep running without it, and `/refine` in them says it is not active. A session that has already sent requests without it stays without it when it is opened again later, also after a restart; one that never sent a request follows the switch.
 - Turning it **off** takes effect at once, also in open sessions.
 - The setting is kept per profile. No preset key or older `auto_refine` setting can turn it on.
 - Saving the settings again, even with the same values, cancels reviews that are still waiting or not yet applied.
@@ -48,7 +48,7 @@ With **Manual and automatic**, a review can also start by itself:
 
 - after a compaction that replaced the history with a model summary (not after the fallback that cuts history without a summary);
 - when the same tool fails with the same error twice in one session (offered once for that tool and error). Numbers, paths and long hex strings are ignored when errors are compared. Refusals do not count: a rejected approval, a permission, credential or budget error, a pause or a cancel;
-- when the model asks for one with the `harness_refine` tool. This works in manual mode too, since the model chose to call it; the tool is always listed while task experience is on.
+- when the model asks for one with the `harness_refine` tool. This works in manual mode too, since the model chose to call it; the tool is always listed in a session opened while task experience is on.
 
 Automatic reviews have limits. Manual reviews are not counted against them; they only wait for a review that is already running. The model's own requests are held only to a cap of 40 reviews a session (one that found nothing does not count), with no cooldown or other limit; the limits below are for the compaction and repeated-failure reviews.
 
@@ -238,7 +238,7 @@ The TUI shows the same lines as text but has no withdraw action. A client can ca
 
 ## Turn it off
 
-Turning the switch off stops new reviews, stops applying results that are waiting, and stops sending entries, at once. The model gets one note that task experience is switched off. The three tools stay listed until AGH restarts, but answer that it is off. Saved entries stay in the session's record and are sent again once it is on and active. If it was on when AGH started, turning it back on works at once; otherwise restart. Withdrawing still works while it is off.
+Turning the switch off stops new reviews, stops applying results that are waiting, and stops sending entries, at once, in every session. The model gets one note that task experience is switched off. The three tools stay listed in the sessions that are open, but answer that it is off. Saved entries stay in the session's record and are sent again once it is on again. Turning it back on works at once in a session that was opened while it was on; other sessions get it when they are opened after that. Withdrawing still works while it is off.
 
 Nothing is saved to the workspace or to user memory while it is off, and requests waiting for approval are withdrawn. Paragraphs saved earlier stay in the workspace memory and user memory and keep their review dates. You can still renew, withdraw or convert them on the memory page. Saved skills stay installed; no skill is installed, updated or reviewed while it is off, and you can still uninstall or roll one back.
 

@@ -32,12 +32,13 @@ const OFF: RefinementSettingsSnapshot = { settings: { enabled: false, mode: 'man
  * The profile's refinement switch as one container sees it, and the bridge between Core's
  * refinement facade and the refine plugin.
  *
- * Two reads, on purpose. The tools are registered from the value read once at assembly and keep it
- * for the container's life, so a running session never gains or loses tools. What Core reads
- * (experience delivery, triggers, planning, applying) is live and also needs the assembly value:
- * switching refinement off stops all of it at once, while switching it on waits for the next
- * assembly, when the tools are registered too. Every read is cheap and never throws; a failed read
- * is off.
+ * The switch is read live. Core decides per session, as it opens, whether the session runs task
+ * experience at all (`@agnes/core` refinement/capture): the refine plugin's tools are registered
+ * for the container's life and offered only to sessions opened while the switch was on, so a
+ * running session never gains or loses tools. What such a session reads (experience delivery,
+ * triggers, planning, applying) is this live switch: switching refinement off stops all of it at
+ * once, switching it on reaches the sessions opened from then on. Every read is cheap and never
+ * throws; a failed read is off.
  */
 export function createRefinementHost(
   dataDir: string,
@@ -59,16 +60,22 @@ export function createRefinementHost(
       return OFF
     }
   }
-  const atAssembly = read()
   let kernel: Kernel | undefined
   let planner: RefinementPlanner | undefined
   const settings = (): RefinementSettingsView => {
-    const now = atAssembly.settings.enabled ? read() : OFF
+    const now = read()
     return { enabled: now.settings.enabled, mode: now.settings.mode, revision: now.revision }
   }
   const sessionOf = (key: string, lane: string) => {
     const session = kernel?.sessions.get(key)
     return session && session.lane === lane ? session : undefined
+  }
+  // A session's memory note changed: recorded only for a session that runs task experience now (one
+  // opened before the switch went on runs as if it were off).
+  const prefixChanged = (key: string, data: Record<string, unknown>) => {
+    const session = kernel?.sessions.get(key)
+    if (session?.d.refinementEnabled?.() === true)
+      void session.diag('refinement-prefix-change', data).catch(() => undefined)
   }
   // What the plugins that own tasks and workflow runs offer, read for one session at a time.
   const offered = offeredSources({ kernel: () => kernel, session: sessionOf })
@@ -79,11 +86,7 @@ export function createRefinementHost(
     dataDir,
     clock,
     enabled: () => settings().enabled,
-    viewChanged: (key, change) =>
-      void kernel?.sessions
-        .get(key)
-        ?.diag('refinement-prefix-change', { reason: 'workspace-memory', ...change })
-        .catch(() => undefined),
+    viewChanged: (key, change) => prefixChanged(key, { reason: 'workspace-memory', ...change }),
   })
   // Saves under ask wait in the profile decision journal, once the profile services hand it over.
   let decisions: Parameters<typeof createRefinementApprovals>[0]['decisions'] | undefined
@@ -123,11 +126,7 @@ export function createRefinementHost(
     registry: memory.registry,
     memory: memory.openWorkspaceMemory,
     workspaceParagraphs: savedParagraphs({ registry: memory.registry, clock }),
-    viewChanged: (key, change) =>
-      void kernel?.sessions
-        .get(key)
-        ?.diag('refinement-prefix-change', { reason: 'user-memory', ...change })
-        .catch(() => undefined),
+    viewChanged: (key, change) => prefixChanged(key, { reason: 'user-memory', ...change }),
   })
   const routed = user.saves
   const workspace = {
@@ -209,8 +208,6 @@ export function createRefinementHost(
   })
 
   return {
-    /** The switch as the tools see it: fixed at this assembly. */
-    view: Object.freeze({ current: () => atAssembly }),
     /** Saved task experience per workspace: registry, memory validity view, reconciliation, saves. */
     workspace,
     /** What the kernel is created with. */
