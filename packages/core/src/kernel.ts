@@ -759,7 +759,7 @@ export class Kernel {
         ...(this.o.quiet ? { quietGroup } : {}),
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
       })
-      bindRefinement(session, refinement.on)
+      bindRefinement(session, refinement)
       await this.bindSessionScope(session, so)
       if (children instanceof KernelChildren) bindChildFactory(session.key, children)
       const sessionHooks = this.createHookEngine(logger, preset)

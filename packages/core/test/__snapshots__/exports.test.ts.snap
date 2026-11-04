@@ -178,6 +178,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "scheduleBatch",
   "selectionAllows",
   "sessionUnattended",
+  "sessionVisibleTools",
   "setChildAgentAllowlist",
   "setChildModelScope",
   "sha256Hex",

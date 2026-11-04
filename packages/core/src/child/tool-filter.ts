@@ -1,6 +1,6 @@
 import type { ChildAgentToolFilter } from '@agnes/extension-api'
 import { sessionIdentity } from '../loop/scope.js'
-import { ToolRegistryView } from '../registry/tool-allow.js'
+import { ToolRegistryView, WithoutToolsView } from '../registry/tool-allow.js'
 import type { ToolRegistry } from '../registry/tools.js'
 import type { CurrentRuntimeLookup } from '../runtime/current.js'
 
@@ -49,11 +49,12 @@ export function sessionToolView(
 ): ((tools: ToolRegistry) => ToolRegistry) | undefined {
   if (!filter && hidden.length === 0) return undefined
   const narrowed: ChildAgentToolFilter = { ...filter, deny: [...(filter?.deny ?? []), ...hidden] }
+  const without = new Set(hidden)
   const views = new WeakMap<ToolRegistry, ToolRegistry>()
   return (tools) => {
     const known = views.get(tools)
     if (known) return known
-    const view = new ChildToolRegistry(tools, narrowed)
+    const view = filter ? new ChildToolRegistry(tools, narrowed) : new WithoutToolsView(tools, without)
     views.set(tools, view)
     return view
   }

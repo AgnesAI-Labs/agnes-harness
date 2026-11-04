@@ -5,7 +5,7 @@ import type { RequestBody } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Kernel } from '../src/kernel.js'
-import { REFINEMENT_TOOLS } from '../src/refinement/capture.js'
+import { REFINEMENT_SESSION, REFINEMENT_TOOLS } from '../src/refinement/capture.js'
 import { refinementFacade } from '../src/refinement/facade.js'
 import { onCompactionCommitted, type RefinementTriggerSink } from '../src/refinement/triggers.js'
 import { EXPERIENCE_OFF_NOTICE } from '../src/request/experience.js'
@@ -104,6 +104,7 @@ const last = (p: FakeProvider): RequestBody => {
 const toolsOf = (request: RequestBody) => (request.kind === 'inference' ? request.tools : [])
 const sectionsOf = (request: RequestBody) => (request.kind === 'inference' ? request.sections : [])
 const hasExperience = (request: RequestBody) => JSON.stringify(request).includes('[task-experience]')
+const markers = async (s: SessionImpl) => (await s.scan({ type: REFINEMENT_SESSION, limit: 10 })).length
 
 describe('turning task experience on reaches the sessions opened after it', () => {
   it('a session open before the switch went on keeps its tools, notes and triggers as they were', async () => {
@@ -140,6 +141,10 @@ describe('turning task experience on reaches the sessions opened after it', () =
     expect(hasExperience(fresh)).toBe(true)
     for (const s of [before, after]) onCompactionCommitted(s, { replaceSeq: s.lastSeq, mode: 'summary' })
     expect(offered).toEqual(['after'])
+    // The decision is recorded once, with the first request, only by the session that runs it.
+    await turn(after, 'again')
+    expect(await markers(before)).toBe(0)
+    expect(await markers(after)).toBe(1)
     await k.close()
   })
 
@@ -201,6 +206,42 @@ describe('a reopened session', () => {
     const { k, s } = await reopen(storage, 'k1')
     expect(names(s)).toEqual(['read'])
     expect(s.d.refinementEnabled?.()).toBe(false)
+    await k.close()
+  })
+
+  it('that opened with it and sent its requests after the switch went off keeps its tools', async () => {
+    sw.on = true
+    const storage = new MemoryStorage()
+    const first = kernel(storage)
+    const s = await first.k.session('k1', options())
+    sw.on = false
+    await turn(s)
+    // Its requests carried the tools, with no experience note: the open-time decision is what is recorded.
+    expect(toolsOf(last(first.provider)).map((t) => t.name)).toContain('harness_refine')
+    expect(hasExperience(last(first.provider))).toBe(false)
+    await first.k.close()
+    sw.on = true
+    const { k, s: again } = await reopen(storage, 'k1')
+    expect(names(again)).toEqual(['read', ...REFINEMENT_TOOLS].sort())
+    expect(again.d.refinementEnabled?.()).toBe(true)
+    await turn(again)
+    expect(await markers(again)).toBe(1)
+    await k.close()
+  })
+
+  it('from before the marker, with experience rows only, counts as having run with it', async () => {
+    const storage = new MemoryStorage()
+    const first = kernel(storage)
+    const s = await first.k.session('k1', options())
+    await turn(s)
+    // What an older ledger of a session that ran with task experience holds: its experience rows.
+    await s.d.log.append([
+      s.ev('x/core/refinement-prefix-change', { reason: 'experience-snapshot' }, { ignorable: true }),
+    ])
+    await first.k.close()
+    sw.on = true
+    const { k, s: again } = await reopen(storage, 'k1')
+    expect(names(again)).toEqual(['read', ...REFINEMENT_TOOLS].sort())
     await k.close()
   })
 

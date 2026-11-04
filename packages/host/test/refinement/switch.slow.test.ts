@@ -5,11 +5,19 @@ import { fileURLToPath } from 'node:url'
 import { ecosystem as baseEcosystem } from '@agnes/base'
 import { RefinementSettingsStore } from '@agnes/host-infrastructure/refinement-settings'
 import { afterAll, describe, expect, it } from 'vitest'
+import type { Host } from '../../src/runtime/lifecycle/host.js'
 import { createTestHost } from '../../testkit/index.js'
 
 const baseDir = fileURLToPath(new URL('../../../base/', import.meta.url))
 const REFINEMENT_TOOLS = ['harness_inspect', 'harness_propose', 'harness_refine']
 const PROFILE = 'local-dev'
+
+/** The refinement tools a session's capability set lists (what the TUI `/tools` shows), with their state. */
+const capabilityTools = (host: Pick<Host, 'sessionCapabilities'>, key: string) =>
+  (host.sessionCapabilities?.(key).tools ?? [])
+    .filter((tool) => REFINEMENT_TOOLS.includes(tool.id))
+    .map(({ id, enabled }) => ({ id, enabled }))
+    .sort((a, b) => a.id.localeCompare(b.id))
 
 /** The refine plugin's tools a session is offered, as its tool catalog lists them. */
 const offered = (session: {
@@ -143,11 +151,14 @@ describe('what Core reads of the switch in a running host', () => {
       expect(before.d.refinementEnabled?.()).toBe(false)
       expect(before.d.refinement?.settings().enabled).toBe(false)
       expect(offered(before)).toEqual([])
+      // Nor does its capability set list them, so a tool filter cannot name what it does not have.
+      expect(capabilityTools(host, before.key)).toEqual([])
       const after = await host.createSession({ cwd: dataDir, key: 'switch-after' })
       expect(after.d.refinementEnabled?.()).toBe(true)
       expect(after.d.refinement?.settings()).toMatchObject({ enabled: true, mode: 'auto' })
       expect(after.d.refinementTriggers?.accepts?.(after.key)).toBe(true)
       expect(offered(after).map((tool) => tool.name)).toEqual(REFINEMENT_TOOLS)
+      expect(capabilityTools(host, after.key)).toEqual(REFINEMENT_TOOLS.map((id) => ({ id, enabled: true })))
       // Off reaches every session at once; the newer one keeps its tool list, which now answers off.
       save(dataDir, false)
       expect(after.d.refinementEnabled?.()).toBe(false)

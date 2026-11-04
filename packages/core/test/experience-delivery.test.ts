@@ -26,7 +26,7 @@ import {
   experienceNotes,
   isControlNote,
   renderExperience,
-  withExperienceDiag,
+  withExperienceRows,
 } from '../src/request/experience.js'
 import { REFINEMENT_GUIDANCE, SNAPSHOT_FORMAT_LINE } from '../src/request/experience-guidance.js'
 import { experienceForRequest } from '../src/request/experience-room.js'
@@ -387,12 +387,12 @@ describe('refinement experience delivery', () => {
         data: { kind: 'runtime_context', content: [{ type: 'text', text }] },
       }) as never
     const snapshot = note(`${EXPERIENCE_PREFIX}${REFINEMENT_GUIDANCE}`)
-    const out = withExperienceDiag(session, { notes: [snapshot] }).notes
+    const out = withExperienceRows(session, { notes: [snapshot] }).notes
     expect(out).toHaveLength(2)
     expect(out[1]).toMatchObject({ type: 'x/core/refinement-prefix-change', ignorable: true })
-    expect(withExperienceDiag(session, { notes: [] }).notes).toEqual([])
+    expect(withExperienceRows(session, { notes: [] }).notes).toEqual([])
     const update = note(`${EXPERIENCE_PREFIX}Task experience update, format 1.`)
-    expect(withExperienceDiag(session, { notes: [update] }).notes).toEqual([update])
+    expect(withExperienceRows(session, { notes: [update] }).notes).toEqual([update])
   })
 
   it('a malformed register cell is left out and counted, and the request still goes out', async () => {
