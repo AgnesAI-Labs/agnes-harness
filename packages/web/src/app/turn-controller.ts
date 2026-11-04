@@ -151,7 +151,6 @@ export function createTurnController(
         route: context.projection.usage.model.route,
         id: context.projection.usage.model.id,
         settings: context.projection.usage.model.settings ?? {
-          contextWindow: context.projection.usage.context.window,
           thinking: context.projection.usage.model.thinking,
         },
       }

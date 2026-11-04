@@ -92,6 +92,7 @@ function setup(
     seams?: Seams
     ids?: IdMinter
     clock?: () => number
+    contextWindow?: number
   } = {},
 ) {
   const provider = fakeProvider(o.scripts ?? [textTurn('answer')])
@@ -101,11 +102,13 @@ function setup(
   loops.register('@test/announce', loop)
   const storage = o.storage ?? new MemoryStorage()
   const seams = o.seams ?? fakeSeams()
+  const preset = presetDefaults()
+  if (o.contextWindow !== undefined) preset.model.contextWindow = { primary: o.contextWindow }
   const k = Kernel.create({
     storage,
     loops,
     provider,
-    preset: presetDefaults(),
+    preset,
     seams,
     contract: { contract_id: null, parser_version: '1' },
     fsOps: testFsOps(),
@@ -1511,7 +1514,8 @@ describe('without announce', () => {
           )),
         )
       }),
-      { ids: stableIds(), clock: () => 1_757_203_200_000 },
+      // This byte fixture fixes its budget explicitly; automatic budgets are tested separately.
+      { ids: stableIds(), clock: () => 1_757_203_200_000, contextWindow: 100000 },
     )
     f.k.tools.add(readTool(), { source: 'test', trust: 'builtin' })
     const session = await f.open('bytes')

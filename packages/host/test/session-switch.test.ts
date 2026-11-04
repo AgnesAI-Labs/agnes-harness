@@ -485,6 +485,40 @@ function twoRouteHostOptions(
 }
 
 describe('replaySwitchesOnOpen', () => {
+  it('restores automatic capacity from the current provider while preserving manual budgets', async () => {
+    const dataDir = scratch()
+    const provider = (capacity: number) =>
+      new ScriptedProvider({
+        models: [{ ...modelRecord('gw', 'm1'), contextWindow: capacity }, modelRecord('alt', 'm2')],
+        scripts: [],
+      })
+    const first = await createTestHost(twoRouteHostOptions(dataDir, provider(128000)))
+    const automatic = await first.host.createSession({ cwd: dataDir, key: 'automatic-window' })
+    await automatic.setModel({ slot: 'primary', route: 'gw', model: 'm1', contextWindow: null })
+    const [boundary] = await automatic.scan({ type: 'x/core/model-switch', order: 'desc', limit: 1 })
+    if (!boundary) throw new Error('Missing automatic model selection')
+    await first.host.createSession({
+      cwd: dataDir,
+      key: 'automatic-child',
+      parent: { key: automatic.key, boundarySeq: boundary.seq },
+    })
+    const manual = await first.host.createSession({ cwd: dataDir, key: 'manual-window' })
+    await manual.setModel({ slot: 'primary', route: 'gw', model: 'm1', contextWindow: 128000 })
+    await first.host.close()
+    const second = await createTestHost(twoRouteHostOptions(dataDir, provider(1048576)))
+    try {
+      const restored = await second.host.createSession({ cwd: dataDir, key: 'automatic-window' })
+      expect((await restored.projectUI()).usage?.context.window).toBe(1048576)
+      expect((await restored.projectUI()).usage?.model.settings).toEqual({})
+      const child = await second.host.createSession({ cwd: dataDir, key: 'automatic-child' })
+      expect((await child.projectUI()).usage?.context.window).toBe(1048576)
+      expect(child.preset.model.contextWindow?.primary).toBeUndefined()
+      const pinned = await second.host.createSession({ cwd: dataDir, key: 'manual-window' })
+      expect((await pinned.projectUI()).usage?.context.window).toBe(128000)
+    } finally {
+      await second.host.close()
+    }
+  })
   it.each([
     ['standard', false],
     ['minimal', false],

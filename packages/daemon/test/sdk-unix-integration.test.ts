@@ -214,7 +214,7 @@ it('projects the actual core timeline with generation and historical cuts throug
       reasoningComplete: false,
       billingComplete: false,
       context: { tokens: 0, window: 128000, autoCompact: true, source: 'estimated', compactAt: 111616 },
-      model: { route: 'gw', id: 'm1', thinking: 'off', settings: { contextWindow: 128000 } },
+      model: { route: 'gw', id: 'm1', thinking: 'off', settings: {} },
     },
     yolo: false,
   })

@@ -1120,15 +1120,13 @@ export class SessionImpl {
       const record = records.find((m) => m.route === target.route && m.id === target.model)
       if (!record) continue
       const thinking = this.preset.model.thinking[slot] ?? record.defaultSettings?.thinking
+      const contextWindow = this.preset.model.contextWindow?.[slot] ?? record.defaultSettings?.contextWindow
       modelSettings.push({
         slot,
         ...target,
         settings: {
           ...(thinking === undefined ? {} : { thinking }),
-          contextWindow:
-            this.preset.model.contextWindow?.[slot] ??
-            record.defaultSettings?.contextWindow ??
-            record.contextWindow,
+          ...(contextWindow === undefined ? {} : { contextWindow }),
         },
       })
     }
@@ -2577,6 +2575,15 @@ export class SessionImpl {
     if (this.closingOrClosed || this.d.log.isClosed) throw new CoreError('E_CLOSED', 'session closed')
   }
 
+  private primaryModelSettings() {
+    const thinking = this.preset.model.thinking.primary
+    const contextWindow = this.preset.model.contextWindow?.primary
+    return {
+      ...(thinking === undefined ? {} : { thinking }),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+    }
+  }
+
   private headProjectionUsage() {
     const target = resolveModel(this, 'primary')
     const model = this.d.provider
@@ -2589,12 +2596,7 @@ export class SessionImpl {
         id: target.model,
         contextWindow: contextWindowFor(this, target.route, target.model),
       },
-      settings: {
-        ...(this.preset.model.thinking.primary === undefined
-          ? {}
-          : { thinking: this.preset.model.thinking.primary }),
-        contextWindow: contextWindowFor(this, target.route, target.model),
-      },
+      settings: this.primaryModelSettings(),
       thinking: this.preset.model.thinking.primary ?? 'off',
       autoCompact: this.preset.compaction.enabled,
       ...this.compactAt(contextWindowFor(this, target.route, target.model)),
@@ -2650,12 +2652,7 @@ export class SessionImpl {
         id: target.model,
         contextWindow: contextWindowFor(this, target.route, target.model),
       },
-      settings: {
-        ...(this.preset.model.thinking.primary === undefined
-          ? {}
-          : { thinking: this.preset.model.thinking.primary }),
-        contextWindow: contextWindowFor(this, target.route, target.model),
-      },
+      settings: this.primaryModelSettings(),
       thinking: this.preset.model.thinking.primary ?? 'off',
       contextTokens: contextTokensAtCut(events, this.lane, cut),
       autoCompact: this.preset.compaction.enabled,
