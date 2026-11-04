@@ -174,9 +174,8 @@ it('runs recurring work in a new session of this workspace and reminders here, a
   })
 })
 
-it('publishes the official tools, interaction table and delivery notification through the interface', async () => {
-  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-  expect(manifest.agnes.plugins[0].capabilities.services).toEqual(schedulingServiceCapabilities)
+function wrapped(options: { renderer?: boolean; failUpsert?: boolean } = {}) {
+  const renderer = options.renderer ?? true
   const row = {
     id: 'sched_0000000000000001',
     title: 'Report',
@@ -200,6 +199,7 @@ it('publishes the official tools, interaction table and delivery notification th
       return row
     },
     async upsert() {
+      if (options.failUpsert) throw new Error('schedule store unavailable')
       return row
     },
     async control() {
@@ -239,13 +239,30 @@ it('publishes the official tools, interaction table and delivery notification th
     session: { key: 'sess', depth: 0, toolUseId: 'use-1', workspaceRoot: '/work/app' },
     signal: new AbortController().signal,
     tools: {
+      list: () => (renderer ? [{ name: 'ui_render' }] : []),
       async invoke(name: string, input: unknown) {
         expect(name).toBe('ui_render')
+        // An unattended session does not offer the renderer, and calling it throws.
+        if (!renderer) throw new Error('Unknown tool: ui_render')
         surfaces.push(input)
         return { content: [] }
       },
     },
   } as unknown as ToolContext
+  return { tools, ctx, surfaces, row, notification: () => notification }
+}
+
+const createArgs = {
+  title: 'Report',
+  prompt: 'Write it',
+  selector: { every_seconds: 3600 },
+  target: 'new_session' as const,
+}
+
+it('publishes the official tools, interaction table and delivery notification through the interface', async () => {
+  const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  expect(manifest.agnes.plugins[0].capabilities.services).toEqual(schedulingServiceCapabilities)
+  const { tools, ctx, surfaces, row, notification } = wrapped()
   const create = tools.find((tool) => tool.name === 'schedule_create')
   expect(
     (
@@ -263,8 +280,25 @@ it('publishes the official tools, interaction table and delivery notification th
       },
     },
   ])
-  expect(await notification?.({ trigger: { kind: 'turn_end' }, session: ctx.session } as never)).toEqual({
+  expect(await notification()?.({ trigger: { kind: 'turn_end' }, session: ctx.session } as never)).toEqual({
     title: 'Report',
     body: 'Write it',
   })
+})
+
+it('finishes a schedule change with its normal result when ui_render is not offered', async () => {
+  const { tools, ctx, surfaces, row } = wrapped({ renderer: false })
+  const out = await tools.find((tool) => tool.name === 'schedule_create')?.execute(createArgs, ctx)
+  expect(out?.isError).toBeFalsy()
+  expect(out?.details).toMatchObject({ id: row.id, runsIn: 'a new session in /work/app for every run' })
+  expect(surfaces).toEqual([])
+  const list = await tools.find((tool) => tool.name === 'schedule_list')?.execute({}, ctx)
+  expect(list?.isError).toBeFalsy()
+})
+
+it('still reports a schedule change that fails when ui_render is not offered', async () => {
+  const { tools, ctx, surfaces } = wrapped({ renderer: false, failUpsert: true })
+  const out = await tools.find((tool) => tool.name === 'schedule_create')?.execute(createArgs, ctx)
+  expect(out?.details).toEqual({ code: 'internal_error' })
+  expect(surfaces).toEqual([])
 })
