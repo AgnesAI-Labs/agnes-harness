@@ -9,7 +9,6 @@ import type { MethodName } from './methods.js'
 export type MethodTier = 'client' | 'admin'
 
 export const METHOD_TIERS: Record<MethodName, MethodTier> = {
-  '_agnes/v1/packages.skillImport': 'admin',
   '_agnes/v1/applications.get': 'admin',
   '_agnes/v1/applications.preview': 'admin',
   '_agnes/v1/applications.adopt': 'admin',
@@ -69,6 +68,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/packages.pins.inspect': 'admin',
   '_agnes/v1/packages.pins.release': 'admin',
   '_agnes/v1/packages.trustWorkspace': 'admin',
+  '_agnes/v1/packages.skillImport': 'admin',
   '_agnes/v1/plugins.tree.get': 'admin',
   '_agnes/v1/plugins.publicationStatus': 'admin',
   '_agnes/v1/sessions.migrate': 'admin',

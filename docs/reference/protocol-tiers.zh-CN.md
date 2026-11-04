@@ -199,6 +199,7 @@
 - `_agnes/v1/packages.catalog.get`
 - `_agnes/v1/packages.provenance`
 - `_agnes/v1/packages.sourcePolicy`
+- `_agnes/v1/packages.skillImport`
 - `_agnes/v1/applications.get`
 - `_agnes/v1/applications.preview`
 - `_agnes/v1/applications.adopt`

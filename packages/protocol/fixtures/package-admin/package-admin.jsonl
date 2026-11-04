@@ -1,10 +1,4 @@
 {"id":"pm4-000-PackageAdminPermission","target":"config","name":"PackageAdminPermission","kind":"valid","payload":"packages.read"}
-{"id":"skill-import-params-valid","target":"config","name":"SkillImportParams","kind":"valid","payload":{"profile":"local-dev","clientId":"client","commandId":"prepare-1","action":"prepare","source":{"type":"path","ref":"path:./skill"}}}
-{"id":"skill-import-params-invalid","target":"config","name":"SkillImportParams","kind":"invalid","payload":{"profile":"local-dev","clientId":"client","commandId":"prepare-1","action":"execute"}}
-{"id":"skill-import-result-valid","target":"config","name":"SkillImportResult","kind":"valid","payload":{"state":"selection_required","candidates":["archify"]}}
-{"id":"skill-import-result-invalid","target":"config","name":"SkillImportResult","kind":"invalid","payload":{"state":"executed"}}
-{"id":"skill-import-env-valid","target":"config","name":"SkillEnvironmentRequirement","kind":"valid","payload":{"name":"node","state":"satisfied","evidence":"probed","actual":"24.20.0"}}
-{"id":"skill-import-env-invalid","target":"config","name":"SkillEnvironmentRequirement","kind":"invalid","payload":{"name":"node","state":"safe","evidence":"probed"}}
 {"id":"pm4-001-PackageAdminPermission","target":"config","name":"PackageAdminPermission","kind":"invalid","payload":"not-a-permission"}
 {"id":"pm4-002-PackageSource","target":"config","name":"PackageSource","kind":"valid","payload":{"type":"file","ref":"file:./fixture"}}
 {"id":"pm4-003-PackageSource","target":"config","name":"PackageSource","kind":"invalid","payload":{"type":"file","ref":"file:./fixture","unknown":true}}
@@ -393,6 +387,14 @@
 {"id":"opc-042-trust-workspace-params-unknown","target":"config","name":"PackageTrustWorkspaceParams","kind":"invalid","payload":{"profile":"test","clientId":"client-1","commandId":"command-1","deployDir":"/deploy/xinwei","unknown":true}}
 {"id":"opc-043-trust-workspace-result","target":"config","name":"PackageTrustWorkspaceResult","kind":"valid","payload":{"hash":"sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
 {"id":"opc-044-trust-workspace-result-unknown","target":"config","name":"PackageTrustWorkspaceResult","kind":"invalid","payload":{"hash":"sha256-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","unknown":true}}
+{"id":"skill-import-params-valid","target":"config","name":"SkillImportParams","kind":"valid","payload":{"profile":"local-dev","clientId":"client","commandId":"prepare-1","action":"prepare","source":{"type":"path","ref":"path:./skill"}}}
+{"id":"skill-import-params-invalid","target":"config","name":"SkillImportParams","kind":"invalid","payload":{"profile":"local-dev","clientId":"client","commandId":"prepare-1","action":"execute"}}
+{"id":"skill-import-result-valid","target":"config","name":"SkillImportResult","kind":"valid","payload":{"state":"selection_required","candidates":["archify"]}}
+{"id":"skill-import-result-invalid","target":"config","name":"SkillImportResult","kind":"invalid","payload":{"state":"executed"}}
+{"id":"skill-import-env-valid","target":"config","name":"SkillEnvironmentRequirement","kind":"valid","payload":{"name":"node","state":"satisfied","evidence":"probed","actual":"24.20.0"}}
+{"id":"skill-import-env-invalid","target":"config","name":"SkillEnvironmentRequirement","kind":"invalid","payload":{"name":"node","state":"safe","evidence":"probed"}}
+{"id":"skill-import-method-params","target":"method","name":"_agnes/v1/packages.skillImport","side":"params","kind":"valid","payload":{"profile":"local-dev","clientId":"client","commandId":"prepare-1","action":"prepare","source":{"type":"path","ref":"path:./skill"}}}
+{"id":"skill-import-method-result","target":"method","name":"_agnes/v1/packages.skillImport","side":"result","kind":"valid","payload":{"state":"selection_required","candidates":["archify"]}}
 {"id":"skin-004-SkinListResult","target":"config","name":"SkinListResult","kind":"valid","payload":{"revision":"r1","skins":[{"id":"midnight","name":"\u5348\u591c","packageName":"@agnes/skins-builtin","cssUrl":"/skins/@agnes/skins-builtin/midnight/skin.css","tokens":{"--agnes-bg-page":{"light":"#fdfeff","dark":"#161b21"}}}]}}
 {"id":"skin-005-SkinListResult","target":"config","name":"SkinListResult","kind":"invalid","payload":{"skins":[]}}
 {"id":"skin-006-SkinListResult","target":"config","name":"SkinListResult","kind":"invalid","payload":{"revision":"r1","skins":[{"id":"a","packageName":"p","cssUrl":"/c"}]}}

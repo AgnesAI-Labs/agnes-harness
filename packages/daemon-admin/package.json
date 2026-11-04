@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./packages/skill-import": "./src/packages/skill-import.ts",
     ".": "./src/index.ts",
     "./index": "./src/index.ts",
     "./package-actual-identity": "./src/package-actual-identity.ts",
@@ -22,6 +21,7 @@
     "./packages/plugin-source": "./src/packages/plugin-source.ts",
     "./packages/project": "./src/packages/project.ts",
     "./packages/runtime-references": "./src/packages/runtime-references.ts",
+    "./packages/skill-import": "./src/packages/skill-import.ts",
     "./plugin-tree-surface": "./src/plugin-tree-surface.ts",
     "./resources/adapters": "./src/resources/adapters.ts",
     "./resources/admin-surface": "./src/resources/admin-surface.ts",
