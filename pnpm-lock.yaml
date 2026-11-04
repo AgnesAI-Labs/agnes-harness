@@ -404,6 +404,9 @@ importers:
       '@agnes/resource-control-runtime':
         specifier: workspace:*
         version: link:../resource-control-runtime
+      '@agnes/resource-control-store':
+        specifier: workspace:*
+        version: link:../resource-control-store
       '@agnes/resource-control-worker':
         specifier: workspace:*
         version: link:../resource-control-worker

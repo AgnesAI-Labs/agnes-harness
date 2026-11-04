@@ -10,6 +10,13 @@ import type { ResourceAuthority } from './permissions.js'
 import { assertResourceProfile, type ResourceProfileScope } from './profile-scope.js'
 import { createSkillResourceStore, type SkillResourceStore } from './skills.js'
 
+/** The daemon's resource-control state under a profile data dir. */
+export const resourceControlDirectory = (dataDir: string): string => join(dataDir, 'resource-control')
+
+/** The control snapshot workers read for one profile: Skill decisions and managed MCP servers. */
+export const workerSnapshotPath = (directory: string, profile: string): string =>
+  join(directory, 'worker-snapshots', `${profile}.json`)
+
 /** One daemon service with independently durable Skill and MCP journals. */
 export class ResourceControlStore implements ResourceStateStore {
   private readonly instanceId = randomUUID()
@@ -226,7 +233,7 @@ export class ResourceControlStore implements ResourceStateStore {
   }
   snapshotPath(profile: string): string {
     assertResourceProfile(this.scope, profile)
-    return join(this.directory, 'worker-snapshots', `${profile}.json`)
+    return workerSnapshotPath(this.directory, profile)
   }
   async writeWorkerSnapshot(profile: string): Promise<void> {
     assertResourceProfile(this.scope, profile)

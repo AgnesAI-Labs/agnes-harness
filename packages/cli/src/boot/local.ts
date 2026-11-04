@@ -61,8 +61,8 @@ import { resolveLaunchResources } from '../../launch/resources.js'
 import { BootError } from '../errors.js'
 import { resolveLocale } from '../tui/locale.js'
 import type { BootDeps, Booted, ParsedArgs } from '../types.js'
-import { profileNameFrom, readProfileInputs } from './inputs.js'
-import { createLocalSkills, savedSkillControlFile } from './local-skills.js'
+import { profileNameFrom, readProfileInputs, resolveHome } from './inputs.js'
+import { createLocalSkills } from './local-skills.js'
 import { readScreenshotBytes, requestMediaOriginIsValid } from './screenshot-read.js'
 
 /** Defined by the normal packaged local build; absent in source and SEA development runs. */
@@ -109,6 +109,13 @@ export type LocalBootDeps = BootDeps & {
    * control itself (an evaluation harness) passes it here. Absent: unchanged.
    */
   refinementSave?: NonNullable<HostOptions['refinementSave']>
+  /**
+   * Internal, composed by bootLocal from the command line. `safeMode` offers plugin Skills only.
+   * `skillDecisionsDataDir` is the data dir whose saved Skill decisions apply when the run's own is
+   * not the installation's (`--ephemeral`).
+   */
+  safeMode?: boolean
+  skillDecisionsDataDir?: string
   /**
    * Where the default loader keeps transpiled plugin source, instead of the profile's cacheDir (an
    * isolated one-shot run otherwise starts cold). Entries are checked against the current source.
@@ -198,14 +205,18 @@ export async function assembleLocalHost(
       },
     },
   })
-  // The disk Skills a daemon worker would offer, read from the same folders with the daemon's saved
-  // decisions; a headless run keeps those in the data dir it was started from.
+  // The disk Skills a daemon worker would offer, read from the same folders under the daemon's saved
+  // decisions. A headless run keeps those in the data dir it was started from, an ephemeral run in the
+  // installation's. Safe mode offers plugin Skills only.
   const local = createLocalSkills({
     registry: skills,
     agnesHome: deps.home,
     osHome: deps.env.HOME ?? deps.env.USERPROFILE ?? homedir(),
     importUserSkills: deps.env.AGNES_SKILLS_IMPORT_USER === '1',
-    controlFile: savedSkillControlFile(deps.packageDataDir ?? profile.dataDir, profileName),
+    decisions: {
+      dataDir: deps.skillDecisionsDataDir ?? deps.packageDataDir ?? profile.dataDir,
+      profile: profileName,
+    },
     log: hostLogger(deps.log).warn,
   })
   host = await createHost(profile, {
@@ -216,7 +227,7 @@ export async function assembleLocalHost(
     log: hostLogger(deps.log),
     prompter,
     skillContribution: createSkillCordisService(skills),
-    skillResources: local.input,
+    skillResources: deps.safeMode ? skills.snapshot() : local.input,
     ...(deps.requestMedia ? { requestMedia: deps.requestMedia } : {}),
     ...(deps.refinementSave ? { refinementSave: deps.refinementSave } : {}),
     agnesVersion: deps.agnesVersion,
@@ -540,7 +551,17 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
   })
   let host: Host
   try {
-    host = await assembleLocalHost(profile, profileName, cwd, { ...deps, requestMedia }, bridge.prompter)
+    const skillDeps = {
+      ...(p.safeMode ? { safeMode: true } : {}),
+      ...(p.ephemeral ? { skillDecisionsDataDir: dataDir(resolveHome(deps.env)) } : {}),
+    }
+    host = await assembleLocalHost(
+      profile,
+      profileName,
+      cwd,
+      { ...deps, requestMedia, ...skillDeps },
+      bridge.prompter,
+    )
     mediaHost = host
   } catch (e) {
     await ownershipStorage.close().catch(noop)

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,11 +8,11 @@ import { createTestHost } from '@agnes/host/testkit'
 import type { Context } from '@agnes/plugin-runtime'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { AGH_DIR } from '@agnes/protocol'
+import { resourceControlDirectory, workerSnapshotPath } from '@agnes/resource-control-store'
 import { scanSkills } from '@agnes/resource-control-worker'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { bootLocal } from '../src/boot/local.js'
-import { savedSkillControlFile } from '../src/boot/local-skills.js'
 import type { Booted } from '../src/types.js'
 import { TEST_LOCK } from './boot-host.js'
 
@@ -89,10 +89,11 @@ async function boot() {
   })
   state.provider = provider
   const logged: string[] = []
-  const start = async (): Promise<Booted> => {
-    const booted = await bootLocal(parseArgs(['--cwd', workspace]), {
-      env: { HOME: root },
-      home,
+  /** `flags` are extra command-line flags; `bootHome` replaces the home the run boots in. */
+  const start = async (flags: string[] = [], bootHome = home): Promise<Booted> => {
+    const booted = await bootLocal(parseArgs([...flags, '--cwd', workspace]), {
+      env: { HOME: root, AGH_HOME: home },
+      home: bootHome,
       cwd: workspace,
       agnesVersion: '0.0.0',
       log: (line) => logged.push(line),
@@ -116,13 +117,45 @@ async function boot() {
       .map((line) => line.split('\t')[0])
       .sort()
   }
+  /** One turn in a new session, then the skills its request offered. */
+  const offeredIn = async (b: Booted, sessionKey?: string) => {
+    await turn(await b.client.session.new({ cwd: workspace, ...(sessionKey ? { sessionKey } : {}) }))
+    return offered()
+  }
+  const decisionsFile = (at = home) => workerSnapshotPath(resourceControlDirectory(dataDir(at)), 'local-dev')
+  /** Writes the daemon's saved decisions for this home, the way its store does. */
+  const saveDecisions = (control: object, at = home) => {
+    const file = decisionsFile(at)
+    mkdirSync(join(file, '..'), { recursive: true })
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        profile: 'local-dev',
+        skills: { control: { priorities: {}, removed: [], desired: [], trust: [], ...control } },
+        mcp: [],
+        mcpAuthority: 'resource-control',
+      }),
+    )
+  }
+  /** What the daemon's scan records for a workspace Skill: its resource id and capability. */
+  const scanned = async (name: string) => {
+    const scan = await scanSkills(workspace, undefined, undefined, root, home, false, undefined, () => {})
+    const found = scan.roots.flatMap((item) => item.candidates).find((item) => item.name === name)
+    if (!found) throw new Error(`scan did not find ${name}`)
+    return found
+  }
   return {
     home,
+    root,
     workspace,
-    provider,
     logged,
     start,
     offered,
+    offeredIn,
+    decisionsFile,
+    saveDecisions,
+    scanned,
     workspaceSkills: join(workspace, AGH_DIR, 'skills'),
     userSkills: join(home, 'skills'),
   }
@@ -130,14 +163,14 @@ async function boot() {
 
 type Session = Awaited<ReturnType<Booted['client']['session']['new']>>
 const turn = async (session: Session) => expect((await session.prompt('go')).reason).toBe('completed')
+const OLD_REVISION = 'e'.repeat(64)
 
 describe('a host embedded in the CLI offers the disk Skills a daemon worker would', () => {
   it('offers only the plugin Skills when no Skill folder exists', async () => {
     const t = await boot()
     const b = await t.start()
     try {
-      await turn(await b.client.session.new({ cwd: t.workspace }))
-      expect(t.offered()).toEqual(['plugin-skill'])
+      expect(await t.offeredIn(b)).toEqual(['plugin-skill'])
     } finally {
       await b.close()
     }
@@ -150,15 +183,13 @@ describe('a host embedded in the CLI offers the disk Skills a daemon worker woul
     skill(t.userSkills, 'personal')
     const b = await t.start()
     try {
-      const session = await b.client.session.new({ cwd: t.workspace })
-      await turn(session)
-      expect(t.offered()).toEqual(['from-claude-folder', 'personal', 'plugin-skill', 'pre-boot'])
+      expect(await t.offeredIn(b)).toEqual(['from-claude-folder', 'personal', 'plugin-skill', 'pre-boot'])
     } finally {
       await b.close()
     }
   })
 
-  it('offers a Skill written during a session to the next session, and to that session after refreshSkills', async () => {
+  it('keeps each session on the list it started with; a new session scans, refreshSkills rebuilds every view', async () => {
     const t = await boot()
     const b = await t.start()
     try {
@@ -166,67 +197,141 @@ describe('a host embedded in the CLI offers the disk Skills a daemon worker woul
       await turn(first)
       expect(t.offered()).toEqual(['plugin-skill'])
       skill(t.workspaceSkills, 'saved-later')
+      expect(await t.offeredIn(b, 'local-skills-second')).toEqual(['plugin-skill', 'saved-later'])
+      // The second session's scan does not change the first session's list.
       await turn(first)
       expect(t.offered()).toEqual(['plugin-skill'])
-      await turn(await b.client.session.new({ cwd: t.workspace, sessionKey: 'local-skills-second' }))
-      expect(t.offered()).toEqual(['plugin-skill', 'saved-later'])
-      skill(t.workspaceSkills, 'saved-last')
       b.refreshSkills?.()
       await turn(first)
-      expect(t.offered()).toEqual(['plugin-skill', 'saved-last', 'saved-later'])
+      expect(t.offered()).toEqual(['plugin-skill', 'saved-later'])
     } finally {
       await b.close()
     }
   })
 
-  it('keeps a Skill the daemon saved as disabled off, and offers the others', async () => {
+  it('applies the daemon trust rules to the saved decisions', async () => {
+    const t = await boot()
+    for (const name of [
+      'rejected',
+      'untrusted',
+      'removed',
+      'trusted-then-edited',
+      'disabled-then-edited',
+      'never-seen',
+    ])
+      skill(t.workspaceSkills, name)
+    const rejected = await t.scanned('rejected')
+    const untrusted = await t.scanned('untrusted')
+    const removed = await t.scanned('removed')
+    const edited = await t.scanned('trusted-then-edited')
+    const disabled = await t.scanned('disabled-then-edited')
+    const decided = (item: typeof rejected, state: string, desired: string, revision = item.revision) => ({
+      trust: { resourceId: item.resourceId, revision, capabilityHash: item.capabilityHash, state },
+      desired: { resourceId: item.resourceId, state: desired },
+    })
+    const all = [
+      decided(rejected, 'rejected', 'enabled'),
+      decided(untrusted, 'untrusted', 'enabled'),
+      // Decisions saved before the file was edited: they follow the Skill to its new revision.
+      decided(edited, 'trusted', 'enabled', OLD_REVISION),
+      decided(disabled, 'trusted', 'disabled', OLD_REVISION),
+    ]
+    t.saveDecisions({
+      removed: [removed.resourceId],
+      trust: all.map((item) => item.trust),
+      desired: all.map((item) => item.desired),
+    })
+    const b = await t.start()
+    try {
+      expect(await t.offeredIn(b)).toEqual(['never-seen', 'plugin-skill', 'trusted-then-edited'])
+    } finally {
+      await b.close()
+    }
+  })
+
+  it('offers no disk Skill under --safe-mode', async () => {
+    const t = await boot()
+    skill(t.workspaceSkills, 'repo-skill')
+    skill(t.userSkills, 'personal')
+    const b = await t.start(['--safe-mode', '--standalone'])
+    try {
+      expect(await t.offeredIn(b)).toEqual(['plugin-skill'])
+    } finally {
+      await b.close()
+    }
+  })
+
+  it('reads the real home decisions under --ephemeral', async () => {
     const t = await boot()
     skill(t.workspaceSkills, 'switched-off')
     skill(t.workspaceSkills, 'still-on')
-    const scan = await scanSkills(t.workspace, undefined, undefined, t.home, t.home, false)
-    const off = scan.roots.flatMap((root) => root.candidates).find((c) => c.name === 'switched-off')
-    if (!off) throw new Error('scan did not find the skill')
-    const file = savedSkillControlFile(dataDir(t.home), 'local-dev')
-    mkdirSync(join(file, '..'), { recursive: true })
-    writeFileSync(
-      file,
-      JSON.stringify({
-        version: 1,
-        profile: 'local-dev',
-        // An edited Skill keeps its decision: the saved revision is an older one.
-        skills: {
-          control: {
-            priorities: {},
-            removed: [],
-            desired: [{ resourceId: off.resourceId, state: 'disabled' }],
-            trust: [
-              {
-                resourceId: off.resourceId,
-                revision: 'e'.repeat(64),
-                capabilityHash: off.capabilityHash,
-                state: 'trusted',
-              },
-            ],
-          },
+    const off = await t.scanned('switched-off')
+    t.saveDecisions({
+      trust: [
+        {
+          resourceId: off.resourceId,
+          revision: off.revision,
+          capabilityHash: off.capabilityHash,
+          state: 'trusted',
         },
-        mcp: [],
-        mcpAuthority: 'resource-control',
-      }),
-    )
-    const b = await t.start()
+      ],
+      desired: [{ resourceId: off.resourceId, state: 'disabled' }],
+    })
+    const ephemeral = join(t.root, 'ephemeral-home')
+    mkdirSync(ephemeral)
+    const b = await t.start(['--ephemeral'], ephemeral)
     try {
-      await turn(await b.client.session.new({ cwd: t.workspace }))
-      expect(t.offered()).toEqual(['plugin-skill', 'still-on'])
+      expect(await t.offeredIn(b)).toEqual(['plugin-skill', 'still-on'])
     } finally {
       await b.close()
     }
   })
 
-  it('sends a skipped Skill file to the boot log, not to the terminal', async () => {
+  it('offers no disk Skill when the daemon kept resource state but no decisions file', async () => {
+    const t = await boot()
+    skill(t.workspaceSkills, 'pre-boot')
+    mkdirSync(resourceControlDirectory(dataDir(t.home)), { recursive: true })
+    const b = await t.start()
+    try {
+      expect(await t.offeredIn(b)).toEqual(['plugin-skill'])
+    } finally {
+      await b.close()
+    }
+  })
+
+  it('treats every Skill as new where the daemon never kept resource state', async () => {
+    const t = await boot()
+    skill(t.workspaceSkills, 'pre-boot')
+    expect(existsSync(resourceControlDirectory(dataDir(t.home)))).toBe(false)
+    const b = await t.start()
+    try {
+      expect(await t.offeredIn(b)).toEqual(['plugin-skill', 'pre-boot'])
+    } finally {
+      await b.close()
+    }
+  })
+
+  it('offers no disk Skill when the saved decisions cannot be read', async () => {
+    const t = await boot()
+    skill(t.workspaceSkills, 'pre-boot')
+    mkdirSync(join(t.decisionsFile(), '..'), { recursive: true })
+    writeFileSync(t.decisionsFile(), '{"version":1,"skills":')
+    const b = await t.start()
+    try {
+      expect(await t.offeredIn(b)).toEqual(['plugin-skill'])
+    } finally {
+      await b.close()
+    }
+  })
+
+  it('sends a skipped Skill file to the boot log once, not to the terminal', async () => {
     const t = await boot()
     skill(t.workspaceSkills, 'good')
     mkdirSync(join(t.workspaceSkills, 'broken'), { recursive: true })
     writeFileSync(join(t.workspaceSkills, 'broken', 'SKILL.md'), 'no frontmatter here\n')
+    skill(t.userSkills, 'personal')
+    mkdirSync(join(t.userSkills, 'broken-user'), { recursive: true })
+    writeFileSync(join(t.userSkills, 'broken-user', 'SKILL.md'), 'no frontmatter here\n')
     const writes: string[] = []
     const spies = [
       vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
@@ -246,32 +351,19 @@ describe('a host embedded in the CLI offers the disk Skills a daemon worker woul
     let b: Booted | undefined
     try {
       b = await t.start()
-      await turn(await b.client.session.new({ cwd: t.workspace }))
+      await t.offeredIn(b)
     } finally {
       for (const spy of spies) spy.mockRestore()
       await b?.close()
     }
     expect(writes).toEqual([])
-    expect(t.offered()).toEqual(['good', 'plugin-skill'])
-    expect(t.logged).toEqual([
+    expect(t.offered()).toEqual(['good', 'personal', 'plugin-skill'])
+    // One line per skipped file: the session's single scan covers the user roots too.
+    expect(t.logged.sort()).toEqual([
+      expect.stringMatching(/^host warn: agnes: Skill skill\/user\/\S+ skipped \(invalid-frontmatter\)$/),
       expect.stringMatching(
         /^host warn: agnes: Skill skill\/workspace\/\S+ skipped \(invalid-frontmatter\)$/,
       ),
     ])
-  })
-
-  it('offers no disk Skill when the saved decisions cannot be read', async () => {
-    const t = await boot()
-    skill(t.workspaceSkills, 'pre-boot')
-    const file = savedSkillControlFile(dataDir(t.home), 'local-dev')
-    mkdirSync(join(file, '..'), { recursive: true })
-    writeFileSync(file, '{"version":1,"skills":')
-    const b = await t.start()
-    try {
-      await turn(await b.client.session.new({ cwd: t.workspace }))
-      expect(t.offered()).toEqual(['plugin-skill'])
-    } finally {
-      await b.close()
-    }
   })
 })

@@ -1,17 +1,21 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, stat } from 'node:fs/promises'
 import {
   createSkillCandidateRegistry,
   type ResourceActivationBarrier,
-  type SkillCandidate,
   type SkillControlInput,
   type SkillRuntimeInput,
 } from '@agnes/resource-control-runtime'
-import { scanSkills, workspaceSkills } from '@agnes/resource-control-worker'
+import {
+  knownSkillIds,
+  resourceControlDirectory,
+  skillDecisionsAfterScan,
+  workerSnapshotPath,
+} from '@agnes/resource-control-store'
+import { SkillScanCache, scanSkills, workspaceSkills } from '@agnes/resource-control-worker'
 
 type Registry = ReturnType<typeof createSkillCandidateRegistry>
-type Generation = { workspaces: SkillRuntimeInput; derived: Map<symbol, SkillRuntimeInput> }
+type Scan = Awaited<ReturnType<typeof scanSkills>>
 
 /**
  * The views below are built inside a turn (a session's first Skill read), so they publish at once
@@ -20,10 +24,8 @@ type Generation = { workspaces: SkillRuntimeInput; derived: Map<symbol, SkillRun
 const PLAIN_BARRIER: ResourceActivationBarrier = Object.freeze({
   quiesce: <T>(_operationId: string, publish: (permit: unknown) => Promise<T>) => publish(undefined),
 })
-
-/** Where the daemon saves the Skill decisions its workers read: enable/disable, trust, removal. */
-export const savedSkillControlFile = (dataDir: string, profile: string): string =>
-  join(dataDir, 'resource-control', 'worker-snapshots', `${profile}.json`)
+/** Session keys whose views are kept; the least recently used one is dropped past this. */
+const MAX_SESSIONS = 256
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -56,51 +58,56 @@ function parseControl(raw: unknown): SkillControlInput | undefined {
   return raw.skills.control as SkillControlInput
 }
 
-/** No file: the daemon never saw a decision, so every Skill is new. Unreadable: no disk Skills. */
-async function savedControl(file: string): Promise<SkillControlInput | 'unreadable'> {
-  let bytes: string
+const missing = async (path: string): Promise<boolean> => {
   try {
-    bytes = await readFile(file, 'utf8')
+    await stat(path)
+    return false
   } catch (error) {
-    if ((error as { code?: unknown }).code === 'ENOENT') return { desired: [], trust: [] }
-    return 'unreadable'
-  }
-  try {
-    return parseControl(JSON.parse(bytes)) ?? 'unreadable'
-  } catch {
-    return 'unreadable'
+    return (error as { code?: unknown }).code === 'ENOENT'
   }
 }
 
 /**
- * The daemon's rules for the decisions it records: a recorded decision follows its Skill across edits
- * (rebound to the scanned revision), and a Skill seen for the first time is trusted and enabled.
+ * The decisions the daemon saved for this profile. A data dir the daemon never kept resource state
+ * in has none, so every Skill is new. Once it has, a missing or unreadable file offers no disk Skill.
  */
-function controlFor(saved: SkillControlInput, candidates: readonly SkillCandidate[]): SkillControlInput {
-  const byId = new Map(candidates.map((candidate) => [candidate.resourceId, candidate]))
-  const removed = saved.removed ?? []
-  const known = new Set([
-    ...saved.desired.map((item) => item.resourceId),
-    ...saved.trust.map((item) => item.resourceId),
-  ])
-  const trust = saved.trust.map((item) => {
-    const candidate = byId.get(item.resourceId)
-    return candidate
-      ? { ...item, revision: candidate.revision, capabilityHash: candidate.capabilityHash }
-      : item
-  })
-  const desired = [...saved.desired]
-  for (const candidate of byId.values()) {
-    if (known.has(candidate.resourceId) || removed.includes(candidate.resourceId)) continue
-    trust.push({
-      resourceId: candidate.resourceId,
-      revision: candidate.revision,
-      capabilityHash: candidate.capabilityHash,
-      state: 'trusted',
-    })
-    desired.push({ resourceId: candidate.resourceId, state: 'enabled' })
+async function savedControl(dataDir: string, profile: string): Promise<SkillControlInput | 'closed'> {
+  const directory = resourceControlDirectory(dataDir)
+  let bytes: string
+  try {
+    bytes = await readFile(workerSnapshotPath(directory, profile), 'utf8')
+  } catch {
+    return (await missing(directory)) ? { desired: [], trust: [] } : 'closed'
   }
-  return { priorities: saved.priorities ?? {}, removed, desired, trust }
+  try {
+    return parseControl(JSON.parse(bytes)) ?? 'closed'
+  } catch {
+    return 'closed'
+  }
+}
+
+/** The store's own rules applied to one scan. The snapshot keeps no discovered list, only decisions. */
+function controlFor(saved: SkillControlInput, scan: Scan): SkillControlInput {
+  const candidates = scan.roots.flatMap((root) => root.candidates)
+  const recorded = {
+    trust: Object.fromEntries(saved.trust.map(({ resourceId, ...decision }) => [resourceId, decision])),
+    desired: Object.fromEntries(saved.desired.map((item) => [item.resourceId, item.state])),
+  }
+  const removed = saved.removed ?? []
+  const { trust, desired } = skillDecisionsAfterScan({
+    ...recorded,
+    known: knownSkillIds({ discovered: [], ...recorded }),
+    removed,
+    current: candidates,
+    observed: candidates,
+    capability: Object.fromEntries(candidates.map((item) => [item.resourceId, item.capabilityHash])),
+  })
+  return {
+    priorities: saved.priorities ?? {},
+    removed,
+    desired: Object.entries(desired).map(([resourceId, state]) => ({ resourceId, state })),
+    trust: Object.entries(trust).map(([resourceId, decision]) => ({ resourceId, ...decision })),
+  }
 }
 
 export type LocalSkillsOptions = Readonly<{
@@ -109,8 +116,8 @@ export type LocalSkillsOptions = Readonly<{
   agnesHome: string
   osHome: string
   importUserSkills: boolean
-  /** The daemon's saved decisions, see `savedSkillControlFile`. */
-  controlFile: string
+  /** The data dir whose daemon decisions apply, and the profile they were saved for. */
+  decisions: Readonly<{ dataDir: string; profile: string }>
   /** Non-fatal problems, including Skill files the scan skipped; never the terminal directly. */
   log: (line: string) => void
 }>
@@ -118,94 +125,105 @@ export type LocalSkillsOptions = Readonly<{
 export type LocalSkills = Readonly<{
   /** The Host's Skill resources. */
   input: SkillRuntimeInput
-  /** Scan the Skill folders again before the next Skill read of any session. */
+  /** Build every session's view again from a new scan, on its next Skill read. */
   refresh(): void
 }>
 
 /**
- * The Skills a host embedded in the CLI offers: the same disk folders a daemon worker scans for a
- * session's workspace (workspace and user Skill roots), with the daemon's saved decisions, plus the
- * Skills plugins register. A view is built again when a session uses Skills for the first time and
- * after `refresh`; a call that already entered a view keeps it to the end.
+ * The Skills a host embedded in the CLI offers: the disk folders a daemon worker scans for a
+ * session's workspace (workspace and user Skill roots) under the daemon's saved decisions, plus the
+ * Skills plugins register. Each session key gets one view, built from one scan on its first Skill
+ * read and kept for that session's life, so a new session never changes another session's list.
+ * `refresh` is the only thing that rebuilds existing views.
  */
 export function createLocalSkills(options: LocalSkillsOptions): LocalSkills {
-  const view = async (root: string | undefined, saved: SkillControlInput | 'unreadable') => {
+  const cache = new SkillScanCache()
+  const pluginOnly = workspaceSkills(options.registry.snapshot(), async () => options.registry.snapshot())
+  let epoch = 0
+  let scans = 0
+  let closedLogged = false
+  /** What a read outside any session sees: the user roots of the latest scan, for the file fence. */
+  let latestShared: SkillRuntimeInput = options.registry.snapshot()
+  const sessions = new Map<string, { epoch: number; root: string; view: Promise<SkillRuntimeInput> }>()
+
+  const publish = async (roots: Scan['roots'], failed: Scan['failedRoots'], control: SkillControlInput) => {
     const scoped = createSkillCandidateRegistry({ barrier: PLAIN_BARRIER })
     scoped.shareRuntimeFrom(options.registry)
+    for (const item of roots) scoped.replaceRoot(item.rootKey, item.candidates)
+    for (const root of failed) scoped.failRoot(root, new Error('Skill scan failed'))
+    scoped.setControl(control)
+    await scoped.activate('local-skills', async () => undefined)
+    return scoped.snapshot()
+  }
+  const scanned = async (root: string, revision: string) => {
+    const known = cache.get(root, revision)
+    if (known) return known
+    const scan = await scanSkills(
+      root,
+      undefined,
+      undefined,
+      options.osHome,
+      options.agnesHome,
+      options.importUserSkills,
+      undefined,
+      options.log,
+    )
+    cache.observe(root, revision, scan)
+    return scan
+  }
+  const build = async (root: string): Promise<SkillRuntimeInput> => {
     try {
-      if (saved !== 'unreadable') {
-        const scan = await scanSkills(
-          root,
-          undefined,
-          undefined,
-          options.osHome,
-          options.agnesHome,
-          options.importUserSkills,
-          undefined,
-          options.log,
-        )
-        for (const item of scan.roots) scoped.replaceRoot(item.rootKey, item.candidates)
-        for (const failed of scan.failedRoots) scoped.failRoot(failed, new Error('Skill scan failed'))
-        scoped.setControl(
-          controlFor(
-            saved,
-            scan.roots.flatMap((item) => item.candidates),
-          ),
-        )
+      const saved = await savedControl(options.decisions.dataDir, options.decisions.profile)
+      if (saved === 'closed') {
+        if (!closedLogged) options.log('skills: the saved Skill decisions are unreadable; only plugin Skills')
+        closedLogged = true
+        return pluginOnly
       }
-      await scoped.activate('local-skills', async () => undefined)
-      return scoped.snapshot()
+      // One scan per view: the user-level view and the workspace view below both read it.
+      const revision = String(++scans)
+      const scan = await scanned(root, revision)
+      const control = controlFor(saved, scan)
+      const shared = await publish(
+        scan.roots.filter((item) => item.rootKey !== 'workspace-agnes'),
+        scan.failedRoots.filter((item) => item !== 'workspace-agnes'),
+        control,
+      )
+      latestShared = shared
+      return workspaceSkills(shared, async (at) => {
+        const own = await scanned(at, revision)
+        return publish(own.roots, own.failedRoots, at === root ? control : controlFor(saved, own))
+      })
     } catch {
       // A Skill the registry refuses fails the whole view; plugin Skills stay offered.
       options.log('skills: the Skill folders could not be read; only plugin Skills are offered')
-      return options.registry.snapshot()
+      return pluginOnly
     }
   }
-  const build = async (): Promise<Generation> => {
-    const saved = await savedControl(options.controlFile)
-    if (saved === 'unreadable') options.log('skills: the saved Skill decisions are unreadable')
-    return {
-      workspaces: workspaceSkills(await view(undefined, saved), (root) => view(root, saved)),
-      derived: new Map(),
+  const viewFor = (sessionKey: string, root: string) => {
+    let session = sessions.get(sessionKey)
+    sessions.delete(sessionKey)
+    if (!session || session.epoch !== epoch || session.root !== root)
+      session = { epoch, root, view: build(root) }
+    sessions.set(sessionKey, session)
+    for (const key of sessions.keys()) {
+      if (sessions.size <= MAX_SESSIONS) break
+      sessions.delete(key)
     }
+    return session.view
   }
-  // Until a session reads Skills, only plugin Skills exist; the first read builds the disk view.
-  let current: Generation = {
-    workspaces: workspaceSkills(options.registry.snapshot(), async () => options.registry.snapshot()),
-    derived: new Map(),
-  }
-  let stale = true
-  let building: Promise<void> | undefined
-  const seen = new Set<string>()
-  // One scan at a time. A refresh asked for while a scan runs is served by one more scan after it.
-  const settle = async () => {
-    while (stale || building) {
-      if (!building) {
-        stale = false
-        building = build().then(
-          (next) => {
-            current = next
-          },
-          () => options.log('skills: the Skill folders could not be scanned again; the last scan stays'),
-        )
-      }
-      const flight = building
-      await flight
-      if (building === flight) building = undefined
-    }
-  }
-  const follow = (variant: (generation: Generation) => SkillRuntimeInput): SkillRuntimeInput => {
+
+  const follow = (variant: (input: SkillRuntimeInput) => SkillRuntimeInput): SkillRuntimeInput => {
     const entered = new AsyncLocalStorage<SkillRuntimeInput>()
-    const now = () => entered.getStore() ?? variant(current)
+    const now = () => entered.getStore() ?? variant(latestShared)
     return Object.freeze({
       scopeRuntime: (accept: Parameters<NonNullable<SkillRuntimeInput['scopeRuntime']>>[0]) => {
-        const id = Symbol('scoped')
-        return follow((generation) => {
-          const known = generation.derived.get(id)
+        const derived = new WeakMap<SkillRuntimeInput, SkillRuntimeInput>()
+        return follow((input) => {
+          const base = variant(input)
+          const known = derived.get(base)
           if (known) return known
-          const base = variant(generation)
           const made = base.scopeRuntime?.(accept) ?? base
-          generation.derived.set(id, made)
+          derived.set(base, made)
           return made
         })
       },
@@ -221,12 +239,7 @@ export function createLocalSkills(options: LocalSkillsOptions): LocalSkills {
       read: (resourceId, session) => now().read(resourceId, session),
       readFile: (resourceId, revision, path, session) => now().readFile(resourceId, revision, path, session),
       async scopeWorkspace<T>(root: string, sessionKey: string, invoke: () => Promise<T>): Promise<T> {
-        if (!seen.has(sessionKey)) {
-          seen.add(sessionKey)
-          stale = true
-        }
-        await settle()
-        const pinned = variant(current)
+        const pinned = variant(await viewFor(sessionKey, root))
         const scope = pinned.scopeWorkspace
         if (!scope) return entered.run(pinned, invoke)
         return entered.run(pinned, () => scope(root, sessionKey, invoke))
@@ -234,9 +247,9 @@ export function createLocalSkills(options: LocalSkillsOptions): LocalSkills {
     } satisfies SkillRuntimeInput)
   }
   return Object.freeze({
-    input: follow((generation) => generation.workspaces),
+    input: follow((input) => input),
     refresh: () => {
-      stale = true
+      epoch += 1
     },
   })
 }

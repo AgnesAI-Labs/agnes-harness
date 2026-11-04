@@ -161,6 +161,7 @@
     "@agnes/web",
     "@agnes/resource-control-cli",
     "@agnes/resource-control-runtime",
+    "@agnes/resource-control-store",
     "@agnes/resource-control-worker",
     "@agnes/cli-tui",
     "@agnes/package-manager",
