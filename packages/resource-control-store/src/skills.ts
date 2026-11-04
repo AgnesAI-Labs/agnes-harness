@@ -661,7 +661,11 @@ export class SkillResourceStore {
         const incomingIds = new Set(values.map((item) => item.resourceId))
         const discovered = [
           ...retained.filter((item) => !incomingIds.has(item.resourceId)),
-          ...values,
+          ...values.map((item) =>
+            journal.discovered.find((previous) => previous.resourceId === item.resourceId)?.reviewRequired
+              ? { ...item, reviewRequired: true }
+              : item,
+          ),
         ].filter((item) => !removed.includes(item.resourceId))
         discovered.push(...journal.discovered.filter((item) => removed.includes(item.resourceId)))
         const ids = new Set(discovered.map((item) => item.resourceId))

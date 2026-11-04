@@ -81,15 +81,25 @@ it('serves real local examples through daemon catalog and source inspection', as
     },
     operations: new FilePackageOperationStore(join(dataDir, 'operations')),
     catalog,
+    community: () => ({
+      state: 'pending',
+      lastSuccessAt: null,
+      nextAttemptAt: null,
+      error: null,
+      totalReported: 0,
+      items: [],
+    }),
     clock: () => now,
   })
 
+  expect(service.features).toEqual(['packages.community-discovery.v1'])
   const helpers = (await service.call(
     '_agnes/v1/packages.catalog.list',
-    { profile, query: 'skill-helper', limit: 50 },
+    { profile, query: 'skill-helper', limit: 50, includeCommunity: true },
     authority,
   )) as PackageCatalogPage
   expect(helpers.items).toHaveLength(1)
+  expect(helpers.community).toMatchObject({ state: 'pending', items: [] })
   expect(helpers.items[0]).toMatchObject({
     id: '@agnes/skill-helper',
     sourceId: 'builtin-plugins',

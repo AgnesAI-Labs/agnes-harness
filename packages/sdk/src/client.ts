@@ -101,7 +101,7 @@ export type {
 type InitializeResponseBody = {
   protocolVersion: number
   agentCapabilities?: Record<string, unknown>
-  _meta?: { agnes?: { agnesVersion?: string; platform?: string } }
+  _meta?: { agnes?: { agnesVersion?: string; platform?: string; features?: unknown } }
 }
 
 function knownMethod(method: string): method is MethodName {
@@ -822,6 +822,9 @@ export class Client {
       if (r.protocolVersion !== 1) throw new ProtocolViolation('unsupported negotiated protocol version')
       return {
         agnesVersion: r._meta?.agnes?.agnesVersion ?? 'unknown',
+        ...(Array.isArray(r._meta?.agnes?.features)
+          ? { features: r._meta.agnes.features.filter((value): value is string => typeof value === 'string') }
+          : {}),
         ...(typeof r._meta?.agnes?.platform === 'string' ? { platform: r._meta.agnes.platform } : {}),
         capabilities: r.agentCapabilities ?? {},
       }

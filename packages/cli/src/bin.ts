@@ -344,7 +344,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       return await (await branches()).runPluginsPackBranch(p, branchContext)
     if (
       (p.command === 'plugins' &&
-        !/^(reload|publication-status|provenance|candidates|config|tree|generations)$/.test(
+        !/^(reload|publication-status|provenance|candidates|config|tree|generations|skill-import)$/.test(
           p.positional[0] ?? '',
         )) ||
       p.command === 'package' ||

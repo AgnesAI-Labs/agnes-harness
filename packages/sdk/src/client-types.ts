@@ -68,6 +68,8 @@ export type CreateClientOptions = {
 
 export type InitializeInfo = {
   agnesVersion: string
+  /** Features advertised by the connected daemon, absent on older daemons. */
+  features?: readonly string[]
   capabilities: Record<string, unknown>
   platform?: string
 }

@@ -19,9 +19,16 @@ import {
   Tag,
   useUiText,
 } from '@agnes/web-ui'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { PluginView } from './admin-view.js'
+import {
+  CommunityCard,
+  CommunityDetails,
+  type CommunityRepository,
+  useCommunityDiscovery,
+} from './community-market.js'
 import { matchesPluginFilters, type PluginSource, PluginSourceFilter, PluginToolbar } from './plugins-tab.js'
+import { SkillInstallDialog } from './skill-import.js'
 
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 
@@ -145,7 +152,14 @@ function MarketCard({
 
 /** Today's plugin catalog; a real marketplace later replaces the data source, not the page. */
 export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
+  const [importSource, setImportSource] = useState<string | null>(null)
   const [source, setSource] = useState<PluginSource | ''>('')
+  const { snapshot, failed } = useCommunityDiscovery(view)
+  const [selected, setSelected] = useState<CommunityRepository | null>(null)
+  const detailTrigger = useRef<HTMLElement | null>(null)
+  const [display, setDisplay] = useState({ key: '', count: 12 })
+  const listKey = JSON.stringify([source, view.query, view.kind])
+  const count = display.key === listKey ? display.count : 12
   const rows = view.state.catalog.filter(
     (item) =>
       !item.metadata?.exampleOf &&
@@ -155,6 +169,26 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
   const grouped = new Map<string, PackageCatalogDescriptor[]>()
   for (const row of rows) grouped.set(row.id, [...(grouped.get(row.id) ?? []), row])
   const groups = [...grouped.values()]
+  const community =
+    !source || source === 'community'
+      ? (snapshot?.items ?? []).filter(
+          (row) =>
+            !view.kind &&
+            `${row.fullName} ${row.description} ${row.topics.join(' ')}`
+              .toLowerCase()
+              .includes(view.query.toLowerCase()),
+        )
+      : []
+  const entries = [
+    ...groups.map((group) => ({ kind: 'package' as const, group })),
+    ...community.map((row) => ({ kind: 'community' as const, row })),
+  ]
+  const closeDetail = () => {
+    setSelected(null)
+    requestAnimationFrame(() => {
+      if (detailTrigger.current?.isConnected) detailTrigger.current.focus()
+    })
+  }
   // The controller keeps one list; until it has switched to the catalog there is nothing to show.
   const ready = view.tab === 'discover'
   return (
@@ -165,6 +199,18 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
         onQuery={() => void view.loadCatalog()}
         leading={<PluginSourceFilter value={source} onChange={setSource} t={t} />}
       />
+      {importSource !== null && (
+        <SkillInstallDialog
+          key={importSource}
+          view={view}
+          initialSource={importSource}
+          t={t}
+          onClose={() => {
+            setImportSource(null)
+            requestAnimationFrame(() => detailTrigger.current?.focus())
+          }}
+        />
+      )}
       <div className="plugins-page-callout">
         <IconTile name="bot" />
         <div>
@@ -175,31 +221,65 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
           {t('market.agents.open')}
         </Button>
       </div>
-      {!ready || (view.state.loading && !rows.length) ? (
+      {!ready ||
+      (view.state.loading && !entries.length) ||
+      (source === 'community' &&
+        !entries.length &&
+        !snapshot?.lastSuccessAt &&
+        (snapshot?.state === 'pending' || snapshot?.state === 'syncing')) ? (
         <SettingsState tone="loading">{t('market.loading')}</SettingsState>
-      ) : !rows.length ? (
+      ) : !entries.length ? (
         <EmptyState
           className="plugin-empty"
           icon={<Icon name="puzzle" size={48} />}
           title={view.query || view.kind || source ? t('market.none') : t('market.empty')}
-          description={t('market.emptyHelp')}
+          description={t(
+            source === 'community' && (failed || snapshot?.error)
+              ? 'community.loadFailed'
+              : 'market.emptyHelp',
+          )}
         />
       ) : (
         <div className="plugins-page-gallery" data-testid="market-list">
-          {groups.map((group) => (
-            <MarketCard key={group[0]!.id} group={group} view={view} t={t} />
-          ))}
+          {entries.slice(0, count).map((entry) =>
+            entry.kind === 'package' ? (
+              <MarketCard key={`package:${entry.group[0]!.id}`} group={entry.group} view={view} t={t} />
+            ) : (
+              <CommunityCard
+                key={`community:${entry.row.id}`}
+                row={entry.row}
+                t={t}
+                onView={(row, trigger) => {
+                  detailTrigger.current = trigger
+                  setSelected(row)
+                }}
+              />
+            ),
+          )}
         </div>
       )}
-      {ready && view.state.nextCursor && (
+      {ready && (count < entries.length || view.state.nextCursor) && (
         <Button
           className="plugin-more"
           appearance="ghost"
-          onClick={() => void view.loadCatalog(view.state.nextCursor ?? undefined)}
+          onClick={() => {
+            setDisplay({ key: listKey, count: count + 12 })
+            if (count >= entries.length && view.state.nextCursor) void view.loadCatalog(view.state.nextCursor)
+          }}
         >
           {t('market.more')}
         </Button>
       )}
+      <CommunityDetails
+        row={selected}
+        view={view}
+        t={t}
+        onClose={closeDetail}
+        onSkillImport={(url) => {
+          setSelected(null)
+          setImportSource(`git:${url}.git`)
+        }}
+      />
     </>
   )
 }

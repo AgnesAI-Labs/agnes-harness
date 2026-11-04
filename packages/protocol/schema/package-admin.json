@@ -1769,6 +1769,65 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "community": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "state": { "enum": ["disabled", "pending", "syncing", "ready", "failed"] },
+            "lastSuccessAt": { "type": ["string", "null"], "maxLength": 32 },
+            "nextAttemptAt": { "type": ["string", "null"], "maxLength": 32 },
+            "error": {
+              "oneOf": [
+                { "enum": ["network", "rate-limit", "invalid-data", "storage", "configuration"] },
+                { "type": "null" }
+              ]
+            },
+            "totalReported": { "type": "integer", "minimum": 0 },
+            "items": {
+              "type": "array",
+              "maxItems": 400,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "id": { "type": "integer", "minimum": 1 },
+                  "fullName": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$",
+                    "maxLength": 256
+                  },
+                  "description": { "type": "string", "maxLength": 2048 },
+                  "topics": {
+                    "type": "array",
+                    "maxItems": 20,
+                    "items": { "type": "string", "maxLength": 64 }
+                  },
+                  "ecosystem": { "enum": ["agh", "dsh"] },
+                  "stars": { "type": "integer", "minimum": 0 },
+                  "forks": { "type": "integer", "minimum": 0 },
+                  "issues": { "type": "integer", "minimum": 0 },
+                  "language": { "type": "string", "maxLength": 100 },
+                  "license": { "type": "string", "maxLength": 100 },
+                  "pushedAt": { "type": ["string", "null"], "maxLength": 32 }
+                },
+                "required": [
+                  "id",
+                  "fullName",
+                  "description",
+                  "topics",
+                  "ecosystem",
+                  "stars",
+                  "forks",
+                  "issues",
+                  "language",
+                  "license",
+                  "pushedAt"
+                ]
+              }
+            }
+          },
+          "required": ["state", "lastSuccessAt", "nextAttemptAt", "error", "totalReported", "items"]
+        },
         "items": {
           "type": "array",
           "items": {
@@ -1964,6 +2023,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "includeCommunity": { "type": "boolean" },
         "profile": {
           "type": "string",
           "minLength": 1,
@@ -2626,6 +2686,77 @@
         }
       },
       "required": ["hash"]
+    },
+    "SkillImportParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile", "clientId", "commandId", "action"],
+      "properties": {
+        "profile": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "clientId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "action": { "enum": ["check", "prepare", "commit", "status", "cancel"] },
+        "source": { "$ref": "#/$defs/PackageSource" },
+        "subdirectory": { "type": "string", "maxLength": 2048 },
+        "scope": { "enum": ["workspace", "user"] },
+        "enable": { "type": "boolean" },
+        "proposalId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "expectedDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "SkillImportResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state"],
+      "properties": {
+        "state": {
+          "enum": [
+            "selection_required",
+            "unsupported",
+            "prepared",
+            "running",
+            "ready",
+            "installed",
+            "failed",
+            "cancelled",
+            "interrupted"
+          ]
+        },
+        "proposalId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 1024 },
+        "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "sourceDigest": { "type": "string", "maxLength": 256 },
+        "resolvedSource": { "$ref": "#/$defs/PackageSource" },
+        "candidates": { "type": "array", "maxItems": 100, "items": { "type": "string", "maxLength": 2048 } },
+        "files": { "type": "array", "maxItems": 2048, "items": { "type": "string", "maxLength": 2048 } },
+        "fileCount": { "type": "integer", "minimum": 0, "maximum": 2048 },
+        "scope": { "enum": ["workspace", "user"] },
+        "resourceId": { "type": "string", "maxLength": 512 },
+        "revision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "phase": { "type": "string", "maxLength": 128 },
+        "message": { "type": "string", "maxLength": 1024 },
+        "environment": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/SkillEnvironmentRequirement" }
+        },
+        "warnings": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 1024 } },
+        "effective": { "const": "next-turn" },
+        "resourceOperationId": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "SkillEnvironmentRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "state", "evidence"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 128 },
+        "state": { "enum": ["satisfied", "missing", "unsupported", "unknown"] },
+        "evidence": { "enum": ["declared", "inferred", "probed"] },
+        "required": { "type": "string", "maxLength": 256 },
+        "actual": { "type": "string", "maxLength": 256 }
+      }
     },
     "SkinReadParams": {
       "description": "One same-origin skin route path to read bytes for. The path is a URL path, never a filesystem path.",

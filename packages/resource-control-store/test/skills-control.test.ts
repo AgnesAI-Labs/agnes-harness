@@ -130,88 +130,102 @@ describe('Skill resource control', () => {
       }
     }
   })
-  it('keeps Host capability/actual observations private while making refresh/trust/desired idempotent', async () => {
-    directory = await mkdtemp(join(tmpdir(), 'agnes-skill-control-'))
-    const item = candidate()
-    const unrelated = candidate('unrelated')
-    const observations: string[][] = []
-    const views: string[][] = []
-    const service = testService(
-      createResourceControlService(
-        createSkillResourceStore({
-          directory,
-          scope,
-          adapter: {
-            refresh: async () => [item, unrelated],
-            view: async ({ skills }) => {
-              views.push(skills.map((skill) => skill.resourceId))
-              return skills
+  it.each([false, true])(
+    'keeps revision review rules and Host observations private (managed=%s)',
+    async (reviewRequired) => {
+      directory = await mkdtemp(join(tmpdir(), 'agnes-skill-control-'))
+      let item = candidate()
+      if (reviewRequired) item = { ...item, descriptor: { ...item.descriptor, reviewRequired: true } }
+      const unrelated = candidate('unrelated')
+      const observations: string[][] = []
+      const views: string[][] = []
+      const service = testService(
+        createResourceControlService(
+          createSkillResourceStore({
+            directory,
+            scope,
+            adapter: {
+              refresh: async () => [item, unrelated],
+              view: async ({ skills }) => {
+                views.push(skills.map((skill) => skill.resourceId))
+                return skills
+              },
+              reconcile: async ({ resources }) => {
+                observations.push(resources.map((resource) => resource.resourceId))
+                return resources.map((resource) => ({
+                  resourceId: resource.resourceId,
+                  actual: resource.desired === 'enabled' ? 'ready' : 'disabled',
+                }))
+              },
             },
-            reconcile: async ({ resources }) => {
-              observations.push(resources.map((resource) => resource.resourceId))
-              return resources.map((resource) => ({
-                resourceId: resource.resourceId,
-                actual: resource.desired === 'enabled' ? 'ready' : 'disabled',
-              }))
-            },
-          },
-        }),
-      ),
-    )
-    const refresh = await service.call(
-      '_agnes/v1/skills.refresh',
-      { profile, clientId: 'client', commandId: 'refresh-1' },
-      authority,
-    )
-    expect(await settled(service, refresh.operationId)).toMatchObject({ state: 'succeeded' })
-    const listed = await service.call('_agnes/v1/resources.list', { profile }, authority)
-    expect(JSON.stringify(listed)).not.toContain(item.capabilityHash)
-    expect(listed.skillRoots).toEqual(
-      expect.arrayContaining([{ rootKey: 'user-agnes', scope: 'user', state: 'ready' }]),
-    )
-    const skill = listed.items.find((skill) => skill.resourceId === item.descriptor.resourceId)
-    if (!skill) throw new Error('refresh must publish the fixture skill')
-    const trust = await service.call(
-      '_agnes/v1/skills.trust.set',
-      {
+          }),
+        ),
+      )
+      const refresh = await service.call(
+        '_agnes/v1/skills.refresh',
+        { profile, clientId: 'client', commandId: 'refresh-1' },
+        authority,
+      )
+      expect(await settled(service, refresh.operationId)).toMatchObject({ state: 'succeeded' })
+      const listed = await service.call('_agnes/v1/resources.list', { profile }, authority)
+      expect(JSON.stringify(listed)).not.toContain(item.capabilityHash)
+      expect(listed.skillRoots).toEqual(
+        expect.arrayContaining([{ rootKey: 'user-agnes', scope: 'user', state: 'ready' }]),
+      )
+      const skill = listed.items.find((skill) => skill.resourceId === item.descriptor.resourceId)
+      if (!skill) throw new Error('refresh must publish the fixture skill')
+      const trust = await service.call(
+        '_agnes/v1/skills.trust.set',
+        {
+          profile,
+          resourceId: skill.resourceId,
+          expectedRevision: skill.revision,
+          trust: 'trusted',
+          clientId: 'client',
+          commandId: 'trust-1',
+        },
+        authority,
+      )
+      await settled(service, trust.operationId)
+      const enable = {
         profile,
         resourceId: skill.resourceId,
+        state: 'enabled',
         expectedRevision: skill.revision,
-        trust: 'trusted',
+        config: { kind: 'none' },
         clientId: 'client',
-        commandId: 'trust-1',
-      },
-      authority,
-    )
-    await settled(service, trust.operationId)
-    const enable = {
-      profile,
-      resourceId: skill.resourceId,
-      state: 'enabled',
-      expectedRevision: skill.revision,
-      config: { kind: 'none' },
-      clientId: 'client',
-      commandId: 'enable-1',
-    }
-    const accepted = await service.call('_agnes/v1/resources.desired.set', enable, authority)
-    expect(await service.call('_agnes/v1/resources.desired.set', enable, authority)).toEqual(accepted)
-    await expect(
-      service.call('_agnes/v1/resources.desired.set', { ...enable, state: 'disabled' }, authority),
-    ).rejects.toMatchObject({ data: { code: 'COMMAND_CONFLICT' } })
-    await settled(service, accepted.operationId)
-    expect(
-      await service.call('_agnes/v1/resources.get', { profile, resourceId: skill.resourceId }, authority),
-    ).toMatchObject({ trust: 'trusted', desired: 'enabled', actual: 'ready' })
-    expect(observations.slice(-2)).toEqual([[skill.resourceId], [skill.resourceId]])
-    expect(views.at(-1)).toEqual([skill.resourceId])
-    expect(
-      await service.call(
-        '_agnes/v1/resources.get',
-        { profile, resourceId: unrelated.descriptor.resourceId },
+        commandId: 'enable-1',
+      }
+      const accepted = await service.call('_agnes/v1/resources.desired.set', enable, authority)
+      expect(await service.call('_agnes/v1/resources.desired.set', enable, authority)).toEqual(accepted)
+      await expect(
+        service.call('_agnes/v1/resources.desired.set', { ...enable, state: 'disabled' }, authority),
+      ).rejects.toMatchObject({ data: { code: 'COMMAND_CONFLICT' } })
+      await settled(service, accepted.operationId)
+      expect(
+        await service.call('_agnes/v1/resources.get', { profile, resourceId: skill.resourceId }, authority),
+      ).toMatchObject({ trust: 'trusted', desired: 'enabled', actual: 'ready' })
+      expect(observations.slice(-2)).toEqual([[skill.resourceId], [skill.resourceId]])
+      expect(views.at(-1)).toEqual([skill.resourceId])
+      expect(
+        await service.call(
+          '_agnes/v1/resources.get',
+          { profile, resourceId: unrelated.descriptor.resourceId },
+          authority,
+        ),
+      ).toMatchObject({ desired: 'enabled', actual: 'ready' })
+      item = { ...item, descriptor: { ...item.descriptor, revision: hash('changed-script') } }
+      const changed = await service.call(
+        '_agnes/v1/skills.refresh',
+        { profile, clientId: 'client', commandId: 'refresh-after-script-edit' },
         authority,
-      ),
-    ).toMatchObject({ desired: 'enabled', actual: 'ready' })
-  })
+      )
+      expect(await settled(service, changed.operationId)).toMatchObject({ state: 'succeeded' })
+      expect(
+        await service.call('_agnes/v1/resources.get', { profile, resourceId: skill.resourceId }, authority),
+      ).toMatchObject({ trust: reviewRequired ? 'untrusted' : 'trusted' })
+    },
+  )
 
   it('fails closed without a Host adapter and retains the durable desired operation', async () => {
     directory = await mkdtemp(join(tmpdir(), 'agnes-skill-control-'))

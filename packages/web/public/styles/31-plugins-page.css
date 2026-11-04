@@ -225,6 +225,66 @@
     grid-template-columns: repeat(auto-fill, minmax(min(100%, 16.875rem), 1fr));
     gap: var(--s12);
   }
+  .community-market-actions,
+  .community-market-details .community-market-topics {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s8);
+  }
+  .plugins-page-card.community-market-card {
+    height: 16.5rem;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    overflow: hidden;
+  }
+  .community-market-card > .community-market-summary {
+    display: -webkit-box;
+    align-self: start;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow-wrap: anywhere;
+  }
+  .community-market-card > .agh-meta-text,
+  .community-market-card h3 {
+    overflow-wrap: anywhere;
+  }
+  .community-market-details .community-market-topics a {
+    max-width: 100%;
+    padding: var(--s4) var(--s8);
+    border: 1px solid var(--agnes-line-primary);
+    border-radius: var(--radius-card);
+    font-size: var(--font-size-caption);
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .community-market-description {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    line-height: 1.7;
+  }
+  .community-market-facts {
+    display: grid;
+    gap: var(--s12);
+    margin-block: var(--s24);
+  }
+  .community-market-facts > div {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    gap: var(--s12);
+  }
+  .community-market-facts dt {
+    color: var(--agnes-text-secondary);
+  }
+  .community-market-facts dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .community-market-compatibility {
+    margin-block-start: var(--s24);
+    color: var(--agnes-text-secondary);
+  }
   /* Header, summary, footer, and the optional failed-check line under the footer. */
   .plugins-page-card {
     min-width: 0;
@@ -640,5 +700,37 @@
     bottom: 0;
     flex-wrap: wrap;
     background: var(--agnes-bg-app-content);
+  }
+}
+/* The explicit install window shares the same theme and content review primitives. */
+@layer app {
+  .skill-install-dialog .ant-modal-body {
+    max-height: 70dvh;
+    overflow: auto;
+    overflow-wrap: anywhere;
+  }
+  .skill-install-steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s12);
+    padding: 0;
+    list-style: none;
+    color: var(--agnes-text-secondary);
+  }
+  .skill-install-steps li {
+    flex: 1;
+    padding-block: var(--s8);
+    text-align: center;
+    border-bottom: 2px solid var(--agnes-line-primary);
+  }
+  .skill-install-steps [aria-current="step"] {
+    color: var(--agnes-brand-primary);
+    border-color: var(--agnes-brand-primary);
+    font-weight: 600;
+  }
+  .skill-import-files {
+    max-height: 16rem;
+    overflow: auto;
+    overflow-wrap: anywhere;
   }
 }

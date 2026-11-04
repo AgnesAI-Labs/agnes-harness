@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 
-import type { PackageCatalogDescriptor } from '@agnes/protocol'
+import type { PackageCatalogDescriptor, PackageCatalogPage } from '@agnes/protocol'
 import {
   ComputerUseCapability,
   type SettingsComputerUseView,
@@ -26,6 +26,7 @@ import {
   pluginsRoute,
 } from '../src/pages/plugins/route.js'
 import { SkillFolders } from '../src/pages/plugins/skill-folders.js'
+import { SkillInstallDialog } from '../src/pages/plugins/skill-import.js'
 
 afterEach(() => document.body.replaceChildren())
 
@@ -300,6 +301,229 @@ it('groups marketplace releases and opens or installs the selected release', asy
     expect(chosen).toBe('2.0.0')
   } finally {
     flushSync(() => root.unmount())
+  }
+})
+
+it.each([true, false])(
+  'reviews complete Skill content and cleans up abandoned review (commit=%s)',
+  async (commit) => {
+    vi.useFakeTimers()
+    const prepared = {
+      state: 'prepared',
+      proposalId: 'skill-install-fixture',
+      name: 'fixture',
+      digest: 'a'.repeat(64),
+      files: ['SKILL.md', 'bin/main.mjs'],
+      fileCount: 2,
+      environment: [{ name: 'node', evidence: 'probed', state: 'satisfied' }],
+    }
+    const skillImport = vi
+      .fn()
+      .mockResolvedValueOnce({ state: 'running', proposalId: 'skill-check-fixture', phase: 'acquiring' })
+      .mockResolvedValueOnce(prepared)
+      .mockResolvedValueOnce({ ...prepared, state: 'installed' })
+    const view = { api: { skillImport } } as unknown as PluginView
+    const host = document.body.appendChild(document.createElement('div'))
+    const root = createRoot(host)
+    const button = (text: string) =>
+      [...host.querySelectorAll<HTMLButtonElement>('button')].find((entry) => entry.textContent === text)
+    try {
+      flushSync(() =>
+        root.render(
+          createElement(SkillInstallDialog, {
+            view,
+            initialSource: 'git:https://github.com/owner/repository.git',
+            t: (key) => key,
+            onClose: vi.fn(),
+          }),
+        ),
+      )
+      await act(async () => undefined)
+      expect(skillImport).toHaveBeenLastCalledWith({
+        action: 'check',
+        source: { type: 'git', ref: 'git:https://github.com/owner/repository.git' },
+        scope: 'user',
+        enable: false,
+      })
+      expect(host.textContent).toContain('skill.import.phase.acquiring')
+      await act(async () => vi.advanceTimersByTimeAsync(300))
+      expect(host.textContent).toContain('skill.import.env.satisfied')
+      expect(host.textContent).toContain('skill.import.unverified')
+      if (!commit) return
+      await act(async () => button('skill.import.confirm')?.click())
+      expect(skillImport).toHaveBeenLastCalledWith({
+        action: 'commit',
+        proposalId: prepared.proposalId,
+        expectedDigest: prepared.digest,
+      })
+      expect(host.textContent).toContain('skill.import.state.installed')
+      expect(button('skill.import.confirm')).toBeUndefined()
+    } finally {
+      flushSync(() => root.unmount())
+      host.remove()
+      vi.useRealTimers()
+      if (!commit)
+        expect(skillImport).toHaveBeenLastCalledWith({ action: 'cancel', proposalId: prepared.proposalId })
+    }
+  },
+)
+
+it('cancels a late check response when its installation window has already closed', async () => {
+  let finish: (value: { state: 'running'; proposalId: string; phase: string }) => void = () => undefined
+  const check = new Promise<{ state: 'running'; proposalId: string; phase: string }>((resolve) => {
+    finish = resolve
+  })
+  const skillImport = vi.fn().mockReturnValueOnce(check).mockResolvedValue({ state: 'cancelled' })
+  const view = { api: { skillImport } } as unknown as PluginView
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  flushSync(() =>
+    root.render(
+      createElement(SkillInstallDialog, {
+        view,
+        initialSource: 'git:https://github.com/owner/repository.git',
+        t: (key) => key,
+        onClose: vi.fn(),
+      }),
+    ),
+  )
+  flushSync(() => root.unmount())
+  await act(async () => {
+    finish({ state: 'running', proposalId: 'skill-check-late', phase: 'acquiring' })
+  })
+  expect(skillImport).toHaveBeenLastCalledWith({ action: 'cancel', proposalId: 'skill-check-late' })
+  host.remove()
+})
+
+it('merges community cards into one gallery and opens complete details without remote requests', async () => {
+  const topics = ['agh-plugin', ...Array.from({ length: 19 }, (_, i) => `topic-${i}`)]
+  const community: NonNullable<PackageCatalogPage['community']> = {
+    state: 'ready',
+    error: null,
+    totalReported: 30,
+    lastSuccessAt: new Date().toISOString(),
+    nextAttemptAt: null,
+    items: Array.from({ length: 13 }, (_, id) => ({
+      id: id + 1,
+      fullName: `author/repo-${id}`,
+      description: '<script>not markup</script>',
+      topics,
+      ecosystem: id === 0 ? 'dsh' : 'agh',
+      stars: 100 - id,
+      forks: 2,
+      issues: 3,
+      language: 'TypeScript',
+      license: 'MIT',
+      pushedAt: null,
+    })),
+  }
+  const fetcher = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('No external fetch expected'))
+  const catalog = vi.fn(async () => ({ items: [], nextCursor: null, community }))
+  const inspect = vi.fn()
+  const view = {
+    state: {
+      community,
+      catalog: [
+        {
+          id: '@example/official',
+          version: '1.0.0',
+          source: { type: 'file', ref: 'file:./official' },
+          sourceId: 'builtin-plugins',
+          integrity: `sha256-${'a'.repeat(64)}`,
+          license: 'MIT',
+          contributions: [],
+          compatibility: 'supported',
+          retrievedAt: new Date().toISOString(),
+        },
+      ],
+      installed: [],
+      loading: false,
+    },
+    api: { catalog },
+    refreshCommunity: catalog,
+    tab: 'discover',
+    query: '',
+    queryRaw: '',
+    kind: '',
+    t: (key: string) => key,
+    purposeText: (key: string) => key,
+    can: () => true,
+    canEffect: () => true,
+    inspecting: () => false,
+    inspectFailure: () => undefined,
+    primaryAction: () => ({ disabled: false, run: () => undefined }),
+    loadCatalog: vi.fn(),
+    inspect,
+  } as unknown as PluginView
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  try {
+    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    expect(host.querySelectorAll('[data-testid="market-list"]')).toHaveLength(1)
+    expect(host.querySelectorAll('[data-testid="market-card"]')).toHaveLength(1)
+    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(11)
+    expect(host.querySelectorAll('.community-market-topics a')).toHaveLength(0)
+    expect(host.textContent).not.toContain('community.coverage')
+    expect(host.textContent).not.toContain('community.updated')
+    const source = host.querySelector<HTMLSelectElement>('.plugin-source-filter select')!
+    await act(async () => {
+      source.value = 'community'
+      source.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(12)
+    expect(host.querySelectorAll('[data-testid="market-card"]')).toHaveLength(0)
+    expect(host.querySelector('.community-market-card p')?.textContent).toBe('<script>not markup</script>')
+    expect(host.querySelector('script')).toBeNull()
+    const views = host.querySelectorAll<HTMLButtonElement>('[data-testid="community-view"]')
+    await act(async () => views[0]?.click())
+    const details = () => document.querySelector('[data-testid="community-details"]')
+    await vi.waitFor(() => expect(details()).not.toBeNull())
+    expect(details()?.querySelectorAll('.community-market-topics a')).toHaveLength(20)
+    expect(details()?.textContent).toContain('<script>not markup</script>')
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('community.reviewRequired')
+    await act(async () =>
+      document.querySelector<HTMLButtonElement>('[aria-label="community.close"]')?.click(),
+    )
+    await vi.waitFor(() => expect(details()).toBeNull())
+    await vi.waitFor(() => expect(document.activeElement).toBe(views[0]))
+    await act(async () => views[1]?.click())
+    const check = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+      (button) => button.textContent === 'community.check',
+    )
+    await act(async () => check?.click())
+    expect(inspect).toHaveBeenCalledWith(
+      { type: 'git', ref: 'git:https://github.com/author/repo-1.git' },
+      'install',
+      check,
+    )
+    const next = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'market.more',
+    )!
+    await act(async () => next.click())
+    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(13)
+    view.query = 'repo-5'
+    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    expect(host.querySelectorAll('[data-testid="community-card"]')).toHaveLength(1)
+    expect(host.textContent).toContain('author/repo-5')
+    view.query = 'no-match'
+    view.state.community = { ...community, state: 'syncing' }
+    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    expect(host.textContent).toContain('market.none')
+    expect(host.textContent).not.toContain('market.loading')
+    view.state.community = { ...community, items: [], state: 'syncing' }
+    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    expect(host.textContent).toContain('market.none')
+    view.state.community = { ...community, items: [], state: 'pending', lastSuccessAt: null }
+    flushSync(() => root.render(createElement(MarketTab, { view, t: (key) => key })))
+    expect(host.textContent).toContain('market.loading')
+    expect(fetcher).not.toHaveBeenCalled()
+    expect(catalog).not.toHaveBeenCalled()
+    await act(async () => window.dispatchEvent(new Event('focus')))
+    expect(catalog).toHaveBeenCalled()
+    expect(fetcher).not.toHaveBeenCalled()
+  } finally {
+    flushSync(() => root.unmount())
+    fetcher.mockRestore()
   }
 })
 

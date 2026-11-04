@@ -4,6 +4,16 @@ export type { DecisionPresentation, ToolPresentation } from '../gen/ts/session-v
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
 export {
+  isSkillBundleIgnored,
+  isSkillBundleMarker,
+  isSkillBundlePath,
+  SKILL_BUNDLE_FRONTMATTER_KEYS,
+  SKILL_BUNDLE_LIMITS,
+  SKILL_BUNDLE_MARKER,
+  SKILL_BUNDLE_VERSION,
+  skillBundleFileKind,
+} from './skill-bundle.js'
+export {
   boundedUiJson,
   componentDataValid,
   uiDataBinding,
@@ -493,6 +503,9 @@ export type {
   RuntimePinReleaseResult,
   SessionGenerationMigrationParams,
   SessionGenerationMigrationResult,
+  SkillEnvironmentRequirement,
+  SkillImportParams,
+  SkillImportResult,
   SkinListResult,
   SkinReadParams,
   SkinReadResult,

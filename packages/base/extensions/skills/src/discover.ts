@@ -119,6 +119,7 @@ export type SkillCandidate = Readonly<{
   /** Host-private absolute base directory, told to the model so it can read files and run scripts. */
   directory?: string
   invocation: SkillInvocation
+  reviewRequired?: boolean
 }>
 /**
  * Why a whole root scan was rejected. The code names a reason only — never a path, a directory name or
@@ -475,11 +476,27 @@ export async function discoverSkillRoot(
       // An earlier directory, or a directory over a single file, shadows a same-name Skill.
       if (earlier && (earlier.dir !== dirIndex || single)) continue
       if (!earlier) admitted.set(outcome.candidate.normalizedName, { dir: dirIndex, single })
-      const files = read.skillDir ? await collectSkillFiles(fs, read.skillDir, read.skillReal) : []
+      let files: readonly SkillFile[]
+      try {
+        files = read.skillDir ? await collectSkillFiles(fs, read.skillDir, read.skillReal) : []
+      } catch {
+        skip('skill-file-unreadable')
+        progress?.reject({ code: 'skill-file-unreadable', stage: 'read' }, false)
+        continue
+      }
+      if (
+        files.some((file) => file.relativePath === 'AGH-SKILL.json') &&
+        !parseSkillDocument(read.source, undefined, true)
+      ) {
+        skip('invalid-frontmatter')
+        progress?.reject({ code: 'invalid-frontmatter', stage: 'parse' })
+        continue
+      }
       candidates.push(
         Object.freeze({
           ...outcome.candidate,
           revision: skillRevision(read.source, files),
+          ...(files.some((file) => file.relativePath === 'AGH-SKILL.json') ? { reviewRequired: true } : {}),
           ...(files.length ? { files } : {}),
           // A single-file Skill has no directory of its own: its parent is the whole root, and
           // naming that would open every sibling Skill to whoever reads this one.

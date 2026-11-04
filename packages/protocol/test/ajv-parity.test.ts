@@ -8533,6 +8533,9 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageActivationRequest: PackageAdminGen.PackageActivationRequest,
     PackageRollbackTarget: PackageAdminGen.PackageRollbackTarget,
     PackageAdminContext: PackageAdminGen.PackageAdminContext,
+    SkillImportParams: PackageAdminGen.SkillImportParams,
+    SkillImportResult: PackageAdminGen.SkillImportResult,
+    SkillEnvironmentRequirement: PackageAdminGen.SkillEnvironmentRequirement,
     PackageSource: PackageAdminGen.PackageSource,
     PluginCapabilities: PackageAdminGen.PluginCapabilities,
     ClientModuleListParams: PackageAdminGen.ClientModuleListParams,
@@ -8746,6 +8749,11 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/packages.skillImport': {
+    fileId: 'https://agnes.ai/schema/package-admin.json',
+    params: 'SkillImportParams',
+    result: 'SkillImportResult',
+  },
   '_agnes/v1/agents.resolve': { fileId: AGENTS_ID, params: 'AgentResolveParams', result: 'AgentPlan' },
   '_agnes/v1/applications.get': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
@@ -9763,6 +9771,17 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/packages.skillImport': {
+    valid: {
+      profile: 'local-dev',
+      clientId: 'cli',
+      commandId: 'prepare-1',
+      action: 'prepare',
+      source: { type: 'path', ref: 'path:./fixture' },
+    },
+    invalid: [{}, { profile: 'local-dev', action: 'execute' }],
+    note: 'Explicit managed Skill import',
+  },
   '_agnes/v1/agents.resolve': {
     valid: { ref: 'acme/kit#work' },
     invalid: [{}, { ref: 1 }, { ref: 'x', actor: 'forged' }],
@@ -10636,6 +10655,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/packages.skillImport': {
+    valid: { state: 'selection_required', candidates: ['archify'] },
+    invalid: [{ state: 'executed' }, { state: 'prepared', actor: 'forged' }],
+    note: 'Import state is separate from functional compatibility',
+  },
   '_agnes/v1/session.integrity': {
     valid: { state: 'failed', verifiedThroughSeq: 0, lastSeq: 50, legacyThroughSeq: 0, failureSeq: 7 },
     invalid: [

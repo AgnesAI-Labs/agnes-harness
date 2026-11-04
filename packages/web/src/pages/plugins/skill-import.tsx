@@ -1,0 +1,262 @@
+import type { SkillImportResult } from '@agnes/protocol'
+import { Button, Dialog, MetaText, SettingsDetails, SettingsState, SettingsToolbar } from '@agnes/web-ui'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { PluginView } from './admin-view.js'
+
+type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
+const pending = (result?: SkillImportResult) => result?.state === 'running'
+
+/** Explicit community-install progress is the scoped product exception to page-based editing. */
+function useSkillInstall({
+  view,
+  initialSource,
+  onClose,
+}: {
+  view: PluginView
+  initialSource: string
+  t: Text
+  onClose(): void
+}) {
+  const [result, setResult] = useState<SkillImportResult>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const api = view.api
+  const current = useRef<SkillImportResult>()
+  const active = useRef(false)
+  const accept = useCallback((next: SkillImportResult) => {
+    current.current = next
+    setResult(next)
+  }, [])
+  const cancel = useCallback(
+    async (value = current.current) => {
+      if (value?.proposalId && ['prepared', 'running'].includes(value.state))
+        await api?.skillImport({ action: 'cancel', proposalId: value.proposalId })
+    },
+    [api],
+  )
+  useEffect(() => {
+    if (!api) return
+    let mounted = true
+    active.current = true
+    setBusy(true)
+    void api
+      .skillImport({
+        action: 'check',
+        source: { type: 'git', ref: initialSource },
+        scope: 'user',
+        enable: false,
+      })
+      .then((next) => {
+        if (mounted) accept(next)
+        else if (next.proposalId)
+          void api.skillImport({ action: 'cancel', proposalId: next.proposalId }).catch(() => undefined)
+      })
+      .catch(() => {
+        if (mounted) setError('skill.import.failed')
+      })
+      .finally(() => {
+        if (mounted) setBusy(false)
+      })
+    return () => {
+      mounted = false
+      active.current = false
+      void cancel().catch(() => undefined)
+    }
+  }, [api, initialSource, accept, cancel])
+  useEffect(() => {
+    if (error || result?.state !== 'running' || !result?.proposalId || !api) return
+    const proposalId = result.proposalId
+    let mounted = true
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      try {
+        const next = await api.skillImport({ action: 'status', proposalId })
+        if (!mounted) return
+        accept(next)
+        if (pending(next) && next.proposalId === proposalId) timer = setTimeout(poll, 700)
+      } catch {
+        if (mounted) setError('skill.import.failed')
+      }
+    }
+    timer = setTimeout(poll, 300)
+    return () => {
+      mounted = false
+      clearTimeout(timer)
+    }
+  }, [api, result?.state, result?.proposalId, error, accept])
+  const run = async (action: 'check' | 'commit', subdirectory?: string) => {
+    if (!api || busy) return
+    const value = current.current
+    if (action === 'commit' && (value?.state !== 'prepared' || !value.proposalId || !value.digest)) return
+    setBusy(true)
+    setError('')
+    try {
+      if (action === 'check') await cancel(value)
+      const next = await api.skillImport(
+        action === 'check'
+          ? {
+              action,
+              source: value?.resolvedSource ?? { type: 'git', ref: initialSource },
+              ...(subdirectory ? { subdirectory } : {}),
+              scope: 'user',
+              enable: false,
+            }
+          : {
+              action,
+              ...(value?.proposalId ? { proposalId: value.proposalId } : {}),
+              ...(value?.digest ? { expectedDigest: value.digest } : {}),
+            },
+      )
+      if (active.current) accept(next)
+      else await cancel(next)
+    } catch {
+      if (active.current) setError('skill.import.failed')
+    } finally {
+      if (active.current) setBusy(false)
+    }
+  }
+  const close = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await cancel()
+      onClose()
+    } catch {
+      setError('skill.import.failed')
+      setBusy(false)
+    }
+  }
+  const phase = result?.phase
+  const checking =
+    pending(result) && ['acquiring', 'identifying', 'validating', 'environment'].includes(phase ?? '')
+  const retry = () => {
+    if (error && pending(result)) setError('')
+    else void run('check')
+  }
+  return { result, busy, error, checking, phase, run, close, retry }
+}
+
+export function SkillInstallDialog(props: Parameters<typeof useSkillInstall>[0]) {
+  const { t } = props
+  const flow = useSkillInstall(props)
+  const { result, busy, error, checking, phase, run, close } = flow
+  const reasonKey = `skill.import.reason.${result?.message}`
+  const reason = t(reasonKey) === reasonKey ? t('skill.import.failed') : t(reasonKey)
+  return (
+    <Dialog
+      open
+      size="lg"
+      title={t('skill.import.title')}
+      className="skill-install-dialog"
+      onCancel={() => void close()}
+      closable={!busy}
+      keyboard={!busy}
+      mask={{ closable: false }}
+      footer={<SkillInstallActions {...flow} t={t} />}
+    >
+      <div aria-live="polite" aria-busy={busy || pending(result)}>
+        <ol className="skill-install-steps" aria-label={t('skill.import.progress')}>
+          {['check', 'review', 'install', 'done'].map((step, index) => (
+            <li
+              key={step}
+              aria-current={
+                index ===
+                (!result || checking
+                  ? 0
+                  : result.state === 'prepared' || result.state === 'selection_required'
+                    ? 1
+                    : pending(result)
+                      ? 2
+                      : 3)
+                  ? 'step'
+                  : undefined
+              }
+            >
+              {t(`skill.import.step.${step}`)}
+            </li>
+          ))}
+        </ol>
+        {(!result || checking) && !error && (
+          <SettingsState tone="loading">{t(`skill.import.phase.${phase ?? 'acquiring'}`)}</SettingsState>
+        )}
+        {error && <SettingsState tone="error">{t(error)}</SettingsState>}
+        {result && (
+          <>
+            <p>
+              <strong>{result.name}</strong> {!checking && t(`skill.import.state.${result.state}`)}
+            </p>
+            {result.description && <p>{result.description}</p>}
+            {result.message && (
+              <SettingsState tone={result.state === 'failed' ? 'error' : 'empty'}>{reason}</SettingsState>
+            )}
+            {result.state === 'selection_required' && !result.candidates?.length && (
+              <p>{t('skill.import.noSkills')}</p>
+            )}
+            {result.candidates?.map((candidate) => (
+              <Button key={candidate} disabled={busy} onClick={() => void run('check', candidate)}>
+                {candidate || '/'}
+              </Button>
+            ))}
+            {result.state === 'prepared' && <p>{t('skill.import.help')}</p>}
+            {result.environment && (
+              <>
+                <h4>{t('skill.import.environment')}</h4>
+                <ul>
+                  {result.environment.map((item) => (
+                    <li key={`${item.name}-${item.evidence}`}>
+                      {item.name}
+                      {item.required ? ` ${item.required}` : ''}：{t(`skill.import.env.${item.state}`)}
+                      {item.actual ? ` (${item.actual})` : ''}
+                    </li>
+                  ))}
+                </ul>
+                <MetaText>{t('skill.import.unverified')}</MetaText>
+              </>
+            )}
+            {result.files && (
+              <SettingsDetails
+                title={t('skill.import.files', { count: result.fileCount ?? result.files.length })}
+              >
+                <ul className="skill-import-files">
+                  {result.files.map((file) => (
+                    <li key={file}>{file}</li>
+                  ))}
+                </ul>
+                <MetaText>{result.digest}</MetaText>
+                <MetaText>{result.resolvedSource?.ref}</MetaText>
+              </SettingsDetails>
+            )}
+          </>
+        )}
+      </div>
+    </Dialog>
+  )
+}
+
+function SkillInstallActions({
+  result,
+  busy,
+  error,
+  run,
+  close,
+  retry,
+  t,
+}: ReturnType<typeof useSkillInstall> & { t: Text }) {
+  return (
+    <SettingsToolbar>
+      <Button disabled={busy} onClick={() => void close()}>
+        {t(result?.state === 'prepared' || pending(result) ? 'skill.import.cancel' : 'skill.import.close')}
+      </Button>
+      {result?.state === 'prepared' && !error && (
+        <Button appearance="primary" disabled={busy} onClick={() => void run('commit')}>
+          {t('skill.import.confirm')}
+        </Button>
+      )}
+      {(error || result?.state === 'failed' || result?.state === 'cancelled') && (
+        <Button disabled={busy} onClick={retry}>
+          {t('skill.import.retry')}
+        </Button>
+      )}
+    </SettingsToolbar>
+  )
+}

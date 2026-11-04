@@ -1,8 +1,7 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as P from '../gen/ts/package-admin.js'
-import { contract } from './admin-contract.js'
-import { inspectJsonData } from './json-data.js'
-import { type ValidationResult, validateAgainst } from './validate.js'
+import { checkAdminData as check, contract } from './admin-contract.js'
+import type { ValidationResult } from './validate.js'
 
 /** Browser client-module slots currently backed by a real Web host outlet. */
 export const WEB_CLIENT_MODULE_SLOT_NAMES = Object.freeze([
@@ -558,6 +557,12 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'effect',
     'packages.trust',
   ),
+  '_agnes/v1/packages.skillImport': contract(
+    P.SkillImportParams,
+    P.SkillImportResult,
+    'effect',
+    'packages.install',
+  ),
   '_agnes/v1/plugins.tree.get': contract(P.PackageListParams, P.PluginTreeView, 'read', 'packages.read'),
   '_agnes/v1/plugins.publicationStatus': contract(
     P.PackageListParams,
@@ -628,9 +633,8 @@ export function canAccessPackageAdmin(
 
 // Written out explicitly, rather than derived as `keyof typeof DATA_SCHEMAS`, for the same reason
 // MethodName is in methods.ts: once the object literal grows past a certain size, tsc's declaration
-// emit hits TS7056 ("inferred type ... exceeds the maximum length the compiler will serialize")
-// trying to print the whole literal type. An explicit annotation on the table sidesteps that by
-// giving tsc a short type reference (`Record<PackageAdminDataName, TSchema>`) to print instead.
+// emit hits TS7056 ("inferred type ... exceeds the maximum length the compiler will serialize"). An
+// explicit `Record<PackageAdminDataName, TSchema>` annotation gives tsc a short type reference instead.
 export type PackageAdminDataName =
   | 'PresentationRoleSelection'
   | 'PresentationRoleSelections'
@@ -716,6 +720,8 @@ export type PackageAdminDataName =
   | 'PackagePinsReleaseResult'
   | 'PackageTrustWorkspaceParams'
   | 'PackageTrustWorkspaceResult'
+  | 'SkillImportParams'
+  | 'SkillImportResult'
   | 'PluginTreeArtifact'
   | 'PluginTreeApplyParams'
   | 'PluginTreeRollbackParams'
@@ -811,6 +817,8 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PackagePinsReleaseResult: P.PackagePinsReleaseResult,
   PackageTrustWorkspaceParams: P.PackageTrustWorkspaceParams,
   PackageTrustWorkspaceResult: P.PackageTrustWorkspaceResult,
+  SkillImportParams: P.SkillImportParams,
+  SkillImportResult: P.SkillImportResult,
   PluginTreeArtifact: P.PluginTreeArtifact,
   PluginTreeApplyParams: P.PluginTreeApplyParams,
   PluginTreeRollbackParams: P.PluginTreeRollbackParams,
@@ -819,12 +827,6 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PluginTreeRollbackResult: P.PluginTreeRollbackResult,
   ClientModuleRosterRow: P.ClientModuleRosterRow,
   ClientModuleEffectCallParams: P.ClientModuleEffectCallParams,
-}
-function check(schema: TSchema, value: unknown, maxBytes = 1048576): ValidationResult<unknown> {
-  const inspected = inspectJsonData(value, maxBytes)
-  if (!inspected.ok)
-    return { ok: false, errors: [{ path: '', code: 'TYPE', message: 'expected bounded strict JSON data' }] }
-  return validateAgainst(schema, inspected.value)
 }
 export function validatePackageAdminData(
   name: PackageAdminDataName,

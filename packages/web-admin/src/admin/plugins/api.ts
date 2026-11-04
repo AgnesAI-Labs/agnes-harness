@@ -41,6 +41,7 @@ const pendingContexts = new WeakMap<FetchLike, Promise<AdminContext>>()
 type AdminOverview = { context: AdminContext; inventory?: PackageListResult }
 const pendingOverviews = new WeakMap<FetchLike, Promise<AdminOverview>>()
 const METHOD_BY_PATH = {
+  'skills/import': '_agnes/v1/packages.skillImport',
   'candidates/list': '_agnes/v1/plugins.candidates.list',
   'candidates/show': '_agnes/v1/plugins.candidates.show',
   'candidates/create': '_agnes/v1/plugins.candidates.create',
@@ -539,6 +540,9 @@ export class PluginAdminApi {
       ...(query ? { query } : {}),
       ...(cursor ? { cursor } : {}),
       limit: 50,
+      ...(this.#context.features?.includes('packages.community-discovery.v1')
+        ? { includeCommunity: true }
+        : {}),
     })
   }
 
@@ -552,6 +556,14 @@ export class PluginAdminApi {
 
   async inspect(source: PackageSource): Promise<PackageOperationReceipt> {
     return this.#effect('inspect', { source })
+  }
+
+  async skillImport(
+    input: Omit<import('@agnes/protocol').SkillImportParams, 'profile' | 'clientId' | 'commandId'>,
+  ): Promise<import('@agnes/protocol').SkillImportResult> {
+    if (!this.#context.features?.includes('packages.skill-import.v1'))
+      throw new Error('SKILL_IMPORT_UNAVAILABLE')
+    return this.#effect('skills/import', input)
   }
 
   async install(source: PackageSource, expectedIntegrity: string): Promise<PackageOperationReceipt> {

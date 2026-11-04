@@ -540,6 +540,10 @@ it('recognizes help before forwarding commands and leaves stdio arguments as dat
 })
 
 it('keeps candidate review digests supplied by the human instead of selecting the latest draft', () => {
+  expect(
+    parseArgs(['plugins', 'skill-import', 'commit', 'skill-install-fixture', 'a'.repeat(64)]).positional,
+  ).toEqual(['skill-import', 'commit', 'skill-install-fixture', 'a'.repeat(64)])
+  expect(usage()).toContain('plugins skill-import prepare')
   const candidateHash = 'sha256-' + 'a'.repeat(64),
     reviewHash = 'sha256-' + 'b'.repeat(64)
   expect(

@@ -1,7 +1,8 @@
 // One way to open something (owner 2026-10-14, DESIGN.md 「v4 交互规范」): a page pushed in place, or
 // a one-question ConfirmDialog. No right-side drawers and no large form dialogs. The files that still
 // open a Drawer, Dialog or Modal are listed with a ceiling that only goes down; a new file or one more
-// use fails. Removing a use needs no edit here, so windows converting pages in parallel never conflict.
+// use fails. Community detail and its explicit check/install progress window are scoped product exceptions.
+// Removing a use needs no edit here, so windows converting pages in parallel never conflict.
 import { readFileSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { describe, expect, it } from 'vitest'

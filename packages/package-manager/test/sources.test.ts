@@ -793,13 +793,21 @@ describe('fetchSource', () => {
     },
   )
 
-  it.each(['valid', 'manifest-missing', 'manifest-invalid', 'git-fetch'] as const)(
+  it.each(['valid', 'manifest-missing', 'manifest-invalid', 'git-fetch', 'cancelled'] as const)(
     'fetches a pinned Git source or classifies its refusal (%s)',
     async (outcome) => {
       const commit = '0123456789012345678901234567890123456789'
       const calls: string[][] = []
-      const exec: ExecFn = async (_command, args) => {
+      const controller = new AbortController()
+      const exec: ExecFn = async (_command, args, options) => {
         calls.push([...args])
+        if (outcome === 'cancelled' && args.includes('fetch')) {
+          if (!options.signal) throw new Error('Git cancellation was not connected')
+          return new Promise((_, reject) => {
+            options.signal?.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })
+            queueMicrotask(() => controller.abort())
+          })
+        }
         if (outcome === 'git-fetch' && args.includes('fetch')) throw new Error('private Git stderr')
         const at = args.indexOf('-C')
         const checkout = args.includes('checkout')
@@ -817,8 +825,14 @@ describe('fetchSource', () => {
       const fetching = fetchSource(parseSource(`git:https://example.com/x.git#${commit}`), into, {
         cwd: dir,
         exec,
+        signal: controller.signal,
         npmProvenance: async () => undefined,
       })
+      if (outcome === 'cancelled') {
+        await expect(fetching).rejects.toMatchObject({ code: 'E_PACKAGE_CANCELLED' })
+        expect(existsSync(into)).toBe(false)
+        return
+      }
       if (outcome !== 'valid') {
         await expect(fetching).rejects.toMatchObject({
           code: 'E_PACKAGE_SOURCE',

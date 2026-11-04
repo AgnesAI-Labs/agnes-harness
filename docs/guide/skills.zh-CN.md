@@ -8,6 +8,27 @@
 
 Skill 提供任务说明与资源，不等于执行权限。AGH 发现候选、审核版本、选择同名胜出项，再向会话暴露可用内容；不能只因磁盘上存在文件就声称模型已读取。
 
+## 导入完整 Skill
+
+在 **插件 → 市场** 打开社区仓库详情，点击“检查并安装”。安装窗口会自动启动后台检查，展示当前阶段、内容审查和安装结果；只有一个技能时自动选择，多个时由你选择。确认审查内容后才会安装。打开社区详情不会下载或执行来源；仓库标签不代表兼容性认证。CLI 还支持本地目录、归档和 `git:` / `url:` 来源。
+
+审查页展示完整文件列表、固定来源身份及已知解释器要求。这条路径保留 `scripts/` 外的脚本、模板、HTML、图片和许可证。上限为 2048 个文件、总量 32 MiB、单文件 8 MiB、16 层路径，并受来源获取层更严格的限制约束。链接、原生可执行文件、原生扩展、WASM 和不支持的文件会明确拒绝，不静默丢弃。请选择通用技能目录，不要导入其他宿主的激活 patch。
+
+安装不会执行包脚本、安装依赖或授予命令权限。新技能保持停用，请到 **插件 → 技能** 审查并启用。后端只探测固定解释器版本，未知依赖明确展示；环境检查通过不代表全部功能可用。脚本使用会话现有命令权限和沙箱，产物应写入任务工作区，不应修改已安装技能目录。
+
+完整导入的 frontmatter 支持 `name`、`description`、`license`、`metadata`、`compatibility` 及 AGH 既有调用标志。外部工具限制、模型、Hook 等未知行为字段会被拒绝，不静默删除，也不模拟其宿主。
+
+Node SDK 的 `client.packages.skillImport(...)` 对应 `_agnes/v1/packages.skillImport`；先检查 `initialize().features` 是否包含 `packages.skill-import.v1`。prepare 返回提案与摘要，commit 必须携带同一摘要；每个请求绑定当前初始化后的 clientId、profile 和 commandId，同一已认证操作者可以从同一 profile 的新 CLI 连接继续该提案。CLI 使用相同审查边界：
+
+```sh
+agh plugins skill-import prepare path:/absolute/path/to/repository skill-subdirectory
+agh plugins skill-import commit PROPOSAL_ID SHA256_FROM_PREPARE
+agh plugins skill-import status PROPOSAL_ID
+agh plugins skill-import cancel PROPOSAL_ID
+```
+
+SDK 本地来源 ref 使用正斜杠；CLI 和 Web 会转换 Windows 路径分隔符。以 `.` 开头的条目（如 `.git*`、`.DS_Store`）、`Thumbs.db` 和 `desktop.ini` 会被忽略，不会保留。完整导入会记录 `AGH-SKILL.json`，请将其与目录一同保留。所有保留资源参与审查修订，修改脚本、模板或标记都需要重新信任；普通本地维护技能保留原有编辑规则。同名替换会被拒绝；更换安装请使用既有受审查删除流程，此入口暂不执行原地升级，也不承诺运行中命令的版本租约。
+
 ## 让 Agent 创作 Skill
 
 例如：“创建一个简单的技能，叫数学老师skill。”Agent 使用 `math-teacher` 等 ASCII 目录标识；`SKILL.md` frontmatter 可以保留中文显示名，必须提供 `name` 和 `description`。

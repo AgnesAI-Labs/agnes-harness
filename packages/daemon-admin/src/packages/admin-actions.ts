@@ -34,6 +34,7 @@ export const ACTIONS = {
   'pins/inspect': '_agnes/v1/packages.pins.inspect',
   'pins/release': '_agnes/v1/packages.pins.release',
   'trust-workspace': '_agnes/v1/packages.trustWorkspace',
+  'skills/import': '_agnes/v1/packages.skillImport',
   'application/get': '_agnes/v1/applications.get',
   'application/preview': '_agnes/v1/applications.preview',
   'application/adopt': '_agnes/v1/applications.adopt',

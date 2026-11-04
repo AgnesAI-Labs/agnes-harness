@@ -116,6 +116,7 @@ export function canCombineUpdate(
   preview: import('@agnes/protocol').PackagePreview,
 ): boolean {
   return (
+    item.trusted &&
     page.supportsCompositeActivation() &&
     page.activeIntegrity(item) !== undefined &&
     !!preview.capabilityHash &&
