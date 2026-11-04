@@ -45,7 +45,8 @@ export type RunOptions = {
   dockerCommand?: string[]
 }
 
-export const runId = (taskId: string, setting: Setting, rep: number): string => `${taskId}.${setting}.r${rep}`
+export const runId = (taskId: string, setting: Setting | 'oracle', rep: number): string =>
+  `${taskId}.${setting}.r${rep}`
 
 export function primeSettings(setting: Setting, cfg: RunConfig): object {
   return {

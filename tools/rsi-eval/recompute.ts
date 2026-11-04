@@ -13,7 +13,7 @@ import { writeFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { buildReport, readRunRecords } from './report.js'
-import type { EvalTask, PromptWindow, RunRecord, Setting } from './types.js'
+import type { EvalTask, PromptWindow, RunRecord } from './types.js'
 
 export type ArmCounts = { runs: number; sessions: number; firstFailure: number; recurs: number }
 export type TaskRow = { taskId: string; on: ArmCounts; off: ArmCounts }
@@ -31,9 +31,11 @@ const emptyArm = (): ArmCounts => ({ runs: 0, sessions: 0, firstFailure: 0, recu
 export const taskRows = (records: RunRecord[]): TaskRow[] => {
   const rows = new Map<string, TaskRow>()
   for (const record of records) {
+    // Oracle runs have their own section in the report; this table is the on/off pair.
+    if (record.setting === 'oracle') continue
     const row = rows.get(record.taskId) ?? { taskId: record.taskId, on: emptyArm(), off: emptyArm() }
     rows.set(record.taskId, row)
-    const arm = row[record.setting as Setting]
+    const arm = row[record.setting]
     arm.runs++
     for (const windows of sessionsOf(record)) {
       const ran = windows.filter((w) => w.ran)

@@ -10,7 +10,7 @@
 //   pnpm --filter @agnes/system-node build:native
 //   export RSI_EVAL_API_KEY=...            # the variable named by keyEnv in the run config
 //   pnpm exec tsx tools/rsi-eval/agh/run-agh.ts --config <run-config.json> --out <dir> \
-//     [--tasks a,b] [--reps 3] [--settings on,off] [--tasks-dir <dir>]
+//     [--tasks a,b] [--reps 3] [--arms off,on,oracle] [--tasks-dir <dir>]
 //   pnpm exec tsx tools/rsi-eval/report.ts --run-dir <dir> --config <run-config.json>
 //
 // The run config is the one the Prime runner takes (run-config.example.json): the same route, model,
@@ -44,6 +44,12 @@
 // workspace afterwards. Both of its sessions use that one workspace, so the second session is a new
 // session where the saved skill is.
 // Off: no switch file at all, which is the default.
+// Oracle (opt-in with `--arms off,on,oracle`; `--settings` is the same option, older name, on and off only):
+// refinement off as in "off", and before the SECOND session starts, one paragraph taken from the task's
+// `trap.note` is written to that session's workspace memory, through the same edit the memory page makes.
+// The first session is the same as the off run's. It is the most a saved lesson could give the second
+// session, so it is the ceiling the "on" run is measured against (see capture.ts). Only for tasks of two
+// sessions that are not workflow tasks; the other tasks are skipped for this arm.
 //
 // No goal: the sessions are unattended and are given no goal. The goal extension has no quiet
 // way to set one: `/goal create` starts automatic rounds of its own on the main model (up to
@@ -76,7 +82,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
 import { readConfig, runId } from '../prime/run-prime.js'
 import { DEFAULT_FIXTURE, fixtureOf, taskFixtures, workspaceName } from '../suite.js'
-import type { EvalTask, RunConfig, RunOutcome, Setting } from '../types.js'
+import type { Arm, EvalTask, RunConfig, RunOutcome } from '../types.js'
 
 const defaultTasksDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'tasks')
 
@@ -147,6 +153,11 @@ export interface AghSession {
 export interface AghHost {
   /** Opens a session in `workspace`, one of the launch input's `workspaces`. */
   openSession(sessionKey: string, workspace: string): Promise<AghSession>
+  /**
+   * Adds a paragraph to the memory of one of the run's workspaces, as a person's own edit of it, in
+   * effect from the next session that opens there. Needed for the oracle arm only.
+   */
+  seedMemory?(workspace: string, text: string): Promise<void>
   close(): Promise<void>
   /** Every row of a session's ledger, read after `close`. */
   ledger(sessionKey: string): LedgerRow[]
@@ -181,12 +192,15 @@ export type AghArgs = {
   out: string
   tasks?: string[]
   reps: number
-  settings: Setting[]
+  /** The arms to run, in this order: `--arms`, or `--settings` (on and off only); `on,off` when neither is given. */
+  settings: Arm[]
   tasksDir: string
 }
 
+const ARMS: readonly Arm[] = ['on', 'off', 'oracle']
+
 export const USAGE =
-  'usage: run-agh.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 3] [--settings on,off] [--tasks-dir <dir>]'
+  'usage: run-agh.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 3] [--arms off,on,oracle] [--tasks-dir <dir>]'
 
 export function parseAghArgs(argv: string[]): AghArgs {
   const { values } = parseArgs({
@@ -196,21 +210,27 @@ export function parseAghArgs(argv: string[]): AghArgs {
       out: { type: 'string' },
       tasks: { type: 'string' },
       reps: { type: 'string', default: '3' },
-      settings: { type: 'string', default: 'on,off' },
+      settings: { type: 'string' },
+      arms: { type: 'string' },
       'tasks-dir': { type: 'string', default: defaultTasksDir },
     },
   })
   if (!values.config || !values.out) throw new Error(USAGE)
   const reps = Number(values.reps)
   if (!Number.isInteger(reps) || reps < 1) throw new Error('--reps must be a positive integer')
-  const settings = (values.settings as string).split(',').map((s) => s.trim())
-  for (const s of settings) if (s !== 'on' && s !== 'off') throw new Error(`unknown setting "${s}"`)
+  if (values.settings !== undefined && values.arms !== undefined)
+    throw new Error('--settings and --arms are the same option; give one of them')
+  const settings = (values.arms ?? values.settings ?? 'on,off').split(',').map((s) => s.trim())
+  for (const s of settings) {
+    if (values.arms !== undefined ? !ARMS.includes(s as Arm) : s !== 'on' && s !== 'off')
+      throw new Error(`unknown ${values.arms !== undefined ? 'arm' : 'setting'} "${s}"`)
+  }
   return {
     config: values.config,
     out: values.out,
     ...(values.tasks ? { tasks: values.tasks.split(',').map((s) => s.trim()) } : {}),
     reps,
-    settings: settings as Setting[],
+    settings: settings as Arm[],
     tasksDir: values['tasks-dir'] as string,
   }
 }
@@ -276,8 +296,18 @@ export function aghProfile(cfg: RunConfig, id: string): object {
   }
 }
 
-export const refinementSwitch = (setting: Setting): RefinementSwitch | undefined =>
+export const refinementSwitch = (setting: Arm): RefinementSwitch | undefined =>
   setting === 'on' ? { enabled: true, mode: 'auto' } : undefined
+
+/** The arm is for tasks of two sessions that are not workflow tasks: a lesson to carry, and no skill to hand-write. */
+export const oracleApplies = (task: EvalTask): boolean =>
+  task.sessions.length === 2 && task.category !== 'workflow'
+
+/**
+ * The paragraph the oracle arm writes to the second session's memory: the task's own one-line note of
+ * its rule. Never the checks or the solutions, which are what the work is measured against.
+ */
+export const oracleLesson = (task: EvalTask): string => task.trap.note.trim()
 
 /** The nearest directory above `path` (or `path` itself) that holds `.git`, if any. */
 export function gitAncestor(path: string): string | undefined {
@@ -319,7 +349,7 @@ const defaultCheck: CheckRun = async (check, cwd, home, timeoutMs) => {
 
 export async function runOne(
   task: EvalTask,
-  setting: Setting,
+  setting: Arm,
   rep: number,
   cfg: RunConfig,
   outDir: string,
@@ -329,6 +359,8 @@ export async function runOne(
   const runDir = resolve(outDir, id)
   const outcomeFile = join(runDir, 'outcome.json')
   if (existsSync(outcomeFile)) return JSON.parse(readFileSync(outcomeFile, 'utf8')) as RunOutcome
+  if (setting === 'oracle' && !oracleApplies(task))
+    throw new Error(`task ${task.id} has no oracle arm: it needs two sessions and is not a workflow task`)
 
   const fixtureDir = opts.fixtureDir ?? join(defaultTasksDir, task.id, 'fixture')
   const workBase = realpathSync(opts.workBase ?? tmpdir())
@@ -373,6 +405,11 @@ export async function runOne(
       for (let i = 0; i < task.sessions.length; i++) {
         const key = `rsi-eval-${id}-s${i + 1}`
         keys.push(key)
+        // The oracle arm's one difference from off: the lesson is in the second session's memory before it starts.
+        if (setting === 'oracle' && i === 1) {
+          if (!host.seedMemory) throw new Error('this host cannot seed memory, which the oracle arm needs')
+          await host.seedMemory(workOf(i), oracleLesson(task))
+        }
         const stdoutFile = join(runDir, `session${i + 1}.turns.jsonl`)
         const result = await runSession(
           host,
@@ -448,7 +485,7 @@ async function runSession(
   key: string,
   workspace: string,
   prompts: EvalTask['sessions'][number]['prompts'],
-  setting: Setting,
+  setting: Arm,
   cfg: RunConfig,
   logFile: string,
   endSave?: 'workspace' | 'user',
@@ -549,6 +586,10 @@ async function main(argv: string[]): Promise<void> {
     for (let rep = 1; rep <= args.reps; rep++) {
       for (const task of tasks) {
         for (const setting of args.settings) {
+          if (setting === 'oracle' && !oracleApplies(task)) {
+            if (rep === 1) console.error(`skipped ${task.id}: no oracle arm for this task`)
+            continue
+          }
           const id = runId(task.id, setting, rep)
           const fresh = !existsSync(join(out, id, 'outcome.json'))
           const outcome = await runOne(task, setting, rep, cfg, out, {

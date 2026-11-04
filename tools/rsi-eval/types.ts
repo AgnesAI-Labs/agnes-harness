@@ -10,6 +10,13 @@ export type Category =
 
 export type Setting = 'on' | 'off'
 
+/**
+ * What a run is measured as: `on` and `off` are the refinement switch. `oracle` is `off` plus one
+ * paragraph taken from the task's `trap.note`, written to the second session's workspace memory before
+ * that session starts. Only the AGH runner has it.
+ */
+export type Arm = Setting | 'oracle'
+
 export type EvalPrompt = {
   text: string
   /** Run after all sessions end, inside the task workspace. */
@@ -104,11 +111,18 @@ export type WorkflowReuse = {
   matching: number
 }
 
+/**
+ * What one session cost, summed from the rows of its ledger (every lane). `lowerBound`: the session had
+ * child sessions whose cost is not in this ledger, or a row without a price, so the figures are at least
+ * this much.
+ */
+export type SessionCost = { requests: number; tokens: number; cost: number; lowerBound: boolean }
+
 export type RunRecord = {
   system: 'prime' | 'agh'
   taskId: string
   category: Category
-  setting: Setting
+  setting: Arm
   rep: number
   exit: 'ok' | 'error' | 'timeout'
   windows: PromptWindow[]
@@ -118,4 +132,6 @@ export type RunRecord = {
   usage: { requests: number; unknown: number; tokens: number; costUsd: number }
   alignment?: Alignment
   workflowReuse?: WorkflowReuse
+  /** AGH runs: the cost of each session of the task, in order. */
+  sessionCosts?: SessionCost[]
 }

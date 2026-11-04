@@ -6,10 +6,11 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { AGH_DIR } from '../../packages/protocol/src/constants.js'
-import { runMetrics, toRunRecord, type UsageSummary, workflowReuseMetric } from './metrics.js'
+import { type CaptureResult, captureMetric } from './capture.js'
+import { runMetrics, sessionCost, toRunRecord, type UsageSummary, workflowReuseMetric } from './metrics.js'
 import { type Diff, pairedTaskBootstrap } from './stats.js'
 import { fixtureOf, workspaceName } from './suite.js'
-import type { EvalTask, RunConfig, RunOutcome, RunRecord, Setting, UsageRow } from './types.js'
+import type { Arm, EvalTask, RunConfig, RunOutcome, RunRecord, SessionCost, UsageRow } from './types.js'
 import { readSkillTexts } from './workflow-reuse.js'
 
 export type ReportOptions = { resamples?: number; seed?: number }
@@ -53,7 +54,7 @@ const exclusionOf = (perTask: (number | null)[][]): Exclusion => ({
   of: perTask.reduce((sum, values) => sum + values.length, 0),
 })
 
-const bySetting = (records: RunRecord[], setting: Setting): RunRecord[] =>
+const bySetting = (records: RunRecord[], setting: Arm): RunRecord[] =>
   records.filter((r) => r.setting === setting)
 
 const DIRECTIONS = {
@@ -67,6 +68,8 @@ const DIRECTIONS = {
     "Share of the second session's `workflow` calls (a new session in the same workspace) whose definition, normalised, equals one the first session saved as a skill in that workspace. Per setting, not a difference. Only workflow tasks; runs whose first session never completed a `workflow` run are excluded, runs where the workspace holds no skill with a workflow definition count as nothing saved, or as save refused when the host refused the workspace save.",
   costOverhead:
     '(on minus off) divided by off, per task then averaged. Positive means refinement costs more; 0.25 is 25 percent more.',
+  secondSession:
+    "What the second session of a two-session task costs (model requests, tokens, dollars; every lane of its ledger, the review calls included), per arm: off, on, and oracle (off plus the task's own lesson written to memory before that session). Differences are off minus the other arm, so positive means the other arm is cheaper. Capture rate = sum of (off minus on) over sum of (off minus oracle), over the tasks whose off-minus-oracle 95% interval lies above 0; the others are counted as no headroom. Single-session and workflow tasks do not enter.",
 } as const
 
 const CRITERION_1_RULE = 'repeat-error difference (off minus on) is above 0 and its 95% interval excludes 0'
@@ -145,6 +148,54 @@ const workflowReuseSummary = (runs: RunRecord[]) => {
   }
 }
 
+const secondSessionMeasure = (r: CaptureResult) => ({
+  mean: r.means,
+  offMinusOn: diffJson(r.offMinusOn),
+  offMinusOracle: diffJson(r.offMinusOracle),
+  captureRate: r.capture.rate,
+  included: r.capture.included,
+  noHeadroom: r.capture.noHeadroom,
+  tooFewRuns: r.capture.tooFewRuns,
+  noOnRuns: r.capture.noOnRuns,
+})
+
+const SECOND_SESSION_MEASURES = ['requests', 'tokens', 'cost'] as const
+type Measure = (typeof SECOND_SESSION_MEASURES)[number]
+
+type SecondSessionRuns = { record: RunRecord; cost: SessionCost }
+
+/**
+ * The second session of the two-session tasks, per arm, and the capture rate. Only runs with a recorded
+ * cost for their second session enter (a single-session task has none; workflow tasks are left out).
+ */
+const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
+  const runs: SecondSessionRuns[] = records.flatMap((record) => {
+    const cost = record.category === 'workflow' ? undefined : sessionCost(record, 1)
+    return cost ? [{ record, cost }] : []
+  })
+  if (runs.length === 0) return undefined
+  const byTask = groupBy(runs, (r) => r.record.taskId)
+  const measure = (name: Measure): CaptureResult =>
+    captureMetric(
+      [...byTask].map(([taskId, list]) => {
+        const values = (arm: Arm) => list.filter((r) => r.record.setting === arm).map((r) => r.cost[name])
+        return { taskId, off: values('off'), on: values('on'), oracle: values('oracle') }
+      }),
+      options,
+    )
+  const arms = (arm: Arm) => runs.filter((r) => r.record.setting === arm).length
+  const measures = Object.fromEntries(
+    SECOND_SESSION_MEASURES.map((name) => [name, secondSessionMeasure(measure(name))]),
+  ) as Record<Measure, ReturnType<typeof secondSessionMeasure>>
+  return {
+    direction: DIRECTIONS.secondSession,
+    tasks: byTask.size,
+    runs: { off: arms('off'), on: arms('on'), oracle: arms('oracle') },
+    lowerBoundRuns: runs.filter((r) => r.cost.lowerBound).length,
+    measures,
+  }
+}
+
 const systemReport = (records: RunRecord[], options: ReportOptions) => {
   const on = bySetting(records, 'on')
   const off = bySetting(records, 'off')
@@ -200,6 +251,8 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
 
   const workflowRuns = records.filter((r) => r.workflowReuse !== undefined)
 
+  const second = secondSessionReport(records, options)
+
   const lower = drop.ci95[0]
   const criterion1 = drop.tasks > 0 && drop.estimate > 0 && lower > 0
 
@@ -243,6 +296,7 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
       tokens: { relative: diffJson(tokens.diff), pooled: tokens.pooled, skippedTasks: tokens.skippedTasks },
       costUsd: { relative: diffJson(cost.diff), pooled: cost.pooled, skippedTasks: cost.skippedTasks },
     },
+    ...(second ? { secondSession: second } : {}),
     criterion1: {
       rule: CRITERION_1_RULE,
       metric: 'repeatErrorDrop',
@@ -276,6 +330,56 @@ const workflowReuseMarkdown = (w: NonNullable<SystemReport['workflowReuse']>): s
     ...side('Off', w.off),
     '',
   ]
+}
+
+const fmtMean = (value: number | null, measure: Measure): string =>
+  value === null ? 'n/a' : measure === 'cost' ? value.toFixed(4) : value.toFixed(1)
+const fmtMeasureDiff = (d: DiffJson, measure: Measure): string =>
+  d.estimate === null
+    ? 'n/a (no task has runs of both arms)'
+    : `${fmtMean(d.estimate, measure)} (95% CI ${fmtMean(d.ci95[0], measure)} to ${fmtMean(d.ci95[1], measure)}; ${d.tasks} tasks)`
+
+const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): string[] => {
+  const lines = [
+    '### 4. Second-session cost and capture rate',
+    '',
+    `Direction: ${s.direction}`,
+    '',
+    `${s.tasks} two-session tasks; runs with a recorded second session: ${s.runs.off} off, ${s.runs.on} on, ${s.runs.oracle} oracle.`,
+    '',
+    '| measure | off | on | oracle | off minus on | off minus oracle | capture rate |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+  ]
+  for (const name of SECOND_SESSION_MEASURES) {
+    const m = s.measures[name]
+    lines.push(
+      `| ${name} | ${fmtMean(m.mean.off, name)} | ${fmtMean(m.mean.on, name)} | ${fmtMean(m.mean.oracle, name)} | ${fmtMeasureDiff(m.offMinusOn, name)} | ${fmtMeasureDiff(m.offMinusOracle, name)} | ${m.captureRate === null ? 'n/a' : m.captureRate.toFixed(3)} |`,
+    )
+  }
+  lines.push('')
+  for (const name of s.runs.oracle === 0 ? [] : SECOND_SESSION_MEASURES) {
+    const m = s.measures[name]
+    const list = (ids: string[]) => (ids.length === 0 ? 'none' : ids.join(', '))
+    lines.push(
+      `- ${name}: capture rate over ${m.included.length} tasks. No headroom (the hand-written lesson does not save: off minus oracle interval not above 0), counted and left out: ${m.noHeadroom.length} (${list(m.noHeadroom)}). Too few off or oracle runs to judge: ${m.tooFewRuns.length} (${list(m.tooFewRuns)}). Headroom but no refinement run: ${m.noOnRuns.length} (${list(m.noOnRuns)}).`,
+    )
+  }
+  lines.push('')
+  if (s.runs.oracle === 0)
+    lines.push(
+      'No oracle runs: the oracle column and the capture rate need runs with `--arms off,on,oracle`.',
+      '',
+    )
+  if (s.lowerBoundRuns > 0)
+    lines.push(
+      `${s.lowerBoundRuns} runs have a second session whose child sessions (or an unpriced request) are not in its ledger, so their figures are lower bounds.`,
+      '',
+    )
+  lines.push(
+    'Refinement is run as the Prime runs are: one manual review after every prompt, so the on column costs more than real use would.',
+    '',
+  )
+  return lines
 }
 
 const systemMarkdown = (name: string, r: SystemReport): string[] => {
@@ -331,6 +435,7 @@ const systemMarkdown = (name: string, r: SystemReport): string[] => {
     `- Tokens, mean per-task overhead: ${fmtDiff(r.costOverhead.tokens.relative)}; pooled ${fmt(r.costOverhead.tokens.pooled)}; ${r.costOverhead.tokens.skippedTasks} tasks skipped (no off baseline)`,
     `- Cost, mean per-task overhead: ${fmtDiff(r.costOverhead.costUsd.relative)}; pooled ${fmt(r.costOverhead.costUsd.pooled)}; ${r.costOverhead.costUsd.skippedTasks} tasks skipped (no off baseline)`,
     '',
+    ...(r.secondSession ? secondSessionMarkdown(r.secondSession) : []),
     '### Pass criterion (1)',
     '',
     `Rule: ${r.criterion1.rule}.`,
@@ -403,7 +508,7 @@ export const readRunRecords = (
     const file = join(runDir, entry.name, 'outcome.json')
     if (!entry.isDirectory() || !existsSync(file)) continue
     const outcome = JSON.parse(readFileSync(file, 'utf8')) as RunOutcome
-    const task = tasks.get(outcome.runId.replace(/\.(on|off)\.r\d+$/, ''))
+    const task = tasks.get(outcome.runId.replace(/\.(on|off|oracle)\.r\d+$/, ''))
     if (!task) throw new Error(`run ${outcome.runId} has no matching task in the suite`)
     const readFile = (path: string): string => {
       const candidates = [

@@ -2,7 +2,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { type HostModule, loadMemoryModule, prepareHome, prepareMemory } from './launch.js'
+import {
+  type HostModule,
+  loadMemoryModule,
+  prepareHome,
+  prepareMemory,
+  seedWorkspaceMemory,
+} from './launch.js'
 import { aghProfile, EVAL_MEMORY, PROFILE } from './run-agh.js'
 
 const cfg = {
@@ -97,5 +103,33 @@ describe('prepareHome', () => {
   it('refuses a home that already exists', async () => {
     mkdirSync(join(dir, 'used', 'home'), { recursive: true })
     await expect(prepareHome(input('used', true), await host())).rejects.toThrow(/already exists/)
+  })
+
+  it('seeds a paragraph into the workspace memory the way a person edits it, and the agent sees it', async () => {
+    const memory = await loadMemoryModule()
+    const run = input('seed', false)
+    const workspace = join(dir, 'ws-seed')
+    mkdirSync(workspace)
+    const other = join(dir, 'ws-other')
+    mkdirSync(other)
+    await prepareHome(run, await host())
+    await prepareMemory({ home: run.home, workspaces: [workspace, other], memory: EVAL_MEMORY }, memory)
+    const open = (root: string) =>
+      memory.openMemory({ home: run.home, workspaceRoot: root, sessionKey: 'read' })
+
+    const note = 'studio/build.sh uses ../parts, so it must be run with studio/ as the working directory.'
+    await seedWorkspaceMemory({ home: run.home, workspace, text: note }, memory)
+    expect((await open(workspace).readFile('MEMORY.md')).content).toContain(note)
+    // What the agent is shown at the start of a turn.
+    expect((await open(workspace).snapshot(1))?.content).toContain(note)
+    // Only that workspace.
+    expect((await open(other).snapshot(1))?.content ?? '').not.toContain(note)
+
+    // Memory the workspace already holds is kept, and the paragraph is added after it.
+    const second = 'A second paragraph.'
+    await seedWorkspaceMemory({ home: run.home, workspace, text: second }, memory)
+    const content = (await open(workspace).readFile('MEMORY.md')).content
+    expect(content.indexOf(note)).toBeGreaterThanOrEqual(0)
+    expect(content.indexOf(second)).toBeGreaterThan(content.indexOf(note))
   })
 })

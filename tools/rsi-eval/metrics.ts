@@ -2,7 +2,15 @@
 // are zero-based throughout: session 0 is the first session, so "session 2" in the design is index 1.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { EvalTask, PromptWindow, RunOutcome, RunRecord, Setting, WorkflowReuse } from './types.js'
+import type {
+  Arm,
+  EvalTask,
+  PromptWindow,
+  RunOutcome,
+  RunRecord,
+  SessionCost,
+  WorkflowReuse,
+} from './types.js'
 import { parseAghWorkflowCalls, savedDefinitions } from './workflow-reuse.js'
 
 export type { PromptWindow, RunRecord } from './types.js'
@@ -298,7 +306,49 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
   return { windows, refine, harnessLookups, compactions }
 }
 
-const RUN_ID = /^.+\.(on|off)\.r(\d+)$/
+/**
+ * What one AGH session cost, from its ledger (one row per line, every lane): a request is a
+ * `cost/ledger` row, whatever its purpose or lane (the review calls of the refinement lane included);
+ * tokens are input, output, cache read and cache write; cost is the rows' billed micro-dollars. Child
+ * sessions are counted into the parent only where their cost is in the parent's ledger. The parent
+ * ledger of this host holds `subagent/cost` rows that name a child and say its cost is incomplete,
+ * without an amount, so a session with such a row (or a cost row without a price) is a lower bound.
+ */
+export const sessionCostOfLedger = (jsonl: string): SessionCost => {
+  let requests = 0
+  let tokens = 0
+  let micros = 0
+  let lowerBound = false
+  for (const line of jsonl.split('\n')) {
+    if (line.trim() === '') continue
+    let row: unknown
+    try {
+      row = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (!isObject(row)) continue
+    const data = isObject(row.data) ? row.data : {}
+    if (row.type === 'subagent/cost') {
+      lowerBound = true
+    } else if (row.type === 'cost/ledger') {
+      requests++
+      const counts = isObject(data.tokens) ? data.tokens : {}
+      for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'])
+        if (typeof counts[key] === 'number') tokens += counts[key]
+      const billing = isObject(data.billing) ? data.billing : {}
+      if (typeof billing.usdMicros === 'number') micros += billing.usdMicros
+      else lowerBound = true
+    }
+  }
+  return { requests, tokens, cost: micros / 1_000_000, lowerBound }
+}
+
+/** The cost of one session of a run (zero-based, as everywhere here); none for a run without ledgers. */
+export const sessionCost = (run: RunRecord, session: number): SessionCost | undefined =>
+  run.sessionCosts?.[session]
+
+const RUN_ID = /^.+\.(on|off|oracle)\.r(\d+)$/
 
 export type ToRunRecordOptions = {
   system?: RunRecord['system']
@@ -325,12 +375,16 @@ export const toRunRecord = (
 
   const windows: PromptWindow[] = []
   const refine = { auto: 0, user: 0, self: 0, appliedEdits: 0 }
+  const sessionCosts: SessionCost[] = []
   let harnessLookups = 0
   let compactions = 0
   task.sessions.forEach((_, sessionIndex) => {
     const files = outcome.sessions[sessionIndex]?.sessionFiles ?? []
     const parse = (options.system ?? 'prime') === 'agh' ? parseAghSession : parsePrimeSession
-    const parsed = parse(files.map((file) => read(locate(file))).join('\n'), task, sessionIndex)
+    const text = files.map((file) => read(locate(file))).join('\n')
+    const parsed = parse(text, task, sessionIndex)
+    if ((options.system ?? 'prime') === 'agh' && files.length > 0)
+      sessionCosts[sessionIndex] = sessionCostOfLedger(text)
     for (const window of parsed.windows) {
       const check = outcome.checks.find((c) => c.session === window.session && c.prompt === window.prompt)
       windows.push({ ...window, checksPassed: window.ran && check ? check.passed : null })
@@ -362,7 +416,7 @@ export const toRunRecord = (
     system: options.system ?? 'prime',
     taskId: task.id,
     category: task.category,
-    setting: match[1] as Setting,
+    setting: match[1] as Arm,
     rep: Number(match[2]),
     exit,
     windows,
@@ -377,6 +431,7 @@ export const toRunRecord = (
     },
     ...(outcome.alignment ? { alignment: outcome.alignment } : {}),
     ...(workflowReuse ? { workflowReuse } : {}),
+    ...(sessionCosts.length > 0 ? { sessionCosts } : {}),
   }
 }
 

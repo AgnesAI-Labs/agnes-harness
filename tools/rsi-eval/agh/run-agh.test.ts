@@ -12,7 +12,8 @@ import {
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { EvalTask, RunConfig } from '../types.js'
+import { defaultTasksDir, loadSuite } from '../suite.js'
+import type { Arm, EvalTask, RunConfig } from '../types.js'
 import {
   type AghHost,
   type AghSession,
@@ -22,6 +23,8 @@ import {
   EVAL_MEMORY,
   type LaunchInput,
   type LedgerRow,
+  oracleApplies,
+  oracleLesson,
   parseAghArgs,
   REFINE_WAIT_MS,
   requireKey,
@@ -64,6 +67,7 @@ type Call =
   | { op: 'review'; key: string; saveTo?: 'workspace' | 'user' }
   | { op: 'settled'; key: string; runId: string; ms: number }
   | { op: 'close-session'; key: string }
+  | { op: 'seed'; workspace: string; text: string }
   | { op: 'close-host' }
 
 type Script = {
@@ -83,6 +87,9 @@ function stubLaunch(calls: Call[], script: Script = {}) {
     let reviews = 0
     const opened: string[] = []
     return {
+      seedMemory: async (workspace, text) => {
+        calls.push({ op: 'seed', workspace, text })
+      },
       openSession: async (key, workspace): Promise<AghSession> => {
         calls.push({ op: 'open', key, workspace })
         opened.push(key)
@@ -153,14 +160,7 @@ describe('run-agh', () => {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
 
-  const run = (
-    t: EvalTask,
-    setting: 'on' | 'off',
-    calls: Call[],
-    script?: Script,
-    rep = 1,
-    timeout?: number,
-  ) =>
+  const run = (t: EvalTask, setting: Arm, calls: Call[], script?: Script, rep = 1, timeout?: number) =>
     runOne(t, setting, rep, timeout ? { ...cfg, sessionTimeoutMs: timeout } : cfg, out, {
       launch: stubLaunch(calls, script),
       fixtureDir: fixture,
@@ -502,5 +502,135 @@ describe('run-agh', () => {
   it('refuses a work directory inside a git repository', async () => {
     mkdirSync(join(work, '.git'))
     await expect(run(task('directory', [['a', 'b', 'c']]), 'off', [])).rejects.toThrow(/git work tree/)
+  })
+
+  describe('the oracle arm', () => {
+    const twoSessions = (category: EvalTask['category'] = 'cross-session'): EvalTask => ({
+      ...task(category, [
+        ['a', 'b', 'c'],
+        ['d', 'e', 'f'],
+      ]),
+      trap: { signatures: ['x'], reproduce: 'true', note: 'Run the tool from studio/, never from the root.' },
+    })
+
+    /** What the runner asked of the host, with the names that differ by arm made equal. */
+    const shape = (calls: Call[]): Record<string, unknown>[] =>
+      calls.flatMap((c): Record<string, unknown>[] => {
+        if (c.op === 'seed') return []
+        if (c.op === 'launch') {
+          const { home: _h, profileDocument: _p, env: _e, workspace, workspaces, ...rest } = c.input
+          return [
+            { op: c.op, ...rest, workspace: workspaces.indexOf(workspace), workspaces: workspaces.length },
+          ]
+        }
+        if (c.op === 'open') return [{ op: c.op, key: c.key.replace(/\.(off|oracle)\./, '.arm.') }]
+        if ('key' in c) return [{ ...c, key: c.key.replace(/\.(off|oracle)\./, '.arm.') }]
+        return [{ ...c }]
+      })
+
+    it('runs the same as off, with refinement off and no review', async () => {
+      const t = twoSessions()
+      const off: Call[] = []
+      const oracle: Call[] = []
+      await run(t, 'off', off)
+      await run(t, 'oracle', oracle)
+      expect(shape(oracle)).toEqual(shape(off))
+      expect(oracle.some((c) => c.op === 'review')).toBe(false)
+      const launch = oracle.find((c) => c.op === 'launch')
+      expect(launch && 'input' in launch ? launch.input.refinement : 'missing').toBeUndefined()
+      expect(readFileSync(join(out, 't1.oracle.r1', 'home', 'marker'), 'utf8')).toBe('off')
+      expect(JSON.parse(readFileSync(join(out, 't1.oracle.r1', 'outcome.json'), 'utf8')).runId).toBe(
+        't1.oracle.r1',
+      )
+    })
+
+    it('writes the lesson to the second session workspace after the first session ends and before the second opens', async () => {
+      const t = twoSessions()
+      const calls: Call[] = []
+      await run(t, 'oracle', calls)
+      const ops = calls.map((c) => (c.op === 'prompt' ? `prompt:${c.text}` : c.op))
+      expect(ops).toEqual([
+        'launch',
+        'open',
+        'prompt:a',
+        'prompt:b',
+        'prompt:c',
+        'close-session',
+        'seed',
+        'open',
+        'prompt:d',
+        'prompt:e',
+        'prompt:f',
+        'close-session',
+        'close-host',
+      ])
+      const seeds = calls.flatMap((c) => (c.op === 'seed' ? [c] : []))
+      const opens = calls.flatMap((c) => (c.op === 'open' ? [c] : []))
+      expect(seeds).toEqual([{ op: 'seed', workspace: opens[1]?.workspace, text: t.trap.note }])
+    })
+
+    it('seeds the second session workspace of a cross-workspace task, not the first', async () => {
+      mkdirSync(join(dir, 'fixture-b'))
+      const t = twoSessions('cross-workspace')
+      t.sessions[1] = { ...(t.sessions[1] as EvalTask['sessions'][number]), fixture: 'fixture-b' }
+      const calls: Call[] = []
+      await run(t, 'oracle', calls)
+      const [first, second] = calls.flatMap((c) => (c.op === 'open' ? [c.workspace] : []))
+      expect(first).not.toBe(second)
+      expect(calls.flatMap((c) => (c.op === 'seed' ? [c.workspace] : []))).toEqual([second])
+    })
+
+    it('is for tasks of two sessions that are not workflow tasks', async () => {
+      expect(oracleApplies(twoSessions())).toBe(true)
+      expect(oracleApplies(twoSessions('workflow'))).toBe(false)
+      expect(oracleApplies(task('directory', [['a', 'b', 'c']]))).toBe(false)
+      for (const t of [twoSessions('workflow'), task('directory', [['a', 'b', 'c']])])
+        await expect(run(t, 'oracle', [])).rejects.toThrow(/no oracle arm/)
+    })
+
+    it('needs a host that can seed memory', async () => {
+      const launch = stubLaunch([])
+      const bare = async (input: LaunchInput) => {
+        const { seedMemory: _s, ...host } = await launch(input)
+        return host as AghHost
+      }
+      await expect(
+        runOne(twoSessions(), 'oracle', 1, cfg, out, {
+          launch: bare,
+          fixtureDir: fixture,
+          workBase: work,
+          runCheck,
+        }),
+      ).rejects.toThrow(/cannot seed memory/)
+    })
+
+    it('takes the lesson from the note and never from what the checks expect to see', () => {
+      const tasks = loadSuite(defaultTasksDir)
+      const eligible = tasks.filter(oracleApplies)
+      expect(eligible.length).toBeGreaterThan(0)
+      for (const t of eligible) {
+        const lesson = oracleLesson(t)
+        expect(lesson, t.id).toBe(t.trap.note.trim())
+        for (const p of t.sessions.flatMap((s) => s.prompts)) {
+          for (const check of p.checks) {
+            // A check's command is an ordinary one (`make test`); what it expects to see is its answer.
+            expect(lesson, `${t.id} marker`).not.toContain(check.contains)
+          }
+          // A solution is made of ordinary commands (`make test`), and a note may give its rule with one
+          // example command, so only a note that is a whole solution step by itself is refused.
+          for (const command of p.solution) expect(lesson, `${t.id} solution`).not.toBe(command)
+        }
+      }
+    })
+
+    it('is chosen with --arms; --settings and the default stay as they were', () => {
+      const base = ['--config', 'c.json', '--out', 'o']
+      expect(parseAghArgs(base).settings).toEqual(['on', 'off'])
+      expect(parseAghArgs([...base, '--arms', 'off,on,oracle']).settings).toEqual(['off', 'on', 'oracle'])
+      expect(parseAghArgs([...base, '--settings', 'off']).settings).toEqual(['off'])
+      expect(() => parseAghArgs([...base, '--settings', 'off,oracle'])).toThrow(/oracle/)
+      expect(() => parseAghArgs([...base, '--arms', 'off,maybe'])).toThrow(/maybe/)
+      expect(() => parseAghArgs([...base, '--arms', 'off', '--settings', 'on'])).toThrow(/same option/)
+    })
   })
 })

@@ -92,6 +92,11 @@ export type MemoryModule = {
     /** Saves the settings and returns the inspection that follows. */
     configure(settings: object): Promise<MemoryInspection>
     inspect(): Promise<MemoryInspection>
+    /** The memory page's own read and edit of a memory file (compare-and-swap on the hash read). */
+    readFile(path: string): Promise<{ content: string; hash: string }>
+    editFile(path: string, content: string, baseHash: string): Promise<unknown>
+    /** What the agent is shown at the start of a turn; none while memory is off. */
+    snapshot(turn: number): Promise<{ content: string } | undefined>
     close?(): Promise<void> | void
   }
 }
@@ -117,6 +122,36 @@ export async function prepareMemory(
     } finally {
       await session.close?.()
     }
+  }
+}
+
+/** The workspace memory index a person edits on the memory page. */
+const MEMORY_INDEX = 'MEMORY.md'
+
+/**
+ * Adds one paragraph to a workspace's memory the way a person saves it on the memory page (the
+ * provider's own edit of the index, which the agent reads from the next turn), after what the index
+ * already holds. Used for the oracle arm: the task's lesson, written before the second session.
+ */
+export async function seedWorkspaceMemory(
+  input: { home: string; workspace: string; text: string },
+  memory: MemoryModule,
+): Promise<void> {
+  const session = memory.openMemory({
+    home: input.home,
+    workspaceRoot: input.workspace,
+    sessionKey: 'rsi-eval-seed',
+  })
+  try {
+    const current = await session.readFile(MEMORY_INDEX)
+    const kept = current.content.trimEnd()
+    await session.editFile(
+      MEMORY_INDEX,
+      `${kept === '' ? '' : `${kept}\n\n`}${input.text.trim()}\n`,
+      current.hash,
+    )
+  } finally {
+    await session.close?.()
   }
 }
 
@@ -264,6 +299,11 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
 
   return {
     openSession,
+    seedMemory: async (workspace, text) => {
+      if (!input.workspaces.includes(workspace))
+        throw new Error(`${workspace} is not one of the run's workspaces`)
+      await seedWorkspaceMemory({ home: input.home, workspace, text }, await loadMemoryModule())
+    },
     close: async () => {
       try {
         await booted.close()
