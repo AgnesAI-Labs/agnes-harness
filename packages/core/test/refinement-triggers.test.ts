@@ -1,11 +1,11 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
-import type { HookPayloadMap } from '@agnes/extension-api'
+import type { HookPayloadMap, ToolResult } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import type { RoleDelegation } from '../src/child/roles.js'
 import { Kernel } from '../src/kernel.js'
-import { normalizeToolError } from '../src/refinement/normalize-error.js'
+import { normalizeCommandError, normalizeToolError } from '../src/refinement/normalize-error.js'
 import {
   MAX_FAILURE_TALLIES,
   onCompactionCommitted,
@@ -267,9 +267,12 @@ describe('compaction trigger', () => {
   })
 })
 
-/** A session whose model calls the `read` tool once per scripted outcome, then answers. */
+/**
+ * A session whose model calls the `read` tool once per scripted outcome, then answers. A string is
+ * an error with that text (`ok` is a success); an object is returned as the tool's result.
+ */
 async function failing(
-  outcomes: string[],
+  outcomes: Array<string | ToolResult>,
   over: { refinementEnabled?: () => boolean; refinementTriggers?: RefinementTriggerSink; tool?: string } = {},
 ) {
   const script = [...outcomes]
@@ -277,6 +280,7 @@ async function failing(
   registry.add(
     readTool(async () => {
       const next = script.shift() ?? 'ok'
+      if (typeof next !== 'string') return next
       return next === 'ok' ? text('ok') : { ...text(next), isError: true }
     }),
     { source: 'agnes/tools-core', trust: 'builtin' },
@@ -386,6 +390,19 @@ describe('repeated-failure trigger', () => {
     expect(offered).toEqual([])
   })
 
+  it('a failing shell command is counted by what it printed, not by its exit code', async () => {
+    const { offered, port } = sink()
+    const { turn, log } = await failing(
+      [shellFailure('error: X'), shellFailure('error: Y'), shellFailure('error: X')],
+      { refinementEnabled: enabled, refinementTriggers: port },
+    )
+    await turn('go')
+    const results = (await log.scan({ type: 'tool/result', limit: 50 })).map((r) => r.seq)
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: expect.any(Number), focus: 'read' }])
+    // Offered at the second `error: X`, not at the second failing command.
+    expect(offered[0]?.seq).toBeGreaterThan(results[2] as number)
+  })
+
   it('nothing is triggered when refinement is off or manual', async () => {
     const same = ['boom', 'boom', 'boom', 'boom']
     const off = sink()
@@ -410,6 +427,21 @@ function fakeSession(port: RefinementTriggerSink, turn: object | null = {}) {
 }
 const failure = (t: string, details?: unknown) =>
   ({ ...text(t), isError: true, ...(details ? { details } : {}) }) as never
+/** A result shaped like the shell tool's for a command that exited non-zero. */
+function shellFailure(stderr: string, opts: { stdout?: string; exitCode?: number } = {}): ToolResult {
+  const exitCode = opts.exitCode ?? 1
+  const lines = [
+    ...(opts.stdout ? [opts.stdout] : []),
+    ...(stderr ? [`[stderr]\n${stderr}`] : []),
+    'Command failed; inspect the output and current state, correct the command/arguments, then retry.',
+    `[exit ${exitCode}]`,
+  ]
+  return {
+    content: [{ type: 'text', text: lines.join('\n') }],
+    isError: true,
+    details: { code: 'SHELL_EXIT', exitCode },
+  }
+}
 
 describe('which failures count', () => {
   it.each([
@@ -447,6 +479,102 @@ describe('which failures count', () => {
     expect(offered).toEqual([])
     onToolSettled(s, 'fetch', failure('no response after 9s', { code: 'TIMEOUT' }))
     expect(offered).toHaveLength(1)
+  })
+
+  it('two shell commands that fail with different errors do not trigger', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    onToolSettled(s, 'shell', shellFailure('error: X'))
+    onToolSettled(s, 'shell', shellFailure('error: Y', { exitCode: 2 }))
+    expect(offered).toEqual([])
+  })
+
+  it('a shell error is offered once per error: a second error gets its own offer', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    onToolSettled(s, 'shell', shellFailure('error: X in /srv/a/one.ts'))
+    expect(offered).toEqual([])
+    onToolSettled(s, 'shell', shellFailure('error: X in /srv/b/two.ts', { exitCode: 3 }))
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'shell' }])
+    onToolSettled(s, 'shell', shellFailure('error: Y'))
+    expect(offered).toHaveLength(1)
+    onToolSettled(s, 'shell', shellFailure('error: Y'))
+    expect(offered).toHaveLength(2)
+    // The first error again: it was offered already.
+    onToolSettled(s, 'shell', shellFailure('error: X in /srv/a/one.ts'))
+    expect(offered).toHaveLength(2)
+  })
+
+  it('a shell failure that printed nothing at all is keyed by its code', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    const empty = { content: [], isError: true, details: { code: 'SHELL_EXIT', exitCode: 1 } } as never
+    onToolSettled(s, 'shell', empty)
+    expect(offered).toEqual([])
+    onToolSettled(s, 'shell', empty)
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'shell' }])
+  })
+
+  it('a shell permission refusal never triggers', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    for (let i = 0; i < 4; i++) onToolSettled(s, 'shell', shellFailure('bash: /etc/hosts: Permission denied'))
+    for (let i = 0; i < 4; i++)
+      onToolSettled(s, 'shell', shellFailure('cp: /etc/hosts: Permission denied', { stdout: `copying ${i}` }))
+    expect(offered).toEqual([])
+  })
+
+  it('a shell error is keyed by its stderr, not by the stdout before it', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    onToolSettled(s, 'shell', shellFailure('error: X', { stdout: 'building app' }))
+    expect(offered).toEqual([])
+    onToolSettled(s, 'shell', shellFailure('error: X', { stdout: 'running tests\n3 passed' }))
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'shell' }])
+  })
+
+  it('the same stdout with different stderr errors does not trigger', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    onToolSettled(s, 'shell', shellFailure('error: X', { stdout: '> app@1.0.0 test' }))
+    onToolSettled(s, 'shell', shellFailure('error: Y', { stdout: '> app@1.0.0 test' }))
+    onToolSettled(s, 'shell', shellFailure('error: Z', { stdout: '> app@1.0.0 test' }))
+    expect(offered).toEqual([])
+  })
+
+  it('a shell failure with no stderr is keyed by its first line, as before', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    onToolSettled(s, 'shell', shellFailure('', { stdout: 'build failed: X' }))
+    onToolSettled(s, 'shell', shellFailure('', { stdout: 'build failed: Y' }))
+    expect(offered).toEqual([])
+    onToolSettled(s, 'shell', shellFailure('', { stdout: 'build failed: X' }))
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'shell' }])
+  })
+
+  it('a Python traceback on stderr is keyed by its exception, not by the shell lines after it', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    const trace = (line: number, exception: string) =>
+      `Traceback (most recent call last):\n  File "/srv/job.py", line ${line}, in <module>\n    run()\n${exception}`
+    onToolSettled(s, 'shell', shellFailure(trace(12, 'ValueError: bad value 7')))
+    onToolSettled(s, 'shell', shellFailure(trace(12, "KeyError: 'name'")))
+    expect(offered).toEqual([])
+    onToolSettled(s, 'shell', shellFailure(trace(40, 'ValueError: bad value 9'), { stdout: 'step 1' }))
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'shell' }])
+  })
+
+  it('a specific code still keys the error for the shell too', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    onToolSettled(s, 'shell', failure('[stderr]\nfirst\n[timed out after 1000ms]', { code: 'SHELL_TIMEOUT' }))
+    expect(offered).toEqual([])
+    onToolSettled(
+      s,
+      'shell',
+      failure('[stderr]\nsecond\n[timed out after 9000ms]', { code: 'SHELL_TIMEOUT' }),
+    )
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'shell' }])
   })
 
   it('the same error from different tools is counted per tool', () => {
@@ -522,6 +650,34 @@ describe('which failures count', () => {
     }
     const s = fakeSession(port)
     for (let i = 0; i < 3; i++) expect(() => onToolSettled(s, 'a', failure('boom'))).not.toThrow()
+  })
+})
+
+describe('normalizeCommandError', () => {
+  const err = (t: string) => normalizeCommandError([{ type: 'text', text: t }])
+  it('keys by the first line of stderr, masked like any error', () => {
+    expect(err('building\n[stderr]\n\nerror: cannot open /tmp/a1/x.txt (code 2)\nmore\n[exit 1]')).toBe(
+      'error: cannot open <path> (code #)',
+    )
+  })
+  it('keys a traceback on stderr by its exception line, before the shell closing lines', () => {
+    const text = [
+      'step 1',
+      '[stderr]',
+      'Traceback (most recent call last):',
+      '  File "/srv/job.py", line 3, in <module>',
+      'ValueError: bad value 7',
+      'Command failed; inspect the output and current state, correct the command/arguments, then retry.',
+      '[exit 1] [output truncated by sandbox]',
+    ].join('\n')
+    expect(err(text)).toBe('valueerror: bad value #')
+  })
+  it('falls back to the first-line rule when stderr is missing or empty', () => {
+    const plain = 'build failed: X\nCommand failed; inspect the output and current state.\n[exit 1]'
+    expect(err(plain)).toBe(normalizeToolError({ content: [{ type: 'text', text: plain }] }))
+    const empty = 'build failed: X\n[stderr]\n   \n[exit 1]'
+    expect(err(empty)).toBe('build failed: x')
+    expect(normalizeCommandError([])).toBe('')
   })
 })
 

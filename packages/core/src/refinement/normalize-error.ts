@@ -11,15 +11,46 @@ const PYTHON_TRACEBACK = /^traceback \(most recent call last\):?$/i
 
 export function normalizeToolError(result: { code?: string; content?: unknown[] }): string {
   if (result.code) return result.code
-  let text = ''
-  for (const block of result.content ?? []) {
-    const b = block as { type?: unknown; text?: unknown } | null
-    if (b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string' && b.text.trim()) {
-      text = b.text
-      break
-    }
+  return keyOf(firstText(result.content).split('\n'))
+}
+
+const STDERR_LABEL = /^\[stderr\]$/i
+/** What the shell writes after a failing command's stderr: the retry advice and the `[exit N]` line. */
+const SHELL_CLOSING = /^(?:\[exit -?\d+\]|command failed; inspect the output)/i
+
+/**
+ * The key for a command that exited non-zero: the error it wrote to stderr, not whatever stdout
+ * came first. The stderr section runs from the shell's last `[stderr]` label to the shell's own
+ * closing lines and goes through the same rule as any error text. With no stderr, or only blank
+ * stderr, it is the first-line rule of `normalizeToolError`.
+ *
+ * Only the live trigger uses this: ledger rows do not keep the tool's code, so the offline
+ * statistics tool cannot tell these failures apart and keeps the first-line rule.
+ */
+export function normalizeCommandError(content?: unknown[]): string {
+  const lines = firstText(content).split('\n')
+  const label = lines.findLastIndex((line) => STDERR_LABEL.test(line.trim()))
+  if (label >= 0) {
+    const stderr = lines.slice(label + 1)
+    const closing = (line = '') => !line.trim() || SHELL_CLOSING.test(line.trim())
+    while (stderr.length && closing(stderr.at(-1))) stderr.pop()
+    const key = keyOf(stderr)
+    if (key) return key
   }
-  const lines = text.split('\n').filter((line) => line.trim() && !STREAM_LABEL.test(line.trim()))
+  return keyOf(lines)
+}
+
+function firstText(content: unknown[] = []): string {
+  for (const block of content) {
+    const b = block as { type?: unknown; text?: unknown } | null
+    if (b && typeof b === 'object' && b.type === 'text' && typeof b.text === 'string' && b.text.trim())
+      return b.text
+  }
+  return ''
+}
+
+function keyOf(raw: string[]): string {
+  const lines = raw.filter((line) => line.trim() && !STREAM_LABEL.test(line.trim()))
   // A Python traceback starts with the same header whatever went wrong; its last line names the exception.
   const first = lines[0] ?? ''
   const key = PYTHON_TRACEBACK.test(first.trim()) ? (lines.at(-1) ?? '') : first
