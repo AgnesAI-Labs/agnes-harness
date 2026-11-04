@@ -1,3 +1,0 @@
-payroll files are exported on the 1st of the month
-exports go to a shared bucket
-the bucket keeps files for 90 days

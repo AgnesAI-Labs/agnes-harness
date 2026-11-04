@@ -1,3 +1,0 @@
-orders has no shipped_at column
-customer_id is not indexed
-table is about 40 million rows

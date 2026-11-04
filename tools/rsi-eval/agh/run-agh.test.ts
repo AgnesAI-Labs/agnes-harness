@@ -18,15 +18,18 @@ import type { Arm, EvalTask } from '../types.js'
 import {
   type AghHost,
   aghProfile,
+  BLOCKED_FILE,
   type CheckRun,
   checkRoute,
   EVAL_MEMORY,
   finishedOutcome,
+  frozenSourcesMadeHere,
   INFRA_FAILURES_FILE,
   type LaunchInput,
   type LedgerRow,
   oracleApplies,
   oracleLesson,
+  orderArms,
   parseAghArgs,
   proxyRunId,
   REFINE_WAIT_MS,
@@ -626,6 +629,67 @@ describe('run-agh', () => {
       expect(streak.stopped).toBe(false)
       expect(streak.record(true)).toBe(true)
       expect(streak.stopped).toBe(true)
+    })
+  })
+
+  describe("runs the host's verifier blocked", () => {
+    // A real run whose first turn the host's verifier ended blocked (tool_call_as_text; see fixtures/real).
+    const blockedRows = (): LedgerRow[] =>
+      readFileSync(join(import.meta.dirname, '..', 'fixtures', 'real', 'blocked.long-01.on-s1.jsonl'), 'utf8')
+        .split('\n')
+        .filter((line) => line.trim() !== '')
+        .map((line) => JSON.parse(line) as LedgerRow)
+    const blocking = { turns: { b: 'blocked' }, ledgerRows: { s1: blockedRows() } }
+
+    it('records the run as blocked, with where and why, and not as infra-failed', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      const outcome = await run(t, 'off', [], blocking)
+      expect(outcome.blocked).toEqual({ session: 0, prompt: 1, reasons: ['tool_call_as_text'] })
+      expect(outcome.infraFailed).toBeUndefined()
+      expect(outcome.prompts?.map((p) => p.reason)).toEqual(['completed', 'blocked'])
+      // A turn that failed for another reason is not blocked.
+      expect((await run(t, 'off', [], { turns: { a: 'failed' } }, 2)).blocked).toBeUndefined()
+    })
+
+    it('is redone once on the next start under a new proxy id, then left as blocked', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      await run(t, 'on', [], blocking)
+      expect(finishedOutcome(out, 't1.on.r1')).toBeUndefined()
+      const again: Call[] = []
+      const second = await run(t, 'on', again, blocking)
+      expect(second.blocked).toBeDefined()
+      const profile = (calls: Call[]) =>
+        calls.flatMap((c) => (c.op === 'launch' ? [c.input.profileDocument] : []))[0]
+      expect(profile(again)).toEqual(aghProfile(cfg, proxyRunId('t1.on.r1', 1)))
+      const notes = readFileSync(join(out, BLOCKED_FILE), 'utf8').trim().split('\n')
+      expect(notes).toHaveLength(1)
+      expect(JSON.parse(notes[0] as string)).toMatchObject({
+        runId: 't1.on.r1',
+        reasons: ['tool_call_as_text'],
+      })
+      // Blocked again: it stays as it is.
+      expect(finishedOutcome(out, 't1.on.r1')?.blocked).toBeDefined()
+      const third: Call[] = []
+      expect((await run(t, 'on', third)).blocked).toBeDefined()
+      expect(third).toEqual([])
+    })
+  })
+
+  describe('the order of the arms', () => {
+    it('runs frozen after on, so a frozen run can copy the on run of the same invocation', () => {
+      expect(orderArms(['frozen', 'off', 'on', 'oracle'])).toEqual(['off', 'on', 'oracle', 'frozen'])
+      expect(orderArms(['on', 'off', 'oracle', 'frozen'])).toEqual(['on', 'off', 'oracle', 'frozen'])
+      expect(orderArms(['off', 'frozen'])).toEqual(['off', 'frozen'])
+      const base = ['--config', 'c.json', '--out', 'o', '--frozen-from', 'o']
+      expect(parseAghArgs([...base, '--arms', 'frozen,on,off']).settings).toEqual(['on', 'off', 'frozen'])
+      // The frozen sources are this invocation's own on runs only with the same folder and the on arm.
+      expect(frozenSourcesMadeHere(parseAghArgs([...base, '--arms', 'on,frozen']))).toBe(true)
+      expect(frozenSourcesMadeHere(parseAghArgs([...base, '--arms', 'off,frozen']))).toBe(false)
+      expect(
+        frozenSourcesMadeHere(
+          parseAghArgs(['--config', 'c', '--out', 'o', '--frozen-from', 'p', '--arms', 'on,frozen']),
+        ),
+      ).toBe(false)
     })
   })
 })

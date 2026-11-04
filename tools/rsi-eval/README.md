@@ -184,6 +184,16 @@ The report also prints, at its head, the model, route, upstream (without credent
 and flags the prices as assumed when the run config says `"pricesAssumed": true`. It prints the share of
 runs whose first session hit the trap, per arm and per task, and names the tasks where no run did.
 
+## Runs the host's verifier blocked are not task failures
+
+The host checks every turn; when the check fails (for example `tool_call_as_text`, a tool call the model
+wrote as text, so it never ran) it asks the model to repair the turn, and when that does not take it ends
+the turn `blocked`. The harness stopped that run, not its task. The runner records it as `blocked` in the
+outcome (session, prompt and the verifier's reasons, from the ledger's `x/core/verifier-recovery` row;
+`blocked.ts`), the report leaves it out of every metric and lists such runs per arm with their reasons, and
+the next start of the same command redoes it once, noted in `blocked-runs.jsonl`, under a new proxy id as
+an infrastructure redo is. A run blocked again is left as blocked.
+
 ## What the capture rate does and does not say
 
 The report prints the capture rate as `rate = numerator / denominator over N of M tasks; 95% CI a to b`,
@@ -242,7 +252,10 @@ prompt. The category has no floor of five tasks; the categories of the first sui
 sessions of two milestones over one workspace, in four domains (a release tool, a vendor data import, a config deployer, a test harness). Each tool enforces
 one rule that no prompt states, that its error does not spell out and that nothing in the workspace shows:
 the tool's source (`tool/<name>.py`, outside the fixture) is packed into `fixture/bin/<name>` by
-`long-tools.ts`, so reading the launcher shows neither its checks nor its messages. Each task repeats one
+`long-tools.ts`, so reading the launcher shows neither its checks nor its messages. The launcher is a shell
+script that runs the source with the macOS command line tools' own Python when there is one: inside the
+eval sandbox the `/usr/bin/python3` shim prints cache warnings to stderr around every message, and agents
+then hide stderr, and the tool's errors with it. Each task repeats one
 multi-step procedure at every milestone. `tasks/LONG.md` (for reviewers; never copied into a workspace)
 gives each task's rule and why it cannot be read off the workspace; `long-tasks.test.ts` holds the tasks to
 that.
@@ -297,7 +310,16 @@ before the first session the run starts with exactly what the `on` run of the sa
 that folder saved: its saved workspace memory paragraphs, its saved user memory sections and its installed
 workspace skills (`agh/frozen.ts`). Not the notes the agent wrote into memory itself (an `off` run writes
 those too) and not the work it left in the files. The runner refuses a missing source, one that is not an
-`on` run, and one the upstream ended; it checks every source before the first run starts.
+`on` run, one the upstream ended, and one the host's verifier blocked (it saved only part of a run); it
+checks every source before the first run starts.
+
+The on runs and the frozen runs can be made in one invocation: `--reps 5 --arms on,off,oracle,frozen
+--frozen-from <the same folder as --out>`. Then frozen always runs right after the on run of the same task
+and repetition (`orderArms` moves it behind `on` whatever order `--arms` names), its source is checked at
+that point instead of before the first run, and a frozen run whose on run cannot be a source (blocked,
+ended by the upstream) is skipped with a message while the others go on; start the same command again to
+redo the on run and then its frozen run. With `--frozen-from` another folder, the sources must all be there
+before the start, as before.
 
 - The paragraphs are written as hand-written memory text, without their markers: a saved paragraph is shown
   to the agent only while the host's registry vouches for it, and the fresh run's registry knows nothing of

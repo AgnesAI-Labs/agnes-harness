@@ -1,0 +1,22 @@
+{
+  "runId": "long-01-release-train.on.r1",
+  "system": "agh",
+  "sessions": [
+    {
+      "exitCode": 1,
+      "timedOut": false,
+      "stdoutFile": "session1.turns.jsonl",
+      "sessionFiles": ["s1.events.jsonl"]
+    }
+  ],
+  "checks": [],
+  "prompts": [
+    {
+      "session": 0,
+      "prompt": 0,
+      "endedAt": "2026-11-04T07:48:34.540Z",
+      "reason": "blocked"
+    }
+  ],
+  "onProtocol": "triggers"
+}

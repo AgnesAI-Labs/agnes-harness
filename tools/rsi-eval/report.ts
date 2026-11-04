@@ -8,7 +8,9 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { AGH_DIR } from '../../packages/protocol/src/constants.js'
+import { type BlockedExcluded, blockedExcluded, blockedMarkdown } from './blocked.js'
 import { type CaptureResult, captureMetric } from './capture.js'
+import { type InfraExcluded, infraExcluded, infraMarkdown } from './infra.js'
 import {
   cappedMarkdown,
   cappedReport,
@@ -551,18 +553,12 @@ const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): s
   return lines
 }
 
-const infraMarkdown = (x: NonNullable<InfraExcluded>): string[] => [
-  `Runs the upstream ended, not the task (quota, credentials, rate limit, server error), left out of every metric below: on ${x.on}, off ${x.off}, oracle ${x.oracle}.${
-    Object.keys(x.reasons).length === 0
-      ? ''
-      : ` Reasons: ${Object.entries(x.reasons)
-          .map(([reason, n]) => `${reason} x${n}`)
-          .join(', ')}.`
-  } They are redone when the run is started again.`,
-  '',
-]
-
-const systemMarkdown = (name: string, r: SystemReport, infra?: InfraExcluded): string[] => {
+const systemMarkdown = (
+  name: string,
+  r: SystemReport,
+  infra?: InfraExcluded,
+  blocked?: BlockedExcluded,
+): string[] => {
   const verdict = !r.criterion1.evaluable
     ? 'NOT EVALUABLE (no paired tasks)'
     : r.criterion1.pass
@@ -574,6 +570,7 @@ const systemMarkdown = (name: string, r: SystemReport, infra?: InfraExcluded): s
     `${r.tasks} tasks; runs: ${r.runs.on} on, ${r.runs.off} off.`,
     '',
     ...(infra ? infraMarkdown(infra) : []),
+    ...(blocked ? blockedMarkdown(blocked) : []),
     ...trapMarkdown(r.firstSessionTrap),
     '### 1. Repeat-error drop',
     '',
@@ -689,22 +686,6 @@ const longMarkdown = (r: ReturnType<typeof longSections>): string[] => [
   ...(r.ruleForgetting ? forgettingMarkdown(r.ruleForgetting) : []),
 ]
 
-/** The runs of a system that the upstream ended, per arm, with the reasons; none when there are none. */
-type InfraExcluded = { on: number; off: number; oracle: number; reasons: Record<string, number> } | undefined
-const infraExcluded = (records: RunRecord[]): InfraExcluded => {
-  const failed = records.filter((r) => r.infraFailed)
-  if (failed.length === 0) return undefined
-  const reasons: Record<string, number> = {}
-  for (const r of failed)
-    reasons[r.infraFailed?.reason ?? '?'] = (reasons[r.infraFailed?.reason ?? '?'] ?? 0) + 1
-  return {
-    on: bySetting(failed, 'on').length,
-    off: bySetting(failed, 'off').length,
-    oracle: bySetting(failed, 'oracle').length,
-    reasons,
-  }
-}
-
 const money = (value: number): string => String(value)
 
 /** The report header lines for the run configuration: model, route, upstream (without credentials) and prices. */
@@ -731,10 +712,12 @@ export const buildReport = (
 ): { json: object; markdown: string } => {
   const systems: Record<string, SystemReport & ReturnType<typeof longSections>> = {}
   const excluded: Record<string, NonNullable<InfraExcluded>> = {}
+  const blockedRuns: Record<string, NonNullable<BlockedExcluded>> = {}
   for (const [system, all] of groupBy(records, (r) => r.system)) {
     // A run the upstream ended says nothing about the system under test: no metric sees it. A capped run
     // is a result, but not one a mean can hold: it is listed apart and enters only the milestone curves.
-    const counted = all.filter((r) => !r.infraFailed)
+    // A run the host's verifier blocked was stopped by the harness, not its task: no metric sees it either.
+    const counted = all.filter((r) => !r.infraFailed && !r.blocked)
     systems[system] = {
       ...systemReport(
         counted.filter((r) => !r.capped),
@@ -744,6 +727,8 @@ export const buildReport = (
     }
     const infra = infraExcluded(all)
     if (infra) excluded[system] = infra
+    const blocked = blockedExcluded(all)
+    if (blocked) blockedRuns[system] = blocked
   }
   const run = options.run && {
     ...options.run,
@@ -761,6 +746,7 @@ export const buildReport = (
     directions: DIRECTIONS,
     criterion1Rule: CRITERION_1_RULE,
     ...(Object.keys(excluded).length === 0 ? {} : { infraExcluded: excluded }),
+    ...(Object.keys(blockedRuns).length === 0 ? {} : { blockedExcluded: blockedRuns }),
     systems,
   }
   const markdown = [
@@ -773,7 +759,7 @@ export const buildReport = (
     "A trap hit is a command run that failed with the task's signature (on stderr, or in the output of a run that exited non-zero). Reading the tool's source or docs never counts.",
     '',
     ...Object.entries(systems).flatMap(([name, report]) => [
-      ...systemMarkdown(name, report, excluded[name]),
+      ...systemMarkdown(name, report, excluded[name], blockedRuns[name]),
       ...longMarkdown(report),
     ]),
   ].join('\n')

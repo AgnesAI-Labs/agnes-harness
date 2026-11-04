@@ -1,3 +1,0 @@
-invoice endpoint returns the currency code
-rate limit raised to 600 per minute
-old v1 export route removed

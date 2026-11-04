@@ -577,6 +577,7 @@ export const toRunRecord = (
     ...(outcome.onProtocol ? { onProtocol: outcome.onProtocol } : {}),
     ...(outcome.frozenFrom ? { frozenFrom: outcome.frozenFrom } : {}),
     ...(outcome.infraFailed ? { infraFailed: outcome.infraFailed } : {}),
+    ...(outcome.blocked ? { blocked: outcome.blocked } : {}),
   }
 }
 

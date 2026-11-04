@@ -107,6 +107,8 @@ export type RunOutcome = {
   saveRefused?: string
   /** Set when the upstream, not the task, ended the run; see `InfraFailure`. */
   infraFailed?: InfraFailure
+  /** Set when the host's own verifier ended a turn `blocked`; see `Blocked`. */
+  blocked?: Blocked
   /** Set when the run reached its request cap and was stopped there. */
   capped?: Capped
   /** Set when a milestone's checks failed and the run was stopped there. */
@@ -119,6 +121,19 @@ export type RunOutcome = {
   onProtocol?: OnProtocol
   /** Frozen runs: the `on` run whose saved lessons were seeded, and what was seeded. */
   frozenFrom?: FrozenSeed
+}
+
+/**
+ * A run whose turn the host's own turn verifier ended `blocked` (for example `tool_call_as_text`: the model
+ * wrote a tool call as text, it did not run, and the repair did not take). The harness stopped the turn,
+ * not the task, so such a run is no task failure: it is left out of every metric and redone once.
+ */
+export type Blocked = {
+  /** Which session and prompt (zero-based) the blocked turn belonged to. */
+  session: number
+  prompt: number
+  /** The verifier's reasons, as its ledger row names them. */
+  reasons: string[]
 }
 
 /** How the runner drives an `on` run: a manual review after every prompt (as Prime does), or only refinement's own triggers. */
@@ -218,6 +233,8 @@ export type RunRecord = {
   startedAt?: string
   /** The upstream ended the run; such records are left out of every metric. */
   infraFailed?: InfraFailure
+  /** The host's verifier ended a turn blocked; such records are left out of every metric. */
+  blocked?: Blocked
   /** The run reached its request cap; such records are listed apart, not in the means. */
   capped?: Capped
   /** AGH runs: what the run had spent at the end of each prompt, with the milestone results. */
