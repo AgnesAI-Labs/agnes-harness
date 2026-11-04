@@ -1,7 +1,11 @@
-#!/usr/bin/env python3
+#!/bin/sh
 # harness: runs the textkit test suites and keeps the dashboard. Run `bin/harness help`.
-import base64, zlib
-exec(compile(zlib.decompress(base64.b64decode("""
+py=python3
+for c in /Library/Developer/CommandLineTools/usr/bin/python3 /Applications/Xcode.app/Contents/Developer/usr/bin/python3; do
+  if [ -x "$c" ]; then py=$c; break; fi
+done
+exec "$py" -c 'import base64,sys,zlib;sys.argv=sys.argv[1:];exec(compile(zlib.decompress(base64.b64decode(open(sys.argv[0]).read().split("#PACKED\n",1)[1])),"<harness>","exec"))' "$0" "$@"
+#PACKED
 eNqVWW2P2zYS/u5fMWVhnIRold0kvfTUOEA/JLgARXtItp9cw6EtymZXJgWS2l1fsP/9MENSb7aT
 nLGwRZGc12eGM9wfYc+NEtYWYFplwe0FOPHo7qQDJ6wD20onLHBVwp0QjV9RcrvfaG7KHD62Cj5v
 pHoe6MBe1M3nfCYPjTYO9tzua7mJQ/9Ty03eOlnHt39breKztvHJcFXqQxzZYzfxXyQ4+/jHH7ew
@@ -45,4 +49,3 @@ XWPsUZGePQPmV68tms9fMgKcnO3DNIbp66R2SsfIoMpwKC8FOZXoI0G7yhrvInAKr+y9JVDzy8SC
 p60JwOy50nMPTTMMDrqnZzHt+mCXlroOf0J3ry/6gIJlarjFyHDDI2Ko+gWSfehfQKK/ml9M/DDI
 GF/FLK2ZmF0oZ46w8JSXg0NniunuTO6SBHdnTmWiN7R6eNFZPowRwb0dhsWUT6yxHYnm0QYejFY7
 NEh7EMrZC/0JNSazGWWc7j9XBP7/AcVtViQ=
-""")), "<harness>", "exec"))

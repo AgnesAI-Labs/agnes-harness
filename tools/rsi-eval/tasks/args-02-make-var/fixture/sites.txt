@@ -1,3 +1,0 @@
-alpha 8101
-beta 8102
-gamma 8103

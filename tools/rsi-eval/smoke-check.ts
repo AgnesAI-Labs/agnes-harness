@@ -319,8 +319,10 @@ export const frozenSkillsOfferedCheck = (runDir: string, run: string): Check => 
 
 export function smokeChecklist(input: {
   runDir: string
+  /** A task of two or more sessions, run with the arms off, on, oracle and frozen. */
   twoSession: EvalTask
-  workflow: EvalTask
+  /** A workflow task run with the arm on; the workflow checks are left out without one. */
+  workflow?: EvalTask
   rep: number
 }): Check[] {
   const id = (task: EvalTask, arm: string) => `${task.id}.${arm}.r${input.rep}`
@@ -329,15 +331,15 @@ export function smokeChecklist(input: {
   return [
     ...skillChecks(input.runDir, [
       { id: id(t, 'on'), task: t },
-      { id: id(w, 'on'), task: w },
+      ...(w ? [{ id: id(w, 'on'), task: w }] : []),
     ]),
     offWritesNoSkill(input.runDir, [
       { id: id(t, 'off'), task: t },
       { id: id(t, 'oracle'), task: t },
     ]),
-    skillsOfferedCheck(input.runDir, [id(t, 'on'), id(w, 'on')]),
+    skillsOfferedCheck(input.runDir, [id(t, 'on'), ...(w ? [id(w, 'on')] : [])]),
     frozenSkillsOfferedCheck(input.runDir, id(t, 'frozen')),
-    workflowCheck(input.runDir, [t, w], id(w, 'on')),
+    ...(w ? [workflowCheck(input.runDir, [t, w], id(w, 'on'))] : []),
     ...oracleMemoryChecks(input.runDir, t, id(t, 'oracle'), id(t, 'off')),
     firstSessionCheck(input.runDir, id(t, 'oracle'), id(t, 'off')),
   ]
@@ -352,9 +354,9 @@ const main = (): void => {
   const runDir = flag('--run-dir')
   const twoSession = flag('--two-session')
   const workflow = flag('--workflow')
-  if (!runDir || !twoSession || !workflow)
+  if (!runDir || !twoSession)
     throw new Error(
-      'usage: smoke-check.ts --run-dir <out> --two-session <task> --workflow <task> [--rep 1] [--suite <dir>]',
+      'usage: smoke-check.ts --run-dir <out> --two-session <task> [--workflow <task>] [--rep 1] [--suite <dir>]',
     )
   const suite = flag('--suite')
   const tasks = new Map(
@@ -368,7 +370,7 @@ const main = (): void => {
   const checks = smokeChecklist({
     runDir: resolve(runDir),
     twoSession: pick(twoSession),
-    workflow: pick(workflow),
+    ...(workflow ? { workflow: pick(workflow) } : {}),
     rep: Number(flag('--rep') ?? '1'),
   })
   for (const c of checks) console.log(`${c.status.padEnd(4)}  ${c.name}\n      ${c.detail}`)

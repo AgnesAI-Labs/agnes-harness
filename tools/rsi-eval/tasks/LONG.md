@@ -64,9 +64,18 @@ Ten vendor files (two vendors, orders and refunds) imported into a warehouse wit
   one; the lesson ("by position, table order, cents, read each file's header") still does. Every amount
   converts exactly with `int(float(x) * 100)` too, so an agent's float conversion never commits a wrong
   total by a cent.
-- **Error:** `batch rejected at line N: a value does not fit the table`, the same message for a value in
-  the wrong column, a wrong number of values, a decimal amount and a refund of an unknown order. Fixing the
-  order alone gives the same error again on the amount, so it takes `peek`, `total` and a second try.
+- **Error:** `batch rejected at line N: value K ('north') does not fit the table`, naming the line, the
+  position and the vendor's value, or `N values, the table takes 4` for a file not separated by commas.
+  It names no column, type or format. The first error says the value at position 1 is wrong; `peek` shows
+  what the table holds at each position, and after the order is fixed the same error on the amount sends
+  the agent to the unit (`peek`, `total`). The importer has no other hidden check (no id ranges, no
+  reference from a refund to its order), so a probe the agent writes with made-up ids is judged by the
+  rule alone.
+- **The first probe** had 3 of 5 runs give up at milestone 1: `schema` listed the columns alphabetically
+  without saying so, and they wrote files in that order; probes with made-up ids failed on a hidden id
+  range, so every attempt looked refused. Both are gone, the schema says it is listed by name, and the
+  README says to keep scratch files inside the project (the sandbox refuses writes to `/tmp`, which one
+  run took for the tool refusing).
 - **Procedure:** read the vendor's header, write a copy in the table's order with amounts in cents, load
   the copy, commit the batch it prints, check the total. Every milestone imports a file whose layout
   differs from the table's.
@@ -78,9 +87,12 @@ Ten config changes to three services, deployed with `bin/rollout` to dev, canary
 - **Rule:** `bin/rollout apply <service> prod` takes a change only when shadow runs exactly those values
   right now. Canary, the usual guess, does not count.
 - **Error:** `prod refused: change <hash> of <service> is unproven`. Deploying to canary first gives the
-  same error. `bin/rollout status` shows the values each environment runs and no change ids;
-  `bin/rollout history <service>` shows that every past prod deploy followed a shadow deploy of the same
-  change, which is how the agent can find it.
+  same error, and so does dev; only after shadow does prod take it. No listing pairs shadow with prod:
+  `bin/rollout status` shows dev, canary and prod (no shadow, no change ids) and `bin/rollout history`
+  only prod's deploys. In the first probe the `off` runs read the shadow-then-prod pattern off `history`
+  and `status` before their first prod deploy of a session, so they rarely hit the rule; that path is
+  closed. The agent finds the rule by trying the environments `bin/rollout envs` lists (`get` and `diff`
+  still work for shadow).
 - **Procedure:** edit the config, lint, apply to shadow, apply to prod, check with `get`. Nine of the ten
   milestones go to prod; the one that is canary only is the second of its session, so every session starts
   with a prod deploy. The last moves all three services.

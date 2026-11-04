@@ -13,29 +13,47 @@ import { deflateSync, inflateSync } from 'node:zlib'
 import { defaultTasksDir } from './suite.js'
 
 const LINE = 76
+const MARK = '#PACKED'
+/**
+ * The macOS command line tools' own Python, tried before `python3` on the PATH: inside a sandbox the
+ * `/usr/bin/python3` shim prints cache warnings to stderr around every message of the tool, and agents then
+ * hide stderr, and the tool's errors with it.
+ */
+const PYTHONS = [
+  '/Library/Developer/CommandLineTools/usr/bin/python3',
+  '/Applications/Xcode.app/Contents/Developer/usr/bin/python3',
+]
 
-/** The launcher for a tool's source; its first line (a `# ` comment) stays readable as the header. */
+/**
+ * The launcher for a tool's source: a shell script that runs the packed source, kept below a mark, with the
+ * Python it finds. The source's first line (a `# ` comment) stays readable as the header.
+ */
 export const packTool = (name: string, source: string): string => {
   const header = source.split('\n', 1)[0] ?? ''
   if (!header.startsWith('# ')) throw new Error(`${name}: the source must start with a "# " comment line`)
   const blob = deflateSync(Buffer.from(source, 'utf8'), { level: 9 }).toString('base64')
   const lines = blob.match(new RegExp(`.{1,${LINE}}`, 'g')) ?? []
+  const run = `import base64,sys,zlib;sys.argv=sys.argv[1:];exec(compile(zlib.decompress(base64.b64decode(open(sys.argv[0]).read().split("${MARK}\\n",1)[1])),"<${name}>","exec"))`
   return [
-    '#!/usr/bin/env python3',
+    '#!/bin/sh',
     header,
-    'import base64, zlib',
-    'exec(compile(zlib.decompress(base64.b64decode("""',
+    'py=python3',
+    `for c in ${PYTHONS.join(' ')}; do`,
+    '  if [ -x "$c" ]; then py=$c; break; fi',
+    'done',
+    `exec "$py" -c '${run}' "$0" "$@"`,
+    MARK,
     ...lines,
-    `""")), "<${name}>", "exec"))`,
     '',
   ].join('\n')
 }
 
 /** The source a launcher runs. */
 export const unpackTool = (launcher: string): string => {
-  const match = /base64\.b64decode\("""\n([A-Za-z0-9+/=\n]*)"""\)/.exec(launcher)
-  if (!match?.[1]) throw new Error('not a packed tool')
-  return inflateSync(Buffer.from(match[1].replace(/\n/g, ''), 'base64')).toString('utf8')
+  const at = launcher.indexOf(`\n${MARK}\n`)
+  if (at < 0) throw new Error('not a packed tool')
+  const blob = launcher.slice(at + MARK.length + 2).replace(/\n/g, '')
+  return inflateSync(Buffer.from(blob, 'base64')).toString('utf8')
 }
 
 /** Every long task's tools: the source file and the launcher it is packed into. */

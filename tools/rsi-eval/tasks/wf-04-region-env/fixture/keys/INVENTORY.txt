@@ -1,3 +1,0 @@
-card token signing key is 11 months old
-ledger db password is 5 months old
-keys are stored in the vault under payments/

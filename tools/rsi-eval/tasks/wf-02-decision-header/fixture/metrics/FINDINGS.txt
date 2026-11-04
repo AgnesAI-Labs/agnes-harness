@@ -1,3 +1,0 @@
-email send rate doubled between 09:10 and 09:20
-p95 cart latency 2.8 s, was 0.9 s
-error rate flat

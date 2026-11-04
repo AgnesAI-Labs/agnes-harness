@@ -361,7 +361,7 @@ describe('long tasks and the frozen arm in the runner', () => {
       expect(calls.some((c) => c.op === 'review' || c.op === 'liveness')).toBe(false)
     })
 
-    it('refuses a missing source, a source that is not an on run, and one the upstream ended', async () => {
+    it('refuses a missing source, a source that is not an on run, one the upstream ended, and one blocked', async () => {
       await expect(run(single, 'frozen', {}, { frozenFrom: join(dir, 'nowhere') })).rejects.toThrow(
         /is not there/,
       )
@@ -372,6 +372,13 @@ describe('long tasks and the frozen arm in the runner', () => {
         infraFailed: { session: 0, reason: 'QUOTA (HTTP 402)', status: 402 },
       })
       await expect(run(single, 'frozen', {}, { frozenFrom: ended })).rejects.toThrow(/ended by the upstream/)
+      // A run the host's verifier blocked saved only part of a run: a partial lesson is no source.
+      const blocked = await source(join(dir, 'blocked'), {
+        blocked: { session: 0, prompt: 1, reasons: ['tool_call_as_text'] },
+      })
+      await expect(run(single, 'frozen', {}, { frozenFrom: blocked })).rejects.toThrow(
+        /blocked by the host's verifier/,
+      )
       // Nothing was paid for: no host was launched.
       expect(calls.some((c) => c.op === 'launch')).toBe(false)
     })

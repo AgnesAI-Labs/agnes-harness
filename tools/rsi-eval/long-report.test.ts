@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 import { reachedMilestones, ruleForgetting, runStatus } from './long-report.js'
 import { progressOf, sessionCostOfLedger, toRunRecord } from './metrics.js'
 import { buildReport, TRIGGERS_HEADER } from './report.js'
-import { defaultTasksDir, loadSuite } from './suite.js'
 import type { EvalTask, PromptProgress, RunOutcome, RunRecord, SessionCost } from './types.js'
 
 // Ledgers are trimmed rows of the first evaluation's runs (fixtures/real): cross-01's off run, first
@@ -12,8 +11,9 @@ import type { EvalTask, PromptProgress, RunOutcome, RunRecord, SessionCost } fro
 // their results: the trap was hit twice in the first session and not in the second).
 const real = (name: string): string =>
   readFileSync(join(import.meta.dirname, 'fixtures', 'real', name), 'utf8')
-const suite = loadSuite(defaultTasksDir)
-const byId = (id: string) => suite.find((t) => t.id === id) as EvalTask
+// The tasks those runs ran, kept as data (fixtures/tasks): the short tasks are no longer in the suite.
+const byId = (id: string): EvalTask =>
+  JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'tasks', `${id}.json`), 'utf8')) as EvalTask
 
 describe('what a session had spent at the end of each prompt', () => {
   const text = real('progress.cross-01.off-s1.jsonl')

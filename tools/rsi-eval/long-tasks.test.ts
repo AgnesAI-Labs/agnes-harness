@@ -79,11 +79,12 @@ const RULES: Record<string, Rules> = {
     naive: (commands) => commands.filter((c) => !/ shadow$/.test(c)),
     errorMustNotSay: [/shadow/i, /canary/i, /first/i, /before/i],
     workspaceMustNotSay: [/unproven/i, /prove/i, /gate/i, /before prod/i, /first/i],
-    // Status shows the values, not the change ids that would show shadow and prod running the same change.
-    probes: ['web', 'api', 'worker'].map((service) => ({
-      command: `bin/rollout status ${service}`,
-      mustNotSay: [/\b[0-9a-f]{8}\b/],
-    })),
+    // No listing puts shadow next to prod: status shows dev, canary and prod without change ids, and the
+    // history only prod's deploys, so nothing shows that prod took what shadow ran.
+    probes: ['web', 'api', 'worker'].flatMap((service) => [
+      { command: `bin/rollout status ${service}`, mustNotSay: [/\b[0-9a-f]{8}\b/, /shadow/] },
+      { command: `bin/rollout history ${service}`, mustNotSay: [/shadow|canary|dev/] },
+    ]),
   },
   'long-04-test-harness': {
     tool: 'bin/harness',
@@ -200,63 +201,73 @@ describe('the long tasks', () => {
             expect(text, `${where}: ${pattern.source}`).not.toMatch(pattern)
       })
 
-      posixIt('gives the rule away in none of the looks a careful agent takes before its first failure', async () => {
-        for (const probe of rules.probes) {
+      posixIt(
+        'gives the rule away in none of the looks a careful agent takes before its first failure',
+        async () => {
+          for (const probe of rules.probes) {
+            const work = join(scratch(), 'work')
+            const home = scratch()
+            cpSync(join(defaultTasksDir, task.id, 'fixture'), work, { recursive: true })
+            if (probe.setup) expect((await run(probe.setup, work, home)).code).toBe(0)
+            const out = await run(probe.command, work, home)
+            expect(out.code, out.output).toBe(0)
+            for (const pattern of probe.mustNotSay)
+              expect(out.output, `${probe.command}: ${pattern.source}`).not.toMatch(pattern)
+          }
+        },
+      )
+
+      posixIt(
+        'trips the natural approach at the first milestone with an error that does not say the fix',
+        async () => {
           const work = join(scratch(), 'work')
           const home = scratch()
           cpSync(join(defaultTasksDir, task.id, 'fixture'), work, { recursive: true })
-          if (probe.setup) expect((await run(probe.setup, work, home)).code).toBe(0)
-          const out = await run(probe.command, work, home)
-          expect(out.code, out.output).toBe(0)
-          for (const pattern of probe.mustNotSay)
-            expect(out.output, `${probe.command}: ${pattern.source}`).not.toMatch(pattern)
-        }
-      })
-
-      posixIt('trips the natural approach at the first milestone with an error that does not say the fix', async () => {
-        const work = join(scratch(), 'work')
-        const home = scratch()
-        cpSync(join(defaultTasksDir, task.id, 'fixture'), work, { recursive: true })
-        const trap = await run(task.trap.reproduce, work, home)
-        expect(trap.code).not.toBe(0)
-        const line = trap.output.split('\n').find((l) => signatures(task).some((s) => s.test(l)))
-        expect(line, trap.output).toBeDefined()
-        for (const pattern of rules.errorMustNotSay) expect(line, pattern.source).not.toMatch(pattern)
-        if (rules.fix) {
-          const values = (await run(rules.fix, work, home)).output.split('\n').filter(Boolean)
-          expect(values.length).toBeGreaterThan(0)
-          for (const value of values) expect(line).not.toContain(value)
-        }
-        const first = prompts(task)[0]
-        const results = await Promise.all((first?.checks ?? []).map((c) => run(c.command, work, home)))
-        expect(results.some((r, i) => !checkPasses(r, first?.checks[i]?.contains ?? ''))).toBe(true)
-      })
-
-      posixIt('meets the rule at the first milestone of every session, where the natural solution trips it', async () => {
-        const root = scratch()
-        const home = scratch()
-        const work = join(root, 'work')
-        cpSync(join(defaultTasksDir, task.id, 'fixture'), work, { recursive: true })
-        const tripped: number[] = []
-        for (const [index, prompt] of prompts(task).entries()) {
-          const naive = join(root, `naive-${index}`)
-          cpSync(work, naive, { recursive: true })
-          for (const command of rules.naive(prompt.solution)) {
-            const result = await run(command, naive, home)
-            if (result.code !== 0) {
-              if (signatures(task).some((s) => s.test(result.output))) tripped.push(index)
-              break
-            }
+          const trap = await run(task.trap.reproduce, work, home)
+          expect(trap.code).not.toBe(0)
+          const line = trap.output.split('\n').find((l) => signatures(task).some((s) => s.test(l)))
+          expect(line, trap.output).toBeDefined()
+          for (const pattern of rules.errorMustNotSay) expect(line, pattern.source).not.toMatch(pattern)
+          if (rules.fix) {
+            const values = (await run(rules.fix, work, home)).output.split('\n').filter(Boolean)
+            expect(values.length).toBeGreaterThan(0)
+            for (const value of values) expect(line).not.toContain(value)
           }
-          for (const command of prompt.solution)
-            expect((await run(command, work, home)).code, command).toBe(0)
-        }
-        // A new session starts without the rule in its context: its first milestone must trip the natural way.
-        const firsts = task.sessions.map((_, s) =>
-          task.sessions.slice(0, s).reduce((sum, session) => sum + session.prompts.length, 0),
-        )
-        for (const first of firsts) expect(tripped, `milestone ${first + 1}`).toContain(first)
-      }, 120_000)
+          const first = prompts(task)[0]
+          const results = await Promise.all((first?.checks ?? []).map((c) => run(c.command, work, home)))
+          expect(results.some((r, i) => !checkPasses(r, first?.checks[i]?.contains ?? ''))).toBe(true)
+        },
+      )
+
+      posixIt(
+        'meets the rule at the first milestone of every session, where the natural solution trips it',
+        async () => {
+          const root = scratch()
+          const home = scratch()
+          const work = join(root, 'work')
+          cpSync(join(defaultTasksDir, task.id, 'fixture'), work, { recursive: true })
+          const tripped: number[] = []
+          for (const [index, prompt] of prompts(task).entries()) {
+            const naive = join(root, `naive-${index}`)
+            cpSync(work, naive, { recursive: true })
+            for (const command of rules.naive(prompt.solution)) {
+              const result = await run(command, naive, home)
+              if (result.code !== 0) {
+                if (signatures(task).some((s) => s.test(result.output))) tripped.push(index)
+                break
+              }
+            }
+            for (const command of prompt.solution)
+              expect((await run(command, work, home)).code, command).toBe(0)
+          }
+          // A new session starts without the rule in its context: its first milestone must trip the natural way.
+          const firsts = task.sessions.map((_, s) =>
+            task.sessions.slice(0, s).reduce((sum, session) => sum + session.prompts.length, 0),
+          )
+          for (const first of firsts) expect(tripped, `milestone ${first + 1}`).toContain(first)
+        },
+        120_000,
+      )
     })
   }
 })

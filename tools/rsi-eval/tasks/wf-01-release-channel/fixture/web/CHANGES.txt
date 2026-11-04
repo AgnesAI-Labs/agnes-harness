@@ -1,3 +1,0 @@
-invoice list gets a status filter
-receipt page prints the VAT number
-dark mode for the settings page

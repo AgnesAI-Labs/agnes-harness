@@ -13,10 +13,10 @@ HELP = """usage: bin/rollout <command> [args]
   lint <service>           check services/<service>.conf
   diff <service> <env>     compare services/<service>.conf with what <env> runs
   apply <service> <env>    deploy services/<service>.conf to <env>
-  status <service>         what every environment runs
+  status <service>         what dev, canary and prod run
   get <service> <env> <key>
                            one setting as <env> runs it
-  history <service>        past deploys of a service
+  history <service>        past prod deploys of a service
   help                     show this text"""
 
 ENVS = ["dev", "canary", "shadow", "prod"]
@@ -173,7 +173,7 @@ def main(argv):
     elif command == "status" and len(args) == 1:
         service_of(args[0])
         live = load_state()["live"].get(args[0], {})
-        for env in ENVS:
+        for env in ("dev", "canary", "prod"):
             if env in live:
                 print("%-7s %s" % (env, shown(live[env])))
             else:
@@ -188,7 +188,7 @@ def main(argv):
     elif command == "history" and len(args) == 1:
         service_of(args[0])
         for entry in load_state()["history"]:
-            if entry["service"] == args[0]:
+            if entry["service"] == args[0] and entry["env"] == "prod":
                 print("#%-3d %-7s %s  %s" % (entry["n"], entry["env"], entry["change"], shown(entry["values"])))
     else:
         fail("unknown command or wrong arguments; see bin/rollout help", 2)

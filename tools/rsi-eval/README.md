@@ -5,6 +5,13 @@ AGH is `agh/run-agh.ts` (its header comment lists the options and the cost warni
 builds the report from a run folder; `recompute.ts` recomputes the numbers of finished runs offline
 and never calls a model.
 
+The bundled suite (`tasks/`) is the four long tasks (see "The long tasks" below). The 30 short tasks of the
+first evaluation (one to two sessions of three prompts each, in six categories) were removed: their rules
+were learnt in the first session and leaked from the workspace, so they could not show what a saved lesson
+saves. The runner still reads task folders of those categories (two sessions, a second workspace,
+workflow tasks), which its tests use; the definitions of the three old tasks whose recorded runs the tests
+read are kept as data in `fixtures/tasks/`.
+
 ## Known limits of the first evaluation
 
 These were found by reading the ledgers of the first full AGH run (180 runs, 30 tasks, one model); no
@@ -117,9 +124,10 @@ call. A run folder made before this section existed shows the off and on columns
 
 ## Smoke run of the evaluation changes
 
-`scripts/smoke-v2.sh` runs the minimum real runs into a new folder, one repetition each: one two-session
-task (default `cross-01-build-subdir`) with `--arms off,on,oracle` and then `frozen` from that `on` run,
-and one workflow task (default `wf-01-release-channel`) with `--arms on`, after a preflight call. It then prints the checklist of
+`scripts/smoke-v2.sh` runs the minimum real runs into a new folder, one repetition each: one long task
+(default `long-01-release-train`) with `--arms off,on,oracle,frozen`, the frozen run copying that `on` run,
+and, when `SMOKE_WORKFLOW_TASK` names one, a workflow task with `--arms on` (the suite holds none now), after
+a preflight call. It then prints the checklist of
 `smoke-check.ts` as PASS, FAIL or WARN lines and exits non-zero if any check failed. It spends model calls.
 
 ```
@@ -137,7 +145,7 @@ The checklist:
 - a skill an `on` run installed is offered in the skill catalogue of a later request of that run, and the
   frozen run is offered its seeded skills from its first request (WARN when there is nothing to judge by);
 - the off and oracle runs wrote no skill;
-- the workflow run of the first session is counted as finished;
+- with a workflow task, its first session's workflow run is counted as finished;
 - the oracle run's workspace memory holds the lesson, the off run's does not, and it was written
   between the two sessions;
 - the oracle run's first session matches the off run's: the same prompts, system prompt, tool schema and
@@ -184,6 +192,16 @@ The report also prints, at its head, the model, route, upstream (without credent
 and flags the prices as assumed when the run config says `"pricesAssumed": true`. It prints the share of
 runs whose first session hit the trap, per arm and per task, and names the tasks where no run did.
 
+## Runs the host's verifier blocked are not task failures
+
+The host checks every turn; when the check fails (for example `tool_call_as_text`, a tool call the model
+wrote as text, so it never ran) it asks the model to repair the turn, and when that does not take it ends
+the turn `blocked`. The harness stopped that run, not its task. The runner records it as `blocked` in the
+outcome (session, prompt and the verifier's reasons, from the ledger's `x/core/verifier-recovery` row;
+`blocked.ts`), the report leaves it out of every metric and lists such runs per arm with their reasons, and
+the next start of the same command redoes it once, noted in `blocked-runs.jsonl`, under a new proxy id as
+an infrastructure redo is. A run blocked again is left as blocked.
+
 ## What the capture rate does and does not say
 
 The report prints the capture rate as `rate = numerator / denominator over N of M tasks; 95% CI a to b`,
@@ -214,7 +232,7 @@ A task of the category `long` is a run of many stages, one prompt each, in one s
 sessions over the same workspace. Each session is a new conversation that picks the work up where the last
 one left it, so what the agent learnt in an earlier session is not in its context any more; only what was
 saved (memory, skills) or left in the files carries over. A session of a long task may hold a single
-prompt. The category has no floor of five tasks; the categories of the first suite keep theirs.
+prompt. No category has a floor of tasks.
 
 - **Milestones.** A prompt with `"milestone": "<name>"` has its checks run right after it, in the live
   workspace, before any review. The run stops at the first milestone whose checks fail (`stopped` in the
@@ -242,7 +260,10 @@ prompt. The category has no floor of five tasks; the categories of the first sui
 sessions of two milestones over one workspace, in four domains (a release tool, a vendor data import, a config deployer, a test harness). Each tool enforces
 one rule that no prompt states, that its error does not spell out and that nothing in the workspace shows:
 the tool's source (`tool/<name>.py`, outside the fixture) is packed into `fixture/bin/<name>` by
-`long-tools.ts`, so reading the launcher shows neither its checks nor its messages. Each task repeats one
+`long-tools.ts`, so reading the launcher shows neither its checks nor its messages. The launcher is a shell
+script that runs the source with the macOS command line tools' own Python when there is one: inside the
+eval sandbox the `/usr/bin/python3` shim prints cache warnings to stderr around every message, and agents
+then hide stderr, and the tool's errors with it. Each task repeats one
 multi-step procedure at every milestone. `tasks/LONG.md` (for reviewers; never copied into a workspace)
 gives each task's rule and why it cannot be read off the workspace; `long-tasks.test.ts` holds the tasks to
 that.
@@ -297,7 +318,16 @@ before the first session the run starts with exactly what the `on` run of the sa
 that folder saved: its saved workspace memory paragraphs, its saved user memory sections and its installed
 workspace skills (`agh/frozen.ts`). Not the notes the agent wrote into memory itself (an `off` run writes
 those too) and not the work it left in the files. The runner refuses a missing source, one that is not an
-`on` run, and one the upstream ended; it checks every source before the first run starts.
+`on` run, one the upstream ended, and one the host's verifier blocked (it saved only part of a run); it
+checks every source before the first run starts.
+
+The on runs and the frozen runs can be made in one invocation: `--reps 5 --arms on,off,oracle,frozen
+--frozen-from <the same folder as --out>`. Then frozen always runs right after the on run of the same task
+and repetition (`orderArms` moves it behind `on` whatever order `--arms` names), its source is checked at
+that point instead of before the first run, and a frozen run whose on run cannot be a source (blocked,
+ended by the upstream) is skipped with a message while the others go on; start the same command again to
+redo the on run and then its frozen run. With `--frozen-from` another folder, the sources must all be there
+before the start, as before.
 
 - The paragraphs are written as hand-written memory text, without their markers: a saved paragraph is shown
   to the agent only while the host's registry vouches for it, and the fresh run's registry knows nothing of

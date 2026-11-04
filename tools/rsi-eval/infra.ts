@@ -6,7 +6,7 @@
 // results. The host reports the end of a turn in its ledger (`turn/end` with the error it ended on, after
 // its own retries), and the usage proxy sees every upstream status; either is enough to call the run an
 // infrastructure failure.
-import type { InfraFailure } from './types.js'
+import type { InfraFailure, RunRecord } from './types.js'
 
 /**
  * After this many runs in a row ended by the infrastructure, a shard stops instead of starting the next
@@ -117,3 +117,32 @@ export const errorBodyPreview = (body: string, secrets: readonly string[] = []):
   const folded = redactSecrets(body, secrets).replace(/\s+/g, ' ').trim()
   return folded.length > ERROR_BODY_CHARS ? `${folded.slice(0, ERROR_BODY_CHARS)}...` : folded
 }
+
+/** The runs of a system that the upstream ended, per arm, with the reasons; none when there are none. */
+export type InfraExcluded =
+  | { on: number; off: number; oracle: number; reasons: Record<string, number> }
+  | undefined
+export const infraExcluded = (records: RunRecord[]): InfraExcluded => {
+  const failed = records.filter((r) => r.infraFailed)
+  if (failed.length === 0) return undefined
+  const reasons: Record<string, number> = {}
+  for (const r of failed)
+    reasons[r.infraFailed?.reason ?? '?'] = (reasons[r.infraFailed?.reason ?? '?'] ?? 0) + 1
+  return {
+    on: failed.filter((r) => r.setting === 'on').length,
+    off: failed.filter((r) => r.setting === 'off').length,
+    oracle: failed.filter((r) => r.setting === 'oracle').length,
+    reasons,
+  }
+}
+
+export const infraMarkdown = (x: NonNullable<InfraExcluded>): string[] => [
+  `Runs the upstream ended, not the task (quota, credentials, rate limit, server error), left out of every metric below: on ${x.on}, off ${x.off}, oracle ${x.oracle}.${
+    Object.keys(x.reasons).length === 0
+      ? ''
+      : ` Reasons: ${Object.entries(x.reasons)
+          .map(([reason, n]) => `${reason} x${n}`)
+          .join(', ')}.`
+  } They are redone when the run is started again.`,
+  '',
+]
