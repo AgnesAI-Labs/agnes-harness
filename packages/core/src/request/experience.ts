@@ -63,6 +63,8 @@ const HEADING: Record<HarnessEntry['kind'], string> = {
 }
 /** How many skill and subagent entries of each kind a snapshot lists by relevance. */
 const METADATA_TOP = 3
+/** How many prompt and memory entries of each kind a snapshot gives in full, by relevance; the token budget still applies. */
+const FULL_TEXT_TOP = 3
 /** Characters of a skill or subagent line after its reference. */
 const METADATA_CHARS = 200
 /** Recent conversation read for relevance: this many messages, at most this many characters. */
@@ -160,9 +162,9 @@ function renderControl(control: readonly string[] | undefined, budget: number): 
 }
 
 /**
- * A snapshot: the fixed guidance, then every prompt and memory entry in full and, for skills and
- * subagents, the `METADATA_TOP` most relevant of each kind as one line of metadata with a count of the
- * rest. Relevance is term overlap with the recent conversation (and the goal, once one is supplied);
+ * A snapshot: the fixed guidance, then the `FULL_TEXT_TOP` most relevant prompt and memory entries of
+ * each kind in full and, for skills and subagents, the `METADATA_TOP` most relevant of each kind as one
+ * line of metadata, each kind with a count of the rest. Relevance is term overlap with the recent conversation (and the goal, once one is supplied);
  * it is computed here once and frozen into the text. With no entry the snapshot is the guidance
  * alone. Budgets are estimated with `estimateTokens`; the guidance is outside them. `body` is the
  * trusted header (guidance and counts); `data` is the entry lines, untrusted, '' when there are none.
@@ -173,12 +175,18 @@ export function renderExperience(
 ): { control: string; body: string; data: string; omitted: number } {
   const query = [ctx.goalText, ctx.recentText].filter(Boolean).join('\n')
   const entries = view.entries.filter(usable)
-  const full = rankEntries(
-    entries.filter((item) => isFullText(item.entry.kind)),
-    query,
-  ).map((item) => candidate(item.entry))
-  const metadata: Candidate[] = []
   const more: Partial<Record<HarnessEntry['kind'], number>> = {}
+  const chosen: EffectiveEntry[] = []
+  for (const kind of ['prompt', 'memory'] as const) {
+    const ranked = rankEntries(
+      entries.filter((item) => item.entry.kind === kind),
+      query,
+    )
+    chosen.push(...ranked.slice(0, FULL_TEXT_TOP))
+    if (ranked.length > FULL_TEXT_TOP) more[kind] = ranked.length - FULL_TEXT_TOP
+  }
+  const full = rankEntries(chosen, query).map((item) => candidate(item.entry))
+  const metadata: Candidate[] = []
   for (const kind of ['skill', 'subagent'] as const) {
     const ranked = rankEntries(
       entries.filter((item) => item.entry.kind === kind),
