@@ -11,9 +11,30 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverSkillRoot, skillRoots } from '@agnes/base'
 import { rpcError, type SkillImportParams } from '@agnes/protocol'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import type { PackageAdminAuthority } from '../src/packages/permissions.js'
 import { createSkillImportService } from '../src/packages/skill-import.js'
+
+// Capture the authority the installer receives so its resource callback can be exercised directly.
+const seen = vi.hoisted(() => ({
+  authority: undefined as undefined | { resources: (m: string, d: object) => Promise<unknown> },
+}))
+vi.mock('@agnes/host', async (importActual) => {
+  const actual = await importActual<typeof import('@agnes/host')>()
+  return {
+    ...actual,
+    createSkillInstaller: (...args: Parameters<typeof actual.createSkillInstaller>) => {
+      const installer = actual.createSkillInstaller(...args)
+      return {
+        ...installer,
+        request: (invocation: never, authority: never, signal: never) => {
+          seen.authority = authority
+          return installer.request(invocation, authority, signal)
+        },
+      }
+    },
+  }
+})
 
 const cleanup: (() => void)[] = []
 afterEach(() => {
@@ -36,6 +57,7 @@ function fixture() {
     writeFileSync(join(path, 'bin', 'main.mjs'), "throw Error('installation must never execute this')")
   }
   let revision = ''
+  const calls: { method: string; permissions: readonly string[] }[] = []
   const service = createSkillImportService({
     directory: join(root, 'operations'),
     home,
@@ -44,7 +66,8 @@ function fixture() {
     discovery: { roots: skillRoots, discover: discoverSkillRoot },
     environment: async () => [{ name: 'node', state: 'satisfied', evidence: 'probed', actual: '24.20.0' }],
     resources: {
-      call: async (method, params) => {
+      call: async (method, params, granted) => {
+        calls.push({ method, permissions: granted?.permissions ?? [] })
         const data = params as Record<string, unknown>
         if (method === '_agnes/v1/resources.operation.get') return { state: 'succeeded' }
         if (method === '_agnes/v1/resources.get')
@@ -76,6 +99,7 @@ function fixture() {
     )
   return {
     root,
+    calls,
     source,
     home,
     service,
@@ -223,4 +247,35 @@ it('refuses local source trees overlapping private installation state before acq
     s.request({ action: 'prepare', source: { type: 'path', ref: `path:${secret.replaceAll('\\', '/')}` } }),
   ).rejects.toThrow('protected installation state')
   expect(existsSync(join(s.home, 'skills'))).toBe(false)
+})
+
+it('keeps management imports on the session resource allowlist and gates enabling on trust and activation', async () => {
+  const s = fixture()
+  const source = { type: 'path' as const, ref: `path:${s.source.replaceAll('\\', '/')}` }
+  const prepared = await s.request({ action: 'prepare', source, subdirectory: 'first' })
+  if (!prepared.proposalId || !prepared.revision || !prepared.digest) throw new Error('missing identity')
+  s.revision(prepared.revision)
+  const proposalId = prepared.proposalId
+  // enable:false by an install-only caller records a disabled desired state and never trusts.
+  await s.request({ action: 'commit', proposalId, expectedDigest: prepared.digest })
+  await expect.poll(async () => (await s.request({ action: 'status', proposalId })).state).toBe('installed')
+  expect(existsSync(join(s.home, 'skills/first'))).toBe(true)
+  expect(s.calls.map((c) => c.method)).not.toContain('_agnes/v1/skills.trust.set')
+  expect(s.calls.find((c) => c.method === '_agnes/v1/resources.desired.set')?.permissions).toEqual([
+    'resources.skills.write',
+  ])
+  const resources = seen.authority?.resources
+  if (!resources) throw new Error('missing installer authority')
+  s.calls.length = 0
+  await expect(resources('_agnes/v1/skills.remove', {})).rejects.toMatchObject(rpcError('CAPABILITY_DENIED'))
+  await expect(resources('_agnes/v1/mcp.servers.list', {})).rejects.toMatchObject(
+    rpcError('CAPABILITY_DENIED'),
+  )
+  await expect(resources('_agnes/v1/skills.trust.set', { trust: 'trusted' })).rejects.toMatchObject(
+    rpcError('CAPABILITY_DENIED'),
+  )
+  await expect(resources('_agnes/v1/resources.desired.set', { state: 'enabled' })).rejects.toMatchObject(
+    rpcError('CAPABILITY_DENIED'),
+  )
+  expect(s.calls).toEqual([])
 })
