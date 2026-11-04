@@ -1052,7 +1052,7 @@ export function createConfigurationService(
     const result = labelOnlyUpdate
       ? { models: structuredClone(existing?.models ?? []), verified: true }
       : compatible.isCompatibleEntry(entry) && parsed.models !== undefined
-        ? { models: chatModels.compatibleModels(entry, baseUrl, parsed.models), verified: true }
+        ? { models: chatModels.compatibleModels(entry, baseUrl, parsed.models, input), verified: true }
         : oauthEntry
           ? {
               models: configModels((await staticCatalogue(entry)).records, existing?.models),

@@ -552,10 +552,19 @@ it('edits a saved OpenAI-compatible account: its models are part of the draft, a
   ;(h.doc.getElementById('account-dialog-close') as unknown as HTMLButtonElement).click()
   expect(discardShown()).toBe(true)
   ;(h.doc.getElementById('config-account-keep') as unknown as HTMLButtonElement).click()
+  h.config.test.mockResolvedValueOnce({
+    verified: true,
+    models: [{ ...model('a'), contextWindow: 1048576 }, model('b')],
+  })
+  ;[...(panel?.querySelectorAll('button') ?? [])]
+    .find((button) => button.textContent === zhT('accounts.compatible.fetch'))
+    ?.click()
+  await vi.waitFor(() => expect(h.config.test).toHaveBeenCalled())
+  await settle()
   await h.click('#config-save')
   await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
   const saved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]
-  expect(saved[0]).toMatchObject({ models: [model('a')] })
+  expect(saved[0]).toMatchObject({ models: [{ ...model('a'), contextWindow: 1048576 }] })
   // A new address saves without a key; the backend decides whether a stored key may follow.
   await h.click('button[aria-label="编辑 relay"]')
   h.input('config-base-url').value = 'http://moved.example/v1'
@@ -569,6 +578,47 @@ it('edits a saved OpenAI-compatible account: its models are part of the draft, a
   const moved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]
   expect(moved[0]).toMatchObject({ baseUrl: 'http://moved.example/v1' })
   expect(moved[0]).not.toHaveProperty('apiKey')
+  h.controller.close()
+})
+
+it('saves explicit budget corrections for every selected relay model after shrinking', async () => {
+  const models = ['a', 'b'].map((id) => ({
+    id,
+    name: id,
+    contextWindow: 128000,
+    defaultSettings: { contextWindow: 64000 },
+  }))
+  const h = await setup(
+    [{ ...account('relay'), providerId: 'openai-compatible', model: 'a', models }],
+    [{ ...OPENAI, id: 'openai-compatible' }],
+  )
+  await h.click('button[aria-label="编辑 relay"]')
+  h.config.test.mockResolvedValueOnce({
+    verified: true,
+    models: models.map((model) => ({ ...model, contextWindow: 32768 })),
+  })
+  const panel = h.doc.getElementById('config-compatible-models')
+  ;[...(panel?.querySelectorAll('button') ?? [])]
+    .find((button) => button.textContent === zhT('accounts.compatible.fetch'))
+    ?.click()
+  await vi.waitFor(() => expect(h.config.test).toHaveBeenCalled())
+  await settle()
+  for (const id of ['a', 'b']) {
+    h.input('config-model').value = id
+    h.input('config-model').dispatchEvent(
+      new (window as Window).Event('change', { bubbles: true }) as unknown as Event,
+    )
+    h.input('config-context-window').value = '32000'
+    h.input('config-context-window').dispatchEvent(
+      new (window as Window).Event('change', { bubbles: true }) as unknown as Event,
+    )
+  }
+  await h.click('#config-save')
+  await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
+  const saved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]
+  expect(saved[0]).toMatchObject({
+    models: ['a', 'b'].map((id) => ({ id, contextWindow: 32768, defaultSettings: { contextWindow: 32000 } })),
+  })
   h.controller.close()
 })
 
