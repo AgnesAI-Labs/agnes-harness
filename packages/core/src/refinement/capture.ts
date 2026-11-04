@@ -141,6 +141,20 @@ export function sessionVisibleTools(s: SessionImpl, tools: ToolRegistry): ToolRe
   return visible.get(sessionIdentity(s))?.(tools) ?? tools
 }
 
+let withoutRefinement: ((tools: ToolRegistry) => ToolRegistry) | undefined
+/**
+ * `tools` as a session opening now would be offered them, for a Host listing made while no session
+ * is open (an agent launch review): a new session runs task experience only while the switch is on.
+ */
+export function newSessionVisibleTools(
+  kernel: { refinementEnabled?: () => boolean },
+  tools: ToolRegistry,
+): ToolRegistry {
+  if (!kernel.refinementEnabled || switchedOn(kernel.refinementEnabled)) return tools
+  withoutRefinement ??= sessionToolView(undefined, REFINEMENT_TOOLS)!
+  return withoutRefinement(tools)
+}
+
 /**
  * The marker row the next request of `s` carries, while the session owes it (see `bindRefinement`).
  * It rides in the request's dispatch transaction, so a request prepared and never sent records

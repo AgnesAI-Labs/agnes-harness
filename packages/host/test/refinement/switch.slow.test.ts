@@ -153,6 +153,8 @@ describe('what Core reads of the switch in a running host', () => {
       expect(offered(before)).toEqual([])
       // Nor does its capability set list them, so a tool filter cannot name what it does not have.
       expect(capabilityTools(host, before.key)).toEqual([])
+      // A launch review (no session yet) lists what a session opening now gets: the tools, now on.
+      expect(capabilityTools(host, '')).toEqual(REFINEMENT_TOOLS.map((id) => ({ id, enabled: true })))
       const after = await host.createSession({ cwd: dataDir, key: 'switch-after' })
       expect(after.d.refinementEnabled?.()).toBe(true)
       expect(after.d.refinement?.settings()).toMatchObject({ enabled: true, mode: 'auto' })
@@ -166,6 +168,7 @@ describe('what Core reads of the switch in a running host', () => {
       expect(offered(after)).toHaveLength(REFINEMENT_TOOLS.length)
       expect(before.d.refinementEnabled?.()).toBe(false)
       expect(offered(before)).toEqual([])
+      expect(capabilityTools(host, '')).toEqual([])
     } finally {
       await host.close()
     }

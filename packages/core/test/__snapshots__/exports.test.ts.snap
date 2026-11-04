@@ -135,6 +135,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "modelAllowsTool",
   "namesWorkspace",
   "newOpState",
+  "newSessionVisibleTools",
   "noCompaction",
   "noopHooks",
   "normalizeChildAgentAllowlist",
