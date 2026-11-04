@@ -10,6 +10,10 @@
 // The store's catalogue adapter is the small one the daemon's own end-to-end test uses: it lists the
 // skill folders of the workspace and reports a trusted, enabled skill as ready.
 //
+// The host offers the skills it finds on disk, scanned when a session first reads skills; a skill saved
+// during a session is offered to that session only after the host is told to scan again, so every save
+// the handler accepts is followed by that refresh (`refreshAfterSave`), and the next request offers it.
+//
 // A run with refinement off gets no transport at all (`skillSaveTransport` returns undefined), and the
 // handler also answers `refinement-off` while the switch reads off, so an off run can never write a skill.
 import { existsSync, readdirSync } from 'node:fs'
@@ -233,4 +237,17 @@ export function skillSaveTransport(
   input: SkillSaveInput,
 ): SkillSaveTransport | undefined {
   return refinement?.enabled ? createSkillSaveTransport(input) : undefined
+}
+
+/**
+ * The transport with the host's skill refresh after every save the handler accepted (`ok: true`), so the
+ * saved skill is offered from the session's next request. A refused save changes nothing on disk and
+ * asks for no scan.
+ */
+export function refreshAfterSave(transport: SkillSaveTransport, refresh: () => void): SkillSaveTransport {
+  return async (sessionKey, params, signal) => {
+    const reply = await transport(sessionKey, params, signal)
+    if (typeof reply === 'object' && reply !== null && (reply as { ok?: unknown }).ok === true) refresh()
+    return reply
+  }
 }

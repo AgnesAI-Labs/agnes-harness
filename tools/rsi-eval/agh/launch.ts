@@ -18,7 +18,7 @@ import {
   type ReviewAnswer,
   TERMINAL_REVIEW_STATES,
 } from './run-agh.js'
-import { loadSkillSaveModules, skillSaveTransport } from './skill-save.js'
+import { loadSkillSaveModules, refreshAfterSave, skillSaveTransport } from './skill-save.js'
 
 const PACKAGES = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages')
 const CLI = join(PACKAGES, 'cli')
@@ -81,6 +81,8 @@ type OwnedSession = {
 }
 type Booted = {
   client: Client
+  /** The local form's rescan of the skill folders before the next skill read of any session. */
+  refreshSkills?: () => void
   host?: { profile: { dataDir: string }; kernel: { get(key: string): OwnedSession | undefined } }
   close(): Promise<void>
 }
@@ -220,8 +222,11 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
   }
   // Saved skills reach the workspace through the daemon's installer over a resource-control store of this
   // run; only a run with refinement on gets the way to do it (see skill-save.ts).
+  // After each accepted save the host scans its skill folders again, so the next request offers the skill;
+  // the host exists only after boot, so the transport reaches it through `refreshSkills`.
   const live = new Map<string, string>()
-  const refinementSave = input.refinement
+  let refreshSkills: (() => void) | undefined
+  const transport = input.refinement
     ? skillSaveTransport(input.refinement, {
         home: input.home,
         dataDir: data,
@@ -231,6 +236,7 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
         modules: await loadSkillSaveModules(),
       })
     : undefined
+  const refinementSave = transport ? refreshAfterSave(transport, () => refreshSkills?.()) : undefined
   const agnesVersion = (JSON.parse(readFileSync(join(CLI, 'package.json'), 'utf8')) as { version: string })
     .version
   // The host reads user-wide instruction files from AGH_HOME; the run's home holds none.
@@ -263,6 +269,12 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
     restore()
     throw new Error(`the run host does not use the run's data dir ${data}`)
   }
+  if (refinementSave && !booted.refreshSkills) {
+    await booted.close()
+    restore()
+    throw new Error('the run host cannot rescan its skill folders, so a saved skill would never be offered')
+  }
+  refreshSkills = booted.refreshSkills
   for (const workspace of input.workspaces) await booted.client.workspace.add(workspace)
   const ids = new Map<string, string>()
 

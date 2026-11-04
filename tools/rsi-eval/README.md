@@ -62,25 +62,26 @@ failed call, so in any unattended session (`agh -p`, `agh run`, a scheduled run,
 workflow that ran to the end is reported to the model as an unknown outcome. `deliverables` guards the same call by checking
 that `ui_render` exists; `workflow` and `workflow_status` do not.
 
-### Saved skills are not offered to the agent in the eval host (still open)
+### Saved skills were not offered to the agent in the eval host
 
-Saving a skill now works (it lands in the workspace's skills folder, above), but the embedded host never
-scans skills on disk, so a saved skill is never offered to the agent: not to a later session, and not to
+Saving a skill worked (it landed in the workspace's skills folder, above), but the embedded host never
+scanned skills on disk, so a saved skill was never offered to the agent: not to a later session, and not to
 the session that saved it. Evidence from a smoke run's own captured requests (`home/data/model-requests`):
 the workflow task's `on` run installed `release-request-workflow` at the end of its first session, and all
 161 requests it made after that offered only the bundled `remembering` skill in their `<available_skills>`.
-A product fix is being made separately.
+Results recorded before the fix that depend on a saved skill (the `on` arm's, every workflow result, the
+skill part of the frozen arm) are invalid.
 
-Until skills are offered in the embedded host, these results are invalid and must not be reported as
-findings:
+Now: a host the CLI embeds offers the skills it finds on disk, scanned when a session first reads skills
+(so a new session sees every saved skill), and `Booted.refreshSkills()` asks for a scan before the next
+skill read of any session. The runner wraps the skill transport so that every save the handler accepts
+(`ok: true`) is followed by that refresh (`refreshAfterSave` in `agh/skill-save.ts`): the session that
+saved a skill is offered it from its next request. `agh/skill-save.test.ts` saves a skill through the
+transport and reads the host's skill view the way a turn does, with and without the refresh.
 
-- the `on` arm's results that depend on a saved skill, in any category, and every result of the workflow
-  tasks (workflow reuse runs through the skill the first session saves);
-- the skill part of the frozen arm (its memory part stands).
-
-`smoke-check.ts` therefore does not accept a skill folder on disk as a saved skill: it also requires the
+`smoke-check.ts` still does not accept a skill folder on disk as a saved skill: it also requires the
 skill in the catalogue of a later request of the `on` run, and a frozen run's seeded skills in its first
-request's catalogue. Those two checks are expected to FAIL until the fix lands, and say so.
+request's catalogue.
 
 ## The oracle arm and the capture rate
 
@@ -132,8 +133,7 @@ The checklist:
 - no skill save is refused `unavailable`, and a skill the review proposed is in the workspace's skills
   folder (WARN when the model proposed no skill: run again);
 - a skill an `on` run installed is offered in the skill catalogue of a later request of that run, and the
-  frozen run is offered its seeded skills from its first request (both expected to FAIL for now, see the
-  known limits; WARN when there is nothing to judge by);
+  frozen run is offered its seeded skills from its first request (WARN when there is nothing to judge by);
 - the off and oracle runs wrote no skill;
 - the workflow run of the first session is counted as finished;
 - the oracle run's workspace memory holds the lesson, the off run's does not, and it was written
@@ -283,8 +283,7 @@ those too) and not the work it left in the files. The runner refuses a missing s
   to the agent only while the host's registry vouches for it, and the fresh run's registry knows nothing of
   another run's saves.
 - The skills are copied into the workspace's skills folder before the host starts, where the `on` run left
-  them. The embedded host does not offer skills it finds on disk (see the known limits), so until that is
-  fixed the skill part of the frozen arm is invalid and the arm is a test of the saved memory only.
+  them, and the host offers them from the first request.
 - The runner records which throwaway workspace each fixture used (`workspaces` in the outcome), so a later
   frozen run can find each workspace's memory. A source recorded before that is accepted only for a task of
   one workspace.
