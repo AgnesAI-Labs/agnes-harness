@@ -46,8 +46,23 @@ export type RunConfig = {
   /** Name of the environment variable that holds the key; never the key itself. */
   keyEnv: string
   prices: { input: number; output: number; cacheRead: number; cacheWrite: number }
+  /** True when the prices are a stand-in, not the provider's list; the report says so. */
+  pricesAssumed?: boolean
   proxyPort: number
   sessionTimeoutMs: number
+}
+
+/**
+ * A run that the infrastructure ended, not the task: the upstream refused or failed to answer (quota,
+ * credentials, rate limit, a server error) so the model never got to do the work. Such a run says nothing
+ * about the system under test; it is left out of every metric and redone on the next start.
+ */
+export type InfraFailure = {
+  /** Which session's turn the upstream ended (zero-based). */
+  session: number
+  /** What the host reported: the error code and, when it has one, the HTTP status. */
+  reason: string
+  status?: number
 }
 
 export type RunOutcome = {
@@ -63,6 +78,8 @@ export type RunOutcome = {
   alignment?: Alignment
   /** Workflow tasks: why the host refused the workspace save sent at the end of session 1. */
   saveRefused?: string
+  /** Set when the upstream, not the task, ended the run; see `InfraFailure`. */
+  infraFailed?: InfraFailure
 }
 
 /**
@@ -134,4 +151,6 @@ export type RunRecord = {
   workflowReuse?: WorkflowReuse
   /** AGH runs: the cost of each session of the task, in order. */
   sessionCosts?: SessionCost[]
+  /** The upstream ended the run; such records are left out of every metric. */
+  infraFailed?: InfraFailure
 }

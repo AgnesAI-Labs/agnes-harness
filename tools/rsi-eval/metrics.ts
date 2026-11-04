@@ -432,6 +432,7 @@ export const toRunRecord = (
     ...(outcome.alignment ? { alignment: outcome.alignment } : {}),
     ...(workflowReuse ? { workflowReuse } : {}),
     ...(sessionCosts.length > 0 ? { sessionCosts } : {}),
+    ...(outcome.infraFailed ? { infraFailed: outcome.infraFailed } : {}),
   }
 }
 

@@ -67,6 +67,7 @@
 // short call. The total grows with tasks x prompts x reps x 2 settings.
 
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -80,9 +81,10 @@ import { tmpdir } from 'node:os'
 import { dirname, join, parse, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import { createInfraStreak, INFRA_STOP_AFTER, infraFromLedger, infraFromStatuses } from '../infra.js'
 import { readConfig, runId } from '../prime/run-prime.js'
 import { DEFAULT_FIXTURE, fixtureOf, taskFixtures, workspaceName } from '../suite.js'
-import type { Arm, EvalTask, RunConfig, RunOutcome } from '../types.js'
+import type { Arm, EvalTask, InfraFailure, RunConfig, RunOutcome } from '../types.js'
 
 const defaultTasksDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'tasks')
 
@@ -183,7 +185,46 @@ export type AghRunOptions = {
   workBase?: string
   /** Runs one check; defaults to bash with a small fixed environment, as the task self-check does. */
   runCheck?: CheckRun
+  /** The statuses the usage proxy saw for a run id, oldest first; for a run that ended without a readable ledger error. */
+  statuses?: (proxyRunId: string) => number[]
 }
+
+/** The outcome of a run that is finished for good: one the infrastructure ended is not, it is redone. */
+export const finishedOutcome = (outDir: string, id: string): RunOutcome | undefined => {
+  const file = join(outDir, id, 'outcome.json')
+  if (!existsSync(file)) return undefined
+  const outcome = JSON.parse(readFileSync(file, 'utf8')) as RunOutcome
+  return outcome.infraFailed ? undefined : outcome
+}
+
+/** The exit code of a shard that stopped because the infrastructure kept ending its runs. */
+export const INFRA_STOP_EXIT = 3
+
+/** Where a run that the infrastructure ended is noted before it is redone, in the output folder. */
+export const INFRA_FAILURES_FILE = 'infra-failures.jsonl'
+
+/** How many times a run was ended by the infrastructure and started again, from the note file. */
+const earlierAttempts = (outDir: string, runId: string): number => {
+  const file = join(outDir, INFRA_FAILURES_FILE)
+  if (!existsSync(file)) return 0
+  return readFileSync(file, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .filter((line) => {
+      try {
+        return (JSON.parse(line) as { runId?: string }).runId === runId
+      } catch {
+        return false
+      }
+    }).length
+}
+
+/**
+ * The id a run's model traffic goes under at the usage proxy. A run that is redone after an
+ * infrastructure failure gets a new one (`<id>~a1`), so what the failed attempt used is not counted into
+ * the run that replaces it; the report reads the latest attempt of a run.
+ */
+export const proxyRunId = (id: string, attempt: number): string => (attempt === 0 ? id : `${id}~a${attempt}`)
 
 // ------------------------------------------------------------------ pure parts
 
@@ -358,7 +399,17 @@ export async function runOne(
   const id = runId(task.id, setting, rep)
   const runDir = resolve(outDir, id)
   const outcomeFile = join(runDir, 'outcome.json')
-  if (existsSync(outcomeFile)) return JSON.parse(readFileSync(outcomeFile, 'utf8')) as RunOutcome
+  if (existsSync(outcomeFile)) {
+    const finished = JSON.parse(readFileSync(outcomeFile, 'utf8')) as RunOutcome
+    if (!finished.infraFailed) return finished
+    // The upstream ended that run, not the task: note it, then do the run again from the start.
+    appendFileSync(
+      join(outDir, INFRA_FAILURES_FILE),
+      `${JSON.stringify({ runId: id, ts: new Date().toISOString(), ...finished.infraFailed })}\n`,
+    )
+  }
+  const attempt = earlierAttempts(outDir, id)
+  const proxyId = proxyRunId(id, attempt)
   if (setting === 'oracle' && !oracleApplies(task))
     throw new Error(`task ${task.id} has no oracle arm: it needs two sessions and is not a workflow task`)
 
@@ -390,7 +441,7 @@ export async function runOne(
     const host = await opts.launch({
       home,
       profile: PROFILE,
-      profileDocument: aghProfile(cfg, id),
+      profileDocument: aghProfile(cfg, proxyId),
       refinement: refinementSwitch(setting),
       workspace: workOf(0),
       workspaces,
@@ -456,12 +507,20 @@ export async function runOne(
         checks.push({ session: s, prompt: p, passed })
       }
     }
+    // An upstream that refused or failed to answer ended the run, not the task. The host's own account of
+    // the turn that ended is preferred; otherwise the proxy's last answers for the run.
+    let infraFailed: InfraFailure | undefined
+    for (const [i, key] of keys.entries()) infraFailed ??= infraFromLedger(host.ledger(key), i)
+    const unclean = sessions.some((s) => s.timedOut || s.exitCode !== 0)
+    if (!infraFailed && unclean && opts.statuses)
+      infraFailed = infraFromStatuses(opts.statuses(proxyId), sessions.length - 1)
     const outcome: RunOutcome = {
       runId: id,
       system: 'agh',
       sessions,
       checks,
       ...(saveRefused === undefined ? {} : { saveRefused }),
+      ...(infraFailed ? { infraFailed } : {}),
     }
     writeFileSync(outcomeFile, `${JSON.stringify(outcome, null, 2)}\n`)
     return outcome
@@ -579,28 +638,42 @@ async function main(argv: string[]): Promise<void> {
     upstream: cfg.upstream,
     port: cfg.proxyPort,
     logFile: join(out, 'usage.jsonl'),
+    redact: [key],
   })
   // The host resolves the route's secret from this process's environment; it is never written down.
   process.env[SECRET_ENV] = key
+  const streak = createInfraStreak()
   try {
-    for (let rep = 1; rep <= args.reps; rep++) {
+    for (let rep = 1; rep <= args.reps && !streak.stopped; rep++) {
       for (const task of tasks) {
         for (const setting of args.settings) {
+          if (streak.stopped) break
           if (setting === 'oracle' && !oracleApplies(task)) {
             if (rep === 1) console.error(`skipped ${task.id}: no oracle arm for this task`)
             continue
           }
           const id = runId(task.id, setting, rep)
-          const fresh = !existsSync(join(out, id, 'outcome.json'))
+          const fresh = finishedOutcome(out, id) === undefined
           const outcome = await runOne(task, setting, rep, cfg, out, {
             launch: launchHost,
             fixtureDir: join(tasksDir, task.id, 'fixture'),
+            statuses: (proxyId) => proxy.statuses(proxyId),
           })
           const exits = outcome.sessions.map((s) => (s.timedOut ? 'timeout' : String(s.exitCode))).join(',')
           const passed = outcome.checks.filter((c) => c.passed).length
+          const infra = outcome.infraFailed
+            ? ` INFRA-FAILED (${outcome.infraFailed.reason}; not a task failure, left out of the results, redone on the next start)`
+            : ''
           console.error(
-            `${fresh ? 'ran' : 'skipped'} ${id} exit=[${exits}] checks=${passed}/${outcome.checks.length} (${relative(process.cwd(), join(out, id))})`,
+            `${fresh ? 'ran' : 'skipped'} ${id} exit=[${exits}] checks=${passed}/${outcome.checks.length}${infra} (${relative(process.cwd(), join(out, id))})`,
           )
+          if (fresh && streak.record(outcome.infraFailed !== undefined)) {
+            console.error(
+              `STOPPED: ${INFRA_STOP_AFTER} runs in a row were ended by the upstream (${outcome.infraFailed?.reason}), not by their tasks. ` +
+                'Check the key, the account balance and the model name (the preflight does this), then start the same command again: finished runs are kept, the infra-failed ones are redone.',
+            )
+            process.exitCode = INFRA_STOP_EXIT
+          }
         }
       }
     }

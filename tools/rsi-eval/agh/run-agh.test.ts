@@ -12,6 +12,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createInfraStreak, INFRA_STOP_AFTER } from '../infra.js'
 import { defaultTasksDir, loadSuite } from '../suite.js'
 import type { Arm, EvalTask, RunConfig } from '../types.js'
 import {
@@ -21,11 +22,14 @@ import {
   type CheckRun,
   checkRoute,
   EVAL_MEMORY,
+  finishedOutcome,
+  INFRA_FAILURES_FILE,
   type LaunchInput,
   type LedgerRow,
   oracleApplies,
   oracleLesson,
   parseAghArgs,
+  proxyRunId,
   REFINE_WAIT_MS,
   requireKey,
   runOne,
@@ -71,6 +75,8 @@ type Call =
   | { op: 'close-host' }
 
 type Script = {
+  /** Ledger rows a session's ledger holds besides its first row, by session key suffix (`s1`, `s2`). */
+  ledgerRows?: Record<string, LedgerRow[]>
   /** How each prompt ends, by prompt text; `hang` waits for the abort. Default `completed`. */
   turns?: Record<string, string>
   review?: { runId: string } | { refused: string }
@@ -128,6 +134,7 @@ function stubLaunch(calls: Call[], script: Script = {}) {
             origin: 'system',
             data: { key },
           },
+          ...(script.ledgerRows?.[key.slice(key.lastIndexOf('-') + 1)] ?? []),
         ]
       },
     }
@@ -631,6 +638,89 @@ describe('run-agh', () => {
       expect(() => parseAghArgs([...base, '--settings', 'off,oracle'])).toThrow(/oracle/)
       expect(() => parseAghArgs([...base, '--arms', 'off,maybe'])).toThrow(/maybe/)
       expect(() => parseAghArgs([...base, '--arms', 'off', '--settings', 'on'])).toThrow(/same option/)
+    })
+  })
+
+  describe('runs the infrastructure ended', () => {
+    // Rows of the first evaluation's run that the provider ended with HTTP 402 (see fixtures/real).
+    const quotaRows = (name: string): LedgerRow[] =>
+      readFileSync(join(import.meta.dirname, '..', 'fixtures', 'real', name), 'utf8')
+        .split('\n')
+        .filter((line) => line.trim() !== '' && !line.includes('"type": "session/start"'))
+        .map((line) => JSON.parse(line) as LedgerRow)
+    const failing = { turns: { a: 'failed' }, ledgerRows: { s1: quotaRows('infra-402.xws-05.off-s1.jsonl') } }
+
+    it('marks a run whose turn ended in HTTP 402 as infra-failed, with the reason and status', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      const outcome = await run(t, 'off', [], failing)
+      expect(outcome.infraFailed).toEqual({ session: 0, reason: 'QUOTA (HTTP 402)', status: 402 })
+      // The run is still recorded as it ended, so its folder says what happened.
+      expect(outcome.sessions[0]?.exitCode).toBe(1)
+      expect(
+        JSON.parse(readFileSync(join(out, 't1.off.r1', 'outcome.json'), 'utf8')).infraFailed,
+      ).toMatchObject({
+        status: 402,
+      })
+    })
+
+    it('does not mark a run that failed for another reason, nor one that completed', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      expect((await run(t, 'off', [], { turns: { a: 'failed' } })).infraFailed).toBeUndefined()
+      expect((await run(t, 'off', [], {}, 2)).infraFailed).toBeUndefined()
+    })
+
+    it('falls back on the statuses the proxy saw when the ledger names no error', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      const withStatuses = (statuses: number[], rep: number) =>
+        runOne(t, 'off', rep, cfg, out, {
+          launch: stubLaunch([], { turns: { a: 'failed' } }),
+          fixtureDir: fixture,
+          workBase: work,
+          runCheck,
+          statuses: () => statuses,
+        })
+      expect((await withStatuses([200, 503, 503, 503], 1)).infraFailed).toMatchObject({ status: 503 })
+      expect((await withStatuses([503, 200, 400], 2)).infraFailed).toBeUndefined()
+    })
+
+    it('is redone on the next start, not skipped, and counted under a new proxy id', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      const first: Call[] = []
+      await run(t, 'off', first, failing)
+      expect(finishedOutcome(out, 't1.off.r1')).toBeUndefined()
+      const again: Call[] = []
+      const redone = await run(t, 'off', again)
+      expect(redone.infraFailed).toBeUndefined()
+      expect(redone.sessions[0]?.exitCode).toBe(0)
+      expect(finishedOutcome(out, 't1.off.r1')).toBeDefined()
+      const profile = (calls: Call[]) =>
+        calls.flatMap((c) => (c.op === 'launch' ? [c.input.profileDocument] : []))[0]
+      expect(profile(first)).toEqual(aghProfile(cfg, 't1.off.r1'))
+      expect(profile(again)).toEqual(aghProfile(cfg, proxyRunId('t1.off.r1', 1)))
+      expect(proxyRunId('t1.off.r1', 1)).toBe('t1.off.r1~a1')
+      // The failed attempt is noted before it is replaced.
+      const notes = readFileSync(join(out, INFRA_FAILURES_FILE), 'utf8').trim().split('\n')
+      expect(notes).toHaveLength(1)
+      expect(JSON.parse(notes[0] as string)).toMatchObject({ runId: 't1.off.r1', status: 402 })
+      // A finished run is still skipped.
+      const third: Call[] = []
+      await run(t, 'off', third)
+      expect(third).toEqual([])
+    })
+
+    it('stops a shard after a few runs in a row, and a good run starts the count over', () => {
+      const streak = createInfraStreak()
+      expect(INFRA_STOP_AFTER).toBe(3)
+      expect([true, true, false, true, true].map((x) => streak.record(x))).toEqual([
+        false,
+        false,
+        false,
+        false,
+        false,
+      ])
+      expect(streak.stopped).toBe(false)
+      expect(streak.record(true)).toBe(true)
+      expect(streak.stopped).toBe(true)
     })
   })
 })

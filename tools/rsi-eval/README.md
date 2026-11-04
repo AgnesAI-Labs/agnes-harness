@@ -111,3 +111,41 @@ two-session task (default `cross-01-build-subdir`) with `--arms off,on,oracle`, 
 
 `RSI_EVAL_LABEL` names the output folder; `SMOKE_TWO_SESSION_TASK` and `SMOKE_WORKFLOW_TASK` change the
 tasks. It spends model calls, so the owner runs it.
+
+## Infrastructure failures are not task failures
+
+The first evaluation lost 30 runs to HTTP 402 (the account was out of quota). They were recorded as
+failed runs (exit 1, no checks) and counted in the report. Now:
+
+- **Detection** (`infra.ts`, `agh/run-agh.ts`). After a run, the host's ledger is read: when the last
+  turn ended in error with a provider error code (`AUTH`, `QUOTA`, `RATE_LIMIT`, `TRANSPORT`) or an HTTP
+  status of 401, 402, 403, 429 or 5xx, the outcome gets `infraFailed` with the session, the reason and the
+  status. The host has retried by then, so a rate limit or a server error that is reported persisted.
+  Failing that, a run that did not end cleanly is marked when the usage proxy's last three answers for it
+  were all such statuses. A 400, a refused format, a timeout or a task failure is not infrastructure.
+- **Results.** `report.ts` leaves infra-failed runs out of every metric and prints, per arm, how many it
+  left out and why. `recompute.ts` does the same.
+- **Redo.** Starting the same command again redoes an infra-failed run from the start (a finished run is
+  skipped as before). The failed attempt is noted in `infra-failures.jsonl` in the output folder, and the
+  redo's model traffic goes to the proxy under `<id>~a<N>`, so what the failed attempt spent is not counted
+  into the run that replaces it. `mark-infra.ts --run-dir <out>` recognises the same failures in older
+  output, such as the first evaluation's runs recorded as plain failures, and marks them for the redo.
+- **Stop.** After 3 runs in a row ended by the infrastructure a shard stops with a message and exit code
+  3 (`INFRA_STOP_AFTER` in `infra.ts`), so a bad key or an empty account does not burn through the task
+  list. Three is more than one bad moment and few enough to waste little.
+- **Error bodies.** The usage proxy keeps the first 500 characters of the body of every response that is
+  not a 200 in `errors.jsonl` next to `usage.jsonl` (run id, status, body). Credentials are removed first:
+  the API key given to the runner, `Bearer` tokens, `sk-` keys, values of key-like fields and any long
+  unbroken token. Headers and the request are never kept.
+- **Preflight.** `preflight.ts --config <run-config.json>` makes one tiny real call to the configured
+  upstream through the proxy path and says whether the key is missing, the key is refused, the balance is
+  out, the model name is wrong, the rate limit is hit or the upstream cannot be reached. It needs the
+  variable the run config names as `keyEnv`; the key is sent upstream and nowhere else.
+- **Scripts.** The shell scripts in `~/rsi-eval/` (outside the repository) call the preflight first, take
+  the run config from `RSI_EVAL_CONFIG`, take the key from the `keyEnv` variable when it is set, recognise
+  and redo infra-failed runs on start, and check for a running evaluation with the runner's own command
+  line.
+
+The report also prints, at its head, the model, route, upstream (without credentials) and the prices used,
+and flags the prices as assumed when the run config says `"pricesAssumed": true`. It prints the share of
+runs whose first session hit the trap, per arm and per task, and names the tasks where no run did.

@@ -315,6 +315,8 @@ export function readConfig(file: string): RunConfig {
   for (const key of ['input', 'output', 'cacheRead', 'cacheWrite']) {
     if (typeof prices?.[key] !== 'number') throw new Error(`run-config: prices.${key} must be a number`)
   }
+  if (raw.pricesAssumed !== undefined && typeof raw.pricesAssumed !== 'boolean')
+    throw new Error('run-config: "pricesAssumed" must be true or false when given')
   for (const key of ['proxyPort', 'sessionTimeoutMs']) {
     if (typeof raw[key] !== 'number') throw new Error(`run-config: "${key}" must be a number`)
   }

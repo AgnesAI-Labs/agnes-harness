@@ -13,7 +13,12 @@ import { fixtureOf, workspaceName } from './suite.js'
 import type { Arm, EvalTask, RunConfig, RunOutcome, RunRecord, SessionCost, UsageRow } from './types.js'
 import { readSkillTexts } from './workflow-reuse.js'
 
-export type ReportOptions = { resamples?: number; seed?: number }
+export type ReportOptions = {
+  resamples?: number
+  seed?: number
+  /** The run configuration, for the report header: what model, upstream and prices the run used. */
+  run?: Pick<RunConfig, 'provider' | 'api' | 'upstream' | 'model' | 'prices' | 'pricesAssumed'>
+}
 
 type DiffJson = {
   estimate: number | null
@@ -196,6 +201,40 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
   }
 }
 
+type TrapCell = { runs: number; hit: number }
+const trapCell = (runs: RunRecord[]): TrapCell => ({
+  runs: runs.length,
+  hit: runs.filter((r) => r.windows.some((w) => w.session === 0 && w.ran && w.trapHit)).length,
+})
+
+/**
+ * How often the first session hit the trap, per arm and per task. A task whose first session never hits it
+ * leaves nothing for refinement to repeat or avoid, and shows up here as a task with no hit. Workflow tasks
+ * are left out: their commands run in child sessions, so a hit is not defined for them.
+ */
+const firstSessionTrapReport = (records: RunRecord[]) => {
+  const runs = records.filter(
+    (r) => r.category !== 'workflow' && r.windows.some((w) => w.session === 0 && w.ran),
+  )
+  const arms = ['on', 'off', 'oracle'] as const
+  const byArm = Object.fromEntries(arms.map((arm) => [arm, trapCell(bySetting(runs, arm))])) as Record<
+    (typeof arms)[number],
+    TrapCell
+  >
+  const tasks = [...groupBy(runs, (r) => r.taskId)].map(([taskId, list]) => ({
+    taskId,
+    ...(Object.fromEntries(arms.map((arm) => [arm, trapCell(bySetting(list, arm))])) as Record<
+      (typeof arms)[number],
+      TrapCell
+    >),
+  }))
+  return {
+    byArm,
+    tasks,
+    noHit: tasks.filter((t) => t.on.hit + t.off.hit + t.oracle.hit === 0).map((t) => t.taskId),
+  }
+}
+
 const systemReport = (records: RunRecord[], options: ReportOptions) => {
   const on = bySetting(records, 'on')
   const off = bySetting(records, 'off')
@@ -252,6 +291,7 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
   const workflowRuns = records.filter((r) => r.workflowReuse !== undefined)
 
   const second = secondSessionReport(records, options)
+  const firstTrap = firstSessionTrapReport(records)
 
   const lower = drop.ci95[0]
   const criterion1 = drop.tasks > 0 && drop.estimate > 0 && lower > 0
@@ -296,6 +336,7 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
       tokens: { relative: diffJson(tokens.diff), pooled: tokens.pooled, skippedTasks: tokens.skippedTasks },
       costUsd: { relative: diffJson(cost.diff), pooled: cost.pooled, skippedTasks: cost.skippedTasks },
     },
+    firstSessionTrap: firstTrap,
     ...(second ? { secondSession: second } : {}),
     criterion1: {
       rule: CRITERION_1_RULE,
@@ -382,7 +423,40 @@ const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): s
   return lines
 }
 
-const systemMarkdown = (name: string, r: SystemReport): string[] => {
+const trapMarkdown = (t: SystemReport['firstSessionTrap']): string[] => {
+  const cell = (c: TrapCell): string => (c.runs === 0 ? '-' : `${c.hit}/${c.runs}`)
+  const hasOracle = t.byArm.oracle.runs > 0
+  const lines = [
+    '### First-session trap hits',
+    '',
+    "Runs whose first session hit the trap (a failed run of the task's tool with its signature), out of the runs of that task and arm. A run whose first session never hits it has nothing for refinement to repeat or avoid and is excluded from metrics 1 and 2. Workflow tasks are left out (their commands run in child sessions).",
+    '',
+    `- Rate: on ${cell(t.byArm.on)}, off ${cell(t.byArm.off)}${hasOracle ? `, oracle ${cell(t.byArm.oracle)}` : ''}`,
+    `- Tasks whose first session never hit the trap in any run: ${t.noHit.length === 0 ? 'none' : `${t.noHit.length} (${t.noHit.join(', ')})`}`,
+    '',
+    `| task | on | off |${hasOracle ? ' oracle |' : ''}`,
+    `| --- | --- | --- |${hasOracle ? ' --- |' : ''}`,
+    ...t.tasks.map(
+      (row) =>
+        `| ${row.taskId} | ${cell(row.on)} | ${cell(row.off)} |${hasOracle ? ` ${cell(row.oracle)} |` : ''}`,
+    ),
+    '',
+  ]
+  return lines
+}
+
+const infraMarkdown = (x: NonNullable<InfraExcluded>): string[] => [
+  `Runs the upstream ended, not the task (quota, credentials, rate limit, server error), left out of every metric below: on ${x.on}, off ${x.off}, oracle ${x.oracle}.${
+    Object.keys(x.reasons).length === 0
+      ? ''
+      : ` Reasons: ${Object.entries(x.reasons)
+          .map(([reason, n]) => `${reason} x${n}`)
+          .join(', ')}.`
+  } They are redone when the run is started again.`,
+  '',
+]
+
+const systemMarkdown = (name: string, r: SystemReport, infra?: InfraExcluded): string[] => {
   const verdict = !r.criterion1.evaluable
     ? 'NOT EVALUABLE (no paired tasks)'
     : r.criterion1.pass
@@ -393,6 +467,8 @@ const systemMarkdown = (name: string, r: SystemReport): string[] => {
     '',
     `${r.tasks} tasks; runs: ${r.runs.on} on, ${r.runs.off} off.`,
     '',
+    ...(infra ? infraMarkdown(infra) : []),
+    ...trapMarkdown(r.firstSessionTrap),
     '### 1. Repeat-error drop',
     '',
     `Direction: ${r.repeatErrorDrop.direction}`,
@@ -473,24 +549,105 @@ const systemMarkdown = (name: string, r: SystemReport): string[] => {
   return lines
 }
 
+/** The runs of a system that the upstream ended, per arm, with the reasons; none when there are none. */
+type InfraExcluded = { on: number; off: number; oracle: number; reasons: Record<string, number> } | undefined
+const infraExcluded = (records: RunRecord[]): InfraExcluded => {
+  const failed = records.filter((r) => r.infraFailed)
+  if (failed.length === 0) return undefined
+  const reasons: Record<string, number> = {}
+  for (const r of failed)
+    reasons[r.infraFailed?.reason ?? '?'] = (reasons[r.infraFailed?.reason ?? '?'] ?? 0) + 1
+  return {
+    on: bySetting(failed, 'on').length,
+    off: bySetting(failed, 'off').length,
+    oracle: bySetting(failed, 'oracle').length,
+    reasons,
+  }
+}
+
+const money = (value: number): string => String(value)
+
+/** The report header lines for the run configuration: model, route, upstream (without credentials) and prices. */
+const runMarkdown = (run: NonNullable<ReportOptions['run']>): string[] => {
+  let upstream = run.upstream
+  try {
+    const url = new URL(run.upstream)
+    upstream = `${url.origin}${url.pathname.replace(/\/+$/, '')}`
+  } catch {
+    /* not a URL: shown as given */
+  }
+  const p = run.prices
+  return [
+    `Run: model ${run.model} through route ${run.provider} (${run.api}) at ${upstream}.`,
+    '',
+    `Prices per million tokens, USD: input ${money(p.input)}, output ${money(p.output)}, cache read ${money(p.cacheRead)}, cache write ${money(p.cacheWrite)}.${run.pricesAssumed ? " ASSUMED: these prices are a stand-in, not the provider's price list, so every cost figure below is only as good as that assumption." : ''}`,
+    '',
+  ]
+}
+
 export const buildReport = (
   records: RunRecord[],
   options: ReportOptions = {},
 ): { json: object; markdown: string } => {
   const systems: Record<string, SystemReport> = {}
-  for (const [system, runs] of groupBy(records, (r) => r.system))
-    systems[system] = systemReport(runs, options)
-  const json = { directions: DIRECTIONS, criterion1Rule: CRITERION_1_RULE, systems }
+  const excluded: Record<string, NonNullable<InfraExcluded>> = {}
+  for (const [system, all] of groupBy(records, (r) => r.system)) {
+    // A run the upstream ended says nothing about the system under test: no metric sees it.
+    systems[system] = systemReport(
+      all.filter((r) => !r.infraFailed),
+      options,
+    )
+    const infra = infraExcluded(all)
+    if (infra) excluded[system] = infra
+  }
+  const run = options.run && {
+    ...options.run,
+    upstream: (() => {
+      try {
+        const url = new URL(options.run.upstream)
+        return `${url.origin}${url.pathname.replace(/\/+$/, '')}`
+      } catch {
+        return options.run.upstream
+      }
+    })(),
+  }
+  const json = {
+    ...(run ? { run } : {}),
+    directions: DIRECTIONS,
+    criterion1Rule: CRITERION_1_RULE,
+    ...(Object.keys(excluded).length === 0 ? {} : { infraExcluded: excluded }),
+    systems,
+  }
   const markdown = [
     '# Evaluation report',
     '',
+    ...(options.run ? runMarkdown(options.run) : []),
     'Aggregate numbers only. Each metric states its own direction; they are not all "on minus off".',
     '',
     "A trap hit is a command run that failed with the task's signature (on stderr, or in the output of a run that exited non-zero). Reading the tool's source or docs never counts.",
     '',
-    ...Object.entries(systems).flatMap(([name, report]) => systemMarkdown(name, report)),
+    ...Object.entries(systems).flatMap(([name, report]) => systemMarkdown(name, report, excluded[name])),
   ].join('\n')
   return { json, markdown: `${markdown}\n` }
+}
+
+/**
+ * A run that was redone after the upstream ended it has its model traffic under `<id>~a<N>` for the Nth
+ * redo; the run's usage is that of its latest attempt, so the failed attempt's spend is not counted into the
+ * run that replaced it.
+ */
+export const latestAttempts = (usage: Map<string, UsageSummary>): Map<string, UsageSummary> => {
+  const latest = new Map<string, { n: number; summary: UsageSummary }>()
+  for (const [key, summary] of usage) {
+    const found = /^(.+)~a(\d+)$/.exec(key)
+    if (!found) continue
+    const base = found[1] as string
+    const n = Number(found[2])
+    if (n > (latest.get(base)?.n ?? 0)) latest.set(base, { n, summary })
+  }
+  const out = new Map(usage)
+  for (const [base, { summary }] of latest) out.set(base, summary)
+  return out
 }
 
 /**
@@ -520,7 +677,7 @@ export const readRunRecords = (
     }
     const savedSkills = join(runDir, entry.name, workspaceName(fixtureOf(task, 0)), AGH_DIR, 'skills')
     records.push(
-      toRunRecord(task, outcome, usage, {
+      toRunRecord(task, outcome, latestAttempts(usage), {
         readFile,
         system: outcome.system ?? 'prime',
         readSavedSkills: () => readSkillTexts(savedSkills),
@@ -567,7 +724,7 @@ const main = async (): Promise<void> => {
 
   const records = readRunRecords(runDir, tasks, usage)
 
-  const report = buildReport(records)
+  const report = buildReport(records, { run: config })
   writeFileSync(join(runDir, 'report.json'), `${JSON.stringify(report.json, null, 2)}\n`)
   writeFileSync(join(runDir, 'report.md'), report.markdown)
   console.log(`wrote report.json and report.md for ${records.length} runs`)

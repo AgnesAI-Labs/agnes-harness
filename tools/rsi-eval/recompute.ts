@@ -90,7 +90,8 @@ const main = async (): Promise<void> => {
     loadSuite(suiteDir ? resolve(suiteDir) : defaultTasksDir, { minTasks: 1 }).map((t) => [t.id, t]),
   )
   const records = readRunRecords(runDir, tasks)
-  const rows = taskRows(records)
+  // A run the upstream ended says nothing about the system under test (the report counts and names them).
+  const rows = taskRows(records.filter((r) => !r.infraFailed))
   const unmatched = records.filter((r) => r.exit === 'ok' && r.windows.some((w) => !w.ran)).length
   if (unmatched > 0)
     console.error(
