@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import {
+  isSkillBundleIgnored,
   isSkillBundleMarker,
   isSkillBundlePath,
   SKILL_BUNDLE_LIMITS,
@@ -44,6 +45,7 @@ export async function collectSkillBundle(
   let visits = 0
   const walk = async (relative: string) => {
     for (const entry of await fs.list(join(directory, relative))) {
+      if (isSkillBundleIgnored(entry.name)) continue
       if (++visits > SKILL_BUNDLE_LIMITS.entries) fail()
       const name = relative ? `${relative}/${entry.name}` : entry.name
       if (!isSkillBundlePath(name) || seen.has(name.normalize('NFKC').toLowerCase())) fail()

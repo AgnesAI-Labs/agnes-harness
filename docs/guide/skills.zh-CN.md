@@ -27,7 +27,7 @@ agh plugins skill-import status PROPOSAL_ID
 agh plugins skill-import cancel PROPOSAL_ID
 ```
 
-SDK 本地来源 ref 使用正斜杠；CLI 和 Web 会转换 Windows 路径分隔符。完整导入会记录 `AGH-SKILL.json`，请将其与目录一同保留。所有保留资源参与审查修订，修改脚本、模板或标记都需要重新信任；普通本地维护技能保留原有编辑规则。同名替换会被拒绝；更换安装请使用既有受审查删除流程，此入口暂不执行原地升级，也不承诺运行中命令的版本租约。
+SDK 本地来源 ref 使用正斜杠；CLI 和 Web 会转换 Windows 路径分隔符。以 `.` 开头的条目（如 `.git*`、`.DS_Store`）、`Thumbs.db` 和 `desktop.ini` 会被忽略，不会保留。完整导入会记录 `AGH-SKILL.json`，请将其与目录一同保留。所有保留资源参与审查修订，修改脚本、模板或标记都需要重新信任；普通本地维护技能保留原有编辑规则。同名替换会被拒绝；更换安装请使用既有受审查删除流程，此入口暂不执行原地升级，也不承诺运行中命令的版本租约。
 
 ## 让 Agent 创作 Skill
 

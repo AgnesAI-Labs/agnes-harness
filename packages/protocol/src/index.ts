@@ -9,6 +9,7 @@ export type { DecisionPresentation, ToolPresentation } from '../gen/ts/session-v
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
 export {
+  isSkillBundleIgnored,
   isSkillBundleMarker,
   isSkillBundlePath,
   SKILL_BUNDLE_FRONTMATTER_KEYS,

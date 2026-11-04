@@ -65,6 +65,7 @@ describe('protocol src boundary', () => {
         'SKILL_BUNDLE_FRONTMATTER_KEYS',
         'SKILL_BUNDLE_MARKER',
         'SKILL_BUNDLE_VERSION',
+        'isSkillBundleIgnored',
         'isSkillBundleMarker',
         'isSkillBundlePath',
         'skillBundleFileKind',

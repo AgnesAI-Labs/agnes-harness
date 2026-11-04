@@ -14,6 +14,7 @@ import { decideFsPath, validateFsPolicy } from '@agnes/core'
 import type { FsEntry, FsStat } from '@agnes/extension-api'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import {
+  isSkillBundleIgnored,
   isSkillBundleMarker,
   SKILL_BUNDLE_LIMITS,
   SKILL_BUNDLE_MARKER,
@@ -207,6 +208,7 @@ export async function readInstallBundle(
     try {
       for (let entry = directory.readSync(); entry; entry = directory.readSync()) {
         if (++entries > (complete ? SKILL_BUNDLE_LIMITS.entries : 128)) throw installError('SKILL_SIZE_LIMIT')
+        if (complete && isSkillBundleIgnored(entry.name)) continue
         if (!safeName(entry.name)) throw installError('SKILL_FILE_REFUSED')
         const full = join(path, entry.name)
         checkPath(full)
