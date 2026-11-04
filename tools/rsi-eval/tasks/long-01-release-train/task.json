@@ -1,0 +1,298 @@
+{
+  "id": "long-01-release-train",
+  "category": "long",
+  "description": "Ten releases of four small packages with the repository's release tool, which only publishes a release note that names the build being published.",
+  "trap": {
+    "signatures": ["publish refused: the release note is not tied to this build"],
+    "reproduce": "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"alpha ready\"/' packages/alpha/src/alpha.py && perl -pi -e 's/^version = .*/version = 1.4.0/' packages/alpha/pkg.ini && bin/ship build alpha && printf 'Alpha now reports ready.\\n' > packages/alpha/NEXT.md && bin/ship publish alpha",
+    "note": "bin/ship publish only takes a release note that names the build being published: after the last change to the package's sources and pkg.ini, run `bin/ship build <name>`, read the id on the `build` line of `bin/ship inspect <name>`, and put that id in packages/<name>/NEXT.md together with the note; then `bin/ship publish <name>`. Any later change to the sources or the version changes the id, so build again and update the note. Release steps: change the code, set the version in pkg.ini, build, inspect, write NEXT.md with the note and the build id, publish, add `- <name> <version>: <note>` at the top of the list in CHANGELOG.md."
+  },
+  "maxRequests": 250,
+  "oracle": {
+    "afterPrompt": 0
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "milestone": "first-release",
+          "text": "Change the alpha package so that `python3 packages/alpha/src/alpha.py` prints `alpha ready`, then release alpha as version 1.4.0 with the release note `Alpha now reports ready.`, following the release steps in the README. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "alpha 1.4.0 published"
+            },
+            {
+              "command": "python3 packages/alpha/src/alpha.py",
+              "contains": "alpha ready"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- alpha 1.4.0: Alpha now reports ready."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"alpha ready\"/' packages/alpha/src/alpha.py",
+            "perl -pi -e 's/^version = .*/version = 1.4.0/' packages/alpha/pkg.ini",
+            "bin/ship build alpha",
+            "printf '%s\\n\\nbuild %s\\n' 'Alpha now reports ready.' \"$(bin/ship inspect alpha | sed -n 's/^build //p')\" > packages/alpha/NEXT.md",
+            "bin/ship publish alpha",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- alpha 1.4.0: Alpha now reports ready.\\n/' CHANGELOG.md"
+          ]
+        },
+        {
+          "milestone": "beta-online",
+          "text": "Next, beta: make `python3 packages/beta/src/beta.py` print `beta online` and release beta 2.1.0 with the release note `Beta reports online.`.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "beta 2.1.0 published"
+            },
+            {
+              "command": "python3 packages/beta/src/beta.py",
+              "contains": "beta online"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- beta 2.1.0: Beta reports online."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"beta online\"/' packages/beta/src/beta.py",
+            "perl -pi -e 's/^version = .*/version = 2.1.0/' packages/beta/pkg.ini",
+            "bin/ship build beta",
+            "printf '%s\\n\\nbuild %s\\n' 'Beta reports online.' \"$(bin/ship inspect beta | sed -n 's/^build //p')\" > packages/beta/NEXT.md",
+            "bin/ship publish beta",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- beta 2.1.0: Beta reports online.\\n/' CHANGELOG.md"
+          ]
+        },
+        {
+          "milestone": "gamma-steady",
+          "text": "Gamma should print `gamma steady` (`python3 packages/gamma/src/gamma.py`). Release gamma 0.9.0 with the release note `Gamma reports steady.`.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "gamma 0.9.0 published"
+            },
+            {
+              "command": "python3 packages/gamma/src/gamma.py",
+              "contains": "gamma steady"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- gamma 0.9.0: Gamma reports steady."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"gamma steady\"/' packages/gamma/src/gamma.py",
+            "perl -pi -e 's/^version = .*/version = 0.9.0/' packages/gamma/pkg.ini",
+            "bin/ship build gamma",
+            "printf '%s\\n\\nbuild %s\\n' 'Gamma reports steady.' \"$(bin/ship inspect gamma | sed -n 's/^build //p')\" > packages/gamma/NEXT.md",
+            "bin/ship publish gamma",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- gamma 0.9.0: Gamma reports steady.\\n/' CHANGELOG.md"
+          ]
+        },
+        {
+          "milestone": "delta-live",
+          "text": "Make delta print `delta live` and release delta 3.2.0; release note: `Delta reports live.`.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "delta 3.2.0 published"
+            },
+            {
+              "command": "python3 packages/delta/src/delta.py",
+              "contains": "delta live"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- delta 3.2.0: Delta reports live."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"delta live\"/' packages/delta/src/delta.py",
+            "perl -pi -e 's/^version = .*/version = 3.2.0/' packages/delta/pkg.ini",
+            "bin/ship build delta",
+            "printf '%s\\n\\nbuild %s\\n' 'Delta reports live.' \"$(bin/ship inspect delta | sed -n 's/^build //p')\" > packages/delta/NEXT.md",
+            "bin/ship publish delta",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- delta 3.2.0: Delta reports live.\\n/' CHANGELOG.md"
+          ]
+        },
+        {
+          "milestone": "alpha-patch",
+          "text": "A small follow-up for alpha: it should print `alpha set`. Release it as 1.4.1 with the note `Alpha reports set.`.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "alpha 1.4.1 published"
+            },
+            {
+              "command": "python3 packages/alpha/src/alpha.py",
+              "contains": "alpha set"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- alpha 1.4.1: Alpha reports set."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"alpha set\"/' packages/alpha/src/alpha.py",
+            "perl -pi -e 's/^version = .*/version = 1.4.1/' packages/alpha/pkg.ini",
+            "bin/ship build alpha",
+            "printf '%s\\n\\nbuild %s\\n' 'Alpha reports set.' \"$(bin/ship inspect alpha | sed -n 's/^build //p')\" > packages/alpha/NEXT.md",
+            "bin/ship publish alpha",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- alpha 1.4.1: Alpha reports set.\\n/' CHANGELOG.md"
+          ]
+        },
+        {
+          "milestone": "beta-patch",
+          "text": "Beta should print `beta warm` now. Release beta 2.1.1, note `Beta reports warm.`.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "beta 2.1.1 published"
+            },
+            {
+              "command": "python3 packages/beta/src/beta.py",
+              "contains": "beta warm"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- beta 2.1.1: Beta reports warm."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"beta warm\"/' packages/beta/src/beta.py",
+            "perl -pi -e 's/^version = .*/version = 2.1.1/' packages/beta/pkg.ini",
+            "bin/ship build beta",
+            "printf '%s\\n\\nbuild %s\\n' 'Beta reports warm.' \"$(bin/ship inspect beta | sed -n 's/^build //p')\" > packages/beta/NEXT.md",
+            "bin/ship publish beta",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- beta 2.1.1: Beta reports warm.\\n/' CHANGELOG.md"
+          ]
+        },
+        {
+          "milestone": "gamma-one",
+          "text": "Gamma is ready for 1.0.0: make it print `gamma stable` and release it with the note `Gamma reaches its first stable release.`.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "gamma 1.0.0 published"
+            },
+            {
+              "command": "python3 packages/gamma/src/gamma.py",
+              "contains": "gamma stable"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- gamma 1.0.0: Gamma reaches its first stable release."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"gamma stable\"/' packages/gamma/src/gamma.py",
+            "perl -pi -e 's/^version = .*/version = 1.0.0/' packages/gamma/pkg.ini",
+            "bin/ship build gamma",
+            "printf '%s\\n\\nbuild %s\\n' 'Gamma reaches its first stable release.' \"$(bin/ship inspect gamma | sed -n 's/^build //p')\" > packages/gamma/NEXT.md",
+            "bin/ship publish gamma",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- gamma 1.0.0: Gamma reaches its first stable release.\\n/' CHANGELOG.md"
+          ]
+        },
+        {
+          "milestone": "delta-patch",
+          "text": "Delta needs a patch release 3.2.1: it should print `delta calm`. Release note: `Delta reports calm.`.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "delta 3.2.1 published"
+            },
+            {
+              "command": "python3 packages/delta/src/delta.py",
+              "contains": "delta calm"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- delta 3.2.1: Delta reports calm."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"delta calm\"/' packages/delta/src/delta.py",
+            "perl -pi -e 's/^version = .*/version = 3.2.1/' packages/delta/pkg.ini",
+            "bin/ship build delta",
+            "printf '%s\\n\\nbuild %s\\n' 'Delta reports calm.' \"$(bin/ship inspect delta | sed -n 's/^build //p')\" > packages/delta/NEXT.md",
+            "bin/ship publish delta",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- delta 3.2.1: Delta reports calm.\\n/' CHANGELOG.md"
+          ]
+        },
+        {
+          "milestone": "alpha-minor",
+          "text": "Alpha gets a minor release, 1.5.0: make it print `alpha go`, release note `Alpha reports go.`.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "alpha 1.5.0 published"
+            },
+            {
+              "command": "python3 packages/alpha/src/alpha.py",
+              "contains": "alpha go"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- alpha 1.5.0: Alpha reports go."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"alpha go\"/' packages/alpha/src/alpha.py",
+            "perl -pi -e 's/^version = .*/version = 1.5.0/' packages/alpha/pkg.ini",
+            "bin/ship build alpha",
+            "printf '%s\\n\\nbuild %s\\n' 'Alpha reports go.' \"$(bin/ship inspect alpha | sed -n 's/^build //p')\" > packages/alpha/NEXT.md",
+            "bin/ship publish alpha",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- alpha 1.5.0: Alpha reports go.\\n/' CHANGELOG.md"
+          ]
+        },
+        {
+          "milestone": "two-releases",
+          "text": "Two releases to finish: beta should print `beta done` and go out as 2.2.0 with the note `Beta reports done.`; delta should print `delta done` and go out as 3.3.0 with the note `Delta reports done.`.",
+          "checks": [
+            {
+              "command": "bin/ship log",
+              "contains": "beta 2.2.0 published"
+            },
+            {
+              "command": "python3 packages/beta/src/beta.py",
+              "contains": "beta done"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- beta 2.2.0: Beta reports done."
+            },
+            {
+              "command": "bin/ship log",
+              "contains": "delta 3.3.0 published"
+            },
+            {
+              "command": "python3 packages/delta/src/delta.py",
+              "contains": "delta done"
+            },
+            {
+              "command": "head -n 6 CHANGELOG.md",
+              "contains": "- delta 3.3.0: Delta reports done."
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"beta done\"/' packages/beta/src/beta.py",
+            "perl -pi -e 's/^version = .*/version = 2.2.0/' packages/beta/pkg.ini",
+            "bin/ship build beta",
+            "printf '%s\\n\\nbuild %s\\n' 'Beta reports done.' \"$(bin/ship inspect beta | sed -n 's/^build //p')\" > packages/beta/NEXT.md",
+            "bin/ship publish beta",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- beta 2.2.0: Beta reports done.\\n/' CHANGELOG.md",
+            "perl -pi -e 's/^MESSAGE = .*/MESSAGE = \"delta done\"/' packages/delta/src/delta.py",
+            "perl -pi -e 's/^version = .*/version = 3.3.0/' packages/delta/pkg.ini",
+            "bin/ship build delta",
+            "printf '%s\\n\\nbuild %s\\n' 'Delta reports done.' \"$(bin/ship inspect delta | sed -n 's/^build //p')\" > packages/delta/NEXT.md",
+            "bin/ship publish delta",
+            "perl -0pi -e 's/\\n\\n/\\n\\n- delta 3.3.0: Delta reports done.\\n/' CHANGELOG.md"
+          ]
+        }
+      ]
+    }
+  ]
+}

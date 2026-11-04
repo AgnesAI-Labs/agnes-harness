@@ -1,0 +1,177 @@
+{
+  "id": "long-02-vendor-import",
+  "category": "long",
+  "description": "Ten imports of vendor CSV files into a small warehouse whose importer reads columns by position in the table's order and takes amounts in whole cents.",
+  "trap": {
+    "signatures": ["batch rejected at line \\d+: a value does not fit the table"],
+    "reproduce": "bin/ingest load orders drops/acme-0301.csv",
+    "note": "bin/ingest ignores a file's header names: it reads the columns by position, in the order `bin/ingest schema <table>` prints them (orders: id, placed, amount_cents, region; refunds: id, order_id, amount_cents, reason), and amounts must be whole cents (a vendor's 12.50 is 1250). The vendors' files use other column orders and decimal amounts, and acme and bolt differ (in refunds files `refund` is the refund id and `order` the order id). So for every vendor file: read its header, write a copy with one header line, the table's column order and the amounts in cents, load that copy with `bin/ingest load <table> <copy>`, commit the batch number it prints, and check `bin/ingest total <table>`."
+  },
+  "maxRequests": 250,
+  "oracle": {
+    "afterPrompt": 0
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "milestone": "first-import",
+          "text": "Import the vendor file `drops/acme-0301.csv` into the `orders` table and commit it. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 11 rows, 448788 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-0301.csv orders drops/acme-0301.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load orders drops/acme-0301.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "second-acme",
+          "text": "Acme sent another drop: import `drops/acme-0302.csv` into `orders` and commit it.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 16 rows, 665920 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-0302.csv orders drops/acme-0302.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load orders drops/acme-0302.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "first-bolt",
+          "text": "Now the first file from bolt: `drops/bolt-0301.csv` goes into `orders`. Import and commit it.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 22 rows, 1043938 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-0301.csv orders drops/bolt-0301.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load orders drops/bolt-0301.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "acme-refunds",
+          "text": "Acme's refunds for the month are in `drops/acme-r0301.csv`; import them into the `refunds` table and commit.",
+          "checks": [
+            {
+              "command": "bin/ingest total refunds",
+              "contains": "refunds: 4 rows, 82051 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-r0301.csv refunds drops/acme-r0301.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load refunds drops/acme-r0301.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "second-bolt",
+          "text": "Import bolt's `drops/bolt-0302.csv` into `orders` and commit it.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 27 rows, 1349906 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-0302.csv orders drops/bolt-0302.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load orders drops/bolt-0302.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "third-acme",
+          "text": "Import `drops/acme-0303.csv` (acme) into `orders` and commit it.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 33 rows, 1503036 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-0303.csv orders drops/acme-0303.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load orders drops/acme-0303.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "bolt-refunds",
+          "text": "Bolt's refunds are in `drops/bolt-r0301.csv`. Import them into `refunds` and commit.",
+          "checks": [
+            {
+              "command": "bin/ingest total refunds",
+              "contains": "refunds: 7 rows, 147396 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-r0301.csv refunds drops/bolt-r0301.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load refunds drops/bolt-r0301.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "third-bolt",
+          "text": "Import and commit bolt's `drops/bolt-0303.csv` into `orders`.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 38 rows, 1707523 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-0303.csv orders drops/bolt-0303.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load orders drops/bolt-0303.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "month-end-acme",
+          "text": "Month end for acme: import `drops/acme-0304.csv` into `orders` and `drops/acme-r0302.csv` into `refunds`, and commit both.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 44 rows, 2024710 cents"
+            },
+            {
+              "command": "bin/ingest total refunds",
+              "contains": "refunds: 9 rows, 297222 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/acme-0304.csv orders drops/acme-0304.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load orders drops/acme-0304.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')",
+            "python3 - drops/acme-r0302.csv refunds drops/acme-r0302.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load refunds drops/acme-r0302.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        },
+        {
+          "milestone": "last-bolt",
+          "text": "Last one: import bolt's `drops/bolt-0304.csv` into `orders` and commit it.",
+          "checks": [
+            {
+              "command": "bin/ingest total orders",
+              "contains": "orders: 50 rows, 2383200 cents"
+            }
+          ],
+          "solution": [
+            "python3 - drops/bolt-0304.csv orders drops/bolt-0304.ready.csv <<'EOF'\nimport csv, sys\nsrc, table, dst = sys.argv[1:]\nmaps = {'orders': {'order': 'id', 'date': 'placed', 'total': 'amount_cents', 'region': 'region'},\n        'refunds': {'refund': 'id', 'order': 'order_id', 'amount': 'amount_cents', 'reason': 'reason'}}\ncols = {'orders': ['id', 'placed', 'amount_cents', 'region'], 'refunds': ['id', 'order_id', 'amount_cents', 'reason']}[table]\nrows = list(csv.reader(open(src)))\nnamed = [dict(zip([maps[table][h] for h in rows[0]], r)) for r in rows[1:] if r]\nfor r in named:\n    r['amount_cents'] = str(round(float(r['amount_cents']) * 100))\nwith open(dst, 'w', newline='') as f:\n    w = csv.writer(f, lineterminator='\\n')\n    w.writerow(cols)\n    w.writerows([[r[c] for c in cols] for r in named])\nEOF",
+            "bin/ingest load orders drops/bolt-0304.ready.csv",
+            "bin/ingest commit $(bin/ingest batches | awk '$4 == \"staged\" {n=$2} END {print n}')"
+          ]
+        }
+      ]
+    }
+  ]
+}

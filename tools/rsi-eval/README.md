@@ -231,6 +231,17 @@ category has no floor of five tasks; the categories of the first suite keep thei
   out of every mean; they appear in the milestone curves, which stop at the cap. The cap counts every request
   of the run, the review calls included. The session timeout still applies; size it to the cap.
 
+### The long tasks
+
+`tasks/long-01-release-train` to `tasks/long-04-test-harness` are four such tasks of ten milestones each, in
+four domains (a release tool, a vendor data import, a config deployer, a test harness). Each tool enforces
+one rule that no prompt states, that its error does not spell out and that nothing in the workspace shows:
+the tool's source (`tool/<name>.py`, outside the fixture) is packed into `fixture/bin/<name>` by
+`long-tools.ts`, so reading the launcher shows neither its checks nor its messages. Each task repeats one
+multi-step procedure at every milestone. `tasks/LONG.md` (for reviewers; never copied into a workspace)
+gives each task's rule and why it cannot be read off the workspace; `long-tasks.test.ts` holds the tasks to
+that.
+
 ## Context window
 
 The run config may name `contextWindow` and `maxOutputTokens` for the declared model; without them the

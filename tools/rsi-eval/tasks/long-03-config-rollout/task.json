@@ -1,0 +1,198 @@
+{
+  "id": "long-03-config-rollout",
+  "category": "long",
+  "description": "Ten config changes to three services, deployed with a rollout tool that only lets into prod a change shadow is running.",
+  "trap": {
+    "signatures": ["prod refused: change [0-9a-f]+ of \\w+ is unproven"],
+    "reproduce": "perl -pi -e 's/^timeout = .*/timeout = 45/' services/web.conf && bin/rollout apply web prod",
+    "note": "bin/rollout apply <service> prod only takes a change that shadow runs right now, with the same values (canary does not count): deploy the edited config to shadow first, then to prod, and do not edit it in between. Steps for a prod change: edit services/<service>.conf, `bin/rollout lint <service>`, apply it to shadow, then to prod, then check with `bin/rollout get <service> prod <key>`. Other environments take a change directly."
+  },
+  "maxRequests": 250,
+  "oracle": {
+    "afterPrompt": 0
+  },
+  "sessions": [
+    {
+      "prompts": [
+        {
+          "milestone": "first-deploy",
+          "text": "Raise the web service's `timeout` to 45 and deploy the change to prod. Just run the tools; don't read their source.",
+          "checks": [
+            {
+              "command": "bin/rollout get web prod timeout",
+              "contains": "web@prod timeout=45"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^timeout = .*/timeout = 45/' services/web.conf",
+            "bin/rollout apply web shadow",
+            "bin/rollout apply web prod"
+          ]
+        },
+        {
+          "milestone": "api-connections",
+          "text": "The api needs more connections: set `max_conn` to 400 and get it running in prod.",
+          "checks": [
+            {
+              "command": "bin/rollout get api prod max_conn",
+              "contains": "api@prod max_conn=400"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^max_conn = .*/max_conn = 400/' services/api.conf",
+            "bin/rollout apply api shadow",
+            "bin/rollout apply api prod"
+          ]
+        },
+        {
+          "milestone": "worker-canary",
+          "text": "Try a worker `concurrency` of 6 on canary only; leave the other environments as they are.",
+          "checks": [
+            {
+              "command": "bin/rollout get worker canary concurrency",
+              "contains": "worker@canary concurrency=6"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^concurrency = .*/concurrency = 6/' services/worker.conf",
+            "bin/rollout apply worker canary"
+          ]
+        },
+        {
+          "milestone": "web-workers",
+          "text": "Give the web service 12 `workers` in prod.",
+          "checks": [
+            {
+              "command": "bin/rollout get web prod workers",
+              "contains": "web@prod workers=12"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^workers = .*/workers = 12/' services/web.conf",
+            "bin/rollout apply web shadow",
+            "bin/rollout apply web prod"
+          ]
+        },
+        {
+          "milestone": "api-logging",
+          "text": "Set the api's `log_level` to warn, on dev and in prod.",
+          "checks": [
+            {
+              "command": "bin/rollout get api dev log_level",
+              "contains": "api@dev log_level=warn"
+            },
+            {
+              "command": "bin/rollout get api prod log_level",
+              "contains": "api@prod log_level=warn"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^log_level = .*/log_level = warn/' services/api.conf",
+            "bin/rollout apply api dev",
+            "bin/rollout apply api shadow",
+            "bin/rollout apply api prod"
+          ]
+        },
+        {
+          "milestone": "worker-retries",
+          "text": "For the worker: `retries` 5 and `concurrency` 8, deployed to prod.",
+          "checks": [
+            {
+              "command": "bin/rollout get worker prod retries",
+              "contains": "worker@prod retries=5"
+            },
+            {
+              "command": "bin/rollout get worker prod concurrency",
+              "contains": "worker@prod concurrency=8"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^retries = .*/retries = 5/' services/worker.conf",
+            "perl -pi -e 's/^concurrency = .*/concurrency = 8/' services/worker.conf",
+            "bin/rollout apply worker shadow",
+            "bin/rollout apply worker prod"
+          ]
+        },
+        {
+          "milestone": "web-cache",
+          "text": "Turn the web cache off (`cache = off`) on canary and in prod.",
+          "checks": [
+            {
+              "command": "bin/rollout get web canary cache",
+              "contains": "web@canary cache=off"
+            },
+            {
+              "command": "bin/rollout get web prod cache",
+              "contains": "web@prod cache=off"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^cache = .*/cache = off/' services/web.conf",
+            "bin/rollout apply web canary",
+            "bin/rollout apply web shadow",
+            "bin/rollout apply web prod"
+          ]
+        },
+        {
+          "milestone": "api-timeout",
+          "text": "Lower the api `timeout` to 20 in prod.",
+          "checks": [
+            {
+              "command": "bin/rollout get api prod timeout",
+              "contains": "api@prod timeout=20"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^timeout = .*/timeout = 20/' services/api.conf",
+            "bin/rollout apply api shadow",
+            "bin/rollout apply api prod"
+          ]
+        },
+        {
+          "milestone": "worker-queue",
+          "text": "Move the worker to the queue `jobs-v2` in prod.",
+          "checks": [
+            {
+              "command": "bin/rollout get worker prod queue",
+              "contains": "worker@prod queue=jobs-v2"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^queue = .*/queue = jobs-v2/' services/worker.conf",
+            "bin/rollout apply worker shadow",
+            "bin/rollout apply worker prod"
+          ]
+        },
+        {
+          "milestone": "region-move",
+          "text": "Move all three services (web, api, worker) to `region` eu-2 in prod.",
+          "checks": [
+            {
+              "command": "bin/rollout get web prod region",
+              "contains": "web@prod region=eu-2"
+            },
+            {
+              "command": "bin/rollout get api prod region",
+              "contains": "api@prod region=eu-2"
+            },
+            {
+              "command": "bin/rollout get worker prod region",
+              "contains": "worker@prod region=eu-2"
+            }
+          ],
+          "solution": [
+            "perl -pi -e 's/^region = .*/region = eu-2/' services/web.conf",
+            "bin/rollout apply web shadow",
+            "bin/rollout apply web prod",
+            "perl -pi -e 's/^region = .*/region = eu-2/' services/api.conf",
+            "bin/rollout apply api shadow",
+            "bin/rollout apply api prod",
+            "perl -pi -e 's/^region = .*/region = eu-2/' services/worker.conf",
+            "bin/rollout apply worker shadow",
+            "bin/rollout apply worker prod"
+          ]
+        }
+      ]
+    }
+  ]
+}
