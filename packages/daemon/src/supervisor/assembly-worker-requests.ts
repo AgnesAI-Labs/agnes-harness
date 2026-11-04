@@ -1,5 +1,6 @@
 import type { ConnectionState } from '@agnes/daemon-foundation/local/endpoint'
 import type { ApprovalRequest } from '@agnes/daemon-rpc/local/prompter'
+import { agnesHome, RefinementSettingsStore } from '@agnes/host'
 import { rpcError } from '@agnes/protocol'
 import { artifactMediaReadReply } from './artifact-read.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
@@ -11,6 +12,7 @@ import type { WorkersState } from './assembly-workers.js'
 import { createMcpManageRequests } from './mcp-manage-requests.js'
 import { permissionRequest } from './permission-requests.js'
 import { createPluginManageRequests } from './plugin-manage-requests.js'
+import { createRefinementSkillRequests } from './refinement-skill-requests.js'
 import { callWorkerScheduling } from './scheduling-service.js'
 import { createSkillInstallRequests } from './skill-install-requests.js'
 import type { WorkerPool } from './worker-pool.js'
@@ -38,6 +40,7 @@ export function createWorkerRequests(
     effectivePackageAdmin,
     schedules,
     profilePorts,
+    savedSkills,
   } = state
   const managementClients = {
     connections: () => [...conns].map((entry) => entry.conn),
@@ -52,6 +55,17 @@ export function createWorkerRequests(
     ...(resourceControl.unixAuthority ? { authority: resourceControl.unixAuthority } : {}),
     ...managementClients,
     workspace: (key) => workspaces.get(key),
+  })
+  const refinementSettings = new RefinementSettingsStore(o.config.dataDir, o.profile.name)
+  const refinementSkillRequests = createRefinementSkillRequests({
+    dataDir: o.config.dataDir,
+    profile: o.profile.name,
+    agnesHome: agnesHome(process.env),
+    service: resourceControl.service,
+    installers: savedSkills.installers,
+    workspace: (key) => workspaces.get(key),
+    owner: (key) => sessionOwnership.resolve(key),
+    enabled: () => refinementSettings.current().settings.enabled,
   })
   const pluginManageRequests = createPluginManageRequests({
     directory: resourceControlDirectory,
@@ -92,6 +106,7 @@ export function createWorkerRequests(
     if (f.method === 'scheduling')
       return callWorkerScheduling(schedules, workspaceCatalog, sessionKey, f.params, workerSignal)
     if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
+    if (f.method === 'refinement-save') return refinementSkillRequests(sessionKey, f.params)
     if (['plugin-manage', 'mcp-manage', 'skill-install'].includes(f.method))
       return permissionRequest(
         f.permissionContext,

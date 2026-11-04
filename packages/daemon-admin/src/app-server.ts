@@ -46,7 +46,9 @@ export function createAppServerAdmin(options: {
   inspectProfile?(bundles?: readonly string[]): Promise<ResolvedProfile>
   memory?(
     input: AdminMemoryParams,
-  ): Promise<Pick<import('@agnes/protocol/gen/app-server').AdminMemoryResult, 'inspection' | 'file'>>
+  ): Promise<
+    Pick<import('@agnes/protocol/gen/app-server').AdminMemoryResult, 'inspection' | 'file' | 'saved'>
+  >
   triggerSession?(input: TriggerSessionInput): Promise<void>
   credentialConfigurations?(): Promise<CredentialConfiguration[]>
   plan?(input: AdminPlanParams): Promise<{ active: boolean; text: string }>

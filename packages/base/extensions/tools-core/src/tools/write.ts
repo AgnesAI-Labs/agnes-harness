@@ -2,12 +2,13 @@ import type { Bytes, ToolResult } from '@agnes/extension-api'
 import { defineTool } from '@agnes/plugin-runtime'
 import type { LspSessions } from '../../../lsp/src/registry.js'
 import type { FileChangeRecorder } from '../file-change.js'
-import { fsFailure, notObservedText } from '../guards/feedback.js'
+import { fsFailure, notObservedText, toolFailure } from '../guards/feedback.js'
 import { withFileLock } from '../guards/mutation-queue.js'
 import { ABSENT, observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/observed.js'
 import { looksTruncated } from '../guards/truncation.js'
 import { usesCrlf, writeContent } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
+import { isHiddenParagraphs, refusalCode, WRITE_HIDDEN_TEXT } from './hidden-paragraphs.js'
 import { withLspNote } from './lsp-note.js'
 import { MAX_READ_BYTES } from './read.js'
 import { WriteParams } from './schemas.js'
@@ -105,6 +106,7 @@ export function createWriteTool(record?: FileChangeRecorder, lsp?: LspSessions) 
           // A file the fence lets the model read but not replace fails here, not at the read above.
           // Left to propagate, a refusal that wrote nothing would reach the model as a call whose
           // outcome is unknown, and nothing in it would say the policy said no.
+          if (isHiddenParagraphs(e)) return toolFailure(ctx, refusalCode(e), WRITE_HIDDEN_TEXT)
           if ((e as { code?: string }).code !== 'E_FS_DENIED') throw e
           return fsFailure(ctx, 'write before writing', args.path, e)
         }

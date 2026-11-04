@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Create a page named about.md with the title \"About\" and one paragraph \"We build small tools.\" Build it with the project's build script so the HTML exists.",
+          "text": "Create a page named about.md with the title \"About\" and one paragraph \"We build small tools.\" Build it with the project's build script so the HTML exists. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat _out/about.html",
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "text": "Create a page named contact.md with the title \"Contact\" and one paragraph \"Write to hello@example.test.\" Build it with the project's build script so the HTML exists.",
+          "text": "Remember, pages must live in content/; the builder rejects any other path. Create a page named contact.md with the title \"Contact\" and one paragraph \"Write to hello@example.test.\" Build it with the project's build script so the HTML exists.",
           "checks": [
             {
               "command": "cat _out/contact.html",

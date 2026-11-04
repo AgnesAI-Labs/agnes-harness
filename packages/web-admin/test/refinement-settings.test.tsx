@@ -95,12 +95,12 @@ it('the settings panel saves with revision and shows the permission text', async
   expect(field(host, 'refinement-enabled').getAttribute('aria-checked')).toBe('false')
   expect((field(host, 'refinement-mode') as HTMLSelectElement).value).toBe('manual')
   expect(api.save).not.toHaveBeenCalled()
-  // What turning it on allows, one by one, each marked as not available yet.
+  // What turning it on allows, one by one; every grant is in force.
   const permissions = field(host, 'refinement-permissions').textContent ?? ''
   expect(permissions).toContain('Install proven skills in the workspace')
   expect(permissions).toContain('Let the model save skills in the workspace')
   expect(permissions).toContain('Let the model save memory in the workspace')
-  expect(permissions.match(/Not available yet/g)).toHaveLength(3)
+  expect(permissions).not.toMatch(/later release/)
   expect(field(host, 'refinement-allows-undo').textContent).toContain('Nothing is brought back')
   // The expectations the user should have, said plainly.
   expect(host.textContent).toContain('Turning it on reaches the tools the next time the host starts')
@@ -214,7 +214,94 @@ it('shows the section in Chinese', async () => {
   expect(text).toContain('开启要等宿主下次启动才会让工具出现')
   expect(text).toContain('关闭则立即生效')
   expect(text).toContain('可能出现更多命令审批')
-  expect(field(host, 'refinement-permissions').textContent?.match(/暂未提供/g)).toHaveLength(3)
+  expect(field(host, 'refinement-permissions').textContent).not.toContain('后续版本')
+  expect(field(host, 'refinement-allows-install').textContent).toContain('纯指令')
+})
+
+it('every grant is in force: none says it comes in a later release', async () => {
+  const host = await mount(fakeApi())
+  const memory = field(host, 'refinement-allows-memory').textContent ?? ''
+  expect(memory).toContain('Let the model save memory in the workspace')
+  for (const name of ['install', 'skill', 'memory'])
+    expect(field(host, `refinement-allows-${name}`).textContent).not.toMatch(/not available|later release/i)
+  const install = field(host, 'refinement-allows-install').textContent ?? ''
+  // Saved skills are instructions only: a script is written by the agent itself, under its permissions.
+  expect(install).toMatch(/instructions only/i)
+  expect(install).toMatch(/30 days/)
+  expect(field(host, 'refinement-allows-skill').textContent).toMatch(/uninstall|roll/i)
+})
+
+it('the settings panel states that user-level lessons are written automatically', async () => {
+  const host = await mount(fakeApi())
+  const user = field(host, 'refinement-allows-user').textContent ?? ''
+  expect(user).toContain('user memory')
+  expect(user).toMatch(/written automatically/)
+  expect(user).toMatch(/withdraw/i)
+  expect(user).toMatch(/only in workspaces that turn it on/)
+  expect(user).not.toMatch(/later release/i)
+  document.documentElement.lang = 'zh-CN'
+  const zh = (await mount(fakeApi())).textContent ?? ''
+  expect(zh).toContain('自动写入用户记忆')
+})
+
+const NOTICE_KEY = 'agnes.refinement.workspace-notice'
+const storage = () => globalThis.localStorage
+
+it('shows a profile that already had refinement on a one-time notice until it is dismissed', async () => {
+  storage().removeItem(NOTICE_KEY)
+  try {
+    const host = await mount(fakeApi({ enabled: true, mode: 'auto' }))
+    const notice = field(host, 'refinement-workspace-notice')
+    expect(notice.textContent).toContain('workspace memory')
+    expect(notice.textContent).toContain('workspace skills')
+    expect(notice.textContent).not.toMatch(/later release/)
+    expect(notice.textContent).toMatch(/without asking again/)
+    // Lessons that hold everywhere now also go to user memory, automatically.
+    expect(notice.textContent).toMatch(/user memory, automatically/)
+    expect(notice.textContent).toContain('Learn from finished work')
+    const dismiss = notice.querySelector<HTMLButtonElement>('button')
+    if (!dismiss) throw new Error('missing dismiss')
+    await act(async () => dismiss.click())
+    expect(query(host, 'refinement-workspace-notice')).toBeNull()
+    // Dismissed for this viewer: a later visit does not show it again, and nothing was saved.
+    const again = await mount(fakeApi({ enabled: true, mode: 'auto' }))
+    expect(query(again, 'refinement-workspace-notice')).toBeNull()
+  } finally {
+    storage().removeItem(NOTICE_KEY)
+  }
+})
+
+it('shows no notice when refinement is off, or turned on here, and works without browser storage', async () => {
+  storage().removeItem(NOTICE_KEY)
+  const api = fakeApi()
+  const host = await mount(api)
+  expect(query(host, 'refinement-workspace-notice')).toBeNull()
+  await toggle(host, 'refinement-enabled')
+  expect(query(host, 'refinement-workspace-notice')).toBeNull()
+  expect(api.save).toHaveBeenCalledTimes(1)
+  const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new Error('blocked')
+  })
+  const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new Error('blocked')
+  })
+  try {
+    const blocked = await mount(fakeApi({ enabled: true, mode: 'manual' }))
+    const notice = field(blocked, 'refinement-workspace-notice')
+    await act(async () => notice.querySelector<HTMLButtonElement>('button')?.click())
+    expect(query(blocked, 'refinement-workspace-notice')).toBeNull()
+  } finally {
+    get.mockRestore()
+    set.mockRestore()
+  }
+})
+
+it('shows the notice in Chinese', async () => {
+  storage().removeItem(NOTICE_KEY)
+  document.documentElement.lang = 'zh-CN'
+  const host = await mount(fakeApi({ enabled: true, mode: 'auto' }))
+  expect(field(host, 'refinement-workspace-notice').textContent).toContain('工作区记忆')
+  expect(field(host, 'refinement-workspace-notice').textContent).toContain('自动写入用户记忆')
 })
 
 it('registers the section under General', () => {
@@ -226,4 +313,18 @@ it('registers the section under General', () => {
   })
   dispose()
   expect(settingsSections.get('refinement')).toBeUndefined()
+})
+
+it('shows the saved skills of the workspace when the connection reaches them', async () => {
+  const plain = await mount(fakeApi())
+  expect(query(plain, 'refinement-saved-skills')).toBeNull()
+  const host = await mount({
+    ...fakeApi(),
+    savedSkills: {
+      workspaces: async () => [{ path: '/w', available: true }],
+      skills: async () => ({ skills: [], drafts: [] }),
+    },
+  })
+  await act(async () => {})
+  expect(field(host, 'refinement-saved-skills').textContent).toContain('Saved skills')
 })

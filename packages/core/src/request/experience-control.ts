@@ -60,6 +60,13 @@ export const expiredLine = (e: Pick<HarnessEntry, 'kind' | 'id' | 'version'>): s
 export const withdrawnLine = (ref: string, version: number): string =>
   `- [${ref} v${version}] withdrawn: it was removed; do not follow it any longer.`
 
+/**
+ * The control line for an entry handed off to the workspace: it now lives as a workspace skill of the
+ * same name, which the skill catalogue lists. Read as a withdrawal, so it is said once.
+ */
+export const handedOffLine = (ref: string, version: number): string =>
+  `- [${ref} v${version}] withdrawn: installed as the workspace skill ${ref.slice(ref.indexOf('/') + 1)}; use that skill instead.`
+
 /** Whether a note's header is a control note that voids every note before it. */
 const voidsAll = (body: string) =>
   body.includes(EXPERIENCE_RESET_NOTICE) || body.includes(EXPERIENCE_OFF_NOTICE)
@@ -129,17 +136,21 @@ const refOf = (e: Pick<HarnessEntry, 'kind' | 'id'>) => `${e.kind}/${e.id}`
 /**
  * The control lines owed now, in `kind/id` order: each expired entry the model was given and has not
  * been told about, and each entry it was given that is gone (in none of `present`: not in force, not
- * expired, not held while its task cannot be read).
+ * expired, not held while its task cannot be read). An entry gone because it was handed off to the
+ * workspace (`handedOff`) is said to be installed as a skill rather than removed.
  */
 export function controlLines(
   delivered: ReadonlyMap<string, number>,
   expired: readonly { entry: HarnessEntry }[],
   present: ReadonlySet<string>,
+  handedOff: ReadonlySet<string> = new Set(),
 ): string[] {
   const lines = new Map<string, string>()
   for (const { entry } of expired)
     if (delivered.has(refOf(entry))) lines.set(refOf(entry), expiredLine(entry))
-  for (const [ref, version] of delivered) if (!present.has(ref)) lines.set(ref, withdrawnLine(ref, version))
+  for (const [ref, version] of delivered)
+    if (!present.has(ref))
+      lines.set(ref, handedOff.has(ref) ? handedOffLine(ref, version) : withdrawnLine(ref, version))
   return [...lines.keys()].sort(byRef).map((ref) => lines.get(ref) as string)
 }
 

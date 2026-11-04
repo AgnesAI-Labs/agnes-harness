@@ -18,7 +18,7 @@ type CompatibleEntry = Readonly<{
   capabilities?: Readonly<{ declaredModels?: boolean }>
 }>
 type Listing =
-  | Readonly<{ ids: readonly string[] }>
+  | Readonly<{ ids: readonly string[]; contextWindows?: Readonly<Record<string, number>> }>
   | Readonly<{ failure: NonNullable<ConfigTestResult['catalogueError']> }>
 
 /**
@@ -69,12 +69,23 @@ function compatibleModels(
   baseUrl: string,
   value: unknown,
   chatModelAllowed: (id: string) => boolean,
+  selection?: Pick<ConfigSaveInput, 'model' | 'defaultSettings'>,
 ): ConfigModel[] {
   requireAddress(entry, baseUrl)
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_MODELS)
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const models = value.map((row) => {
-    const model = normalizeConfigModel(row)
+    const candidate =
+      row !== null &&
+      typeof row === 'object' &&
+      !Array.isArray(row) &&
+      'id' in row &&
+      selection !== undefined &&
+      row.id === selection.model &&
+      selection.defaultSettings !== undefined
+        ? { ...row, defaultSettings: selection.defaultSettings }
+        : row
+    const model = normalizeConfigModel(candidate)
     if (
       model === undefined ||
       model.reasoning !== undefined ||
@@ -118,10 +129,15 @@ async function testCompatibleAccount(
       : undefined
   const listing = await deps.list(entry.api, args.baseUrl, args.apiKey ?? saved)
   if ('failure' in listing) return { models: [], verified: false, catalogueError: listing.failure }
+  const contexts = new Map(Object.entries(listing.contextWindows ?? {}))
   return {
-    models: listing.ids
-      .filter(deps.chatModelAllowed)
-      .map((id) => structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id)),
+    models: listing.ids.filter(deps.chatModelAllowed).map((id) => {
+      const contextWindow = contexts.get(id)
+      return {
+        ...(structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id)),
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+      }
+    }),
     verified: true,
   }
 }
@@ -197,8 +213,12 @@ export function chatModelPolicy(chatModelAllowed: (id: string) => boolean) {
       if (defaults?.model) requireModel(defaults.model)
       return defaults
     },
-    compatibleModels: (entry: CompatibleEntry, baseUrl: string, value: unknown) =>
-      compatibleModels(entry, baseUrl, value, chatModelAllowed),
+    compatibleModels: (
+      entry: CompatibleEntry,
+      baseUrl: string,
+      value: unknown,
+      selection?: Pick<ConfigSaveInput, 'model' | 'defaultSettings'>,
+    ) => compatibleModels(entry, baseUrl, value, chatModelAllowed, selection),
     testCompatibleAccount: (
       args: Parameters<typeof testCompatibleAccount>[0],
       deps: Omit<Parameters<typeof testCompatibleAccount>[1], 'chatModelAllowed'>,

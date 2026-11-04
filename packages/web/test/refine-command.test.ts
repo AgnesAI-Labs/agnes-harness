@@ -74,14 +74,75 @@ describe('the composer /refine command', () => {
     expect(lines[0]).toContain('run-3')
   })
 
-  it('answers --workspace without asking, and needs an open conversation', async () => {
+  it('asks for agreement to an unknown price, and --unpriced gives it', async () => {
+    const refused = setup(async () => {
+      throw rejected('unpriced')
+    })
+    await runRefineCommand(refused.context, '/refine the build')
+    expect(refused.lines[0]).toMatch(/no known price/)
+    expect(refused.lines[0]).toContain('/refine --unpriced')
+    const { context, lines, refine } = setup(async () => ({ runId: 'run-6' }))
+    await runRefineCommand(context, '/refine --unpriced the build')
+    expect(refine).toHaveBeenLastCalledWith('session-1', 'the build', { allowUnpriced: true })
+    expect(lines[0]).toContain('run-6')
+    await runRefineCommand(context, '/refine --workspace --unpriced')
+    expect(refine).toHaveBeenLastCalledWith('session-1', undefined, {
+      saveTo: 'workspace',
+      allowUnpriced: true,
+    })
+    const chinese = setup(
+      async () => {
+        throw rejected('unpriced')
+      },
+      true,
+      zh,
+    )
+    await runRefineCommand(chinese.context, '/refine')
+    expect(chinese.lines[0]).toContain('/refine --unpriced')
+  })
+
+  it('/refine --user queues a review saved to user memory', async () => {
+    const { context, lines, refine } = setup(async () => ({ runId: 'run-7' }))
+    await runRefineCommand(context, '/refine --user  my style ')
+    expect(refine).toHaveBeenLastCalledWith('session-1', 'my style', { saveTo: 'user' })
+    expect(lines[0]).toContain('run-7')
+    expect(lines[0]).toMatch(/saved to user memory/i)
+    await runRefineCommand(context, '/refine --unpriced --user')
+    expect(refine).toHaveBeenLastCalledWith('session-1', undefined, { saveTo: 'user', allowUnpriced: true })
+    // A word that only starts like the flag is focus text; both targets together are not taken.
+    await runRefineCommand(context, '/refine --users')
+    expect(refine).toHaveBeenLastCalledWith('session-1', '--users')
+    const calls = refine.mock.calls.length
+    await runRefineCommand(context, '/refine --user --workspace')
+    expect(lines.at(-1)).toMatch(/either --workspace or --user/)
+    expect(refine).toHaveBeenCalledTimes(calls)
+    const chinese = setup(async () => ({ runId: 'run-8' }), true, zh)
+    await runRefineCommand(chinese.context, '/refine --user')
+    expect(chinese.lines[0]).toContain('用户记忆')
+  })
+
+  it('/refine --workspace queues a saving review', async () => {
+    const { context, lines, refine } = setup(async () => ({ runId: 'run-4' }))
+    await runRefineCommand(context, '/refine --workspace  the build ')
+    expect(refine).toHaveBeenLastCalledWith('session-1', 'the build', { saveTo: 'workspace' })
+    expect(lines[0]).toContain('run-4')
+    expect(lines[0]).toMatch(/saved to this workspace/i)
+    expect(lines[0]).not.toMatch(/not available/i)
+    await runRefineCommand(context, '/refine --workspace')
+    expect(refine).toHaveBeenLastCalledWith('session-1', undefined, { saveTo: 'workspace' })
+    const chinese = setup(async () => ({ runId: 'run-5' }), true, zh)
+    await runRefineCommand(chinese.context, '/refine --workspace')
+    expect(chinese.lines[0]).toContain('工作区')
+  })
+
+  it('refuses a too-long focus without asking, and needs an open conversation', async () => {
     const { context, lines, refine } = setup(async () => ({ runId: 'x' }))
-    await runRefineCommand(context, '/refine --workspace the build')
-    expect(lines[0]).toMatch(/workspace.*not available yet/i)
     await runRefineCommand(context, `/refine ${'x'.repeat(513)}`)
-    expect(lines[1]).toMatch(/512/)
+    expect(lines[0]).toMatch(/512/)
     // 300 emoji are 600 UTF-16 units, which the daemon counts.
     await runRefineCommand(context, `/refine ${'😀'.repeat(300)}`)
+    expect(lines[1]).toMatch(/512/)
+    await runRefineCommand(context, `/refine --workspace ${'x'.repeat(513)}`)
     expect(lines[2]).toMatch(/512/)
     expect(refine).not.toHaveBeenCalled()
     const none = setup(async () => ({ runId: 'x' }), false)

@@ -53,6 +53,8 @@
     "@agnes/system-node": "workspace:*",
     "@agnes/resource-control-cli": "workspace:*",
     "@agnes/resource-control-runtime": "workspace:*",
+    "@agnes/resource-control-store": "workspace:*",
+    "@agnes/resource-control-worker": "workspace:*",
     "@agnes/cli-tui": "workspace:*",
     "ajv": "8.20.0",
     "get-east-asian-width": "1.6.0",

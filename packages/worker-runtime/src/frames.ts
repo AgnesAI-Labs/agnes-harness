@@ -40,6 +40,7 @@ export type SessionMethod =
   | 'btw'
   | 'refine'
   | 'refineRollback'
+  | 'refineSave'
   | 'voice.transcribe'
   | 'voice.speak'
   | 'ui.action'
@@ -237,6 +238,7 @@ export type RequestFrame = {
     | 'plugin-manage-abort'
     | 'mcp-manage'
     | 'mcp-manage-abort'
+    | 'refinement-save'
   params: unknown
 }
 export type WorkerCommandFrame = {

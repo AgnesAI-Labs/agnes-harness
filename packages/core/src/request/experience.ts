@@ -2,7 +2,8 @@ import type { EventInput, Seq } from '@agnes/core-common/types'
 import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import { estimateTokens } from '../execution/model-tokens.js'
-import { validEntries } from '../refinement/validity.js'
+import { deliveredReferences } from '../refinement/references.js'
+import { handedOffRefs, validEntries } from '../refinement/validity.js'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
 import {
@@ -393,10 +394,12 @@ export async function deriveExperienceNotes(
   }
   const seen = visibleExperience(surface)
   // A task-level entry whose task cannot be read now is held: neither given nor announced.
-  const { valid, expired, held } = await validEntries(s)
+  const { valid: inForce, expired, held } = await validEntries(s)
+  // An entry bound to an approved skill or role says how to invoke it, or that it is unavailable now.
+  const valid = await deliveredReferences(s, inForce)
   const entries: EffectiveEntry[] = valid.map(({ entry, seq }) => ({ entry, seq }))
   const present = new Set([...valid, ...expired, ...held].map(({ entry }) => `${entry.kind}/${entry.id}`))
-  const control = controlLines(refs.delivered, expired, present)
+  const control = controlLines(refs.delivered, expired, present, handedOffRefs(s.state))
   // Held entries the model was not given at their version are named in the note, so that once their
   // task can be read they are owed, however many notes were written meanwhile.
   const heldBack = held

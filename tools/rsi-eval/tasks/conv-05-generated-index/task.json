@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a plugin `shout` to the plugin runner: `bash run.sh shout <words...>` prints the words joined by spaces and uppercased. Make sure it runs and the project's tests pass.",
+          "text": "Add a plugin `shout` to the plugin runner: `bash run.sh shout <words...>` prints the words joined by spaces and uppercased. Make sure it runs and the project's tests pass. Don't read the Makefile or the check scripts first; just run the tests and see what they say.",
           "checks": [
             {
               "command": "bash run.sh shout hello there",
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "text": "Add a plugin `count` to the plugin runner: `bash run.sh count <args...>` prints how many arguments it got, in the form `N args`. Make sure it runs and the project's tests pass.",
+          "text": "Remember, a new plugin has to be registered by regenerating plugins.index with `make index`. Add a plugin `count` to the plugin runner: `bash run.sh count <args...>` prints how many arguments it got, in the form `N args`. Make sure it runs and the project's tests pass.",
           "checks": [
             {
               "command": "bash run.sh count a b c",

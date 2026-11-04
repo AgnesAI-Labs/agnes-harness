@@ -173,6 +173,7 @@ export interface AppServerMethods {
   "_agnes/v1/session.fork": { params: Static<typeof import("./agnes-v1.js").SessionForkParams>; result: Static<typeof import("./agnes-v1.js").SessionIdParams>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.btw": { params: Static<typeof import("./agnes-v1.js").SessionBtwParams>; result: Static<typeof import("./agnes-v1.js").SessionBtwResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.refine": { params: Static<typeof import("./agnes-v1.js").SessionRefineParams>; result: Static<typeof import("./agnes-v1.js").SessionRefineResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/session.refine.save": { params: Static<typeof import("./agnes-v1.js").SessionRefineSaveParams>; result: Static<typeof import("./agnes-v1.js").SessionRefineSaveResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.refine.rollback": { params: Static<typeof import("./agnes-v1.js").SessionRefineRollbackParams>; result: Static<typeof import("./agnes-v1.js").SessionRefineRollbackResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.voice.transcribe": { params: Static<typeof import("./agnes-v1.js").SessionVoiceTranscribeParams>; result: Static<typeof import("./agnes-v1.js").SessionVoiceTranscribeResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.voice.speak": { params: Static<typeof import("./agnes-v1.js").SessionVoiceSpeakParams>; result: Static<typeof import("./agnes-v1.js").SessionVoiceSpeakResult>; direction: "c2s"; kind: "request" }
@@ -181,6 +182,7 @@ export interface AppServerMethods {
   "_agnes/v1/voice.settings.save": { params: Static<typeof import("./agnes-v1.js").VoiceSettingsSaveParams>; result: Static<typeof import("./agnes-v1.js").VoiceSettingsSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/refinement.get": { params: Static<typeof import("./agnes-v1.js").ConfigEmptyParams>; result: Static<typeof import("./agnes-v1.js").RefinementSettingsSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/refinement.save": { params: Static<typeof import("./agnes-v1.js").RefinementSettingsSaveParams>; result: Static<typeof import("./agnes-v1.js").RefinementSettingsSaveResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/refinement.skills": { params: Static<typeof import("./agnes-v1.js").RefinementSkillsParams>; result: Static<typeof import("./agnes-v1.js").RefinementSkillsResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.rename": { params: Static<typeof import("./agnes-v1.js").SessionRenameParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.archive": { params: Static<typeof import("./agnes-v1.js").SessionArchiveParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.pin": { params: Static<typeof import("./agnes-v1.js").SessionPinParams>; result: Static<typeof import("./agnes-v1.js").SessionPreferences>; direction: "c2s"; kind: "request" }

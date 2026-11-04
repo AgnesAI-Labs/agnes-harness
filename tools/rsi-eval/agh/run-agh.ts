@@ -10,15 +10,16 @@
 //   pnpm --filter @agnes/system-node build:native
 //   export RSI_EVAL_API_KEY=...            # the variable named by keyEnv in the run config
 //   pnpm exec tsx tools/rsi-eval/agh/run-agh.ts --config <run-config.json> --out <dir> \
-//     [--tasks a,b] [--reps 5] [--settings on,off] [--tasks-dir <dir>]
+//     [--tasks a,b] [--reps 3] [--arms off,on,oracle] [--tasks-dir <dir>]
 //   pnpm exec tsx tools/rsi-eval/report.ts --run-dir <dir> --config <run-config.json>
 //
 // The run config is the one the Prime runner takes (run-config.example.json): the same route, model,
 // prices, proxy port and session timeout, so the two systems are measured the same way. `provider`
 // becomes the AGH route name (lower case letters, digits and dashes) and `api` must be an API AGH
-// speaks (for example anthropic-messages or openai-completions). The run config has no context
-// window, so the model is declared with 200,000 tokens of context and 8,192 of output. Keep --out
-// outside any git repository. The task commands and checks need bash, python3 and make on PATH.
+// speaks (for example anthropic-messages or openai-completions). The model is declared with the run
+// config's `contextWindow` and `maxOutputTokens`, 200,000 and 8,192 when it names none; the host
+// compacts by that window (numbers in the README). Keep --out outside any git repository. The task
+// commands and checks need bash, python3 and make on PATH.
 //
 // What one run is: a task, a setting and a repetition. Each run gets a home of its own under
 // <out>/<runId>/home (its data dir, sessions.db, memory and the refinement switch live there, never
@@ -35,21 +36,51 @@
 // On: the switch on, mode "manual and automatic", and after every prompt one manual review (the
 // request `/refine` makes), waited for before the next prompt, as the Prime runs send `/refine`
 // after every prompt. Every approval is given, as Prime runs without asking. AGH keeps entries per
-// session, so the second session of a cross-session task starts empty. AGH has no user-initiated
-// save to user memory, so where Prime ends the first session of a cross-workspace task with
-// `/refine --global`, nothing extra is sent and the outcome is marked `alignment: 'auto-only'`.
+// session, so the second session of a cross-session task starts empty. Where Prime ends the first
+// session of a cross-workspace task with `/refine --global` (in place of its last `/refine`), this
+// runner makes its last review of that session the user's own save to user memory (`/refine --user`),
+// so what is carried to the second workspace is the same kind of save.
+// A workflow task is different: its first session ends with the user's save to the workspace
+// (`/refine --workspace`), in place of the last review, so the skill it saves can be read from that
+// workspace afterwards. Both of its sessions use that one workspace, so the second session is a new
+// session where the saved skill is.
+// With `--on-protocol triggers` the on arm sends no manual reviews (nor the end-of-session saves) and
+// leaves refinement to its own triggers; a dry read of the session's experience entries, at no model cost,
+// then checks once per session that refinement is live, which the reviews otherwise show.
 // Off: no switch file at all, which is the default.
+// Oracle (opt-in with `--arms off,on,oracle`; `--settings` is the same option, older name, on and off only):
+// refinement off as in "off", and before the SECOND session starts, one paragraph taken from the task's
+// `trap.note` is written to that session's workspace memory, through the same edit the memory page makes.
+// The first session is the same as the off run's. It is the most a saved lesson could give the second
+// session, so it is the ceiling the "on" run is measured against (see capture.ts). Only for tasks of two
+// sessions that are not workflow tasks; the other tasks are skipped for this arm.
+//
+// Frozen (`--arms frozen --frozen-from <folder of on runs>`): refinement off, and before the first session
+// the workspace (and user memory) holds exactly what the on run of the same task and repetition saved:
+// its saved memory paragraphs, as text, and its installed workspace skills (see frozen.ts).
+//
+// Milestones: a prompt marked `milestone` has its checks run right after it, and the run stops at the first
+// that fails. Each prompt's end time is recorded, so the report can read from the ledger what had been
+// spent by then. A run stops cleanly at its request cap (`maxRequests` of the task, else --max-requests):
+// the usage proxy refuses what is past it and the runner aborts the turn; the run is recorded `capped`.
+//
+// No goal: the sessions are unattended and are given no goal. The goal extension has no quiet
+// way to set one: `/goal create` starts automatic rounds of its own on the main model (up to
+// --max-rounds, racing the next prompt and changing what a run costs), and a task-level lesson
+// without a goal expires. So the tasks put a plain user correction in the second prompt of the
+// first session; a lesson can quote it, which a session-level lesson needs.
 //
 // The key: read only from the environment variable named by keyEnv, never written to a file or
 // printed. It is handed to the host in this process's environment as the secret the route refers
 // to; commands the agent runs get a fixed small environment without it.
 //
 // Cost: every prompt is a full agent turn on the main model; with refinement on, each prompt adds
-// one review (input up to about 8,192 tokens, output up to 1,024, at most 65,536 tokens per
+// one review (input up to about 24,000 tokens, output up to 4,096, at most 524,288 tokens per
 // session) plus the experience notes in later requests; the host also names each session with one
 // short call. The total grows with tasks x prompts x reps x 2 settings.
 
 import {
+  appendFileSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -63,9 +94,27 @@ import { tmpdir } from 'node:os'
 import { dirname, join, parse, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import { createInfraStreak, INFRA_STOP_AFTER, infraFromLedger, infraFromStatuses } from '../infra.js'
 import { readConfig, runId } from '../prime/run-prime.js'
 import { DEFAULT_FIXTURE, fixtureOf, taskFixtures, workspaceName } from '../suite.js'
-import type { EvalTask, RunConfig, RunOutcome, Setting } from '../types.js'
+import type {
+  Arm,
+  Capped,
+  EvalTask,
+  FrozenSeed,
+  InfraFailure,
+  OnProtocol,
+  RunConfig,
+  RunOutcome,
+} from '../types.js'
+import {
+  copyFrozenSkills,
+  type FrozenMemoryModule,
+  type FrozenSource,
+  frozenSeed,
+  loadFrozenMemoryModule,
+  readFrozenSource,
+} from './frozen.js'
 
 const defaultTasksDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'tasks')
 
@@ -123,16 +172,31 @@ export interface AghSession {
   readonly key: string
   /** One turn; resolves with how it ended (`completed`, `failed`, ...). */
   prompt(text: string, signal: AbortSignal): Promise<string>
-  /** Asks for one manual review of this session. */
-  review(): Promise<ReviewAnswer>
+  /**
+   * Asks for one manual review of this session; with `saveTo` the result is also saved as the user's own
+   * save, to the workspace (`/refine --workspace`) or to user memory (`/refine --user`).
+   */
+  review(saveTo?: 'workspace' | 'user'): Promise<ReviewAnswer>
   /** The review's final state, or undefined when it has none within `ms`. */
   settled(runId: string, ms: number): Promise<string | undefined>
+  /**
+   * Whether refinement is live in this session, without a model call (a read of its experience entries):
+   * refused, with the reason, exactly when a review would be. For `on` runs that send no manual reviews.
+   */
+  liveness?(): Promise<{ live: true } | { refused: string }>
   close(): Promise<void>
 }
 
 export interface AghHost {
   /** Opens a session in `workspace`, one of the launch input's `workspaces`. */
   openSession(sessionKey: string, workspace: string): Promise<AghSession>
+  /**
+   * Adds a paragraph to the memory of one of the run's workspaces, as a person's own edit of it, in
+   * effect from the next session that opens there. Needed for the oracle arm only.
+   */
+  seedMemory?(workspace: string, text: string): Promise<void>
+  /** Adds a paragraph to the user memory, as a person writes it. Needed for the frozen arm only. */
+  seedUserMemory?(text: string): Promise<void>
   close(): Promise<void>
   /** Every row of a session's ledger, read after `close`. */
   ledger(sessionKey: string): LedgerRow[]
@@ -158,7 +222,62 @@ export type AghRunOptions = {
   workBase?: string
   /** Runs one check; defaults to bash with a small fixed environment, as the task self-check does. */
   runCheck?: CheckRun
+  /** The statuses the usage proxy saw for a run id, oldest first; for a run that ended without a readable ledger error. */
+  statuses?: (proxyRunId: string) => number[]
+  /** Enforces a run's request cap (the usage proxy does); without it no cap is enforced. */
+  cap?: {
+    limit(proxyRunId: string, max: number, reached: () => void): void
+    unlimit(proxyRunId: string): void
+  }
+  /** The cap for a task that names none. */
+  maxRequests?: number
+  /** Frozen runs: the output folder that holds the `on` runs whose saved lessons are seeded. */
+  frozenFrom?: string
+  /** The memory provider's layout and parser, for reading a frozen run's source; loaded when absent. */
+  frozenMemory?: FrozenMemoryModule
+  /** How `on` runs are driven; `reviews` when absent. */
+  onProtocol?: OnProtocol
 }
+
+/** The most model requests a run may make when its task names no cap (`EvalTask.maxRequests`). */
+export const DEFAULT_MAX_REQUESTS = 400
+
+/** The outcome of a run that is finished for good: one the infrastructure ended is not, it is redone. */
+export const finishedOutcome = (outDir: string, id: string): RunOutcome | undefined => {
+  const file = join(outDir, id, 'outcome.json')
+  if (!existsSync(file)) return undefined
+  const outcome = JSON.parse(readFileSync(file, 'utf8')) as RunOutcome
+  return outcome.infraFailed ? undefined : outcome
+}
+
+/** The exit code of a shard that stopped because the infrastructure kept ending its runs. */
+export const INFRA_STOP_EXIT = 3
+
+/** Where a run that the infrastructure ended is noted before it is redone, in the output folder. */
+export const INFRA_FAILURES_FILE = 'infra-failures.jsonl'
+
+/** How many times a run was ended by the infrastructure and started again, from the note file. */
+const earlierAttempts = (outDir: string, runId: string): number => {
+  const file = join(outDir, INFRA_FAILURES_FILE)
+  if (!existsSync(file)) return 0
+  return readFileSync(file, 'utf8')
+    .split('\n')
+    .filter((line) => line.trim() !== '')
+    .filter((line) => {
+      try {
+        return (JSON.parse(line) as { runId?: string }).runId === runId
+      } catch {
+        return false
+      }
+    }).length
+}
+
+/**
+ * The id a run's model traffic goes under at the usage proxy. A run that is redone after an
+ * infrastructure failure gets a new one (`<id>~a1`), so what the failed attempt used is not counted into
+ * the run that replaces it; the report reads the latest attempt of a run.
+ */
+export const proxyRunId = (id: string, attempt: number): string => (attempt === 0 ? id : `${id}~a${attempt}`)
 
 // ------------------------------------------------------------------ pure parts
 
@@ -167,12 +286,20 @@ export type AghArgs = {
   out: string
   tasks?: string[]
   reps: number
-  settings: Setting[]
+  /** The arms to run, in this order: `--arms`, or `--settings` (on and off only); `on,off` when neither is given. */
+  settings: Arm[]
   tasksDir: string
+  /** The folder of the `on` runs the frozen arm takes its lessons from. */
+  frozenFrom?: string
+  onProtocol: OnProtocol
+  maxRequests: number
 }
 
+const ARMS: readonly Arm[] = ['on', 'off', 'oracle', 'frozen']
+const PROTOCOLS: readonly OnProtocol[] = ['reviews', 'triggers']
+
 export const USAGE =
-  'usage: run-agh.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 5] [--settings on,off] [--tasks-dir <dir>]'
+  'usage: run-agh.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 3] [--arms off,on,oracle,frozen] [--frozen-from <dir of on runs>] [--on-protocol reviews|triggers] [--max-requests 400] [--tasks-dir <dir>]'
 
 export function parseAghArgs(argv: string[]): AghArgs {
   const { values } = parseArgs({
@@ -181,23 +308,45 @@ export function parseAghArgs(argv: string[]): AghArgs {
       config: { type: 'string' },
       out: { type: 'string' },
       tasks: { type: 'string' },
-      reps: { type: 'string', default: '5' },
-      settings: { type: 'string', default: 'on,off' },
+      reps: { type: 'string', default: '3' },
+      settings: { type: 'string' },
+      arms: { type: 'string' },
       'tasks-dir': { type: 'string', default: defaultTasksDir },
+      'frozen-from': { type: 'string' },
+      'on-protocol': { type: 'string', default: 'reviews' },
+      'max-requests': { type: 'string', default: String(DEFAULT_MAX_REQUESTS) },
     },
   })
   if (!values.config || !values.out) throw new Error(USAGE)
   const reps = Number(values.reps)
   if (!Number.isInteger(reps) || reps < 1) throw new Error('--reps must be a positive integer')
-  const settings = (values.settings as string).split(',').map((s) => s.trim())
-  for (const s of settings) if (s !== 'on' && s !== 'off') throw new Error(`unknown setting "${s}"`)
+  if (values.settings !== undefined && values.arms !== undefined)
+    throw new Error('--settings and --arms are the same option; give one of them')
+  const settings = (values.arms ?? values.settings ?? 'on,off').split(',').map((s) => s.trim())
+  for (const s of settings) {
+    if (values.arms !== undefined ? !ARMS.includes(s as Arm) : s !== 'on' && s !== 'off')
+      throw new Error(`unknown ${values.arms !== undefined ? 'arm' : 'setting'} "${s}"`)
+  }
+  const onProtocol = values['on-protocol'] as string
+  if (!PROTOCOLS.includes(onProtocol as OnProtocol))
+    throw new Error(`--on-protocol must be one of ${PROTOCOLS.join(', ')}, got "${onProtocol}"`)
+  const maxRequests = Number(values['max-requests'])
+  if (!Number.isInteger(maxRequests) || maxRequests < 1)
+    throw new Error('--max-requests must be a positive integer')
+  if (settings.includes('frozen') && !values['frozen-from'])
+    throw new Error('the frozen arm needs --frozen-from <the output folder of the on runs it copies>')
+  if (!settings.includes('frozen') && values['frozen-from'])
+    throw new Error('--frozen-from is only for the frozen arm')
   return {
     config: values.config,
     out: values.out,
     ...(values.tasks ? { tasks: values.tasks.split(',').map((s) => s.trim()) } : {}),
     reps,
-    settings: settings as Setting[],
+    settings: settings as Arm[],
     tasksDir: values['tasks-dir'] as string,
+    ...(values['frozen-from'] ? { frozenFrom: values['frozen-from'] } : {}),
+    onProtocol: onProtocol as OnProtocol,
+    maxRequests,
   }
 }
 
@@ -219,7 +368,15 @@ export function checkRoute(cfg: RunConfig): void {
     )
 }
 
-/** The model record AGH needs; context and output sizes are fixed defaults (the run config has none). */
+/** The context window and output size a model is declared with when the run config names none. */
+export const DEFAULT_CONTEXT_WINDOW = 200_000
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8_192
+
+/**
+ * The model record AGH needs. The context window and the output size come from the run config
+ * (`contextWindow`, `maxOutputTokens`), with the old fixed values as defaults. The host compacts by the
+ * declared window (see the README for the numbers), so a smaller window makes it compact sooner.
+ */
 function modelRecord(cfg: RunConfig, baseUrl: string): object {
   return {
     id: cfg.model,
@@ -230,8 +387,8 @@ function modelRecord(cfg: RunConfig, baseUrl: string): object {
     reasoning: false,
     input: ['text'],
     cost: { ...cfg.prices },
-    contextWindow: 200_000,
-    maxTokens: 8_192,
+    contextWindow: cfg.contextWindow ?? DEFAULT_CONTEXT_WINDOW,
+    maxTokens: cfg.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
     toolCallFormats: ['native'],
     thinkingReplay: 'native',
     contract_id: null,
@@ -262,8 +419,25 @@ export function aghProfile(cfg: RunConfig, id: string): object {
   }
 }
 
-export const refinementSwitch = (setting: Setting): RefinementSwitch | undefined =>
+export const refinementSwitch = (setting: Arm): RefinementSwitch | undefined =>
   setting === 'on' ? { enabled: true, mode: 'auto' } : undefined
+
+/**
+ * The arm is for tasks that are not workflow tasks (no skill to hand-write) and have a point to write the
+ * lesson at: before a second session, or after a named prompt of the first (`EvalTask.oracle`).
+ */
+export const oracleApplies = (task: EvalTask): boolean =>
+  task.category !== 'workflow' && (task.sessions.length === 2 || task.oracle !== undefined)
+
+/** Where the oracle writes the lesson: after a prompt of the first session, or before the second session. */
+export const oracleSeedPoint = (task: EvalTask): { afterPrompt: number } | { beforeSession: 1 } =>
+  task.oracle ? { afterPrompt: task.oracle.afterPrompt } : { beforeSession: 1 }
+
+/**
+ * The paragraph the oracle arm writes to the second session's memory: the task's own one-line note of
+ * its rule. Never the checks or the solutions, which are what the work is measured against.
+ */
+export const oracleLesson = (task: EvalTask): string => task.trap.note.trim()
 
 /** The nearest directory above `path` (or `path` itself) that holds `.git`, if any. */
 export function gitAncestor(path: string): string | undefined {
@@ -283,6 +457,8 @@ type SessionLog = {
   reason?: string
   error?: string
   review?: ReviewAnswer & { state?: string }
+  milestone?: 'failed'
+  seeded?: 'oracle'
 }
 
 /** The states a review ends in. */
@@ -305,7 +481,7 @@ const defaultCheck: CheckRun = async (check, cwd, home, timeoutMs) => {
 
 export async function runOne(
   task: EvalTask,
-  setting: Setting,
+  setting: Arm,
   rep: number,
   cfg: RunConfig,
   outDir: string,
@@ -314,7 +490,33 @@ export async function runOne(
   const id = runId(task.id, setting, rep)
   const runDir = resolve(outDir, id)
   const outcomeFile = join(runDir, 'outcome.json')
-  if (existsSync(outcomeFile)) return JSON.parse(readFileSync(outcomeFile, 'utf8')) as RunOutcome
+  if (existsSync(outcomeFile)) {
+    const finished = JSON.parse(readFileSync(outcomeFile, 'utf8')) as RunOutcome
+    if (!finished.infraFailed) return finished
+    // The upstream ended that run, not the task: note it, then do the run again from the start.
+    appendFileSync(
+      join(outDir, INFRA_FAILURES_FILE),
+      `${JSON.stringify({ runId: id, ts: new Date().toISOString(), ...finished.infraFailed })}\n`,
+    )
+  }
+  const attempt = earlierAttempts(outDir, id)
+  const proxyId = proxyRunId(id, attempt)
+  if (setting === 'oracle' && !oracleApplies(task))
+    throw new Error(
+      `task ${task.id} has no oracle arm: it needs two sessions or an oracle.afterPrompt, and is not a workflow task`,
+    )
+  // The frozen arm's source is read before anything is paid for: a missing or wrong source stops here.
+  let frozen: FrozenSource | undefined
+  if (setting === 'frozen') {
+    if (!opts.frozenFrom)
+      throw new Error('the frozen arm needs the folder of the on runs it copies (frozenFrom)')
+    frozen = readFrozenSource(
+      opts.frozenFrom,
+      task,
+      rep,
+      opts.frozenMemory ?? (await loadFrozenMemoryModule()),
+    )
+  }
 
   const fixtureDir = opts.fixtureDir ?? join(defaultTasksDir, task.id, 'fixture')
   const workBase = realpathSync(opts.workBase ?? tmpdir())
@@ -332,6 +534,7 @@ export async function runOne(
   // One throwaway workspace per fixture; sessions that use the same fixture share it.
   const works = new Map<string, string>()
   const workOf = (sessionIndex: number): string => works.get(fixtureOf(task, sessionIndex)) as string
+  const maxRequests = task.maxRequests ?? opts.maxRequests ?? DEFAULT_MAX_REQUESTS
   try {
     for (const fixture of taskFixtures(task)) {
       const work = mkdtempSync(join(workBase, 'rsi-agh-'))
@@ -340,11 +543,18 @@ export async function runOne(
         recursive: true,
       })
     }
+    // The saved skills are in the workspace before the host starts, as they were where the on run left them.
+    const seed: FrozenSeed | undefined = frozen
+      ? frozenSeed(
+          frozen,
+          copyFrozenSkills(frozen, (fixture) => works.get(fixture) as string),
+        )
+      : undefined
     const workspaces = [...works.values()]
     const host = await opts.launch({
       home,
       profile: PROFILE,
-      profileDocument: aghProfile(cfg, id),
+      profileDocument: aghProfile(cfg, proxyId),
       refinement: refinementSwitch(setting),
       workspace: workOf(0),
       workspaces,
@@ -353,26 +563,91 @@ export async function runOne(
       env: { ...process.env, AGH_HOME: home },
     })
     const sessions: RunOutcome['sessions'] = []
+    const prompts: NonNullable<RunOutcome['prompts']> = []
+    const milestoneChecks: RunOutcome['checks'] = []
+    let saveRefused: string | undefined
+    let stopped: RunOutcome['stopped']
     const keys: string[] = []
+    // The request cap: the proxy refuses what is past it and tells the runner, which stops the turn.
+    const stop = new AbortController()
+    let capped: Capped | undefined
+    const at = { session: 0, prompt: 0 }
+    opts.cap?.limit(proxyId, maxRequests, () => {
+      capped ??= { maxRequests, session: at.session, prompt: at.prompt }
+      stop.abort()
+    })
+    const runCheck = opts.runCheck ?? defaultCheck
+    const checkHome = join(runDir, 'check-home')
+    mkdirSync(checkHome, { recursive: true })
+    const protocol: OnProtocol = opts.onProtocol ?? 'reviews'
     try {
+      // Before the first session is paid for: the oracle and frozen arms cannot run on a host that cannot seed memory.
+      if ((setting === 'oracle' || setting === 'frozen') && !host.seedMemory)
+        throw new Error(`this host cannot seed memory, which the ${setting} arm needs`)
+      if (frozen) {
+        for (const [fixture, { paragraphs }] of frozen.workspaces)
+          if (paragraphs.length > 0)
+            await host.seedMemory?.(works.get(fixture) as string, paragraphs.join('\n\n'))
+        if (frozen.userSections.length > 0) {
+          if (!host.seedUserMemory)
+            throw new Error('this host cannot seed user memory, which this frozen run needs')
+          await host.seedUserMemory(frozen.userSections.join('\n\n'))
+        }
+      }
+      const seedPoint = oracleSeedPoint(task)
+      const endSave = endSaveFor(task.category)
       for (let i = 0; i < task.sessions.length; i++) {
         const key = `rsi-eval-${id}-s${i + 1}`
         keys.push(key)
+        at.session = i
+        // The oracle arm's one difference from off: the lesson in memory before the second session, or
+        // after a named prompt of the first.
+        if (setting === 'oracle' && 'beforeSession' in seedPoint && i === seedPoint.beforeSession)
+          await host.seedMemory?.(workOf(i), oracleLesson(task))
         const stdoutFile = join(runDir, `session${i + 1}.turns.jsonl`)
-        const result = await runSession(
-          host,
+        const taskPrompts = task.sessions[i]?.prompts ?? []
+        const result = await runSession(host, {
           key,
-          workOf(i),
-          task.sessions[i]?.prompts ?? [],
+          workspace: workOf(i),
+          prompts: taskPrompts,
           setting,
           cfg,
-          stdoutFile,
-        )
-        sessions.push({ ...result, stdoutFile, sessionFiles: [] })
-        // A failed or timed-out session ends the run: later sessions would build on missing work.
+          logFile: stdoutFile,
+          // The first session ends with the user's own save: to the workspace for a workflow task, to
+          // user memory for a cross-workspace task.
+          ...(i === 0 && endSave ? { endSave } : {}),
+          protocol,
+          stop: stop.signal,
+          started: (prompt) => {
+            at.prompt = prompt
+          },
+          ended: (prompt, reason) => {
+            prompts.push({ session: i, prompt, endedAt: new Date().toISOString(), reason })
+          },
+          // A milestone is checked right after its prompt, in the workspace as the run has left it so far.
+          milestone: async (prompt) => {
+            const taskPrompt = taskPrompts[prompt]
+            if (taskPrompt?.milestone === undefined) return true
+            let passed = true
+            for (const check of taskPrompt.checks)
+              if (!(await runCheck(check, workOf(i), checkHome, CHECK_TIMEOUT_MS))) passed = false
+            milestoneChecks.push({ session: i, prompt, passed })
+            return passed
+          },
+          ...(setting === 'oracle' && i === 0 && 'afterPrompt' in seedPoint
+            ? { seedAfter: { prompt: seedPoint.afterPrompt, text: oracleLesson(task) } }
+            : {}),
+        })
+        const { saveRefused: refused, failedMilestone, capped: wasCapped, ...ended } = result
+        if (refused !== undefined) saveRefused = refused
+        sessions.push({ ...ended, ...(wasCapped ? { capped: true } : {}), stdoutFile, sessionFiles: [] })
+        if (failedMilestone !== undefined)
+          stopped = { reason: 'milestone-failed', session: i, prompt: failedMilestone }
+        // A failed, capped or timed-out session ends the run: later sessions would build on missing work.
         if (result.timedOut || result.exitCode !== 0) break
       }
     } finally {
+      opts.cap?.unlimit(proxyId)
       await host.close()
     }
     for (const [i, key] of keys.entries()) {
@@ -384,14 +659,13 @@ export async function runOne(
     }
 
     // Checks run after every session, in the workspace, only for sessions that ended cleanly; prompts of
-    // a session that failed part-way are left without a result instead of being counted as passed.
-    const runCheck = opts.runCheck ?? defaultCheck
-    const checkHome = join(runDir, 'check-home')
-    mkdirSync(checkHome, { recursive: true })
-    const checks: RunOutcome['checks'] = []
+    // a session that failed part-way are left without a result instead of being counted as passed. A
+    // milestone was checked right after its prompt instead, and keeps that result.
+    const checks: RunOutcome['checks'] = [...milestoneChecks]
     for (const [s, session] of sessions.entries()) {
       if (session.timedOut || session.exitCode !== 0) continue
       for (const [p, taskPrompt] of (task.sessions[s]?.prompts ?? []).entries()) {
+        if (taskPrompt.milestone !== undefined) continue
         let passed = true
         for (const check of taskPrompt.checks) {
           if (!(await runCheck(check, workOf(s), checkHome, CHECK_TIMEOUT_MS))) passed = false
@@ -399,12 +673,30 @@ export async function runOne(
         checks.push({ session: s, prompt: p, passed })
       }
     }
+    checks.sort((x, y) => x.session - y.session || x.prompt - y.prompt)
+    // An upstream that refused or failed to answer ended the run, not the task. The host's own account of
+    // the turn that ended is preferred; otherwise the proxy's last answers for the run. A capped run was
+    // stopped by the runner itself.
+    let infraFailed: InfraFailure | undefined
+    if (!capped) {
+      for (const [i, key] of keys.entries()) infraFailed ??= infraFromLedger(host.ledger(key), i)
+      const unclean = sessions.some((s) => s.timedOut || s.exitCode !== 0)
+      if (!infraFailed && unclean && opts.statuses)
+        infraFailed = infraFromStatuses(opts.statuses(proxyId), sessions.length - 1)
+    }
     const outcome: RunOutcome = {
       runId: id,
       system: 'agh',
       sessions,
       checks,
-      ...(setting === 'on' && task.category === 'cross-workspace' ? { alignment: 'auto-only' as const } : {}),
+      ...(saveRefused === undefined ? {} : { saveRefused }),
+      ...(infraFailed ? { infraFailed } : {}),
+      ...(capped ? { capped } : {}),
+      ...(stopped ? { stopped } : {}),
+      prompts,
+      workspaces: Object.fromEntries(works),
+      ...(setting === 'on' ? { onProtocol: protocol } : {}),
+      ...(seed ? { frozenFrom: seed } : {}),
     }
     writeFileSync(outcomeFile, `${JSON.stringify(outcome, null, 2)}\n`)
     return outcome
@@ -416,37 +708,89 @@ export async function runOne(
   }
 }
 
-async function runSession(
-  host: AghHost,
-  key: string,
-  workspace: string,
-  prompts: EvalTask['sessions'][number]['prompts'],
-  setting: Setting,
-  cfg: RunConfig,
-  logFile: string,
-): Promise<{ exitCode: number | null; timedOut: boolean }> {
+/** Where the first session of a task of this category ends with the user's own save, if it does. */
+function endSaveFor(category: EvalTask['category']): 'workspace' | 'user' | undefined {
+  if (category === 'workflow') return 'workspace'
+  if (category === 'cross-workspace') return 'user'
+  return undefined
+}
+
+type SessionPlan = {
+  key: string
+  workspace: string
+  prompts: EvalTask['sessions'][number]['prompts']
+  setting: Arm
+  cfg: RunConfig
+  logFile: string
+  endSave?: 'workspace' | 'user'
+  protocol: OnProtocol
+  /** Aborted when the run reached its request cap: the turn is stopped and the session ends. */
+  stop: AbortSignal
+  started(prompt: number): void
+  ended(prompt: number, reason: string): void
+  /** Runs a prompt's milestone checks, if it is one; false stops the run. */
+  milestone(prompt: number): Promise<boolean>
+  /** The oracle's lesson, written after this prompt. */
+  seedAfter?: { prompt: number; text: string }
+}
+
+type SessionEnd = {
+  exitCode: number | null
+  timedOut: boolean
+  saveRefused?: string
+  capped?: boolean
+  failedMilestone?: number
+}
+
+async function runSession(host: AghHost, plan: SessionPlan): Promise<SessionEnd> {
+  const { prompts, setting, cfg, endSave } = plan
   const deadline = Date.now() + cfg.sessionTimeoutMs
-  const log = (entry: SessionLog) => writeFileSync(logFile, `${JSON.stringify(entry)}\n`, { flag: 'a' })
-  writeFileSync(logFile, '')
-  const session = await host.openSession(key, workspace)
+  const log = (entry: SessionLog) => writeFileSync(plan.logFile, `${JSON.stringify(entry)}\n`, { flag: 'a' })
+  writeFileSync(plan.logFile, '')
+  const session = await host.openSession(plan.key, plan.workspace)
   let exitCode: number | null = 0
   let timedOut = false
+  let capped = false
+  let failedMilestone: number | undefined
+  let saveRefused: string | undefined
+  const reviews = setting === 'on' && plan.protocol === 'reviews'
   try {
+    // Without manual reviews nothing else would show a dead refinement: check it once, at no model cost.
+    if (setting === 'on' && plan.protocol === 'triggers') {
+      if (!session.liveness) throw new Error('this host cannot check that refinement is live')
+      const live = await session.liveness()
+      if ('refused' in live && NOT_ACTIVE.has(live.refused))
+        throw new Error(
+          `refinement is not active in the run host (${live.refused}); the "on" run would measure nothing`,
+        )
+    }
     for (const [index, prompt] of prompts.entries()) {
+      if (plan.stop.aborted) {
+        capped = true
+        break
+      }
       const left = deadline - Date.now()
       if (left <= 0) {
         timedOut = true
         break
       }
+      plan.started(index)
       const abort = new AbortController()
       const timer = setTimeout(() => abort.abort(), left)
+      const signal = AbortSignal.any([abort.signal, plan.stop])
       let reason: string | undefined
       try {
-        reason = await session.prompt(prompt.text, abort.signal)
+        reason = await session.prompt(prompt.text, signal)
       } catch (error) {
         log({ prompt: index, error: error instanceof Error ? error.message : String(error) })
       } finally {
         clearTimeout(timer)
+      }
+      plan.ended(index, plan.stop.aborted ? 'capped' : abort.signal.aborted ? 'timeout' : (reason ?? 'error'))
+      if (plan.stop.aborted) {
+        capped = true
+        log({ prompt: index, reason: 'capped' })
+        break
       }
       if (abort.signal.aborted) {
         timedOut = true
@@ -458,25 +802,47 @@ async function runSession(
         exitCode = 1
         break
       }
-      if (setting !== 'on') {
-        log({ prompt: index, reason })
-        continue
+      if (!(await plan.milestone(index))) {
+        log({ prompt: index, reason, milestone: 'failed' })
+        failedMilestone = index
+        exitCode = 1
+        break
       }
-      const review = await session.review()
-      if ('refused' in review && NOT_ACTIVE.has(review.refused))
-        throw new Error(
-          `refinement is not active in the run host (${review.refused}); the "on" run would measure nothing`,
-        )
-      const state =
-        'runId' in review
-          ? await session.settled(review.runId, Math.min(REFINE_WAIT_MS, Math.max(0, deadline - Date.now())))
-          : undefined
-      log({ prompt: index, reason, review: { ...review, ...(state ? { state } : {}) } })
+      if (!reviews) {
+        log({ prompt: index, reason })
+      } else {
+        const saveTo = index === prompts.length - 1 ? endSave : undefined
+        const review = await session.review(saveTo)
+        if ('refused' in review && NOT_ACTIVE.has(review.refused))
+          throw new Error(
+            `refinement is not active in the run host (${review.refused}); the "on" run would measure nothing`,
+          )
+        if (saveTo && 'refused' in review) saveRefused = review.refused
+        const state =
+          'runId' in review
+            ? await session.settled(
+                review.runId,
+                Math.min(REFINE_WAIT_MS, Math.max(0, deadline - Date.now())),
+              )
+            : undefined
+        log({ prompt: index, reason, review: { ...review, ...(state ? { state } : {}) } })
+      }
+      // The lesson is in memory from the next prompt on: the provider reads it again at each turn.
+      if (plan.seedAfter?.prompt === index) {
+        await host.seedMemory?.(plan.workspace, plan.seedAfter.text)
+        log({ prompt: index, seeded: 'oracle' })
+      }
     }
   } finally {
     await session.close()
   }
-  return { exitCode: timedOut ? null : exitCode, timedOut }
+  return {
+    exitCode: timedOut ? null : capped ? 1 : exitCode,
+    timedOut,
+    ...(capped ? { capped: true } : {}),
+    ...(failedMilestone === undefined ? {} : { failedMilestone }),
+    ...(saveRefused === undefined ? {} : { saveRefused }),
+  }
 }
 
 // ------------------------------------------------------------------ CLI
@@ -501,30 +867,72 @@ async function main(argv: string[]): Promise<void> {
     tasks = tasks.filter((t) => wanted.includes(t.id))
   }
 
+  // The frozen arm's sources are checked before anything is paid for.
+  const frozenFrom = args.frozenFrom ? resolve(args.frozenFrom) : undefined
+  if (frozenFrom) {
+    const memory = await loadFrozenMemoryModule()
+    const problems: string[] = []
+    for (let rep = 1; rep <= args.reps; rep++)
+      for (const task of tasks) {
+        try {
+          readFrozenSource(frozenFrom, task, rep, memory)
+        } catch (error) {
+          problems.push(error instanceof Error ? error.message : String(error))
+        }
+      }
+    if (problems.length > 0) throw new Error(`the frozen arm cannot start:\n${problems.join('\n')}`)
+  }
+
   const out = resolve(args.out)
   mkdirSync(out, { recursive: true })
   const proxy = await startUsageProxy({
     upstream: cfg.upstream,
     port: cfg.proxyPort,
     logFile: join(out, 'usage.jsonl'),
+    redact: [key],
   })
   // The host resolves the route's secret from this process's environment; it is never written down.
   process.env[SECRET_ENV] = key
+  const streak = createInfraStreak()
   try {
-    for (let rep = 1; rep <= args.reps; rep++) {
+    for (let rep = 1; rep <= args.reps && !streak.stopped; rep++) {
       for (const task of tasks) {
         for (const setting of args.settings) {
+          if (streak.stopped) break
+          if (setting === 'oracle' && !oracleApplies(task)) {
+            if (rep === 1) console.error(`skipped ${task.id}: no oracle arm for this task`)
+            continue
+          }
           const id = runId(task.id, setting, rep)
-          const fresh = !existsSync(join(out, id, 'outcome.json'))
+          const fresh = finishedOutcome(out, id) === undefined
           const outcome = await runOne(task, setting, rep, cfg, out, {
             launch: launchHost,
             fixtureDir: join(tasksDir, task.id, 'fixture'),
+            statuses: (proxyId) => proxy.statuses(proxyId),
+            cap: proxy,
+            maxRequests: args.maxRequests,
+            onProtocol: args.onProtocol,
+            ...(frozenFrom ? { frozenFrom } : {}),
           })
           const exits = outcome.sessions.map((s) => (s.timedOut ? 'timeout' : String(s.exitCode))).join(',')
           const passed = outcome.checks.filter((c) => c.passed).length
+          const infra = outcome.infraFailed
+            ? ` INFRA-FAILED (${outcome.infraFailed.reason}; not a task failure, left out of the results, redone on the next start)`
+            : outcome.capped
+              ? ` CAPPED (${outcome.capped.maxRequests} requests, session ${outcome.capped.session + 1} prompt ${outcome.capped.prompt + 1}; listed apart in the report)`
+              : outcome.stopped
+                ? ` STOPPED at a failed milestone (session ${outcome.stopped.session + 1} prompt ${outcome.stopped.prompt + 1})`
+                : ''
           console.error(
-            `${fresh ? 'ran' : 'skipped'} ${id} exit=[${exits}] checks=${passed}/${outcome.checks.length} (${relative(process.cwd(), join(out, id))})`,
+            `${fresh ? 'ran' : 'skipped'} ${id} exit=[${exits}] checks=${passed}/${outcome.checks.length}${infra} (${relative(process.cwd(), join(out, id))})`,
           )
+          if (fresh && streak.record(outcome.infraFailed !== undefined)) {
+            console.error(
+              `STOPPED: ${INFRA_STOP_AFTER} runs in a row were ended by the upstream (${outcome.infraFailed?.reason}), not by their tasks. ` +
+                'Check the key, the account balance and the model name (the preflight does this), then start the same command again: finished runs are kept, the infra-failed ones are redone.',
+            )
+            process.exitCode = INFRA_STOP_EXIT
+          }
         }
       }
     }

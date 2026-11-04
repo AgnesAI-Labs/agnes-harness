@@ -39,11 +39,22 @@ import type { ServiceRegistry } from '../ext-host/services.js'
 import type { ProfileActivations } from './activation.js'
 import { profileServiceContext } from './context.js'
 import { ProfileEffectQueues } from './effect-queues.js'
+import {
+  type HostDecisionOwner,
+  hostDecisionAnswerable,
+  hostDecisionEnded,
+  hostDecisionPending,
+  hostOperation,
+} from './host-decisions.js'
 import { type DecisionsChanged, ProfileJournal, type ProfileOperation } from './journal.js'
 import { retainProfileJournal } from './shared-journal.js'
 
+export { HOST_DECISION_ACTIVATION, type HostDecisionOwner } from './host-decisions.js'
+export type { ProfileJournal, ProfileOperation } from './journal.js'
 export type ProfileServiceRuntime = ReturnType<typeof createProfileServiceRuntime>
 export function createProfileServiceRuntime(deps: {
+  /** Host parts that keep their own decisions in this journal, by the owner name their operations carry. */
+  hostOwners?: ReadonlyMap<string, HostDecisionOwner>
   streams?: import('./streams.js').ProfileStreams
   managed?: import('./managed.js').ProfileManagedResources
   barrier?: import('../ext-host/activation-barrier.js').ExtensionActivationBarrier
@@ -488,14 +499,13 @@ export function createProfileServiceRuntime(deps: {
     const decisions = log.decisions(actor)
     const pending: DecisionSnapshot[] = []
     for (const value of await decisions.list()) {
-      if (
-        value.request.requestedBy.id !== actor.id ||
-        value.request.requestedBy.org !== actor.org ||
-        value.consumption ||
-        value.invalidation ||
-        value.result
-      )
+      if (value.request.requestedBy.id !== actor.id || value.request.requestedBy.org !== actor.org) continue
+      const hosted = hostOperation(log, deps.hostOwners, value.handle.id, value.request.operationId)
+      if (hosted) {
+        if (await hostDecisionPending(hosted, value, decisions, deps.log)) pending.push(value)
         continue
+      }
+      if (value.consumption || value.invalidation || value.result) continue
       const operation = [...log.operations.values()].find(
         (row) => row.receipt.decision?.id === value.handle.id,
       )
@@ -624,22 +634,28 @@ export function createProfileServiceRuntime(deps: {
     ): Promise<DecisionCommandReceipt> {
       const actor = await actorFor(credential, 'approval'),
         log = await journal()
-      return log.decisions(actor).answer(params, {
+      const decisions = log.decisions(actor)
+      const receipt = await decisions.answer(params, {
         actor,
         category: 'human',
         authorize: async (snapshot) => {
-          const operation = [...log.operations.values()].find(
-            (row) => row.receipt.decision?.id === snapshot.handle.id,
-          )
-          const entry = operation && deps.registry.resolve(operation.owner, operation.service)
-          if (!operation || !entry) throw rpcError('CAPABILITY_DENIED')
-          entry.assertAlive()
-          deps.activations.require(
-            operation.owner,
-            entry.integrity,
-            operation.activationId,
-            entry.activationRevision,
-          )
+          const hosted = hostOperation(log, deps.hostOwners, snapshot.handle.id)
+          if (hosted) {
+            if (!hostDecisionAnswerable(hosted)) throw rpcError('CAPABILITY_DENIED')
+          } else {
+            const operation = [...log.operations.values()].find(
+              (row) => row.receipt.decision?.id === snapshot.handle.id,
+            )
+            const entry = operation && deps.registry.resolve(operation.owner, operation.service)
+            if (!operation || !entry) throw rpcError('CAPABILITY_DENIED')
+            entry.assertAlive()
+            deps.activations.require(
+              operation.owner,
+              entry.integrity,
+              operation.activationId,
+              entry.activationRevision,
+            )
+          }
           if (
             closed ||
             snapshot.request.requestedBy.id !== actor.id ||
@@ -649,6 +665,18 @@ export function createProfileServiceRuntime(deps: {
             throw rpcError('CAPABILITY_DENIED')
         },
       })
+      // A Host owner acts on the answer itself; plugin effects run when their caller calls again.
+      const hosted = hostOperation(log, deps.hostOwners, params.handle.id)
+      if (hosted) await hostDecisionEnded(hosted, await decisions.get(params.handle), deps.log)
+      return receipt
+    },
+    /**
+     * The journal and the principal `credential` stands for, for a Host owner to ask that principal. Its
+     * decisions list and are answered with the plugin services' decisions.
+     */
+    async hostDecisions(credential: unknown): Promise<{ journal: ProfileJournal; actor: Actor }> {
+      const actor = await actorFor(credential)
+      return { journal: await journal(), actor }
     },
     async close() {
       closed = true

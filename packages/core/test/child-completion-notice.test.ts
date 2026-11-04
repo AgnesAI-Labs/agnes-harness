@@ -5,6 +5,7 @@ import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord, Provider, SystemInput } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { childCompletionId, deliverChildCompletion } from '../src/child/completion-notice.js'
+import { retireIdleChildren } from '../src/child/idle-retirement.js'
 import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { hangingProvider, slowCommits, until } from './helpers/child-traces.js'
@@ -102,6 +103,108 @@ function collectContext(parent: Parent) {
 }
 
 describe('child completion notice', () => {
+  it.each([false, true])(
+    'idle retirement preserves one result identity across collection and reopen (collected=%s)',
+    async (collected) => {
+      const storage = new MemoryStorage()
+      const first = kernel(storage)
+      const parent = await first.session('parent', sessionOpts)
+      const child = await parent.d.children.create({
+        parent: parent.key,
+        cwd: '/w',
+        input: 'work',
+        resident: true,
+        parentEffectId: 'background',
+      })
+      await child.run('work')
+      const before = await parent.d.children.inspect?.(child.key)
+      expect(notices(parent)).toHaveLength(1)
+      if (collected) await collectContext(parent).collect(child.key)
+      expect(
+        await retireIdleChildren(first, {
+          now: parent.d.clock() + 3_600_000,
+          idleMs: 3_600_000,
+          limit: 50,
+          signal: new AbortController().signal,
+          canRetireSession: () => true,
+        }),
+      ).toEqual([{ childKey: child.key, status: 'retired' }])
+      expect(notices(parent)).toHaveLength(collected ? 0 : 1)
+      expect(await parent.d.children.inspect?.(child.key)).toMatchObject({
+        completionId: before?.completionId,
+        completionSeq: before?.completionSeq,
+        text: 'child says hi',
+      })
+      expect(await parent.scan({ type: 'x/core/child-result-collected', limit: 10 })).toHaveLength(
+        collected ? 1 : 0,
+      )
+      await first.close()
+      const next = kernel(storage)
+      try {
+        const reopened = await next.session('parent', { ...sessionOpts, writerRunId: 'next' })
+        expect(notices(reopened)).toHaveLength(collected ? 0 : 1)
+        expect(await collectContext(reopened).collect(child.key)).toMatchObject({
+          status: 'completed',
+          text: 'child says hi',
+        })
+        expect(notices(reopened)).toEqual([])
+      } finally {
+        await next.close()
+      }
+    },
+  )
+  it('collects the original idle result while retirement waits for the end hook', async () => {
+    const k = kernel()
+    const parent = await k.session('parent', sessionOpts)
+    const child = await parent.d.children.create({
+      parent: parent.key,
+      cwd: '/w',
+      input: 'work',
+      resident: true,
+      parentEffectId: 'background',
+    })
+    await child.run('work')
+    const before = await parent.d.children.inspect?.(child.key)
+    let resolveHeld!: () => void
+    const held = new Promise<void>((resolve) => {
+      resolveHeld = resolve
+    })
+    let resolveEntered!: () => void
+    const entered = new Promise<void>((resolve) => {
+      resolveEntered = resolve
+    })
+    parent.hooks.subagentEnd = async () => {
+      resolveEntered()
+      await held
+    }
+    const retiring = retireIdleChildren(k, {
+      now: parent.d.clock() + 3_600_000,
+      idleMs: 3_600_000,
+      limit: 50,
+      signal: new AbortController().signal,
+      canRetireSession: () => true,
+    })
+    try {
+      await entered
+      const during = await parent.d.children.inspect?.(child.key)
+      expect(await collectContext(parent).collect(child.key)).toMatchObject({
+        status: 'completed',
+        text: 'child says hi',
+      })
+      expect(notices(parent)).toEqual([])
+      expect(during).toMatchObject({
+        completionId: before?.completionId,
+        completionSeq: before?.completionSeq,
+      })
+      resolveHeld()
+      expect(await retiring).toEqual([{ childKey: child.key, status: 'retired' }])
+      expect(notices(parent)).toEqual([])
+    } finally {
+      resolveHeld()
+      await retiring
+      await k.close()
+    }
+  })
   it.each(['x/core/role-delegation', 'x/fixture/role-delegation'])(
     'review-role: an untrusted %s row cannot name the completion role',
     async (type) => {

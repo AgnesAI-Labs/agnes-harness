@@ -1,16 +1,27 @@
 import { CoreError, type Seq } from '@agnes/core-common/types'
 import type { HarnessEdit, HarnessEntry, Inbox } from '@agnes/core-ledger/reduce/shapes'
-import type { RefinementPlan, RefinementPlanEdit, RefinementRunRecord } from '@agnes/core-ledger/reduce/state'
+import type {
+  RefinementPlan,
+  RefinementPlanEdit,
+  RefinementRunRecord,
+  RefinementTrigger,
+} from '@agnes/core-ledger/reduce/state'
 import { createMaintenancePort } from '../maintenance/port.js'
 import { type ApplyProposal, applyRefine, entryKey } from '../refine/apply.js'
 import type { SessionImpl } from '../step/session.js'
 import { applyMetaRows } from './confirmations.js'
-import { readSetCurrent } from './evidence.js'
+import { changedEntries, readSetCurrent } from './evidence.js'
+import { handOffApplied } from './handoff.js'
 import { APPLY_LIMITS, automaticRefusal } from './limits.js'
+import { asksForAnything, droppedEdits, withoutEntries } from './plan-restrict.js'
+import type { RefinementReferences } from './references.js'
 import { planRefinementRun, type RefinementRunDeps, type RunFacts, refinementRunRow } from './run.js'
 import { readTaskScope, sameTask, type TaskScope } from './task-scope.js'
 import type { RefinementPlanner } from './types.js'
 import { entryValidity, isExpired } from './validity.js'
+import type { RefinementWorkflowRuns } from './workflow-runs.js'
+import type { RefinementWorkspacePort } from './workspace.js'
+import { type RefinementWorkspaceRefs, renewConfirmed, renewsWorkspace } from './workspace-refs.js'
 
 /** The refinement switch as Core reads it: on or off, how automatic triggers are treated, and its revision. */
 export type RefinementSettingsView = { enabled: boolean; mode: 'manual' | 'auto'; revision: string }
@@ -34,6 +45,25 @@ export type RefinementDeps = {
     key: string
     lane: string
   }): TaskScope | null | undefined | Promise<TaskScope | null | undefined>
+  /** The host's save-to-workspace path; absent where the host offers none. */
+  workspace?: RefinementWorkspacePort
+  /**
+   * The entries saved to this session's workspace that a plan may confirm, and their renewal once a
+   * plan that confirms one is applied. Absent means none: the planner input is as before.
+   */
+  workspaceRefs?: RefinementWorkspaceRefs
+  /**
+   * Whether the approved skill or role a skill or subagent entry is bound to may be used by a session
+   * now; checked when a plan settles, when it is applied and when the entry is delivered. Absent: no
+   * reference can be checked, so every one is unavailable.
+   */
+  references?: RefinementReferences
+  /**
+   * Whether a finished `workflow` run of a session may become a skill; checked when a plan settles and
+   * when it is applied, and read again by the host when the skill is saved. Absent: no run can be
+   * checked, so every skill edit that names one is dropped.
+   */
+  workflowRuns?: RefinementWorkflowRuns
 }
 
 /** Why an apply attempt left the run as it was, or what it did. */
@@ -123,6 +153,13 @@ export function pump(s: SessionImpl): void {
     })
 }
 
+/**
+ * Whether a trigger waits for automatic mode. The machine's triggers do, and so does the model saving to
+ * the workspace or user memory; the model asking for a review does not, as it chose to call it.
+ */
+export const needsAutoMode = (trigger: Pick<RefinementTrigger, 'kind' | 'saveTo'>): boolean =>
+  trigger.kind !== 'manual' && !(trigger.kind === 'model' && trigger.saveTo === undefined)
+
 /** Ends a queued run without planning it, if it is still queued. */
 function endQueued(s: SessionImpl, runId: string, state: 'cancelled' | 'rejected', facts: RunFacts) {
   return s.locked(async () => {
@@ -143,14 +180,17 @@ async function start(s: SessionImpl, run: RefinementRunRecord): Promise<boolean>
     return true
   }
   const automatic = run.trigger.kind !== 'manual'
-  if (automatic && settings.mode !== 'auto') {
+  if (needsAutoMode(run.trigger) && settings.mode !== 'auto') {
     await endQueued(s, run.runId, 'rejected', { reason: 'manual-mode' })
     return true
   }
   // A manual request queued after the queue was read is left for the next start, as everywhere else.
   await supersedeQueued(s, run.runId, automatic)
   if (automatic) {
-    const why = await automaticRefusal(s, deps.target, { run: run.runId })
+    const why = await automaticRefusal(s, deps.target, {
+      run: run.runId,
+      ...(run.trigger.kind === 'model' ? { kind: 'model' as const } : {}),
+    })
     if (why?.refused === 'cooldown') {
       wake(s, why.retryAt ?? s.d.clock())
       return false
@@ -169,6 +209,8 @@ async function start(s: SessionImpl, run: RefinementRunRecord): Promise<boolean>
       return { enabled: view !== undefined, revision: view?.revision ?? '' }
     },
     ...(deps.target ? { target: deps.target } : {}),
+    // Only the user's own request carries the agreement to an unknown price, recorded when it was queued.
+    ...(run.trigger.kind === 'manual' && run.trigger.allowUnpriced === true ? { allowUnpriced: true } : {}),
   }
   const done = await planRefinementRun(s, run.runId, runDeps, new AbortController().signal)
   if (done?.state === 'proposed') await tryApply(s, done.runId)
@@ -220,9 +262,22 @@ function proposalOf(
     if (edit.op === 'delete') return { op: 'delete', kind: edit.kind, id: edit.id }
     const { kind, id, title, content } = edit
     const version = (baseline.get(entryKey(edit)) ?? 0) + 1
+    const bound = {
+      ...(edit.reference === undefined ? {} : { reference: edit.reference }),
+      ...(edit.workflowRun === undefined ? {} : { workflowRun: edit.workflowRun }),
+    }
     return {
       op: 'upsert',
-      entry: { kind, id, title, content, scope: 'local', version, source: `refinement:${run.runId}` },
+      entry: {
+        kind,
+        id,
+        title,
+        content,
+        scope: 'local',
+        version,
+        source: `refinement:${run.runId}`,
+        ...bound,
+      },
     }
   })
   const cited = new Set<Seq>([...plan.evidenceSeqs, ...applied.flatMap((edit) => edit.evidenceSeqs)])
@@ -249,7 +304,18 @@ function proposalOf(
  * refinement is off. A plan made under another settings revision is cancelled and one made against
  * entries that have moved since is rejected: neither can hold again.
  */
-export function tryApply(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
+export async function tryApply(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
+  const attempt = await applyLocked(s, runId)
+  if (attempt === 'applied') {
+    // Entries saved to the workspace that the plan confirmed are renewed once it has committed, and
+    // what the run owes the workspace (its result, if it asked; entries now confirmed enough) is saved.
+    await renewConfirmed(s, runId)
+    await handOffApplied(s, runId)
+  }
+  return attempt
+}
+
+function applyLocked(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
   return s.locked(async (): Promise<ApplyAttempt> => {
     const run = s.state.refinementRuns.get(runId)
     if (run?.state !== 'proposed' || !run.plan) return 'not-proposed'
@@ -264,44 +330,68 @@ export function tryApply(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
       await s.append([refinementRunRow(s, runId, 'cancelled', { reason: 'settings-changed' })])
       return 'rejected'
     }
+    // An entry that moved since the planner saw it loses its edits; the others are still applied.
+    let plan = run.plan
     if (run.readSet && !readSetCurrent(s, run.readSet)) {
-      await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'read-set-changed' })])
-      return 'rejected'
+      plan = withoutEntries(plan, changedEntries(s, run.readSet))
+      if (!asksForAnything(plan)) {
+        await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'read-set-changed' })])
+        return 'rejected'
+      }
     }
     const { scope, readable } = await readTaskScope(s)
     // Whether a task-level lesson still has its goal, or an entry the plan reused unread is still not
     // in force, cannot be told now: the run waits, and is looked at again after the next turn.
     if (
       !readable &&
-      (run.plan.edits.some((e) => e.op === 'upsert' && e.applicability === 'task' && !isExpired(e)) ||
-        (run.plan.lapsed?.length ?? 0) > 0)
+      (plan.edits.some((e) => e.op === 'upsert' && e.applicability === 'task' && !isExpired(e)) ||
+        (plan.lapsed?.length ?? 0) > 0)
     )
       return 'task-unreadable'
     // An entry the plan replaced unread because its task had ended is in force again (its goal came
     // back): the plan was made against a table that no longer holds.
-    if (run.plan.lapsed?.length) {
+    if (plan.lapsed?.length) {
       const expired = new Set(entryValidity(s.state, scope, readable).expired.map((v) => entryKey(v.entry)))
-      if (run.plan.lapsed.some((ref) => !expired.has(entryKey(ref)))) {
+      if (plan.lapsed.some((ref) => !expired.has(entryKey(ref)))) {
         await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'read-set-changed' })])
         return 'rejected'
       }
     }
-    const applied = writable(run.plan, scope)
+    // A skill or role an entry is bound to that cannot be used now, or a workflow run that is gone or
+    // unfinished, drops that edit; the rest is applied.
+    const usable = writable(plan, scope)
+    const dropped = await droppedEdits(s, usable)
+    if (dropped.keys.size) {
+      plan = withoutEntries(plan, dropped.keys)
+      if (!asksForAnything(plan)) {
+        await s.append([
+          refinementRunRow(s, runId, 'rejected', {
+            reason: dropped.reason,
+            detail: [...dropped.keys].join(' '),
+          }),
+        ])
+        return 'rejected'
+      }
+    }
+    const applied = writable(plan, scope)
     // Every lesson on the plan belonged to a goal that has ended since, and nothing else would change.
     if (
-      run.plan.edits.length > 0 &&
+      plan.edits.length > 0 &&
       applied.length === 0 &&
-      !run.plan.confirmations.some((c) => c.confirmedBy)
+      !plan.confirmations.some((c) => c.confirmedBy) &&
+      !renewsWorkspace(run.plan)
     ) {
       await s.append([refinementRunRow(s, runId, 'rejected', { reason: 'expired', detail: 'task-ended' })])
       return 'rejected'
     }
+    // An apply that dropped edits or confirmations records the plan as it was applied, so what the hand-off
+    // looks at later is that plan and never an entry or a confirmation the apply left out.
     const ended = (o: { outcome: string; reason?: string }) =>
       o.outcome === 'applied'
-        ? refinementRunRow(s, runId, 'applied', {})
+        ? refinementRunRow(s, runId, 'applied', plan === run.plan ? {} : { plan })
         : refinementRunRow(s, runId, 'rejected', { reason: o.reason ?? 'apply', detail: o.outcome })
     // Validity and confirmations are written after the entry rows, in the same transaction.
-    const meta = applyMetaRows(s, run.plan, applied)
+    const meta = applyMetaRows(s, plan, applied)
     // Only entries in force weigh on the safety cap: not an expired task lesson, not one handed off.
     const validity = entryValidity(s.state, scope, readable)
     const inForce = new Set([...validity.valid, ...validity.held].map((view) => entryKey(view.entry)))
@@ -313,7 +403,7 @@ export function tryApply(s: SessionImpl, runId: string): Promise<ApplyAttempt> {
     }
     let result: Awaited<ReturnType<typeof applyRefine>>
     try {
-      result = await applyRefine(s, proposalOf({ ...run, plan: run.plan }, applied), limits, {
+      result = await applyRefine(s, proposalOf({ ...run, plan }, applied), limits, {
         expectedRegisterSeq: { register: 'op.state', key: s.lane, seq: s.opSeq() },
         with: (o) => [ended(o), ...(o.outcome === 'applied' ? meta : [])],
       })

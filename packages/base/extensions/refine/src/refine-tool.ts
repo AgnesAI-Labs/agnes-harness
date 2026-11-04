@@ -1,6 +1,6 @@
 import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
-import { type RefinementToolPort, workspaceTargetUnavailable } from './port.js'
+import type { RefinementToolPort } from './port.js'
 import { Target } from './propose-tool.js'
 
 export const RefineParams = Type.Object(
@@ -24,12 +24,13 @@ export function createRefineTool(port: Pick<RefinementToolPort, 'refine'>) {
       isConcurrencySafe: false,
       isOpenWorld: false,
       replay: 'never',
-      deferLoading: true,
+      // Always loaded while refinement is on: the experience guidance tells the model when to call it, and a
+      // tool whose schema is not loaded is never called. The tools are not registered with it off.
+      deferLoading: false,
     },
     async execute(args, ctx) {
-      if (args.target === 'workspace') return workspaceTargetUnavailable()
       return port.refine(
-        { ...(args.focus === undefined ? {} : { focus: args.focus }), target: 'session' },
+        { ...(args.focus === undefined ? {} : { focus: args.focus }), target: args.target ?? 'session' },
         ctx,
       )
     },

@@ -11,7 +11,9 @@ import {
   type RefinementRunRecord,
   type RefinementRunState,
   type RefinementTrigger,
+  type RefinementWorkspaceConfirmation,
 } from '@agnes/core-ledger/reduce/state'
+import { isWorkflowRunId } from '@agnes/extension-api'
 import { estimateTokens } from '../execution/model-tokens.js'
 import { resolveModel } from '../execution/turn/inference.js'
 import { sessionIdentity } from '../loop/scope.js'
@@ -23,8 +25,11 @@ import type { EffectiveEntry } from '../request/experience.js'
 import { rankEntries } from '../request/rank-entries.js'
 import { sysEvent } from '../step/events.js'
 import type { SessionImpl } from '../step/session.js'
-import { freezeEvidence, readSetCurrent } from './evidence.js'
+import { changedEntries, freezeEvidence } from './evidence.js'
+import { asksForAnything, droppedEdits, withoutEntries } from './plan-restrict.js'
+import { grantReach } from './reach.js'
 import { redactEvidence } from './redact.js'
+import { isReference } from './references.js'
 import { readTaskScope } from './task-scope.js'
 import {
   type EvidenceSnapshot,
@@ -39,6 +44,14 @@ import {
   type RefinementPlanner,
 } from './types.js'
 import { type EntryView, entryValidity, grantLevels, lapsedKeys, validEntries } from './validity.js'
+import {
+  grantWorkspace,
+  isWorkspaceKind,
+  isWorkspaceRef,
+  plannerWorkspace,
+  shownWorkspaceRefs,
+  workspaceRefsOf,
+} from './workspace-refs.js'
 
 /** The Core row each step of a refinement run is recorded as, on the maintenance lane. */
 export const REFINEMENT_RUN = REFINEMENT_RUN_EVENT
@@ -120,7 +133,12 @@ export async function queueRefinementRun(
     !TRIGGERS.has(trigger?.kind) ||
     !Number.isSafeInteger(trigger.seq) ||
     trigger.seq < 0 ||
-    (trigger.focus !== undefined && (typeof trigger.focus !== 'string' || trigger.focus.length > MAX_FOCUS))
+    (trigger.focus !== undefined &&
+      (typeof trigger.focus !== 'string' || trigger.focus.length > MAX_FOCUS)) ||
+    (trigger.saveTo !== undefined && trigger.saveTo !== 'workspace' && trigger.saveTo !== 'user') ||
+    // User memory is asked for only by a person or by the model; no other trigger has anyone behind it.
+    (trigger.saveTo === 'user' && trigger.kind !== 'manual' && trigger.kind !== 'model') ||
+    (trigger.allowUnpriced !== undefined && (trigger.allowUnpriced !== true || trigger.kind !== 'manual'))
   )
     throw new CoreError('E_ENVELOPE', 'refinement trigger is invalid')
   const runId = s.d.ids.ulid()
@@ -128,6 +146,8 @@ export async function queueRefinementRun(
     kind: trigger.kind,
     seq: trigger.seq,
     ...(trigger.focus === undefined ? {} : { focus: trigger.focus }),
+    ...(trigger.saveTo === undefined ? {} : { saveTo: trigger.saveTo }),
+    ...(trigger.allowUnpriced === true ? { allowUnpriced: true } : {}),
   }
   const facts = { trigger: clean, ...(settingsRevision === undefined ? {} : { settingsRevision }) }
   await s.locked(() => s.append([refinementRunRow(s, runId, 'queued', facts)]))
@@ -242,6 +262,7 @@ export async function planRefinementRun(
       return await move(s, runId, 'rejected', { ...frozen, reason: 'no-evidence' }, queued)
     const { scope, readable } = await readTaskScope(s)
     const { entries, counts } = plannerEntries(snapshot, entryValidity(s.state, scope, readable).valid)
+    const workspace = await workspaceRefsOf(s)
     let prompt: PlannerPrompt
     try {
       prompt = deps.planner.buildPrompt(
@@ -256,6 +277,10 @@ export async function planRefinementRun(
           taskEnded: snapshot.taskEnded,
           activeGoal: scope !== null,
           counts,
+          inputTokens: PLANNER_INPUT_TOKENS,
+          ...(workspace.length ? { workspace: plannerWorkspace(workspace) } : {}),
+          ...(run.trigger.saveTo === undefined ? {} : { saveTo: run.trigger.saveTo }),
+          ...(s.d.refinement?.workspace ? { savesToWorkspace: true } : {}),
         },
       )
     } catch {
@@ -263,6 +288,9 @@ export async function planRefinementRun(
     }
     const problem = promptProblem(prompt, snapshot, entries)
     if (problem) return await move(s, runId, 'rejected', { ...frozen, reason: problem }, queued)
+    const shownWorkspace = shownWorkspaceRefs(workspace, prompt.workspaceRefs)
+    if (shownWorkspace === 'invalid')
+      return await move(s, runId, 'rejected', { ...frozen, reason: 'invalid-prompt' }, queued)
 
     const attempt = (run.attempt ?? 0) + 1
     const byId = new Map(snapshot.items.map((item) => [item.id, item]))
@@ -280,6 +308,7 @@ export async function planRefinementRun(
         }),
         fullEntries: prompt.fullEntries.map(ref),
         shownEntries: [...prompt.fullEntries, ...prompt.referenceEntries].map(ref),
+        ...(shownWorkspace.length ? { workspaceRefs: shownWorkspace } : {}),
         target: { route: target.route, model: target.model },
       },
       queued,
@@ -335,9 +364,24 @@ export function settleRefinementRun(
     // An entry that exists but is not in force (its goal ended) is not shown to the planner, so its id
     // may be written afresh, against its current version.
     let [state, facts] = verdict(s, run, result, deps, lapsedKeys(await validEntries(s)))
+    // A skill or role an edit is bound to that cannot be used now: that edit is dropped, the others stay;
+    // the plan is refused only when nothing else is left.
+    // The same goes for a skill edit that names a workflow run this session does not hold, or that did
+    // not finish.
+    const dropped = state === 'proposed' && facts.plan ? await droppedEdits(s, facts.plan.edits) : undefined
+    if (dropped?.keys.size && facts.plan) {
+      const plan = withoutEntries(facts.plan, dropped.keys)
+      if (asksForAnything(plan)) facts = { ...facts, plan }
+      else [state, facts] = ['rejected', { reason: dropped.reason, detail: [...dropped.keys].join(' ') }]
+    }
     // A plan that holds is given its levels: each lesson as the evidence it cites allows, bound to the
     // current goal or recorded as expired without one.
-    if (state === 'proposed' && facts.plan) [state, facts] = await grantLevels(s, facts.plan)
+    if (state === 'proposed' && facts.plan) {
+      const [levelled, granted] = await grantLevels(s, facts.plan)
+      // A lesson keeps a reach beyond its workspace only where its structure allows (reach.ts).
+      const plan = grantReach(granted.plan, run.trigger, { root: s.workspaceRoot })
+      ;[state, facts] = await grantWorkspace(s, run, [levelled, { ...granted, plan }])
+    }
     await s.append([refinementRunRow(s, runId, state, facts)])
     return s.state.refinementRuns.get(runId)
   })
@@ -361,13 +405,16 @@ function verdict(
       ? ['cancelled', { reason: 'cancelled' }]
       : ['rejected', { reason: result.reason ?? 'provider', ...(result.code ? { detail: result.code } : {}) }]
   if (settings.revision !== run.settingsRevision) return ['rejected', { reason: 'settings-changed' }]
-  if (!run.readSet || !readSetCurrent(s, run.readSet)) return ['rejected', { reason: 'read-set-changed' }]
+  if (!run.readSet) return ['rejected', { reason: 'read-set-changed' }]
+  // Entries that changed since the planner was shown them lose their edits; the others stay.
+  const changed = changedEntries(s, run.readSet)
   let parsed: unknown
   try {
     parsed = deps.planner.parseOutput(result.text ?? '', {
       evidenceIds: (run.evidence ?? []).map((e) => e.id),
       fullEntries: run.fullEntries ?? [],
       shownEntries: run.shownEntries ?? [],
+      ...(run.workspaceRefs?.length ? { workspaceRefs: run.workspaceRefs.map((r) => r.ref) } : {}),
     })
   } catch {
     return ['rejected', { reason: 'invalid-output', detail: 'parser-failed' }]
@@ -375,9 +422,13 @@ function verdict(
   const error = (parsed as { error?: unknown } | null)?.error
   if (typeof error === 'string')
     return ['rejected', { reason: 'invalid-output', detail: error.slice(0, 200) }]
-  const plan = checkedPlan(parsed, run, lapsed)
-  if ('error' in plan) return ['rejected', { reason: 'invalid-output', detail: plan.error }]
-  if (plan.edits.length === 0 && plan.confirmations.length === 0) return ['no-op', {}]
+  const plan = checkedPlan(parsed, run, lapsed, changed)
+  if ('error' in plan)
+    return plan.error === 'read-set-changed'
+      ? ['rejected', { reason: 'read-set-changed' }]
+      : ['rejected', { reason: 'invalid-output', detail: plan.error }]
+  if (plan.edits.length === 0 && plan.confirmations.length === 0 && !plan.workspaceConfirmations)
+    return ['no-op', {}]
   return ['proposed', { plan }]
 }
 
@@ -387,7 +438,27 @@ const str = (v: unknown, max: number, min = 0): v is string =>
   typeof v === 'string' && v.length >= min && v.length <= max
 const only = (o: Obj, keys: readonly string[]) => Object.keys(o).every((k) => keys.includes(k))
 const OUTPUT_KEYS = ['summary', 'rationale', 'expectedOutcome', 'edits', 'confirmations', 'evidenceIds']
-const UPSERT_KEYS = ['op', 'kind', 'id', 'title', 'content', 'applicability', 'evidenceIds', 'quote']
+const UPSERT_KEYS = [
+  'op',
+  'kind',
+  'id',
+  'title',
+  'content',
+  'applicability',
+  'evidenceIds',
+  // Accepted but ignored: earlier planners quoted the request to back a session lesson.
+  'quote',
+  'reference',
+  'workflowRun',
+  'reach',
+]
+
+/** At most `max` UTF-16 units of `text`, never cut inside a surrogate pair. */
+function cutAtUnit(text: string, max: number): string {
+  if (text.length <= max) return text
+  const end = text.charCodeAt(max - 1)
+  return text.slice(0, end >= 0xd800 && end <= 0xdbff ? max - 1 : max)
+}
 
 class Invalid extends Error {}
 const invalid = (why: string): never => {
@@ -406,13 +477,17 @@ const masked = (text: string, max: number, why: string, min = 0): string => {
 /**
  * Core's own check of a parsed plan, whatever the plugin accepted: the shape, at most 5 edits of at
  * most 2,000 characters, only evidence ids the prompt showed (each replaced by its fixed seq), only
- * entries shown in full rewritten or deleted, one edit and one confirmation per entry. A deleted
- * entry the model was given is withdrawn by a control notice ahead of the next request's other notes.
+ * entries shown in full rewritten or deleted, one edit and one confirmation per entry, and no entry that
+ * changed since the planner was shown it (`changed`). It works edit by edit: one that fails is left out
+ * and the rest stay; the plan is refused only when it asked for something and nothing valid is left. A
+ * deleted entry the model was given is withdrawn by a control notice ahead of the next request's other
+ * notes.
  */
 function checkedPlan(
   out: unknown,
   run: RefinementRunRecord,
   lapsed: ReadonlySet<string>,
+  changed: ReadonlySet<string> = new Set(),
 ): RefinementPlan | { error: string } {
   const seqOf = new Map((run.evidence ?? []).map((e) => [e.id, e.seq]))
   const seqs = (ids: unknown, max = MAX_CITED_IDS): Seq[] => {
@@ -424,8 +499,8 @@ function checkedPlan(
       return seqOf.get(id as string) ?? invalid(`unknown-evidence: ${String(id)}`)
     })
   }
-  // Only the user's own requests can back a quote; a quote with no such citation is dropped, so it
-  // can never grant a lesson more than it would get without one.
+  // Only the user's own requests can back the quote of a confirmation; a quote with no such citation is
+  // dropped, so it can never make a confirmation count that would not count without one.
   const userSeqs = new Set((run.evidence ?? []).filter((e) => e.kind === 'user').map((e) => e.seq))
   const quoted: Quoted = (quote, cited) => {
     const from = quote === undefined ? [] : cited.filter((seq) => userSeqs.has(seq))
@@ -438,6 +513,7 @@ function checkedPlan(
   )
   const full = new Set((run.fullEntries ?? []).map(refOf))
   const shown = new Set((run.shownEntries ?? []).map(refOf))
+  const shownWorkspace = new Set((run.workspaceRefs ?? []).map((r) => r.ref))
   try {
     if (
       !isObj(out) ||
@@ -450,54 +526,81 @@ function checkedPlan(
       !Array.isArray(out.evidenceIds)
     )
       return invalid('invalid-shape: output')
-    if (out.edits.length > MAX_PLAN_EDITS) return invalid('too-many-edits')
+    const dropped: string[] = []
     const touched = new Set<string>()
     const baseline: RefinementPlan['baseline'] = []
     const reused: RefinementPlan['baseline'] = []
-    const edits = out.edits.map((raw, at): RefinementPlanEdit => {
-      const edit = checkedEdit(raw, at, seqs, quoted)
-      const key = refOf(edit)
-      if (touched.has(key)) invalid(`duplicate-entry: ${key}`)
-      touched.add(key)
-      const saved = existing.get(key)
-      if (saved === undefined && edit.op === 'delete') invalid(`unknown-entry: ${key}`)
-      // An entry no longer in force (its task ended) does not hold its id: an upsert may reuse it
-      // unread. Only one shown in full may be deleted.
-      const reuse =
-        saved !== undefined && edit.op === 'upsert' && !full.has(key) && lapsed.has(entryKey(edit))
-      if (saved !== undefined && !full.has(key) && !reuse) invalid(`not-shown-in-full: ${key}`)
-      if (saved !== undefined) baseline.push({ kind: edit.kind, id: edit.id, ...saved })
-      if (reuse) reused.push({ kind: edit.kind, id: edit.id, version: saved.version })
-      return edit
-    })
-    const confirmed = new Set<string>()
-    const confirmations = out.confirmations.map((raw, at) => {
-      if (!isObj(raw) || !only(raw, ['entryId', 'evidenceIds', 'quote']) || !str(raw.entryId, 160, 3))
-        return invalid(`invalid-shape: confirmations[${at}]`)
-      if (!shown.has(raw.entryId)) invalid(`unknown-entry: ${raw.entryId}`)
-      if (confirmed.has(raw.entryId)) invalid(`duplicate-confirmation: ${raw.entryId}`)
-      confirmed.add(raw.entryId)
-      const [kind, ...rest] = raw.entryId.split('/')
-      const evidenceSeqs = seqs(raw.evidenceIds)
-      if (evidenceSeqs.length === 0) invalid(`invalid-shape: confirmations[${at}]`)
-      if (raw.quote !== undefined && !str(raw.quote, 2000, 1)) invalid(`invalid-shape: confirmations[${at}]`)
-      const quote =
-        typeof raw.quote === 'string'
-          ? masked(raw.quote, 2000, `invalid-shape: confirmations[${at}]`, 1)
-          : undefined
-      return {
-        kind: kind as HarnessEntry['kind'],
-        id: rest.join('/'),
-        evidenceSeqs,
-        ...quoted(quote, evidenceSeqs),
+    const edits: RefinementPlanEdit[] = []
+    // Extra edits are ignored, not refused.
+    for (const [at, raw] of out.edits.slice(0, MAX_PLAN_EDITS).entries()) {
+      try {
+        // An entry saved to the workspace is only ever confirmed, never rewritten or deleted.
+        if (isObj(raw) && isWorkspaceKind(raw.kind))
+          invalid(`confirm-only: ${String(raw.kind)}/${String(raw.id)}`)
+        const edit = checkedEdit(raw, at, seqs)
+        const key = refOf(edit)
+        if (touched.has(key)) invalid(`duplicate-entry: ${key}`)
+        if (changed.has(key)) invalid('read-set-changed')
+        const saved = existing.get(key)
+        if (saved === undefined && edit.op === 'delete') invalid(`unknown-entry: ${key}`)
+        // An entry no longer in force (its task ended) does not hold its id: an upsert may reuse it
+        // unread. Only one shown in full may be deleted.
+        const reuse =
+          saved !== undefined && edit.op === 'upsert' && !full.has(key) && lapsed.has(entryKey(edit))
+        if (saved !== undefined && !full.has(key) && !reuse) invalid(`not-shown-in-full: ${key}`)
+        touched.add(key)
+        if (saved !== undefined) baseline.push({ kind: edit.kind, id: edit.id, ...saved })
+        if (reuse) reused.push({ kind: edit.kind, id: edit.id, version: saved.version })
+        edits.push(edit)
+      } catch (error) {
+        if (!(error instanceof Invalid)) throw error
+        dropped.push(error.message)
       }
-    })
+    }
+    const confirmed = new Set<string>()
+    const confirmations: (RefinementPlan['confirmations'][number] | RefinementWorkspaceConfirmation)[] = []
+    for (const [at, raw] of out.confirmations.entries()) {
+      try {
+        if (!isObj(raw) || !only(raw, ['entryId', 'evidenceIds', 'quote']) || !str(raw.entryId, 160, 3))
+          invalid(`invalid-shape: confirmations[${at}]`)
+        const entryId = (raw as Obj).entryId as string
+        const workspace = isWorkspaceRef(entryId)
+        if (!(workspace ? shownWorkspace : shown).has(entryId)) invalid(`unknown-entry: ${entryId}`)
+        if (confirmed.has(entryId)) invalid(`duplicate-confirmation: ${entryId}`)
+        if (!workspace && changed.has(entryId)) invalid('read-set-changed')
+        const [kind, ...rest] = entryId.split('/')
+        const evidenceSeqs = seqs((raw as Obj).evidenceIds)
+        if (evidenceSeqs.length === 0) invalid(`invalid-shape: confirmations[${at}]`)
+        const rawQuote = (raw as Obj).quote
+        if (rawQuote !== undefined && !str(rawQuote, 2000, 1)) invalid(`invalid-shape: confirmations[${at}]`)
+        const quote =
+          typeof rawQuote === 'string'
+            ? masked(rawQuote, 2000, `invalid-shape: confirmations[${at}]`, 1)
+            : undefined
+        const checked = { evidenceSeqs, ...quoted(quote, evidenceSeqs) }
+        confirmed.add(entryId)
+        confirmations.push(
+          workspace
+            ? { ref: entryId, ...checked }
+            : { kind: kind as HarnessEntry['kind'], id: rest.join('/'), ...checked },
+        )
+      } catch (error) {
+        if (!(error instanceof Invalid)) throw error
+        dropped.push(error.message)
+      }
+    }
+    // Nothing valid is left of what the planner asked for: the plan is refused with the first reason.
+    if (edits.length === 0 && confirmations.length === 0 && dropped.length > 0)
+      return invalid(dropped[0] as string)
+    const ofWorkspace = (c: (typeof confirmations)[number]) => 'ref' in c
+    const workspaceConfirmations = confirmations.filter(ofWorkspace) as RefinementWorkspaceConfirmation[]
     return {
       summary: masked(out.summary, 1000, 'invalid-shape: output'),
       rationale: masked(out.rationale, 4000, 'invalid-shape: output'),
       expectedOutcome: masked(out.expectedOutcome, 1000, 'invalid-shape: output'),
       edits,
-      confirmations,
+      confirmations: confirmations.filter((c) => !ofWorkspace(c)) as RefinementPlan['confirmations'],
+      ...(workspaceConfirmations.length ? { workspaceConfirmations } : {}),
       evidenceSeqs: seqs(out.evidenceIds, 4 * MAX_CITED_IDS),
       baseline,
       ...(reused.length ? { lapsed: reused.map(ref) } : {}),
@@ -514,7 +617,6 @@ function checkedEdit(
   raw: unknown,
   at: number,
   seqs: (ids: unknown, max?: number) => Seq[],
-  quoted: Quoted,
 ): RefinementPlanEdit {
   const where = `invalid-shape: edits[${at}]`
   if (
@@ -537,13 +639,22 @@ function checkedEdit(
     !str(raw.title, 256, 1) ||
     typeof raw.content !== 'string' ||
     (raw.applicability !== 'task' && raw.applicability !== 'session') ||
-    (raw.quote !== undefined && !str(raw.quote, 2000, 1))
+    (raw.quote !== undefined && !str(raw.quote, 2000, 1)) ||
+    (raw.reach !== undefined && raw.reach !== 'workspace' && raw.reach !== 'user') ||
+    (raw.reference !== undefined && !isReference(kind, raw.reference)) ||
+    // A workflow run turns a skill into a definition the host writes; a skill bound to an approved
+    // resource is only a pointer to it, so the two never go together.
+    (raw.workflowRun !== undefined &&
+      (kind !== 'skill' || raw.reference !== undefined || !isWorkflowRunId(raw.workflowRun)))
   )
     return invalid(where)
-  if (raw.content.length === 0 || raw.content.length > MAX_EDIT_CHARS) return invalid(`edit-too-long: ${at}`)
+  // Only a prompt or memory lesson can be promoted to user memory.
+  if (raw.reach === 'user' && kind !== 'prompt' && kind !== 'memory') return invalid(`reach-kind: ${at}`)
+  if (raw.content.length === 0) return invalid(`invalid-shape: edits[${at}]`)
   const evidenceSeqs = seqs(raw.evidenceIds)
   if (evidenceSeqs.length === 0) return invalid(where)
-  const content = masked(raw.content, MAX_EDIT_CHARS, `edit-too-long: ${at}`)
+  // A longer content is cut, not refused.
+  const content = masked(cutAtUnit(raw.content, MAX_EDIT_CHARS), MAX_EDIT_CHARS, `edit-too-long: ${at}`)
   return {
     op: 'upsert',
     kind,
@@ -552,7 +663,9 @@ function checkedEdit(
     content: content.length > 0 ? content : invalid(where),
     applicability: raw.applicability,
     evidenceSeqs,
-    ...quoted(raw.quote === undefined ? undefined : masked(raw.quote, 2000, where, 1), evidenceSeqs),
+    ...(raw.reference === undefined ? {} : { reference: raw.reference }),
+    ...(raw.workflowRun === undefined ? {} : { workflowRun: raw.workflowRun as string }),
+    ...(raw.reach === 'user' ? { reach: 'user' as const } : {}),
   }
 }
 

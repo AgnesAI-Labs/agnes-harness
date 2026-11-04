@@ -110,6 +110,7 @@ import {
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
 import { bestEffort, quietly } from '../best-effort.js'
+import { forgetIdleChild, idleChildReady } from '../child/idle-retirement.js'
 import {
   childLifecycle,
   childLifecycleRevoked,
@@ -647,6 +648,15 @@ export class SessionImpl {
     return this.activeOps > 0
   }
   private readonly activeWork = new Set<Promise<unknown>>()
+  private retirementClaimed = false
+  /** Reserves idle admission until its terminal CAS commits or loses; invoked under the writer gate. */
+  claimIdleRetirement(): (() => void) | undefined {
+    if (!idleChildReady(this, this.activeWork.size > 0)) return
+    this.retirementClaimed = true
+    return () => {
+      this.retirementClaimed = false
+    }
+  }
   private readonly effectReceipts = new FailureReceipts()
   loopScope = new LoopScope()
   private resuming: Promise<unknown> | undefined
@@ -724,7 +734,7 @@ export class SessionImpl {
   private closing = false
 
   get closingOrClosed(): boolean {
-    return this.closing
+    return this.closing || this.retirementClaimed
   }
 
   private readonly authorization: SessionPermissionAuthority
@@ -1444,6 +1454,7 @@ export class SessionImpl {
     if (target === 'next-step' || msg.kind === 'steer') await this.controls.require('steer', msg.actor)
     return this.locked(async () => {
       // Backend lifecycle checks must share the inbox writer lock with result collection.
+      if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
       if (await options.skipIf?.()) return this.lastSeq
       if (options.dedupeByCommandId) {
         if (!msg.commandId) throw new CoreError('E_ENVELOPE', 'input deduplication requires commandId')
@@ -1949,7 +1960,7 @@ export class SessionImpl {
 
   beginLoopOperation(): () => void {
     this.loopScope.assertAlive()
-    if (this.closing) throw new CoreError('E_CLOSED', 'session closed')
+    if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
     let done!: () => void
     const work = new Promise<void>((resolve) => {
       done = resolve
@@ -1962,7 +1973,7 @@ export class SessionImpl {
   }
 
   private active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
-    if (this.closing) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
+    if (this.closingOrClosed) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
     this.activeOps++
     const work = (async () => {
       while (afterResume && this.resuming) await this.resuming
@@ -2718,6 +2729,7 @@ export class SessionImpl {
       await attempt(() => this.loopDriver?.cancel())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
       await attempt(() => this.loopChildren?.close())
+      await attempt(() => this.d.children.dispose?.())
       // Keep hooks, log and lease alive while producers settle effects and final checkpoints. Work
       // that ignores its cancellation is left behind: it must not hold the log and the lease open.
       // Maintenance calls run outside any turn and have their own drain, within the same bound.
@@ -2733,6 +2745,7 @@ export class SessionImpl {
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')
+      forgetIdleChild(this)
     })
     return this.closePromise
   }

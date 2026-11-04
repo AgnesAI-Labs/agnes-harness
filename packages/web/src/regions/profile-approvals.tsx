@@ -14,6 +14,10 @@ import {
 } from './profile-attention.js'
 import { createProfileAttention, type ProfileAttention } from './profile-attention-state.js'
 
+/** The Host's own decisions about saving task experience: no plugin and no package stand behind them. */
+const taskExperience = (snapshot: DecisionSnapshot): boolean =>
+  snapshot.request.owner === 'core/refinement' && snapshot.request.sourcePackage === 'host'
+
 /** Update the shared unit through its handle so disabling preserves the card and retry focus. */
 function ProfileApproval({
   view,
@@ -135,7 +139,11 @@ export function ProfileApprovals({
             waitingAutomation(client),
           ])
           if (alive) {
-            if (profile.status === 'fulfilled' && profile.value.decisions.length) {
+            // Package names label plugin requests only; the Host's own decisions name no package.
+            if (
+              profile.status === 'fulfilled' &&
+              profile.value.decisions.some((decision) => !taskExperience(decision))
+            ) {
               void homeAdmin()
                 .then(({ api }) => api.list())
                 .then(
@@ -312,7 +320,6 @@ export function ProfileApprovals({
                 </section>
               )
             })}
-          {!view.decision && decisions.length > 0 && <h3>{zh ? '插件请求' : 'Plugin requests'}</h3>}
           {view.decision && !shown.length && (
             <p role="status">
               {zh
@@ -320,50 +327,64 @@ export function ProfileApprovals({
                 : 'Loading approval. Close this window if it has already been handled.'}
             </p>
           )}
-          {shown.map((snapshot) => {
-            const presentation = decisionPresentation(snapshot.request.spec.presentation)
-            const metadata = packages.find((item) => item.id === snapshot.request.sourcePackage)?.metadata
-            const name = resolvePluginMetadata(metadata, zh ? 'zh-CN' : 'en')?.displayName
-            const operation = presentation?.title ?? profileOperation(snapshot, language)
-            const title = operation
-              ? `${zh ? '插件' : 'Plugin'}${name ? ` ${name}` : ''} · ${operation}`
-              : zh
-                ? `${name || '插件'} · 请求执行一个操作`
-                : `${name || 'Plugin'} · requests an operation`
-            return (
-              <ProfileApproval
-                key={snapshot.handle.id}
-                snapshot={snapshot}
-                language={language}
-                view={{
-                  key: snapshot.handle.id,
-                  title,
-                  summary: zh ? '仅对此次操作生效。' : 'Applies only to this operation.',
-                  ...(presentation ? { presentation } : {}),
-                  impact: '',
-                  risk: 'always',
-                  preview: JSON.stringify(
-                    { handle: snapshot.handle, revision: snapshot.revision, request: snapshot.request },
-                    null,
-                    2,
-                  ),
-                  disabled: busy,
-                  actions: snapshot.request.spec.options
-                    .filter((option) => ['allowed-once', 'rejected'].includes(option))
-                    .map((option) => ({
-                      id: option,
-                      label:
-                        option === 'allowed-once' ? (zh ? '允许一次' : 'Allow once') : zh ? '拒绝' : 'Reject',
-                      onSelect: () => {
-                        void answer(snapshot, option)
-                      },
-                    })),
-                }}
-              />
-            )
-          })}
+          {[
+            { heading: zh ? '任务经验' : 'Task experience', items: shown.filter(taskExperience) },
+            {
+              heading: zh ? '插件请求' : 'Plugin requests',
+              items: shown.filter((snapshot) => !taskExperience(snapshot)),
+            },
+          ].flatMap(({ heading, items }) => [
+            !view.decision && items.length > 0 && <h3 key={`heading:${heading}`}>{heading}</h3>,
+            ...items.map((snapshot) => card(snapshot)),
+          ])}
         </section>
       </Dialog>
     </>
   )
+
+  function card(snapshot: DecisionSnapshot) {
+    const presentation = decisionPresentation(snapshot.request.spec.presentation)
+    const operation = presentation?.title ?? profileOperation(snapshot, language)
+    const metadata = taskExperience(snapshot)
+      ? undefined
+      : packages.find((item) => item.id === snapshot.request.sourcePackage)?.metadata
+    const name = resolvePluginMetadata(metadata, zh ? 'zh-CN' : 'en')?.displayName
+    const title = taskExperience(snapshot)
+      ? `${zh ? '任务经验' : 'Task experience'} · ${operation ?? (zh ? '保存经验' : 'Save experience')}`
+      : operation
+        ? `${zh ? '插件' : 'Plugin'}${name ? ` ${name}` : ''} · ${operation}`
+        : zh
+          ? `${name || '插件'} · 请求执行一个操作`
+          : `${name || 'Plugin'} · requests an operation`
+    return (
+      <ProfileApproval
+        key={snapshot.handle.id}
+        snapshot={snapshot}
+        language={language}
+        view={{
+          key: snapshot.handle.id,
+          title,
+          summary: zh ? '仅对此次操作生效。' : 'Applies only to this operation.',
+          ...(presentation ? { presentation } : {}),
+          impact: '',
+          risk: 'always',
+          preview: JSON.stringify(
+            { handle: snapshot.handle, revision: snapshot.revision, request: snapshot.request },
+            null,
+            2,
+          ),
+          disabled: busy,
+          actions: snapshot.request.spec.options
+            .filter((option) => ['allowed-once', 'rejected'].includes(option))
+            .map((option) => ({
+              id: option,
+              label: option === 'allowed-once' ? (zh ? '允许一次' : 'Allow once') : zh ? '拒绝' : 'Reject',
+              onSelect: () => {
+                void answer(snapshot, option)
+              },
+            })),
+        }}
+      />
+    )
+  }
 }

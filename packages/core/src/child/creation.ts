@@ -4,6 +4,18 @@ import { CoreError } from '@agnes/core-common/types'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 
+export function generationDepthOf(session: SessionImpl): number {
+  const start = session.state.session as { delegation?: { generationDepth?: number } } | null
+  return start?.delegation?.generationDepth ?? 0
+}
+
+export function rootTaskIdOf(session: SessionImpl): string {
+  const start = session.state.session as { delegation?: { rootTaskId?: string } } | null
+  if (start?.delegation?.rootTaskId) return start.delegation.rootTaskId
+  const turn = session.state.openTurn.get(session.lane)
+  return `${session.key}:${session.lane}:${turn?.startSeq ?? 0}`
+}
+
 /** Preserve the failed-attach hook without delivering completion into a parent's pending gate. */
 export async function reportFailedCreation(
   parent: SessionImpl,

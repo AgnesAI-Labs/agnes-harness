@@ -156,6 +156,8 @@ export const operationsCatalog: LocaleCatalog = {
       'No package.json was found at the repository root. An AGH plugin needs this manifest; a SKILL.md alone is a Skill, not a plugin.',
     'error.source.manifest-invalid':
       'The source package.json cannot be read or is invalid. Check its JSON, package name and version.',
+    'error.source.source-not-found':
+      'This local path was not found. Enter an absolute path on the machine where the daemon runs, or a path starting with ~/.',
     'error.source.not-plugin':
       'This repository has no AGH plugin declarations. Choose an AGH plugin package; a Skill is installed from Skills.',
     'error.source.git-ref':
@@ -330,6 +332,8 @@ export const operationsCatalog: LocaleCatalog = {
       '仓库根目录没有 package.json 插件清单。AGH 插件需要此清单；仅含 SKILL.md 的技能不是插件。',
     'error.source.manifest-invalid': '来源中的 package.json 无法读取或内容无效，请检查 JSON、包名与版本。',
     'error.source.not-plugin': '此仓库没有 AGH 插件声明，请选择 AGH 插件包；技能请从“技能”页安装。',
+    'error.source.source-not-found':
+      '找不到这个本地路径：请填写 daemon 所在机器上的绝对路径，或以 ~/ 开头的路径。',
     'error.source.git-ref': 'Git 分支、标签或提交不存在或有歧义，请检查引用或填写完整提交 SHA。',
     'error.source.git-fetch': 'Git 仓库下载或检出失败，请检查网络、公开 HTTPS 地址及 Git 是否可用。',
     'error.source-rejected':

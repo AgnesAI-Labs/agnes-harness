@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# audit: the team's tool for audit requests, shared by every project. usage: bin/audit apply
+set -eu
+if [ "${1:-}" != apply ]; then
+  echo "usage: bin/audit apply" >&2
+  exit 2
+fi
+shift
+req=$(ls queue/*.req 2>/dev/null | sort | head -n 1 || true)
+if [ -z "$req" ]; then
+  echo "error: nothing queued" >&2
+  exit 1
+fi
+if [ ! -s docs/SUMMARY.md ]; then
+  echo "error: no summary at docs/SUMMARY.md; write it there first" >&2
+  exit 1
+fi
+item=$(basename "$req" .req)
+mkdir -p done
+{ echo "applied $item"; cat docs/SUMMARY.md; } > "done/$item.txt"
+rm "$req" docs/SUMMARY.md
+echo "applied $item"

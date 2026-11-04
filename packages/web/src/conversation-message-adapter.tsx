@@ -28,6 +28,7 @@ import {
   ConversationToolCard,
   ConversationTurnActions,
   interactionToolPresentation,
+  type RefinementSaveEntry,
   type RefinementWithdraw,
   type TurnErrorActions,
 } from '@agnes/web-ui/conversation'
@@ -234,6 +235,13 @@ type WebConversationMessagesProps = {
     sessionId: string,
     appliedSeq: number,
   ) => Promise<import('@agnes/web-ui/conversation').RefinementWithdrawOutcome>
+  /** Saves one entry a review kept to a session's workspace; the adapter binds the session shown. */
+  onSaveRefinementEntry?: (
+    sessionId: string,
+    kind: 'memory' | 'prompt' | 'skill',
+    id: string,
+    target?: 'user',
+  ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
   /** Compatibility selector; both values now use the same React-owned Markdown. */
   markdownRenderer?: 'legacy' | 'xmarkdown'
   /** The host's voice port: the settled final reply gets a read-aloud button. */
@@ -261,6 +269,7 @@ function ScopedConversationMessages({
   onFork,
   turnErrorActions: hostTurnErrorActions,
   onWithdrawRefinement,
+  onSaveRefinementEntry,
   voice,
   sessionScope,
 }: WebConversationMessagesProps & { sessionScope: string | undefined }) {
@@ -335,6 +344,13 @@ function ScopedConversationMessages({
         ? (appliedSeq) => onWithdrawRefinement(sessionScope, appliedSeq)
         : undefined,
     [onWithdrawRefinement, sessionScope],
+  )
+  const saveRefinementEntry = useMemo<RefinementSaveEntry | undefined>(
+    () =>
+      onSaveRefinementEntry && sessionScope
+        ? (kind, id, target) => onSaveRefinementEntry(sessionScope, kind, id, target)
+        : undefined,
+    [onSaveRefinementEntry, sessionScope],
   )
   const shownNodeIds = folded.size
     ? (visibleNodeIds ?? (nodes ?? []).map((node) => node.id)).filter((id) => !folded.has(id))
@@ -425,6 +441,7 @@ function ScopedConversationMessages({
       t: translate,
       ...(turnErrorActions ? { turnErrorActions } : {}),
       ...(withdrawRefinement ? { withdrawRefinement } : {}),
+      ...(saveRefinementEntry ? { saveRefinementEntry } : {}),
       processStep: (node) => workflowStepRecord(node.text),
       renderMarkdown: (text, part, state) => (
         <SelectedContribution
@@ -655,6 +672,7 @@ function ScopedConversationMessages({
     onFork,
     turnErrorActions,
     withdrawRefinement,
+    saveRefinementEntry,
     voice,
   ])
   const messages = (

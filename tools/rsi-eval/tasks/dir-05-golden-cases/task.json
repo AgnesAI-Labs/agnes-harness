@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a golden case named `three-words` for the word counter: input \"alpha beta gamma\", expected output 3. `./golden` must report it as passing.",
+          "text": "Add a golden case named `three-words` for the word counter: input \"alpha beta gamma\", expected output 3. `./golden` must report it as passing. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "./golden",
@@ -25,7 +25,7 @@
           ]
         },
         {
-          "text": "Add a golden case named `padded` for the word counter: input \"   a    b  \" (with the extra spaces), expected output 2. `./golden` must report it as passing.",
+          "text": "Remember, a golden case is a directory cases/<name>/ with files named `input` and `expected`; flat files in cases/ are rejected. Add a golden case named `padded` for the word counter: input \"   a    b  \" (with the extra spaces), expected output 2. `./golden` must report it as passing.",
           "checks": [
             {
               "command": "./golden",

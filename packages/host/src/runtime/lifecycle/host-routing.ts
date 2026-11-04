@@ -41,6 +41,7 @@ export const HOST_MEMBER_SCOPES = {
   providerFingerprint: 'deployment',
   modelAdapterCatalog: 'deployment',
   memory: 'session',
+  savedParagraphs: 'deployment',
   providers: 'deployment',
   seamBindings: 'deployment',
   runtimes: 'deployment',

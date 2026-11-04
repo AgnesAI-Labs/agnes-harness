@@ -436,6 +436,27 @@ describe('applyRefine with a run id', () => {
   })
 })
 
+describe('the safety cap and entries handed off to the workspace', () => {
+  it('an entry whose metadata says it was handed off does not count toward the cap by default', async () => {
+    const { session } = await openSession({ provider: fakeProvider([]) })
+    const seed = Array.from({ length: 5 }, (_, i) => ({ op: 'upsert', entry: entry(`m${i}`) }))
+    await applyRefine(session, proposal(seed, [], [1], 'seed'), seedLimits)
+    const capped = { ...applyLimits, safetyCap: 5 }
+    expect(
+      (await applyRefine(session, proposal([{ op: 'upsert', entry: entry('x') }], [], [1], 'x'), capped))
+        .outcome,
+    ).toBe('rejected:limit')
+    // Two of the five are handed off: their metadata is bound to their current rows.
+    await session.locked(() =>
+      session.append([meta(session, 'm0', { handedOff: true }), meta(session, 'm1', { handedOff: true })]),
+    )
+    expect(
+      (await applyRefine(session, proposal([{ op: 'upsert', entry: entry('y') }], [], [1], 'y'), capped))
+        .outcome,
+    ).toBe('applied')
+  })
+})
+
 const META = 'x/core/refinement-entry-meta'
 const meta = (session: { ev: (...a: never[]) => unknown }, id: string, over: Record<string, unknown> = {}) =>
   (session.ev as (type: string, data: unknown, o: unknown) => never)(

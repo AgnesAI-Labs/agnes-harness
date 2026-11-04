@@ -39,7 +39,7 @@ import { createToolsCoreExtension } from '../extensions/tools-core/src/index.js'
 import toolsSearchExtension from '../extensions/tools-search/src/index.js'
 import { createToolsWebExtension } from '../extensions/tools-web/src/index.js'
 import { createOfficialSearchProvider } from '../extensions/tools-web/src/search/index.js'
-import workflowExtension from '../extensions/workflow/src/index.js'
+import { createWorkflowExtension } from '../extensions/workflow/src/index.js'
 import type { ChildWorktreePort, SeamInitContext } from './seam-init.js'
 
 /** Replaced with the reviewed generated asset by the CLI SEA build. */
@@ -180,7 +180,10 @@ function defineSubagentExtension(init: SeamInitContext): BundledPlugin {
 
 const bundled = {
   'agnes/intelligent-ui': (): BundledPlugin => intelligentUiExtension,
-  'agnes/workflow': (): BundledPlugin => workflowExtension,
+  'agnes/workflow': (init: SeamInitContext): BundledPlugin =>
+    createWorkflowExtension(
+      init.provideWorkflowRuns ? { provideWorkflowRuns: init.provideWorkflowRuns } : {},
+    ),
   'agnes/context-rules': (): BundledPlugin => contextRulesExtension,
   'agnes/follow-up-hint': (init: SeamInitContext): BundledPlugin =>
     createFollowUpHintExtension(init.sessionTasks),

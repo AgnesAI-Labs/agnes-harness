@@ -2,7 +2,17 @@
 // are zero-based throughout: session 0 is the first session, so "session 2" in the design is index 1.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import type { EvalTask, PromptWindow, RunOutcome, RunRecord, Setting } from './types.js'
+import type {
+  Arm,
+  EvalTask,
+  PromptProgress,
+  PromptWindow,
+  RunOutcome,
+  RunRecord,
+  SessionCost,
+  WorkflowReuse,
+} from './types.js'
+import { parseAghWorkflowCalls, savedDefinitions } from './workflow-reuse.js'
 
 export type { PromptWindow, RunRecord } from './types.js'
 
@@ -11,6 +21,9 @@ export type ParsedSession = {
   refine: RunRecord['refine']
   harnessLookups: number
   compactions: number
+  /** AGH: the ledger seq of every trap hit inside a prompt window, and of every compaction. */
+  hitSeqs?: number[]
+  compactionSeqs?: number[]
 }
 
 export type UsageSummary = {
@@ -41,19 +54,79 @@ const contentText = (content: unknown): string => {
     .join('\n')
 }
 
-/** Every text a tool run printed, whatever `isError` says: result text, stderr and the error value. */
-const toolOutputTexts = (message: Json): string[] => {
-  const texts = [contentText(message.content)]
+/**
+ * Tools that run a command. A trap hit is a failed run of one of them; reading a file with the read
+ * tool (or printing it with `cat` in a shell) never counts, even when the file holds the signature.
+ */
+const EXECUTING_TOOLS: ReadonlySet<string> = new Set(['shell', 'bash', 'exec', 'python_repl'])
+
+/** A command that only prints files or text: its output is never a failed run of the task's tool. */
+const READER_COMMAND =
+  /(?:^|[;&|(\n])\s*(?:cat|head|tail|sed|grep|egrep|rg|awk|less|more|bat|nl|od|xxd|strings)\s/
+const isReaderCommand = (command: string): boolean => READER_COMMAND.test(command)
+
+/** A non-zero exit the command printed itself (`echo "exit=$?"`) or a Prime `BashResult(exit_code=N`. */
+const PRINTED_FAILURE = /\bexit(?:[ _]?code)?\s*[=:]\s*(-?[1-9]\d*)\b/i
+
+const matchesSignature = (signatures: RegExp[], texts: string[]): boolean =>
+  texts.some((text) => signatures.some((signature) => signature.test(text)))
+
+/** The pieces of an AGH shell result: `stdout`, then `[stderr]` and the error text, then `[exit N]`. */
+const splitShellResult = (text: string): { stdout: string; stderr: string; exit: number | undefined } => {
+  let body = text
+  let exit: number | undefined
+  const exitMatch = /\n*\[exit (-?\d+)\]\s*$/.exec(body)
+  if (exitMatch) {
+    exit = Number(exitMatch[1])
+    body = body.slice(0, exitMatch.index)
+  }
+  const marker = /(?:^|\n)\[stderr\]\n?/.exec(body)
+  if (!marker) return { stdout: body, stderr: '', exit }
+  return { stdout: body.slice(0, marker.index), stderr: body.slice(marker.index + marker[0].length), exit }
+}
+
+/**
+ * Whether a run of an AGH shell tool failed with the signature: the signature is on stderr, or the run
+ * failed (error result, non-zero exit, a printed non-zero exit) and printed it on stdout with a command
+ * that is not a plain file reader.
+ */
+const aghShellFailed = (signatures: RegExp[], text: string, isError: boolean, command: string): boolean => {
+  const { stdout, stderr, exit } = splitShellResult(text)
+  if (matchesSignature(signatures, [stderr])) return true
+  const failed = isError || (exit !== undefined && exit !== 0) || PRINTED_FAILURE.test(stdout)
+  return failed && !isReaderCommand(command) && matchesSignature(signatures, [stdout])
+}
+
+/**
+ * The same for a Prime tool result (`python_repl`, which runs commands through `bash(...)` or
+ * `subprocess`): the signature is in the exception, in stderr, or in the output of a run that failed.
+ */
+const primeRunFailed = (signatures: RegExp[], message: Json, command: string): boolean => {
+  if (typeof message.toolName !== 'string' || !EXECUTING_TOOLS.has(message.toolName)) return false
   const details = isObject(message.details) ? message.details : {}
-  if (typeof details.stderr === 'string') texts.push(details.stderr)
-  const error = isObject(details.error) ? details.error : {}
-  if (typeof error.evalue === 'string') texts.push(error.evalue)
-  return texts
+  const error = isObject(details.error) ? details.error : undefined
+  const exceptionTexts: string[] = []
+  if (typeof details.stderr === 'string') exceptionTexts.push(details.stderr)
+  if (error) {
+    if (typeof error.evalue === 'string') exceptionTexts.push(error.evalue)
+    if (Array.isArray(error.traceback))
+      exceptionTexts.push(error.traceback.filter((line) => typeof line === 'string').join('\n'))
+  }
+  if (matchesSignature(signatures, exceptionTexts)) return true
+  const text = contentText(message.content)
+  const failed =
+    (!error && (message.isError === true || details.status === 'error')) || PRINTED_FAILURE.test(text)
+  return failed && !isReaderCommand(command) && matchesSignature(signatures, [text])
 }
 
 type Source = 'auto' | 'user' | 'self'
 const asSource = (value: unknown): Source => (value === 'auto' || value === 'self' ? value : 'user')
 
+/**
+ * The same counts from a Prime session file. The trap is hit only by a failed run: an executing tool
+ * result (`python_repl`) whose exception, stderr or failed output holds the signature, or a failed `!`
+ * command; printing a file that holds the signature is not a hit.
+ */
 export const parsePrimeSession = (jsonl: string, task: EvalTask, sessionIndex: number): ParsedSession => {
   const prompts = task.sessions[sessionIndex]?.prompts ?? []
   const signatures = task.trap.signatures.map((signature) => new RegExp(signature))
@@ -65,10 +138,10 @@ export const parsePrimeSession = (jsonl: string, task: EvalTask, sessionIndex: n
   const audits: { id: string; edits: number }[] = []
   const noticeSource = new Map<string, Source>()
 
-  const readOutput = (texts: string[]): void => {
+  const commands = new Map<string, string>()
+  const markHit = (): void => {
     const window = windows[current]
-    if (!window || window.trapHit) return
-    if (texts.some((text) => signatures.some((signature) => signature.test(text)))) window.trapHit = true
+    if (window) window.trapHit = true
   }
 
   const readNotice = (customType: unknown, details: unknown): void => {
@@ -99,15 +172,26 @@ export const parsePrimeSession = (jsonl: string, task: EvalTask, sessionIndex: n
           lastOpened = next
         }
       } else if (message.role === 'toolResult') {
-        readOutput(toolOutputTexts(message))
+        const details = isObject(message.details) ? message.details : {}
+        const kernel = isObject(details.bashCommands) ? details.bashCommands : {}
+        const command =
+          typeof kernel.first === 'string' ? kernel.first : (commands.get(String(message.toolCallId)) ?? '')
+        if (primeRunFailed(signatures, message, command)) markHit()
       } else if (message.role === 'bashExecution') {
-        if (typeof message.output === 'string') readOutput([message.output])
+        // A command the user ran with `!`: a failure is a non-zero exit with the signature in its output.
+        const failed = typeof message.exitCode === 'number' && message.exitCode !== 0
+        const command = typeof message.command === 'string' ? message.command : ''
+        if (failed && !isReaderCommand(command) && typeof message.output === 'string')
+          if (matchesSignature(signatures, [message.output])) markHit()
       } else if (message.role === 'custom') {
         readNotice(message.customType, message.details)
       }
     } else if (entry.type === 'tool_started') {
       const args = isObject(entry.args) ? entry.args : {}
       if (typeof args.code === 'string') harnessLookups += args.code.match(LOOKUP)?.length ?? 0
+      const run =
+        typeof args.code === 'string' ? args.code : typeof args.command === 'string' ? args.command : ''
+      if (typeof entry.toolCallId === 'string') commands.set(entry.toolCallId, run)
     } else if (entry.type === 'compaction') {
       compactions++
     } else if (entry.type === 'custom' && entry.customType === REFINEMENT_AUDIT) {
@@ -143,7 +227,9 @@ const isMainLane = (lane: unknown): boolean =>
 /**
  * The same counts from an AGH session file: one ledger row per line (`{seq, type, lane, origin, data}`,
  * every lane), as the AGH runner writes it. A prompt window opens at the user's own message with the
- * prompt's text (notes the host adds are not the user's); tool results are read for the trap. A review
+ * prompt's text (notes the host adds are not the user's). The trap counts as hit in a window when a command
+ * the shell tool ran failed with the signature (see `aghShellFailed`); reading a file that holds the
+ * signature never counts. A review
  * counts once it reached planning (or opened with a plan, for a direct proposal), by what started it:
  * manual is `user`, the model's request is `self`, compaction and repeated failures are `auto`.
  * Applied edits are those of applied `harness/refine` rows that are not withdrawals.
@@ -157,7 +243,10 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
   let harnessLookups = 0
   let compactions = 0
   const runs = new Map<string, { source?: Source; planned: boolean }>()
+  const calls = new Map<string, { name: string; command: string }>()
   const refine = { auto: 0, user: 0, self: 0, appliedEdits: 0 }
+  const hitSeqs: number[] = []
+  const compactionSeqs: number[] = []
 
   for (const line of jsonl.split('\n')) {
     if (line.trim() === '') continue
@@ -197,20 +286,166 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
       }
     } else if (row.type === 'tool/result') {
       const window = windows[current]
-      const text = contentText(data.content)
-      if (window && !window.trapHit && signatures.some((signature) => signature.test(text)))
+      const call = typeof data.toolUseId === 'string' ? calls.get(data.toolUseId) : undefined
+      const name = call?.name ?? (typeof row.origin === 'string' ? row.origin.replace(/^tool:/, '') : '')
+      if (
+        window &&
+        EXECUTING_TOOLS.has(name) &&
+        aghShellFailed(signatures, contentText(data.content), data.isError === true, call?.command ?? '')
+      ) {
         window.trapHit = true
+        if (typeof row.seq === 'number') hitSeqs.push(row.seq)
+      }
     } else if (row.type === 'tool/call') {
       if (data.name === 'harness_inspect') harnessLookups++
+      if (typeof data.toolUseId === 'string' && typeof data.name === 'string') {
+        const args = isObject(data.args) ? data.args : {}
+        calls.set(data.toolUseId, {
+          name: data.name,
+          command: typeof args.command === 'string' ? args.command : '',
+        })
+      }
     } else if (row.type === 'x/core/compaction-end') {
       compactions++
+      if (typeof row.seq === 'number') compactionSeqs.push(row.seq)
     }
   }
   for (const run of runs.values()) if (run.planned) refine[run.source ?? 'user']++
-  return { windows, refine, harnessLookups, compactions }
+  return { windows, refine, harnessLookups, compactions, hitSeqs, compactionSeqs }
 }
 
-const RUN_ID = /^.+\.(on|off)\.r(\d+)$/
+/**
+ * What one AGH session cost, from its ledger (one row per line, every lane): a request is a
+ * `cost/ledger` row, whatever its purpose or lane (the review calls of the refinement lane included);
+ * tokens are input, output, cache read and cache write; cost is the rows' billed micro-dollars. Child
+ * sessions are counted into the parent only where their cost is in the parent's ledger. The parent
+ * ledger of this host holds `subagent/cost` rows that name a child and say its cost is incomplete,
+ * without an amount, so a session with such a row (or a cost row without a price) is a lower bound.
+ * `refinement` is the part of the totals that sits in the refinement lane: the review calls of the `on` arm.
+ */
+export const sessionCostOfLedger = (jsonl: string): SessionCost => {
+  let requests = 0
+  let tokens = 0
+  let micros = 0
+  const review = { requests: 0, tokens: 0, micros: 0 }
+  let lowerBound = false
+  for (const line of jsonl.split('\n')) {
+    if (line.trim() === '') continue
+    let row: unknown
+    try {
+      row = JSON.parse(line)
+    } catch {
+      continue
+    }
+    if (!isObject(row)) continue
+    const data = isObject(row.data) ? row.data : {}
+    if (row.type === 'subagent/cost') {
+      lowerBound = true
+    } else if (row.type === 'cost/ledger') {
+      const inReview = row.lane === 'refinement'
+      requests++
+      if (inReview) review.requests++
+      const counts = isObject(data.tokens) ? data.tokens : {}
+      for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'])
+        if (typeof counts[key] === 'number') {
+          tokens += counts[key]
+          if (inReview) review.tokens += counts[key]
+        }
+      const billing = isObject(data.billing) ? data.billing : {}
+      if (typeof billing.usdMicros === 'number') {
+        micros += billing.usdMicros
+        if (inReview) review.micros += billing.usdMicros
+      } else lowerBound = true
+    }
+  }
+  return {
+    requests,
+    tokens,
+    cost: micros / 1_000_000,
+    lowerBound,
+    refinement: { requests: review.requests, tokens: review.tokens, cost: review.micros / 1_000_000 },
+  }
+}
+
+/** The `ts` of the first row of a ledger (one row per line), if it has one. */
+const firstRowTime = (jsonl: string): string | undefined => {
+  const line = jsonl.split('\n').find((l) => l.trim() !== '')
+  if (!line) return undefined
+  try {
+    const row = JSON.parse(line) as { ts?: unknown }
+    return typeof row.ts === 'string' ? row.ts : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** The cost of one session of a run (zero-based, as everywhere here); none for a run without ledgers. */
+export const sessionCost = (run: RunRecord, session: number): SessionCost | undefined =>
+  run.sessionCosts?.[session]
+
+/**
+ * What each session had spent when each of its prompts ended (`outcome.prompts`, by the runner's clock):
+ * the rows of its ledger up to that moment. Tool calls are the main lane's `tool/call` rows; requests,
+ * tokens and cost are counted as `sessionCostOfLedger` counts them, all lanes and without the refinement
+ * lane. A milestone prompt carries the result of the checks run right after it.
+ */
+export const progressOf = (task: EvalTask, outcome: RunOutcome, texts: string[]): PromptProgress[] => {
+  const parsed = texts.map((text) =>
+    (text ?? '').split('\n').flatMap((line) => {
+      if (line.trim() === '') return []
+      try {
+        const row = JSON.parse(line) as unknown
+        return isObject(row) && typeof row.ts === 'string' ? [{ row, at: Date.parse(row.ts) }] : []
+      } catch {
+        return []
+      }
+    }),
+  )
+  const out: PromptProgress[] = []
+  for (const ended of outcome.prompts ?? []) {
+    const until = Date.parse(ended.endedAt)
+    let toolCalls = 0
+    let requests = 0
+    let tokens = 0
+    let micros = 0
+    let mainRequests = 0
+    let mainMicros = 0
+    for (const { row, at } of parsed[ended.session] ?? []) {
+      if (at > until) continue
+      const data = isObject(row.data) ? row.data : {}
+      if (row.type === 'tool/call' && isMainLane(row.lane)) toolCalls++
+      if (row.type !== 'cost/ledger') continue
+      const inReview = row.lane === 'refinement'
+      const counts = isObject(data.tokens) ? data.tokens : {}
+      const billing = isObject(data.billing) ? data.billing : {}
+      const usd = typeof billing.usdMicros === 'number' ? billing.usdMicros : 0
+      requests++
+      micros += usd
+      for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'])
+        if (typeof counts[key] === 'number') tokens += counts[key]
+      if (!inReview) {
+        mainRequests++
+        mainMicros += usd
+      }
+    }
+    const milestone = task.sessions[ended.session]?.prompts[ended.prompt]?.milestone
+    const check = outcome.checks.find((c) => c.session === ended.session && c.prompt === ended.prompt)
+    out.push({
+      session: ended.session,
+      prompt: ended.prompt,
+      toolCalls,
+      requests,
+      tokens,
+      cost: micros / 1_000_000,
+      mainRequests,
+      mainCost: mainMicros / 1_000_000,
+      ...(milestone === undefined ? {} : { milestone, passed: check?.passed === true }),
+    })
+  }
+  return out
+}
+
+const RUN_ID = /^.+\.(on|off|oracle|frozen)\.r(\d+)$/
 
 export type ToRunRecordOptions = {
   system?: RunRecord['system']
@@ -218,6 +453,8 @@ export type ToRunRecordOptions = {
   readFile?: (path: string) => string
   /** Session file paths are resolved against this directory when given. */
   baseDir?: string
+  /** The `SKILL.md` texts the workspace holds after the first session; none when absent. Workflow tasks only. */
+  readSavedSkills?: () => string[]
 }
 
 export const toRunRecord = (
@@ -235,12 +472,27 @@ export const toRunRecord = (
 
   const windows: PromptWindow[] = []
   const refine = { auto: 0, user: 0, self: 0, appliedEdits: 0 }
+  const sessionCosts: SessionCost[] = []
+  let startedAt: string | undefined
   let harnessLookups = 0
   let compactions = 0
+  const texts: string[] = []
+  const trapEvents: NonNullable<RunRecord['trapEvents']> = []
   task.sessions.forEach((_, sessionIndex) => {
     const files = outcome.sessions[sessionIndex]?.sessionFiles ?? []
     const parse = (options.system ?? 'prime') === 'agh' ? parseAghSession : parsePrimeSession
-    const parsed = parse(files.map((file) => read(locate(file))).join('\n'), task, sessionIndex)
+    const text = files.map((file) => read(locate(file))).join('\n')
+    const parsed = parse(text, task, sessionIndex)
+    if ((options.system ?? 'prime') === 'agh' && files.length > 0) {
+      sessionCosts[sessionIndex] = sessionCostOfLedger(text)
+      if (sessionIndex === 0) startedAt = firstRowTime(text)
+      texts[sessionIndex] = text
+      trapEvents.push({
+        session: sessionIndex,
+        hits: parsed.hitSeqs ?? [],
+        compactions: parsed.compactionSeqs ?? [],
+      })
+    }
     for (const window of parsed.windows) {
       const check = outcome.checks.find((c) => c.session === window.session && c.prompt === window.prompt)
       windows.push({ ...window, checksPassed: window.ran && check ? check.passed : null })
@@ -259,6 +511,13 @@ export const toRunRecord = (
     exit = 'error'
   }
 
+  const workflowReuse =
+    task.category === 'workflow' && (options.system ?? 'prime') === 'agh'
+      ? workflowReuseOf(task, outcome, (file) => read(locate(file)), options.readSavedSkills)
+      : undefined
+
+  const progress = outcome.prompts ? progressOf(task, outcome, texts) : undefined
+
   const summary = usage.get(outcome.runId)
   const tokens = summary
     ? summary.tokens.input + summary.tokens.output + summary.tokens.cacheRead + summary.tokens.cacheWrite
@@ -267,7 +526,7 @@ export const toRunRecord = (
     system: options.system ?? 'prime',
     taskId: task.id,
     category: task.category,
-    setting: match[1] as Setting,
+    setting: match[1] as Arm,
     rep: Number(match[2]),
     exit,
     windows,
@@ -281,11 +540,51 @@ export const toRunRecord = (
       costUsd: summary?.costUsd ?? 0,
     },
     ...(outcome.alignment ? { alignment: outcome.alignment } : {}),
+    ...(workflowReuse ? { workflowReuse } : {}),
+    ...(sessionCosts.length > 0 ? { sessionCosts } : {}),
+    ...(startedAt ? { startedAt } : {}),
+    ...(trapEvents.length > 0 ? { trapEvents } : {}),
+    ...(progress ? { progress } : {}),
+    ...(outcome.capped ? { capped: outcome.capped } : {}),
+    ...(outcome.onProtocol ? { onProtocol: outcome.onProtocol } : {}),
+    ...(outcome.frozenFrom ? { frozenFrom: outcome.frozenFrom } : {}),
+    ...(outcome.infraFailed ? { infraFailed: outcome.infraFailed } : {}),
+  }
+}
+
+/**
+ * What the first session of a workflow task left and the second one did with it: whether the first
+ * completed a `workflow` run, whether its workspace holds a skill with a workflow definition, and how
+ * many of the second session's `workflow` calls ran one of the saved definitions.
+ */
+const workflowReuseOf = (
+  task: EvalTask,
+  outcome: RunOutcome,
+  read: (file: string) => string,
+  readSavedSkills: (() => string[]) | undefined,
+): WorkflowReuse => {
+  const calls = (sessionIndex: number) =>
+    parseAghWorkflowCalls(
+      (outcome.sessions[sessionIndex]?.sessionFiles ?? []).map((file) => read(file)).join('\n'),
+    )
+  const first = task.sessions.length > 0 ? calls(0) : { calls: [], completed: [] }
+  const second = task.sessions.length > 1 ? calls(1) : { calls: [], completed: [] }
+  const saved = new Set(savedDefinitions(readSavedSkills?.() ?? []))
+  return {
+    firstCompleted: first.completed.length > 0,
+    saved: saved.size > 0,
+    ...(outcome.saveRefused === undefined ? {} : { saveRefused: outcome.saveRefused }),
+    calls: second.calls.length,
+    matching: second.calls.filter((definition) => saved.has(definition)).length,
   }
 }
 
 export type Metrics = {
   recurrence: number | null
+  /**
+   * Cross-session tasks only: the first session hit the trap (there was something to learn) and the
+   * second session ran and never hit it. Undefined when the first session never hit the trap.
+   */
   crossSessionAvoided: boolean | null
   /**
    * Cross-workspace tasks only: the first session hit the trap (there was something to learn) and the
@@ -294,6 +593,39 @@ export type Metrics = {
    */
   crossWorkspaceAvoided: boolean | null
   completion: number
+}
+
+/**
+ * The reuse of one workflow run, or null for a run of any other task. `excluded`: the first session
+ * never completed a `workflow` run, so there was nothing to reuse. `nothingSaved`: it did, but no saved
+ * skill carries a workflow definition. `saveRefused`: the same, but the host refused the workspace save. `reused`: at least one `workflow` call of the second session ran
+ * a saved definition.
+ */
+export type WorkflowReuseMetric =
+  | { excluded: true }
+  | {
+      excluded: false
+      /** No saved skill carries a definition, and the host did not refuse the save. */
+      nothingSaved: boolean
+      /** The host refused the workspace save (this is the reason); no saved skill carries a definition. */
+      saveRefused: string | undefined
+      calls: number
+      matching: number
+      reused: boolean
+    }
+
+export const workflowReuseMetric = (record: RunRecord): WorkflowReuseMetric | null => {
+  const w = record.workflowReuse
+  if (!w) return null
+  if (!w.firstCompleted) return { excluded: true }
+  return {
+    excluded: false,
+    nothingSaved: !w.saved && w.saveRefused === undefined,
+    saveRefused: w.saved ? undefined : w.saveRefused,
+    calls: w.calls,
+    matching: w.matching,
+    reused: w.matching > 0,
+  }
 }
 
 export const runMetrics = (record: RunRecord): Metrics => {
@@ -318,8 +650,8 @@ export const runMetrics = (record: RunRecord): Metrics => {
     const ran = (sessions.get(1) ?? []).filter((w) => w.ran)
     return ran.length > 0 && ran.every((w) => !w.trapHit)
   }
-  const crossSessionAvoided = record.category === 'cross-session' ? secondClean() : null
   const learned = (sessions.get(0) ?? []).some((w) => w.ran && w.trapHit)
+  const crossSessionAvoided = record.category === 'cross-session' && learned ? secondClean() : null
   const crossWorkspaceAvoided = record.category === 'cross-workspace' && learned ? secondClean() : null
 
   const passed = record.windows.filter((w) => w.ran && w.checksPassed === true).length

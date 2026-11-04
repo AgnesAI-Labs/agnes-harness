@@ -4,7 +4,13 @@ import { entryKey } from '../../src/refine/apply.js'
 import { refinementFacade } from '../../src/refinement/facade.js'
 import type { RefinementDeps } from '../../src/refinement/scheduler.js'
 import type { TaskScope } from '../../src/refinement/task-scope.js'
-import type { PlannerEntry, PlannerEvidence, RefinementPlanner } from '../../src/refinement/types.js'
+import type {
+  PlannerEntry,
+  PlannerEvidence,
+  PlannerGuidance,
+  RefinementPlanner,
+} from '../../src/refinement/types.js'
+import type { RefinementWorkspaceRefs } from '../../src/refinement/workspace-refs.js'
 import { ToolRegistry } from '../../src/registry/tools.js'
 import { fakeProvider, sentFor, textTurn } from './fake-provider.js'
 import { actor, openSession, readTool } from './open-session.js'
@@ -31,6 +37,7 @@ export type Seen = {
   evidence: readonly PlannerEvidence[]
   entries: readonly PlannerEntry[]
   activeGoal: boolean
+  guidance?: PlannerGuidance
 }
 export type Answer = (seen: Seen) => unknown
 
@@ -68,6 +75,12 @@ export async function open(
     taskScope?: boolean
     /** More tools, by name, answering in order (false: a failed result). */
     tools?: Record<string, boolean[]>
+    /** The host's save-to-workspace path. */
+    workspace?: RefinementDeps['workspace']
+    /** The entries saved to the workspace the host lists, and their renewal. */
+    workspaceRefs?: RefinementWorkspaceRefs
+    /** The switch, read on every call so a test may move it; on and automatic by default. */
+    sw?: { enabled: boolean; mode: 'manual' | 'auto'; revision: string }
   } = {},
 ) {
   /** The task the reader reports; `unreadable` makes the read fail. */
@@ -76,7 +89,7 @@ export async function open(
   let seen: Seen = { evidence: [], entries: [], activeGoal: false }
   const planner: RefinementPlanner = {
     buildPrompt(snapshot, entries, guidance) {
-      seen = { evidence: snapshot.items, entries, activeGoal: guidance.activeGoal }
+      seen = { evidence: snapshot.items, entries, activeGoal: guidance.activeGoal, guidance }
       const text = JSON.stringify({ guidance, entries, evidence: snapshot.items })
       return {
         system: 'Plan one refinement.',
@@ -84,6 +97,7 @@ export async function open(
         evidenceIds: snapshot.items.map((item) => item.id),
         fullEntries: entries.map(({ kind, id }) => ({ kind, id })),
         referenceEntries: [],
+        ...(guidance.workspace ? { workspaceRefs: guidance.workspace.map((w) => w.ref) } : {}),
         omitted: { referenceEntries: 0, evidence: 0, fullEntries: 0 },
         inputTokens: 0,
       }
@@ -134,9 +148,11 @@ export async function open(
       { source: 'agnes/tools-core', trust: 'builtin' },
     )
   const refinement: RefinementDeps = {
-    settings: () => ({ enabled: true, mode: 'auto', revision: 'r1' }),
+    settings: () => ({ ...(o.sw ?? { enabled: true, mode: 'auto', revision: 'r1' }) }),
     planner: () => planner,
     target,
+    ...(o.workspace ? { workspace: o.workspace } : {}),
+    ...(o.workspaceRefs ? { workspaceRefs: o.workspaceRefs } : {}),
     ...(o.taskScope === false
       ? {}
       : {
@@ -153,9 +169,9 @@ export async function open(
     await s.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
     return s.run({ until: 'turn-end', signal: new AbortController().signal })
   }
-  /** Plans and applies one manual request for the work so far, and returns how the run ended. */
-  const refine = async () => {
-    const outcome = await facade.request({ kind: 'manual', seq: s.lastSeq })
+  /** Plans and applies one request (manual unless told) for the work so far, and returns how the run ended. */
+  const refine = async (trigger: { kind?: 'manual' | 'model'; saveTo?: 'workspace' } = {}) => {
+    const outcome = await facade.request({ kind: 'manual', ...trigger, seq: s.lastSeq })
     const runId = (outcome as { runId?: string }).runId as string
     expect(runId, JSON.stringify(outcome)).toBeTruthy()
     await vi.waitFor(() =>

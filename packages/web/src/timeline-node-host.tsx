@@ -34,6 +34,12 @@ export interface TimelineNodeHostProps {
     sessionId: string,
     appliedSeq: number,
   ) => Promise<import('@agnes/web-ui/conversation').RefinementWithdrawOutcome>
+  onSaveRefinementEntry?: (
+    sessionId: string,
+    kind: 'memory' | 'prompt' | 'skill',
+    id: string,
+    target?: 'user',
+  ) => Promise<import('@agnes/web-ui/conversation').RefinementSaveOutcome>
   markdownRenderer?: 'legacy' | 'xmarkdown'
   voice?: VoicePort
 }
@@ -50,6 +56,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
     onFork,
     turnErrorActions,
     onWithdrawRefinement,
+    onSaveRefinementEntry,
     markdownRenderer,
     voice,
   },
@@ -229,6 +236,7 @@ export const TimelineNodeHost = forwardRef<TranscriptHandle, TimelineNodeHostPro
           {...(onFork ? { onFork } : {})}
           {...(turnErrorActions ? { turnErrorActions } : {})}
           {...(onWithdrawRefinement ? { onWithdrawRefinement } : {})}
+          {...(onSaveRefinementEntry ? { onSaveRefinementEntry } : {})}
           {...(claim ? { claim } : {})}
           {...(session ? { session } : {})}
           {...(locale ? { locale } : {})}

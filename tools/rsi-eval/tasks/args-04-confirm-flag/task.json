@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Purge the `eu` region of the cache with the project's cachectl tool.",
+          "text": "Purge the `eu` region of the cache with the project's cachectl tool. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "test -e cache/eu.dat && echo eu-present || echo eu-gone",
@@ -25,7 +25,7 @@
           "solution": ["./cachectl purge eu --yes"]
         },
         {
-          "text": "Purge the `us` region of the cache with the project's cachectl tool.",
+          "text": "Remember, `cachectl purge` only works without a terminal when you pass `--yes`. Purge the `us` region of the cache with the project's cachectl tool.",
           "checks": [
             {
               "command": "test -e cache/us.dat && echo us-present || echo us-gone",

@@ -9,12 +9,13 @@ import { SystemPromptSettingsStore } from '@agnes/host-infrastructure/system-pro
 import { hashDirectory } from '@agnes/package-manager'
 import { normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { type ApplicationPreview, type InferenceEvent, jcs, type RequestBody } from '@agnes/protocol'
-import { expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { pluginHost, pluginRow, pluginSourceWith, targetOf } from '../assemble/plugin-extension-fixture.js'
 
 const vendor = '@fixture/roles'
 const ref = (role: string) => `${vendor}#${role}`
 const digest = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
+afterEach(() => vi.useRealTimers())
 const text = (value: string): InferenceEvent[] => [
   { type: 'text_delta', delta: value },
   { type: 'done', reason: 'stop' },
@@ -47,6 +48,8 @@ it.each([
 ] as const)(
   'opens roles with captured authority and sandbox constraints (%s, delegatedFullAccess: %s)',
   async (mode, optIn) => {
+    const exerciseRetirement = mode === 'confined' && !optIn
+    if (exerciseRetirement) vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] })
     const declaration = {
       id: 'role-fixture',
       defaultAgent: ref('assistant'),
@@ -177,6 +180,7 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
         },
       },
       disableSessionTitle: true,
+      ...(exerciseRetirement ? { limits: { 'lease.ttl_ms': 14_400_000 } } : {}),
       approval: async () => ({ verdict: 'unavailable', reason: 'no-approver' }),
       treeBudgetCredits: 100,
       allowed: ['standard', 'inspect'],
@@ -450,9 +454,29 @@ ctx.tools.register({ ...tool('writer_signature'), execute: async (_args, ctx) =>
         await strictChild.run('Inspect the evidence')
         await strictChild.cancel!()
       }
+      if (exerciseRetirement) {
+        const retiringRole = await create(ref('reader'))
+        await retiringRole.run('Inspect the evidence')
+        expect(await parent.d.children.list?.()).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: retiringRole.key, status: 'idle', continuable: true }),
+          ]),
+        )
+        await vi.advanceTimersByTimeAsync(3_600_000)
+        await expect.poll(() => fixture.host.kernel.get(retiringRole.key) === undefined).toBe(true)
+        expect(await parent.d.children.list?.()).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: retiringRole.key, status: 'completed', continuable: false }),
+          ]),
+        )
+        expect(await parent.d.children.inspect?.(retiringRole.key)).toMatchObject({
+          text: 'Findings ready; signed actions belong to the main assistant.',
+        })
+      }
       await parent.close()
     } finally {
       await fixture.host.close()
+      if (exerciseRetirement) vi.useRealTimers()
     }
   },
   120_000,

@@ -63,6 +63,7 @@ import {
 import { traceCatalog } from '@agnes/web-units/trace-locale'
 import { LoopPicker } from '../loop-picker.js'
 import { businessAgentSuggestions } from '../pages/business-agents.js'
+import { saveRefinementEntry } from '../refine-save.js'
 import { withdrawRefinement } from '../refine-withdraw.js'
 import type {
   ApprovalRegionMount,
@@ -213,6 +214,10 @@ export async function startClientModules(options: {
     registerRefinementSettingsSection({
       read: () => options.agnes.refinement.get(),
       save: (settings, expectedRevision) => options.agnes.refinement.save({ settings, expectedRevision }),
+      savedSkills: {
+        workspaces: async () => (await options.agnes.workspace.list()).items,
+        skills: (input) => options.agnes.refinement.skills(input),
+      },
     }),
   )
   const storedLocale = readLocalePreference(safeThemeStorage())
@@ -553,6 +558,8 @@ export async function startClientModules(options: {
           ...(options.claim ? { claim: options.claim } : {}),
           onWithdrawRefinement: (sessionId, appliedSeq) =>
             withdrawRefinement(options.agnes, sessionId, appliedSeq),
+          onSaveRefinementEntry: (sessionId, kind, id, target) =>
+            saveRefinementEntry(options.agnes, sessionId, kind, id, target),
           session,
           locale,
           resources,

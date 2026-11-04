@@ -1,6 +1,27 @@
 import { expect, it } from 'vitest'
 import { fetchProviderModels } from '../src/adapters/pi/probe-models.js'
 
+it.each([
+  [{ context_length: 1048576, limit: { context: 262144 } }, 1048576],
+  [{ limit: { context: 1048576 } }, 1048576],
+  [{ context_window: 262144 }, 262144],
+  [{ context_length: -1, limit: { context: 1048576 } }, 1048576],
+  [{ context_length: '1048576' }, undefined],
+  [{ context_length: 0 }, undefined],
+  [{ context_length: 1.5 }, undefined],
+  [{ context_length: Number.MAX_SAFE_INTEGER + 1 }, undefined],
+])('reads valid provider context limits from %j', async (metadata, capacity) => {
+  const result = await fetchProviderModels({
+    api: 'openai-completions',
+    baseUrl: 'https://relay.invalid/v1',
+    request: async () => Response.json({ data: [{ id: 'kimi-k3', ...metadata }] }),
+  })
+  expect(result).toEqual({
+    ids: ['kimi-k3'],
+    ...(capacity === undefined ? {} : { contextWindows: { 'kimi-k3': capacity } }),
+  })
+})
+
 it('normalizes Gemini resource names and excludes credential-shaped model IDs', async () => {
   let body: unknown = { models: [{ name: 'models/gemini-test' }] }
   let status = 200

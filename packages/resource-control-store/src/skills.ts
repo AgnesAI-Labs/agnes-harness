@@ -26,7 +26,6 @@ import {
   observeSkills,
   projected,
   prune,
-  rebindSkillTrust,
   receipt,
   reconcileSkillObservations,
   replaceOperation,
@@ -38,6 +37,7 @@ import {
   skillRuntimeRevision,
   terminal,
 } from './skill-state.js'
+import { knownSkillIds, skillDecisionsAfterScan } from './skill-trust.js'
 
 type EffectMethod =
   | '_agnes/v1/skills.remove'
@@ -677,34 +677,20 @@ export class SkillResourceStore {
               .map((item) => [item.descriptor.resourceId, item.capabilityHash]),
           ),
         }
-        // A decision follows its Skill across edits: it is rebound to the observed revision and
-        // capability instead of being dropped, so an edited Skill keeps its trust or rejection.
         // The worker that produced this scan still has the deletion barrier in its snapshot.
         // Publish the cleared barrier before reconcile can establish the new winner/actual state.
-        let controlChanged = !!reinstall && journal.removed.includes(reinstall.resourceId)
-        const rebound = rebindSkillTrust(journal, discovered, capability)
-        const trust = rebound.trust
-        controlChanged ||= rebound.changed
-        const desired: Record<string, 'enabled' | 'disabled'> = Object.fromEntries(
-          Object.entries(journal.desired).filter(([id]) => ids.has(id)),
-        )
-        // A Skill seen for the first time is trusted and enabled; any recorded decision wins over this.
-        const known = new Set([
-          ...journal.discovered.map((item) => item.resourceId),
-          ...Object.keys(journal.trust),
-          ...Object.keys(journal.desired),
-        ])
-        for (const item of values) {
-          const capabilityHash = capability[item.resourceId]
-          if (known.has(item.resourceId) || removed.includes(item.resourceId) || !capabilityHash) continue
-          trust[item.resourceId] = {
-            revision: item.revision,
-            capabilityHash,
-            state: item.reviewRequired ? 'untrusted' : 'trusted',
-          }
-          desired[item.resourceId] = item.reviewRequired ? 'disabled' : 'enabled'
-          controlChanged = true
-        }
+        const decisions = skillDecisionsAfterScan({
+          trust: journal.trust,
+          desired: journal.desired,
+          known: knownSkillIds(journal),
+          removed,
+          current: discovered,
+          observed: values,
+          capability,
+        })
+        const { trust, desired } = decisions
+        const controlChanged =
+          decisions.changed || (!!reinstall && journal.removed.includes(reinstall.resourceId))
         return {
           next: changed(journal, {
             removed,

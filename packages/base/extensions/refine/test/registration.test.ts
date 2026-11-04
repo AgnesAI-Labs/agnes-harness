@@ -95,7 +95,7 @@ describe('refine extension registration', () => {
     expect(applyPlugin(createRefineExtension({ settings: settings(true) })).tools).toEqual([])
   })
 
-  it('registers harness_propose, harness_refine and harness_inspect as deferred tools when on', () => {
+  it('registers harness_propose, harness_refine and harness_inspect when on, harness_refine always loaded', () => {
     const registered = applyPlugin(
       createRefineExtension({ settings: settings(true), runs: fakeRuns().connect }),
     )
@@ -104,7 +104,9 @@ describe('refine extension registration', () => {
       'harness_refine',
       'harness_inspect',
     ])
-    for (const tool of registered.tools) expect(tool.meta.deferLoading, tool.name).toBe(true)
+    // The model's own request for a review is always loaded, so it can be called when the guidance says to.
+    for (const tool of registered.tools)
+      expect(tool.meta.deferLoading, tool.name).toBe(tool.name !== 'harness_refine')
     expect(registered.hooks).toEqual([])
     registered.dispose()
     expect(registered.tools).toEqual([])
@@ -235,6 +237,77 @@ describe('the tools backed by the host runs', () => {
   })
 })
 
+describe('saving to the workspace from the tools', () => {
+  const on = (answer?: RefinementOutcome) => {
+    const runs = fakeRuns(answer)
+    return {
+      runs,
+      registered: applyPlugin(createRefineExtension({ settings: settings(true), runs: runs.connect })),
+    }
+  }
+
+  it('harness_propose with target workspace applies to the session then saves as model', async () => {
+    const { runs, registered } = on()
+    const ctx = fakeToolContext()
+    const result = await byName(registered, 'harness_propose').execute(
+      { ...proposal, target: 'workspace' } as never,
+      ctx,
+    )
+    expect(result.isError).toBeUndefined()
+    // The host is asked to apply the proposal to this session and then save it; the model never says who it is.
+    expect(runs.calls).toEqual([
+      ['propose', { key: ctx.session.key, lane: ctx.session.lane }, proposal, { saveTo: 'workspace' }],
+    ])
+    expect(text(result)).toContain('run-1')
+    expect(text(result)).toContain('saved to the workspace between later turns')
+    expect(text(result)).toContain('timeline')
+    expect(text(result)).toContain('user-revoked')
+    expect(text(result)).toContain('do not try again')
+  })
+
+  it('harness_refine with target workspace runs the same flow as /refine --workspace', async () => {
+    const { runs, registered } = on()
+    const ctx = fakeToolContext()
+    const result = await byName(registered, 'harness_refine').execute(
+      { focus: 'build', target: 'workspace' } as never,
+      ctx,
+    )
+    expect(runs.calls).toEqual([
+      ['request', { key: ctx.session.key, lane: ctx.session.lane }, { focus: 'build', saveTo: 'workspace' }],
+    ])
+    expect(text(result)).toContain('saved to the workspace')
+    expect(text(result)).toContain('timeline')
+    // A session target asks for no save.
+    await byName(registered, 'harness_refine').execute({ target: 'session' } as never, ctx)
+    expect(runs.calls.at(-1)).toEqual(['request', { key: ctx.session.key, lane: ctx.session.lane }, {}])
+  })
+
+  it('a save the host cannot offer is a target error; in manual mode only the user can save', async () => {
+    for (const name of ['harness_propose', 'harness_refine'] as const) {
+      const args = name === 'harness_propose' ? { ...proposal, target: 'workspace' } : { target: 'workspace' }
+      const none = await byName(on({ refused: 'unavailable', detail: 'workspace' }).registered, name).execute(
+        args as never,
+        fakeToolContext(),
+      )
+      expect(none.structured, name).toEqual({ code: 'REFINEMENT_TARGET_UNAVAILABLE' })
+      expect(text(none), name).toBe(
+        'REFINEMENT_TARGET_UNAVAILABLE: saving to the workspace is not available here; omit target to keep it in this session',
+      )
+      const manual = await byName(on({ refused: 'manual-mode' }).registered, name).execute(
+        args as never,
+        fakeToolContext(),
+      )
+      expect(manual.structured, name).toEqual({ code: 'REFINEMENT_MANUAL' })
+      // Leaving out the target helps a proposal only: a review is the user's alone in manual mode.
+      expect(text(manual), name).toBe(
+        name === 'harness_propose'
+          ? 'REFINEMENT_MANUAL: refinement is set to manual; only the user can save to the workspace. Omit target to keep it in this session'
+          : 'REFINEMENT_MANUAL: refinement is set to manual; only the user can ask for a review or save to the workspace. The model can do either only when refinement is automatic',
+      )
+    }
+  })
+})
+
 describe('tools forward to an injected port', () => {
   const ok = { content: [{ type: 'text' as const, text: 'ok' }] }
   const port = (): RefinementToolPort & { [K in keyof RefinementToolPort]: ReturnType<typeof vi.fn> } => ({
@@ -264,21 +337,13 @@ describe('tools forward to an injected port', () => {
     expect(p.inspect).toHaveBeenCalledWith(args, ctx)
   })
 
-  it('a workspace target is refused as a later-release feature and never reaches the port', async () => {
+  it('a workspace target reaches the port as the target, never as part of the proposal', async () => {
     const p = port()
     const registered = applyPlugin(createRefineExtension({ settings: settings(true), port: p }))
-    for (const [name, args] of [
-      ['harness_propose', { ...proposal, target: 'workspace' }],
-      ['harness_refine', { focus: 'x', target: 'workspace' }],
-    ] as const) {
-      const result = await byName(registered, name).execute(args as never, fakeToolContext())
-      expect(result.isError, name).toBe(true)
-      expect(result.structured, name).toEqual({ code: 'REFINEMENT_TARGET_UNAVAILABLE' })
-      expect(text(result), name).toBe(
-        'REFINEMENT_TARGET_UNAVAILABLE: saving to the workspace is available in a later release; omit target to keep it in this session',
-      )
-    }
-    expect(p.propose).not.toHaveBeenCalled()
-    expect(p.refine).not.toHaveBeenCalled()
+    const ctx = fakeToolContext()
+    await byName(registered, 'harness_propose').execute({ ...proposal, target: 'workspace' } as never, ctx)
+    expect(p.propose).toHaveBeenCalledWith(proposal, ctx, 'workspace')
+    await byName(registered, 'harness_refine').execute({ focus: 'x', target: 'workspace' } as never, ctx)
+    expect(p.refine).toHaveBeenCalledWith({ focus: 'x', target: 'workspace' }, ctx)
   })
 })

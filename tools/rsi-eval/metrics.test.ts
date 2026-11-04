@@ -58,13 +58,26 @@ const win = (sessionIndex: number, promptIndex: number, over: Partial<PromptWind
 })
 
 describe('parsePrimeSession', () => {
-  it('matches the trap in python stdout even when isError is false', () => {
+  it('matches the trap in the output of a failed run and in stderr even when isError is false', () => {
     const parsed = parsePrimeSession(fixture('prime-session-stdout-trap.jsonl'), task, 0)
     expect(parsed.windows).toEqual([
       { session: 0, prompt: 0, ran: true, trapHit: true },
       { session: 0, prompt: 1, ran: true, trapHit: false },
       { session: 0, prompt: 2, ran: true, trapHit: true },
     ])
+  })
+
+  it('does not count reading the source or a successful run as a hit', () => {
+    const parsed = parsePrimeSession(fixture('prime-session-source-read.jsonl'), task, 0)
+    expect(parsed.windows.map((w) => w.trapHit)).toEqual([false, false, false])
+  })
+
+  it('counts a failed run, a repeated failure and ignores the success that follows', () => {
+    const parsed = parsePrimeSession(fixture('prime-session-repeat-failure.jsonl'), task, 0)
+    expect(parsed.windows.map((w) => w.trapHit)).toEqual([true, true, false])
+    expect(
+      runMetrics(record({ windows: parsed.windows.map((w) => ({ ...w, checksPassed: true })) })).recurrence,
+    ).toBe(0.5)
   })
 
   it('marks prompts after an aborted /refine as not ran and counts them as not passed', () => {
@@ -158,8 +171,11 @@ const aghSession = [
     { kind: 'runtime_context', content: [{ type: 'text', text: 'Add function beta and run the tests' }] },
     { origin: 'system' },
   ),
-  row(4, 'tool/call', { name: 'shell', toolUseId: 't1' }),
-  row(5, 'tool/result', toolText('[stderr]\nerror: tests must be run from build/', true)),
+  row(4, 'tool/call', { name: 'shell', toolUseId: 't1', args: { command: 'make test' } }),
+  row(5, 'tool/result', {
+    toolUseId: 't1',
+    ...toolText('[stderr]\nerror: tests must be run from build/', true),
+  }),
   runRow(6, 'r1', 'queued', { trigger: { kind: 'manual', seq: 5 } }),
   runRow(7, 'r1', 'planning'),
   runRow(8, 'r1', 'applied'),
@@ -186,7 +202,12 @@ const aghSession = [
   ),
   row(20, 'harness/refine', { outcome: 'rejected', edits: [{ op: 'upsert' }] }, { origin: 'system' }),
   row(21, 'x/core/compaction-end', {}, { origin: 'system' }),
-  row(22, 'tool/result', toolText('tests must be run from build/'), { lane: 'child' }),
+  row(
+    22,
+    'tool/result',
+    { toolUseId: 't1', ...toolText('[stderr]\ntests must be run from build/', true) },
+    { lane: 'child' },
+  ),
   'not json',
   '',
 ].join('\n')
@@ -201,6 +222,78 @@ describe('parseAghSession', () => {
     ])
     expect(parsed.harnessLookups).toBe(1)
     expect(parsed.compactions).toBe(1)
+  })
+
+  describe('trap hits are failed runs, not reads', () => {
+    const SOURCE = "def fail():\n    print('error: tests must be run from build/', file=sys.stderr)\n"
+    const FAILED = '\n\n[stderr]\nerror: tests must be run from build/\n\n[exit 2]'
+    const windowsOf = (...calls: { name: string; command?: string; text: string; isError?: boolean }[]) => {
+      // One prompt per call, so each call's hit shows in its own window.
+      const rows = calls.flatMap((c, i) => [
+        row(
+          10 * i + 1,
+          'user/message',
+          userText(`Add function ${['alpha', 'beta', 'gamma'][i]} and run the tests`),
+        ),
+        row(10 * i + 2, 'tool/call', {
+          name: c.name,
+          toolUseId: `u${i}`,
+          args: c.command ? { command: c.command } : { path: 'Makefile' },
+        }),
+        row(
+          10 * i + 3,
+          'tool/result',
+          { toolUseId: `u${i}`, ...toolText(c.text, c.isError ?? false) },
+          { origin: `tool:${c.name}` },
+        ),
+      ])
+      return parseAghSession(rows.join('\n'), task, 0).windows.map((w) => w.trapHit)
+    }
+
+    it('does not count the read tool printing the source', () => {
+      expect(windowsOf({ name: 'read', text: `1\t${SOURCE}` })).toEqual([false, false, false])
+    })
+
+    it('does not count cat of the source in a shell', () => {
+      expect(
+        windowsOf({ name: 'shell', command: 'cat Makefile', text: `${SOURCE}\n\n[stderr]\n\n[exit 0]` }),
+      ).toEqual([false, false, false])
+    })
+
+    it('does not count a reader command in a run that failed for another reason', () => {
+      const text = `${SOURCE}\n[stderr]\ncat: nope: No such file or directory\n\n[exit 1]`
+      expect(windowsOf({ name: 'shell', command: 'cat Makefile; cat nope', text, isError: true })).toEqual([
+        false,
+        false,
+        false,
+      ])
+    })
+
+    it('counts a real failing run: the signature on stderr, or a failed run that printed it', () => {
+      expect(windowsOf({ name: 'shell', command: 'make test', text: `${FAILED}`, isError: true })).toEqual([
+        true,
+        false,
+        false,
+      ])
+      // stderr merged into stdout, and the failure shows in the printed exit code
+      expect(
+        windowsOf({
+          name: 'shell',
+          command: 'make test 2>&1; echo "exit=$?"',
+          text: 'error: tests must be run from build/\nexit=2\n\n[stderr]\n\n[exit 0]',
+        }),
+      ).toEqual([true, false, false])
+    })
+
+    it('counts the repeat of a failing run, and not the success after it', () => {
+      expect(
+        windowsOf(
+          { name: 'shell', command: 'make test', text: FAILED, isError: true },
+          { name: 'shell', command: 'make test', text: FAILED, isError: true },
+          { name: 'shell', command: 'make -C build test', text: '3 passed\n\n[stderr]\n\n[exit 0]' },
+        ),
+      ).toEqual([true, true, false])
+    })
   })
 
   it('counts reviews that reached planning by what started them, and edits of applied reviews only', () => {
@@ -270,7 +363,7 @@ describe('runMetrics', () => {
     expect(metrics.recurrence).toBe(0)
   })
 
-  it('crossSessionAvoided is true only when session 2 ran and never hit the trap', () => {
+  it('crossSessionAvoided needs a first-session failure, then a clean second session that ran', () => {
     const avoided = (windows: PromptWindow[], category: RunRecord['category'] = 'cross-session') =>
       runMetrics(record({ category, windows })).crossSessionAvoided
     const s1 = [win(0, 0, { trapHit: true }), win(0, 1), win(0, 2)]
@@ -280,6 +373,8 @@ describe('runMetrics', () => {
       avoided([...s1, win(1, 0, { ran: false }), win(1, 1, { ran: false }), win(1, 2, { ran: false })]),
     ).toBe(false)
     expect(avoided(s1)).toBe(false)
+    // no real failure in session 1: nothing to avoid, so the value is undefined, not true
+    expect(avoided([win(0, 0), win(0, 1), win(0, 2), win(1, 0), win(1, 1), win(1, 2)])).toBeNull()
     expect(avoided([...s1, win(1, 0), win(1, 1), win(1, 2)], 'directory')).toBeNull()
     expect(avoided([...s1, win(1, 0), win(1, 1), win(1, 2)], 'cross-workspace')).toBeNull()
   })

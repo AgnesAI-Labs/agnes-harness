@@ -504,18 +504,39 @@ describe('loop plugins', () => {
     }
   })
 
-  it('closes within its drain window while a port call ignores cancellation', async () => {
-    const stuck = working('test.deaf', modelCall)
-    const loops = defaultLoops()
-    loops.register('@test/deaf', stuck)
-    const provider = deafProvider()
-    const k = kernel(new MemoryStorage(), loops, { closeDrainMs: 30, provider })
-    const session = await k.session('deaf-port', { ...options, loop: stuck })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
-    void session.run({ until: 'turn-end', signal: new AbortController().signal }).catch(() => undefined)
-    await vi.waitFor(() => expect(provider.calls).toBe(1))
-    await expect(k.close()).resolves.toBeUndefined()
-  })
+  it.each([false, true])(
+    'closes within its drain window while a port call ignores cancellation (child=%s)',
+    async (child) => {
+      const stuck = working('test.deaf', modelCall)
+      const loops = defaultLoops()
+      loops.register('@test/deaf', stuck)
+      const provider = deafProvider()
+      const k = kernel(new MemoryStorage(), loops, {
+        closeDrainMs: 30,
+        provider,
+        loop: { id: stuck.id, version: stuck.version },
+        preset: { ...presetDefaults(), treeBudgetCredits: 20, generationLimit: 1, maxFanOut: 1 },
+      })
+      const session = await k.session('deaf-port', {
+        ...options,
+        loop: { id: stuck.id, version: stuck.version },
+      })
+      if (child) {
+        const delegated = await session.d.children.create({
+          parent: session.key,
+          cwd: '/w',
+          input: 'run',
+          resident: true,
+        })
+        void delegated.run('run').catch(() => undefined)
+      } else {
+        await session.enqueue('next-turn', { content: [{ type: 'text', text: 'run' }], actor })
+        void session.run({ until: 'turn-end', signal: new AbortController().signal }).catch(() => undefined)
+      }
+      await vi.waitFor(() => expect(provider.calls).toBe(1))
+      await expect(k.close()).resolves.toBeUndefined()
+    },
+  )
 
   it('ends a cancelled deaf driver before its idle deadline and can run the next turn', async () => {
     vi.useFakeTimers()

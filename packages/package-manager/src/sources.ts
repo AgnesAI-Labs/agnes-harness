@@ -9,6 +9,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { runIsolatedCommand } from '@agnes/package-isolation'
 import type { PackageProvenance } from '@agnes/protocol'
@@ -321,7 +322,10 @@ function metadata(fetchedDir: string, expected?: { name?: string; version?: stri
 function localSource(src: PackageSource, cwd: string): string {
   const example = bundledExampleSource(src.ref) ?? bundledPluginSource(src.ref)
   cwd = example?.root ?? cwd
-  const raw = example?.path ?? src.ref.slice(src.ref.indexOf(':') + 1)
+  let raw = example?.path ?? src.ref.slice(src.ref.indexOf(':') + 1)
+  // Only a leading `~` / `~/` on file:/path: means the daemon's home; `~user` and inner `~` stay literal.
+  // The recorded ref keeps the user's spelling, as it does for relative paths.
+  if (src.type !== 'workspace' && (raw === '~' || raw.startsWith('~/'))) raw = join(homedir(), raw.slice(1))
   // Resolved separately so a missing/escaping source can still name the root it was
   // checked against, which is rarely the process's own cwd (the daemon that fetches
   // this may have started in a different directory than whoever is calling it).
@@ -342,7 +346,7 @@ function localSource(src: PackageSource, cwd: string): string {
     throw sourceError(
       `local package source is unavailable relative to the package workspace root (${cwdRoot}); ` +
         `file: and workspace: sources resolve against that root, not the CLI's own current directory`,
-      'source-unavailable',
+      errorCode(error) === 'ENOENT' && src.type !== 'workspace' ? 'source-not-found' : 'source-unavailable',
       { workspaceRoot: cwdRoot },
     )
   }

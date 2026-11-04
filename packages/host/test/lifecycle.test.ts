@@ -59,6 +59,76 @@ describe('Rollback', () => {
 })
 
 describe('closeHost', () => {
+  it('drains background child retirement before storage teardown without delaying sibling close', async () => {
+    const events: string[] = []
+    let release!: () => void
+    const background = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const rollback = new Rollback()
+    rollback.push('storage', () => {
+      events.push('storage:close')
+    })
+    const closing = closeHost(
+      { rollback, ordinaryReconciliation: { close: async () => undefined } } as Assembled,
+      new Set([
+        {
+          close: async () => {
+            events.push('session:close')
+          },
+        },
+      ]),
+      { timeoutMs: 1000, audit: createMemoryAudit(), backgroundDrains: [background] },
+    )
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(events).toEqual(['session:close'])
+    release()
+    await closing
+    expect(events).toEqual(['session:close', 'storage:close'])
+  })
+
+  it('records a failed background drain while still releasing storage', async () => {
+    const audit = createMemoryAudit()
+    const rollback = new Rollback()
+    let released = false
+    rollback.push('storage', () => {
+      released = true
+    })
+    await closeHost(
+      { rollback, ordinaryReconciliation: { close: async () => undefined } } as Assembled,
+      new Set(),
+      { timeoutMs: 1000, audit, backgroundDrains: [Promise.reject(new Error('drain failed'))] },
+    )
+    expect(released).toBe(true)
+    expect(audit.events.at(-1)).toMatchObject({
+      kind: 'host.closed',
+      detail: { failed: ['background-drain'] },
+    })
+  })
+
+  it('keeps storage open after the shutdown deadline until child retirement settles', async () => {
+    const audit = createMemoryAudit()
+    const rollback = new Rollback()
+    let released = false
+    let finish!: () => void
+    const background = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    rollback.push('storage', () => {
+      released = true
+    })
+    await closeHost(
+      { rollback, ordinaryReconciliation: { close: async () => undefined } } as Assembled,
+      new Set(),
+      { timeoutMs: 1, audit, backgroundDrains: [background] },
+    )
+    expect(released).toBe(false)
+    expect(audit.events.some((event) => event.kind === 'host.closed')).toBe(false)
+    finish()
+    await expect.poll(() => released).toBe(true)
+    expect(audit.events.at(-1)).toMatchObject({ kind: 'host.closed', detail: { forced: true } })
+  })
+
   it('seals and drains ordinary reconciliation before unwinding the plugin tree', async () => {
     const events: string[] = []
     let releaseReconcile!: () => void

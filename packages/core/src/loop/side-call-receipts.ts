@@ -31,6 +31,7 @@ export function sideCallInFlight(s: SessionImpl): boolean {
  * running, and once the turn has begun to end.
  */
 export function claimSideCall(s: SessionImpl, effectId: string, turn: number) {
+  if (s.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
   const owner = sessionIdentity(s)
   const mark = closing.get(owner)
   if (mark !== undefined && mark === s.opSeq())

@@ -201,6 +201,9 @@ export async function scanSkills(
   agnesHomeDir = join(osHomeDir, AGH_DIR),
   importUserSkills = process.env.AGNES_SKILLS_IMPORT_USER === '1',
   resourceIds?: readonly string[],
+  // A skipped entry is reported here. The worker's stderr is its log; a host embedded in a terminal
+  // passes its own logger so the line does not land on the user's screen.
+  warn: (line: string) => void = (line) => console.warn(line),
 ) {
   const fs = {
     async list(path: string) {
@@ -274,7 +277,7 @@ export async function scanSkills(
       filesystem.push({ rootKey: scan.root, candidates })
       for (const entry of scan.skipped ?? []) {
         skippedResourceIds.push(entry.resourceId)
-        console.warn(`agnes: Skill ${entry.resourceId} skipped (${entry.code})`)
+        warn(`agnes: Skill ${entry.resourceId} skipped (${entry.code})`)
       }
       rootStatuses.push({
         rootKey: scan.root,
@@ -407,7 +410,7 @@ export async function scanSkills(
     } catch (error) {
       const loadError = packageSkillLoadError((error as { code?: unknown })?.code)
       const { normalizedName: _normalizedName, ...candidate } = document ?? fallback
-      console.warn(`agnes: Skill ${candidate.resourceId} unavailable (${loadError.code})`)
+      warn(`agnes: Skill ${candidate.resourceId} unavailable (${loadError.code})`)
       return { ...candidate, body: '', loadError }
     }
   })

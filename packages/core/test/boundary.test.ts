@@ -37,6 +37,7 @@ const EXT_VALUE_ALLOWED = new Set([
   'APPROVAL_DEFAULTS', // single public configuration defaults, shared with Core
   'unavailableDecisions', // registration and unconfigured test scopes refuse session access
   'unavailableProjections', // authority-free default; Host supplies the scoped invocation reader
+  'isWorkflowRunId', // the one rule for a well-formed workflow run id, shared with the planner parser
 ])
 
 function moduleSpecifiers(text: string): string[] {

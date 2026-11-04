@@ -1,4 +1,4 @@
-import type { ConfigModel, ConfigTestResult } from '@agnes/protocol'
+import type { ConfigModel, ConfigTestResult, ModelSettings } from '@agnes/protocol'
 import { tr } from '@agnes/web-foundation/locale-bridge'
 import { Button, Field, renderRegion, SettingsChips, SettingsChipToggle } from '@agnes/web-ui'
 
@@ -91,14 +91,20 @@ export function compatibleModelsPanel(host: HTMLElement | undefined, changed: ()
     },
     /** What a listing returned: its ids to pick from, or why there were none. */
     listed(result: ConfigTestResult): void {
-      for (const model of result.models) if (!known.has(model.id)) known.set(model.id, model)
+      for (const model of result.models) known.set(model.id, model)
       listed = result.models.map((model) => model.id)
       error = result.catalogueError
       render()
     },
     /** The declared models: chosen ids, carrying what the listing or the saved account knew. */
-    models(): ConfigModel[] {
-      return chosen.map((id) => structuredClone(known.get(id)) ?? { id, name: id })
+    models(settings?: ReadonlyMap<string, ModelSettings>): ConfigModel[] {
+      return chosen.map((id) => {
+        const model = structuredClone(known.get(id)) ?? { id, name: id }
+        const defaultSettings = settings?.get(id)
+        return defaultSettings === undefined
+          ? model
+          : { ...model, defaultSettings: structuredClone(defaultSettings) }
+      })
     },
     tested(): ConfigTestResult {
       const models = this.models()

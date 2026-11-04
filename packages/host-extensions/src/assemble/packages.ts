@@ -66,6 +66,7 @@ import { PluginImportError } from '../ext-host/loader.js'
 import { resolveEntry } from '../ext-host/manifest.js'
 import type { SkillRuntimeInput } from '../resources/skills.js'
 
+export type { WorkflowRunDefinition, WorkflowRunReader, WorkflowRunSource } from '@agnes/extension-api'
 export type {
   BuildCompactionPlan,
   IsolatedEcosystemFactory,

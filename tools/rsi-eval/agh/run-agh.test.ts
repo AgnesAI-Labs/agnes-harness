@@ -12,120 +12,30 @@ import {
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import type { EvalTask, RunConfig } from '../types.js'
+import { createInfraStreak, INFRA_STOP_AFTER } from '../infra.js'
+import { defaultTasksDir, loadSuite } from '../suite.js'
+import type { Arm, EvalTask } from '../types.js'
 import {
   type AghHost,
-  type AghSession,
   aghProfile,
   type CheckRun,
   checkRoute,
   EVAL_MEMORY,
+  finishedOutcome,
+  INFRA_FAILURES_FILE,
   type LaunchInput,
   type LedgerRow,
+  oracleApplies,
+  oracleLesson,
   parseAghArgs,
+  proxyRunId,
   REFINE_WAIT_MS,
   requireKey,
   runOne,
   SECRET_ENV,
   SECRET_REF,
 } from './run-agh.js'
-
-const KEY_ENV = 'RSI_TEST_API_KEY'
-const KEY_VALUE = 'sk-test-secret-value-456'
-
-const cfg: RunConfig = {
-  provider: 'eval',
-  api: 'anthropic-messages',
-  upstream: 'https://api.example.test',
-  model: 'model-x',
-  keyEnv: KEY_ENV,
-  prices: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  proxyPort: 4555,
-  sessionTimeoutMs: 20_000,
-}
-
-const prompt = (text: string) => ({
-  text,
-  checks: [{ command: `check ${text}`, contains: 'PASS' }],
-  solution: [],
-})
-const task = (category: EvalTask['category'], sessions: string[][]): EvalTask => ({
-  id: 't1',
-  category,
-  description: 'd',
-  trap: { signatures: ['x'], reproduce: 'true', note: 'n' },
-  sessions: sessions.map((prompts) => ({ prompts: prompts.map(prompt) })),
-})
-
-type Call =
-  | { op: 'launch'; input: LaunchInput }
-  | { op: 'open'; key: string; workspace: string }
-  | { op: 'prompt'; key: string; text: string }
-  | { op: 'review'; key: string }
-  | { op: 'settled'; key: string; runId: string; ms: number }
-  | { op: 'close-session'; key: string }
-  | { op: 'close-host' }
-
-type Script = {
-  /** How each prompt ends, by prompt text; `hang` waits for the abort. Default `completed`. */
-  turns?: Record<string, string>
-  review?: { runId: string } | { refused: string }
-  settled?: string
-}
-
-/** A launcher that records what the runner asks of a host and answers from a script; no model, no host. */
-function stubLaunch(calls: Call[], script: Script = {}) {
-  return async (input: LaunchInput): Promise<AghHost> => {
-    calls.push({ op: 'launch', input })
-    // The real launcher makes the home; the stub only marks it so isolation can be checked.
-    mkdirSync(input.home, { recursive: true })
-    writeFileSync(join(input.home, 'marker'), input.refinement ? 'on' : 'off')
-    let reviews = 0
-    const opened: string[] = []
-    return {
-      openSession: async (key, workspace): Promise<AghSession> => {
-        calls.push({ op: 'open', key, workspace })
-        opened.push(key)
-        return {
-          key,
-          prompt: (text, signal) => {
-            calls.push({ op: 'prompt', key, text })
-            const end = script.turns?.[text] ?? 'completed'
-            if (end !== 'hang') return Promise.resolve(end)
-            return new Promise((resolve) => signal.addEventListener('abort', () => resolve('cancelled')))
-          },
-          review: async () => {
-            calls.push({ op: 'review', key })
-            return script.review ?? { runId: `run-${++reviews}` }
-          },
-          settled: async (runId, ms) => {
-            calls.push({ op: 'settled', key, runId, ms })
-            return script.settled ?? 'applied'
-          },
-          close: async () => {
-            calls.push({ op: 'close-session', key })
-          },
-        }
-      },
-      close: async () => {
-        calls.push({ op: 'close-host' })
-      },
-      ledger: (key): LedgerRow[] => {
-        if (!opened.includes(key)) throw new Error(`not opened: ${key}`)
-        return [
-          {
-            seq: 1,
-            ts: '2026-11-03T00:00:00Z',
-            type: 'session/start',
-            lane: 'main',
-            origin: 'system',
-            data: { key },
-          },
-        ]
-      },
-    }
-  }
-}
+import { type Call, cfg, KEY_ENV, KEY_VALUE, type Script, stubLaunch, task } from './test-stub.js'
 
 describe('run-agh', () => {
   let dir: string
@@ -153,14 +63,7 @@ describe('run-agh', () => {
     rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   })
 
-  const run = (
-    t: EvalTask,
-    setting: 'on' | 'off',
-    calls: Call[],
-    script?: Script,
-    rep = 1,
-    timeout?: number,
-  ) =>
+  const run = (t: EvalTask, setting: Arm, calls: Call[], script?: Script, rep = 1, timeout?: number) =>
     runOne(t, setting, rep, timeout ? { ...cfg, sessionTimeoutMs: timeout } : cfg, out, {
       launch: stubLaunch(calls, script),
       fixtureDir: fixture,
@@ -172,7 +75,7 @@ describe('run-agh', () => {
     expect(parseAghArgs(['--config', 'c.json', '--out', 'o'])).toMatchObject({
       config: 'c.json',
       out: 'o',
-      reps: 5,
+      reps: 3,
       settings: ['on', 'off'],
     })
     expect(
@@ -298,7 +201,7 @@ describe('run-agh', () => {
     expect(EVAL_MEMORY).toEqual({ mode: 'auto', userEnabled: true })
   })
 
-  it('marks an on cross-workspace run auto-only and sends nothing extra at the end of session 1', async () => {
+  it('ends session 1 of an on cross-workspace task with the user save, as Prime ends it with --global', async () => {
     const t = task('cross-workspace', [
       ['a', 'b', 'c'],
       ['d', 'e', 'f'],
@@ -306,11 +209,68 @@ describe('run-agh', () => {
     mkdirSync(join(dir, 'fixture-b'))
     t.sessions[1] = { ...(t.sessions[1] as EvalTask['sessions'][number]), fixture: 'fixture-b' }
     const on: Call[] = []
-    expect((await run(t, 'on', on)).alignment).toBe('auto-only')
-    expect(on.filter((c) => c.op === 'review')).toHaveLength(6)
-    expect((await run(t, 'off', [])).alignment).toBeUndefined()
-    const cross = task('cross-session', [['a'], ['b']])
-    expect((await run(cross, 'on', [], {}, 2)).alignment).toBeUndefined()
+    expect(await run(t, 'on', on)).not.toHaveProperty('alignment')
+    // One review after every prompt as before; only the last of the first session saves to user memory.
+    expect(on.filter((c) => c.op === 'review').map((c) => ('saveTo' in c ? c.saveTo : undefined))).toEqual([
+      undefined,
+      undefined,
+      'user',
+      undefined,
+      undefined,
+      undefined,
+    ])
+    const off: Call[] = []
+    expect(await run(t, 'off', off)).not.toHaveProperty('alignment')
+    expect(off.filter((c) => c.op === 'review')).toHaveLength(0)
+    // Tasks that are not cross-workspace never save to user memory.
+    for (const category of ['cross-session', 'directory'] as const) {
+      const calls: Call[] = []
+      await run(task(category, [['a'], ['b']]), 'on', calls, {}, category === 'cross-session' ? 2 : 1)
+      expect(
+        calls.some((c) => c.op === 'review' && c.saveTo === 'user'),
+        category,
+      ).toBe(false)
+    }
+  })
+
+  it('ends the first session of an on workflow run with the save to the workspace, in place of the last review', async () => {
+    const t = task('workflow', [
+      ['a', 'b', 'c'],
+      ['d', 'e', 'f'],
+    ])
+    const on: Call[] = []
+    const outcome = await run(t, 'on', on)
+    const reviews = on.flatMap((c) => (c.op === 'review' ? [c] : []))
+    expect(reviews.map((c) => `${c.key.slice(-2)}:${c.saveTo ?? '-'}`)).toEqual([
+      's1:-',
+      's1:-',
+      's1:workspace',
+      's2:-',
+      's2:-',
+      's2:-',
+    ])
+    // The save is sent, so the run is not marked auto-only.
+    expect(outcome.alignment).toBeUndefined()
+    const off: Call[] = []
+    await run(t, 'off', off)
+    expect(off.some((c) => c.op === 'review')).toBe(false)
+  })
+
+  it('records why the host refused the workspace save, and only that refusal', async () => {
+    const t = task('workflow', [
+      ['a', 'b', 'c'],
+      ['d', 'e', 'f'],
+    ])
+    const refused = await run(t, 'on', [], { review: { refused: 'unpriced' } })
+    expect(refused.saveRefused).toBe('unpriced')
+    expect(refused.sessions).toHaveLength(2)
+    expect(Object.keys(refused.sessions[0] ?? {}).sort()).toEqual([
+      'exitCode',
+      'sessionFiles',
+      'stdoutFile',
+      'timedOut',
+    ])
+    expect((await run(t, 'on', [], {}, 2)).saveRefused).toBeUndefined()
   })
 
   it('asks for one review after each prompt and waits for it when on, and none when off', async () => {
@@ -445,5 +405,227 @@ describe('run-agh', () => {
   it('refuses a work directory inside a git repository', async () => {
     mkdirSync(join(work, '.git'))
     await expect(run(task('directory', [['a', 'b', 'c']]), 'off', [])).rejects.toThrow(/git work tree/)
+  })
+
+  describe('the oracle arm', () => {
+    const twoSessions = (category: EvalTask['category'] = 'cross-session'): EvalTask => ({
+      ...task(category, [
+        ['a', 'b', 'c'],
+        ['d', 'e', 'f'],
+      ]),
+      trap: { signatures: ['x'], reproduce: 'true', note: 'Run the tool from studio/, never from the root.' },
+    })
+
+    /** What the runner asked of the host, with the names that differ by arm made equal. */
+    const shape = (calls: Call[]): Record<string, unknown>[] =>
+      calls.flatMap((c): Record<string, unknown>[] => {
+        if (c.op === 'seed') return []
+        if (c.op === 'launch') {
+          const { home: _h, profileDocument: _p, env: _e, workspace, workspaces, ...rest } = c.input
+          return [
+            { op: c.op, ...rest, workspace: workspaces.indexOf(workspace), workspaces: workspaces.length },
+          ]
+        }
+        if (c.op === 'open') return [{ op: c.op, key: c.key.replace(/\.(off|oracle)\./, '.arm.') }]
+        if ('key' in c) return [{ ...c, key: c.key.replace(/\.(off|oracle)\./, '.arm.') }]
+        return [{ ...c }]
+      })
+
+    it('runs the same as off, with refinement off and no review', async () => {
+      const t = twoSessions()
+      const off: Call[] = []
+      const oracle: Call[] = []
+      await run(t, 'off', off)
+      await run(t, 'oracle', oracle)
+      expect(shape(oracle)).toEqual(shape(off))
+      expect(oracle.some((c) => c.op === 'review')).toBe(false)
+      const launch = oracle.find((c) => c.op === 'launch')
+      expect(launch && 'input' in launch ? launch.input.refinement : 'missing').toBeUndefined()
+      expect(readFileSync(join(out, 't1.oracle.r1', 'home', 'marker'), 'utf8')).toBe('off')
+      expect(JSON.parse(readFileSync(join(out, 't1.oracle.r1', 'outcome.json'), 'utf8')).runId).toBe(
+        't1.oracle.r1',
+      )
+    })
+
+    it('writes the lesson to the second session workspace after the first session ends and before the second opens', async () => {
+      const t = twoSessions()
+      const calls: Call[] = []
+      await run(t, 'oracle', calls)
+      const ops = calls.map((c) => (c.op === 'prompt' ? `prompt:${c.text}` : c.op))
+      expect(ops).toEqual([
+        'launch',
+        'open',
+        'prompt:a',
+        'prompt:b',
+        'prompt:c',
+        'close-session',
+        'seed',
+        'open',
+        'prompt:d',
+        'prompt:e',
+        'prompt:f',
+        'close-session',
+        'close-host',
+      ])
+      const seeds = calls.flatMap((c) => (c.op === 'seed' ? [c] : []))
+      const opens = calls.flatMap((c) => (c.op === 'open' ? [c] : []))
+      expect(seeds).toEqual([{ op: 'seed', workspace: opens[1]?.workspace, text: t.trap.note }])
+    })
+
+    it('seeds the second session workspace of a cross-workspace task, not the first', async () => {
+      mkdirSync(join(dir, 'fixture-b'))
+      const t = twoSessions('cross-workspace')
+      t.sessions[1] = { ...(t.sessions[1] as EvalTask['sessions'][number]), fixture: 'fixture-b' }
+      const calls: Call[] = []
+      await run(t, 'oracle', calls)
+      const [first, second] = calls.flatMap((c) => (c.op === 'open' ? [c.workspace] : []))
+      expect(first).not.toBe(second)
+      expect(calls.flatMap((c) => (c.op === 'seed' ? [c.workspace] : []))).toEqual([second])
+    })
+
+    it('is for tasks of two sessions that are not workflow tasks', async () => {
+      expect(oracleApplies(twoSessions())).toBe(true)
+      expect(oracleApplies(twoSessions('workflow'))).toBe(false)
+      expect(oracleApplies(task('directory', [['a', 'b', 'c']]))).toBe(false)
+      for (const t of [twoSessions('workflow'), task('directory', [['a', 'b', 'c']])])
+        await expect(run(t, 'oracle', [])).rejects.toThrow(/no oracle arm/)
+    })
+
+    it('needs a host that can seed memory, and finds out before the first session is paid for', async () => {
+      const calls: Call[] = []
+      const launch = stubLaunch(calls)
+      const bare = async (input: LaunchInput) => {
+        const { seedMemory: _s, ...host } = await launch(input)
+        return host as AghHost
+      }
+      await expect(
+        runOne(twoSessions(), 'oracle', 1, cfg, out, {
+          launch: bare,
+          fixtureDir: fixture,
+          workBase: work,
+          runCheck,
+        }),
+      ).rejects.toThrow(/cannot seed memory/)
+      // No session was opened and no prompt sent; the host was closed again.
+      expect(calls.map((c) => c.op)).toEqual(['launch', 'close-host'])
+    })
+
+    it('takes the lesson from the note, and no note gives away what the checks expect or a whole solution step', () => {
+      const tasks = loadSuite(defaultTasksDir)
+      expect(tasks.filter(oracleApplies).length).toBeGreaterThan(0)
+      // A note may state its rule with an example command (`ACME_PROFILE=dev bin/acme build about`), so a
+      // solution command inside a note is allowed only here, by name; every other note stays clear of the
+      // solutions' commands of any length that is a step by itself.
+      const MAY_QUOTE_A_COMMAND = new Set(['xws-01-profile-env'])
+      const MIN_STEP = 15
+      for (const t of tasks) {
+        const note = t.trap.note.trim()
+        if (oracleApplies(t)) expect(oracleLesson(t), t.id).toBe(note)
+        for (const p of t.sessions.flatMap((s) => s.prompts)) {
+          for (const check of p.checks)
+            expect(note, `${t.id}: what a check expects`).not.toContain(check.contains)
+          for (const command of p.solution) {
+            expect(note, `${t.id}: the note is a whole solution step`).not.toBe(command.trim())
+            if (!MAY_QUOTE_A_COMMAND.has(t.id) && command.trim().length >= MIN_STEP)
+              expect(note, `${t.id}: the note quotes the solution step ${command}`).not.toContain(
+                command.trim(),
+              )
+          }
+        }
+      }
+    })
+
+    it('is chosen with --arms; --settings and the default stay as they were', () => {
+      const base = ['--config', 'c.json', '--out', 'o']
+      expect(parseAghArgs(base).settings).toEqual(['on', 'off'])
+      expect(parseAghArgs([...base, '--arms', 'off,on,oracle']).settings).toEqual(['off', 'on', 'oracle'])
+      expect(parseAghArgs([...base, '--settings', 'off']).settings).toEqual(['off'])
+      expect(() => parseAghArgs([...base, '--settings', 'off,oracle'])).toThrow(/oracle/)
+      expect(() => parseAghArgs([...base, '--arms', 'off,maybe'])).toThrow(/maybe/)
+      expect(() => parseAghArgs([...base, '--arms', 'off', '--settings', 'on'])).toThrow(/same option/)
+    })
+  })
+
+  describe('runs the infrastructure ended', () => {
+    // Rows of the first evaluation's run that the provider ended with HTTP 402 (see fixtures/real).
+    const quotaRows = (name: string): LedgerRow[] =>
+      readFileSync(join(import.meta.dirname, '..', 'fixtures', 'real', name), 'utf8')
+        .split('\n')
+        .filter((line) => line.trim() !== '' && !line.includes('"type": "session/start"'))
+        .map((line) => JSON.parse(line) as LedgerRow)
+    const failing = { turns: { a: 'failed' }, ledgerRows: { s1: quotaRows('infra-402.xws-05.off-s1.jsonl') } }
+
+    it('marks a run whose turn ended in HTTP 402 as infra-failed, with the reason and status', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      const outcome = await run(t, 'off', [], failing)
+      expect(outcome.infraFailed).toEqual({ session: 0, reason: 'QUOTA (HTTP 402)', status: 402 })
+      // The run is still recorded as it ended, so its folder says what happened.
+      expect(outcome.sessions[0]?.exitCode).toBe(1)
+      expect(
+        JSON.parse(readFileSync(join(out, 't1.off.r1', 'outcome.json'), 'utf8')).infraFailed,
+      ).toMatchObject({
+        status: 402,
+      })
+    })
+
+    it('does not mark a run that failed for another reason, nor one that completed', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      expect((await run(t, 'off', [], { turns: { a: 'failed' } })).infraFailed).toBeUndefined()
+      expect((await run(t, 'off', [], {}, 2)).infraFailed).toBeUndefined()
+    })
+
+    it('falls back on the statuses the proxy saw when the ledger names no error', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      const withStatuses = (statuses: number[], rep: number) =>
+        runOne(t, 'off', rep, cfg, out, {
+          launch: stubLaunch([], { turns: { a: 'failed' } }),
+          fixtureDir: fixture,
+          workBase: work,
+          runCheck,
+          statuses: () => statuses,
+        })
+      expect((await withStatuses([200, 503, 503, 503], 1)).infraFailed).toMatchObject({ status: 503 })
+      expect((await withStatuses([503, 200, 400], 2)).infraFailed).toBeUndefined()
+    })
+
+    it('is redone on the next start, not skipped, and counted under a new proxy id', async () => {
+      const t = task('directory', [['a', 'b', 'c']])
+      const first: Call[] = []
+      await run(t, 'off', first, failing)
+      expect(finishedOutcome(out, 't1.off.r1')).toBeUndefined()
+      const again: Call[] = []
+      const redone = await run(t, 'off', again)
+      expect(redone.infraFailed).toBeUndefined()
+      expect(redone.sessions[0]?.exitCode).toBe(0)
+      expect(finishedOutcome(out, 't1.off.r1')).toBeDefined()
+      const profile = (calls: Call[]) =>
+        calls.flatMap((c) => (c.op === 'launch' ? [c.input.profileDocument] : []))[0]
+      expect(profile(first)).toEqual(aghProfile(cfg, 't1.off.r1'))
+      expect(profile(again)).toEqual(aghProfile(cfg, proxyRunId('t1.off.r1', 1)))
+      expect(proxyRunId('t1.off.r1', 1)).toBe('t1.off.r1~a1')
+      // The failed attempt is noted before it is replaced.
+      const notes = readFileSync(join(out, INFRA_FAILURES_FILE), 'utf8').trim().split('\n')
+      expect(notes).toHaveLength(1)
+      expect(JSON.parse(notes[0] as string)).toMatchObject({ runId: 't1.off.r1', status: 402 })
+      // A finished run is still skipped.
+      const third: Call[] = []
+      await run(t, 'off', third)
+      expect(third).toEqual([])
+    })
+
+    it('stops a shard after a few runs in a row, and a good run starts the count over', () => {
+      const streak = createInfraStreak()
+      expect(INFRA_STOP_AFTER).toBe(3)
+      expect([true, true, false, true, true].map((x) => streak.record(x))).toEqual([
+        false,
+        false,
+        false,
+        false,
+        false,
+      ])
+      expect(streak.stopped).toBe(false)
+      expect(streak.record(true)).toBe(true)
+      expect(streak.stopped).toBe(true)
+    })
   })
 })

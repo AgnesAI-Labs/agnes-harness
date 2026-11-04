@@ -61,6 +61,8 @@ export type HarnessEntry = {
   version: number
   source: string
   reference?: string
+  /** A skill generated from a finished `workflow` run of this session: the run's id. */
+  workflowRun?: string
   arguments?: unknown
 }
 /**

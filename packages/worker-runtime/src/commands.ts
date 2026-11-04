@@ -17,14 +17,7 @@ import {
 import { exporterHealth } from '@agnes/observability'
 import { withPackageVerification } from '@agnes/package-manager'
 import type { LocalGate } from '@agnes/plugin-runtime/host'
-import {
-  type Actor,
-  MAX_FRAME_BYTES,
-  type McpStatus,
-  rpcError,
-  type SkillDescriptor,
-  type WorkerGeneration,
-} from '@agnes/protocol'
+import { type Actor, MAX_FRAME_BYTES, type McpStatus, rpcError, type WorkerGeneration } from '@agnes/protocol'
 import {
   bootstrapWorkerResources,
   type WorkerResourceBootstrapInput,
@@ -559,6 +552,7 @@ export async function handleCommand(
     }
     case 'refine':
     case 'refineRollback':
+    case 'refineSave':
       return refinementCommand(session, cmd.method, p)
     case 'setYolo': {
       if (typeof p.enabled !== 'boolean') throw new TypeError('invalid setYolo command')
@@ -810,7 +804,7 @@ export async function handleServiceCommand(
     case 'memory.manage': {
       if (!host) throw new Error('memory requires an assembled Host')
       const input = p as import('@agnes/protocol/gen/app-server').AdminMemoryParams
-      return manageMemory(host.memory(input.cwd, 'human-editor'), input)
+      return manageMemory(host.memory(input.cwd, 'human-editor'), input, host.savedParagraphs)
     }
     case 'systemPrompt.defaults':
       if (!host) throw new Error('system prompt requires an assembled Host')

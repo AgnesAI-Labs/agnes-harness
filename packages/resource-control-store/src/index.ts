@@ -4,7 +4,12 @@ export {
   type ResourceAdminSurfaceAction,
   type ResourceAdminSurfaceOptions,
 } from './admin-surface.js'
-export { createResourceControlStore, ResourceControlStore } from './control-store.js'
+export {
+  createResourceControlStore,
+  ResourceControlStore,
+  resourceControlDirectory,
+  workerSnapshotPath,
+} from './control-store.js'
 export {
   createResourceControlService,
   type ResourceControlService,
@@ -24,4 +29,5 @@ export {
 } from './permissions.js'
 export { assertResourceProfile, type ResourceProfileScope } from './profile-scope.js'
 export { type SkillJournal, SkillJournalStore } from './skill-journal.js'
+export { knownSkillIds, skillDecisionsAfterScan } from './skill-trust.js'
 export { createSkillResourceStore, SkillResourceStore } from './skills.js'

@@ -59,6 +59,28 @@ describe('harness_propose tool', () => {
     expect(Value.Check(ProposeParams, { ...proposal, target: 'global' })).toBe(false)
   })
 
+  it('the model cannot say who asks: an initiator, scope or user target in the arguments is rejected', async () => {
+    const { RefineParams } = await import('../src/refine-tool.js')
+    for (const extra of [
+      { initiator: 'user' },
+      { initiator: 'auto' },
+      { scope: 'global' },
+      { workspaceRoot: '/x' },
+    ])
+      expect(
+        Value.Check(ProposeParams, { ...proposal, target: 'workspace', ...extra }),
+        JSON.stringify(extra),
+      ).toBe(false)
+    expect(Value.Check(RefineParams, { target: 'workspace', initiator: 'user' })).toBe(false)
+    // User memory is a target the model can name, in either tool, and nothing beyond the three.
+    expect(Value.Check(RefineParams, { target: 'user' })).toBe(true)
+    expect(Value.Check(ProposeParams, { ...proposal, target: 'user' })).toBe(true)
+    expect(Value.Check(RefineParams, { target: 'global' })).toBe(false)
+    expect(Value.Check(ProposeParams, { ...proposal, target: 'global' })).toBe(false)
+    const [edit] = proposal.edits
+    expect(Value.Check(ProposeParams, { ...proposal, edits: [{ ...edit, reach: 'user' }] })).toBe(false)
+  })
+
   it('the model states no trigger, scope, version, baseline or rollback, and stays within the limits', () => {
     expect(Value.Check(ProposeParams, proposal)).toBe(true)
     for (const extra of [
@@ -82,6 +104,18 @@ describe('harness_propose tool', () => {
     expect(Value.Check(ProposeParams, { ...proposal, edits: [{ ...edit, content: 'x'.repeat(2001) }] })).toBe(
       false,
     )
+  })
+
+  it('an upsert may name an approved resource, and gains no other field with it', () => {
+    const [edit] = proposal.edits
+    const bound = { ...edit, kind: 'subagent', reference: '@fixture/roles#reader' }
+    expect(Value.Check(ProposeParams, { ...proposal, edits: [bound] })).toBe(true)
+    expect(Value.Check(ProposeParams, { ...proposal, edits: [{ ...bound, reference: '' }] })).toBe(false)
+    expect(
+      Value.Check(ProposeParams, { ...proposal, edits: [{ ...bound, reference: 'x'.repeat(513) }] }),
+    ).toBe(false)
+    for (const extra of [{ delegatedFullAccess: true }, { tools: ['bash'] }, { model: 'm' }, { budget: 1 }])
+      expect(Value.Check(ProposeParams, { ...proposal, edits: [{ ...bound, ...extra }] })).toBe(false)
   })
 
   it("passes the port's refusal through as a normal result, not a throw", async () => {

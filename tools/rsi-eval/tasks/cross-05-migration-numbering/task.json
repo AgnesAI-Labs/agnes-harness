@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a table `users` with the columns `id`, `name` to the app database (`id` is an integer primary key; `name` is text). Apply it with the project's migration tool.",
+          "text": "Add a table `users` with the columns `id`, `name` to the app database (`id` is an integer primary key; `name` is text). Apply it with the project's migration tool. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "python3 -c \"import sqlite3; c = sqlite3.connect('app.db'); print(','.join(r[1] for r in c.execute('pragma table_info(users)')))\"",
@@ -19,12 +19,12 @@
             }
           ],
           "solution": [
-            "printf 'create table users (id integer primary key, name text);\\n' > migrations/0003_users.sql",
+            "printf 'create table users (id integer primary key, name text);\\n' > migrations/$(printf '%04d' $(($(ls migrations/*.sql | wc -l) + 1)))_users.sql",
             "./migrate"
           ]
         },
         {
-          "text": "Add a table `posts` with the columns `id`, `title` to the app database (`id` is an integer primary key; `title` is text). Apply it with the project's migration tool.",
+          "text": "Remember, files in migrations/ are named NNNN_name.sql and numbered without gaps from 0001; the next one is the highest number plus one. Add a table `posts` with the columns `id`, `title` to the app database (`id` is an integer primary key; `title` is text). Apply it with the project's migration tool.",
           "checks": [
             {
               "command": "python3 -c \"import sqlite3; c = sqlite3.connect('app.db'); print(','.join(r[1] for r in c.execute('pragma table_info(posts)')))\"",
@@ -32,7 +32,7 @@
             }
           ],
           "solution": [
-            "printf 'create table posts (id integer primary key, title text);\\n' > migrations/0003_posts.sql",
+            "printf 'create table posts (id integer primary key, title text);\\n' > migrations/$(printf '%04d' $(($(ls migrations/*.sql | wc -l) + 1)))_posts.sql",
             "./migrate"
           ]
         },
@@ -45,7 +45,7 @@
             }
           ],
           "solution": [
-            "printf 'create table tags (id integer primary key, label text);\\n' > migrations/0003_tags.sql",
+            "printf 'create table tags (id integer primary key, label text);\\n' > migrations/$(printf '%04d' $(($(ls migrations/*.sql | wc -l) + 1)))_tags.sql",
             "./migrate"
           ]
         }
@@ -54,7 +54,7 @@
     {
       "prompts": [
         {
-          "text": "Add a table `comments` with the columns `id`, `body` to the app database (`id` is an integer primary key; `body` is text). Apply it with the project's migration tool.",
+          "text": "Add a table `comments` with the columns `id`, `body` to the app database (`id` is an integer primary key; `body` is text). Apply it with the project's migration tool. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "python3 -c \"import sqlite3; c = sqlite3.connect('app.db'); print(','.join(r[1] for r in c.execute('pragma table_info(comments)')))\"",
@@ -62,7 +62,7 @@
             }
           ],
           "solution": [
-            "printf 'create table comments (id integer primary key, body text);\\n' > migrations/0003_comments.sql",
+            "printf 'create table comments (id integer primary key, body text);\\n' > migrations/$(printf '%04d' $(($(ls migrations/*.sql | wc -l) + 1)))_comments.sql",
             "./migrate"
           ]
         },
@@ -75,7 +75,7 @@
             }
           ],
           "solution": [
-            "printf 'create table likes (id integer primary key, user_id integer);\\n' > migrations/0003_likes.sql",
+            "printf 'create table likes (id integer primary key, user_id integer);\\n' > migrations/$(printf '%04d' $(($(ls migrations/*.sql | wc -l) + 1)))_likes.sql",
             "./migrate"
           ]
         },
@@ -88,7 +88,7 @@
             }
           ],
           "solution": [
-            "printf 'create table follows (id integer primary key, follower integer);\\n' > migrations/0003_follows.sql",
+            "printf 'create table follows (id integer primary key, follower integer);\\n' > migrations/$(printf '%04d' $(($(ls migrations/*.sql | wc -l) + 1)))_follows.sql",
             "./migrate"
           ]
         }

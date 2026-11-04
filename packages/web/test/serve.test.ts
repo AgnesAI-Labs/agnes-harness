@@ -227,15 +227,17 @@ it('issues a fresh CSP style nonce for each served HTML document', async () => {
           return [name, values]
         }),
       )
+      const cdn = ['https://cos-agent-default.agnes-ai.cn', 'https://cos-agent-default.agnes-ai.com']
       if (new URL(document.url).pathname === '/') {
-        expect(directives['img-src']).toEqual(["'self'", 'blob:'])
+        expect(directives['img-src']).toEqual(["'self'", 'blob:', ...cdn])
         expect(directives['frame-src']).toEqual(["'self'", 'blob:'])
+        expect(directives['media-src']).toEqual(["'self'", 'blob:', ...cdn])
       } else {
         expect(directives['img-src']).toBeUndefined()
         expect(directives['frame-src']).toBeUndefined()
+        expect(directives['media-src']).toEqual(["'self'", 'blob:'])
       }
       expect(directives['default-src']).toEqual(["'self'"])
-      expect(directives['media-src']).toEqual(["'self'", 'blob:'])
       expect(directives['script-src']).toEqual(["'self'"])
       expect(directives['style-src']).toEqual(["'self'", `'nonce-${nonce}'`])
 

@@ -79,6 +79,7 @@ export function upsertMeta(
     confirmations: { count: kept?.confirmations.count ?? 0, usedEvidence: used },
     ...(kept?.lastConfirmedSeq === undefined ? {} : { lastConfirmedSeq: kept.lastConfirmedSeq }),
     ...(kept?.handedOff === undefined ? {} : { handedOff: kept.handedOff }),
+    ...(edit.reach === 'user' ? { reach: 'user' as const } : {}),
   }
 }
 

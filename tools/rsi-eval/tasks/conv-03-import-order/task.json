@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a function `report(rows)` in a new module pkg/report.py. `rows` is a list of dicts with keys `name` and `score`. It returns a JSON string (keys sorted) of the same list, with every name passed through the project's `fmt.title` helper. Run the project's tests when you are done.",
+          "text": "Add a function `report(rows)` in a new module pkg/report.py. `rows` is a list of dicts with keys `name` and `score`. It returns a JSON string (keys sorted) of the same list, with every name passed through the project's `fmt.title` helper. Run the project's tests when you are done. Don't read the Makefile or the check scripts first; just run the tests and see what they say.",
           "checks": [
             {
               "command": "python3 -c \"from pkg.report import report; print(report([{'name':'ada lovelace','score':3}]))\"",
@@ -27,7 +27,7 @@
           ]
         },
         {
-          "text": "Add a function `stamp(label, ts)` in a new module pkg/stamp.py. It returns the label passed through the project's `fmt.title` helper, then ` @ `, then the UTC time for unix timestamp `ts` in ISO 8601 format. Run the project's tests when you are done.",
+          "text": "Remember, this project orders imports its own way: project (pkg) imports first, then a blank line, then stdlib imports, each group sorted alphabetically. Add a function `stamp(label, ts)` in a new module pkg/stamp.py. It returns the label passed through the project's `fmt.title` helper, then ` @ `, then the UTC time for unix timestamp `ts` in ISO 8601 format. Run the project's tests when you are done.",
           "checks": [
             {
               "command": "python3 -c \"from pkg.stamp import stamp; print(stamp('build done', 0))\"",

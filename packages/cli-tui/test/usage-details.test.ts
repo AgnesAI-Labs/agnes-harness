@@ -163,6 +163,20 @@ describe('formatUsageReport RSI cost line', () => {
     expect(text).toContain('RSI cost')
     expect(text).toContain('Cumulative USD cost: not provided')
   })
+
+  it('shows a free model at zero and a model with no known price as unknown', () => {
+    const only = (refinement: ReturnType<typeof lane>): UsageView => ({
+      ...baseUsage,
+      totals: { input: 10_000, output: 200, cacheRead: 0, cacheWrite: 0, reasoning: 0 },
+      byLane: { refinement } as NonNullable<UsageView['byLane']>,
+    })
+    expect(formatUsageReport(only(lane(0, 0)), 'en')).toContain(
+      'RSI cost (background experience review, not in the figures above): $0.000 · 0 credits · input 10000 · output 200',
+    )
+    const unknown = formatUsageReport(only(lane()), 'en')
+    expect(unknown).toContain('price unknown · input 10000 · output 200')
+    expect(formatUsageReport(only(lane()), 'zh-CN')).toContain('价格未知')
+  })
 })
 
 describe('withoutRefinement', () => {

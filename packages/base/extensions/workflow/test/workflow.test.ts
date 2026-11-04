@@ -2,14 +2,16 @@ import type { HookContext, HookHandler, ToolContext, ToolDef } from '@agnes/exte
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { extensionFactoryOf } from '@agnes/plugin-runtime/bundled'
 import { expect, it } from 'vitest'
-import extension from '../src/index.js'
+import extension, { createWorkflowExtension } from '../src/index.js'
+import { finishedRun, workflowRunSource } from '../src/source.js'
 import { workflowProjection } from '../src/state.js'
 
-async function fixture(terminal: 'completed' | 'idle' = 'completed') {
+async function fixture(terminal: 'completed' | 'idle' = 'completed', renderer = true) {
   let persisted = workflowProjection.init()
   const tools = new Map<string, ToolDef>()
   const tasks: string[] = []
   const cancelled: string[] = []
+  const rendered: unknown[] = []
   let held = false
   let contextHook: HookHandler<'context'> | undefined
   const api = {
@@ -38,8 +40,15 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
     signal: ac.signal,
     progress: () => {},
     tools: {
+      list: () =>
+        renderer ? [{ name: 'ui_render' }, { name: 'subagent_spawn' }] : [{ name: 'subagent_spawn' }],
       invoke: async (name: string, args: Record<string, unknown>) => {
-        if (name === 'ui_render') return { content: [] }
+        if (name === 'ui_render') {
+          // An unattended session does not offer the renderer, and calling it throws.
+          if (!renderer) throw new Error('Unknown tool: ui_render')
+          rendered.push(args.surface)
+          return { content: [] }
+        }
         expect(name).toBe('subagent_spawn')
         if (typeof args.task !== 'string') throw new Error('Missing child task')
         tasks.push(args.task)
@@ -76,6 +85,7 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
     tools,
     tasks,
     cancelled,
+    rendered,
     ac,
     hold: (value: boolean) => {
       held = value
@@ -128,6 +138,51 @@ it.each(['completed', 'idle'] as const)(
     expect(f.tasks).toHaveLength(3)
   },
 )
+
+it('presents the run when ui_render is offered', async () => {
+  const f = await fixture('completed', true)
+  const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
+  expect(out.isError).toBe(false)
+  expect(f.rendered).toHaveLength(1)
+  const status = await f.tools
+    .get('workflow_status')!
+    .execute({ runId: (out.structured as { runId: string }).runId }, f.ctx)
+  expect(status.isError).toBe(false)
+  expect(f.rendered).toHaveLength(2)
+})
+
+it('finishes with its normal result when ui_render is not offered', async () => {
+  const f = await fixture('completed', false)
+  const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
+  expect(out.isError).toBe(false)
+  expect(out.structured).toMatchObject({ status: 'completed', name: 'report' })
+  expect(f.tasks).toHaveLength(3)
+  expect(f.rendered).toEqual([])
+  const run = Object.values(f.persisted().runs)[0]!
+  expect(run.status).toBe('completed')
+  // Reading the finished run, or looking its status up later, needs no renderer either.
+  const again = await f.tools.get('workflow')!.execute({ runId: run.id }, f.ctx)
+  expect(again.isError).toBe(false)
+  const status = await f.tools.get('workflow_status')!.execute({ runId: run.id }, f.ctx)
+  expect(status.isError).toBe(false)
+})
+
+it('still reports a failed workflow as failed when ui_render is not offered', async () => {
+  const f = await fixture('completed', false)
+  f.ctx.subagent.collect = async (childKey) => ({
+    childKey,
+    status: childKey === 'child-2' ? 'failed' : 'completed',
+    text: childKey + ' answer',
+  })
+  const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
+  expect(out.isError).toBe(true)
+  expect(out.structured).toMatchObject({ status: 'failed' })
+  const run = Object.values(f.persisted().runs)[0]!
+  expect(run.status).toBe('failed')
+  expect(run.error).toContain('Workflow child failed')
+  expect(run.stages[0]!.members.map((m) => m.status)).toEqual(['completed', 'failed'])
+  expect(f.tasks).toHaveLength(2)
+})
 
 it('resumes using saved child identities after interrupted collection', async () => {
   const f = await fixture()
@@ -219,4 +274,66 @@ it('refuses unavailable persistence before spawning, and cancels accepted childr
   await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
   expect(f.cancelled.sort()).toEqual(['child-1', 'child-2'])
   expect(Object.values(f.persisted().runs)[0]?.status).toBe('cancelled')
+})
+
+it('offers its run records to the Host and reads a run as finished only when every member completed', async () => {
+  const f = await fixture()
+  const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
+  expect(out.isError).toBe(false)
+  const run = Object.values(f.persisted().runs)[0]!
+  const state = f.persisted()
+  const reader = workflowRunSource.reader(state)
+  // Names and tasks of the stages, and none of what the members answered or where they ran.
+  expect(reader.finished(run.id)).toEqual({
+    runId: run.id,
+    name: 'report',
+    stages: stages.map((s) => ({
+      name: s.name,
+      members: s.members.map((m) => ({ name: m.name, task: m.task })),
+    })),
+  })
+  expect(JSON.stringify(reader.finished(run.id))).not.toContain('answer')
+  expect(reader.finished('missing')).toBeUndefined()
+  expect(reader.finished('__proto__')).toBeUndefined()
+  // A run that has not finished, or has any member that is not completed, is not finished.
+  for (const status of ['running', 'failed', 'cancelled', 'interrupted'])
+    expect(finishedRun(run.id, { ...run, status })).toBe('not-completed')
+  for (const status of ['pending', 'starting', 'running', 'failed', 'cancelled', 'interrupted']) {
+    const broken = structuredClone(run)
+    broken.stages[1]!.members[0]!.status = status
+    expect(finishedRun(run.id, broken), status).toBe('not-completed')
+  }
+  expect(finishedRun(run.id, { ...run, stages: [] })).toBe('not-completed')
+  // A record that is not shaped like this run is not a run.
+  expect(finishedRun(run.id, null)).toBeUndefined()
+  expect(finishedRun(run.id, { ...run, id: 'other' })).toBeUndefined()
+  expect(finishedRun(run.id, { ...run, stages: [{ name: 's', members: [{ name: 1 }] }] })).toBeUndefined()
+  expect(workflowRunSource.projection).toBe('runs')
+  expect(workflowRunSource.reader(null).finished(run.id)).toBeUndefined()
+})
+
+it('offers the source when the Host grants it, and withdraws it when the plugin is disposed', async () => {
+  const offered: unknown[] = []
+  let withdrawn = 0
+  const plugin = createWorkflowExtension({
+    provideWorkflowRuns: (source) => {
+      offered.push(source)
+      return () => {
+        withdrawn++
+      }
+    },
+  })
+  const api = {
+    registerProjection: () => () => {},
+    registerTool: () => () => {},
+    registerSlot: () => () => {},
+    registerHook: () => () => {},
+    events: { append: async () => 1 },
+  } as unknown as ExtensionAPI
+  const dispose = await extensionFactoryOf(plugin)(api)
+  expect(offered).toEqual([workflowRunSource])
+  await dispose?.()
+  expect(withdrawn).toBe(1)
+  // Without the grant nothing is offered, and the plugin is the one it always was.
+  expect(createWorkflowExtension()).toBe(extension)
 })
