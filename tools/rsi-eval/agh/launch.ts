@@ -18,6 +18,7 @@ import {
   type ReviewAnswer,
   TERMINAL_REVIEW_STATES,
 } from './run-agh.js'
+import { loadSkillSaveModules, skillSaveTransport } from './skill-save.js'
 
 const PACKAGES = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages')
 const CLI = join(PACKAGES, 'cli')
@@ -164,6 +165,19 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
   const { parseArgs } = (await import(pathToFileURL(join(CLI, 'src', 'args.ts')).href)) as {
     parseArgs(argv: string[]): unknown
   }
+  // Saved skills reach the workspace through the daemon's installer over a resource-control store of this
+  // run; only a run with refinement on gets the way to do it (see skill-save.ts).
+  const live = new Map<string, string>()
+  const refinementSave = input.refinement
+    ? skillSaveTransport(input.refinement, {
+        home: input.home,
+        dataDir: data,
+        profile: input.profile,
+        workspaceOf: (key) => live.get(key),
+        enabled: () => new host.RefinementSettingsStore(data, input.profile).read().settings.enabled,
+        modules: await loadSkillSaveModules(),
+      })
+    : undefined
   const agnesVersion = (JSON.parse(readFileSync(join(CLI, 'package.json'), 'utf8')) as { version: string })
     .version
   // The host reads user-wide instruction files from AGH_HOME; the run's home holds none.
@@ -183,6 +197,7 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
         cwd: input.workspace,
         agnesVersion,
         log: () => {},
+        ...(refinementSave ? { refinementSave } : {}),
       },
     )
   } catch (error) {
@@ -203,6 +218,8 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
       throw new Error(`${workspace} is not one of the run's workspaces`)
     const session = await booted.client.createSession({ cwd: workspace, sessionKey })
     ids.set(sessionKey, session.id)
+    live.set(sessionKey, workspace)
+    live.set(session.id, workspace)
     await session.setModel({ slot: 'primary', route: input.model.route, model: input.model.model })
     // Nobody attends an eval run: every approval is given, as the Prime runs execute without asking.
     const offPermission = session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
@@ -237,6 +254,8 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
         try {
           await embedded.kernel.get(session.id)?.close()
         } finally {
+          live.delete(sessionKey)
+          live.delete(session.id)
           await session.detach().catch(() => undefined)
         }
       },

@@ -90,30 +90,55 @@ const resultText = (content: unknown): string => {
     .join('\n')
 }
 
+const UNKNOWN_OUTCOME = 'TOOL_OUTCOME_UNKNOWN'
+const RUN_ROW = 'x/agnes/workflow/run'
+const WORKFLOW_ORIGIN = 'ext:agnes/workflow'
+
 /**
- * The `workflow` tool calls of one AGH session file (one ledger row per line). Only a call that was
- * executed counts: the tool answers an executed call with the run (`runId`, `status`, its stages);
- * a call that was refused or denied, or that failed before a run began, answers with an error text and
- * is skipped. A call that resumes a run (`runId`, no `stages`) carries no definition of its own: it
- * takes the definition of the run it resumes, adds no call, and completes the run when it finishes it.
+ * Whether a workflow run record, as the tool's own run rows give it, is a finished run: its status is
+ * `completed` and every member is `completed`.
  */
-export const parseAghWorkflowCalls = (jsonl: string): WorkflowCalls => {
+const runFinished = (run: Json): boolean =>
+  run.status === 'completed' &&
+  Array.isArray(run.stages) &&
+  run.stages.length > 0 &&
+  run.stages.every(
+    (stage) =>
+      isObject(stage) &&
+      Array.isArray(stage.members) &&
+      stage.members.length > 0 &&
+      stage.members.every((member) => isObject(member) && member.status === 'completed'),
+  )
+
+/**
+ * The `workflow` tool calls of a session's ledger rows (the rows of the session file, every lane). Only
+ * a call that was executed counts: the tool answers an executed call with the run (`runId`, `status`,
+ * its stages); a call that was refused or denied, or that failed before a run began, answers with an
+ * error text and is skipped. A call that resumes a run (`runId`, no `stages`) carries no definition of
+ * its own: it takes the definition of the run it resumes, adds no call, and completes the run when it
+ * finishes it.
+ *
+ * Unknown outcome. In an unattended session the tool's closing step (showing the run as a surface) is
+ * refused after the run has ended, so the call is answered `TOOL_OUTCOME_UNKNOWN` although the run ran
+ * to its end. The run record the tool wrote to the ledger before that (`x/agnes/workflow/run` rows,
+ * the last one for the call) is the evidence then: the call counts as a finished run exactly when that
+ * record is `completed` with every member `completed`. A call with no run record, or whose record is
+ * anything else (interrupted, failed, a member still running), is not counted as finished.
+ */
+export const scanWorkflowRows = (rows: readonly unknown[]): WorkflowCalls => {
   const pending = new Map<string, { definition: string | undefined; runId: string | undefined }>()
   const runs = new Map<string, string>()
+  const records = new Map<string, Json>()
   const finished = new Set<string>()
   const calls: string[] = []
   const completed: string[] = []
-  for (const line of jsonl.split('\n')) {
-    if (line.trim() === '') continue
-    let row: unknown
-    try {
-      row = JSON.parse(line)
-    } catch {
-      continue
-    }
+  for (const row of rows) {
     if (!isObject(row) || !isMainLane(row.lane)) continue
     const data = isObject(row.data) ? row.data : {}
-    if (row.type === 'tool/call' && data.name === 'workflow' && typeof data.toolUseId === 'string') {
+    if (row.type === RUN_ROW) {
+      if (row.origin === WORKFLOW_ORIGIN && typeof data.toolUseId === 'string')
+        records.set(data.toolUseId, data)
+    } else if (row.type === 'tool/call' && data.name === 'workflow' && typeof data.toolUseId === 'string') {
       const args = isObject(data.args) ? data.args : {}
       pending.set(data.toolUseId, {
         definition: normalizeDefinition(args),
@@ -122,19 +147,31 @@ export const parseAghWorkflowCalls = (jsonl: string): WorkflowCalls => {
     } else if (row.type === 'tool/result' && typeof data.toolUseId === 'string') {
       const call = pending.get(data.toolUseId)
       if (!call) continue
-      let answer: unknown
-      try {
-        answer = JSON.parse(resultText(data.content))
-      } catch {
-        continue
+      let answer: Json | undefined
+      let ended: boolean
+      if (data.code === UNKNOWN_OUTCOME) {
+        const record = records.get(data.toolUseId)
+        if (!record || typeof record.id !== 'string') continue
+        answer = { ...record, runId: record.id }
+        ended = runFinished(record)
+      } else {
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(resultText(data.content))
+        } catch {
+          continue
+        }
+        if (!isObject(parsed)) continue
+        answer = parsed
+        ended = parsed.status === 'completed' && data.isError !== true
       }
-      if (!isObject(answer) || typeof answer.runId !== 'string' || typeof answer.status !== 'string') continue
+      if (typeof answer.runId !== 'string' || typeof answer.status !== 'string') continue
       const definition =
         call.definition ?? runs.get(call.runId ?? answer.runId) ?? normalizeDefinition(answer)
       if (definition === undefined) continue
       if (call.definition !== undefined) calls.push(definition)
       runs.set(answer.runId, definition)
-      if (answer.status === 'completed' && data.isError !== true && !finished.has(answer.runId)) {
+      if (ended && !finished.has(answer.runId)) {
         finished.add(answer.runId)
         completed.push(definition)
       }
@@ -142,3 +179,23 @@ export const parseAghWorkflowCalls = (jsonl: string): WorkflowCalls => {
   }
   return { calls, completed }
 }
+
+const parseRows = (jsonl: string): unknown[] => {
+  const rows: unknown[] = []
+  for (const line of jsonl.split('\n')) {
+    if (line.trim() === '') continue
+    try {
+      rows.push(JSON.parse(line))
+    } catch {
+      /* a line that is not a row */
+    }
+  }
+  return rows
+}
+
+/** The `workflow` tool calls of one AGH session file (one ledger row per line); see `scanWorkflowRows`. */
+export const parseAghWorkflowCalls = (jsonl: string): WorkflowCalls => scanWorkflowRows(parseRows(jsonl))
+
+/** Whether the session's ledger rows hold at least one `workflow` run that ran to its end. */
+export const workflowRunCompleted = (rows: readonly unknown[]): boolean =>
+  scanWorkflowRows(rows).completed.length > 0
