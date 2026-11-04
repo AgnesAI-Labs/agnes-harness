@@ -453,14 +453,14 @@ export async function runOne(
     let saveRefused: string | undefined
     const keys: string[] = []
     try {
+      // Before the first session is paid for: the oracle arm cannot run on a host that cannot seed memory.
+      if (setting === 'oracle' && !host.seedMemory)
+        throw new Error('this host cannot seed memory, which the oracle arm needs')
       for (let i = 0; i < task.sessions.length; i++) {
         const key = `rsi-eval-${id}-s${i + 1}`
         keys.push(key)
         // The oracle arm's one difference from off: the lesson is in the second session's memory before it starts.
-        if (setting === 'oracle' && i === 1) {
-          if (!host.seedMemory) throw new Error('this host cannot seed memory, which the oracle arm needs')
-          await host.seedMemory(workOf(i), oracleLesson(task))
-        }
+        if (setting === 'oracle' && i === 1) await host.seedMemory?.(workOf(i), oracleLesson(task))
         const stdoutFile = join(runDir, `session${i + 1}.turns.jsonl`)
         const result = await runSession(
           host,

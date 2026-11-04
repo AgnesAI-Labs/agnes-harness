@@ -17,16 +17,77 @@ const savings = [
 ]
 
 describe('the interval of a difference of two sets of runs', () => {
-  it('is the difference of the means with a seeded 95% interval', () => {
-    const d = runsInterval([24, 26, 25], [14, 16, 15], { seed: 7 })
+  it('is the difference of the means with a Welch t interval, wide for three runs a side', () => {
+    const d = runsInterval([24, 26, 25], [14, 16, 15])
     expect(d?.estimate).toBe(10)
-    expect(d?.ci95[0]).toBeGreaterThan(5)
-    expect(d?.ci95[1]).toBeLessThan(15)
-    expect(runsInterval([24, 26, 25], [14, 16, 15], { seed: 7 })).toEqual(d)
+    // Each side has variance 1, so se = sqrt(2/3) and about 4 degrees of freedom: t = 2.776.
+    const half = 2.776 * Math.sqrt(2 / 3)
+    expect(d?.ci95[0]).toBeCloseTo(10 - half, 6)
+    expect(d?.ci95[1]).toBeCloseTo(10 + half, 6)
+  })
+  it('is a point when the runs of both sides do not vary', () => {
+    expect(runsInterval([20, 20, 20], [19, 19, 19])).toEqual({ estimate: 1, ci95: [1, 1] })
   })
   it('does not exist for fewer than two runs on a side', () => {
-    expect(runsInterval([24], [14, 16], {})).toBeNull()
-    expect(runsInterval([24, 25], [14], {})).toBeNull()
+    expect(runsInterval([24], [14, 16])).toBeNull()
+    expect(runsInterval([24, 25], [14])).toBeNull()
+  })
+})
+
+describe('the capture rate comes with its parts and its uncertainty', () => {
+  const some = [
+    task('a', [24, 26, 25], [19, 21, 20], [14, 16, 15]),
+    task('b', [20, 22, 21], [19, 21, 20], [12, 14, 13]),
+  ]
+
+  it('gives the numerator, the denominator, the task count and an interval of the ratio', () => {
+    const r = captureMetric(some, { resamples: 400, seed: 5 })
+    expect(r.capture.numerator).toBeCloseTo(6, 12)
+    expect(r.capture.denominator).toBeCloseTo(18, 12)
+    expect(r.capture.rate).toBeCloseTo(6 / 18, 12)
+    expect(r.capture.included).toEqual(['a', 'b'])
+    const ci = r.capture.ci95
+    expect(ci).not.toBeNull()
+    expect(ci?.[0]).toBeLessThan(6 / 18)
+    expect(ci?.[1]).toBeGreaterThan(6 / 18)
+    expect(r.capture.validResamples).toBeGreaterThan(0)
+    // The same input gives the same interval.
+    expect(captureMetric(some, { resamples: 400, seed: 5 }).capture.ci95).toEqual(ci)
+  })
+
+  it('has no interval when no resample has a task with headroom', () => {
+    const r = captureMetric([task('flat', [20, 22, 21], [10, 10, 10], [21, 20, 22])], { resamples: 100 })
+    expect(r.capture).toMatchObject({ rate: null, ci95: null })
+  })
+
+  it('says which runs decided headroom, and takes the decision from the other runs when it is given', () => {
+    // On the sums' own runs, task `lucky` looks like it has headroom (oracle far below off) ...
+    const lucky = task('lucky', [30, 31, 29], [30, 31, 29], [20, 21, 19])
+    const same = captureMetric([...some, lucky])
+    expect(same.capture.headroomSource).toBe('same-runs')
+    expect(same.capture.included).toContain('lucky')
+    // ... but the pilot's runs of that task show none: it is left out, and a task the pilot confirms stays.
+    const separate = captureMetric([
+      { ...(some[0] as TaskValues), headroom: { off: [25, 24, 26], oracle: [15, 14, 16] } },
+      { ...lucky, headroom: { off: [20, 21, 19], oracle: [20, 19, 21] } },
+    ])
+    expect(separate.capture.headroomSource).toBe('separate')
+    expect(separate.capture.included).toEqual(['a'])
+    expect(separate.capture.noHeadroom).toEqual(['lucky'])
+    // The sums still use the runs of the full run only.
+    expect(separate.capture.numerator).toBeCloseTo(5, 12)
+  })
+
+  it('cannot judge a task with fewer than two pilot runs, and says so', () => {
+    const r = captureMetric([{ ...(some[0] as TaskValues), headroom: { off: [25], oracle: [15, 14] } }])
+    expect(r.capture.tooFewRuns).toEqual(['a'])
+  })
+
+  it('reports means over the included tasks next to the means over every task', () => {
+    const flat = task('flat', [50, 52, 51], [50, 52, 51], [51, 50, 52])
+    const r = captureMetric([...some, flat])
+    expect(r.means.off).toBeCloseTo((25 + 21 + 51) / 3, 12)
+    expect(r.capture.includedMeans).toEqual({ off: 23, on: 20, oracle: 14 })
   })
 })
 

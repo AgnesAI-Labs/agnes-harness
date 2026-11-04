@@ -94,23 +94,30 @@ call. A run folder made before this section existed shows the off and on columns
 
 ## Smoke run of the evaluation changes
 
-`~/rsi-eval/smoke-v2.sh` (outside the repository, like `pilot.sh`; it reads the key from
-`~/.rsi-eval/env` itself) runs the minimum real runs into a new folder, one repetition each: one
-two-session task (default `cross-01-build-subdir`) with `--arms off,on,oracle`, and one workflow task
-(default `wf-01-release-channel`) with `--arms on`. It then prints the checklist of
-`smoke-check.ts` as PASS, FAIL or WARN lines and exits non-zero if any check failed:
+`scripts/smoke-v2.sh` runs the minimum real runs into a new folder, one repetition each: one two-session
+task (default `cross-01-build-subdir`) with `--arms off,on,oracle`, and one workflow task (default
+`wf-01-release-channel`) with `--arms on`, after a preflight call. It then prints the checklist of
+`smoke-check.ts` as PASS, FAIL or WARN lines and exits non-zero if any check failed. It spends model calls.
 
-- no skill save is refused `unavailable`, and a skill the review proposed is in the workspace's
-  `.agh/skills/` (WARN when the model proposed no skill: run again);
+```
+export <the variable your run config names as "keyEnv">=...
+RSI_EVAL_CONFIG=<run-config.json> RSI_EVAL_OUT=<a folder that does not exist yet> tools/rsi-eval/scripts/smoke-v2.sh
+```
+
+`SMOKE_TWO_SESSION_TASK` and `SMOKE_WORKFLOW_TASK` change the tasks. The run config is the one the runners
+take (`run-config.example.json`); the script reads no key from a file, the variable must be set already.
+
+The checklist:
+
+- no skill save is refused `unavailable`, and a skill the review proposed is in the workspace's skills
+  folder (WARN when the model proposed no skill: run again);
 - the off and oracle runs wrote no skill;
 - the workflow run of the first session is counted as finished;
 - the oracle run's workspace memory holds the lesson, the off run's does not, and it was written
   between the two sessions;
-- the oracle run's first session matches the off run's (same prompts, system prompt, tool schema and
-  size of the first request; the request bytes themselves differ by the throwaway workspace path).
-
-`RSI_EVAL_LABEL` names the output folder; `SMOKE_TWO_SESSION_TASK` and `SMOKE_WORKFLOW_TASK` change the
-tasks. It spends model calls, so the owner runs it.
+- the oracle run's first session matches the off run's: the same prompts, system prompt, tool schema and
+  context sections of the first request. The request bytes themselves differ by the throwaway workspace
+  path, and so does the size of the `environment` section that holds it, which is not compared.
 
 ## Infrastructure failures are not task failures
 
@@ -141,11 +148,37 @@ failed runs (exit 1, no checks) and counted in the report. Now:
   upstream through the proxy path and says whether the key is missing, the key is refused, the balance is
   out, the model name is wrong, the rate limit is hit or the upstream cannot be reached. It needs the
   variable the run config names as `keyEnv`; the key is sent upstream and nowhere else.
-- **Scripts.** The shell scripts in `~/rsi-eval/` (outside the repository) call the preflight first, take
-  the run config from `RSI_EVAL_CONFIG`, take the key from the `keyEnv` variable when it is set, recognise
-  and redo infra-failed runs on start, and check for a running evaluation with the runner's own command
-  line.
+- **Wrapper scripts.** A script that starts a long run should call the preflight first, take the run
+  config from one place, take the key from the `keyEnv` variable, run `mark-infra.ts` on the output folder
+  before starting (so one command always resumes), and check for a running evaluation with the runner's own
+  command line (`cli.mjs tools/rsi-eval/agh/run-agh.ts`), not a bare file name that also matches the shell
+  doing the checking. The repository only holds `scripts/smoke-v2.sh`; the owner's wrappers for the full
+  runs live outside it.
 
 The report also prints, at its head, the model, route, upstream (without credentials) and the prices used,
 and flags the prices as assumed when the run config says `"pricesAssumed": true`. It prints the share of
 runs whose first session hit the trap, per arm and per task, and names the tasks where no run did.
+
+## What the capture rate does and does not say
+
+The report prints the capture rate as `rate = numerator / denominator over N of M tasks; 95% CI a to b`,
+never as a bare number, and the means of the three arms over the tasks of the rate next to the means over
+every task.
+
+- **Which runs count.** Only second sessions that completed and passed their checks enter the means and the
+  rate. A second session that stopped early looks cheap and one that timed out looks dear, so neither says
+  what completing the task costs. The report counts the ones left out per arm and reason (the run never
+  reached its second session, it timed out, a session did not complete, a check failed).
+- **Headroom on other runs.** Whether the hand-written lesson saves anything for a task is decided, when you
+  give `report.ts --headroom-dir <pilot folder>`, on the pilot's `off` and `oracle` runs, and the rate sums
+  the full run's own `off`, `on` and `oracle` runs. Deciding on the same `off` runs that the numerator then
+  sums selects the tasks whose `off` runs were dear and inflates the rate; without a pilot folder the
+  report says that and that the rate is then optimistic. The pilot's runs must not be reused in the full
+  run (the report refuses a folder that holds the same run, by id and start time). The per-task test is a
+  Welch t interval, wide for three runs a side.
+- **The interval** resamples tasks and, within each task, the runs of each arm, and decides headroom again
+  in every resample.
+- **Review calls.** The `on` arm reviews after every prompt, as the Prime runs do. Rows marked "all lanes"
+  include those calls; rows marked "session work only" leave them out (the refinement lane of the ledger),
+  and the report prints the review calls' own mean per run. The effect of the saved lesson alone is in the
+  second kind of row.

@@ -313,11 +313,13 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
  * sessions are counted into the parent only where their cost is in the parent's ledger. The parent
  * ledger of this host holds `subagent/cost` rows that name a child and say its cost is incomplete,
  * without an amount, so a session with such a row (or a cost row without a price) is a lower bound.
+ * `refinement` is the part of the totals that sits in the refinement lane: the review calls of the `on` arm.
  */
 export const sessionCostOfLedger = (jsonl: string): SessionCost => {
   let requests = 0
   let tokens = 0
   let micros = 0
+  const review = { requests: 0, tokens: 0, micros: 0 }
   let lowerBound = false
   for (const line of jsonl.split('\n')) {
     if (line.trim() === '') continue
@@ -332,16 +334,41 @@ export const sessionCostOfLedger = (jsonl: string): SessionCost => {
     if (row.type === 'subagent/cost') {
       lowerBound = true
     } else if (row.type === 'cost/ledger') {
+      const inReview = row.lane === 'refinement'
       requests++
+      if (inReview) review.requests++
       const counts = isObject(data.tokens) ? data.tokens : {}
       for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'])
-        if (typeof counts[key] === 'number') tokens += counts[key]
+        if (typeof counts[key] === 'number') {
+          tokens += counts[key]
+          if (inReview) review.tokens += counts[key]
+        }
       const billing = isObject(data.billing) ? data.billing : {}
-      if (typeof billing.usdMicros === 'number') micros += billing.usdMicros
-      else lowerBound = true
+      if (typeof billing.usdMicros === 'number') {
+        micros += billing.usdMicros
+        if (inReview) review.micros += billing.usdMicros
+      } else lowerBound = true
     }
   }
-  return { requests, tokens, cost: micros / 1_000_000, lowerBound }
+  return {
+    requests,
+    tokens,
+    cost: micros / 1_000_000,
+    lowerBound,
+    refinement: { requests: review.requests, tokens: review.tokens, cost: review.micros / 1_000_000 },
+  }
+}
+
+/** The `ts` of the first row of a ledger (one row per line), if it has one. */
+const firstRowTime = (jsonl: string): string | undefined => {
+  const line = jsonl.split('\n').find((l) => l.trim() !== '')
+  if (!line) return undefined
+  try {
+    const row = JSON.parse(line) as { ts?: unknown }
+    return typeof row.ts === 'string' ? row.ts : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** The cost of one session of a run (zero-based, as everywhere here); none for a run without ledgers. */
@@ -376,6 +403,7 @@ export const toRunRecord = (
   const windows: PromptWindow[] = []
   const refine = { auto: 0, user: 0, self: 0, appliedEdits: 0 }
   const sessionCosts: SessionCost[] = []
+  let startedAt: string | undefined
   let harnessLookups = 0
   let compactions = 0
   task.sessions.forEach((_, sessionIndex) => {
@@ -383,8 +411,10 @@ export const toRunRecord = (
     const parse = (options.system ?? 'prime') === 'agh' ? parseAghSession : parsePrimeSession
     const text = files.map((file) => read(locate(file))).join('\n')
     const parsed = parse(text, task, sessionIndex)
-    if ((options.system ?? 'prime') === 'agh' && files.length > 0)
+    if ((options.system ?? 'prime') === 'agh' && files.length > 0) {
       sessionCosts[sessionIndex] = sessionCostOfLedger(text)
+      if (sessionIndex === 0) startedAt = firstRowTime(text)
+    }
     for (const window of parsed.windows) {
       const check = outcome.checks.find((c) => c.session === window.session && c.prompt === window.prompt)
       windows.push({ ...window, checksPassed: window.ran && check ? check.passed : null })
@@ -432,6 +462,7 @@ export const toRunRecord = (
     ...(outcome.alignment ? { alignment: outcome.alignment } : {}),
     ...(workflowReuse ? { workflowReuse } : {}),
     ...(sessionCosts.length > 0 ? { sessionCosts } : {}),
+    ...(startedAt ? { startedAt } : {}),
     ...(outcome.infraFailed ? { infraFailed: outcome.infraFailed } : {}),
   }
 }

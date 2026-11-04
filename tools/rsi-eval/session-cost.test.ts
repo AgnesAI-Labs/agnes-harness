@@ -19,12 +19,15 @@ describe('the cost of one session, from its ledger', () => {
       tokens: 125_056,
       cost: 0.012566,
       lowerBound: false,
+      // Three of the 21 requests are review calls in the refinement lane.
+      refinement: { requests: 3, tokens: 6839, cost: 0.002118 },
     })
     expect(sessionCostOfLedger(fixture('session-cost.cross-01.off-s2.jsonl'))).toEqual({
       requests: 17,
       tokens: 124_155,
       cost: 0.010802,
       lowerBound: false,
+      refinement: { requests: 0, tokens: 0, cost: 0 },
     })
   })
 
@@ -35,11 +38,18 @@ describe('the cost of one session, from its ledger', () => {
       tokens: 596_996,
       cost: 0.068015,
       lowerBound: true,
+      refinement: { requests: 3, tokens: 43_804, cost: 0.013657 },
     })
   })
 
   it('is empty for a ledger with no cost rows', () => {
-    expect(sessionCostOfLedger('')).toEqual({ requests: 0, tokens: 0, cost: 0, lowerBound: false })
+    expect(sessionCostOfLedger('')).toEqual({
+      requests: 0,
+      tokens: 0,
+      cost: 0,
+      lowerBound: false,
+      refinement: { requests: 0, tokens: 0, cost: 0 },
+    })
   })
 
   it('ignores a row that is not JSON, and a cost row without a price counts as a lower bound', () => {
@@ -54,6 +64,7 @@ describe('the cost of one session, from its ledger', () => {
       tokens: 15,
       cost: 0,
       lowerBound: true,
+      refinement: { requests: 0, tokens: 0, cost: 0 },
     })
   })
 })

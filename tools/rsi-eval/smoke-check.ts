@@ -1,6 +1,6 @@
 // The checklist of the v2 smoke run: reads the run folders of one two-session task (arms off, on and
 // oracle) and one workflow task (arm on), and says for each behaviour that only a real run can show
-// whether it happened. Read only; no model call. `~/rsi-eval/smoke-v2.sh` runs the runner and then this.
+// whether it happened. Read only; no model call. `scripts/smoke-v2.sh` runs the runner and then this.
 //
 // Usage: pnpm exec tsx tools/rsi-eval/smoke-check.ts --run-dir <out> --two-session <task> --workflow <task> [--rep 1] [--suite <dir>]
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
@@ -156,8 +156,11 @@ export const oracleMemoryChecks = (runDir: string, task: EvalTask, oracle: strin
 
 /**
  * The first session of an oracle run is the first session of the off run: the same prompts, system
- * prompt, tool schema and size of the first request. The runs differ in the workspace path and in
- * the run id, so the request bodies themselves cannot be compared byte for byte; these are what can.
+ * prompt, tool schema and context sections of the first request. The runs differ in the throwaway
+ * workspace path and in the run id, so the request bodies cannot be compared byte for byte, and the
+ * `environment` section (which holds the working directory, so its size depends on the path) is left out
+ * of the comparison with everything that sums it, such as the request's total. The other sections are
+ * compared by id and size.
  */
 export const firstSessionCheck = (runDir: string, oracle: string, off: string): Check => {
   const facts = (run: string) => {
@@ -165,9 +168,13 @@ export const firstSessionCheck = (runDir: string, oracle: string, off: string): 
     const start = rows.find((row) => row.type === 'session/start')
     const sent = rows.find((row) => row.type === 'request/sent')
     const breakdown = rows.find((row) => row.type === 'x/core/context-breakdown')
-    const composition = isObject(dataOf(breakdown ?? ({} as Row)).composition)
-      ? (dataOf(breakdown as Row).composition as Record<string, unknown>)
-      : {}
+    const data = dataOf(breakdown ?? ({} as Row))
+    const tokens =
+      isObject(data.composition) && isObject(data.composition.tokens) ? data.composition.tokens : {}
+    const sections = (Array.isArray(data.sections) ? data.sections : [])
+      .filter((section): section is Record<string, unknown> => isObject(section))
+      .filter((section) => section.id !== 'environment')
+      .map((section) => [section.id, section.tokens])
     const prompts = rows
       .filter((row) => row.type === 'user/message' && row.origin !== 'system')
       .map((row) => JSON.stringify(dataOf(row).content))
@@ -176,7 +183,8 @@ export const firstSessionCheck = (runDir: string, oracle: string, off: string): 
         ? (dataOf(start as Row).systemPrompt as Record<string, unknown>).hash
         : undefined,
       toolSchema: dataOf(sent ?? ({} as Row)).tool_schema_hash,
-      firstRequestTokens: composition.total,
+      sections,
+      conversationTokens: tokens.conversation,
       prompts,
     }
   }
@@ -185,14 +193,14 @@ export const firstSessionCheck = (runDir: string, oracle: string, off: string): 
   const same =
     a.systemPrompt !== undefined &&
     a.toolSchema !== undefined &&
-    a.firstRequestTokens !== undefined &&
+    a.sections.length > 0 &&
     a.prompts.length > 0 &&
     JSON.stringify(a) === JSON.stringify(b)
   return {
     name: 'oracle: the first session matches the off run',
     status: same ? 'PASS' : 'FAIL',
     detail: same
-      ? `${a.prompts.length} prompts, same system prompt and tool schema, first request ${String(a.firstRequestTokens)} tokens in both`
+      ? `${a.prompts.length} prompts, same system prompt, tool schema and ${a.sections.length} context sections (the environment section, which holds the path, is not compared)`
       : `oracle ${JSON.stringify({ ...a, prompts: a.prompts.length })} vs off ${JSON.stringify({ ...b, prompts: b.prompts.length })}`,
   }
 }

@@ -133,7 +133,14 @@ export type WorkflowReuse = {
  * child sessions whose cost is not in this ledger, or a row without a price, so the figures are at least
  * this much.
  */
-export type SessionCost = { requests: number; tokens: number; cost: number; lowerBound: boolean }
+export type SessionCost = {
+  requests: number
+  tokens: number
+  cost: number
+  lowerBound: boolean
+  /** The part of the totals that is the refinement lane's: the review calls. The rest is the session's own work. */
+  refinement: { requests: number; tokens: number; cost: number }
+}
 
 export type RunRecord = {
   system: 'prime' | 'agh'
@@ -151,6 +158,8 @@ export type RunRecord = {
   workflowReuse?: WorkflowReuse
   /** AGH runs: the cost of each session of the task, in order. */
   sessionCosts?: SessionCost[]
+  /** AGH runs: the time of the first row of the first session's ledger; tells two runs apart that share an id. */
+  startedAt?: string
   /** The upstream ended the run; such records are left out of every metric. */
   infraFailed?: InfraFailure
 }

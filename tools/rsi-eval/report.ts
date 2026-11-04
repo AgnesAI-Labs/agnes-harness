@@ -1,7 +1,9 @@
 // Aggregate report over evaluation runs. Output holds only aggregate numbers and structure fields:
 // no message bodies, tool output, prompt text or absolute paths.
 //
-// Usage: pnpm exec tsx tools/rsi-eval/report.ts --run-dir <out> --config <run-config.json> [--suite <dir>]
+// Usage: pnpm exec tsx tools/rsi-eval/report.ts --run-dir <out> --config <run-config.json> [--suite <dir>] [--headroom-dir <pilot out>]
+// --headroom-dir: the folder of a pilot (off and oracle runs) that decides which tasks have headroom for the
+// capture rate. It must not hold runs of the run being reported.
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -16,6 +18,11 @@ import { readSkillTexts } from './workflow-reuse.js'
 export type ReportOptions = {
   resamples?: number
   seed?: number
+  /**
+   * A pilot's runs (`--headroom-dir`): their `off` and `oracle` second sessions decide which tasks have
+   * headroom, so that the runs the capture rate sums are not the runs it was selected on.
+   */
+  headroomRecords?: RunRecord[]
   /** The run configuration, for the report header: what model, upstream and prices the run used. */
   run?: Pick<RunConfig, 'provider' | 'api' | 'upstream' | 'model' | 'prices' | 'pricesAssumed'>
 }
@@ -158,45 +165,136 @@ const secondSessionMeasure = (r: CaptureResult) => ({
   offMinusOn: diffJson(r.offMinusOn),
   offMinusOracle: diffJson(r.offMinusOracle),
   captureRate: r.capture.rate,
+  numerator: r.capture.numerator,
+  denominator: r.capture.denominator,
+  captureCi95: r.capture.ci95,
+  validResamples: r.capture.validResamples,
+  resamples: r.capture.resamples,
+  headroomSource: r.capture.headroomSource,
+  includedMeans: r.capture.includedMeans,
   included: r.capture.included,
   noHeadroom: r.capture.noHeadroom,
   tooFewRuns: r.capture.tooFewRuns,
   noOnRuns: r.capture.noOnRuns,
 })
 
-const SECOND_SESSION_MEASURES = ['requests', 'tokens', 'cost'] as const
+/** The cost measures of a second session: all lanes, and the session's own work without the review calls. */
+const SECOND_SESSION_MEASURES = [
+  'requests',
+  'tokens',
+  'cost',
+  'requestsMain',
+  'tokensMain',
+  'costMain',
+] as const
 type Measure = (typeof SECOND_SESSION_MEASURES)[number]
+const baseOf = (measure: Measure): 'requests' | 'tokens' | 'cost' =>
+  measure.replace(/Main$/, '') as 'requests' | 'tokens' | 'cost'
+const pickMeasure = (measure: Measure, c: SessionCost): number =>
+  measure.endsWith('Main') ? c[baseOf(measure)] - c.refinement[baseOf(measure)] : c[baseOf(measure)]
 
-type SecondSessionRuns = { record: RunRecord; cost: SessionCost }
+/** Why a run's second session is not counted into the second-session means; none means it is. */
+const LEFT_OUT_REASONS = ['never-reached', 'timeout', 'exit-error', 'checks-failed'] as const
+type LeftOut = (typeof LEFT_OUT_REASONS)[number]
+const LEFT_OUT_TEXT: Record<LeftOut, string> = {
+  'never-reached': 'the run never reached its second session',
+  timeout: 'the run timed out',
+  'exit-error': 'a session ended without completing',
+  'checks-failed': 'a check of the second session failed',
+}
 
 /**
- * The second session of the two-session tasks, per arm, and the capture rate. Only runs with a recorded
- * cost for their second session enter (a single-session task has none; workflow tasks are left out).
+ * Only a second session that ran to its end and passed its checks says what completing the task costs: one
+ * that stopped early looks cheap, one that timed out looks dear.
+ */
+const secondSessionStatus = (record: RunRecord): LeftOut | undefined => {
+  if (!sessionCost(record, 1)) return 'never-reached'
+  if (record.exit === 'timeout') return 'timeout'
+  if (record.exit !== 'ok') return 'exit-error'
+  const second = record.windows.filter((w) => w.session === 1)
+  if (second.length === 0 || second.some((w) => !w.ran || w.checksPassed !== true)) return 'checks-failed'
+  return undefined
+}
+
+/**
+ * The second session of the two-session tasks, per arm, and the capture rate. Single-session tasks have no
+ * second session and workflow tasks no oracle arm: neither enters. Only second sessions that completed and
+ * passed their checks enter the means and the rate; the others are counted per arm and reason.
+ * `options.headroomRecords` (a pilot's runs) decide which tasks have headroom, when given.
  */
 const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
-  const runs: SecondSessionRuns[] = records.flatMap((record) => {
-    const cost = record.category === 'workflow' ? undefined : sessionCost(record, 1)
-    return cost ? [{ record, cost }] : []
-  })
-  if (runs.length === 0) return undefined
-  const byTask = groupBy(runs, (r) => r.record.taskId)
+  const eligible = records.filter((r) => r.category !== 'workflow' && r.sessionCosts !== undefined)
+  const withSecond = eligible.filter((r) => sessionCost(r, 1) !== undefined || r.exit !== 'ok')
+  if (!eligible.some((r) => sessionCost(r, 1) !== undefined)) return undefined
+  const counted = withSecond.filter((r) => secondSessionStatus(r) === undefined)
+  const arms: Arm[] = ['off', 'on', 'oracle']
+  const leftOut = Object.fromEntries(
+    arms.map((arm) => [
+      arm,
+      Object.fromEntries(
+        LEFT_OUT_REASONS.map((reason) => [
+          reason,
+          withSecond.filter((r) => r.setting === arm && secondSessionStatus(r) === reason).length,
+        ]),
+      ),
+    ]),
+  ) as Record<Arm, Record<LeftOut, number>>
+  const headroomRuns = (options.headroomRecords ?? []).filter(
+    (r) =>
+      !r.infraFailed &&
+      r.category !== 'workflow' &&
+      (r.setting === 'off' || r.setting === 'oracle') &&
+      sessionCost(r, 1) !== undefined &&
+      secondSessionStatus(r) === undefined,
+  )
+  const separate = options.headroomRecords !== undefined
+  const byTask = groupBy(counted, (r) => r.taskId)
+  const taskIds = [...new Set(withSecond.map((r) => r.taskId))].sort()
   const measure = (name: Measure): CaptureResult =>
     captureMetric(
-      [...byTask].map(([taskId, list]) => {
-        const values = (arm: Arm) => list.filter((r) => r.record.setting === arm).map((r) => r.cost[name])
-        return { taskId, off: values('off'), on: values('on'), oracle: values('oracle') }
+      taskIds.map((taskId) => {
+        const list = byTask.get(taskId) ?? []
+        const values = (arm: Arm) =>
+          list
+            .filter((r) => r.setting === arm)
+            .map((r) => pickMeasure(name, sessionCost(r, 1) as SessionCost))
+        const pilot = (arm: Arm) =>
+          headroomRuns
+            .filter((r) => r.taskId === taskId && r.setting === arm)
+            .map((r) => pickMeasure(name, sessionCost(r, 1) as SessionCost))
+        return {
+          taskId,
+          off: values('off'),
+          on: values('on'),
+          oracle: values('oracle'),
+          ...(separate ? { headroom: { off: pilot('off'), oracle: pilot('oracle') } } : {}),
+        }
       }),
       options,
     )
-  const arms = (arm: Arm) => runs.filter((r) => r.record.setting === arm).length
   const measures = Object.fromEntries(
     SECOND_SESSION_MEASURES.map((name) => [name, secondSessionMeasure(measure(name))]),
   ) as Record<Measure, ReturnType<typeof secondSessionMeasure>>
+  const onRuns = counted.filter((r) => r.setting === 'on')
+  const perRun = (pick: (c: SessionCost) => number): number | null =>
+    onRuns.length === 0
+      ? null
+      : onRuns.reduce((sum, r) => sum + pick(sessionCost(r, 1) as SessionCost), 0) / onRuns.length
   return {
     direction: DIRECTIONS.secondSession,
-    tasks: byTask.size,
-    runs: { off: arms('off'), on: arms('on'), oracle: arms('oracle') },
-    lowerBoundRuns: runs.filter((r) => r.cost.lowerBound).length,
+    tasks: taskIds.length,
+    runs: Object.fromEntries(
+      arms.map((arm) => [arm, counted.filter((r) => r.setting === arm).length]),
+    ) as Record<Arm, number>,
+    leftOut,
+    lowerBoundRuns: counted.filter((r) => sessionCost(r, 1)?.lowerBound).length,
+    headroomRuns: separate ? headroomRuns.length : null,
+    reviewOverhead: {
+      runs: onRuns.length,
+      requests: perRun((c) => c.refinement.requests),
+      tokens: perRun((c) => c.refinement.tokens),
+      cost: perRun((c) => c.refinement.cost),
+    },
     measures,
   }
 }
@@ -374,19 +472,38 @@ const workflowReuseMarkdown = (w: NonNullable<SystemReport['workflowReuse']>): s
 }
 
 const fmtMean = (value: number | null, measure: Measure): string =>
-  value === null ? 'n/a' : measure === 'cost' ? value.toFixed(4) : value.toFixed(1)
+  value === null ? 'n/a' : baseOf(measure) === 'cost' ? value.toFixed(4) : value.toFixed(1)
 const fmtMeasureDiff = (d: DiffJson, measure: Measure): string =>
   d.estimate === null
     ? 'n/a (no task has runs of both arms)'
     : `${fmtMean(d.estimate, measure)} (95% CI ${fmtMean(d.ci95[0], measure)} to ${fmtMean(d.ci95[1], measure)}; ${d.tasks} tasks)`
 
+const MEASURE_LABEL: Record<Measure, string> = {
+  requests: 'requests, all lanes',
+  tokens: 'tokens, all lanes',
+  cost: 'cost (USD), all lanes',
+  requestsMain: 'requests, session work only',
+  tokensMain: 'tokens, session work only',
+  costMain: 'cost (USD), session work only',
+}
+
+const fmtCapture = (m: ReturnType<typeof secondSessionMeasure>, measure: Measure): string => {
+  if (m.captureRate === null) return 'n/a'
+  const interval =
+    m.captureCi95 === null
+      ? 'no interval (too few resamples had a task with headroom)'
+      : `95% CI ${m.captureCi95[0].toFixed(2)} to ${m.captureCi95[1].toFixed(2)}`
+  return `${m.captureRate.toFixed(3)} = ${fmtMean(m.numerator, measure)} / ${fmtMean(m.denominator, measure)} over ${m.included.length} of ${m.included.length + m.noHeadroom.length + m.tooFewRuns.length + m.noOnRuns.length} tasks; ${interval}`
+}
+
 const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): string[] => {
+  const list = (ids: string[]) => (ids.length === 0 ? 'none' : ids.join(', '))
   const lines = [
     '### 4. Second-session cost and capture rate',
     '',
     `Direction: ${s.direction}`,
     '',
-    `${s.tasks} two-session tasks; runs with a recorded second session: ${s.runs.off} off, ${s.runs.on} on, ${s.runs.oracle} oracle.`,
+    `${s.tasks} two-session tasks. Second sessions counted (completed, checks passed): ${s.runs.off} off, ${s.runs.on} on, ${s.runs.oracle} oracle.`,
     '',
     '| measure | off | on | oracle | off minus on | off minus oracle | capture rate |',
     '| --- | --- | --- | --- | --- | --- | --- |',
@@ -394,21 +511,53 @@ const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): s
   for (const name of SECOND_SESSION_MEASURES) {
     const m = s.measures[name]
     lines.push(
-      `| ${name} | ${fmtMean(m.mean.off, name)} | ${fmtMean(m.mean.on, name)} | ${fmtMean(m.mean.oracle, name)} | ${fmtMeasureDiff(m.offMinusOn, name)} | ${fmtMeasureDiff(m.offMinusOracle, name)} | ${m.captureRate === null ? 'n/a' : m.captureRate.toFixed(3)} |`,
+      `| ${MEASURE_LABEL[name]} | ${fmtMean(m.mean.off, name)} | ${fmtMean(m.mean.on, name)} | ${fmtMean(m.mean.oracle, name)} | ${fmtMeasureDiff(m.offMinusOn, name)} | ${fmtMeasureDiff(m.offMinusOracle, name)} | ${fmtCapture(m, name)} |`,
     )
   }
-  lines.push('')
-  for (const name of s.runs.oracle === 0 ? [] : SECOND_SESSION_MEASURES) {
-    const m = s.measures[name]
-    const list = (ids: string[]) => (ids.length === 0 ? 'none' : ids.join(', '))
+  if (s.runs.oracle > 0) {
     lines.push(
-      `- ${name}: capture rate over ${m.included.length} tasks. No headroom (the hand-written lesson does not save: off minus oracle interval not above 0), counted and left out: ${m.noHeadroom.length} (${list(m.noHeadroom)}). Too few off or oracle runs to judge: ${m.tooFewRuns.length} (${list(m.tooFewRuns)}). Headroom but no refinement run: ${m.noOnRuns.length} (${list(m.noOnRuns)}).`,
+      '',
+      'The columns off, on and oracle are means over every task that has runs of that arm; off minus on and off minus oracle are over the tasks that have both. The capture rate is over the tasks with headroom only (below), so its columns differ:',
+      '',
     )
+    for (const name of SECOND_SESSION_MEASURES) {
+      const m = s.measures[name]
+      lines.push(
+        `- ${MEASURE_LABEL[name]}, over the ${m.included.length} tasks of the capture rate: off ${fmtMean(m.includedMeans.off, name)}, on ${fmtMean(m.includedMeans.on, name)}, oracle ${fmtMean(m.includedMeans.oracle, name)}.`,
+      )
+    }
   }
   lines.push('')
-  if (s.runs.oracle === 0)
+  if (s.runs.oracle === 0) {
     lines.push(
       'No oracle runs: the oracle column and the capture rate need runs with `--arms off,on,oracle`.',
+      '',
+    )
+  } else {
+    const m = s.measures.requests
+    lines.push(
+      m.headroomSource === 'separate'
+        ? `Headroom (whether the hand-written lesson saves anything for a task) was decided on separate runs: ${s.headroomRuns} off and oracle second sessions of a pilot. The sums above use this run's own off, on and oracle runs.`
+        : 'Headroom and the rate use the SAME off runs: a task passes the headroom test more easily when its off runs happened to be expensive, and the same expensive runs then raise off minus on. With a small headroom the rate is therefore optimistic. Give the report a separate pilot (`--headroom-dir`) to decide headroom on other runs.',
+      '',
+      `Tasks without headroom (off minus oracle interval not above 0), counted and left out of the rate, for requests, all lanes: ${m.noHeadroom.length} (${list(m.noHeadroom)}). Too few off or oracle runs to decide: ${m.tooFewRuns.length} (${list(m.tooFewRuns)}). Headroom but no refinement run: ${m.noOnRuns.length} (${list(m.noOnRuns)}). The lists for the other measures can differ.`,
+      '',
+      `The interval of the rate resamples tasks and the runs within each arm and decides headroom again in every resample (${m.validResamples} of ${m.resamples} resamples had a task with headroom). With three runs per arm it is wide.`,
+      '',
+    )
+  }
+  const out = (['off', 'on', 'oracle'] as const).map(
+    (arm) =>
+      `${arm}: ${LEFT_OUT_REASONS.map((reason) => `${s.leftOut[arm][reason]} ${LEFT_OUT_TEXT[reason]}`).join(', ')}`,
+  )
+  lines.push(
+    `Runs whose second session is left out of the means and the rate, per arm: ${out.join('; ')}.`,
+    '',
+  )
+  const o = s.reviewOverhead
+  if (o.runs > 0)
+    lines.push(
+      `Review calls of the on arm in the second session (refinement lane, included in the all-lanes rows and left out of the session-work rows): ${fmtMean(o.requests, 'requests')} requests, ${fmtMean(o.tokens, 'tokens')} tokens and ${fmtMean(o.cost, 'cost')} USD per run, over ${o.runs} runs. Refinement is run as the Prime runs are, one manual review after every prompt, so this is more than real use would cost; compare the session-work rows for the effect of the saved lesson alone.`,
       '',
     )
   if (s.lowerBoundRuns > 0)
@@ -416,10 +565,6 @@ const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): s
       `${s.lowerBoundRuns} runs have a second session whose child sessions (or an unpriced request) are not in its ledger, so their figures are lower bounds.`,
       '',
     )
-  lines.push(
-    'Refinement is run as the Prime runs are: one manual review after every prompt, so the on column costs more than real use would.',
-    '',
-  )
   return lines
 }
 
@@ -632,6 +777,22 @@ export const buildReport = (
 }
 
 /**
+ * The runs that decide headroom must not be runs of the report itself: a pilot's runs copied into the full
+ * run's folder would be the same runs doing both. Two records with the same id and the same start time are
+ * the same run.
+ */
+export const assertSeparateRuns = (records: RunRecord[], pilot: RunRecord[]): void => {
+  const started = new Map(records.map((r) => [`${r.taskId}.${r.setting}.r${r.rep}`, r.startedAt]))
+  for (const r of pilot) {
+    const id = `${r.taskId}.${r.setting}.r${r.rep}`
+    if (r.startedAt !== undefined && started.get(id) === r.startedAt)
+      throw new Error(
+        `run ${id} is in both the report's folder and the headroom folder (same start time): the headroom runs must not be reused in the run they decide for`,
+      )
+  }
+}
+
+/**
  * A run that was redone after the upstream ended it has its model traffic under `<id>~a<N>` for the Nth
  * redo; the run's usage is that of its latest attempt, so the failed attempt's spend is not counted into the
  * run that replaced it.
@@ -706,7 +867,9 @@ const main = async (): Promise<void> => {
   const runDirArg = flag('--run-dir')
   const configArg = flag('--config')
   if (!runDirArg || !configArg)
-    throw new Error('usage: report.ts --run-dir <out> --config <run-config.json> [--suite <dir>]')
+    throw new Error(
+      'usage: report.ts --run-dir <out> --config <run-config.json> [--suite <dir>] [--headroom-dir <pilot out>]',
+    )
   const runDir = resolve(runDirArg)
   const config = JSON.parse(readFileSync(resolve(configArg), 'utf8')) as RunConfig
 
@@ -724,7 +887,15 @@ const main = async (): Promise<void> => {
 
   const records = readRunRecords(runDir, tasks, usage)
 
-  const report = buildReport(records, { run: config })
+  const headroomDirArg = flag('--headroom-dir')
+  let headroomRecords: RunRecord[] | undefined
+  if (headroomDirArg) {
+    const headroomDir = resolve(headroomDirArg)
+    if (headroomDir === runDir) throw new Error('--headroom-dir must be another folder than --run-dir')
+    headroomRecords = readRunRecords(headroomDir, tasks)
+    assertSeparateRuns(records, headroomRecords)
+  }
+  const report = buildReport(records, { run: config, ...(headroomRecords ? { headroomRecords } : {}) })
   writeFileSync(join(runDir, 'report.json'), `${JSON.stringify(report.json, null, 2)}\n`)
   writeFileSync(join(runDir, 'report.md'), report.markdown)
   console.log(`wrote report.json and report.md for ${records.length} runs`)

@@ -595,8 +595,9 @@ describe('run-agh', () => {
         await expect(run(t, 'oracle', [])).rejects.toThrow(/no oracle arm/)
     })
 
-    it('needs a host that can seed memory', async () => {
-      const launch = stubLaunch([])
+    it('needs a host that can seed memory, and finds out before the first session is paid for', async () => {
+      const calls: Call[] = []
+      const launch = stubLaunch(calls)
       const bare = async (input: LaunchInput) => {
         const { seedMemory: _s, ...host } = await launch(input)
         return host as AghHost
@@ -609,23 +610,31 @@ describe('run-agh', () => {
           runCheck,
         }),
       ).rejects.toThrow(/cannot seed memory/)
+      // No session was opened and no prompt sent; the host was closed again.
+      expect(calls.map((c) => c.op)).toEqual(['launch', 'close-host'])
     })
 
-    it('takes the lesson from the note and never from what the checks expect to see', () => {
+    it('takes the lesson from the note, and no note gives away what the checks expect or a whole solution step', () => {
       const tasks = loadSuite(defaultTasksDir)
-      const eligible = tasks.filter(oracleApplies)
-      expect(eligible.length).toBeGreaterThan(0)
-      for (const t of eligible) {
-        const lesson = oracleLesson(t)
-        expect(lesson, t.id).toBe(t.trap.note.trim())
+      expect(tasks.filter(oracleApplies).length).toBeGreaterThan(0)
+      // A note may state its rule with an example command (`ACME_PROFILE=dev bin/acme build about`), so a
+      // solution command inside a note is allowed only here, by name; every other note stays clear of the
+      // solutions' commands of any length that is a step by itself.
+      const MAY_QUOTE_A_COMMAND = new Set(['xws-01-profile-env'])
+      const MIN_STEP = 15
+      for (const t of tasks) {
+        const note = t.trap.note.trim()
+        if (oracleApplies(t)) expect(oracleLesson(t), t.id).toBe(note)
         for (const p of t.sessions.flatMap((s) => s.prompts)) {
-          for (const check of p.checks) {
-            // A check's command is an ordinary one (`make test`); what it expects to see is its answer.
-            expect(lesson, `${t.id} marker`).not.toContain(check.contains)
+          for (const check of p.checks)
+            expect(note, `${t.id}: what a check expects`).not.toContain(check.contains)
+          for (const command of p.solution) {
+            expect(note, `${t.id}: the note is a whole solution step`).not.toBe(command.trim())
+            if (!MAY_QUOTE_A_COMMAND.has(t.id) && command.trim().length >= MIN_STEP)
+              expect(note, `${t.id}: the note quotes the solution step ${command}`).not.toContain(
+                command.trim(),
+              )
           }
-          // A solution is made of ordinary commands (`make test`), and a note may give its rule with one
-          // example command, so only a note that is a whole solution step by itself is refused.
-          for (const command of p.solution) expect(lesson, `${t.id} solution`).not.toBe(command)
         }
       }
     })

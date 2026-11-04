@@ -76,14 +76,32 @@ describe('the first session check', () => {
     put(join(dir, 'x.oracle.r1', 'sessions', 's1.events.jsonl'), head.replaceAll('.off.', '.oracle.'))
     expect(firstSessionCheck(dir, 'x.oracle.r1', 'x.off.r1')).toMatchObject({ status: 'PASS' })
   })
-  it('fails when a prompt, the tool schema or the first request differs', () => {
+  it('passes when only the environment section differs: it holds the workspace path, whatever its length', () => {
+    const dir = runDir()
+    put(join(dir, 'x.off.r1', 'sessions', 's1.events.jsonl'), head)
+    // The real environment section is 244 tokens; a longer path makes it a few tokens more, and the total with it.
+    expect(head).toContain('"id": "environment", "order": 110, "source": "@agnes/code", "tokens": 244')
+    const longer = head
+      .replace(
+        '"id": "environment", "order": 110, "source": "@agnes/code", "tokens": 244',
+        '"id": "environment", "order": 110, "source": "@agnes/code", "tokens": 246',
+      )
+      .replace('"total": 6821', '"total": 6823')
+    expect(longer).not.toBe(head)
+    put(join(dir, 'x.oracle.r1', 'sessions', 's1.events.jsonl'), longer)
+    expect(firstSessionCheck(dir, 'x.oracle.r1', 'x.off.r1')).toMatchObject({ status: 'PASS' })
+  })
+  it('fails when a prompt, the tool schema or another context section differs', () => {
     const dir = runDir()
     put(join(dir, 'x.off.r1', 'sessions', 's1.events.jsonl'), head)
     const prompt = JSON.parse(head.split('\n')[1] as string).data.content[0].text as string
     for (const [from, to] of [
       [prompt.slice(0, 12), 'A different prompt'],
       ['"tool_schema_hash": "', '"tool_schema_hash": "0'],
-      ['"total": ', '"total": 1'],
+      [
+        '"id": "persona", "order": 1, "source": "@agnes/code/prompts/persona.md", "tokens": 597',
+        '"id": "persona", "order": 1, "source": "@agnes/code/prompts/persona.md", "tokens": 600',
+      ],
     ] as const) {
       expect(head).toContain(from)
       put(join(dir, 'x.oracle.r1', 'sessions', 's1.events.jsonl'), head.replace(from, to))
