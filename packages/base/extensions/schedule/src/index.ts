@@ -33,7 +33,8 @@ export function createScheduleExtension() {
                   (row.target.kind === 'session' && row.target.sessionKey === ctx.session.key))
                   ? [row]
                   : [])
-              if (rows.length)
+              // An unattended session does not offer ui_render; the change is already made, so skip the display.
+              if (rows.length && ctx.tools.list().some((tool) => tool.name === 'ui_render'))
                 await renderInteractionSurface(
                   ctx,
                   tableSurface(

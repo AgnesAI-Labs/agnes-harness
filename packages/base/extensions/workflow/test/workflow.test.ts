@@ -6,11 +6,12 @@ import extension, { createWorkflowExtension } from '../src/index.js'
 import { finishedRun, workflowRunSource } from '../src/source.js'
 import { workflowProjection } from '../src/state.js'
 
-async function fixture(terminal: 'completed' | 'idle' = 'completed') {
+async function fixture(terminal: 'completed' | 'idle' = 'completed', renderer = true) {
   let persisted = workflowProjection.init()
   const tools = new Map<string, ToolDef>()
   const tasks: string[] = []
   const cancelled: string[] = []
+  const rendered: unknown[] = []
   let held = false
   let contextHook: HookHandler<'context'> | undefined
   const api = {
@@ -39,8 +40,15 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
     signal: ac.signal,
     progress: () => {},
     tools: {
+      list: () =>
+        renderer ? [{ name: 'ui_render' }, { name: 'subagent_spawn' }] : [{ name: 'subagent_spawn' }],
       invoke: async (name: string, args: Record<string, unknown>) => {
-        if (name === 'ui_render') return { content: [] }
+        if (name === 'ui_render') {
+          // An unattended session does not offer the renderer, and calling it throws.
+          if (!renderer) throw new Error('Unknown tool: ui_render')
+          rendered.push(args.surface)
+          return { content: [] }
+        }
         expect(name).toBe('subagent_spawn')
         if (typeof args.task !== 'string') throw new Error('Missing child task')
         tasks.push(args.task)
@@ -77,6 +85,7 @@ async function fixture(terminal: 'completed' | 'idle' = 'completed') {
     tools,
     tasks,
     cancelled,
+    rendered,
     ac,
     hold: (value: boolean) => {
       held = value
@@ -129,6 +138,51 @@ it.each(['completed', 'idle'] as const)(
     expect(f.tasks).toHaveLength(3)
   },
 )
+
+it('presents the run when ui_render is offered', async () => {
+  const f = await fixture('completed', true)
+  const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
+  expect(out.isError).toBe(false)
+  expect(f.rendered).toHaveLength(1)
+  const status = await f.tools
+    .get('workflow_status')!
+    .execute({ runId: (out.structured as { runId: string }).runId }, f.ctx)
+  expect(status.isError).toBe(false)
+  expect(f.rendered).toHaveLength(2)
+})
+
+it('finishes with its normal result when ui_render is not offered', async () => {
+  const f = await fixture('completed', false)
+  const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
+  expect(out.isError).toBe(false)
+  expect(out.structured).toMatchObject({ status: 'completed', name: 'report' })
+  expect(f.tasks).toHaveLength(3)
+  expect(f.rendered).toEqual([])
+  const run = Object.values(f.persisted().runs)[0]!
+  expect(run.status).toBe('completed')
+  // Reading the finished run, or looking its status up later, needs no renderer either.
+  const again = await f.tools.get('workflow')!.execute({ runId: run.id }, f.ctx)
+  expect(again.isError).toBe(false)
+  const status = await f.tools.get('workflow_status')!.execute({ runId: run.id }, f.ctx)
+  expect(status.isError).toBe(false)
+})
+
+it('still reports a failed workflow as failed when ui_render is not offered', async () => {
+  const f = await fixture('completed', false)
+  f.ctx.subagent.collect = async (childKey) => ({
+    childKey,
+    status: childKey === 'child-2' ? 'failed' : 'completed',
+    text: childKey + ' answer',
+  })
+  const out = await f.tools.get('workflow')!.execute({ name: 'report', stages }, f.ctx)
+  expect(out.isError).toBe(true)
+  expect(out.structured).toMatchObject({ status: 'failed' })
+  const run = Object.values(f.persisted().runs)[0]!
+  expect(run.status).toBe('failed')
+  expect(run.error).toContain('Workflow child failed')
+  expect(run.stages[0]!.members.map((m) => m.status)).toEqual(['completed', 'failed'])
+  expect(f.tasks).toHaveLength(2)
+})
 
 it('resumes using saved child identities after interrupted collection', async () => {
   const f = await fixture()

@@ -59,6 +59,8 @@ const result = (run: Run) => ({
 })
 
 async function renderRun(ctx: ToolContext, run: Run) {
+  // An unattended session does not offer ui_render; the run is already recorded, so skip the display.
+  if (!ctx.tools.list().some((tool) => tool.name === 'ui_render')) return
   await renderInteractionSurface(
     ctx,
     tableSurface(

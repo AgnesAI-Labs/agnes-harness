@@ -173,6 +173,7 @@ async function world(answer: (runId: () => string, userRequest: string) => unkno
       signal: new AbortController().signal,
       progress: () => undefined,
       tools: {
+        list: () => [{ name: 'ui_render' }, { name: 'subagent_spawn' }],
         invoke: async (name: string) =>
           name === 'ui_render'
             ? { content: [] }
