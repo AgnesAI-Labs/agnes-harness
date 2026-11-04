@@ -54,10 +54,29 @@ export function parsePackageSource(value: string, base: string = process.cwd()):
   throw new TuiUsageError('Use a git HTTPS URL, folder/archive path, or npm:package@version')
 }
 
+/** A package operation that ended failed or cancelled; carries only the fixed codes a CLI may render. */
+export class PackageOperationFailure extends Error {
+  override readonly name = 'PackageOperationFailure'
+  readonly code: string | undefined
+  readonly blockerCodes: readonly string[]
+  readonly blockerReferences: readonly string[]
+  readonly operationId: string
+  constructor(operation: PackageOperation, message: string) {
+    super(message)
+    this.code = operation.error?.code
+    this.blockerCodes = (operation.error?.blockers ?? []).map((b) => b.code)
+    this.blockerReferences = (operation.error?.blockers ?? []).flatMap((b) => b.references)
+    this.operationId = operation.operationId
+  }
+}
+
 function terminalError(operation: PackageOperation): Error {
   const detail = operation.error?.safeMessage ?? operation.state
   const help = operation.error?.fixHint ? operation.error : pluginFailureHelp(operation.error?.code ?? detail)
-  return new Error(`package ${operation.operation} ${detail} ${help.fixHint} ${help.docsUrl}`)
+  return new PackageOperationFailure(
+    operation,
+    `package ${operation.operation} ${detail} ${help.fixHint} ${help.docsUrl}`,
+  )
 }
 
 function pause(): Promise<void> {
