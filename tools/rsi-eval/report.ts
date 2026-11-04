@@ -9,9 +9,20 @@ import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { AGH_DIR } from '../../packages/protocol/src/constants.js'
 import { type CaptureResult, captureMetric } from './capture.js'
+import {
+  cappedMarkdown,
+  cappedReport,
+  forgettingMarkdown,
+  forgettingReport,
+  frozenMarkdown,
+  frozenReport,
+  milestonesMarkdown,
+  milestonesReport,
+} from './long-report.js'
 import { runMetrics, sessionCost, toRunRecord, type UsageSummary, workflowReuseMetric } from './metrics.js'
 import { type Diff, pairedTaskBootstrap } from './stats.js'
 import { fixtureOf, workspaceName } from './suite.js'
+import { firstSessionTrapReport, trapMarkdown } from './trap-report.js'
 import type { Arm, EvalTask, RunConfig, RunOutcome, RunRecord, SessionCost, UsageRow } from './types.js'
 import { readSkillTexts } from './workflow-reuse.js'
 
@@ -299,40 +310,6 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
   }
 }
 
-type TrapCell = { runs: number; hit: number }
-const trapCell = (runs: RunRecord[]): TrapCell => ({
-  runs: runs.length,
-  hit: runs.filter((r) => r.windows.some((w) => w.session === 0 && w.ran && w.trapHit)).length,
-})
-
-/**
- * How often the first session hit the trap, per arm and per task. A task whose first session never hits it
- * leaves nothing for refinement to repeat or avoid, and shows up here as a task with no hit. Workflow tasks
- * are left out: their commands run in child sessions, so a hit is not defined for them.
- */
-const firstSessionTrapReport = (records: RunRecord[]) => {
-  const runs = records.filter(
-    (r) => r.category !== 'workflow' && r.windows.some((w) => w.session === 0 && w.ran),
-  )
-  const arms = ['on', 'off', 'oracle'] as const
-  const byArm = Object.fromEntries(arms.map((arm) => [arm, trapCell(bySetting(runs, arm))])) as Record<
-    (typeof arms)[number],
-    TrapCell
-  >
-  const tasks = [...groupBy(runs, (r) => r.taskId)].map(([taskId, list]) => ({
-    taskId,
-    ...(Object.fromEntries(arms.map((arm) => [arm, trapCell(bySetting(list, arm))])) as Record<
-      (typeof arms)[number],
-      TrapCell
-    >),
-  }))
-  return {
-    byArm,
-    tasks,
-    noHit: tasks.filter((t) => t.on.hit + t.off.hit + t.oracle.hit === 0).map((t) => t.taskId),
-  }
-}
-
 const systemReport = (records: RunRecord[], options: ReportOptions) => {
   const on = bySetting(records, 'on')
   const off = bySetting(records, 'off')
@@ -568,28 +545,6 @@ const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): s
   return lines
 }
 
-const trapMarkdown = (t: SystemReport['firstSessionTrap']): string[] => {
-  const cell = (c: TrapCell): string => (c.runs === 0 ? '-' : `${c.hit}/${c.runs}`)
-  const hasOracle = t.byArm.oracle.runs > 0
-  const lines = [
-    '### First-session trap hits',
-    '',
-    "Runs whose first session hit the trap (a failed run of the task's tool with its signature), out of the runs of that task and arm. A run whose first session never hits it has nothing for refinement to repeat or avoid and is excluded from metrics 1 and 2. Workflow tasks are left out (their commands run in child sessions).",
-    '',
-    `- Rate: on ${cell(t.byArm.on)}, off ${cell(t.byArm.off)}${hasOracle ? `, oracle ${cell(t.byArm.oracle)}` : ''}`,
-    `- Tasks whose first session never hit the trap in any run: ${t.noHit.length === 0 ? 'none' : `${t.noHit.length} (${t.noHit.join(', ')})`}`,
-    '',
-    `| task | on | off |${hasOracle ? ' oracle |' : ''}`,
-    `| --- | --- | --- |${hasOracle ? ' --- |' : ''}`,
-    ...t.tasks.map(
-      (row) =>
-        `| ${row.taskId} | ${cell(row.on)} | ${cell(row.off)} |${hasOracle ? ` ${cell(row.oracle)} |` : ''}`,
-    ),
-    '',
-  ]
-  return lines
-}
-
 const infraMarkdown = (x: NonNullable<InfraExcluded>): string[] => [
   `Runs the upstream ended, not the task (quota, credentials, rate limit, server error), left out of every metric below: on ${x.on}, off ${x.off}, oracle ${x.oracle}.${
     Object.keys(x.reasons).length === 0
@@ -694,6 +649,36 @@ const systemMarkdown = (name: string, r: SystemReport, infra?: InfraExcluded): s
   return lines
 }
 
+/** The sections for long tasks, capped runs, the frozen arm and rule forgetting; each only when it has data. */
+const longSections = (records: RunRecord[], options: ReportOptions) => {
+  const milestones = milestonesReport(records)
+  const capped = cappedReport(records)
+  const frozen = frozenReport(records, options)
+  const forgetting = forgettingReport(records)
+  const on = records.filter((r) => r.setting === 'on')
+  const triggers = on.filter((r) => r.onProtocol === 'triggers').length
+  return {
+    ...(triggers > 0 ? { onProtocol: { reviews: on.length - triggers, triggers } } : {}),
+    ...(capped ? { capped } : {}),
+    ...(milestones ? { milestones } : {}),
+    ...(frozen ? { frozen } : {}),
+    ...(forgetting ? { ruleForgetting: forgetting } : {}),
+  }
+}
+
+const longMarkdown = (r: ReturnType<typeof longSections>): string[] => [
+  ...(r.onProtocol
+    ? [
+        `On runs: ${r.onProtocol.reviews} with a manual review after every prompt, ${r.onProtocol.triggers} with refinement's own triggers only (no manual reviews; liveness checked once per session). Do not pool the two in one comparison.`,
+        '',
+      ]
+    : []),
+  ...(r.capped ? cappedMarkdown(r.capped) : []),
+  ...(r.milestones ? milestonesMarkdown(r.milestones) : []),
+  ...(r.frozen ? frozenMarkdown(r.frozen) : []),
+  ...(r.ruleForgetting ? forgettingMarkdown(r.ruleForgetting) : []),
+]
+
 /** The runs of a system that the upstream ended, per arm, with the reasons; none when there are none. */
 type InfraExcluded = { on: number; off: number; oracle: number; reasons: Record<string, number> } | undefined
 const infraExcluded = (records: RunRecord[]): InfraExcluded => {
@@ -734,14 +719,19 @@ export const buildReport = (
   records: RunRecord[],
   options: ReportOptions = {},
 ): { json: object; markdown: string } => {
-  const systems: Record<string, SystemReport> = {}
+  const systems: Record<string, SystemReport & ReturnType<typeof longSections>> = {}
   const excluded: Record<string, NonNullable<InfraExcluded>> = {}
   for (const [system, all] of groupBy(records, (r) => r.system)) {
-    // A run the upstream ended says nothing about the system under test: no metric sees it.
-    systems[system] = systemReport(
-      all.filter((r) => !r.infraFailed),
-      options,
-    )
+    // A run the upstream ended says nothing about the system under test: no metric sees it. A capped run
+    // is a result, but not one a mean can hold: it is listed apart and enters only the milestone curves.
+    const counted = all.filter((r) => !r.infraFailed)
+    systems[system] = {
+      ...systemReport(
+        counted.filter((r) => !r.capped),
+        options,
+      ),
+      ...longSections(counted, options),
+    }
     const infra = infraExcluded(all)
     if (infra) excluded[system] = infra
   }
@@ -771,7 +761,10 @@ export const buildReport = (
     '',
     "A trap hit is a command run that failed with the task's signature (on stderr, or in the output of a run that exited non-zero). Reading the tool's source or docs never counts.",
     '',
-    ...Object.entries(systems).flatMap(([name, report]) => systemMarkdown(name, report, excluded[name])),
+    ...Object.entries(systems).flatMap(([name, report]) => [
+      ...systemMarkdown(name, report, excluded[name]),
+      ...longMarkdown(report),
+    ]),
   ].join('\n')
   return { json, markdown: `${markdown}\n` }
 }
@@ -826,7 +819,7 @@ export const readRunRecords = (
     const file = join(runDir, entry.name, 'outcome.json')
     if (!entry.isDirectory() || !existsSync(file)) continue
     const outcome = JSON.parse(readFileSync(file, 'utf8')) as RunOutcome
-    const task = tasks.get(outcome.runId.replace(/\.(on|off|oracle)\.r\d+$/, ''))
+    const task = tasks.get(outcome.runId.replace(/\.(on|off|oracle|frozen)\.r\d+$/, ''))
     if (!task) throw new Error(`run ${outcome.runId} has no matching task in the suite`)
     const readFile = (path: string): string => {
       const candidates = [

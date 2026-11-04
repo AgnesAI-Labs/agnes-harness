@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import type {
   Arm,
   EvalTask,
+  PromptProgress,
   PromptWindow,
   RunOutcome,
   RunRecord,
@@ -20,6 +21,9 @@ export type ParsedSession = {
   refine: RunRecord['refine']
   harnessLookups: number
   compactions: number
+  /** AGH: the ledger seq of every trap hit inside a prompt window, and of every compaction. */
+  hitSeqs?: number[]
+  compactionSeqs?: number[]
 }
 
 export type UsageSummary = {
@@ -241,6 +245,8 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
   const runs = new Map<string, { source?: Source; planned: boolean }>()
   const calls = new Map<string, { name: string; command: string }>()
   const refine = { auto: 0, user: 0, self: 0, appliedEdits: 0 }
+  const hitSeqs: number[] = []
+  const compactionSeqs: number[] = []
 
   for (const line of jsonl.split('\n')) {
     if (line.trim() === '') continue
@@ -284,11 +290,12 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
       const name = call?.name ?? (typeof row.origin === 'string' ? row.origin.replace(/^tool:/, '') : '')
       if (
         window &&
-        !window.trapHit &&
         EXECUTING_TOOLS.has(name) &&
         aghShellFailed(signatures, contentText(data.content), data.isError === true, call?.command ?? '')
-      )
+      ) {
         window.trapHit = true
+        if (typeof row.seq === 'number') hitSeqs.push(row.seq)
+      }
     } else if (row.type === 'tool/call') {
       if (data.name === 'harness_inspect') harnessLookups++
       if (typeof data.toolUseId === 'string' && typeof data.name === 'string') {
@@ -300,10 +307,11 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
       }
     } else if (row.type === 'x/core/compaction-end') {
       compactions++
+      if (typeof row.seq === 'number') compactionSeqs.push(row.seq)
     }
   }
   for (const run of runs.values()) if (run.planned) refine[run.source ?? 'user']++
-  return { windows, refine, harnessLookups, compactions }
+  return { windows, refine, harnessLookups, compactions, hitSeqs, compactionSeqs }
 }
 
 /**
@@ -375,7 +383,69 @@ const firstRowTime = (jsonl: string): string | undefined => {
 export const sessionCost = (run: RunRecord, session: number): SessionCost | undefined =>
   run.sessionCosts?.[session]
 
-const RUN_ID = /^.+\.(on|off|oracle)\.r(\d+)$/
+/**
+ * What each session had spent when each of its prompts ended (`outcome.prompts`, by the runner's clock):
+ * the rows of its ledger up to that moment. Tool calls are the main lane's `tool/call` rows; requests,
+ * tokens and cost are counted as `sessionCostOfLedger` counts them, all lanes and without the refinement
+ * lane. A milestone prompt carries the result of the checks run right after it.
+ */
+export const progressOf = (task: EvalTask, outcome: RunOutcome, texts: string[]): PromptProgress[] => {
+  const parsed = texts.map((text) =>
+    (text ?? '').split('\n').flatMap((line) => {
+      if (line.trim() === '') return []
+      try {
+        const row = JSON.parse(line) as unknown
+        return isObject(row) && typeof row.ts === 'string' ? [{ row, at: Date.parse(row.ts) }] : []
+      } catch {
+        return []
+      }
+    }),
+  )
+  const out: PromptProgress[] = []
+  for (const ended of outcome.prompts ?? []) {
+    const until = Date.parse(ended.endedAt)
+    let toolCalls = 0
+    let requests = 0
+    let tokens = 0
+    let micros = 0
+    let mainRequests = 0
+    let mainMicros = 0
+    for (const { row, at } of parsed[ended.session] ?? []) {
+      if (at > until) continue
+      const data = isObject(row.data) ? row.data : {}
+      if (row.type === 'tool/call' && isMainLane(row.lane)) toolCalls++
+      if (row.type !== 'cost/ledger') continue
+      const inReview = row.lane === 'refinement'
+      const counts = isObject(data.tokens) ? data.tokens : {}
+      const billing = isObject(data.billing) ? data.billing : {}
+      const usd = typeof billing.usdMicros === 'number' ? billing.usdMicros : 0
+      requests++
+      micros += usd
+      for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'])
+        if (typeof counts[key] === 'number') tokens += counts[key]
+      if (!inReview) {
+        mainRequests++
+        mainMicros += usd
+      }
+    }
+    const milestone = task.sessions[ended.session]?.prompts[ended.prompt]?.milestone
+    const check = outcome.checks.find((c) => c.session === ended.session && c.prompt === ended.prompt)
+    out.push({
+      session: ended.session,
+      prompt: ended.prompt,
+      toolCalls,
+      requests,
+      tokens,
+      cost: micros / 1_000_000,
+      mainRequests,
+      mainCost: mainMicros / 1_000_000,
+      ...(milestone === undefined ? {} : { milestone, passed: check?.passed === true }),
+    })
+  }
+  return out
+}
+
+const RUN_ID = /^.+\.(on|off|oracle|frozen)\.r(\d+)$/
 
 export type ToRunRecordOptions = {
   system?: RunRecord['system']
@@ -406,6 +476,8 @@ export const toRunRecord = (
   let startedAt: string | undefined
   let harnessLookups = 0
   let compactions = 0
+  const texts: string[] = []
+  const trapEvents: NonNullable<RunRecord['trapEvents']> = []
   task.sessions.forEach((_, sessionIndex) => {
     const files = outcome.sessions[sessionIndex]?.sessionFiles ?? []
     const parse = (options.system ?? 'prime') === 'agh' ? parseAghSession : parsePrimeSession
@@ -414,6 +486,12 @@ export const toRunRecord = (
     if ((options.system ?? 'prime') === 'agh' && files.length > 0) {
       sessionCosts[sessionIndex] = sessionCostOfLedger(text)
       if (sessionIndex === 0) startedAt = firstRowTime(text)
+      texts[sessionIndex] = text
+      trapEvents.push({
+        session: sessionIndex,
+        hits: parsed.hitSeqs ?? [],
+        compactions: parsed.compactionSeqs ?? [],
+      })
     }
     for (const window of parsed.windows) {
       const check = outcome.checks.find((c) => c.session === window.session && c.prompt === window.prompt)
@@ -437,6 +515,8 @@ export const toRunRecord = (
     task.category === 'workflow' && (options.system ?? 'prime') === 'agh'
       ? workflowReuseOf(task, outcome, (file) => read(locate(file)), options.readSavedSkills)
       : undefined
+
+  const progress = outcome.prompts ? progressOf(task, outcome, texts) : undefined
 
   const summary = usage.get(outcome.runId)
   const tokens = summary
@@ -463,6 +543,11 @@ export const toRunRecord = (
     ...(workflowReuse ? { workflowReuse } : {}),
     ...(sessionCosts.length > 0 ? { sessionCosts } : {}),
     ...(startedAt ? { startedAt } : {}),
+    ...(trapEvents.length > 0 ? { trapEvents } : {}),
+    ...(progress ? { progress } : {}),
+    ...(outcome.capped ? { capped: outcome.capped } : {}),
+    ...(outcome.onProtocol ? { onProtocol: outcome.onProtocol } : {}),
+    ...(outcome.frozenFrom ? { frozenFrom: outcome.frozenFrom } : {}),
     ...(outcome.infraFailed ? { infraFailed: outcome.infraFailed } : {}),
   }
 }

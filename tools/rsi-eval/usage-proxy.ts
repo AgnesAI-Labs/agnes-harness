@@ -271,6 +271,28 @@ const unknownRow = (runId: string, status: number): UsageRow => ({
   usage: 'unknown',
 })
 
+/** The status a request past a run's cap is answered with: a refused request, not an upstream failure. */
+export const CAP_STATUS = 400
+
+/** The proxy's handle. `limit` sets a run's request cap (see `RequestCap`). */
+export type UsageProxy = {
+  port: number
+  close(): Promise<void>
+  statuses(runId: string): number[]
+} & RequestCap
+
+/**
+ * A cap on the model requests of one run id. Requests past `max` are not forwarded: they are answered
+ * `CAP_STATUS` with a body that says so (a refusal the infrastructure check does not take for an upstream
+ * failure), nothing is logged as usage, and `reached` is called once so the runner can stop the run.
+ */
+export type RequestCap = {
+  limit(runId: string, max: number, reached: () => void): void
+  unlimit(runId: string): void
+  /** Requests forwarded for the run id so far. */
+  forwarded(runId: string): number
+}
+
 export async function startUsageProxy(opts: {
   upstream: string
   port: number
@@ -281,12 +303,14 @@ export async function startUsageProxy(opts: {
   errorLogFile?: string
   /** Secrets (the API key) that are removed from a kept body wherever they appear. */
   redact?: string[]
-}): Promise<{ port: number; close(): Promise<void>; statuses(runId: string): number[] }> {
+}): Promise<UsageProxy> {
   const upstream = new URL(opts.upstream)
   const client = upstream.protocol === 'https:' ? https : http
   const basePath = upstream.pathname.replace(/\/+$/, '')
   const inflight = new Set<Promise<void>>()
   const statuses = new Map<string, number[]>()
+  const forwarded = new Map<string, number>()
+  const caps = new Map<string, { max: number; reached: () => void; fired: boolean }>()
 
   const log = (row: UsageRow) => {
     appendFileSync(opts.logFile, `${JSON.stringify(row)}\n`)
@@ -321,6 +345,21 @@ export async function startUsageProxy(opts: {
       return
     }
     const path = `${basePath}${match[2] ?? '/'}${match[3] ?? ''}`
+
+    const cap = caps.get(runId)
+    if (cap && (forwarded.get(runId) ?? 0) >= cap.max) {
+      req.resume()
+      const message = `rsi-eval: this run reached its cap of ${cap.max} model requests; the request was not sent`
+      res.writeHead(CAP_STATUS, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message } }))
+      logError(runId, CAP_STATUS, message)
+      if (!cap.fired) {
+        cap.fired = true
+        cap.reached()
+      }
+      return
+    }
+    forwarded.set(runId, (forwarded.get(runId) ?? 0) + 1)
 
     const headers: http.OutgoingHttpHeaders = {}
     for (const [name, value] of Object.entries(req.headers)) {
@@ -418,6 +457,13 @@ export async function startUsageProxy(opts: {
     port: (server.address() as AddressInfo).port,
     /** The statuses the upstream answered a run with, oldest first (the last 50). */
     statuses: (runId) => [...(statuses.get(runId) ?? [])],
+    limit: (runId, max, reached) => {
+      caps.set(runId, { max, reached, fired: false })
+    },
+    unlimit: (runId) => {
+      caps.delete(runId)
+    },
+    forwarded: (runId) => forwarded.get(runId) ?? 0,
     async close() {
       server.closeIdleConnections()
       const closed = new Promise<void>((resolve) => server.close(() => resolve()))

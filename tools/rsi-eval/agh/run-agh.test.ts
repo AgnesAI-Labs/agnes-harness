@@ -14,10 +14,9 @@ import { join, relative } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createInfraStreak, INFRA_STOP_AFTER } from '../infra.js'
 import { defaultTasksDir, loadSuite } from '../suite.js'
-import type { Arm, EvalTask, RunConfig } from '../types.js'
+import type { Arm, EvalTask } from '../types.js'
 import {
   type AghHost,
-  type AghSession,
   aghProfile,
   type CheckRun,
   checkRoute,
@@ -36,110 +35,7 @@ import {
   SECRET_ENV,
   SECRET_REF,
 } from './run-agh.js'
-
-const KEY_ENV = 'RSI_TEST_API_KEY'
-const KEY_VALUE = 'sk-test-secret-value-456'
-
-const cfg: RunConfig = {
-  provider: 'eval',
-  api: 'anthropic-messages',
-  upstream: 'https://api.example.test',
-  model: 'model-x',
-  keyEnv: KEY_ENV,
-  prices: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-  proxyPort: 4555,
-  sessionTimeoutMs: 20_000,
-}
-
-const prompt = (text: string) => ({
-  text,
-  checks: [{ command: `check ${text}`, contains: 'PASS' }],
-  solution: [],
-})
-const task = (category: EvalTask['category'], sessions: string[][]): EvalTask => ({
-  id: 't1',
-  category,
-  description: 'd',
-  trap: { signatures: ['x'], reproduce: 'true', note: 'n' },
-  sessions: sessions.map((prompts) => ({ prompts: prompts.map(prompt) })),
-})
-
-type Call =
-  | { op: 'launch'; input: LaunchInput }
-  | { op: 'open'; key: string; workspace: string }
-  | { op: 'prompt'; key: string; text: string }
-  | { op: 'review'; key: string; saveTo?: 'workspace' | 'user' }
-  | { op: 'settled'; key: string; runId: string; ms: number }
-  | { op: 'close-session'; key: string }
-  | { op: 'seed'; workspace: string; text: string }
-  | { op: 'close-host' }
-
-type Script = {
-  /** Ledger rows a session's ledger holds besides its first row, by session key suffix (`s1`, `s2`). */
-  ledgerRows?: Record<string, LedgerRow[]>
-  /** How each prompt ends, by prompt text; `hang` waits for the abort. Default `completed`. */
-  turns?: Record<string, string>
-  review?: { runId: string } | { refused: string }
-  settled?: string
-}
-
-/** A launcher that records what the runner asks of a host and answers from a script; no model, no host. */
-function stubLaunch(calls: Call[], script: Script = {}) {
-  return async (input: LaunchInput): Promise<AghHost> => {
-    calls.push({ op: 'launch', input })
-    // The real launcher makes the home; the stub only marks it so isolation can be checked.
-    mkdirSync(input.home, { recursive: true })
-    writeFileSync(join(input.home, 'marker'), input.refinement ? 'on' : 'off')
-    let reviews = 0
-    const opened: string[] = []
-    return {
-      seedMemory: async (workspace, text) => {
-        calls.push({ op: 'seed', workspace, text })
-      },
-      openSession: async (key, workspace): Promise<AghSession> => {
-        calls.push({ op: 'open', key, workspace })
-        opened.push(key)
-        return {
-          key,
-          prompt: (text, signal) => {
-            calls.push({ op: 'prompt', key, text })
-            const end = script.turns?.[text] ?? 'completed'
-            if (end !== 'hang') return Promise.resolve(end)
-            return new Promise((resolve) => signal.addEventListener('abort', () => resolve('cancelled')))
-          },
-          review: async (saveTo) => {
-            calls.push({ op: 'review', key, ...(saveTo ? { saveTo } : {}) })
-            return script.review ?? { runId: `run-${++reviews}` }
-          },
-          settled: async (runId, ms) => {
-            calls.push({ op: 'settled', key, runId, ms })
-            return script.settled ?? 'applied'
-          },
-          close: async () => {
-            calls.push({ op: 'close-session', key })
-          },
-        }
-      },
-      close: async () => {
-        calls.push({ op: 'close-host' })
-      },
-      ledger: (key): LedgerRow[] => {
-        if (!opened.includes(key)) throw new Error(`not opened: ${key}`)
-        return [
-          {
-            seq: 1,
-            ts: '2026-11-03T00:00:00Z',
-            type: 'session/start',
-            lane: 'main',
-            origin: 'system',
-            data: { key },
-          },
-          ...(script.ledgerRows?.[key.slice(key.lastIndexOf('-') + 1)] ?? []),
-        ]
-      },
-    }
-  }
-}
+import { type Call, cfg, KEY_ENV, KEY_VALUE, type Script, stubLaunch, task } from './test-stub.js'
 
 describe('run-agh', () => {
   let dir: string

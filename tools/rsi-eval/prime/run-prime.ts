@@ -45,7 +45,7 @@ export type RunOptions = {
   dockerCommand?: string[]
 }
 
-export const runId = (taskId: string, setting: Setting | 'oracle', rep: number): string =>
+export const runId = (taskId: string, setting: Setting | 'oracle' | 'frozen', rep: number): string =>
   `${taskId}.${setting}.r${rep}`
 
 export function primeSettings(setting: Setting, cfg: RunConfig): object {
@@ -315,6 +315,9 @@ export function readConfig(file: string): RunConfig {
   for (const key of ['input', 'output', 'cacheRead', 'cacheWrite']) {
     if (typeof prices?.[key] !== 'number') throw new Error(`run-config: prices.${key} must be a number`)
   }
+  for (const key of ['contextWindow', 'maxOutputTokens'])
+    if (raw[key] !== undefined && (!Number.isInteger(raw[key]) || (raw[key] as number) < 1))
+      throw new Error(`run-config: "${key}" must be a positive integer when given`)
   if (raw.pricesAssumed !== undefined && typeof raw.pricesAssumed !== 'boolean')
     throw new Error('run-config: "pricesAssumed" must be true or false when given')
   for (const key of ['proxyPort', 'sessionTimeoutMs']) {

@@ -12,7 +12,14 @@ const categories: readonly Category[] = [
   'cross-session',
   'cross-workspace',
   'workflow',
+  'long',
 ]
+
+/**
+ * The fewest tasks a full suite needs of each category. A category added later is written a few tasks at
+ * a time, so it has no floor of its own; the categories of the first suite keep theirs.
+ */
+const NEW_CATEGORIES: ReadonlySet<Category> = new Set(['long'])
 
 /** The fixture a session's workspace is copied from when it names none. */
 export const DEFAULT_FIXTURE = 'fixture'
@@ -84,7 +91,12 @@ const expectArray = (value: unknown, where: string): unknown[] => {
 
 const parseTask = (raw: unknown, dirName: string): EvalTask => {
   const where = `task ${dirName}`
-  const task = expectRecord(raw, where, ['id', 'category', 'description', 'trap', 'sessions'])
+  const task = expectRecord(
+    raw,
+    where,
+    ['id', 'category', 'description', 'trap', 'sessions'],
+    ['maxRequests', 'oracle'],
+  )
   const id = expectString(task.id, `${where}.id`)
   const category = expectString(task.category, `${where}.category`)
   if (!categories.includes(category as Category))
@@ -117,8 +129,11 @@ const parseTask = (raw: unknown, dirName: string): EvalTask => {
     const prompts = expectArray(session.prompts, `${sessionWhere}.prompts`).map(
       (promptEntry, promptIndex) => {
         const promptWhere = `${sessionWhere}.prompts[${promptIndex}]`
-        const prompt = expectRecord(promptEntry, promptWhere, ['text', 'checks', 'solution'])
+        const prompt = expectRecord(promptEntry, promptWhere, ['text', 'checks', 'solution'], ['milestone'])
+        const milestone =
+          'milestone' in prompt ? expectString(prompt.milestone, `${promptWhere}.milestone`) : undefined
         return {
+          ...(milestone === undefined ? {} : { milestone }),
           text: expectString(prompt.text, `${promptWhere}.text`),
           checks: expectArray(prompt.checks, `${promptWhere}.checks`).map((checkEntry, checkIndex) => {
             const checkWhere = `${promptWhere}.checks[${checkIndex}]`
@@ -144,9 +159,12 @@ const parseTask = (raw: unknown, dirName: string): EvalTask => {
 
   const expectedSessions =
     category === 'cross-session' || category === 'cross-workspace' || category === 'workflow' ? 2 : 1
-  if (sessions.length !== expectedSessions) {
+  // A long task is one session of many stages, or two (the second picking the work up again).
+  if (category === 'long' ? sessions.length > 2 : sessions.length !== expectedSessions) {
     throw new Error(
-      `${where}: ${category} tasks need exactly ${expectedSessions} session${expectedSessions === 1 ? '' : 's'}, got ${sessions.length}`,
+      category === 'long'
+        ? `${where}: long tasks need one or two sessions, got ${sessions.length}`
+        : `${where}: ${category} tasks need exactly ${expectedSessions} session${expectedSessions === 1 ? '' : 's'}, got ${sessions.length}`,
     )
   }
 
@@ -162,7 +180,35 @@ const parseTask = (raw: unknown, dirName: string): EvalTask => {
     throw new Error(`${where}: only cross-workspace tasks name another fixture than "${DEFAULT_FIXTURE}"`)
   }
 
-  return { id, category: category as Category, description, trap, sessions }
+  let maxRequests: number | undefined
+  if ('maxRequests' in task) {
+    if (!Number.isInteger(task.maxRequests) || (task.maxRequests as number) < 1)
+      throw new Error(`${where}.maxRequests: expected a positive integer`)
+    maxRequests = task.maxRequests as number
+  }
+  let oracle: { afterPrompt: number } | undefined
+  if ('oracle' in task) {
+    const raw = expectRecord(task.oracle, `${where}.oracle`, ['afterPrompt'])
+    const after = raw.afterPrompt
+    const first = sessions[0]?.prompts.length ?? 0
+    // The lesson must land before some prompt of the first session is left to use it.
+    if (!Number.isInteger(after) || (after as number) < 0 || (after as number) > first - 2)
+      throw new Error(
+        `${where}.oracle.afterPrompt: expected a prompt index from 0 to ${first - 2} of the first session`,
+      )
+    if (category === 'workflow') throw new Error(`${where}.oracle: workflow tasks have no oracle arm`)
+    oracle = { afterPrompt: after as number }
+  }
+
+  return {
+    id,
+    category: category as Category,
+    description,
+    trap,
+    sessions,
+    ...(maxRequests === undefined ? {} : { maxRequests }),
+    ...(oracle ? { oracle } : {}),
+  }
 }
 
 /**
@@ -195,6 +241,7 @@ export const loadSuite = (dir: string, opts: LoadSuiteOptions = {}): EvalTask[] 
 
   if (tasks.length < minTasks) throw new Error(`suite needs at least ${minTasks} tasks, got ${tasks.length}`)
   for (const category of categories) {
+    if (NEW_CATEGORIES.has(category)) continue
     const count = tasks.filter((task) => task.category === category).length
     if (count < minPerCategory) {
       throw new Error(`suite needs at least ${minPerCategory} ${category} tasks, got ${count}`)

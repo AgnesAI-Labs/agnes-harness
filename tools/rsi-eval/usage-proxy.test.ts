@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { UsageRow } from './types.js'
-import { startUsageProxy, summarizeUsage } from './usage-proxy.js'
+import { CAP_STATUS, startUsageProxy, summarizeUsage, type UsageProxy } from './usage-proxy.js'
 
 type Seen = { method: string; url: string; headers: http.IncomingHttpHeaders; body: string }
 type Upstream = { port: number; seen: Seen[]; close(): Promise<void> }
@@ -71,7 +71,7 @@ describe('usage proxy', () => {
   let dir: string
   let logFile: string
   let upstream: Upstream
-  let proxy: { port: number; close(): Promise<void>; statuses(runId: string): number[] } | undefined
+  let proxy: UsageProxy | undefined
 
   const rows = (): UsageRow[] =>
     readFileSync(logFile, 'utf8')
@@ -506,6 +506,58 @@ describe('usage proxy', () => {
           body: expect.stringContaining('unreachable'),
         }),
       ])
+    })
+  })
+
+  describe('a request cap', () => {
+    const post = (port: number, runId: string) =>
+      fetch(`http://127.0.0.1:${port}/run/${runId}/v1/messages`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      })
+
+    it('forwards up to the cap, refuses the rest without sending them, and tells the runner once', async () => {
+      const p = await start((_req, res) => {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ model: 'm', usage: { input_tokens: 1, output_tokens: 1 } }))
+      })
+      let reached = 0
+      p.limit('run-c', 2, () => reached++)
+      const answers = []
+      for (let i = 0; i < 4; i++) answers.push(await post(p.port, 'run-c'))
+      expect(answers.map((a) => a.status)).toEqual([200, 200, CAP_STATUS, CAP_STATUS])
+      expect(await answers[2]?.json()).toMatchObject({
+        error: { message: expect.stringContaining('cap of 2') },
+      })
+      expect(reached).toBe(1)
+      expect(p.forwarded('run-c')).toBe(2)
+      // Another run is not capped by it.
+      expect((await post(p.port, 'other')).status).toBe(200)
+      await p.close()
+      // Only what reached the upstream is usage; the refusals are noted with the error bodies.
+      expect(upstream.seen).toHaveLength(3)
+      expect(rows().map((r) => [r.runId, r.status])).toEqual([
+        ['run-c', 200],
+        ['run-c', 200],
+        ['other', 200],
+      ])
+      expect(
+        errors()
+          .filter((e) => e.runId === 'run-c')
+          .map((e) => e.status),
+      ).toEqual([CAP_STATUS, CAP_STATUS])
+    })
+
+    it('is not an infrastructure status, and is lifted with unlimit', async () => {
+      const { isInfraStatus } = await import('./infra.js')
+      expect(isInfraStatus(CAP_STATUS)).toBe(false)
+      const p = await start((_req, res) => res.end('{}'))
+      p.limit('run-u', 0, () => undefined)
+      expect((await post(p.port, 'run-u')).status).toBe(CAP_STATUS)
+      p.unlimit('run-u')
+      expect((await post(p.port, 'run-u')).status).toBe(200)
+      await p.close()
     })
   })
 })

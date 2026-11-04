@@ -7,6 +7,7 @@ import {
   loadMemoryModule,
   prepareHome,
   prepareMemory,
+  seedUserMemory,
   seedWorkspaceMemory,
 } from './launch.js'
 import { aghProfile, EVAL_MEMORY, PROFILE } from './run-agh.js'
@@ -131,5 +132,26 @@ describe('prepareHome', () => {
     const content = (await open(workspace).readFile('MEMORY.md')).content
     expect(content.indexOf(note)).toBeGreaterThanOrEqual(0)
     expect(content.indexOf(second)).toBeGreaterThan(content.indexOf(note))
+  })
+
+  it('seeds a paragraph into the user memory, which every workspace of the run then shows the agent', async () => {
+    const memory = await loadMemoryModule()
+    const run = input('user', false)
+    const workspaces = [join(dir, 'ws-1'), join(dir, 'ws-2')]
+    for (const ws of workspaces) mkdirSync(ws)
+    await prepareHome(run, await host())
+    await prepareMemory({ home: run.home, workspaces, memory: EVAL_MEMORY }, memory)
+    const text = 'The shared bin/acme tool needs ACME_PROFILE=dev in every project.'
+    seedUserMemory({ home: run.home, workspace: workspaces[0] as string, text }, memory)
+    for (const workspaceRoot of workspaces) {
+      const shown = await memory.openMemory({ home: run.home, workspaceRoot, sessionKey: 'read' }).snapshot(1)
+      expect(shown?.content, workspaceRoot).toContain(text)
+    }
+    // A second paragraph is added after the first.
+    seedUserMemory({ home: run.home, workspace: workspaces[1] as string, text: 'Second.' }, memory)
+    const shown = await memory
+      .openMemory({ home: run.home, workspaceRoot: workspaces[0] as string, sessionKey: 'read' })
+      .snapshot(1)
+    expect(shown?.content.indexOf('Second.')).toBeGreaterThan(shown?.content.indexOf(text) ?? -1)
   })
 })

@@ -182,3 +182,109 @@ every task.
   include those calls; rows marked "session work only" leave them out (the refinement lane of the ledger),
   and the report prints the review calls' own mean per run. The effect of the saved lesson alone is in the
   second kind of row.
+
+## Long tasks, milestones and the request cap
+
+A task of the category `long` is one session of many stages, one prompt each (or two sessions). The
+category has no floor of five tasks; the categories of the first suite keep theirs.
+
+- **Milestones.** A prompt with `"milestone": "<name>"` has its checks run right after it, in the live
+  workspace, before any review. The run stops at the first milestone whose checks fail (`stopped` in the
+  outcome), so "reached" is monotone. Prompts that are no milestone are still checked at the end, as before.
+  The self-check judges a milestone the same way: before and after its own solution, with every earlier
+  solution applied, and not in the final state.
+- **What was spent by each prompt.** The runner records when each prompt's turn ended (`prompts` in the
+  outcome). The report reads from the session's ledger what had been spent by then: main-lane tool calls,
+  requests, tokens and dollars (all lanes, and without the refinement lane).
+- **Report.** Per task, one row per run with what it had spent at each milestone it passed, the row stopping
+  where the run stopped (a failed milestone, the cap, a timeout); per arm and milestone, how many runs reached
+  it and the medians of those that did; and one point per run of milestones reached against what the whole run
+  cost. There is no single "milestone every run reached" number: that collapses to the weakest run and hides
+  an arm that fails more often.
+- **Request cap.** `"maxRequests"` in the task, else `--max-requests` (default 400). The usage proxy forwards
+  that many requests of a run and answers the rest with HTTP 400 and a body that says so (not sent, not
+  usage, and not a status the infrastructure check takes for an upstream failure); the runner then aborts the
+  turn and records `capped` with the session and prompt. Capped runs are listed apart in the report and left
+  out of every mean; they appear in the milestone curves, which stop at the cap. The cap counts every request
+  of the run, the review calls included. The session timeout still applies; size it to the cap.
+
+## Context window
+
+The run config may name `contextWindow` and `maxOutputTokens` for the declared model; without them the
+model is declared with 200,000 and 8,192 as before, so old runs are unchanged. What the host does with the
+window, read from its code (`createCompactionThreshold` in `packages/extension-api/src/compaction-engine.ts`,
+`compactionSettingsFor` in `packages/core/src/execution/turn/gate.ts`, the defaults in
+`packages/core-common/src/step/preset.ts`; `context-window.test.ts` pins the parts that can be run alone):
+
+- It compacts when the context passes `window - reserve`. The reserve is 16,384 tokens; it becomes
+  `min(16,384, window / 4)` only when a session works with a window smaller than its model's capacity or
+  the window is not above 16,384, neither of which happens with a declared window above 16,384. Once per
+  stretch, while at least half of the last request was read from the prompt cache, it waits up to half the
+  reserve (8,192 tokens) longer.
+- A window too small for the fixed instructions and tool schemas ends the turn with a budget error instead
+  of compacting (`contextBudgetError`).
+- A compaction keeps a model-written summary and the most recent `min(20,000, (window - reserve - fixed
+  prefix) / 2)` tokens. The fixed prefix (instructions and tool schemas) was about 6,200 tokens in the
+  first evaluation's first requests.
+
+| declared window | compacts past | keeps of the recent context |
+| --- | --- | --- |
+| 200,000 (default) | 183,616 | 20,000 |
+| 128,000 | 111,616 | 20,000 |
+| 64,000 | 47,616 | 20,000 |
+| 32,000 | 15,616 | about 4,700 |
+
+So with a 64,000 window the host does compact, but each compaction keeps the last 20,000 tokens verbatim
+plus a summary: compaction is not the same as forgetting. A run's ledger shows the window it used
+(`session/start`, `modelSettings[].settings.contextWindow`) and each compaction (`x/core/compaction-end`).
+The first evaluation's 200,000 window never compacted. The Prime runner's model file declares no window;
+this option is for AGH only.
+
+## The oracle on long tasks
+
+`"oracle": { "afterPrompt": <n> }` in a task writes the lesson after prompt `n` (zero-based) of the first
+session, before the next one, instead of before a second session. For a long task that keeps the oracle's
+gap to `off` from including the first discovery of the rule, which refinement can never avoid. Two-session
+tasks without it keep the old behaviour.
+
+## The frozen arm
+
+`--arms off,frozen --frozen-from <the output folder of a finished run with on runs>`: refinement off, and
+before the first session the run starts with exactly what the `on` run of the same task and repetition in
+that folder saved: its saved workspace memory paragraphs, its saved user memory sections and its installed
+workspace skills (`agh/frozen.ts`). Not the notes the agent wrote into memory itself (an `off` run writes
+those too) and not the work it left in the files. The runner refuses a missing source, one that is not an
+`on` run, and one the upstream ended; it checks every source before the first run starts.
+
+- The paragraphs are written as hand-written memory text, without their markers: a saved paragraph is shown
+  to the agent only while the host's registry vouches for it, and the fresh run's registry knows nothing of
+  another run's saves.
+- The skills are copied into the workspace's skills folder before the host starts, where the `on` run left
+  them. Not verified: whether the embedded host offers a workspace skill to the agent at all. In every
+  request captured in the smoke runs the skill catalogue listed only the bundled `remembering` skill, but
+  every saved skill in those runs was saved after the last captured request, so this is not settled. Until a
+  run shows a seeded skill in the catalogue, read the frozen arm as a test of the saved memory.
+- The runner records which throwaway workspace each fixture used (`workspaces` in the outcome), so a later
+  frozen run can find each workspace's memory. A source recorded before that is accepted only for a task of
+  one workspace.
+- The report compares frozen with `off` and the oracle per session and for the whole run, over sessions that
+  completed and passed their checks: no review calls and no experience guidance are in the measured run, so
+  this measures the lessons, not refinement's overhead. Report the `on` run's own cost as the one-time
+  investment.
+
+## Driving the on arm by refinement's own triggers
+
+`--on-protocol triggers` sends no manual review after the prompts (and no end-of-session saves) and leaves
+refinement to its own triggers (compaction, repeated failure, the model's own request). The manual reviews
+were also the runner's only sign that refinement was live, so the runner then reads the session's experience
+entries once per session (no model call): it is refused exactly when a review would be, and a dead
+refinement stops the run. The default stays `reviews`. The report says how many `on` runs used each; do not
+pool the two.
+
+## Rule forgetting
+
+For every run, the report says whether the trap rule was broken again after the first hit: later in the same
+session (and of those, after a compaction), or in the second session, from the ledgers and with the same trap
+rule as the other metrics. If `off` never breaks the rule again there is nothing for a saved lesson to save.
+On the first evaluation's 13-run sample: of 4 `off` runs that hit the trap, 1 broke the rule again later in
+the same session and 1 of the 2 with a second session broke it there.

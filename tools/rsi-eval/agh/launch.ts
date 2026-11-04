@@ -99,6 +99,8 @@ export type MemoryModule = {
     snapshot(turn: number): Promise<{ content: string } | undefined>
     close?(): Promise<void> | void
   }
+  /** Where the provider keeps a workspace's memory and the user memory, under the home. */
+  fileMemoryRoots(home: string, workspace: string): { protectedRoot: string; root: string; userRoot: string }
 }
 
 /** The official file memory provider, from its source like the CLI boot code below. */
@@ -153,6 +155,22 @@ export async function seedWorkspaceMemory(
   } finally {
     await session.close?.()
   }
+}
+
+/**
+ * Adds one paragraph to the user memory, the memory every workspace reads, the way a person writes it:
+ * there is no edit of it through the provider, a person edits the file itself. After what it already
+ * holds. Used for the frozen arm when the `on` run it copies saved to user memory.
+ */
+export function seedUserMemory(
+  input: { home: string; workspace: string; text: string },
+  memory: MemoryModule,
+): void {
+  const { userRoot } = memory.fileMemoryRoots(input.home, input.workspace)
+  mkdirSync(userRoot, { recursive: true, mode: 0o700 })
+  const file = join(userRoot, MEMORY_INDEX)
+  const kept = existsSync(file) ? readFileSync(file, 'utf8').trimEnd() : ''
+  writeFileSync(file, `${kept === '' ? '' : `${kept}\n\n`}${input.text.trim()}\n`, { mode: 0o600 })
 }
 
 const refusal = (error: unknown): string | undefined => {
@@ -262,6 +280,17 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
     return {
       key: sessionKey,
       prompt: async (text, signal) => (await session.prompt(text, { signal, unattended: true })).reason,
+      // A read of the session's experience entries: no model call. It is refused exactly when a review
+      // would be (refinement off, or not wired into this host), so it shows a dead refinement.
+      liveness: async () => {
+        const owned = embedded.kernel.get(session.id)
+        if (!owned) return { refused: 'unavailable' }
+        const { refinementFacade } = (await import('@agnes/core')) as unknown as {
+          refinementFacade(s: never): { inspect(request: { op: 'list' }): Promise<object> }
+        }
+        const out = await refinementFacade(owned as never).inspect({ op: 'list' })
+        return 'refused' in out ? { refused: String(out.refused) } : { live: true as const }
+      },
       review: async (saveTo): Promise<ReviewAnswer> => {
         try {
           const owned = embedded.kernel.get(session.id)
@@ -303,6 +332,9 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
       if (!input.workspaces.includes(workspace))
         throw new Error(`${workspace} is not one of the run's workspaces`)
       await seedWorkspaceMemory({ home: input.home, workspace, text }, await loadMemoryModule())
+    },
+    seedUserMemory: async (text) => {
+      seedUserMemory({ home: input.home, workspace: input.workspace, text }, await loadMemoryModule())
     },
     close: async () => {
       try {
