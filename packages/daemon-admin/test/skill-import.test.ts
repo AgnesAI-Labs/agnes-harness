@@ -13,6 +13,7 @@ import { discoverSkillRoot, skillRoots } from '@agnes/base'
 import { rpcError, type SkillImportParams } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import type { PackageAdminAuthority } from '../src/packages/permissions.js'
+import { skillEnvironment } from '../src/packages/skill-environment.js'
 import { createSkillImportService } from '../src/packages/skill-import.js'
 
 // Capture the authority the installer receives so its resource callback can be exercised directly.
@@ -278,4 +279,19 @@ it('keeps management imports on the session resource allowlist and gates enablin
     rpcError('CAPABILITY_DENIED'),
   )
   expect(s.calls).toEqual([])
+})
+
+it('probes python3 before python and reports missing only when both fail', async () => {
+  const probe = (available: Record<string, string>) => async (command: string) => {
+    if (!(command in available)) throw new Error('ENOENT')
+    return { stdout: `Python ${available[command]}\n` } as never
+  }
+  const probed = (available: Record<string, string>) =>
+    skillEnvironment('.', ['tool.py'], '.', new AbortController().signal, probe(available))
+  expect(await probed({ python3: '3.12.1' })).toEqual([
+    { name: 'python', state: 'satisfied', evidence: 'probed', actual: '3.12.1' },
+  ])
+  expect(await probed({ python: '3.9.0' })).toMatchObject([{ name: 'python', actual: '3.9.0' }])
+  expect(await probed({ python3: '3.12.1', python: '2.7.18' })).toMatchObject([{ actual: '3.12.1' }])
+  expect(await probed({})).toEqual([{ name: 'python', state: 'missing', evidence: 'probed' }])
 })
