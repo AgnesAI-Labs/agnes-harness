@@ -62,6 +62,7 @@ import { BootError } from '../errors.js'
 import { resolveLocale } from '../tui/locale.js'
 import type { BootDeps, Booted, ParsedArgs } from '../types.js'
 import { profileNameFrom, readProfileInputs } from './inputs.js'
+import { createLocalSkills, savedSkillControlFile } from './local-skills.js'
 import { readScreenshotBytes, requestMediaOriginIsValid } from './screenshot-read.js'
 
 /** Defined by the normal packaged local build; absent in source and SEA development runs. */
@@ -197,6 +198,16 @@ export async function assembleLocalHost(
       },
     },
   })
+  // The disk Skills a daemon worker would offer, read from the same folders with the daemon's saved
+  // decisions; a headless run keeps those in the data dir it was started from.
+  const local = createLocalSkills({
+    registry: skills,
+    agnesHome: deps.home,
+    osHome: deps.env.HOME ?? deps.env.USERPROFILE ?? homedir(),
+    importUserSkills: deps.env.AGNES_SKILLS_IMPORT_USER === '1',
+    controlFile: savedSkillControlFile(deps.packageDataDir ?? profile.dataDir, profileName),
+    log: hostLogger(deps.log).warn,
+  })
   host = await createHost(profile, {
     dataDir: profile.dataDir,
     profileDir: deps.runtimeDirectory ?? profileDir,
@@ -205,7 +216,7 @@ export async function assembleLocalHost(
     log: hostLogger(deps.log),
     prompter,
     skillContribution: createSkillCordisService(skills),
-    skillResources: skills.snapshot(),
+    skillResources: local.input,
     ...(deps.requestMedia ? { requestMedia: deps.requestMedia } : {}),
     ...(deps.refinementSave ? { refinementSave: deps.refinementSave } : {}),
     agnesVersion: deps.agnesVersion,
@@ -214,8 +225,11 @@ export async function assembleLocalHost(
     ...(deps.loader ? { loader: deps.loader } : await defaultPackages(deps, profile, profileDir, hostRoot)),
     ...(deps.signal ? { signal: deps.signal } : {}),
   })
+  skillRefresh.set(host, local.refresh)
   return host
 }
+
+const skillRefresh = new WeakMap<Host, () => void>()
 
 /**
  * The one-shot form: resolve a profile, build a host, wrap it in the in-process daemon endpoint and
@@ -573,6 +587,7 @@ export async function bootLocal(p: ParsedArgs, deps: LocalBootDeps): Promise<Boo
     resolvedProfileHash: profile.hash,
     bootMs: performance.now() - t0,
     form: 'local',
+    refreshSkills: () => skillRefresh.get(host)?.(),
     // In dependency order, and each one guarded: a close that throws halfway leaves the host running
     // with nothing left holding a reference to it, which on the one-shot path is a process that
     // never exits.

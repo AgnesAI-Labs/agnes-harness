@@ -184,6 +184,11 @@ export type Booted = {
   host?: Host
   /** Present for local import: registers owner and workspace binding in sessions.db. */
   sessionAdmission?: SessionAdmissionPort
+  /**
+   * Present for the local form: scan the Skill folders again before the next Skill read of any
+   * session, for a caller that has just written a Skill there (a new session rescans by itself).
+   */
+  refreshSkills?: () => void
   profileName: string
   resolvedProfileHash: string | null
   bootMs: number

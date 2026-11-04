@@ -43,6 +43,9 @@
       "path": "../resource-control-runtime"
     },
     {
+      "path": "../resource-control-worker"
+    },
+    {
       "path": "../cli-tui"
     },
     {

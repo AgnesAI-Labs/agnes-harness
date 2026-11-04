@@ -56,7 +56,7 @@ Confirm `trust=trusted`, `desired=enabled`, `actual=ready`, and `winner`, then e
 
 ## Sources and conflicts
 
-Default disk sources are workspace `.agh/skills` (also workspace `.agents/skills` and `.claude/skills`) and `$AGH_HOME/skills`; packages can also contribute Skills. Importing the OS user's `~/.agents/skills`, `~/.claude/skills`, and `~/.codex/skills` requires explicit deployment configuration `AGNES_SKILLS_IMPORT_USER=1` when starting the daemon. It is off by default, including for a fresh or isolated AGH_HOME. Imported user Skills use the same automatic trust policy; opt in only for trusted folders. `AGH_HOME` does not relocate those other tools' user directories. Each session reads its own workspace rather than substituting the worker's startup directory.
+Default disk sources are workspace `.agh/skills` (also workspace `.agents/skills` and `.claude/skills`) and `$AGH_HOME/skills`; packages can also contribute Skills. Importing the OS user's `~/.agents/skills`, `~/.claude/skills`, and `~/.codex/skills` requires explicit deployment configuration `AGNES_SKILLS_IMPORT_USER=1` when starting the daemon. It is off by default, including for a fresh or isolated AGH_HOME. Imported user Skills use the same automatic trust policy; opt in only for trusted folders. `AGH_HOME` does not relocate those other tools' user directories. Each session reads its own workspace rather than substituting the worker's startup directory. Hosts the CLI runs itself (`--standalone`, `--ephemeral`, `agh run`, `agh import`) read the same Skill folders, keep the enable and trust decisions the daemon saved, and scan again when a session starts.
 
 Default priorities, with higher values taking precedence:
 

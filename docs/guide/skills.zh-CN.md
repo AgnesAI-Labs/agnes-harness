@@ -50,7 +50,7 @@ node /path/to/agnes-harness/agnes.mjs skills list
 
 ## 来源与冲突
 
-默认磁盘来源是工作区 `.agh/skills`（也支持工作区 `.agents/skills`、`.claude/skills`）和 `$AGH_HOME/skills`；包也可以贡献 Skill。操作系统用户的 `~/.agents/skills`、`~/.claude/skills`、`~/.codex/skills` 默认不导入，包括全新或隔离的 AGH_HOME。只有启动 daemon 时显式设置部署配置 `AGNES_SKILLS_IMPORT_USER=1` 才导入；导入的用户技能同样自动信任，因此只对可信目录开启。`AGH_HOME` 不会重定位其他工具的用户目录。多工作区按会话自己的工作区读取，不以 worker 启动目录替代。
+默认磁盘来源是工作区 `.agh/skills`（也支持工作区 `.agents/skills`、`.claude/skills`）和 `$AGH_HOME/skills`；包也可以贡献 Skill。操作系统用户的 `~/.agents/skills`、`~/.claude/skills`、`~/.codex/skills` 默认不导入，包括全新或隔离的 AGH_HOME。只有启动 daemon 时显式设置部署配置 `AGNES_SKILLS_IMPORT_USER=1` 才导入；导入的用户技能同样自动信任，因此只对可信目录开启。`AGH_HOME` 不会重定位其他工具的用户目录。多工作区按会话自己的工作区读取，不以 worker 启动目录替代。CLI 自己启动的宿主（`--standalone`、`--ephemeral`、`agh run`、`agh import`）读取同样的技能文件夹，沿用 daemon 保存的启用与信任决定，并在会话开始时重新扫描。
 
 默认优先级如下，数字越大越优先：
 
