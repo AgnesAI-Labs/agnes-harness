@@ -24,15 +24,17 @@ const PLAN = '{"summary":"none","edits":[]}'
 const planner = record({
   id: 'planner',
   route: 'rsi',
+  maxTokens: 8192,
   cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
 })
 // No price at all: the catalogue gives no usable rate. A price of zero is a known price (a free or local model).
 const unpriced = record({
   id: 'local',
   route: 'rsi',
+  maxTokens: 8192,
   cost: { input: Number.NaN, output: Number.NaN, cacheRead: 0, cacheWrite: 0 },
 })
-const free = record({ id: 'free', route: 'rsi' })
+const free = record({ id: 'free', route: 'rsi', maxTokens: 8192 })
 const plannerUsage = (credits = 0.001): InferenceEvent => ({
   type: 'usage',
   tokens: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0 },
@@ -168,6 +170,24 @@ describe('the maintenance port', () => {
       credits: 0.001,
     })
     expect(usage?.totals).toMatchObject({ input: 100, output: 10 })
+    await session.close()
+  })
+
+  it('asks a model that allows fewer output tokens for what it allows, and holds and records that number', async () => {
+    const small = record({ id: 'small', route: 'rsi', maxTokens: 512, cost: planner.cost })
+    const { provider: p, planned } = provider()
+    const { session, log } = await openSession({ provider: { ...p, models: () => [small] } })
+    const port = createMaintenancePort(session)
+
+    const result = await port.invoke(
+      request({ runId: 'run-small', maxOutputTokens: 4096, target: { route: small.route, model: small.id } }),
+      signal(),
+    )
+    expect(result).toMatchObject({ outcome: 'ok' })
+    expect(planned[0]).toMatchObject({ model: 'small', sampling: { maxTokens: 512 } })
+    expect(data(ofType(onLane(await rows(log)), 'x/core/maintenance-intent')[0])).toMatchObject({
+      maxOutputTokens: 512,
+    })
     await session.close()
   })
 
