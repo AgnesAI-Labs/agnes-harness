@@ -5798,7 +5798,7 @@
       "additionalProperties": false,
       "required": ["id", "name", "reason", "diff", "at"],
       "properties": {
-        "id": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
         "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
         "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
         "diff": { "type": "string", "maxLength": 1048576 },

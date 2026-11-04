@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverSkillRoot, skillRoots } from '@agnes/base'
-import { REVIEW_AFTER_MS, RefinementRegistry } from '@agnes/host'
+import { createSkillDraftStore, REVIEW_AFTER_MS, RefinementRegistry } from '@agnes/host'
 import {
   createResourceControlService,
   createSkillResourceStore,
@@ -403,6 +403,32 @@ describe("the user's uninstall of a saved skill", () => {
 })
 
 describe("the owner's saved skills over the refinement.skills method", () => {
+  it('lists the drafts kept for skills a person wrote, with the ids the draft store gives them', async () => {
+    const t = setup()
+    const kept = createSkillDraftStore(t.dataDir)(t.workspace).put({
+      name: 'notes',
+      reason: 'human-written',
+      base: 'Mine.\n',
+      proposed: 'Theirs.\n',
+      receiptId: 'receipt-1',
+      evidence: {
+        sessionKey: 'session-1',
+        entryId: 'entry-1',
+        entryVersion: 1,
+        contentHash: 'c'.repeat(64),
+        evidenceSeqs: [1],
+        commandId: 'command-1',
+        initiator: 'user',
+      },
+      at: 5,
+    })
+    const listed = await t.saved.manage({ cwd: t.workspace }, 'local')
+    expect(listed.drafts).toEqual([
+      { id: kept.id, name: 'notes', reason: 'human-written', diff: kept.diff, at: 5 },
+    ])
+    expect(kept.id).toMatch(/^[a-f0-9]{32}$/)
+  })
+
   it('lists saved skills with their state, rolls one back and uninstalls it, recording both', async () => {
     const t = setup()
     const first = await t.install('notes', 'One.')

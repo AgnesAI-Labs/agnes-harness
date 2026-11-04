@@ -17,7 +17,7 @@ const REASONS = new Set([
   'SKILL_TARGET_BUSY',
 ])
 const PREVIOUS_LISTED = 16
-const HASH = /^[a-f0-9]{64}$/
+const DRAFT_ID = /^[a-f0-9]{32}$/
 
 const refused = (reason: string) => rpcError('SEMANTIC_REJECTED', { reason })
 
@@ -54,7 +54,7 @@ export function createRefinementSkillsAdmin(options: {
     try {
       kept = drafts(root)
         .list()
-        .filter((draft) => HASH.test(draft.id))
+        .filter((draft) => DRAFT_ID.test(draft.id))
         .map(({ id, name, reason, diff, at }) => ({ id, name, reason, diff, at }))
     } catch {
       // No drafts to show.
