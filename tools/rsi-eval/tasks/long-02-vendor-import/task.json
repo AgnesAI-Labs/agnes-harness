@@ -3,9 +3,12 @@
   "category": "long",
   "description": "Ten imports of vendor files over five sessions into a small warehouse whose importer reads comma-separated columns by position in the table's order and takes amounts in whole cents; the vendors' formats change along the way.",
   "trap": {
-    "signatures": ["batch rejected at line \\d+: a value does not fit the table"],
+    "signatures": [
+      "batch rejected at line \\d+: value \\d+ \\(.*\\) does not fit the table",
+      "batch rejected at line \\d+: \\d+ values, the table takes \\d+"
+    ],
     "reproduce": "bin/ingest load orders drops/acme-0301.csv",
-    "note": "bin/ingest reads a comma-separated file by position and ignores the header names: the columns must come in the table's own order, which is the order `bin/ingest peek <table>` prints values in (orders: id, placed date as YYYY-MM-DD, amount, region; refunds: id, order id, amount, reason), not the alphabetical order `bin/ingest schema` lists, and amounts must be whole cents (a vendor's 12.50 is 1250). The vendors' files differ from that and from each other, and change over time: other column orders and names, extra columns to drop, `;` or tab separators, decimal commas with `.` for thousands, `$` and `,` thousands, day-first dates. So for every vendor file: look at its header and a few rows, write a comma-separated copy with one header line, the table's column order, amounts in cents (convert exactly, not through a float) and ISO dates, load that copy with `bin/ingest load <table> <copy>`, commit the batch number it prints, and check `bin/ingest total <table>`."
+    "note": "bin/ingest reads a comma-separated file by position and ignores the header names: the columns must come in the table's own order, which is the order `bin/ingest peek <table>` prints values in (orders: id, placed date as YYYY-MM-DD, amount, region; refunds: id, order id, amount, reason), not the alphabetical order `bin/ingest schema` lists, and amounts must be whole cents as `bin/ingest total` counts them (a vendor's 12.50 is 1250). The error names the line and the position of the value that does not fit. The vendors' files differ from that and from each other, and change over time: other column orders and names, extra columns to drop, `;` or tab separators, decimal commas with `.` for thousands, `$` and `,` thousands, day-first dates. So for every vendor file: look at its header and a few rows, write a comma-separated copy with one header line, the table's column order, amounts in cents (convert exactly, not through a float) and ISO dates, load that copy with `bin/ingest load <table> <copy>`, commit the batch number it prints, and check `bin/ingest total <table>`."
   },
   "maxRequests": 250,
   "sessions": [
