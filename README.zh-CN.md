@@ -182,6 +182,8 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 
 [插件快速开始](docs/extend/quickstart.zh-CN.md) · [插件开发](docs/develop/plugins.zh-CN.md) · [不配置模型账号先体验](docs/guide/demo.zh-CN.md#不配置模型账号先跑通本地链路)
 
+**分享你的插件。** 把插件单独放一个 GitHub 仓库，`package.json` 放在仓库根目录，用 `vX.Y.Z` tag 发版，再给仓库加上 GitHub 话题 `agh-plugin`，它就会出现在 [github.com/topics/agh-plugin](https://github.com/topics/agh-plugin)。别人用 `agh plugins add git:https://github.com/<owner>/<repo>#vX.Y.Z` 即可安装某个版本。官方插件同时收录在 [AGH 插件市场索引](https://github.com/AgnesAI-Labs/agh-plugin-market)。
+
 ## 案例演示与复现
 
 ### MHS 火星救援：多设备协作
