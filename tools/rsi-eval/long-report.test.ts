@@ -71,6 +71,29 @@ describe('what a session had spent at the end of each prompt', () => {
     ])
   })
 
+  it('counts a later session on top of every earlier one, so the curve runs over the whole run', () => {
+    // Both sessions of cross-03's off run: the second session's prompt ends after its last row.
+    const s1 = real('trap.cross-03.off-s1.jsonl')
+    const s2 = real('trap.cross-03.off-s2.jsonl')
+    const t = byId('cross-03-latin1-menus')
+    const end = '2100-01-01T00:00:00.000Z'
+    const at = (session: number, texts: string[]) =>
+      progressOf(
+        t,
+        { ...outcome(false), prompts: [{ session, prompt: 0, endedAt: end, reason: 'completed' }] },
+        texts,
+      )[0]
+    const alone1 = at(0, [s1])
+    const alone2 = at(0, [s2])
+    const both = at(1, [s1, s2])
+    expect(alone1?.toolCalls).toBeGreaterThan(0)
+    expect(alone2?.toolCalls).toBeGreaterThan(0)
+    expect(both?.toolCalls).toBe((alone1?.toolCalls ?? 0) + (alone2?.toolCalls ?? 0))
+    expect(both?.requests).toBe((alone1?.requests ?? 0) + (alone2?.requests ?? 0))
+    // A prompt of the first session counts nothing of the second.
+    expect(at(0, [s1, s2])).toEqual(alone1)
+  })
+
   it('carries the milestone and whether its checks passed', () => {
     const staged: EvalTask = {
       ...task,
@@ -122,7 +145,7 @@ describe('rule forgetting', () => {
       firstHitSession: 0,
       againSameSession: 1,
       againAfterCompaction: 0,
-      againInSession2: 0,
+      againInLaterSession: 0,
     })
   })
 
@@ -157,8 +180,8 @@ describe('rule forgetting', () => {
         firstHit: 1,
         againSameSession: 1,
         againAfterCompaction: 0,
-        withSecondSession: 1,
-        againInSession2: 0,
+        withLaterSession: 1,
+        againInLaterSession: 0,
       },
     })
   })

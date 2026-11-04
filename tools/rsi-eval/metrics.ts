@@ -384,8 +384,31 @@ export const sessionCost = (run: RunRecord, session: number): SessionCost | unde
   run.sessionCosts?.[session]
 
 /**
- * What each session had spent when each of its prompts ended (`outcome.prompts`, by the runner's clock):
- * the rows of its ledger up to that moment. Tool calls are the main lane's `tool/call` rows; requests,
+ * What the sessions after the first cost together: the part of a run a lesson carried over from the first
+ * session can change. For a task of two sessions it is the second session's cost. None when the run never
+ * reached a second session.
+ */
+export const laterSessionsCost = (run: RunRecord): SessionCost | undefined => {
+  const later = (run.sessionCosts ?? []).slice(1)
+  if (!later[0]) return undefined
+  const present = later.filter((c): c is SessionCost => c !== undefined)
+  const total = (pick: (c: SessionCost) => number) => present.reduce((sum, c) => sum + pick(c), 0)
+  return {
+    requests: total((c) => c.requests),
+    tokens: total((c) => c.tokens),
+    cost: total((c) => c.cost),
+    lowerBound: present.some((c) => c.lowerBound),
+    refinement: {
+      requests: total((c) => c.refinement.requests),
+      tokens: total((c) => c.refinement.tokens),
+      cost: total((c) => c.refinement.cost),
+    },
+  }
+}
+
+/**
+ * What the run had spent, over all its sessions so far, when each prompt ended (`outcome.prompts`, by the
+ * runner's clock): the rows of the earlier sessions' ledgers and of its own up to that moment. Tool calls are the main lane's `tool/call` rows; requests,
  * tokens and cost are counted as `sessionCostOfLedger` counts them, all lanes and without the refinement
  * lane. A milestone prompt carries the result of the checks run right after it.
  */
@@ -410,8 +433,13 @@ export const progressOf = (task: EvalTask, outcome: RunOutcome, texts: string[])
     let micros = 0
     let mainRequests = 0
     let mainMicros = 0
-    for (const { row, at } of parsed[ended.session] ?? []) {
-      if (at > until) continue
+    // The run so far: every row of the earlier sessions, and this session's up to the prompt's end.
+    const rows = parsed
+      .slice(0, ended.session + 1)
+      .flatMap((session, index) =>
+        index < ended.session ? session : session.filter(({ at }) => at <= until),
+      )
+    for (const { row } of rows) {
       const data = isObject(row.data) ? row.data : {}
       if (row.type === 'tool/call' && isMainLane(row.lane)) toolCalls++
       if (row.type !== 'cost/ledger') continue

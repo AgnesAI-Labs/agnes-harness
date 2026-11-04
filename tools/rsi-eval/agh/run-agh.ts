@@ -51,9 +51,10 @@
 // Oracle (opt-in with `--arms off,on,oracle`; `--settings` is the same option, older name, on and off only):
 // refinement off as in "off", and before the SECOND session starts, one paragraph taken from the task's
 // `trap.note` is written to that session's workspace memory, through the same edit the memory page makes.
-// The first session is the same as the off run's. It is the most a saved lesson could give the second
-// session, so it is the ceiling the "on" run is measured against (see capture.ts). Only for tasks of two
-// sessions that are not workflow tasks; the other tasks are skipped for this arm.
+// The first session is the same as the off run's. It is the most a saved lesson could give the sessions
+// after the first, so it is the ceiling the "on" run is measured against (see capture.ts). Only for tasks of
+// two or more sessions (a long task may have several in one workspace, each a new conversation) or with an
+// `oracle.afterPrompt`, and not for workflow tasks; the other tasks are skipped for this arm.
 //
 // Frozen (`--arms frozen --frozen-from <folder of on runs>`): refinement off, and before the first session
 // the workspace (and user memory) holds exactly what the on run of the same task and repetition saved:
@@ -424,10 +425,11 @@ export const refinementSwitch = (setting: Arm): RefinementSwitch | undefined =>
 
 /**
  * The arm is for tasks that are not workflow tasks (no skill to hand-write) and have a point to write the
- * lesson at: before a second session, or after a named prompt of the first (`EvalTask.oracle`).
+ * lesson at: before the second session of a task of two or more, or after a named prompt of the first
+ * (`EvalTask.oracle`).
  */
 export const oracleApplies = (task: EvalTask): boolean =>
-  task.category !== 'workflow' && (task.sessions.length === 2 || task.oracle !== undefined)
+  task.category !== 'workflow' && (task.sessions.length >= 2 || task.oracle !== undefined)
 
 /** Where the oracle writes the lesson: after a prompt of the first session, or before the second session. */
 export const oracleSeedPoint = (task: EvalTask): { afterPrompt: number } | { beforeSession: 1 } =>

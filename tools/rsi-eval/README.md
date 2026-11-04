@@ -91,15 +91,17 @@ request's catalogue.
 - `oracle` is `off` (refinement off) plus one paragraph, the task's own `trap.note`, written to the
   second session's workspace memory after the first session ends and before the second one opens. It goes
   through the memory provider's own edit of `MEMORY.md`, the one the memory page makes, so the agent
-  reads it like any hand-written memory. The first session is the off run's. Only tasks of two sessions
-  that are not workflow tasks have this arm; the runner skips the others for it.
+  reads it like any hand-written memory. The first session is the off run's. Only tasks of two or more
+  sessions (or with `oracle.afterPrompt`) that are not workflow tasks have this arm; the runner skips the
+  others for it.
 - `sessionCost(run, session)` (`metrics.ts`) is what a session cost, summed from the rows of its own
   ledger (every lane, so the review calls of the `on` arm count): model requests, tokens, dollars. A
   parent ledger holds only a `subagent/cost` marker for each child session, without an amount, so a
   session with children, or a request without a price, is reported as a lower bound.
-- The report gets a section "Second-session cost and capture rate" (`secondSession` in `report.json`).
-  It covers the second session of two-session tasks only: single-session tasks have none, workflow
-  tasks have no oracle arm. It gives the three arms' costs side by side, `off - on` and `off - oracle`
+- The report gets a section "Cost after the first session and capture rate" (`secondSession` in `report.json`).
+  It covers the sessions after the first (`laterSessionsCost`: the second session of a two-session task,
+  sessions 2 to N together of a long task of N): single-session tasks have none, workflow tasks have no
+  oracle arm. It gives the three arms' costs side by side, `off - on` and `off - oracle`
   with 95% intervals over tasks, and the capture rate
   `sum(off - on) / sum(off - oracle)` (`capture.ts`).
 - The capture rate is computed over the tasks where the hand-written lesson saves something: the
@@ -188,10 +190,10 @@ The report prints the capture rate as `rate = numerator / denominator over N of 
 never as a bare number, and the means of the three arms over the tasks of the rate next to the means over
 every task.
 
-- **Which runs count.** Only second sessions that completed and passed their checks enter the means and the
-  rate. A second session that stopped early looks cheap and one that timed out looks dear, so neither says
-  what completing the task costs. The report counts the ones left out per arm and reason (the run never
-  reached its second session, it timed out, a session did not complete, a check failed).
+- **Which runs count.** Only runs whose sessions after the first all completed and passed their checks enter
+  the means and the rate. A run that stopped early looks cheap and one that timed out looks dear, so neither
+  says what completing the task costs. The report counts the ones left out per arm and reason (the run never
+  reached its second session, it timed out, a session did not complete, a check failed or was not reached).
 - **Headroom on other runs.** Whether the hand-written lesson saves anything for a task is decided, when you
   give `report.ts --headroom-dir <pilot folder>`, on the pilot's `off` and `oracle` runs, and the rate sums
   the full run's own `off`, `on` and `oracle` runs. Deciding on the same `off` runs that the numerator then
@@ -208,8 +210,11 @@ every task.
 
 ## Long tasks, milestones and the request cap
 
-A task of the category `long` is one session of many stages, one prompt each (or two sessions). The
-category has no floor of five tasks; the categories of the first suite keep theirs.
+A task of the category `long` is a run of many stages, one prompt each, in one session or in up to ten
+sessions over the same workspace. Each session is a new conversation that picks the work up where the last
+one left it, so what the agent learnt in an earlier session is not in its context any more; only what was
+saved (memory, skills) or left in the files carries over. A session of a long task may hold a single
+prompt. The category has no floor of five tasks; the categories of the first suite keep theirs.
 
 - **Milestones.** A prompt with `"milestone": "<name>"` has its checks run right after it, in the live
   workspace, before any review. The run stops at the first milestone whose checks fail (`stopped` in the
@@ -217,8 +222,8 @@ category has no floor of five tasks; the categories of the first suite keep thei
   The self-check judges a milestone the same way: before and after its own solution, with every earlier
   solution applied, and not in the final state.
 - **What was spent by each prompt.** The runner records when each prompt's turn ended (`prompts` in the
-  outcome). The report reads from the session's ledger what had been spent by then: main-lane tool calls,
-  requests, tokens and dollars (all lanes, and without the refinement lane).
+  outcome). The report reads from the ledgers what the run had spent by then, over every session so far:
+  main-lane tool calls, requests, tokens and dollars (all lanes, and without the refinement lane).
 - **Report.** Per task, one row per run with what it had spent at each milestone it passed, the row stopping
   where the run stopped (a failed milestone, the cap, a timeout); per arm and milestone, how many runs reached
   it and the medians of those that did; and one point per run of milestones reached against what the whole run
@@ -276,10 +281,14 @@ this option is for AGH only.
 
 ## The oracle on long tasks
 
-`"oracle": { "afterPrompt": <n> }` in a task writes the lesson after prompt `n` (zero-based) of the first
-session, before the next one, instead of before a second session. For a long task that keeps the oracle's
-gap to `off` from including the first discovery of the rule, which refinement can never avoid. Two-session
-tasks without it keep the old behaviour.
+A long task of several sessions gets the lesson as a two-session task does: written to the workspace memory
+after the first session ends, before the second opens. So the oracle's gap to `off` leaves out the first
+discovery of the rule, which refinement can never avoid, and covers every later session, each of which
+starts without the rule in its context. The cost after the first session (the report's section 4) is then
+what sessions 2 to N cost together; a run that stopped before its last session is left out of it.
+
+`"oracle": { "afterPrompt": <n> }` in a task instead writes the lesson after prompt `n` (zero-based) of the
+first session, before the next one; that is for a long task of one session.
 
 ## The frozen arm
 
@@ -316,7 +325,7 @@ pool the two.
 ## Rule forgetting
 
 For every run, the report says whether the trap rule was broken again after the first hit: later in the same
-session (and of those, after a compaction), or in the second session, from the ledgers and with the same trap
+session (and of those, after a compaction), or in a later session, from the ledgers and with the same trap
 rule as the other metrics. If `off` never breaks the rule again there is nothing for a saved lesson to save.
 On the first evaluation's 13-run sample: of 4 `off` runs that hit the trap, 1 broke the rule again later in
 the same session and 1 of the 2 with a second session broke it there.

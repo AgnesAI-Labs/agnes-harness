@@ -49,6 +49,9 @@ export const workspaceName = (fixture: string): string => `work${fixture.slice(D
 const DEFAULT_MIN_TASKS = 20
 const MIN_PER_CATEGORY = 5
 const MIN_PROMPTS_PER_SESSION = 3
+/** A long task's session may be short: a few milestones, one prompt each, before the context is reset. */
+const MIN_PROMPTS_PER_LONG_SESSION = 1
+const MAX_LONG_SESSIONS = 10
 
 export type LoadSuiteOptions = {
   /**
@@ -149,21 +152,21 @@ const parseTask = (raw: unknown, dirName: string): EvalTask => {
         }
       },
     )
-    if (prompts.length < MIN_PROMPTS_PER_SESSION) {
-      throw new Error(
-        `${sessionWhere}: needs at least ${MIN_PROMPTS_PER_SESSION} prompts, got ${prompts.length}`,
-      )
+    const minPrompts = category === 'long' ? MIN_PROMPTS_PER_LONG_SESSION : MIN_PROMPTS_PER_SESSION
+    if (prompts.length < minPrompts) {
+      throw new Error(`${sessionWhere}: needs at least ${minPrompts} prompts, got ${prompts.length}`)
     }
     return fixture === undefined ? { prompts } : { prompts, fixture }
   })
 
   const expectedSessions =
     category === 'cross-session' || category === 'cross-workspace' || category === 'workflow' ? 2 : 1
-  // A long task is one session of many stages, or two (the second picking the work up again).
-  if (category === 'long' ? sessions.length > 2 : sessions.length !== expectedSessions) {
+  // A long task is one session of many stages, or several in the same workspace, each a new conversation
+  // that picks the work up where the last one left it.
+  if (category === 'long' ? sessions.length > MAX_LONG_SESSIONS : sessions.length !== expectedSessions) {
     throw new Error(
       category === 'long'
-        ? `${where}: long tasks need one or two sessions, got ${sessions.length}`
+        ? `${where}: long tasks have at most ${MAX_LONG_SESSIONS} sessions, got ${sessions.length}`
         : `${where}: ${category} tasks need exactly ${expectedSessions} session${expectedSessions === 1 ? '' : 's'}, got ${sessions.length}`,
     )
   }

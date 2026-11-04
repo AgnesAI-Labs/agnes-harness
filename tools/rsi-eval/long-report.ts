@@ -8,7 +8,7 @@
 // - Frozen: the frozen arm (refinement off, an `on` run's saved lessons from the start) against `off` and
 //   the oracle, per session and for the whole run, over the sessions that completed and passed their checks.
 // - Rule forgetting: per run, whether the trap was hit again after the first hit, later in the same session
-//   (and of those, after a compaction) or in the second session.
+//   (and of those, after a compaction) or in a later session.
 import { sessionCost } from './metrics.js'
 import { type Diff, pairedTaskBootstrap } from './stats.js'
 import type { Arm, RunRecord } from './types.js'
@@ -327,13 +327,13 @@ export type Forgetting = {
   againSameSession: number
   /** Of those, hits with a compaction between the first hit and them. */
   againAfterCompaction: number
-  /** Hits in the second session after a first hit in the first; null without a second session or a first-session hit. */
-  againInSession2: number | null
+  /** Hits in the sessions after the one of the first hit; null without a first hit or a later session. */
+  againInLaterSession: number | null
 }
 
 /**
  * Whether a run broke the trap rule again after it first hit it: later in the same session (and whether a
- * compaction came between), or in the second session. From the ledgers, with the same trap rule as the
+ * compaction came between), or in a later session. From the ledgers, with the same trap rule as the
  * other metrics: a failed run of an executing tool with the task's signature.
  */
 export const ruleForgetting = (r: RunRecord): Forgetting | undefined => {
@@ -345,14 +345,15 @@ export const ruleForgetting = (r: RunRecord): Forgetting | undefined => {
   const afterCompaction = first
     ? later.filter((seq) => first.compactions.some((c) => c > (firstSeq as number) && c < seq)).length
     : 0
-  const second = events.find((e) => e.session === 1)
+  const laterSessions = first ? events.filter((e) => e.session > first.session) : []
   return {
     run: runName(r),
     arm: r.setting,
     firstHitSession: first ? first.session : null,
     againSameSession: later.length,
     againAfterCompaction: afterCompaction,
-    againInSession2: first?.session === 0 && second ? second.hits.length : null,
+    againInLaterSession:
+      laterSessions.length > 0 ? laterSessions.reduce((sum, e) => sum + e.hits.length, 0) : null,
   }
 }
 
@@ -368,7 +369,7 @@ export const forgettingReport = (records: RunRecord[]) => {
     ARM_ORDER.filter((arm) => rows.some((row) => row.arm === arm)).map((arm) => {
       const armRows = rows.filter((row) => row.arm === arm)
       const hit = armRows.filter((row) => row.firstHitSession !== null)
-      const withSecond = hit.filter((row) => row.againInSession2 !== null)
+      const withLater = hit.filter((row) => row.againInLaterSession !== null)
       return [
         arm,
         {
@@ -376,8 +377,8 @@ export const forgettingReport = (records: RunRecord[]) => {
           firstHit: hit.length,
           againSameSession: hit.filter((row) => row.againSameSession > 0).length,
           againAfterCompaction: hit.filter((row) => row.againAfterCompaction > 0).length,
-          withSecondSession: withSecond.length,
-          againInSession2: withSecond.filter((row) => (row.againInSession2 ?? 0) > 0).length,
+          withLaterSession: withLater.length,
+          againInLaterSession: withLater.filter((row) => (row.againInLaterSession ?? 0) > 0).length,
         },
       ]
     }),
@@ -389,25 +390,25 @@ export const forgettingMarkdown = (f: NonNullable<ReturnType<typeof forgettingRe
   const lines = [
     '### Rule forgetting',
     '',
-    "Whether a run broke the trap rule again after its first hit: later in the same session (and of those, after a compaction of the context), or in the second session. A trap hit is a failed run of the task's tool with its signature, as above. If `off` never breaks the rule again, there is nothing for a saved lesson to save. Workflow tasks are left out.",
+    "Whether a run broke the trap rule again after its first hit: later in the same session (and of those, after a compaction of the context), or in a later session. A trap hit is a failed run of the task's tool with its signature, as above. If `off` never breaks the rule again, there is nothing for a saved lesson to save. Workflow tasks are left out.",
     '',
-    '| arm | runs | first hit | again, same session | again after a compaction | again in session 2 (of runs with one) |',
+    '| arm | runs | first hit | again, same session | again after a compaction | again in a later session (of runs with one) |',
     '| --- | --- | --- | --- | --- | --- |',
   ]
   for (const [arm, a] of Object.entries(f.byArm))
     lines.push(
-      `| ${arm} | ${a.runs} | ${a.firstHit} | ${a.againSameSession} | ${a.againAfterCompaction} | ${a.againInSession2} of ${a.withSecondSession} |`,
+      `| ${arm} | ${a.runs} | ${a.firstHit} | ${a.againSameSession} | ${a.againAfterCompaction} | ${a.againInLaterSession} of ${a.withLaterSession} |`,
     )
   lines.push(
     '',
     'Each off run:',
     '',
-    '| run | first hit | again, same session | of those after a compaction | again in session 2 |',
+    '| run | first hit | again, same session | of those after a compaction | again in a later session |',
     '| --- | --- | --- | --- | --- |',
   )
   for (const row of f.off)
     lines.push(
-      `| ${row.run} | ${row.firstHitSession === null ? 'never' : `session ${row.firstHitSession + 1}`} | ${row.againSameSession} | ${row.againAfterCompaction} | ${row.againInSession2 === null ? 'n/a' : row.againInSession2} |`,
+      `| ${row.run} | ${row.firstHitSession === null ? 'never' : `session ${row.firstHitSession + 1}`} | ${row.againSameSession} | ${row.againAfterCompaction} | ${row.againInLaterSession === null ? 'n/a' : row.againInLaterSession} |`,
     )
   lines.push('')
   return lines

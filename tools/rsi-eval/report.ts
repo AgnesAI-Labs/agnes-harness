@@ -19,7 +19,13 @@ import {
   milestonesMarkdown,
   milestonesReport,
 } from './long-report.js'
-import { runMetrics, sessionCost, toRunRecord, type UsageSummary, workflowReuseMetric } from './metrics.js'
+import {
+  laterSessionsCost,
+  runMetrics,
+  toRunRecord,
+  type UsageSummary,
+  workflowReuseMetric,
+} from './metrics.js'
 import { type Diff, pairedTaskBootstrap } from './stats.js'
 import { fixtureOf, workspaceName } from './suite.js'
 import { firstSessionTrapReport, trapMarkdown } from './trap-report.js'
@@ -92,7 +98,7 @@ const DIRECTIONS = {
   costOverhead:
     '(on minus off) divided by off, per task then averaged. Positive means refinement costs more; 0.25 is 25 percent more.',
   secondSession:
-    "What the second session of a two-session task costs (model requests, tokens, dollars; every lane of its ledger, the review calls included), per arm: off, on, and oracle (off plus the task's own lesson written to memory before that session). Differences are off minus the other arm, so positive means the other arm is cheaper. Capture rate = sum of (off minus on) over sum of (off minus oracle), over the tasks whose off-minus-oracle 95% interval lies above 0; the others are counted as no headroom. Single-session and workflow tasks do not enter.",
+    "What the sessions after the first cost together (the second session of a two-session task; sessions 2 to N of a long task of N sessions) in model requests, tokens and dollars (every lane of their ledgers, the review calls included), per arm: off, on, and oracle (off plus the task's own lesson written to memory before the second session). Differences are off minus the other arm, so positive means the other arm is cheaper. Capture rate = sum of (off minus on) over sum of (off minus oracle), over the tasks whose off-minus-oracle 95% interval lies above 0; the others are counted as no headroom. Single-session and workflow tasks do not enter.",
 } as const
 
 const CRITERION_1_RULE = 'repeat-error difference (off minus on) is above 0 and its 95% interval excludes 0'
@@ -208,10 +214,10 @@ const pickMeasure = (measure: Measure, c: SessionCost): number =>
 const LEFT_OUT_REASONS = ['never-reached', 'timeout', 'exit-error', 'checks-failed'] as const
 type LeftOut = (typeof LEFT_OUT_REASONS)[number]
 const LEFT_OUT_TEXT: Record<LeftOut, string> = {
-  'never-reached': 'the run never reached its second session',
+  'never-reached': 'the run never reached a session after the first',
   timeout: 'the run timed out',
   'exit-error': 'a session ended without completing',
-  'checks-failed': 'a check of the second session failed',
+  'checks-failed': 'a check of a session after the first failed, or one was not reached',
 }
 
 /**
@@ -219,11 +225,11 @@ const LEFT_OUT_TEXT: Record<LeftOut, string> = {
  * that stopped early looks cheap, one that timed out looks dear.
  */
 const secondSessionStatus = (record: RunRecord): LeftOut | undefined => {
-  if (!sessionCost(record, 1)) return 'never-reached'
+  if (!laterSessionsCost(record)) return 'never-reached'
   if (record.exit === 'timeout') return 'timeout'
   if (record.exit !== 'ok') return 'exit-error'
-  const second = record.windows.filter((w) => w.session === 1)
-  if (second.length === 0 || second.some((w) => !w.ran || w.checksPassed !== true)) return 'checks-failed'
+  const later = record.windows.filter((w) => w.session >= 1)
+  if (later.length === 0 || later.some((w) => !w.ran || w.checksPassed !== true)) return 'checks-failed'
   return undefined
 }
 
@@ -235,8 +241,8 @@ const secondSessionStatus = (record: RunRecord): LeftOut | undefined => {
  */
 const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
   const eligible = records.filter((r) => r.category !== 'workflow' && r.sessionCosts !== undefined)
-  const withSecond = eligible.filter((r) => sessionCost(r, 1) !== undefined || r.exit !== 'ok')
-  if (!eligible.some((r) => sessionCost(r, 1) !== undefined)) return undefined
+  const withSecond = eligible.filter((r) => laterSessionsCost(r) !== undefined || r.exit !== 'ok')
+  if (!eligible.some((r) => laterSessionsCost(r) !== undefined)) return undefined
   const counted = withSecond.filter((r) => secondSessionStatus(r) === undefined)
   const arms: Arm[] = ['off', 'on', 'oracle']
   const leftOut = Object.fromEntries(
@@ -255,7 +261,7 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
       !r.infraFailed &&
       r.category !== 'workflow' &&
       (r.setting === 'off' || r.setting === 'oracle') &&
-      sessionCost(r, 1) !== undefined &&
+      laterSessionsCost(r) !== undefined &&
       secondSessionStatus(r) === undefined,
   )
   const separate = options.headroomRecords !== undefined
@@ -268,11 +274,11 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
         const values = (arm: Arm) =>
           list
             .filter((r) => r.setting === arm)
-            .map((r) => pickMeasure(name, sessionCost(r, 1) as SessionCost))
+            .map((r) => pickMeasure(name, laterSessionsCost(r) as SessionCost))
         const pilot = (arm: Arm) =>
           headroomRuns
             .filter((r) => r.taskId === taskId && r.setting === arm)
-            .map((r) => pickMeasure(name, sessionCost(r, 1) as SessionCost))
+            .map((r) => pickMeasure(name, laterSessionsCost(r) as SessionCost))
         return {
           taskId,
           off: values('off'),
@@ -290,7 +296,7 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
   const perRun = (pick: (c: SessionCost) => number): number | null =>
     onRuns.length === 0
       ? null
-      : onRuns.reduce((sum, r) => sum + pick(sessionCost(r, 1) as SessionCost), 0) / onRuns.length
+      : onRuns.reduce((sum, r) => sum + pick(laterSessionsCost(r) as SessionCost), 0) / onRuns.length
   return {
     direction: DIRECTIONS.secondSession,
     tasks: taskIds.length,
@@ -298,7 +304,7 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
       arms.map((arm) => [arm, counted.filter((r) => r.setting === arm).length]),
     ) as Record<Arm, number>,
     leftOut,
-    lowerBoundRuns: counted.filter((r) => sessionCost(r, 1)?.lowerBound).length,
+    lowerBoundRuns: counted.filter((r) => laterSessionsCost(r)?.lowerBound).length,
     headroomRuns: separate ? headroomRuns.length : null,
     reviewOverhead: {
       runs: onRuns.length,
@@ -476,7 +482,7 @@ const fmtCapture = (m: ReturnType<typeof secondSessionMeasure>, measure: Measure
 const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): string[] => {
   const list = (ids: string[]) => (ids.length === 0 ? 'none' : ids.join(', '))
   const lines = [
-    '### 4. Second-session cost and capture rate',
+    '### 4. Cost after the first session and capture rate',
     '',
     `Direction: ${s.direction}`,
     '',
