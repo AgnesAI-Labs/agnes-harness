@@ -85,9 +85,7 @@ export function SessionModelSettings({
   const available = budgetChoices(settings.capacity).filter((tokens) => tokens < settings.capacity)
   const common = available.filter((tokens) => tokens === 128000 || tokens === 256000)
   const presets = common.length ? common : available.slice(-2)
-  const [custom, setCustom] = useState(
-    !!saved && Number(saved) !== settings.capacity && !presets.includes(Number(saved)),
-  )
+  const [custom, setCustom] = useState(!!saved && !presets.includes(Number(saved)))
   const levels = thinkingChoices(settings, t)
   const stale = unavailableThinking(settings, t)
   const thinking = stale ? undefined : (settings.thinking ?? '')
@@ -152,7 +150,7 @@ export function SessionModelSettings({
             custom
               ? 'custom'
               : check.valid
-                ? check.tokens === undefined || check.tokens === settings.capacity
+                ? check.tokens === undefined
                   ? ''
                   : String(check.tokens)
                 : undefined

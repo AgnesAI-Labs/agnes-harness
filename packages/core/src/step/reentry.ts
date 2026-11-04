@@ -546,16 +546,13 @@ export async function setModel(
           (thinkingCarriesForward ? priorThinking : sameModel ? undefined : known.defaultSettings?.thinking))
     const contextWindow =
       sel.contextWindow === null
-        ? known.contextWindow
-        : (sel.contextWindow ??
-          (sameModel && priorWindow !== undefined
-            ? priorWindow
-            : (known.defaultSettings?.contextWindow ?? known.contextWindow)))
+        ? undefined
+        : (sel.contextWindow ?? (sameModel ? priorWindow : known.defaultSettings?.contextWindow))
     const to = {
       route: sel.route,
       model: sel.model,
       ...(effectiveThinking === undefined ? {} : { thinking: effectiveThinking }),
-      contextWindow,
+      ...(contextWindow === undefined ? {} : { contextWindow }),
     }
     const r = await s.d.log.append([
       s.ev('x/core/model-switch', { slot: sel.slot, from, to }, { ignorable: true }),

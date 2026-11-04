@@ -258,7 +258,7 @@ function ModelPanel({
         t('modelSettings.presetAuto')),
     // The capacity already sits beside the model row, so automatic is not followed by it here.
     context:
-      state.settings?.contextWindow === undefined || state.settings.contextWindow === state.settings.capacity
+      state.settings?.contextWindow === undefined
         ? t('modelSettings.presetAuto')
         : contextBudgetLabel(state.settings.contextWindow),
     auxiliary: !auxiliaryAvailable
