@@ -753,8 +753,10 @@ describe('model picker', () => {
       await open(trigger)
       expect(document.querySelectorAll('.model-picker-nav')).toHaveLength(3)
       expect(document.querySelector('#model-picker-thinking')?.textContent).toContain('低')
-      // 容量已在模型行右侧，主菜单的「自动」不再重复它。
-      expect(document.querySelector('#model-picker-context .model-picker-value')?.textContent).toBe('自动')
+      // A number is a manual budget even when it equals the current model capacity.
+      expect(document.querySelector('#model-picker-context .model-picker-value')?.textContent).toBe(
+        window === undefined ? '自动' : '128K',
+      )
       expect(document.querySelectorAll('.model-picker-group-title')[0]?.textContent).toBe('OpenAI')
       expect(document.querySelector('.model-picker-capacity')?.textContent).toBe('128K')
       expect(document.querySelector('.model-picker-settings-title')).toBeNull()
@@ -769,7 +771,9 @@ describe('model picker', () => {
         await vi.waitFor(() => expect(document.activeElement).toBe(row))
       }
       await enter('context')
-      expect(option('session-model-budget', '自动').getAttribute('aria-checked')).toBe('true')
+      expect(option('session-model-budget', '自动').getAttribute('aria-checked')).toBe(
+        String(window === undefined),
+      )
       press(document.activeElement as HTMLElement, 'Escape')
       await vi.waitFor(() => expect(document.activeElement?.id).toBe('model-picker-context'))
       expect(trigger.getAttribute('aria-expanded')).toBe('true')

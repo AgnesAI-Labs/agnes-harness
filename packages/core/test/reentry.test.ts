@@ -1112,6 +1112,20 @@ const modelRecord = (route: string, id: string): ModelRecord => ({
 })
 
 describe('setModel', () => {
+  it('keeps a fresh automatic session unpinned before any model switch', async () => {
+    let capacity = 128000
+    const provider = fakeProvider([textTurn('unused')])
+    Object.assign(provider, { models: () => [{ ...modelRecord('r', 'm'), contextWindow: capacity }] })
+    const defaults = presetDefaults()
+    const { session } = await openSession({
+      provider,
+      preset: { ...defaults, model: { ...defaults.model, route: { primary: 'r' }, id: { primary: 'm' } } },
+    })
+    capacity = 1048576
+    expect(session.preset.model.contextWindow?.primary).toBeUndefined()
+    expect((await session.projectUI()).usage?.context.window).toBe(1048576)
+    expect((await session.projectUI()).usage?.model.settings).toEqual({})
+  })
   it('switches the resolved route/model for a slot and the next request uses it', async () => {
     const provider = fakeProvider([textTurn('a'), textTurn('b')])
     Object.assign(provider, {
@@ -1134,7 +1148,7 @@ describe('setModel', () => {
     expect(rows[0]?.data).toEqual({
       slot: 'primary',
       from: { route: 'default', model: null },
-      to: { route: 'r', model: 'm', contextWindow: 8192 },
+      to: { route: 'r', model: 'm' },
     })
   })
 
@@ -1177,7 +1191,26 @@ describe('setModel', () => {
     }
     await session.setModel({ slot: 'primary', route: 'r', model: 'm', thinking: null, contextWindow: null })
     expect(session.preset.model.thinking.primary).toBeUndefined()
-    expect(session.preset.model.contextWindow?.primary).toBe(8192)
+    expect(session.preset.model.contextWindow?.primary).toBeUndefined()
+    expect((await session.projectUI()).usage?.model.settings).toEqual({})
+  })
+
+  it('follows provider capacity in automatic mode and preserves an explicit budget', async () => {
+    let capacity = 8192
+    const provider = fakeProvider([textTurn('a')])
+    Object.assign(provider, { models: () => [{ ...modelRecord('r', 'm'), contextWindow: capacity }] })
+    const { session, log } = await openSession({ provider })
+    await session.setModel({ slot: 'primary', route: 'r', model: 'm', contextWindow: null })
+    capacity = 1048576
+    expect((await session.projectUI()).usage?.context.window).toBe(1048576)
+    expect((await session.projectUI()).usage?.model.settings).toEqual({})
+    expect((await log.scan({ type: 'x/core/model-switch', limit: 1 }))[0]?.data).toMatchObject({
+      to: { route: 'r', model: 'm' },
+    })
+    await session.setModel({ slot: 'primary', route: 'r', model: 'm', contextWindow: 128000 })
+    capacity = 2097152
+    expect((await session.projectUI()).usage?.context.window).toBe(128000)
+    expect((await session.projectUI()).usage?.model.settings?.contextWindow).toBe(128000)
   })
 
   it.each([100, 4096].flatMap((window) => ['inference', 'compaction'].map((mode) => ({ window, mode }))))(
