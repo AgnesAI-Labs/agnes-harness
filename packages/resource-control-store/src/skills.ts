@@ -11,7 +11,7 @@ import {
 import type { SkillCatalogAdapter } from './adapters.js'
 import type { ResourceAuthority, ResourceEffectAdmission } from './permissions.js'
 import type { ResourceProfileScope } from './profile-scope.js'
-import { type ResourceOperationRecord, SkillJournalStore, type SkillTrustDecision } from './skill-journal.js'
+import { type ResourceOperationRecord, SkillJournalStore } from './skill-journal.js'
 import { readSkillView, skillListPage } from './skill-list.js'
 import { checkedSkillScanObservation, SkillScanReports, type SkillScanToken } from './skill-scan-reports.js'
 import {
@@ -37,6 +37,7 @@ import {
   skillRuntimeRevision,
   terminal,
 } from './skill-state.js'
+import { knownSkillIds, skillDecisionsAfterScan } from './skill-trust.js'
 
 type EffectMethod =
   | '_agnes/v1/skills.remove'
@@ -672,36 +673,20 @@ export class SkillResourceStore {
               .map((item) => [item.descriptor.resourceId, item.capabilityHash]),
           ),
         }
-        // A decision follows its Skill across edits: it is rebound to the observed revision and
-        // capability instead of being dropped, so an edited Skill keeps its trust or rejection.
         // The worker that produced this scan still has the deletion barrier in its snapshot.
         // Publish the cleared barrier before reconcile can establish the new winner/actual state.
-        let controlChanged = !!reinstall && journal.removed.includes(reinstall.resourceId)
-        const trust: Record<string, SkillTrustDecision> = {}
-        for (const [id, decision] of Object.entries(journal.trust)) {
-          const descriptor = discovered.find((item) => item.resourceId === id)
-          const capabilityHash = capability[id]
-          if (!descriptor || !capabilityHash) continue
-          if (decision.revision !== descriptor.revision || decision.capabilityHash !== capabilityHash)
-            controlChanged = true
-          trust[id] = { ...decision, revision: descriptor.revision, capabilityHash }
-        }
-        const desired: Record<string, 'enabled' | 'disabled'> = Object.fromEntries(
-          Object.entries(journal.desired).filter(([id]) => ids.has(id)),
-        )
-        // A Skill seen for the first time is trusted and enabled; any recorded decision wins over this.
-        const known = new Set([
-          ...journal.discovered.map((item) => item.resourceId),
-          ...Object.keys(journal.trust),
-          ...Object.keys(journal.desired),
-        ])
-        for (const item of values) {
-          const capabilityHash = capability[item.resourceId]
-          if (known.has(item.resourceId) || removed.includes(item.resourceId) || !capabilityHash) continue
-          trust[item.resourceId] = { revision: item.revision, capabilityHash, state: 'trusted' }
-          desired[item.resourceId] = 'enabled'
-          controlChanged = true
-        }
+        const decisions = skillDecisionsAfterScan({
+          trust: journal.trust,
+          desired: journal.desired,
+          known: knownSkillIds(journal),
+          removed,
+          current: discovered,
+          observed: values,
+          capability,
+        })
+        const { trust, desired } = decisions
+        const controlChanged =
+          decisions.changed || (!!reinstall && journal.removed.includes(reinstall.resourceId))
         return {
           next: changed(journal, {
             removed,

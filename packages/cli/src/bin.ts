@@ -142,7 +142,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
     // Said every time and on stderr: a flag that sounds like a guarantee must not hide what this build cannot skip.
     io.stderr.write(
       p.safeMode
-        ? 'agh: --safe-mode skips custom slash commands and non-built-in plugins; instruction files, hooks and MCP servers are still loaded by this build\n'
+        ? 'agh: --safe-mode skips custom slash commands, non-built-in plugins and disk Skills; instruction files, hooks and MCP servers are still loaded by this build\n'
         : 'agh: --ignore-rules skips custom slash commands; instruction files (AGENTS.md, CLAUDE.md) are still loaded by this build\n',
     )
   if (p.command === 'completion')

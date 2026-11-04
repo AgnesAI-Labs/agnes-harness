@@ -50,7 +50,7 @@ node /path/to/agnes-harness/agnes.mjs skills list
 
 ## 来源与冲突
 
-默认磁盘来源是工作区 `.agh/skills`（也支持工作区 `.agents/skills`、`.claude/skills`）和 `$AGH_HOME/skills`；包也可以贡献 Skill。操作系统用户的 `~/.agents/skills`、`~/.claude/skills`、`~/.codex/skills` 默认不导入，包括全新或隔离的 AGH_HOME。只有启动 daemon 时显式设置部署配置 `AGNES_SKILLS_IMPORT_USER=1` 才导入；导入的用户技能同样自动信任，因此只对可信目录开启。`AGH_HOME` 不会重定位其他工具的用户目录。多工作区按会话自己的工作区读取，不以 worker 启动目录替代。
+默认磁盘来源是工作区 `.agh/skills`（也支持工作区 `.agents/skills`、`.claude/skills`）和 `$AGH_HOME/skills`；包也可以贡献 Skill。操作系统用户的 `~/.agents/skills`、`~/.claude/skills`、`~/.codex/skills` 默认不导入，包括全新或隔离的 AGH_HOME。只有启动 daemon 时显式设置部署配置 `AGNES_SKILLS_IMPORT_USER=1` 才导入；导入的用户技能同样自动信任，因此只对可信目录开启。`AGH_HOME` 不会重定位其他工具的用户目录。多工作区按会话自己的工作区读取，不以 worker 启动目录替代。CLI 自己启动的宿主（`--standalone`、`--ephemeral`、`agh run`、`agh import`）读取同样的技能文件夹，并沿用 daemon 为该安装保存的启用与信任决定（`--ephemeral` 从真实的 home 读取）：daemon 从未保存过资源状态时，所有技能都按新技能处理；保存过之后，决定文件缺失或无法读取时不提供任何磁盘技能。每个会话保留它开始时的技能列表，`--safe-mode` 只提供插件技能。
 
 默认优先级如下，数字越大越优先：
 
