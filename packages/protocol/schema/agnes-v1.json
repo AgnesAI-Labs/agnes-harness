@@ -5770,7 +5770,7 @@
       }
     },
     "RefinementSavedSkill": {
-      "description": "A skill refinement installed in the workspace: `active` (on), `review-disabled` (switched off by the 30-day review: awaiting review; switching it on again renews it). `previous` are the earlier revisions it can be rolled back to, newest last. `initiator` is who asked for the save it holds now.",
+      "description": "A skill refinement installed in the workspace: `active` (on), `review-disabled` (switched off by the 30-day review, or by the cap on saved skills in force when `disabledFor` says `capacity`; switching it on again renews it). `previous` are the earlier revisions it can be rolled back to, newest last. `initiator` is who asked for the save it holds now.",
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "resourceId", "revision", "state", "reviewAfter", "initiator", "previous"],
@@ -5784,6 +5784,10 @@
         "workflow": {
           "description": "The skill was generated from a finished `workflow` run and carries its definition.",
           "const": true
+        },
+        "disabledFor": {
+          "description": "Why a `review-disabled` skill is off when it was not the 30-day review: `capacity`, the workspace already had 20 saved skills in force. Only a person switches it back on; a confirmation or an update does not.",
+          "const": "capacity"
         },
         "previous": {
           "type": "array",

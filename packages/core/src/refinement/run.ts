@@ -46,9 +46,13 @@ import {
 import { type EntryView, entryValidity, grantLevels, lapsedKeys, validEntries } from './validity.js'
 import {
   grantWorkspace,
+  isSavedPrefix,
+  isSavedRef,
   isWorkspaceKind,
   isWorkspaceRef,
   plannerWorkspace,
+  savedEntriesOf,
+  savedParagraphOf,
   shownWorkspaceRefs,
   workspaceRefsOf,
 } from './workspace-refs.js'
@@ -262,6 +266,14 @@ export async function planRefinementRun(
       return await move(s, runId, 'rejected', { ...frozen, reason: 'no-evidence' }, queued)
     const { scope, readable } = await readTaskScope(s)
     const { entries, counts } = plannerEntries(snapshot, entryValidity(s.state, scope, readable).valid)
+    // Saved entries nobody edited since they were saved are offered in full under their saved id: an
+    // upsert rewrites the saved paragraph in place. One a person edited is only ever confirmed.
+    const held = new Set(entries.map((e) => e.id))
+    for (const e of (await savedEntriesOf(s)) ?? []) {
+      if (!e.untouched || held.has(e.ref) || counts[e.kind] >= PLANNER_ENTRIES_PER_KIND) continue
+      entries.push({ kind: e.kind, id: e.ref, title: e.title, content: e.content, version: 1 })
+      counts[e.kind]++
+    }
     const workspace = await workspaceRefsOf(s)
     let prompt: PlannerPrompt
     try {
@@ -483,6 +495,15 @@ const masked = (text: string, max: number, why: string, min = 0): string => {
  * deleted entry the model was given is withdrawn by a control notice ahead of the next request's other
  * notes.
  */
+/** `memory/ws.<id>` as the saved paragraph `workspace-memory/<id>` when the planner was shown that one. */
+function savedAlias(entryId: string, shownWorkspace: ReadonlySet<string>): string {
+  const saved = savedParagraphOf(entryId.slice(entryId.indexOf('/') + 1))
+  if (!saved) return entryId
+  const ref = `${saved.layer === 'user' ? 'user-memory' : 'workspace-memory'}/${saved.paragraphId}`
+  // A saved entry has no cell of its own to confirm: without its paragraph shown, nothing is renewed.
+  return shownWorkspace.has(ref) ? ref : invalid(`unknown-entry: ${entryId}`)
+}
+
 function checkedPlan(
   out: unknown,
   run: RefinementRunRecord,
@@ -539,6 +560,12 @@ function checkedPlan(
           invalid(`confirm-only: ${String(raw.kind)}/${String(raw.id)}`)
         const edit = checkedEdit(raw, at, seqs)
         const key = refOf(edit)
+        // A saved entry is rewritten only when it was shown in full, and never deleted.
+        if (isSavedRef(edit.id) && edit.op === 'delete') invalid(`confirm-only: ${key}`)
+        if (isSavedRef(edit.id) && !full.has(key)) invalid(`not-shown-in-full: ${key}`)
+        // An id under a saved prefix is reserved for new entries; one the session holds already may change.
+        if (isSavedPrefix(edit.id) && !isSavedRef(edit.id) && !existing.has(key))
+          invalid(`reserved-id: ${key}`)
         if (touched.has(key)) invalid(`duplicate-entry: ${key}`)
         if (changed.has(key)) invalid('read-set-changed')
         const saved = existing.get(key)
@@ -563,7 +590,8 @@ function checkedPlan(
       try {
         if (!isObj(raw) || !only(raw, ['entryId', 'evidenceIds', 'quote']) || !str(raw.entryId, 160, 3))
           invalid(`invalid-shape: confirmations[${at}]`)
-        const entryId = (raw as Obj).entryId as string
+        // A saved entry shown under its saved id is confirmed as the saved paragraph it is.
+        const entryId = savedAlias((raw as Obj).entryId as string, shownWorkspace)
         const workspace = isWorkspaceRef(entryId)
         if (!(workspace ? shownWorkspace : shown).has(entryId)) invalid(`unknown-entry: ${entryId}`)
         if (confirmed.has(entryId)) invalid(`duplicate-confirmation: ${entryId}`)

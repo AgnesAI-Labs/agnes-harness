@@ -9,7 +9,7 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.enabled.hint':
       'Off by default. When on, Agnes reviews your sessions in the background and keeps useful lessons as experience for later turns.',
     'refinement.enabled.info':
-      'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once.',
+      'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once. To keep lessons for later sessions, also turn workspace memory on (Settings → General → Personalization → Memory: "Ask me first" or "Automatic"); while it is off, lessons last only for the session they were learned in.',
     'refinement.mode': 'How reviews start',
     'refinement.mode.hint':
       'Manual: a review runs only when you ask with /refine. Automatic: reviews can also start by themselves, within spending limits.',
@@ -48,7 +48,8 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.group.main': '任务经验（RSI）',
     'refinement.enabled': '从完成的工作中学习',
     'refinement.enabled.hint': '默认关闭。开启后，Agnes 会在后台复盘你的会话，把有用的经验留给之后的轮次。',
-    'refinement.enabled.info': '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。',
+    'refinement.enabled.info':
+      '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',
     'refinement.mode': '复盘如何开始',
     'refinement.mode.hint': '手动：只有你用 /refine 提出时才复盘。自动：也会在费用限额内自行开始复盘。',
     'refinement.mode.manual': '仅手动',

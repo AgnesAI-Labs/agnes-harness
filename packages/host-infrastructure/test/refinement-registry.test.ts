@@ -424,6 +424,28 @@ describe('RefinementRegistry', () => {
     expect(statSync(fileOf(dir, '/w')).mode & 0o077).toBe(0)
   })
 
+  it('keeps why a skill was switched off and who switched it back on; an unknown value is dropped', () => {
+    const dir = tempDir()
+    const one = new RefinementRegistry(dir, '/w', clockAt())
+    one.update((draft) => {
+      draft.skills.push(skill({ name: 'off', state: 'review-disabled', disabledFor: 'capacity' }))
+      draft.skills.push(skill({ name: 'on', enabledBy: 'person' }))
+      draft.skills.push(skill({ name: 'plain' }))
+    }, one.read().revision)
+    const file = fileOf(dir, '/w')
+    const stored = JSON.parse(readFileSync(file, 'utf8'))
+    stored.skills[2].disabledFor = 'a-later-reason'
+    stored.skills[2].enabledBy = 'someone-later'
+    writeFileSync(file, JSON.stringify(stored))
+    const read = new RefinementRegistry(dir, '/w', clockAt())
+    expect(read.unreadable()).toBe(false)
+    const [off, on, plain] = read.read().skills
+    expect(off).toMatchObject({ state: 'review-disabled', disabledFor: 'capacity' })
+    expect(on).toMatchObject({ state: 'active', enabledBy: 'person' })
+    expect(plain).not.toHaveProperty('disabledFor')
+    expect(plain).not.toHaveProperty('enabledBy')
+  })
+
   it('stores structure and hashes only: receipts and revocations carry no entry text', () => {
     const { registry, dir } = make()
     const marker = 'ENTRY-TEXT-MARKER'

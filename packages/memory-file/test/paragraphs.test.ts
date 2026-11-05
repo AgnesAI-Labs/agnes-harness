@@ -176,6 +176,31 @@ describe('file memory managed paragraphs', () => {
     expect(text(await f.files(2).read(f.index))).toBe(`${OMITTED(2)}\n`)
   })
 
+  it('a delivered paragraph is left out of the snapshot silently and shown on read', async () => {
+    const f = await fixture({ validity: view({ [A]: 'valid', [B]: 'delivered' }).view })
+    await f.session.configure({ mode: 'auto' })
+    const stored = `Human note\n\n${block(A, 'Run pnpm lint before commit.')}\n${block(B, 'Saved lesson.')}tail\n`
+    await writeFile(f.index, stored)
+    const snapshot = await f.session.snapshot(1)
+    expect(snapshot?.content).toContain(`Human note\n\n${block(A, 'Run pnpm lint before commit.')}\ntail\n`)
+    expect(snapshot?.content).not.toContain('Saved lesson.')
+    expect(snapshot?.content).not.toContain('task-experience paragraphs omitted')
+    expect(text(await f.files(1).read(f.index))).toBe(stored)
+  })
+
+  it('whole-file writes and replaceExact check a delivered paragraph against the read view', async () => {
+    const f = await fixture({ validity: view({ [B]: 'delivered' }).view })
+    await f.session.configure({ mode: 'auto' })
+    const stored = `Top\n${block(B, 'Saved lesson.')}Bottom\n`
+    await writeFile(f.index, stored)
+    const files = f.files(1)
+    await files.replaceExact?.(f.index, 'Bottom', 'Bottom line')
+    expect(await f.raw()).toBe(`Top\n${block(B, 'Saved lesson.')}Bottom line\n`)
+    const seen = text(await f.files(2).read(f.index))
+    await f.files(2).write(f.index, `${seen}more\n`)
+    expect(await f.raw()).toBe(`Top\n${block(B, 'Saved lesson.')}Bottom line\nmore\n`)
+  })
+
   it('the omitted set changes memoryRevision', async () => {
     const tracked = view({ [A]: 'valid' })
     const f = await fixture({ validity: tracked.view })

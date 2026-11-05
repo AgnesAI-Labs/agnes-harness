@@ -61,6 +61,7 @@ export function openMemory(input: {
     const indexValid = passes(index, config)
     // An index already over its cap is never shown, so it is not parsed for paragraphs either.
     const indexView = indexValid ? paragraphView(index.content, validity) : unfilteredIndexView(index.content)
+    const noteView = indexValid ? paragraphView(index.content, validity, 'note') : indexView
     const agent = files.map((entry) =>
       entry.path === 'MEMORY.md' && indexView.content !== entry.content
         ? file(entry.path, indexView.content)
@@ -79,7 +80,7 @@ export function openMemory(input: {
       ]),
     )
     const workspaceContent = indexValid
-      ? indexView.content
+      ? noteView.content
       : '[Memory omitted: consolidate the index or remove secret-like content.]'
     const userContent = userValid
       ? userView.text

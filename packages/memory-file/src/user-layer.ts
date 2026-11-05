@@ -66,7 +66,14 @@ function layerOf(content: string, validity: (id: string) => MemoryParagraphValid
     return { text: content, managed: false, omittedIds: [], handWritten: content, sections: [] }
   const { paragraphs, anomalies } = parseParagraphs(content)
   const valid = paragraphs.filter((paragraph) => validity(paragraph.id) === 'valid')
-  const left = [...anomalies, ...paragraphs.filter((paragraph) => validity(paragraph.id) !== 'valid')]
+  // A delivered section is given to the model by the Host: it is neither shown here nor counted.
+  const left = [
+    ...anomalies,
+    ...paragraphs.filter((paragraph) => {
+      const answer = validity(paragraph.id)
+      return answer !== 'valid' && answer !== 'delivered'
+    }),
+  ]
   const regions = [...paragraphs, ...anomalies]
     .map(({ start, end }) => ({ start, end }))
     .sort((a, b) => a.start - b.start || b.end - a.end)
@@ -101,8 +108,8 @@ function layerOf(content: string, validity: (id: string) => MemoryParagraphValid
  * whatever the workspace's memory mode, since every workspace reads the same file. A put is refused with
  * `MEMORY_USER_BUDGET` when the hand-written text, the sections in force and the sections being put would
  * take more than the user budget in what the agent is shown (this workspace's `userTokenBudget`, never
- * more than the default), or when the file would pass its index size or line cap; nothing is trimmed or
- * merged. Credential-like content is refused as in workspace memory (`MEMORY_SECRET_LIKE_CONTENT`).
+ * more than the default; not checked when the view `delivers`, since then no section is shown here), or
+ * when the file would pass its index size or line cap; nothing is trimmed or merged. Credential-like content is refused as in workspace memory (`MEMORY_SECRET_LIKE_CONTENT`).
  */
 export function userParagraphPort(
   user: MemoryStore,
@@ -144,8 +151,10 @@ export function userParagraphPort(
           throw fault('MEMORY_USER_BUDGET')
         throw error
       }
+      // A Host that gives the sections in force to the model itself shows none of them in this layer,
+      // so a put takes no room in what the agent is shown.
       const puts = new Set(list.flatMap((change) => (change.op === 'put' ? [change.id] : [])))
-      if (puts.size) {
+      if (puts.size && view?.delivers !== true) {
         const budget = Math.min(config.userTokenBudget, defaults.userTokenBudget)
         const used = bytesOf(layerOf(candidate.content, (id) => (puts.has(id) ? 'valid' : answer(id))))
         if (used.handWritten + used.rsiInForce > budget) throw fault('MEMORY_USER_BUDGET')

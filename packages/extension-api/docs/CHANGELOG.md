@@ -2,6 +2,20 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.5.0
+
+### Added
+
+All additions are optional; `^5.0.0` ranges admit 5.5.0 and no existing contract changes for a Host that
+does not use them.
+
+- `MemoryParagraphValidity` gains `delivered`: a managed paragraph in force that the Host gives to the
+  model itself (in the task-experience snapshot). A provider leaves it out of its snapshot without an
+  omission line and shows it on read like `valid`. A provider that predates it treats it as `unknown`.
+- `MemoryValidityView.delivers`: true when the Host answers every paragraph in force `delivered`. A
+  section put into user memory then takes no room in what the agent is shown, so `propose` does not
+  refuse it for the user memory budget; the index caps still apply.
+
 ## 5.4.0
 
 ### Added

@@ -40,6 +40,14 @@ Extension API 5.3.0 为用户记忆（每个工作区都可能读取的记忆）
 - `open` 可能收到 `userValidity`：用于用户记忆中受管段落的 `MemoryValidityView`，规则与 `validity` 相同。支持它的 provider 先向智能体展示人写的用户记忆，之后只展示仍有效的段落，因此用户记忆预算总是先截掉保存的文字，而不是人写的内容。没有标记的用户记忆文件按原样展示，revision 也不变。
 - `MemorySession.userParagraphs?(source, signal)` 返回作用于用户记忆索引的 `MemoryParagraphPort`。它不受工作区记忆模式影响：智能体仍然不能写用户记忆，何时可以写入由 Host 自己判定。人写内容、有效段落与新写入段落合计超出智能体看到的用户记忆预算，或索引会超过大小或行数上限时，`propose` 以 `MEMORY_USER_BUDGET` 拒绝；它从不为腾出空间而截断、合并或删除任何内容。凭据形状的内容与工作区记忆一样以 `MEMORY_SECRET_LIKE_CONTENT` 拒绝。人写内容与标记行从不改动。`memoryParagraphConformance` 可以像检查 `paragraphs` 一样检查它。
 
+## Host 自己交付的段落（5.5.0）
+
+Extension API 5.5.0 新增有效性答案 `delivered` 和可选的 `MemoryValidityView.delivers`。Host 如果自己把仍有效的段落放进任务经验快照交给模型，就对它们答 `delivered`，并设 `delivers: true`。
+
+- provider 在快照里略去 `delivered` 段落，不加省略行；读文件时和 `valid` 一样显示。整文件写入和精确替换都按智能体读到的内容核对。
+- 视图 `delivers` 时，写入用户记忆的段落不占智能体看到的内容，`propose` 不会因为用户记忆预算拒绝它；索引的大小和行数上限照旧。
+- 早于 5.5.0 的 provider 把 `delivered` 当作 `unknown`，略去该段落并加省略行；Host 照样交付它。
+
 - Agent 默认关闭。询问模式在写入前审批精确文件候选，绑定 `baseHash`、`newHash`、完整 diff、会话/轮次；full-access 自动允许并记录每项精确提案，其他预设的宽泛授权不能代替该审批。拒绝、取消、冲突的候选不能注入。
 - 同轮请求保持索引与主题修订。主题正文按需进入模型上下文；人工修改下轮可见。关闭在下次请求生效，即使该轮之前已生成快照。
 - 存储上限与注入预算独立，两层与头部都计预算；有可见省略标记。超限整合失败不能截断索引文件。

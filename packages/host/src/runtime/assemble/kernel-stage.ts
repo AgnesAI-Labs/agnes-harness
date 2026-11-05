@@ -105,7 +105,7 @@ async function selectCoreProviders(
  */
 function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase, refinement: RefinementHost) {
   const { providerSelections, deps } = ctx
-  const open = (workspaceRoot: string, sessionKey: string): MemorySession | undefined => {
+  const open = (workspaceRoot: string, sessionKey: string, child = false): MemorySession | undefined => {
     const selection = providerSelections.memory ?? { provider: 'file', version: '1.0.0' }
     if (
       !providerSelections.memory &&
@@ -116,8 +116,8 @@ function sessionMemory(ctx: AssemblyContext, pluginTree: HostPluginTreeBase, ref
       home: dirname(dirname(deps.profileDir)),
       workspaceRoot,
       sessionKey,
-      validity: refinement.workspace.validity(workspaceRoot, sessionKey),
-      userValidity: refinement.workspace.userValidity(sessionKey),
+      validity: refinement.workspace.validity(workspaceRoot, sessionKey, child),
+      userValidity: refinement.workspace.userValidity(sessionKey, child),
     })
   }
   refinement.workspace.bindMemory(open)
@@ -245,8 +245,8 @@ export async function createKernel(
       ...adapters.fs,
       read: (path, opts) => adapters.fs.read(path, { ...opts, unit: 'bytes' }),
     },
-    memoryFor: ({ key, workspaceRoot }) =>
-      input.refinement.workspace.opened(workspaceRoot, memory(workspaceRoot, key)),
+    memoryFor: ({ key, workspaceRoot, child }) =>
+      input.refinement.workspace.opened(workspaceRoot, memory(workspaceRoot, key, child === true)),
     commandPathScopeFor: hostCommandPathScope,
     netFetch: deps.netFetch ?? createNetFetch(),
     publicFetch: deps.publicFetch ?? createPublicFetch(deps.env),
