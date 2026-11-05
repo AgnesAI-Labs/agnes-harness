@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { verifyResults } from './result.mjs'
+import { heavyShard } from './run-heavy-shard.mjs'
 import { changedPaths, detectDocsOnly, isDocsOnly } from './scope.mjs'
 import { verifyStoryResult } from './story-results.mjs'
 
@@ -66,6 +67,62 @@ describe('CI scope', () => {
       const setups = workflow.match(/uses: actions\/setup-node@/g) ?? []
       expect(workflow, name).not.toMatch(/\bnode-version:/)
       expect(workflow.match(/node-version-file: \.node-version\b/g) ?? [], name).toHaveLength(setups.length)
+    }
+  })
+
+  it('runs the native PowerShell file once on Windows for PRs and every full-platform event', () => {
+    const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')
+    const file = 'packages/host-infrastructure/test/adapters/powershell-file.e2e.test.ts'
+    const check = workflow.split('\n  check:\n')[1]?.split('\n  windows-check-result:')[0] ?? ''
+    const steps = check.split(/\n {6}- /)
+    const isolated = steps.filter((step) => step.includes(`run: pnpm exec vitest run ${file}`))
+    expect(isolated).toHaveLength(1)
+    const step = isolated[0] as string
+    const command = /^ {8}run: (.+)$/m.exec(step)?.[1]?.trim().split(/\s+/)
+    expect(command).toEqual(['pnpm', 'exec', 'vitest', 'run', file, '--maxWorkers=1'])
+    expect(steps.indexOf(step)).toBeGreaterThan(steps.findIndex((s) => s.includes('id: suite')))
+    const condition = /^ {8}if: (.+)$/m.exec(step)?.[1] ?? ''
+    const checkRows = [...check.matchAll(/^\s*- \{ os: ([^,]+),.* shard: '([^']*)' \}/gm)]
+    expect(checkRows.length).toBeGreaterThan(0)
+    const osNames: Record<string, string> = {
+      'ubuntu-latest': 'Linux',
+      'macos-latest': 'macOS',
+      'windows-latest': 'Windows',
+    }
+    const matches = (os: string, shard: string, event: string) => {
+      const context: Record<string, string> = {
+        'runner.os': os,
+        'matrix.shard': shard,
+        'github.event_name': event,
+      }
+      return condition.split(/\s*&&\s*/).every((clause) => {
+        const equality = /^(runner\.os|matrix\.shard|github\.event_name) == '([^']+)'$/.exec(clause)
+        if (!equality) throw new Error('unsupported isolated-step condition')
+        return context[equality[1] as string] === equality[2]
+      })
+    }
+    const heavy = workflow.split('\n  heavy:\n')[1]?.split('\n  runtime-package:')[0] ?? ''
+    const matrix =
+      /os: \$\{\{ fromJSON\(github.event_name == '([^']+)' && '([^']+)' \|\| '([^']+)'\) \}\}/.exec(heavy)
+    expect(matrix === null).toBe(false)
+    const { lists } = JSON.parse(readFileSync(new URL('./heavy-shards.json', import.meta.url), 'utf8'))
+    const excluded = /AGNES_TEST_EXCLUDE: \$\{\{ runner.os == 'Windows' && '([^']*)' \|\| '' \}\}/.exec(heavy)
+    expect(excluded === null).toBe(false)
+    const held = new Set(excluded?.[1]?.split(',') ?? [])
+    const shardOwners = [1, 2, 3].filter((index) => {
+      const shard = heavyShard(`${index}/3`, lists)
+      return !held.has(file) && (shard.files ? shard.files.includes(file) : !shard.exclude?.includes(file))
+    })
+    expect(shardOwners).toEqual([3])
+    for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch']) {
+      const extra = checkRows.filter((row) => matches(osNames[row[1] as string] ?? '', row[2] ?? '', event))
+      expect(
+        extra.map((row) => [row[1], row[2]]),
+        event,
+      ).toEqual(event === 'pull_request' ? [['windows-latest', '1/3']] : [])
+      const heavyOs = JSON.parse((event === matrix?.[1] ? matrix?.[2] : matrix?.[3]) ?? '[]') as string[]
+      const nativeHeavy = heavyOs.includes('windows-latest') ? shardOwners.length : 0
+      expect(extra.length + nativeHeavy, event).toBe(1)
     }
   })
 

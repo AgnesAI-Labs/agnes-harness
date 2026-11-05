@@ -143,6 +143,11 @@ jobs:
         # Files run alone below on Windows are held out here.
         env: { AGNES_TEST_EXCLUDE: '${{ matrix.testExclude }}' }
         run: pnpm exec vitest run --project fast ${{ matrix.testArgs }}
+      # Keep this native Windows gate on PRs after moving real-process tests to the heavy tier.
+      # Other events already execute it once in Windows heavy shard 3.
+      - name: Windows PowerShell private scripts on pull requests
+        if: runner.os == 'Windows' && matrix.shard == '1/3' && github.event_name == 'pull_request'
+        run: pnpm exec vitest run packages/host-infrastructure/test/adapters/powershell-file.e2e.test.ts --maxWorkers=1
       # The Skill install flow polls for completion with a three-second bound; run this
       # disk-backed integration file without other Vitest files competing on Windows.
       - name: Windows Skill install requests
