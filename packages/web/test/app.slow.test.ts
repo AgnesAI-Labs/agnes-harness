@@ -20,10 +20,33 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 let releaseRuntime: import('../src/client-modules/boot.js').ClientModulesRuntime | undefined
 let mountRelease: () => Promise<void>
+async function renderUI(work: () => void | Promise<void>): Promise<void> {
+  const previous = Reflect.get(globalThis, 'IS_REACT_ACT_ENVIRONMENT')
+  Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', true)
+  try {
+    await act(work)
+  } finally {
+    if (previous === undefined) Reflect.deleteProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT')
+    else Reflect.set(globalThis, 'IS_REACT_ACT_ENVIRONMENT', previous)
+  }
+}
+
 async function bootApp(): Promise<void> {
-  await import('../src/app.js')
-  if (!releaseRuntime) throw new Error('Client modules did not start')
-  await mountRelease()
+  // Reload hints are independent of each case's admin/upload HTTP fixtures.
+  const fetcher = globalThis.fetch
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>((input, init) =>
+      new URL(String(input), location.href).pathname === '/plugins/changes'
+        ? Promise.resolve(Response.json({ epoch: 'fixture', cursor: 0, reset: false, events: [] }))
+        : fetcher(input, init),
+    ),
+  )
+  await renderUI(async () => {
+    await import('../src/app.js')
+    if (!releaseRuntime) throw new Error('Client modules did not start')
+    await mountRelease()
+  })
 }
 
 const sdk = vi.hoisted(() => ({
@@ -408,10 +431,10 @@ function modelMenu(): HTMLElement {
 }
 
 afterEach(async () => {
-  await act(async () => {
+  await renderUI(async () => {
     window.dispatchEvent(new Event('pagehide'))
+    await releaseRuntime?.dispose()
   })
-  await releaseRuntime?.dispose()
   releaseRuntime = undefined
   vi.resetModules()
   vi.clearAllMocks()
@@ -2954,7 +2977,13 @@ describe('queued input deletion', () => {
       )
       document.querySelector<HTMLButtonElement>('.composer-queue-remove')?.click()
       await vi.waitFor(() => expect(old.removeQueued).toHaveBeenCalledExactlyOnceWith('shared-id'))
-      document.querySelector<HTMLButtonElement>('[data-session="next"]')?.click()
+      const selectNext = await vi.waitFor(() => {
+        const button = document.querySelector<HTMLButtonElement>('[data-session="next"]')
+        expect(button).not.toBeNull()
+        expect(button?.disabled).toBe(false)
+        return button as HTMLButtonElement
+      })
+      await renderUI(() => selectNext.click())
       await vi.waitFor(() =>
         expect(document.querySelector('.composer-queue-preview')?.textContent).toBe('next input'),
       )
@@ -3212,6 +3241,8 @@ describe('image composer submissions', () => {
   it.each(['PNG', '10 MiB JPEG'])(
     'enables and sends a %s without text through session.prompt',
     async (format) => {
+      const warnings = vi.spyOn(console, 'warn')
+      onTestFinished(() => warnings.mockRestore())
       const active = session('old', async () => idleTimeline('old', { route: 'local', id: 'model-a' }))
       await start(active)
       let bytes = imagePngBytes
@@ -3235,6 +3266,9 @@ describe('image composer submissions', () => {
         titleLocale: 'zh-CN',
         references: [],
       })
+      expect(
+        warnings.mock.calls.filter(([message]) => String(message).startsWith('[client-modules]')),
+      ).toEqual([])
     },
   )
 
@@ -4424,10 +4458,14 @@ describe('session that cannot continue on this build', () => {
       binding.loadWebSession.mockReturnValue(opening.promise)
       await bootApp()
       if (priorFailure) {
-        await vi.waitFor(() =>
-          expect(document.getElementById('notice')?.dataset.kind).toBe('session-recovery'),
-        )
-        document.querySelector<HTMLButtonElement>('[data-recovery-action="retry"]')?.click()
+        const retry = await vi.waitFor(() => {
+          expect(document.getElementById('notice')?.dataset.kind).toBe('session-recovery')
+          const button = document.querySelector<HTMLButtonElement>('[data-recovery-action="retry"]')
+          expect(button).not.toBeNull()
+          expect(button?.disabled).toBe(false)
+          return button as HTMLButtonElement
+        })
+        await renderUI(() => retry.click())
         await vi.waitFor(() => expect(binding.loadWebSession).toHaveBeenCalledTimes(2))
       }
       await vi.waitFor(() => expect(document.getElementById('transcript')?.textContent).toContain('历史问题'))
