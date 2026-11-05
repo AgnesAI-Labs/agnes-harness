@@ -654,3 +654,26 @@ describe('file memory paragraph port', () => {
     )
   })
 })
+
+describe('the truncation notice and delivered paragraphs', () => {
+  it('names a line of the file as read that holds text left out of the note, wherever the cut falls', async () => {
+    const f = await fixture({ validity: view({ [A]: 'delivered' }).view })
+    await f.session.configure({ mode: 'auto' })
+    const early = Array.from({ length: 6 }, (_, i) => `- early ${i}`)
+    const later = Array.from({ length: 30 }, (_, i) => `- later ${i} ${'x'.repeat(60)}`)
+    await writeFile(f.index, `${early.join('\n')}\n${block(A, 'Saved lesson.')}${later.join('\n')}\n`)
+    const read = text(await f.files(1).read(f.index)).split('\n')
+    let checked = 0
+    for (let limit = 128; limit <= 700; limit++) {
+      await f.session.configure({ tokenBudget: limit })
+      const content = (await f.session.snapshot(limit))?.content ?? ''
+      const line = /from line (\d+) of /u.exec(content)?.[1]
+      if (!line) continue
+      checked++
+      const named = read[Number(line) - 1] ?? ''
+      expect(named, `limit ${limit}`).toMatch(/^- (early|later) \d+( x+)?$/u)
+      expect(content, `limit ${limit}`).not.toContain(`${named}\n`)
+    }
+    expect(checked).toBeGreaterThan(100)
+  })
+})

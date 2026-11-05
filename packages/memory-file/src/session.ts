@@ -87,20 +87,33 @@ export function openMemory(input: {
       : '[User memory omitted: consolidate the index or remove secret-like content.]'
     // Each layer is cut to its own limit in bytes; the fixed header lines are not counted. The workspace
     // notice names the line of the file as the agent reads it, so a read from there gives the rest.
+    // The offset is the first byte left out, so it belongs to the segment that starts at or before it
+    // and ends after it; only the very end of the text falls back to the segment that ends there.
+    const holding = <T extends { length: number }>(
+      segments: readonly T[],
+      at: (segment: T) => number | undefined,
+      offset: number,
+    ) => {
+      const of = (end: boolean) =>
+        segments.find((segment) => {
+          const start = at(segment)
+          return (
+            start !== undefined &&
+            start <= offset &&
+            (end ? offset <= start + segment.length : offset < start + segment.length)
+          )
+        })
+      return of(false) ?? of(true)
+    }
     const readLine = (offset: number): number => {
       if (!indexValid) return workspaceContent.slice(0, offset).split('\n').length
-      const from = noteView.segments.find(
-        (segment) =>
-          segment.raw !== undefined && segment.view <= offset && offset <= segment.view + segment.length,
+      const from = holding(
+        noteView.segments,
+        (segment) => (segment.raw === undefined ? undefined : segment.view),
+        offset,
       )
       const raw = from?.raw === undefined ? undefined : from.raw + (offset - from.view)
-      const to =
-        raw === undefined
-          ? undefined
-          : indexView.segments.find(
-              (segment) =>
-                segment.raw !== undefined && segment.raw <= raw && raw <= segment.raw + segment.length,
-            )
+      const to = raw === undefined ? undefined : holding(indexView.segments, (segment) => segment.raw, raw)
       const read = to?.raw === undefined || raw === undefined ? offset : to.view + (raw - to.raw)
       return indexView.content.slice(0, read).split('\n').length
     }
@@ -108,13 +121,13 @@ export function openMemory(input: {
       workspaceContent,
       config.tokenBudget,
       ({ paragraphs, kb, offset }) =>
-        `[Memory truncated at the size limit: ${paragraphs} more paragraphs (about ${kb} KB) not shown, from line ${readLine(offset)} of ${join(paths.root, 'MEMORY.md')}. Read them with the read tool when they may matter.]`,
+        `[Memory truncated at the size limit: ${paragraphs} more ${paragraphs === 1 ? 'paragraph' : 'paragraphs'} (about ${kb} KB) not shown, from line ${readLine(offset)} of ${join(paths.root, 'MEMORY.md')}. Read them with the read tool when they may matter.]`,
     )
     const userLayer = fitBytes(
       userContent,
       config.userTokenBudget,
       ({ paragraphs, kb }) =>
-        `[User memory truncated at the size limit: ${paragraphs} more paragraphs (about ${kb} KB) not shown.]`,
+        `[User memory truncated at the size limit: ${paragraphs} more ${paragraphs === 1 ? 'paragraph' : 'paragraphs'} (about ${kb} KB) not shown.]`,
       '[User memory truncated at the size limit.]',
     )
     const content = [

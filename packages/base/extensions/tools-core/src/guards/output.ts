@@ -224,7 +224,7 @@ export function refBlock(ref: ArtifactRef, mime?: string): { type: 'ref'; ref: A
 // `output_max_bytes`, because Core cuts every tool result at exactly that total: a larger limit
 // here let blocks through that Core then cut with no note and no stored copy. At this limit the
 // tool's own omission note and stored full set take effect, provided the note is paid for out of
-// the same limit (the MCP adapter reclaims admitted blocks until it fits).
+// the same limit (the MCP adapter reserves room for it before admitting any block).
 export const callOutputLimitBytes = (ctx: Pick<ToolContext, 'outputMaxBytes'>): number => ctx.outputMaxBytes
 
 // One block of a tool call's result, described so guardOutputSet can charge it against the call's

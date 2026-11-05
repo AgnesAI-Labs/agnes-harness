@@ -18,7 +18,7 @@ function sources(): { path: string; text: string }[] {
 }
 
 const DEFINES = /\bfunction\s+estimateTokens\b|\b(?:const|let|var)\s+estimateTokens\s*=/
-const BYTES_OR_THIRDS = /Buffer\.byteLength|\.length\s*\/\s*3\b/
+const BYTES_OR_THIRDS = /Buffer\.byteLength|\.length\s*\/\s*[34]\b/
 
 function functionName(node: ts.Node, tree: ts.SourceFile): string | undefined {
   if ((ts.isFunctionDeclaration(node) || ts.isMethodDeclaration(node)) && node.name)

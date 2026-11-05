@@ -93,7 +93,15 @@ export function storedSettings(input: Partial<MemorySettings>): MemorySettings {
 }
 
 /** Paragraphs (runs of non-blank lines) in a text. */
-const paragraphsIn = (text: string) => text.split(/\n\s*\n/u).filter((part) => part.trim()).length
+export function omissionLine(count: number): string {
+  return `[${count} task-experience paragraphs omitted: expired or unverifiable]`
+}
+
+const OMISSION_LINE = /^\[\d+ task-experience paragraphs omitted: expired or unverifiable\]$/u
+
+// Paragraphs of text left out, not counting a line that only says paragraphs were left out.
+const paragraphsIn = (text: string) =>
+  text.split(/\n\s*\n/u).filter((part) => part.trim() && !OMISSION_LINE.test(part.trim())).length
 
 /**
  * `content` cut to at most `maxBytes` UTF-8 bytes at a whole line, with a closing line that says how much
@@ -107,9 +115,6 @@ export function fitBytes(
   brief = '[Memory truncated at the size limit.]',
 ): { content: string; omitted: boolean } {
   if (Buffer.byteLength(content) <= maxBytes) return { content, omitted: false }
-  const lines = content.split('\n')
-  let keep = 0
-  let used = 0
   const closing = (offset: number) => {
     const left = content.slice(offset)
     return notice({
@@ -118,16 +123,26 @@ export function fitBytes(
       offset,
     })
   }
-  for (const line of lines) {
+  // Room is kept for the longest the closing line can be, so the lines are fitted in one pass and
+  // the line is written once, for where the cut falls.
+  const room =
+    maxBytes -
+    Buffer.byteLength(
+      notice({
+        paragraphs: Math.max(1, paragraphsIn(content)),
+        kb: (Buffer.byteLength(content) / 1024).toFixed(1),
+        offset: content.length,
+      }),
+    )
+  let used = 0
+  let offset = 0
+  for (const line of content.split('\n')) {
     const next = used + Buffer.byteLength(line) + 1
-    const offset = lines.slice(0, keep + 1).join('\n').length + 1
-    if (next + Buffer.byteLength(closing(offset)) > maxBytes) break
+    if (next > room) break
     used = next
-    keep++
+    offset += line.length + 1
   }
-  const shown = lines.slice(0, keep).join('\n')
-  const offset = keep ? shown.length + 1 : 0
-  const text = keep ? `${shown}\n${closing(offset)}` : closing(0)
+  const text = `${content.slice(0, offset)}${closing(offset)}`
   // A limit too small for the full notice still gets one that fits.
   return { content: Buffer.byteLength(text) <= maxBytes ? text : brief, omitted: true }
 }

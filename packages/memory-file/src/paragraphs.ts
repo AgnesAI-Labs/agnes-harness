@@ -1,5 +1,5 @@
 import type { MemoryParagraphValidity, MemoryValidityView } from '@agnes/extension-api'
-import { fault } from './content.js'
+import { fault, omissionLine } from './content.js'
 
 /**
  * Managed paragraphs: text the Host saved into the workspace index, wrapped in one marker line before
@@ -142,9 +142,7 @@ export type ParagraphView = Readonly<{
   segments: readonly Segment[]
 }>
 
-export function omissionLine(count: number): string {
-  return `[${count} task-experience paragraphs omitted: expired or unverifiable]`
-}
+export { omissionLine }
 
 /** A view that throws or answers out of range counts as unverifiable. */
 export function validityOf(view: MemoryValidityView | undefined): (id: string) => MemoryParagraphValidity {
