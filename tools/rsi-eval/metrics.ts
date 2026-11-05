@@ -273,11 +273,13 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
       continue
     }
     if (row.type === EXPERIENCE_ROW && data.reason === 'experience-snapshot' && experience === undefined) {
-      // Saved entries carry the ids of the memory they came from: `ws.` and `user.`.
+      // `included` names each entry as its snapshot line does, `kind/id`; a saved entry's id names the
+      // memory it came from: `ws.` or `user.`.
       const included = Array.isArray(data.included) ? data.included : []
       experience = {
         saved: typeof data.saved === 'number' ? data.saved : 0,
-        savedIncluded: included.filter((id) => typeof id === 'string' && /^(ws|user)\./u.test(id)).length,
+        savedIncluded: included.filter((ref) => typeof ref === 'string' && /^[a-z]+\/(ws|user)\./u.test(ref))
+          .length,
       }
       continue
     }
