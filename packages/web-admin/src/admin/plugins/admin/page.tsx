@@ -945,7 +945,7 @@ export class PluginAdminPage {
     this.#sourceTrigger?.focus({ preventScroll: true })
   }
 
-  submitSource(): void {
+  async submitSource(): Promise<void> {
     if (this.#sourceBusy) return
     const ref = this.#sourceRefValue.trim()
     const problem = sourceProblem(this.#sourceTypeValue, ref, this.#t)
@@ -963,23 +963,24 @@ export class PluginAdminPage {
     this.#sourceBusy = true
     // Stay on this dialog until the backend has accepted the check: a refusal has to be readable
     // where the user is looking, not in a panel that this dialog has just been closed over.
-    void this.inspect(source, mode, trigger, packageId)
-      .then((result) => {
-        if (this.#lifetime.signal.aborted) return
-        if (result.ok && this.#surface) {
-          // On the full page the form stays, busy, until the check is done: then its review page
-          // takes its place, or its failure shows here.
-          this.#flow.sourceCheck = result.operationId
-          return
-        }
-        this.#sourceBusy = false
-        if (result.ok) this.closeSourceDialog()
-        else this.#sourceError = result.error
-      })
-      .catch(() => {
-        this.#sourceBusy = false
-      })
-      .then(() => this.render())
+    try {
+      // A refresh temporarily disables effects; inspect rechecks authority after it settles.
+      const result = await this.#refresh.idle().then(() => this.inspect(source, mode, trigger, packageId))
+      if (this.#lifetime.signal.aborted) return
+      if (result.ok && this.#surface) {
+        // On the full page the form stays, busy, until the check is done: then its review page
+        // takes its place, or its failure shows here.
+        this.#flow.sourceCheck = result.operationId
+        return
+      }
+      this.#sourceBusy = false
+      if (result.ok) this.closeSourceDialog()
+      else this.#sourceError = result.error
+    } catch {
+      this.#sourceBusy = false
+    } finally {
+      this.render()
+    }
   }
 
   async operationUpdated(operation: PackageOperation): Promise<void> {
