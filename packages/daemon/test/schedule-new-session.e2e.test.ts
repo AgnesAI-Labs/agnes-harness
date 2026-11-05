@@ -21,6 +21,11 @@ import { adaptHostTables } from '../src/supervisor/storage-adapters.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
 
+vi.mock('@agnes/host-infrastructure/documents-directory', async (original) => ({
+  ...(await original<typeof import('@agnes/host-infrastructure/documents-directory')>()),
+  resolveDocumentsDirectory: (await import('./managed-documents-fixture.js')).fixtureDocumentsDirectory,
+}))
+
 // The same real-worker fixture as supervisor.e2e.test.ts: a real worker process over the internal
 // wire, with a scripted model instead of credentials.
 const workerSpawnOpts = {

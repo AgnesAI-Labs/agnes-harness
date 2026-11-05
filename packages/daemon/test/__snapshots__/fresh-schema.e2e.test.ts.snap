@@ -745,6 +745,12 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "table",
       },
       {
+        "name": "managed_chat_authority",
+        "sql": "CREATE TABLE managed_chat_authority (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)",
+        "tbl_name": "managed_chat_authority",
+        "type": "table",
+      },
+      {
         "name": "plugin_config_audit",
         "sql": "CREATE TABLE plugin_config_audit (
       seq INTEGER PRIMARY KEY AUTOINCREMENT, profile TEXT NOT NULL, command_id TEXT NOT NULL,

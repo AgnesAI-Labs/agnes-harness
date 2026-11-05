@@ -6,7 +6,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -27,7 +26,7 @@ import {
 } from '@agnes/host'
 import { telemetrySnapshot } from '@agnes/observability'
 import { hasPrivateDaclSync } from '@agnes/system-node'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { MemoryTickets } from '../src/storage/lister.js'
 import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
@@ -37,7 +36,13 @@ import {
   type StartSupervisorOptions,
   startProductionSupervisor,
 } from '../src/supervisor/supervisor.js'
+import { fixtureDocumentsDirectory } from './managed-documents-fixture.js'
 import { sourceTranspileCache } from './source-transpile-cache.js'
+
+vi.mock('@agnes/host-infrastructure/documents-directory', async (original) => ({
+  ...(await original<typeof import('@agnes/host-infrastructure/documents-directory')>()),
+  resolveDocumentsDirectory: (await import('./managed-documents-fixture.js')).fixtureDocumentsDirectory,
+}))
 
 // These workers assemble the production package graph from TypeScript source before they say
 // hello. Cold assembly exceeded 90 s in the Windows regression run; a 180 s diagnostic window
@@ -193,9 +198,8 @@ describe('production supervisor storage', () => {
     })
     await seeded.release(productionSession, 'fact-fixture')
     await seeded.close()
-    // Every start keeps exactly one private managed workspace for chats under the data directory.
-    const chats = join(realpathSync(dir), 'chats')
-    const chatsOnly = { items: [{ path: chats, kind: 'chats', revision: 1 }] }
+    // Fresh installs keep one stable current root in Documents and never create a legacy data/chats.
+    let chats: string | undefined
     const supervisor = await startProductionSupervisor(o)
     const rpc = await client(supervisor.socketPath)
     try {
@@ -205,6 +209,27 @@ describe('production supervisor storage', () => {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
       })
+      const listed = (await rpc.call(4, '_agnes/v1/workspace.list', {})) as {
+        items: Array<{
+          path: string
+          kind: string
+          managedRole?: string
+          revision: number
+          available: boolean
+        }>
+      }
+      expect(listed.items).toHaveLength(1)
+      const current = listed.items[0]
+      if (!current) throw new Error('current managed chats root missing')
+      expect(current).toMatchObject({
+        kind: 'chats',
+        managedRole: 'current',
+        revision: 1,
+        available: true,
+      })
+      chats = current.path
+      expect(chats.startsWith(join(await fixtureDocumentsDirectory(), 'Agnes Harness', 'chats-'))).toBe(true)
+      expect(existsSync(join(dir, 'chats'))).toBe(false)
       await expect(
         rpc.call(2, '_agnes/v1/jobs.enqueue', {
           idempotencyKey: 'production-job',
@@ -218,7 +243,6 @@ describe('production supervisor storage', () => {
       ).resolves.toEqual({ granted: true })
       if (createPlatform().snapshot().os === 'win32') expect(hasPrivateDaclSync(chats)).toBe(true)
       else expect(statSync(chats).mode & 0o777).toBe(0o700)
-      await expect(rpc.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject(chatsOnly)
     } finally {
       rpc.close()
       await supervisor.close()
@@ -234,7 +258,10 @@ describe('production supervisor storage', () => {
       await expect(
         retry.call(2, '_agnes/v1/auth.claim', { kind: 'production-restart', value: 'same-event' }),
       ).resolves.toEqual({ granted: false })
-      await expect(retry.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject(chatsOnly)
+      await expect(retry.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject({
+        items: [{ path: chats, kind: 'chats', managedRole: 'current', revision: 1, available: true }],
+      })
+      expect(existsSync(join(dir, 'chats'))).toBe(false)
       await expect(
         retry.call(3, '_agnes/v1/session.factChain', {
           sessionId: productionSession,

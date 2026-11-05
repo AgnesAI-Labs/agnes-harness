@@ -50,8 +50,8 @@ afterEach(async () => {
 
 // One shared Worker serves every live session; daemon restart starts its replacement. Each one
 // assembles the production package graph from TypeScript source before it says hello, which takes
-// about 30 s on a loaded hosted runner, so widen the startup window (and the SDK request budget
-// that can wait on it) beyond that, and allow both generations plus fixture/RPC cleanup.
+// about 30 s on a loaded hosted runner. The SDK request and history-load idle budgets must both
+// cover that startup window; allow both generations plus fixture/RPC cleanup.
 const sourceWorkerStartupMs = 90_000
 const integrationTimeoutMs = sourceWorkerStartupMs * 2 + 10_000
 it(
@@ -182,7 +182,7 @@ it(
       const web = createClient({
         journal: memoryJournal('web-setup'),
         auth: { kind: 'local' },
-        timeouts: { request: sourceWorkerStartupMs },
+        timeouts: { request: sourceWorkerStartupMs, loadIdle: sourceWorkerStartupMs },
         transportFactories: {
           ws: (option) =>
             wsTransport({ ...option, url: ws.url, headers: { Origin: 'http://127.0.0.1:4180' } }),
@@ -192,7 +192,7 @@ it(
       const cli = createClient({
         journal: memoryJournal('cli-shared'),
         auth: { kind: 'local' },
-        timeouts: { request: sourceWorkerStartupMs },
+        timeouts: { request: sourceWorkerStartupMs, loadIdle: sourceWorkerStartupMs },
         transport: localSdkTransport(daemon.socketPath),
       })
       clients.push(web, cli)
@@ -343,7 +343,7 @@ it(
       const restored = createClient({
         journal: memoryJournal(),
         auth: { kind: 'local' },
-        timeouts: { request: sourceWorkerStartupMs },
+        timeouts: { request: sourceWorkerStartupMs, loadIdle: sourceWorkerStartupMs },
         transport: localSdkTransport(daemon.socketPath),
       })
       clients.push(restored)

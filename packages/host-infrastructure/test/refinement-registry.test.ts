@@ -421,7 +421,7 @@ describe('RefinementRegistry', () => {
     expect(two.read().skills[0]?.archive).toEqual(['v1', 'v2'])
     two.read().skills[0]?.archive.push('tampered')
     expect(two.read().skills[0]?.archive).toEqual(['v1', 'v2'])
-    expect(statSync(fileOf(dir, '/w')).mode & 0o077).toBe(0)
+    if (process.platform !== 'win32') expect(statSync(fileOf(dir, '/w')).mode & 0o077).toBe(0)
   })
 
   it('keeps why a skill was switched off and who switched it back on; an unknown value is dropped', () => {
