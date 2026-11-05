@@ -60,7 +60,7 @@ const TERMINAL = new Set<JobStatusName>(['completed', 'failed', 'dead', 'cancell
  * enqueueing a prompt). It lives in `result` while the row is active, so an interrupted row tells
  * "never started" apart from "may have run" without a schema change.
  */
-export type DispatchMark = { at: number; sessionKey?: string }
+export type DispatchMark = { at: number; sessionKey?: string; runId?: string }
 
 export function dispatchMarkOf(job: JobRow): DispatchMark | undefined {
   const mark = (job.result as { dispatched?: unknown } | undefined)?.dispatched
@@ -244,11 +244,22 @@ export class JobsRepo {
 
   /** Records that this owner's attempt is about to cause a side effect. */
   markDispatched(key: string, owner: string, mark: DispatchMark): void {
-    this.table.exec(
-      `UPDATE jobs SET result = ?, updated_at = ?
-       WHERE idempotency_key = ? AND lease_owner = ? AND status = 'active'`,
-      [JSON.stringify({ dispatched: mark }), mark.at, key, owner],
-    )
+    this.table.transaction(() => {
+      const job = this.get(key)
+      if (job?.status !== 'active' || job.leaseOwner !== owner || (job.leaseUntil ?? 0) < mark.at)
+        throw new Error('scheduled run lease unavailable')
+      const previous = dispatchMarkOf(job)
+      if (
+        (previous?.sessionKey && mark.sessionKey && previous.sessionKey !== mark.sessionKey) ||
+        (previous?.runId && mark.runId && previous.runId !== mark.runId)
+      )
+        throw new Error('scheduled run identity conflict')
+      this.table.exec(
+        `UPDATE jobs SET result = ?, updated_at = ?
+         WHERE idempotency_key = ? AND lease_owner = ? AND status = 'active' AND lease_until >= ?`,
+        [JSON.stringify({ dispatched: { ...previous, ...mark } }), mark.at, key, owner, mark.at],
+      )
+    })
   }
 
   settle(
@@ -313,18 +324,13 @@ export class JobsRepo {
       // A local execution still has a live owner even if its heartbeat was delayed (e.g. OS sleep).
       if (live?.has(row.idempotency_key)) continue
       const stalledCounter = row.stalled_counter + 1
-      if (stalledCounter > maxStalled) {
-        this.table.exec(
-          `UPDATE jobs SET status = 'dead', stalled_counter = ?, error = 'stalled',
-           lease_owner = NULL, lease_until = NULL, heartbeat = NULL, updated_at = ?
-           WHERE idempotency_key = ? AND status = 'active' AND lease_until < ?`,
-          [stalledCounter, now, row.idempotency_key, now],
-        )
-        if (this.get(row.idempotency_key)?.status === 'dead') dead.push(row.idempotency_key)
-        continue
-      }
       const job = this.get(row.idempotency_key)
-      if (interrupt && job && dispatchMarkOf(job) && !interrupt.retryable(job)) {
+      if (
+        interrupt &&
+        job &&
+        dispatchMarkOf(job) &&
+        (dispatchMarkOf(job)?.runId !== undefined || !interrupt.retryable(job))
+      ) {
         this.table.exec(
           `UPDATE jobs SET stalled_counter = ?, lease_owner = ?, lease_until = ?, heartbeat = ?, updated_at = ?
            WHERE idempotency_key = ? AND status = 'active' AND lease_until < ?`,
@@ -333,6 +339,16 @@ export class JobsRepo {
         const leased = this.get(row.idempotency_key)
         if (leased?.status === 'active' && leased.leaseOwner === interrupt.owner && leased.heartbeat === now)
           interrupted.push(leased)
+        continue
+      }
+      if (stalledCounter > maxStalled) {
+        this.table.exec(
+          `UPDATE jobs SET status = 'dead', stalled_counter = ?, error = 'stalled',
+           lease_owner = NULL, lease_until = NULL, heartbeat = NULL, updated_at = ?
+           WHERE idempotency_key = ? AND status = 'active' AND lease_until < ?`,
+          [stalledCounter, now, row.idempotency_key, now],
+        )
+        if (this.get(row.idempotency_key)?.status === 'dead') dead.push(row.idempotency_key)
         continue
       }
       this.table.exec(

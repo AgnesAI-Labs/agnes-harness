@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { realpathSync } from 'node:fs'
+import { resolve } from 'node:path'
 import {
   createSchedulesPort,
   type NewSessionTarget,
@@ -6,8 +8,13 @@ import {
   type ScheduleDb,
   type ScheduleJobs,
 } from '@agnes/base/schedule'
-import type { JobRow } from '@agnes/daemon-foundation/jobs/repo'
+import type { JobRow, JobsRepo } from '@agnes/daemon-foundation/jobs/repo'
 import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
+import {
+  createScheduledSessionAdmission,
+  type ScheduledBindingAuthority,
+  type ScheduledSessionAdmission,
+} from './scheduled-session-admission.js'
 
 /** The shared worker's session catalog, as far as a target check reads it. */
 export type ScheduleCatalog = {
@@ -91,7 +98,13 @@ export function scheduleSessions(
       journal: memoryJournal('scheduled-tasks'),
     })
   return {
-    async create(target: NewSessionTarget, title: string, signal?: AbortSignal): Promise<string> {
+    async create(
+      target: NewSessionTarget,
+      title: string,
+      signal?: AbortSignal,
+      sessionKey: string = randomUUID(),
+      trustedCreate?: () => Promise<string>,
+    ): Promise<string> {
       signal?.throwIfAborted()
       if (closing) throw new Error('scheduled session admission closed')
       const client = connect()
@@ -106,14 +119,16 @@ export function scheduleSessions(
         signal?.throwIfAborted()
         // A fresh key, as the Web uses for a new chat: without one, `session/new` reopens the
         // workspace's canonical session and every run would land in the same conversation.
-        const session = await client.createSession({
-          cwd: target.cwd,
-          permission: 'default',
-          sessionKey: randomUUID(),
-          ...(target.preset ? { preset: target.preset } : {}),
-          ...(target.bundles?.length ? { bundles: target.bundles } : {}),
-          ...(target.loop ? { loop: target.loop } : {}),
-        })
+        const session = trustedCreate
+          ? { id: await trustedCreate() }
+          : await client.createSession({
+              cwd: target.cwd,
+              permission: 'default',
+              sessionKey,
+              ...(target.preset ? { preset: target.preset } : {}),
+              ...(target.bundles?.length ? { bundles: target.bundles } : {}),
+              ...(target.loop ? { loop: target.loop } : {}),
+            })
         try {
           signal?.throwIfAborted()
           await client.call('_agnes/v1/session.rename', { sessionId: session.id, title })
@@ -181,23 +196,85 @@ export function scheduledTasks(o: {
   socketPath: string
   serverIdentity: { pid: number; processStartId: string }
   sources: ScheduleTargetSources
+  legacy?: {
+    root: string
+    authority: ScheduledBindingAuthority & { revokeSchedule(taskId: string, inTransaction?: boolean): void }
+    repo: JobsRepo
+    create(
+      target: NewSessionTarget,
+      title: string,
+      admission: ScheduledSessionAdmission,
+      signal?: AbortSignal,
+    ): Promise<string>
+  }
 }) {
+  const legacy = o.legacy
   const check = scheduleTargetCheck(o.sources)
-  const port = createSchedulesPort(o.db, o.jobs, o.clock, check)
+  const isLegacy = (cwd: string) => {
+    if (!legacy) return false
+    try {
+      return realpathSync(cwd) === legacy.root
+    } catch {
+      return resolve(cwd) === resolve(legacy.root)
+    }
+  }
+  const port = createSchedulesPort(
+    o.db,
+    o.jobs,
+    o.clock,
+    check,
+    legacy
+      ? {
+          allow: (id, target) =>
+            target.kind !== 'new-session' ||
+            !isLegacy(target.cwd) ||
+            (!!id && legacy.authority.scheduleEligible(id, legacy.root)),
+          revoke: (id) => legacy.authority.revokeSchedule(id, true),
+          sameTargetIdentity: (before, after) =>
+            before.kind === after.kind &&
+            (before.kind !== 'new-session' ||
+              after.kind !== 'new-session' ||
+              before.cwd === after.cwd ||
+              (isLegacy(before.cwd) && isLegacy(after.cwd))),
+        }
+      : undefined,
+  )
+  const admissions = legacy
+    ? createScheduledSessionAdmission({
+        repo: legacy.repo,
+        authority: legacy.authority,
+        clock: o.clock,
+        targetOf: (key) => {
+          const task = port.targetOf(key)
+          return task?.target.kind === 'new-session' && isLegacy(task.target.cwd)
+            ? { ...task, target: { ...task.target, cwd: legacy.root } }
+            : task
+        },
+      })
+    : undefined
   const runs = scheduleSessions(o.socketPath, o.serverIdentity)
   const newSession = (job: JobRow) => {
     const task = port.targetOf(job.idempotencyKey)
     return task?.target.kind === 'new-session' ? { title: task.title, target: task.target } : undefined
   }
   const hooks = {
-    onDispatched: (job: JobRow, info: { at: number; seq?: number; reason?: string; sessionKey: string }) =>
-      port.recordDispatch(job.idempotencyKey, info),
+    onDispatched: (
+      job: JobRow,
+      info: { at: number; seq?: number; reason?: string; sessionKey: string; runId?: string },
+    ) => port.recordDispatch(job.idempotencyKey, info),
     keepWaiting: (job: JobRow) => port.stillWaiting(job.idempotencyKey),
-    onSettled: (job: JobRow, info: { at: number; nextRunAt: number | null; reason?: string }) =>
-      port.noteSettlement(job.idempotencyKey, info),
+    onSettled: (
+      job: JobRow,
+      info: { at: number; nextRunAt: number | null; reason?: string; runId?: string },
+    ) => port.noteSettlement(job.idempotencyKey, info),
     unattendedApproval: (job: JobRow) =>
       port.targetOf(job.idempotencyKey)?.target.unattendedApproval ?? ('notify' as const),
-    prepare: async (job: JobRow, signal?: AbortSignal, dispatching?: () => void) => {
+    prepare: async (
+      job: JobRow,
+      signal?: AbortSignal,
+      dispatching?: () => void,
+      beginRun?: (sessionKey: string) => { runId: string; sessionKey: string },
+    ) => {
       signal?.throwIfAborted()
       if (port.hasWaiting(job.idempotencyKey)) throw new Error('approval_pending_previous_run')
       const task = newSession(job)
@@ -206,21 +283,52 @@ export function scheduledTasks(o: {
       const code = await check(task.target)
       signal?.throwIfAborted()
       if (code) throw new Error(code)
-      dispatching?.()
-      return { sessionKey: await runs.create(task.target, runTitle(task.title, o.clock()), signal) }
+      if (legacy && isLegacy(task.target.cwd)) {
+        if (!beginRun || !admissions || !signal) throw new Error('scheduled run identity unavailable')
+        const identity = beginRun(randomUUID())
+        const admission = await admissions.admitLegacyRun({ jobKey: job.idempotencyKey, ...identity }, signal)
+        return {
+          sessionKey: await runs.create(
+            task.target,
+            runTitle(task.title, o.clock()),
+            signal,
+            identity.sessionKey,
+            () =>
+              legacy.create(
+                { ...task.target, cwd: admission.root },
+                runTitle(task.title, o.clock()),
+                admission,
+                signal,
+              ),
+          ),
+        }
+      }
+      const identity = beginRun?.(randomUUID())
+      if (!identity) dispatching?.()
+      return {
+        sessionKey: await runs.create(
+          task.target,
+          runTitle(task.title, o.clock()),
+          signal,
+          identity?.sessionKey,
+        ),
+      }
     },
     retryable: (job: JobRow) => newSession(job) === undefined,
-    onFailed: (job: JobRow, info: { at: number; error: string; sessionKey?: string }) =>
-      port.recordFailure(job.idempotencyKey, {
+    onFailed: (job: JobRow, info: { at: number; error: string; sessionKey?: string; runId?: string }) => {
+      if (info.runId) admissions?.interrupted(info.runId)
+      return port.recordFailure(job.idempotencyKey, {
         at: info.at,
+        ...(info.runId ? { runId: info.runId } : {}),
         ...failureOf(info.error, {
           newSession: newSession(job) !== undefined,
           ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
         }),
         ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
-      }),
+      })
+    },
     recurAfterFailure: (job: JobRow) =>
       job.idempotencyKey.startsWith('schedule:') && port.stillWaiting(job.idempotencyKey),
   }
-  return { ...port, hooks, close: () => runs.close() }
+  return { ...port, hooks, admissions, close: () => runs.close() }
 }

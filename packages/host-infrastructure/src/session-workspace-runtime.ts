@@ -450,6 +450,16 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
     const authorizeWrite = writeAuthority.authorizeWrite
     return Object.freeze({
       root: runtime.root,
+      documentReadScope: () =>
+        Object.freeze({
+          root: runtime.root,
+          ...(runtime.binding.legacyChatReadGrant
+            ? {
+                legacyManagedRoot: runtime.binding.legacyChatReadGrant.root,
+                legacyDirectoryIdentity: runtime.binding.legacyChatReadGrant.directoryIdentity,
+              }
+            : {}),
+        }),
       fs: {
         ...(authorizeWrite
           ? {

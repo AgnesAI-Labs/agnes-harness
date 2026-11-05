@@ -35,7 +35,8 @@
     "./storage/table": "./src/storage/table.ts",
     "./storage/workspaces": "./src/storage/workspaces.ts",
     "./workspace-binding": "./src/workspace-binding.ts",
-    "./jobs/bound-wakes": "./src/jobs/bound-wakes.ts"
+    "./jobs/bound-wakes": "./src/jobs/bound-wakes.ts",
+    "./storage/managed-chat-authority": "./src/storage/managed-chat-authority.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

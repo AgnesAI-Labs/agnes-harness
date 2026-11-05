@@ -447,6 +447,7 @@ export {
   type SessionDefaultsConfigurationService,
 } from '@agnes/host-infrastructure/configuration'
 export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-infrastructure/doctor'
+export { resolveDocumentsDirectory } from '@agnes/host-infrastructure/documents-directory'
 export { REVIEW_AFTER_MS, RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
 export {
   type RefinementSettingsPort,

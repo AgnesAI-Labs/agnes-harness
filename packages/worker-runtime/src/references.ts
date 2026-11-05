@@ -168,8 +168,20 @@ export async function sessionReferences(
       limits,
       sessions,
       files: {
-        search: (query: string) => searchReferenceFiles(view.root, view.fs(), query, signal),
-        read: (path: string) => readWorkspaceReference(view.root, path, view.fs(), limits.maxSourceBytes),
+        search: (query: string) =>
+          searchReferenceFiles(
+            view.root,
+            { stat: view.fs().stat, readScope: view.documentReadScope() },
+            query,
+            signal,
+          ),
+        read: (path: string) =>
+          readWorkspaceReference(
+            view.root,
+            path,
+            { stat: view.fs().stat, readScope: view.documentReadScope() },
+            limits.maxSourceBytes,
+          ),
       },
     }
     return operation === 'search'

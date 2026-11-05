@@ -18,6 +18,7 @@ import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
 import { defaultPermissionLevel, defaultRecipe, permissionModeOf } from '../session-permission.js'
 import { webView } from '../view.js'
 import { renderWorkbench, unmountWorkbenchSoon } from '../workbench/dock.js'
+import { currentChats } from '../workspace-picker.js'
 
 /** Ends the progress of the session being opened, while one is. */
 let endSessionRead: (() => void) | undefined
@@ -51,8 +52,7 @@ export function composerWorkspaceView(input: {
     label: selected?.name ?? t(fallback),
     title: selected?.path ?? t(input.current ? 'composer.workspace.currentTitle' : fallback),
     choices,
-    clearable:
-      input.drafting && !!selected && input.rows.some((row) => row.kind === 'chats' && row.available),
+    clearable: input.drafting && !!selected && !!currentChats(input.rows),
   }
 }
 
@@ -209,7 +209,10 @@ export function createComposerController(
       context.t,
     )
     context.notice.disableRecovery(context.recoveryDisabled())
-    const canStartDraft = context.draftingNew && context.selectedWorkspace?.available === true
+    const canStartDraft =
+      context.draftingNew &&
+      context.selectedWorkspace?.available === true &&
+      context.selectedWorkspace.managedRole !== 'legacy'
     const permissionUnknown =
       context.current !== undefined &&
       (context.permissionRefreshPending || context.sessionYoloEnabled === undefined)

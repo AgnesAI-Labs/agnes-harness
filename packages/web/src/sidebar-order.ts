@@ -6,12 +6,17 @@ import type { WorkspaceEntry } from '@agnes/protocol'
  * that no longer exist are kept in storage but ignored when rendering; a move rewrites the
  * effective order. The three sections themselves have one fixed order and cannot be moved.
  */
-export type SidebarSectionId = 'pinned' | 'chats' | 'workspaces'
+export type SidebarSectionId = 'pinned' | 'chats' | 'legacy-chats' | 'workspaces'
 
 export type DropPosition = 'before' | 'after'
 
 /** 置顶 → 项目 → 临时会话, always. */
-export const SIDEBAR_SECTION_ORDER: readonly SidebarSectionId[] = ['pinned', 'workspaces', 'chats']
+export const SIDEBAR_SECTION_ORDER: readonly SidebarSectionId[] = [
+  'pinned',
+  'workspaces',
+  'chats',
+  'legacy-chats',
+]
 
 const WORKSPACE_KEY = 'agnes.sidebar.workspace-order.v1'
 

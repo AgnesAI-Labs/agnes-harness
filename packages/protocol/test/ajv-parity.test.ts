@@ -4588,8 +4588,17 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       sessionCount: 2,
       available: true,
       kind: 'chats',
+      managedRole: 'current',
     },
     invalid: [
+      {
+        path: '/project',
+        name: 'project',
+        lastUsedAt: null,
+        sessionCount: 0,
+        available: true,
+        managedRole: 'legacy',
+      },
       { path: '', name: 'project', lastUsedAt: null, sessionCount: 0, available: true },
       {
         path: '/workspace/project',

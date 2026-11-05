@@ -1,3 +1,4 @@
+import type { WorkspaceEntry } from '@agnes/protocol'
 import { tr } from '@agnes/web-foundation/locale-bridge'
 
 export type WorkspacePickerResult =
@@ -51,4 +52,15 @@ export async function requestWorkspacePicker(
   )
     return { status: 'selected', path: body.path }
   throw new Error(tr('settings.workspacePicker.ambiguous'))
+}
+
+/** Explicit legacy rows never serve as a new-chat default, including during root failure. */
+export function currentChats(rows: readonly WorkspaceEntry[]): WorkspaceEntry | undefined {
+  const managed = rows.filter((row) => row.kind === 'chats')
+  return (
+    managed.find((row) => row.available && row.managedRole === 'current') ??
+    (managed.length === 1 && managed[0]?.available && managed[0].managedRole === undefined
+      ? managed[0]
+      : undefined)
+  )
 }

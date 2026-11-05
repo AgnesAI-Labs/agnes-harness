@@ -12,6 +12,8 @@ AGH can execute tools, write files, and connect to external systems. Model text,
 
 <a id="三类不同的信任"></a>
 
+Managed chat folders do not grant extra file or command permissions. Previous chats can access documents in their original folder only through a verified session binding (including trusted forks and compatible scheduled runs). Workspace documents and references still recheck session authority and reject traversal and symlinks; private installation state remains protected. Current and previous chat folders do not share files. Binary files retain metadata-only preview behavior.
+
 ## Three kinds of trust
 
 | Boundary | Meaning | What it does not establish |
