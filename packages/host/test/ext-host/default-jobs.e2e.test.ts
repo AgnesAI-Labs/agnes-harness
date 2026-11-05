@@ -76,6 +76,12 @@ it.runIf(process.platform === 'win32')(
       }
       const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
       expect(JSON.stringify(results)).toContain('中文变量')
+      expect(results).toHaveLength(4)
+      expect(results.at(-1)?.data).toMatchObject({
+        structured: { status: 'running', jobId: expect.any(String) },
+      })
+      const timeoutResult = results.at(-1)?.data as { isError?: boolean } | undefined
+      expect(Boolean(timeoutResult?.isError)).toBe(false)
       for (const name of ['ready.txt', 'timeout.txt'])
         await expect
           .poll(() => readFileSync(join(root, name), 'utf8'), { timeout: 15000 })

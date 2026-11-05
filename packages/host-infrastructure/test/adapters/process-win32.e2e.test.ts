@@ -120,7 +120,11 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
           request.argv[0] === SHELL_STDIN_SENTINEL
             ? [...request.argv]
             : expandShell([...request.argv], 'powershell', (s) => powerShellCommand(shell, s)),
-          { cwd: request.cwd ?? ctx.cwd, ...(request.signal ? { signal: request.signal } : {}) },
+          {
+            cwd: request.cwd ?? ctx.cwd,
+            ...(request.argv[0] === SHELL_STDIN_SENTINEL ? {} : { stdin: '' }),
+            ...(request.signal ? { signal: request.signal } : {}),
+          },
         )
       const tool = createShellTool(jobs)
       let call = 0
@@ -128,8 +132,21 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         Object.assign(ctx.session, { toolUseId: `win-${call++}` })
         return tool.execute({ command, ...extra }, ctx)
       }
+      // A foreground receipt can be running. Join that exact job, then read its idempotent result.
+      const runCompleted = async (command: string, extra = {}) => {
+        const receipt = await run(command, extra)
+        const id = (receipt.details as { jobId: string }).jobId
+        expect(typeof id, JSON.stringify(receipt)).toBe('string')
+        const terminal = await jobs.wait(ctx, id, 15000)
+        expect(terminal.status, JSON.stringify(terminal)).not.toBe('running')
+        const before = jobs.list(ctx).map((job) => job.id)
+        const result = await tool.execute({ command, ...extra }, ctx)
+        expect(result.details).toMatchObject({ jobId: id, code: terminal.code, status: terminal.status })
+        expect(jobs.list(ctx).map((job) => job.id)).toEqual(before)
+        return result
+      }
       try {
-        const ordinary = await run(
+        const ordinary = await runCompleted(
           "[Console]::Write('中文' + $PSVersionTable.PSVersion.Major); [Console]::Write((Join-Path $env:LOCALAPPDATA 'AgnesAudit')); exit 7",
         )
         expect(ordinary.isError).toBe(true)
@@ -138,7 +155,7 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         expect(JSON.stringify(ordinary)).toContain(
           JSON.stringify('C:\\synthetic\\local appdata\\AgnesAudit').slice(1, -1),
         )
-        const streams = await run(
+        const streams = await runCompleted(
           "Write-Host '中文 host'; Write-Warning '中文 warning'; [Console]::Write($env:PYTHONUTF8 + ':' + $env:PYTHONUNBUFFERED)",
         )
         expect(streams.isError, JSON.stringify(streams)).toBeUndefined()
@@ -146,17 +163,17 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         expect(JSON.stringify(streams)).toContain('中文 warning')
         expect(JSON.stringify(streams)).toContain('1:1')
         expect(JSON.stringify(streams)).not.toContain('CLIXML')
-        const first = await run(
+        const first = await runCompleted(
           "$kept = '变量中文'; [Console]::Write($kept); [Console]::Write($env:LOCALAPPDATA)",
           { persistent: true },
         )
         expect(first.isError, JSON.stringify(first)).toBeUndefined()
         expect(JSON.stringify(first)).toContain(JSON.stringify('C:\\synthetic\\local appdata').slice(1, -1))
-        const next = await run('[Console]::Write($kept)', { persistent: true })
+        const next = await runCompleted('[Console]::Write($kept)', { persistent: true })
         expect(next.isError, JSON.stringify(next)).toBeUndefined()
         expect(JSON.stringify(next)).toContain('变量中文')
         expect(next.details).toMatchObject({ sessionId: (first.details as { sessionId: string }).sessionId })
-        const long = await run("[Console]::Write('" + '中'.repeat(16000) + "')")
+        const long = await runCompleted("[Console]::Write('" + '中'.repeat(16000) + "')")
         expect(long.isError, JSON.stringify(long).slice(-500)).toBeUndefined()
         // A successful tool call is aborted by Core's finally; an owned background Job must survive it.
         const callSignal = new AbortController()
