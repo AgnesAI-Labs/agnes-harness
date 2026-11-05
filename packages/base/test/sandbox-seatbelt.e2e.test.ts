@@ -22,14 +22,27 @@ import { LOOPBACK_GATE_PATH_PREFIX, openLoopbackListener } from '@agnes/system-n
 import { expect, it, vi } from 'vitest'
 import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 
-function run(argv: string[], env?: NodeJS.ProcessEnv) {
+function run(argv: string[], env?: NodeJS.ProcessEnv, timeout = 3000) {
   const [file, ...args] = argv
   if (!file) throw new Error('missing executable')
+  const started = performance.now()
   return new Promise<{ code: number; stdout: string }>((resolve, reject) => {
-    execFile(file, args, { timeout: 3000, ...(env ? { env } : {}) }, (error, stdout) => {
+    execFile(file, args, { timeout, ...(env ? { env } : {}) }, (error, stdout) => {
       if (!error) resolve({ code: 0, stdout })
       else if (!error.killed && typeof error.code === 'number') resolve({ code: error.code, stdout })
-      else reject(error)
+      else {
+        // Do not mistake a harness timeout or failed launch for an OS policy denial.
+        const failure = new Error(
+          `Probe did not exit normally: ${JSON.stringify({
+            code: error.code ?? null,
+            signal: error.signal ?? null,
+            killed: error.killed,
+            elapsedMs: Math.round(performance.now() - started),
+          })}`,
+        )
+        Object.assign(failure, { code: error.code, signal: error.signal, killed: error.killed })
+        reject(failure)
+      }
     })
   })
 }
@@ -435,7 +448,9 @@ seatbelt(
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_CONFIG_GLOBAL: '/dev/null',
       }
-      expect((await run(['/usr/bin/git', 'init', '--quiet', '--template=', allowed], env)).code).toBe(0)
+      expect((await run(['/usr/bin/git', 'init', '--quiet', '--template=', allowed], env, 10_000)).code).toBe(
+        0,
+      )
       const status = await run(confine('git -C "$1" status --short', allowed), env)
       expect(status.code).toBe(0)
       expect(status.stdout).toContain('?? ok')
