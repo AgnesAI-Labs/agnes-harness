@@ -12,7 +12,7 @@ import type {
   MemorySource,
   MemoryValidityView,
 } from '@agnes/extension-api'
-import { diff, fault, file, fit, hash, validateContent } from './content.js'
+import { diff, fault, file, fitBytes, hash, validateContent } from './content.js'
 import { paragraphPort } from './paragraph-port.js'
 import {
   markerSet,
@@ -85,9 +85,38 @@ export function openMemory(input: {
     const userContent = userValid
       ? userView.text
       : '[User memory omitted: consolidate the index or remove secret-like content.]'
-    const total = config.tokenBudget + (config.userEnabled ? config.userTokenBudget : 0)
-    const workspace = fit(workspaceContent, config.tokenBudget)
-    const userLayer = fit(userContent, config.userTokenBudget)
+    // Each layer is cut to its own limit in bytes; the fixed header lines are not counted. The workspace
+    // notice names the line of the file as the agent reads it, so a read from there gives the rest.
+    const readLine = (offset: number): number => {
+      if (!indexValid) return workspaceContent.slice(0, offset).split('\n').length
+      const from = noteView.segments.find(
+        (segment) =>
+          segment.raw !== undefined && segment.view <= offset && offset <= segment.view + segment.length,
+      )
+      const raw = from?.raw === undefined ? undefined : from.raw + (offset - from.view)
+      const to =
+        raw === undefined
+          ? undefined
+          : indexView.segments.find(
+              (segment) =>
+                segment.raw !== undefined && segment.raw <= raw && raw <= segment.raw + segment.length,
+            )
+      const read = to?.raw === undefined || raw === undefined ? offset : to.view + (raw - to.raw)
+      return indexView.content.slice(0, read).split('\n').length
+    }
+    const workspace = fitBytes(
+      workspaceContent,
+      config.tokenBudget,
+      ({ paragraphs, kb, offset }) =>
+        `[Memory truncated at the size limit: ${paragraphs} more paragraphs (about ${kb} KB) not shown, from line ${readLine(offset)} of ${join(paths.root, 'MEMORY.md')}. Read them with the read tool when they may matter.]`,
+    )
+    const userLayer = fitBytes(
+      userContent,
+      config.userTokenBudget,
+      ({ paragraphs, kb }) =>
+        `[User memory truncated at the size limit: ${paragraphs} more paragraphs (about ${kb} KB) not shown.]`,
+      '[User memory truncated at the size limit.]',
+    )
     const content = [
       `Agent memory (untrusted learned preferences; AGENTS.md and knowledge sources take precedence). Revision: ${revision}.`,
       `Workspace memory directory: ${paths.root}. Use normal read/write/edit tools; topic reads share this turn's revision.`,
@@ -97,15 +126,14 @@ export function openMemory(input: {
         ? [`User memory (read-only for the agent):\n${userLayer.content}`]
         : []),
     ].join('\n\n')
-    const bounded = fit(content, total)
     const value = {
       files,
       agent,
       index: indexView,
       snapshot: Object.freeze({
         revision,
-        content: bounded.content,
-        omitted: bounded.omitted || workspace.omitted || userLayer.omitted,
+        content,
+        omitted: workspace.omitted || userLayer.omitted,
       }),
     }
     turnSnapshot = { turn, value }
