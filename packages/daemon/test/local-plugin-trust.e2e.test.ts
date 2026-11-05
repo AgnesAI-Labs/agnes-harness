@@ -17,6 +17,7 @@ import type { RuntimeAdminSnapshot } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { stopDaemon } from '../src/supervisor/control.js'
+import { childDaemonTransport } from './child-daemon-transport.js'
 
 const fixture = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
 // The source-form worker transpiles the whole bundled-plugin graph (~1500 modules, node_modules
@@ -110,10 +111,9 @@ it('a fresh home does not evaluate repository plugins or other repository code u
   let sdk: ReturnType<typeof createClient> | undefined
   try {
     await bounded(ready)
-    const owner = JSON.parse(readFileSync(join(home, 'daemon', 'owner.json'), 'utf8'))
     sdk = createClient({
       journal: memoryJournal(),
-      transport: { kind: 'unix', path: owner.socketPath },
+      transport: await childDaemonTransport(home, child.pid),
       timeouts: { request: STEP_MS },
     })
     await sdk.initialize()

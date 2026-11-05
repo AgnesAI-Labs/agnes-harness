@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,7 +10,7 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
 import { stopDaemon } from '../src/supervisor/control.js'
-import { localSdkTransport } from './local-socket-path.js'
+import { childDaemonTransport } from './child-daemon-transport.js'
 
 async function deadline<T>(promise: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -72,10 +72,7 @@ it('enables single and multiple client contributions and retains their roster af
     }
     try {
       await deadline(ready, 'daemon startup')
-      const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8')) as {
-        socketPath: string
-      }
-      return { socketPath: owner.socketPath, close }
+      return { transport: await childDaemonTransport(home, child.pid), close }
     } catch (error) {
       await close()
       throw error
@@ -88,7 +85,7 @@ it('enables single and multiple client contributions and retains their roster af
     const connected = createClient({
       journal: memoryJournal(),
       auth: { kind: 'local' },
-      transport: localSdkTransport(daemon.socketPath),
+      transport: daemon.transport,
       timeouts: { request: 90_000 },
     })
     await connected.initialize()

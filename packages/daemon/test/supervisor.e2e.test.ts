@@ -9,7 +9,7 @@ import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, s
 import { createTestHost } from '@agnes/host/testkit'
 import { DEFAULT_VOICE_SETTINGS } from '@agnes/protocol'
 import { createClient, type LedgerEvent, memoryJournal, wsTransport } from '@agnes/sdk'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { WebSocket } from 'ws'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { signSourceAuth, sourceAuthCanonical } from '../src/local/auth.js'
@@ -19,6 +19,7 @@ import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 import { DaemonMutationLockError } from '../src/supervisor/mutation-lock.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
+import { childDaemonTransport } from './child-daemon-transport.js'
 import { localSdkTransport } from './local-socket-path.js'
 
 // A `WorkerPool.workerEntry` override that runs a real worker (`runWorker`, src/worker/main.ts) over
@@ -39,12 +40,26 @@ const SOURCE_AUTH_KEY = ['source', 'auth', 'fixture', 'key'].join('-')
 
 type Rpc = { id?: number; method?: string; result?: unknown; error?: unknown }
 
-async function client(path: string): Promise<{
+// Record the actual stalled phase without changing any operation or the test's deadline.
+function testStages(name: string) {
+  const started = performance.now()
+  const stages: Array<{ phase: string; elapsedMs: number }> = []
+  onTestFailed(() => {
+    console.error(name, JSON.stringify({ elapsedMs: Math.round(performance.now() - started), stages }))
+  })
+  return (phase: string) => stages.push({ phase, elapsedMs: Math.round(performance.now() - started) })
+}
+
+async function client(
+  path: string,
+  stage?: (phase: string) => void,
+): Promise<{
   socket: ReturnType<typeof connect>
   call: (id: number, method: string, params: unknown) => Promise<Rpc>
   /** Every frame received, responses and notifications alike, in arrival order. */
   seen: Rpc[]
 }> {
+  stage?.('connect raw client')
   const socket = connect(path)
   await new Promise<void>((resolve, reject) => {
     socket.once('connect', () => resolve())
@@ -65,6 +80,7 @@ async function client(path: string): Promise<{
   const next = (): Promise<Rpc> =>
     inbox.length ? Promise.resolve(inbox.shift() as Rpc) : new Promise((resolve) => waiters.push(resolve))
   const call = async (id: number, method: string, params: unknown): Promise<Rpc> => {
+    stage?.(`RPC ${id} ${method}`)
     socket.write(encodeFrame({ jsonrpc: '2.0', id, method, params }))
     for (;;) {
       const m = await next()
@@ -446,6 +462,8 @@ describe('agnesd supervisor: real end-to-end', () => {
   }, 60_000)
 
   it('serves initialize -> session/new -> session/prompt through a real worker subprocess, and refuses a second instance', async () => {
+    const stage = testStages('initialize/new/prompt fixture')
+    stage('seed durable artifact session')
     const dir = mkdtempSync(join(tmpdir(), 'agnes-sup-'))
     try {
       const profile = buildProfile(dir)
@@ -489,6 +507,7 @@ describe('agnesd supervisor: real end-to-end', () => {
       expect(ownership.bindNew(artifactSessionId, 'local')).toBe(true)
       expect(ownership.activateNew(artifactSessionId, 'local')).toBe(true)
 
+      stage('start supervisor')
       const sup = await startSupervisor({
         config,
         profile,
@@ -504,6 +523,7 @@ describe('agnesd supervisor: real end-to-end', () => {
       })
       try {
         expect(sup.ws).toBeDefined()
+        stage('reclaim and WebSocket authentication')
         await expect(sup.reclaimNow()).resolves.toEqual([])
         expect(await wsInitialize(sup.ws?.url as string, sup.ws?.token as string)).toMatchObject({
           error: { data: { reason: 'local auth not accepted on ws' } },
@@ -533,6 +553,7 @@ describe('agnesd supervisor: real end-to-end', () => {
         // owner cannot be safely superseded. Confirmed by actually running this assertion against
         // the plan's originally-assumed `{ name: 'AlreadyRunning' }`/`OwnerLockError` shape first
         // and reading the real failure (see this task's report for the exact before/after output).
+        stage('refuse second supervisor')
         await expect(
           startSupervisor({
             config,
@@ -546,7 +567,7 @@ describe('agnesd supervisor: real end-to-end', () => {
           }),
         ).rejects.toBeInstanceOf(DaemonMutationLockError)
 
-        const c = await client(sup.socketPath)
+        const c = await client(sup.socketPath, stage)
         try {
           const init = await c.call(1, 'initialize', {
             protocolVersion: 1,
@@ -643,7 +664,7 @@ describe('agnesd supervisor: real end-to-end', () => {
             result: { seq: (firstUi.result as { seq: number }).seq },
           })
 
-          const c2 = await client(sup.socketPath)
+          const c2 = await client(sup.socketPath, stage)
           try {
             expect(
               await c2.call(1, 'initialize', {
@@ -717,8 +738,10 @@ describe('agnesd supervisor: real end-to-end', () => {
           c.socket.end()
         }
       } finally {
+        stage('close supervisor')
         await sup.close()
         await expect(sup.reclaimNow()).resolves.toEqual([])
+        stage('close SQLite tables')
         await tables.close()
       }
     } finally {
@@ -728,6 +751,8 @@ describe('agnesd supervisor: real end-to-end', () => {
 })
 
 it('restores one attached SDK session after its worker is replaced', async () => {
+  const stage = testStages('attached worker replacement fixture')
+  stage('start supervisor')
   const dir = mkdtempSync(join(tmpdir(), 'agnes-idle-restore-e2e-'))
   const profile = buildProfile(dir)
   const profileFile = join(dir, 'profile.json')
@@ -749,7 +774,9 @@ it('restores one attached SDK session after its worker is replaced', async () =>
     transport: localSdkTransport(sup.socketPath),
   })
   try {
+    stage('session/new')
     const session = await sdk.session.new({ cwd: dir })
+    stage('session/attach')
     await session.attach({ filter: { preview: true } })
     const seen: Array<{ seq: number; type: string }> = []
     let turnEnds = 0
@@ -774,38 +801,50 @@ it('restores one attached SDK session after its worker is replaced', async () =>
       }
     })()
 
+    stage('first prompt')
     await expect(session.prompt('before idle')).resolves.toMatchObject({ reason: 'completed' })
+    stage('first turn/end event')
     await firstEnd
+    stage('first UI projection')
     const firstTimeline = await session.projectUI()
     const firstMax = Math.max(...seen.map((event) => event.seq))
     const firstCount = seen.length
 
     // '@shared' is kept up from daemon start (P1) and is exempt from idle eviction, so the
     // worker replacement this test exercises is forced directly rather than through evictIdleNow.
+    stage('retire shared worker')
     expect(sup.retireSharedWorkerNow()).toBe(true)
     // No settling sleep: this prompt lands on the exact retirement boundary. WorkerLink.close()
     // must synchronously remove the old registry entry so SDK receives the recoverable not-found,
     // not an opaque command failure against a half-closed socket.
+    stage('replacement prompt')
     await expect(session.prompt('after idle')).resolves.toMatchObject({ reason: 'completed' })
+    stage('second turn/end event')
     await secondEnd
+    stage('finish event iterator')
     await collect
 
     expect(turnEnds).toBe(2)
     expect(new Set(seen.map((event) => event.seq)).size).toBe(seen.length)
     expect(seen.slice(firstCount).every((event) => event.seq > firstMax)).toBe(true)
+    stage('incremental UI projection')
     const incremental = await session.projectUIPatch(firstTimeline.upto)
     expect(incremental.kind).toBe('patch')
     if (incremental.kind !== 'patch') throw new Error('expected worker-backed projection patch')
     expect(incremental.patch.from).toBe(firstTimeline.upto)
     expect(incremental.patch.upto).toBeGreaterThan(firstTimeline.upto)
     expect(incremental.patch.changes.length).toBeGreaterThan(0)
+    stage('complete UI projection')
     const timeline = await session.projectUI()
     const rendered = JSON.stringify(timeline.nodes)
     expect(rendered.match(/before idle/g)).toHaveLength(1)
     expect(rendered.match(/after idle/g)).toHaveLength(1)
   } finally {
+    stage('close SDK')
     await sdk.close()
+    stage('close supervisor')
     await sup.close()
+    stage('close SQLite tables')
     await tables.close()
     rmSync(dir, { recursive: true, force: true })
   }
@@ -1288,6 +1327,7 @@ it('retains the original request across worker and daemon crashes, then consumes
     const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
     let stdout = '',
       stderr = ''
+    let transport: Awaited<ReturnType<typeof childDaemonTransport>>
     child.stdout?.on('data', (data) => {
       stdout += String(data)
     })
@@ -1302,13 +1342,14 @@ it('retains the original request across worker and daemon crashes, then consumes
         },
         { timeout: 20000, interval: 100 },
       )
+      transport = await childDaemonTransport(dir, child.pid)
     } catch (error) {
       child.kill('SIGKILL')
       await exited
       throw error
     }
     return {
-      socketPath: stdout.split('READY_SOCKET ')[1]!.split('\n')[0]!,
+      transport,
       diagnostics: () => stderr,
       async crash() {
         child.kill('SIGKILL')
@@ -1328,7 +1369,7 @@ it('retains the original request across worker and daemon crashes, then consumes
     }
   }
   let sup = await open()
-  let sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+  let sdk = createClient({ journal: memoryJournal(), transport: sup.transport })
   try {
     const session = await sdk.session.new({ cwd: dir })
     expect(await session.prompt('review exact call')).toMatchObject({ reason: 'parked' })
@@ -1356,7 +1397,7 @@ it('retains the original request across worker and daemon crashes, then consumes
     await sup.crash()
     process.kill(remainingWorker, 'SIGKILL')
     sup = await open()
-    sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(sup.socketPath) })
+    sdk = createClient({ journal: memoryJournal(), transport: sup.transport })
     await vi.waitFor(
       async () => expect((await sdk.approval.list(session.id)).decisions).toEqual([original]),
       { timeout: 50000, interval: 500 },
