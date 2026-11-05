@@ -139,7 +139,7 @@ type PreparedContent =
   | Readonly<{ kind: 'image'; image: SafeImage }>
 
 type OutputPiece =
-  | Readonly<{ kind: 'text'; blocks: ToolResult['content']; bytes: number }>
+  | Readonly<{ kind: 'text'; blocks: ToolResult['content'] }>
   | Readonly<{ kind: 'image'; block: ToolResult['content'][number] }>
 
 type RefBlock = ReturnType<typeof refBlock>
@@ -223,9 +223,9 @@ function prepareContent(
 }
 
 // The most text of one MCP call that is kept, stored or shown. `read` and `grep` take at most
-// MAX_READ_BYTES of a stored output, so bytes stored past that could never be read back. It also
-// equals the largest per-call model budget (4 x the 1 MiB maximum of `tools.output_max_bytes`), so it
-// never cuts a result the model could have been shown whole.
+// MAX_READ_BYTES of a stored output, so bytes stored past that could never be read back. It is above
+// the largest per-call model budget (the 1 MiB maximum of `tools.output_max_bytes`), so it never cuts
+// a result the model could have been shown whole.
 // The SDK has already read the whole response into memory by the time a result gets here and this
 // cannot undo that; it bounds what is copied, stored and persisted from it.
 const MAX_KEPT_MCP_TEXT_BYTES = MAX_READ_BYTES
@@ -361,58 +361,69 @@ function remoteDefinition(
         const callLimit = callOutputLimitBytes(ctx)
         // The cut note is text the model reads, so it is paid for out of the same budget up front.
         const cutText = cut === undefined ? undefined : cutNote(cfg.id, cut)
-        let remainingTextBytes = callLimit - (cutText === undefined ? 0 : Buffer.byteLength(cutText, 'utf8'))
-        let textExhausted = false
-        let omittedTexts = 0
-        for (const item of prepared) {
-          if (item.kind === 'image') {
-            const ref = await guardedCtx.artifacts.put(item.image.bytes, { mime: item.image.mime })
-            pieces.push({ kind: 'image', block: { type: 'image', ref, mime: item.image.mime } })
-            continue
+        const textBudget = callLimit - (cutText === undefined ? 0 : Buffer.byteLength(cutText, 'utf8'))
+        const textBytes = allTexts.reduce((n, text) => n + Buffer.byteLength(text, 'utf8'), 0)
+        let omittedNote: Readonly<{ text: string; ref?: ReturnType<typeof refBlock> }> | undefined
+        const showImage = async (image: SafeImage) => {
+          const ref = await guardedCtx.artifacts.put(image.bytes, { mime: image.mime })
+          pieces.push({ kind: 'image', block: { type: 'image', ref, mime: image.mime } })
+        }
+        if (textBytes <= textBudget || allTexts.length === 1) {
+          // Within the call budget a block is cut only by the guard's line limit; a lone block over it
+          // gets the guard's head, tail and stored copy, inside what the cut note leaves of the budget.
+          const limited = Object.create(guardedCtx) as typeof guardedCtx
+          Object.defineProperty(limited, 'outputMaxBytes', { enumerable: true, value: textBudget })
+          for (const item of prepared) {
+            if (item.kind === 'image') {
+              await showImage(item.image)
+              continue
+            }
+            // guardOutput can include an artifact backend failure in its fallback text, so redact
+            // again after it returns.
+            const guarded = await guardOutput(limited, item.text)
+            const blocks: ToolResult['content'] = [{ type: 'text', text: redactSecrets(guarded.text, cfg) }]
+            if (guarded.ref) blocks.push(refBlock(guarded.ref))
+            pieces.push({ kind: 'text', blocks })
           }
-          if (textExhausted) {
-            omittedTexts++
-            continue
+        } else {
+          // Over the call budget, the whole text set is stored once and the model sees whole blocks
+          // from the start, then the note. When not even the first block fits whole, its head is shown
+          // instead of nothing; no block is stored on its own, so nothing is stored twice.
+          const stored = await storeOmittedTextSet(guardedCtx, allTexts)
+          const note = (omitted: number, cut: string) =>
+            `\n[omitted ${omitted} of ${allTexts.length} text content blocks${cut}: over the ${callLimit}-byte call limit; ${stored.note}]\n`
+          // The longest the note can be, so the blocks shown never leave too little room for it.
+          const noteBytes = Buffer.byteLength(
+            note(allTexts.length, ` (block 1 cut after its first ${textBytes} bytes)`),
+            'utf8',
+          )
+          let remaining = textBudget - noteBytes
+          let shown = 0
+          let cut = ''
+          let full = true
+          for (const item of prepared) {
+            if (item.kind === 'image') {
+              await showImage(item.image)
+              continue
+            }
+            if (!full) continue
+            const size = Buffer.byteLength(item.text, 'utf8')
+            if (size <= remaining) {
+              pieces.push({ kind: 'text', blocks: [{ type: 'text', text: item.text }] })
+              remaining -= size
+              shown++
+              continue
+            }
+            full = false
+            if (shown > 0 || remaining <= 0) continue
+            const head = cutHead(item.text.slice(0, remaining), remaining)
+            pieces.push({ kind: 'text', blocks: [{ type: 'text', text: head }] })
+            cut = ` (block 1 cut after its first ${Buffer.byteLength(head, 'utf8')} bytes)`
           }
-          // Text keeps the existing per-block and aggregate 32 KiB contracts. Media is guarded by
-          // its own count/bytes/pixels/block limits and therefore never spends this text budget.
-          const guarded = await guardOutput(guardedCtx, item.text)
-          // guardOutput can include an artifact backend failure in its fallback text, so redact again
-          // after it returns and charge the actual post-redaction bytes exposed to the model.
-          const guardedText = redactSecrets(guarded.text, cfg)
-          const cost = new TextEncoder().encode(guardedText).byteLength
-          if (cost > remainingTextBytes) {
-            textExhausted = true
-            omittedTexts++
-            continue
-          }
-          const blocks: ToolResult['content'] = [{ type: 'text', text: guardedText }]
-          if (guarded.ref) {
-            const block = refBlock(guarded.ref)
-            blocks.push(block)
-          }
-          pieces.push({ kind: 'text', blocks, bytes: cost })
-          remainingTextBytes -= cost
+          const omitted = allTexts.length - shown - (cut ? 1 : 0)
+          omittedNote = { text: note(omitted, cut), ...(stored.ref ? { ref: stored.ref } : {}) }
         }
         const content: ToolResult['content'] = []
-        let omittedNote: Readonly<{ text: string; ref?: ReturnType<typeof refBlock> }> | undefined
-        if (omittedTexts > 0) {
-          const stored = await storeOmittedTextSet(guardedCtx, allTexts)
-          const note = () =>
-            `\n[omitted ${omittedTexts} of ${allTexts.length} text content blocks: over the ${callLimit}-byte call limit; ${stored.note}]\n`
-          // The omission note is itself text. Reclaim the latest admitted text blocks until the
-          // complete returned text (including that note) remains inside the same 32 KiB budget.
-          const noteCost = () => new TextEncoder().encode(note()).byteLength
-          while (noteCost() > remainingTextBytes) {
-            const index = pieces.findLastIndex((piece) => piece.kind === 'text')
-            if (index < 0) break
-            const [removed] = pieces.splice(index, 1)
-            if (removed?.kind !== 'text') throw new Error('text budget bookkeeping mismatch')
-            remainingTextBytes += removed.bytes
-            omittedTexts++
-          }
-          omittedNote = stored.ref ? { text: note(), ref: stored.ref } : { text: note() }
-        }
         // First, so the guard notes that follow ("truncated: N bytes") read against the true size.
         if (cutText !== undefined) content.push({ type: 'text', text: cutText })
         for (const piece of pieces)

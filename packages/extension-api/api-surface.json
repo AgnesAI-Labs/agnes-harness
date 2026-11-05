@@ -1,5 +1,5 @@
 {
-  "apiVersion": "5.5.0",
+  "apiVersion": "5.6.0",
   "runtimeExports": [
     "API_VERSION",
     "APPROVAL_DEFAULTS",
@@ -58,6 +58,7 @@
     "defaultToolPolicy",
     "defineKind",
     "definePersistenceProvider",
+    "estimateTokens",
     "extEventType",
     "isExtensionError",
     "isJsonPayload",

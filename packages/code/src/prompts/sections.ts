@@ -54,7 +54,7 @@ export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSection
   { id: 'code-doctrine', order: 140, source: 'file', owner: 'code' },
   { id: 'tools:sdk', order: 150, source: 'dynamic', owner: 'code' },
   // Skill routing catalog. It is a context-hook section, not additionalContext: the shared
-  // additionalContext channel is capped at 8192 bytes by the hook schema.
+  // additionalContext channel is capped at 8192 characters (UTF-16 units) by the hook schema.
   { id: 'skills', order: 160, source: 'dynamic', owner: 'base' },
   { id: 'plan-mode', order: 162, source: 'dynamic', owner: 'base' },
   { id: 'persistent-goal', order: 164, source: 'dynamic', owner: 'base' },

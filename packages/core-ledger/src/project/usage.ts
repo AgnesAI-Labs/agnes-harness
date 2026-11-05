@@ -1,4 +1,5 @@
 import type { Event, Seq } from '@agnes/core-common/types'
+import { estimateTokens } from '@agnes/extension-api'
 import type {
   Billing,
   ModelRecord,
@@ -41,7 +42,7 @@ export function contextTokensAtCut(events: Iterable<Event>, lane: string, upto: 
   for (const node of computeSurface(prefix, { lane })) {
     if (last && node.seq <= last.seq) continue
     const content = (node.event.data as { content?: Array<{ text?: string }> } | null)?.content ?? []
-    for (const block of content) total += Math.ceil((block.text ?? '').length / 4)
+    for (const block of content) total += estimateTokens(block.text ?? '')
   }
   return total
 }

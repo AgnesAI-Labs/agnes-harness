@@ -135,16 +135,17 @@ describe('user memory: saved sections in what the agent reads', () => {
     expect(rendered.text).toMatch(/\[\d+ task-experience paragraphs omitted: expired or unverifiable\]\n$/)
   })
 
-  it('RSI sections never displace hand-written user memory within the 512-token budget', async () => {
+  it('RSI sections never displace hand-written user memory within a 512-byte limit', async () => {
     const { view: v } = view({ [A]: 'valid' })
     const hand = `${'- A hand-written preference that matters.\n'.repeat(8)}`
     const f = await fixture({ userValidity: v })
+    await f.session.configure({ userTokenBudget: 512 })
     // The saved section comes first in the file and is long: the hand-written text still comes first.
     await writeFile(f.userFile, `${block(A, `Saved: ${'x'.repeat(400)}`)}\n${hand}`)
     const layer = await f.userLayer(1)
     expect(Buffer.byteLength(layer)).toBeLessThanOrEqual(512)
     expect(layer.startsWith(hand.trimEnd())).toBe(true)
-    expect(layer).toContain('Memory omitted')
+    expect(layer).toContain('memory truncated at the size limit')
   })
 
   it('renewal in the registry changes delivery without touching the file', async () => {
@@ -260,6 +261,7 @@ describe('user memory: the managed section write', () => {
     const answers = view({ [A]: 'valid', [B]: 'expired' })
     const f = await fixture({ userValidity: answers.view })
     const hand = `${'h'.repeat(300)}\n`
+    await f.session.configure({ userTokenBudget: 512 })
     // An expired section takes no room in what is shown; the one in force does.
     const stored = `${hand}\n${block(A, 'a'.repeat(100))}\n${block(B, 'b'.repeat(400))}`
     await writeFile(f.userFile, stored)
@@ -279,10 +281,10 @@ describe('user memory: the managed section write', () => {
     await expect(f.port().propose({ op: 'put', id: C, text: 'c'.repeat(10) })).rejects.toMatchObject({
       code: 'MEMORY_USER_BUDGET',
     })
-    // A larger one never raises the limit above 512: every workspace reads the same file.
+    // A larger one never raises the limit above the 2 KiB default: every workspace reads the same file.
     await f.session.configure({ userTokenBudget: 4096 })
     await expect(
-      f.port().propose({ op: 'put', id: 'rd000000004', text: 'd'.repeat(10) }),
+      f.port().propose({ op: 'put', id: 'rd000000004', text: 'd'.repeat(1600) }),
     ).rejects.toMatchObject({ code: 'MEMORY_USER_BUDGET' })
     // Taking a section out always fits.
     const out = f.port()

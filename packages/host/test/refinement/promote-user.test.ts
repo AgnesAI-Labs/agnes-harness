@@ -228,7 +228,7 @@ describe('promoting a confirmed lesson to user memory', () => {
 
   it('a promotion that would push user memory past its budget is refused and writes nothing', async () => {
     const h = await home()
-    const hand = `${'- A preference the person wrote by hand.\n'.repeat(11)}`
+    const hand = `${'- A preference the person wrote by hand.\n'.repeat(50)}`
     writeFileSync(h.userFile, hand)
     const receipt = await h.saves.save(request(h))
     expect(receipt).toMatchObject({ outcome: 'refused', reason: 'user-memory-budget', layer: 'user' })
@@ -383,7 +383,7 @@ describe("saving to user memory on the user's request", () => {
 
   it('is refused past the user memory budget and trims nothing', async () => {
     const h = await home()
-    const hand = `${'- A preference the person wrote by hand.\n'.repeat(11)}`
+    const hand = `${'- A preference the person wrote by hand.\n'.repeat(50)}`
     writeFileSync(h.userFile, hand)
     const receipt = await h.saves.save(asked(h))
     expect(receipt).toMatchObject({ outcome: 'refused', reason: 'user-memory-budget', layer: 'user' })
@@ -484,7 +484,7 @@ describe("saving to user memory on the user's request", () => {
     // The model's request meets the same budget and name checks.
     const w = await home()
     expect(await w.saves.save(askedWith(w, `Run make in ${w.root}/api first.`))).not.toHaveProperty('layer')
-    writeFileSync(w.userFile, `${'- A preference the person wrote by hand.\n'.repeat(11)}`)
+    writeFileSync(w.userFile, `${'- A preference the person wrote by hand.\n'.repeat(50)}`)
     expect(await w.saves.save(asked(w, { initiator: 'model' }))).toMatchObject({
       outcome: 'refused',
       reason: 'user-memory-budget',

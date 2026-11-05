@@ -2880,11 +2880,13 @@
         },
         "tokenBudget": {
           "type": "integer",
+          "description": "Workspace memory injection limit in UTF-8 bytes (the name is kept for compatibility); the fixed header is not counted.",
           "minimum": 128,
           "maximum": 1048576
         },
         "userTokenBudget": {
           "type": "integer",
+          "description": "User memory injection limit in UTF-8 bytes (the name is kept for compatibility).",
           "minimum": 128,
           "maximum": 1048576
         },
@@ -2932,11 +2934,13 @@
         },
         "tokenBudget": {
           "type": "integer",
+          "description": "Workspace memory injection limit in UTF-8 bytes (the name is kept for compatibility); the fixed header is not counted.",
           "minimum": 128,
           "maximum": 1048576
         },
         "userTokenBudget": {
           "type": "integer",
+          "description": "User memory injection limit in UTF-8 bytes (the name is kept for compatibility).",
           "minimum": 128,
           "maximum": 1048576
         },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chooseCut, estimateTokens, pairClosed } from '../src/cut.js'
+import { chooseCut, nodeTokensEstimate, pairClosed } from '../src/cut.js'
 
 const u = (seq: number, tokensEstimate = 100) => ({
   seq,
@@ -156,7 +156,7 @@ describe('chooseCut', () => {
   })
 
   it('uses the conservative fallback for invalid estimates', () => {
-    expect(estimateTokens({ seq: 1, type: 'user/message' })).toBe(64)
-    expect(estimateTokens({ seq: 1, type: 'user/message', tokensEstimate: Number.NaN })).toBe(64)
+    expect(nodeTokensEstimate({ seq: 1, type: 'user/message' })).toBe(64)
+    expect(nodeTokensEstimate({ seq: 1, type: 'user/message', tokensEstimate: Number.NaN })).toBe(64)
   })
 })
