@@ -1,5 +1,5 @@
-import { Readable } from 'node:stream'
-import { describe, expect, it } from 'vitest'
+import { PassThrough, Readable } from 'node:stream'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UsageError } from '../src/errors.js'
 import { readPromptInput } from '../src/modes/prompt-input.js'
 
@@ -68,5 +68,83 @@ describe('readPromptInput', () => {
     expect(await readPromptInput({ positional: '', stdin: split, stdinIsTTY: false })).toEqual([
       { type: 'text', text: '人工智能' },
     ])
+  })
+
+  describe('stdin wait hint', () => {
+    afterEach(() => vi.useRealTimers())
+    const run = (open: PassThrough, o: { positional: string; stdinIsTTY?: boolean }) => {
+      const hint = vi.fn()
+      const done = readPromptInput({ ...o, stdin: open, stdinIsTTY: o.stdinIsTTY ?? false, onWaitHint: hint })
+      return { hint, done }
+    }
+
+    it('fires once after the delay when a positional is given and stdin stays open, then still reads the pipe', async () => {
+      vi.useFakeTimers()
+      const open = new PassThrough()
+      const { hint, done } = run(open, { positional: 'hi' })
+      await vi.advanceTimersByTimeAsync(2999)
+      expect(hint).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(hint).toHaveBeenCalledTimes(1)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(hint).toHaveBeenCalledTimes(1)
+      open.end('late data')
+      expect(await done).toEqual([
+        { type: 'text', text: 'hi' },
+        { type: 'text', text: '[stdin]\nlate data' },
+      ])
+    })
+
+    it('stays quiet when data arrives before the delay', async () => {
+      vi.useFakeTimers()
+      const open = new PassThrough()
+      const { hint, done } = run(open, { positional: 'hi' })
+      open.write('early ')
+      await vi.advanceTimersByTimeAsync(10)
+      await vi.advanceTimersByTimeAsync(10_000)
+      open.end('rest')
+      await done
+      expect(hint).not.toHaveBeenCalled()
+    })
+
+    it('stays quiet when EOF arrives before the delay, and leaves no timer behind', async () => {
+      vi.useFakeTimers()
+      const open = new PassThrough()
+      const { hint, done } = run(open, { positional: 'hi' })
+      open.end()
+      await done
+      expect(vi.getTimerCount()).toBe(0)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(hint).not.toHaveBeenCalled()
+    })
+
+    it('clears the timer when the stream errors', async () => {
+      vi.useFakeTimers()
+      const open = new PassThrough()
+      const { hint, done } = run(open, { positional: 'hi' })
+      const failed = expect(done).rejects.toThrow('boom')
+      open.destroy(new Error('boom'))
+      await failed
+      expect(vi.getTimerCount()).toBe(0)
+      expect(hint).not.toHaveBeenCalled()
+    })
+
+    it('never fires for a terminal stdin', async () => {
+      vi.useFakeTimers()
+      const { hint, done } = run(new PassThrough(), { positional: 'hi', stdinIsTTY: true })
+      await done
+      expect(vi.getTimerCount()).toBe(0)
+      expect(hint).not.toHaveBeenCalled()
+    })
+
+    it('never fires without a positional, where stdin is the prompt', async () => {
+      vi.useFakeTimers()
+      const open = new PassThrough()
+      const { hint, done } = run(open, { positional: '' })
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(hint).not.toHaveBeenCalled()
+      open.end('prompt')
+      expect(await done).toEqual([{ type: 'text', text: 'prompt' }])
+    })
   })
 })

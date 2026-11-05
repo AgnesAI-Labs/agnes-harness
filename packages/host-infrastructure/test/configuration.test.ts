@@ -94,6 +94,14 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
   const capacity = result.models[0]?.contextWindow
   if (!capacity) throw new Error('model capacity missing')
   const defaultSettings = { contextWindow: Math.floor(capacity / 2) }
+  // The catalogue's first model changes between pi releases; pick a level it does not offer.
+  const tested = result.models[0]
+  const unsupportedThinking = ['minimal', 'low', 'medium', 'high', 'xhigh', 'max'].find(
+    (level) =>
+      tested?.reasoning !== true ||
+      (tested.thinkingLevelMap !== undefined && !Object.hasOwn(tested.thinkingLevelMap, level)),
+  )
+  if (!unsupportedThinking) throw new Error('the first openai model offers every thinking level')
   expect(requestsHeaders(server.requests)[0]?.authorization).toBe('Bearer sk-test-value')
 
   const saved = await service.save({
@@ -161,7 +169,7 @@ it('tests a real provider catalogue, saves an atomic non-secret record, and expo
     { contextWindow: 1.5 },
     { contextWindow: 100 },
     { thinking: 'unknown' },
-    { thinking: 'high' },
+    { thinking: unsupportedThinking },
   ]) {
     await expect(
       service.save({ providerId: 'openai', model, defaultSettings: invalid as never }),
