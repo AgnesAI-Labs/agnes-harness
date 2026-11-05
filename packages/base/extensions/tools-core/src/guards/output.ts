@@ -20,17 +20,14 @@ import { collapseRepeatedLines } from './repeated-output.js'
 // totals such as the context window and the compaction threshold are counted in estimated tokens.
 //
 // The byte limit is a deployment setting (preset `tools.output_max_bytes`, handed to a tool as
-// `ctx.outputMaxBytes`). The head and tail kept when a result is cut follow it in the proportions the
-// limit has always had, half and an eighth, so one number moves all three together.
+// `ctx.outputMaxBytes`). The head and tail kept when a result is cut follow it, so one number moves all
+// three together: a cut keeps five eighths of the limit, split evenly, because a command's error or a
+// test run's summary is usually at the end of its output.
 export type OutputLimits = { maxBytes: number; maxLines: number; headBytes: number; tailBytes: number }
 
 export function outputLimits(maxBytes: number): OutputLimits {
-  return {
-    maxBytes,
-    maxLines: 2000,
-    headBytes: Math.floor(maxBytes / 2),
-    tailBytes: Math.floor(maxBytes / 8),
-  }
+  const kept = Math.floor((maxBytes * 5) / 16)
+  return { maxBytes, maxLines: 2000, headBytes: kept, tailBytes: kept }
 }
 
 /** The limits of a deployment that set nothing. */
