@@ -11,14 +11,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverSkillRoot, skillRoots } from '@agnes/base'
 import {
+  canAccessResourceControl,
   jcs,
   type McpServerDefinitionInput,
+  type ResourceControlMethodName,
   rpcError,
   type SkillImportParams,
   sha256Hex,
 } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { runtimeIntegrity } from '../src/packages/mcp-import-artifacts.js'
+import { resourcePort } from '../src/packages/mcp-import-state.js'
 import type { PackageAdminAuthority } from '../src/packages/permissions.js'
 import { skillEnvironment } from '../src/packages/skill-environment.js'
 import { createSkillImportService } from '../src/packages/skill-import.js'
@@ -1182,6 +1185,49 @@ it('keeps management imports on the session resource allowlist and gates enablin
     rpcError('CAPABILITY_DENIED'),
   )
   expect(s.calls).toEqual([])
+})
+
+it('admits every resource method the MCP import lifecycle calls, including reconnect', async () => {
+  const granted = {
+    audience: 'admin',
+    principalId: 'p',
+    clientId: 'c',
+    permissions: [
+      'packages.install',
+      'packages.activate',
+      'packages.trust',
+      'packages.remove',
+      'credentials.read',
+    ],
+  } as PackageAdminAuthority
+  const methods: ResourceControlMethodName[] = [
+    '_agnes/v1/resources.get',
+    '_agnes/v1/resources.operation.get',
+    '_agnes/v1/resources.desired.set',
+    '_agnes/v1/mcp.servers.get',
+    '_agnes/v1/mcp.servers.create',
+    '_agnes/v1/mcp.servers.trust.set',
+    '_agnes/v1/mcp.servers.test',
+    '_agnes/v1/mcp.servers.enable',
+    '_agnes/v1/mcp.servers.disable',
+    '_agnes/v1/mcp.servers.reconnect',
+    '_agnes/v1/mcp.servers.remove',
+    '_agnes/v1/skills.trust.set',
+    '_agnes/v1/skills.remove',
+  ]
+  const denied: string[] = []
+  const port = resourcePort(
+    {
+      call: async (method, _params, authority) => {
+        if (!authority || !canAccessResourceControl(method, authority)) denied.push(method)
+        return {}
+      },
+    },
+    'default',
+    granted,
+  )
+  for (const method of methods) await port(method, {})
+  expect(denied).toEqual([])
 })
 
 it('probes python3 before python and reports missing only when both fail', async () => {
