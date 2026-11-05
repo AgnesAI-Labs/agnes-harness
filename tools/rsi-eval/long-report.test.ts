@@ -381,3 +381,70 @@ describe("the report header of runs left to refinement's own triggers", () => {
     )
   })
 })
+
+describe('saved lessons in context at the start of a later session', () => {
+  const task = byId('cross-03-latin1-menus')
+  const snapshot = (seq: number, included: string[], saved: number) =>
+    JSON.stringify({
+      seq,
+      ts: '2026-11-05T01:00:00.000Z',
+      type: 'x/core/refinement-prefix-change',
+      lane: 'main',
+      origin: 'system',
+      data: { reason: 'experience-snapshot', entries: included.length, tokens: 90, saved, included },
+    })
+  const onRun = (rep: number, second: string[]): RunRecord =>
+    toRunRecord(
+      task,
+      {
+        runId: `cross-03-latin1-menus.on.r${rep}`,
+        system: 'agh',
+        sessions: [
+          { exitCode: 0, timedOut: false, stdoutFile: 'a', sessionFiles: ['s1.jsonl'] },
+          { exitCode: 0, timedOut: false, stdoutFile: 'b', sessionFiles: ['s2.jsonl'] },
+        ],
+        checks: [],
+      },
+      new Map(),
+      {
+        system: 'agh',
+        readFile: (path) =>
+          path === 's1.jsonl'
+            ? real('trap.cross-03.off-s1.jsonl')
+            : [...second, real('trap.cross-03.off-s2.jsonl')].join('\n'),
+      },
+    )
+
+  it('reads from the first snapshot row of each session how many saved entries it carried', () => {
+    const r = onRun(1, [
+      snapshot(5, ['ws.r0000000001', 'memory.local', 'user.r0000000002'], 2),
+      snapshot(90, [], 2),
+    ])
+    expect(r.experienceAtStart).toEqual([
+      { session: 0, snapshot: false, saved: 0, savedIncluded: 0 },
+      { session: 1, snapshot: true, saved: 2, savedIncluded: 2 },
+    ])
+  })
+
+  it('counts the later sessions of on runs that began with a saved lesson in context, and the trap hits per session', () => {
+    const records = [
+      onRun(1, [snapshot(5, ['ws.r0000000001'], 1)]),
+      onRun(2, [snapshot(5, ['memory.local'], 1)]),
+      onRun(3, []),
+    ]
+    const { markdown, json } = buildReport(records, { resamples: 50 })
+    const lessons = (json as { systems: { agh: { lessonsInContext: Record<string, unknown> } } }).systems.agh
+      .lessonsInContext
+    expect(lessons).toMatchObject({
+      laterSessions: 3,
+      withSnapshot: 2,
+      withSaved: 2,
+      savedInContext: 1,
+    })
+    expect(markdown).toContain('### Saved lessons in context at the start of a later session')
+    expect(markdown).toContain('1 of 3 later sessions of on runs')
+    expect(markdown).toContain('| cross-03-latin1-menus.on.r1 | session 2 | yes | 1 | 0 |')
+    expect(markdown).toContain('| cross-03-latin1-menus.on.r2 | session 2 | no | 1 | 0 |')
+    expect(markdown).toContain('| cross-03-latin1-menus.on.r3 | session 2 | no snapshot | 0 | 0 |')
+  })
+})
