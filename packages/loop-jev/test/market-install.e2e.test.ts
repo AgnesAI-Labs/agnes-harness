@@ -1,7 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type FakeSystemOne, startFakeSystemOne } from '@agnes/ai/testkit'
 import { initializeHome } from '@agnes/host'
@@ -9,6 +9,7 @@ import type { PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { answersFor, PICK_LS, PICK_RESPOND } from './helpers/fake-jev.js'
+import { marketEndpoint } from './helpers/market-endpoint.js'
 
 // The user's path end to end, against the real daemon: find the Jev loop in the Market catalogue,
 // install it from the payload the release ships, trust and enable it, see it in the loop picker's
@@ -62,7 +63,7 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
   let daemon: ChildProcess
   let exited: Promise<number | null>
   let sdk: Sdk
-  let socketPath: string | undefined
+  let socketDirectory: string | undefined
   let stderr = ''
 
   beforeAll(async () => {
@@ -164,11 +165,12 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
     })
     await bounded(ready, 'source daemon boot')
     const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
-    socketPath = owner.socketPath
+    const endpoint = marketEndpoint(owner)
+    socketDirectory = endpoint.socketDirectory
     sdk = createClient({
       journal: memoryJournal(),
       timeouts: { request: 120_000 },
-      transport: { kind: 'unix', path: owner.socketPath },
+      transport: endpoint.transport,
     })
     await sdk.initialize()
   }, 180_000)
@@ -182,7 +184,7 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
       clearTimeout(timer)
     }
     await fake?.close()
-    if (socketPath) rmSync(dirname(socketPath), { recursive: true, force: true })
+    if (socketDirectory) rmSync(socketDirectory, { recursive: true, force: true })
     rmSync(root, { recursive: true, force: true })
   }, 40_000)
 
