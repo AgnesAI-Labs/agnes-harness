@@ -567,7 +567,10 @@ describe('registerRemoteToolsStrict', () => {
     // What is stored of the server's text, across every copy, is at most `cap` bytes.
     const serverText = (bytes: Uint8Array) =>
       new TextDecoder().decode(bytes).replace(/(^|\n)=== text block \d+ of \d+ \(\d+ bytes\) ===\n/g, '')
-    const storedBytes = many.ctx.calls.artifacts.reduce((n, a) => n + Buffer.byteLength(serverText(a.bytes)), 0)
+    const storedBytes = many.ctx.calls.artifacts.reduce(
+      (n, a) => n + Buffer.byteLength(serverText(a.bytes)),
+      0,
+    )
     expect(storedBytes).toBeLessThanOrEqual(cap)
     expect(many.text).toContain('[omitted 1 of 2 text content blocks')
     expect(many.text).toContain(`returned ${8 * MiB} bytes of text`)
