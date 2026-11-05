@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { applyBeforeRequestPatches, deriveRequest, scanAll, toProviderRequest } from '@agnes/core'
+import { estimateTokens } from '@agnes/extension-api'
 import { type RequestBody, rpcError } from '@agnes/protocol'
 import type { HostSession } from '../lifecycle/host.js'
 import { abortable, accountedSideCall, type SideCallRun } from './session-side-call.js'
@@ -165,7 +166,7 @@ async function ask(
       derivedHash: derived.header.derived_hash,
     })
 
-    const tokens = new TextEncoder().encode(JSON.stringify(wire)).byteLength + maxTokens
+    const tokens = estimateTokens(JSON.stringify(wire)) + maxTokens
     // An auxiliary review honours the open turn's budget override exactly like `generate` does.
     let cap = s.preset.budget.perRequestCap
     if (options.slots) {

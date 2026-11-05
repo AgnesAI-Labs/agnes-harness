@@ -25,6 +25,13 @@ describe('session/new systemPromptAppend', () => {
     expect(parseSystemPromptAppend('Answer in French.')).toBe('Answer in French.')
     expect(parseSystemPromptAppend('x'.repeat(8192))).toHaveLength(8192)
   })
+  it('astral characters are checked once in UTF-16 units', () => {
+    // 4096 emoji are 8192 UTF-16 units, at the cap. 8191 Latin characters and one emoji are 8193
+    // units but only 8192 code points, and are refused.
+    expect(parseSystemPromptAppend('😀'.repeat(4096))).toHaveLength(8192)
+    expect(() => parseSystemPromptAppend('😀'.repeat(4097))).toThrow(TypeError)
+    expect(() => parseSystemPromptAppend(`${'x'.repeat(8191)}😀`)).toThrow(TypeError)
+  })
   it.each([
     ['empty', ''],
     ['over the cap', 'x'.repeat(8193)],

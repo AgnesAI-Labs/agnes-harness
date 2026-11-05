@@ -223,9 +223,9 @@ function prepareContent(
 }
 
 // The most text of one MCP call that is kept, stored or shown. `read` and `grep` take at most
-// MAX_READ_BYTES of a stored output, so bytes stored past that could never be read back. It also
-// equals the largest per-call model budget (4 x the 1 MiB maximum of `tools.output_max_bytes`), so it
-// never cuts a result the model could have been shown whole.
+// MAX_READ_BYTES of a stored output, so bytes stored past that could never be read back. It is above
+// the largest per-call model budget (the 1 MiB maximum of `tools.output_max_bytes`), so it never cuts
+// a result the model could have been shown whole.
 // The SDK has already read the whole response into memory by the time a result gets here and this
 // cannot undo that; it bounds what is copied, stored and persisted from it.
 const MAX_KEPT_MCP_TEXT_BYTES = MAX_READ_BYTES
@@ -374,7 +374,7 @@ function remoteDefinition(
             omittedTexts++
             continue
           }
-          // Text keeps the existing per-block and aggregate 32 KiB contracts. Media is guarded by
+          // Text keeps the per-block and per-call `output_max_bytes` limits. Media is guarded by
           // its own count/bytes/pixels/block limits and therefore never spends this text budget.
           const guarded = await guardOutput(guardedCtx, item.text)
           // guardOutput can include an artifact backend failure in its fallback text, so redact again
@@ -401,7 +401,7 @@ function remoteDefinition(
           const note = () =>
             `\n[omitted ${omittedTexts} of ${allTexts.length} text content blocks: over the ${callLimit}-byte call limit; ${stored.note}]\n`
           // The omission note is itself text. Reclaim the latest admitted text blocks until the
-          // complete returned text (including that note) remains inside the same 32 KiB budget.
+          // complete returned text (including that note) remains inside the same call budget.
           const noteCost = () => new TextEncoder().encode(note()).byteLength
           while (noteCost() > remainingTextBytes) {
             const index = pieces.findLastIndex((piece) => piece.kind === 'text')

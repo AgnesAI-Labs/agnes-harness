@@ -243,7 +243,7 @@ it.each(['openai-responses', 'anthropic-messages'] as const)(
       }
       expect(snapshot.attempts[0]!.providerActualTokens).toBeNull()
       expect(snapshot.attempts[1]!.providerActualTokens).toMatchObject({ input: 11, output: 3 })
-      expect(snapshot.attempts[1]!.estimatedTokens).toHaveProperty('method', 'serialized-utf8-bytes/4')
+      expect(snapshot.attempts[1]!.estimatedTokens).toHaveProperty('method', 'estimateTokens')
       if (api === 'openai-responses') expect(received[1]).toHaveProperty('store', false)
       for await (const _event of provider.infer(
         { ...request, kind: 'summary', slot: 'compaction' },

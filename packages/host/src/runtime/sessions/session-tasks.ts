@@ -12,6 +12,7 @@ import {
   type SessionImpl,
   toProviderRequest,
 } from '@agnes/core'
+import { estimateTokens } from '@agnes/extension-api'
 import type { SessionTasks } from '@agnes/host-extensions/assemble/packages'
 import type { InferenceEvent } from '@agnes/protocol'
 import { bestEffort } from '../../best-effort.js'
@@ -153,7 +154,7 @@ export function createSessionTasks(
           sessionKey: `aux:${randomUUID()}`,
           derivedHash: derived.header.derived_hash,
         })
-        const tokens = new TextEncoder().encode(JSON.stringify(wire)).byteLength + maxTokens
+        const tokens = estimateTokens(JSON.stringify(wire)) + maxTokens
         const projected = await abortable(
           s.d.runtime.billingProjected({ tokensEstimate: tokens, model: modelId }),
           signal,

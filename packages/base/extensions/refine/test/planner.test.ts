@@ -1,9 +1,9 @@
 import type { RefinementPlanner } from '@agnes/core'
+import { estimateTokens } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { type ParseContext, parsePlannerOutput } from '../src/planner/parse.js'
 import {
   buildPlannerPrompt,
-  estimateTokens,
   type PlannerEntry,
   type PlannerEvidence,
   type PlannerGuidance,

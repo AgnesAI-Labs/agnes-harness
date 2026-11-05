@@ -3,6 +3,7 @@ import { createServer, type Server as HttpServer } from 'node:http'
 import { createRequire } from 'node:module'
 import { PassThrough } from 'node:stream'
 import { deflateSync } from 'node:zlib'
+import { boundToolResult } from '@agnes/core-effects/effects/tool-dispatch'
 import { checkToolDef, type ResourceEntry, type ToolDef } from '@agnes/extension-api'
 import type { Context } from '@agnes/plugin-runtime'
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js'
@@ -25,7 +26,7 @@ import { fakeToolContext } from '../../testkit/tool-context.js'
 // The sizes in these cases are built from an 8 KiB single-block limit and the call limit that follows
 // from it, so they ask for that limit explicitly instead of taking the deployment default.
 const SMALL = 8192
-const CALL_OUTPUT_LIMIT_BYTES = 4 * SMALL
+const CALL_OUTPUT_LIMIT_BYTES = SMALL
 const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
   fakeToolContext({ outputMaxBytes: SMALL, ...o })
 
@@ -475,6 +476,32 @@ describe('registerRemoteToolsStrict', () => {
     expect((hit.content[0] as { text: string }).text).toContain('row 99')
   })
 
+  it('a tool result between 1x and 4x output_max_bytes keeps the tool omission note and its full text is stored', async () => {
+    // Core cuts every tool result at one output_max_bytes. A tool-layer call limit above that let
+    // these three blocks through whole, so Core cut them with no way back to the rest.
+    const conn = connection()
+    conn.callTool = async () => ({
+      content: Array.from({ length: 3 }, (_, i) => ({
+        type: 'text' as const,
+        text: `row ${i} ${'x'.repeat(7000)}`,
+      })),
+    })
+    const state = fakeApi()
+    await registerRemoteToolsStrict(state.api, conn, stdio)
+    const ctx = ctxOf()
+    const result = await (state.tools[0] as ToolDef).execute({}, ctx)
+    const shown = boundToolResult(result, SMALL)
+    const text = shown.content.map((b) => (b.type === 'text' ? b.text : '')).join('\n')
+    expect(text).toContain('[omitted 2 of 3 text content blocks')
+    expect(text).not.toContain('[output truncated')
+    expect(modelVisibleTextBytes(shown.content)).toBeLessThanOrEqual(SMALL)
+    const locator = /artifact:\/\/[0-9a-f]{64}\?size=\d+/.exec(text)?.[0] as string
+    expect(locator).toBeDefined()
+    const hit = await grepTool.execute({ pattern: 'row 2 ', path: locator }, ctx)
+    expect(hit.isError).toBeUndefined()
+    expect((hit.content[0] as { text: string }).text).toContain('row 2')
+  })
+
   it('keeps only what read can give back of an oversized result, and says what was left out', async () => {
     const MiB = 1024 * 1024
     const cap = MAX_READ_BYTES
@@ -513,8 +540,13 @@ describe('registerRemoteToolsStrict', () => {
     // Several blocks that together pass the cap: later ones are cut, then dropped, and counted.
     const block = (c: string) => ({ type: 'text' as const, text: c.repeat(2 * MiB) })
     const many = await run([block('a'), block('b'), block('c'), block('d')])
-    const storedBytes = many.ctx.calls.artifacts.reduce((n, a) => n + a.bytes.byteLength, 0)
-    expect(storedBytes).toBeLessThanOrEqual(cap)
+    // Each stored copy holds at most `cap` bytes of the server's text. Two cut blocks pass the call
+    // budget, so the kept set is also stored whole next to the guard's copy of each block.
+    const serverText = (bytes: Uint8Array) =>
+      new TextDecoder().decode(bytes).replace(/(^|\n)=== text block \d+ of \d+ \(\d+ bytes\) ===\n/g, '')
+    for (const stored of many.ctx.calls.artifacts)
+      expect(Buffer.byteLength(serverText(stored.bytes))).toBeLessThanOrEqual(cap)
+    expect(many.text).toContain('[omitted 1 of 2 text content blocks')
     expect(many.text).toContain(`returned ${8 * MiB} bytes of text`)
     expect(many.text).toContain('2 text blocks after that point were dropped')
 
@@ -561,8 +593,10 @@ describe('registerRemoteToolsStrict', () => {
   it('keeps a guard-written artifact reachable when aggregate omission storage later fails', async () => {
     const conn = connection()
     conn.callTool = async () => ({
+      // The first block leaves too little of the call budget for the cut second block, which the
+      // guard has already stored by then.
       content: [
-        ...Array.from({ length: 4 }, () => ({ type: 'text' as const, text: 'x'.repeat(7000) })),
+        { type: 'text' as const, text: 'x'.repeat(3000) },
         { type: 'text' as const, text: 'y'.repeat(9000) },
       ],
     })
@@ -590,8 +624,8 @@ describe('registerRemoteToolsStrict', () => {
   })
 
   it('keeps a 1456px PNG above 32 KiB even after the independent text budget is exhausted', async () => {
-    const screenshot = png(1456, 909, { ancillaryBytes: CALL_OUTPUT_LIMIT_BYTES + 1024 })
-    expect(screenshot.length).toBeGreaterThan(CALL_OUTPUT_LIMIT_BYTES)
+    const screenshot = png(1456, 909, { ancillaryBytes: 32 * 1024 + 1024 })
+    expect(screenshot.length).toBeGreaterThan(32 * 1024)
     const conn = connection()
     conn.callTool = async () => ({
       content: [

@@ -163,8 +163,12 @@ function auxiliaryAxSomText(events: readonly Event[], media: LedgerPreparedReque
   return text
 }
 
-/** Upper bound on the wire body that will be sent, or null when a field has no supported bound. */
-export function boundWireInputTokens(wire: WireBody): number | null {
+/**
+ * Conservative upper bound on the input tokens of the wire body that will be sent: one per serialized
+ * UTF-16 unit, so a reservation made from it is never short. Not an estimate (that is
+ * `estimateTokens`). Null when a field has no supported bound.
+ */
+export function wireInputUpperBound(wire: WireBody): number | null {
   for (const message of wire.messages) {
     for (const block of message.content) {
       if (block.type !== 'text' && block.type !== 'thinking') return null
@@ -814,7 +818,7 @@ export async function admitInferenceRequest(
     }
   }
   if (await treeBudgetApplies(s)) {
-    const inputTokens = imageInputTokens ?? boundWireInputTokens(wire)
+    const inputTokens = imageInputTokens ?? wireInputUpperBound(wire)
     if (inputTokens === null) {
       await s.endTurn('budget')
       return { phase: 'terminal', reason: 'budget' }
