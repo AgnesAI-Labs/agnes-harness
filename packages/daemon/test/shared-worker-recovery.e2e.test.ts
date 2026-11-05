@@ -21,6 +21,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 10_000): Promise<vo
   }
 }
 
+// Three worker generations can exceed 20 s while each 10 s startup or recovery stage succeeds.
 it('recovers every open session together after the shared worker crashes', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-shared-recovery-'))
   const profileFile = join(dir, 'profile.json')
@@ -130,4 +131,4 @@ it('recovers every open session together after the shared worker crashes', async
     await server.close()
     rmSync(dir, { recursive: true, force: true })
   }
-}, 20_000)
+}, 32_000)
