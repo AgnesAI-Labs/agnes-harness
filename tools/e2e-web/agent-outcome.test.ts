@@ -161,8 +161,8 @@ it('the shipped runbook refuses Windows jobs before reaching the raw process por
     ...manifest.agnes.bundles['ops-runbook'].presets,
   })
   const config = normalizeSandboxStaticConfig(preset.doc)
-  const ctx = fakeToolContext({ cwd: resolve('/work/proj') })
-  const policy = testFsPolicy(ctx.cwd)
+  const policy = testFsPolicy(resolve('/work/proj'))
+  const ctx = fakeToolContext({ cwd: policy.workspaceRoot })
   let rawStarts = 0
   const backend = await sandboxWorkspaceProbe({
     ...config,
