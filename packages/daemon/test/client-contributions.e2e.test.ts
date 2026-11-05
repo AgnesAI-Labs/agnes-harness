@@ -9,6 +9,7 @@ import type { PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
+import { stopDaemon } from '../src/supervisor/control.js'
 import { localSdkTransport } from './local-socket-path.js'
 
 async function deadline<T>(promise: Promise<T>, label: string): Promise<T> {
@@ -59,8 +60,9 @@ it('enables single and multiple client contributions and retains their roster af
     })
     const close = async () => {
       if (child.exitCode !== null || child.signalCode !== null) return
-      child.kill('SIGTERM')
       try {
+        if (process.platform === 'win32') expect(await stopDaemon(home, { waitMs: 90_000 })).toBe('stopped')
+        else child.kill('SIGTERM')
         expect(await deadline(exited, 'daemon shutdown')).toBe(0)
       } catch (error) {
         child.kill('SIGKILL')

@@ -10,6 +10,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { buildConfig } from '../src/supervisor/config.js'
 import { startProductionSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
+import { sourceTranspileCache } from './source-transpile-cache.js'
 
 const processIdentity = async (pid: number) =>
   pid === process.pid
@@ -108,7 +109,7 @@ it(
     if (!address || typeof address === 'string') throw new Error('missing provider address')
     const baseUrl = `http://127.0.0.1:${address.port}/v1`
     const configuration = createConfigurationService({ home, profile: 'local-dev' })
-    const userBase = { name: 'local-dev', dataDir: data, cacheDir: join(home, 'cache') }
+    const userBase = { name: 'local-dev', dataDir: data, cacheDir: sourceTranspileCache() }
     // The built-in payload-only adapter's route, declared before the saved accounts' routes.
     const jevRoute = {
       route: 'jev',

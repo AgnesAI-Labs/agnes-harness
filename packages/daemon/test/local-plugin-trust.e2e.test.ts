@@ -16,6 +16,7 @@ import { initializeHome } from '@agnes/host'
 import type { RuntimeAdminSnapshot } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
+import { stopDaemon } from '../src/supervisor/control.js'
 
 const fixture = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
 // The source-form worker transpiles the whole bundled-plugin graph (~1500 modules, node_modules
@@ -35,10 +36,11 @@ async function bounded<T>(work: Promise<T>): Promise<T> {
     clearTimeout(timer)
   }
 }
-async function shutdown(child: ChildProcess, exited: Promise<number | null>) {
+async function shutdown(child: ChildProcess, exited: Promise<number | null>, home: string) {
   if (child.exitCode !== null || child.signalCode !== null) return
-  child.kill('SIGTERM')
   try {
+    if (process.platform === 'win32') expect(await stopDaemon(home, { waitMs: STEP_MS })).toBe('stopped')
+    else child.kill('SIGTERM')
     expect(await bounded(exited)).toBe(0)
   } catch (error) {
     child.kill('SIGKILL')
@@ -151,7 +153,7 @@ it('a fresh home does not evaluate repository plugins or other repository code u
     )
   } finally {
     await sdk?.close()
-    await shutdown(child, exited)
+    await shutdown(child, exited, home)
     rmSync(root, { recursive: true, force: true })
   }
 }, 300_000)

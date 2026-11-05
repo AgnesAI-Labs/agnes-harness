@@ -1268,7 +1268,12 @@ it('retains the original request across worker and daemon crashes, then consumes
   const open = async () => {
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', fileURLToPath(new URL('./fake-supervisor-entry.ts', import.meta.url)), dir],
+      [
+        '--import',
+        'tsx',
+        fileURLToPath(new URL('./fixtures/controlled-supervisor-entry.ts', import.meta.url)),
+        dir,
+      ],
       {
         env: {
           PATH: process.env.PATH,
@@ -1277,16 +1282,16 @@ it('retains the original request across worker and daemon crashes, then consumes
           AGNES_FAKE_WORKER_RECOVERY: '1',
           AGNES_FAKE_WORKER_TURNS: '4',
         },
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       },
     )
     const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
     let stdout = '',
       stderr = ''
-    child.stdout.on('data', (data) => {
+    child.stdout?.on('data', (data) => {
       stdout += String(data)
     })
-    child.stderr.on('data', (data) => {
+    child.stderr?.on('data', (data) => {
       stderr += String(data)
     })
     try {
@@ -1311,8 +1316,9 @@ it('retains the original request across worker and daemon crashes, then consumes
       },
       async close() {
         if (child.exitCode !== null || child.signalCode !== null) return
-        child.kill('SIGTERM')
         try {
+          if (process.platform === 'win32') child.send('test:close')
+          else child.kill('SIGTERM')
           await vi.waitFor(() => expect(child.exitCode).toBe(0), { timeout: 20000, interval: 100 })
         } finally {
           if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
