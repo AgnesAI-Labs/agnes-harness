@@ -62,6 +62,12 @@ export class MemoryStore {
       throw fault('MEMORY_INVALID_SETTINGS')
     }
   }
+  /**
+   * writer.json keeps the whole source, including a background run's `maintenance` id. The value
+   * returned here becomes the inspection's `lastWriter`, which clients validate against a closed
+   * schema; clients that predate `maintenance` refuse unknown fields, so only the original fields
+   * are returned.
+   */
   writer(): MemorySource | undefined {
     const path = join(this.root, 'writer.json')
     safe(this.protectedRoot, path)

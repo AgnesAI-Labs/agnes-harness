@@ -1,4 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -12,12 +20,18 @@ import {
 } from './scripted-session.js'
 
 const baselineFile = fileURLToPath(new URL('../fixtures/refinement/off-baseline.json', import.meta.url))
+const userBaselineFile = fileURLToPath(
+  new URL('../fixtures/refinement/off-baseline-user-memory.json', import.meta.url),
+)
 const apis = ['anthropic-messages', 'openai-completions'] as const
+
+/** Hand-written user memory the second gate runs with: a person's own preferences, no saved sections. */
+const USER_MEMORY = '# Preferences\n\n- Answer in short sentences.\n- Prefer pnpm over npm.\n'
 
 type Baseline = Record<(typeof apis)[number], string[]>
 
 /** Runs the session once per api and returns the masked, normalized requests. */
-async function record(): Promise<Baseline> {
+async function record(userMemory?: string): Promise<Baseline> {
   const baseline = {} as Baseline
   for (const api of apis) {
     const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'agnes-refinement-baseline-')))
@@ -26,7 +40,15 @@ async function record(): Promise<Baseline> {
       const workspace = join(root, 'workspace')
       mkdirSync(dataDir)
       mkdirSync(workspace)
-      const requests = await runScriptedSession({ dataDir, workspace, api })
+      const requests = await runScriptedSession({
+        dataDir,
+        workspace,
+        api,
+        ...(userMemory === undefined ? {} : { userMemory }),
+      })
+      // Off, nothing of saved task experience is touched: no registry is ever created.
+      expect(existsSync(join(dataDir, 'refinement', 'workspaces'))).toBe(false)
+      expect(existsSync(join(dataDir, 'memory', 'user', 'refinement.json'))).toBe(false)
       const volatileFree = maskVolatile(
         requests.map((request) => request.raw),
         { dataDir, workspace },
@@ -45,6 +67,35 @@ async function record(): Promise<Baseline> {
 // this gate and could not be verified here. Follow-up: make `pinnedPlatform().matches` return false
 // on win32 and run one Windows diagnostic. The helper tests in the second describe boot no host and run everywhere.
 describe.skipIf(process.platform === 'win32')('refinement off, host-booted', () => {
+  /** Compares a run with its recorded baseline, or records it when asked to. */
+  async function gate(file: string, userMemory?: string): Promise<Baseline> {
+    const actual = await record(userMemory)
+    if (process.env.AGH_RECORD_REFINEMENT_BASELINE === '1') {
+      writeFileSync(file, `${JSON.stringify(actual, null, 2)}\n`)
+      return actual
+    }
+    const baseline = JSON.parse(readFileSync(file, 'utf8')) as Baseline
+    for (const api of apis) {
+      expect(actual[api].length, `${api} request count`).toBe(baseline[api].length)
+      for (const [index, request] of actual[api].entries()) {
+        const expected = baseline[api][index] ?? ''
+        if (request !== expected)
+          throw new Error(`${api} request ${index}: ${firstDifference(expected, request)}`)
+      }
+    }
+    return baseline
+  }
+
+  it('RSI off with user memory sends the same bytes as before', async () => {
+    const baseline = await gate(userBaselineFile, USER_MEMORY)
+    for (const api of apis) {
+      // The memory note is there and carries the person's own text as it is.
+      expect(baseline[api][0]).toContain('User memory (read-only for the agent):')
+      expect(baseline[api][0]).toContain('Prefer pnpm over npm.')
+      expect(baseline[api].join('')).not.toContain('harness_propose')
+    }
+  })
+
   it('RSI off sends the same bytes as before', async () => {
     const actual = await record()
     if (process.env.AGH_RECORD_REFINEMENT_BASELINE === '1') {

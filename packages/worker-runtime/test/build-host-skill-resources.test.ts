@@ -173,6 +173,7 @@ it('still calls buildHost when bootstrap produced no Skill resources', async () 
     boundWakes: expect.any(Function),
     scheduling: expect.any(Function),
     skillInstall: expect.any(Function),
+    refinementSave: expect.any(Function),
     requestMedia: expect.any(Object),
     runtimePluginSources: expect.any(Function),
     serviceAuthority: expect.objectContaining({ resolve: expect.any(Function) }),

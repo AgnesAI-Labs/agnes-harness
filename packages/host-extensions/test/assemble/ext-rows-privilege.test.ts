@@ -77,6 +77,15 @@ describe('verified ext: row privilege grants', () => {
     )
     for (const id of ['agnes/goals', 'agnes/goal/x', 'goal', 'agnes/Goal'])
       expect(h.authority.extension(h.pkg.id, id, h.modules.get(h.pkg.id)), id).not.toHaveProperty('taskScope')
+    // The workflow run records go to the workflow plugin alone.
+    expect(h.authority.extension(h.pkg.id, 'agnes/workflow', h.modules.get(h.pkg.id))).toMatchObject({
+      workflowRuns: true,
+    })
+    for (const id of ['agnes/workflows', 'agnes/workflow/x', 'workflow', 'agnes/goal', 'agnes/refine'])
+      expect(h.authority.extension(h.pkg.id, id, h.modules.get(h.pkg.id)), id).not.toHaveProperty(
+        'workflowRuns',
+      )
+    expect(h.authority.extension('@acme/package', 'agnes/workflow', { id: '@acme/package' })).toEqual({})
     expect(h.authority.extension('@acme/package', 'agnes/goal', { id: '@acme/package' })).toEqual({})
     expect(h.authority.seam(h.pkg.id, 'artifacts', h.modules.get(h.pkg.id))).toEqual({
       privateArtifactStore: true,

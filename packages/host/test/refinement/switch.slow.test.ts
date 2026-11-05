@@ -78,11 +78,11 @@ describe('the refinement switch at host assembly', () => {
     expect(loaded.find((entry) => entry.id === 'agnes/refine')?.loaded).toBe(true)
   })
 
-  it('only the settings file turns the tools on, all three deferred', async () => {
+  it('only the settings file turns the tools on, harness_refine always loaded and the others deferred', async () => {
     const dataDir = scratch()
     enable(dataDir)
     const { tools, registrations } = await refinementTools(dataDir)
-    expect(tools).toEqual(REFINEMENT_TOOLS.map((name) => ({ name, deferLoading: true })))
+    expect(tools).toEqual(REFINEMENT_TOOLS.map((name) => ({ name, deferLoading: name !== 'harness_refine' })))
     expect(registrations).toEqual(['tool:harness_propose', 'tool:harness_refine', 'tool:harness_inspect'])
   })
 

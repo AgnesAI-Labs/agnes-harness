@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a database migration that creates a table `tags` with columns `id` (integer primary key) and `name` (text, not null, unique). Build the local database with the project's make target to confirm it applies.",
+          "text": "Add a database migration that creates a table `tags` with columns `id` (integer primary key) and `name` (text, not null, unique). Build the local database with the project's make target to confirm it applies. Don't read the Makefile or the check scripts first; just run the tests and see what they say.",
           "checks": [
             {
               "command": "make db >/dev/null && python3 -c \"import sqlite3; c = sqlite3.connect('build/app.sqlite3'); print([r[1] for r in c.execute('pragma table_info(tags)')])\"",
@@ -29,7 +29,7 @@
           ]
         },
         {
-          "text": "Add a database migration that creates a table `comments` with columns `id` (integer primary key), `post_id` (integer, not null) and `body` (text, not null). Build the local database with the project's make target to confirm it applies.",
+          "text": "Remember, a new migrations/NNN_name.sql also needs db/SCHEMA_VERSION and the `current schema version:` line of docs/schema.txt set to NNN. Add a database migration that creates a table `comments` with columns `id` (integer primary key), `post_id` (integer, not null) and `body` (text, not null). Build the local database with the project's make target to confirm it applies.",
           "checks": [
             {
               "command": "make db >/dev/null && python3 -c \"import sqlite3; c = sqlite3.connect('build/app.sqlite3'); print([r[1] for r in c.execute('pragma table_info(comments)')])\"",

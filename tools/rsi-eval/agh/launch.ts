@@ -18,6 +18,7 @@ import {
   type ReviewAnswer,
   TERMINAL_REVIEW_STATES,
 } from './run-agh.js'
+import { loadSkillSaveModules, skillSaveTransport } from './skill-save.js'
 
 const PACKAGES = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'packages')
 const CLI = join(PACKAGES, 'cli')
@@ -35,7 +36,7 @@ export type HostModule = {
   cacheDir(home: string): string
   RefinementSettingsStore: new (dataDir: string, profile: string) => SettingsStore
   /** The manual review request behind `session.refine`; the embedded host does not serve that RPC. */
-  requestRefinement(session: never, focus?: string): Promise<{ runId: string }>
+  requestRefinement(session: never, focus?: string, saveTo?: 'workspace' | 'user'): Promise<{ runId: string }>
 }
 
 /**
@@ -91,8 +92,15 @@ export type MemoryModule = {
     /** Saves the settings and returns the inspection that follows. */
     configure(settings: object): Promise<MemoryInspection>
     inspect(): Promise<MemoryInspection>
+    /** The memory page's own read and edit of a memory file (compare-and-swap on the hash read). */
+    readFile(path: string): Promise<{ content: string; hash: string }>
+    editFile(path: string, content: string, baseHash: string): Promise<unknown>
+    /** What the agent is shown at the start of a turn; none while memory is off. */
+    snapshot(turn: number): Promise<{ content: string } | undefined>
     close?(): Promise<void> | void
   }
+  /** Where the provider keeps a workspace's memory and the user memory, under the home. */
+  fileMemoryRoots(home: string, workspace: string): { protectedRoot: string; root: string; userRoot: string }
 }
 
 /** The official file memory provider, from its source like the CLI boot code below. */
@@ -117,6 +125,52 @@ export async function prepareMemory(
       await session.close?.()
     }
   }
+}
+
+/** The workspace memory index a person edits on the memory page. */
+const MEMORY_INDEX = 'MEMORY.md'
+
+/**
+ * Adds one paragraph to a workspace's memory the way a person saves it on the memory page (the
+ * provider's own edit of the index, which the agent reads from the next turn), after what the index
+ * already holds. Used for the oracle arm: the task's lesson, written before the second session.
+ */
+export async function seedWorkspaceMemory(
+  input: { home: string; workspace: string; text: string },
+  memory: MemoryModule,
+): Promise<void> {
+  const session = memory.openMemory({
+    home: input.home,
+    workspaceRoot: input.workspace,
+    sessionKey: 'rsi-eval-seed',
+  })
+  try {
+    const current = await session.readFile(MEMORY_INDEX)
+    const kept = current.content.trimEnd()
+    await session.editFile(
+      MEMORY_INDEX,
+      `${kept === '' ? '' : `${kept}\n\n`}${input.text.trim()}\n`,
+      current.hash,
+    )
+  } finally {
+    await session.close?.()
+  }
+}
+
+/**
+ * Adds one paragraph to the user memory, the memory every workspace reads, the way a person writes it:
+ * there is no edit of it through the provider, a person edits the file itself. After what it already
+ * holds. Used for the frozen arm when the `on` run it copies saved to user memory.
+ */
+export function seedUserMemory(
+  input: { home: string; workspace: string; text: string },
+  memory: MemoryModule,
+): void {
+  const { userRoot } = memory.fileMemoryRoots(input.home, input.workspace)
+  mkdirSync(userRoot, { recursive: true, mode: 0o700 })
+  const file = join(userRoot, MEMORY_INDEX)
+  const kept = existsSync(file) ? readFileSync(file, 'utf8').trimEnd() : ''
+  writeFileSync(file, `${kept === '' ? '' : `${kept}\n\n`}${input.text.trim()}\n`, { mode: 0o600 })
 }
 
 const refusal = (error: unknown): string | undefined => {
@@ -164,6 +218,19 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
   const { parseArgs } = (await import(pathToFileURL(join(CLI, 'src', 'args.ts')).href)) as {
     parseArgs(argv: string[]): unknown
   }
+  // Saved skills reach the workspace through the daemon's installer over a resource-control store of this
+  // run; only a run with refinement on gets the way to do it (see skill-save.ts).
+  const live = new Map<string, string>()
+  const refinementSave = input.refinement
+    ? skillSaveTransport(input.refinement, {
+        home: input.home,
+        dataDir: data,
+        profile: input.profile,
+        workspaceOf: (key) => live.get(key),
+        enabled: () => new host.RefinementSettingsStore(data, input.profile).read().settings.enabled,
+        modules: await loadSkillSaveModules(),
+      })
+    : undefined
   const agnesVersion = (JSON.parse(readFileSync(join(CLI, 'package.json'), 'utf8')) as { version: string })
     .version
   // The host reads user-wide instruction files from AGH_HOME; the run's home holds none.
@@ -183,6 +250,7 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
         cwd: input.workspace,
         agnesVersion,
         log: () => {},
+        ...(refinementSave ? { refinementSave } : {}),
       },
     )
   } catch (error) {
@@ -203,6 +271,8 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
       throw new Error(`${workspace} is not one of the run's workspaces`)
     const session = await booted.client.createSession({ cwd: workspace, sessionKey })
     ids.set(sessionKey, session.id)
+    live.set(sessionKey, workspace)
+    live.set(session.id, workspace)
     await session.setModel({ slot: 'primary', route: input.model.route, model: input.model.model })
     // Nobody attends an eval run: every approval is given, as the Prime runs execute without asking.
     const offPermission = session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
@@ -210,11 +280,24 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
     return {
       key: sessionKey,
       prompt: async (text, signal) => (await session.prompt(text, { signal, unattended: true })).reason,
-      review: async (): Promise<ReviewAnswer> => {
+      // A read of the session's experience entries: no model call. It is refused exactly when a review
+      // would be (refinement off, or not wired into this host), so it shows a dead refinement.
+      liveness: async () => {
+        const owned = embedded.kernel.get(session.id)
+        if (!owned) return { refused: 'unavailable' }
+        const { refinementFacade } = (await import('@agnes/core')) as unknown as {
+          refinementFacade(s: never): { inspect(request: { op: 'list' }): Promise<object> }
+        }
+        const out = await refinementFacade(owned as never).inspect({ op: 'list' })
+        return 'refused' in out ? { refused: String(out.refused) } : { live: true as const }
+      },
+      review: async (saveTo): Promise<ReviewAnswer> => {
         try {
           const owned = embedded.kernel.get(session.id)
           if (!owned) return { refused: 'unavailable' }
-          return await host.requestRefinement(owned as never)
+          return await (saveTo
+            ? host.requestRefinement(owned as never, undefined, saveTo)
+            : host.requestRefinement(owned as never))
         } catch (error) {
           const reason = refusal(error)
           if (reason === undefined) throw error
@@ -235,6 +318,8 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
         try {
           await embedded.kernel.get(session.id)?.close()
         } finally {
+          live.delete(sessionKey)
+          live.delete(session.id)
           await session.detach().catch(() => undefined)
         }
       },
@@ -243,6 +328,14 @@ export async function launchHost(input: LaunchInput): Promise<AghHost> {
 
   return {
     openSession,
+    seedMemory: async (workspace, text) => {
+      if (!input.workspaces.includes(workspace))
+        throw new Error(`${workspace} is not one of the run's workspaces`)
+      await seedWorkspaceMemory({ home: input.home, workspace, text }, await loadMemoryModule())
+    },
+    seedUserMemory: async (text) => {
+      seedUserMemory({ home: input.home, workspace: input.workspace, text }, await loadMemoryModule())
+    },
     close: async () => {
       try {
         await booted.close()

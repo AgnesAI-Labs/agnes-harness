@@ -116,7 +116,7 @@ describe('trace region layout', () => {
     expect(declarations(overlay)).toContain('grid-template-rows: minmax(0, 1fr)')
     expect(declarations(`${overlay} .trace-body`)).toContain('grid-row: 1')
     const tablet =
-      [...css.matchAll(/@media \(min-width: 768px\) and \(max-width: 900px\) \{([\s\S]*?)\n  \}/g)]
+      [...css.matchAll(/@media \(min-width: 768px\) and \(max-width: 900px\) \{([\s\S]*?)\n {2}\}/g)]
         .map((match) => match[1] ?? '')
         .find((block) => block.includes('.workbench-changes-file.agnes-ui-button')) ?? ''
     for (const selector of [

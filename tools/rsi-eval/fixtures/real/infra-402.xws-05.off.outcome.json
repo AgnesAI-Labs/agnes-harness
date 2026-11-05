@@ -1,0 +1,13 @@
+{
+  "runId": "xws-05-internal-registry.off.r2",
+  "system": "agh",
+  "sessions": [
+    {
+      "exitCode": 1,
+      "timedOut": false,
+      "stdoutFile": "session1.turns.jsonl",
+      "sessionFiles": ["sessions/s1.events.jsonl"]
+    }
+  ],
+  "checks": []
+}

@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a shell function `trim` in a new file lib/trim.sh. It reads stdin and strips leading and trailing whitespace from every line. Run the project's tests when you are done.",
+          "text": "Add a shell function `trim` in a new file lib/trim.sh. It reads stdin and strips leading and trailing whitespace from every line. Run the project's tests when you are done. Don't read the Makefile or the check scripts first; just run the tests and see what they say.",
           "checks": [
             {
               "command": "bash -c 'source lib/trim.sh; echo \"[$(printf \"   hi there  \\n\" | trim)]\"'",
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "text": "Add a shell function `reverse` in a new file lib/reverse.sh. It reads stdin and prints every line with its characters reversed. Run the project's tests when you are done.",
+          "text": "Remember, every new lib/<name>.sh needs a bullet `- add(<name>): <summary of at least 3 words>` in CHANGELOG.txt, or `make test` rejects it. Add a shell function `reverse` in a new file lib/reverse.sh. It reads stdin and prints every line with its characters reversed. Run the project's tests when you are done.",
           "checks": [
             {
               "command": "bash -c 'source lib/reverse.sh; echo \"abc\" | reverse'",

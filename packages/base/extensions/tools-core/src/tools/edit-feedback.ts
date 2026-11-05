@@ -20,9 +20,10 @@ export async function editFailure(
   index: number | null,
   written: boolean | 'unknown',
   message: string,
+  extra: Record<string, unknown> = {},
 ): Promise<ToolResult> {
   const result = await toolFailure(ctx, code, message)
-  const feedback = { category, index, written, hint: RECOVERY_HINT[category] }
+  const feedback = { category, index, written, hint: RECOVERY_HINT[category], ...extra }
   return {
     ...result,
     // Standard model requests render content; structured also serves programmatic callers.

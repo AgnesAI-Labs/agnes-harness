@@ -35,17 +35,23 @@ export function isSkillBundlePath(path: string): boolean {
   )
 }
 
+/** Editor, VCS and OS metadata (`.git*`, `.DS_Store`, `Thumbs.db`) that never belongs to a bundle. */
+export function isSkillBundleIgnored(name: string): boolean {
+  return name.startsWith('.') || /^(thumbs\.db|desktop\.ini)$/i.test(name)
+}
+
 export function skillBundleFileKind(path: string): 'text' | 'binary' | undefined {
   if (!isSkillBundlePath(path)) return undefined
   const name = path.split('/').at(-1) ?? ''
-  if (/^(LICENSE(?:-.*)?|NOTICE|COPYING|AUTHORS)$/i.test(name)) return 'text'
+  if (/^(LICENSE(?:-.*)?|NOTICE|COPYING|AUTHORS|README|CHANGELOG|Makefile|Dockerfile|Justfile)$/i.test(name))
+    return 'text'
   if (
-    /\.(md|txt|json|ya?ml|csv|js|mjs|cjs|ts|py|sh|bash|ps1|rb|html?|css|svg|xml|j2|jinja2?|toml|lock)$/i.test(
+    /\.(md|txt|json|ya?ml|csv|js|mjs|cjs|ts|py|sh|bash|ps1|rb|html?|css|svg|xml|j2|jinja2?|toml|lock|tsx|jsx|go|rs|java|kt|swift|c|h|cpp|hpp|lua|php|pl|r|sql|ini|cfg|conf|xsd|xsl|xslt|rst|tex)$/i.test(
       name,
     )
   )
     return 'text'
-  if (/\.(png|jpe?g|webp|gif|ico|woff2?|ttf|otf)$/i.test(name)) return 'binary'
+  if (/\.(png|jpe?g|webp|gif|ico|woff2?|ttf|otf|pdf|docx|xlsx|pptx|bmp|avif)$/i.test(name)) return 'binary'
   return undefined
 }
 

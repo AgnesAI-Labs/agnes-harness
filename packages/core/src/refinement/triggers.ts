@@ -2,8 +2,8 @@ import type { EventInput } from '@agnes/core-common/types'
 import type { ToolResult } from '@agnes/extension-api'
 import { compactedForControl } from '../request/experience-room.js'
 import { isChildSession } from '../step/child-session.js'
-import type { SessionImpl, TurnMemory } from '../step/session.js'
-import { normalizeToolError } from './normalize-error.js'
+import type { SessionImpl } from '../step/session.js'
+import { normalizeCommandError, normalizeToolError } from './normalize-error.js'
 import type { RefinementTrigger } from './types.js'
 
 /** A trigger and where it came from: the sink is shared by every session of the kernel. */
@@ -20,19 +20,26 @@ export interface RefinementTriggerSink {
   accepts?(sessionKey: string): boolean
 }
 
-/** The same failing tool and error this many times in one task is a candidate. */
-const REPEAT_THRESHOLD = 3
+/** The same failing tool and error this many times in one session is a candidate. */
+const REPEAT_THRESHOLD = 2
 
 /**
  * Refusals and stops are not lessons: a rejected approval, a paused session, a budget or
  * permission or credential refusal, a user's cancel. They must never be turned into advice, so they
- * are not counted. Matched on the error code, and on the first line of text for tools that only
- * report words.
+ * are not counted. Matched on the error code, and on the first line of text whenever that text is
+ * the key: for tools that only report words, and for an exit-only code (below).
  */
 const NEVER_COUNTED_CODE =
   /^(?:APPROVAL_REJECTED|CONTROL_PAUSED|CANCELLED|TOOL_REJECTED_BEFORE_EFFECT)$|BUDGET|PERMISSION|CREDENTIAL|UNAUTHORI[SZ]ED|FORBIDDEN|DENIED|APPROVAL/i
 const NEVER_COUNTED_TEXT =
   /permission denied|operation not permitted|access denied|unauthori[sz]ed|forbidden|credential|api[ _-]?key|budget (?:exceeded|exhausted)|quota exceeded|insufficient (?:budget|credits?)/
+
+/**
+ * Codes that only say the command exited non-zero. Every failing shell command carries one, so as a
+ * key it would make all of them the same error: such a failure is keyed by the error it printed
+ * (its stderr first, see `normalizeCommandError`), and by the code only when there is no text.
+ */
+const EXIT_ONLY_CODE = new Set(['SHELL_EXIT'])
 
 function live(s: SessionImpl): RefinementTriggerSink | undefined {
   const sink = s.d.refinementTriggers
@@ -77,13 +84,15 @@ export function onCompactionCommitted(
   })
 }
 
-/** Per task (the open turn, for now): how often each tool and error was seen, and which were offered. */
-const tallies = new WeakMap<TurnMemory, Map<string, { count: number; offered: boolean }>>()
+/** The most tool and error pairs a session's tally keeps; past it the oldest pair is forgotten. */
+export const MAX_FAILURE_TALLIES = 256
+
+/** Per session: how often each tool and error was seen, and which were offered. */
+const tallies = new WeakMap<SessionImpl, Map<string, { count: number; offered: boolean }>>()
 
 /**
- * A tool result that settled. Failures count per tool and normalized error within the open turn;
- * the third of the same kind is offered once. Core has no goal concept yet, so the task is the
- * current user turn; a recovered turn starts its tally again.
+ * A tool result that settled. Failures count per tool and normalized error within the session; the
+ * second of the same kind is offered once. A reopened session starts its tally again.
  */
 export function onToolSettled(
   s: SessionImpl,
@@ -92,12 +101,11 @@ export function onToolSettled(
   code?: string,
 ): void {
   if (result.isError !== true || !s.turn) return
-  guarded(() => countFailure(s, s.turn as TurnMemory, name, result, code))
+  guarded(() => countFailure(s, name, result, code))
 }
 
 function countFailure(
   s: SessionImpl,
-  turn: TurnMemory,
   name: string,
   result: Pick<ToolResult, 'content' | 'details'>,
   code?: string,
@@ -106,12 +114,25 @@ function countFailure(
   if (!sink) return
   const detail = (result.details as { code?: unknown } | null | undefined)?.code
   const known = code ?? (typeof detail === 'string' ? detail : undefined)
-  const key = normalizeToolError({ ...(known ? { code: known } : {}), content: result.content })
-  if (!key || (known ? NEVER_COUNTED_CODE.test(known) : NEVER_COUNTED_TEXT.test(key))) return
-  const seen = tallies.get(turn) ?? new Map<string, { count: number; offered: boolean }>()
-  tallies.set(turn, seen)
+  if (known && NEVER_COUNTED_CODE.test(known)) return
+  const exitOnly = known !== undefined && EXIT_ONLY_CODE.has(known)
+  const byCode = known && !exitOnly ? known : undefined
+  const text = byCode
+    ? ''
+    : exitOnly
+      ? normalizeCommandError(result.content)
+      : normalizeToolError({ content: result.content })
+  if (text && NEVER_COUNTED_TEXT.test(text)) return
+  const key = byCode ?? (text || known)
+  if (!key) return
+  const seen = tallies.get(s) ?? new Map<string, { count: number; offered: boolean }>()
+  tallies.set(s, seen)
   const id = `${name}\u0000${key}`
   const tally = seen.get(id) ?? { count: 0, offered: false }
+  if (!seen.has(id) && seen.size >= MAX_FAILURE_TALLIES) {
+    const oldest = seen.keys().next()
+    if (!oldest.done) seen.delete(oldest.value)
+  }
   seen.set(id, tally)
   tally.count++
   if (tally.count < REPEAT_THRESHOLD || tally.offered) return

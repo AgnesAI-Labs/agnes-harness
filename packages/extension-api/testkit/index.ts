@@ -51,6 +51,7 @@ export function defineFixture(fixture: ExtensionFixture): ExtensionFixture {
 }
 export { projectionFixture } from './fixtures/projections.js'
 export { serviceFixture } from './fixtures/services.js'
+export { type MemoryParagraphFixture, memoryParagraphConformance } from './memory-paragraphs.js'
 export {
   childAgentConformance,
   compactionConformance,

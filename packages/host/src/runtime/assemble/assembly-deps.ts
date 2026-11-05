@@ -130,6 +130,11 @@ export type AssembleDeps = HostPaths &
     pluginManage?: import('@agnes/host-extensions/resources/plugin-manage-port').PluginManageBridge
     skillInstall?: import('@agnes/host-extensions/resources/skill-install-port').SkillInstallBridge
     /**
+     * Request-only daemon bridge for saved skills: one installer request for a session, answered by
+     * the process that holds resource control. Absent: skill entries are not saved to the workspace.
+     */
+    refinementSave?: import('../refinement/skill-sender.js').RefinementSaveTransport
+    /**
      * Cordis contribution port for the same registry that produced `skillResources`.
      * Plugins call it during apply; consumers keep using `skillResources`.
      */

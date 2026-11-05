@@ -8,6 +8,15 @@ import { observe, observedVersion, UNKNOWN_VERSION, versionOf } from '../guards/
 import { crlf, usesCrlf } from '../line-endings.js'
 import { normalizeWorkspacePath } from '../paths.js'
 import { editFailure, matchLocations, mismatchFeedback } from './edit-feedback.js'
+import {
+  EDIT_UNSUPPORTED_TEXT,
+  type ExactOutcome,
+  exactFailure,
+  isHiddenParagraphs,
+  refusalCode,
+  replaceOneByOne,
+  viewAfter,
+} from './hidden-paragraphs.js'
 import { withLspNote } from './lsp-note.js'
 import { isBinary, MAX_READ_BYTES } from './read.js'
 import { EditParams } from './schemas.js'
@@ -96,10 +105,12 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions, l
             details: { code: 'FS_NOT_OBSERVED', path: args.path },
           }
         let text = original
+        const planned: { oldText: string; newText: string }[] = []
         const normalize = usesCrlf(original) ? crlf : (value: string) => value
         for (const [i, e] of args.edits.entries()) {
           const oldText = normalize(e.oldText)
           const newText = normalize(e.newText)
+          planned.push({ oldText, newText })
           const { count: n, lines } = matchLocations(text, oldText)
           if (n === 0) {
             const seen = observedVersion(ctx.session.key, abs)
@@ -142,24 +153,35 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions, l
         // change either total. Nor is a newText cut off by the output limit a case for this tool:
         // the turn drops every tool call of a response that stopped at max_tokens, because its
         // arguments were cut off mid-serialisation.
+        let exact: ExactOutcome | undefined
         try {
           await ctx.fs.write(args.path, text)
         } catch (e) {
           if (ctx.signal.aborted) throw e
-          const code = failureCode(e, 'FS_WRITE_FAILED')
-          const hint =
-            code === 'E_FS_DENIED'
-              ? 'edit denied by file policy; choose an allowed path or ask the user to change the workspace/access policy; read the file before retrying.'
-              : 'edit failed while writing the batch; inspect the file with read and check write access before retrying. A backend failure may have written partial content.'
-          // Unexpected I/O still propagates, with safe JSON feedback in the error result text.
-          if (code !== 'E_FS_DENIED')
-            throw Object.assign(
-              new Error(
-                `${code}: ${JSON.stringify({ category: 'write_failed', index: null, written: 'unknown', hint })}`,
-              ),
-              { code },
-            )
-          return editFailure(ctx, code, 'write_failed', null, false, hint)
+          // A memory file that hides paragraphs refuses the whole-file write that would drop them.
+          // Every edit has matched the visible content above, so they go through one by one.
+          if (isHiddenParagraphs(e)) {
+            if (!ctx.fs.replaceExact)
+              return editFailure(ctx, refusalCode(e), 'write_failed', null, false, EDIT_UNSUPPORTED_TEXT)
+            exact = await replaceOneByOne(ctx, args.path, planned, bytes)
+            if (exact.applied.length === 0) return exactFailure(ctx, exact, planned.length)
+            text = await viewAfter(ctx, args.path, exact.failure ? original : text)
+          } else {
+            const code = failureCode(e, 'FS_WRITE_FAILED')
+            const hint =
+              code === 'E_FS_DENIED'
+                ? 'edit denied by file policy; choose an allowed path or ask the user to change the workspace/access policy; read the file before retrying.'
+                : 'edit failed while writing the batch; inspect the file with read and check write access before retrying. A backend failure may have written partial content.'
+            // Unexpected I/O still propagates, with safe JSON feedback in the error result text.
+            if (code !== 'E_FS_DENIED')
+              throw Object.assign(
+                new Error(
+                  `${code}: ${JSON.stringify({ category: 'write_failed', index: null, written: 'unknown', hint })}`,
+                ),
+                { code },
+              )
+            return editFailure(ctx, code, 'write_failed', null, false, hint)
+          }
         }
         if (record)
           try {
@@ -180,6 +202,7 @@ export function createEditTool(record?: FileChangeRecorder, lsp?: LspSessions, l
           abs,
           (await versionOf(ctx, args.path, enc.encode(text), MAX_READ_BYTES)) ?? UNKNOWN_VERSION,
         )
+        if (exact?.failure) return exactFailure(ctx, exact, planned.length)
         const delta = text.split('\n').length - original.split('\n').length
         wrote.text = text
         return {

@@ -184,6 +184,12 @@ export type Booted = {
   host?: Host
   /** Present for local import: registers owner and workspace binding in sessions.db. */
   sessionAdmission?: SessionAdmissionPort
+  /**
+   * Present for the local form: rebuild every session's Skill view from a new scan on its next Skill
+   * read. For a caller that has just written a Skill (the evaluation host after a saved Skill);
+   * otherwise a session keeps the view it started with, and only a new session scans again.
+   */
+  refreshSkills?: () => void
   profileName: string
   resolvedProfileHash: string | null
   bootMs: number

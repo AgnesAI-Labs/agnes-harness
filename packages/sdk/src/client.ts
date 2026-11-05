@@ -303,6 +303,11 @@ export class Client {
       input: import('@agnes/protocol').RefinementSettingsSaveParams,
     ): Promise<import('@agnes/protocol').RefinementSettingsSaveResult> =>
       this.call('_agnes/v1/refinement.save', input),
+    /** The skills refinement saved in a workspace and the drafts kept for a person; uninstall or roll one back. */
+    skills: (
+      input: import('@agnes/protocol').RefinementSkillsParams,
+    ): Promise<import('@agnes/protocol').RefinementSkillsResult> =>
+      this.call('_agnes/v1/refinement.skills', input),
   }
   readonly systemPrompt = {
     get: (
@@ -575,9 +580,37 @@ export class Client {
         { sessionId, question },
         { timeoutMs: Math.max(this.timeouts.request, 75_000), ...options },
       ),
-    /** Asks for a background refinement review of the session's latest task; returns the queued run. */
-    refine: (sessionId: string, focus?: string): Promise<import('@agnes/protocol').SessionRefineResult> =>
-      this.call('_agnes/v1/session.refine', { sessionId, ...(focus === undefined ? {} : { focus }) }),
+    /**
+     * Asks for a background refinement review of the session's latest task; returns the queued run.
+     * `saveTo: 'workspace'` (`/refine --workspace`, local owner only) also saves the applied result to
+     * the session's workspace; `saveTo: 'user'` (`/refine --user`) saves it to user memory instead, without
+     * waiting for two confirmations. `allowUnpriced: true` (`/refine --unpriced`, local owner only) is the
+     * owner's agreement to plan on a model with no known price; without it such a request is refused
+     * `unpriced`.
+     */
+    refine: (
+      sessionId: string,
+      focus?: string,
+      options: { saveTo?: 'workspace' | 'user'; allowUnpriced?: true } = {},
+    ): Promise<import('@agnes/protocol').SessionRefineResult> =>
+      this.call('_agnes/v1/session.refine', {
+        sessionId,
+        ...(focus === undefined ? {} : { focus }),
+        ...(options.saveTo === undefined ? {} : { saveTo: options.saveTo }),
+        ...(options.allowUnpriced === true ? { allowUnpriced: true } : {}),
+      }),
+    /**
+     * Saves one refinement entry of the session to its workspace (or with `target: 'user'`, to user
+     * memory) without calling a model (local owner only). The receipt says how it ended; a refusal (refinement off, taken back before by the user
+     * is overridden here, memory off, ...) is a receipt too.
+     */
+    refineSave: (
+      sessionId: string,
+      kind: import('@agnes/protocol').SessionRefineSaveParams['kind'],
+      id: string,
+      target?: 'user',
+    ): Promise<import('@agnes/protocol').SessionRefineSaveResult> =>
+      this.call('_agnes/v1/session.refine.save', { sessionId, kind, id, ...(target ? { target } : {}) }),
     /**
      * Withdraws an applied refinement of the session (`appliedSeq`, as the timeline shows it). Refused
      * (`SEMANTIC_REJECTED`) with reason `changed-since` when a later change touched one of its entries.

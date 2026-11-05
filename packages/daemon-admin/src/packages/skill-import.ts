@@ -3,7 +3,14 @@ import { mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { createSkillInstaller, type SkillInstallInvocation } from '@agnes/host'
 import { assertSkillSourceLocation, fetchSource, selectSkillSource } from '@agnes/package-manager'
-import { jcs, rpcError, type SkillImportParams, type SkillImportResult } from '@agnes/protocol'
+import {
+  jcs,
+  type ResourceControlMethodName,
+  type ResourcePermission,
+  rpcError,
+  type SkillImportParams,
+  type SkillImportResult,
+} from '@agnes/protocol'
 import type { ResourceControlService } from '@agnes/resource-control-store'
 import { createMcpImports } from './mcp-import.js'
 import type { PackageAdminAuthority } from './permissions.js'
@@ -22,6 +29,15 @@ const publicInstallResult = (
 ): SkillImportResult => {
   const { files, ...rest } = result
   return { ...rest, ...(files ? { files: [...files] } : {}) }
+}
+
+const installerResourcePermissions: Partial<Record<ResourceControlMethodName, ResourcePermission[]>> = {
+  '_agnes/v1/resources.list': ['resources.read'],
+  '_agnes/v1/resources.get': ['resources.read'],
+  '_agnes/v1/resources.operation.get': ['resources.read'],
+  '_agnes/v1/skills.refresh': ['skills.refresh', 'resources.skills.write'],
+  '_agnes/v1/skills.trust.set': ['skills.trust'],
+  '_agnes/v1/resources.desired.set': ['resources.skills.write'],
 }
 
 /** Management and session imports share the Host installer and resource-governance effects. */
@@ -107,23 +123,32 @@ export function createSkillImportService(options: {
       },
       // This path is a server-authorized, explicit administrative prepare/commit, not a model tool.
       ask: async () => true,
-      resources: (method, data) =>
-        options.resources.call(
+      resources: async (method, data) => {
+        // Same method allowlist as the session install path; permissions are the minimum per method.
+        const needed = installerResourcePermissions[method]
+        if (!needed) throw rpcError('CAPABILITY_DENIED')
+        // Enabling (trust, or desired state other than the install's own `disabled` record) needs
+        // the caller's own trust and activation rights, matching the `enable: true` commit gate.
+        if (
+          (method === '_agnes/v1/skills.trust.set' ||
+            (method === '_agnes/v1/resources.desired.set' && data.state !== 'disabled')) &&
+          !(
+            granted.permissions.includes('packages.trust') &&
+            granted.permissions.includes('packages.activate')
+          )
+        )
+          throw rpcError('CAPABILITY_DENIED')
+        return options.resources.call(
           method,
           { ...data, ...('commandId' in data ? { clientId: granted.clientId } : {}) },
           {
             audience: 'admin',
             principalId: granted.principalId,
             clientId: granted.clientId,
-            permissions: [
-              'resources.read',
-              'resources.skills.write',
-              'skills.refresh',
-              'skills.trust',
-              'resources.reconcile',
-            ],
+            permissions: needed,
           },
-        ),
+        )
+      },
     }
     if (params.action !== 'prepare') {
       if (!params.proposalId) throw rpcError('INVALID_PARAMS')

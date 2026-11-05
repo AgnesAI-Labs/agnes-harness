@@ -1,0 +1,3 @@
+6 hosts read the signing key
+2 hosts connect to the ledger db
+hosts reload secrets on SIGHUP

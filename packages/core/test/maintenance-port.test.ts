@@ -24,9 +24,17 @@ const PLAN = '{"summary":"none","edits":[]}'
 const planner = record({
   id: 'planner',
   route: 'rsi',
+  maxTokens: 8192,
   cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
 })
-const unpriced = record({ id: 'local', route: 'rsi' })
+// No price at all: the catalogue gives no usable rate. A price of zero is a known price (a free or local model).
+const unpriced = record({
+  id: 'local',
+  route: 'rsi',
+  maxTokens: 8192,
+  cost: { input: Number.NaN, output: Number.NaN, cacheRead: 0, cacheWrite: 0 },
+})
+const free = record({ id: 'free', route: 'rsi', maxTokens: 8192 })
 const plannerUsage = (credits = 0.001): InferenceEvent => ({
   type: 'usage',
   tokens: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0 },
@@ -53,6 +61,8 @@ function provider(
     turnEntered?: () => void
     scripts?: Script[]
     plannerCredits?: number
+    /** The provider reports tokens but no credits for the planning call. */
+    plannerNoCredits?: boolean
     plannerHang?: boolean
   } = {},
 ) {
@@ -60,7 +70,7 @@ function provider(
   const planned: RequestBody[] = []
   const p: Provider = {
     ...base,
-    models: () => [planner, unpriced],
+    models: () => [planner, unpriced, free],
     async *infer(request, options) {
       if (request.route !== 'rsi') {
         o.turnEntered?.()
@@ -73,7 +83,12 @@ function provider(
       if (o.plannerHang) await new Promise<never>(() => undefined)
       await o.plannerGate
       yield { type: 'text_delta', delta: PLAN }
-      yield plannerUsage(o.plannerCredits)
+      yield o.plannerNoCredits
+        ? ({
+            type: 'usage',
+            tokens: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0 },
+          } as InferenceEvent)
+        : plannerUsage(o.plannerCredits)
       yield { type: 'done', reason: 'stop' }
     },
   }
@@ -158,6 +173,24 @@ describe('the maintenance port', () => {
     await session.close()
   })
 
+  it('asks a model that allows fewer output tokens for what it allows, and holds and records that number', async () => {
+    const small = record({ id: 'small', route: 'rsi', maxTokens: 512, cost: planner.cost })
+    const { provider: p, planned } = provider()
+    const { session, log } = await openSession({ provider: { ...p, models: () => [small] } })
+    const port = createMaintenancePort(session)
+
+    const result = await port.invoke(
+      request({ runId: 'run-small', maxOutputTokens: 4096, target: { route: small.route, model: small.id } }),
+      signal(),
+    )
+    expect(result).toMatchObject({ outcome: 'ok' })
+    expect(planned[0]).toMatchObject({ model: 'small', sampling: { maxTokens: 512 } })
+    expect(data(ofType(onLane(await rows(log)), 'x/core/maintenance-intent')[0])).toMatchObject({
+      maxOutputTokens: 512,
+    })
+    await session.close()
+  })
+
   it('a user turn can start and end while maintenance is in flight', async () => {
     const held = gate()
     const { provider: p, planned, base } = provider({ plannerGate: held.wait })
@@ -224,6 +257,47 @@ describe('the maintenance port', () => {
     expect(await storage.projectTree(`k:main:${turnStart}`)).toMatchObject({
       settledMicro: chargeToMicrocredits(1),
     })
+    await session.close()
+  })
+
+  it('a model priced at zero is a known price: it plans unheld, its cost is zero, and the token budget still bounds it', async () => {
+    const { provider: p, planned } = provider({ plannerCredits: 0 })
+    const storage = new MemoryStorage()
+    const reserve = vi.spyOn(storage, 'reserve')
+    const { session, log } = await openSession({ provider: p, storage })
+    const port = createMaintenancePort(session, { budgetTokens: 2000 })
+    const target = { route: free.route, model: free.id }
+    expect(await port.invoke(request({ target, maxOutputTokens: 1000 }), signal())).toMatchObject({
+      outcome: 'ok',
+      text: PLAN,
+    })
+    expect(reserve).not.toHaveBeenCalled()
+    const [cost] = ofType(onLane(await rows(log)), 'cost/ledger')
+    expect(data(cost)).toMatchObject({ credits: 0, tokens: { input: 100, output: 10 } })
+    // 110 tokens are spent: a call that could take the rest of the budget and more is refused.
+    expect(
+      await port.invoke(request({ runId: 'run-2', target, maxOutputTokens: 1900 }), signal()),
+    ).toMatchObject({ outcome: 'error', reason: 'budget', dispatch: 'not-sent' })
+    expect(planned).toHaveLength(1)
+    await session.close()
+  })
+
+  it('a run the user agreed to on an unknown price records its cost as unknown and is bounded by tokens', async () => {
+    const { provider: p } = provider({ plannerNoCredits: true })
+    const { session, log } = await openSession({ provider: p })
+    const port = createMaintenancePort(session, { budgetTokens: 2000 })
+    const target = { route: unpriced.route, model: unpriced.id }
+    expect(
+      await port.invoke(request({ target, allowUnpriced: true, maxOutputTokens: 1000 }), signal()),
+    ).toMatchObject({ outcome: 'ok', usage: { input: 100, output: 10 } })
+    const [cost] = ofType(onLane(await rows(log)), 'cost/ledger')
+    expect(data(cost)).not.toHaveProperty('credits')
+    expect(
+      await port.invoke(
+        request({ runId: 'run-2', target, allowUnpriced: true, maxOutputTokens: 1900 }),
+        signal(),
+      ),
+    ).toMatchObject({ outcome: 'error', reason: 'budget' })
     await session.close()
   })
 

@@ -1,4 +1,5 @@
 import { storedAttachment, type UINode } from '@agnes/protocol'
+import { saveText } from './save-text.js'
 
 /** Text presentation while the richer cards are assembled around the same projected nodes. */
 export function nodeText(node: UINode): string {
@@ -39,6 +40,8 @@ export function nodeText(node: UINode): string {
       return `Memory ${node.paths.join(', ')} changed outside the memory provider and was loaded as is; review it with /memory`
     case 'refinement-run':
       return refinementRunText(node)
+    case 'refinement-save':
+      return saveText(node)
     case 'workspace-undo':
       return node.conflicts > 0
         ? `Undo of turn ${node.turn} refused: ${node.conflicts} file(s) changed since the turn`
@@ -74,11 +77,15 @@ function refinementRunText(node: Extract<UINode, { kind: 'refinement-run' }>): s
     (node.edits ?? []).filter((edit) => edit.op === op).map((edit) => `${edit.kind}/${edit.id}`)
   const saved = names('upsert')
   const removed = names('delete')
+  const workflow = (node.edits ?? [])
+    .filter((edit) => edit.workflow === true)
+    .map((edit) => `${edit.kind}/${edit.id}`)
   return [
     `Experience review (${node.trigger}) ${RUN_STATE[node.state]}.`,
     node.reason ? `Reason: ${node.reason}.` : '',
     saved.length > 0 ? `Saved: ${saved.join(', ')}.` : '',
     removed.length > 0 ? `Removed: ${removed.join(', ')}.` : '',
+    workflow.length > 0 ? `Based on a finished workflow run: ${workflow.join(', ')}.` : '',
     node.withdrawn ? 'Withdrawn since.' : '',
   ]
     .filter(Boolean)

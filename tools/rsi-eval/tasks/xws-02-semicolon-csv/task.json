@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Load this stock list into the `stock` table with the team's csvload tool: bolt 120, nut 300. Write it as a CSV file with a header row `item`, `qty` first.",
+          "text": "Load this stock list into the `stock` table with the team's csvload tool: bolt 120, nut 300. Write it as a CSV file with a header row `item`, `qty` first. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat tables/stock.txt",
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "text": "Load this list into the `bins` table with the team's csvload tool: A1 holds 12 washers, B4 holds 40 hinges. Write it as a CSV file with a header row `bin`, `part`, `count` first.",
+          "text": "Remember, csvload only accepts `;` as the field separator, never commas. Load this list into the `bins` table with the team's csvload tool: A1 holds 12 washers, B4 holds 40 hinges. Write it as a CSV file with a header row `bin`, `part`, `count` first.",
           "checks": [
             {
               "command": "cat tables/bins.txt",
@@ -67,7 +67,7 @@
       "fixture": "fixture-b",
       "prompts": [
         {
-          "text": "Load these weekly hours into the `hours` table with the team's csvload tool: ana 38, ben 40. Write it as a CSV file with a header row `person`, `hours` first.",
+          "text": "Load these weekly hours into the `hours` table with the team's csvload tool: ana 38, ben 40. Write it as a CSV file with a header row `person`, `hours` first. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat tables/hours.txt",

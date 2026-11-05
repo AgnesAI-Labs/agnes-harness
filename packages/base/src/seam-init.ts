@@ -14,6 +14,7 @@ import type {
   PersistenceMetadataNamespace,
   SessionRef,
   TaskScopeSource,
+  WorkflowRunSource,
 } from '@agnes/extension-api'
 import type { ComputerUseBackendProvider } from '../extensions/computer-use/src/backend.js'
 import type { ComputerUseToolOptions } from '../extensions/computer-use/src/tool.js'
@@ -235,6 +236,11 @@ export type SeamInitContext = {
    * agnes/goal. Returns what withdraws the offer.
    */
   provideTaskScope?: (source: TaskScopeSource) => () => void
+  /**
+   * Offers the session's workflow runs to the host as a projection and its reader; supplied only to
+   * agnes/workflow. Returns what withdraws the offer.
+   */
+  provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
 }
 
 /** A read of the profile's refinement settings: the switch and the trigger mode. */

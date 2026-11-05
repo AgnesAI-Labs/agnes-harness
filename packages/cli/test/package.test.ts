@@ -567,3 +567,71 @@ it('trusts the installed hashes with --yes and refuses wrong hashes with expecte
     expect(written.join('')).toContain('Requested capabilities: {"exec":["node"]}')
   }
 })
+
+describe('failed package operation reporting', () => {
+  const failedRemove = (error: Record<string, unknown>) =>
+    ({
+      clientId: async () => 'client',
+      packages: {
+        remove: async () => ({ operationId: 'op-remove', profile }),
+        operation: {
+          get: async () => ({
+            ...operation('enable'),
+            operationId: 'op-remove',
+            operation: 'remove',
+            state: 'failed',
+            error,
+          }),
+        },
+      },
+    }) as unknown as NodeClient
+  async function failure(error: Record<string, unknown>, json = false) {
+    const caught = await runPackageCommand(
+      parseArgs(['package', 'remove', 'example', '--yes']),
+      failedRemove(error),
+      { write: () => {}, confirm: async () => false },
+    ).catch((e: unknown) => e)
+    let stderr = ''
+    const sink = new Writable({
+      write(chunk, _encoding, done) {
+        stderr += String(chunk)
+        done()
+      },
+    })
+    const code = reportCommandFailure(caught, 'package', { env: {}, stderr: sink }, json)
+    return { code, stderr }
+  }
+  const running = {
+    code: 'E_PACKAGE_STATE',
+    safeMessage: 'SERVER TEXT /private/path',
+    blockers: [{ code: 'generation', references: ['redacted', 'package-running'] }],
+    fixHint: 'SERVER HINT',
+  }
+
+  it('names the package code and the disable step for a running package, never server text', async () => {
+    const { code, stderr } = await failure(running)
+    expect(code).toBe(1)
+    expect(stderr).toBe(
+      'E_PACKAGE_STATE: the package is still running. Run `agh package disable <id>`, wait until it stops, then retry.\n',
+    )
+  })
+
+  it('renders other known package codes with fixed text', async () => {
+    const { stderr } = await failure({ code: 'E_PACKAGE_SOURCE', safeMessage: '/secret', blockers: [] })
+    expect(stderr).toMatch(/^E_PACKAGE_SOURCE: .+\n$/)
+    expect(stderr).not.toContain('/secret')
+  })
+
+  it('emits structured JSON with code, blocker codes and operation id only', async () => {
+    const { code, stderr } = await failure(running, true)
+    expect(code).toBe(1)
+    expect(JSON.parse(stderr)).toEqual({
+      error: { code: 'E_PACKAGE_STATE', blockers: ['generation'], operationId: 'op-remove' },
+    })
+  })
+
+  it('keeps the generic fallback for an unknown package error code', async () => {
+    const { stderr } = await failure({ code: 'E_SOMETHING_NEW', safeMessage: '/secret', blockers: [] })
+    expect(stderr).toBe('agh: The request failed. Inspect its status with agh doctor.\n')
+  })
+})

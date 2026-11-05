@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+  cpSync,
   existsSync,
   linkSync,
   lstatSync,
@@ -591,6 +592,32 @@ describe('fetchSource', () => {
     expect(caught).toBeInstanceOf(Error)
     expect((caught as Error).message).toContain(resolvedRoot)
     expect((caught as { detail?: { workspaceRoot?: string } }).detail?.workspaceRoot).toBe(resolvedRoot)
+    expect((caught as { detail?: { reason?: string } }).detail?.reason).toBe('source-not-found')
+  })
+
+  it('expands a leading ~/ to the home directory for file: and path: only', async () => {
+    const home = join(dir, 'home')
+    mkdirSync(join(home, 'dl'), { recursive: true })
+    cpSync(join(fixtures, 'pkg-a'), join(home, 'dl', 'pkg-a'), { recursive: true })
+    const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE }
+    process.env.HOME = home
+    process.env.USERPROFILE = home
+    try {
+      const expected = hashDirectory(join(fixtures, 'pkg-a'))
+      for (const prefix of ['file:', 'path:']) {
+        const into = join(dir, `into-${prefix.slice(0, -1)}`)
+        const fetched = await fetchSource(parseSource(`${prefix}~/dl/pkg-a`), into, { cwd: dir })
+        expect(fetched.integrity).toBe(expected)
+      }
+      for (const ref of ['file:~other/dl/pkg-a', 'file:./~/dl/pkg-a', 'file:dl/~/pkg-a'])
+        await expect(fetchSource(parseSource(ref), join(dir, 'no'), { cwd: dir })).rejects.toMatchObject({
+          detail: { reason: 'source-not-found' },
+        })
+    } finally {
+      for (const [key, value] of Object.entries(saved))
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+    }
   })
 
   it('does not copy excluded local trees', async () => {

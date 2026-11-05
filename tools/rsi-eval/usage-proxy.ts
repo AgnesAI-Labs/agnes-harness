@@ -2,8 +2,10 @@ import { appendFileSync } from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
 import type { AddressInfo } from 'node:net'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createBrotliDecompress, createGunzip, createInflate } from 'node:zlib'
+import { errorBodyPreview } from './infra.js'
 import type { UsageRow } from './types.js'
 
 export type { UsageRow }
@@ -13,6 +15,11 @@ export type { UsageRow }
 // to the upstream unchanged. The response streams back unchanged while a copy is parsed for token usage.
 // One `UsageRow` is appended to the log per request. The log holds token counts and a few scalars only:
 // never request/response headers or bodies, and never a key.
+//
+// The one body that is kept is that of a response that is not a 200: the status alone does not say why a
+// call was refused (an unexplained 400, a 402 that is a balance and not a quota). It goes to a separate
+// file, `errors.jsonl` next to the usage log: the first 500 characters, with anything that looks like a
+// credential removed (see `errorBodyPreview`); never a header, never the request.
 //
 // Compressed responses: the bytes are forwarded as the upstream sent them (accept-encoding is not touched)
 // and a decoded copy is parsed (gzip, deflate, br). An encoding we cannot decode yields `unknown`.
@@ -40,7 +47,10 @@ type Counts = {
 }
 
 const MAX_JSON_BYTES = 32 * 1024 * 1024
+/** How much of a response is read for an error preview; the preview itself is shorter. */
+const PREVIEW_BYTES = 4096
 const CLOSE_GRACE_MS = 5000
+const MAX_STATUSES = 50
 
 const HOP_BY_HOP = new Set([
   'connection',
@@ -183,10 +193,17 @@ const createUsageTap = (contentType: string, contentEncoding: string | undefined
   const jsonChunks: Buffer[] = []
   let jsonBytes = 0
   let broken = false
+  const head: Buffer[] = []
+  let headBytes = 0
   const decoder = decoderFor(contentEncoding)
   if (decoder.kind === 'unsupported') broken = true
 
   const consume = (chunk: Buffer) => {
+    if (headBytes < PREVIEW_BYTES) {
+      const part = chunk.subarray(0, PREVIEW_BYTES - headBytes)
+      head.push(part)
+      headBytes += part.length
+    }
     if (isSse) {
       sse.write(chunk)
       return
@@ -195,7 +212,7 @@ const createUsageTap = (contentType: string, contentEncoding: string | undefined
     if (jsonBytes > MAX_JSON_BYTES) broken = true
     else jsonChunks.push(chunk)
   }
-  const result = (): Counts & { reported: boolean } => {
+  const result = (): Counts & { reported: boolean; head: string } => {
     if (isSse) sse.end()
     else if (!broken) {
       try {
@@ -206,7 +223,14 @@ const createUsageTap = (contentType: string, contentEncoding: string | undefined
     }
     // A partial count (e.g. a stream cut after message_start) is not a usable total: report unknown.
     const reported = !broken && acc.input !== null && acc.output !== null
-    return { ...acc, reported }
+    return {
+      ...acc,
+      reported,
+      head:
+        decoder.kind === 'unsupported'
+          ? '(body not readable: unsupported content-encoding)'
+          : Buffer.concat(head).toString('utf8'),
+    }
   }
 
   let done: Promise<ReturnType<typeof result>> | undefined
@@ -247,20 +271,60 @@ const unknownRow = (runId: string, status: number): UsageRow => ({
   usage: 'unknown',
 })
 
+/** The status a request past a run's cap is answered with: a refused request, not an upstream failure. */
+export const CAP_STATUS = 400
+
+/** The proxy's handle. `limit` sets a run's request cap (see `RequestCap`). */
+export type UsageProxy = {
+  port: number
+  close(): Promise<void>
+  statuses(runId: string): number[]
+} & RequestCap
+
+/**
+ * A cap on the model requests of one run id. Requests past `max` are not forwarded: they are answered
+ * `CAP_STATUS` with a body that says so (a refusal the infrastructure check does not take for an upstream
+ * failure), nothing is logged as usage, and `reached` is called once so the runner can stop the run.
+ */
+export type RequestCap = {
+  limit(runId: string, max: number, reached: () => void): void
+  unlimit(runId: string): void
+  /** Requests forwarded for the run id so far. */
+  forwarded(runId: string): number
+}
+
 export async function startUsageProxy(opts: {
   upstream: string
   port: number
   logFile: string
   /** Bind address. Default 127.0.0.1; see the networking note at the top of this file. */
   host?: string
-}): Promise<{ port: number; close(): Promise<void> }> {
+  /** Where the bodies of non-200 responses are kept. Default `errors.jsonl` next to `logFile`. */
+  errorLogFile?: string
+  /** Secrets (the API key) that are removed from a kept body wherever they appear. */
+  redact?: string[]
+}): Promise<UsageProxy> {
   const upstream = new URL(opts.upstream)
   const client = upstream.protocol === 'https:' ? https : http
   const basePath = upstream.pathname.replace(/\/+$/, '')
   const inflight = new Set<Promise<void>>()
+  const statuses = new Map<string, number[]>()
+  const forwarded = new Map<string, number>()
+  const caps = new Map<string, { max: number; reached: () => void; fired: boolean }>()
 
   const log = (row: UsageRow) => {
     appendFileSync(opts.logFile, `${JSON.stringify(row)}\n`)
+    const seen = statuses.get(row.runId) ?? []
+    seen.push(row.status)
+    if (seen.length > MAX_STATUSES) seen.shift()
+    statuses.set(row.runId, seen)
+  }
+  const errorLogFile = opts.errorLogFile ?? join(dirname(opts.logFile), 'errors.jsonl')
+  const logError = (runId: string, status: number, body: string) => {
+    appendFileSync(
+      errorLogFile,
+      `${JSON.stringify({ ts: new Date().toISOString(), runId, status, body: errorBodyPreview(body, opts.redact) })}\n`,
+    )
   }
 
   const handle = (req: http.IncomingMessage, res: http.ServerResponse): void => {
@@ -281,6 +345,21 @@ export async function startUsageProxy(opts: {
       return
     }
     const path = `${basePath}${match[2] ?? '/'}${match[3] ?? ''}`
+
+    const cap = caps.get(runId)
+    if (cap && (forwarded.get(runId) ?? 0) >= cap.max) {
+      req.resume()
+      const message = `rsi-eval: this run reached its cap of ${cap.max} model requests; the request was not sent`
+      res.writeHead(CAP_STATUS, { 'content-type': 'application/json' })
+      res.end(JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message } }))
+      logError(runId, CAP_STATUS, message)
+      if (!cap.fired) {
+        cap.fired = true
+        cap.reached()
+      }
+      return
+    }
+    forwarded.set(runId, (forwarded.get(runId) ?? 0) + 1)
 
     const headers: http.OutgoingHttpHeaders = {}
     for (const [name, value] of Object.entries(req.headers)) {
@@ -331,6 +410,7 @@ export async function startUsageProxy(opts: {
         upstreamRes.on('error', () => res.destroy())
         upstreamRes.on('close', () => {
           void tap.finish().then((parsed) => {
+            if (status !== 200 && !logged) logError(runId, status, parsed.head)
             logOnce({
               ts: new Date().toISOString(),
               runId,
@@ -346,7 +426,8 @@ export async function startUsageProxy(opts: {
         })
       },
     )
-    upstreamReq.on('error', () => {
+    upstreamReq.on('error', (error: NodeJS.ErrnoException) => {
+      if (!logged) logError(runId, 502, `upstream unreachable: ${error.code ?? error.name}`)
       logOnce(unknownRow(runId, 502))
       if (!res.headersSent) {
         res.writeHead(502, { 'content-type': 'text/plain' })
@@ -374,6 +455,15 @@ export async function startUsageProxy(opts: {
 
   return {
     port: (server.address() as AddressInfo).port,
+    /** The statuses the upstream answered a run with, oldest first (the last 50). */
+    statuses: (runId) => [...(statuses.get(runId) ?? [])],
+    limit: (runId, max, reached) => {
+      caps.set(runId, { max, reached, fired: false })
+    },
+    unlimit: (runId) => {
+      caps.delete(runId)
+    },
+    forwarded: (runId) => forwarded.get(runId) ?? 0,
     async close() {
       server.closeIdleConnections()
       const closed = new Promise<void>((resolve) => server.close(() => resolve()))

@@ -675,10 +675,17 @@ const AGNES_DEFS: Record<string, TSchema> = {
   SessionRefineResult: AgnesGen.SessionRefineResult,
   SessionRefineRollbackParams: AgnesGen.SessionRefineRollbackParams,
   SessionRefineRollbackResult: AgnesGen.SessionRefineRollbackResult,
+  SessionRefineSaveParams: AgnesGen.SessionRefineSaveParams,
+  SessionRefineSaveResult: AgnesGen.SessionRefineSaveResult,
+  RefinementSaveReceipt: AgnesGen.RefinementSaveReceipt,
   RefinementSettings: AgnesGen.RefinementSettings,
   RefinementSettingsSnapshot: AgnesGen.RefinementSettingsSnapshot,
   RefinementSettingsSaveParams: AgnesGen.RefinementSettingsSaveParams,
   RefinementSettingsSaveResult: AgnesGen.RefinementSettingsSaveResult,
+  RefinementSkillsParams: AgnesGen.RefinementSkillsParams,
+  RefinementSavedSkill: AgnesGen.RefinementSavedSkill,
+  RefinementSkillDraft: AgnesGen.RefinementSkillDraft,
+  RefinementSkillsResult: AgnesGen.RefinementSkillsResult,
   VoiceSettings: AgnesGen.VoiceSettings,
   VoiceSettingsSnapshot: AgnesGen.VoiceSettingsSnapshot,
   VoiceSettingsSaveParams: AgnesGen.VoiceSettingsSaveParams,
@@ -4181,14 +4188,15 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'side answer: text, the model that wrote it and the optional credits it cost',
   },
   SessionRefineParams: {
-    valid: { sessionId: 's', focus: 'flaky tests' },
+    valid: { sessionId: 's', focus: 'flaky tests', saveTo: 'workspace' },
     invalid: [
       { focus: 'x' }, // missing required sessionId
       { sessionId: 's', focus: '' }, // boundary: one below minLength:1
       { sessionId: 's', focus: rep(513) }, // boundary: one above maxLength:512
       { sessionId: 's', target: 'workspace' }, // additionalProperties:false
+      { sessionId: 's', saveTo: 'global' }, // outside the closed set of save targets
     ],
-    note: 'manual refinement request: sessionId and an optional focus',
+    note: 'manual refinement request: sessionId, an optional focus and an optional workspace save',
   },
   SessionRefineResult: {
     valid: { runId: '01J6ZM2Q3R4S5T6V7W8X9Y0Z01' },
@@ -4198,6 +4206,132 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { runId: 'r', state: 'queued' }, // additionalProperties:false
     ],
     note: 'manual refinement request result: the queued run',
+  },
+  SessionRefineSaveParams: {
+    valid: { sessionId: 's', kind: 'memory', id: 'build-rules' },
+    invalid: [
+      { kind: 'memory', id: 'x' }, // missing required sessionId
+      { sessionId: 's', id: 'x' }, // missing required kind
+      { sessionId: 's', kind: 'memory' }, // missing required id
+      { sessionId: 's', kind: 'workflow', id: 'x' }, // outside the closed enum
+      { sessionId: 's', kind: 'memory', id: '' }, // boundary: one below minLength:1
+      { sessionId: 's', kind: 'memory', id: rep(129) }, // boundary: one above maxLength:128
+      { sessionId: 's', kind: 'memory', id: 'x', initiator: 'auto' }, // additionalProperties:false
+      { sessionId: 's', kind: 'memory', id: 'x', target: 'workspace' }, // only user memory is a named target
+    ],
+    note: "the owner's save of one entry to the workspace: sessionId, the entry kind and id",
+  },
+  RefinementSaveReceipt: {
+    valid: {
+      receiptId: 'rc-1',
+      commandId: 'auto:memory/build:h',
+      initiator: 'auto',
+      source: {
+        sessionKey: 'k',
+        kind: 'memory',
+        entryId: 'build',
+        contentHash: 'h',
+        runId: 'run-1',
+        initiator: 'auto',
+      },
+      outcome: 'refused',
+      reason: 'user-revoked',
+      steps: [
+        { step: 'switch', verdict: 'pass' },
+        { step: 'revocation', verdict: 'fail' },
+      ],
+      at: 1,
+    },
+    invalid: [
+      { receiptId: 'rc-1' }, // missing required fields
+      {
+        receiptId: 'rc-1',
+        commandId: 'c',
+        initiator: 'owner',
+        source: { sessionKey: 'k', kind: 'memory', entryId: 'e', contentHash: 'h', initiator: 'user' },
+        outcome: 'saved',
+        steps: [],
+        at: 1,
+      }, // initiator outside the closed enum
+      {
+        receiptId: 'rc-1',
+        commandId: 'c',
+        initiator: 'user',
+        source: {
+          sessionKey: 'k',
+          kind: 'memory',
+          entryId: 'e',
+          contentHash: 'h',
+          initiator: 'user',
+          title: 't',
+        },
+        outcome: 'saved',
+        steps: [],
+        at: 1,
+      }, // additionalProperties:false on the source: no text rides along
+      {
+        receiptId: 'rc-1',
+        commandId: 'c',
+        initiator: 'user',
+        source: { sessionKey: 'k', kind: 'memory', entryId: 'e', contentHash: 'h', initiator: 'user' },
+        outcome: 'refused',
+        reason: '',
+        steps: [],
+        at: 1,
+      }, // boundary: an empty reason, one below minLength:1
+    ],
+    note: 'save receipt: who asked, the source entry by hash, the outcome and each step of the fixed order',
+  },
+  SessionRefineSaveResult: {
+    // The reason is open: one this client does not know yet (here `approval-expired`) still validates.
+    valid: {
+      receipt: {
+        receiptId: 'rc-1',
+        commandId: 'cmd-1',
+        initiator: 'user',
+        source: {
+          sessionKey: 'k',
+          kind: 'memory',
+          entryId: 'build-rules',
+          contentHash: 'h',
+          initiator: 'user',
+        },
+        outcome: 'refused',
+        reason: 'approval-expired',
+        steps: [{ step: 'switch', verdict: 'pass' }],
+        target: { kind: 'memory-paragraph', paragraphId: 'r0123456789', fileHash: 'f' },
+        at: 1,
+      },
+    },
+    invalid: [
+      {}, // missing required receipt
+      { receipt: { receiptId: 'rc-1' } }, // receipt missing required fields
+      {
+        receipt: {
+          receiptId: 'rc-1',
+          commandId: 'cmd-1',
+          initiator: 'user',
+          source: { sessionKey: 'k', kind: 'memory', entryId: 'e', contentHash: 'h', initiator: 'user' },
+          outcome: 'saved',
+          steps: [],
+          at: 1,
+          content: 'entry text',
+        },
+      }, // additionalProperties:false: a receipt never carries text
+      {
+        receipt: {
+          receiptId: 'rc-1',
+          commandId: 'cmd-1',
+          initiator: 'user',
+          source: { sessionKey: 'k', kind: 'memory', entryId: 'e', contentHash: 'h', initiator: 'user' },
+          outcome: 'refused',
+          reason: 7,
+          steps: [],
+          at: 1,
+        },
+      }, // reason is a string
+    ],
+    note: 'save result: the receipt, structure and hashes only',
   },
   SessionRefineRollbackParams: {
     valid: { sessionId: 's', appliedSeq: 42 },
@@ -4256,6 +4390,76 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       { revision: rep64, extra: true }, // additionalProperties:false
     ],
     note: 'refinement settings save result: the new revision',
+  },
+  RefinementSkillsParams: {
+    valid: { cwd: '/w', action: 'rollback', name: 'lint-fixer', toRevision: rep64 },
+    invalid: [
+      {}, // missing required cwd
+      { cwd: '' }, // boundary: one below minLength:1
+      { cwd: '/w', action: 'install' }, // outside the closed enum
+      { cwd: '/w', name: 'Lint' }, // pattern: upper case is not a saved skill name
+      { cwd: '/w', toRevision: 'a'.repeat(63) }, // pattern: one short of 64
+      { cwd: '/w', workspaceId: rep64 }, // additionalProperties:false
+    ],
+    note: "the owner's list, uninstall or rollback of the skills refinement saved in a workspace",
+  },
+  RefinementSavedSkill: {
+    valid: {
+      name: 'lint-fixer',
+      resourceId: 'skill/workspace/workspace-agnes/x',
+      revision: rep64,
+      state: 'review-disabled',
+      reviewAfter: 1,
+      initiator: 'auto',
+      previous: [rep64],
+    },
+    invalid: [
+      {
+        name: 'lint-fixer',
+        resourceId: 'r',
+        revision: rep64,
+        state: 'active',
+        reviewAfter: 1,
+        initiator: 'auto',
+      }, // missing required previous
+      {
+        name: 'lint-fixer',
+        resourceId: 'r',
+        revision: rep64,
+        state: 'uninstalled',
+        reviewAfter: 1,
+        initiator: 'auto',
+        previous: [],
+      }, // outside the closed enum
+      {
+        name: 'lint-fixer',
+        resourceId: 'r',
+        revision: rep64,
+        state: 'active',
+        reviewAfter: -1,
+        initiator: 'auto',
+        previous: [],
+      }, // boundary: one below minimum:0
+    ],
+    note: 'a skill refinement installed: its state, review date, who asked and the revisions it can go back to',
+  },
+  RefinementSkillDraft: {
+    valid: { id: rep(32), name: 'lint-fixer', reason: 'changed-since', diff: '--- a\n+++ b\n', at: 1 },
+    invalid: [
+      { name: 'lint-fixer', reason: 'changed-since', diff: '', at: 1 }, // missing required id
+      { id: rep(32), name: 'lint-fixer', reason: '', diff: '', at: 1 }, // boundary: one below minLength:1
+      { id: rep(64), name: 'lint-fixer', reason: 'x', diff: '', at: 1 }, // pattern: a draft id is 32 hex digits
+      { id: rep(32), name: 'lint-fixer', reason: 'x', diff: '', at: 1, proposed: 'y' }, // additionalProperties:false
+    ],
+    note: 'a change kept for a person: the skill, why, and a whole-file diff',
+  },
+  RefinementSkillsResult: {
+    valid: { skills: [], drafts: [] },
+    invalid: [
+      { skills: [] }, // missing required drafts
+      { skills: [], drafts: [], more: true }, // additionalProperties:false
+    ],
+    note: 'the saved skills of a workspace and the drafts kept for a person',
   },
   VoiceSettings: {
     valid: VOICE_SETTINGS,
@@ -7956,7 +8160,12 @@ const AppSamples: Record<string, Sample> = {
   MemorySettingsPatch: { valid: { mode: 'ask' }, invalid: [null], note: 'File memory boundary shape' },
   MemorySource: {
     valid: { sessionKey: 'synthetic-session', turn: 1 },
-    invalid: [null],
+    invalid: [
+      null,
+      { sessionKey: 'synthetic-session', turn: 1, maintenance: '' },
+      { sessionKey: 'synthetic-session', turn: 1, maintenance: 'r'.repeat(129) },
+      { sessionKey: 'synthetic-session', maintenance: 'run-1' },
+    ],
     note: 'File memory boundary shape',
   },
   MemoryFileInfo: {
@@ -8033,6 +8242,19 @@ const AppSamples: Record<string, Sample> = {
     },
     invalid: [null],
     note: 'File memory boundary shape',
+  },
+  SavedParagraphRequest: {
+    valid: { action: 'withdraw', paragraphId: 'r0a1b2c3d4e' },
+    invalid: [{ action: 'delete' }, { action: 'renew', paragraphId: 'x' }, { action: 'list', text: 'x' }],
+    note: 'Saved task experience paragraphs on the memory page',
+  },
+  SavedParagraph: {
+    valid: { id: 'r0a1b2c3d4e', text: 'Lint first', validity: 'valid', reviewAfter: 1, initiator: 'auto' },
+    invalid: [
+      { id: 'r0a1b2c3d4e', text: 'x', validity: 'stale' },
+      { id: 'r0a1b2c3d4e', validity: 'valid' },
+    ],
+    note: 'Saved task experience paragraphs on the memory page',
   },
   AdminContextConfig: {
     valid: {
@@ -9347,6 +9569,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'SessionRefineRollbackParams',
     result: 'SessionRefineRollbackResult',
   },
+  '_agnes/v1/session.refine.save': {
+    fileId: AGNES_ID,
+    params: 'SessionRefineSaveParams',
+    result: 'SessionRefineSaveResult',
+  },
   '_agnes/v1/session.voice.transcribe': {
     fileId: AGNES_ID,
     params: 'SessionVoiceTranscribeParams',
@@ -9367,6 +9594,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: AGNES_ID,
     params: 'RefinementSettingsSaveParams',
     result: 'RefinementSettingsSaveResult',
+  },
+  '_agnes/v1/refinement.skills': {
+    fileId: AGNES_ID,
+    params: 'RefinementSkillsParams',
+    result: 'RefinementSkillsResult',
   },
   '_agnes/v1/voice.settings.get': {
     fileId: AGNES_ID,
@@ -10294,11 +10526,13 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwParams as Sample,
   '_agnes/v1/session.refine': AGNES_SAMPLES.SessionRefineParams as Sample,
   '_agnes/v1/session.refine.rollback': AGNES_SAMPLES.SessionRefineRollbackParams as Sample,
+  '_agnes/v1/session.refine.save': AGNES_SAMPLES.SessionRefineSaveParams as Sample,
   '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeParams as Sample,
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakParams as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/refinement.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveParams as Sample,
+  '_agnes/v1/refinement.skills': AGNES_SAMPLES.RefinementSkillsParams as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.ConfigEmptyParams as Sample,
   '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSaveParams as Sample,
   '_agnes/v1/session.rename': {
@@ -11007,11 +11241,13 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.btw': AGNES_SAMPLES.SessionBtwResult as Sample,
   '_agnes/v1/session.refine': AGNES_SAMPLES.SessionRefineResult as Sample,
   '_agnes/v1/session.refine.rollback': AGNES_SAMPLES.SessionRefineRollbackResult as Sample,
+  '_agnes/v1/session.refine.save': AGNES_SAMPLES.SessionRefineSaveResult as Sample,
   '_agnes/v1/session.voice.transcribe': AGNES_SAMPLES.SessionVoiceTranscribeResult as Sample,
   '_agnes/v1/session.voice.speak': AGNES_SAMPLES.SessionVoiceSpeakResult as Sample,
   '_agnes/v1/voice.status': AGNES_SAMPLES.VoiceStatusResult as Sample,
   '_agnes/v1/refinement.get': AGNES_SAMPLES.RefinementSettingsSnapshot as Sample,
   '_agnes/v1/refinement.save': AGNES_SAMPLES.RefinementSettingsSaveResult as Sample,
+  '_agnes/v1/refinement.skills': AGNES_SAMPLES.RefinementSkillsResult as Sample,
   '_agnes/v1/voice.settings.get': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
   '_agnes/v1/voice.settings.save': AGNES_SAMPLES.VoiceSettingsSnapshot as Sample,
   '_agnes/v1/session.list': AGNES_SAMPLES.PageSessionMeta as Sample,

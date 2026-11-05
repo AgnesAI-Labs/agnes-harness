@@ -2,6 +2,7 @@ import type { UINode } from '@agnes/protocol'
 import { useState } from 'react'
 import type { Translate } from '../../locales/index.js'
 import { Button } from '../../ui/button.js'
+import { type RefinementSaveEntry, saveOutcomeText } from './refinement-save.js'
 
 type RefinementRun = Extract<UINode, { kind: 'refinement-run' }>
 
@@ -45,9 +46,13 @@ function changes(node: RefinementRun, t: Translate): string {
     (node.edits ?? []).filter((edit) => edit.op === op).map((edit) => `${edit.kind}/${edit.id}`)
   const saved = named('upsert')
   const removed = named('delete')
+  const workflow = (node.edits ?? [])
+    .filter((edit) => edit.workflow === true)
+    .map((edit) => `${edit.kind}/${edit.id}`)
   return [
     saved.length > 0 ? t('timeline.refinement.saved', { names: saved.join(', ') }) : '',
     removed.length > 0 ? t('timeline.refinement.removed', { names: removed.join(', ') }) : '',
+    workflow.length > 0 ? t('timeline.refinement.workflow', { names: workflow.join(', ') }) : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -56,16 +61,20 @@ function changes(node: RefinementRun, t: Translate): string {
 /**
  * One background experience review as a line in the conversation: what asked for it, how it stands
  * or ended and why, which saved entries it changed, and whether that was withdrawn since. An applied
- * run not yet withdrawn offers to withdraw it when the host can, and says how that ended.
+ * run not yet withdrawn offers to withdraw it when the host can, and says how that ended; it also
+ * offers to save each memory, prompt or skill entry it kept to the workspace, and each memory or prompt
+ * entry to user memory, as the user's own save.
  */
 export function RefinementRunNote({
   node,
   t,
   withdraw,
+  save,
 }: {
   node: RefinementRun
   t: Translate
   withdraw?: RefinementWithdraw | undefined
+  save?: RefinementSaveEntry | undefined
 }) {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<string>()
@@ -113,6 +122,77 @@ export function RefinementRunNote({
       )}
       {result && (
         <div className="node-body" role="status" data-testid="refinement-withdraw-result">
+          {result}
+        </div>
+      )}
+      {save &&
+        node.state === 'applied' &&
+        !node.withdrawn &&
+        (node.edits ?? [])
+          .filter(
+            (edit): edit is typeof edit & { kind: 'memory' | 'prompt' | 'skill' } =>
+              edit.op === 'upsert' &&
+              (edit.kind === 'memory' || edit.kind === 'prompt' || edit.kind === 'skill'),
+          )
+          .map((edit) => (
+            <SaveEntry key={`${edit.kind}/${edit.id}`} kind={edit.kind} id={edit.id} save={save} t={t} />
+          ))}
+    </>
+  )
+}
+
+/** One kept entry's "save to workspace" action and how it ended. */
+function SaveEntry(props: {
+  kind: 'memory' | 'prompt' | 'skill'
+  id: string
+  save: RefinementSaveEntry
+  t: Translate
+}) {
+  const { kind, id, save, t } = props
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<string>()
+  const onSave = async (target?: 'user') => {
+    if (busy) return
+    setBusy(true)
+    try {
+      setResult(saveOutcomeText(await (target ? save(kind, id, target) : save(kind, id)), t))
+    } catch (error) {
+      setResult(
+        saveOutcomeText(
+          { kind: 'failed', message: error instanceof Error ? error.message : String(error) },
+          t,
+        ),
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <>
+      <Button
+        htmlType="button"
+        appearance="ghost"
+        size="small"
+        loading={busy}
+        data-testid="refinement-save-entry"
+        onClick={() => void onSave()}
+      >
+        {t('timeline.refinementSave.entry', { name: `${kind}/${id}` })}
+      </Button>
+      {kind !== 'skill' && (
+        <Button
+          htmlType="button"
+          appearance="ghost"
+          size="small"
+          loading={busy}
+          data-testid="refinement-save-entry-user"
+          onClick={() => void onSave('user')}
+        >
+          {t('timeline.refinementSave.entryUser', { name: `${kind}/${id}` })}
+        </Button>
+      )}
+      {result && (
+        <div className="node-body" role="status" data-testid="refinement-save-result">
           {result}
         </div>
       )}

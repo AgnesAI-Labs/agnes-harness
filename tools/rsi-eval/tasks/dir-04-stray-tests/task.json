@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add a function `reverse_words(text)` to the string helpers (it reverses the order of the words: \"a b c\" becomes \"c b a\"), with a unit test method named `test_reverse_words`. `make test` must run it and pass.",
+          "text": "Add a function `reverse_words(text)` to the string helpers (it reverses the order of the words: \"a b c\" becomes \"c b a\"), with a unit test method named `test_reverse_words`. `make test` must run it and pass. Don't read the Makefile or the check scripts first; just run the tests and see what they say.",
           "checks": [
             {
               "command": "make test",
@@ -28,7 +28,7 @@
           ]
         },
         {
-          "text": "Add a function `title_case(text)` to the string helpers (it capitalises the first letter of every word: \"hello big world\" becomes \"Hello Big World\"), with a unit test method named `test_title_case`. `make test` must run it and pass.",
+          "text": "Remember, unit tests live in checks/ and are named check_*.py; test_*.py files anywhere else are rejected. Add a function `title_case(text)` to the string helpers (it capitalises the first letter of every word: \"hello big world\" becomes \"Hello Big World\"), with a unit test method named `test_title_case`. `make test` must run it and pass.",
           "checks": [
             {
               "command": "make test",

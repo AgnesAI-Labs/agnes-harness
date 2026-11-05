@@ -9,7 +9,6 @@ import type { MethodName } from './methods.js'
 export type MethodTier = 'client' | 'admin'
 
 export const METHOD_TIERS: Record<MethodName, MethodTier> = {
-  '_agnes/v1/packages.skillImport': 'admin',
   '_agnes/v1/applications.get': 'admin',
   '_agnes/v1/applications.preview': 'admin',
   '_agnes/v1/applications.adopt': 'admin',
@@ -69,6 +68,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/packages.pins.inspect': 'admin',
   '_agnes/v1/packages.pins.release': 'admin',
   '_agnes/v1/packages.trustWorkspace': 'admin',
+  '_agnes/v1/packages.skillImport': 'admin',
   '_agnes/v1/plugins.tree.get': 'admin',
   '_agnes/v1/plugins.publicationStatus': 'admin',
   '_agnes/v1/sessions.migrate': 'admin',
@@ -184,6 +184,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/session.btw': 'client',
   '_agnes/v1/session.refine': 'client',
   '_agnes/v1/session.refine.rollback': 'client',
+  '_agnes/v1/session.refine.save': 'client',
   '_agnes/v1/session.voice.transcribe': 'client',
   '_agnes/v1/session.voice.speak': 'client',
   '_agnes/v1/voice.status': 'client',
@@ -191,6 +192,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/voice.settings.save': 'admin',
   '_agnes/v1/refinement.get': 'admin',
   '_agnes/v1/refinement.save': 'admin',
+  '_agnes/v1/refinement.skills': 'admin',
   '_agnes/v1/session.rename': 'client',
   '_agnes/v1/session.archive': 'client',
   '_agnes/v1/session.pin': 'client',

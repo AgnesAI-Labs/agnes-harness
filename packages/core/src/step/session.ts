@@ -110,6 +110,7 @@ import {
 } from '@agnes/protocol'
 import { SystemInput as SystemInputSchema } from '@agnes/protocol/gen/session-v1'
 import { bestEffort, quietly } from '../best-effort.js'
+import { forgetIdleChild, idleChildReady } from '../child/idle-retirement.js'
 import {
   childLifecycle,
   childLifecycleRevoked,
@@ -647,6 +648,15 @@ export class SessionImpl {
     return this.activeOps > 0
   }
   private readonly activeWork = new Set<Promise<unknown>>()
+  private retirementClaimed = false
+  /** Reserves idle admission until its terminal CAS commits or loses; invoked under the writer gate. */
+  claimIdleRetirement(): (() => void) | undefined {
+    if (!idleChildReady(this, this.activeWork.size > 0)) return
+    this.retirementClaimed = true
+    return () => {
+      this.retirementClaimed = false
+    }
+  }
   private readonly effectReceipts = new FailureReceipts()
   loopScope = new LoopScope()
   private resuming: Promise<unknown> | undefined
@@ -724,7 +734,7 @@ export class SessionImpl {
   private closing = false
 
   get closingOrClosed(): boolean {
-    return this.closing
+    return this.closing || this.retirementClaimed
   }
 
   private readonly authorization: SessionPermissionAuthority
@@ -1110,15 +1120,13 @@ export class SessionImpl {
       const record = records.find((m) => m.route === target.route && m.id === target.model)
       if (!record) continue
       const thinking = this.preset.model.thinking[slot] ?? record.defaultSettings?.thinking
+      const contextWindow = this.preset.model.contextWindow?.[slot] ?? record.defaultSettings?.contextWindow
       modelSettings.push({
         slot,
         ...target,
         settings: {
           ...(thinking === undefined ? {} : { thinking }),
-          contextWindow:
-            this.preset.model.contextWindow?.[slot] ??
-            record.defaultSettings?.contextWindow ??
-            record.contextWindow,
+          ...(contextWindow === undefined ? {} : { contextWindow }),
         },
       })
     }
@@ -1444,6 +1452,7 @@ export class SessionImpl {
     if (target === 'next-step' || msg.kind === 'steer') await this.controls.require('steer', msg.actor)
     return this.locked(async () => {
       // Backend lifecycle checks must share the inbox writer lock with result collection.
+      if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
       if (await options.skipIf?.()) return this.lastSeq
       if (options.dedupeByCommandId) {
         if (!msg.commandId) throw new CoreError('E_ENVELOPE', 'input deduplication requires commandId')
@@ -1949,7 +1958,7 @@ export class SessionImpl {
 
   beginLoopOperation(): () => void {
     this.loopScope.assertAlive()
-    if (this.closing) throw new CoreError('E_CLOSED', 'session closed')
+    if (this.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
     let done!: () => void
     const work = new Promise<void>((resolve) => {
       done = resolve
@@ -1962,7 +1971,7 @@ export class SessionImpl {
   }
 
   private active<T>(fn: () => Promise<T>, afterResume = true): Promise<T> {
-    if (this.closing) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
+    if (this.closingOrClosed) return Promise.reject(new CoreError('E_CLOSED', 'session closed'))
     this.activeOps++
     const work = (async () => {
       while (afterResume && this.resuming) await this.resuming
@@ -2566,6 +2575,15 @@ export class SessionImpl {
     if (this.closingOrClosed || this.d.log.isClosed) throw new CoreError('E_CLOSED', 'session closed')
   }
 
+  private primaryModelSettings() {
+    const thinking = this.preset.model.thinking.primary
+    const contextWindow = this.preset.model.contextWindow?.primary
+    return {
+      ...(thinking === undefined ? {} : { thinking }),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
+    }
+  }
+
   private headProjectionUsage() {
     const target = resolveModel(this, 'primary')
     const model = this.d.provider
@@ -2578,12 +2596,7 @@ export class SessionImpl {
         id: target.model,
         contextWindow: contextWindowFor(this, target.route, target.model),
       },
-      settings: {
-        ...(this.preset.model.thinking.primary === undefined
-          ? {}
-          : { thinking: this.preset.model.thinking.primary }),
-        contextWindow: contextWindowFor(this, target.route, target.model),
-      },
+      settings: this.primaryModelSettings(),
       thinking: this.preset.model.thinking.primary ?? 'off',
       autoCompact: this.preset.compaction.enabled,
       ...this.compactAt(contextWindowFor(this, target.route, target.model)),
@@ -2639,12 +2652,7 @@ export class SessionImpl {
         id: target.model,
         contextWindow: contextWindowFor(this, target.route, target.model),
       },
-      settings: {
-        ...(this.preset.model.thinking.primary === undefined
-          ? {}
-          : { thinking: this.preset.model.thinking.primary }),
-        contextWindow: contextWindowFor(this, target.route, target.model),
-      },
+      settings: this.primaryModelSettings(),
       thinking: this.preset.model.thinking.primary ?? 'off',
       contextTokens: contextTokensAtCut(events, this.lane, cut),
       autoCompact: this.preset.compaction.enabled,
@@ -2718,6 +2726,7 @@ export class SessionImpl {
       await attempt(() => this.loopDriver?.cancel())
       await Promise.all(this.runtimeInstances.map((instance) => attempt(() => instance.runtime.cancel())))
       await attempt(() => this.loopChildren?.close())
+      await attempt(() => this.d.children.dispose?.())
       // Keep hooks, log and lease alive while producers settle effects and final checkpoints. Work
       // that ignores its cancellation is left behind: it must not hold the log and the lease open.
       // Maintenance calls run outside any turn and have their own drain, within the same bound.
@@ -2733,6 +2742,7 @@ export class SessionImpl {
       await this.d.workspaceLease?.close().catch((error: unknown) => failures.push(error))
       if (failures.length === 1) throw failures[0]
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')
+      forgetIdleChild(this)
     })
     return this.closePromise
   }

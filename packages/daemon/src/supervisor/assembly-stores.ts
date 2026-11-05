@@ -2,7 +2,11 @@ import { randomBytes } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { collectPackageSkillFiles } from '@agnes/base'
-import { createResourceControlService, createResourceControlStore } from '@agnes/daemon-admin/resources/index'
+import {
+  createResourceControlService,
+  createResourceControlStore,
+  resourceControlDirectory as resourceControlPath,
+} from '@agnes/daemon-admin/resources/index'
 import type { ConnectionState, LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { NoticeSink } from '@agnes/daemon-foundation/local/notice'
 import { MemoryClaims, MemoryJournal } from '@agnes/daemon-foundation/local/ports'
@@ -70,7 +74,7 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
     clock,
     workspaceRoot: o.workspaceRoot,
   })
-  const resourceControlDirectory = join(o.config.dataDir, 'resource-control')
+  const resourceControlDirectory = resourceControlPath(o.config.dataDir)
   // Global MCP/user/package resource workers use a server-owned data root when this daemon was
   // not launched for one workspace. Caller-selected workspace ids still resolve only through the
   // registered WorkspaceCatalog below.

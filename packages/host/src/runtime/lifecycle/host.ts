@@ -45,6 +45,7 @@ import type { Actor, ExtensionCallParams, ExtensionCallResult, ThinkingLevel } f
 import { readRuntimeSkillCandidates, type SkillCandidate } from '@agnes/resource-control-runtime'
 import { startApprovalExpiry } from '../approval/expiry.js'
 import { type AssembleDeps, type Assembled, assemble } from '../assemble/assemble.js'
+import { startIdleChildMaintenance } from '../children/idle-child-maintenance.js'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
 import { createCompositionHost } from '../profile/composition-runtime.js'
 import { trackHostComposition } from '../profile/composition-tracking.js'
@@ -71,29 +72,11 @@ import {
   registerHostExecutionRows,
 } from './host-facade.js'
 import { registerHostIdle } from './host-idle.js'
+import type { HostSession } from './host-session.js'
 import { closeHost } from './lifecycle.js'
 import { reopenSelection } from './reopen-selection.js'
 
-// core does not export a type named `Session`; it exports SessionImpl and SessionLogImpl. Taking the
-// return type instead of pinning a name means a rename over there is not a break over here.
-export type HostSession = Awaited<ReturnType<Kernel['session']>> & {
-  /** Host-private policy snapshot for local author-code execution; never plugin arguments. */
-  readonly commandSandboxPolicy?: () => {
-    policy: import('@agnes/core').FsPolicy
-    network: 'allow' | 'deny'
-    local: boolean
-    allowsUnconfined?: boolean
-  }
-  readonly hasActiveProcesses?: () => boolean
-  readonly intelligentUi?: Pick<
-    import('@agnes/intelligent-ui-contract').IntelligentUiInstance,
-    'action' | 'read' | 'refresh'
-  >
-  readonly pluginGenerationId?: string
-  readonly referenceResolvers?: import('@agnes/extension-api').ReferenceResolverPort
-  readonly referenceSessions?: import('@agnes/extension-api').ReferenceContext['sessions']
-  readonly referenceLimits?: import('@agnes/extension-api').ReferenceLimits
-}
+export type { HostSession } from './host-session.js'
 export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
   audit?: AuditSink
   loader?: PackageLoader
@@ -213,6 +196,8 @@ export interface Host {
   /** Read-only descriptions from the currently assembled adapter registry. */
   modelAdapterCatalog: Assembled['modelAdapterCatalog']
   memory: Assembled['memory']
+  /** A person's management of saved task experience paragraphs, on the memory session the editor uses. */
+  readonly savedParagraphs: Assembled['savedParagraphs']
   readonly providers: Assembled['providers']
   /** The implementation each seam kind was bound to in this container. */
   seamBindings: Assembled['seamBindings']
@@ -343,6 +328,13 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
   let modelApplication = Promise.resolve()
   let closed = false
   let closePromise: Promise<void> | undefined
+  const childMaintenance = startIdleChildMaintenance({
+    kernel: a.kernel,
+    workspaces: workspaceRuntimes,
+    dataDir: opts.dataDir,
+    limits: profile.limits,
+    audit,
+  })
   const host: Host = {
     activationBarrier: a.activationBarrier,
     approvalGrants: a.approvalGrants,
@@ -433,6 +425,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     },
     modelAdapterCatalog: () => a.modelAdapterCatalog(),
     memory: (workspaceRoot, sessionKey) => a.memory(workspaceRoot, sessionKey),
+    savedParagraphs: a.savedParagraphs,
     providers: Object.freeze({ catalog: () => a.providers.catalog() }),
     seamBindings: () => a.seamBindings(),
     runtimes: a.runtimes,
@@ -857,11 +850,13 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     close() {
       if (closePromise) return closePromise
       closed = true
+      const childDrain = childMaintenance.close()
       const timeoutMs = opts.closeTimeoutMs ?? profile.limits['shutdown.grace_ms'] ?? 10_000
       closePromise = closeHost(a, sessions, {
         timeoutMs,
         audit,
         pendingOpenings: [...pendingSessionOpens, modelApplication],
+        backgroundDrains: [childDrain],
         beforeRollback: async () => {
           workspaceRuntimes.beginClose()
           await workspaceRuntimes.finishCloseAll()

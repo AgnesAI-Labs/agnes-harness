@@ -4,6 +4,7 @@ import type { SessionImpl } from '../step/session.js'
 import { childResultSequence } from './collected-result.js'
 import { childCompletionId } from './completion-notice.js'
 import { childExecutionReceipt } from './execution-receipt.js'
+import { retiredCompletionIdentity } from './idle-retirement-fact.js'
 
 export function snapshotFromRecord(record: ChildTaskRecord): ChildStatus {
   const terminal = record.state === 'completed' || record.state === 'failed' || record.state === 'cancelled'
@@ -39,11 +40,16 @@ export async function snapshotFromLedger(parent: SessionImpl, record: ChildTaskR
       .filter((block) => block.type === 'text' && typeof block.text === 'string')
       .map((block) => block.text)
       .join('')
+    const completionSeq = base.completionId
+      ? await childResultSequence(parent, record, tail[0]?.seq ?? 0)
+      : undefined
+    const completionId =
+      completionSeq === undefined
+        ? undefined
+        : ((await retiredCompletionIdentity(parent, record, completionSeq)) ?? base.completionId)
     return {
       ...base,
-      ...(base.completionId
-        ? { completionSeq: await childResultSequence(parent, record, tail[0]?.seq ?? 0) }
-        : {}),
+      ...(completionId && completionSeq !== undefined ? { completionId, completionSeq } : {}),
       lastSeq: tail[0]?.seq ?? base.lastSeq,
       ...(text ? { text } : {}),
       receipt: await childExecutionReceipt(parent, record),
@@ -76,6 +82,8 @@ export async function snapshotFromLive(
     .filter((block) => block.type === 'text')
     .map((block) => block.text ?? '')
     .join('')
+  const retiredId =
+    state === 'done' ? await retiredCompletionIdentity(parent, record, completionSeq) : undefined
   return {
     state: state === 'error' || state === 'cancelled' ? 'error' : state === 'done' ? 'done' : 'running',
     lastSeq,
@@ -84,11 +92,13 @@ export async function snapshotFromLive(
     ...(terminal || idle
       ? {
           completionSeq,
-          completionId: childCompletionId(
-            record.childKey,
-            state === 'cancelled' ? 'cancelled' : state === 'error' ? 'failed' : 'completed',
-            idle ? completionSeq : undefined,
-          ),
+          completionId:
+            retiredId ??
+            childCompletionId(
+              record.childKey,
+              state === 'cancelled' ? 'cancelled' : state === 'error' ? 'failed' : 'completed',
+              idle ? completionSeq : undefined,
+            ),
         }
       : {}),
     receipt: await childExecutionReceipt(parent, record),

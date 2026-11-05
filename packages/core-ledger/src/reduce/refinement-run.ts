@@ -15,8 +15,19 @@ export type RefinementRunState =
   | 'unknown'
 
 export type RefinementTriggerKind = 'manual' | 'model' | 'compaction' | 'repeated-failure'
-/** What asked for a run: who, at which seq, and an optional focus. */
-export type RefinementTrigger = { kind: RefinementTriggerKind; seq: Seq; focus?: string }
+/**
+ * What asked for a run: who, at which seq, and an optional focus. `saveTo: 'workspace'` asks for the
+ * run's applied result to be saved to the session's workspace as well; `saveTo: 'user'` (the user's own
+ * request or the model's) saves it to user memory instead. `allowUnpriced` (the user's own request only) records
+ * that the user agreed to plan on a model with no known price.
+ */
+export type RefinementTrigger = {
+  kind: RefinementTriggerKind
+  seq: Seq
+  focus?: string
+  saveTo?: 'workspace' | 'user'
+  allowUnpriced?: true
+}
 
 export type RefinementEntryKind = 'prompt' | 'memory' | 'skill' | 'subagent'
 export type RefinementEntryRef = { kind: RefinementEntryKind; id: string }
@@ -32,13 +43,14 @@ export type RefinementReadSet = {
 }
 /**
  * One evidence id the planner saw, fixed to the ledger row it stands for, with what kind of fact it
- * is: only `user` (the user's own, trusted request) can back a quoted lesson.
+ * is: only `user` (the user's own, trusted request) can back a quoted confirmation or a lesson that
+ * reaches every workspace.
  */
 export type RefinementEvidenceRef = {
   id: string
   lane: string
   seq: Seq
-  kind: 'user' | 'external' | 'tool' | 'summary'
+  kind: 'user' | 'external' | 'tool' | 'summary' | 'assistant'
 }
 
 export type RefinementPlanEdit =
@@ -50,9 +62,6 @@ export type RefinementPlanEdit =
       content: string
       applicability: 'task' | 'session'
       evidenceSeqs: Seq[]
-      /** Kept only when the edit cites a request of the user's own; `quoteSeqs` are those requests. */
-      quote?: string
-      quoteSeqs?: Seq[]
       /**
        * A task-level lesson planned with no goal to bind it to: it would have expired with the goal it
        * never had, so it stays on the plan as a record and is never applied.
@@ -60,12 +69,41 @@ export type RefinementPlanEdit =
       expired?: true
       /** The goal a task-level lesson is bound to; it expires when that goal is completed or replaced. */
       taskScope?: { id: string; revision: number }
-      /** Asked for at session level but without the evidence that grants it, so kept at task level. */
-      downgraded?: true
-      /** The evidence identities that granted session level; they never count as confirmations. */
+      /** The user's own requests a session-level edit cites (`user:<seq>`); they never count as confirmations. */
       usedEvidence?: string[]
+      /** A skill or subagent bound to an approved resource: `<resourceId>@<revision>`, or an agent reference. */
+      reference?: string
+      /** A skill generated from a finished `workflow` run of this session (its `runId`); the host writes its definition. */
+      workflowRun?: string
+      /**
+       * The lesson may be promoted to user memory, read in every workspace. Absent means its workspace
+       * only. The planner suggests it; Core keeps it only where the structure allows.
+       */
+      reach?: 'user'
     }
   | { op: 'delete'; kind: RefinementEntryKind; id: string; evidenceSeqs: Seq[] }
+/**
+ * An entry saved to the workspace, shown to a run's planner as confirm-only: its reference
+ * (`workspace-memory/<paragraph id>` or `workspace-skill/<name>`), the content version it was shown
+ * at, and, when it was saved from a session entry, that entry.
+ */
+export type RefinementWorkspaceRef = {
+  ref: string
+  version: string
+  source?: { sessionKey: string; kind: RefinementEntryKind; entryId: string }
+}
+/**
+ * A plan's report that new evidence bore out an entry saved to the workspace. It never changes the
+ * entry; once the plan is applied it renews the entry's review date.
+ */
+export type RefinementWorkspaceConfirmation = {
+  ref: string
+  evidenceSeqs: Seq[]
+  quote?: string
+  quoteSeqs?: Seq[]
+  /** The evidence that makes it count, checked when the plan settled; absent, it renews nothing. */
+  confirmedBy?: { identity: string; seq: Seq }
+}
 /** A validated plan, with every evidence id already replaced by its fixed seq. */
 export type RefinementPlan = {
   summary: string
@@ -91,6 +129,8 @@ export type RefinementPlan = {
    * ended). The apply refuses the plan if any of them is in force again.
    */
   lapsed?: RefinementEntryRef[]
+  /** Confirmations of entries saved to the workspace; absent when the plan has none. */
+  workspaceConfirmations?: RefinementWorkspaceConfirmation[]
 }
 
 /** A run as its rows fold: the latest state and every fact recorded on the way. */
@@ -111,6 +151,8 @@ export type RefinementRunRecord = {
   evidence?: RefinementEvidenceRef[]
   fullEntries?: RefinementEntryRef[]
   shownEntries?: RefinementEntryRef[]
+  /** Entries saved to the workspace the planner was shown, which it may only confirm. */
+  workspaceRefs?: RefinementWorkspaceRef[]
   target?: { route: string; model: string }
   plan?: RefinementPlan
 }
@@ -148,14 +190,26 @@ const STATES = new Set(Object.keys(NEXT))
 const KINDS = new Set(['manual', 'model', 'compaction', 'repeated-failure'])
 
 function triggerOf(raw: unknown): RefinementTrigger | undefined {
-  const t = raw as { kind?: unknown; seq?: unknown; focus?: unknown } | null
+  const t = raw as {
+    kind?: unknown
+    seq?: unknown
+    focus?: unknown
+    saveTo?: unknown
+    allowUnpriced?: unknown
+  } | null
   if (!t || typeof t !== 'object' || !KINDS.has(String(t.kind))) return undefined
   if (!Number.isSafeInteger(t.seq) || (t.seq as number) < 0) return undefined
   if (t.focus !== undefined && typeof t.focus !== 'string') return undefined
+  if (t.saveTo !== undefined && t.saveTo !== 'workspace' && t.saveTo !== 'user') return undefined
+  // Only a person's own request or the model's may target user memory: no other trigger has anyone behind it.
+  if (t.saveTo === 'user' && t.kind !== 'manual' && t.kind !== 'model') return undefined
+  if (t.allowUnpriced !== undefined && (t.allowUnpriced !== true || t.kind !== 'manual')) return undefined
   return {
     kind: t.kind as RefinementTriggerKind,
     seq: t.seq as Seq,
     ...(t.focus === undefined ? {} : { focus: t.focus as string }),
+    ...(t.saveTo === undefined ? {} : { saveTo: t.saveTo as 'workspace' | 'user' }),
+    ...(t.allowUnpriced === true ? { allowUnpriced: true as const } : {}),
   }
 }
 
@@ -167,6 +221,7 @@ const FACTS = [
   'evidence',
   'fullEntries',
   'shownEntries',
+  'workspaceRefs',
   'target',
   'plan',
 ] as const

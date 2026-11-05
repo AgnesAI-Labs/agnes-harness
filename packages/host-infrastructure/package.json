@@ -49,6 +49,7 @@
     "./workspace": "./src/workspace.ts",
     "./doctor": "./src/doctor.ts",
     "./system-prompt-settings": "./src/system-prompt-settings.ts",
+    "./refinement-registry": "./src/refinement-registry.ts",
     "./refinement-settings": "./src/refinement-settings.ts",
     "./voice-settings": "./src/voice-settings.ts",
     "./request-traces": "./src/request-traces.ts",

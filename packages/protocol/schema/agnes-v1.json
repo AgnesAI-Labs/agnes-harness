@@ -3635,12 +3635,63 @@
                 "properties": {
                   "op": { "enum": ["upsert", "delete"] },
                   "kind": { "enum": ["prompt", "memory", "skill", "subagent"] },
-                  "id": { "type": "string", "maxLength": 128 }
+                  "id": { "type": "string", "maxLength": 128 },
+                  "workflow": {
+                    "description": "A skill generated from a finished `workflow` run of this session.",
+                    "const": true
+                  }
                 }
               }
             },
             "appliedSeq": { "type": "integer", "minimum": 1 },
             "withdrawn": { "type": "boolean" }
+          }
+        },
+        {
+          "description": "One save of task experience into the workspace or user memory: how it ended and, when refused, why. Entry text, the target file and the content are never part of it.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id", "seq", "state"],
+          "properties": {
+            "kind": { "const": "refinement-save" },
+            "id": { "type": "string" },
+            "seq": { "type": "integer" },
+            "state": { "enum": ["saved", "installed", "awaiting-approval", "refused", "unknown"] },
+            "reason": {
+              "enum": [
+                "refinement-off",
+                "user-revoked",
+                "unconfirmed",
+                "source-rules",
+                "static-check",
+                "memory-off",
+                "memory-full",
+                "unsupported-provider",
+                "subagent-review-unavailable",
+                "child-session",
+                "unavailable",
+                "conflict",
+                "approval-expired",
+                "user-memory-budget",
+                "model-cannot-write-user",
+                "workflow-run-unavailable",
+                "workflow-run-not-completed",
+                "workflow-definition-too-large",
+                "workflow-already-saved"
+              ]
+            },
+            "initiator": {
+              "description": "Who asked for the save: an automatic save after repeated confirmation, the user, or the model.",
+              "enum": ["auto", "user", "model"]
+            },
+            "target": {
+              "description": "Where the save goes: workspace memory, a workspace skill, a workspace agent, or user memory (read in every workspace that turns it on). Never a path.",
+              "enum": ["workspace-memory", "workspace-skill", "workspace-agent", "user-memory"]
+            },
+            "userMemoryRead": {
+              "description": "For a save to user memory: whether the workspace it came from reads user memory itself.",
+              "type": "boolean"
+            }
           }
         },
         {
@@ -5437,6 +5488,14 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 512
+        },
+        "saveTo": {
+          "description": "`workspace` (`/refine --workspace`): the applied result is also saved to the session's workspace as the user's save. `user` (`/refine --user`): it is saved to user memory instead, without waiting for two confirmations. Local owner only.",
+          "enum": ["workspace", "user"]
+        },
+        "allowUnpriced": {
+          "description": "The owner agrees to plan on a model with no known price (`/refine --unpriced`); the cost is then unknown. Without it such a request is refused `unpriced`. A model priced at zero is a known price and needs no agreement. Local owner only.",
+          "const": true
         }
       }
     },
@@ -5475,6 +5534,115 @@
           "type": "integer",
           "minimum": 1
         }
+      }
+    },
+    "SessionRefineSaveParams": {
+      "description": "The owner's save of one refinement entry of the session into its workspace, or into user memory. No model is called. Local owner only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "kind", "id"],
+      "properties": {
+        "sessionId": {
+          "type": "string"
+        },
+        "kind": { "enum": ["prompt", "memory", "skill", "subagent"] },
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "target": {
+          "description": "`user`: save the entry to user memory instead of the workspace, as the user's own save (a prompt or memory entry only).",
+          "const": "user"
+        }
+      }
+    },
+    "SessionRefineSaveResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt"],
+      "properties": {
+        "receipt": { "$ref": "#/$defs/RefinementSaveReceipt" }
+      }
+    },
+    "RefinementSaveReceipt": {
+      "description": "What one save of task experience into the workspace came to, step by step: structure and hashes only, never the entry's text.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receiptId", "commandId", "initiator", "source", "outcome", "steps", "at"],
+      "properties": {
+        "receiptId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "initiator": { "enum": ["auto", "user", "model"] },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sessionKey", "kind", "entryId", "contentHash", "initiator"],
+          "properties": {
+            "sessionKey": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "kind": { "enum": ["prompt", "memory", "skill", "subagent"] },
+            "entryId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "contentHash": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "runId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "initiator": { "enum": ["auto", "user", "model"] },
+            "fromWorkflow": {
+              "description": "A skill generated from a finished `workflow` run; its `contentHash` is then the hash of the run's normalised definition.",
+              "const": true
+            }
+          }
+        },
+        "outcome": { "enum": ["saved", "installed", "awaiting-approval", "refused", "unknown"] },
+        "reason": {
+          "description": "Why a save was refused. Known values: refinement-off, user-revoked, unconfirmed, source-rules, static-check, memory-off, memory-full, unsupported-provider, subagent-review-unavailable, child-session, unavailable, conflict, approval-expired, user-memory-budget, model-cannot-write-user, workflow-run-unavailable, workflow-run-not-completed, workflow-definition-too-large, workflow-already-saved. Open: a later release may add reasons, so treat an unknown one as a refusal.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["step", "verdict"],
+            "properties": {
+              "step": {
+                "enum": ["switch", "revocation", "confirmations", "rules", "memory-mode", "capacity"]
+              },
+              "verdict": { "enum": ["pass", "fail", "skip"] }
+            }
+          }
+        },
+        "target": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "paragraphId", "fileHash"],
+              "properties": {
+                "kind": { "const": "memory-paragraph" },
+                "paragraphId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                "fileHash": { "type": "string", "minLength": 1, "maxLength": 4096 }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "name", "resourceId", "revision"],
+              "properties": {
+                "kind": { "const": "skill" },
+                "name": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                "resourceId": { "type": "string", "minLength": 1, "maxLength": 4096 },
+                "revision": { "type": "string", "minLength": 1, "maxLength": 4096 }
+              }
+            }
+          ]
+        },
+        "layer": {
+          "description": "`user`: the save went to user memory (read in every workspace) rather than the workspace.",
+          "const": "user"
+        },
+        "userMemoryRead": {
+          "description": "With `layer` `user`: whether the workspace the entry came from reads user memory itself.",
+          "type": "boolean"
+        },
+        "at": { "type": "number" }
       }
     },
     "SessionBtwResult": {
@@ -5587,6 +5755,71 @@
       "required": ["revision"],
       "properties": {
         "revision": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    },
+    "RefinementSkillsParams": {
+      "description": "The skills refinement saved into one workspace, and the owner's uninstall or rollback of one of them. `cwd` names an available workspace. `list` (the default) changes nothing; `uninstall` and `rollback` name the skill; `rollback` goes to `toRevision`, by default the revision before the current one. Uninstalling or rolling back is recorded so automatic and model saves never bring that skill back.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cwd"],
+      "properties": {
+        "cwd": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "action": { "enum": ["list", "uninstall", "rollback"] },
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+        "toRevision": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "RefinementSavedSkill": {
+      "description": "A skill refinement installed in the workspace: `active` (on), `review-disabled` (switched off by the 30-day review: awaiting review; switching it on again renews it). `previous` are the earlier revisions it can be rolled back to, newest last. `initiator` is who asked for the save it holds now.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "resourceId", "revision", "state", "reviewAfter", "initiator", "previous"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+        "resourceId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "state": { "enum": ["active", "review-disabled"] },
+        "reviewAfter": { "type": "integer", "minimum": 0 },
+        "initiator": { "enum": ["auto", "user", "model"] },
+        "workflow": {
+          "description": "The skill was generated from a finished `workflow` run and carries its definition.",
+          "const": true
+        },
+        "previous": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+        }
+      }
+    },
+    "RefinementSkillDraft": {
+      "description": "A change refinement wanted to make to a skill a person wrote or changed, kept for the person and never written: `human-written` or `changed-since`. `diff` is a whole-file diff of the skill's SKILL.md; it holds planner text, so a client shows it as plain text only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "reason", "diff", "at"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-f0-9]{32}$" },
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "diff": { "type": "string", "maxLength": 1048576 },
+        "at": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "RefinementSkillsResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skills", "drafts"],
+      "properties": {
+        "skills": {
+          "type": "array",
+          "maxItems": 4096,
+          "items": { "$ref": "#/$defs/RefinementSavedSkill" }
+        },
+        "drafts": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/RefinementSkillDraft" }
+        }
       }
     },
     "VoiceFeatureState": {

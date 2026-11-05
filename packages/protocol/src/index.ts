@@ -1,14 +1,10 @@
 export type { ApplicationWorkbenchText } from '../gen/ts/extension-manifest.js'
-export type {
-  SkillEnvironmentRequirement,
-  SkillImportParams,
-  SkillImportResult,
-} from '../gen/ts/package-admin.js'
 export type { DecisionPresentation, ToolPresentation } from '../gen/ts/session-v1.js'
 // jcs is the shared strict RFC 8785 serializer for SDK/daemon signature bytes; it does not replace core request hashing.
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
 export {
+  isSkillBundleIgnored,
   isSkillBundleMarker,
   isSkillBundlePath,
   SKILL_BUNDLE_FRONTMATTER_KEYS,
@@ -144,10 +140,15 @@ export type {
   PluginRuntimeStatusResult,
   PluginStreamsEndpointParams,
   PluginStreamsEndpointResult,
+  RefinementSavedSkill,
+  RefinementSaveReceipt,
   RefinementSettings,
   RefinementSettingsSaveParams,
   RefinementSettingsSaveResult,
   RefinementSettingsSnapshot,
+  RefinementSkillDraft,
+  RefinementSkillsParams,
+  RefinementSkillsResult,
   SeqResult,
   SessionActivity,
   SessionActivityParams,
@@ -208,6 +209,8 @@ export type {
   SessionRefineResult,
   SessionRefineRollbackParams,
   SessionRefineRollbackResult,
+  SessionRefineSaveParams,
+  SessionRefineSaveResult,
   SessionRemoveQueuedParams,
   SessionRenameParams,
   SessionRevealWorkspaceParams,
@@ -500,6 +503,9 @@ export type {
   RuntimePinReleaseResult,
   SessionGenerationMigrationParams,
   SessionGenerationMigrationResult,
+  SkillEnvironmentRequirement,
+  SkillImportParams,
+  SkillImportResult,
   SkinListResult,
   SkinReadParams,
   SkinReadResult,

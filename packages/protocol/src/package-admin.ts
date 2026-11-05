@@ -343,12 +343,6 @@ export type PackageAdminAccessPolicy = Readonly<{
   identity: 'none' | 'principal-client-command'
 }>
 export const PACKAGE_ADMIN_METHODS = Object.freeze({
-  '_agnes/v1/packages.skillImport': contract(
-    P.SkillImportParams,
-    P.SkillImportResult,
-    'effect',
-    'packages.install',
-  ),
   '_agnes/v1/applications.get': contract(P.PackageListParams, P.ApplicationState, 'read', 'packages.read'),
   '_agnes/v1/applications.preview': contract(
     P.ApplicationPreviewParams,
@@ -563,6 +557,12 @@ export const PACKAGE_ADMIN_METHODS = Object.freeze({
     'effect',
     'packages.trust',
   ),
+  '_agnes/v1/packages.skillImport': contract(
+    P.SkillImportParams,
+    P.SkillImportResult,
+    'effect',
+    'packages.install',
+  ),
   '_agnes/v1/plugins.tree.get': contract(P.PackageListParams, P.PluginTreeView, 'read', 'packages.read'),
   '_agnes/v1/plugins.publicationStatus': contract(
     P.PackageListParams,
@@ -633,9 +633,8 @@ export function canAccessPackageAdmin(
 
 // Written out explicitly, rather than derived as `keyof typeof DATA_SCHEMAS`, for the same reason
 // MethodName is in methods.ts: once the object literal grows past a certain size, tsc's declaration
-// emit hits TS7056 ("inferred type ... exceeds the maximum length the compiler will serialize")
-// trying to print the whole literal type. An explicit annotation on the table sidesteps that by
-// giving tsc a short type reference (`Record<PackageAdminDataName, TSchema>`) to print instead.
+// emit hits TS7056 ("inferred type ... exceeds the maximum length the compiler will serialize"). An
+// explicit `Record<PackageAdminDataName, TSchema>` annotation gives tsc a short type reference instead.
 export type PackageAdminDataName =
   | 'PresentationRoleSelection'
   | 'PresentationRoleSelections'
@@ -721,6 +720,8 @@ export type PackageAdminDataName =
   | 'PackagePinsReleaseResult'
   | 'PackageTrustWorkspaceParams'
   | 'PackageTrustWorkspaceResult'
+  | 'SkillImportParams'
+  | 'SkillImportResult'
   | 'PluginTreeArtifact'
   | 'PluginTreeApplyParams'
   | 'PluginTreeRollbackParams'
@@ -816,6 +817,8 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PackagePinsReleaseResult: P.PackagePinsReleaseResult,
   PackageTrustWorkspaceParams: P.PackageTrustWorkspaceParams,
   PackageTrustWorkspaceResult: P.PackageTrustWorkspaceResult,
+  SkillImportParams: P.SkillImportParams,
+  SkillImportResult: P.SkillImportResult,
   PluginTreeArtifact: P.PluginTreeArtifact,
   PluginTreeApplyParams: P.PluginTreeApplyParams,
   PluginTreeRollbackParams: P.PluginTreeRollbackParams,

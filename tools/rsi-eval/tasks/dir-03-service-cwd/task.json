@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Generate the `inventory` report with the service's run.py and save its output as reports/inventory.txt at the repository root.",
+          "text": "Generate the `inventory` report with the service's run.py and save its output as reports/inventory.txt at the repository root. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat reports/inventory.txt",
@@ -21,7 +21,7 @@
           "solution": ["mkdir -p reports", "(cd service && python3 run.py inventory) > reports/inventory.txt"]
         },
         {
-          "text": "Generate the `orders` report with the service's run.py and save its output as reports/orders.txt at the repository root.",
+          "text": "Remember, run.py opens ./config.ini, so it has to be started from inside service/. Generate the `orders` report with the service's run.py and save its output as reports/orders.txt at the repository root.",
           "checks": [
             {
               "command": "cat reports/orders.txt",

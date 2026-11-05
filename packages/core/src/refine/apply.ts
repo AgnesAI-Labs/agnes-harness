@@ -19,16 +19,26 @@ export type ApplyLimits = {
   maxChars: number
   safetyCap: number
   contractPrefixMarkers?: string[]
-  // Test hook: stands in for the handed-off marker until it exists.
+  /** Which entries weigh on the cap; by default every live entry not handed off (`isCountedEntry`). */
   isCounted?: (entry: HarnessEntry) => boolean
+  /** An upserted entry bound to an approved resource that cannot be used now (`rejected:evidence`). */
+  isUnavailable?: (entry: HarnessEntry) => boolean
 }
 
 /**
- * Whether an entry weighs on the per-kind safety cap. Only valid, not handed-off entries should;
- * the handed-off marker does not exist yet, so for now every live entry counts. A caller can supply
- * its own predicate through `ApplyLimits.isCounted`.
+ * Whether an entry weighs on the per-kind safety cap: every live entry, except one handed off to the
+ * workspace (its metadata, bound to the row that set it, says so). The refinement scheduler further
+ * leaves out the entries that are not in force (`ApplyLimits.isCounted`).
  */
-export const isCountedEntry = (_entry: HarnessEntry): boolean => true
+export const isCountedEntry = (entry: HarnessEntry, state?: LedgerState): boolean => {
+  if (!state) return true
+  const key = entryKey(entry)
+  const cell = state.registers.harnessEntries.get(key)
+  // An entry about to be written is a new version: its metadata does not describe it yet.
+  if (cell?.value !== entry) return true
+  const meta = state.refinementEntryMeta.get(key)
+  return !(meta?.handedOff === true && meta.entrySeq === cell.seq)
+}
 
 /** A refinement proposal as `applyRefine` takes it: a run id is mandatory, since it is the idempotency key. */
 export type ApplyProposal = RefineProposal & { runId: string }
@@ -120,7 +130,7 @@ export async function applyRefine(
     maxChars: l.maxChars,
     safetyCap: l.safetyCap,
     markers: l.contractPrefixMarkers ?? [],
-    isCounted: l.isCounted ?? isCountedEntry,
+    isCounted: l.isCounted ?? ((entry: HarnessEntry) => isCountedEntry(entry, s.state)),
   }
   const entries = s.state.registers.harnessEntries
   const editKey = (e: HarnessEdit): string => entryKey(e.op === 'upsert' ? e.entry : e)
@@ -185,6 +195,9 @@ export async function applyRefine(
     const hit = await s.d.log.scan({ fromSeq: seq, toSeq: seq })
     if (hit.length === 0) return reject('rejected:evidence', 'unknown-evidence')
   }
+
+  if (p.edits.some((e) => e.op === 'upsert' && l.isUnavailable?.(e.entry)))
+    return reject('rejected:evidence', 'reference-unavailable')
 
   for (const e of p.edits) {
     if (e.op !== 'upsert') continue

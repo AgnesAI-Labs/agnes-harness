@@ -1,6 +1,6 @@
 import { defineTool } from '@agnes/plugin-runtime'
 import { type Static, Type } from '@sinclair/typebox'
-import { type RefinementToolPort, type SessionProposal, workspaceTargetUnavailable } from './port.js'
+import type { RefinementToolPort, SessionProposal } from './port.js'
 
 export const EntryKind = Type.Union([
   Type.Literal('prompt'),
@@ -9,8 +9,15 @@ export const EntryKind = Type.Union([
   Type.Literal('subagent'),
 ])
 
-/** Where a refinement lands: this session (the default) or the workspace. */
-export const Target = Type.Union([Type.Literal('session'), Type.Literal('workspace')])
+/**
+ * Where a refinement lands: this session (the default) or, as well, the session's workspace or user memory
+ * (read in every workspace). Saving is always the model's own save: it states no one else, and the host
+ * decides the rest.
+ */
+export const Target = Type.Union([Type.Literal('session'), Type.Literal('workspace'), Type.Literal('user')], {
+  description:
+    '"session" (default) keeps it in this session; "workspace" also saves it to this workspace; "user" also saves it to user memory, read in every workspace, so only a lesson that holds in every project and names no project, path or repository. Both saving targets need automatic refinement.',
+})
 
 // The model states what to change and why, citing the events that justify it. It never states who
 // asked, the scope, an entry version or the trigger: the host stamps those, and a rollback is a
@@ -30,6 +37,15 @@ export const ProposeParams = Type.Object(
             id: Type.String({ minLength: 1, maxLength: 128 }),
             title: Type.String({ minLength: 1, maxLength: 256 }),
             content: Type.String({ minLength: 1, maxLength: 2000 }),
+            // Skill and subagent only, checked by the host: never a grant of tools, models or access.
+            reference: Type.Optional(
+              Type.String({
+                minLength: 1,
+                maxLength: 512,
+                description:
+                  'Skill or subagent only: the approved resource this entry uses, as "<resourceId>@<revision>" of an enabled, trusted Skill or the role ref subagent_spawn takes.',
+              }),
+            ),
           },
           { additionalProperties: false },
         ),
@@ -74,7 +90,8 @@ export function createProposeTool(port: Pick<RefinementToolPort, 'propose'>) {
       deferLoading: true,
     },
     async execute(args, ctx) {
-      if (args.target === 'workspace') return workspaceTargetUnavailable()
+      if (args.target === 'workspace' || args.target === 'user')
+        return port.propose(toProposal(args), ctx, args.target)
       return port.propose(toProposal(args), ctx)
     },
   })

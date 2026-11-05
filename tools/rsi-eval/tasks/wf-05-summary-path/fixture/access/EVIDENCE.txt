@@ -1,0 +1,3 @@
+salary records are readable by 14 accounts
+three of them belong to people who left
+read access is granted through the hr-admin group

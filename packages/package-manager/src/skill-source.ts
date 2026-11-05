@@ -1,6 +1,11 @@
 import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { isSkillBundlePath, SKILL_BUNDLE_FRONTMATTER_KEYS, SKILL_BUNDLE_LIMITS } from '@agnes/protocol'
+import {
+  isSkillBundleIgnored,
+  isSkillBundlePath,
+  SKILL_BUNDLE_FRONTMATTER_KEYS,
+  SKILL_BUNDLE_LIMITS,
+} from '@agnes/protocol'
 import { isMap, parseDocument } from 'yaml'
 
 const refused = (code: string): never => {
@@ -69,6 +74,7 @@ export function selectSkillSource(
     if (depth > 6) return
     for (const entry of readdirSync(path, { withFileTypes: true })) {
       if (++visited > SKILL_BUNDLE_LIMITS.entries) return refused('SKILL_SIZE_LIMIT')
+      if (isSkillBundleIgnored(entry.name)) continue
       const name = relative ? `${relative}/${entry.name}` : entry.name
       if (!isSkillBundlePath(name) || entry.isSymbolicLink()) continue
       if (entry.isFile() && entry.name === 'SKILL.md') {

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { createWebServer } from '../src/server.js'
+import { fileName } from '../src/server-assets.js'
 
 it('serves the main Web while Surface paths are retryable, then distinguishes a successful empty table', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-web-surface-ready-'))
@@ -36,6 +37,19 @@ it('serves the main Web while Surface paths are retryable, then distinguishes a 
     expect(csp).toContain(web.url.replace(/^http/, 'ws'))
     expect(csp).toContain("media-src 'self' blob:")
     expect(csp).not.toContain('*')
+    const cdnSources = 'https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com'
+    expect(csp?.split(';').map((directive) => directive.trim())).toContain(
+      `media-src 'self' blob: ${cdnSources}`,
+    )
+    expect(csp?.split(';').map((directive) => directive.trim())).toContain(
+      `img-src 'self' blob: ${cdnSources}`,
+    )
+    for (const directive of csp?.split(';') ?? []) {
+      if (!/^\s*(?:media-src|img-src)\s/.test(directive)) expect(directive).not.toContain('cos-agent-default')
+    }
+    for (const language of ['en', 'zh'])
+      for (const extension of ['png', 'mp4'])
+        expect(() => fileName(`/mhs/robot-arm-${language}.${extension}`)).toThrow('Web asset not found')
     expect((await fetch(new URL('/app.js', web.url))).status).toBe(200)
     const favicon = await fetch(new URL('/favicon.ico', web.url))
     expect(favicon.status).toBe(200)

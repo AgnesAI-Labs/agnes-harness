@@ -31,6 +31,8 @@ export type RefinementEntryMeta = {
   confirmations: { count: number; usedEvidence: string[] }
   lastConfirmedSeq?: Seq
   handedOff?: boolean
+  /** Promotable to user memory (every workspace); absent means the workspace only. */
+  reach?: 'user'
   /** The `harness/entry` row this metadata belongs to, and the row that recorded it. */
   entrySeq: Seq
   seq: Seq
@@ -43,7 +45,17 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 
 /** The checked metadata a row carries, or undefined when any field is not what Core writes. */
 function metaOf(d: Record<string, unknown>): Omit<RefinementEntryMeta, 'entrySeq' | 'seq'> | undefined {
-  const { kind, id, contentHash, applicability, taskScope, confirmations, lastConfirmedSeq, handedOff } = d
+  const {
+    kind,
+    id,
+    contentHash,
+    applicability,
+    taskScope,
+    confirmations,
+    lastConfirmedSeq,
+    handedOff,
+    reach,
+  } = d
   if (!KINDS.has(String(kind)) || typeof id !== 'string' || id.length === 0) return undefined
   if (typeof contentHash !== 'string' || contentHash.length === 0) return undefined
   if (applicability !== 'task' && applicability !== 'session') return undefined
@@ -61,6 +73,7 @@ function metaOf(d: Record<string, unknown>): Omit<RefinementEntryMeta, 'entrySeq
     return undefined
   if (lastConfirmedSeq !== undefined && !isSeq(lastConfirmedSeq)) return undefined
   if (handedOff !== undefined && typeof handedOff !== 'boolean') return undefined
+  if (reach !== undefined && reach !== 'user') return undefined
   return {
     kind: kind as RefinementEntryMeta['kind'],
     id,
@@ -75,6 +88,7 @@ function metaOf(d: Record<string, unknown>): Omit<RefinementEntryMeta, 'entrySeq
     },
     ...(lastConfirmedSeq === undefined ? {} : { lastConfirmedSeq }),
     ...(handedOff === undefined ? {} : { handedOff }),
+    ...(reach === 'user' ? { reach } : {}),
   }
 }
 

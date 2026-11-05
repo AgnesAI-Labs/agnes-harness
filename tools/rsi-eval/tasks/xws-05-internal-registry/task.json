@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add the dependency `leftpad` to the project with the team's pkg tool.",
+          "text": "Add the dependency `leftpad` to the project with the team's pkg tool. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat deps.txt",
@@ -21,7 +21,7 @@
           "solution": ["bin/pkg add leftpad --registry internal"]
         },
         {
-          "text": "Add the dependency `colorize` to the project with the team's pkg tool.",
+          "text": "Remember, on this machine pkg only reaches the internal registry: always pass `--registry internal`. Add the dependency `colorize` to the project with the team's pkg tool.",
           "checks": [
             {
               "command": "cat deps.txt",
@@ -46,7 +46,7 @@
       "fixture": "fixture-b",
       "prompts": [
         {
-          "text": "Add the dependency `argparse-lite` to the project with the team's pkg tool.",
+          "text": "Add the dependency `argparse-lite` to the project with the team's pkg tool. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat deps.txt",

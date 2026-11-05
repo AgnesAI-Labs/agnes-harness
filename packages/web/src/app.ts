@@ -1982,9 +1982,6 @@ function modelDefaults(option: ModelPickerOption): KnownSessionModel {
     id: option.id,
     settings: {
       ...record?.defaultSettings,
-      ...(record?.contextWindow
-        ? { contextWindow: record.defaultSettings?.contextWindow ?? record.contextWindow }
-        : {}),
     },
   }
 }
@@ -2028,9 +2025,6 @@ async function selectModelSettings(settings: ModelSettings): Promise<boolean> {
 }
 async function selectModel(option: ModelPickerOption, settings?: ModelSettings): Promise<boolean> {
   const sameModel = knownSessionModel?.route === option.route && knownSessionModel.id === option.id
-  const window =
-    settings?.contextWindow ??
-    runtimeModels.find((m) => m.route === option.route && m.id === option.id)?.contextWindow
   const selected: KnownSessionModel =
     settings === undefined
       ? sameModel && knownSessionModel
@@ -2039,7 +2033,7 @@ async function selectModel(option: ModelPickerOption, settings?: ModelSettings):
       : {
           route: option.route,
           id: option.id,
-          settings: { ...settings, ...(window === undefined ? {} : { contextWindow: window }) },
+          settings: { ...settings },
         }
   const session = sessionBinding.session
   if (sessionPending || modelChangePending || auxiliaryModelPending) return false

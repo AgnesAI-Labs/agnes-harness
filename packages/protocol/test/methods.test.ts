@@ -278,6 +278,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/packages.sourcePolicy',
         '_agnes/v1/packages.remove',
         '_agnes/v1/packages.rollback',
+        '_agnes/v1/packages.skillImport',
         '_agnes/v1/packages.trust',
         '_agnes/v1/packages.trustWorkspace',
         '_agnes/v1/packages.untrust',
@@ -307,6 +308,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/session.btw',
         '_agnes/v1/session.refine',
         '_agnes/v1/session.refine.rollback',
+        '_agnes/v1/session.refine.save',
         '_agnes/v1/session.voice.transcribe',
         '_agnes/v1/session.voice.speak',
         '_agnes/v1/session.bookmarks.set',
@@ -373,6 +375,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/voice.settings.save',
         '_agnes/v1/refinement.get',
         '_agnes/v1/refinement.save',
+        '_agnes/v1/refinement.skills',
         '_agnes/v1/workspace.add',
         '_agnes/v1/workspace.list',
         '_agnes/v1/workspace.reveal',
@@ -388,7 +391,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(234)
+    expect(Object.keys(METHODS)).toHaveLength(237)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({

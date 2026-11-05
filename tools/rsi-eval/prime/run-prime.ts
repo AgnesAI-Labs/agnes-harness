@@ -45,7 +45,8 @@ export type RunOptions = {
   dockerCommand?: string[]
 }
 
-export const runId = (taskId: string, setting: Setting, rep: number): string => `${taskId}.${setting}.r${rep}`
+export const runId = (taskId: string, setting: Setting | 'oracle' | 'frozen', rep: number): string =>
+  `${taskId}.${setting}.r${rep}`
 
 export function primeSettings(setting: Setting, cfg: RunConfig): object {
   return {
@@ -76,6 +77,9 @@ export function primeModels(cfg: RunConfig, id: string): object {
 /** Where a session's workspace is mounted in its container: /work, or /work-b for fixture-b. */
 export const mountPoint = (task: EvalTask, sessionIndex: number): string =>
   `/${workspaceName(fixtureOf(task, sessionIndex))}`
+
+/** Workflow tasks need the `workflow` tool, which Prime does not have; they run on AGH only. */
+export const primeTasks = (tasks: EvalTask[]): EvalTask[] => tasks.filter((t) => t.category !== 'workflow')
 
 /** The tasks whose first session ends with a save that outlives the workspace. */
 const CARRIES_OVER: ReadonlySet<EvalTask['category']> = new Set(['cross-session', 'cross-workspace'])
@@ -311,6 +315,11 @@ export function readConfig(file: string): RunConfig {
   for (const key of ['input', 'output', 'cacheRead', 'cacheWrite']) {
     if (typeof prices?.[key] !== 'number') throw new Error(`run-config: prices.${key} must be a number`)
   }
+  for (const key of ['contextWindow', 'maxOutputTokens'])
+    if (raw[key] !== undefined && (!Number.isInteger(raw[key]) || (raw[key] as number) < 1))
+      throw new Error(`run-config: "${key}" must be a positive integer when given`)
+  if (raw.pricesAssumed !== undefined && typeof raw.pricesAssumed !== 'boolean')
+    throw new Error('run-config: "pricesAssumed" must be true or false when given')
   for (const key of ['proxyPort', 'sessionTimeoutMs']) {
     if (typeof raw[key] !== 'number') throw new Error(`run-config: "${key}" must be a number`)
   }
@@ -324,7 +333,7 @@ async function main(argv: string[]): Promise<void> {
       config: { type: 'string' },
       out: { type: 'string' },
       tasks: { type: 'string' },
-      reps: { type: 'string', default: '5' },
+      reps: { type: 'string', default: '3' },
       settings: { type: 'string', default: 'on,off' },
       image: { type: 'string', default: DEFAULT_IMAGE },
       'tasks-dir': { type: 'string', default: defaultTasksDir },
@@ -332,7 +341,7 @@ async function main(argv: string[]): Promise<void> {
   })
   if (!values.config || !values.out) {
     throw new Error(
-      'usage: run-prime.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 5] [--settings on,off] [--image <tag>]',
+      'usage: run-prime.ts --config <run-config.json> --out <dir> [--tasks a,b] [--reps 3] [--settings on,off] [--image <tag>]',
     )
   }
   const cfg = readConfig(values.config)
@@ -349,9 +358,13 @@ async function main(argv: string[]): Promise<void> {
     import('../usage-proxy.js'),
   ])
   const tasksDir = resolve(values['tasks-dir'] as string)
-  let tasks = loadSuite(tasksDir)
+  const suite = loadSuite(tasksDir)
+  let tasks = primeTasks(suite)
   if (values.tasks) {
     const wanted = values.tasks.split(',').map((s) => s.trim())
+    const workflow = wanted.filter((id) => suite.some((t) => t.id === id && t.category === 'workflow'))
+    if (workflow.length > 0)
+      throw new Error(`these tasks need the workflow tool, which Prime does not have: ${workflow.join(', ')}`)
     const missing = wanted.filter((id) => !tasks.some((t) => t.id === id))
     if (missing.length > 0) throw new Error(`unknown task ids: ${missing.join(', ')}`)
     tasks = tasks.filter((t) => wanted.includes(t.id))

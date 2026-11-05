@@ -23,6 +23,7 @@ import type {
   PersistenceProvider,
   SandboxProvider,
   TaskScopeSource,
+  WorkflowRunSource,
 } from '@agnes/extension-api'
 import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajectory-contract'
@@ -148,12 +149,29 @@ export type SeamInitContext = {
    * its state; supplied only to the plugin that owns tasks. Returns what withdraws the offer.
    */
   provideTaskScope?: (source: TaskScopeSource) => () => void
+  /**
+   * Offers the session's workflow runs to the host as one of the plugin's projections and a reader of
+   * its state, so a finished run can be kept as a skill; supplied only to the plugin that runs
+   * workflows. Returns what withdraws the offer.
+   */
+  provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
 }
 
-/** A session's managed refinement as the refinement tools reach it. */
+/**
+ * A session's managed refinement as the refinement tools reach it. `saveTo` asks for what is applied
+ * to be saved to the session's workspace (`'workspace'`) or to user memory (`'user'`) too, always as the
+ * model's save.
+ */
 export type RefinementRunsPort = Readonly<{
-  propose(session: { key: string; lane: string }, proposal: DirectProposal): Promise<RefinementOutcome>
-  request(session: { key: string; lane: string }, request: { focus?: string }): Promise<RefinementOutcome>
+  propose(
+    session: { key: string; lane: string },
+    proposal: DirectProposal,
+    options?: { saveTo?: 'workspace' | 'user' },
+  ): Promise<RefinementOutcome>
+  request(
+    session: { key: string; lane: string },
+    request: { focus?: string; saveTo?: 'workspace' | 'user' },
+  ): Promise<RefinementOutcome>
   /** Reads that session's own entries in force; nothing is written. */
   inspect(session: { key: string; lane: string }, request: InspectRequest): Promise<InspectOutcome>
 }>

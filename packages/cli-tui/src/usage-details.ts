@@ -36,13 +36,20 @@ export function formatCallUsage(node: Extract<UINode, { kind: 'cost' }>): string
     .join('\n')
 }
 
-/** The refinement lane's own line: what background experience review cost, in whatever it was priced. */
+/**
+ * The refinement lane's own line: what background experience review cost, in whatever it was priced. A
+ * model priced at zero shows a zero cost; one with no known price (planned only with the user's
+ * agreement) has neither dollars nor credits, and the line says the price is unknown.
+ */
 function refinementRow(total: UsageView, locale: string): string[] {
   const share = refinementShare(total)
   if (!share) return []
   const parts = [
     ...(share.usdMicros === undefined ? [] : [formatUsdMicros(share.usdMicros)]),
     ...(share.credits === undefined ? [] : [`${formatCredits(share.credits)} credits`]),
+    ...(share.usdMicros === undefined && share.credits === undefined
+      ? [tt('usage.rows.rsiUnknown', locale)]
+      : []),
     tt('usage.rows.rsiTokens', locale, { input: share.input, output: share.output }),
   ]
   return [tt('usage.rows.rsi', locale, { value: parts.join(' · ') })]

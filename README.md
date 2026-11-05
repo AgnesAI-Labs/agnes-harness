@@ -182,6 +182,8 @@ The same template also starts a tool with a panel, an agent loop, a model adapte
 
 [Plugin quickstart](docs/extend/quickstart.md) · [Plugin development](docs/develop/plugins.md) · [Try without a model account](docs/guide/demo.md#run-locally-without-a-model-account)
 
+**Share your plugin.** Put it in its own GitHub repository with `package.json` at the root, release it with `vX.Y.Z` tags, and add the GitHub topic `agh-plugin` so it appears on [github.com/topics/agh-plugin](https://github.com/topics/agh-plugin). Anyone can then install a release with `agh plugins add git:https://github.com/<owner>/<repo>#vX.Y.Z`. Official plugins are also listed in the [AGH plugin market index](https://github.com/AgnesAI-Labs/agh-plugin-market).
+
 ## Demo videos and reproduction
 
 ### MHS Mars rescue: coordinating devices

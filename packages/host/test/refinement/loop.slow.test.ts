@@ -512,7 +512,8 @@ async function loop(api: Api, dataDir: string): Promise<void> {
       )
       const plan = rows[2]?.data.plan as { edits: { evidenceSeqs: number[] }[] }
       expect(plan.edits[0]?.evidenceSeqs).toEqual([request?.seq, failed?.seq, fixed?.seq])
-      expect(plan.edits[0]).toMatchObject({ applicability: 'session', quote: QUOTE })
+      expect(plan.edits[0]).toMatchObject({ applicability: 'session' })
+      expect(plan.edits[0]).not.toHaveProperty('quote')
       // One background call on the maintenance lane.
       const intents = await scan(t.session, 'x/core/maintenance-intent')
       expect(intents.map((row) => row.lane)).toEqual(['refinement'])
@@ -522,7 +523,10 @@ async function loop(api: Api, dataDir: string): Promise<void> {
         expect.arrayContaining(['x/core/refinement-run', 'x/core/maintenance-intent']),
       )
       // The tools are registered: the switch was on when the host was assembled.
-      expect(deferredListing(t.main()[0])).toContain('harness_refine')
+      // harness_refine is always loaded (its schema is in the request); the other two are listed as deferred.
+      expect(t.main()[0]?.raw).toContain('harness_refine')
+      expect(deferredListing(t.main()[0])).not.toContain('harness_refine')
+      expect(deferredListing(t.main()[0])).toContain('harness_propose')
       expect(t.planner()).toHaveLength(1)
       expect(t.planner()[0]?.raw).toContain('Trigger: model.')
       const evidence = evidenceOf(t.planner()[0]?.body)

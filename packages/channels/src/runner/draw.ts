@@ -188,6 +188,7 @@ export function whatToDraw(
     case 'context-sections':
     case 'contribute-conflict':
     case 'refinement-run':
+    case 'refinement-save':
     case 'context':
       // Advisory diagnostic rows for /context, a background experience review's progress, and
       // harness-internal notices (hook notes, per-request fact snapshots) riding the user/message

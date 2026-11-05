@@ -1,6 +1,12 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import {
+  ExternalPackageDescriptor,
+  McpImportPreview,
+  SkillEnvironmentRequirement,
+} from '../gen/ts/package-admin.js'
+import { checkAdminData } from '../src/admin-contract.js'
+import {
   checkSequence,
   type EventEnvelope,
   type Frame,
@@ -249,6 +255,11 @@ const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown
     validatePackageAdminData('PackageTrustWorkspaceParams' satisfies PackageAdminDataName, x),
   PackageTrustWorkspaceResult: (x) =>
     validatePackageAdminData('PackageTrustWorkspaceResult' satisfies PackageAdminDataName, x),
+  SkillImportParams: (x) => validatePackageAdminData('SkillImportParams' satisfies PackageAdminDataName, x),
+  SkillImportResult: (x) => validatePackageAdminData('SkillImportResult' satisfies PackageAdminDataName, x),
+  SkillEnvironmentRequirement: (x) => checkAdminData(SkillEnvironmentRequirement, x),
+  McpImportPreview: (x) => checkAdminData(McpImportPreview, x),
+  ExternalPackageDescriptor: (x) => checkAdminData(ExternalPackageDescriptor, x),
   PluginTreeArtifact: (x) => validatePackageAdminData('PluginTreeArtifact' satisfies PackageAdminDataName, x),
   PluginTreeGetParams: (x) => validatePackageAdminData('PackageListParams' satisfies PackageAdminDataName, x),
   PluginTreeListParams: (x) =>

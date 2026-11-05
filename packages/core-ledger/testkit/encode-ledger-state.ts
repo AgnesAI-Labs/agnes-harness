@@ -15,6 +15,7 @@ export type EncodedLedgerState = Omit<
   | 'refinementRuns'
   | 'refinementEntryMeta'
   | 'refinementTombstones'
+  | 'refinementSaves'
 > & {
   registers: {
     [K in keyof LedgerState['registers']]: Array<
@@ -39,6 +40,9 @@ export type EncodedLedgerState = Omit<
   >
   refinementTombstones: Array<
     [string, LedgerState['refinementTombstones'] extends ReadonlyMap<string, infer V> ? V : never]
+  >
+  refinementSaves: Array<
+    [string, LedgerState['refinementSaves'] extends ReadonlyMap<string, infer V> ? V : never]
   >
 }
 
@@ -65,5 +69,6 @@ export function encodeLedgerState(state: LedgerState): EncodedLedgerState {
     refinementRuns: [...state.refinementRuns],
     refinementEntryMeta: [...state.refinementEntryMeta],
     refinementTombstones: [...state.refinementTombstones],
+    refinementSaves: [...state.refinementSaves],
   }
 }

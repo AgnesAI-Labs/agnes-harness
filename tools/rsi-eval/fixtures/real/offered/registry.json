@@ -1,0 +1,17 @@
+{
+  "receipts": [
+    {
+      "receiptId": "fe8f84ec-9e83-44fe-93dd-e4bd162e10e0",
+      "source": {
+        "kind": "skill",
+        "entryId": "release-request-workflow"
+      },
+      "outcome": "installed",
+      "target": {
+        "kind": "skill",
+        "name": "release-request-workflow"
+      },
+      "at": 1793764623144
+    }
+  ]
+}

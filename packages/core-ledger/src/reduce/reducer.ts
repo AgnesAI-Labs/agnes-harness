@@ -6,6 +6,7 @@ import { ChunkedMap } from './chunked-map.js'
 import { reduceDecision } from './decision.js'
 import { foldEntryMeta, foldEntryTombstone, REFINEMENT_ENTRY_META_EVENT } from './refinement-entry-meta.js'
 import { foldRefinementRun, REFINEMENT_RUN_EVENT } from './refinement-run.js'
+import { foldRefinementSave, REFINEMENT_SAVE_EVENT } from './refinement-save.js'
 import type {
   ArtifactJob,
   BudgetState,
@@ -27,6 +28,7 @@ type Tables =
   | 'refinementRuns'
   | 'refinementEntryMeta'
   | 'refinementTombstones'
+  | 'refinementSaves'
 type Registers = LedgerState['registers']
 type Writable<T> = T extends ReadonlyMap<infer K, infer V> ? Map<K, V> : never
 
@@ -191,8 +193,9 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
         reset('pendingEffects')
         reset('resumedRequests')
         reset('taint')
-        // A child never takes over the parent's runs, planned or pending.
+        // A child never takes over the parent's runs, planned or pending, nor the receipts of its saves.
         reset('refinementRuns')
+        reset('refinementSaves')
         s.toolCalls = ChunkedMap.empty()
         s.creditsUsed = 0
         if (start.delegation?.kind === 'spawn') s.lastLedgerTokens = null
@@ -343,6 +346,11 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       if (meta) table('refinementEntryMeta').set(key, meta)
       const tombstone = foldEntryTombstone(cell, e)
       if (tombstone) table('refinementTombstones').set(key, tombstone)
+      break
+    }
+    case REFINEMENT_SAVE_EVENT: {
+      const saved = foldRefinementSave(e)
+      if (saved) table('refinementSaves').set(saved.receiptId, saved)
       break
     }
     case 'tool/call': {

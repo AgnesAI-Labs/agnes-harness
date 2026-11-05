@@ -11,7 +11,7 @@
     {
       "prompts": [
         {
-          "text": "Add the shop `crepe` with one menu item, `Crêpe Suzette` at 7. Generate its price card with the project's card tool.",
+          "text": "Add the shop `crepe` with one menu item, `Crêpe Suzette` at 7. Generate its price card with the project's card tool. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat cards/crepe.card",
@@ -25,7 +25,7 @@
           "solution": ["printf 'Cr\\xeape Suzette;7\\n' > menus/crepe.txt", "./cards.sh crepe"]
         },
         {
-          "text": "Add the shop `taqueria` with one menu item, `Piña Colada` at 6. Generate its price card with the project's card tool.",
+          "text": "Remember, menu files must be written as ISO-8859-1, not UTF-8 (for example with printf \\xNN escapes or iconv). Add the shop `taqueria` with one menu item, `Piña Colada` at 6. Generate its price card with the project's card tool.",
           "checks": [
             {
               "command": "cat cards/taqueria.card",
@@ -57,7 +57,7 @@
     {
       "prompts": [
         {
-          "text": "Add the shop `smorgas` with one menu item, `Smörgåsbord` at 9. Generate its price card with the project's card tool.",
+          "text": "Add the shop `smorgas` with one menu item, `Smörgåsbord` at 9. Generate its price card with the project's card tool. Just run the tool; don't read its source or docs first.",
           "checks": [
             {
               "command": "cat cards/smorgas.card",

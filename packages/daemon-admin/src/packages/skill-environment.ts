@@ -9,6 +9,7 @@ export async function skillEnvironment(
   files: readonly string[],
   cwd: string,
   signal: AbortSignal,
+  run: typeof runIsolatedCommand = runIsolatedCommand,
 ): Promise<SkillEnvironmentRequirement[]> {
   const result: SkillEnvironmentRequirement[] = []
   let pkg: Record<string, unknown> = {}
@@ -22,7 +23,13 @@ export async function skillEnvironment(
     pkg.engines && typeof pkg.engines === 'object' ? (pkg.engines as Record<string, unknown>) : {}
   const interpreters = [
     { name: 'node', used: files.some((p) => /\.[cm]?js$/.test(p)), args: ['--version'] },
-    { name: 'python', used: files.some((p) => p.endsWith('.py')), args: ['--version'] },
+    {
+      name: 'python',
+      // Default macOS and many Linux distributions ship only `python3`.
+      commands: ['python3', 'python'],
+      used: files.some((p) => p.endsWith('.py')),
+      args: ['--version'],
+    },
     { name: 'bash', used: files.some((p) => /\.(sh|bash)$/.test(p)), args: ['--version'] },
     {
       name: 'pwsh',
@@ -42,14 +49,25 @@ export async function skillEnvironment(
         ? String(engines[interpreter.name]).slice(0, 256)
         : undefined
     try {
-      const probe = await runIsolatedCommand(interpreter.name, interpreter.args, {
-        cwd,
-        env,
-        timeoutMs: 5000,
-        maxOutputBytes: 4096,
-        signal,
-        windowsBatch: 'script',
-      })
+      let probe: Awaited<ReturnType<typeof run>> | undefined
+      let failure: unknown
+      for (const command of interpreter.commands ?? [interpreter.name]) {
+        try {
+          probe = await run(command, interpreter.args, {
+            cwd,
+            env,
+            timeoutMs: 5000,
+            maxOutputBytes: 4096,
+            signal,
+            windowsBatch: 'script',
+          })
+          break
+        } catch (error) {
+          signal.throwIfAborted()
+          failure = error
+        }
+      }
+      if (!probe) throw failure
       const actual = /\d+\.\d+\.\d+/.exec(probe.stdout)?.[0]
       const minimum = required && /^>=\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(required)
       const compare =

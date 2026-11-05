@@ -75,6 +75,7 @@ describe('PM4 management contracts', () => {
       'not-plugin',
       'git-ref',
       'git-fetch',
+      'source-not-found',
     ])
       expect(validatePackageAdminData('PackageAdminError', { ...failure, sourceFailure }).ok).toBe(true)
     expect(
@@ -115,7 +116,8 @@ describe('PM4 management contracts', () => {
     // Five presentation rows preserve valid metadata and reject invalid display/authority fields.
     // Three binding rows cover history-only session ownership and reject invalid availability/owner.
     // Twenty-three role selection rows cover attested bindings, closed roles and state boundaries.
-    expect(result.total).toBe(692)
+    // Six additional standalone Skill/environment/MCP fixtures supplement the import method rows.
+    expect(result.total).toBe(706)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {
@@ -129,7 +131,7 @@ describe('PM4 management contracts', () => {
       )
       .sort()
     expect(names).toEqual(Object.keys(PACKAGE_ADMIN_METHODS).sort())
-    expect(names).toHaveLength(47) // Includes publication status, session migration, authoring and three config methods.
+    expect(names).toHaveLength(48) // Includes publication status, session migration, skill import, authoring and three config methods.
     for (const name of names as PackageAdminMethodName[]) {
       const method = METHODS[name],
         policy = method.administration

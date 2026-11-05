@@ -56,6 +56,11 @@ export interface ConversationMessagesProps {
    * withdrawal.
    */
   withdrawRefinement?: import('./refinement-run.js').RefinementWithdraw | undefined
+  /**
+   * Saves one entry an applied review kept to the session's workspace, as the user's own save. Without
+   * it the review line offers no per-entry save.
+   */
+  saveRefinementEntry?: import('./refinement-save.js').RefinementSaveEntry | undefined
   /** Host-owned interactive cards and deliverables can stay outside collapsed process history. */
   keepNodeVisible?: (node: UINode) => boolean
 }
