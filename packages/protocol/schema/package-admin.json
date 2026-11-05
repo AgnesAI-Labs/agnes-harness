@@ -11,11 +11,23 @@
         "profile": { "type": "string", "minLength": 1, "maxLength": 512 },
         "clientId": { "type": "string", "minLength": 1, "maxLength": 512 },
         "commandId": { "type": "string", "minLength": 1, "maxLength": 128 },
-        "action": { "enum": ["check", "prepare", "commit", "status", "cancel"] },
+        "action": { "description": "runtime-prepare is retained only to refuse legacy requests; configure provider commands manually.", "enum": ["check", "prepare", "commit", "status", "cancel", "rollback", "uninstall", "activation-check", "enable", "disable", "runtime-prepare"] },
+        "runtimeNetwork": { "deprecated": true, "type": "boolean" },
+        "runtimeRegistry": { "deprecated": true, "enum": ["user", "npmjs", "npmmirror"] },
+        "runtimeMode": { "deprecated": true, "enum": ["release", "source"] },
+        "runtimeBuild": { "deprecated": true, "type": "boolean" },
+        "runtimeUnconfined": { "deprecated": true, "type": "boolean" },
         "source": { "$ref": "#/$defs/PackageSource" },
         "subdirectory": { "type": "string", "maxLength": 2048 },
         "scope": { "enum": ["workspace", "user"] },
         "enable": { "type": "boolean" },
+        "testConnection": { "type": "boolean" },
+        "trustResources": { "type": "boolean" },
+        "expectedActivationDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "mcpSandboxProfile": { "enum": ["strict", "workspace-write", "network", "off-with-warning"] },
+        "mcpServers": { "description": "Explicit MCP selection. Omitted means no connections; changes require a new check.", "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 128 } },
+        "skillDirectories": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "type": "string", "maxLength": 2048 } },
+        "credentialBindings": { "type": "object", "maxProperties": 32, "propertyNames": { "pattern": "^[A-Za-z0-9_.-]{1,128}$" }, "additionalProperties": { "type": "string", "pattern": "^secret://[a-z0-9-]+/[a-z0-9._-]+$" } },
         "proposalId": { "type": "string", "minLength": 1, "maxLength": 128 },
         "expectedDigest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
       }
@@ -37,6 +49,75 @@
             "cancelled",
             "interrupted"
           ]
+        },
+        "kind": { "enum": ["skill", "mcp"] },
+        "mcp": { "$ref": "#/$defs/McpImportPreview" },
+        "activation": {
+          "type": "object", "additionalProperties": false,
+          "required": ["digest", "enable", "expiresAt", "resources", "environment", "issues", "warnings"],
+          "properties": {
+            "runtime": {
+              "deprecated": true,
+              "type": "object", "additionalProperties": false,
+              "required": ["strategy", "required", "commands", "issues"],
+              "properties": {
+                "strategy": { "enum": ["npm", "node", "python", "manual", "none"] },
+                "mode": { "enum": ["release", "source"] },
+                "release": {
+                  "type": "object", "additionalProperties": false,
+                  "required": ["name", "version", "repository", "tarball", "integrity"],
+                  "properties": {
+                    "name": { "type": "string", "maxLength": 214 },
+                    "version": { "type": "string", "maxLength": 64 },
+                    "repository": { "type": "string", "maxLength": 2048 },
+                    "tarball": { "type": "string", "maxLength": 4096, "pattern": "^https://" },
+                    "integrity": { "type": "string", "maxLength": 128, "pattern": "^sha512-" }
+                  }
+                },
+                "required": { "type": "boolean" },
+                "commands": { "type": "array", "maxItems": 8, "items": { "type": "string", "maxLength": 1024 } },
+                "issues": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 128 } },
+                "buildScript": { "type": "string", "maxLength": 64 },
+                "buildCommand": { "type": "string", "maxLength": 8192 },
+                "managerVersion": { "type": "string", "maxLength": 64 },
+                "registry": { "type": "string", "maxLength": 2048, "pattern": "^https://" },
+                "sourceDigest": { "type": "string", "maxLength": 256 }
+              }
+            },
+            "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "enable": { "type": "boolean" },
+            "expiresAt": { "type": "string", "maxLength": 64 },
+            "environment": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/SkillEnvironmentRequirement" } },
+            "issues": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 128 } },
+            "warnings": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 128 } },
+            "completed": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 512 } },
+            "outcomes": { "type": "array", "maxItems": 32, "items": {
+              "type": "object", "additionalProperties": false, "required": ["resourceId", "status"],
+              "properties": {
+                "resourceId": { "type": "string", "maxLength": 512 },
+                "status": { "enum": ["succeeded", "failed", "skipped"] },
+                "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" }
+              }
+            } },
+            "errorCode": { "type": "string", "maxLength": 128 },
+            "resources": { "type": "array", "maxItems": 32, "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["kind", "resourceId", "name", "revision", "desired", "trust"],
+              "properties": {
+                "kind": { "enum": ["mcp", "skill"] },
+                "resourceId": { "type": "string", "maxLength": 512 },
+                "name": { "type": "string", "maxLength": 128 },
+                "revision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+                "desired": { "enum": ["enabled", "disabled"] },
+                "trust": { "enum": ["trusted", "untrusted", "rejected"] },
+                "launch": { "type": "string", "maxLength": 20000 },
+                "cwd": { "type": "string", "maxLength": 4096 },
+                "sandboxProfile": { "enum": ["strict", "workspace-write", "network", "off-with-warning"] },
+                "credentialKind": { "type": "string", "maxLength": 32 },
+                "issues": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 128 } }
+              }
+            } }
+          }
         },
         "proposalId": { "type": "string", "maxLength": 128 },
         "name": { "type": "string", "maxLength": 128 },
@@ -60,6 +141,45 @@
         "warnings": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 1024 } },
         "effective": { "const": "next-turn" },
         "resourceOperationId": { "type": "string", "maxLength": 128 }
+      }
+    },
+    "McpImportPreview": {
+      "type": "object", "additionalProperties": false,
+      "required": ["servers", "skills", "requiredCredentials", "configurationFiles", "issues"],
+      "properties": {
+        "servers": { "type": "array", "maxItems": 16, "items": {
+          "type": "object", "additionalProperties": false, "required": ["serverId", "transport", "state"],
+          "properties": {
+            "serverId": { "type": "string", "maxLength": 128 },
+            "transport": { "enum": ["stdio", "http", "sse"] },
+            "command": { "type": "string", "maxLength": 512 },
+            "args": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 512 } },
+            "url": { "type": "string", "maxLength": 2048 },
+            "cwd": { "type": "string", "maxLength": 4096 },
+            "credentialKind": { "type": "string", "maxLength": 32 },
+            "sandboxProfile": { "enum": ["strict", "workspace-write", "network", "off-with-warning"] },
+            "errorCode": { "type": "string", "maxLength": 128 },
+            "selected": { "type": "boolean" },
+            "requiredCredentials": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 128 } },
+            "state": { "enum": ["planned", "registered", "tested", "failed", "removed", "not-installed"] },
+            "revision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "toolCount": { "type": "integer", "minimum": 0, "maximum": 10000 }
+          }
+        } },
+        "skills": { "type": "array", "maxItems": 16, "items": {
+          "type": "object", "additionalProperties": false, "required": ["path", "name", "state"],
+          "properties": {
+            "path": { "type": "string", "maxLength": 2048 }, "name": { "type": "string", "maxLength": 128 },
+            "state": { "enum": ["prepared", "unsupported", "installed", "removed"] },
+            "fileCount": { "type": "integer", "minimum": 0, "maximum": 2048 },
+            "resourceId": { "type": "string", "maxLength": 512 },
+            "revision": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        } },
+        "requiredCredentials": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 128 } },
+        "configurationFiles": { "type": "array", "maxItems": 4, "items": { "type": "string", "maxLength": 256 } },
+        "issues": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 128 } }
       }
     },
     "SkillEnvironmentRequirement": {
@@ -2066,6 +2186,46 @@
       },
       "required": ["generations", "plugins"]
     },
+    "ExternalPackageDescriptor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "source", "result", "resources"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^mcp-import-[a-f0-9-]{36}$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "desired": { "enum": ["enabled", "disabled", "mixed"] },
+        "primaryStatus": {
+          "type": "object", "additionalProperties": false,
+          "required": ["state", "reasonCode", "reason", "nextAction"],
+          "properties": {
+            "state": { "enum": ["ready", "blocked", "disabled", "untrusted"] },
+            "reasonCode": { "enum": ["ready", "trust-required", "disabled", "activation-failed", "starting", "observation-unavailable", "policy-blocked"] },
+            "reason": { "type": "object", "additionalProperties": false, "required": ["en", "zh-CN"], "properties": {
+              "en": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "zh-CN": { "type": "string", "minLength": 1, "maxLength": 256 }
+            } },
+            "nextAction": { "enum": ["trust", "enable", "none"] }
+          }
+        },
+        "version": { "type": "string", "maxLength": 64 },
+        "description": { "type": "string", "maxLength": 1024 },
+        "installedAt": { "type": "string", "maxLength": 64 },
+        "source": { "$ref": "#/$defs/PackageSource" },
+        "result": { "$ref": "#/$defs/SkillImportResult" },
+        "resources": { "type": "array", "maxItems": 32, "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["kind", "resourceId", "name", "state"],
+          "properties": {
+            "kind": { "enum": ["mcp", "skill"] },
+            "resourceId": { "type": "string", "maxLength": 512 },
+            "name": { "type": "string", "maxLength": 128 },
+            "state": { "enum": ["present", "changed", "missing", "unknown", "removed"] },
+            "desired": { "enum": ["enabled", "disabled"] },
+            "trust": { "enum": ["trusted", "untrusted", "rejected"] },
+            "actual": { "type": "string", "maxLength": 64 }
+          }
+        } }
+      }
+    },
     "PackageListResult": {
       "type": "object",
       "additionalProperties": false,
@@ -2073,6 +2233,7 @@
         "generations": {
           "$ref": "#/$defs/PluginGenerationStatus"
         },
+        "externalPackages": { "type": "array", "maxItems": 1024, "items": { "$ref": "#/$defs/ExternalPackageDescriptor" } },
         "packages": {
           "type": "array",
           "items": {

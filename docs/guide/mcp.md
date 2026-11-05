@@ -8,6 +8,36 @@ English | [简体中文](mcp.zh-CN.md)
 
 Connect an existing MCP tool service to AGH's task flow. This guide covers adding a service, reviewing its tool scope, connecting, and checking actual state after configuration changes.
 
+## External plugin compatibility
+
+AGH native plugins remain the primary ecosystem. Community imports reuse generic Skills and static MCP declarations; they do not emulate DSH or another harness runtime. AGH starts only the reviewed command or connects to the declared address. Provider-declared package launchers such as `npx` may download their own packages when started, subject to the existing MCP trust and sandbox settings.
+
+AGH does not infer npm packages from repository metadata, install dependencies, build Git source or repair native artifacts. If the declared local script is absent, enable review explains the missing entry. Obtain the provider’s runnable distribution and configure its command in **Connections (MCP)**. Deeply customized plugins may remain unsupported. A launcher’s internal prerequisites can only be confirmed by actually connecting; a failed connection is reported per item and does not block other reviewed Skills. Enabling a Skill does not make an unavailable MCP dependency work.
+
+Previously prepared installations retain their commands, integrity checks and uninstall cleanup. Old automatic-preparation requests are refused; no new preparation runs are created.
+
+## Import from a community repository
+
+MCP connections are unchecked by default. Select the connections you want, then apply the selection to check a new frozen plan. AGH does not infer whether MCP is required. Only selected connections participate in credential, environment, conflict and connection-test checks; Skills can be installed without them. An empty installation cannot be submitted. Existing installed connections are not removed by this choice. SDK callers pass `mcpServers` during both check and commit; omission means no connections, and commit must match the checked selection.
+
+An imported MCP package appears in **Plugins** with the same source badge, state, switch and action menu as other plugins. Its detail shows the pinned source, declared version and associated connections and selected Skills. The switch reviews and coordinates these capabilities: enable attempts MCP connections and then Skills; disable attempts Skills and then connections. A failure or ineligible capability is reported per item while other reviewed capabilities continue. Partial results remain visible after refresh or restart; check again to retry, without restarting capabilities already at the requested state. Trust requires explicit confirmation. Current revisions, permissions and runtime requirements are checked again before applying the reviewed plan. Missing capabilities are reported, edited capabilities are protected, and partial failures stay visible. Connections and Skills can still be managed independently. Existing MCP import receipts remain visible after an upgrade without reinstalling.
+
+Runtime checks use the new service's execution environment, not a previous installation report. After changing Node, stop the old service and restart AGH using the intended Node executable; changing a terminal's Node does not replace the runtime of an already running service. The package row reports actual readiness separately from the desired switch state.
+
+Use **Uninstall plugin** in that detail to remove the package's unchanged resources. Uninstall requires current install and remove permissions; it retains edited resources and reports conflicts, and tolerates resources already removed individually. Managed source files are removed only after a complete uninstall. This record does not add native AGH runtime compatibility or automatic external package updates.
+
+In **Plugins → Market**, open a community repository and choose **Check and install**. The background check recognizes static `mcpServers` declarations in `.mcp.json`, `mcp.json`, `.codex-plugin/mcp.json`, or `.claude-plugin/plugin.json`. It supports stdio, HTTP and SSE; conflicting declarations, unknown settings, shell commands and unsafe paths are refused. A repository topic is only a discovery label. This entry does not emulate another host's plugins.
+
+Review every command or URL and its working directory. Bind authentication placeholders to existing `secret://provider/name` references; literal credential and environment values are refused. Optional Skills under `skills/`, `.agents/skills/` and `.claude/skills/` are listed separately. Choose the ones to install; existing Skills and connections are never overwritten. Imported Skills remain disabled. The source limit is 10,000 entries, 128 MiB and 32 directory levels; each Skill retains its own complete-bundle limits.
+
+Adding connections does not start them. Explicitly selecting the connection test trusts the frozen definitions and starts their commands or contacts their services through the existing MCP runtime. A successful test leaves the connections disabled; enable them in **Connections (MCP)** when needed. Runtime requirements and unknown dependencies are displayed separately. Checks do not run package install/build hooks, install dependencies, or change the global toolchain. A command such as a package runner may itself acquire dependencies when you explicitly start or test it.
+
+Local isolation defaults to `strict`. To choose another existing sandbox profile, change the selector and apply it with another check before confirming. `off-with-warning` requires an explicit choice and shows that the process receives your user account access. An unavailable sandbox remains a connection-test failure; importing a source never silently disables it. OAuth services still require sign-in through the existing connection manager.
+
+The window reports resources added before a partial failure. **Undo items added by this import** removes only this import's new resources with unchanged revisions. Edited resources are retained. Interrupted writes whose ownership is uncertain require review in the resource manager; they are not automatically deleted. Restarting does not replay an interrupted import or start a server. Managed source files are retained for local commands until a successful undo removes their import.
+
+The Node SDK uses `client.packages.skillImport`: `check` returns a task immediately, `status` reports progress, and `commit` binds `expectedDigest`, optional `skillDirectories`, and `testConnection`. `credentialBindings` and `mcpSandboxProfile` belong to the check that creates the frozen plan. Explicit `rollback` also requires the digest. Existing synchronous `prepare` remains available for CLI callers; prefer the background check for large repositories. MCP imports create profile connections and user-scope companion Skills.
+
 Definitions, security approval, desired enablement, and actual connection state remain separate in the control plane. In Web, users review the definition and choose Enable once; AGH completes the approval check before enabling. Inspect the catalog, then verify a real tool call.
 
 In Web, choose **Add MCP service**, then **Local command** or **Remote service**. Enter a name and the command or URL. Commands retain quoted arguments; they are not run through a shell. Select a saved credential when authentication is required. Local commands require the exact token environment variable documented by the service, such as `CONTEXT7_API_KEY` for Context7; the form no longer defaults to a generic `TOKEN`.
@@ -29,6 +59,8 @@ After editing the command, URL, credentials or other connection settings, the ne
 <a id="在会话中接入"></a>
 
 Each remote tool has one local name, `mcp__<server>__<tool>`. Names changed by sanitization, length limits or collisions carry a hash and stay within 64 characters. Each server receives only its own prefix grant; execution still sends the original remote tool name. Per-server resource bridge tools use the same naming rule.
+
+For SDK group enable/disable operations, inspect activation.outcomes and phase: installed can mean partial success. Outcomes identify succeeded, failed and skipped resources; recheck before retrying.
 
 ## Add a service in a session
 

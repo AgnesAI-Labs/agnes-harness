@@ -181,7 +181,13 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
         t={t}
         workspaceId={data.plugins?.workspaceId?.()}
         canSave={view?.canEffect('packages.activate') ?? false}
+        packageRevision={view?.state.externalPackages}
         packageName={(id) => {
+          if (id.startsWith('resource:')) {
+            return view?.state.externalPackages?.find((entry) =>
+              entry.resources.some((row) => `resource:${row.resourceId}` === id && row.state === 'present'),
+            )?.name
+          }
           const item = view?.state.installed.find((entry) => entry.id === id)
           return item
             ? resolvePluginMetadata(item.metadata, view?.locale.getSnapshot() ?? 'en')?.displayName

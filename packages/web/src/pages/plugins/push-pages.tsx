@@ -2,6 +2,8 @@ import { usePushStack } from '@agnes/web-ui'
 import { type ReactNode, useEffect } from 'react'
 import type { PluginView } from './admin-view.js'
 import { CapabilityDetail } from './capabilities.js'
+import { ExternalLifecyclePage } from './external-lifecycle.js'
+import { ExternalPackagePages } from './external-packages.js'
 import { InstallReviewPage } from './install-page.js'
 import { PluginPages } from './plugin-pages.js'
 import {
@@ -75,6 +77,8 @@ export function PluginsPushPages({
         />
       ))}
       <PluginPages view={view} />
+      <ExternalPackagePages view={view} t={t} />
+      <ExternalLifecyclePage view={view} t={t} />
       <InstallReviewPage view={view} />
     </>
   )

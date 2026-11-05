@@ -431,7 +431,7 @@ export async function fetchSource(
     npmProvenance?: typeof fetchNpmProvenance
     extract?: (tarball: string, into: string, signal?: AbortSignal) => Promise<void>
     signal?: AbortSignal
-    /** Static Skill acquisition; never enters npm installation or package activation. */
+    /** Static external-content acquisition; never enters npm installation or package activation. */
     contentOnly?: boolean
   },
 ): Promise<FetchedSource> {
@@ -533,6 +533,7 @@ export async function fetchSource(
           const archiveRealpath = nativeRealpathSync(tarball)
           if (!archiveStat.isFile() || !contained(nativeRealpathSync(packDir), archiveRealpath))
             throw new Error('unsafe archive')
+          if (archiveStat.size > 256 * 1024 * 1024) throw new Error('archive too large')
           bytes = readFileSync(tarball)
         } catch {
           throw sourceError('npm pack did not produce its declared archive', 'npm-pack-archive')
@@ -563,7 +564,9 @@ export async function fetchSource(
         pkg = opts.contentOnly
           ? { name: 'skill-source', version: '0.0.0', dependencies: {} }
           : metadata(payload)
-        integrity = hashDirectory(payload)
+        integrity = opts.contentOnly
+          ? await hashDirectoryAsync(payload, opts.signal ? { signal: opts.signal } : {})
+          : hashDirectory(payload)
         break
       }
       case 'url': {
@@ -586,7 +589,9 @@ export async function fetchSource(
         pkg = opts.contentOnly
           ? { name: 'skill-source', version: '0.0.0', dependencies: {} }
           : metadata(payload)
-        integrity = hashDirectory(payload)
+        integrity = opts.contentOnly
+          ? await hashDirectoryAsync(payload, opts.signal ? { signal: opts.signal } : {})
+          : hashDirectory(payload)
         break
       }
       case 'local':

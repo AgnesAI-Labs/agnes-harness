@@ -8313,6 +8313,8 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageAdminContext: PackageAdminGen.PackageAdminContext,
     SkillImportParams: PackageAdminGen.SkillImportParams,
     SkillImportResult: PackageAdminGen.SkillImportResult,
+    McpImportPreview: PackageAdminGen.McpImportPreview,
+    ExternalPackageDescriptor: PackageAdminGen.ExternalPackageDescriptor,
     SkillEnvironmentRequirement: PackageAdminGen.SkillEnvironmentRequirement,
     PackageSource: PackageAdminGen.PackageSource,
     PluginCapabilities: PackageAdminGen.PluginCapabilities,

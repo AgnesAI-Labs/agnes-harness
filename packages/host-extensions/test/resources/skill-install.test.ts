@@ -200,6 +200,21 @@ describe('controlled Skill installer', () => {
     await s.request({ action: 'commit', proposalId: second.proposalId })
     expect(await s.done(second.proposalId)).toMatchObject({ state: 'ready' })
     expect(readFileSync(join(s.home, 'skills/demo/bin/fixture.mjs'), 'utf8')).toContain('must not execute')
+    const exclusive = await s.prepare({
+      action: 'prepare-bundle',
+      sourceDirectory: s.source,
+      scope: 'user',
+      enable: false,
+      exclusive: true,
+    })
+    await s.request({ action: 'commit', proposalId: exclusive.proposalId })
+    expect(await s.done(exclusive.proposalId)).toMatchObject({
+      state: 'failed',
+      message: 'SKILL_TARGET_CONFLICT',
+    })
+    expect(readFileSync(join(s.home, 'skills/demo/renderers/render.mjs'), 'utf8')).toBe(
+      'export const version = 2',
+    )
   })
 
   it.each(['payload.exe', 'escape.node', 'payload.wasm'])(

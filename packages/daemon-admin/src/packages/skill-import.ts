@@ -5,6 +5,7 @@ import { createSkillInstaller, type SkillInstallInvocation } from '@agnes/host'
 import { assertSkillSourceLocation, fetchSource, selectSkillSource } from '@agnes/package-manager'
 import { jcs, rpcError, type SkillImportParams, type SkillImportResult } from '@agnes/protocol'
 import type { ResourceControlService } from '@agnes/resource-control-store'
+import { createMcpImports } from './mcp-import.js'
 import type { PackageAdminAuthority } from './permissions.js'
 import { skillEnvironment } from './skill-environment.js'
 import { createSkillImportChecks } from './skill-import-checks.js'
@@ -32,6 +33,7 @@ export function createSkillImportService(options: {
   discovery: Parameters<typeof createSkillInstaller>[1]
   resources: Pick<ResourceControlService, 'call'>
   environment?: typeof skillEnvironment
+  mcpEnvironment?: typeof import('./mcp-import-environment.js').mcpEnvironment
 }) {
   const installer = createSkillInstaller(join(options.directory, 'receipts'), options.discovery)
   const plans = new Map<string, ImportPlan>()
@@ -49,6 +51,7 @@ export function createSkillImportService(options: {
   const controller = new AbortController()
   const cleanup = () => {
     checks.cleanup()
+    mcps.cleanup()
     for (const [key, command] of commands) if (command.expires < Date.now()) commands.delete(key)
     for (const [id, plan] of plans) {
       if (plan.expires > Date.now() || running.has(id)) continue
@@ -75,6 +78,15 @@ export function createSkillImportService(options: {
     const checked = await checks.handle(params, granted, owner)
     if (checked) return checked
     if (params.action === 'check') throw rpcError('INVALID_PARAMS')
+    const mcpResult = await mcps.request(params, granted, owner)
+    if (mcpResult) return mcpResult
+    if (
+      params.action !== 'prepare' &&
+      params.action !== 'commit' &&
+      params.action !== 'cancel' &&
+      params.action !== 'status'
+    )
+      throw rpcError('INVALID_PARAMS')
     const authority: Parameters<ReturnType<typeof createSkillInstaller>['request']>[1] = {
       principalId: granted.principalId,
       profile: params.profile,
@@ -169,7 +181,7 @@ export function createSkillImportService(options: {
     )
     const signal = AbortSignal.any([
       controller.signal,
-      AbortSignal.timeout(120_000),
+      AbortSignal.timeout(240_000),
       ...(checkSignal ? [checkSignal] : []),
     ])
     let retained = false
@@ -181,13 +193,26 @@ export function createSkillImportService(options: {
         signal,
       })
       progress?.('identifying')
-      let selection = selectSkillSource(fetched.dir, params.subdirectory)
-      if (!selection.reason && !selection.directory && selection.candidates.length === 1)
-        selection = selectSkillSource(fetched.dir, selection.candidates[0])
       const origin = {
         sourceDigest: fetched.integrity,
         resolvedSource: (fetched.source ?? params.source) as NonNullable<SkillImportResult['resolvedSource']>,
       }
+      if (!params.subdirectory) {
+        const imported = await mcps.prepare({
+          source: fetched.dir,
+          integrity: fetched.integrity,
+          params,
+          granted,
+          owner,
+          origin,
+          signal,
+          ...(progress ? { progress } : {}),
+        })
+        if (imported) return imported
+      }
+      let selection = selectSkillSource(fetched.dir, params.subdirectory)
+      if (!selection.reason && !selection.directory && selection.candidates.length === 1)
+        selection = selectSkillSource(fetched.dir, selection.candidates[0])
       if (selection.reason) return { state: 'unsupported', message: selection.reason, ...origin }
       if (!selection.directory)
         return { state: 'selection_required', candidates: selection.candidates, ...origin }
@@ -238,7 +263,14 @@ export function createSkillImportService(options: {
     (params, granted, signal, progress) => execute(params, granted, signal, progress),
     (params, granted) => execute(params, granted),
   )
+  const mcps = createMcpImports(options)
   return {
+    async list(profile: string, granted: PackageAdminAuthority) {
+      if (!granted.permissions.includes('packages.read') || granted.installer === 'agent')
+        throw rpcError('CAPABILITY_DENIED')
+      if (profile !== options.profile) return []
+      return mcps.list(jcs([granted.principalId, profile, options.workspace]), granted)
+    },
     async call(params: SkillImportParams, granted: PackageAdminAuthority): Promise<SkillImportResult> {
       cleanup()
       const key = jcs([granted.principalId, granted.clientId, params.commandId])
@@ -255,10 +287,11 @@ export function createSkillImportService(options: {
       if (params.action !== 'status') commands.set(key, { payload, task, expires: Date.now() + 10 * 60_000 })
       return task
     },
-    close() {
+    async close() {
       clearInterval(timer)
       controller.abort()
       checks.close()
+      await mcps.close()
       for (const plan of plans.values()) removeStage(plan.stage)
       plans.clear()
       commands.clear()

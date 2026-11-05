@@ -1,6 +1,6 @@
 /** @vitest-environment happy-dom */
 
-import type { PackageCatalogDescriptor, PackageCatalogPage } from '@agnes/protocol'
+import type { PackageCatalogDescriptor, PackageCatalogPage, SkillImportResult } from '@agnes/protocol'
 import {
   ComputerUseCapability,
   type SettingsComputerUseView,
@@ -12,6 +12,7 @@ import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
+import { ExternalOperationResult } from '../src/pages/plugins/external-operation-result.js'
 import { MarketTab } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
 import { isBusinessAgent, orderInstalled, PluginsTab } from '../src/pages/plugins/plugins-tab.js'
@@ -29,6 +30,62 @@ import { SkillFolders } from '../src/pages/plugins/skill-folders.js'
 import { SkillInstallDialog } from '../src/pages/plugins/skill-import.js'
 
 afterEach(() => document.body.replaceChildren())
+
+it.each(['failed', 'skipped'] as const)('shows persisted partial capability results (%s)', (status) => {
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const activation: NonNullable<SkillImportResult['activation']> = {
+    digest: 'a'.repeat(64),
+    enable: true,
+    expiresAt: '2099-01-01T00:00:00Z',
+    environment: [],
+    issues: [],
+    warnings: [],
+    resources: [
+      {
+        kind: 'mcp',
+        resourceId: 'mcp/rea',
+        name: 'rea',
+        revision: 'b'.repeat(64),
+        desired: 'disabled',
+        trust: 'untrusted',
+      },
+      {
+        kind: 'skill',
+        resourceId: 'skill/companion',
+        name: 'CLI companion',
+        revision: 'c'.repeat(64),
+        desired: 'disabled',
+        trust: 'untrusted',
+      },
+    ],
+    outcomes: [
+      { resourceId: 'mcp/rea', status, code: 'MCP_LOCAL_ENTRY_MISSING' },
+      { resourceId: 'skill/companion', status: 'succeeded' },
+    ],
+  }
+  const t = (key: string, vars: Readonly<Record<string, string | number>> = {}) =>
+    Object.entries(vars).reduce(
+      (value, [name, item]) => value.replaceAll(`{${name}}`, String(item)),
+      pluginsPageCatalog.en[key] ?? key,
+    )
+  try {
+    flushSync(() => root.render(createElement(ExternalOperationResult, { activation, t })))
+    expect(host.textContent).toContain('Partially completed')
+    expect(host.textContent).toContain('1/2')
+    expect(host.textContent).toContain('CLI companion')
+    expect(host.textContent).toContain(status === 'failed' ? 'Failed' : 'Skipped')
+    expect(host.textContent).toContain('The declared local MCP entry file is missing')
+    expect(host.textContent).not.toContain('All 2')
+    activation.outcomes![0] = { resourceId: 'mcp/rea', status: 'succeeded' }
+    flushSync(() => root.render(createElement(ExternalOperationResult, { activation, t })))
+    expect(host.textContent).toContain('All 2')
+    expect(host.textContent).not.toContain('MCP_LOCAL_ENTRY_MISSING')
+  } finally {
+    flushSync(() => root.unmount())
+    host.remove()
+  }
+})
 
 it('keeps skill folders read-only until the page permits configuration writes', async () => {
   const config = {
@@ -395,6 +452,96 @@ it('cancels a late check response when its installation window has already close
   host.remove()
 })
 
+it('reviews MCP connections and commits only explicitly selected Skills and connection tests', async () => {
+  const prepared = {
+    state: 'prepared',
+    kind: 'mcp',
+    proposalId: 'mcp-import-fixture',
+    digest: 'a'.repeat(64),
+    mcp: {
+      servers: [
+        {
+          serverId: 'sample',
+          transport: 'stdio',
+          sandboxProfile: 'strict',
+          command: 'node',
+          args: ['server.mjs'],
+          state: 'planned',
+          selected: false,
+        },
+      ],
+      skills: [{ path: '.agents/skills/companion', name: 'companion', state: 'prepared', fileCount: 2 }],
+      requiredCredentials: [],
+      configurationFiles: ['.mcp.json'],
+      issues: [],
+    },
+  }
+  const skillImport = vi
+    .fn()
+    .mockResolvedValueOnce(prepared)
+    .mockResolvedValueOnce({ ...prepared, state: 'cancelled' })
+    .mockResolvedValueOnce({
+      ...prepared,
+      mcp: {
+        ...prepared.mcp,
+        servers: prepared.mcp.servers.map((server) => ({ ...server, selected: true })),
+      },
+    })
+    .mockResolvedValueOnce({ ...prepared, state: 'installed' })
+  const view = { api: { skillImport }, canEffect: () => true } as unknown as PluginView
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  try {
+    flushSync(() =>
+      root.render(
+        createElement(SkillInstallDialog, {
+          view,
+          initialSource: 'git:https://github.com/example/mcp.git',
+          t: (key) => key,
+          onClose: vi.fn(),
+        }),
+      ),
+    )
+    await act(async () => undefined)
+    expect(host.textContent).toContain('mcp.import.connections')
+    const choices = host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')
+    expect(choices).toHaveLength(2)
+    expect(choices[0]?.checked).toBe(false)
+    expect(choices[1]?.checked).toBe(true)
+    await act(async () => {
+      choices[0]?.click()
+    })
+    const apply = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'mcp.import.configure',
+    )
+    await act(async () => apply?.click())
+    expect(skillImport).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: 'check', mcpServers: ['sample'] }),
+    )
+    const reviewedChoices = host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')
+    expect(reviewedChoices).toHaveLength(3)
+    expect(reviewedChoices[0]?.checked).toBe(true)
+    expect(reviewedChoices[1]?.checked).toBe(true)
+    await act(async () => reviewedChoices[2]?.click())
+    const confirm = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'skill.import.confirm',
+    )
+    await act(async () => confirm?.click())
+    expect(skillImport).toHaveBeenLastCalledWith({
+      action: 'commit',
+      proposalId: prepared.proposalId,
+      expectedDigest: prepared.digest,
+      skillDirectories: ['.agents/skills/companion'],
+      mcpServers: ['sample'],
+      testConnection: true,
+    })
+    expect(host.textContent).toContain('mcp.import.state.installed')
+  } finally {
+    flushSync(() => root.unmount())
+    host.remove()
+  }
+})
+
 it('merges community cards into one gallery and opens complete details without remote requests', async () => {
   const topics = ['agh-plugin', ...Array.from({ length: 19 }, (_, i) => `topic-${i}`)]
   const community: NonNullable<PackageCatalogPage['community']> = {
@@ -660,7 +807,24 @@ it('keeps all plugins in a single list with the bundled helper enable toggle', (
   ]
   const toggle = vi.fn(async () => {})
   const view = {
-    state: { installed: rows, loading: false, inventoryAuthoritative: true, operations: new Map() },
+    state: {
+      installed: rows,
+      loading: false,
+      inventoryAuthoritative: true,
+      operations: new Map(),
+      externalPackages: [
+        {
+          id: 'mcp-import-00000000-0000-4000-8000-000000000000',
+          name: 'sample/mcp-kit',
+          source: { type: 'git', ref: 'git:https://github.com/sample/mcp-kit.git#fixed' },
+          result: { kind: 'mcp', state: 'installed' },
+          resources: [
+            { kind: 'mcp', resourceId: 'mcp/sample', name: 'sample', state: 'present' },
+            { kind: 'skill', resourceId: 'skill/user/companion', name: 'companion', state: 'present' },
+          ],
+        },
+      ],
+    },
     filteredInstalled: () => rows,
     locale: { getSnapshot: () => 'en' },
     query: '',
@@ -692,6 +856,15 @@ it('keeps all plugins in a single list with the bundled helper enable toggle', (
       '@agnes-fde/support-triage',
     )
     expect(host.querySelector('[data-plugin-id="acme/example"]')).not.toBeNull()
+    expect(builtin.querySelector('[data-testid="external-plugin-row"]')?.textContent).toContain(
+      'sample/mcp-kit',
+    )
+    expect(
+      builtin
+        .querySelector('[data-testid="external-plugin-row"] button[role="switch"]')
+        ?.getAttribute('aria-checked'),
+    ).toBe('false')
+    expect(builtin.querySelector('[data-testid="external-plugin-row"] .plugin-row-actions')).not.toBeNull()
     const sourceFilter = host.querySelector<HTMLSelectElement>('select[aria-label="source.label"]')
     if (!sourceFilter) throw new Error('source filter missing')
     flushSync(() => {
@@ -718,6 +891,12 @@ it('keeps all plugins in a single list with the bundled helper enable toggle', (
     expect(enable.disabled).toBe(false)
     enable.click()
     expect(toggle).toHaveBeenCalledWith(expect.objectContaining({ id: '@agnes/plugin-helper' }))
+    view.query = 'companion'
+    flushSync(() => root.render(createElement(PluginsTab, { view, t: (key) => key, summaries: {} })))
+    expect(host.querySelector('[data-testid="external-plugin-row"]')).not.toBeNull()
+    view.query = 'no-such-plugin'
+    flushSync(() => root.render(createElement(PluginsTab, { view, t: (key) => key, summaries: {} })))
+    expect(host.querySelector('[data-testid="external-plugin-row"]')).toBeNull()
   } finally {
     flushSync(() => root.unmount())
   }

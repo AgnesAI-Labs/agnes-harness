@@ -763,7 +763,7 @@ class Service implements PackageAdminService {
           return this.options.manager.sourcePolicy(
             await this.options.profileDirectory(data.profile as string),
           )
-        if (method === '_agnes/v1/packages.list') return await this.list(data as { profile: string })
+        if (method === '_agnes/v1/packages.list') return await this.list(data as { profile: string }, granted)
         if (method === '_agnes/v1/plugins.tree.get')
           return this.pluginTreeView(data as { profile: string }, true)
         if (method === '_agnes/v1/plugins.tree.list')
@@ -1067,12 +1067,18 @@ class Service implements PackageAdminService {
     return item
   }
 
-  private async list(params: { profile: string }): Promise<PackageListResult> {
+  private async list(
+    params: { profile: string },
+    granted?: PackageAdminAuthority,
+  ): Promise<PackageListResult> {
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory)
     const generations = await this.readGenerations(params.profile)
     return {
       packages: await this.projectInventory(params.profile, inventory, generations),
+      ...(granted && this.options.skillImport && granted.installer !== 'agent'
+        ? { externalPackages: await this.options.skillImport.list(params.profile, granted) }
+        : {}),
       ...(generations ? { generations } : {}),
     }
   }

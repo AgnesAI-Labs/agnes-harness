@@ -598,17 +598,15 @@ export class PluginAdminPage {
       this.#presentationRuntime = undefined
       this.#presentationComposition = undefined
       const surfaceLinks = surfaceFeed?.surfaces ?? []
-      this.#state = rememberInventory({
-        ...this.#state,
-        context,
-        installed: list.packages,
-        generations: list.generations,
-        surfaceLinks,
-        tree,
-        inventoryAuthoritative: true,
-        loading: false,
-        connection: 'connected',
-      })
+      this.#state = rememberInventory(
+        {
+          ...this.#state,
+          context,
+          surfaceLinks,
+          tree,
+        },
+        list,
+      )
       this.render()
       void presentation
         .then(({ runtimeCatalog, composition }) => {
