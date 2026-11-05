@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeHome } from '@agnes/host'
 import type { PackageOperationReceipt } from '@agnes/protocol'
@@ -118,7 +118,7 @@ it('enables single and multiple client contributions and retains their roster af
     }
     for (const count of [1, 2]) {
       const name = `@acme/client-${count}`
-      const directory = join(root, `client-${count}`)
+      const directory = join(root, `client-${count} #%中文`)
       await mkdir(directory)
       const plugins = Array.from({ length: count }, (_, index) => ({
         apiRange: '^5.0.0',
@@ -158,7 +158,7 @@ it('enables single and multiple client contributions and retains their roster af
           }),
         )
       }
-      const source = { type: 'file' as const, ref: `file:${directory}` }
+      const source = { type: 'file' as const, ref: `file:${directory.split(sep).join('/')}` }
       const preview = (await complete(await admin.inspect({ ...(await command()), source }))).preview
       if (!preview) throw new Error('preview missing')
       if (!preview.capabilityHash) throw new Error('capability hash missing')

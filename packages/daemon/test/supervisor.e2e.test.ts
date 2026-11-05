@@ -5,7 +5,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { fakeModel } from '@agnes/ai/testkit'
-import { canonicalJson, DEFAULT_COMPUTER_USE, hashInput, type ResolvedProfile, sha256hex } from '@agnes/host'
+import {
+  canonicalJson,
+  DEFAULT_COMPUTER_USE,
+  defaultProcessIdentity,
+  hashInput,
+  type ResolvedProfile,
+  sha256hex,
+} from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
 import { DEFAULT_VOICE_SETTINGS } from '@agnes/protocol'
 import { createClient, type LedgerEvent, memoryJournal, wsTransport } from '@agnes/sdk'
@@ -1302,6 +1309,7 @@ it.each(['session', 'worker'])(
 
 it('retains the original request across worker and daemon crashes, then consumes once', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'agh-decision-cold-'))
+  const recoveryWait = { timeout: 50_000, interval: 500 }
   writeFileSync(join(dir, 'profile.json'), JSON.stringify(buildProfile(dir)))
   writeFileSync(join(dir, 'daemon-config.json'), JSON.stringify(buildConfigFor(dir)))
   const open = async () => {
@@ -1385,22 +1393,27 @@ it('retains the original request across worker and daemon crashes, then consumes
     expect(Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid).toBe(true)
     process.kill(pid, 'SIGKILL')
     // The existing writer lease must lapse; a killed process cannot voluntarily release it.
-    await vi.waitFor(
-      async () => {
-        expect((await sdk.approval.list(session.id)).decisions).toEqual([original])
-        expect(Number(readFileSync(join(dir, 'fixture-worker-pid'), 'utf8'))).not.toBe(pid)
-      },
-      { timeout: 50_000, interval: 500 },
-    )
+    await vi.waitFor(async () => {
+      expect((await sdk.approval.list(session.id)).decisions).toEqual([original])
+      expect(Number(readFileSync(join(dir, 'fixture-worker-pid'), 'utf8'))).not.toBe(pid)
+    }, recoveryWait)
     await sdk.close()
     const remainingWorker = Number(readFileSync(join(dir, 'fixture-worker-pid'), 'utf8'))
+    const remainingIdentity = await defaultProcessIdentity(remainingWorker)
+    expect(remainingIdentity.state).toBe('alive')
     await sup.crash()
-    process.kill(remainingWorker, 'SIGKILL')
+    // Losing the supervisor closes the worker's authority channel and shuts that generation down.
+    // Observe its identity instead of signalling a PID that may already have exited or been reused.
+    await vi.waitFor(async () => {
+      const current = await defaultProcessIdentity(remainingWorker)
+      expect(current.state).not.toBe('unknown')
+      expect(current).not.toEqual(remainingIdentity)
+    }, recoveryWait)
     sup = await open()
     sdk = createClient({ journal: memoryJournal(), transport: sup.transport })
     await vi.waitFor(
       async () => expect((await sdk.approval.list(session.id)).decisions).toEqual([original]),
-      { timeout: 50000, interval: 500 },
+      recoveryWait,
     )
     expect(original?.handle.sessionId).toBe(session.id)
     const command = {
