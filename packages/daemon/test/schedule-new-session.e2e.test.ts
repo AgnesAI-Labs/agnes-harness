@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +14,7 @@ import {
   sha256hex,
 } from '@agnes/host'
 import { createClient, memoryJournal } from '@agnes/sdk'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { afterEach, expect, it, vi } from 'vitest'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
@@ -264,7 +265,7 @@ it.each(['due', 'run-now'] as const)(
     const dir = mkdtempSync(join(tmpdir(), 'agnes-legacy-schedule-'))
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
     mkdirSync(join(dir, 'chats'))
-    const legacy = realpathSync(join(dir, 'chats'))
+    const legacy = nativeRealpathSync(join(dir, 'chats'))
     writeFileSync(join(legacy, 'report.md'), 'old report')
     const profile = buildProfile(dir)
     const profileFile = join(dir, 'profile.json')
@@ -474,7 +475,7 @@ it.each(['committed', 'opened'] as const)(
     const dir = mkdtempSync(join(tmpdir(), 'agnes-legacy-recover-owner-'))
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
     mkdirSync(join(dir, 'chats'))
-    const legacy = realpathSync(join(dir, 'chats'))
+    const legacy = nativeRealpathSync(join(dir, 'chats'))
     writeFileSync(join(legacy, 'report.md'), 'old report')
     const profile = buildProfile(dir)
     const profileFile = join(dir, 'profile.json')

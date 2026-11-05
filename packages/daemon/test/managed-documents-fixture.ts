@@ -1,6 +1,7 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { afterEach, beforeEach } from 'vitest'
 
 let fixture: string | undefined
@@ -9,7 +10,7 @@ beforeEach(() => {
   fixture = mkdtempSync(join(tmpdir(), 'agnes-managed-documents-'))
   const directory = join(fixture, 'Documents')
   mkdirSync(directory, { mode: 0o700 })
-  documents = realpathSync(directory)
+  documents = nativeRealpathSync(directory)
 })
 afterEach(() => {
   if (fixture) rmSync(fixture, { recursive: true, force: true })

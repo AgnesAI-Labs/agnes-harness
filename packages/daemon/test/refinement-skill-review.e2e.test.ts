@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { discoverSkillRoot, skillRoots } from '@agnes/base'
@@ -9,6 +9,7 @@ import {
   createSkillResourceStore,
   RESOURCE_ALL_PERMISSIONS,
 } from '@agnes/resource-control-store'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readInstallBundle } from '../../host-extensions/src/resources/skill-install-files.js'
 import { removeFilesystemSkill } from '../../resource-control-worker/src/skill-remove.js'
@@ -44,7 +45,7 @@ const USER = {
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 
 function setup() {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-skill-review-e2e-')))
+  const root = nativeRealpathSync(mkdtempSync(join(tmpdir(), 'agnes-skill-review-e2e-')))
   roots.push(root)
   const home = join(root, 'home')
   const dataDir = join(home, 'data')
