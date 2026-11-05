@@ -278,7 +278,9 @@ describe('refinement experience delivery', () => {
     }
     expect(`${out.body}${out.data}`).not.toContain('s-deploy')
     expect(`${out.body}${out.data}`).not.toContain('s-docs')
-    expect(out.body).toContain('2 more skill entries are not shown here (including any saved from earlier sessions); use harness_inspect to list them.')
+    expect(out.body).toContain(
+      '2 more skill entries are not shown here (including any saved from earlier sessions); use harness_inspect to list them.',
+    )
     expect(`${out.body}${out.data}`).not.toContain('SECRET-TAIL')
     for (const line of out.data.split('\n').filter((l) => l.startsWith('- [skill/')))
       expect(line.length).toBeLessThanOrEqual(260)
@@ -301,8 +303,12 @@ describe('refinement experience delivery', () => {
     for (const ref of ['[prompt/p-tone v1]', '[prompt/p-review v1]', '[prompt/p-tests v1]'])
       expect(out.data).toContain(ref)
     for (const id of ['m-schema', 'm-cache', 'p-commits']) expect(out.data).not.toContain(id)
-    expect(out.body).toContain('2 more memory entries are not shown here (including any saved from earlier sessions); use harness_inspect to list them.')
-    expect(out.body).toContain('1 more prompt entry is not shown here (including any saved from earlier sessions); use harness_inspect to list them.')
+    expect(out.body).toContain(
+      '2 more memory entries are not shown here (including any saved from earlier sessions); use harness_inspect to list them.',
+    )
+    expect(out.body).toContain(
+      '1 more prompt entry is not shown here (including any saved from earlier sessions); use harness_inspect to list them.',
+    )
     // Within the cap an entry is still given in full, not as a line of metadata.
     expect(out.data).toContain('Facts about the build step.')
     expect(out.omitted).toBe(0)

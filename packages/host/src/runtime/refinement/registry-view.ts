@@ -70,6 +70,7 @@ export function registryView(
     return held
   }
   return Object.freeze({
+    delivers: inForce === 'delivered',
     revision(): string {
       try {
         return answers().revision

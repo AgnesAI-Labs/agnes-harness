@@ -12,7 +12,10 @@ export const SNAPSHOT_FORMAT_LINE = 'Task experience snapshot, format 2.'
  * in earlier sessions joined the snapshot, are still recognised, so a reopened session is not given a
  * second snapshot for them alone.
  */
-export const SNAPSHOT_FORMAT_LINES: readonly string[] = ['Task experience snapshot, format 1.', SNAPSHOT_FORMAT_LINE]
+export const SNAPSHOT_FORMAT_LINES: readonly string[] = [
+  'Task experience snapshot, format 1.',
+  SNAPSHOT_FORMAT_LINE,
+]
 
 export const REFINEMENT_GUIDANCE = [
   SNAPSHOT_FORMAT_LINE,

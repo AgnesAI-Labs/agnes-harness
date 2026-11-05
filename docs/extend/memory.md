@@ -40,6 +40,14 @@ Extension API 5.3.0 adds two optional members for user memory, the memory every 
 - `open` may receive `userValidity`, a `MemoryValidityView` for managed sections of user memory with the same rules as `validity`. A provider that keeps them shows the agent the hand-written user memory first and only the sections in force after it, so the user memory budget cuts saved text before anything a person wrote. A user memory file without markers is shown exactly as before, with the same revision.
 - `MemorySession.userParagraphs?(source, signal)` returns a `MemoryParagraphPort` over the user memory index. It works whatever the workspace's memory mode: the agent still cannot write user memory, and the Host decides on its own when a section may be written. `propose` refuses `MEMORY_USER_BUDGET` when the hand-written text, the sections in force and the sections being put would not fit the user memory budget the agent is shown, or when the index would pass its size or line cap; it never trims, merges or removes anything to make room. Credential-like content is refused with `MEMORY_SECRET_LIKE_CONTENT` as in workspace memory. Hand-written text and marker lines are never changed. `memoryParagraphConformance` checks it like `paragraphs`.
 
+## Paragraphs the Host delivers itself (5.5.0)
+
+Extension API 5.5.0 adds the validity answer `delivered` and the optional `MemoryValidityView.delivers`. A Host that gives the paragraphs in force to the model itself, in the task-experience snapshot, answers them `delivered` and sets `delivers: true`.
+
+- A provider leaves a `delivered` paragraph out of its snapshot without an omission line, and shows it on read like a `valid` one; whole-file writes and exact replacements are checked against what the agent reads.
+- While the view `delivers`, a section put into user memory takes no room in what the agent is shown, so `propose` does not refuse it for the user memory budget; the index size and line caps still apply.
+- A provider that predates 5.5.0 treats `delivered` as `unknown` and leaves the paragraph out with its omission line; the Host still delivers it.
+
 - Default agent permission off; ask reviews an exact file-level proposal before any mutation. Bind approval to `baseHash`, `newHash`, full diff and session/turn. Full access automatically allows and records the exact proposal; broad grants under other presets cannot approve it. Reject/cancel/conflict never inject a candidate.
 - Preserve a turn's index and topic revision across repeated model requests. Topic content is on demand in the model context. Human changes become visible next turn. Off takes effect on the next request even when that turn had an earlier snapshot.
 - Keep storage caps independent of context allocation; budget both layers and headers. Use a visible omission marker. Reject over-cap consolidation without truncating the stored index.

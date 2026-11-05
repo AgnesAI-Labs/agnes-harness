@@ -22,13 +22,14 @@ const HAND = '# Preferences\n\n- Answer in short sentences.\n'
 const SOURCE: MemorySource = { sessionKey: 'refinement:workspace', turn: 0, maintenance: 'run-1' }
 
 /** A Host-side view whose answers the test sets; revision moves with every change. */
-function view(initial: Record<string, MemoryParagraphValidity> = {}) {
+function view(initial: Record<string, MemoryParagraphValidity> = {}, delivers = false) {
   const answers = new Map(Object.entries(initial))
   let revision = 1
   return {
     view: {
       revision: () => `v${revision}`,
       validity: (id: string) => answers.get(id) ?? 'unknown',
+      ...(delivers ? { delivers: true } : {}),
     } satisfies MemoryValidityView,
     set(id: string, value: MemoryParagraphValidity) {
       answers.set(id, value)
@@ -255,8 +256,42 @@ describe('user memory: the managed section write', () => {
     expect(await readFile(f.userFile, 'utf8')).toBe(HAND)
   })
 
-  it('a section save is not refused for the injection limit: the Host delivers sections itself', async () => {
-    const answers = view({ [A]: 'delivered' })
+  it('a promotion that would push user memory past its budget is refused and writes nothing', async () => {
+    const answers = view({ [A]: 'valid', [B]: 'expired' })
+    const f = await fixture({ userValidity: answers.view })
+    const hand = `${'h'.repeat(300)}\n`
+    // An expired section takes no room in what is shown; the one in force does.
+    const stored = `${hand}\n${block(A, 'a'.repeat(100))}\n${block(B, 'b'.repeat(400))}`
+    await writeFile(f.userFile, stored)
+    // 300 + (2 + 100) + (2 + 100) = 504: fits in 512.
+    const port = f.port()
+    await port.commit(await port.propose({ op: 'put', id: C, text: 'c'.repeat(100) }))
+    const fits = await readFile(f.userFile, 'utf8')
+    expect(fits).toContain('c'.repeat(100))
+    // The Host records it: from now on it is in force.
+    answers.set(C, 'valid')
+    // One more section of 10 bytes does not.
+    await expect(
+      f.port().propose({ op: 'put', id: 'rd000000004', text: 'd'.repeat(10) }),
+    ).rejects.toMatchObject({ code: 'MEMORY_USER_BUDGET' })
+    // A smaller user budget in this workspace's settings is the limit there.
+    await f.session.configure({ userTokenBudget: 256 })
+    await expect(f.port().propose({ op: 'put', id: C, text: 'c'.repeat(10) })).rejects.toMatchObject({
+      code: 'MEMORY_USER_BUDGET',
+    })
+    // A larger one never raises the limit above 512: every workspace reads the same file.
+    await f.session.configure({ userTokenBudget: 4096 })
+    await expect(
+      f.port().propose({ op: 'put', id: 'rd000000004', text: 'd'.repeat(10) }),
+    ).rejects.toMatchObject({ code: 'MEMORY_USER_BUDGET' })
+    // Taking a section out always fits.
+    const out = f.port()
+    await out.commit(await out.propose({ op: 'remove', id: C }))
+    expect(await readFile(f.userFile, 'utf8')).toBe(stored)
+  })
+
+  it('a section save is not refused for the injection limit when the Host delivers sections itself', async () => {
+    const answers = view({ [A]: 'delivered' }, true)
     const f = await fixture({ userValidity: answers.view })
     const hand = `${'h'.repeat(300)}\n`
     const stored = `${hand}\n${block(A, 'a'.repeat(400))}`

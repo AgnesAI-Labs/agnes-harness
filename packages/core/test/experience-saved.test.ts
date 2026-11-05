@@ -1,8 +1,9 @@
+import type { Event } from '@agnes/core-common/types'
 import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
-import type { Event } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
 import { applyRefine } from '../src/refine/apply.js'
+import { refinementFacade } from '../src/refinement/facade.js'
 import type { RefinementWorkspaceRefs, SavedEntry } from '../src/refinement/workspace-refs.js'
 import { deriveExperienceNotes, EXPERIENCE_PREFIX, type ExperienceNote } from '../src/request/experience.js'
 import { CONTROL_FORMAT_LINE } from '../src/request/experience-control.js'
@@ -149,7 +150,11 @@ describe('entries saved in earlier sessions reach the model through the snapshot
   it('a session entry with the same id, the same source or the same text appears once', async () => {
     const p = port([
       saved(1, { ref: 'ws.r0000000001', title: 'Same id', content: 'old text' }),
-      saved(2, { title: 'From here', content: 'saved copy', source: { sessionKey: 'k', kind: 'memory', entryId: 'mine' } }),
+      saved(2, {
+        title: 'From here',
+        content: 'saved copy',
+        source: { sessionKey: 'k', kind: 'memory', entryId: 'mine' },
+      }),
       saved(3, { title: 'Same text', content: 'identical lesson' }),
       saved(4, { kind: 'prompt', title: 'Kept', content: 'a different saved lesson' }),
     ])
@@ -229,6 +234,22 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     )
   })
 
+  it('a withdrawn saved entry in force again is given again', async () => {
+    const p = port([saved(1)])
+    const { session } = await open(p.refs)
+    const first = await deriveExperienceNotes(session, [ask('Saved 1')])
+    p.set([])
+    const withdrawn = await deriveExperienceNotes(session, [
+      ask('Saved 1'),
+      ...first.map(delivered),
+      ask('a'),
+    ])
+    expect(textOf(withdrawn)).toContain('[memory/ws.r0000000001 v1] withdrawn')
+    p.set([saved(1)])
+    const surface = [ask('Saved 1'), ...first.map(delivered), ask('a'), ...withdrawn.map(delivered), ask('b')]
+    expect(textOf(await deriveExperienceNotes(session, surface))).toContain('(saved) Saved 1')
+  })
+
   it("another session's new save waits for the next cold boundary", async () => {
     const p = port([saved(1)])
     const { session } = await open(p.refs)
@@ -236,7 +257,9 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     const surface = [ask('Saved 1 Saved 2'), ...first.map(delivered), ask('next')]
     p.set([saved(1), saved(2)])
     expect(textOf(await deriveExperienceNotes(session, surface))).not.toContain('Saved 2')
-    expect(textOf(await deriveExperienceNotes(session, [ask('Saved 1 Saved 2')]))).toContain('(saved) Saved 2')
+    expect(textOf(await deriveExperienceNotes(session, [ask('Saved 1 Saved 2')]))).toContain(
+      '(saved) Saved 2',
+    )
   })
 
   it('sends no saved entries while refinement is off', async () => {
@@ -282,5 +305,56 @@ describe('entries saved in earlier sessions reach the model through the snapshot
       'ws.r0000000002',
       'ws.r0000000003',
     ])
+  })
+})
+
+describe('saved entries through the inspect and propose tools, and the snapshot row', () => {
+  const settings = { enabled: true, mode: 'manual' as const, revision: 'r1' }
+  async function withTurn(refs: RefinementWorkspaceRefs) {
+    const { session, log } = await openSession({
+      provider: fakeProvider([textTurn('answer'), textTurn('answer')]),
+      refinementEnabled: () => true,
+      refinement: { settings: () => ({ ...settings }), planner: () => undefined, workspaceRefs: refs },
+    })
+    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'Saved 1 please' }], actor })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    return { session, log, facade: refinementFacade(session) }
+  }
+
+  it('harness_inspect lists and reads saved entries', async () => {
+    const t = await withTurn(port([saved(1), saved(2)]).refs)
+    expect(await t.facade.inspect({ op: 'list', kind: 'memory' })).toMatchObject({
+      op: 'list',
+      total: 2,
+      entries: [{ id: 'ws.r0000000001' }, { id: 'ws.r0000000002' }],
+    })
+    expect(await t.facade.inspect({ op: 'get', kind: 'memory', id: 'ws.r0000000002' })).toMatchObject({
+      op: 'get',
+      entry: { id: 'ws.r0000000002', title: 'Saved 2', content: 'lesson number 2', truncated: false },
+    })
+  })
+
+  it('harness_propose cannot make an entry under a saved id', async () => {
+    const t = await withTurn(port([]).refs)
+    for (const id of ['ws.r0000000009', 'user.r0000000009'])
+      expect(
+        await t.facade.propose({
+          rationale: 'r',
+          evidenceSeqs: [1],
+          edits: [{ op: 'upsert', kind: 'memory', id, title: 'Forged', content: 'forged' }],
+        }),
+      ).toMatchObject({ refused: 'invalid' })
+  })
+
+  it('the snapshot row records the candidates, how many were saved earlier and which were included', async () => {
+    const t = await withTurn(port([saved(1), saved(2)]).refs)
+    const rows = await t.log.scan({ type: 'x/core/refinement-prefix-change', limit: 10 })
+    expect(rows[0]?.data).toMatchObject({
+      reason: 'experience-snapshot',
+      candidates: { prompt: 0, memory: 2, skill: 0, subagent: 0 },
+      saved: 2,
+      // The most recently saved first, on a tie.
+      included: ['memory/ws.r0000000002', 'memory/ws.r0000000001'],
+    })
   })
 })

@@ -54,7 +54,7 @@ export type MemoryApprovalResult = Readonly<
 /**
  * Whether a managed paragraph may be shown to the agent: `expired` is past its review date and
  * `unknown` cannot be verified (no record, damaged record or a damaged marker). `delivered` (since
- * 5.4.0) is in force but given to the model by the Host itself: a provider leaves it out of its
+ * 5.5.0) is in force but given to the model by the Host itself: a provider leaves it out of its
  * snapshot without an omission line and shows it on read like `valid`. A provider that predates it
  * treats it as `unknown`.
  */
@@ -71,6 +71,12 @@ export type MemoryParagraphValidity = 'valid' | 'expired' | 'unknown' | 'deliver
 export interface MemoryValidityView {
   revision(): string
   validity(paragraphId: string): MemoryParagraphValidity
+  /**
+   * Optional since 5.5.0. True when the Host gives every managed paragraph in force to the model itself
+   * (it answers them `delivered`): a paragraph being put then takes no room in what the agent is shown,
+   * so a provider does not refuse it for the injection budget. Storage caps still apply.
+   */
+  readonly delivers?: boolean
 }
 
 /** A managed paragraph of the stored memory file, as stored. */
@@ -136,7 +142,8 @@ export interface MemorySession {
    *
    * - It works whatever the workspace's memory mode: the agent never writes user memory, and the Host
    *   decides on its own when a section may be written.
-   * - `propose` refuses `MEMORY_USER_BUDGET` when the hand-written text, the sections in force and the
+   * - `propose` refuses `MEMORY_USER_BUDGET` (not for the budget while `userValidity.delivers`, see
+   *   `MemoryValidityView.delivers`) when the hand-written text, the sections in force and the
    *   sections being put would not fit the user memory budget the agent is shown, or the index would pass
    *   its size or line cap. It never trims, merges or removes anything to make room. Credential-like
    *   content is refused as in workspace memory (`MEMORY_SECRET_LIKE_CONTENT`).

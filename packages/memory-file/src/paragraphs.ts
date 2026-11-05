@@ -230,12 +230,7 @@ export function paragraphView(
       continue
     }
     let j = i
-    while (
-      j + 1 < regions.length &&
-      !regions[j + 1]!.silent &&
-      regions[j + 1]!.start === regions[j]!.end
-    )
-      j++
+    while (j + 1 < regions.length && !regions[j + 1]!.silent && regions[j + 1]!.start === regions[j]!.end) j++
     const end = regions[j]!.end
     const note = omissionLine(j - i + 1) + (text[end - 1] === '\n' ? '\n' : '')
     segments.push({ view: content.length, length: note.length })

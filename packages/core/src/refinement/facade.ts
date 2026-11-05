@@ -9,6 +9,7 @@ import {
   rollbackProblem,
   rollbackRefine,
 } from '../refine/apply.js'
+import { inspectableEntries } from '../request/experience.js'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
 import { resumeHandOffs } from './handoff.js'
@@ -30,6 +31,7 @@ import {
 } from './scheduler.js'
 import { lapsedKeys, validEntries } from './validity.js'
 import { recordSettledSaves } from './workspace.js'
+import { isSavedRef } from './workspace-refs.js'
 
 export type { InspectAnswer, InspectEntry, InspectRequest, InspectSummary } from './inspect.js'
 export type { RefinementDeps, RefinementSettingsView } from './scheduler.js'
@@ -227,6 +229,8 @@ function directPlan(
   for (const [at, edit] of p.edits.entries()) {
     if (!KINDS.has(edit?.kind) || typeof edit.id !== 'string' || !ID.test(edit.id))
       return invalid(`edits[${at}]`)
+    // `ws.` and `user.` name entries saved in earlier sessions: never made under that id here.
+    if (isSavedRef(edit.id)) return invalid(`edits[${at}]: saved entry id`)
     if (edit.op !== 'upsert' && edit.op !== 'delete') return invalid(`edits[${at}].op`)
     const key = entryKey(edit)
     if (touched.has(key)) return invalid(`edits[${at}]: duplicate`)
@@ -318,7 +322,7 @@ async function inspect(s: SessionImpl, request: InspectRequest): Promise<Inspect
   const refused = refusal(s)
   if (refused) return refused
   const { valid } = await validEntries(s)
-  const out = inspectEntries(s, valid, request)
+  const out = inspectEntries(s, await inspectableEntries(s, valid), request)
   if ('problem' in out) return { refused: out.problem, detail: out.detail }
   if (out.op !== 'get') return out
   // A full read keeps the text (a later change builds on it), and says when its resource is unusable now.

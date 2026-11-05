@@ -101,9 +101,27 @@ describe('workspace memory in the assembled host', () => {
         `Human line.\n\n${marked('ra000000001', 'Fresh lesson.')}\n\n${marked('rb000000001', 'Stale lesson.')}\n`,
         stored.hash,
       )
-      const snapshot = await host.memory(workspace, 'reader')?.snapshot(1)
-      expect(snapshot?.content).toContain('Fresh lesson.')
+      const reader = host.memory(workspace, 'reader')
+      const snapshot = await reader?.snapshot(1)
+      // A paragraph in force reaches the model through the task-experience snapshot, not the memory
+      // note; the agent still sees it when it reads the file. An expired one is shown nowhere.
+      expect(snapshot?.content).toContain('Human line.')
+      expect(snapshot?.content).not.toContain('Fresh lesson.')
       expect(snapshot?.content).not.toContain('Stale lesson.')
+      const seen = await reader
+        ?.files(
+          {
+            read: async () => new Uint8Array(),
+            write: async () => undefined,
+            list: async () => [],
+            stat: async () => ({}),
+          } as never,
+          { sessionKey: 'reader', turn: 1, toolUseId: 't' },
+          new AbortController().signal,
+          async () => ({ status: 'approved' }),
+        )
+        .read(`${reader.root}/MEMORY.md`)
+      expect(Buffer.from(seen ?? new Uint8Array()).toString('utf8')).toContain('Fresh lesson.')
       // The person reads the raw file.
       expect((await memory.readFile('MEMORY.md')).content).toContain('Stale lesson.')
 
@@ -395,17 +413,19 @@ describe('saving task experience to the workspace in an assembled host', () => {
       // No implicit hand-off: the entry stays in session 1.
       expect([...first.state.registers.harnessEntries.keys()].join(' ')).toContain('notes-location')
 
-      // Session 2 reads it with the rest of the workspace memory.
+      // Session 2 is given it in its task-experience snapshot; the memory note carries only the rest.
       const second = await host.createSession({ cwd: workspace, key: 'second-session' })
       await turn(second, 'What do you remember about this workspace?')
       const before = main().at(-1)
-      expect(latestMemoryNote(before)).toContain('docs/notes.txt')
+      expect(before?.raw).toContain(`[memory/ws.${saved?.id} v1] (saved) Notes file location`)
+      expect(latestMemoryNote(before)).not.toContain('docs/notes.txt')
       const revision = (await host.memory(workspace, 'probe-1')?.snapshot(1))?.revision
 
-      // Past its review date the next request's memory note leaves it out; the system prompt is unchanged.
+      // Past its review date the next request withdraws it; the system prompt is unchanged.
       vi.setSystemTime(T0 + REVIEW_AFTER_MS + DAY)
       await turn(second, 'And now?')
       const after = main().at(-1)
+      expect(after?.raw).toContain(`[memory/ws.${saved?.id} v1] withdrawn`)
       expect(latestMemoryNote(after)).not.toContain('docs/notes.txt')
       expect(latestMemoryNote(after)).toContain('Human preference line.')
       expect(systemOf(after)).toBe(systemOf(before))

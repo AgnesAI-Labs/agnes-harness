@@ -398,6 +398,18 @@ function savedAsEntries(
   }))
 }
 
+/**
+ * The entries `harness_inspect` reads: this session's in force, then the ones saved in earlier sessions
+ * that it does not hold already. A host that cannot answer adds none.
+ */
+export async function inspectableEntries(
+  s: SessionImpl,
+  valid: readonly EffectiveEntry[],
+): Promise<EffectiveEntry[]> {
+  const saved = await savedEntriesOf(s)
+  return [...valid, ...savedAsEntries(s, saved ?? [], valid)]
+}
+
 /** What the last snapshot built for a session chose from, for its `refinement-prefix-change` row. */
 const snapshotChoices = new WeakMap<
   SessionImpl,
@@ -508,9 +520,12 @@ export async function deriveExperienceNotes(
   const present = new Set([...valid, ...expired, ...held].map(({ entry }) => `${entry.kind}/${entry.id}`))
   // Entries saved in earlier sessions are listed at a cold boundary, for a format 1 snapshot that never
   // carried them, and whenever the model was given one, so that one gone since is withdrawn.
-  const givenSaved = [...refs.delivered.keys()].filter((ref) => isSavedRef(ref.slice(ref.indexOf('/') + 1)))
+  const isSavedKey = (ref: string) => isSavedRef(ref.slice(ref.indexOf('/') + 1))
+  const givenSaved = [...refs.delivered.keys()].filter(isSavedKey)
+  const withdrawnSaved = [...refs.withdrawn].filter(isSavedKey)
   const cold = !seen.snapshot || (seen.legacy && !seen.saved)
-  const saved = cold || givenSaved.length ? await savedFor(s) : { entries: [], failed: false }
+  const saved =
+    cold || givenSaved.length || withdrawnSaved.length ? await savedFor(s) : { entries: [], failed: false }
   for (const e of saved.entries) present.add(`${e.kind}/${e.ref}`)
   // A host that cannot answer withdraws nothing: what it said before still stands.
   if (saved.failed) for (const ref of givenSaved) present.add(ref)
@@ -574,10 +589,16 @@ export async function deriveExperienceNotes(
       (refs.heldMore && meta?.applicability === 'task' && refs.delivered.get(ref) !== entry.version)
     )
   }
+  // A saved entry the model was told is withdrawn, and in force again (renewed by a person), is owed too.
+  const back = savedAsEntries(
+    s,
+    saved.entries.filter((e) => refs.withdrawn.has(`${e.kind}/${e.ref}`)),
+    entries,
+  )
   const fresh =
     notice === EXPERIENCE_RESET_NOTICE
       ? entries
-      : valid.filter(owed).map(({ entry, seq }) => ({ entry, seq }))
+      : [...valid.filter(owed).map(({ entry, seq }) => ({ entry, seq })), ...back]
   if (fresh.length) {
     const { body, data } = renderExperienceUpdate(fresh, EXPERIENCE_BUDGETS)
     // An entry owed from before the last note that still does not fit is not announced again and
