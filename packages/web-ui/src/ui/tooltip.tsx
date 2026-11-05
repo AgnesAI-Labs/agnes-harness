@@ -1,9 +1,10 @@
 import { Tooltip as AntTooltip, type TooltipProps as AntTooltipProps } from 'antd'
-import { cloneElement, type ReactElement, useId, useState } from 'react'
+import { cloneElement, type ReactElement, type ReactNode, useId, useRef, useState } from 'react'
 import { Kbd, type ShortcutKey } from './kbd.js'
 
 export type TooltipProps = Omit<AntTooltipProps, 'children' | 'title' | 'open' | 'trigger' | 'disabled'> & {
-  title: string
+  /** A function is read when the hint opens, so a control toggled outside React explains itself late. */
+  title: string | (() => ReactNode)
   children?: ReactElement<{ 'aria-describedby'?: string | undefined }>
   /** Disabled native controls need a keyboard-accessible explanation. */
   disabled?: boolean | undefined
@@ -28,7 +29,18 @@ if (typeof document !== 'undefined') {
 export function Tooltip({ title, children, disabled = false, shortcut, ...props }: TooltipProps) {
   const [open, setOpen] = useState(false)
   const id = useId()
+  const anchor = useRef<HTMLSpanElement>(null)
   if (!children) return null
+  const text = () => (typeof title === 'function' ? title() : title)
+  // A controller can enable a control after render; the hint follows the control, not the props.
+  const explainsNothing = () => {
+    const value = text()
+    if (value === null || value === undefined || value === '') return true
+    if (!disabled) return false
+    const control = anchor.current?.querySelector<HTMLButtonElement>('button, input, select, textarea')
+    return control ? !control.disabled : false
+  }
+  const reveal = (next: boolean) => setOpen(next && !explainsNothing())
   const expanded =
     'aria-expanded' in children.props &&
     (children.props['aria-expanded'] === true || children.props['aria-expanded'] === 'true')
@@ -49,27 +61,28 @@ export function Tooltip({ title, children, disabled = false, shortcut, ...props 
       }
       id={id}
       title={
-        shortcut ? (
-          <span className="agh-tooltip-shortcut">
-            {title}
-            <Kbd keys={shortcut} />
-          </span>
-        ) : (
-          title
-        )
+        shortcut
+          ? () => (
+              <span className="agh-tooltip-shortcut">
+                {text()}
+                <Kbd keys={shortcut} />
+              </span>
+            )
+          : text
       }
       open={visible}
       trigger="hover"
       mouseEnterDelay={0.5}
-      onOpenChange={setOpen}
+      onOpenChange={reveal}
       rootClassName={['agh-tooltip', props.rootClassName].filter(Boolean).join(' ')}
     >
       <span
+        ref={anchor}
         className="agh-tooltip-anchor"
         role="group"
         tabIndex={disabled ? 0 : undefined}
-        aria-label={disabled ? title : undefined}
-        onFocusCapture={() => setOpen(keyNavigation)}
+        aria-label={disabled && typeof title === 'string' ? title : undefined}
+        onFocusCapture={() => reveal(keyNavigation)}
         onBlurCapture={() => setOpen(false)}
         onClickCapture={() => setOpen(false)}
         onKeyDownCapture={(event) => {

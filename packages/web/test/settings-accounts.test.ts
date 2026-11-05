@@ -348,8 +348,9 @@ it('creates a distinct same-provider account and manages defaults with revision 
   expect(h.input('config-model-trigger').disabled).toBe(false)
   await h.click('#config-model-trigger')
   await h.click('#config-model-listbox-0')
+  // An empty choice is not a default model to save, so the button says so.
   expect(h.input('config-model').value).toBe('')
-  expect(h.input('config-save').disabled).toBe(false)
+  expect(h.input('config-save').disabled).toBe(true)
   await h.click('#config-model-trigger')
   await h.click('#config-model-listbox-1')
   expect(h.input('config-model').value).toBe('m')
@@ -487,17 +488,33 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
     baseUrl: 'https://api.siliconflow.cn/v1',
   })
   expect(h.doc.getElementById('config-error')?.textContent).toBe('')
-  // Listed models are picked by hand; the default model comes from the picked ones.
+  // The first listed model joins the draft and becomes the default, so saving needs no second pick.
   const listed = (id: string) => ({ id, name: id, contextWindow: 32768, maxTokens: 8192 })
-  h.config.test.mockResolvedValueOnce({ models: [listed('Qwen/Qwen3-32B'), listed('other')], verified: true })
+  h.config.test.mockResolvedValue({ models: [listed('Qwen/Qwen3-32B'), listed('other')], verified: true })
   fetchModels()
   await vi.waitFor(() => expect(panel?.textContent).toContain('Qwen/Qwen3-32B'))
   expect(panel?.textContent).not.toContain(zhT('accounts.compatible.error.http404'))
+  await vi.waitFor(() => expect(h.input('config-model').value).toBe('Qwen/Qwen3-32B'))
+  expect(h.input('config-save').disabled).toBe(false)
+  // Dropping the only chosen model locks the group again and names the missing choice.
   const chip = [...(panel?.querySelectorAll<HTMLButtonElement>('button[aria-pressed]') ?? [])].find(
     (button) => button.textContent === 'Qwen/Qwen3-32B',
   )
   chip?.click()
+  await vi.waitFor(() => expect(h.input('config-model').value).toBe(''))
+  expect(h.doc.getElementById('config-model-lock')?.hasAttribute('hidden')).toBe(false)
+  expect(h.doc.getElementById('config-model-lock-text')?.textContent).toBe(zhT('accounts.modelLockedChoose'))
+  expect(h.input('config-save').disabled).toBe(true)
+  // The greyed button explains itself on hover instead of only sitting there.
+  expect(h.input('config-save').getAttribute('data-disabled-reason')).toBe(zhT('accounts.saveNeedsModel'))
+  expect(h.input('config-save').closest('.agh-tooltip-anchor')?.getAttribute('aria-label')).toBe(
+    zhT('accounts.saveNeedsModel'),
+  )
+  expect(h.doc.getElementById('config-model')?.textContent).toContain(zhT('settings.model.chooseAbove'))
+  chip?.click()
   await vi.waitFor(() => expect(h.input('config-model').value).toBe('Qwen/Qwen3-32B'))
+  expect(h.doc.getElementById('config-model-lock')?.hasAttribute('hidden')).toBe(true)
+  expect(h.input('config-save').hasAttribute('data-disabled-reason')).toBe(false)
   await h.click('#config-save')
   await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
   const saved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]

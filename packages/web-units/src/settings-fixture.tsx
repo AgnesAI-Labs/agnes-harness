@@ -1,4 +1,5 @@
 import {
+  accountSaveDisabledReason,
   Button,
   createRegionRenderer,
   Disclosure,
@@ -232,7 +233,14 @@ function SettingsFixture() {
               <Button id="config-account-cancel" htmlType="button" appearance="secondary">
                 <span>{text('accounts.cancel', '取消')}</span>
               </Button>
-              <Button id="config-save" form="config-form" disabled htmlType="submit" appearance="primary">
+              <Button
+                id="config-save"
+                form="config-form"
+                disabled
+                htmlType="submit"
+                appearance="primary"
+                disabledReason={accountSaveDisabledReason}
+              >
                 <span>{text('settings-shell.saveAccount', '保存账户')}</span>
               </Button>
             </div>

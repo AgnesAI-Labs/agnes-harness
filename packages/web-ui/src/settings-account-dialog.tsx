@@ -56,6 +56,10 @@ function AccountKeyField({ t }: { t: Translate }) {
   )
 }
 
+/** Read late, because this dialog's fields are driven by the controller outside React. */
+export const accountSaveDisabledReason = () =>
+  document.getElementById('config-save')?.getAttribute('data-disabled-reason') ?? ''
+
 export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
   const bodyRef = useRef<HTMLElement>()
   const [body, setBody] = useState<HTMLElement>()
@@ -274,7 +278,15 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                 <Button id="config-account-cancel" htmlType="button">
                   {t('accounts.cancel')}
                 </Button>
-                <Button id="config-save" appearance="primary" htmlType="submit" form="config-form" disabled>
+                <Button
+                  id="config-save"
+                  appearance="primary"
+                  htmlType="submit"
+                  form="config-form"
+                  disabled
+                  // The controller owns why saving is unavailable and publishes it on the button.
+                  disabledReason={accountSaveDisabledReason}
+                >
                   {t('accounts.save')}
                 </Button>
               </div>

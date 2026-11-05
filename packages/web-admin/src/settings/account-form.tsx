@@ -70,6 +70,8 @@ export type AccountFormState = {
   provider: ConfigProvider | undefined
   oauth: boolean
   tested: ConfigTestResult | undefined
+  /** The endpoint listed models for this draft, so a locked model group is waiting for a choice. */
+  catalogue: boolean
   /** The timeouts the advanced options hold, in milliseconds; an absent key is the default. */
   timeouts: Readonly<Record<string, number>>
 }
@@ -210,7 +212,13 @@ export function accountForm(ui: SettingsElements) {
       if (lock) lock.hidden = !locked
       const lockText = byId('config-model-lock-text')
       if (lockText)
-        lockText.textContent = tr(state.oauth ? 'accounts.modelLockedOAuth' : 'accounts.modelLocked')
+        lockText.textContent = tr(
+          state.oauth
+            ? 'accounts.modelLockedOAuth'
+            : state.catalogue
+              ? 'accounts.modelLockedChoose'
+              : 'accounts.modelLocked',
+        )
       const lockTest = byId('config-model-lock-test')
       if (lockTest) lockTest.hidden = !state.editing || state.oauth
       if (advanced) advanced.hidden = state.step !== 'connection'

@@ -46,6 +46,8 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'accounts.compatible.fetch': 'Fetch models',
     'accounts.compatible.choose':
       'Choose the models this account offers; the default model is picked from them.',
+    'accounts.modelLockedChoose': 'Choose the models this account provides above, then set the default here.',
+    'accounts.saveNeedsModel': 'Choose at least one model.',
     'accounts.compatible.listed': 'Listed by the endpoint',
     'accounts.compatible.manual': 'Model IDs added by hand',
     'accounts.compatible.add': 'Add',
@@ -145,6 +147,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.key.offlineCleared': 'The backend is offline and this input has been cleared.',
     'settings.model.chooseSaved': 'Choose the default model to save',
     'settings.model.testFirst': 'Enter a key to list the models',
+    'settings.model.chooseAbove': 'Choose a model above first',
     'settings.model.default': 'Default model',
     'settings.model.thinkingUnsupported':
       'The model does not support the selected reasoning level. Choose another.',
@@ -269,6 +272,8 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'accounts.compatible.models': '模型',
     'accounts.compatible.fetch': '获取模型',
     'accounts.compatible.choose': '选择这个账户提供的模型，默认模型从中挑选。',
+    'accounts.modelLockedChoose': '先在上方选择这个账户提供的模型，再在这里设置默认模型。',
+    'accounts.saveNeedsModel': '请至少选择一个模型',
     'accounts.compatible.listed': '接口返回的模型',
     'accounts.compatible.manual': '手动添加的模型 ID',
     'accounts.compatible.add': '添加',
@@ -352,6 +357,7 @@ export const settingsLocaleCatalog: LocaleCatalog = {
     'settings.key.offlineCleared': '后台未连接，页面已清除本次输入。',
     'settings.model.chooseSaved': '选择要保存的默认模型',
     'settings.model.testFirst': '填入密钥后列出模型',
+    'settings.model.chooseAbove': '请先选择上面的模型',
     'settings.model.default': '默认模型',
     'settings.model.thinkingUnsupported': '该模型当前不支持所选思考强度，请重新选择',
     'settings.model.contextRange': '上下文预算须为 {min} Token 以上、模型容量以内的正整数，可使用 K/M 单位',
