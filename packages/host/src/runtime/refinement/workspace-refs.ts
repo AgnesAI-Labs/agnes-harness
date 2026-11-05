@@ -1,4 +1,4 @@
-import type { RefinementWorkspaceRefs, WorkspaceReference } from '@agnes/core'
+import type { RefinementWorkspaceRefs, SavedEntry, WorkspaceReference } from '@agnes/core'
 import type { MemorySession } from '@agnes/extension-api'
 import {
   normalizedContentHash,
@@ -7,6 +7,8 @@ import {
   type RegistryParagraph,
   type RegistrySkill,
 } from '@agnes/host-infrastructure/refinement-registry'
+import { registryView } from './registry-view.js'
+import { SECRET_LIKE } from './save-rules.js'
 import { workspaceSkillText } from './skill-drafts.js'
 
 const MEMORY_REF = 'workspace-memory/'
@@ -21,6 +23,8 @@ export type WorkspaceRefsDeps = {
   /** The open session's canonical workspace root and memory, or undefined when it is not open here. */
   session(at: { key: string; lane: string }): { workspaceRoot: string; memory?: MemorySession } | undefined
   clock(): number
+  /** The registry of sections saved to user memory; absent: none are delivered. */
+  userRegistry?: () => RefinementRegistry
 }
 
 /**
@@ -48,6 +52,50 @@ async function storedParagraphs(memory: MemorySession | undefined, sessionKey: s
   } catch {
     return undefined
   }
+}
+
+/** The managed sections of user memory by id, or undefined while user memory is off for the agent. */
+async function storedSections(memory: MemorySession | undefined, sessionKey: string) {
+  if (!memory || typeof memory.userParagraphs !== 'function') return undefined
+  try {
+    const settings = (await memory.inspect()).settings
+    if (settings.mode === 'off' || !settings.userEnabled) return undefined
+    const port = memory.userParagraphs({ sessionKey, turn: 0 }, new AbortController().signal)
+    const { paragraphs } = await port.list()
+    return new Map(paragraphs.map((p) => [p.id, p.text]))
+  } catch {
+    return undefined
+  }
+}
+
+/** Saved prompt and memory paragraphs in force, in full, as the snapshot gives them. */
+function savedEntries(
+  prefix: 'ws.' | 'user.',
+  live: readonly RegistryParagraph[],
+  stored: ReadonlyMap<string, string> | undefined,
+): SavedEntry[] {
+  if (!stored) return []
+  const out: SavedEntry[] = []
+  for (const p of live) {
+    const kind = p.source.kind
+    if (kind !== 'prompt' && kind !== 'memory') continue
+    const text = stored.get(p.id)
+    // A paragraph a person has since turned into something that looks like a secret is not delivered.
+    if (text === undefined || SECRET_LIKE.test(text)) continue
+    const { title, summary } = titled(text)
+    const { sessionKey, entryId } = p.source
+    out.push({
+      ref: `${prefix}${p.id}`,
+      kind,
+      title,
+      content: summary,
+      version: normalizedContentHash(text),
+      savedAt: p.reviewAfter - REVIEW_AFTER_MS,
+      untouched: normalizedContentHash(text) === p.contentHash,
+      source: { sessionKey, kind, entryId },
+    })
+  }
+  return out
 }
 
 /**
@@ -139,6 +187,30 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
         if (out.length >= MAX_LISTED) break
       }
       return [...out, ...skills]
+    },
+    async entries(at) {
+      const where = deps.session(at)
+      if (!where) return []
+      const now = deps.clock()
+      const workspace = savedEntries(
+        'ws.',
+        inForce(registryOf(where.workspaceRoot), now),
+        await storedParagraphs(where.memory, at.key),
+      )
+      const userRegistry = deps.userRegistry?.()
+      const user = userRegistry
+        ? savedEntries('user.', inForce(userRegistry, now), await storedSections(where.memory, at.key))
+        : []
+      return [...workspace, ...user]
+    },
+    revision(at) {
+      const where = deps.session(at)
+      if (!where) return ''
+      const userRegistry = deps.userRegistry?.()
+      return [
+        registryView(registryOf(where.workspaceRoot), deps.clock).revision(),
+        userRegistry ? registryView(userRegistry, deps.clock).revision() : '',
+      ].join(':')
     },
     async renew(at, ref, version) {
       const where = deps.session(at)

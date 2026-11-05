@@ -53,9 +53,12 @@ export type MemoryApprovalResult = Readonly<
 
 /**
  * Whether a managed paragraph may be shown to the agent: `expired` is past its review date and
- * `unknown` cannot be verified (no record, damaged record or a damaged marker).
+ * `unknown` cannot be verified (no record, damaged record or a damaged marker). `delivered` (since
+ * 5.4.0) is in force but given to the model by the Host itself: a provider leaves it out of its
+ * snapshot without an omission line and shows it on read like `valid`. A provider that predates it
+ * treats it as `unknown`.
  */
-export type MemoryParagraphValidity = 'valid' | 'expired' | 'unknown'
+export type MemoryParagraphValidity = 'valid' | 'expired' | 'unknown' | 'delivered'
 
 /**
  * Optional since 5.2.0. A read-only view the Host passes to `MemoryProvider.open` so a provider can

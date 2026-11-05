@@ -73,6 +73,7 @@ export function workspaceMemory(input: {
           : (change) => {
               if (enabled()) input.viewChanged?.(sessionKey, change)
             },
+        'delivered',
       ),
     /** The memory selection sessions use; bound once the kernel stage has it. */
     bindMemory(open: MemoryOpener): void {

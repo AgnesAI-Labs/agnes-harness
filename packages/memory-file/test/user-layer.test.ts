@@ -157,6 +157,20 @@ describe('user memory: saved sections in what the agent reads', () => {
     expect(await readFile(f.userFile, 'utf8')).toBe(stored)
   })
 
+  it('delivered sections are left out of the user layer without a count line', async () => {
+    const { view: v } = view({ [A]: 'delivered', [B]: 'valid' })
+    const f = await fixture({ userValidity: v })
+    await writeFile(f.userFile, `${HAND}\n${block(A, 'Lesson A.')}\n${block(B, 'Lesson B.')}`)
+    const layer = await f.userLayer(1)
+    expect(layer).toContain('Lesson B.')
+    expect(layer).not.toContain('Lesson A.')
+    expect(layer).not.toContain('task-experience paragraphs omitted')
+    expect(userLayerBytes(`${HAND}\n${block(A, 'Lesson A.')}`, v)).toEqual({
+      handWritten: Buffer.byteLength(HAND.trimEnd()),
+      rsiInForce: 0,
+    })
+  })
+
   it('counts hand-written bytes and the sections in force the way they are shown', () => {
     const { view: v } = view({ [A]: 'valid', [B]: 'expired' })
     const stored = `${HAND}\n${block(A, 'Lesson A.')}\n${block(B, 'Lesson B, long expired.')}`
@@ -241,38 +255,21 @@ describe('user memory: the managed section write', () => {
     expect(await readFile(f.userFile, 'utf8')).toBe(HAND)
   })
 
-  it('a promotion that would push user memory past its budget is refused and writes nothing', async () => {
-    const answers = view({ [A]: 'valid', [B]: 'expired' })
+  it('a section save is not refused for the injection limit: the Host delivers sections itself', async () => {
+    const answers = view({ [A]: 'delivered' })
     const f = await fixture({ userValidity: answers.view })
     const hand = `${'h'.repeat(300)}\n`
-    // An expired section takes no room in what is shown; the one in force does.
-    const stored = `${hand}\n${block(A, 'a'.repeat(100))}\n${block(B, 'b'.repeat(400))}`
+    const stored = `${hand}\n${block(A, 'a'.repeat(400))}`
     await writeFile(f.userFile, stored)
-    // 300 + (2 + 100) + (2 + 100) = 504: fits in 512.
+    // 300 hand-written bytes plus 400 + 100 bytes of sections: well past 512, still written.
     const port = f.port()
     await port.commit(await port.propose({ op: 'put', id: C, text: 'c'.repeat(100) }))
-    const fits = await readFile(f.userFile, 'utf8')
-    expect(fits).toContain('c'.repeat(100))
-    // The Host records it: from now on it is in force.
-    answers.set(C, 'valid')
-    // One more section of 10 bytes does not.
-    await expect(
-      f.port().propose({ op: 'put', id: 'rd000000004', text: 'd'.repeat(10) }),
-    ).rejects.toMatchObject({ code: 'MEMORY_USER_BUDGET' })
-    // A smaller user budget in this workspace's settings is the limit there.
-    await f.session.configure({ userTokenBudget: 256 })
-    await expect(f.port().propose({ op: 'put', id: C, text: 'c'.repeat(10) })).rejects.toMatchObject({
-      code: 'MEMORY_USER_BUDGET',
-    })
-    // A larger one never raises the limit above 512: every workspace reads the same file.
-    await f.session.configure({ userTokenBudget: 4096 })
-    await expect(
-      f.port().propose({ op: 'put', id: 'rd000000004', text: 'd'.repeat(10) }),
-    ).rejects.toMatchObject({ code: 'MEMORY_USER_BUDGET' })
-    // Taking a section out always fits.
-    const out = f.port()
-    await out.commit(await out.propose({ op: 'remove', id: C }))
-    expect(await readFile(f.userFile, 'utf8')).toBe(stored)
+    expect(await readFile(f.userFile, 'utf8')).toContain('c'.repeat(100))
+    answers.set(C, 'delivered')
+    const layer = await f.userLayer(1)
+    expect(layer).toContain(hand.trimEnd())
+    expect(layer).not.toContain('a'.repeat(400))
+    expect(layer).not.toContain('task-experience paragraphs omitted')
   })
 
   it('over the index cap it refuses for lack of room, never trimming', async () => {

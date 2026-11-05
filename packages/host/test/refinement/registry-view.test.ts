@@ -75,6 +75,17 @@ describe('the validity view the Host gives memory', () => {
     expect(view.revision()).not.toBe(before)
   })
 
+  it('answers delivered for a paragraph in force when the Host gives it to the model itself', async () => {
+    const clock = clockAt(T0)
+    const registry = new RefinementRegistry(scratch(), '/ws', clock.now)
+    seed(registry, [paragraph('ra000000001', T0)])
+    const view = registryView(registry, clock.now, undefined, 'delivered')
+    expect(view.validity('ra000000001')).toBe('delivered')
+    await nextBurst()
+    clock.set(T0 + REVIEW_AFTER_MS)
+    expect(view.validity('ra000000001')).toBe('expired')
+  })
+
   it('answers unknown for ids it does not hold as active, and for an empty registry', () => {
     const clock = clockAt(T0)
     const registry = new RefinementRegistry(scratch(), '/ws', clock.now)

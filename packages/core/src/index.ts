@@ -309,7 +309,7 @@ export {
   type WorkspaceSaveRequest,
   workspaceSaveRequest,
 } from './refinement/workspace.js'
-export type { RefinementWorkspaceRefs, WorkspaceReference } from './refinement/workspace-refs.js'
+export type { RefinementWorkspaceRefs, SavedEntry, WorkspaceReference } from './refinement/workspace-refs.js'
 export { HookRegistry, type HookSnapshot } from './registry/hooks.js'
 export { type RegisteredResource, ResourceRegistry } from './registry/resources.js'
 export { type RuntimeSlotFill, SlotRegistry } from './registry/slots.js'

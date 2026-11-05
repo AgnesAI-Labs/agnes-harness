@@ -66,7 +66,14 @@ function layerOf(content: string, validity: (id: string) => MemoryParagraphValid
     return { text: content, managed: false, omittedIds: [], handWritten: content, sections: [] }
   const { paragraphs, anomalies } = parseParagraphs(content)
   const valid = paragraphs.filter((paragraph) => validity(paragraph.id) === 'valid')
-  const left = [...anomalies, ...paragraphs.filter((paragraph) => validity(paragraph.id) !== 'valid')]
+  // A delivered section is given to the model by the Host: it is neither shown here nor counted.
+  const left = [
+    ...anomalies,
+    ...paragraphs.filter((paragraph) => {
+      const answer = validity(paragraph.id)
+      return answer !== 'valid' && answer !== 'delivered'
+    }),
+  ]
   const regions = [...paragraphs, ...anomalies]
     .map(({ start, end }) => ({ start, end }))
     .sort((a, b) => a.start - b.start || b.end - a.end)
@@ -143,12 +150,6 @@ export function userParagraphPort(
         if ((error as { code?: unknown }).code === 'MEMORY_CONSOLIDATION_REQUIRED')
           throw fault('MEMORY_USER_BUDGET')
         throw error
-      }
-      const puts = new Set(list.flatMap((change) => (change.op === 'put' ? [change.id] : [])))
-      if (puts.size) {
-        const budget = Math.min(config.userTokenBudget, defaults.userTokenBudget)
-        const used = bytesOf(layerOf(candidate.content, (id) => (puts.has(id) ? 'valid' : answer(id))))
-        if (used.handWritten + used.rsiInForce > budget) throw fault('MEMORY_USER_BUDGET')
       }
       const proposal: MemoryProposal = Object.freeze({
         path: join(user.root, INDEX),

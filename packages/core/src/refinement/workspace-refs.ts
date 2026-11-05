@@ -66,7 +66,37 @@ export type RefinementWorkspaceRefs = {
     lane: string
   }): readonly WorkspaceReference[] | Promise<readonly WorkspaceReference[]>
   renew(session: { key: string; lane: string }, ref: string, version: string): boolean | Promise<boolean>
+  /**
+   * The prompt and memory entries saved to the session's workspace and to user memory that are in force
+   * now, in full, for the task-experience snapshot. Absent: none are delivered.
+   */
+  entries?(session: { key: string; lane: string }): readonly SavedEntry[] | Promise<readonly SavedEntry[]>
+  /** Changes whenever `entries` may answer differently (a save, a withdrawal, a review date passing). */
+  revision?(session: { key: string; lane: string }): string
 }
+
+/**
+ * A prompt or memory entry saved in an earlier session, as the snapshot gives it: `ws.<paragraph id>` in
+ * workspace memory, `user.<paragraph id>` in user memory. `untouched` says its text is still what was
+ * saved (a person has not edited it); `savedAt` is when it was last saved or renewed.
+ */
+export type SavedEntry = {
+  ref: string
+  kind: 'prompt' | 'memory'
+  title: string
+  content: string
+  version: string
+  savedAt: number
+  untouched: boolean
+  source?: { sessionKey: string; kind: RefinementEntryKind; entryId: string }
+}
+
+/** How long a snapshot waits for the host's saved entries before it goes without them. */
+export const SAVED_LIST_TIMEOUT_MS = 1_000
+/** A saved entry's id in the snapshot: its paragraph in workspace memory (`ws.`) or user memory (`user.`). */
+export const SAVED_REF = /^(?:ws|user)\.r[0-9a-z]{10}$/u
+/** Whether an entry id names a saved entry; such ids are never made by a plan or the model directly. */
+export const isSavedRef = (id: unknown): boolean => typeof id === 'string' && SAVED_REF.test(id)
 
 const warn = (s: SessionImpl, what: string, error: unknown) =>
   s.d.logger.warn(`refinement ${what} failed`, { message: String(error) })
@@ -77,6 +107,62 @@ function sourceOf(raw: unknown): WorkspaceReference['source'] | undefined {
   if (typeof o.sessionKey !== 'string' || typeof o.entryId !== 'string' || !KINDS.has(String(o.kind)))
     return undefined
   return { sessionKey: o.sessionKey, kind: o.kind as RefinementEntryKind, entryId: o.entryId }
+}
+
+/**
+ * The prompt and memory entries saved in earlier sessions that the host gives this session now, for the
+ * snapshot: well-formed ones only, each once. `undefined` when the host failed or did not answer within
+ * `SAVED_LIST_TIMEOUT_MS`, which the caller must not read as "none are saved".
+ */
+export async function savedEntriesOf(s: SessionImpl): Promise<SavedEntry[] | undefined> {
+  const port = s.d.refinement?.workspaceRefs
+  if (!port?.entries) return []
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let listed: readonly SavedEntry[]
+  try {
+    listed = await Promise.race([
+      Promise.resolve(port.entries({ key: s.key, lane: s.lane })),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out')), SAVED_LIST_TIMEOUT_MS)
+      }),
+    ])
+  } catch (error) {
+    warn(s, 'saved entry listing', error)
+    return undefined
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+  if (!Array.isArray(listed)) return undefined
+  const out: SavedEntry[] = []
+  const seen = new Set<string>()
+  for (const raw of listed) {
+    if (!raw || !isSavedRef(raw.ref) || seen.has(raw.ref)) continue
+    if (raw.kind !== 'prompt' && raw.kind !== 'memory') continue
+    if (typeof raw.title !== 'string' || typeof raw.content !== 'string' || typeof raw.version !== 'string')
+      continue
+    seen.add(raw.ref)
+    const source = sourceOf(raw.source)
+    out.push({
+      ref: raw.ref,
+      kind: raw.kind,
+      title: raw.title,
+      content: raw.content,
+      version: raw.version,
+      savedAt: typeof raw.savedAt === 'number' && Number.isFinite(raw.savedAt) ? raw.savedAt : 0,
+      untouched: raw.untouched === true,
+      ...(source ? { source } : {}),
+    })
+  }
+  return out
+}
+
+/** The host's answer to whether its saved entries may have changed; '' when it cannot say. */
+export function savedRevisionOf(s: SessionImpl): string {
+  try {
+    return s.d.refinement?.workspaceRefs?.revision?.({ key: s.key, lane: s.lane }) ?? ''
+  } catch {
+    return ''
+  }
 }
 
 /**

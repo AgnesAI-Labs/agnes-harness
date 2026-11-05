@@ -52,6 +52,7 @@ export function userMemory(input: {
           : (change) => {
               if (settings().enabled) input.viewChanged(sessionKey, change)
             },
+        'delivered',
       ),
     paragraphs,
     resume: (workspaceRoot: string) => promotions.resume(workspaceRoot),

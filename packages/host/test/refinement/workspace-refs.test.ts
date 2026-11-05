@@ -268,3 +268,119 @@ describe('renewing a confirmed entry', () => {
     expect(await refs.renew(AT, 'workspace-memory/r0000000001', 'h1')).toBe(false)
   })
 })
+
+/** A memory session with a workspace index and a user index, each holding texts by paragraph id. */
+function layered(
+  workspace: Record<string, string>,
+  user: Record<string, string>,
+  o: { mode?: 'off' | 'ask' | 'auto'; userEnabled?: boolean } = {},
+) {
+  const port = (texts: Record<string, string>) => () => ({
+    list: async () => ({
+      hash: 'f1',
+      paragraphs: Object.entries(texts).map(([id, text]) => ({ id, text, validity: 'delivered' as const })),
+    }),
+    propose: async () => {
+      throw new Error('no write expected')
+    },
+    commit: async () => {
+      throw new Error('no write expected')
+    },
+  })
+  return {
+    root: '/memory',
+    snapshot: async () => undefined,
+    inspect: async () => ({
+      root: '/memory',
+      settings: { mode: o.mode ?? 'auto', userEnabled: o.userEnabled ?? true },
+      files: [],
+      bytes: 0,
+    }),
+    paragraphs: port(workspace),
+    userParagraphs: port(user),
+  } as unknown as MemorySession
+}
+
+describe('entries saved earlier, for the experience snapshot', () => {
+  const both = (memory: MemorySession, user: RegistryParagraph[] = []) => {
+    const dataDir = scratch()
+    const clock = () => T0
+    const registry = new RefinementRegistry(dataDir, ROOT, clock)
+    const userRegistry = RefinementRegistry.user(scratch(), clock)
+    if (user.length)
+      userRegistry.update((draft) => {
+        draft.paragraphs.push(...user)
+      }, userRegistry.read().revision)
+    const refs = createWorkspaceRefs({
+      dataDir,
+      session: () => ({ workspaceRoot: ROOT, memory }),
+      clock,
+      userRegistry: () => userRegistry,
+    })
+    return { registry, userRegistry, refs }
+  }
+  const seed = (registry: RefinementRegistry, paragraphs: RegistryParagraph[]) =>
+    registry.update((draft) => {
+      draft.paragraphs.push(...paragraphs)
+    }, registry.read().revision)
+
+  it('lists saved workspace paragraphs in full, with whether a person edited them since', async () => {
+    const t = both(layered({ r0000000001: TEXT, r0000000002: SOME }, {}))
+    seed(t.registry, [
+      paragraph({ contentHash: normalizedContentHash(TEXT) }),
+      paragraph({
+        id: 'r0000000002',
+        contentHash: 'stored-before-a-person-edited-it',
+        source: { sessionKey: 's', kind: 'prompt', entryId: 'p2', contentHash: 'x', initiator: 'auto' },
+      }),
+    ])
+    expect(await t.refs.entries?.(AT)).toEqual([
+      {
+        ref: 'ws.r0000000001',
+        kind: 'memory',
+        title: 'Use pnpm here',
+        content: 'Install with pnpm, never npm.',
+        version: normalizedContentHash(TEXT),
+        savedAt: T0 + 10 * DAY - REVIEW_AFTER_MS,
+        untouched: true,
+        source: { sessionKey: 'session-a', kind: 'memory', entryId: 'use-pnpm' },
+      },
+      {
+        ref: 'ws.r0000000002',
+        kind: 'prompt',
+        title: 'Some title',
+        content: 'Some text.',
+        version: normalizedContentHash(SOME),
+        savedAt: T0 + 10 * DAY - REVIEW_AFTER_MS,
+        untouched: false,
+        source: { sessionKey: 's', kind: 'prompt', entryId: 'p2' },
+      },
+    ])
+  })
+
+  it('lists user sections only while user memory is enabled, and nothing while memory is off', async () => {
+    const user = [paragraph({ id: 'r0000000009', contentHash: normalizedContentHash(SOME) })]
+    const on = both(layered({}, { r0000000009: SOME }), user)
+    expect((await on.refs.entries?.(AT))?.map((e) => e.ref)).toEqual(['user.r0000000009'])
+    const disabled = both(layered({}, { r0000000009: SOME }, { userEnabled: false }), user)
+    expect(await disabled.refs.entries?.(AT)).toEqual([])
+    const off = both(layered({ r0000000001: TEXT }, { r0000000009: SOME }, { mode: 'off' }), user)
+    seed(off.registry, [paragraph()])
+    expect(await off.refs.entries?.(AT)).toEqual([])
+  })
+
+  it('skips a saved paragraph that now looks like a secret', async () => {
+    const t = both(layered({ r0000000001: 'Deploy key\napi_key = abcdefghijklmnop' }, {}))
+    seed(t.registry, [paragraph()])
+    expect(await t.refs.entries?.(AT)).toEqual([])
+  })
+
+  it('its revision moves when a paragraph is saved, withdrawn or passes its review date', () => {
+    const t = both(layered({}, {}))
+    const first = t.refs.revision?.(AT)
+    seed(t.registry, [paragraph()])
+    const saved = t.refs.revision?.(AT)
+    expect(saved).not.toBe(first)
+    expect(t.refs.revision?.(AT)).toBe(saved)
+  })
+})
