@@ -250,6 +250,18 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     expect(textOf(await deriveExperienceNotes(session, surface))).toContain('(saved) Saved 1')
   })
 
+  it('a cold boundary lists the saved entries again, whatever the cached revision says', async () => {
+    const p = port([saved(1, { content: 'old text' })])
+    p.refs.revision = () => 'unchanging'
+    const { session } = await open(p.refs)
+    expect(textOf(await deriveExperienceNotes(session, [ask('Saved 1')]))).toContain('old text')
+    p.set([saved(1, { content: 'text a person edited' })])
+    // The revision did not move (a hand edit of the file): the next snapshot still reads the file.
+    const cold = textOf(await deriveExperienceNotes(session, [ask('Saved 1')]))
+    expect(cold).toContain('text a person edited')
+    expect(cold).not.toContain('old text')
+  })
+
   it("another session's new save waits for the next cold boundary", async () => {
     const p = port([saved(1)])
     const { session } = await open(p.refs)
@@ -332,6 +344,18 @@ describe('saved entries through the inspect and propose tools, and the snapshot 
       op: 'get',
       entry: { id: 'ws.r0000000002', title: 'Saved 2', content: 'lesson number 2', truncated: false },
     })
+  })
+
+  it('harness_propose cannot use the ws. or user. prefix for an entry of its own', async () => {
+    const t = await withTurn(port([]).refs)
+    for (const id of ['ws.notes', 'user.prefs'])
+      expect(
+        await t.facade.propose({
+          rationale: 'r',
+          evidenceSeqs: [1],
+          edits: [{ op: 'upsert', kind: 'memory', id, title: 'Forged', content: 'forged' }],
+        }),
+      ).toMatchObject({ refused: 'invalid' })
   })
 
   it('harness_propose cannot make an entry under a saved id it has not read in full', async () => {

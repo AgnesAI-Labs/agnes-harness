@@ -309,3 +309,32 @@ describe('changes of the view a session reads', () => {
     expect(reported).toEqual(['session-1'])
   })
 })
+
+describe('the views sessions open memory with', () => {
+  it('a child session sees saved paragraphs in its memory note; other sessions get them delivered', async () => {
+    const { workspaceMemory } = await import('../../src/runtime/refinement/workspace-memory.js')
+    const { userMemory } = await import('../../src/runtime/refinement/user-memory.js')
+    const dataDir = scratch()
+    const home = scratch()
+    const clock = () => T0
+    const memory = workspaceMemory({ dataDir, clock, enabled: () => true })
+    const registry = memory.registry('/ws')
+    seed(registry, [paragraph('ra000000001', T0)])
+    expect(memory.validity('/ws', 'main').validity('ra000000001')).toBe('delivered')
+    expect(memory.validity('/ws', 'child', true).validity('ra000000001')).toBe('valid')
+    const user = userMemory({
+      home,
+      clock,
+      settings: () => ({ enabled: true, mode: 'auto', revision: 'r' }) as never,
+      saves: { save: async () => ({}) } as never,
+      registry: memory.registry,
+      memory: () => undefined,
+      workspaceParagraphs: (async () => ({ paragraphs: [] })) as never,
+      viewChanged: () => undefined,
+    })
+    const users = user.userRegistry()
+    seed(users, [paragraph('rb000000001', T0)])
+    expect(user.userValidity('main').validity('rb000000001')).toBe('delivered')
+    expect(user.userValidity('child', true).validity('rb000000001')).toBe('valid')
+  })
+})

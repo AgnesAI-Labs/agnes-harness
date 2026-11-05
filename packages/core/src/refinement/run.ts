@@ -46,6 +46,7 @@ import {
 import { type EntryView, entryValidity, grantLevels, lapsedKeys, validEntries } from './validity.js'
 import {
   grantWorkspace,
+  isSavedPrefix,
   isSavedRef,
   isWorkspaceKind,
   isWorkspaceRef,
@@ -496,8 +497,9 @@ const masked = (text: string, max: number, why: string, min = 0): string => {
 /** `memory/ws.<id>` as the saved paragraph `workspace-memory/<id>` when the planner was shown that one. */
 function savedAlias(entryId: string, shownWorkspace: ReadonlySet<string>): string {
   const id = entryId.slice(entryId.indexOf('/') + 1)
-  if (!id.startsWith('ws.') || !isSavedRef(id)) return entryId
-  const ref = `workspace-memory/${id.slice(3)}`
+  if (!isSavedRef(id)) return entryId
+  const user = id.startsWith('user.')
+  const ref = `${user ? 'user-memory' : 'workspace-memory'}/${id.slice(user ? 5 : 3)}`
   return shownWorkspace.has(ref) ? ref : entryId
 }
 
@@ -560,6 +562,7 @@ function checkedPlan(
         // A saved entry is rewritten only when it was shown in full, and never deleted.
         if (isSavedRef(edit.id) && edit.op === 'delete') invalid(`confirm-only: ${key}`)
         if (isSavedRef(edit.id) && !full.has(key)) invalid(`not-shown-in-full: ${key}`)
+        if (isSavedPrefix(edit.id) && !isSavedRef(edit.id)) invalid(`reserved-id: ${key}`)
         if (touched.has(key)) invalid(`duplicate-entry: ${key}`)
         if (changed.has(key)) invalid('read-set-changed')
         const saved = existing.get(key)

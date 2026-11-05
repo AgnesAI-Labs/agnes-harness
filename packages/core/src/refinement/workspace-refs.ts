@@ -33,7 +33,7 @@ export const WORKSPACE_REFS_PER_KIND = 40
 export const WORKSPACE_TITLE_CHARS = 120
 export const WORKSPACE_SUMMARY_CHARS = 240
 
-const REF = /^workspace-(memory|skill)\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
+const REF = /^(?:workspace-(?:memory|skill)|user-memory)\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 const KINDS = new Set(['prompt', 'memory', 'skill', 'subagent'])
 const MAX_VERSION = 256
 
@@ -42,7 +42,7 @@ export const isWorkspaceRef = (value: unknown): value is string =>
   typeof value === 'string' && REF.test(value)
 /** The kinds a plan would have to name to change a saved entry, which it never may. */
 export const isWorkspaceKind = (kind: unknown): boolean =>
-  kind === 'workspace-memory' || kind === 'workspace-skill'
+  kind === 'workspace-memory' || kind === 'workspace-skill' || kind === 'user-memory'
 
 /** One entry saved to the workspace, as the host lists it for a session's planner. */
 export type WorkspaceReference = {
@@ -95,6 +95,8 @@ export type SavedEntry = {
 export const SAVED_LIST_TIMEOUT_MS = 1_000
 /** A saved entry's id in the snapshot: its paragraph in workspace memory (`ws.`) or user memory (`user.`). */
 export const SAVED_REF = /^(?:ws|user)\.r[0-9a-z]{10}$/u
+/** Ids under the saved prefixes: never made for an entry of a session's own. */
+export const isSavedPrefix = (id: unknown): boolean => typeof id === 'string' && /^(?:ws|user)\./u.test(id)
 /** Whether an entry id names a saved entry; such ids are never made by a plan or the model directly. */
 export const isSavedRef = (id: unknown): boolean => typeof id === 'string' && SAVED_REF.test(id)
 

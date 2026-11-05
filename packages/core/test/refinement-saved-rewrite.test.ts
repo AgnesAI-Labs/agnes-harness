@@ -160,3 +160,83 @@ describe('a later session rewrites a saved entry by id', () => {
     expect(entryKey({ kind: 'memory', id: `ws.${PID}` })).toBeTruthy()
   })
 })
+
+describe('user memory entries', () => {
+  const USER_PID = 'r0000000009'
+  function userPort() {
+    const renewed: string[] = []
+    const entry = saved({
+      ref: `user.${USER_PID}`,
+      title: 'Short answers',
+      content: 'Answer in short sentences.',
+    })
+    const refs: RefinementWorkspaceRefs = {
+      list: () => [
+        { ref: `user-memory/${USER_PID}`, title: entry.title, summary: entry.content, version: 'v1' },
+      ],
+      renew: (_at, r) => {
+        renewed.push(r)
+        return true
+      },
+      entries: () => [entry],
+      revision: () => 'r1',
+    }
+    return { refs, renewed }
+  }
+
+  it('confirming a user. entry renews the user memory section', async () => {
+    const p = userPort()
+    const t = await open({
+      workspaceRefs: p.refs,
+      answers: [
+        (seen) =>
+          output({
+            confirmations: [
+              {
+                entryId: `memory/user.${USER_PID}`,
+                evidenceIds: ids(seen, (e) => e.kind === 'user'),
+                quote: 'read file b, not a',
+              },
+            ],
+          }),
+      ],
+    })
+    await t.say(REQUEST)
+    const run = await t.refine()
+    expect(run?.plan?.workspaceConfirmations?.map((c) => c.ref)).toEqual([`user-memory/${USER_PID}`])
+  })
+
+  it('a rewrite of a user. entry is saved to user memory, whatever its reach says', async () => {
+    const p = userPort()
+    const t = await open({
+      workspaceRefs: p.refs,
+      answers: [
+        (seen) =>
+          output({
+            edits: [
+              upsert(`user.${USER_PID}`, {
+                content: 'Answer briefly.',
+                evidenceIds: ids(seen, (e) => e.kind === 'user'),
+              }),
+            ],
+          }),
+      ],
+    })
+    await t.say(REQUEST)
+    expect((await t.refine())?.state).toBe('applied')
+    const request = workspaceSaveRequest(t.session, {
+      kind: 'memory',
+      id: `user.${USER_PID}`,
+      initiator: 'auto',
+    } as never)
+    expect(request?.target).toBe('user')
+    expect(request?.entry.replaces).toEqual({ layer: 'user', paragraphId: USER_PID })
+    const forced = workspaceSaveRequest(t.session, {
+      kind: 'memory',
+      id: `user.${USER_PID}`,
+      initiator: 'auto',
+      target: undefined,
+    } as never)
+    expect(forced?.target).toBe('user')
+  })
+})

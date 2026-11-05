@@ -12,6 +12,7 @@ import { SECRET_LIKE } from './save-rules.js'
 import { workspaceSkillText } from './skill-drafts.js'
 
 const MEMORY_REF = 'workspace-memory/'
+const USER_REF = 'user-memory/'
 const SKILL_REF = 'workspace-skill/'
 /** The longest title or summary of a saved skill shown to the planner: its catalogue line's limit. */
 const SKILL_LINE_MAX = 200
@@ -54,15 +55,29 @@ async function storedParagraphs(memory: MemorySession | undefined, sessionKey: s
   }
 }
 
-/** The managed sections of user memory by id, or undefined while user memory is off for the agent. */
+/**
+ * The managed paragraphs of one layer by id, for the snapshot: `null` when that layer is not read for
+ * the agent (no memory, no paragraph access, memory off, user memory not enabled). A failed read throws:
+ * it must never pass for "nothing saved", which would withdraw what the model was given.
+ */
+async function layerParagraphs(
+  memory: MemorySession | undefined,
+  sessionKey: string,
+  layer: 'workspace' | 'user',
+): Promise<ReadonlyMap<string, string> | null> {
+  const open = layer === 'user' ? memory?.userParagraphs : memory?.paragraphs
+  if (!memory || typeof open !== 'function') return null
+  const settings = (await memory.inspect()).settings
+  if (settings.mode === 'off' || (layer === 'user' && !settings.userEnabled)) return null
+  const port = open.call(memory, { sessionKey, turn: 0 }, new AbortController().signal)
+  const { paragraphs } = await port.list()
+  return new Map(paragraphs.map((p) => [p.id, p.text]))
+}
+
+/** `layerParagraphs` for the planner's confirmation list, where a failed read lists nothing. */
 async function storedSections(memory: MemorySession | undefined, sessionKey: string) {
-  if (!memory || typeof memory.userParagraphs !== 'function') return undefined
   try {
-    const settings = (await memory.inspect()).settings
-    if (settings.mode === 'off' || !settings.userEnabled) return undefined
-    const port = memory.userParagraphs({ sessionKey, turn: 0 }, new AbortController().signal)
-    const { paragraphs } = await port.list()
-    return new Map(paragraphs.map((p) => [p.id, p.text]))
+    return (await layerParagraphs(memory, sessionKey, 'user')) ?? undefined
   } catch {
     return undefined
   }
@@ -72,7 +87,7 @@ async function storedSections(memory: MemorySession | undefined, sessionKey: str
 function savedEntries(
   prefix: 'ws.' | 'user.',
   live: readonly RegistryParagraph[],
-  stored: ReadonlyMap<string, string> | undefined,
+  stored: ReadonlyMap<string, string> | null,
 ): SavedEntry[] {
   if (!stored) return []
   const out: SavedEntry[] = []
@@ -163,16 +178,39 @@ function titled(text: string): { title: string; summary: string } {
 export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspaceRefs {
   const registryOf = (workspaceRoot: string) =>
     new RefinementRegistry(deps.dataDir, workspaceRoot, deps.clock)
+  /** Sections saved to user memory in force, for a plan to confirm (`user-memory/<id>`). */
+  const userRefs = async (at: { key: string }, memory: MemorySession | undefined) => {
+    const registry = deps.userRegistry?.()
+    const live = registry ? inForce(registry, deps.clock()) : []
+    if (live.length === 0) return []
+    const stored = await storedSections(memory, at.key)
+    if (!stored) return []
+    const out: WorkspaceReference[] = []
+    for (const p of live) {
+      const text = stored.get(p.id)
+      if (text === undefined) continue
+      const { sessionKey, kind, entryId } = p.source
+      out.push({
+        ref: `${USER_REF}${p.id}`,
+        ...titled(text),
+        version: normalizedContentHash(text),
+        source: { sessionKey, kind, entryId },
+      })
+      if (out.length >= MAX_LISTED) break
+    }
+    return out
+  }
   return Object.freeze<RefinementWorkspaceRefs>({
     async list(at) {
       const where = deps.session(at)
       if (!where) return []
       const registry = registryOf(where.workspaceRoot)
       const skills = listSkills(registry, where.workspaceRoot, deps.clock())
+      const user = await userRefs(at, where.memory)
       const live = inForce(registry, deps.clock())
-      if (live.length === 0) return skills
+      if (live.length === 0) return [...user, ...skills]
       const stored = await storedParagraphs(where.memory, at.key)
-      if (!stored) return skills
+      if (!stored) return [...user, ...skills]
       const out: WorkspaceReference[] = []
       for (const p of live) {
         const text = stored.get(p.id)
@@ -186,20 +224,20 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
         })
         if (out.length >= MAX_LISTED) break
       }
-      return [...out, ...skills]
+      return [...out, ...user, ...skills]
     },
     async entries(at) {
       const where = deps.session(at)
       if (!where) return []
       const now = deps.clock()
-      const workspace = savedEntries(
-        'ws.',
-        inForce(registryOf(where.workspaceRoot), now),
-        await storedParagraphs(where.memory, at.key),
-      )
+      const live = inForce(registryOf(where.workspaceRoot), now)
+      const workspace = live.length
+        ? savedEntries('ws.', live, await layerParagraphs(where.memory, at.key, 'workspace'))
+        : []
       const userRegistry = deps.userRegistry?.()
-      const user = userRegistry
-        ? savedEntries('user.', inForce(userRegistry, now), await storedSections(where.memory, at.key))
+      const userLive = userRegistry ? inForce(userRegistry, now) : []
+      const user = userLive.length
+        ? savedEntries('user.', userLive, await layerParagraphs(where.memory, at.key, 'user'))
         : []
       return [...workspace, ...user]
     },
@@ -216,9 +254,11 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       const where = deps.session(at)
       if (where && ref.startsWith(SKILL_REF))
         return renewSkill(registryOf(where.workspaceRoot), where.workspaceRoot, ref, version, deps.clock)
-      if (!where || !ref.startsWith(MEMORY_REF)) return false
-      const id = ref.slice(MEMORY_REF.length)
-      const registry = registryOf(where.workspaceRoot)
+      const user = ref.startsWith(USER_REF)
+      if (!where || !(user || ref.startsWith(MEMORY_REF))) return false
+      const id = ref.slice(user ? USER_REF.length : MEMORY_REF.length)
+      const registry = user ? deps.userRegistry?.() : registryOf(where.workspaceRoot)
+      if (!registry) return false
       // Every check is made on one snapshot, and the renewal is written only while the registry is
       // still at that snapshot's revision: any write in between (a merge, a revocation) refuses it.
       const snap = registry.read()
@@ -228,7 +268,7 @@ export function createWorkspaceRefs(deps: WorkspaceRefsDeps): RefinementWorkspac
       )
       if (!found) return false
       // The version is the text as it is stored now: text edited since the planner saw it is not renewed.
-      const text = (await storedParagraphs(where.memory, at.key))?.get(id)
+      const text = (await (user ? storedSections : storedParagraphs)(where.memory, at.key))?.get(id)
       if (text === undefined || normalizedContentHash(text) !== version) return false
       try {
         registry.update((draft) => {

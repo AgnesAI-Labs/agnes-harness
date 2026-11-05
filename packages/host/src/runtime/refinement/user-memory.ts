@@ -43,7 +43,7 @@ export function userMemory(input: {
     saves: routedSaves(input.saves, promotions),
     userRegistry,
     /** The view memory is opened with for sections of user memory; read only when the file has markers. */
-    userValidity: (sessionKey?: string) =>
+    userValidity: (sessionKey?: string, child = false) =>
       registryView(
         userRegistry(),
         clock,
@@ -52,7 +52,7 @@ export function userMemory(input: {
           : (change) => {
               if (settings().enabled) input.viewChanged(sessionKey, change)
             },
-        'delivered',
+        child ? 'valid' : 'delivered',
       ),
     paragraphs,
     resume: (workspaceRoot: string) => promotions.resume(workspaceRoot),

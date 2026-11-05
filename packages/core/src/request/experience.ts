@@ -352,10 +352,15 @@ const savedCache = new WeakMap<SessionImpl, { revision: string; entries: readonl
  * host's revision moved. `failed` when the host could not answer and nothing was listed before: then no
  * saved entry the model was given may be withdrawn on that account.
  */
-async function savedFor(s: SessionImpl): Promise<{ entries: readonly SavedEntry[]; failed: boolean }> {
+async function savedFor(
+  s: SessionImpl,
+  fresh: boolean,
+): Promise<{ entries: readonly SavedEntry[]; failed: boolean }> {
   const revision = savedRevisionOf(s)
   const cached = savedCache.get(s)
-  if (cached && revision && cached.revision === revision) return { entries: cached.entries, failed: false }
+  // A snapshot always reads afresh: the revision does not follow a hand edit of the file.
+  if (!fresh && cached && revision && cached.revision === revision)
+    return { entries: cached.entries, failed: false }
   const listed = await savedEntriesOf(s)
   if (!listed) return { entries: cached?.entries ?? [], failed: !cached }
   savedCache.set(s, { revision, entries: listed })
@@ -525,7 +530,9 @@ export async function deriveExperienceNotes(
   const withdrawnSaved = [...refs.withdrawn].filter(isSavedKey)
   const cold = !seen.snapshot || (seen.legacy && !seen.saved)
   const saved =
-    cold || givenSaved.length || withdrawnSaved.length ? await savedFor(s) : { entries: [], failed: false }
+    cold || givenSaved.length || withdrawnSaved.length
+      ? await savedFor(s, cold)
+      : { entries: [], failed: false }
   for (const e of saved.entries) present.add(`${e.kind}/${e.ref}`)
   // A host that cannot answer withdraws nothing: what it said before still stands.
   if (saved.failed) for (const ref of givenSaved) present.add(ref)

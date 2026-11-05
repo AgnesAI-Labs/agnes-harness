@@ -384,3 +384,55 @@ describe('entries saved earlier, for the experience snapshot', () => {
     expect(t.refs.revision?.(AT)).toBe(saved)
   })
 })
+
+describe('fixes after the branch review', () => {
+  const failing = () =>
+    ({
+      root: '/memory',
+      snapshot: async () => undefined,
+      inspect: async () => {
+        throw new Error('EBUSY')
+      },
+      paragraphs: () => ({
+        list: async () => {
+          throw new Error('EBUSY')
+        },
+      }),
+      userParagraphs: () => ({
+        list: async () => {
+          throw new Error('EBUSY')
+        },
+      }),
+    }) as unknown as MemorySession
+
+  it('a failed memory read is a failure, never "nothing saved"', async () => {
+    const dataDir = scratch()
+    const registry = new RefinementRegistry(dataDir, ROOT, () => T0)
+    registry.update((draft) => {
+      draft.paragraphs.push(paragraph())
+    }, registry.read().revision)
+    const refs = createWorkspaceRefs({
+      dataDir,
+      session: () => ({ workspaceRoot: ROOT, memory: failing() }),
+      clock: () => T0,
+    })
+    await expect(Promise.resolve(refs.entries?.(AT))).rejects.toThrow()
+  })
+
+  it('lists user sections for confirmation and renews them through the user registry', async () => {
+    const dataDir = scratch()
+    const userRegistry = RefinementRegistry.user(scratch(), () => T0)
+    userRegistry.update((draft) => {
+      draft.paragraphs.push(paragraph({ id: 'r0000000009', contentHash: normalizedContentHash(SOME) }))
+    }, userRegistry.read().revision)
+    const refs = createWorkspaceRefs({
+      dataDir,
+      session: () => ({ workspaceRoot: ROOT, memory: layered({}, { r0000000009: SOME }) }),
+      clock: () => T0,
+      userRegistry: () => userRegistry,
+    })
+    expect((await refs.list(AT)).map((r) => r.ref)).toContain('user-memory/r0000000009')
+    expect(await refs.renew(AT, 'user-memory/r0000000009', normalizedContentHash(SOME))).toBe(true)
+    expect(userRegistry.read().paragraphs[0]?.reviewAfter).toBe(T0 + REVIEW_AFTER_MS)
+  })
+})

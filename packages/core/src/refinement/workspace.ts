@@ -147,9 +147,12 @@ export function workspaceSaveRequest(
   const meta = s.state.refinementEntryMeta.get(key)
   const current = meta && meta.entrySeq === cell.seq ? meta : undefined
   const lastTurn = s.state.lastTurn.get(s.lane)
+  // A rewrite of a saved paragraph goes back to the layer that paragraph is in.
+  const replaces = replacesOf(entry.id).replaces
+  const toUser = replaces ? replaces.layer === 'user' : input.target === 'user'
   return {
     initiator: input.initiator,
-    ...(input.target === 'user' ? { target: 'user' as const } : {}),
+    ...(toUser ? { target: 'user' as const } : {}),
     commandId: input.commandId ?? s.d.ids.ulid(),
     session: {
       key: s.key,
