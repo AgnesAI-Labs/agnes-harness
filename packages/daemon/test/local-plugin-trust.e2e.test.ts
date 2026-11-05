@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeHome } from '@agnes/host'
 import type { RuntimeAdminSnapshot } from '@agnes/protocol'
-import { createClient, memoryJournal } from '@agnes/sdk'
+import { createClient, JsonRpcError, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { stopDaemon } from '../src/supervisor/control.js'
 import { childDaemonTransport } from './child-daemon-transport.js'
@@ -109,19 +109,26 @@ it('a fresh home does not evaluate repository plugins or other repository code u
     child.once('exit', (code) => reject(new Error(`daemon exited ${code}: ${stderr}`)))
   })
   let sdk: ReturnType<typeof createClient> | undefined
+  let phase = 'daemon readiness'
   try {
     await bounded(ready)
+    phase = 'discover daemon transport'
     sdk = createClient({
       journal: memoryJournal(),
       transport: await childDaemonTransport(home, child.pid),
       timeouts: { request: STEP_MS },
     })
+    phase = 'initialize'
     await sdk.initialize()
+    phase = 'session/new before workspace trust'
     await bounded(sdk.session.new({ cwd: workspace }))
     expect(existsSync(marker)).toBe(false)
     expect(existsSync(otherMarker)).toBe(false)
     const client = sdk
-    const runtime = () => client.call<RuntimeAdminSnapshot>('_agnes/v1/sessionSelection.runtime', {})
+    const runtime = () => {
+      phase = 'sessionSelection.runtime'
+      return client.call<RuntimeAdminSnapshot>('_agnes/v1/sessionSelection.runtime', {})
+    }
     expect((await runtime()).workspaceDeployments).toContainEqual(
       expect.objectContaining({
         deployDir: workspace,
@@ -138,6 +145,7 @@ it('a fresh home does not evaluate repository plugins or other repository code u
       (item) => item.deployDir === workspace,
     )?.trustHash
     if (!offeredHash) throw new Error('repository trust offer has no hash')
+    phase = 'packages.trustWorkspace'
     await sdk.packages.trustWorkspace({
       profile: 'local-dev',
       clientId: await sdk.clientId(),
@@ -145,12 +153,26 @@ it('a fresh home does not evaluate repository plugins or other repository code u
       deployDir: workspace,
       expectedHash: offeredHash,
     })
+    phase = 'sessionSelection.reloadLocal'
     await sdk.call('_agnes/v1/sessionSelection.reloadLocal', {})
+    phase = 'session/new after workspace trust'
     await bounded(sdk.session.new({ cwd: workspace }))
     expect(existsSync(marker)).toBe(true)
     expect((await runtime()).workspaceDeployments).toContainEqual(
       expect.objectContaining({ deployDir: workspace, pluginCount: 1, state: 'trusted' }),
     )
+  } catch (error) {
+    const data: Record<string, string> = {}
+    if (error instanceof JsonRpcError)
+      for (const key of ['code', 'reason']) {
+        const value = error.data[key]
+        if (typeof value === 'string' && /^[A-Z][A-Z0-9_]{0,95}$/.test(value)) data[key] = value
+      }
+    console.error(
+      'LOCAL_PLUGIN_TRUST_FAILURE',
+      JSON.stringify({ phase, ...(error instanceof JsonRpcError ? { rpcCode: error.code } : {}), data }),
+    )
+    throw error
   } finally {
     await sdk?.close()
     await shutdown(child, exited, home)

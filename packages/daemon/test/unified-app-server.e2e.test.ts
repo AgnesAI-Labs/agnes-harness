@@ -386,10 +386,13 @@ it(
       // its immutable workspace binding instead of treating the required ACP empty cwd as a new root.
       stage('history.default.load')
       const unavailable = await restored.session.load(newDefault.id)
+      stage('history.default.reject-removed-model')
       await expect(
         unavailable.setModel({ slot: 'primary', route: 'account-hot-added', model: 'deepseek-v4-pro' }),
       ).rejects.toBeDefined()
+      stage('history.default.set-available-model')
       await unavailable.setModel({ slot: 'primary', route: saved.provider.route, model: 'deepseek-flash' })
+      stage('history.default.prompt')
       expect((await unavailable.prompt('Continue after replacing removed model.')).reason).toBe('completed')
       stage('history.original.load')
       const loaded = await restored.session.load(session.id)
