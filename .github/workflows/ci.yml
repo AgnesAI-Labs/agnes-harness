@@ -225,6 +225,39 @@ jobs:
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version-file: .node-version, cache: pnpm }
+      # Hosted Windows runners keep the workspace and RUNNER_TEMP on the D: work disk, but TEMP
+      # defaults to the C: system disk. Tests put their stores, ledgers, locks and flushes under
+      # os.tmpdir(), so they share the system disk with everything else on the VM.
+      # One number per disk in the log, so a slow run can be told apart from a slow disk.
+      - name: measure flushed writes on the Windows system and work disks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $script = @'
+          const fs = require('node:fs'), path = require('node:path')
+          for (const root of process.argv.slice(1)) {
+            const dir = fs.mkdtempSync(path.join(root, 'flush-'))
+            const started = performance.now()
+            for (let i = 0; i < 200; i++) fs.writeFileSync(path.join(dir, `f${i}`), 'x'.repeat(4096), { flush: true })
+            console.log(`${root}: ${((performance.now() - started) / 200).toFixed(2)} ms per flushed 4 KiB write`)
+            fs.rmSync(dir, { recursive: true, force: true })
+          }
+          '@
+          node -e $script -- $env:TEMP $env:RUNNER_TEMP
+      # Like the per-user Temp it replaces, the folder grants only this user, SYSTEM and
+      # Administrators, so the private homes and stores tests create under it pass validation.
+      # RUNNER_TEMP itself inherits the D: drive's broad grants.
+      - name: keep temporary files on the Windows work disk
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $temp = Join-Path $env:RUNNER_TEMP 'private-temp'
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+          $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls $temp /inheritance:r /grant:r "*${user}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot make the temporary folder private' }
+          "TEMP=$temp" >> $env:GITHUB_ENV
+          "TMP=$temp" >> $env:GITHUB_ENV
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run doctor:toolchain
       - name: prepare Windows native headers
@@ -259,16 +292,18 @@ jobs:
           path: node_modules/.cache/agnes-source-transpile
           key: source-transpile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'pnpm-lock.yaml') }}-${{ github.sha }}-${{ matrix.shard }}
           restore-keys: source-transpile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'pnpm-lock.yaml') }}-
-      # These tests start real processes and are the most sensitive to a loaded runner, so they
-      # run with less file fan-out than the fast tier. The check job spreads Windows files over
-      # three runners, but this job holds every heavy file on one; two at a time there starved each
-      # other's process startup, shutdown and file-handle release, so Windows runs them one at a
-      # time. Linux also reserves a CPU for Vite and child-process setup. The files run alone
-      # below on Windows are held out here.
+      # A cache restore may miss. Compile the trusted official graph before source-worker startup
+      # deadlines; each real worker still imports/evaluates it through the production loader.
+      - name: Prepare source transpile cache
+        timeout-minutes: 5
+        run: pnpm exec tsx tools/ci/prepare-source-transpile.ts
+      # Run real-process files one at a time on each shard, leaving capacity for their children,
+      # source transforms and durable I/O. Tests retain their own concurrent clients and processes.
+      # The Windows files run separately below are held out here.
       - name: test heavy tier
         env:
           AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
-        run: node tools/ci/run-heavy-shard.mjs --shard=${{ matrix.shard }}/3 --maxWorkers=${{ runner.os == 'macOS' && 2 || 1 }}
+        run: node tools/ci/run-heavy-shard.mjs --shard=${{ matrix.shard }}/3 --maxWorkers=1
       - name: Save source transpile cache
         if: ${{ !cancelled() }}
         uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
