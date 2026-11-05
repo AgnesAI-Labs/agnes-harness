@@ -342,8 +342,8 @@ describe('refinement experience on the provider wire', () => {
         await fixture(
           api,
           async (session, requests, _restart, host) => {
-            // A session opened while the switch was off runs without task experience: its memory note
-            // changes too, but nothing is recorded for it.
+            // A session opened while the switch was off runs without task experience: the saved paragraph
+            // is in neither its memory note nor any note of its own, and nothing is recorded for it.
             switchTo(false)
             const older = await host.createSession({ cwd: session.d.cwd, key: 'wire-refinement-older' })
             switchTo(true)
@@ -369,16 +369,17 @@ describe('refinement experience on the provider wire', () => {
             expect(requests).toHaveLength(4)
             const [first, olderFirst, second, olderSecond] = requests
             if (!olderFirst || !olderSecond) throw new Error('missing loopback request')
-            expect(memoryNote(olderFirst)).toContain(LESSON)
-            expect(memoryNote(olderSecond)).not.toContain(LESSON)
+            expect(olderFirst.raw).not.toContain(LESSON)
+            expect(olderSecond.raw).not.toContain(LESSON)
             expect(await older.d.log.scan({ type: 'x/core/refinement-prefix-change', limit: 10 })).toEqual([])
             if (!first || !second) throw new Error('missing loopback request')
-            // The paragraph reaches the model while it is in force, and is left out once its date passed.
-            expect(memoryNote(first)).toContain(LESSON)
+            // The paragraph reaches the model in the task-experience snapshot while it is in force, never
+            // in the memory note, and is withdrawn once its date passed.
+            expect(first.raw).toContain(`/ws.${ID} v1] (saved) ${LESSON}`)
+            expect(memoryNote(first)).not.toContain(LESSON)
             expect(memoryNote(second)).not.toContain(LESSON)
             expect(memoryNote(second)).toContain('Human preference line.')
-            // The first turn's note stays in the history as it was sent.
-            expect(second.raw.split(LESSON)).toHaveLength(2)
+            expect(second.raw).toContain(`/ws.${ID} v1] withdrawn`)
             // Only the memory note changes: the system prompt keeps its bytes, the memory revision moves.
             expect(systemOf(second)).toBe(systemOf(first))
             expect(after).not.toBe(before)
