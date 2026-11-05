@@ -783,18 +783,20 @@ export class PluginAdminPage {
   /** Confirm the reviewed check. The page stays, busy, until the operation it starts has settled. */
   async confirmReview(enableAfter = false): Promise<void> {
     const flow = this.#flow
-    if (!flow.review || flow.review.busy) return
-    flow.review = { busy: true, enableAfter }
+    const review = flow.beginReview(enableAfter)
+    if (!review) return
+    const preview = this.#state.preview
     this.render()
     try {
+      // Inventory reads temporarily revoke effects; decide on the finished authority without
+      // carrying this confirmation into a cancelled, replaced or disposed review.
+      await this.#refresh.idle()
+      if (this.#lifetime.signal.aborted || flow.review !== review || this.#state.preview !== preview) return
       const operationId = await this.#submitPreview(enableAfter)
       // Refused before it was sent (permission, connection): say why on this page.
-      if (flow.review)
-        flow.review = operationId
-          ? { ...flow.review, operationId }
-          : { busy: false, error: this.#state.error, enableAfter }
+      flow.settleReview(review, operationId, this.#state.error)
     } catch (error) {
-      if (flow.review) flow.review = { busy: false, error: safeMessage(error), enableAfter }
+      flow.settleReview(review, undefined, safeMessage(error))
     }
     this.render()
   }
