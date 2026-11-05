@@ -54,7 +54,12 @@ try {
   await rt.connect()
   if (name === 'business-agent') {
     say('1. Install the existing support-triage business bundle after capability review.')
-    const preview = await install(rt, 'examples/fde/support-triage')
+    const directory = join(rt.workspace, 'support source 中文 # literal%20')
+    await cp('examples/fde/support-triage', directory, {
+      recursive: true,
+      filter: (source) => !source.includes('node_modules'),
+    })
+    const preview = await install(rt, directory)
     const business = await begin()
     const normal = await rt.session({ bundles: [] })
     assert.ok((await business.tools()).tools.some((t) => t.name === 'fde_support_send'))
@@ -98,7 +103,7 @@ try {
     )
   } else if (name === 'hot-upgrade') {
     say('1. Start a multi-step workflow on v1; stop at its durable review question.')
-    const directory = join(rt.workspace, 'support-v1')
+    const directory = join(rt.workspace, 'support-v1 中文 # literal%20')
     await cp('examples/fde/support-triage', directory, {
       recursive: true,
       filter: (source) => !source.includes('node_modules'),

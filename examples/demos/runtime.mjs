@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { createClient, memoryJournal } from '@agnes/sdk'
 
@@ -239,8 +239,9 @@ export async function complete(client, receipt) {
   )
 }
 export async function install(rt, directory) {
+  // Package file references contain literal paths, not percent-encoded file URLs.
   const client = rt.client,
-    source = { type: 'file', ref: `file:${resolve(directory)}` }
+    source = { type: 'file', ref: `file:${resolve(directory).split(sep).join('/')}` }
   const { preview } = await complete(
     client,
     await client.packages.inspect({ ...(await command(client)), source }),
