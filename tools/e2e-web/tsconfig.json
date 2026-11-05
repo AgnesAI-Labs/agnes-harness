@@ -24,6 +24,7 @@
     "developer-example.ts",
     "agent-sweep.spec.ts",
     "agent-sweep.e2e.test.ts",
+    "child-output.ts",
     "first-run-snapshots.ts",
     "workbench.spec.ts",
     "narrow.spec.ts",

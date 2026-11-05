@@ -634,7 +634,8 @@ describe('production supervisor storage', () => {
           clientId: 'mcp-health-test',
           commandId: `${serverId}-enable`,
         })) as { operationId: string }
-        expect((await wait(enabled.operationId)).state).toBe('succeeded')
+        const operation = await wait(enabled.operationId)
+        expect(operation, JSON.stringify(operation)).toMatchObject({ state: 'succeeded' })
         return { revision: descriptor.revision, pidFile }
       }
       const a = await activate('a')

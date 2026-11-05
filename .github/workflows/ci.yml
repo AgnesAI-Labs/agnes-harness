@@ -293,6 +293,17 @@ jobs:
       - name: Windows built CLI managed MCP lifecycle
         if: runner.os == 'Windows' && matrix.shard == 3
         run: pnpm exec vitest run packages/cli/test/built-resource-mcp.e2e.test.ts --maxWorkers=1
+      - name: Upload failed heavy browser evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: heavy-browser-${{ matrix.os }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .agnes-tmp/e2e-web
+            !.agnes-tmp/e2e-web/**/.playwright-artifacts-*/**
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 14
       - name: verify working tree is clean
         run: git diff --exit-code
   runtime-package:

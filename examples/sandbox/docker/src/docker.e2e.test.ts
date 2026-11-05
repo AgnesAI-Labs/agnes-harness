@@ -43,7 +43,7 @@ describe('docker sandbox provider', () => {
           fsWrite: [{ path: dir }],
           limits: { timeoutMs: 180_000 },
         })
-        expect(result.code).toBe(0)
+        expect(result.code, result.stderr).toBe(0)
         expect(result.stdout.trim()).toBe('ok')
       } finally {
         await instance.dispose()
