@@ -2,6 +2,17 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.6.0
+
+### Added
+
+The addition is optional; `^5.0.0` ranges admit 5.6.0 and no existing contract changes.
+
+- `estimateTokens(text)`: the one token estimate, about four Latin characters or 1.7 CJK-range
+  characters to a token, counted per code point. It is the estimator Core already used; every budget
+  counted in tokens (context window, compaction threshold, task experience snapshot) now uses it, so a
+  plugin that compares its own text against such a budget gets the same number.
+
 ## 5.5.0
 
 ### Added

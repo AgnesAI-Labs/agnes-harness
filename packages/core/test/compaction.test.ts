@@ -9,7 +9,7 @@ import { HookBlockedError } from '../src/hooks/block.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { CompactionRunner } from '../src/step/compaction.js'
 import { contextTokens } from '../src/step/gate.js'
-import { boundWireInputTokens, discloseTools, estimateTokens, resolveModel } from '../src/step/inference.js'
+import { discloseTools, estimateTokens, resolveModel, wireInputUpperBound } from '../src/step/inference.js'
 import { fakeProvider, type Script, sent, textTurn, toolTurn } from './helpers/fake-provider.js'
 import { fakeSeams } from './helpers/fake-seams.js'
 import { actor, openSession, readTool } from './helpers/open-session.js'
@@ -478,7 +478,7 @@ describe('production compaction phase', () => {
     const summary = provider.requests.find((request) => request.kind === 'summary')
     if (!summary) throw new Error('missing wide summary request')
     expect(summary.tools).toEqual(provider.requests[2]?.tools)
-    const bound = boundWireInputTokens(summary)
+    const bound = wireInputUpperBound(summary)
     expect(bound).not.toBeNull()
     expect(bound).toBeGreaterThan(4_000)
     expect(reservations).toHaveLength(1)

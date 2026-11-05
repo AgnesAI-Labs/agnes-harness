@@ -1,4 +1,9 @@
-import type { CompactionInput, CompactionOutput, SurfaceNode } from '@agnes/extension-api'
+import {
+  type CompactionInput,
+  type CompactionOutput,
+  estimateTokens,
+  type SurfaceNode,
+} from '@agnes/extension-api'
 import { lessonNotePlaceholder } from '@agnes/protocol'
 import { chooseCut } from './cut.js'
 
@@ -17,19 +22,6 @@ export const DEFAULT_COMPACTION_QUALITY: CompactionQualityConfig = {
   tailChars: 1024,
   marker: '\n\n[... tool result middle pruned ...]\n\n',
   imageBudgetBytes: 1_048_576,
-}
-
-const CJK_CHAR = /[　-〿぀-ヿ㐀-䶿一-鿿豈-﫿＀-￯가-힣]/
-
-/** Same character mix as Core's estimator, duplicated so this package does not import the loop. */
-export function estimateTokens(text: string): number {
-  let cjk = 0
-  let other = 0
-  for (const ch of text) {
-    if (CJK_CHAR.test(ch)) cjk++
-    else other++
-  }
-  return Math.ceil(cjk / 1.7 + other / 4)
 }
 
 function positive(value: number | undefined, fallback: number): number {

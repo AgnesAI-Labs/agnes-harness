@@ -20,7 +20,7 @@ import { readTool } from '../src/tools/read.js'
 // ask for that limit explicitly instead of taking the deployment default.
 const SMALL = 8192
 const { maxBytes, maxLines, headBytes, tailBytes } = outputLimits(SMALL)
-const CALL_OUTPUT_LIMIT_BYTES = 4 * SMALL
+const CALL_OUTPUT_LIMIT_BYTES = SMALL
 const ctxOf = (o: Parameters<typeof fakeToolContext>[0] = {}) =>
   fakeToolContext({ outputMaxBytes: SMALL, ...o })
 
@@ -252,7 +252,7 @@ describe('guardOutput', () => {
     expect(r.text.startsWith('h'.repeat(8192))).toBe(true)
     expect(r.text.endsWith('t'.repeat(2048))).toBe(true)
     expect(r.text).toContain('over the 16384-byte limit')
-    expect(callOutputLimitBytes(ctx)).toBe(4 * 16384)
+    expect(callOutputLimitBytes(ctx)).toBe(16384)
   })
 
   it('says how much of the start and the end of a cut text it kept', async () => {
@@ -336,7 +336,7 @@ describe('guardOutput does not eat a byte-order mark', () => {
 
 describe('guardOutputSet', () => {
   it('keeps the call limit at its documented value', () => {
-    expect(callOutputLimitBytes({ outputMaxBytes: 8192 })).toBe(32 * 1024)
+    expect(callOutputLimitBytes({ outputMaxBytes: 8192 })).toBe(8192)
   })
 
   it('passes a small set through untouched, without spending the artifact store', async () => {
@@ -359,7 +359,7 @@ describe('guardOutputSet', () => {
   it('bounds the sum across blocks, not just each one', async () => {
     const ctx = ctxOf()
     // Ten blocks of 7KB: every one is under the single-block limit on its own, but their sum
-    // (70KB) is well over the 32KB call limit, so a per-block-only check would let all of them
+    // (70KB) is well over the 8KB call limit, so a per-block-only check would let all of them
     // through -- exactly the shape an MCP server wrapping a database returns as "many rows".
     const input: GuardedBlock[] = Array.from({ length: 10 }, () => ({
       kind: 'text' as const,

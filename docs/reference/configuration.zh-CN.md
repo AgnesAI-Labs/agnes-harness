@@ -8,6 +8,8 @@
 
 配置文件与模型凭据分离。优先使用 CLI `config` 或 Web 设置修改 Provider；不要手写含密钥的 YAML 或自行编辑配置服务的 revision。
 
+本页与设置中的单位：“字节”指 UTF-8 字节；“字符”指 UTF-16 单位；“token”指 `estimateTokens` 估算或模型返回的用量。
+
 ## 部署网络
 
 官方模型适配器、MCP HTTP/SSE、URL/npm/git 包下载和 OTLP HTTP 导出遵循 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，小写名称优先。未配置 HTTPS 代理时使用 HTTP 代理；`NO_PROXY` 匹配的主机直连。显式为空的小写值覆盖大写值。修改进程环境后重启 daemon。`agnes doctor network` 仅报告有效代理的主机/端口及是否配置绕过规则，不显示用户名、密码或查询参数。工作区 `web_fetch` 保留独立的公网访问策略。

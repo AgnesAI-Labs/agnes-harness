@@ -1,3 +1,5 @@
+import { estimateTokens } from '@agnes/extension-api'
+
 /** Existing entries of one kind the planner sees at most, in full or as references. */
 export const ENTRIES_PER_KIND = 40
 /** Entries of one kind given in full, the only ones a plan may rewrite. */
@@ -70,19 +72,6 @@ export type PlannerPrompt = {
   omitted: PlannerOmitted
   /** The estimate of system plus message text. */
   inputTokens: number
-}
-
-const CJK_CHAR = /[　-〿぀-ヿ㐀-䶿一-鿿豈-﫿＀-￯가-힣]/
-
-/** Same character mix as Core's estimator, duplicated so this package does not import Core. */
-export function estimateTokens(text: string): number {
-  let cjk = 0
-  let other = 0
-  for (const ch of text) {
-    if (CJK_CHAR.test(ch)) cjk++
-    else other++
-  }
-  return Math.ceil(cjk / 1.7 + other / 4)
 }
 
 const KINDS: readonly EntryKind[] = ['prompt', 'memory', 'skill', 'subagent']
