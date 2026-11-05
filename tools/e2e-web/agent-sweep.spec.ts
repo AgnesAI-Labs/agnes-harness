@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import type { Page } from '@playwright/test'
+import { assertRunbookBackendRefusal } from './agent-outcome.js'
 import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
 import { readSessionEvents } from './ledger.js'
@@ -127,6 +128,8 @@ test.describe('shipped agent acceptance', () => {
   for (const agent of catalog.filter((agent) => !filter || filter.some((id) => agent.ref.includes(id))))
     test(`agent launch sweep: ${agent.ref}`, async ({ page, runtime }, info) => {
       test.setTimeout(9 * 60_000)
+      const windows = process.platform === 'win32' // guards-allow-platform: acceptance owns the documented Windows refusal expectation.
+      const backendRefusal = windows && agent.ref === '@agnes-fde/ops-runbook#ops-runbook'
       const client = await runtime.connect()
       if (real) {
         if (!process.env.AGH_DEMO_API_KEY) throw new Error('Explicit real sweep requires AGH_DEMO_API_KEY')
@@ -314,6 +317,7 @@ test.describe('shipped agent acceptance', () => {
             throw new Error('AGH-recorded $5 budget exhausted')
           }
           const last = timeline.turns.at(-1)
+          if (backendRefusal && last?.status === 'failed') break
           if (last?.status === 'failed' || last?.status === 'cancelled')
             throw new Error(`Turn ${last.status}`)
           if (last?.status === 'completed' && !(await page.getByTestId('question-card').isVisible())) break
@@ -321,7 +325,13 @@ test.describe('shipped agent acceptance', () => {
         }
         const timeline = await session.projectUI(undefined, { surface: 'web' })
         row.timeline = timeline
-        expect(timeline.turns.at(-1)?.status, 'Six-minute completion cap').toBe('completed')
+        if (backendRefusal) {
+          assertRunbookBackendRefusal(timeline, await readSessionEvents(session), await session.jobsRead())
+          expect((await session.deliverables()).items).toEqual([])
+          expect(readdirSync(runtime.workspace).filter((name) => name === 'fde-output')).toEqual([])
+          row.outcome = 'expected-backend-refusal'
+          row.refusalCode = 'SHELL_JOB_BACKEND_UNAVAILABLE'
+        } else expect(timeline.turns.at(-1)?.status, 'Six-minute completion cap').toBe('completed')
         // The session runs the launched role, not the general assistant.
         if (!general) expect((await client.session.runtime(id)).preset?.bundles).toContain(agent.ref)
         // A showcase role's draft is a natural-language business task. The offline teaching model
@@ -344,10 +354,10 @@ test.describe('shipped agent acceptance', () => {
             expect(detail.result.content).toEqual([
               expect.objectContaining({ type: 'text', text: expect.stringContaining('ENOENT') }),
             ])
-          else if (planned)
+          else if (planned && !backendRefusal)
             expect(detail.result?.isError, `${node.name}: ${JSON.stringify(detail.result)}`).not.toBe(true)
         }
-        if (agent.ref.startsWith('@agnes-fde/')) {
+        if (agent.ref.startsWith('@agnes-fde/') && !backendRefusal) {
           expect(tools.some((node) => node.kind === 'tool' && node.name === 'present')).toBe(true)
           await expect(
             page.getByTestId('conversation-turn').getByText('report.md', { exact: true }).first(),

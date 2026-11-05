@@ -23,6 +23,7 @@
     "base-conversation.spec.ts",
     "developer-example.ts",
     "agent-sweep.spec.ts",
+    "agent-outcome.ts",
     "agent-sweep.e2e.test.ts",
     "child-output.ts",
     "first-run-snapshots.ts",
