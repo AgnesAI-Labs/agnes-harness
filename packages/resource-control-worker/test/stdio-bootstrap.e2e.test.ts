@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { bootstrapWorkerResources } from '../src/runtime-bootstrap.js'
+import { observeMcpProcesses } from './child-process-observer.js'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -73,27 +74,29 @@ describe('worker stdio MCP bootstrap', () => {
         ],
       }),
     )
-    const state = await bootstrapWorkerResources({
-      env: {
-        AGNES_RESOURCE_SNAPSHOT: snapshot,
-        AGNES_RESOURCE_CONTROL: '1',
-        AGNES_RESOURCE_MCP_POLICY: JSON.stringify({
-          allowedExecutables: [process.execPath],
-          allowLoopbackHttp: false,
-          localDaemon: true,
-        }),
-      },
-      cwd: root,
-      agnesHomeDir: join(root, 'home'),
-      // The production resolved profile has adapters; retaining this minimal legacy shape proves a
-      // no-secret definition does not touch the resolver before the transport handshake.
-      profile: { name: 'local-dev', dataDir: root } as never,
-      createBarrier: () => barrier,
-      createSecrets: () => {
-        throw new Error('none-bound MCP must not create a secret resolver')
-      },
-    })
+    const observer = observeMcpProcesses()
+    let state: Awaited<ReturnType<typeof bootstrapWorkerResources>>
     try {
+      state = await bootstrapWorkerResources({
+        env: {
+          AGNES_RESOURCE_SNAPSHOT: snapshot,
+          AGNES_RESOURCE_CONTROL: '1',
+          AGNES_RESOURCE_MCP_POLICY: JSON.stringify({
+            allowedExecutables: [process.execPath],
+            allowLoopbackHttp: false,
+            localDaemon: true,
+          }),
+        },
+        cwd: root,
+        agnesHomeDir: join(root, 'home'),
+        // The production resolved profile has adapters; retaining this minimal legacy shape proves a
+        // no-secret definition does not touch the resolver before the transport handshake.
+        profile: { name: 'local-dev', dataDir: root } as never,
+        createBarrier: () => barrier,
+        createSecrets: () => {
+          throw new Error('none-bound MCP must not create a secret resolver')
+        },
+      })
       expect(state?.mcp).toMatchObject([{ serverId: 'fixture', connectionState: 'ready', toolCount: 2 }])
       expect(state?.runtime.mcpResources().list()[0]?.catalog).toHaveLength(2)
       expect(
@@ -102,7 +105,14 @@ describe('worker stdio MCP bootstrap', () => {
           .list()[0]
           ?.catalog?.map((tool) => tool.name),
       ).toEqual(['first', 'second'])
+    } catch (error) {
+      console.error(
+        'STDIO_BOOTSTRAP_PROCESS_FAILURE',
+        JSON.stringify({ events: observer.events, dropped: observer.dropped }),
+      )
+      throw error
     } finally {
+      observer.dispose()
       await state?.runtime.mcp.close()
     }
   })

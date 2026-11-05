@@ -50,6 +50,15 @@ vi.mock('@agnes/host-infrastructure/documents-directory', async (original) => ({
 // completed the same startup and Skill assertions. Keep this source-only test budget separate
 // from the production startup limit, and leave room for assertions and cleanup below.
 const SOURCE_WORKER_STARTUP_MS = 180_000
+const runtimeObserver = new URL('./fixtures/mcp-runtime-observer.mjs', import.meta.url)
+const { readExecFileObservations } = (await import(runtimeObserver.href)) as {
+  readExecFileObservations(file: string): unknown
+}
+function observedWorkerArguments(output: string): string[] {
+  const preload = new URL(runtimeObserver)
+  preload.searchParams.set('output', output)
+  return ['--import', preload.href, '--import', 'tsx']
+}
 
 function profile(dataDir: string): ResolvedProfile {
   const body = {
@@ -503,6 +512,7 @@ describe('production supervisor storage', () => {
   it('projects a killed stdio MCP generation without degrading an unrelated active server', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-mcp-health-'))
     const server = join(dir, 'mcp-health-server.mjs')
+    const runtimeObservation = join(dir, 'daemon', 'mcp-runtime-observer.jsonl')
     const previousAllowlist = process.env.AGNES_MCP_STDIO_ALLOWLIST
     const previousPath = process.env.PATH
     let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
@@ -547,7 +557,7 @@ describe('production supervisor storage', () => {
         processIdentity: async (pid) =>
           pid === process.pid ? { state: 'alive', startId: 'mcp-health-test' } : { state: 'dead' },
         workerExecPath: process.execPath,
-        workerExecArgv: ['--import', 'tsx'],
+        workerExecArgv: observedWorkerArguments(runtimeObservation),
         workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
       })
       const connection = await client(supervisor.socketPath)
@@ -636,11 +646,13 @@ describe('production supervisor storage', () => {
           commandId: `${serverId}-enable`,
         })) as { operationId: string }
         const operation = await wait(enabled.operationId)
+        const actualRuntimeInspection = readExecFileObservations(runtimeObservation)
         if (operation.state !== 'succeeded')
           console.error(
             'MCP_FAILURE_DIAGNOSTICS',
             JSON.stringify({
               entryReached: existsSync(pidFile),
+              actualWorkerRuntimeInspection: actualRuntimeInspection,
               separatePreparationProbe: await mcpPreparationDiagnostics(
                 {
                   id: serverId,
@@ -660,6 +672,9 @@ describe('production supervisor storage', () => {
             }),
           )
         expect(operation, JSON.stringify(operation)).toMatchObject({ state: 'succeeded' })
+        expect(actualRuntimeInspection).toEqual(
+          expect.arrayContaining([expect.objectContaining({ event: 'observer-ready' })]),
+        )
         return { revision: descriptor.revision, pidFile }
       }
       const a = await activate('a')
@@ -722,6 +737,7 @@ describe('production supervisor storage', () => {
     async () => {
       const dir = mkdtempSync(join(tmpdir(), 'agnes-resource-secret-'))
       const server = join(dir, 'mcp-secret-server.mjs')
+      const runtimeObservation = join(dir, 'daemon', 'mcp-runtime-observer.jsonl')
       const observation = join(dir, 'mcp-observation.json')
       const sentinel = ['resource', 'credential', 'audit', 'marker'].join('-')
       const expectedHash = createHash('sha256').update(sentinel, 'utf8').digest('hex')
@@ -769,7 +785,7 @@ describe('production supervisor storage', () => {
               ? { state: 'alive' as const, startId: 'resource-secret-test' }
               : { state: 'dead' as const },
           workerExecPath: process.execPath,
-          workerExecArgv: ['--import', 'tsx'],
+          workerExecArgv: observedWorkerArguments(runtimeObservation),
           workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
         }
         supervisor = await startProductionSupervisor(startOptions)
@@ -840,11 +856,13 @@ describe('production supervisor storage', () => {
           commandId: 'resource-secret-test',
         })) as { operationId: string }
         const testOperation = await wait(tested.operationId)
+        const actualRuntimeInspection = readExecFileObservations(runtimeObservation)
         if (testOperation.state !== 'succeeded')
           console.error(
             'MCP_FAILURE_DIAGNOSTICS',
             JSON.stringify({
               entryReached: existsSync(observation),
+              actualWorkerRuntimeInspection: actualRuntimeInspection,
               separatePreparationProbe: await mcpPreparationDiagnostics(
                 {
                   id: 'secret-audit',
@@ -867,6 +885,9 @@ describe('production supervisor storage', () => {
           state: 'succeeded',
           result: { toolCount: 1 },
         })
+        expect(actualRuntimeInspection).toEqual(
+          expect.arrayContaining([expect.objectContaining({ event: 'observer-ready' })]),
+        )
         const enabled = (await call('_agnes/v1/mcp.servers.enable', {
           profile: 'local-dev',
           serverId: 'secret-audit',
