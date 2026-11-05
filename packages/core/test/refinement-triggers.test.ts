@@ -442,6 +442,20 @@ function shellFailure(stderr: string, opts: { stdout?: string; exitCode?: number
     details: { code: 'SHELL_EXIT', exitCode },
   }
 }
+/**
+ * A result shaped like the jobs extension's shell (`runShellJob`) for a command that exited non-zero:
+ * its own retry advice, and the exit status as a number in `details.code`.
+ */
+function shellJobFailure(stderr: string, opts: { stdout?: string; exitCode?: number } = {}): ToolResult {
+  const exitCode = opts.exitCode ?? 1
+  const text = `${opts.stdout ?? ''}${stderr ? `\n[stderr]\n${stderr}` : ''}\nCommand failed; inspect job_output and current state, correct the command/arguments before retrying.\n[exit ${exitCode}]`
+  return {
+    structured: { jobId: 'job-1', status: 'failed' },
+    content: [{ type: 'text', text }],
+    isError: true,
+    details: { jobId: 'job-1', status: 'failed', code: exitCode },
+  }
+}
 
 describe('which failures count', () => {
   it.each([
@@ -550,6 +564,24 @@ describe('which failures count', () => {
     expect(offered).toEqual([])
     onToolSettled(s, 'shell', shellFailure('', { stdout: 'build failed: X' }))
     expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'shell' }])
+  })
+
+  it('a shell job error is keyed by its stderr, not by the stdout before it', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    const refused = 'rollout: prod refused: change 9cc86891 of api is unproven'
+    onToolSettled(s, 'shell', shellJobFailure(refused))
+    expect(offered).toEqual([])
+    onToolSettled(s, 'shell', shellJobFailure(refused, { stdout: 'applied api change 9cc86891 to canary' }))
+    expect(offered).toEqual([{ kind: 'repeated-failure', seq: 42, focus: 'shell' }])
+  })
+
+  it('a shell job failure with only blank stderr is keyed by its first line, not by the retry advice', () => {
+    const { offered, port } = sink()
+    const s = fakeSession(port)
+    onToolSettled(s, 'shell', shellJobFailure('\n', { stdout: 'build failed: X' }))
+    onToolSettled(s, 'shell', shellJobFailure('\n', { stdout: 'build failed: Y' }))
+    expect(offered).toEqual([])
   })
 
   it('a Python traceback on stderr is keyed by its exception, not by the shell lines after it', () => {
