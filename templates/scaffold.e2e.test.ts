@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { npmCommand } from '../tools/toolchain/check.mjs'
 import { scaffold, templateNames } from './create-agh-plugin.mjs'
 import { linkLocal } from './link-local.mjs'
 
@@ -95,9 +96,10 @@ describe('plugin scaffolder', () => {
         const target = await scaffold(kind, '@acme/hello', join(temp, 'plugin'), { local })
         await linkLocal(target)
         await linkLocal(target) // repeating a partial/completed link is supported
+        const npm = npmCommand()
         const run = (script: string, args: string[] = []) => {
           try {
-            return execFileSync('npm', ['run', script, ...args], {
+            return execFileSync(npm.bin, [...npm.args, 'run', script, ...args], {
               cwd: target,
               encoding: 'utf8',
               timeout: 20000,
@@ -105,13 +107,15 @@ describe('plugin scaffolder', () => {
               env: {
                 ...process.env,
                 PATH: process.env.PATH?.split(delimiter)
-                  .filter((entry) => !entry.includes('node_modules/.bin'))
+                  .filter((entry) => !entry.replaceAll('\\', '/').includes('node_modules/.bin'))
                   .join(delimiter),
               },
             })
           } catch (error) {
-            const output = error as { stdout?: string; stderr?: string }
-            throw new Error(`${output.stdout ?? ''}\n${output.stderr ?? ''}`, { cause: error })
+            const output = error as { message?: string; stdout?: string; stderr?: string }
+            throw new Error([output.message, output.stdout, output.stderr].filter(Boolean).join('\n'), {
+              cause: error,
+            })
           }
         }
         if (!local) expect(run('build')).toContain('tsc')

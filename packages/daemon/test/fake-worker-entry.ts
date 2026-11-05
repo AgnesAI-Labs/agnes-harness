@@ -1,6 +1,6 @@
 import { appendFileSync, createReadStream, mkdirSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import type { ToolContext } from '@agnes/extension-api'
@@ -275,7 +275,10 @@ void runWorker(
                   const textOf = (message: (typeof request.messages)[number]) =>
                     message.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
                   const askIndex = request.messages.findLastIndex(
-                    (message) => message.role === 'user' && /^read \//.test(textOf(message)),
+                    (message) =>
+                      message.role === 'user' &&
+                      textOf(message).startsWith('read ') &&
+                      isAbsolute(textOf(message).slice('read '.length)),
                   )
                   const ask = request.messages[askIndex]
                   const result = request.messages.slice(askIndex + 1).find((m) => m.role === 'tool_result')
