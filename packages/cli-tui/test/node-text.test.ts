@@ -112,7 +112,7 @@ it('save rows render initiator, outcome and reason without text', () => {
     /This workspace does not read user memory/,
   )
   expect(save({ ...user, reason: 'user-memory-budget' })).toMatch(
-    /not saved to user memory.*Reason: user memory has no room for it/,
+    /not saved to user memory.*Reason: the user memory file is full/,
   )
   expect(save({ ...user, reason: 'model-cannot-write-user' })).toMatch(
     /an earlier version did not let the model write user memory/,
