@@ -112,7 +112,8 @@ export function savedParagraphs(deps: {
       return {
         id,
         text,
-        validity,
+        // In force either way: delivered through the experience snapshot rather than the memory note.
+        validity: validity === 'delivered' ? 'valid' : validity,
         ...(record
           ? { reviewAfter: record.reviewAfter, initiator: record.source.initiator, kind: record.source.kind }
           : {}),

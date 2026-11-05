@@ -173,6 +173,8 @@ export type KernelOptions = {
   memoryFor?: (input: {
     key: string
     workspaceRoot: string
+    /** A child session (delegated, role or fork): it gets no task-experience notes of its own. */
+    child?: boolean
   }) => import('@agnes/extension-api').MemorySession | undefined
   /** Trusted Host classification for file paths with independently enforced domain gates. */
   commandPathScopeFor?: (input: {
@@ -659,7 +661,11 @@ export class Kernel {
       })
       const sessionTools = sessionToolView(so.toolFilter, refinement.hiddenTools)
       const workspaceRoot = workspaceIdentity?.canonicalRoot ?? so.cwd
-      memory = this.o.memoryFor?.({ key, workspaceRoot })
+      memory = this.o.memoryFor?.({
+        key,
+        workspaceRoot,
+        child: opensAsChild(log, tracker.state, so.roleDelegation),
+      })
       session = new SessionImpl({
         ...(this.o.commandPathScopeFor
           ? {

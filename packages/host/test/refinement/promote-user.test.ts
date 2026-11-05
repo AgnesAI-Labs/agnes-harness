@@ -510,7 +510,8 @@ describe('the user memory registry', () => {
     const id = sectionId(await h.saves.save(request(h)))
     for (const host of hosts) {
       expect(host.workspace.userRegistry().validity(id, h.now.value)).toBe('valid')
-      expect(host.workspace.userValidity().validity(id)).toBe('valid')
+      // In force, and given to the model through the task-experience snapshot.
+      expect(host.workspace.userValidity().validity(id)).toBe('delivered')
     }
     // The records sit next to the user memory file, not in any data directory.
     expect(existsSync(join(h.dir, 'memory', 'user', 'refinement.json'))).toBe(true)

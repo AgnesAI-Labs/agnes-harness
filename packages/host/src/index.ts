@@ -571,6 +571,8 @@ export {
 export * from './runtime/profile/session-capabilities.js'
 export { createSkillDraftStore } from './runtime/refinement/skill-drafts.js'
 export {
+  enforceSkillCap,
+  RSI_SKILL_CAP,
   recordSkillRevocation,
   renewSkillForUser,
   reviewSkills,

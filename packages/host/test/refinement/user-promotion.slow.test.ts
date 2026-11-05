@@ -291,17 +291,21 @@ describe('promoting task experience to user memory in an assembled host', () => 
       expect(existsSync(join(dataDir, 'refinement', 'workspaces'))).toBe(false)
       await first.close()
 
-      // A new session in workspace B, on a host of its own, reads it with the user memory.
+      // A new session in workspace B, on a host of its own, is given it in its task-experience snapshot;
+      // the user memory in its memory note carries only what the person wrote.
       const beta = await openHost(b)
       const second = await beta.createSession({ cwd: b, key: 'beta-session' })
       await turn(second, 'Hello again.')
       const before = main().at(-1)
-      expect(latestMemoryNote(before)).toContain(LESSON)
+      const ref = `user.${section?.id ?? ''} v1]`
+      expect(before?.raw).toContain(`${ref} (saved)`)
+      expect(latestMemoryNote(before)).not.toContain(LESSON)
 
       // Past its review date the next request leaves it out and says so; the system prompt is unchanged.
       vi.setSystemTime(T0 + REVIEW_AFTER_MS + DAY)
       await turn(second, 'And now?')
       const expired = main().at(-1)
+      expect(expired?.raw).toContain(`${ref} withdrawn`)
       expect(latestMemoryNote(expired)).not.toContain(LESSON)
       expect(latestMemoryNote(expired)).toContain('1 task-experience paragraphs omitted')
       expect(systemOf(expired)).toBe(systemOf(before))
@@ -313,12 +317,13 @@ describe('promoting task experience to user memory in an assembled host', () => 
       const renewed = await manage(editor() as never, b, { action: 'renew', paragraphId: id, layer: 'user' })
       expect(renewed.paragraphs).toEqual([expect.objectContaining({ id, validity: 'valid' })])
       await turn(second, 'Still there?')
-      expect(latestMemoryNote(main().at(-1))).toContain(LESSON)
+      expect(main().at(-1)?.raw).toContain(`${ref} (saved)`)
       await manage(editor() as never, b, { action: 'withdraw', paragraphId: id, layer: 'user' })
       expect(readFileSync(userFile, 'utf8')).toBe('')
       expect(registry.read().revocations).toEqual([expect.objectContaining({ action: 'memory-withdrawn' })])
       await turn(second, 'And after withdrawing?')
       const withdrawn = main().at(-1)
+      expect(withdrawn?.raw).toContain(`${ref} withdrawn`)
       expect(latestMemoryNote(withdrawn)).not.toContain(LESSON)
       expect(systemOf(withdrawn)).toBe(systemOf(before))
       await second.close()

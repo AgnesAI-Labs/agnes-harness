@@ -178,7 +178,12 @@ function render(
 ): string {
   const sections = [head]
   if (parts.full.length)
-    sections.push(['Entries you may rewrite (full text):', ...parts.full.map((p) => p.text)].join('\n'))
+    sections.push(
+      [
+        'Entries you may rewrite (full text; an id starting with ws. or user. is saved for later sessions: an upsert under that id rewrites the saved text, a delete is refused):',
+        ...parts.full.map((p) => p.text),
+      ].join('\n'),
+    )
   if (parts.reference.length)
     sections.push(
       ['Reference entries (summaries; confirm or leave alone):', ...parts.reference.map((p) => p.text)].join(

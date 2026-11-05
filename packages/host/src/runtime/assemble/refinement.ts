@@ -159,6 +159,7 @@ export function createRefinementHost(
       )
     },
     clock,
+    userRegistry: user.userRegistry,
   })
   // Skills and roles a skill or subagent entry is bound to, as the session can use them now.
   const references = createRefinementReferences({ session: sessionOf, skills: () => sources.skills?.() })
