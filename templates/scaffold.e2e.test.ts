@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -85,6 +85,36 @@ describe('plugin scaffolder', () => {
     }
   })
 
+  it.each(['file', 'link', 'directory'])(
+    'preserves a foreign Windows compiler launcher (%s), then links idempotently after its owner removes it',
+    async (kind) => {
+      const temp = await mkdtemp(join(tmpdir(), 'agh-launcher spaces & ! #%-'))
+      try {
+        const target = await scaffold('tool', '@acme/launcher', join(temp, 'plugin'))
+        const bin = join(target, 'node_modules/.bin')
+        const launcher = join(bin, 'tsc.cmd')
+        const foreign = join(temp, 'foreign.cmd')
+        await mkdir(bin, { recursive: true })
+        await writeFile(foreign, '@echo foreign compiler\r\n')
+        if (kind === 'file') await writeFile(launcher, '@echo foreign compiler\r\n')
+        else if (kind === 'link') await symlink(foreign, launcher)
+        else await mkdir(launcher)
+        await expect(linkLocal(target)).rejects.toThrow(/existing|different|foreign/)
+        expect(await readFile(foreign, 'utf8')).toBe('@echo foreign compiler\r\n')
+        if (kind !== 'directory') expect(await readFile(launcher, 'utf8')).toBe('@echo foreign compiler\r\n')
+        if (kind === 'link') expect(await readlink(launcher)).toBe(foreign)
+        if (kind === 'directory') expect((await lstat(launcher)).isDirectory()).toBe(true)
+        await rm(launcher, { recursive: kind === 'directory' })
+        await linkLocal(target)
+        const owned = await readFile(launcher, 'utf8')
+        await linkLocal(target)
+        expect(await readFile(launcher, 'utf8')).toBe(owned)
+      } finally {
+        await rm(temp, { recursive: true, force: true })
+      }
+    },
+  )
+
   it.each([
     ...['tool', 'loop', 'model-adapter'].map((kind) => ({ kind, local: false })),
     ...templateNames.map((kind) => ({ kind, local: true })),
@@ -118,7 +148,19 @@ describe('plugin scaffolder', () => {
             })
           }
         }
-        if (!local) expect(run('build')).toContain('tsc')
+        if (!local) {
+          expect(run('build')).toContain('tsc')
+          if (kind === 'tool') {
+            const source = join(target, 'src/index.ts')
+            const original = await readFile(source, 'utf8')
+            try {
+              await writeFile(source, `${original}\nconst broken: string = 42\n`)
+              expect(() => run('build')).toThrow('TS2322')
+            } finally {
+              await writeFile(source, original)
+            }
+          }
+        }
         expect(run('test')).toContain(`pass ${kind === 'tool-with-panel' ? 2 : 1}`)
         if (kind === 'tool' && local)
           expect(run('test', ['--', '--test-name-pattern=does-not-match-any-test'])).not.toContain(
