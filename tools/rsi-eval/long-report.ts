@@ -475,3 +475,38 @@ export const lessonsMarkdown = (l: NonNullable<ReturnType<typeof lessonsReport>>
   ),
   '',
 ]
+
+// ------------------------------------------------------------------ the long sections together
+
+/** The sections for long tasks, capped runs, the frozen arm, saved lessons in context and rule forgetting; each only when it has data. */
+export const longSections = (records: RunRecord[], options: Options = {}) => {
+  const milestones = milestonesReport(records)
+  const capped = cappedReport(records)
+  const frozen = frozenReport(records, options)
+  const forgetting = forgettingReport(records)
+  const lessons = lessonsReport(records)
+  const on = records.filter((r) => r.setting === 'on')
+  const triggers = on.filter((r) => r.onProtocol === 'triggers').length
+  return {
+    ...(triggers > 0 ? { onProtocol: { reviews: on.length - triggers, triggers } } : {}),
+    ...(capped ? { capped } : {}),
+    ...(milestones ? { milestones } : {}),
+    ...(frozen ? { frozen } : {}),
+    ...(forgetting ? { ruleForgetting: forgetting } : {}),
+    ...(lessons ? { lessonsInContext: lessons } : {}),
+  }
+}
+
+export const longMarkdown = (r: ReturnType<typeof longSections>): string[] => [
+  ...(r.onProtocol
+    ? [
+        `On runs: ${r.onProtocol.reviews} with a manual review after every prompt, ${r.onProtocol.triggers} with refinement's own triggers only (no manual reviews; liveness checked once per session). Do not pool the two in one comparison.`,
+        '',
+      ]
+    : []),
+  ...(r.capped ? cappedMarkdown(r.capped) : []),
+  ...(r.milestones ? milestonesMarkdown(r.milestones) : []),
+  ...(r.frozen ? frozenMarkdown(r.frozen) : []),
+  ...(r.lessonsInContext ? lessonsMarkdown(r.lessonsInContext) : []),
+  ...(r.ruleForgetting ? forgettingMarkdown(r.ruleForgetting) : []),
+]

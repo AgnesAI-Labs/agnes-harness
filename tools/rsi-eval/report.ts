@@ -11,18 +11,7 @@ import { AGH_DIR } from '../../packages/protocol/src/constants.js'
 import { type BlockedExcluded, blockedExcluded, blockedMarkdown } from './blocked.js'
 import { type CaptureResult, captureMetric } from './capture.js'
 import { type InfraExcluded, infraExcluded, infraMarkdown } from './infra.js'
-import {
-  cappedMarkdown,
-  cappedReport,
-  forgettingMarkdown,
-  forgettingReport,
-  frozenMarkdown,
-  frozenReport,
-  lessonsMarkdown,
-  lessonsReport,
-  milestonesMarkdown,
-  milestonesReport,
-} from './long-report.js'
+import { longMarkdown, longSections } from './long-report.js'
 import {
   laterSessionsCost,
   runMetrics,
@@ -670,39 +659,6 @@ const systemMarkdown = (
 /** The report header line for runs whose on arm was left to refinement's own triggers. */
 export const TRIGGERS_HEADER =
   "Some on runs were driven by refinement's own triggers only (`--on-protocol triggers`): they sent no manual review and none of the end-of-session saves, neither the workflow task's save to the workspace nor the cross-workspace task's save to user memory. What reached their second session came from automatic saves alone, so their workflow reuse and cross-workspace results are not comparable with runs that sent those saves."
-
-/** The sections for long tasks, capped runs, the frozen arm, saved lessons in context and rule forgetting; each only when it has data. */
-const longSections = (records: RunRecord[], options: ReportOptions) => {
-  const milestones = milestonesReport(records)
-  const capped = cappedReport(records)
-  const frozen = frozenReport(records, options)
-  const forgetting = forgettingReport(records)
-  const lessons = lessonsReport(records)
-  const on = records.filter((r) => r.setting === 'on')
-  const triggers = on.filter((r) => r.onProtocol === 'triggers').length
-  return {
-    ...(triggers > 0 ? { onProtocol: { reviews: on.length - triggers, triggers } } : {}),
-    ...(capped ? { capped } : {}),
-    ...(milestones ? { milestones } : {}),
-    ...(frozen ? { frozen } : {}),
-    ...(forgetting ? { ruleForgetting: forgetting } : {}),
-    ...(lessons ? { lessonsInContext: lessons } : {}),
-  }
-}
-
-const longMarkdown = (r: ReturnType<typeof longSections>): string[] => [
-  ...(r.onProtocol
-    ? [
-        `On runs: ${r.onProtocol.reviews} with a manual review after every prompt, ${r.onProtocol.triggers} with refinement's own triggers only (no manual reviews; liveness checked once per session). Do not pool the two in one comparison.`,
-        '',
-      ]
-    : []),
-  ...(r.capped ? cappedMarkdown(r.capped) : []),
-  ...(r.milestones ? milestonesMarkdown(r.milestones) : []),
-  ...(r.frozen ? frozenMarkdown(r.frozen) : []),
-  ...(r.lessonsInContext ? lessonsMarkdown(r.lessonsInContext) : []),
-  ...(r.ruleForgetting ? forgettingMarkdown(r.ruleForgetting) : []),
-]
 
 const money = (value: number): string => String(value)
 
