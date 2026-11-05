@@ -18,6 +18,8 @@ import {
   forgettingReport,
   frozenMarkdown,
   frozenReport,
+  lessonsMarkdown,
+  lessonsReport,
   milestonesMarkdown,
   milestonesReport,
 } from './long-report.js'
@@ -103,7 +105,11 @@ const DIRECTIONS = {
     "What the sessions after the first cost together (the second session of a two-session task; sessions 2 to N of a long task of N sessions) in model requests, tokens and dollars (every lane of their ledgers, the review calls included), per arm: off, on, and oracle (off plus the task's own lesson written to memory before the second session). Differences are off minus the other arm, so positive means the other arm is cheaper. Capture rate = sum of (off minus on) over sum of (off minus oracle), over the tasks whose off-minus-oracle 95% interval lies above 0; the others are counted as no headroom. Single-session and workflow tasks do not enter.",
 } as const
 
-const CRITERION_1_RULE = 'repeat-error difference (off minus on) is above 0 and its 95% interval excludes 0'
+const CRITERION_1_RULE =
+  'capture rate of requests after the first session (off minus on over off minus oracle) is above 0 and its 95% interval excludes 0'
+/** The rule before the capture rate, still computed and shown next to it, for comparison only. */
+const PREVIOUS_CRITERION_1_RULE =
+  'repeat-error difference (off minus on) is above 0 and its 95% interval excludes 0'
 
 const overheadDiff = (
   records: RunRecord[],
@@ -376,8 +382,11 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
   const second = secondSessionReport(records, options)
   const firstTrap = firstSessionTrapReport(records)
 
-  const lower = drop.ci95[0]
-  const criterion1 = drop.tasks > 0 && drop.estimate > 0 && lower > 0
+  const previous = drop.tasks > 0 && drop.estimate > 0 && drop.ci95[0] > 0
+  const rate = second?.measures.requests
+  const rateCi = rate?.captureCi95 ?? null
+  const evaluable = rate !== undefined && rate.captureRate !== null && rateCi !== null
+  const criterion1 = evaluable && (rate.captureRate as number) > 0 && (rateCi as [number, number])[0] > 0
 
   return {
     runs: { on: on.length, off: off.length },
@@ -423,8 +432,14 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
     ...(second ? { secondSession: second } : {}),
     criterion1: {
       rule: CRITERION_1_RULE,
-      metric: 'repeatErrorDrop',
+      metric: 'secondSession.requests.captureRate',
       pass: criterion1,
+      evaluable,
+    },
+    previousCriterion1: {
+      rule: PREVIOUS_CRITERION_1_RULE,
+      metric: 'repeatErrorDrop',
+      pass: previous,
       evaluable: drop.tasks > 0,
     },
     settings: { on: settingSummary(on), off: settingSummary(off) },
@@ -559,11 +574,9 @@ const systemMarkdown = (
   infra?: InfraExcluded,
   blocked?: BlockedExcluded,
 ): string[] => {
-  const verdict = !r.criterion1.evaluable
-    ? 'NOT EVALUABLE (no paired tasks)'
-    : r.criterion1.pass
-      ? 'PASS'
-      : 'FAIL'
+  const verdictOf = (c: SystemReport['criterion1'], none: string) =>
+    !c.evaluable ? `NOT EVALUABLE (${none})` : c.pass ? 'PASS' : 'FAIL'
+  const verdict = verdictOf(r.criterion1, 'no capture rate with an interval')
   const lines = [
     `## ${name}`,
     '',
@@ -621,6 +634,8 @@ const systemMarkdown = (
     '',
     `Verdict: ${verdict}`,
     '',
+    `Old rule, for comparison only: ${r.previousCriterion1.rule}. Verdict under it: ${verdictOf(r.previousCriterion1, 'no paired tasks')}.`,
+    '',
     '### Run structure',
     '',
     '| | on | off |',
@@ -656,12 +671,13 @@ const systemMarkdown = (
 export const TRIGGERS_HEADER =
   "Some on runs were driven by refinement's own triggers only (`--on-protocol triggers`): they sent no manual review and none of the end-of-session saves, neither the workflow task's save to the workspace nor the cross-workspace task's save to user memory. What reached their second session came from automatic saves alone, so their workflow reuse and cross-workspace results are not comparable with runs that sent those saves."
 
-/** The sections for long tasks, capped runs, the frozen arm and rule forgetting; each only when it has data. */
+/** The sections for long tasks, capped runs, the frozen arm, saved lessons in context and rule forgetting; each only when it has data. */
 const longSections = (records: RunRecord[], options: ReportOptions) => {
   const milestones = milestonesReport(records)
   const capped = cappedReport(records)
   const frozen = frozenReport(records, options)
   const forgetting = forgettingReport(records)
+  const lessons = lessonsReport(records)
   const on = records.filter((r) => r.setting === 'on')
   const triggers = on.filter((r) => r.onProtocol === 'triggers').length
   return {
@@ -670,6 +686,7 @@ const longSections = (records: RunRecord[], options: ReportOptions) => {
     ...(milestones ? { milestones } : {}),
     ...(frozen ? { frozen } : {}),
     ...(forgetting ? { ruleForgetting: forgetting } : {}),
+    ...(lessons ? { lessonsInContext: lessons } : {}),
   }
 }
 
@@ -683,6 +700,7 @@ const longMarkdown = (r: ReturnType<typeof longSections>): string[] => [
   ...(r.capped ? cappedMarkdown(r.capped) : []),
   ...(r.milestones ? milestonesMarkdown(r.milestones) : []),
   ...(r.frozen ? frozenMarkdown(r.frozen) : []),
+  ...(r.lessonsInContext ? lessonsMarkdown(r.lessonsInContext) : []),
   ...(r.ruleForgetting ? forgettingMarkdown(r.ruleForgetting) : []),
 ]
 
@@ -745,6 +763,7 @@ export const buildReport = (
     ...(run ? { run } : {}),
     directions: DIRECTIONS,
     criterion1Rule: CRITERION_1_RULE,
+    previousCriterion1Rule: PREVIOUS_CRITERION_1_RULE,
     ...(Object.keys(excluded).length === 0 ? {} : { infraExcluded: excluded }),
     ...(Object.keys(blockedRuns).length === 0 ? {} : { blockedExcluded: blockedRuns }),
     systems,

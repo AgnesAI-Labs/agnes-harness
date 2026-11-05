@@ -502,13 +502,15 @@ describe('buildReport', () => {
     run(id, 'off', 2, true, { exit: 'timeout' }),
   ])
 
-  it('reports the three metrics with their directions and the criterion (1) verdict', () => {
+  it('reports the three metrics with their directions and the old criterion (1) verdict next to the new one', () => {
     const { json, markdown } = buildReport(records, { resamples: 500 })
     const prime = primeOf(json)
     // off recurrence 1, on recurrence 0 (t1..t3) and 0.5 average for t4 -> mean difference 0.875
     expect(prime.repeatErrorDrop.difference.estimate).toBeCloseTo(0.875)
     expect(prime.repeatErrorDrop.difference.ci95[0]).toBeGreaterThan(0)
-    expect(prime.criterion1.pass).toBe(true)
+    expect(prime.previousCriterion1.pass).toBe(true)
+    // These runs have no session after the first, so the capture rate the criterion is now judged on is absent.
+    expect(prime.criterion1).toMatchObject({ pass: false, evaluable: false })
     expect(prime.costOverhead.tokens.relative.estimate).toBeCloseTo(0.5)
     expect(prime.costOverhead.costUsd.relative.estimate).toBeCloseTo(0.5)
     expect(prime.settings.on.refine).toEqual({ auto: 4, user: 8, self: 0, appliedEdits: 12 })
@@ -517,15 +519,15 @@ describe('buildReport', () => {
     expect(prime.settings.off.exit).toEqual({ ok: 4, error: 0, timeout: 4 })
     expect(markdown).toContain('off minus on')
     expect(markdown).toContain('on minus off')
-    expect(markdown).toContain('Verdict: PASS')
+    expect(markdown).toContain('Verdict under it: PASS')
     expect(JSON.stringify(json)).not.toMatch(/\/Users|\/work|\/tmp/)
   })
 
-  it('fails criterion (1) when the interval includes 0 and when nothing can be paired', () => {
+  it('fails the old criterion (1) when the interval includes 0 and when nothing can be paired', () => {
     const noEffect = tasks.flatMap((id) => [run(id, 'on', 1, true), run(id, 'off', 1, true)])
     const flat = buildReport(noEffect, { resamples: 200 })
-    expect(primeOf(flat.json).criterion1.pass).toBe(false)
-    expect(flat.markdown).toContain('Verdict: FAIL')
+    expect(primeOf(flat.json).previousCriterion1.pass).toBe(false)
+    expect(flat.markdown).toContain('Verdict under it: FAIL')
 
     // trap never fires anywhere: every recurrence is undefined, so nothing is paired
     const silent = tasks.flatMap((id) => [
@@ -536,8 +538,8 @@ describe('buildReport', () => {
     const prime = primeOf(none.json)
     expect(prime.repeatErrorDrop.difference.estimate).toBeNull()
     expect(prime.repeatErrorDrop.difference.excludedRuns).toBe(8)
-    expect(prime.criterion1).toMatchObject({ pass: false, evaluable: false })
-    expect(none.markdown).toContain('NOT EVALUABLE')
+    expect(prime.previousCriterion1).toMatchObject({ pass: false, evaluable: false })
+    expect(none.markdown).toContain('Verdict under it: NOT EVALUABLE (no paired tasks)')
   })
 
   it('uses only cross-session tasks for reuse and counts unknown usage', () => {

@@ -24,6 +24,8 @@ export type ParsedSession = {
   /** AGH: the ledger seq of every trap hit inside a prompt window, and of every compaction. */
   hitSeqs?: number[]
   compactionSeqs?: number[]
+  /** AGH: the first task-experience snapshot row of the session. */
+  experience?: { saved: number; savedIncluded: number }
 }
 
 export type UsageSummary = {
@@ -215,6 +217,7 @@ export const parsePrimeSession = (jsonl: string, task: EvalTask, sessionIndex: n
 }
 
 const REFINEMENT_RUN = 'x/core/refinement-run'
+const EXPERIENCE_ROW = 'x/core/refinement-prefix-change'
 const TRIGGER_SOURCE: Record<string, Source> = {
   manual: 'user',
   model: 'self',
@@ -247,6 +250,7 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
   const refine = { auto: 0, user: 0, self: 0, appliedEdits: 0 }
   const hitSeqs: number[] = []
   const compactionSeqs: number[] = []
+  let experience: ParsedSession['experience']
 
   for (const line of jsonl.split('\n')) {
     if (line.trim() === '') continue
@@ -266,6 +270,15 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
       if (trigger && typeof trigger.kind === 'string') run.source = TRIGGER_SOURCE[trigger.kind] ?? 'user'
       if (data.state === 'planning' || data.state === 'proposed') run.planned = true
       runs.set(data.runId, run)
+      continue
+    }
+    if (row.type === EXPERIENCE_ROW && data.reason === 'experience-snapshot' && experience === undefined) {
+      // Saved entries carry the ids of the memory they came from: `ws.` and `user.`.
+      const included = Array.isArray(data.included) ? data.included : []
+      experience = {
+        saved: typeof data.saved === 'number' ? data.saved : 0,
+        savedIncluded: included.filter((id) => typeof id === 'string' && /^(ws|user)\./u.test(id)).length,
+      }
       continue
     }
     if (row.type === 'harness/refine') {
@@ -311,7 +324,15 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
     }
   }
   for (const run of runs.values()) if (run.planned) refine[run.source ?? 'user']++
-  return { windows, refine, harnessLookups, compactions, hitSeqs, compactionSeqs }
+  return {
+    windows,
+    refine,
+    harnessLookups,
+    compactions,
+    hitSeqs,
+    compactionSeqs,
+    ...(experience ? { experience } : {}),
+  }
 }
 
 /**
@@ -506,6 +527,7 @@ export const toRunRecord = (
   let compactions = 0
   const texts: string[] = []
   const trapEvents: NonNullable<RunRecord['trapEvents']> = []
+  const experienceAtStart: NonNullable<RunRecord['experienceAtStart']> = []
   task.sessions.forEach((_, sessionIndex) => {
     const files = outcome.sessions[sessionIndex]?.sessionFiles ?? []
     const parse = (options.system ?? 'prime') === 'agh' ? parseAghSession : parsePrimeSession
@@ -519,6 +541,12 @@ export const toRunRecord = (
         session: sessionIndex,
         hits: parsed.hitSeqs ?? [],
         compactions: parsed.compactionSeqs ?? [],
+      })
+      experienceAtStart.push({
+        session: sessionIndex,
+        snapshot: parsed.experience !== undefined,
+        saved: parsed.experience?.saved ?? 0,
+        savedIncluded: parsed.experience?.savedIncluded ?? 0,
       })
     }
     for (const window of parsed.windows) {
@@ -572,6 +600,7 @@ export const toRunRecord = (
     ...(sessionCosts.length > 0 ? { sessionCosts } : {}),
     ...(startedAt ? { startedAt } : {}),
     ...(trapEvents.length > 0 ? { trapEvents } : {}),
+    ...(experienceAtStart.length > 0 ? { experienceAtStart } : {}),
     ...(progress ? { progress } : {}),
     ...(outcome.capped ? { capped: outcome.capped } : {}),
     ...(outcome.onProtocol ? { onProtocol: outcome.onProtocol } : {}),
