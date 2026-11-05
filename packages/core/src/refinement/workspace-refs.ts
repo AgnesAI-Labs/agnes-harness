@@ -95,6 +95,14 @@ export type SavedEntry = {
 export const SAVED_LIST_TIMEOUT_MS = 1_000
 /** A saved entry's id in the snapshot: its paragraph in workspace memory (`ws.`) or user memory (`user.`). */
 export const SAVED_REF = /^(?:ws|user)\.r[0-9a-z]{10}$/u
+/** The saved paragraph a `ws.<id>` or `user.<id>` entry id names; undefined for any other id. */
+export function savedParagraphOf(
+  id: string,
+): { layer: 'workspace' | 'user'; paragraphId: string } | undefined {
+  if (!isSavedRef(id)) return undefined
+  const user = id.startsWith('user.')
+  return { layer: user ? 'user' : 'workspace', paragraphId: id.slice(user ? 5 : 3) }
+}
 /** Ids under the saved prefixes: never made for an entry of a session's own. */
 export const isSavedPrefix = (id: unknown): boolean => typeof id === 'string' && /^(?:ws|user)\./u.test(id)
 /** Whether an entry id names a saved entry; such ids are never made by a plan or the model directly. */

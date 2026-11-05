@@ -1227,3 +1227,41 @@ describe('rewriting a saved paragraph by id', () => {
     expect(await ws.file()).toBe(edited)
   })
 })
+
+describe('rewrites after the PR review', () => {
+  const NEW = 'Run pnpm lint and pnpm typecheck first.'
+  it('a rewrite of a user-memory section sent to the workspace save is refused, never appended', async () => {
+    const ws = await workspace()
+    const save = ws.service()
+    const before = await ws.file()
+    expect(
+      await save.save(
+        request(ws, {
+          ...entry({
+            id: 'user.r0000000009',
+            content: NEW,
+            replaces: { layer: 'user', paragraphId: 'r0000000009' },
+          }),
+        }),
+      ),
+    ).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+    expect(await ws.file()).toBe(before)
+  })
+
+  it('a paragraph past its review date is not rewritten', async () => {
+    const ws = await workspace()
+    const save = ws.service()
+    const pid = paragraphOf(await save.save(request(ws)))
+    ws.now.value = T0 + 31 * 86_400_000
+    const before = await ws.file()
+    expect(
+      await save.save(
+        request(ws, {
+          session: { key: 'session-2', lane: 'main', workspaceRoot: ws.root, lastSeq: 40, child: false },
+          ...entry({ id: `ws.${pid}`, content: NEW, replaces: { layer: 'workspace', paragraphId: pid } }),
+        }),
+      ),
+    ).toMatchObject({ outcome: 'refused', reason: 'conflict' })
+    expect(await ws.file()).toBe(before)
+  })
+})

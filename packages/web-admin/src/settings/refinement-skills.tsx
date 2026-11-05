@@ -40,6 +40,7 @@ export function SavedSkillsBlock({ api }: { api: SavedSkillsApi }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>()
   const [saved, setSaved] = useState<{ workspace: number; user: number }>()
+  const [memoryOff, setMemoryOff] = useState(false)
   useEffect(() => {
     let live = true
     void api.workspaces().then(
@@ -78,7 +79,18 @@ export function SavedSkillsBlock({ api }: { api: SavedSkillsApi }) {
     let live = true
     setSaved(undefined)
     const count = async (input: AdminMemoryParams) =>
-      (await (api.memory ? api.memory(input) : memoryRequest(input))).saved?.paragraphs.length ?? 0
+      // Only paragraphs in force count as saved experience; expired or unverifiable ones are not given.
+      (await (api.memory ? api.memory(input) : memoryRequest(input))).saved?.paragraphs.filter(
+        (paragraph) => paragraph.validity === 'valid',
+      ).length ?? 0
+    setMemoryOff(false)
+    // Without workspace memory, saved lessons have nowhere to go: say so where the workspace is chosen.
+    void (api.memory ? api.memory({ cwd }) : memoryRequest({ cwd })).then(
+      (result) => {
+        if (live) setMemoryOff(result.inspection?.settings.mode === 'off')
+      },
+      () => undefined,
+    )
     void Promise.all([
       count({ cwd, saved: { action: 'list' } }),
       count({ cwd, saved: { action: 'list', layer: 'user' } }),
@@ -117,6 +129,11 @@ export function SavedSkillsBlock({ api }: { api: SavedSkillsApi }) {
   return (
     <SettingsBlock label={t('skills.title')} data-testid="refinement-saved-skills" aria-busy={busy}>
       <p className="agnes-settings-note">{t('skills.help')}</p>
+      {memoryOff && (
+        <p className="agnes-settings-note" role="status" data-testid="refinement-memory-off">
+          {t('skills.memoryOff')}
+        </p>
+      )}
       {saved && (
         <p className="agnes-settings-note" data-testid="refinement-saved-counts">
           {t('skills.saved', { total: saved.workspace + saved.user, ...saved })}

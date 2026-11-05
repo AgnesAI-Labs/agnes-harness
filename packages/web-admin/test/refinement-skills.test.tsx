@@ -57,12 +57,17 @@ function listed(): RefinementSkillsResult {
 const paragraph = (id: string) => ({ id, text: `Lesson ${id}`, validity: 'valid' as const })
 /** The saved list of `admin.memory`: three in the workspace, two in user memory, unless told otherwise. */
 const savedLists =
-  (counts: { workspace: number; user: number } = { workspace: 3, user: 2 }) =>
+  (counts: { workspace: number; user: number } = { workspace: 3, user: 2 }, mode = 'auto') =>
   async (input: AdminMemoryParams): Promise<AdminMemoryResult> => {
+    if (!input.saved) return { inspection: { settings: { mode } } } as unknown as AdminMemoryResult
     const count = input.saved?.layer === 'user' ? counts.user : counts.workspace
     return {
       saved: {
-        paragraphs: Array.from({ length: count }, (_, i) => paragraph(`r${String(i).padStart(10, '0')}`)),
+        // One past its review date in each list: not counted as saved experience.
+        paragraphs: [
+          ...Array.from({ length: count }, (_, i) => paragraph(`r${String(i).padStart(10, '0')}`)),
+          { id: 'rzzzzzzzzzz', text: 'An expired lesson', validity: 'expired' as const },
+        ],
       },
     } as unknown as AdminMemoryResult
   }
@@ -224,4 +229,18 @@ it('shows the section in Chinese', async () => {
   expect(host.textContent).toContain('回滚到上一版')
   expect(host.textContent).toContain('因数量上限停用')
   expect(host.textContent).toContain('已存经验 5 条（工作区 3，用户 2）')
+})
+
+it('says so when the chosen workspace keeps no memory, so lessons stay in their session', async () => {
+  const off = fakeApi()
+  off.api.memory = vi.fn(savedLists(undefined, 'off'))
+  const host = await mount(off.api)
+  expect(off.api.memory).toHaveBeenCalledWith({ cwd: '/work/repo' })
+  const warning = all(host, 'refinement-memory-off')
+  expect(warning).toHaveLength(1)
+  expect(warning[0]?.textContent).toContain('Workspace memory is off')
+  expect(warning[0]?.textContent).toContain('Settings → General → Personalization → Memory')
+  const on = fakeApi()
+  const other = await mount(on.api)
+  expect(all(other, 'refinement-memory-off')).toHaveLength(0)
 })

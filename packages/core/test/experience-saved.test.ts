@@ -262,6 +262,51 @@ describe('entries saved in earlier sessions reach the model through the snapshot
     expect(cold).not.toContain('old text')
   })
 
+  it('a listing that fails at the cold boundary is tried again on the next request', async () => {
+    const p = port([saved(1)])
+    let fail = true
+    const entries = p.refs.entries
+    p.refs.entries = async (at) => {
+      if (fail) throw new Error('busy')
+      return entries?.(at) ?? []
+    }
+    const { session } = await open(p.refs)
+    const first = await deriveExperienceNotes(session, [ask('Saved 1')])
+    expect(textOf(first)).not.toContain('(saved)')
+    fail = false
+    const next = await deriveExperienceNotes(session, [ask('Saved 1'), ...first.map(delivered), ask('again')])
+    expect(textOf(next)).toContain('(saved) Saved 1')
+  })
+
+  it('a format 1 surface with nothing saved lists the saved entries once, not on every request', async () => {
+    const p = port([])
+    const { session } = await open(p.refs)
+    const legacy = note(`${EXPERIENCE_PREFIX}Task experience snapshot, format 1.\nOld guidance.`)
+    for (const text of ['a', 'b', 'c']) await deriveExperienceNotes(session, [legacy, ask(text)])
+    expect(p.calls()).toBe(1)
+  })
+
+  it('a reset notice gives the saved entries still in force again', async () => {
+    const all = Array.from({ length: 15 }, (_, i) => saved(i + 1))
+    const p = port(all)
+    const { session } = await open(p.refs)
+    const snapshot = await deriveExperienceNotes(session, [ask('x')])
+    // An update that delivered all fifteen, then fourteen of them are withdrawn at once.
+    const update = note(
+      `${EXPERIENCE_PREFIX}Task experience update, format 1.`,
+      all.map((e) => `- [memory/${e.ref} v1] (saved) ${e.title}: ${e.content}`).join('\n'),
+    )
+    p.set([saved(15)])
+    const notes = await deriveExperienceNotes(session, [
+      ask('x'),
+      ...snapshot.map(delivered),
+      update,
+      ask('y'),
+    ])
+    expect(textOf(notes)).toContain('No task-experience note before this one applies any longer')
+    expect(textOf(notes)).toContain('(saved) Saved 15')
+  })
+
   it("another session's new save waits for the next cold boundary", async () => {
     const p = port([saved(1)])
     const { session } = await open(p.refs)

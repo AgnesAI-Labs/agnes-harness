@@ -14,7 +14,7 @@ import type { SessionImpl } from '../step/session.js'
 import { settingsOf } from './scheduler.js'
 import { skillInstalledRows } from './skill-handoff.js'
 import { contentHash } from './validity.js'
-import { isSavedRef } from './workspace-refs.js'
+import { savedParagraphOf } from './workspace-refs.js'
 
 export type { SaveInitiator, SaveReceipt } from '@agnes/core-ledger/reduce/refinement-save'
 
@@ -127,13 +127,6 @@ function plannedEvidence(s: SessionImpl, entry: HarnessEntry): Seq[] {
 }
 
 /** The request for one live entry of this session, or undefined when there is no such entry. */
-/** The saved paragraph an entry under a saved id rewrites. */
-function replacesOf(id: string): { replaces?: { layer: 'workspace' | 'user'; paragraphId: string } } {
-  if (!isSavedRef(id)) return {}
-  const user = id.startsWith('user.')
-  return { replaces: { layer: user ? 'user' : 'workspace', paragraphId: id.slice(user ? 5 : 3) } }
-}
-
 export function workspaceSaveRequest(
   s: SessionImpl,
   input: WorkspaceSaveInput,
@@ -147,8 +140,10 @@ export function workspaceSaveRequest(
   const meta = s.state.refinementEntryMeta.get(key)
   const current = meta && meta.entrySeq === cell.seq ? meta : undefined
   const lastTurn = s.state.lastTurn.get(s.lane)
-  // A rewrite of a saved paragraph goes back to the layer that paragraph is in.
-  const replaces = replacesOf(entry.id).replaces
+  // A rewrite of a saved paragraph goes back to the layer that paragraph is in. A user-memory section is
+  // rewritten only when the save already passed the checks that let an entry reach user memory.
+  const replaces = savedParagraphOf(entry.id)
+  if (replaces?.layer === 'user' && input.target !== 'user') return undefined
   const toUser = replaces ? replaces.layer === 'user' : input.target === 'user'
   return {
     initiator: input.initiator,
@@ -172,7 +167,7 @@ export function workspaceSaveRequest(
       applicability: current?.applicability ?? 'task',
       ...(typeof entry.reference === 'string' ? { reference: entry.reference } : {}),
       ...(typeof entry.workflowRun === 'string' ? { workflowRun: entry.workflowRun } : {}),
-      ...replacesOf(entry.id),
+      ...(replaces ? { replaces } : {}),
     },
     evidenceSeqs: [...(input.evidenceSeqs ?? plannedEvidence(s, entry))],
     ...(lastTurn === undefined ? {} : { evidenceTurn: lastTurn }),

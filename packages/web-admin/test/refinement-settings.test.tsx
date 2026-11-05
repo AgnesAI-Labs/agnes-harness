@@ -110,7 +110,7 @@ it('the settings panel saves with revision and shows the permission text', async
   // When it takes effect, said plainly in the help beside the switch, which keyboard users reach too.
   const help = switchHelp(host)
   expect(help?.getAttribute('aria-label')).toBe(
-    'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once.',
+    'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once. To keep lessons for later sessions, also turn workspace memory on (Settings → General → Personalization → Memory: "Ask me first" or "Automatic"); while it is off, lessons last only for the session they were learned in.',
   )
   expect(help?.getAttribute('tabindex')).toBe('0')
   expect(field(host, 'refinement-approvals').textContent).toContain('more commands')
@@ -214,7 +214,7 @@ it('shows the section in Chinese', async () => {
   const host = await mount(fakeApi())
   const text = host.textContent ?? ''
   expect(switchHelp(host)?.getAttribute('aria-label')).toBe(
-    '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。',
+    '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',
   )
   expect(text).not.toContain('重启')
   expect(text).toContain('可能出现更多命令审批')

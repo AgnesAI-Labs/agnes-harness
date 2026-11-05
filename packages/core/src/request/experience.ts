@@ -344,6 +344,11 @@ function currentRequestText(surface: readonly SurfaceNode[]): string {
   return ''
 }
 
+/** Sessions whose last snapshot went without saved entries because the host could not list them. */
+const savedOwed = new WeakSet<SessionImpl>()
+/** Sessions that already looked for saved entries for a format 1 snapshot. */
+const legacyLooked = new WeakSet<SessionImpl>()
+
 /** The saved entries last listed for a session, at the host revision they were listed at. */
 const savedCache = new WeakMap<SessionImpl, { revision: string; entries: readonly SavedEntry[] }>()
 
@@ -528,7 +533,11 @@ export async function deriveExperienceNotes(
   const isSavedKey = (ref: string) => isSavedRef(ref.slice(ref.indexOf('/') + 1))
   const givenSaved = [...refs.delivered.keys()].filter(isSavedKey)
   const withdrawnSaved = [...refs.withdrawn].filter(isSavedKey)
-  const cold = !seen.snapshot || (seen.legacy && !seen.saved)
+  // A format 1 snapshot never carried saved entries: they are looked for once. A snapshot sent while the
+  // host could not list them owes them until a listing succeeds.
+  const legacy = seen.snapshot && seen.legacy && !seen.saved && !legacyLooked.has(s)
+  const owedBefore = seen.snapshot && savedOwed.has(s)
+  const cold = !seen.snapshot || legacy || savedOwed.has(s)
   const saved =
     cold || givenSaved.length || withdrawnSaved.length
       ? await savedFor(s, cold)
@@ -546,7 +555,12 @@ export async function deriveExperienceNotes(
   const named = heldLine(heldBack)
   const withHeld = (text: string) => (named ? `${text}\n${named}` : text)
   // A format 1 snapshot never carried saved entries: with some in force, a new snapshot gives them once.
-  if (!seen.snapshot || (seen.legacy && !seen.saved && saved.entries.length > 0)) {
+  if (legacy) legacyLooked.add(s)
+  if (cold) {
+    if (saved.failed) savedOwed.add(s)
+    else savedOwed.delete(s)
+  }
+  if (!seen.snapshot || ((legacy || owedBefore) && !saved.failed && saved.entries.length > 0)) {
     const all = [...entries, ...savedAsEntries(s, saved.entries, entries)]
     const out = renderExperience(
       { entries: all, control },
@@ -604,7 +618,7 @@ export async function deriveExperienceNotes(
   )
   const fresh =
     notice === EXPERIENCE_RESET_NOTICE
-      ? entries
+      ? [...entries, ...savedAsEntries(s, saved.entries, entries)]
       : [...valid.filter(owed).map(({ entry, seq }) => ({ entry, seq })), ...back]
   if (fresh.length) {
     const { body, data } = renderExperienceUpdate(fresh, EXPERIENCE_BUDGETS)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { entryKey } from '../src/refine/apply.js'
+import { applyRefine, entryKey } from '../src/refine/apply.js'
 import { refinementFacade } from '../src/refinement/facade.js'
 import { workspaceSaveRequest } from '../src/refinement/workspace.js'
 import type {
@@ -206,7 +206,7 @@ describe('user memory entries', () => {
     expect(run?.plan?.workspaceConfirmations?.map((c) => c.ref)).toEqual([`user-memory/${USER_PID}`])
   })
 
-  it('a rewrite of a user. entry is saved to user memory, whatever its reach says', async () => {
+  it('a rewrite of a user. entry is saved back to user memory only through the user-memory checks', async () => {
     const p = userPort()
     const t = await open({
       workspaceRefs: p.refs,
@@ -228,15 +228,82 @@ describe('user memory entries', () => {
       kind: 'memory',
       id: `user.${USER_PID}`,
       initiator: 'auto',
+      target: 'user',
     } as never)
     expect(request?.target).toBe('user')
     expect(request?.entry.replaces).toEqual({ layer: 'user', paragraphId: USER_PID })
-    const forced = workspaceSaveRequest(t.session, {
+    // Without a user target (the reach check did not let it reach user memory) nothing is saved.
+    const unchecked = workspaceSaveRequest(t.session, {
       kind: 'memory',
       id: `user.${USER_PID}`,
       initiator: 'auto',
       target: undefined,
     } as never)
-    expect(forced?.target).toBe('user')
+    expect(unchecked).toBeUndefined()
+  })
+})
+
+describe('after the PR review', () => {
+  it('a confirmation of a saved entry whose paragraph was not listed for confirmation is dropped', async () => {
+    const entry = saved()
+    const refs: RefinementWorkspaceRefs = {
+      list: () => [],
+      renew: () => true,
+      entries: () => [entry],
+      revision: () => 'r1',
+    }
+    const t = await open({
+      workspaceRefs: refs,
+      answers: [
+        (seen) =>
+          output({
+            confirmations: [
+              { entryId: `memory/ws.${PID}`, evidenceIds: ids(seen, (e) => e.kind === 'user') },
+            ],
+          }),
+      ],
+    })
+    await t.say(REQUEST)
+    expect((await t.refine())?.state).toBe('rejected')
+  })
+
+  it('an existing entry whose own id starts with user. can still be changed', async () => {
+    const t = await open({})
+    await t.say(REQUEST)
+    await applyRefine(
+      t.session,
+      {
+        proposalId: 'legacy',
+        runId: 'legacy',
+        trigger: 'manual',
+        edits: [
+          {
+            op: 'upsert',
+            entry: {
+              kind: 'memory',
+              id: 'user.prefs',
+              title: 'Old',
+              content: 'old',
+              scope: 'local',
+              version: 1,
+              source: 'refine',
+            },
+          },
+        ],
+        baseline: [],
+        rationale: 'r',
+        evidenceSeqs: [1],
+      } as never,
+      { maxEdits: 50, maxChars: 4000, safetyCap: 50 },
+    )
+    const facade = refinementFacade(t.session)
+    await facade.inspect({ op: 'get', kind: 'memory', id: 'user.prefs' })
+    expect(
+      await facade.propose({
+        rationale: 'r',
+        evidenceSeqs: [1],
+        edits: [{ op: 'delete', kind: 'memory', id: 'user.prefs' }],
+      }),
+    ).toHaveProperty('runId')
   })
 })

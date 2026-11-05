@@ -52,6 +52,7 @@ import {
   isWorkspaceRef,
   plannerWorkspace,
   savedEntriesOf,
+  savedParagraphOf,
   shownWorkspaceRefs,
   workspaceRefsOf,
 } from './workspace-refs.js'
@@ -496,11 +497,11 @@ const masked = (text: string, max: number, why: string, min = 0): string => {
  */
 /** `memory/ws.<id>` as the saved paragraph `workspace-memory/<id>` when the planner was shown that one. */
 function savedAlias(entryId: string, shownWorkspace: ReadonlySet<string>): string {
-  const id = entryId.slice(entryId.indexOf('/') + 1)
-  if (!isSavedRef(id)) return entryId
-  const user = id.startsWith('user.')
-  const ref = `${user ? 'user-memory' : 'workspace-memory'}/${id.slice(user ? 5 : 3)}`
-  return shownWorkspace.has(ref) ? ref : entryId
+  const saved = savedParagraphOf(entryId.slice(entryId.indexOf('/') + 1))
+  if (!saved) return entryId
+  const ref = `${saved.layer === 'user' ? 'user-memory' : 'workspace-memory'}/${saved.paragraphId}`
+  // A saved entry has no cell of its own to confirm: without its paragraph shown, nothing is renewed.
+  return shownWorkspace.has(ref) ? ref : invalid(`unknown-entry: ${entryId}`)
 }
 
 function checkedPlan(
@@ -562,7 +563,9 @@ function checkedPlan(
         // A saved entry is rewritten only when it was shown in full, and never deleted.
         if (isSavedRef(edit.id) && edit.op === 'delete') invalid(`confirm-only: ${key}`)
         if (isSavedRef(edit.id) && !full.has(key)) invalid(`not-shown-in-full: ${key}`)
-        if (isSavedPrefix(edit.id) && !isSavedRef(edit.id)) invalid(`reserved-id: ${key}`)
+        // An id under a saved prefix is reserved for new entries; one the session holds already may change.
+        if (isSavedPrefix(edit.id) && !isSavedRef(edit.id) && !existing.has(key))
+          invalid(`reserved-id: ${key}`)
         if (touched.has(key)) invalid(`duplicate-entry: ${key}`)
         if (changed.has(key)) invalid('read-set-changed')
         const saved = existing.get(key)

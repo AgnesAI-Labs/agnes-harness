@@ -362,8 +362,9 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     } catch {
       return refused('unavailable', 'capacity')
     }
-    const replaces =
-      request.entry.replaces?.layer === 'workspace' ? request.entry.replaces.paragraphId : undefined
+    // A rewrite belongs to the layer its paragraph is in: one of a user-memory section is never appended here.
+    if (request.entry.replaces?.layer === 'user') return refused('conflict', 'capacity')
+    const replaces = request.entry.replaces?.paragraphId
     const placed = placement(snapshot, base.source, text, deps.clock(), inFile, replaces)
     if (placed === 'busy' || placed === 'gone') return refused('conflict', 'capacity')
     if ('existing' in placed) {
@@ -668,7 +669,9 @@ export function placement(
   const already = (currentText: string) => normalizedContentHash(currentText) === hash
   // A rewrite of a saved paragraph goes into that paragraph only, and only while it is in force there.
   if (replaces !== undefined) {
-    const target = active.find((paragraph) => paragraph.id === replaces && inFile.has(paragraph.id))
+    const target = active.find(
+      (paragraph) => paragraph.id === replaces && now < paragraph.reviewAfter && inFile.has(paragraph.id),
+    )
     if (!target) return 'gone'
     return {
       id: target.id,

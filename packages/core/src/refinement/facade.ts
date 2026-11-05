@@ -238,7 +238,12 @@ function directPlan(
     // `ws.` and `user.` name entries saved in earlier sessions: never deleted here, and rewritten only
     // after a full read of the saved text; the host refuses the save if a person has edited it since.
     if (isSavedRef(edit.id) && edit.op === 'delete') return invalid(`edits[${at}]: saved entry id`)
-    if (isSavedPrefix(edit.id) && !isSavedRef(edit.id)) return invalid(`edits[${at}]: reserved id`)
+    if (
+      isSavedPrefix(edit.id) &&
+      !isSavedRef(edit.id) &&
+      !s.state.registers.harnessEntries.has(entryKey(edit))
+    )
+      return invalid(`edits[${at}]: reserved id`)
     if (edit.op !== 'upsert' && edit.op !== 'delete') return invalid(`edits[${at}].op`)
     const key = entryKey(edit)
     if (touched.has(key)) return invalid(`edits[${at}]: duplicate`)
