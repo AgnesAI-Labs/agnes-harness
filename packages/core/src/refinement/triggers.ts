@@ -37,7 +37,8 @@ const NEVER_COUNTED_TEXT =
 /**
  * Codes that only say the command exited non-zero. Every failing shell command carries one, so as a
  * key it would make all of them the same error: such a failure is keyed by the error it printed
- * (its stderr first, see `normalizeCommandError`), and by the code only when there is no text.
+ * (its stderr first, see `normalizeCommandError`), and by the code only when there is no text. The
+ * jobs shell puts the exit status itself in `details.code`, a number: it says no more than these.
  */
 const EXIT_ONLY_CODE = new Set(['SHELL_EXIT'])
 
@@ -113,7 +114,8 @@ function countFailure(
   const sink = live(s)
   if (!sink) return
   const detail = (result.details as { code?: unknown } | null | undefined)?.code
-  const known = code ?? (typeof detail === 'string' ? detail : undefined)
+  const known =
+    code ?? (typeof detail === 'string' ? detail : typeof detail === 'number' ? 'SHELL_EXIT' : undefined)
   if (known && NEVER_COUNTED_CODE.test(known)) return
   const exitOnly = known !== undefined && EXIT_ONLY_CODE.has(known)
   const byCode = known && !exitOnly ? known : undefined

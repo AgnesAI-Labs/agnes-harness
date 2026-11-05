@@ -195,7 +195,7 @@ function render(
 
 /**
  * The planner's input: a fixed system prompt and one user message with the host's notes, the
- * saved entries (up to 5 per kind in full, the rest of the first 40 as 240-character references),
+ * saved entries (up to `FULL_ENTRIES_PER_KIND` per kind in full, the rest of the first 40 as 240-character references),
  * the entries saved to the workspace (references the plan may only confirm) and the frozen evidence.
  * Over the input target it leaves out, in order: reference entries (least relevant first), then
  * workspace references (last first); evidence, oldest first, but never the task's first request or the newest few
