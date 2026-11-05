@@ -334,7 +334,7 @@ describe('saved entries through the inspect and propose tools, and the snapshot 
     })
   })
 
-  it('harness_propose cannot make an entry under a saved id', async () => {
+  it('harness_propose cannot make an entry under a saved id it has not read in full', async () => {
     const t = await withTurn(port([]).refs)
     for (const id of ['ws.r0000000009', 'user.r0000000009'])
       expect(
@@ -343,7 +343,7 @@ describe('saved entries through the inspect and propose tools, and the snapshot 
           evidenceSeqs: [1],
           edits: [{ op: 'upsert', kind: 'memory', id, title: 'Forged', content: 'forged' }],
         }),
-      ).toMatchObject({ refused: 'invalid' })
+      ).toMatchObject({ refused: 'read-first' })
   })
 
   it('the snapshot row records the candidates, how many were saved earlier and which were included', async () => {

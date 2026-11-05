@@ -362,8 +362,10 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     } catch {
       return refused('unavailable', 'capacity')
     }
-    const placed = placement(snapshot, base.source, text, deps.clock(), inFile)
-    if (placed === 'busy') return refused('conflict', 'capacity')
+    const replaces =
+      request.entry.replaces?.layer === 'workspace' ? request.entry.replaces.paragraphId : undefined
+    const placed = placement(snapshot, base.source, text, deps.clock(), inFile, replaces)
+    if (placed === 'busy' || placed === 'gone') return refused('conflict', 'capacity')
     if ('existing' in placed) {
       const receipt: SaveReceipt = {
         ...base,
@@ -386,7 +388,8 @@ export function createWorkspaceSave(deps: WorkspaceSaveDeps): WorkspaceSave {
     // Under ask the person sees the exact change; otherwise only the user's own save may replace text
     // a person has edited in place.
     if (mode === 'ask') return ask({ request, base, registry, port, paragraph, source, decided, verdicts })
-    const untouched = request.initiator !== 'user' ? placed.untouched : undefined
+    // A rewrite of a saved paragraph never overwrites a person's edit, whoever asks for it.
+    const untouched = request.initiator !== 'user' || replaces ? placed.untouched : undefined
     // 6. Capacity is known once the change is proposed; the commit records the rest.
     const result = await commitParagraph({
       registry,
@@ -642,10 +645,12 @@ export function placement(
   text: string,
   now: number,
   inFile: ReadonlyMap<string, string>,
+  replaces?: string,
 ):
   | { existing: { id: string; fileHash: string } }
   | { id: string; untouched?: (currentText: string) => boolean }
-  | 'busy' {
+  | 'busy'
+  | 'gone' {
   const same = (other: SaveSource) =>
     other.sessionKey === source.sessionKey && other.kind === source.kind && other.entryId === source.entryId
   if (
@@ -661,6 +666,16 @@ export function placement(
   if (existing) return { existing: { id: existing.id, fileHash: existing.fileHash } }
   // Text already equal to what is being saved loses nothing a person wrote.
   const already = (currentText: string) => normalizedContentHash(currentText) === hash
+  // A rewrite of a saved paragraph goes into that paragraph only, and only while it is in force there.
+  if (replaces !== undefined) {
+    const target = active.find((paragraph) => paragraph.id === replaces && inFile.has(paragraph.id))
+    if (!target) return 'gone'
+    return {
+      id: target.id,
+      untouched: (currentText) =>
+        normalizedContentHash(currentText) === target.contentHash || already(currentText),
+    }
+  }
   const lineage = active.find((paragraph) => same(paragraph.source))
   if (lineage)
     return {

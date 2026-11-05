@@ -216,8 +216,10 @@ export function createUserSave(deps: UserSaveDeps): UserSave {
     } catch {
       return refuse(registry, read, 'unavailable', { ...verdicts, capacity: 'fail' })
     }
-    const placed = placement(snapshot, base.source, text, deps.clock(), inFile)
-    if (placed === 'busy') return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })
+    const replaces = request.entry.replaces?.layer === 'user' ? request.entry.replaces.paragraphId : undefined
+    const placed = placement(snapshot, base.source, text, deps.clock(), inFile, replaces)
+    if (placed === 'busy' || placed === 'gone')
+      return refuse(registry, read, 'conflict', { ...verdicts, capacity: 'fail' })
     if ('existing' in placed) {
       const receipt: SaveReceipt = {
         ...read,

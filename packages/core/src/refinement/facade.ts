@@ -13,7 +13,13 @@ import { inspectableEntries } from '../request/experience.js'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
 import { resumeHandOffs } from './handoff.js'
-import { type InspectAnswer, type InspectRequest, inspectEntries, readInFull } from './inspect.js'
+import {
+  type InspectAnswer,
+  type InspectRequest,
+  inspectEntries,
+  readInFull,
+  readSavedInFull,
+} from './inspect.js'
 import { APPLY_LIMITS, automaticRefusal, type LimitRefusal, plannerPriced } from './limits.js'
 import { redactEvidence } from './redact.js'
 import { isReference, unavailableReferences } from './references.js'
@@ -229,8 +235,9 @@ function directPlan(
   for (const [at, edit] of p.edits.entries()) {
     if (!KINDS.has(edit?.kind) || typeof edit.id !== 'string' || !ID.test(edit.id))
       return invalid(`edits[${at}]`)
-    // `ws.` and `user.` name entries saved in earlier sessions: never made under that id here.
-    if (isSavedRef(edit.id)) return invalid(`edits[${at}]: saved entry id`)
+    // `ws.` and `user.` name entries saved in earlier sessions: never deleted here, and rewritten only
+    // after a full read of the saved text; the host refuses the save if a person has edited it since.
+    if (isSavedRef(edit.id) && edit.op === 'delete') return invalid(`edits[${at}]: saved entry id`)
     if (edit.op !== 'upsert' && edit.op !== 'delete') return invalid(`edits[${at}].op`)
     const key = entryKey(edit)
     if (touched.has(key)) return invalid(`edits[${at}]: duplicate`)
@@ -246,6 +253,8 @@ function directPlan(
     if (cell && (typeof saved !== 'number' || (!reuse && !readInFull(s, key, saved, cell.seq))))
       return { refused: 'read-first', detail: `${edit.kind}/${edit.id}` }
     if (!cell && edit.op === 'delete') return { refused: 'not-found', detail: `${edit.kind}/${edit.id}` }
+    if (!cell && isSavedRef(edit.id) && !readSavedInFull(s, key))
+      return { refused: 'read-first', detail: `${edit.kind}/${edit.id}` }
     const version = typeof saved === 'number' ? saved : 0
     baseline.push({ kind: edit.kind, id: edit.id, version, seq: mutationToken(s.state, key) })
     if (reuse) reused.push({ kind: edit.kind, id: edit.id, version })

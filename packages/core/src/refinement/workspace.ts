@@ -14,6 +14,7 @@ import type { SessionImpl } from '../step/session.js'
 import { settingsOf } from './scheduler.js'
 import { skillInstalledRows } from './skill-handoff.js'
 import { contentHash } from './validity.js'
+import { isSavedRef } from './workspace-refs.js'
 
 export type { SaveInitiator, SaveReceipt } from '@agnes/core-ledger/reduce/refinement-save'
 
@@ -53,6 +54,11 @@ export type WorkspaceSaveRequest = {
     reference?: string
     /** For a skill generated from a finished `workflow` run: the run's id. The host writes the definition. */
     workflowRun?: string
+    /**
+     * The saved paragraph this entry rewrites (its id is `ws.<paragraph id>` or `user.<paragraph id>`):
+     * the save replaces it in place, or is refused when it is gone or a person has edited it.
+     */
+    replaces?: { layer: 'workspace' | 'user'; paragraphId: string }
   }
   evidenceSeqs: Seq[]
   evidenceTurn?: number
@@ -121,6 +127,13 @@ function plannedEvidence(s: SessionImpl, entry: HarnessEntry): Seq[] {
 }
 
 /** The request for one live entry of this session, or undefined when there is no such entry. */
+/** The saved paragraph an entry under a saved id rewrites. */
+function replacesOf(id: string): { replaces?: { layer: 'workspace' | 'user'; paragraphId: string } } {
+  if (!isSavedRef(id)) return {}
+  const user = id.startsWith('user.')
+  return { replaces: { layer: user ? 'user' : 'workspace', paragraphId: id.slice(user ? 5 : 3) } }
+}
+
 export function workspaceSaveRequest(
   s: SessionImpl,
   input: WorkspaceSaveInput,
@@ -156,6 +169,7 @@ export function workspaceSaveRequest(
       applicability: current?.applicability ?? 'task',
       ...(typeof entry.reference === 'string' ? { reference: entry.reference } : {}),
       ...(typeof entry.workflowRun === 'string' ? { workflowRun: entry.workflowRun } : {}),
+      ...replacesOf(entry.id),
     },
     evidenceSeqs: [...(input.evidenceSeqs ?? plannedEvidence(s, entry))],
     ...(lastTurn === undefined ? {} : { evidenceTurn: lastTurn }),
