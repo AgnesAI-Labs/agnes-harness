@@ -59,9 +59,10 @@ jobs:
           # The human review-to-publish case alone; the update/skill inbox case with the full-access case.
           - { id: candidate-review, args: "candidate-review.spec.ts --grep 'refuses edited approval'" }
           - { id: candidate-review-2, args: "candidate-review.spec.ts --grep-invert 'refuses edited approval'" }
-          # Per PR: en/light at the phone and tablet widths, which carry all twelve narrow captures.
+          # Per PR: independent phone/tablet audits retain all twelve captures within each step's budget.
           # The nightly suite (e2e-web-nightly.yml) runs every locale/theme at all three widths.
-          - { id: narrow, args: "narrow.spec.ts --grep 'en/light$'", narrow-widths: "375,768" }
+          - { id: narrow-phone, args: "narrow.spec.ts --grep '375 en/light$'", narrow-widths: "375" }
+          - { id: narrow-tablet, args: "narrow.spec.ts --grep '768 en/light$'", narrow-widths: "768" }
     if: inputs.suite != 'narrow-nightly'
     runs-on: macos-15
     timeout-minutes: 15
@@ -125,7 +126,8 @@ jobs:
           - { id: main-13, args: "v3-navigation.spec.ts" }
           - { id: main-14, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'" }
           - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'" }
-          - { id: narrow, args: "narrow.spec.ts --grep 'en/light$'", narrow-widths: "375,768" }
+          - { id: narrow-phone, args: "narrow.spec.ts --grep '375 en/light$'", narrow-widths: "375" }
+          - { id: narrow-tablet, args: "narrow.spec.ts --grep '768 en/light$'", narrow-widths: "768" }
     # Explicit lists from hosted-Linux timings: count-based --shard cannot balance cases that take
     # two seconds to three minutes. Every case appears in exactly one list (README: Gate).
     # Functional, accessibility and layout assertions; layout still depends on this image and its
