@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough, Readable } from 'node:stream'
 import { createClient, memoryJournal } from '@agnes/sdk'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../src/args.js'
 import { runPrint } from '../src/modes/print.js'
 import { cliResultLine, findParkedTicket, lastAssistantText } from '../src/modes/result-line.js'
@@ -158,6 +158,30 @@ describe('runPrint in text mode', () => {
       prompt: Array<{ text: string }>
     }
     expect(prompt.prompt).toEqual([{ type: 'text', text: 'from the pipe' }])
+  })
+
+  // A positional prompt plus a stdin that never closes is a silent hang; text mode says why on
+  // stderr, the machine modes keep stderr quiet by contract.
+  it.each([
+    ['text', true],
+    ['json', false],
+    ['stream-json', false],
+  ])('says it is waiting for stdin to close in %s mode: %s', async (mode, hinted) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const open = Object.assign(new PassThrough(), { isTTY: false })
+      const o = { ...io(), stdin: open }
+      const args = mode === 'text' ? ['-p', 'hello'] : ['-p', 'hello', '--mode', mode]
+      const run = runPrint(await booted(), parseArgs(args), o)
+      await vi.advanceTimersByTimeAsync(3000)
+      expect(o.err().includes('agh: waiting for stdin to close')).toBe(hinted)
+      vi.useRealTimers()
+      open.end()
+      await run
+      expect(o.err().split('waiting for stdin').length - 1).toBe(hinted ? 1 : 0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   // The correctness requirement, asserted on the endpoint's own record: a cursorless attach that

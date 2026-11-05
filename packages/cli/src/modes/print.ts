@@ -235,6 +235,15 @@ export async function runPrint(booted: Booted, p: ParsedArgs, io: PrintIO): Prom
     positional: (p.command === 'resume' ? p.positional.slice(1) : p.positional).join(' '),
     stdin: io.stdin,
     stdinIsTTY: io.stdin.isTTY === true,
+    ...(machine
+      ? {}
+      : {
+          onWaitHint: () => {
+            io.stderr.write(
+              'agh: waiting for stdin to close (it is appended to the prompt); use `< /dev/null` to send the prompt alone\n',
+            )
+          },
+        }),
   })
   if (outputSchema) blocks.push({ type: 'text', text: schemaInstruction(outputSchema, io.locale) })
   // The ladder can only cancel a turn that exists. A signal that lands before the prompt is sent --
