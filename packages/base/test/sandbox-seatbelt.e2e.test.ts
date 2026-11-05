@@ -25,12 +25,21 @@ import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 function run(argv: string[], env?: NodeJS.ProcessEnv) {
   const [file, ...args] = argv
   if (!file) throw new Error('missing executable')
-  return new Promise<{ code: number; stdout: string }>((resolve) => {
+  return new Promise<{ code: number; stdout: string }>((resolve, reject) => {
     execFile(file, args, { timeout: 3000, ...(env ? { env } : {}) }, (error, stdout) => {
-      resolve({ code: error ? (typeof error.code === 'number' ? error.code : -1) : 0, stdout })
+      if (!error) resolve({ code: 0, stdout })
+      else if (!error.killed && typeof error.code === 'number') resolve({ code: error.code, stdout })
+      else reject(error)
     })
   })
 }
+it('does not treat a failed launch or timed-out probe as sandbox enforcement', async () => {
+  const missing = join(tmpdir(), `agh-no-executable-${process.pid}-${Date.now()}`)
+  await expect(run([missing])).rejects.toMatchObject({ code: 'ENOENT' })
+  await expect(run([process.execPath, '-e', 'setTimeout(() => {}, 6000)'])).rejects.toMatchObject({
+    killed: true,
+  })
+})
 // These are platform acceptance checks, not simulated results. Non-macOS skips remain OS-matrix debt.
 const seatbelt = it.runIf(existsSync('/usr/bin/sandbox-exec'))
 seatbelt(

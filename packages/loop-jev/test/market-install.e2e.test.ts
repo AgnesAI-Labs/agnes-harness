@@ -6,10 +6,11 @@ import { fileURLToPath } from 'node:url'
 import { type FakeSystemOne, startFakeSystemOne } from '@agnes/ai/testkit'
 import { initializeHome } from '@agnes/host'
 import type { PackageOperationReceipt } from '@agnes/protocol'
-import { createClient, memoryJournal } from '@agnes/sdk'
+import { createClient, memoryJournal, unixTransport } from '@agnes/sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { answersFor, PICK_LS, PICK_RESPOND } from './helpers/fake-jev.js'
 import { marketEndpoint } from './helpers/market-endpoint.js'
+import { rpcDiagnostics } from './helpers/rpc-diagnostics.js'
 
 // The user's path end to end, against the real daemon: find the Jev loop in the Market catalogue,
 // install it from the payload the release ships, trust and enable it, see it in the loop picker's
@@ -171,6 +172,14 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
       journal: memoryJournal(),
       timeouts: { request: 120_000 },
       transport: endpoint.transport,
+      transportFactories: {
+        unix: (option) => {
+          if (option.kind !== 'unix') throw new Error('Expected source daemon transport')
+          return rpcDiagnostics(unixTransport(option), (failure) =>
+            console.error('MARKET_RPC_FAILURE', JSON.stringify(failure)),
+          )
+        },
+      },
     })
     await sdk.initialize()
   }, 180_000)

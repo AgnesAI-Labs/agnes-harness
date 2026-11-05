@@ -37,6 +37,7 @@ import {
   startProductionSupervisor,
 } from '../src/supervisor/supervisor.js'
 import { fixtureDocumentsDirectory } from './managed-documents-fixture.js'
+import { mcpPreparationDiagnostics } from './mcp-preparation-diagnostics.js'
 import { sourceTranspileCache } from './source-transpile-cache.js'
 
 vi.mock('@agnes/host-infrastructure/documents-directory', async (original) => ({
@@ -635,6 +636,29 @@ describe('production supervisor storage', () => {
           commandId: `${serverId}-enable`,
         })) as { operationId: string }
         const operation = await wait(enabled.operationId)
+        if (operation.state !== 'succeeded')
+          console.error(
+            'MCP_FAILURE_DIAGNOSTICS',
+            JSON.stringify({
+              entryReached: existsSync(pidFile),
+              separatePreparationProbe: await mcpPreparationDiagnostics(
+                {
+                  id: serverId,
+                  transport: 'stdio',
+                  defer: false,
+                  cmd: [executable, server, pidFile],
+                  sandboxProfile: windows ? 'off-with-warning' : 'workspace-write',
+                  workspacePath: dir,
+                },
+                {
+                  home: dir,
+                  dataDir: dir,
+                  profileDir: join(dir, 'profiles', 'local-dev'),
+                  ...(process.env.PATH ? { path: process.env.PATH } : {}),
+                },
+              ),
+            }),
+          )
         expect(operation, JSON.stringify(operation)).toMatchObject({ state: 'succeeded' })
         return { revision: descriptor.revision, pidFile }
       }
@@ -815,7 +839,31 @@ describe('production supervisor storage', () => {
           clientId: 'resource-secret-test',
           commandId: 'resource-secret-test',
         })) as { operationId: string }
-        await expect(wait(tested.operationId)).resolves.toMatchObject({
+        const testOperation = await wait(tested.operationId)
+        if (testOperation.state !== 'succeeded')
+          console.error(
+            'MCP_FAILURE_DIAGNOSTICS',
+            JSON.stringify({
+              entryReached: existsSync(observation),
+              separatePreparationProbe: await mcpPreparationDiagnostics(
+                {
+                  id: 'secret-audit',
+                  transport: 'stdio',
+                  defer: false,
+                  cmd: [process.execPath, server, expectedHash, observation],
+                  sandboxProfile: process.platform === 'win32' ? 'off-with-warning' : 'workspace-write',
+                  workspacePath: dir,
+                },
+                {
+                  home: dir,
+                  dataDir: dir,
+                  profileDir: join(dir, 'profiles', 'local-dev'),
+                  ...(process.env.PATH ? { path: process.env.PATH } : {}),
+                },
+              ),
+            }),
+          )
+        expect(testOperation, JSON.stringify(testOperation)).toMatchObject({
           state: 'succeeded',
           result: { toolCount: 1 },
         })
