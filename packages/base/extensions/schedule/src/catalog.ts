@@ -16,7 +16,6 @@ import {
   reject,
   type ScheduleCode,
   ScheduleRejected,
-  type ScheduleRun,
   type ScheduleRunOutcome,
   type ScheduleSelector,
   type ScheduleStatus,
@@ -34,6 +33,7 @@ import {
   startProgress,
 } from './run-progress.js'
 import { openRunReceipts } from './run-receipts.js'
+import { createRunWriter } from './run-writer.js'
 import { ensureScheduleSchema, scheduleSearchText } from './schema.js'
 
 export {
@@ -219,15 +219,17 @@ export type ScheduleCatalog = {
   }): ScheduleView[]
   read(id: string): ScheduleView | undefined
   /** The task behind a job key, for the daemon to resolve a new-session target before running. */
-  targetOf(jobKey: string): { id: string; title: string; target: ScheduleTarget } | undefined
+  targetOf(
+    jobKey: string,
+  ): { id: string; title: string; target: ScheduleTarget; revision: number; jobKey: string } | undefined
   recordDispatch(
     jobKey: string,
-    info: { at: number; seq?: number; reason?: string; sessionKey?: string },
+    info: { at: number; seq?: number; reason?: string; sessionKey?: string; runId?: string },
   ): void
   noteSettlement(jobKey: string, info: { nextRunAt: number | null; at?: number; reason?: string }): void
   recordFailure(
     jobKey: string,
-    info: { at: number; reason: string; detail?: string; sessionKey?: string },
+    info: { at: number; reason: string; detail?: string; sessionKey?: string; runId?: string },
   ): void
   observeSession(sessionKey: string, event: EventEnvelope): boolean
   notificationSession(runSession: string): string | undefined
@@ -236,10 +238,17 @@ export type ScheduleCatalog = {
   recentDelivery(sessionKey: string, since: number): { title: string; prompt: string } | undefined
 }
 
+export type ScheduleTargetPolicy = {
+  allow(taskId: string | undefined, target: ScheduleTarget): boolean
+  revoke(taskId: string): void
+  sameTargetIdentity?(before: ScheduleTarget, after: ScheduleTarget): boolean
+}
+
 export function openScheduleCatalog(
   db: ScheduleDb,
   jobs: ScheduleJobs,
   clock: () => number = () => Date.now(),
+  policy?: ScheduleTargetPolicy,
 ): ScheduleCatalog {
   ensureScheduleSchema(db)
   const receipts = openRunReceipts(db)
@@ -298,33 +307,17 @@ export function openScheduleCatalog(
        ORDER BY at DESC, rowid DESC LIMIT 1`,
       [id, key],
     )
-  const insertRun = (id: string, key: string, run: ScheduleRun) =>
-    db.transaction(() => {
-      db.exec(
-        `INSERT INTO schedule_runs (schedule_id, job_key, at, outcome, session_key, ended_at, seq, reason, detail)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          key,
-          run.at,
-          run.outcome,
-          run.sessionKey ?? null,
-          run.endedAt ?? null,
-          run.seq ?? null,
-          run.reason ?? null,
-          run.detail ?? null,
-        ],
-      )
-      const rid = db.get<{ rid: number }>('SELECT last_insert_rowid() AS rid')?.rid
-      const task = load(id)
-      if (rid !== undefined && task)
-        receipts.add(rid, id, {
+  const insertRun = createRunWriter(db, receipts, (id) => {
+    const task = load(id)
+    return task
+      ? {
           title: task.title,
           prompt: task.prompt,
           selector: JSON.parse(task.selector) as ScheduleSelector,
           target: targetFor(task).target,
-        })
-    })
+        }
+      : undefined
+  })
   /** A new job for the stored rule, counted from now; used by resume. */
   const restart = (row: ScheduleRow, now: number) => {
     const { target } = targetFor(row)
@@ -347,6 +340,7 @@ export function openScheduleCatalog(
     create(input) {
       const now = clock()
       const compiled = compileWrite(input, 'create', now)
+      if (policy && !policy.allow(undefined, compiled.target)) reject('workspace_missing')
       const id = scheduleId()
       const key = jobKey(id, 1)
       const delay = delayFor(compiled.schedule, now)
@@ -397,6 +391,8 @@ export function openScheduleCatalog(
         'update',
         now,
       )
+      if (policy && !policy.allow(row.id, compiled.target))
+        return { updated: false, code: 'workspace_missing' }
       const stored = JSON.stringify(compiled.stored)
       const promptChanged = compiled.prompt !== row.prompt
       const selectorChanged = stored !== row.selector
@@ -406,6 +402,16 @@ export function openScheduleCatalog(
         return { updated: false, code: 'schedule_conflict' }
       const paused = row.status === 'paused'
       db.transaction(() => {
+        if (
+          !(
+            policy?.sameTargetIdentity?.(before.target, compiled.target) ??
+            (before.target.kind === compiled.target.kind &&
+              (before.target.kind !== 'new-session' ||
+                compiled.target.kind !== 'new-session' ||
+                before.target.cwd === compiled.target.cwd))
+          )
+        )
+          policy?.revoke(row.id)
         let key = row.job_key
         let revision = row.revision
         let next = row.next_run_at
@@ -472,6 +478,7 @@ export function openScheduleCatalog(
       const now = clock()
       const status = row.job_key ? jobs.status(row.job_key) : undefined
       db.transaction(() => {
+        policy?.revoke(id)
         if ((status === 'waiting' || status === 'delayed') && row.job_key) jobs.cancelQueued(row.job_key, now)
         db.exec(
           `UPDATE schedules SET status = 'archived', updated_at = ? WHERE id = ? AND status IN ('active', 'paused')`,
@@ -602,7 +609,9 @@ export function openScheduleCatalog(
     targetOf(key) {
       const id = idOf(key)
       const row = id ? load(id) : undefined
-      return row ? { id: row.id, title: row.title, target: targetFor(row).target } : undefined
+      return row && row.job_key === key
+        ? { id: row.id, title: row.title, target: targetFor(row).target, revision: row.revision, jobKey: key }
+        : undefined
     },
     recordDispatch(key, info) {
       const id = idOf(key)
@@ -611,13 +620,18 @@ export function openScheduleCatalog(
       // No reason: the prompt joined a turn that was already running.
       const outcome: ScheduleRunOutcome =
         info.reason === 'prompt' ? 'running' : info.reason === 'resumed' ? 'ran' : 'delivered'
-      insertRun(id, key, {
-        at: info.at,
-        outcome,
-        ...(previousApprovalExpired(db, id) ? { reason: 'previous_approval_expired' } : {}),
-        ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
-        ...(info.seq === undefined ? {} : { seq: info.seq }),
-      })
+      insertRun(
+        id,
+        key,
+        {
+          at: info.at,
+          outcome,
+          ...(previousApprovalExpired(db, id) ? { reason: 'previous_approval_expired' } : {}),
+          ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
+          ...(info.seq === undefined ? {} : { seq: info.seq }),
+        },
+        info.runId,
+      )
       const open = openRun(id, key)
       if (open && outcome === 'running') saveProgress(open.rid, startProgress())
     },
@@ -698,14 +712,19 @@ export function openScheduleCatalog(
         )
         return
       }
-      insertRun(id, key, {
-        at: info.at,
-        outcome: 'failed',
-        endedAt: info.at,
-        reason,
-        ...(detail ? { detail } : {}),
-        ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
-      })
+      insertRun(
+        id,
+        key,
+        {
+          at: info.at,
+          outcome: 'failed',
+          endedAt: info.at,
+          reason,
+          ...(detail ? { detail } : {}),
+          ...(info.sessionKey ? { sessionKey: info.sessionKey } : {}),
+        },
+        info.runId,
+      )
     },
     stillWaiting(key) {
       const id = idOf(key)
@@ -731,8 +750,9 @@ export function createSchedulesPort(
   jobs: ScheduleJobs,
   clock: () => number = () => Date.now(),
   check?: ScheduleTargetCheck,
+  policy?: ScheduleTargetPolicy,
 ) {
-  const catalog = openScheduleCatalog(db, jobs, clock)
+  const catalog = openScheduleCatalog(db, jobs, clock, policy)
   const verify = async (target: unknown) => {
     const compiled = compileTarget(target)
     if (compiled.kind === 'new-session' && check) {

@@ -150,6 +150,13 @@ export type SessionOpenResult = {
 
 /** Authenticated daemon-to-worker workspace authority. This type is never part of public RPC. */
 export type WorkspaceBindingFrame = Readonly<{
+  legacyChatReadGrant?: Readonly<{
+    sessionKey: string
+    workspaceId: string
+    root: string
+    directoryIdentity?: string
+    source: 'existing' | 'derived' | 'schedule'
+  }>
   version: 1
   sessionKey: string
   workspaceId: string

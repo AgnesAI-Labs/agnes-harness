@@ -236,3 +236,25 @@ it('keeps showing the model an attachment opened the session with', async () => 
   binding.begin()
   await work
 })
+
+it('forks a legacy session using its original cwd even when the selected draft is current', async () => {
+  const fork = vi.fn(async () => {
+    throw new Error('stop after fork request')
+  })
+  const parent = { id: 'legacy-session' }
+  const context = {
+    current: parent,
+    sessionBinding: { capture: () => ({}) },
+    projection: { opState: null },
+    sessionRows: [{ sessionId: parent.id, cwd: '/old/chats' }],
+    selectedWorkspace: { path: '/documents/current', kind: 'chats', managedRole: 'current' },
+    client: { session: { fork } },
+  } as unknown as Parameters<typeof createSessionController>[0]
+  await expect(
+    createSessionController(context, new SessionBindingOwner()).forkTurn({
+      forkable: true,
+      endSeq: 42,
+    } as never),
+  ).rejects.toThrow('stop after fork request')
+  expect(fork).toHaveBeenCalledWith('legacy-session', 42, { cwd: '/old/chats' })
+})

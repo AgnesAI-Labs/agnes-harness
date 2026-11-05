@@ -301,7 +301,14 @@ export function SchedulesPage({
   const workspaceName = useMemo(() => new Map(workspaces.map((item) => [item.path, item.name])), [workspaces])
   const homeWorkspace = () => {
     const from = sessionKey ? sessionTitle.get(sessionKey)?.cwd : undefined
-    return from || workspaces.find((item) => item.available)?.path || ''
+    return (
+      (from &&
+      workspaces.some((item) => item.path === from && item.available && item.managedRole !== 'legacy')
+        ? from
+        : undefined) ||
+      workspaces.find((item) => item.available && item.managedRole !== 'legacy')?.path ||
+      ''
+    )
   }
   const visible = rows.filter(
     (row) =>

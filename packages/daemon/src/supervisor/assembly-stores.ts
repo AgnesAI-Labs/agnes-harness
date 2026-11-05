@@ -39,7 +39,11 @@ import { startJwksCache } from './jwks-cache.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { canonicalPath } from './scope.js'
 import { persistResolvedProfile } from './storage-adapters.js'
-import { openWorkspaceCatalog } from './workspace-catalog.js'
+import {
+  managedChatPrivateRoots,
+  openWorkspaceCatalog,
+  readLegacyChatSchedules,
+} from './workspace-catalog.js'
 
 export type Conn = { ep: LocalEndpoint; conn: ConnectionState }
 
@@ -69,10 +73,19 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
     : new MemorySessionPrincipalOwnership()
   const workspaceCatalog = await openWorkspaceCatalog({
     dataDir: o.config.dataDir,
+    ownerHome,
+    privateRoots: managedChatPrivateRoots({
+      ownerHome,
+      dataDir: o.config.dataDir,
+      profileDir: o.profileDir,
+      profileFile: o.profileFile,
+      ...(o.profile.adapters?.secrets.path ? { secretsDirectory: o.profile.adapters.secrets.path } : {}),
+    }),
     tables: jobTables,
     sessions: workspaces,
     clock,
     workspaceRoot: o.workspaceRoot,
+    legacySchedules: readLegacyChatSchedules(jobTables),
   })
   const resourceControlDirectory = resourceControlPath(o.config.dataDir)
   // Global MCP/user/package resource workers use a server-owned data root when this daemon was

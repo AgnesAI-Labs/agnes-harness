@@ -1,7 +1,10 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { openDaemonScheduleDb, openScheduleCatalog } from '@agnes/base/schedule'
+import { JobsRepo } from '@agnes/daemon-foundation/jobs/repo'
 import {
   canonicalJson,
   createSqliteStorage,
@@ -22,7 +25,7 @@ import { localSdkTransport } from './local-socket-path.js'
 // wire, with a scripted model instead of credentials.
 const workerSpawnOpts = {
   workerExecPath: process.execPath,
-  workerEntry: fileURLToPath(new URL('./fake-worker-entry.ts', import.meta.url)),
+  workerEntry: fileURLToPath(new URL('./schedule-worker-entry.ts', import.meta.url)),
   workerExecArgv: ['--import', 'tsx'],
 }
 function buildProfile(dataDir: string): ResolvedProfile {
@@ -248,4 +251,309 @@ it.each(['due', 'run-now'] as const)(
     }
   },
   DEFAULT_LIMITS.workerStartupMs + 60_000,
+)
+
+it.each(['due', 'run-now'] as const)(
+  'runs a never-run legacy task (%s) twice with distinct durable identities and preserves old files after restart and deletion',
+  async (mode) => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-legacy-schedule-'))
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
+    mkdirSync(join(dir, 'chats'))
+    const legacy = realpathSync(join(dir, 'chats'))
+    writeFileSync(join(legacy, 'report.md'), 'old report')
+    const profile = buildProfile(dir)
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify(profile))
+    const storage = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
+    const tables = adaptHostTables(storage.tables('@agnes/daemon'))
+    const repo = new JobsRepo(tables.table('jobs'), Date.now)
+    const catalog = openScheduleCatalog(openDaemonScheduleDb(tables.table('schedules')), repo.scheduleJobs())
+    const task = catalog.create({
+      title: 'Old report',
+      prompt: 'go',
+      selector: { every_seconds: 3600 },
+      target: { kind: 'new-session', cwd: legacy },
+    })
+    if (mode === 'due') catalog.control(task.id, 'run')
+    const open = () =>
+      startSupervisor({
+        config: configFor(dir),
+        profile,
+        profileDir: join(dir, 'profiles', 'local-dev'),
+        profileFile,
+        workspaceRoot: dir,
+        jobTables: tables,
+        ...workerSpawnOpts,
+      })
+    let sup = await open()
+    let sdk = createClient({
+      transport: localSdkTransport(sup.socketPath),
+      journal: memoryJournal('legacy-schedule'),
+    })
+    const sessions: string[] = []
+    const runIds: string[] = []
+    let stage = 'copy'
+    try {
+      await expect(
+        sdk.call('_agnes/v1/schedules.upsert', {
+          title: 'Copied',
+          prompt: 'go',
+          selector: { every_seconds: 3600 },
+          target: { kind: 'new-session', cwd: legacy },
+        }),
+      ).rejects.toBeDefined()
+      for (let index = 0; index < 2; index++) {
+        stage = `cycle ${index} control`
+        if (index === 0 && mode === 'run-now') {
+          await sdk.call('_agnes/v1/schedules.control', { id: task.id, action: 'pause' })
+          await sdk
+            .call('_agnes/v1/schedules.upsert', {
+              id: task.id,
+              title: 'Edited report',
+              prompt: 'go again',
+              selector: { every_seconds: 7200 },
+              target: { kind: 'new-session', cwd: legacy, unattendedApproval: 'refuse' },
+            })
+            .catch((error) => {
+              throw new Error(`legacy edit failed: ${JSON.stringify(error.data)}`)
+            })
+          await sdk.call('_agnes/v1/schedules.control', { id: task.id, action: 'resume' })
+        }
+        if (index > 0 || mode === 'run-now')
+          await sdk.call('_agnes/v1/schedules.control', { id: task.id, action: 'run' })
+        stage = `cycle ${index} history`
+        await vi.waitFor(
+          async () => {
+            const history = await sdk.call<{ runs: { id: string; sessionKey: string; outcome: string }[] }>(
+              '_agnes/v1/schedules.history',
+              { id: task.id },
+            )
+            expect(history.runs).toHaveLength(index + 1)
+            expect(history.runs[0]?.outcome).toBe('ran')
+            sessions[index] = history.runs[0]!.sessionKey
+            runIds[index] = history.runs[0]!.id
+          },
+          { timeout: 30000, interval: 250 },
+        )
+        stage = `cycle ${index} file read`
+        expect(
+          await sdk.call('_agnes/v1/session.workspace.read', {
+            sessionId: sessions[index],
+            path: 'report.md',
+          }),
+        ).toMatchObject({ text: 'old report' })
+      }
+      if (mode === 'run-now') {
+        stage = 'current/legacy workspace isolation and file entry points'
+        const legacySession = sessions[0]
+        if (!legacySession) throw new Error('first legacy run has no session')
+        const entries = await sdk.call<{ items: { path: string; managedRole?: string }[] }>(
+          '_agnes/v1/workspace.list',
+          {},
+        )
+        const current = entries.items.find((entry) => entry.managedRole === 'current')?.path
+        if (!current) throw new Error('current managed chats root missing')
+        expect(current).not.toBe(legacy)
+        cleanup.push(() => rmSync(current, { recursive: true, force: true }))
+        writeFileSync(join(current, 'report.md'), 'new report')
+        writeFileSync(join(current, 'current-only.txt'), 'new root')
+        writeFileSync(join(legacy, 'legacy-only.txt'), 'old root')
+        const manual = await sdk.createSession({ cwd: current, sessionKey: randomUUID() })
+        for (const [sessionId, expected, own, other] of [
+          [manual.id, 'new report', 'current-only.txt', 'legacy-only.txt'],
+          [legacySession, 'old report', 'legacy-only.txt', 'current-only.txt'],
+        ] as const) {
+          const files = await sdk.call<{ entries: { name: string }[] }>('_agnes/v1/session.workspace.list', {
+            sessionId,
+          })
+          expect(files.entries.map((entry) => entry.name)).toContain(own)
+          expect(files.entries.map((entry) => entry.name)).not.toContain(other)
+          expect(
+            await sdk.call('_agnes/v1/session.workspace.read', { sessionId, path: 'report.md' }),
+          ).toMatchObject({ text: expected })
+          stage = `references search ${own}`
+          const references = await sdk.call<{ items: { source: string; id: string }[] }>(
+            '_agnes/v1/session.references.search',
+            { sessionId, query: `file ${own}` },
+          )
+          expect(references.items).toContainEqual(expect.objectContaining({ source: 'file', id: own }))
+          stage = `references exclusion ${own}`
+          const forbidden = await sdk.call<{ items: { id: string }[] }>(
+            '_agnes/v1/session.references.search',
+            { sessionId, query: `file ${other}` },
+          )
+          expect(forbidden.items).toEqual([])
+          stage = `resolve @file ${own}`
+          const selected = await sdk.session.load(sessionId, {
+            cwd: expected === 'old report' ? legacy : current,
+          })
+          expect(
+            await selected.prompt('check selected file', { references: [{ source: 'file', id: own }] }),
+          ).toMatchObject({ reason: 'completed' })
+          const uploadId = randomUUID()
+          const bytes = Buffer.from(`uploaded to ${own}`)
+          const sha256 = sha256hex(bytes.toString())
+          const upload = (input: Record<string, unknown>) =>
+            sdk.call<{ attachment?: { uri: string } }>('_agnes/v1/session.fileUpload', {
+              sessionId,
+              uploadId,
+              ...input,
+            })
+          stage = `upload start ${own}`
+          await upload({ operation: 'start', name: 'upload.txt', mimeType: 'text/plain', size: bytes.length })
+          stage = `upload chunk ${own}`
+          await upload({ operation: 'chunk', offset: 0, data: bytes.toString('base64'), sha256 })
+          stage = `upload finish ${own}`
+          const finished = await upload({ operation: 'finish', sha256 })
+          expect(finished.attachment?.uri).toMatch(/^agnes-upload:\/\//)
+          stage = `upload read ${own}`
+          const uploadedPath = `.agnes-attachments/${sha256hex(sessionId)}/${uploadId}/${sha256}`
+          expect(
+            await sdk.call('_agnes/v1/session.workspace.read', { sessionId, path: uploadedPath }),
+          ).toMatchObject({ text: bytes.toString() })
+          expect(await sdk.call('_agnes/v1/session.workspace.changes', { sessionId })).toMatchObject({
+            scope: 'session',
+            files: expect.any(Array),
+          })
+        }
+        stage = 'legacy fork'
+        const parent = await sdk.session.load(legacySession, { cwd: legacy })
+        const { timeline } = await parent.projectUIOpening({ surface: 'tui' })
+        const at = timeline.turns.findLast((turn) => turn.forkable && turn.endSeq !== undefined)?.endSeq
+        if (at === undefined) throw new Error('legacy scheduled run has no forkable boundary')
+        const child = await sdk.session.fork(parent.id, at)
+        expect(
+          await sdk.call('_agnes/v1/session.workspace.read', { sessionId: child.id, path: 'report.md' }),
+        ).toMatchObject({ text: 'old report' })
+      }
+      expect(sessions[0]).not.toBe(sessions[1])
+      expect(runIds[0]).not.toBe(runIds[1])
+      stage = 'archive'
+      await sdk.call('_agnes/v1/schedules.archive', { id: task.id })
+      await sdk.close()
+      await sup.close()
+      stage = 'restart'
+      sup = await open()
+      sdk = createClient({
+        transport: localSdkTransport(sup.socketPath),
+        journal: memoryJournal('legacy-restarted'),
+      })
+      stage = 'restarted load/read'
+      for (const sessionId of sessions) {
+        await sdk.session.load(sessionId, { cwd: legacy })
+        stage = 'restarted file read'
+        expect(
+          await sdk.call('_agnes/v1/session.workspace.read', { sessionId, path: 'report.md' }),
+        ).toMatchObject({ text: 'old report' })
+      }
+    } catch (error) {
+      throw new Error(
+        `${stage}: ${error instanceof Error ? error.message : error}; data=${JSON.stringify((error as { data?: unknown }).data)}`,
+      )
+    } finally {
+      await sdk.close()
+      await sup.close()
+      await storage.close()
+    }
+  },
+  DEFAULT_LIMITS.workerStartupMs + 90000,
+)
+
+it.each(['committed', 'opened'] as const)(
+  'recovers an authenticated scheduled owner after failure at %s without replaying its prompt',
+  async (phase) => {
+    const { ManagedChatAuthority } = await import('@agnes/daemon-foundation/storage/managed-chat-authority')
+    const { SessionPrincipalOwnershipIndex } = await import(
+      '@agnes/daemon-foundation/storage/session-ownership'
+    )
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-legacy-recover-owner-'))
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
+    mkdirSync(join(dir, 'chats'))
+    const legacy = realpathSync(join(dir, 'chats'))
+    writeFileSync(join(legacy, 'report.md'), 'old report')
+    const profile = buildProfile(dir)
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify(profile))
+    const storage = createSqliteStorage({ file: join(dir, 'sessions.db'), tablesDir: join(dir, 'tables') })
+    const tables = adaptHostTables(storage.tables('@agnes/daemon'))
+    const repo = new JobsRepo(tables.table('jobs'), Date.now)
+    const catalog = openScheduleCatalog(openDaemonScheduleDb(tables.table('schedules')), repo.scheduleJobs())
+    const task = catalog.create({
+      title: 'Interrupted',
+      prompt: 'must not replay',
+      selector: { every_seconds: 3600 },
+      target: { kind: 'new-session', cwd: legacy },
+    })
+    const originalCommit = ManagedChatAuthority.prototype.commitScheduledBinding
+    const fault =
+      phase === 'committed'
+        ? vi.spyOn(ManagedChatAuthority.prototype, 'commitScheduledBinding').mockImplementationOnce(function (
+            this: InstanceType<typeof ManagedChatAuthority>,
+            key,
+          ) {
+            originalCommit.call(this, key)
+            throw new Error('injected after source commit')
+          })
+        : vi
+            .spyOn(SessionPrincipalOwnershipIndex.prototype, 'activateNew')
+            .mockImplementationOnce(() => false)
+    const open = () =>
+      startSupervisor({
+        config: configFor(dir),
+        profile,
+        profileDir: join(dir, 'profiles', 'local-dev'),
+        profileFile,
+        workspaceRoot: dir,
+        jobTables: tables,
+        ...workerSpawnOpts,
+      })
+    let sup = await open()
+    let sdk = createClient({
+      transport: localSdkTransport(sup.socketPath),
+      journal: memoryJournal('recover-pending-owner'),
+    })
+    try {
+      await sdk.call('_agnes/v1/schedules.control', { id: task.id, action: 'run' })
+      let sessionId = ''
+      await vi.waitFor(
+        async () => {
+          const history = await sdk.call<{ runs: { outcome: string; sessionKey: string }[] }>(
+            '_agnes/v1/schedules.history',
+            { id: task.id },
+          )
+          expect(history.runs).toHaveLength(1)
+          expect(history.runs[0]?.outcome).toBe('failed')
+          sessionId = history.runs[0]?.sessionKey ?? ''
+          expect(sessionId).not.toBe('')
+        },
+        { timeout: 30000, interval: 250 },
+      )
+      fault.mockRestore()
+      const ownership = new SessionPrincipalOwnershipIndex(tables.table('session_principal_ownership'))
+      expect(ownership.resolve(sessionId)).toBeUndefined()
+      expect(ownership.ownsNewReservation(sessionId, 'local')).toBe(true)
+      await sdk.call('_agnes/v1/schedules.archive', { id: task.id })
+      await sdk.close()
+      await sup.close()
+      sup = await open()
+      sdk = createClient({
+        transport: localSdkTransport(sup.socketPath),
+        journal: memoryJournal('recover-pending-owner-restarted'),
+      })
+      await sdk.session.load(sessionId, { cwd: legacy })
+      expect(ownership.resolve(sessionId)).toMatchObject({ principalId: 'local', active: true })
+      expect(
+        await sdk.call('_agnes/v1/session.workspace.read', { sessionId, path: 'report.md' }),
+      ).toMatchObject({ text: 'old report' })
+      await sdk.session.load(sessionId, { cwd: legacy })
+      const history = await sdk.call<{ runs: unknown[] }>('_agnes/v1/schedules.history', { id: task.id })
+      expect(history.runs).toHaveLength(1)
+    } finally {
+      fault.mockRestore()
+      await sdk.close()
+      await sup.close()
+      await storage.close()
+    }
+  },
+  DEFAULT_LIMITS.workerStartupMs + 60000,
 )

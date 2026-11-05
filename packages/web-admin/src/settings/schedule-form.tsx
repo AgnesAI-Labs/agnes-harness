@@ -268,12 +268,34 @@ export function ScheduleEditor({
 }) {
   const [now] = useState(() => Date.now())
   const set = <K extends keyof ScheduleDraft>(key: K, value: ScheduleDraft[K]) =>
-    onDraft({ ...draft, [key]: value })
-  const usable = workspaces.filter((item) => item.available || item.path === draft.cwd)
+    onDraft({
+      ...draft,
+      [key]: value,
+      ...(key === 'target' &&
+      value !== 'new-session' &&
+      workspaces.some((item) => item.path === draft.cwd && item.managedRole === 'legacy')
+        ? { cwd: '' }
+        : {}),
+    })
+  const usable = workspaces.filter((item) =>
+    item.managedRole === 'legacy'
+      ? editing &&
+        draft.target === 'new-session' &&
+        draft.saved?.target.kind === 'new-session' &&
+        draft.saved.target.cwd === item.path &&
+        draft.cwd === item.path
+      : item.available || item.path === draft.cwd,
+  )
+
   const ready =
     draft.title.trim() !== '' &&
     draft.prompt.trim() !== '' &&
-    (draft.target === 'session' ? draft.sessionKey !== '' : draft.cwd !== '') &&
+    (draft.target === 'session'
+      ? draft.sessionKey !== ''
+      : draft.cwd !== '' &&
+        !workspaces.some(
+          (item) => item.path === draft.cwd && item.managedRole === 'legacy' && !usable.includes(item),
+        )) &&
     (draft.frequency !== 'weekly' || draft.weekdays.length > 0) &&
     (draft.frequency !== 'every' || everySeconds(draft) >= MIN_EVERY_SECONDS) &&
     (draft.frequency !== 'once' || draft.at !== '') &&
@@ -357,7 +379,11 @@ export function ScheduleEditor({
                 {draft.cwd === '' && <option value="">—</option>}
                 {usable.map((item) => (
                   <option key={item.path} value={item.path}>
-                    {item.name || folderName(item.path)}
+                    {item.managedRole === 'legacy'
+                      ? ux('legacyChats')
+                      : item.kind === 'chats'
+                        ? ux('currentChats')
+                        : item.name || folderName(item.path)}
                   </option>
                 ))}
               </SettingsPickerSelect>

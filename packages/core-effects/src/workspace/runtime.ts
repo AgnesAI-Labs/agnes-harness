@@ -32,9 +32,16 @@ export type ApprovalWorkspaceContext = ApprovalSeam
 /** Checkpoint operations bound to the invocation's workspace scope. */
 export type CheckpointWorkspaceContext = CheckpointSeam
 
+export type WorkspaceDocumentReadScope = Readonly<{
+  root: string
+  legacyManagedRoot?: string
+  legacyDirectoryIdentity?: string
+}>
+
 /** The only workspace capabilities an invocation may retain. All callable members are revocable. */
 export interface WorkspaceInvocationView {
   readonly root: CanonicalWorkspaceId
+  documentReadScope(): WorkspaceDocumentReadScope
   fs(): RevocableFsOps
   ready(signal?: AbortSignal): Promise<OpaqueSandboxConfine>
   hookSnapshot(): Promise<HookInvocationSnapshot>
@@ -91,6 +98,7 @@ export interface WorkspacePublicationDispatch {
 /** Raw Host-owned inputs. This object is consumed by the scope builder and never reaches callers. */
 export type WorkspaceInvocationSource = Readonly<{
   root: CanonicalWorkspaceId
+  documentReadScope?(): WorkspaceDocumentReadScope
   fs: FsOps
   ready(signal?: AbortSignal): Promise<OpaqueSandboxConfine>
   hookSnapshot(): Promise<HookInvocationSnapshot>
@@ -332,6 +340,10 @@ function invocationView(source: WorkspaceInvocationSource, scope: InvocationScop
 
   return Object.freeze({
     root: source.root,
+    documentReadScope: () => {
+      scope.assertOpen()
+      return Object.freeze({ ...(source.documentReadScope?.() ?? { root: source.root }) })
+    },
     fs: () => {
       scope.assertOpen()
       return fs

@@ -5903,43 +5903,92 @@
       }
     },
     "WorkspaceEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["path", "name", "lastUsedAt", "sessionCount", "available"],
-      "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "name", "lastUsedAt", "sessionCount", "available"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "lastUsedAt": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            },
+            "sessionCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "kind": {
+              "enum": ["chats"]
+            },
+            "managedRole": {
+              "not": {}
+            }
+          }
         },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "lastUsedAt": {
-          "type": ["string", "null"],
-          "format": "date-time"
-        },
-        "sessionCount": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "available": {
-          "type": "boolean"
-        },
-        "workspaceId": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "kind": {
-          "enum": ["chats"]
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "name", "lastUsedAt", "sessionCount", "available", "kind"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "lastUsedAt": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            },
+            "sessionCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "kind": {
+              "enum": ["chats"]
+            },
+            "managedRole": {
+              "enum": ["current", "legacy"]
+            }
+          }
         }
-      }
+      ]
     },
     "WorkspaceListParams": {
       "type": "object",

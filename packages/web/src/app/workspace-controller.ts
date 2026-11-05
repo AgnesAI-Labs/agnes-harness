@@ -5,7 +5,7 @@ import type { AppSessionContext } from '../app.js'
 import { requestNewSession } from '../application.js'
 import { mountNewSessionDialog } from '../new-session-dialog.js'
 import { sessionInventory } from '../session-inventory.js'
-import { requestWorkspacePicker, workspacePickerAvailable } from '../workspace-picker.js'
+import { currentChats, requestWorkspacePicker, workspacePickerAvailable } from '../workspace-picker.js'
 
 /**
  * The draft's workspace: an explicit choice, else the one already selected, else the most recently
@@ -16,12 +16,14 @@ export function draftWorkspace(
   selected: WorkspaceEntry | undefined,
   workspace?: WorkspaceEntry,
 ): WorkspaceEntry | undefined {
+  if (workspace?.managedRole === 'legacy' || (!workspace && selected?.managedRole === 'legacy'))
+    return currentChats(rows)
   if (workspace) return workspace
   if (selected?.available) return selected
   return (
     rows.find((row) => row.available && row.kind !== 'chats') ??
-    rows.find((row) => row.available && row.kind === 'chats') ??
-    selected
+    currentChats(rows) ??
+    (selected?.managedRole !== 'legacy' ? selected : undefined)
   )
 }
 
@@ -80,12 +82,17 @@ export function createWorkspaceController(
   }
 
   function resolveDraft(workspace?: WorkspaceEntry): void {
+    const legacy =
+      workspace?.managedRole === 'legacy' ||
+      (!workspace && context.selectedWorkspace?.managedRole === 'legacy')
     remember(draftWorkspace(context.workspaceRows, context.selectedWorkspace, workspace))
+    if ((legacy || !context.selectedWorkspace) && !currentChats(context.workspaceRows))
+      dialog.update({ error: context.t('app.newSession.currentChatsUnavailable') })
   }
 
   /** The composer chip's choice: a registered workspace, or `'chats'` to work without one. */
   function select(workspace: WorkspaceEntry | 'chats'): void {
-    const next = workspace === 'chats' ? context.workspaceRows.find((row) => row.kind === 'chats') : workspace
+    const next = workspace === 'chats' ? currentChats(context.workspaceRows) : workspace
     if (!next) return
     remember(next)
     context.renderControls()

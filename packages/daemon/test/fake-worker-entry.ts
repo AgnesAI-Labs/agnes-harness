@@ -195,6 +195,45 @@ void runWorker(
         writeFileSync(join(profile.dataDir, 'fixture-worker-pid'), String(process.pid))
       const { host } = await createTestHost({
         dataDir: profile.dataDir,
+        ...(env.AGNES_FAKE_WORKER_REFERENCES === '1'
+          ? {
+              packages: {
+                '@agnes/base': {
+                  plugins: await (async () => {
+                    const { defaultLoopPlugin, referenceResolversPlugin } = await import('@agnes/base')
+                    const { normalizePluginExport } = await import('@agnes/plugin-runtime/host')
+                    return [
+                      {
+                        declaration: {
+                          export: 'defaultLoopPlugin',
+                          id: 'loop:agnes.default',
+                          apiRange: '^5.0.0',
+                          default: true,
+                          inject: ['loops'],
+                          provide: [],
+                          runtime: 'in-process',
+                        },
+                        entry: normalizePluginExport(defaultLoopPlugin),
+                      },
+                      {
+                        declaration: {
+                          export: 'referenceResolversPlugin',
+                          id: 'reference-resolvers:default',
+                          apiRange: '^5.0.0',
+                          default: true,
+                          inject: ['providers'],
+                          provide: [],
+                          runtime: 'in-process',
+                        },
+                        entry: normalizePluginExport(referenceResolversPlugin),
+                      },
+                    ]
+                  })(),
+                },
+              },
+            }
+          : {}),
+
         mcpManage: capabilities.mcpManage,
         ...(await permissionFixture(profile.dataDir)),
         ...(env.AGNES_FAKE_WORKER_QUEUE === '1'
