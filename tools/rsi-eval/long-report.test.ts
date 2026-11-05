@@ -417,7 +417,8 @@ describe('saved lessons in context at the start of a later session', () => {
 
   it('reads from the first snapshot row of each session how many saved entries it carried', () => {
     const r = onRun(1, [
-      snapshot(5, ['ws.r0000000001', 'memory.local', 'user.r0000000002'], 2),
+      // `included` names each entry as its snapshot line does: kind, a slash, then the id.
+      snapshot(5, ['memory/ws.r0000000001', 'prompt/local-rule', 'prompt/user.r0000000002'], 2),
       snapshot(90, [], 2),
     ])
     expect(r.experienceAtStart).toEqual([
@@ -428,8 +429,8 @@ describe('saved lessons in context at the start of a later session', () => {
 
   it('counts the later sessions of on runs that began with a saved lesson in context, and the trap hits per session', () => {
     const records = [
-      onRun(1, [snapshot(5, ['ws.r0000000001'], 1)]),
-      onRun(2, [snapshot(5, ['memory.local'], 1)]),
+      onRun(1, [snapshot(5, ['memory/ws.r0000000001'], 1)]),
+      onRun(2, [snapshot(5, ['memory/local'], 1)]),
       onRun(3, []),
     ]
     const { markdown, json } = buildReport(records, { resamples: 50 })
