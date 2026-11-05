@@ -295,6 +295,63 @@ describe('the 30-day review of saved skills in the daemon', () => {
   })
 })
 
+describe('the cap on saved skills in force in a workspace', () => {
+  it('a session opening and each install keep 20 in force; a skill a person switched back on stays on', async () => {
+    const s = setup()
+    const name = (i: number) => `skill-${String(i).padStart(2, '0')}`
+    // Saved before the cap existed: 21 in force.
+    const installer = s.saved.installers(s.workspace)
+    const made: { resourceId: string; revision: string }[] = []
+    for (let i = 0; i <= 20; i++) {
+      made.push(
+        await installer.install(draft(name(i), 'One.'), {
+          workspaceRoot: s.workspace,
+          receiptId: `r-${i}`,
+          source: { ...source, entryId: name(i) },
+        }),
+      )
+      s.later(1000)
+    }
+    expect(s.registry().skills.filter((skill) => skill.state === 'active')).toHaveLength(21)
+    await s.sessionOpens()
+    // The one confirmed longest ago is switched off for capacity; its folder stays.
+    const first = made[0] as { resourceId: string; revision: string }
+    expect(await s.get(first.resourceId)).toMatchObject({ desired: 'disabled' })
+    expect(existsSync(join(s.folder(name(0)), 'SKILL.md'))).toBe(true)
+    expect(s.registry().skills[0]).toMatchObject({ state: 'review-disabled', disabledFor: 'capacity' })
+    expect(s.registry().skills.filter((skill) => skill.state === 'active')).toHaveLength(20)
+    let listed = await s.saved.manage({ cwd: s.workspace }, 'local')
+    expect(listed.skills[0]).toMatchObject({ name: name(0), disabledFor: 'capacity' })
+    expect(listed.skills[1]).not.toHaveProperty('disabledFor')
+    // A person switches it back on: theirs to keep, and no longer counted.
+    expect(
+      await s.settle(
+        await s.user('_agnes/v1/resources.desired.set', {
+          resourceId: first.resourceId,
+          expectedRevision: first.revision,
+          state: 'enabled',
+        }),
+      ),
+    ).toBe('succeeded')
+    expect(s.registry().skills[0]).toMatchObject({ state: 'active', enabledBy: 'person' })
+    expect(s.registry().skills[0]).not.toHaveProperty('disabledFor')
+    await s.sessionOpens()
+    expect(s.registry().skills.filter((skill) => skill.state === 'active')).toHaveLength(21)
+    // A new install over the cap switches off the oldest counted one, never the person's.
+    await s.install(name(21))
+    expect(s.registry().skills[0]).toMatchObject({ state: 'active', enabledBy: 'person' })
+    expect(s.registry().skills[1]).toMatchObject({ name: name(1), disabledFor: 'capacity' })
+    expect(await s.get((made[1] as { resourceId: string }).resourceId)).toMatchObject({
+      desired: 'disabled',
+    })
+    expect(s.registry().skills.filter((skill) => skill.state === 'active')).toHaveLength(21)
+    listed = await s.saved.manage({ cwd: s.workspace }, 'local')
+    expect(
+      listed.skills.filter((skill) => skill.disabledFor === 'capacity').map((skill) => skill.name),
+    ).toEqual([name(1)])
+  }, 60_000)
+})
+
 describe("the user's uninstall of a saved skill", () => {
   it('uninstall by the user is recorded and survives a restart', async () => {
     const s = setup()

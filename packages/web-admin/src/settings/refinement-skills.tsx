@@ -1,4 +1,5 @@
 import type { RefinementSavedSkill, RefinementSkillsParams, RefinementSkillsResult } from '@agnes/protocol'
+import type { AdminMemoryParams, AdminMemoryResult } from '@agnes/protocol/gen/app-server'
 import {
   appServerErrorMessage,
   Banner,
@@ -9,22 +10,27 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { useEffect, useState } from 'react'
+import { memoryRequest } from './memory-api.js'
 import { SAVED_SKILLS_NAMESPACE, savedSkillsCatalog } from './refinement-skills-locale.js'
 
 /** The daemon's view of the skills task experience saved in a workspace, for the owner. */
 export type SavedSkillsApi = {
   workspaces(): Promise<readonly { path: string; available: boolean }[]>
   skills(input: RefinementSkillsParams): Promise<RefinementSkillsResult>
+  /** `_agnes/v1/admin.memory`, for the saved paragraph lists; the settings page's own request when absent. */
+  memory?(input: AdminMemoryParams): Promise<AdminMemoryResult>
 }
 
 const errorEnvelope = (error: unknown) =>
   (error as { envelope?: unknown; data?: unknown })?.envelope ?? (error as { data?: unknown })?.data ?? true
 
 /**
- * The skills task experience installed in one workspace: whether each is on or awaiting review (the
- * 30-day review switched it off), who saved it, and the owner's uninstall and rollback; then the drafts
- * kept for a person instead of writing a skill they wrote or changed. A draft holds planner text, so it
- * is shown as plain text only.
+ * The skills task experience installed in one workspace: whether each is on, awaiting review (the
+ * 30-day review switched it off) or off because the workspace reached its limit of saved skills in
+ * force, who saved it, and the owner's uninstall and rollback; then the drafts kept for a person instead
+ * of writing a skill they wrote or changed. A draft holds planner text, so it is shown as plain text
+ * only. Above them, how many paragraphs of task experience are saved for the chosen workspace and in
+ * user memory (the saved lists of `admin.memory`); nothing is shown when either cannot be read.
  */
 export function SavedSkillsBlock({ api }: { api: SavedSkillsApi }) {
   const { t, locale } = useUiText(SAVED_SKILLS_NAMESPACE, savedSkillsCatalog)
@@ -33,6 +39,7 @@ export function SavedSkillsBlock({ api }: { api: SavedSkillsApi }) {
   const [result, setResult] = useState<RefinementSkillsResult>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>()
+  const [saved, setSaved] = useState<{ workspace: number; user: number }>()
   useEffect(() => {
     let live = true
     void api.workspaces().then(
@@ -66,6 +73,25 @@ export function SavedSkillsBlock({ api }: { api: SavedSkillsApi }) {
       live = false
     }
   }, [api, cwd])
+  useEffect(() => {
+    if (!cwd) return
+    let live = true
+    setSaved(undefined)
+    const count = async (input: AdminMemoryParams) =>
+      (await (api.memory ? api.memory(input) : memoryRequest(input))).saved?.paragraphs.length ?? 0
+    void Promise.all([
+      count({ cwd, saved: { action: 'list' } }),
+      count({ cwd, saved: { action: 'list', layer: 'user' } }),
+    ]).then(
+      ([workspace, user]) => {
+        if (live) setSaved({ workspace, user })
+      },
+      () => undefined,
+    )
+    return () => {
+      live = false
+    }
+  }, [api, cwd])
   const act = async (action: 'uninstall' | 'rollback', name: string) => {
     if (busy || !cwd) return
     setBusy(true)
@@ -81,7 +107,9 @@ export function SavedSkillsBlock({ api }: { api: SavedSkillsApi }) {
   const date = new Intl.DateTimeFormat(locale, { dateStyle: 'medium' })
   const status = (skill: RefinementSavedSkill) =>
     [
-      t(`skills.${skill.state}`, { date: date.format(skill.reviewAfter) }),
+      skill.disabledFor === 'capacity'
+        ? t('skills.capacity')
+        : t(`skills.${skill.state}`, { date: date.format(skill.reviewAfter) }),
       t('skills.by', { who: t(`skills.initiator.${skill.initiator}`) }),
       ...(skill.workflow === true ? [t('skills.workflow')] : []),
     ].join(' ')
@@ -89,6 +117,11 @@ export function SavedSkillsBlock({ api }: { api: SavedSkillsApi }) {
   return (
     <SettingsBlock label={t('skills.title')} data-testid="refinement-saved-skills" aria-busy={busy}>
       <p className="agnes-settings-note">{t('skills.help')}</p>
+      {saved && (
+        <p className="agnes-settings-note" data-testid="refinement-saved-counts">
+          {t('skills.saved', { total: saved.workspace + saved.user, ...saved })}
+        </p>
+      )}
       {available.length > 1 && (
         <SettingsItem label={t('skills.workspace')}>
           <SettingsSelect

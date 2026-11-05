@@ -5,7 +5,9 @@ import { setTimeout as delay } from 'node:timers/promises'
 import {
   REVIEW_AFTER_MS,
   RefinementRegistry,
+  type RegistryRecords,
   type RegistrySkill,
+  type SaveReceipt,
   type SaveRefusal,
   type SaveSource,
 } from '@agnes/host-infrastructure/refinement-registry'
@@ -96,8 +98,14 @@ export type RefinementSkillInstaller = Readonly<{
   /**
    * Switches the skill off (`desired = disabled`; the folder stays) and records it `review-disabled`.
    * With `reviewAfter`, only while the registry still holds that review date: a renewal meanwhile wins.
+   * With `capacity` (the cap on saved skills in force), the record also says why (`disabledFor`) and
+   * the registry keeps a receipt of it.
    */
-  disable(name: string, expected: { revision: string; reviewAfter?: number }): Promise<void>
+  disable(
+    name: string,
+    expected: { revision: string; reviewAfter?: number },
+    reason?: 'capacity',
+  ): Promise<void>
   uninstall(name: string): Promise<void>
   /** Finishes the operations a crash left unfinished in this workspace; returns how many finished. */
   recover(): Promise<number>
@@ -114,6 +122,8 @@ export type RefinementSkillInstallers = ((workspaceRoot: string) => RefinementSk
 }
 
 const LIVE: readonly RegistrySkill['state'][] = ['active', 'review-disabled']
+/** The command a capacity receipt names: never one a save request carries. */
+const CAPACITY_COMMAND = 'skill-capacity'
 const WORKSPACE_ID = /^[a-f0-9]{64}$/
 const RECEIPT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/
 
@@ -128,6 +138,24 @@ function validSource(value: unknown): value is SaveSource {
     ['auto', 'user', 'model'].includes(String(source.initiator)) &&
     (source.fromWorkflow === undefined || source.fromWorkflow === true)
   )
+}
+
+/**
+ * The registry's receipt of a skill the cap on saved skills in force switched off: the entry it was
+ * saved from, the capacity step that failed, and the skill and revision now off. Never a session
+ * ledger row: the cap also runs when a session opens, with no ledger to write.
+ */
+function capacityReceipt(skill: RegistrySkill, at: number): SaveReceipt {
+  return {
+    receiptId: `${CAPACITY_COMMAND}-${randomUUID()}`,
+    commandId: CAPACITY_COMMAND,
+    initiator: 'auto',
+    source: skill.source,
+    outcome: 'refused',
+    steps: [{ step: 'capacity', verdict: 'fail' }],
+    target: { kind: 'skill', name: skill.name, resourceId: skill.resourceId, revision: skill.revision },
+    at,
+  }
 }
 
 /** How a refusal of the installer reads in a save receipt. */
@@ -298,10 +326,10 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
     }
     const recordOf = (name: string) =>
       registry.read().skills.find((skill) => skill.name.toLowerCase() === name)
-    const writeRegistry = (mutate: (skills: RegistrySkill[]) => void) => {
+    const writeRegistry = (mutate: (skills: RegistrySkill[], draft: RegistryRecords) => void) => {
       for (let attempt = 0; ; attempt++) {
         try {
-          registry.update((draft) => mutate(draft.skills), registry.read().revision)
+          registry.update((draft) => mutate(draft.skills, draft), registry.read().revision)
           return
         } catch (error) {
           if ((error as { code?: string }).code !== 'REGISTRY_REVISION_CONFLICT' || attempt >= 4) throw error
@@ -459,6 +487,8 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
         const earlier = entry.kind === 'install' ? [] : (record?.archive ?? [])
         const history = [...earlier, ...(entry.fromRevision ? [entry.fromRevision] : [])]
         const ordered = [...new Set([...history.filter((r) => r !== entry.toRevision), entry.toRevision])]
+        // A replacement keeps why the skill is off (while it stays off) and that a person switched it on.
+        const kept = entry.kind === 'install' ? undefined : record
         return {
           name: entry.name,
           resourceId,
@@ -467,6 +497,8 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
           reviewAfter: clock() + REVIEW_AFTER_MS,
           state: enabled ? 'active' : 'review-disabled',
           archive: archive.prune(entry.name, ordered, [entry.toRevision]),
+          ...(!enabled && kept?.disabledFor ? { disabledFor: kept.disabledFor } : {}),
+          ...(kept?.enabledBy ? { enabledBy: kept.enabledBy } : {}),
         }
       })
       archive.journal.remove(entry.id)
@@ -503,7 +535,10 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
         `${randomUUID()}-enable`,
       )
       await settled(record.resourceId, record.revision, true)
-      setRecord(record.name, (current) => ({ ...(current ?? record), state: 'active' }))
+      setRecord(record.name, (current) => {
+        const { disabledFor: _off, ...rest } = current ?? record
+        return { ...rest, state: 'active' }
+      })
     }
     const replace = async (
       name: string,
@@ -637,7 +672,7 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
           return { revision: (await replace(name, record, disk, restored, options)).revision }
         })
       },
-      async disable(name, expected) {
+      async disable(name, expected, reason) {
         if (!isSavedSkillName(name)) throw installError('SKILL_NAME_INVALID')
         return serial(name, async () => {
           await pendingFor(name)
@@ -651,7 +686,18 @@ export function createRefinementSkillInstallers(deps: RefinementSkillDeps): Refi
             { resourceId: record.resourceId, expectedRevision: record.revision, state: 'disabled' },
             `${randomUUID()}-disable`,
           )
-          setRecord(name, (current) => ({ ...(current ?? record), state: 'review-disabled' }))
+          writeRegistry((skills, draft) => {
+            const index = skills.findIndex((skill) => skill.name.toLowerCase() === name)
+            const current = index < 0 ? record : (skills[index] as RegistrySkill)
+            const next: RegistrySkill = {
+              ...current,
+              state: 'review-disabled',
+              ...(reason === 'capacity' ? { disabledFor: 'capacity' as const } : {}),
+            }
+            if (index < 0) skills.push(next)
+            else skills[index] = next
+            if (reason === 'capacity') draft.receipts.push(capacityReceipt(next, clock()))
+          })
         })
       },
       async uninstall(name) {

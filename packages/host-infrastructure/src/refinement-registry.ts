@@ -65,6 +65,13 @@ export type RegistrySkill = {
   reviewAfter: number
   state: 'active' | 'review-disabled' | 'uninstalled' | 'rolled-back'
   archive: string[]
+  /**
+   * Why a `review-disabled` skill is off when it was not the 30-day review: `capacity`, the workspace
+   * already had as many saved skills in force as it may. Only a person switches it back on.
+   */
+  disabledFor?: 'capacity'
+  /** A person switched it back on: the cap on saved skills in force never switches it off. */
+  enabledBy?: 'person'
 }
 export type Revocation = {
   sessionKey: string
@@ -179,6 +186,10 @@ const cleanSkill = (value: unknown): RegistrySkill | undefined => {
   const state = oneOf(raw.state, ['active', 'review-disabled', 'uninstalled', 'rolled-back'] as const)
   const archive = list(raw.archive, text)
   if (!every(name, resourceId, revision, source, reviewAfter, state, archive)) return undefined
+  // Optional marks: a value this build does not know (a later one) is dropped, never a reason to
+  // distrust the file, as earlier builds ignore both fields.
+  const disabledFor = oneOf(raw.disabledFor, ['capacity'] as const)
+  const enabledBy = oneOf(raw.enabledBy, ['person'] as const)
   return {
     name: name as string,
     resourceId: resourceId as string,
@@ -187,6 +198,8 @@ const cleanSkill = (value: unknown): RegistrySkill | undefined => {
     reviewAfter: reviewAfter as number,
     state: state as RegistrySkill['state'],
     archive: archive as string[],
+    ...(disabledFor === undefined ? {} : { disabledFor }),
+    ...(enabledBy === undefined ? {} : { enabledBy }),
   }
 }
 

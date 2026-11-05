@@ -1,5 +1,7 @@
 import {
   createRefinementSkillInstallers,
+  enforceSkillCap,
+  RefinementRegistry,
   type RefinementSkillInstaller,
   type RefinementSkillInstallers,
   refinementSkillRefusal,
@@ -191,7 +193,8 @@ export function savedSkillInstallers(options: {
  * lives here. Reached only over the authenticated worker channel. The requesting session must be live:
  * a save does not outlive its session. The workspace is always the one that session is bound to, never
  * one named in the request, and nothing happens while refinement is switched off. Refusals come back
- * as a save refusal reason, never as a partial effect.
+ * as a save refusal reason, never as a partial effect. After an install or an update the cap on saved
+ * skills in force runs for that workspace; what it does never changes the request's answer.
  */
 export function createRefinementSkillRequests(options: {
   dataDir: string
@@ -205,9 +208,19 @@ export function createRefinementSkillRequests(options: {
   owner(sessionKey: string): { active: boolean } | undefined
   /** Read again for every request: the refinement switch. */
   enabled(): boolean
+  clock?: () => number
   pollMs?: number
 }) {
   const installers = options.installers ?? savedSkillInstallers(options)
+  const clock = options.clock ?? Date.now
+  /** The cap on saved skills in force, after an install or update wrote one. */
+  const capped = async (installer: RefinementSkillInstaller, workspace: string) => {
+    try {
+      await enforceSkillCap(new RefinementRegistry(options.dataDir, workspace, clock), installer, clock())
+    } catch {
+      // The next install, update or session opening checks again.
+    }
+  }
   let inflight = 0
   return async (sessionKey: string, params: unknown): Promise<unknown> => {
     if (!plain(params)) throw rpcError('INVALID_PARAMS')
@@ -218,7 +231,10 @@ export function createRefinementSkillRequests(options: {
     if (inflight >= MAX_INFLIGHT) return { ok: false, reason: 'unavailable', code: 'SKILL_INSTALL_BUSY' }
     inflight++
     try {
-      const result = await work(installers(workspace), workspace)
+      const installer = installers(workspace)
+      const result = await work(installer, workspace)
+      if ((params.op === 'install' || params.op === 'update') && 'revision' in (result as object))
+        await capped(installer, workspace)
       return { ok: true, ...(result as object) }
     } catch (error) {
       const code = (error as { code?: unknown }).code
