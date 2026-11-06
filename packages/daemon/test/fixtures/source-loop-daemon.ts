@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runAgnesd } from '../../src/launch.js'
 
 const home = process.argv[2]
@@ -10,7 +10,7 @@ await runAgnesd(
   { home, workspace, profile: 'local-dev' },
   {
     workerExecPath: process.execPath,
-    workerExecArgv: ['--import', createRequire(import.meta.url).resolve('tsx')],
+    workerExecArgv: ['--import', pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href],
     workerEntry: fileURLToPath(new URL('../../src/worker/main.ts', import.meta.url)),
   },
 )
