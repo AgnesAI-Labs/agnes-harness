@@ -94,6 +94,7 @@ describe('loopback serving', () => {
         customFsDeny: false,
         providerId: 'local',
         localProviderId: 'local',
+        localImplementation: 'unimplemented',
         root: 'C:\\work',
         policyDigest: 'a'.repeat(64),
       }),

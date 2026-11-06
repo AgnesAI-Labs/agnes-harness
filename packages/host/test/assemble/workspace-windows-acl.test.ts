@@ -53,6 +53,8 @@ const offerInput = (execution: WindowsAclExecution | undefined, staticConfig = o
   customFsDeny: staticConfig.denyPaths.length > 0,
   providerId: 'local',
   localProviderId: 'local',
+  // What the trusted local sandbox reports for Windows: no full isolation there.
+  localImplementation: 'unimplemented' as const,
   root: ROOT,
   policyDigest: DIGEST,
 })
@@ -98,6 +100,24 @@ describe('Windows write restriction in the workspace runtime', () => {
       windowsHostSpawnOffer(offerInput(execution, official({}, 'full-access'))),
     ).resolves.toBeUndefined()
     await expect(windowsHostSpawnOffer(offerInput(execution, official(), 'darwin'))).resolves.toBeUndefined()
+  })
+
+  it('keeps the existing path where the trusted local sandbox implements full isolation on Windows', async () => {
+    // windows_mode says what a policy accepts where full isolation is unavailable. A local provider
+    // that implements it is asked as on any other platform, and refuses or confines by itself.
+    const { execution, rootIdentity } = facade()
+    for (const config of [official(), official({}, 'read-only'), official({ required: true })])
+      await expect(
+        windowsHostSpawnOffer({ ...offerInput(execution, config), localImplementation: 'implemented' }),
+      ).resolves.toBeUndefined()
+    expect(rootIdentity).not.toHaveBeenCalled()
+    // Anything short of an implemented provider keeps the decision, refusals included.
+    await expect(
+      windowsHostSpawnOffer({
+        ...offerInput(execution, official({ required: true })),
+        localImplementation: 'unknown',
+      }),
+    ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
   })
 
   it('leaves a recipe that did not opt in to its own on_unavailable, without downgrade authority', async () => {

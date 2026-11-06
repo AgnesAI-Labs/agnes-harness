@@ -129,6 +129,7 @@ export function createReadinessManager(
       customFsDeny: planExplicitDeny(plan),
       providerId,
       localProviderId: RELEASE_DEFAULTS.sandboxProvider,
+      localImplementation: localSandboxImplementation(ctx.profile, modules, adapters.platform.os),
       root: plan.policy.workspaceRoot,
       policyDigest: plan.policy.digest,
     })

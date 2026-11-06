@@ -65,6 +65,7 @@ const offer = (plan: WorkspacePolicyPlan) =>
     customFsDeny: planExplicitDeny(plan),
     providerId: 'local',
     localProviderId: 'local',
+    localImplementation: 'unimplemented',
     root: plan.policy.workspaceRoot,
     policyDigest: plan.policy.digest,
   })

@@ -74,8 +74,11 @@ const refusal = (reason: string): HostError =>
 
 /**
  * The Host-started offer for one workspace policy, or undefined where the existing path applies:
- * another platform, no Windows opt-in, or the explicit full-access contract. A write-restricted
- * policy the partial contract cannot satisfy is refused here, before any provider is asked.
+ * another platform, no Windows opt-in, the explicit full-access contract, or a trusted local sandbox
+ * that implements full isolation on Windows (`windows_mode` only says what a policy accepts where
+ * that is unavailable; such a provider confines or refuses by itself, as on other platforms). A
+ * write-restricted policy the partial contract cannot satisfy is refused here, before any provider
+ * is asked.
  */
 export async function windowsHostSpawnOffer(input: {
   execution: WindowsAclExecution | undefined
@@ -85,10 +88,17 @@ export async function windowsHostSpawnOffer(input: {
   customFsDeny: boolean
   providerId: string
   localProviderId: string
+  /** What the builtin local sandbox implements on this OS (`localSandboxImplementation`). */
+  localImplementation: 'implemented' | 'unimplemented' | 'unknown'
   root: string
   policyDigest: string
 }): Promise<HostSpawnSandboxWorkspaceBackend | undefined> {
-  if (input.os !== 'win32' || input.staticConfig.windowsMode !== 'write-restricted') return undefined
+  if (
+    input.os !== 'win32' ||
+    input.staticConfig.windowsMode !== 'write-restricted' ||
+    input.localImplementation === 'implemented'
+  )
+    return undefined
   const facts = windowsFacts(input.staticConfig, false, input.providerId, input.customFsDeny)
   const decision = input.execution
     ? input.execution.decide(facts)
