@@ -8,6 +8,7 @@ import {
   remoteSecretBinding,
   stdioSecretBinding,
 } from './mcp-secret-binding.js'
+import { mcpSignInMark } from './mcp-sign-in.js'
 
 export { ResourceUsageError }
 
@@ -242,7 +243,7 @@ function resourceLine(resource: ResourceDescriptor): string {
       : ''
     return `${resource.resourceId} name=${resource.name} revision=${resource.revision} trust=${resource.trust} desired=${resource.desired} actual=${resource.actual} ${resolution} source=${resource.sourceIdentity.scope}/${resource.sourceIdentity.rootKey}${resource.stale ? ' stale=true' : ''}${error}`
   }
-  return `${resource.serverId} revision=${resource.revision} trust=${resource.trust} desired=${resource.desired} actual=${resource.actual} transport=${resource.transportKind}${resource.transportKind === 'stdio' ? ` sandbox=${resource.sandboxProfile ?? ('sandboxProfile' in resource.definition ? resource.definition.sandboxProfile : undefined) ?? 'strict'}` : ''}`
+  return `${resource.serverId} revision=${resource.revision} trust=${resource.trust} desired=${resource.desired} actual=${resource.actual} transport=${resource.transportKind}${resource.transportKind === 'stdio' ? ` sandbox=${resource.sandboxProfile ?? ('sandboxProfile' in resource.definition ? resource.definition.sandboxProfile : undefined) ?? 'strict'}` : ''}${mcpSignInMark(resource)}`
 }
 function operationLine(operation: ResourceOperation): string {
   const result = operation.result

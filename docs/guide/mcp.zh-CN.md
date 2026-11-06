@@ -173,6 +173,8 @@ MCP 集合成功应用后，即使独立的 Skills 刷新失败，也保留新�
 
 **会话路径上的 OAuth：** `secretBinding.kind === 'oauth'` 的服务使用在网页 MCP 页完成的登录。每个请求都读取保存的登录：令牌快到期前续期，收到 401 时续期一次；别的进程写入的新令牌直接使用；登出后，服务端不会再收到带旧令牌的请求。没有可用的登录，或登录后服务地址变了，该服务不可用，错误码为 `MCP_OAUTH_NEEDS_RECONNECT`，工具调用返回请用户登录的提示。
 
+**服务需要登录时：** 这个状态记在服务上，所有列出服务的地方都能看到。还没登录、或登录已经失效的 OAuth 服务，在网页 MCP 页显示“需要登录”，在 `agh mcp list` 里带 `needs sign-in`。没有设凭据的服务在连接时回 401 或 403，该服务不可用，错误码为 `MCP_AUTH_REQUIRED`，同样会被标出；已经设了 bearer 或 header 凭据的服务仍报 `MCP_AUTH_FAILED`。TUI 启动时还会提示一次已启用且需要登录的服务（同一进程里每个服务只提示一次）：`这些 MCP 服务需要登录：a、b。运行 /mcp 查看。` 请在网页的 MCP 页登录；正在运行的会话在下一个请求就会用上新的登录。
+
 逐服务器运行器的源码与测试可在下方查阅。实际运行版本及外部服务验证范围见[验证记录](../maintainers/verification.zh-CN.md)。
 
 源码入口：[管理命令](../../packages/resource-control-cli/src/resources.ts)、[Schema](../../packages/protocol/schema/resource-control.json)、[资源启动](../../packages/resource-control-worker/src/runtime-bootstrap.ts)、[Worker 启动](../../packages/worker-runtime/src/main.ts)、[轮次重载](../../packages/worker-runtime/src/commands.ts)、[逐服务器运行器](../../packages/worker-runtime/src/mcp-row-runtime.ts)与[派生](../../packages/worker-runtime/src/mcp-server-rows.ts)。校验位置记录在[源码锚点清单](../../tools/public-docs/source-checks.json)。

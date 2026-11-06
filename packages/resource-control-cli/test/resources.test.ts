@@ -139,6 +139,62 @@ describe('resource CLI argument boundary', () => {
     })
     expect(output).toBe('No resources found.')
   })
+  describe('MCP sign-in marks', () => {
+    const server = (serverId: string, extra: Record<string, unknown>) => ({
+      kind: 'mcp' as const,
+      resourceId: `mcp/${serverId}`,
+      serverId,
+      revision: 'a'.repeat(64),
+      trust: 'trusted',
+      desired: 'enabled',
+      actual: 'unavailable',
+      transportKind: 'http',
+      definition: {},
+      ...extra,
+    })
+    const listed = async (items: unknown[]) => {
+      let output = ''
+      const client = {
+        clientId: async () => 'client',
+        mcp: { servers: { list: async () => ({ items }) } },
+      }
+      await runResourceCommand('mcp', ['list'], client as never, {
+        write: (text) => {
+          output += text
+        },
+      })
+      return output.split('\n')
+    }
+    it('list marks an oauth server that needs sign-in', async () => {
+      const lines = await listed([
+        server('fresh', { secretBindingKind: 'oauth', authorizationStatus: 'pending' }),
+        server('expired', { secretBindingKind: 'oauth', authorizationStatus: 'needs-reconnect' }),
+        server('signed-in', {
+          secretBindingKind: 'oauth',
+          authorizationStatus: 'authorized',
+          actual: 'ready',
+        }),
+      ])
+      expect(lines[0]).toMatch(/^fresh .* needs sign-in$/)
+      expect(lines[1]).toMatch(/^expired .* needs sign-in$/)
+      expect(lines[2]).toMatch(/^signed-in /)
+      expect(lines[2]).not.toContain('needs sign-in')
+    })
+    it('list marks a server without credentials that answered with an auth requirement', async () => {
+      const lines = await listed([
+        server('open', {
+          secretBindingKind: 'none',
+          lastSafeError: { code: 'MCP_AUTH_REQUIRED', message: 'MCP server requires sign-in' },
+        }),
+        server('broken', {
+          secretBindingKind: 'none',
+          lastSafeError: { code: 'MCP_CONNECT_FAILED', message: 'could not connect' },
+        }),
+      ])
+      expect(lines[0]).toMatch(/^open .* needs sign-in$/)
+      expect(lines[1]).not.toContain('needs sign-in')
+    })
+  })
   it('rejects raw secret flags before it can make a Daemon call', async () => {
     await expect(
       runResourceCommand(

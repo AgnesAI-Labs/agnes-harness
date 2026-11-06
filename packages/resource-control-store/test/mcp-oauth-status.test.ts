@@ -60,14 +60,15 @@ afterEach(async () => {
   directory = ''
 })
 
-const ready = (serverId: string) => ({
+const observation = (serverId: string, connectionState: 'connecting' | 'ready' | 'unavailable') => ({
   serverId,
-  connectionState: 'ready' as const,
+  connectionState,
   observedRevision: null,
   catalogRevision: null,
   toolCount: 0,
   observedAt: new Date().toISOString(),
 })
+const ready = (serverId: string) => observation(serverId, 'ready')
 
 /** mcp.servers.create always kicks off an async drive() -> adapter.reconcile() in the background
  * (see McpResourceStore.effect()), even though none of the tests below care about connection state
@@ -80,7 +81,9 @@ function statusOnlyAdapter() {
     throw new Error('adapter should not be invoked by an oauth-status-only test')
   }
   return {
-    reconcile: async ({ serverId }: { serverId: string }) => ({ status: ready(serverId) }),
+    reconcile: async ({ serverId }: { serverId: string }) => ({
+      status: observation(serverId, 'connecting'),
+    }),
     reconnect: unreachable,
     test: unreachable,
     tools: unreachable,
@@ -269,5 +272,83 @@ describe('mcp.servers.oauth.status / mcp.servers.oauth.status.set', () => {
         readOnlyAuthority,
       ),
     ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+  })
+
+  describe('worker observations', () => {
+    const needsSignIn = (serverId: string) => ({
+      ...observation(serverId, 'unavailable'),
+      lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT', message: 'MCP server needs sign-in' },
+    })
+    const authorizationOf = (service: TestService, serverId: string) =>
+      service.call('_agnes/v1/mcp.servers.oauth.status', { profile, serverId }, authority)
+
+    it('a worker status with MCP_OAUTH_NEEDS_RECONNECT marks the server needs-reconnect', async () => {
+      directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-oauth-status-'))
+      const store = new McpResourceStore(directory, scope, statusOnlyAdapter())
+      const service = testService(createResourceControlService(store))
+      await createOAuthServer(service, oauthDefinition)
+
+      await store.observeWorker(profile, [needsSignIn('oauth-server')])
+
+      await expect(authorizationOf(service, 'oauth-server')).resolves.toMatchObject({
+        authorizationStatus: 'needs-reconnect',
+      })
+    })
+
+    it('a ready worker status marks the server authorized', async () => {
+      directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-oauth-status-'))
+      const store = new McpResourceStore(directory, scope, statusOnlyAdapter())
+      const service = testService(createResourceControlService(store))
+      await createOAuthServer(service, oauthDefinition)
+      await store.observeWorker(profile, [needsSignIn('oauth-server')])
+
+      await store.observeWorker(profile, [ready('oauth-server')])
+
+      await expect(authorizationOf(service, 'oauth-server')).resolves.toEqual({
+        authorizationStatus: 'authorized',
+      })
+    })
+
+    it('other statuses leave the recorded authorization alone', async () => {
+      directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-oauth-status-'))
+      const store = new McpResourceStore(directory, scope, statusOnlyAdapter())
+      const service = testService(createResourceControlService(store))
+      await createOAuthServer(service, oauthDefinition)
+      await store.observeWorker(profile, [needsSignIn('oauth-server')])
+
+      await store.observeWorker(profile, [observation('oauth-server', 'connecting')])
+
+      await expect(authorizationOf(service, 'oauth-server')).resolves.toEqual({
+        authorizationStatus: 'needs-reconnect',
+      })
+    })
+
+    it('a non-oauth server status leaves authorizationStatus null', async () => {
+      directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-oauth-status-'))
+      const store = new McpResourceStore(directory, scope, statusOnlyAdapter())
+      const service = testService(createResourceControlService(store))
+      await createOAuthServer(service, plainDefinition)
+
+      await store.observeWorker(profile, [needsSignIn('plain-server')])
+      await expect(authorizationOf(service, 'plain-server')).resolves.toMatchObject({
+        authorizationStatus: null,
+      })
+      await store.observeWorker(profile, [ready('plain-server')])
+      await expect(authorizationOf(service, 'plain-server')).resolves.toEqual({ authorizationStatus: null })
+    })
+
+    it('a status written by a lifecycle operation updates the authorization too', async () => {
+      directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-oauth-status-'))
+      const store = new McpResourceStore(directory, scope, {
+        ...statusOnlyAdapter(),
+        reconcile: async ({ serverId }: { serverId: string }) => ({ status: needsSignIn(serverId) }),
+      })
+      const service = testService(createResourceControlService(store))
+      await createOAuthServer(service, oauthDefinition)
+
+      await expect(authorizationOf(service, 'oauth-server')).resolves.toMatchObject({
+        authorizationStatus: 'needs-reconnect',
+      })
+    })
   })
 })
