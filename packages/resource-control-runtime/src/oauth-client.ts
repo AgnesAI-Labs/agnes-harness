@@ -8,8 +8,13 @@ import {
 import type {
   AuthorizationServerMetadata,
   OAuthClientMetadata,
+  OAuthProtectedResourceMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js'
+import {
+  checkResourceAllowed,
+  resourceUrlFromServerUrl,
+} from '@modelcontextprotocol/sdk/shared/auth-utils.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { validateManagedHttpUrl } from './mcp.js'
 
@@ -91,7 +96,12 @@ export type RegisterOAuthClientOptions = Readonly<{
 }>
 
 export type RegisterOAuthClientResult =
-  | Readonly<{ clientId: string; clientSecret?: string | undefined }>
+  | Readonly<{
+      clientId: string
+      clientSecret?: string | undefined
+      /** The client authentication method the registration response settled on, if it named one. */
+      tokenEndpointAuthMethod?: string | undefined
+    }>
   | Readonly<{ pendingClientId: true }>
 
 /**
@@ -120,25 +130,41 @@ export async function registerOAuthClient(
     return { clientId: opts.clientMetadataUrl }
   }
 
-  if (metadata?.registration_endpoint && opts.redirectUri) {
-    try {
-      const info = await registerClient(authorizationServerUrl, {
-        metadata,
-        clientMetadata: buildDcrClientMetadata(opts.redirectUri),
-        // SDK's fetchFn?: FetchLike has no explicit `| undefined` in its property type, so under
-        // this repo's exactOptionalPropertyTypes the property must be omitted rather than set to
-        // undefined - conditional spread does that instead of `fetchFn: opts.fetchImpl`.
-        ...(opts.fetchImpl ? { fetchFn: opts.fetchImpl } : {}),
-      })
-      return { clientId: info.client_id, clientSecret: info.client_secret }
-    } catch {
-      // Registration endpoint exists but rejected us (unreachable, malformed response, policy
-      // refusal, ...) - fall through to pendingClientId rather than propagating a discovery-time
-      // error out of what is meant to be a best-effort chain.
-    }
-  }
+  if (!opts.redirectUri) return { pendingClientId: true }
+  return registerDynamicClient(authorizationServerUrl, metadata, opts.redirectUri, opts.fetchImpl)
+}
 
-  return { pendingClientId: true }
+/**
+ * RFC 7591 Dynamic Client Registration against already-discovered metadata. Never throws: no
+ * registration endpoint, or a registration the server refuses, is `{ pendingClientId: true }`.
+ */
+export async function registerDynamicClient(
+  authorizationServerUrl: URL,
+  metadata: AuthorizationServerMetadata | undefined,
+  redirectUri: string,
+  fetchImpl?: FetchLike,
+): Promise<RegisterOAuthClientResult> {
+  if (!metadata?.registration_endpoint) return { pendingClientId: true }
+  try {
+    const info = await registerClient(authorizationServerUrl, {
+      metadata,
+      clientMetadata: buildDcrClientMetadata(redirectUri),
+      // SDK's fetchFn?: FetchLike has no explicit `| undefined` in its property type, so under
+      // this repo's exactOptionalPropertyTypes the property must be omitted rather than set to
+      // undefined - conditional spread does that instead of `fetchFn: fetchImpl`.
+      ...(fetchImpl ? { fetchFn: fetchImpl } : {}),
+    })
+    return {
+      clientId: info.client_id,
+      clientSecret: info.client_secret,
+      tokenEndpointAuthMethod: info.token_endpoint_auth_method,
+    }
+  } catch {
+    // Registration endpoint exists but rejected us (unreachable, malformed response, policy
+    // refusal, ...) - fall through to pendingClientId rather than propagating a discovery-time
+    // error out of what is meant to be a best-effort chain.
+    return { pendingClientId: true }
+  }
 }
 
 /**
@@ -155,29 +181,43 @@ export async function registerOAuthClient(
  * fallback is exactly the kind of thing that quietly drifts from this one the day either changes.
  */
 export async function resolveAuthorizationServerUrl(serverUrl: URL, fetchImpl?: FetchLike): Promise<URL> {
+  return authorizationServerFrom(await tryDiscoverResourceMetadata(serverUrl, fetchImpl), serverUrl)
+}
+
+async function tryDiscoverResourceMetadata(
+  serverUrl: URL,
+  fetchImpl?: FetchLike,
+): Promise<OAuthProtectedResourceMetadata | undefined> {
   try {
-    const resourceMetadata = await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchImpl)
-    const first = resourceMetadata.authorization_servers?.[0]
-    if (first) {
+    return await discoverOAuthProtectedResourceMetadata(serverUrl, {}, fetchImpl)
+  } catch {
+    // No RFC 9728 Protected Resource Metadata (or an unreadable document): legacy fallback.
+    return undefined
+  }
+}
+
+function authorizationServerFrom(
+  resourceMetadata: OAuthProtectedResourceMetadata | undefined,
+  serverUrl: URL,
+): URL {
+  const first = resourceMetadata?.authorization_servers?.[0]
+  if (first) {
+    try {
       const candidate = new URL(first)
-      // SSRF guard: `first` is attacker/compromised-resource-server-controlled
-      // content straight out of this PRM response body, not something `serverUrl` itself being
-      // validated at MCP definition registration time (resource-control-runtime/src/mcp.ts's
-      // `validateManagedTransport`) ever covered - a resource server naming an arbitrary internal
-      // host here would otherwise have every subsequent OAuth network call (RFC 8414 discovery, DCR,
-      // token exchange) aimed at it from inside the daemon's own network position. `httpPolicy:
-      // undefined` enforces HTTPS-only with no loopback exception - the right default for an
-      // authorization server, which should never legitimately be loopback (unlike an MCP resource
-      // server itself, which a local-daemon deployment may explicitly opt into over loopback HTTP -
-      // see runtime-bootstrap.ts's own policy plumbing). An invalid candidate here is treated exactly
-      // like "no PRM support" (falls through to the same legacy same-origin default below) rather
-      // than propagating an error, matching this function's own "never throws" contract.
+      // SSRF guard: `first` is attacker/compromised-resource-server-controlled content straight out
+      // of the PRM response body, not something `serverUrl` being validated at MCP definition
+      // registration time (`validateManagedTransport`) ever covered. A resource server naming an
+      // arbitrary internal host here would otherwise have every subsequent OAuth network call (RFC
+      // 8414 discovery, DCR, token exchange) aimed at it from inside the daemon's network position.
+      // `httpPolicy: undefined` enforces HTTPS-only with no loopback exception, the right default
+      // for an authorization server. An invalid candidate is treated exactly like "no PRM support"
+      // (falls through to the same legacy same-origin default below) rather than propagating an
+      // error, matching this function's "never throws" contract.
       validateManagedHttpUrl(candidate, undefined)
       return candidate
+    } catch {
+      // The resource server named an authorization server this function refuses to trust.
     }
-  } catch {
-    // No RFC 9728 Protected Resource Metadata, or the resource server named an authorization server
-    // this function refuses to trust - legacy fallback below either way.
   }
   return new URL('/', serverUrl)
 }
@@ -220,6 +260,43 @@ export async function tryDiscoverAuthorizationServerMetadata(
     return undefined
   }
   return metadata
+}
+
+export type McpOAuthDiscovery = Readonly<{
+  authorizationServer: URL
+  metadata?: AuthorizationServerMetadata
+  tokenEndpoint: URL
+  issuer?: string
+  /** What the access token is for; sent as `resource` on every authorization and token request. */
+  resource: URL
+  scopesSupported: readonly string[]
+}>
+
+/**
+ * Everything a login or a refresh needs to know about the server's authorization side, from one
+ * round of discovery. The protected resource named by the metadata must be on the server's own
+ * origin and its path must be a prefix of the server's path; anything else throws. Without such
+ * metadata the resource is the server address without its fragment.
+ */
+export async function discoverMcpOAuth(serverUrl: URL, fetchImpl?: FetchLike): Promise<McpOAuthDiscovery> {
+  const resourceMetadata = await tryDiscoverResourceMetadata(serverUrl, fetchImpl)
+  let resource = resourceUrlFromServerUrl(serverUrl)
+  if (resourceMetadata) {
+    const advertised = new URL(resourceMetadata.resource)
+    if (!checkResourceAllowed({ requestedResource: serverUrl, configuredResource: advertised }))
+      throw new Error('the protected resource named by the server does not cover the server address')
+    resource = advertised
+  }
+  const authorizationServer = authorizationServerFrom(resourceMetadata, serverUrl)
+  const metadata = await tryDiscoverAuthorizationServerMetadata(authorizationServer, fetchImpl)
+  return {
+    authorizationServer,
+    ...(metadata ? { metadata } : {}),
+    tokenEndpoint: metadata ? new URL(metadata.token_endpoint) : new URL('/token', authorizationServer),
+    ...(metadata?.issuer ? { issuer: metadata.issuer } : {}),
+    resource,
+    scopesSupported: resourceMetadata?.scopes_supported ?? [],
+  }
 }
 
 function buildDcrClientMetadata(redirectUri: string): OAuthClientMetadata {

@@ -84,6 +84,21 @@ function descriptor(row: McpRow): McpServerDescriptor {
   }
 }
 
+/** The authorization an observed connection implies for an oauth-bound row: a status that carries
+ * MCP_OAUTH_NEEDS_RECONNECT means the stored sign-in no longer works, a ready connection means it
+ * does. Any other observation says nothing about it. Written in the same journal transaction as the
+ * status itself, so the two never disagree. */
+function authorizationFrom(
+  row: McpRow,
+  observed: McpStatus,
+): { authorizationStatus?: McpAuthorizationStatus } {
+  if (row.definition.secretBinding.kind !== 'oauth') return {}
+  if (observed.lastSafeError?.code === 'MCP_OAUTH_NEEDS_RECONNECT')
+    return { authorizationStatus: 'needs-reconnect' }
+  if (observed.connectionState === 'ready') return { authorizationStatus: 'authorized' }
+  return {}
+}
+
 /** Shared projection for both the mcp.servers.oauth.status read and the .status.set write's own
  * result (the write returns the value it just committed, so a caller can trust its own response
  * instead of always issuing a second read): reuses McpStatus.lastSafeError verbatim rather than
@@ -685,7 +700,15 @@ export class McpResourceStore {
     await this.journal.txn(profile, (j) => {
       const row = j.servers[serverId]
       return {
-        next: row ? { ...j, servers: { ...j.servers, [serverId]: { ...row, status: copy(observed) } } } : j,
+        next: row
+          ? {
+              ...j,
+              servers: {
+                ...j.servers,
+                [serverId]: { ...row, ...authorizationFrom(row, observed), status: copy(observed) },
+              },
+            }
+          : j,
         result: undefined,
       }
     })

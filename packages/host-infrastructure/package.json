@@ -17,6 +17,7 @@
     "./adapters/fs-io-remote": "./src/adapters/fs-io-remote.ts",
     "./adapters/fs-io": "./src/adapters/fs-io.ts",
     "./adapters/fs": "./src/adapters/fs.ts",
+    "./adapters/mcp-oauth-store": "./src/adapters/mcp-oauth-store.ts",
     "./adapters/net": "./src/adapters/net.ts",
     "./adapters/platform-win32": "./src/adapters/platform-win32.ts",
     "./adapters/platform": "./src/adapters/platform.ts",

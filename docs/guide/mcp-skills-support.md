@@ -23,7 +23,7 @@ This page lists what the current session path implements. A management screen th
 | Resource pages | One page per call. Pass `nextCursor` back as `cursor`. A page over 256 entries is an error |
 | Resource images as model image blocks | Not supported. Text is returned as text. Binary content is bounded base64 |
 | Prompt templates (`prompts/list`, `prompts/get`) | Not supported |
-| OAuth on the session row | Not supported. A definition whose secret binding is `oauth` is skipped. A successful check in the management UI does not make that server available in the session |
+| OAuth on the session row | Supported. The session uses the sign-in made on the web MCP page and reads it for every request: it refreshes the token shortly before expiry, and once after a 401. Without a usable sign-in the server is unavailable with `MCP_OAUTH_NEEDS_RECONNECT`, and a tool call returns a message asking the user to sign in |
 
 ## Skills
 

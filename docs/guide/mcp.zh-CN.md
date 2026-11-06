@@ -22,7 +22,7 @@
 
 编辑命令、地址或凭据等连接配置后，新版本会以未信任、未启用状态保存，旧版本的启用请求不会用于连接新配置。重新审核并启用后才会连接。仅修改工具加载方式仍保留信任与启用状态。
 
-**当前源码：** 会话中的 MCP 服务以逐服务器 Host 行运行；OAuth 绑定仍会在该会话路径被跳过，详见[运行方式与版本](#运行方式与版本)。资源、提示模板与 OAuth 等支持与不支持的行为见 [MCP 与 Skills 支持范围](mcp-skills-support.zh-CN.md)。已执行的版本化验证见[验证记录](../maintainers/verification.zh-CN.md)。
+**当前源码：** 会话中的 MCP 服务以逐服务器 Host 行运行，OAuth 绑定也一样，详见[运行方式与版本](#运行方式与版本)。资源、提示模板与 OAuth 等支持与不支持的行为见 [MCP 与 Skills 支持范围](mcp-skills-support.zh-CN.md)。已执行的版本化验证见[验证记录](../maintainers/verification.zh-CN.md)。
 
 每个远端工具只有一个本地名称：`mcp__<server>__<tool>`。清洗、长度限制或重名需要改写时会加入哈希，名称始终不超过 64 字符。每个服务器只获得自己的前缀授权；执行时仍发送原始远端工具名。单服务器资源桥接工具使用相同命名规则。
 
@@ -136,6 +136,8 @@ stdio 使用 `--stdio EXECUTABLE` 与重复的 `--arg VALUE`；不要把完整 s
 
 凭据使用已有 secret 引用：`--secret-env NAME=secret://namespace/name`（stdio）、`--bearer-ref secret://namespace/name` 或 `--header-ref x-api-key=secret://namespace/name`（HTTP/SSE）。不把真实密钥放在命令行、截图或文档中。`--allow-tool TOOL_NAME` 可以重复指定允许的工具。
 
+用 OAuth 登录的 HTTP/SSE 服务加 `--oauth`。已经有这个服务的客户端 ID 时加 `--oauth-client-id ID`；这个客户端还有密钥时，先把密钥存成凭据，再加 `--oauth-client-secret-ref secret://namespace/name`。密钥引用必须和 `--oauth-client-id` 一起用，OAuth 参数不能和 `--bearer-ref`、`--header-ref` 一起用。网页向导的 OAuth 部分有同样两个可选项，客户端密钥填 `secret://` 引用，不填密钥本身。客户端密钥只在守护进程完成登录时读取，不出现在服务定义、操作记录和日志里。保存后在网页 MCP 页打开这个服务，点「去授权」登录。
+
 ## MCP 工具如何提供给模型
 
 模型可调用的每个工具 schema 都会随每次请求发送，MCP 目录一大，每一轮都要多付上下文和费用。以官方工具集实测：一个含 15 个常见工具的服务器每次请求约增加 2,750 tokens，十个这样的服务器约 27,500。
@@ -169,7 +171,9 @@ session worker 启动及资源变化后的轮次边界调用 `createMcpRowRuntim
 
 MCP 集合成功应用后，即使独立的 Skills 刷新失败，也保留新的 MCP 集合；该失败不会恢复已禁用或删除的服务器。若 MCP 应用后状态不确定，Worker 会拒绝后续轮次，直到完成恢复：下一轮会再次尝试重载，重载完全成功后轮次恢复放行；如果这次重试也失败，共享 Worker 会退出，由 daemon 重启并按快照重建各行。资源变更通常要等其他会话中已在运行的轮次结束；某一轮 30 秒后仍未结束（例如在等审批）时，不再拖住其他会话：它们先用当前资源运行，变更在下一次 Worker 空闲时的轮次或再过 30 秒后生效。
 
-**OAuth 限制：** 当前逐服务器行路径跳过 `secretBinding.kind === 'oauth'` 的定义。专用资源管理 service worker 保留 manager 路径，所以管理面连接/测试成功不等于该服务在会话内可调用。需要在目标会话验证实际工具调用；不要把管理状态当作 OAuth 会话支持证明。
+**会话路径上的 OAuth：** `secretBinding.kind === 'oauth'` 的服务使用在网页 MCP 页完成的登录。每个请求都读取保存的登录：令牌快到期前续期，收到 401 时续期一次；别的进程写入的新令牌直接使用；登出后，服务端不会再收到带旧令牌的请求。没有可用的登录，或登录后服务地址变了，该服务不可用，错误码为 `MCP_OAUTH_NEEDS_RECONNECT`，工具调用返回请用户登录的提示。
+
+**服务需要登录时：** 这个状态记在服务上，所有列出服务的地方都能看到。还没登录、或登录已经失效的 OAuth 服务，在网页 MCP 页显示“需要登录”，在 `agh mcp list` 里带 `needs sign-in`。没有设凭据的服务在连接时回 401 或 403，该服务不可用，错误码为 `MCP_AUTH_REQUIRED`，同样会被标出；已经设了 bearer 或 header 凭据的服务仍报 `MCP_AUTH_FAILED`。TUI 启动时还会提示一次已启用且需要登录的服务（同一进程里每个服务只提示一次）：`这些 MCP 服务需要登录：a、b。运行 /mcp 查看。` 请在网页的 MCP 页登录；正在运行的会话在下一个请求就会用上新的登录。
 
 逐服务器运行器的源码与测试可在下方查阅。实际运行版本及外部服务验证范围见[验证记录](../maintainers/verification.zh-CN.md)。
 

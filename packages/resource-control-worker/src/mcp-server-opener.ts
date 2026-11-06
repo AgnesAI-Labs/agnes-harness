@@ -6,8 +6,9 @@ import { jcs, type McpServerDefinitionInput, validateResourceControlData } from 
 import {
   type McpCredentialResolver,
   type McpHttpPolicy,
-  type McpOAuthCredentialResolver,
+  type McpOAuthStore,
   type McpStdioPolicy,
+  mcpOAuthAuthorizer,
   resolvedConfig,
   validateManagedHttpUrl,
 } from '@agnes/resource-control-runtime'
@@ -93,12 +94,9 @@ export type McpServerOpenerDeps = Readonly<{
   baseEnv: Readonly<Record<string, string>>
   stdioPolicy: McpStdioPolicy
   httpPolicy: McpHttpPolicy
-  /** Omitted, an oauth-bound definition fails closed inside `resolvedConfig` itself
-   * (`McpOAuthNeedsReconnectError`) -- matching `bootstrapWorkerResources`'s own optional wiring.
-   * Moot in practice: `mcpServerRowsFromDefinitions` (`@agnes/worker-runtime`) filters
-   * `secretBinding.kind === 'oauth'` definitions out before any row (and so this opener) ever sees
-   * them. */
-  oauthCredentials?: McpOAuthCredentialResolver
+  /** Where OAuth servers keep their sign-in, built on first use. Omitted, an OAuth server needs
+   * sign-in (`McpOAuthNeedsReconnectError`) and is never contacted. */
+  oauthStore?(): McpOAuthStore
   approvedLocalStart?(definition: McpServerDefinitionInput): Promise<boolean>
   connectTimeoutMs?: number
   sandbox?: McpSandboxContext
@@ -109,6 +107,9 @@ export type McpServerOpenerDeps = Readonly<{
  * into the one `McpServerOpener` port `@agnes/base`'s row extensions depend
  * on. One instance is definition-agnostic and serves every MCP row: `deps` here is deployment-wide
  * state (the credential resolver, the two policies), never anything specific to one server.
+ *
+ * An OAuth server's connection gets a per-request authorizer instead of a token in its config, so
+ * the pool key never holds a token and a refresh never needs a new connection.
  *
  * `resolvedConfig`'s first parameter is `McpManagedInput` (`{definition, revision, desired, trust}`),
  * but reading its implementation shows only `.definition` is ever read -- `revision`/`desired`/
@@ -134,8 +135,12 @@ export function createMcpServerOpener(deps: McpServerOpenerDeps): McpServerOpene
       signal,
       deps.baseEnv,
       { stdioPolicy, httpPolicy: deps.httpPolicy },
-      deps.oauthCredentials ? { oauthCredentials: deps.oauthCredentials } : undefined,
     )
+    const authorize = await mcpOAuthAuthorizer(definition, {
+      store: definition.secretBinding.kind === 'oauth' ? deps.oauthStore?.() : undefined,
+      resolver: deps.resolver,
+      signal,
+    })
     const config = await sandboxMcpConfig(
       {
         ...resolved,
@@ -159,6 +164,7 @@ export function createMcpServerOpener(deps: McpServerOpenerDeps): McpServerOpene
           signal,
           ...(deps.connectTimeoutMs !== undefined ? { connectTimeoutMs: deps.connectTimeoutMs } : {}),
           validateRedirectUrl: (url) => validateManagedHttpUrl(url, deps.httpPolicy),
+          ...(authorize ? { authorize } : {}),
         }),
     })
   }
@@ -178,15 +184,21 @@ export function createMcpServerOpener(deps: McpServerOpenerDeps): McpServerOpene
  * The resolver is built once per worker, not per generation: the file and env resolvers read their
  * source on every `resolve`, so a rotated secret is still picked up by the next connect attempt.
  * `baseEnv` is `{}` because the manager's `baseEnvironment` is never set in production either.
- * No OAuth resolver: OAuth-bound definitions never become rows.
+ * The OAuth store is built the same lazy way, the first time an OAuth server connects.
  */
 export function createWorkerMcpServerOpener(
-  input: Pick<WorkerResourceBootstrapInput, 'env' | 'profile' | 'createSecrets' | 'cwd' | 'agnesHomeDir'>,
+  input: Pick<
+    WorkerResourceBootstrapInput,
+    'env' | 'profile' | 'createSecrets' | 'createMcpOAuthStore' | 'cwd' | 'agnesHomeDir'
+  >,
   managedAllowedExecutables: readonly string[] = [],
 ): McpServerOpener {
   const policy = deploymentMcpPolicy(input.env)
   let secrets: ReturnType<WorkerResourceBootstrapInput['createSecrets']> | undefined
+  let oauthStore: McpOAuthStore | undefined
+  const createMcpOAuthStore = input.createMcpOAuthStore
   return createMcpServerOpener({
+    ...(createMcpOAuthStore ? { oauthStore: () => (oauthStore ??= createMcpOAuthStore(input.profile)) } : {}),
     resolver: async (ref, signal) => {
       if (signal.aborted) throw new DOMException('aborted', 'AbortError')
       secrets ??= input.createSecrets(input.profile)

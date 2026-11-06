@@ -27,10 +27,12 @@ export function generationExtensionRestorer(
     )
       throw new Error('E_GENERATION_MCP_DEFINITION: MCP definition is invalid or not enabled and trusted')
     const policy = deploymentMcpPolicy(input.env)
+    const createMcpOAuthStore = input.createMcpOAuthStore
     const opener =
       sharedOpener ??
       createMcpServerOpener({
         resolver: async (ref) => input.createSecrets(input.profile).resolve(ref),
+        ...(createMcpOAuthStore ? { oauthStore: () => createMcpOAuthStore(input.profile) } : {}),
         approvedLocalStart: (definition) =>
           Promise.resolve(policy.localStartApprovals === true && jcs(definition) === jcs(entry.definition)),
         sandbox: {

@@ -409,7 +409,8 @@
       "required": ["kind"],
       "properties": {
         "kind": { "const": "oauth" },
-        "staticClientId": { "type": "string", "minLength": 1, "maxLength": 512 }
+        "staticClientId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "clientSecretRef": { "$ref": "profile.json#/$defs/SecretRef" }
       }
     },
     "McpHttpSecretBinding": {

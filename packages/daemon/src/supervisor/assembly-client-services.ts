@@ -13,6 +13,7 @@ import type { RuntimeState } from './assembly-runtime.js'
 import type { SessionsState } from './assembly-session-services.js'
 import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
+import { mcpOAuthServerLookup } from './mcp-oauth-server.js'
 import { newSessionActorResolver } from './new-session-actor.js'
 import { webhookSessions, webhookTriggerActor } from './webhook-sessions.js'
 
@@ -34,6 +35,7 @@ export function openClientServices(
     registry,
     supervisorRegistry,
     services,
+    resourceControl,
   } = state
   const resolveActor: NonNullable<AgnesContext['resolveActor']> =
     o.ports?.resolveActor ??
@@ -78,6 +80,7 @@ export function openClientServices(
     resolveProfile: o.reloadProfile ?? (async () => o.profile),
     ...(o.inspectProfile ? { inspectProfile: o.inspectProfile } : {}),
     workspaces: () => workspaceCatalog.list(),
+    mcpServer: mcpOAuthServerLookup(resourceControl.service),
     plan: createPlanCommands({
       activationBarrier,
       journal,

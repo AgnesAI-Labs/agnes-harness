@@ -22,6 +22,7 @@ import {
   ToolListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { normalizeRemoteInputSchema } from '../mcp-json-schema.js'
+import { authorizedFetch, type McpHttpAuthorizer } from './authorize.js'
 import { McpCallError } from './call-error.js'
 import type { McpServerConfig } from './config.js'
 import type { McpConnection, McpResourceCallOptions } from './register.js'
@@ -34,6 +35,8 @@ import {
 } from './resources.js'
 import { observeStdioStartup } from './stdio-diagnostics.js'
 import { type CloseObservableTransport, observeTransportDisconnect } from './transport-health.js'
+
+export type { McpHttpAuthorizer } from './authorize.js'
 
 type SdkTool = {
   name: string
@@ -107,7 +110,8 @@ const METHOD_DOWNGRADE_STATUSES = new Set([301, 302, 303])
 const METHOD_DOWNGRADE_ANY_NON_GET_STATUS = 303
 // Never follow these across an origin change: the bearer/session credential this connection was
 // configured with, plus anything that could carry ambient auth. httpTransport() adds this server's
-// own configured credential header name(s) (e.g. a custom `x-api-key`) on top of this fixed set.
+// own configured credential header name(s) (e.g. a custom `x-api-key`) on top of this fixed set, and
+// a per-request authorizer adds every header name it hands out.
 const CROSS_ORIGIN_STRIPPED_HEADERS = new Set([
   'authorization',
   'proxy-authorization',
@@ -151,8 +155,9 @@ function policedHttpFetch(
   validateRedirectUrl: ((url: URL) => void) | undefined,
   credentialHeaderNames: ReadonlySet<string>,
 ): FetchLike {
-  const strippedOnCrossOrigin = new Set([...CROSS_ORIGIN_STRIPPED_HEADERS, ...credentialHeaderNames])
   return async (input, init) => {
+    // Read per request: an authorizer may name more credential headers after the transport exists.
+    const strippedOnCrossOrigin = new Set([...CROSS_ORIGIN_STRIPPED_HEADERS, ...credentialHeaderNames])
     const originalOrigin = (input instanceof URL ? input : new URL(String(input))).origin
     let url = input instanceof URL ? input : new URL(String(input))
     let requestInit = init
@@ -388,22 +393,37 @@ function stdioTransport(cfg: McpServerConfig, deps: McpSdkDeps): SdkTransport {
   })
 }
 
+type HttpAuthorization = Readonly<{ authorizer: McpHttpAuthorizer; onRefusal(error: unknown): void }>
+
+/** The policed fetch, behind the per-request authorizer when there is one. */
+function transportFetch(
+  cfg: McpServerConfig,
+  validateRedirectUrl: ((url: URL) => void) | undefined,
+  authorization: HttpAuthorization | undefined,
+): FetchLike {
+  // Every header this config carries is credential-derived (resolvedConfig only ever populates it
+  // from a resolved SecretRef), so its own key names are exactly the extra headers a cross-origin
+  // redirect hop must not carry -- whatever name the http-header secret binding was configured with.
+  const credentialHeaderNames = new Set(Object.keys(cfg.headers ?? {}).map((name) => name.toLowerCase()))
+  const policed = policedHttpFetch(cfg.id, validateRedirectUrl, credentialHeaderNames)
+  return authorization
+    ? authorizedFetch(policed, authorization.authorizer, credentialHeaderNames, authorization.onRefusal)
+    : policed
+}
+
 function httpTransport(
   cfg: McpServerConfig,
   deps: McpSdkDeps,
   validateRedirectUrl: ((url: URL) => void) | undefined,
+  authorization: HttpAuthorization | undefined,
 ): SdkTransport {
   if (!cfg.url) throw new TypeError(`MCP server ${cfg.id} has no http url`)
   const url = new URL(cfg.url)
   if (url.protocol !== 'http:' && url.protocol !== 'https:')
     throw new TypeError(`MCP server ${cfg.id} url must use http or https`)
-  // Every header this config carries is credential-derived (resolvedConfig only ever populates it
-  // from a resolved SecretRef), so its own key names are exactly the extra headers a cross-origin
-  // redirect hop must not carry -- whatever name the http-header secret binding was configured with.
-  const credentialHeaderNames = new Set(Object.keys(cfg.headers ?? {}).map((name) => name.toLowerCase()))
   return deps.createHttpTransport(url, {
     ...(cfg.headers === undefined ? {} : { headers: { ...cfg.headers } }),
-    fetch: policedHttpFetch(cfg.id, validateRedirectUrl, credentialHeaderNames),
+    fetch: transportFetch(cfg, validateRedirectUrl, authorization),
   })
 }
 
@@ -432,17 +452,15 @@ function sseTransport(
   cfg: McpServerConfig,
   deps: McpSdkDeps,
   validateRedirectUrl: ((url: URL) => void) | undefined,
+  authorization: HttpAuthorization | undefined,
 ): SdkTransport {
   if (!cfg.url) throw new TypeError(`MCP server ${cfg.id} has no sse url`)
   const url = new URL(cfg.url)
   if (url.protocol !== 'http:' && url.protocol !== 'https:')
     throw new TypeError(`MCP server ${cfg.id} url must use http or https`)
-  // Same reasoning as httpTransport() above: every header this config carries is credential-derived,
-  // so its key names are exactly what a cross-origin redirect hop must not carry.
-  const credentialHeaderNames = new Set(Object.keys(cfg.headers ?? {}).map((name) => name.toLowerCase()))
   return deps.createSseTransport(url, {
     ...(cfg.headers === undefined ? {} : { requestInit: { headers: { ...cfg.headers } } }),
-    fetch: policedHttpFetch(cfg.id, validateRedirectUrl, credentialHeaderNames),
+    fetch: transportFetch(cfg, validateRedirectUrl, authorization),
   })
 }
 
@@ -477,6 +495,8 @@ export async function connectMcp(
      * refused -- following one blind is the SSRF gap this option exists to close.
      */
     validateRedirectUrl?: (url: URL) => void
+    /** HTTP and SSE only: asked for headers before every request (see {@link McpHttpAuthorizer}). */
+    authorize?: McpHttpAuthorizer
   } = {},
 ): Promise<McpConnection> {
   // Exhaustive over McpServerConfig's transport discriminant (currently 'stdio' | 'http' | 'sse'):
@@ -484,16 +504,29 @@ export async function connectMcp(
   // resource-control-runtime/src/mcp.ts, so a fourth transport kind fails loudly here too, instead
   // of a three-way ternary's implicit "else" silently routing it through Streamable HTTP the way
   // resolvedConfig() once did before that was fixed one layer up.
+  // The SSE event stream reports a failed request as its own error with only the message text, so
+  // an authorizer refusal during the handshake is kept here and reported in place of that error.
+  let refusal: { error: unknown } | undefined
+  // Set by a refusal on a live connection, whose transport then reports an error (a disconnect).
+  let refusedLive = false
+  let connected = false
+  const authorization: HttpAuthorization | undefined = options.authorize && {
+    authorizer: options.authorize,
+    onRefusal: (error) => {
+      refusal = { error }
+      refusedLive = connected
+    },
+  }
   let transport: SdkTransport
   switch (cfg.transport) {
     case 'stdio':
       transport = stdioTransport(cfg, deps)
       break
     case 'http':
-      transport = httpTransport(cfg, deps, options.validateRedirectUrl)
+      transport = httpTransport(cfg, deps, options.validateRedirectUrl, authorization)
       break
     case 'sse':
-      transport = sseTransport(cfg, deps, options.validateRedirectUrl)
+      transport = sseTransport(cfg, deps, options.validateRedirectUrl, authorization)
       break
     default: {
       const exhaustive: never = cfg.transport
@@ -510,16 +543,29 @@ export async function connectMcp(
     })
   } catch (error) {
     await client.close().catch(() => undefined)
-    const failure = options.signal?.aborted ? error : (startup?.failure(error) ?? error)
+    const failure = options.signal?.aborted
+      ? error
+      : refusal
+        ? refusal.error
+        : (startup?.failure(error) ?? error)
     startup?.settled()
     throw failure
   }
   startup?.settled()
+  connected = true
 
   let closed = false
   const closeListeners = new Set<() => void>()
   const reportUnexpectedClose = (): void => {
     if (closed) return
+    // A refusal ends the connection too (a new one picks up the new sign-in), but closing it now
+    // would fail the refused request with "connection closed" before the refusal itself reached
+    // the caller; report the disconnect once that request has settled.
+    if (refusedLive) {
+      refusedLive = false
+      setTimeout(reportUnexpectedClose, 0)
+      return
+    }
     for (const listener of [...closeListeners]) listener()
   }
   // Client.connect installs its own transport callbacks. Chain them after the handshake so SDK

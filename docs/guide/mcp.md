@@ -24,7 +24,7 @@ The tool catalog shows each tool’s name and a short purpose. Expand a tool for
 
 After editing the command, URL, credentials or other connection settings, the new revision is saved untrusted and disabled. The old enablement request does not start the new definition; review and enable it again. Changing only tool loading still preserves trust and enablement.
 
-**Current implementation:** Session MCP services run as individual Host rows. OAuth bindings are still skipped on this session path; see [runtime behavior and versions](#runtime-behavior-and-versions). Supported and unsupported MCP and Skill behavior, including resources, prompt templates, and OAuth, is listed in [MCP and Skills support](mcp-skills-support.md). See [verification](../maintainers/verification.md) for versioned results.
+**Current implementation:** Session MCP services run as individual Host rows, OAuth bindings included; see [runtime behavior and versions](#runtime-behavior-and-versions). Supported and unsupported MCP and Skill behavior, including resources, prompt templates, and OAuth, is listed in [MCP and Skills support](mcp-skills-support.md). See [verification](../maintainers/verification.md) for versioned results.
 
 <a id="在会话中接入"></a>
 
@@ -142,6 +142,8 @@ For stdio, use `--stdio EXECUTABLE` and repeat `--arg VALUE` as needed. Do not p
 
 Use existing secret references: `--secret-env NAME=secret://namespace/name` for stdio, or `--bearer-ref secret://namespace/name` and `--header-ref x-api-key=secret://namespace/name` for HTTP/SSE. Keep real keys out of command lines, screenshots, and documentation. Repeat `--allow-tool TOOL_NAME` to restrict allowed tools.
 
+For an HTTP/SSE server that signs in with OAuth, use `--oauth`. If you already have a client ID for the server, add `--oauth-client-id ID`; if that client also has a secret, store the secret as a credential and add `--oauth-client-secret-ref secret://namespace/name`. The secret reference needs `--oauth-client-id`, and the OAuth flags cannot be combined with `--bearer-ref` or `--header-ref`. In the Web wizard, the OAuth part has the same two optional fields, and the client secret is entered as a `secret://` reference, never as the secret itself. The client secret is read only by the daemon when it completes a sign-in; it does not appear in the server definition, the operation journal or logs. After saving, sign in from the server's page in the Web MCP page ("Authorize").
+
 <a id="mcp-工具如何提供给模型"></a>
 
 ## How MCP tools reach the model
@@ -181,7 +183,9 @@ Changing a definition changes the row's revision, while unchanged servers can re
 
 A successfully applied MCP set remains effective if the independent Skills refresh fails, so a disabled or removed server cannot be restored by that failure. If MCP application leaves an uncertain state, the worker refuses further turns until recovery: the next turn tries the reload again, and once a reload fully succeeds turns are admitted again. If that retry fails as well, the shared worker exits and the daemon restarts it, rebuilding the rows from the snapshot. A resource change normally waits for turns already running in other sessions to finish; one that is still running after 30 seconds (waiting on an approval, for example) no longer holds back the other sessions. They run on the current resources, and the change applies at the next turn that finds the worker idle or after another 30 seconds.
 
-**OAuth limitation:** The current per-server row path skips definitions with `secretBinding.kind === 'oauth'`. The dedicated resource-management service worker retains the manager path. Successful connection/testing in the management interface therefore does not establish session tool availability. Verify an actual call in the target session; management status alone does not prove OAuth session support.
+**OAuth on the session path:** A server with `secretBinding.kind === 'oauth'` connects with the sign-in made on the web MCP page. Every request reads the stored sign-in: the token is refreshed shortly before it expires and once after a 401, a token written by another process is used as is, and after a sign-out the server receives no further request with the old token. Without a usable sign-in, or after the server address changed since sign-in, the server is unavailable with `MCP_OAUTH_NEEDS_RECONNECT` and its tool calls return a message asking the user to sign in.
+
+**When a server needs sign-in:** The state is recorded on the server, so every place that lists servers shows it. An OAuth server that has not been signed in yet, or whose sign-in no longer works, reads "Sign-in needed" on the web MCP page and carries `needs sign-in` in `agh mcp list`. A server with no credentials that answers a connection with 401 or 403 is unavailable with `MCP_AUTH_REQUIRED` and is marked the same way; servers that already have a bearer or header credential keep reporting `MCP_AUTH_FAILED`. The TUI also names the enabled servers that need sign-in once at start (once per server in that process): `MCP servers that need sign-in: a, b. Run /mcp to see them.` Sign in from the MCP page in the web UI; a session already running picks the new sign-in up on its next request.
 
 The runner's source and tests are linked below. Check [verification](../maintainers/verification.md) for the actual runtime version and external-service coverage.
 

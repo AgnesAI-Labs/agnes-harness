@@ -11,7 +11,8 @@ import type {
   AdminBundlesSave,
   AdminContextParams,
   AdminHistoryParams,
-  AdminMcpOAuthSave,
+  AdminMcpOAuthComplete,
+  AdminMcpOAuthGet,
   AdminMemoryParams,
   AdminPlanParams,
 } from '@agnes/protocol/gen/app-server'
@@ -68,8 +69,9 @@ export function registerAppServerAdmin(
   register('_agnes/v1/admin.search.test', true, (input) => service.search('POST', 'search/test', input))
   register('_agnes/v1/admin.history.search', false, (input) => service.history(input as AdminHistoryParams))
   register('_agnes/v1/admin.plan', true, (input) => service.plan(input as AdminPlanParams))
-  register('_agnes/v1/admin.mcp.oauth.save', true, (input) =>
-    service.saveMcpOAuth(input as AdminMcpOAuthSave),
+  register('_agnes/v1/admin.mcp.oauth.get', false, (input) => service.getMcpOAuth(input as AdminMcpOAuthGet))
+  register('_agnes/v1/admin.mcp.oauth.complete', true, (input) =>
+    service.completeMcpOAuth(input as AdminMcpOAuthComplete),
   )
   // Config writes are optional on context; conservatively require activate for this combined method.
   register('_agnes/v1/admin.triggers', true, (input) =>

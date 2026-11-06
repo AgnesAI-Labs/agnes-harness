@@ -851,28 +851,58 @@ describe('createMcpRowRuntime row shape and failure handling', () => {
     expect(runtime.status('never-seen')).toBeUndefined()
   })
 
-  it('an OAuth-bound definition is reported unavailable with MCP_OAUTH_UNSUPPORTED, never a row', async () => {
-    const host = await testHost()
-    const { opener } = countingOpener()
-    const runtime = createMcpRowRuntime({ host, opener })
-    const oauthEntry: McpServerSnapshotEntry = {
-      ...entry('needs-oauth'),
-      definition: {
-        serverId: 'needs-oauth',
-        displayName: 'needs-oauth',
-        transport: { kind: 'http', url: 'https://mcp.example.test/api' },
-        secretBinding: { kind: 'oauth', staticClientId: 'static-client-id' },
-      } as McpServerDefinitionInput,
-    }
+  it.each([
+    ['an empty credential store', true],
+    ['no credential store at all', false],
+  ])(
+    'oauth server without a credential is unavailable with MCP_OAUTH_NEEDS_RECONNECT (%s)',
+    async (_label, withStore) => {
+      const host = await testHost()
+      const reads: string[] = []
+      const runtime = createMcpRowRuntime({
+        host,
+        opener: createWorkerMcpServerOpener({
+          env: {},
+          profile: { name: 'local-dev', dataDir: hostDir } as never,
+          createSecrets: () => {
+            throw new Error('an OAuth server without a static client must not resolve secrets')
+          },
+          ...(withStore
+            ? {
+                createMcpOAuthStore: () => ({
+                  read: async (serverId: string) => {
+                    reads.push(serverId)
+                    return null
+                  },
+                  update: async () => {
+                    throw new Error('nothing to write')
+                  },
+                }),
+              }
+            : {}),
+        }),
+      })
+      cleanup.push(() => runtime.apply([]))
+      const oauthEntry: McpServerSnapshotEntry = {
+        ...entry('needs-oauth'),
+        definition: {
+          serverId: 'needs-oauth',
+          displayName: 'needs-oauth',
+          transport: { kind: 'http', url: 'https://mcp.example.test/api' },
+          secretBinding: { kind: 'oauth' },
+        } as McpServerSnapshotEntry['definition'],
+      }
 
-    const result = await runtime.apply([oauthEntry])
+      const result = await runtime.apply([oauthEntry])
 
-    expect(result.rowIds).toHaveLength(0)
-    expect(result.statuses.get('needs-oauth')).toMatchObject({
-      connectionState: 'unavailable',
-      lastSafeError: { code: 'MCP_OAUTH_UNSUPPORTED' },
-    })
-  })
+      expect(result.rowIds).toHaveLength(1)
+      expect(result.statuses.get('needs-oauth')).toMatchObject({
+        connectionState: 'unavailable',
+        lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT', message: 'MCP server needs sign-in' },
+      })
+      expect(reads.length).toBe(withStore ? 1 : 0)
+    },
+  )
 
   it('a server dropped from a later snapshot leaves no trace in status() or a stale apply() map', async () => {
     const host = await testHost()

@@ -267,6 +267,18 @@ function capPreparedText(
   return { prepared: kept, cut: { total, kept: keptBytes, dropped } }
 }
 
+/** The message of an error that says the server needs the user to sign in, else undefined. */
+function signInText(error: unknown): string | undefined {
+  try {
+    if (!(error instanceof Error) || (error as { code?: unknown }).code !== 'MCP_OAUTH_NEEDS_RECONNECT')
+      return undefined
+    return typeof error.message === 'string' ? error.message : undefined
+  } catch {
+    // Untrusted error objects, including their accessors.
+    return undefined
+  }
+}
+
 const cutNote = (serverId: string, cut: TextCut): string =>
   `\n[mcp server ${serverId} returned ${cut.total} bytes of text, over the ${MAX_KEPT_MCP_TEXT_BYTES}-byte limit on what is kept; only the first ${cut.kept} bytes were kept${
     cut.dropped > 0 ? ` (${cut.dropped} text blocks after that point were dropped)` : ''
@@ -331,6 +343,11 @@ function remoteDefinition(
         // while Core still counts it as running.
         result = await conn.callTool(remote.name, args, { signal: ctx.signal, timeoutMs: ctx.timeoutMs })
       } catch (error) {
+        // The server needs the user to sign in: the request was either never sent or refused by
+        // the server, so even a tool that changes things did not run. Its message tells the model
+        // what to ask the user.
+        const signIn = signInText(error)
+        if (signIn !== undefined) return { content: [{ type: 'text', text: signIn }], isError: true }
         // A timeout or a dropped connection after the request left says nothing about what the
         // tool did. A tool that changes things throws, so Core records the outcome as unknown
         // instead of the model reading a failure and calling it again; reads and idempotent calls
