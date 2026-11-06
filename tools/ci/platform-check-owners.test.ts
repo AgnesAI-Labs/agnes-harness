@@ -120,7 +120,7 @@ it('runs story once on Linux with actual sandbox and shell prerequisites', () =>
   expect(workflow.indexOf('Linux sandbox and shells')).toBeLessThan(workflow.indexOf('run: pnpm test:story'))
 })
 
-it('runs fresh Windows native compilation only in its isolated owner step', () => {
+it('runs real Windows native and PowerShell probes only on their isolated owners', () => {
   const fast = steps.get('test fast tier (includes Protocol conformance)') ?? ''
   const held = /AGNES_TEST_EXCLUDE:.*runner\.os == 'Windows' && '([^']+)'/.exec(fast)?.[1].split(',') ?? []
   for (const [file, step] of [
