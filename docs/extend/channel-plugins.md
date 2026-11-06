@@ -2,6 +2,8 @@
 
 English | [简体中文](channel-plugins.zh-CN.md)
 
+[Full integration manual](channel-bridge-integration.md) · Examples, media, binding and acceptance.
+
 The backend supplies one shared channel bridge. Each platform is an independently installed
 plugin; installing Harness alone does not connect to any IM account.
 

@@ -2,6 +2,8 @@
 
 [English](channel-plugins.md) | 简体中文
 
+[完整接入开发手册](channel-bridge-integration.zh-CN.md) · 代码示例、附件、绑定与验收。
+
 后端提供统一渠道桥接，各个平台分别发布独立插件。仅安装 Harness 不会连接任何 IM 账号。
 
 从 `@agnes/plugin-runtime/channel-contract` 导入适配器合同、`channelKind` 和

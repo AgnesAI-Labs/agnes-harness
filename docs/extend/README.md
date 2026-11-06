@@ -26,6 +26,8 @@ Tools add operations to an existing loop. Loops own scheduling and state through
 
 An MCP bundle does not automatically start, install or trust an external server. Edit its definition, start the intended server and follow [MCP management](../guide/mcp.md). Skills provide instructions rather than tool implementation; see [Skills](../guide/skills.md). The adapter starter emits a deterministic development reply; replace it before real inference.
 
+[Channel bridge integration manual](channel-bridge-integration.md): independent IM contracts, configuration, messages/media, binding and acceptance.
+
 ## Hook failures
 
 The session context adapter treats `context` contributions as optional guidance. If a contributor times out, throws, or returns invalid data, its contribution is dropped for that request and `x/core/hook-failed` records the source and failure kind. Other contributors continue; the failed registration is retried on the next context refresh. Previous guidance from that contributor is dropped too. The dispatch table still rejects invalid transformations; the adapter owns this fallback. A deliberate block from the trusted bundled prompt adapter remains blocking.
