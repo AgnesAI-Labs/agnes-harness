@@ -173,7 +173,7 @@ export {
 export { isolatedEcosystem } from './hooks-isolation.js'
 export { catalogInfoOf, type McpCatalogInfo } from './mcp/catalog-info.js'
 export type { McpServerConfig } from './mcp/config.js'
-export { connectMcp, type McpSdkDeps } from './mcp/connect.js'
+export { connectMcp, type McpHttpAuthorizer, type McpSdkDeps } from './mcp/connect.js'
 export type {
   ToolIndex,
   ToolIndexHit,
