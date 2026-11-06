@@ -95,9 +95,9 @@ export function summarizeMcpOAuth(read: McpOAuthRead): McpOAuthSummary {
 }
 
 /**
- * Builds the authorization request. The client is, in order: the static client ID, the client a
- * previous registration stored for the same redirect address, or a new dynamic registration;
- * without any of them the caller must ask for a client ID. Scope is what was granted plus what a
+ * Builds the authorization request. The client is, in order: the static client ID, a new dynamic
+ * registration, or, when the server no longer registers clients, the one stored for the same
+ * redirect address; without any of them the caller must ask for a client ID. Scope is what was granted plus what a
  * refused call required, else what the resource advertises, with `offline_access` when the
  * authorization server supports it. `resource` is always sent.
  */
@@ -115,22 +115,28 @@ export async function beginMcpOAuthLogin(input: {
 
   let client: McpOAuthLoginStart['client']
   if (input.staticClientId) client = { clientId: input.staticClientId }
-  else if (summary.client && summary.client.redirectUri === input.redirectUri)
-    client = { clientId: summary.client.clientId }
   else {
+    // The authorization server may have forgotten a client it registered earlier, and the browser
+    // would then only show it an error. A new registration is cheap, so each sign-in makes one;
+    // the stored client stays for refresh until this sign-in replaces it.
     const registered = await registerDynamicClient(
       discovery.authorizationServer,
       discovery.metadata,
       input.redirectUri,
       fetchImpl,
     )
-    if ('pendingClientId' in registered) return { pendingClientId: true }
-    client = {
-      clientId: registered.clientId,
-      ...(registered.clientSecret ? { clientSecret: registered.clientSecret } : {}),
-      ...(registered.tokenEndpointAuthMethod
-        ? { tokenEndpointAuthMethod: registered.tokenEndpointAuthMethod }
-        : {}),
+    if ('pendingClientId' in registered) {
+      if (!summary.client || summary.client.redirectUri !== input.redirectUri)
+        return { pendingClientId: true }
+      client = { clientId: summary.client.clientId }
+    } else {
+      client = {
+        clientId: registered.clientId,
+        ...(registered.clientSecret ? { clientSecret: registered.clientSecret } : {}),
+        ...(registered.tokenEndpointAuthMethod
+          ? { tokenEndpointAuthMethod: registered.tokenEndpointAuthMethod }
+          : {}),
+      }
     }
   }
 

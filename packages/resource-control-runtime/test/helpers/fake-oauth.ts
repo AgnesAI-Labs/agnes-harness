@@ -17,6 +17,8 @@ export type FakeOAuthOptions = Readonly<{
   prm?: Readonly<{ resource: string; scopes?: string[] }>
   /** What `/register` hands back. */
   registration?: Readonly<{ clientId?: string; clientSecret?: string; tokenEndpointAuthMethod?: string }>
+  /** Leave `registration_endpoint` out of the metadata, like a server that does not register clients. */
+  noRegistration?: boolean
   /** Token endpoint response. An object with an `error` field is sent as a 400. */
   tokenResponse?: (grant: FakeGrant) => object
 }>
@@ -84,7 +86,7 @@ export async function startFakeOAuthServer(options: FakeOAuthOptions = {}): Prom
         issuer: httpsOrigin,
         authorization_endpoint: `${httpsOrigin}/authorize`,
         token_endpoint: `${httpsOrigin}/token`,
-        registration_endpoint: `${httpsOrigin}/register`,
+        ...(options.noRegistration ? {} : { registration_endpoint: `${httpsOrigin}/register` }),
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],

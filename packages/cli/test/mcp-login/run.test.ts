@@ -262,15 +262,15 @@ describe('terminal MCP sign-in', () => {
     }
   })
 
-  it('the port of a stored registration is reused, so no new registration is needed', async () => {
+  it('the port of a stored registration is reused and the sign-in registers a new client', async () => {
     const port = await freePort()
     const redirectUri = `http://localhost:${port}/callback`
     const t = login({ summary: { client: { clientId: 'kept-client', redirectUri } } })
     expect(await t.outcome).toEqual({ kind: 'signed-in' })
     expect((await t.shown).redirectUri).toBe(redirectUri)
-    expect(t.network.paths).not.toContain('https://auth.example.test/register')
+    expect(t.network.paths).toContain('https://auth.example.test/register')
     expect(t.daemon.params('_agnes/v1/admin.mcp.oauth.complete')).toMatchObject({
-      client: { clientId: 'kept-client' },
+      client: { clientId: 'dcr-client' },
     })
   })
 
