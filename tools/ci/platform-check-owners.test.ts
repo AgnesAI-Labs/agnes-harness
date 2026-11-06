@@ -76,6 +76,7 @@ const owners = [
   ['Windows daemon startup directories', 'Windows', '1/6', false],
   ['Windows conversation MCP registration', 'Windows', '2/6', false],
   ['Windows PowerShell metadata', 'Windows', '3/6', false],
+  ['Windows PowerShell wire encoding', 'Windows', '3/6', false],
   ['Windows native compiler environment', 'Windows', '6/6', false],
   ['Windows portable native runtime', 'Windows', '6/6', false],
   ['verify local delivery with Windows PowerShell 5.1', 'Windows', '1/6', false],
@@ -126,6 +127,10 @@ it('runs real Windows native and PowerShell probes only on their isolated owners
   for (const [file, step] of [
     ['packages/cli/test/windows-runtime.test.ts', 'Windows portable native runtime'],
     ['packages/host-infrastructure/test/adapters/powershell.test.ts', 'Windows PowerShell metadata'],
+    [
+      'packages/host-infrastructure/test/adapters/powershell-probe-trace.test.ts',
+      'Windows PowerShell wire encoding',
+    ],
   ]) {
     expect(held).toContain(file)
     expect(steps.get(step)).toContain(`pnpm exec vitest run ${file} --maxWorkers=1`)

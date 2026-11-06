@@ -109,6 +109,8 @@ jobs:
       - name: Run original platform cases
         env: { AGNES_POWERSHELL_PROBE_TRACE: '1' }
         run: pnpm exec vitest run packages/host-infrastructure/test/adapters/powershell.test.ts --maxWorkers=1
+      - name: Verify the wire format with the real system shell
+        run: pnpm exec vitest run packages/host-infrastructure/test/adapters/powershell-probe-trace.test.ts --maxWorkers=1
   web-native-linux:
     if: inputs.suite != 'platform-probes' && inputs.suite != 'windows-probe'
     uses: ./.github/workflows/ci-native.yml

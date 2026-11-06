@@ -62,16 +62,22 @@ export function createConfiguredPowerShellResolver(probe: Probe = probePowerShel
 }
 
 const execute = promisify(execFile)
-const probeScript = [
-  "$ErrorActionPreference = 'Stop'",
-  '$codePage = [Console]::OutputEncoding.CodePage',
-  '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)',
-  "$mode = 'Legacy'",
-  'if (Test-Path variable:PSNativeCommandArgumentPassing) { $mode = [string]$PSNativeCommandArgumentPassing }',
-  '@{ path = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName;',
-  'version = $PSVersionTable.PSVersion.ToString(); edition = $PSVersionTable.PSEdition;',
-  'nativeArguments = $mode; codePage = $codePage } | ConvertTo-Json -Compress',
-].join('\n')
+// Metadata needs no cmdlets: their first use can import unrelated PowerShell modules.
+const probeScript = String.raw`
+$ErrorActionPreference = 'Stop'
+$codePage = [Console]::OutputEncoding.CodePage
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+function quote([string]$value) {
+  '"' + [regex]::Replace($value, '[\x00-\x1f"\\\ud800-\udfff]', [Text.RegularExpressions.MatchEvaluator]{
+    param($match)
+    '\u{0:x4}' -f [int][char]$match.Value[0]
+  }) + '"'
+}
+$path = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+$mode = [string]$ExecutionContext.SessionState.PSVariable.GetValue('PSNativeCommandArgumentPassing', 'Legacy')
+$json = '{{"path":{0},"version":{1},"edition":{2},"nativeArguments":{3},"codePage":{4}}}' -f (quote $path), (quote ($PSVersionTable.PSVersion.ToString())), (quote $PSVersionTable.PSEdition), (quote $mode), $codePage
+[Console]::Out.WriteLine($json)
+`.trim()
 
 const absolutePath = (path: string): boolean =>
   win32.isAbsolute(path) && win32.parse(path).root.length > 1 && !path.includes('\0')
