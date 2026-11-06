@@ -8,6 +8,9 @@ export type FakeDaemonOptions = {
   refresh?: { signedIn: boolean }
   completeError?: unknown
   reconnect?: 'succeeded' | 'failed' | 'throws'
+  refreshError?: unknown
+  /** Runs when a daemon request arrives, before it is answered. */
+  onRequest?: (method: string) => void
 }
 
 export const SERVER_URL = 'https://mcp.example.test/mcp'
@@ -35,6 +38,7 @@ export function fakeDaemon(options: FakeDaemonOptions = {}) {
     },
     async request(method: string, params: Record<string, unknown>) {
       record(method, params)
+      options.onRequest?.(method)
       if (method === '_agnes/v1/admin.mcp.oauth.get')
         return {
           epoch: 0,
@@ -44,6 +48,7 @@ export function fakeDaemon(options: FakeDaemonOptions = {}) {
           requiredScope: [],
           ...options.summary,
         }
+      if (method === '_agnes/v1/admin.mcp.oauth.refresh' && options.refreshError) throw options.refreshError
       if (method === '_agnes/v1/admin.mcp.oauth.refresh') return options.refresh ?? { signedIn: false }
       if (method === '_agnes/v1/admin.mcp.oauth.complete') {
         if (options.completeError) throw options.completeError

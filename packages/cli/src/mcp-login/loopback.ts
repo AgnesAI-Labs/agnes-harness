@@ -47,7 +47,13 @@ export async function startLoopbackCallback(input: {
     res.writeHead(page.status, page.headers).end(page.body)
   }
   const handle = (req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? '/', 'http://localhost')
+    let url: URL
+    try {
+      url = new URL(req.url ?? '/', 'http://localhost')
+    } catch {
+      // A request target the HTTP parser accepts but no URL parser does.
+      return void res.writeHead(400).end()
+    }
     if (req.method !== 'GET' || url.pathname !== '/callback') return void res.writeHead(404).end()
     if (taken || url.searchParams.get('state') !== input.state) return answer(res, 'state-expired')
     const error = url.searchParams.get('error')

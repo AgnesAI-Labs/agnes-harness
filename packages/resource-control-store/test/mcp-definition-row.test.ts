@@ -39,11 +39,24 @@ describe('an update of an MCP definition', () => {
   })
 
   it('needs review again when anything else changes with it', () => {
-    for (const next of [
-      { ...none, displayName: 'Renamed', secretBinding: { kind: 'oauth' as const } },
-      { ...none, secretBinding: { kind: 'oauth' as const, staticClientId: 'client' } },
-    ])
-      expect(definedRow(prior, next, 'b'.repeat(64), status('unavailable'))).toMatchObject({
+    const oauth: McpServerDefinitionInput = { ...none, secretBinding: { kind: 'oauth' } }
+    const bearer: McpServerDefinitionInput = {
+      ...none,
+      secretBinding: { kind: 'http-bearer', credentialRef: 'secret://mcp/docs' },
+    }
+    const http = { kind: 'http' as const, url: 'https://other.example.com/mcp' }
+    const pairs: [McpServerDefinitionInput, McpServerDefinitionInput][] = [
+      [none, { ...none, displayName: 'Renamed', secretBinding: { kind: 'oauth' as const } }],
+      [none, { ...none, secretBinding: { kind: 'oauth' as const, staticClientId: 'client' } }],
+      [none, { ...none, secretBinding: { kind: 'oauth' as const, callbackPort: 4123 } }],
+      [none, { ...none, transport: http, secretBinding: { kind: 'oauth' } }],
+      [oauth, none],
+      [bearer, oauth],
+    ]
+    for (const [before, next] of pairs)
+      expect(
+        definedRow({ ...prior, definition: before }, next, 'b'.repeat(64), status('unavailable')),
+      ).toMatchObject({
         trust: 'untrusted',
         desired: 'disabled',
       })

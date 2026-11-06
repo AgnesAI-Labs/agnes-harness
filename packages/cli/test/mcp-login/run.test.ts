@@ -18,6 +18,7 @@ function loginUi(paste?: (shown: Shown) => Promise<string | undefined>) {
     reveal = resolve
   })
   const progress: string[] = []
+  const pasteSignals: AbortSignal[] = []
   const ui = {
     show(input: { serverId: string; authorizationUrl: string }) {
       const authorizationUrl = new URL(input.authorizationUrl)
@@ -28,6 +29,7 @@ function loginUi(paste?: (shown: Shown) => Promise<string | undefined>) {
       })
     },
     async paste(signal: AbortSignal) {
+      pasteSignals.push(signal)
       const seen = await shown
       if (paste) return paste(seen)
       return new Promise<undefined>((resolve) => signal.addEventListener('abort', () => resolve(undefined)))
@@ -36,27 +38,32 @@ function loginUi(paste?: (shown: Shown) => Promise<string | undefined>) {
       progress.push(text)
     },
   }
-  return { ui, shown, progress }
+  return { ui, shown, progress, pasteSignals }
 }
 
 function login(
   options: FakeDaemonOptions,
-  extra: { paste?: (shown: Shown) => Promise<string | undefined>; open?: (url: string) => void } = {},
+  extra: {
+    paste?: (shown: Shown) => Promise<string | undefined>
+    open?: (url: string) => void
+    signal?: AbortSignal
+    fetchImpl?: (input: string | URL | Request) => Promise<Response>
+  } = {},
 ) {
   const daemon = fakeDaemon(options)
   const network = fakeAuthorizationServer()
-  const { ui, shown, progress } = loginUi(extra.paste)
+  const { ui, shown, progress, pasteSignals } = loginUi(extra.paste)
   const browser = browserReturning('code-1')
   const outcome = runMcpLogin({
     client: daemon.client,
     profile: 'local-dev',
     serverId: 'docs',
     ui,
-    signal: new AbortController().signal,
-    fetchImpl: network.fetchImpl,
+    signal: extra.signal ?? new AbortController().signal,
+    fetchImpl: extra.fetchImpl ?? network.fetchImpl,
     openBrowser: extra.open ?? browser.open,
   })
-  return { daemon, network, shown, progress, outcome, browser }
+  return { daemon, network, shown, progress, outcome, browser, pasteSignals }
 }
 
 async function freePort(): Promise<number> {
@@ -74,6 +81,14 @@ const signInCalls = [
   'mcp.servers.get',
   'mcp.servers.reconnect',
 ]
+
+/** Connects to a port; rejects with ECONNREFUSED once nothing listens there. */
+function refused(port: number): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const socket = connect(port, '127.0.0.1', () => resolve(socket.end()))
+    socket.once('error', reject)
+  })
+}
 
 afterEach(() => {
   vi.useRealTimers()
@@ -278,6 +293,86 @@ describe('terminal MCP sign-in', () => {
     [{ reason: 'CONFIG_CREDENTIAL_NOT_FOUND' }, /client secret of "docs" is not in the credential store/],
   ])('reason %o reads as a sentence', (data, sentence) => {
     expect(mcpLoginFailureText('docs', { data: { code: 'SEMANTIC_REJECTED', ...data } })).toMatch(sentence)
+  })
+
+  it('the paste prompt ends as soon as the browser callback wins', async () => {
+    let pasteEndedFirst: boolean | undefined
+    let t: ReturnType<typeof login> | undefined
+    t = login({
+      onRequest: (method) => {
+        if (method === '_agnes/v1/admin.mcp.oauth.complete') pasteEndedFirst = t?.pasteSignals[0]?.aborted
+      },
+    })
+    expect(await t.outcome).toEqual({ kind: 'signed-in' })
+    expect(pasteEndedFirst).toBe(true)
+  })
+
+  it('a cancel while waiting for the callback ends the sign-in and closes the listener', async () => {
+    const cancel = new AbortController()
+    const t = login({}, { open: () => undefined, signal: cancel.signal })
+    const { redirectUri } = await t.shown
+    cancel.abort()
+    expect(await t.outcome).toEqual({ kind: 'cancelled' })
+    await expect(refused(Number(new URL(redirectUri).port))).rejects.toMatchObject({ code: 'ECONNREFUSED' })
+    expect(t.daemon.names()).not.toContain('_agnes/v1/admin.mcp.oauth.complete')
+  })
+
+  it('a cancel during discovery shows and opens nothing, and closes the listener', async () => {
+    const port = await freePort()
+    const cancel = new AbortController()
+    const network = fakeAuthorizationServer()
+    const t = login(
+      { secretBinding: { kind: 'oauth', callbackPort: port } },
+      {
+        signal: cancel.signal,
+        fetchImpl: async (input) => {
+          cancel.abort()
+          return network.fetchImpl(input)
+        },
+      },
+    )
+    expect(await t.outcome).toEqual({ kind: 'cancelled' })
+    expect(t.browser.visits).toEqual([])
+    expect(t.pasteSignals).toEqual([])
+    await expect(refused(port)).rejects.toMatchObject({ code: 'ECONNREFUSED' })
+  })
+
+  it('server-supplied failure text reaches the user without control characters, and capped', () => {
+    const method = `x\u001b]52;c;aGk=\u0007${'m'.repeat(1000)}`
+    const text = mcpLoginFailureText('docs', {
+      data: { code: 'SEMANTIC_REJECTED', reason: 'MCP_OAUTH_CLIENT_AUTH_UNSUPPORTED', method },
+    })
+    expect(text).not.toMatch(/\p{Cc}/u)
+    expect(text).toContain('does not support: x ]52;c;aGk= m')
+    expect(text.length).toBeLessThanOrEqual(501)
+  })
+
+  it('an error message from a failed sign-in step or discovery reaches the user without control characters', async () => {
+    const t = login({
+      summary: { signedIn: true, refreshable: true },
+      refreshError: new Error('bad metadata \u001b[2J\u001b]52;c;aGk=\u0007 from the server'),
+    })
+    const error = await t.outcome.catch((caught: unknown) => caught)
+    expect((error as Error).message).toBe('bad metadata  [2J ]52;c;aGk=  from the server')
+    const discovery = login(
+      {},
+      {
+        // Metadata for another resource, and an escape sequence in every other failure.
+        fetchImpl: async (input) => {
+          if (String(input).includes('oauth-protected-resource'))
+            return Response.json({
+              resource: 'https://other.example.test/mcp',
+              authorization_servers: ['https://auth.example.test/'],
+            })
+          throw new Error('metadata \u001b]52;c;aGk=\u0007 refused')
+        },
+      },
+    )
+    const failed = await discovery.outcome.catch((caught: unknown) => caught)
+    expect((failed as Error).message).toMatch(/^the OAuth settings of "docs" could not be read/)
+    expect((failed as Error).message).not.toMatch(/\p{Cc}/u)
+    const reconnect = await login({ reconnect: 'throws' }).outcome
+    expect(reconnect.reconnectFailed).toBe('daemon went away')
   })
 
   it('logout calls logout then signOut', async () => {

@@ -1,4 +1,4 @@
-import { createServer, type Server } from 'node:net'
+import { connect, createServer, type Server } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import { McpLoginPortBusy, startLoopbackCallback } from '../../src/mcp-login/loopback.js'
 import { McpLoginRefused } from '../../src/mcp-login/paste.js'
@@ -79,6 +79,28 @@ describe('the loopback sign-in callback', () => {
     const response = await fetch(local(listener.redirectUri, '?error=access_denied&state=state-1'))
     expect(response.status).toBe(400)
     expect(await caught).toBeInstanceOf(McpLoginRefused)
+  })
+
+  it('a request target no URL parser accepts is 400, and the wait goes on', async () => {
+    const listener = await start()
+    const port = Number(new URL(listener.redirectUri).port)
+    const answer = await new Promise<string>((resolve, reject) => {
+      let text = ''
+      const socket = connect(port, '127.0.0.1', () =>
+        socket.write('GET http://[/ HTTP/1.1\r\nHost: x\r\n\r\n'),
+      )
+      socket.on('data', (chunk) => {
+        text += String(chunk)
+        socket.end()
+      })
+      socket.on('end', () => resolve(text))
+      socket.on('error', reject)
+    })
+    expect(answer).toMatch(/^HTTP\/1\.1 400/)
+    const page = fetch(local(listener.redirectUri, '?code=abc&state=state-1'))
+    expect(await listener.code).toBe('abc')
+    listener.finish('signed-in')
+    expect((await page).status).toBe(200)
   })
 
   it('fixed callbackPort busy: error, no other port', async () => {

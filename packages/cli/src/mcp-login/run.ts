@@ -40,8 +40,20 @@ export class McpLoginError extends Error {
   }
 }
 
-/** A daemon refusal or a sign-in failure, in one plain sentence. */
+/** Longest failure text shown; the rest of a server-supplied message is cut. */
+const MAX_FAILURE_TEXT = 500
+
+/**
+ * A daemon refusal or a sign-in failure, in one plain sentence. Parts of it can come from the
+ * authorization or MCP server, so control characters (terminal escapes) are replaced and the
+ * length is capped: this is the one place failure text leaves the sign-in.
+ */
 export function mcpLoginFailureText(serverId: string, error: unknown): string {
+  const text = failureText(serverId, error).replace(/\p{Cc}/gu, ' ')
+  return text.length > MAX_FAILURE_TEXT ? `${text.slice(0, MAX_FAILURE_TEXT)}…` : text
+}
+
+function failureText(serverId: string, error: unknown): string {
   if (error instanceof McpOAuthDiscoveryFailed) return discoveryFailed(serverId)
   const data = (error as { data?: { reason?: unknown; code?: unknown; method?: unknown } } | null)?.data
   switch (data?.reason ?? data?.code) {
@@ -148,6 +160,8 @@ async function browserSignIn(
     throw new McpLoginError(
       `the authorization server of "${serverId}" does not register clients by itself; add a client ID to the server (agh mcp update ${serverId} ... --oauth-client-id <id>) and sign in again`,
     )
+  // Cancelled while discovery or registration ran: show nothing, open nothing.
+  if (signal.aborted) return { kind: 'cancelled' }
   start.authorizationUrl.searchParams.set('state', state)
   const authorizationUrl = start.authorizationUrl.href
   ui.show({ serverId, authorizationUrl })
@@ -188,6 +202,10 @@ async function firstCode(
   signal: AbortSignal,
 ): Promise<Readonly<{ code: string }> | 'cancelled' | 'timed-out'> {
   let timer: ReturnType<typeof setTimeout> | undefined
+  // The paste prompt ends as soon as any path wins, not when the whole sign-in ends.
+  const pasting = new AbortController()
+  const stopPasting = () => pasting.abort()
+  signal.addEventListener('abort', stopPasting, { once: true })
   try {
     return await new Promise((resolve, reject) => {
       if (signal.aborted) return resolve('cancelled')
@@ -195,10 +213,10 @@ async function firstCode(
       signal.addEventListener('abort', () => resolve('cancelled'), { once: true })
       listener.code.then((code) => resolve({ code }), reject)
       input.ui
-        .paste(signal)
+        .paste(pasting.signal)
         .then((text) => {
           // Nothing can be pasted here: only the browser can finish the sign-in.
-          if (text === undefined || signal.aborted) return
+          if (text === undefined || pasting.signal.aborted) return
           const pasted = parsePastedCallback(text, { redirectUri: listener.redirectUri, state })
           resolve(pasted === 'cancel' ? 'cancelled' : pasted)
         })
@@ -206,6 +224,8 @@ async function firstCode(
     })
   } finally {
     clearTimeout(timer)
+    signal.removeEventListener('abort', stopPasting)
+    pasting.abort()
   }
 }
 
@@ -301,7 +321,7 @@ async function afterSignIn(
     )
     return {}
   } catch (error) {
-    return { reconnectFailed: error instanceof Error ? error.message : String(error) }
+    return { reconnectFailed: mcpLoginFailureText(serverId, error) }
   }
 }
 
