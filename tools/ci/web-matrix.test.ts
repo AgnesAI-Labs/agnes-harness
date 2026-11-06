@@ -52,3 +52,20 @@ it('refuses missing, repeated or unknown batch references and unsafe selector ch
     expect(() => buildMatrices(changed)).toThrow()
   }
 })
+
+it('lets the full nightly narrow matrix own the phone and tablet subsets exactly once', () => {
+  const source = manifest()
+  const matrices = buildMatrices(source, { nightly: true })
+  for (const platform of ['macos', 'linux'] as const) {
+    const selected = matrices[platform].include.flatMap((group: { batches: Batch[] }) => group.batches)
+    expect(selected.map((batch: Batch) => batch.id)).not.toContain('narrow-phone')
+    expect(selected.map((batch: Batch) => batch.id)).not.toContain('narrow-tablet')
+    expect(selected).toHaveLength(source[platform].batches.length - 2)
+    expect(selected).toEqual(
+      expect.arrayContaining(source[platform].batches.filter((batch) => !batch.id.startsWith('narrow-'))),
+    )
+    expect(matrices[platform].include.every((group: { batches: Batch[] }) => group.batches.length > 0)).toBe(
+      true,
+    )
+  }
+})

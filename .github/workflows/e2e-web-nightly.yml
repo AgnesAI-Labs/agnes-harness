@@ -1,12 +1,10 @@
-name: Web E2E nightly
-# The full narrow-screen matrix (every locale/theme at 375, 390 and 768 pixels) on macOS and Linux.
-# Pull requests run only its en/light phone and tablet pass; see tools/e2e-web/README.md (Gate).
+name: Web E2E manual full suite
+# The daily 02:00 Asia/Shanghai run is owned by ci.yml (18:00 UTC).
+# Keep this existing entry point for an explicit full-browser run on a chosen ref.
 on:
-  schedule:
-    - cron: '17 3 * * *'
   workflow_dispatch:
 permissions: { contents: read }
 jobs:
-  narrow:
+  browsers:
     uses: ./.github/workflows/e2e-web.yml
-    with: { suite: narrow-nightly }
+    with: { suite: nightly }

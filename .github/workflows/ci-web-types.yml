@@ -4,6 +4,7 @@ on:
     inputs:
       artifact: { type: string, default: '' }
       native: { type: string, required: true }
+      nightly: { type: boolean, default: false }
     outputs:
       artifact: { value: '${{ jobs.prepare.outputs.artifact }}' }
       macos-matrix: { value: '${{ jobs.prepare.outputs.macos-matrix }}' }
@@ -52,7 +53,7 @@ jobs:
           pnpm exec vitest run tools/guards/src --maxWorkers=1
       - id: matrix
         if: inputs.artifact == ''
-        run: node tools/ci/web-matrix.mjs
+        run: node tools/ci/web-matrix.mjs ${{ inputs.nightly && '--nightly' || '' }}
       - name: Pack declarations
         if: inputs.artifact == ''
         run: node tools/ci/prepared-artifact.mjs pack types .agnes-tmp/prepared-types

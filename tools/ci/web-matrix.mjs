@@ -40,7 +40,7 @@ function validateBatch(batch, nightly = false) {
   if (!files) fail('batch has no spec files')
 }
 
-export function buildMatrices(source = manifest) {
+export function buildMatrices(source = manifest, { nightly = false } = {}) {
   if (source?.schema !== 1) fail('unsupported manifest schema')
   const matrices = {}
   for (const [platform, count, size] of [
@@ -83,7 +83,16 @@ export function buildMatrices(source = manifest) {
       }
     })
     if (selected.size !== canonical.size) fail('missing canonical batch')
-    matrices[platform] = { include }
+    matrices[platform] = {
+      include: nightly
+        ? include
+            .map((group) => ({
+              ...group,
+              batches: group.batches.filter((batch) => !['narrow-phone', 'narrow-tablet'].includes(batch.id)),
+            }))
+            .filter((group) => group.batches.length)
+        : include,
+    }
   }
   const nightlyIds = ['narrow-en-light', 'narrow-en-dark', 'narrow-zh-CN-light', 'narrow-zh-CN-dark']
   if (!Array.isArray(source.nightly) || source.nightly.length !== nightlyIds.length)
@@ -118,9 +127,10 @@ export function canonicalBatch(batch) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    if (process.argv.length !== 2 || !process.env.GITHUB_OUTPUT)
-      fail('GITHUB_OUTPUT is required; no arguments accepted')
-    const matrices = buildMatrices()
+    const args = process.argv.slice(2)
+    if (!process.env.GITHUB_OUTPUT || (args.length && (args.length !== 1 || args[0] !== '--nightly')))
+      fail('GITHUB_OUTPUT is required; only --nightly is accepted')
+    const matrices = buildMatrices(manifest, { nightly: args.includes('--nightly') })
     appendFileSync(
       process.env.GITHUB_OUTPUT,
       `macos-matrix=${JSON.stringify(matrices.macos)}\nlinux-matrix=${JSON.stringify(matrices.linux)}\n`,

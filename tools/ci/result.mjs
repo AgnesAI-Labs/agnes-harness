@@ -25,6 +25,7 @@ export function verifyResults(needs) {
     'linux-fast': docsOnly === 'true' ? 'skipped' : 'success',
     web: webSelected === 'true' ? 'success' : 'skipped',
     'web-result': webSelected === 'true' ? 'success' : 'skipped',
+    'browser-acceptance': webSelected === 'true' ? 'success' : 'skipped',
   })
   for (const [job, result] of Object.entries(expected)) {
     if (needs[job]?.result !== result) {

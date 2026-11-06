@@ -1,11 +1,12 @@
 import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
-export function ciWebSelected(event, ref) {
-  return event === 'pull_request' || (event === 'push' && ref === 'refs/heads/main')
+export function ciWebSelected(event, _ref, browsers = false) {
+  return event === 'schedule' || (event === 'workflow_dispatch' && browsers)
 }
 
-export function verifyWebResults(needs, { externalFast = false, externalHeavy = false } = {}) {
+export function verifyWebResults(needs, { suite = 'gate' } = {}) {
+  if (!['gate', 'nightly', 'narrow-nightly'].includes(suite)) throw new Error('Invalid browser suite')
   const selected = {
     'web-types': 'success',
     'web-native-linux': 'success',
@@ -14,11 +15,10 @@ export function verifyWebResults(needs, { externalFast = false, externalHeavy = 
     'web-local-macos': 'success',
     'web-quality-linux': 'success',
     'web-quality-macos': 'success',
-    'e2e-web': 'success',
-    'e2e-web-linux': 'success',
-    'linux-contracts': 'success',
-    'linux-fast': externalFast ? 'skipped' : 'success',
-    'linux-migrated-heavy': externalHeavy ? 'skipped' : 'success',
+    'e2e-web': suite === 'narrow-nightly' ? 'skipped' : 'success',
+    'e2e-web-linux': suite === 'narrow-nightly' ? 'skipped' : 'success',
+    'e2e-web-narrow-nightly': suite === 'gate' ? 'skipped' : 'success',
+    'e2e-web-linux-narrow-nightly': suite === 'gate' ? 'skipped' : 'success',
   }
   for (const [job, result] of Object.entries(selected)) {
     if (needs[job]?.result !== result)
@@ -47,7 +47,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (process.argv[2] === 'select') {
     appendFileSync(
       process.env.GITHUB_OUTPUT,
-      `web=${ciWebSelected(process.env.GITHUB_EVENT_NAME, process.env.GITHUB_REF)}\n`,
+      `web=${ciWebSelected(process.env.GITHUB_EVENT_NAME, process.env.GITHUB_REF, process.env.CI_BROWSERS === 'true')}\n`,
     )
   } else if (process.argv[2] === 'platforms') {
     verifyPlatformResults(
@@ -57,8 +57,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     )
   } else {
     verifyWebResults(JSON.parse(process.env.CI_NEEDS), {
-      externalFast: process.env.EXTERNAL_FAST === 'true',
-      externalHeavy: process.env.EXTERNAL_HEAVY === 'true',
+      suite: process.env.WEB_SUITE || 'gate',
     })
   }
 }

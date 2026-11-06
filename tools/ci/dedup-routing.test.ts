@@ -3,17 +3,18 @@ import { describe, expect, it } from 'vitest'
 import { ciWebSelected, verifyPlatformResults, verifyWebResults } from './dedup-routing.mjs'
 
 describe('single-run coverage routing', () => {
-  it('keeps only the original PR and main-push Web union in CI', () => {
-    expect(ciWebSelected('pull_request', 'refs/pull/42/merge')).toBe(true)
-    expect(ciWebSelected('push', 'refs/heads/main')).toBe(true)
-    for (const event of ['workflow_dispatch', 'schedule', 'merge_group'])
-      expect(ciWebSelected(event, 'refs/heads/main')).toBe(false)
+  it('runs browsers only on the daily schedule or an explicit manual request', () => {
+    expect(ciWebSelected('schedule', 'refs/heads/main')).toBe(true)
+    expect(ciWebSelected('workflow_dispatch', 'refs/heads/main', true)).toBe(true)
+    expect(ciWebSelected('workflow_dispatch', 'refs/heads/main', false)).toBe(false)
+    for (const event of ['pull_request', 'push', 'merge_group'])
+      expect(ciWebSelected(event, 'refs/heads/main', true)).toBe(false)
     expect(ciWebSelected('push', 'refs/heads/other')).toBe(false)
   })
 
-  it.each([false, true])(
-    'fails closed for all selected Web dependencies, external heavy/fast=%s',
-    (external) => {
+  it.each(['gate', 'nightly', 'narrow-nightly'])(
+    'fails closed for all selected browser dependencies, suite=%s',
+    (suite) => {
       const needs: Record<string, { result: string }> = {
         'web-types': { result: 'success' },
         'web-native-linux': { result: 'success' },
@@ -22,29 +23,25 @@ describe('single-run coverage routing', () => {
         'web-local-macos': { result: 'success' },
         'web-quality-linux': { result: 'success' },
         'web-quality-macos': { result: 'success' },
-        'e2e-web': { result: 'success' },
-        'e2e-web-linux': { result: 'success' },
-        'linux-contracts': { result: 'success' },
-        'linux-fast': { result: external ? 'skipped' : 'success' },
-        'linux-migrated-heavy': { result: external ? 'skipped' : 'success' },
+        'e2e-web': { result: suite === 'narrow-nightly' ? 'skipped' : 'success' },
+        'e2e-web-linux': { result: suite === 'narrow-nightly' ? 'skipped' : 'success' },
+        'e2e-web-narrow-nightly': { result: suite === 'gate' ? 'skipped' : 'success' },
+        'e2e-web-linux-narrow-nightly': { result: suite === 'gate' ? 'skipped' : 'success' },
       }
-      expect(() => verifyWebResults(needs, { externalFast: external, externalHeavy: external })).not.toThrow()
+      expect(() => verifyWebResults(needs, { suite })).not.toThrow()
       for (const job of Object.keys(needs)) {
         const expected = needs[job]?.result
-        for (const state of ['failure', 'cancelled', 'skipped', 'missing']) {
+        for (const state of ['success', 'failure', 'cancelled', 'skipped', 'missing']) {
           if (state === expected) continue
           const changed = { ...needs, [job]: { result: state } }
-          expect(
-            () => verifyWebResults(changed, { externalFast: external, externalHeavy: external }),
-            `${job}/${state}`,
-          ).toThrow()
+          expect(() => verifyWebResults(changed, { suite }), `${job}/${state}`).toThrow()
         }
       }
     },
   )
 
-  it('does not accept success instead of a declared unselected duplicate', () => {
-    expect(() => verifyWebResults({}, { externalFast: true, externalHeavy: true })).toThrow()
+  it('refuses an unknown suite instead of accepting an empty result', () => {
+    expect(() => verifyWebResults({}, { suite: 'unknown' })).toThrow('suite')
   })
 })
 

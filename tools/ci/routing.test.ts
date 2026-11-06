@@ -138,17 +138,17 @@ describe('CI scope', () => {
     const excluded = /AGNES_TEST_EXCLUDE: \$\{\{ runner.os == 'Windows' && '([^']*)' \|\| '' \}\}/.exec(heavy)
     expect(excluded === null).toBe(false)
     const held = new Set(excluded?.[1]?.split(',') ?? [])
-    const shardOwners = [1, 2, 3].filter((index) => {
-      const shard = heavyShard(`${index}/3`, lists)
+    const shardOwners = [1, 2, 3, 4, 5, 6].filter((index) => {
+      const shard = heavyShard(`${index}/6`, lists)
       return !held.has(file) && (shard.files ? shard.files.includes(file) : !shard.exclude?.includes(file))
     })
-    expect(shardOwners).toEqual([3])
+    expect(shardOwners).toEqual([6])
     for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch']) {
       const extra = checkRows.filter((row) => matches(osNames[row[1] as string] ?? '', row[2] ?? '', event))
       expect(
         extra.map((row) => [row[1], row[2]]),
         event,
-      ).toEqual(event === 'pull_request' ? [['windows-latest', '1/3']] : [])
+      ).toEqual(event === 'pull_request' ? [['windows-latest', '1/6']] : [])
       const heavyOs = platformHeavyOs(workflow, event)
       const nativeHeavy = heavyOs.includes('windows-latest') ? shardOwners.length : 0
       expect(extra.length + nativeHeavy, event).toBe(1)
@@ -185,7 +185,7 @@ describe('CI scope', () => {
       expect(steps.indexOf(step)).toBeGreaterThan(steps.findIndex((s) => s.includes('id: suite')))
     }
     const rows = platformCheckRows(workflow)
-    expect(rows).toHaveLength(7)
+    expect(rows).toHaveLength(13)
     const osNames: Record<string, string> = {
       'ubuntu-latest': 'Linux',
       'macos-latest': 'macOS',
@@ -212,11 +212,11 @@ describe('CI scope', () => {
     const excluded = /AGNES_TEST_EXCLUDE: \$\{\{ runner.os == 'Windows' && '([^']*)' \|\| '' \}\}/.exec(heavy)
     expect(excluded === null).toBe(false)
     expect(new Set(excluded?.[1]?.split(',') ?? []).has(file)).toBe(false)
-    const owners = [1, 2, 3].filter((index) => {
-      const shard = heavyShard(`${index}/3`, lists)
+    const owners = [1, 2, 3, 4, 5, 6].filter((index) => {
+      const shard = heavyShard(`${index}/6`, lists)
       return shard.files ? shard.files.includes(file) : !shard.exclude?.includes(file)
     })
-    expect(owners).toEqual([3])
+    expect(owners).toEqual([6])
     for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch']) {
       const extra = rows.flatMap((row) =>
         isolated
@@ -226,8 +226,8 @@ describe('CI scope', () => {
       expect(extra, event).toEqual(
         event === 'pull_request'
           ? [
-              ['macos-latest', '1/3'],
-              ['windows-latest', '1/3'],
+              ['macos-latest', '1/6'],
+              ['windows-latest', '1/6'],
             ]
           : [],
       )
@@ -344,6 +344,7 @@ function results(docsOnly: boolean): Record<string, { result: string; outputs?: 
     'linux-fast': { result: docsOnly ? 'skipped' : 'success' },
     web: { result: 'success' },
     'web-result': { result: 'success' },
+    'browser-acceptance': { result: 'success' },
   }
 }
 
@@ -369,6 +370,7 @@ describe('CI result', () => {
     'linux-fast',
     'web',
     'web-result',
+    'browser-acceptance',
   ])('fails closed for a failed, cancelled, skipped or missing code job: %s', (job) => {
     for (const state of ['failure', 'cancelled', 'skipped', undefined]) {
       const needs = results(false)
@@ -378,11 +380,12 @@ describe('CI result', () => {
     }
   })
 
-  it('retains CI-only validation without adding Web to manual and scheduled runs', () => {
+  it('accepts intentional browser exclusion while still requiring code validation', () => {
     const needs = results(false)
     needs.changes.outputs = { 'docs-only': 'false', web: 'false' }
     needs.web.result = 'skipped'
     needs['web-result'].result = 'skipped'
+    needs['browser-acceptance'].result = 'skipped'
     expect(() => verifyResults(needs)).not.toThrow()
     needs['linux-fast'].result = 'skipped'
     expect(() => verifyResults(needs)).toThrow('linux-fast')

@@ -6,19 +6,18 @@ on:
       native: { type: string, required: true }
       types: { type: string, required: true }
       local: { type: string, required: true }
+      browsers: { type: boolean, default: false }
 permissions: { contents: read }
 env: { AGNES_NATIVE_BUILDER: glibc228 }
 jobs:
   heavy:
-    name: heavy (${{ inputs.runner }} ${{ matrix.shard }}/3)
+    name: heavy (${{ inputs.runner }} ${{ matrix.shard }}/6)
     strategy:
       fail-fast: false
       matrix:
-        # With the sandbox, shells, built CLI and Chromium provisioned, one Linux runner needed
-        # 45-60 minutes for the whole tier. Shards 1 and 2 are the file lists in
-        # tools/ci/heavy-shards.json, each about 20 minutes of measured Linux file time; shard 3 runs
-        # every other heavy file, so each file runs in exactly one shard.
-        shard: [1, 2, 3]
+        # Five measured file lists balance the ordinary heavy tier. Shard six owns the complete
+        # complement, including future files, registry processes and scheduled browser coverage.
+        shard: [1, 2, 3, 4, 5, 6]
     runs-on: ${{ inputs.runner }}
     # Matches the check job. Windows runs its heavy files one at a time.
     timeout-minutes: 60
@@ -102,6 +101,7 @@ jobs:
         run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-local
       # The multi-tab transport and agent-sweep tests launch the pinned Playwright Chromium.
       - name: provision pinned Chromium
+        if: inputs.browsers && matrix.shard == 6
         run: pnpm exec playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium
       # Source-worker tests share jiti's transpile cache (packages/daemon/test/source-transpile-cache.ts).
       # jiti re-transpiles any file whose source hash changed, so an older cache is safe to restore.
@@ -122,7 +122,7 @@ jobs:
       - name: test heavy tier
         env:
           AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts,packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
-        run: node tools/ci/run-heavy-shard.mjs --shard=${{ matrix.shard }}/3 --maxWorkers=1
+        run: node tools/ci/run-heavy-shard.mjs --shard=${{ matrix.shard }}/6 --maxWorkers=1 ${{ !inputs.browsers && '--without-browser' || '' }}
       - name: Save source transpile cache
         if: ${{ !cancelled() }}
         uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4
@@ -132,20 +132,20 @@ jobs:
       # The ACP cold-start bound measures concurrent CLI processes. Run it without other Vitest
       # files competing for this runner's cores, while retaining its original assertion.
       - name: Windows ACP cold-start concurrency
-        if: runner.os == 'Windows' && matrix.shard == 3
+        if: runner.os == 'Windows' && matrix.shard == 6
         run: pnpm exec vitest run packages/cli/test/acp-concurrency.e2e.test.ts --maxWorkers=1
       # The source CLI fixture cold-loads the test Host; keep its 20-second initialization
       # deadline meaningful by running it without other Vitest files on this Windows runner.
       - name: Windows ephemeral CLI lifecycle
-        if: runner.os == 'Windows' && matrix.shard == 3
+        if: runner.os == 'Windows' && matrix.shard == 6
         run: pnpm exec vitest run packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts --maxWorkers=1
       # These heavy files drive real worker, MCP server and built CLI processes under fixed startup and
       # shutdown deadlines; run each alone so parallel Vitest files do not starve them.
       - name: Windows service worker boundary
-        if: runner.os == 'Windows' && matrix.shard == 3
+        if: runner.os == 'Windows' && matrix.shard == 6
         run: pnpm exec vitest run packages/daemon/test/service-worker.e2e.test.ts --maxWorkers=1
       - name: Windows built CLI managed MCP lifecycle
-        if: runner.os == 'Windows' && matrix.shard == 3
+        if: runner.os == 'Windows' && matrix.shard == 6
         run: pnpm exec vitest run packages/cli/test/built-resource-mcp.e2e.test.ts --maxWorkers=1
       - name: Upload failed heavy browser evidence
         if: failure()
