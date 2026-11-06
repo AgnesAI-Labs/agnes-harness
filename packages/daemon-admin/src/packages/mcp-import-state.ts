@@ -54,7 +54,8 @@ export const resourcePort = (
       'resources.reconcile',
     )
   if (granted.permissions.includes('packages.trust')) permissions.push('mcp.trust', 'skills.trust')
-  if (granted.permissions.includes('packages.activate')) permissions.push('mcp.test', 'mcp.activate')
+  if (granted.permissions.includes('packages.activate'))
+    permissions.push('mcp.test', 'mcp.activate', 'mcp.reconnect')
   if (granted.permissions.includes('credentials.read')) permissions.push('secrets.use')
   return (method: ResourceControlMethodName, data: Record<string, unknown>): Promise<unknown> =>
     resources.call(
