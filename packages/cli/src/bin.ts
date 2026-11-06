@@ -531,6 +531,10 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
         mode === 'tui'
           ? (await import('./commands/resources.js')).createResourceController(booted.client)
           : undefined
+      const mcpLogin =
+        mode === 'tui'
+          ? (await import('./mcp-login/tui-port.js')).createTuiMcpLogin(booted.client)
+          : undefined
       ladderInstalled = true
       const off = installSignalLadder(
         {
@@ -583,6 +587,7 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
                 },
                 signal: () => signal,
                 ...(resourceController ? { resourceController } : {}),
+                ...(mcpLogin ? { mcpLogin } : {}),
                 composerSelectionPath: join(resolveHome(io.env), 'composer-selection.json'),
                 historyPath: join(resolveHome(io.env), 'tui-history.jsonl'),
                 commandsDir: join(home, 'commands'),

@@ -859,6 +859,7 @@ export class TuiApp {
         modelPicker: this.modelPicker,
         sessionPicker: this.sessionPicker,
         providerSetup: this.dialogs.providerSetup,
+        mcpLogin: this.dialogs.mcpLogin,
         editor: this.editor,
         busyInput: this.busyInput,
         appendLocal: (view) => this.timeline.appendLocal(this.session.id, view),
@@ -920,6 +921,7 @@ export class TuiApp {
     this.modelPicker.close()
     this.sessionPicker.close()
     this.usagePanel.close()
+    this.dialogs.close()
     // Restore the terminal before asynchronous teardown can fail or hang. Nothing from the chat is
     // written back to the shell page: it comes back exactly as it was before the TUI started.
     try {

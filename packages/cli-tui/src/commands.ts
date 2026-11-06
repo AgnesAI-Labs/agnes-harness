@@ -28,6 +28,7 @@ import { infoSlash } from './info-commands.js'
 import { jobsSlash } from './job-commands.js'
 import { formatKeys } from './keybindings.js'
 import { type ExtendedKey, tt } from './locale-extended.js'
+import { isMcpLoginAction, mcpLoginSlash } from './mcp-login-command.js'
 import { memorySlash } from './memory-command.js'
 import { accountLabels } from './model-label.js'
 import { parseNotifyMode } from './notify.js'
@@ -50,6 +51,7 @@ import { toolNameCandidates, toolsSlash } from './tool-filter-command.js'
 import { trustSlash } from './trust-command.js'
 import { undoSlash } from './undo-commands.js'
 import { formatContextBreakdown, formatUsageReport } from './usage-details.js'
+import type { McpLoginInit } from './views/mcp-login.js'
 import type { ProviderSetupInit } from './views/provider-setup.js'
 import { worktreeSlash } from './worktree-command.js'
 
@@ -153,6 +155,8 @@ export type SlashResult = {
   modelChoices?: ModelChoice[]
   /** Opens the /provider dialog. Carries no secret: the key is typed into the dialog itself. */
   providerSetup?: ProviderSetupInit
+  /** Opens the /mcp login panel: the sign-in runs behind the injected port, and no secret passes through here. */
+  mcpLogin?: McpLoginInit
   sessionChoices?: SessionChoice[]
   sessionPickerTitle?: ExtendedKey
   /** The /resume picker's scope: Tab switches between this workspace and every workspace, listed by `reload`. */
@@ -701,6 +705,7 @@ export async function runSlash(app: TuiApp, line: string): Promise<SlashResult> 
         text: 'usage: /skill invoke <name> [arguments] | /skill refresh [--root-key <key>] | /skill trust <resourceId> <revision> [trusted|rejected]',
       }
     case '/mcp':
+      if (isMcpLoginAction(args[0])) return mcpLoginSlash(app, args[0], args.slice(1))
       return resourceCommand('mcp', args.length ? args : ['list'])
     default:
       return (
