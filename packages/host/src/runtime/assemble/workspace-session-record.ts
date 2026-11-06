@@ -195,7 +195,9 @@ export function sessionRecordVerifier(input: {
           }
         : {}),
     })
-    // A child sharing this runtime runs under the owner's lease and generation.
+    // A subagent child reserved on this runtime works inside its owner's turn and runs under the
+    // owner's lease and generation. A forked session never shares it under the Windows write
+    // restriction: it opens a runtime of its own, whose owner it is.
     if (generation && key === input.ownerKey) posture.windowsAcl?.bind(generation.generationId)
   }
 }

@@ -88,10 +88,14 @@ export const executionRecordRefusal = (): Error =>
     { code: 'E_SANDBOX_WORKSPACE', reason: 'session-execution-record-invalid' },
   )
 
-const confirmationRefusal = (): Error =>
+/**
+ * The directory at the session's own workspace path was replaced. The confirmation happens outside
+ * the session, with the doctor command, and keeps the same session, history and files.
+ */
+const confirmationRefusal = (root: string): Error =>
   Object.assign(
     new Error(
-      'E_SANDBOX_WORKSPACE: the workspace directory no longer matches the one this session was verified with; confirm the workspace again in this session (its history and files are kept)',
+      `E_SANDBOX_WORKSPACE: the workspace directory at ${root} was replaced since this session was verified; check it, then run \`agh doctor windows-acl --cwd ${root} --repair\` outside the session to confirm it and open the session again (its history and files are kept)`,
     ),
     { code: 'E_SANDBOX_WORKSPACE', reason: 'session-workspace-confirmation-required' },
   )
@@ -385,8 +389,9 @@ function adoptLegacy(
 ) {
   const evidence = input.permissionEvidence
   if (legacy.target !== 'win32' || current.target !== 'win32') throw executionRecordRefusal()
+  // Another workspace is not a replaced directory: no confirmation can accept it.
   if (legacy.workspaceId !== current.workspaceId || legacy.workspaceRoot !== current.workspaceRoot)
-    throw confirmationRefusal()
+    throw executionRecordRefusal()
   if (legacy.staticConfigHash !== evidence.legacyStaticConfigHash) throw executionRecordRefusal()
   if (
     isDeepStrictEqual(execution(legacy), execution({ ...current, staticConfigHash: legacy.staticConfigHash }))
@@ -543,7 +548,9 @@ export function planWindowsExecution(input: {
       throw executionRecordRefusal()
     return append('workspace-confirmed')
   }
-  if (!sameWorkspace || replaced) throw confirmationRefusal()
+  // Another workspace is not a replaced directory: no confirmation can accept it.
+  if (!sameWorkspace) throw executionRecordRefusal()
+  if (replaced) throw confirmationRefusal(current.workspaceRoot)
   if (isDeepStrictEqual(execution(facts), current) && sameIdentity(head.rootIdentity, rootIdentity))
     return { record, generation: head, changed: false }
   if (strengthens(facts, current, permissionIntent)) return append('backend-change')

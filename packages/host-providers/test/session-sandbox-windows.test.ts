@@ -278,19 +278,22 @@ describe('adopting a version 1 Windows record', () => {
   it.each([
     ['another workspace id', { workspaceId: 'other' }],
     ['another workspace root', { workspaceRoot: 'C:\\elsewhere' }],
-  ])('asks to confirm the workspace again in this session for %s', (_name, change) => {
-    const { profileDir, store } = setup()
-    const original = writeLegacy(profileDir, 'old', { ...legacyExecution, ...change })
-    let error: unknown
-    try {
-      store.verifyWindowsExecution('old', verified(), true)
-    } catch (caught) {
-      error = caught
-    }
-    expect(error).toEqual(refusedForConfirmation)
-    expect((error as Error).message).not.toMatch(/new session/)
-    expect(readFileSync(recordFile(profileDir, 'old'), 'utf8')).toBe(original)
-  })
+  ])(
+    'keeps the history and asks for a new session for %s, which no confirmation can accept',
+    (_name, change) => {
+      const { profileDir, store } = setup()
+      const original = writeLegacy(profileDir, 'old', { ...legacyExecution, ...change })
+      let error: unknown
+      try {
+        store.verifyWindowsExecution('old', verified(), true)
+      } catch (caught) {
+        error = caught
+      }
+      expect(error).toEqual(refusedAsInvalid)
+      expect((error as Error).message).toMatch(/keep this history and create a new session/)
+      expect(readFileSync(recordFile(profileDir, 'old'), 'utf8')).toBe(original)
+    },
+  )
 
   it.each([
     ['damaged JSON', '{'],
@@ -389,6 +392,10 @@ describe('version 2 records', () => {
     const bytes = readFileSync(recordFile(profileDir, 's'), 'utf8')
     const replaced = verified({ rootIdentity: { volumeId: 'vol-1', fileId: 'file-2' } })
     expect(() => store.verifyWindowsExecution('s', replaced, true)).toThrow(refusedForConfirmation)
+    // The refusal names the one command that confirms it, run outside the session.
+    expect(() => store.verifyWindowsExecution('s', replaced, true)).toThrow(
+      'agh doctor windows-acl --cwd C:\\work --repair',
+    )
     expect(readFileSync(recordFile(profileDir, 's'), 'utf8')).toBe(bytes)
 
     // The session is listed for confirmation at its saved root, and only there.
@@ -406,6 +413,29 @@ describe('version 2 records', () => {
     })
     expect(readRecord(profileDir, 's').generations).toEqual([generation, confirmed])
     expect(store.verifyWindowsExecution('s', replaced, true)).toEqual(confirmed)
+  })
+
+  it.each([
+    ['another workspace id', { workspaceId: 'other' }],
+    ['another workspace root', { workspaceRoot: 'C:\\elsewhere' }],
+  ])('keeps the history and asks for a new session when a saved session opens in %s', (_name, change) => {
+    const { profileDir, store } = setup()
+    store.verifyWindowsExecution('s', verified(), false)
+    const bytes = readFileSync(recordFile(profileDir, 's'), 'utf8')
+    const moved = verified({ currentExecution: { ...aclExecution, ...change } })
+    let error: unknown
+    try {
+      store.verifyWindowsExecution('s', moved, true)
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toEqual(refusedAsInvalid)
+    expect((error as Error).message).toMatch(/keep this history and create a new session/)
+    // The doctor lists the session only at its saved root, where a confirmation cannot move it.
+    expect(store.windowsWorkspaces()).toEqual([
+      { sessionKey: 's', workspaceRoot: 'C:\\work', rootIdentity: ROOT_ID },
+    ])
+    expect(readFileSync(recordFile(profileDir, 's'), 'utf8')).toBe(bytes)
   })
 
   it('confirms only a replaced directory at the saved root, never another workspace or a new session', () => {

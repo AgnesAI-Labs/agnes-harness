@@ -11,7 +11,7 @@ import {
   compileWorkspacePolicy,
   intersectWorkspacePlan,
   memoryFileIsolation,
-  normalizeSandboxStaticConfig,
+  planExplicitDeny,
 } from '@agnes/host-common/workspace-policy'
 import type { PackageModule } from '@agnes/host-extensions/assemble/packages'
 import { powerShellCommand } from '@agnes/host-infrastructure/adapters/powershell-command'
@@ -42,7 +42,7 @@ import { trustedHookCommands } from './trusted-hooks.js'
 import {
   createReadinessManager,
   localSandboxImplementation,
-  loopbackServeSupported,
+  requestedSandboxConfig,
 } from './workspace-readiness.js'
 import {
   officialPresetNames,
@@ -58,24 +58,11 @@ import {
 } from './workspace-windows-acl.js'
 
 export {
+  degradeLoopbackServe,
   localSandboxImplementation,
   localSandboxProbe,
   loopbackServeSupported,
 } from './workspace-readiness.js'
-
-/**
- * Where the loopback listener cannot be provided, the session still opens and only that capability is
- * dropped: the policy falls back to the same closed L1 network it would have without the grant. Nothing
- * is added, `on_unavailable` is untouched, and a command that tries to serve gets no listener fd.
- */
-export function degradeLoopbackServe<T extends { loopbackServe?: boolean }>(
-  sandbox: T,
-  supported: boolean,
-): T {
-  if (!sandbox.loopbackServe || supported) return sandbox
-  const { loopbackServe: _dropped, ...rest } = sandbox
-  return rest as T
-}
 
 /**
  * Packages whose code is the process's sandbox backend: the builtin that supplies the local probe
@@ -105,10 +92,7 @@ function workspaceSandboxPolicy(
 ) {
   const { adapters } = proc
   const localProvider = sandboxProviderIdFrom(ctx.profile) === RELEASE_DEFAULTS.sandboxProvider
-  const requestedSandbox = degradeLoopbackServe(
-    normalizeSandboxStaticConfig(preset, sandboxConfigTarget(adapters)),
-    localProvider && loopbackServeSupported(adapters.platform.os, !!adapters.transport),
-  )
+  const requestedSandbox = requestedSandboxConfig(preset, adapters, localProvider)
   const implementation =
     !adapters.transport && localProvider
       ? localSandboxImplementation(ctx.profile, pkgs.modules, adapters.platform.os)
@@ -266,6 +250,7 @@ export function createWorkspaceRuntimeFactory(
                 execution: proc.windowsAcl,
                 hostSpawn: raw.hostSpawn,
                 staticConfig: plan.staticConfig,
+                customFsDeny: planExplicitDeny(plan),
                 requiresFileIsolation,
                 providerId: sandboxProviderIdFrom(ctx.profile),
                 root: plan.policy.workspaceRoot,

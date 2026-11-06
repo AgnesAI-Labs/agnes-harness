@@ -27,18 +27,21 @@ export function sandboxConfigTarget(adapters: { platform: { os: string }; transp
 /**
  * What the Windows decision reads from one sandbox config. The closed network L1 implies by default
  * is not a Windows requirement; an allowlist or loopback serving is, and an explicit read deny is.
+ * `customFsDeny` comes from the plan (`planExplicitDeny`): a plan narrowed by a delegating session
+ * lists the default protected paths among its deny paths, and those are not an explicit deny.
  */
 function windowsFacts(
   config: SandboxStaticConfig,
   extraReadIsolation: boolean,
   providerId: string,
+  customFsDeny: boolean,
 ): Omit<WindowsExecutionInput, 'localProviderId' | 'availableBoundary'> {
   return {
     access: config.access ?? 'workspace-write',
     windowsMode: config.windowsMode ?? 'require-full',
     required: config.required,
     extraReadIsolation,
-    customFsDeny: config.denyPaths.length > 0,
+    customFsDeny,
     networkMode: config.loopbackServe ? 'loopback-serve' : config.networkAllow.length > 0 ? 'hosts' : 'allow',
     providerId,
   }
@@ -57,7 +60,7 @@ export function windowsPolicyBoundary(
 ): WindowsWriteBoundary | undefined {
   if (config.windowsMode !== 'write-restricted') return undefined
   const decision = resolveWindowsExecution({
-    ...windowsFacts(config, false, providerId),
+    ...windowsFacts(config, false, providerId, config.denyPaths.length > 0),
     localProviderId,
     availableBoundary: WINDOWS_WRITE_BOUNDARY,
   })
@@ -78,13 +81,15 @@ export async function windowsHostSpawnOffer(input: {
   execution: WindowsAclExecution | undefined
   os: string
   staticConfig: SandboxStaticConfig
+  /** An explicit deny beyond the default protected paths (`planExplicitDeny`). */
+  customFsDeny: boolean
   providerId: string
   localProviderId: string
   root: string
   policyDigest: string
 }): Promise<HostSpawnSandboxWorkspaceBackend | undefined> {
   if (input.os !== 'win32' || input.staticConfig.windowsMode !== 'write-restricted') return undefined
-  const facts = windowsFacts(input.staticConfig, false, input.providerId)
+  const facts = windowsFacts(input.staticConfig, false, input.providerId, input.customFsDeny)
   const decision = input.execution
     ? input.execution.decide(facts)
     : resolveWindowsExecution({ ...facts, localProviderId: input.localProviderId })
@@ -142,6 +147,8 @@ export function windowsSessionGate(input: {
   execution: WindowsAclExecution | undefined
   hostSpawn: HostSpawnSandboxWorkspaceBackend | undefined
   staticConfig: SandboxStaticConfig
+  /** An explicit deny beyond the default protected paths (`planExplicitDeny`). */
+  customFsDeny: boolean
   requiresFileIsolation: boolean
   providerId: string
   root: string
@@ -152,7 +159,7 @@ export function windowsSessionGate(input: {
   const { execution, hostSpawn } = input
   if (!execution || !hostSpawn || hostSpawn.policyDigest !== input.policyDigest) throw refusal('unavailable')
   const decision = execution.decide(
-    windowsFacts(input.staticConfig, input.requiresFileIsolation, input.providerId),
+    windowsFacts(input.staticConfig, input.requiresFileIsolation, input.providerId, input.customFsDeny),
   )
   if (decision.kind !== 'windows-write-restricted-v1')
     throw refusal(decision.kind === 'refusal' ? decision.reason : 'unconfined')

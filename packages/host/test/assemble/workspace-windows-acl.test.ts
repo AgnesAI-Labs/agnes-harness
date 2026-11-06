@@ -1,3 +1,4 @@
+import { sandboxWorkspaceProbe } from '@agnes/base'
 import { memoryFileIsolation, normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
 import { WindowsAclExecution } from '@agnes/host-infrastructure/windows-acl/execution'
 import { WINDOWS_WRITE_BOUNDARY } from '@agnes/host-infrastructure/windows-acl/policy'
@@ -48,6 +49,8 @@ const offerInput = (execution: WindowsAclExecution | undefined, staticConfig = o
   execution,
   os,
   staticConfig,
+  // A compiled (not narrowed) plan: its configured deny paths are its explicit denies.
+  customFsDeny: staticConfig.denyPaths.length > 0,
   providerId: 'local',
   localProviderId: 'local',
   root: ROOT,
@@ -97,6 +100,49 @@ describe('Windows write restriction in the workspace runtime', () => {
     await expect(windowsHostSpawnOffer(offerInput(execution, official(), 'darwin'))).resolves.toBeUndefined()
   })
 
+  it('leaves a recipe that did not opt in to its own on_unavailable, without downgrade authority', async () => {
+    const { execution, rootIdentity } = facade()
+    // A custom recipe that states its own sandbox and omits windows_mode: require-full on Windows.
+    const custom = (onUnavailable: string, extra: Record<string, unknown> = {}) =>
+      normalizeSandboxStaticConfig(
+        {
+          sandbox: { level: 'L1', on_unavailable: onUnavailable, ...extra },
+          providers: { 'tool-policy': { provider: 'default' } },
+        },
+        { target: 'win32' },
+      )
+    for (const config of [
+      custom('allow-if-unimplemented'),
+      custom('allow-if-unimplemented', { deny_paths: ['secret'] }),
+      custom('deny'),
+    ]) {
+      expect(config.windowsMode).toBe('require-full')
+      // Neither the write restriction nor a refusal: the existing unimplemented-platform path decides.
+      await expect(windowsHostSpawnOffer(offerInput(execution, config))).resolves.toBeUndefined()
+    }
+    expect(rootIdentity).not.toHaveBeenCalled()
+    const probe = (onUnavailable: 'allow-if-unimplemented' | 'deny', required = false) =>
+      sandboxWorkspaceProbe({
+        level: 'L1',
+        required,
+        onUnavailable,
+        platform: 'win32',
+        shell: 'powershell',
+        options: { cwd: ROOT, allowPaths: [ROOT], denyPaths: [], networkAllow: [] },
+        probeExec: async () => ({ code: 127, stdout: '', stderr: '', truncated: false, timedOut: false }),
+        log: { debug() {}, info() {}, warn() {}, error() {} } as never,
+      })
+    // allow-if-unimplemented keeps running commands directly, as before this restriction existed.
+    const direct = await probe('allow-if-unimplemented')
+    expect(direct).toMatchObject({ execBackend: 'none', degraded: true })
+    expect(direct.confine({ argv: ['pwsh'], cwd: ROOT })).toEqual(['pwsh'])
+    // deny opens the workspace and refuses every command; required refuses the workspace.
+    const closed = await probe('deny')
+    expect(closed).toMatchObject({ execBackend: 'none', degraded: false })
+    expect(() => closed.confine({ argv: ['pwsh'], cwd: ROOT })).toThrow()
+    await expect(probe('deny', true)).rejects.toThrow()
+  })
+
   it('refuses, never runs raw, when this Host has no Windows execution authority', async () => {
     await expect(windowsHostSpawnOffer(offerInput(undefined))).rejects.toMatchObject({
       code: 'E_SANDBOX_WORKSPACE',
@@ -138,6 +184,7 @@ describe('session gate', () => {
         policyDigest: DIGEST,
       },
       staticConfig: official(),
+      customFsDeny: false,
       requiresFileIsolation: false,
       providerId: 'local',
       root: ROOT,

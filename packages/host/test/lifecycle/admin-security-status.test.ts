@@ -183,3 +183,33 @@ it('reports each session with its own access and actual boundary, not one platfo
     { sessionId: 'full', access: 'full-access', enforcement: actual.full },
   ])
 })
+
+it('describes loopback serving the way sessions decide it on each Host', () => {
+  const serving = (windowsMode?: string) =>
+    ({
+      ...catalog,
+      serve: {
+        name: 'serve',
+        extends: 'standard',
+        sandbox: {
+          level: 'L1',
+          on_unavailable: 'allow-if-unimplemented',
+          loopback_serve: true,
+          ...(windowsMode ? { windows_mode: windowsMode } : {}),
+        },
+      },
+    }) as Record<string, PresetDoc>
+  const serveProfile = { ...profile, presets: { allowed: ['serve'] } } as unknown as ResolvedProfile
+  const row = (platform: Parameters<typeof adminSecurityStatus>[1], presets: Record<string, PresetDoc>) =>
+    adminSecurityStatus(serveProfile, platform, presets, [], noWorkspaces).presetPolicies[0]
+  // Linux has no listener: the session falls back to the closed L1 network, and so does the table.
+  const linux = { ...windowsPlatform, os: 'linux' } as Parameters<typeof adminSecurityStatus>[1]
+  expect(row(linux, serving())).toMatchObject({ networkMode: 'deny' })
+  // On Windows the write restriction refuses it: never the open network of the partial contract.
+  const windows = row(windowsPlatform, serving('write-restricted'))
+  expect(windows).toMatchObject({ networkMode: 'loopback-serve' })
+  expect(windows).not.toHaveProperty('boundary')
+  // A macOS Host serves it.
+  const mac = { ...windowsPlatform, os: 'darwin' } as Parameters<typeof adminSecurityStatus>[1]
+  expect(row(mac, serving())).toMatchObject({ networkMode: 'loopback-serve' })
+})

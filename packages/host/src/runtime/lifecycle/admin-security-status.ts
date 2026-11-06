@@ -5,11 +5,11 @@ import { presetProvider } from '@agnes/host-common/presets/provider'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
-import { normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
 import type { PlatformBackend } from '@agnes/host-infrastructure/adapters/platform'
 import type { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
 import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { RuntimeSecurityStatus } from '@agnes/protocol'
+import { requestedSandboxConfig } from '../assemble/workspace-readiness.js'
 import { windowsPolicyBoundary } from '../assemble/workspace-windows-acl.js'
 import type { HostSession } from './host.js'
 
@@ -26,7 +26,7 @@ function securityPolicy(
   id: string,
   presets: Record<string, PresetDoc>,
   profile: ResolvedProfile,
-  target: { target?: 'win32' },
+  adapters: Readonly<{ platform: { os: string }; transport?: unknown }>,
   permission?: Permission,
 ) {
   const providerId = profile.sandbox?.provider ?? 'local'
@@ -35,7 +35,8 @@ function securityPolicy(
     limits: profile.limits,
     ...(permission ? { permission } : {}),
   }).doc
-  const sandbox = normalizeSandboxStaticConfig(doc, target)
+  // The config a session on this Host runs under, including a loopback request it cannot serve.
+  const sandbox = requestedSandboxConfig(doc, adapters, providerId === RELEASE_DEFAULTS.sandboxProvider)
   // On a local Windows Host the opted-in levels run under the partial contract: reads and network open.
   const boundary = windowsPolicyBoundary(sandbox, providerId, RELEASE_DEFAULTS.sandboxProvider)
   return {
@@ -62,10 +63,12 @@ export function adminSecurityStatus(
   presets: Record<string, PresetDoc>,
   sessions: Iterable<HostSession>,
   workspaces: SessionWorkspaceRuntimeTable,
+  /** The Host's remote transport, when commands run on another machine. */
+  transport?: unknown,
 ): RuntimeSecurityStatus {
   const l1 = platform.capability('sandbox.l1')
-  // The same config target the workspace runtime normalizes with on a Windows Host.
-  const target = platform.os === 'win32' ? ({ target: 'win32' } as const) : {}
+  // The same Host facts the workspace runtime derives its sandbox config from.
+  const target = { platform, ...(transport === undefined ? {} : { transport }) }
   return {
     platform: {
       os: platform.os,

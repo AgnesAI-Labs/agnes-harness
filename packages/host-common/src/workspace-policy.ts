@@ -21,8 +21,11 @@ export type SandboxStaticConfig = Readonly<{
   loopbackServe?: boolean
   /**
    * Present only when the plan is built for a Windows host. `write-restricted` accepts the ACL-based
-   * partial write restriction for commands; `require-full` (also the value for an omitted setting)
-   * accepts only a complete isolation backend.
+   * partial write restriction for commands; with it, `required`, explicit deny paths and network
+   * restrictions are refused, never downgraded to that restriction. `require-full` (also the value
+   * for an omitted setting) never accepts the restriction: Windows has no complete isolation backend,
+   * so `on_unavailable` decides as before. `allow-if-unimplemented` keeps running commands directly
+   * without isolation, `deny` refuses every command, and `required` refuses the workspace.
    */
   windowsMode?: WindowsMode
 }>
@@ -48,7 +51,22 @@ export type WorkspacePolicyPlan = Readonly<{
     loopbackServe?: boolean
     fullAccess?: boolean
   }>
+  /**
+   * Set only on a plan narrowed by `intersectWorkspacePlan`: whether it denies anything beyond the
+   * default protected paths. The narrowed `staticConfig.denyPaths` lists every deny rule, defaults
+   * included, so it cannot tell. See `planExplicitDeny`.
+   */
+  explicitDeny?: boolean
 }>
+
+/**
+ * Whether a plan carries an explicit deny beyond the default protected paths: its configured
+ * `deny_paths`, or, for a narrowed plan, a deny of the delegating policy over a path this
+ * session's own policy allows.
+ */
+export function planExplicitDeny(plan: WorkspacePolicyPlan): boolean {
+  return plan.explicitDeny ?? plan.staticConfig.denyPaths.length > 0
+}
 
 const fault = (reason: string): Error & { code: 'E_SANDBOX_WORKSPACE' } =>
   Object.assign(new Error(`E_SANDBOX_WORKSPACE: ${reason}`), { code: 'E_SANDBOX_WORKSPACE' as const })
@@ -439,11 +457,20 @@ export function intersectWorkspacePlan(plan: WorkspacePolicyPlan, parent: FsPoli
     networkAllow,
   }
   const { fullAccess: _fullAccess, ...backend } = plan.backendOptions
+  const explicitDeny =
+    planExplicitDeny(plan) ||
+    parent.rules.some(
+      (rule) =>
+        rule.effect === 'deny' &&
+        decideFsPath(plan.policy, rule.path, { caseSensitive: plan.semantics.caseSensitive }).effect ===
+          'allow',
+    )
   return {
     ...plan,
     policy,
     staticConfig,
     staticConfigHash: sandboxStaticConfigHash(staticConfig),
+    explicitDeny,
     backendOptions: {
       ...backend,
       network: 'deny',

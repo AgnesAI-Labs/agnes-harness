@@ -12,6 +12,7 @@ import type { CompositionBinding } from '@agnes/host-providers/profile/compositi
 import { applicationConsentSnapshot } from '@agnes/package-manager'
 import { parseAgentRef } from '@agnes/protocol'
 import type { Host, HostSession } from '../lifecycle/host.js'
+import { roleSandboxConstraint } from '../sessions/role-policy.js'
 import type { CreateSessionOptions } from '../sessions/session.js'
 import type { createAgentResolver, sessionAdmission } from './agent-plan.js'
 import type { CompositionContainer } from './composition-selection.js'
@@ -129,19 +130,11 @@ export function createRoleChildren(deps: {
         throw new HostError('E_PRESET_UNSUPPORTED', 'Parent workspace policy snapshot is unavailable')
       const filesystem = structuredClone(sandbox.policy)
       if (sandbox.network === 'allow') filesystem.networkAllow = ['*']
-      const enforcement = parent.d.runtime.enforcement()
-      // A file fence is not an OS boundary. Preserve confinement unless Host already admitted
-      // this local file-only session through the existing explicit unconfined fallback; the
-      // Windows write restriction names its boundary and is never that fallback.
-      const unconfined =
-        sandbox.local &&
-        sandbox.allowsUnconfined === true &&
-        enforcement.level === 'partial' &&
-        enforcement.boundary === undefined &&
-        enforcement.scope.length === 1 &&
-        enforcement.scope[0] === 'file'
-      const enforced =
-        parentAuthority?.sandboxRequired === true || (enforcement.level !== 'none' && !unconfined)
+      const constraint = roleSandboxConstraint({
+        sandbox,
+        enforcement: parent.d.runtime.enforcement(),
+        parentSandboxRequired: parentAuthority?.sandboxRequired === true,
+      })
       const [trigger] =
         triggerSeq === undefined
           ? []
@@ -214,7 +207,7 @@ export function createRoleChildren(deps: {
         humanApprovals,
         ...(delegatedFullAccess ? { delegatedFullAccess: true as const } : {}),
         filesystem,
-        sandboxRequired: enforced,
+        ...constraint,
         parentPolicy:
           parentPreset.approval.policy === 'full-access'
             ? 'default'
