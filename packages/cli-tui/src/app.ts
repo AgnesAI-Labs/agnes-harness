@@ -1,6 +1,7 @@
 import type { ContentBlock, UITimeline } from '@agnes/protocol'
 import { DEFAULT_BRANDING, PreviewMerger, type Session } from '@agnes/sdk'
 import { createAnsi } from './ansi.js'
+import { AppDialogs } from './app-dialogs.js'
 import type { TuiAppOptions } from './app-options.js'
 import { ApprovalSettle } from './approval-settle.js'
 import { BangShell, isBangLine } from './bang-shell.js'
@@ -9,7 +10,7 @@ import { BusyInput, cancelTurn, textOf } from './busy-input.js'
 import { CardFocus } from './card-focus.js'
 import { pasteClipboardImage } from './clipboard-image.js'
 import { applyCommandResult } from './command-result.js'
-import { completeToken, createProviderSetup, opensSwitch, runSlash, slashCommandFor } from './commands.js'
+import { completeToken, opensSwitch, runSlash, slashCommandFor } from './commands.js'
 import { type Component, escapeControl, VStack } from './component.js'
 import { Loader } from './components/loader.js'
 import { DraftStash } from './draft-stash.js'
@@ -40,7 +41,7 @@ import { PromptHistory } from './prompt-history.js'
 import { RawView } from './raw-view.js'
 import { Renderer, type ScreenRenderer } from './renderer.js'
 import type { TuiResourceController } from './resource-controller.js'
-import { type InputDialog, rootInput } from './root-input.js'
+import { rootInput } from './root-input.js'
 import { rootRender } from './root-layout.js'
 import {
   applySwitch,
@@ -139,7 +140,7 @@ export class TuiApp {
   readonly cardFocus: CardFocus
   readonly modelPicker: ModelPicker
   readonly sessionPicker: SessionPicker
-  readonly providerSetup: ReturnType<typeof createProviderSetup>
+  readonly dialogs: AppDialogs
   readonly packages: PackageController
   readonly localCommandView: (command: string, output: string, quiet?: boolean) => Component
   // Streamed text is never in the projected timeline: a streaming node stays empty there, and the
@@ -376,7 +377,7 @@ export class TuiApp {
       onChoose: (choice) => void chooseSession(this, choice),
       changed: () => this.stopped || this.renderer.requestRender(),
     })
-    this.providerSetup = createProviderSetup(this, ansi, locale)
+    this.dialogs = new AppDialogs(this, ansi, locale)
     this.usagePanel = new UsagePanel({
       ansi,
       locale,
@@ -423,14 +424,7 @@ export class TuiApp {
     // A pending approval takes every keystroke, so the dialogs give up their rows until it is answered
     // and then reappear unchanged. Transient command dialogs belong immediately above the footer, not in
     // the conversation; closed ones render zero rows, preserving the normal rule/editor/status adjacency.
-    const dialogs: readonly (Component & InputDialog)[] = [
-      this.modelPicker,
-      this.themePicker,
-      this.sessionPicker,
-      this.providerSetup,
-      this.usagePanel,
-      this.statusLine,
-    ]
+    const dialogs = this.dialogs.inputs(this)
     const root = new VStack([
       this.timeline,
       this.live,
@@ -864,7 +858,7 @@ export class TuiApp {
         usagePanel: this.usagePanel,
         modelPicker: this.modelPicker,
         sessionPicker: this.sessionPicker,
-        providerSetup: this.providerSetup,
+        providerSetup: this.dialogs.providerSetup,
         editor: this.editor,
         busyInput: this.busyInput,
         appendLocal: (view) => this.timeline.appendLocal(this.session.id, view),
