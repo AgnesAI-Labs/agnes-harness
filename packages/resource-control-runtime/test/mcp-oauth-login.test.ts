@@ -125,13 +125,23 @@ describe('MCP OAuth sign-in', () => {
     expect(login.expectedEpoch).toBe(3)
   })
 
-  it('begin reuses the stored DCR client when the redirect URI matches', async () => {
-    const server = await start()
+  it('begin registers a new client even when a stored one has the same redirect URI', async () => {
+    // An authorization server may have forgotten the client it registered; a new registration is
+    // cheap, so every sign-in makes one.
+    const server = await start({ registration: { clientId: 'new-client' } })
+    const summary: McpOAuthSummary = { ...EMPTY, client: { clientId: 'old-client', redirectUri: REDIRECT } }
+    const login = started(await begin(server, { summary }))
+
+    expect(login.client).toEqual({ clientId: 'new-client' })
+    expect(server.paths()).toContain('/register')
+  })
+
+  it('begin keeps the stored client when the server no longer registers clients', async () => {
+    const server = await start({ noRegistration: true })
     const summary: McpOAuthSummary = { ...EMPTY, client: { clientId: 'kept-client', redirectUri: REDIRECT } }
     const login = started(await begin(server, { summary }))
 
     expect(login.client).toEqual({ clientId: 'kept-client' })
-    expect(server.paths()).not.toContain('/register')
   })
 
   it('begin registers again when the stored client was registered for another redirect URI', async () => {
@@ -225,7 +235,10 @@ describe('MCP OAuth sign-in', () => {
   })
 
   it('a reused DCR client takes its secret and method from the stored record', async () => {
-    const server = await start({ authMethods: ['client_secret_post', 'client_secret_basic'] })
+    const server = await start({
+      authMethods: ['client_secret_post', 'client_secret_basic'],
+      noRegistration: true,
+    })
     const store = createMemoryOAuthStore()
     store.seed(SERVER_ID, {
       version: 2,
