@@ -100,7 +100,7 @@ jobs:
         if: runner.os != 'Linux'
         # Files run alone below on Windows are held out here.
         env:
-          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts,packages/cli/test/windows-runtime.test.ts' || '' }}
+          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts,packages/cli/test/windows-runtime.test.ts,packages/host-infrastructure/test/adapters/powershell.test.ts' || '' }}
         run: pnpm exec vitest run --project fast --maxWorkers=2 ${{ matrix.shard != '' && format('--shard={0}', matrix.shard) || '' }}
       # Keep this native Windows gate on PRs after moving real-process tests to the heavy tier.
       # Other events already execute it once in Windows heavy shard 6.
@@ -128,6 +128,11 @@ jobs:
       - name: Windows conversation MCP registration
         if: runner.os == 'Windows' && matrix.shard == '2/6'
         run: pnpm exec vitest run packages/daemon/test/conversation-mcp.e2e.test.ts --maxWorkers=1
+      # These metadata cases invoke the real system shell under its original 10s probe deadline.
+      - name: Windows PowerShell metadata
+        if: runner.os == 'Windows' && matrix.shard == '3/6'
+        env: { AGNES_POWERSHELL_PROBE_TRACE: '1' }
+        run: pnpm exec vitest run packages/host-infrastructure/test/adapters/powershell.test.ts --maxWorkers=1
       # A fresh MSVC invocation includes first-use toolchain setup. Prepare the real compiler
       # environment before the original 30s cases, then give compilation its own test worker.
       - name: Windows native compiler environment

@@ -75,6 +75,7 @@ const owners = [
   ['Windows Skill install requests', 'Windows', '2/6', false],
   ['Windows daemon startup directories', 'Windows', '1/6', false],
   ['Windows conversation MCP registration', 'Windows', '2/6', false],
+  ['Windows PowerShell metadata', 'Windows', '3/6', false],
   ['Windows native compiler environment', 'Windows', '6/6', false],
   ['Windows portable native runtime', 'Windows', '6/6', false],
   ['verify local delivery with Windows PowerShell 5.1', 'Windows', '1/6', false],
@@ -122,7 +123,14 @@ it('runs story once on Linux with actual sandbox and shell prerequisites', () =>
 it('runs fresh Windows native compilation only in its isolated owner step', () => {
   const fast = steps.get('test fast tier (includes Protocol conformance)') ?? ''
   const held = /AGNES_TEST_EXCLUDE:.*runner\.os == 'Windows' && '([^']+)'/.exec(fast)?.[1].split(',') ?? []
-  expect(held).toContain('packages/cli/test/windows-runtime.test.ts')
+  for (const [file, step] of [
+    ['packages/cli/test/windows-runtime.test.ts', 'Windows portable native runtime'],
+    ['packages/host-infrastructure/test/adapters/powershell.test.ts', 'Windows PowerShell metadata'],
+  ]) {
+    expect(held).toContain(file)
+    expect(steps.get(step)).toContain(`pnpm exec vitest run ${file} --maxWorkers=1`)
+    expect(steps.get(step)).not.toContain('--shard=')
+  }
   const compiler = steps.get('Windows native compiler environment') ?? ''
   expect(compiler).toContain('prepare-windows-msvc.ps1')
   const runtime = steps.get('Windows portable native runtime') ?? ''
