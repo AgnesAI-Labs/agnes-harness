@@ -142,6 +142,8 @@ For stdio, use `--stdio EXECUTABLE` and repeat `--arg VALUE` as needed. Do not p
 
 Use existing secret references: `--secret-env NAME=secret://namespace/name` for stdio, or `--bearer-ref secret://namespace/name` and `--header-ref x-api-key=secret://namespace/name` for HTTP/SSE. Keep real keys out of command lines, screenshots, and documentation. Repeat `--allow-tool TOOL_NAME` to restrict allowed tools.
 
+For an HTTP/SSE server that signs in with OAuth, use `--oauth`. If you already have a client ID for the server, add `--oauth-client-id ID`; if that client also has a secret, store the secret as a credential and add `--oauth-client-secret-ref secret://namespace/name`. The secret reference needs `--oauth-client-id`, and the OAuth flags cannot be combined with `--bearer-ref` or `--header-ref`. In the Web wizard, the OAuth part has the same two optional fields, and the client secret is entered as a `secret://` reference, never as the secret itself. The client secret is read only by the daemon when it completes a sign-in; it does not appear in the server definition, the operation journal or logs. After saving, sign in from the server's page in the Web MCP page ("Authorize").
+
 <a id="mcp-工具如何提供给模型"></a>
 
 ## How MCP tools reach the model

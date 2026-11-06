@@ -78,6 +78,7 @@ export const MCP_FORM_LIMITS = {
   toolsMaxItems: schemaNumber('McpToolPolicy.allow', 'maxItems'),
   urlMaxLength: schemaNumber('McpHttpTransport.url', 'maxLength'),
   workspaceMaxLength: schemaNumber('McpServerDefinitionInput.workspacePath', 'maxLength'),
+  oauthClientIdMaxLength: schemaNumber('McpOAuthSecretBinding.staticClientId', 'maxLength'),
 } as const
 
 /** Shared UI schema validation keeps the existing managed MCP form/confirmation DOM intact. */
@@ -104,6 +105,7 @@ export type McpFormFieldId =
   | 'mcp-tools'
   | 'mcp-token-env'
   | 'mcp-workspace'
+  | 'mcp-oauth-secret'
 
 export type McpFormFieldIssue = Readonly<{
   field: McpFormFieldId
@@ -122,6 +124,8 @@ export type McpFormFieldSnapshot = Readonly<{
   toolsText: string
   workspacePath?: string
   sandboxProfile?: string
+  /** OAuth client secret reference; the client ID itself travels in `secretText`. */
+  oauthSecretRef?: string
 }>
 
 const URL_CREDENTIAL_QUERY = /(?:token|secret|password|api[_-]?key|credential)/i
@@ -221,6 +225,17 @@ function secretIssues(secretKind: string, secretText: string, t: LocaleTranslato
   return []
 }
 
+/** A client secret is a reference, and only for a client ID the user gave. */
+function oauthSecretIssues(snapshot: McpFormFieldSnapshot, t: LocaleTranslator): McpFormFieldIssue[] {
+  const reference = snapshot.oauthSecretRef ?? ''
+  if (snapshot.secretKind !== 'oauth' || !reference) return []
+  if (!matchesField('secretRef', reference))
+    return [{ field: 'mcp-oauth-secret', message: t('validation.secret-ref') }]
+  if (!snapshot.secretText)
+    return [{ field: 'mcp-oauth-secret', message: t('validation.oauth-secret-client') }]
+  return []
+}
+
 function toolIssues(toolsText: string, t: LocaleTranslator): McpFormFieldIssue[] {
   const tools = lines(toolsText)
   if (tools.length > MCP_FORM_LIMITS.toolsMaxItems)
@@ -300,6 +315,7 @@ export function mcpFormIssues(
   if (!snapshot.secretText && !['none', 'oauth'].includes(snapshot.secretKind) && options.requireFilled)
     issues.push({ field: 'mcp-secret', message: t('error.form.secret') })
   else issues.push(...secretIssues(snapshot.secretKind, snapshot.secretText, t))
+  issues.push(...oauthSecretIssues(snapshot, t))
   issues.push(...toolIssues(snapshot.toolsText, t))
   return issues
 }

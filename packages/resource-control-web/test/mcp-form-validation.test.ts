@@ -1,6 +1,7 @@
 import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { describe, expect, it } from 'vitest'
 import { deriveMcpName, formatMcpCommand, parseMcpCommand } from '../src/mcp-command.js'
+import { oauthSecretBinding } from '../src/mcp-form.js'
 import { MCP_FORM_LIMITS, type McpFormFieldSnapshot, mcpFormIssues } from '../src/mcp-form-validation.js'
 import { localScriptWorkspace, workspaceContains } from '../src/mcp-workspace.js'
 
@@ -206,5 +207,39 @@ describe('an OAuth sign-in needs no saved secret', () => {
     const remote = { ...http('https://mcp.example.com/mcp'), secretKind: 'oauth' }
     expect(messages(remote, submit)).toEqual([])
     expect(messages({ ...remote, secretText: 'client-123' }, submit)).toEqual([])
+  })
+})
+
+describe('MCP form OAuth client fields', () => {
+  const oauth = (secretText: string, oauthSecretRef: string): McpFormFieldSnapshot => ({
+    ...http('https://example.com/mcp'),
+    secretKind: 'oauth',
+    secretText,
+    oauthSecretRef,
+  })
+
+  it('oauth secret ref goes into clientSecretRef', () => {
+    expect(oauthSecretBinding('c', 'secret://x/y')).toEqual({
+      kind: 'oauth',
+      staticClientId: 'c',
+      clientSecretRef: 'secret://x/y',
+    })
+    expect(oauthSecretBinding('c', '')).toEqual({ kind: 'oauth', staticClientId: 'c' })
+    expect(oauthSecretBinding('', '')).toEqual({ kind: 'oauth' })
+  })
+
+  it('the client ID limit is the protocol schema limit', () => {
+    expect(MCP_FORM_LIMITS.oauthClientIdMaxLength).toBe(512)
+  })
+
+  it('a client secret must be a reference and needs its client ID', () => {
+    expect(mcpFormIssues(oauth('c', 'secret://x/y'), submit)).toEqual([])
+    expect(mcpFormIssues(oauth('', ''), submit)).toEqual([])
+    expect(mcpFormIssues(oauth('c', 'plain-secret'), live).map((issue) => issue.field)).toEqual([
+      'mcp-oauth-secret',
+    ])
+    expect(mcpFormIssues(oauth('', 'secret://x/y'), live).map((issue) => issue.field)).toEqual([
+      'mcp-oauth-secret',
+    ])
   })
 })
