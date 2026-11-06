@@ -64,6 +64,12 @@ afterEach(() => {
 
 const code = (expected: string) => expect.objectContaining({ code: expected })
 const sddl = (path: string) => inspectWindowsAcl(path).securityDescriptor
+
+/** What a fingerprint covers, in readable form: a mismatch shows both descriptors. */
+const described = (path: string) => {
+  const { identity, securityDescriptor } = inspectWindowsAcl(path)
+  return { identity, securityDescriptor }
+}
 const directory = (...parts: string[]) => {
   const path = join(base, ...parts)
   mkdirSync(path, { recursive: true })
@@ -113,7 +119,7 @@ describe.skipIf(process.platform !== 'win32')('Windows execution authority on NT
   it('grants once, keeps the workspace grant standing after close and repairs to the original', async () => {
     const workspace = directory('work')
     writeFileSync(join(workspace, 'file.txt'), 'x')
-    const original = inspectWindowsAcl(workspace).fingerprint
+    const original = described(workspace)
     const authority = await authorityFor()
     const lease = await authority.acquire(writeLease(workspace))
     const claim = claimWindowsLaunchPermit(await lease.prepareLaunch())
@@ -126,12 +132,12 @@ describe.skipIf(process.platform !== 'win32')('Windows execution authority on NT
     expect(sddl(workspace)).toContain(workspaceSid)
     expect(await authority.inspect(workspace)).toMatchObject({ state: 'active' })
     expect((await repairFully(authority, workspace)).state).toBe('revoked')
-    expect(inspectWindowsAcl(workspace).fingerprint).toBe(original)
+    expect(described(workspace)).toEqual(original)
   })
 
   it('an interrupted grant needs attention after a restart and repairs to the original', async () => {
     const workspace = directory('work')
-    const original = inspectWindowsAcl(workspace).fingerprint
+    const original = described(workspace)
     const files = new FaultyFiles()
     const dying: WindowsAclNative = {
       ...realNative,
@@ -153,12 +159,12 @@ describe.skipIf(process.platform !== 'win32')('Windows execution authority on NT
     // The result was never recorded, so the deny and label may remain for the user to check.
     expect(['revoked', 'needs-attention']).toContain(repaired.state)
     expect(sddl(workspace)).not.toMatch(/S-1-4-/)
-    if (repaired.state === 'revoked') expect(inspectWindowsAcl(workspace).fingerprint).toBe(original)
+    if (repaired.state === 'revoked') expect(described(workspace)).toEqual(original)
   })
 
   it('a second Host using the grant blocks repair until it is proven gone', async () => {
     const workspace = directory('work')
-    const original = inspectWindowsAcl(workspace).fingerprint
+    const original = described(workspace)
     const host = otherHost()
     const other = await authorityFor({ pid: host.pid })
     const theirs = await other.acquire(writeLease(workspace, 'session-other'))
@@ -174,7 +180,7 @@ describe.skipIf(process.platform !== 'win32')('Windows execution authority on NT
     expect((await repairFully(ours, workspace)).issues[0]?.reason).toMatch(/^in-use/)
     await host.stop()
     expect((await repairFully(ours, workspace)).state).toBe('revoked')
-    expect(inspectWindowsAcl(workspace).fingerprint).toBe(original)
+    expect(described(workspace)).toEqual(original)
     // The gone Host's temp is released by the next grant transaction, not by its age.
     await ours.acquire(writeLease(directory('elsewhere')))
     expect(() => lstatSync(theirs.tempRoot ?? '')).toThrow()
@@ -183,7 +189,7 @@ describe.skipIf(process.platform !== 'win32')('Windows execution authority on NT
   it('nested roots keep their own grants: repairing the inner one leaves the outer one working', async () => {
     const outer = directory('work')
     const inner = directory('work', 'inner')
-    const originals = [inspectWindowsAcl(outer).fingerprint, inspectWindowsAcl(inner).fingerprint]
+    const originals = [described(outer), described(inner)]
     const authority = await authorityFor()
     await (await authority.acquire(writeLease(outer))).close()
     await (await authority.acquire(writeLease(inner))).close()
@@ -193,13 +199,13 @@ describe.skipIf(process.platform !== 'win32')('Windows execution authority on NT
     claimWindowsLaunchPermit(await lease.prepareLaunch()).abandoned()
     await lease.close()
     expect((await repairFully(authority, outer)).state).toBe('revoked')
-    expect([inspectWindowsAcl(outer).fingerprint, inspectWindowsAcl(inner).fingerprint]).toEqual(originals)
+    expect([described(outer), described(inner)]).toEqual(originals)
   })
 
   it('nested roots granted inner first: the outer grant and its repair leave the inner one working', async () => {
     const outer = directory('work')
     const inner = directory('work', 'inner')
-    const originals = [inspectWindowsAcl(outer).fingerprint, inspectWindowsAcl(inner).fingerprint]
+    const originals = [described(outer), described(inner)]
     // The Host runs the tree walks on a worker thread; so does this case.
     const worker = createWindowsAclWorker()
     try {
@@ -221,7 +227,7 @@ describe.skipIf(process.platform !== 'win32')('Windows execution authority on NT
       await innerLease.close()
       await again.close()
       expect((await repairFully(authority, inner)).state).toBe('revoked')
-      expect([inspectWindowsAcl(outer).fingerprint, inspectWindowsAcl(inner).fingerprint]).toEqual(originals)
+      expect([described(outer), described(inner)]).toEqual(originals)
     } finally {
       await worker.close()
     }

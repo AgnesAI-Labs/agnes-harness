@@ -274,13 +274,18 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
     setNullDacl(nullRoot)
     expect(() => inspectWindowsAcl(nullRoot)).toThrow(code('E_ACL_NULL_DACL'))
 
+    // An empty DACL grants nothing, and every open asks for SYNCHRONIZE besides what it names, so not
+    // even the owner can open such an object to read its descriptor: it is refused for missing
+    // rights, never taken for a NULL DACL.
+    const emptyTree = join(base, 'empty-tree')
+    mkdirSync(emptyTree)
+    writeFileSync(join(emptyTree, 'empty.txt'), '')
+    icacls(join(emptyTree, 'empty.txt'), '/inheritance:r')
+    expect(() => inspectWindowsAcl(emptyTree)).toThrow(
+      expect.objectContaining({ code: 'EACCES', path: join(realpathSync.native(emptyTree), 'empty.txt') }),
+    )
     const root = join(base, 'root')
     mkdirSync(root)
-    writeFileSync(join(root, 'empty.txt'), '')
-    icacls(join(root, 'empty.txt'), '/inheritance:r')
-    const empty = inspectWindowsAcl(root).descendants.find(({ path }) => basename(path) === 'empty.txt')
-    expect(empty?.securityDescriptor).toMatch(/D:P(?!\()/)
-    expect(empty?.securityDescriptor).not.toContain('NO_ACCESS_CONTROL')
     writeFileSync(join(root, 'null.txt'), '')
     setNullDacl(join(root, 'null.txt'))
     expect(() => inspectWindowsAcl(root)).toThrow(
@@ -313,7 +318,7 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
     const sid = writeSid()
     const { result, root: change } = grant(before, sid)
     expect(result.failures).toEqual([])
-    expect(result.complete).toBe(true)
+    expect(result.complete, JSON.stringify(result.failures)).toBe(true)
     expect(change?.added).toHaveLength(3)
     expect(change?.added).toEqual(expect.arrayContaining([...windowsAclGrantEntries(sid)]))
     expect(change?.removed).toEqual([])
@@ -357,8 +362,9 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
       removableChanges: change?.added ?? [],
     })
     expect(restored.failures).toEqual([])
-    expect(restored.complete).toBe(true)
+    expect(restored.complete, JSON.stringify(restored.failures)).toBe(true)
     const after = inspectWindowsAcl(root)
+    expect(after.securityDescriptor).toBe(before.securityDescriptor)
     expect(after.fingerprint).toBe(before.fingerprint)
     expect(after.securityDescriptor).not.toContain(sid)
     const now = new Map(after.descendants.map((item) => [key(item), item]))
@@ -370,7 +376,7 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
     const root = workspace()
     const first = grant(inspectWindowsAcl(root), writeSid())
     const second = grant(inspectWindowsAcl(root), writeSid())
-    expect(second.result.complete).toBe(true)
+    expect(second.result.complete, JSON.stringify(second.result.failures)).toBe(true)
     // The deny and the label already stood, so the second grant only added its own allow entry.
     expect(second.root?.added.map(({ kind }) => kind)).toEqual(['allow'])
     const restored = restoreWindowsAclGrant({
@@ -379,7 +385,7 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
       expectedCurrentFingerprint: second.root?.afterFingerprint ?? '',
       removableChanges: second.root?.added ?? [],
     })
-    expect(restored.complete).toBe(true)
+    expect(restored.complete, JSON.stringify(restored.failures)).toBe(true)
     const after = inspectWindowsAcl(root)
     expect(after.fingerprint).toBe(first.root?.afterFingerprint)
   })
@@ -394,7 +400,7 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
     expect(before.descendants).toEqual([])
     const sid = writeSid()
     const { result, root: change } = grant(before, sid)
-    expect(result.complete).toBe(true)
+    expect(result.complete, JSON.stringify(result.failures)).toBe(true)
     // One descriptor serves both names, so the grant is visible through the outside name too.
     expect(execFileSync('icacls', [outside], { encoding: 'utf8' })).toContain(sid)
     const restored = restoreWindowsAclGrant({
@@ -403,7 +409,7 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
       expectedCurrentFingerprint: change?.afterFingerprint ?? '',
       removableChanges: change?.added ?? [],
     })
-    expect(restored.complete).toBe(true)
+    expect(restored.complete, JSON.stringify(restored.failures)).toBe(true)
     expect(execFileSync('icacls', [outside], { encoding: 'utf8' })).not.toContain(sid)
   })
 
@@ -412,7 +418,10 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
     mkdirSync(root)
     setPlaceholderTag(root)
     try {
-      expect(statSync(root).isDirectory()).toBe(true)
+      // Node's stat follows the reparse point, which no filter handles here; fsutil reads the tag.
+      expect(execFileSync('fsutil', ['reparsepoint', 'query', root], { encoding: 'utf8' })).toMatch(
+        /0x0*234\b/i,
+      )
       expect(readWindowsObjectIdentity(root)).toMatchObject({
         volumeId: expect.any(String),
         fileId: expect.any(String),
@@ -436,27 +445,38 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
       const walk = worker.inspect(root).finally(() => {
         done = true
       })
-      const refusals: string[] = []
+      walk.catch(() => undefined)
+      // Each attempt in order: 'renamed', or the code that refused it. The worker takes its holds a
+      // moment after the request and the result arrives a moment after it lets them go, so a rename
+      // may succeed at either end; none may succeed between two refused ones.
+      const attempts = { root: [] as string[], parent: [] as string[] }
       Atomics.wait(pause, 0, 0, 20)
       while (!done) {
-        for (const [from, to] of [
-          [root, join(base, 'held', 'moved')],
-          [join(base, 'held'), join(base, 'held-moved')],
+        for (const [name, from, to] of [
+          ['root', root, join(base, 'held', 'moved')],
+          ['parent', join(base, 'held'), join(base, 'held-moved')],
         ] as const) {
           try {
             renameSync(from, to)
             renameSync(to, from)
-            if (!done) throw new Error(`${from} was renamed while it was held`)
+            attempts[name].push('renamed')
           } catch (error) {
             const found = (error as { code?: string }).code
             if (found !== 'EBUSY' && found !== 'EPERM' && found !== 'EACCES') throw error
-            refusals.push(found)
+            attempts[name].push(found)
           }
         }
         await new Promise((resolve) => setTimeout(resolve, 5))
       }
       expect((await walk).inheritedDescendants).toBeGreaterThan(3600)
-      expect(refusals.length).toBeGreaterThan(0)
+      const held = (list: string[]) =>
+        list.slice(
+          list.findIndex((item) => item !== 'renamed'),
+          list.findLastIndex((item) => item !== 'renamed') + 1,
+        )
+      expect([...attempts.root, ...attempts.parent].some((item) => item !== 'renamed')).toBe(true)
+      expect(held(attempts.root), JSON.stringify(attempts)).not.toContain('renamed')
+      expect(held(attempts.parent), JSON.stringify(attempts)).not.toContain('renamed')
     } finally {
       await worker.close()
     }
@@ -470,7 +490,7 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
       expect(before).toEqual(inspectWindowsAcl(root))
       const sid = writeSid()
       const result = await worker.apply({ before, grantId: 'grant-1', writeSid: sid })
-      expect(result.complete).toBe(true)
+      expect(result.complete, JSON.stringify(result.failures)).toBe(true)
       expect(result.ownedFingerprint).toBe(inspectWindowsAcl(root).ownedFingerprint)
       const change = result.changes.find((item) => key(item) === key(before))
       const restored = await worker.restore({
@@ -479,7 +499,8 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
         expectedCurrentFingerprint: change?.afterFingerprint ?? '',
         removableChanges: change?.added ?? [],
       })
-      expect(restored.complete).toBe(true)
+      expect(restored.complete, JSON.stringify(restored.failures)).toBe(true)
+      expect(inspectWindowsAcl(root).securityDescriptor).toBe(before.securityDescriptor)
       expect(inspectWindowsAcl(root).fingerprint).toBe(before.fingerprint)
     } finally {
       await worker.close()
@@ -495,7 +516,7 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
     const innerGranted = inspectWindowsAcl(inner)
     const outerBefore = inspectWindowsAcl(outer)
     const { result, root: outerChange } = grant(outerBefore, writeSid())
-    expect(result.complete).toBe(true)
+    expect(result.complete, JSON.stringify(result.failures)).toBe(true)
     const nested = inspectWindowsAcl(inner)
     expect(nested.fingerprint).not.toBe(innerGranted.fingerprint)
     expect(nested.ownedFingerprint).toBe(innerGranted.ownedFingerprint)
@@ -512,6 +533,7 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
       expectedCurrentFingerprint: inspectWindowsAcl(inner).fingerprint,
       removableChanges: innerChange?.added ?? [],
     })
+    expect(inspectWindowsAcl(inner).securityDescriptor).toBe(innerBefore.securityDescriptor)
     expect(inspectWindowsAcl(inner).fingerprint).toBe(innerBefore.fingerprint)
   })
 

@@ -45,13 +45,14 @@ describe.skipIf(process.platform !== 'win32')('broker native process launch', ()
       spawnRestricted(...args: unknown[]): RestrictedTarget
     }
     const environment = `SystemRoot=${process.env.SystemRoot}\0\0`
-    const launch = (change: Record<number, unknown> = {}, count = 6) =>
+    // (application, command line, cwd, environment block, write SIDs, read-only, isolation SID)
+    const launch = (change: Record<number, unknown> = {}, count = 7) =>
       native.spawnRestricted(
-        ...[process.execPath, `"${process.execPath}"`, process.cwd(), environment, [], true]
+        ...[process.execPath, `"${process.execPath}"`, process.cwd(), environment, [], true, 'S-1-4-9']
           .map((value, index) => (index in change ? change[index] : value))
           .slice(0, count),
       )
-    expect(() => launch({}, 5)).toThrow()
+    expect(() => launch({}, 6)).toThrow()
     for (const change of [
       { 0: 'node.exe' },
       { 1: '' },
@@ -65,6 +66,10 @@ describe.skipIf(process.platform !== 'win32')('broker native process launch', ()
       { 4: ['S-1-4-1', 'S-1-4-2', 'S-1-4-3'], 5: false },
       { 4: 'S-1-4-1', 5: false },
       { 5: 'yes' },
+      { 6: '' },
+      { 6: 'S-1-5-18' },
+      { 6: 'S-1-04-9' },
+      { 4: ['S-1-4-9'], 5: false },
     ])
       expect(() => launch(change)).toThrow()
 

@@ -184,6 +184,18 @@ async function readJson<T>(path: string, timeout = 30_000): Promise<T> {
 
 type Resident = { pid: number; child: number; temp: string }
 
+/** Names the request a JSON-RPC refusal answered and keeps its data, which says why. */
+async function answered<T>(request: string, call: () => Promise<T>): Promise<T> {
+  try {
+    return await call()
+  } catch (error) {
+    const { message, data } = error as { message?: string; data?: unknown }
+    throw new Error(`${request}: ${message ?? String(error)} ${JSON.stringify(data ?? null)}`, {
+      cause: error,
+    })
+  }
+}
+
 for (const version of ['5.1', '7'] as const)
   describe.skipIf(process.platform !== 'win32')(
     `Windows write restriction in a detached daemon with PowerShell ${version}`,
@@ -205,7 +217,9 @@ for (const version of ['5.1', '7'] as const)
       }, 120_000)
 
       async function newSession(permission: 'workspace-write' | 'read-only' = 'workspace-write') {
-        const session = await client.session.new({ cwd: daemon.workspace, permission })
+        const session = await answered(`session.new ${permission}`, () =>
+          client.session.new({ cwd: daemon.workspace, permission }),
+        )
         session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
         return session
       }
@@ -219,7 +233,9 @@ for (const version of ['5.1', '7'] as const)
         }
       }
       async function job(session: Session, command: string, timeoutMs = 60_000) {
-        const started = await session.jobsRun(command, { timeoutMs })
+        const started = await answered('session.jobs.control run', () =>
+          session.jobsRun(command, { timeoutMs }),
+        )
         return { id: started.id, done: () => settled(session, started.id) }
       }
       const timeline = async (session: Session) => JSON.stringify(await session.projectUI())
@@ -447,7 +463,7 @@ const result = { testBuild: native.testFaults === true };
 let target;
 try {
   target = native.spawnRestricted(process.execPath, process.env.AGNES_TEST_COMMAND_LINE, process.cwd(),
-    'SystemRoot=' + process.env.SystemRoot + '\\0\\0', [], true);
+    'SystemRoot=' + process.env.SystemRoot + '\\0\\0', [], true, 'S-1-4-9');
   result.created = true;
   if (process.env.AGNES_TEST_FAULT === 'job') {
     const job = native.createProcessJob();

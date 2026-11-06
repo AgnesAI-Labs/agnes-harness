@@ -121,6 +121,12 @@ afterEach(async () => {
 })
 
 const sddl = (path: string) => inspectWindowsAcl(path).securityDescriptor
+
+/** What a fingerprint covers, in readable form: a mismatch shows both descriptors. */
+const described = (path: string) => {
+  const { identity, securityDescriptor } = inspectWindowsAcl(path)
+  return { identity, securityDescriptor }
+}
 const capabilitySids = (path: string) => [...new Set(sddl(path).match(/S-1-4-[\d-]+/g) ?? [])]
 const settle = () => new Promise((resolve) => setTimeout(resolve, 500))
 const code = (expected: string) => expect.objectContaining({ code: expected })
@@ -362,7 +368,7 @@ describe.skipIf(process.platform !== 'win32')(
     )
 
     it('gives a read-only session no write grant and no temp', async () => {
-      const before = inspectWindowsAcl(world.workspace).fingerprint
+      const before = described(world.workspace)
       const s = await session(await hostStack(), world.workspace, 'read-only')
       expect(s.lease.tempRoot).toBeUndefined()
       const facts = await s.probe([
@@ -372,7 +378,7 @@ describe.skipIf(process.platform !== 'win32')(
       ])
       for (const name of ['create', 'mkdir', 'outside']) expect(DENIED, name).toContain(facts[name])
       expect(readdirSync(world.workspace)).toEqual([])
-      expect(inspectWindowsAcl(world.workspace).fingerprint).toBe(before)
+      expect(described(world.workspace)).toEqual(before)
       expect(capabilitySids(world.workspace)).toEqual([])
       expect(await (await maintenance()).inspect(world.workspace)).toMatchObject({ state: 'unavailable' })
     })
@@ -380,7 +386,7 @@ describe.skipIf(process.platform !== 'win32')(
     it.each(['A', 'B'])(
       'two sessions on one root keep working while the other is released, %s first',
       async (first) => {
-        const original = inspectWindowsAcl(world.workspace).fingerprint
+        const original = described(world.workspace)
         const stack = await hostStack()
         const a = await session(stack, world.workspace, 'workspace-write', 'session-a')
         const b = await session(stack, world.workspace, 'workspace-write', 'session-b')
@@ -409,7 +415,7 @@ describe.skipIf(process.platform !== 'win32')(
         // The workspace grant stands after both sessions, until an explicit repair removes it.
         expect(await (await maintenance()).inspect(world.workspace)).toMatchObject({ state: 'active' })
         expect((await repairFully(world.workspace)).state).toBe('revoked')
-        expect(inspectWindowsAcl(world.workspace).fingerprint).toBe(original)
+        expect(described(world.workspace)).toEqual(original)
       },
     )
 
@@ -418,10 +424,7 @@ describe.skipIf(process.platform !== 'win32')(
       async (first) => {
         const inner = join(world.workspace, 'inner')
         mkdirSync(inner)
-        const originals = [
-          inspectWindowsAcl(world.workspace).fingerprint,
-          inspectWindowsAcl(inner).fingerprint,
-        ]
+        const originals = [described(world.workspace), described(inner)]
         const stack = await hostStack()
         const outerSession = await session(stack, world.workspace, 'workspace-write')
         const innerSession = await session(stack, inner, 'workspace-write')
@@ -450,10 +453,7 @@ describe.skipIf(process.platform !== 'win32')(
         await kept.close()
         expect((await repairFully(inner)).state).toBe('revoked')
         expect((await repairFully(world.workspace)).state).toBe('revoked')
-        expect([
-          inspectWindowsAcl(world.workspace).fingerprint,
-          inspectWindowsAcl(inner).fingerprint,
-        ]).toEqual(originals)
+        expect([described(world.workspace), described(inner)]).toEqual(originals)
       },
     )
 
@@ -647,7 +647,7 @@ describe.skipIf(process.platform !== 'win32')(
     it.each(grantCrashes)(
       'a grant interrupted %s runs no business process until repaired',
       async (_point, arm) => {
-        const original = inspectWindowsAcl(world.workspace).fingerprint
+        const original = described(world.workspace)
         const files = new CrashingFiles()
         const { failWhen, ...native } = arm(files)
         if (failWhen) files.failWhen = failWhen
@@ -667,7 +667,7 @@ describe.skipIf(process.platform !== 'win32')(
         expect(capabilitySids(world.workspace)).toEqual([])
         // Without a recorded result the deny and label cannot be proven AGH's; they stay for the user.
         if (repaired.state !== 'revoked') expect(repaired.steps.join('\n')).toMatch(/Low integrity label/)
-        else expect(inspectWindowsAcl(world.workspace).fingerprint).toBe(original)
+        else expect(described(world.workspace)).toEqual(original)
         expect((await businessRuns(restarted, world.workspace)).ran).toBe(repaired.state === 'revoked')
       },
     )
@@ -691,7 +691,7 @@ describe.skipIf(process.platform !== 'win32')(
         }),
       ],
     ])('a repair interrupted %s never reads as active or revoked', async (_point, arm) => {
-      const original = inspectWindowsAcl(world.workspace).fingerprint
+      const original = described(world.workspace)
       const files = new CrashingFiles()
       const native = { ...realNative }
       const authority = await authorityWith({ files, native })
@@ -715,7 +715,7 @@ describe.skipIf(process.platform !== 'win32')(
       expect(attempt.error).toMatchObject({ code: 'E_ACL_NEEDS_ATTENTION' })
       expect(attempt.ran).toBe(false)
       expect((await repairFully(world.workspace)).state).toBe('revoked')
-      expect(inspectWindowsAcl(world.workspace).fingerprint).toBe(original)
+      expect(described(world.workspace)).toEqual(original)
     })
 
     it('refuses on a damaged journal record and keeps it as found', async () => {
@@ -749,7 +749,9 @@ describe.skipIf(process.platform !== 'win32')(
       expect(await a.probe([['write', 'write', join(world.workspace, 'x.txt'), 'x']])).toEqual({
         write: 'ok',
       })
-      const thirdParty = 'S-1-5-21-1000000001-1000000002-1000000003-4242'
+      // NT SERVICE\TrustedInstaller: an account every Windows has (icacls refuses a SID it cannot map),
+      // which the descriptor text names by its SID.
+      const thirdParty = 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464'
       execFileSync(icacls, [world.workspace, '/grant', `*${thirdParty}:(OI)(CI)RX`], { stdio: 'pipe' })
       const other = await businessRuns(stack, world.workspace)
       expect(other.error).toMatchObject({ code: 'E_ACL_CHANGED' })
@@ -829,7 +831,8 @@ describe.skipIf(process.platform !== 'win32')(
         ]),
       ).toEqual({ mkdir: 'ok', file: 'ok' })
       const root = sddl(world.workspace)
-      expect(root).toContain('(D;CI;DC;;;WD)')
+      // FILE_DELETE_CHILD (0x40) is written DT in descriptor text.
+      expect(root).toContain('(D;CI;DT;;;WD)')
       expect(root).toContain('(ML;OICI;NW;;;LW)')
       await s.close()
 

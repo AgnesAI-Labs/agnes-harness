@@ -1,7 +1,7 @@
 // Grant journal and recovery of the Windows execution authority, against modelled NTFS permissions
 // and a real journal directory. A "crash" is an error thrown at the chosen point together with every
 // later journal write failing, which is what a process that died there leaves on disk.
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -52,7 +52,7 @@ describe('grant journal ordering', () => {
   it('refuses when the state root is not private, before any change', async () => {
     const { authority } = aclHost(world)
     await authority.inspect(world.workspace)
-    chmodSync(world.stateRoot, 0o755)
+    world.ntfs.share(world.stateRoot)
     await expect(authority.acquire(writeLease(world.workspace))).rejects.toThrow(code('E_ACL_STATE_UNSAFE'))
     expect(world.ntfs.calls.apply).toBe(0)
   })
@@ -359,7 +359,7 @@ describe('third-party changes and repair rules', () => {
 
   it('removes only the entries this grant added', async () => {
     const object = world.ntfs.objects.get(world.workspace)
-    object?.dacl.unshift('(D;CI;DC;;;WD)')
+    object?.dacl.unshift('(D;CI;DT;;;WD)')
     const before = world.ntfs.sddl(world.workspace)
     const host = aclHost(world)
     await (await host.authority.acquire(writeLease(world.workspace))).close()
@@ -407,7 +407,7 @@ describe('third-party changes and repair rules', () => {
     expect(repaired.issues.map((issue) => issue.reason)).toContainEqual(expect.stringMatching(/^shared/))
     const sddl = world.ntfs.sddl(world.workspace)
     expect(sddl).not.toContain(first.writeSid)
-    expect(sddl).toContain('(D;CI;DC;;;WD)')
+    expect(sddl).toContain('(D;CI;DT;;;WD)')
     expect(sddl).toContain('(ML;OICI;NW;;;LW)')
     // The remaining grant still reads as AGH left it and keeps working.
     const launcher = new Launcher()

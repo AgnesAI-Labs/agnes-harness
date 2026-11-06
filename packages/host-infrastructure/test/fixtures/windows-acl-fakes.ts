@@ -35,7 +35,7 @@ type FakeObject = { identity: WindowsObjectIdentity; dacl: string[]; label: stri
 
 const ALLOW_MASK = 0x110156
 const allowAce = (sid: string) => `(A;OICI;0x110156;;;${sid})`
-const DENY_ACE = '(D;CI;DC;;;WD)'
+const DENY_ACE = '(D;CI;DT;;;WD)'
 const LABEL_ACE = '(ML;OICI;NW;;;LW)'
 const crashError = () => Object.assign(new Error('simulated process death'), { code: 'E_TEST_CRASH' })
 
@@ -59,6 +59,19 @@ export class FakeNtfs implements WindowsAclNative {
   /** How apply ends: normally, after only the allow entry was written, or reporting incomplete. */
   applyOutcome: 'complete' | 'crash-after-allow' | 'crash-after-write' | 'incomplete' = 'complete'
   restoreOutcome: 'complete' | 'crash-after-write' = 'complete'
+  /**
+   * Which directories are private to this account, modelled like the rest of the permissions: on
+   * Windows a directory's file mode says nothing about who else may open it.
+   */
+  readonly privateDirectories = new Set<string>()
+  /** Directories another account was let into; the Host must refuse them as private state. */
+  readonly sharedDirectories = new Set<string>()
+
+  /** Lets other accounts into a directory, as a changed DACL would. */
+  share(path: string): void {
+    this.privateDirectories.delete(path)
+    this.sharedDirectories.add(path)
+  }
 
   directory(path: string): WindowsObjectIdentity {
     mkdirSync(path, { recursive: true })
@@ -244,10 +257,11 @@ export function fakePlatform(ntfs: FakeNtfs, pid = 4242): FakeHost {
       return ntfs.identity(path)
     },
     async ensurePrivateDirectory(path) {
-      mkdirSync(path, { recursive: true, mode: 0o700 })
+      mkdirSync(path, { recursive: true })
       const stat = lstatSync(path)
-      if (!stat.isDirectory() || (stat.mode & 0o077) !== 0)
+      if (!stat.isDirectory() || ntfs.sharedDirectories.has(path))
         throw Object.assign(new Error(`${path} is not private`), { code: 'E_ACL_STATE_UNSAFE' })
+      ntfs.privateDirectories.add(path)
     },
     async createDirectory(path) {
       mkdirSync(path)

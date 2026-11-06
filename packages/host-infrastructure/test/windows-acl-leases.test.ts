@@ -1,6 +1,6 @@
 // Execution leases of the Windows execution authority: the private temp root, per-lease temp and
 // SID, root overlap rules, launch permits and the close/dispose lifecycle.
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -44,7 +44,7 @@ describe('private temp and per-lease identity', () => {
     expect(a.tempRoot && dirname(a.tempRoot)).toBe(world.tempRoot)
     expect(b.tempRoot && dirname(b.tempRoot)).toBe(world.tempRoot)
     expect(a.tempRoot).not.toBe(b.tempRoot)
-    expect(lstatSync(world.tempRoot).mode & 0o077).toBe(0)
+    expect(world.ntfs.privateDirectories.has(world.tempRoot)).toBe(true)
     const claimA = await launcher.launch(a)
     const claimB = await launcher.launch(b)
     expect(claimA.writeSids[0]).toBe(claimB.writeSids[0])

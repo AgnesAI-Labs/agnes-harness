@@ -221,7 +221,7 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
       },
     )
     const result = await run(reader, script)
-    expect(result.completion.code).toBe(0)
+    expect(result.completion.code, result.stderr).toBe(0)
     // The reader can find the writer, but can neither write its memory nor open it fully.
     expect(JSON.parse(result.stdout)).toEqual({ query: true, write: false, writeError: 5, all: false })
     writer.terminate()
@@ -242,7 +242,12 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
       readOnly(temporary()),
     )
     const result = await run(child)
-    expect(result.completion).toEqual({ code: 3, signal: null, cancelled: false, stoppedProcesses: 1 })
+    expect(result.completion, result.stderr).toEqual({
+      code: 3,
+      signal: null,
+      cancelled: false,
+      stoppedProcesses: 1,
+    })
     const { piped, pid } = JSON.parse(result.stdout)
     expect(piped).toBe('grandchild')
     expect(windowsProcessStartTimeSync(pid)).toBeNull()
@@ -291,15 +296,15 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
       readOnly(workspace),
     )
     const result = await run(command)
-    expect(result.completion.code).toBe(7)
-    expect(result.stdout).toBe(`ps${major}`)
+    expect(result.completion.code, result.stderr).toBe(7)
+    expect(result.stdout, result.stderr).toBe(`ps${major}`)
     const piped = await confined(
       [shell, '-NoLogo', '-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-Command', '-'],
       readOnly(workspace),
     )
     const fromStdin = await run(piped, '[Console]::Out.Write("from-stdin")\nexit 4\n')
-    expect(fromStdin.completion.code).toBe(4)
-    expect(fromStdin.stdout).toContain('from-stdin')
+    expect(fromStdin.completion.code, fromStdin.stderr).toBe(4)
+    expect(fromStdin.stdout, fromStdin.stderr).toContain('from-stdin')
   })
 
   it('runs a batch file with literal arguments through cmd.exe', async () => {
@@ -481,7 +486,7 @@ describe.skipIf(process.platform !== 'win32')(
     let target;
     try {
       target = native.spawnRestricted(process.execPath, process.env.AGNES_TEST_COMMAND_LINE, process.cwd(),
-        'SystemRoot=' + process.env.SystemRoot + '\\0\\0', [], true);
+        'SystemRoot=' + process.env.SystemRoot + '\\0\\0', [], true, 'S-1-4-9');
       result.created = true;
       if (process.env.AGNES_TEST_FAULT === 'job') {
         const job = native.createProcessJob();
