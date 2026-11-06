@@ -17,6 +17,21 @@ const BLOCK_LIMIT = 256
 const GENTLE =
   'You are repeating the exact same tool call with identical arguments and the same result. Analyze the previous result before calling again; if the task is not done, try a different approach or different arguments.'
 
+// Times and short durations differ on every run of the same command, so they are blanked before the
+// result is compared: a failing test that prints "Done in 2.31s" and then "Done in 2.34s" is one loop, not
+// two answers. Minutes and longer are kept, so a countdown ("10 minutes left") still reads as progress.
+const CLOCK =
+  /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?|(?<![\d:])\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?![\d:])/g
+const SHORT_DURATION = /(?<![\w.-])\d+(?:\.\d+)?\s?(?:ms|s|secs?|seconds?)\b/g
+
+function withoutTiming(content: ToolResult['content']): ToolResult['content'] {
+  return content.map((block) =>
+    block.type === 'text'
+      ? { ...block, text: block.text.replace(CLOCK, '<time>').replace(SHORT_DURATION, '<duration>') }
+      : block,
+  )
+}
+
 /** Per session (the owner is the session object): the key of the last call and how many times in a row. */
 const runs = new WeakMap<object, { key: string; count: number }>()
 
@@ -30,7 +45,7 @@ export function withRepeatReminder<T extends Pick<ToolResult, 'content'>>(
   let key: string
   try {
     argsJson = canonicalJson(args)
-    key = `${name}\u0000${argsJson}\u0000${sha256Hex(canonicalJson(result.content))}`
+    key = `${name}\u0000${argsJson}\u0000${sha256Hex(canonicalJson(withoutTiming(result.content)))}`
   } catch {
     return result
   }

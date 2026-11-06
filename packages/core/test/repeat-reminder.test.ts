@@ -39,6 +39,48 @@ describe('repeat reminder', () => {
     expect(seen.every((n) => n === undefined)).toBe(true)
   })
 
+  it('treats results that differ only in elapsed time as the same', () => {
+    const owner = {}
+    const seen = notes(owner, [
+      ['bash', { cmd: 'npm test' }, '1 failed\nDone in 2.31s'],
+      ['bash', { cmd: 'npm test' }, '1 failed\nDone in 2.34s'],
+      ['bash', { cmd: 'npm test' }, '1 failed\nDone in 350ms'],
+    ])
+    expect(seen[2]).toBeDefined()
+  })
+
+  it('treats results that differ only in a timestamp or clock time as the same', () => {
+    const owner = {}
+    const seen = notes(owner, [
+      ['bash', { cmd: 'run' }, 'error at 2026-11-06T10:21:03.120Z'],
+      ['bash', { cmd: 'run' }, 'error at 2026-11-06 10:21:09+08:00'],
+      ['bash', { cmd: 'run' }, 'error at 11:02:45'],
+    ])
+    expect(seen[2]).toBeDefined()
+    const same = notes({}, [
+      ['bash', { cmd: 'run' }, 'error at 2026-11-06T10:21:03Z'],
+      ['bash', { cmd: 'run' }, 'error at 2027-01-01T00:00:00Z'],
+      ['bash', { cmd: 'run' }, 'error at 2028-05-05T05:05:05Z'],
+    ])
+    expect(same[2]).toBeDefined()
+  })
+
+  it('still tells results apart when a count or a longer wait changes', () => {
+    const owner = {}
+    const counts = notes(owner, [
+      ['bash', { cmd: 'npm test' }, '3 failed in 1.2s'],
+      ['bash', { cmd: 'npm test' }, '2 failed in 1.3s'],
+      ['bash', { cmd: 'npm test' }, '1 failed in 1.1s'],
+    ])
+    expect(counts[2]).toBeUndefined()
+    const minutes = notes({}, [
+      ['job_output', { id: 'j1' }, 'running, 10 minutes left'],
+      ['job_output', { id: 'j1' }, 'running, 5 minutes left'],
+      ['job_output', { id: 'j1' }, 'running, 1 minutes left'],
+    ])
+    expect(minutes[2]).toBeUndefined()
+  })
+
   it('starts again after a different call in between', () => {
     const owner = {}
     const same: [string, unknown, string] = ['read', { path: 'a.txt' }, 'same']
