@@ -1,6 +1,6 @@
 import type { AddClientAuthentication } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js'
-import { OAUTH_REFRESH_LEEWAY_MS } from './mcp.js'
+import { OAUTH_REFRESH_LEEWAY_MS } from './mcp-oauth-error.js'
 import type { McpOAuthTokens } from './mcp-oauth-store.js'
 
 /** Token lifetime assumed when the token response carries no `expires_in`. */

@@ -48,7 +48,7 @@ function hash8(text: string): string {
 }
 
 /**
- * Derives one Host-owned `ext:` row per non-OAuth MCP server in a snapshot. Pure: the same `entries`
+ * Derives one Host-owned `ext:` row per MCP server in a snapshot. Pure: the same `entries`
  * (by value) always derives the same `rows`/`skipped` -- every
  * field of the returned `DynamicExtension`s is computed from `entries` and `opener` alone, and
  * `opener` is definition-agnostic (one instance serves every row, see `McpServerOpener`'s own doc
@@ -58,8 +58,8 @@ function hash8(text: string): string {
  *
  * Which servers become rows is exactly which servers the resource manager would connect
  * (`resource-control-runtime/src/mcp.ts` `connectManaged`): `desired === 'enabled'` and
- * `trust === 'trusted'`. OAuth-bound definitions are also filtered out here, not deferred to the
- * opener: OAuth is not supported by this path.
+ * `trust === 'trusted'`. An OAuth server is a row like any other; its opener asks the stored
+ * sign-in for a token on every request.
  *
  * Per-server precheck: each definition is re-validated against the
  * protocol schema; one that fails is skipped with a reason and never turns the rest of the batch --
@@ -103,10 +103,6 @@ export function mcpServerRowsFromDefinitions(
     }
     if (entry.trust !== 'trusted') {
       skipped.push({ serverId, reason: `trust is ${entry.trust}` })
-      continue
-    }
-    if (definition.secretBinding.kind === 'oauth') {
-      skipped.push({ serverId, reason: 'oauth secretBinding is not supported (D105/D109)' })
       continue
     }
     const extensionId = mcpServerExtensionId(definition.serverId)

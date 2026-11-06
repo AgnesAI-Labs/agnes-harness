@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto'
 import { isIP } from 'node:net'
 import { mcpConnectionFailure } from './mcp-failure.js'
+import { mcpOAuthAuthorizer } from './mcp-oauth-authorizer.js'
+import type { McpOAuthStore } from './mcp-oauth-store.js'
+
+export {
+  type McpOAuthLoginReason,
+  McpOAuthNeedsReconnectError,
+  OAUTH_REFRESH_LEEWAY_MS,
+} from './mcp-oauth-error.js'
 /**
  * Consumption-only port for Base's MCP library (packages/base/src/mcp). Host neither constructs an MCP client nor imports a
  * package implementation: composition injects Base connectMcp/inspectRemoteCatalog.
@@ -47,7 +55,23 @@ export type McpRuntimeServer = Readonly<{
   catalog?: readonly McpRemoteTool[]
 }>
 export type McpRuntimeInput = Readonly<{ list(): readonly McpRuntimeServer[] }>
-export type McpConnectOptions = Readonly<{ signal: AbortSignal; timeoutMs: number }>
+/**
+ * Supplies credentials per HTTP request. Same shape as `@agnes/base`'s `McpHttpAuthorizer`, which
+ * this layer cannot import.
+ */
+export type McpHttpAuthorizer = Readonly<{
+  /** Headers for this request. Throwing refuses to send it; the error reaches the caller as is. */
+  headers(signal?: AbortSignal): Promise<Readonly<Record<string, string>>>
+  /** Called at most once per request, with its 401 or 403 response and the object `headers()`
+   * returned for it. 'retry' resends it once with fresh headers. */
+  rejected(response: Response, sent: Readonly<Record<string, string>>): Promise<'retry' | 'fail'>
+}>
+export type McpConnectOptions = Readonly<{
+  signal: AbortSignal
+  timeoutMs: number
+  /** Set for an OAuth server: every HTTP request asks it for the token. */
+  authorize?: McpHttpAuthorizer
+}>
 export type McpInspectOptions = Readonly<{ signal: AbortSignal; timeoutMs: number }>
 export type McpConnector = (config: McpServerConfig, options: McpConnectOptions) => Promise<McpConnection>
 /** A remote tool the inspector left out of the catalog, with the reason code status reports. */
@@ -89,79 +113,6 @@ export type McpManagedInput = Readonly<{
 }>
 export type McpCredentialResolver = (ref: string, signal: AbortSignal) => Promise<string>
 
-/**
- * A resolved OAuth 2.1 credential for one managed MCP server, worker-side
- * with a structural
- * counterpart of `packages/host-infrastructure/src/adapters/credential-store.ts`'s `OAuthCredential`, deliberately
- * NOT imported from `@agnes/host` -- this package has no dependency on it today, matching the same
- * decoupling `mcp-oauth-store.ts` documents.
- */
-export type McpOAuthCredential = Readonly<{
-  provider: string
-  accessToken: string
-  refreshToken: string
-  expiresAt: number
-  scope: readonly string[]
-  grantId: string
-}>
-
-/**
- * Reads (and, when `resolvedConfig()` below decides a refresh is due, refreshes) the OAuth
- * credential stored for one managed MCP server. Read and refresh are bundled into a single resolver
- * call instead of two independently-injected options because a caller that has to retry a failed
- * refresh (spec §1.6/§3.5's concurrent-refresh optimistic retry -- another worker process may have
- * already rotated the refresh token) must compare the refreshed value against the *exact* credential
- * this same call read, not a value some other, possibly stale, closure captured earlier.
- *
- * `serverUrl`/`staticClientId` are threaded through explicitly (a deliberate, brief-permitted
- * adjustment: the brief's sketch passed only `serverId`) rather than requiring the real
- * implementation to look the managed definition back up by `serverId` a second time -- a refresh has
- * to run OAuth discovery against the authorization server, which needs the MCP server's URL, and
- * neither that nor an optional pre-registered client_id is derivable from `serverId` alone.
- * `resolvedConfig()` already has both in hand from the definition it is resolving.
- */
-export type McpOAuthCredentialResolver = (
-  serverId: string,
-  signal: AbortSignal,
-  serverUrl: URL,
-  staticClientId: string | undefined,
-) => Promise<Readonly<{ credential: McpOAuthCredential; refresh(): Promise<McpOAuthCredential> }> | undefined>
-
-export type McpOAuthLoginReason = 'login-required' | 'insufficient-scope' | 'endpoint-changed'
-
-/**
- * Thrown by `resolvedConfig()` when an `oauth`-bound MCP server's credential cannot be resolved or
- * refreshed: no resolver configured, no credential stored yet, or refresh failed even after the
- * optimistic re-read retry (never silently keep trying
- * with a stale/expired token). Distinctly typed rather than a bare `Error` so a caller
- * can recognize "this connection failed because the user needs to re-authorize" instead of folding
- * it into every other candidate()/connect failure, and react by surfacing `needs-reconnect` --
- * `connectManaged()` below is that caller (traced per the brief's own instruction to find
- * `resolvedConfig()`'s actual call site rather than guess at a daemon-side file).
- *
- * The message is written for the model: it says what to ask the user, not what failed inside.
- */
-export class McpOAuthNeedsReconnectError extends Error {
-  readonly code = 'MCP_OAUTH_NEEDS_RECONNECT'
-  readonly serverId: string
-  readonly reason: McpOAuthLoginReason
-  constructor(
-    serverId: string,
-    reason: McpOAuthLoginReason = 'login-required',
-    options?: { cause?: unknown },
-  ) {
-    super(
-      reason === 'insufficient-scope'
-        ? `MCP server "${serverId}" needs more permissions. Ask the user to sign in to it again from the MCP page in the web UI.`
-        : `MCP server "${serverId}" needs sign-in. Ask the user to sign in to it from the MCP page in the web UI.`,
-      options,
-    )
-    this.name = 'McpOAuthNeedsReconnectError'
-    this.serverId = serverId
-    this.reason = reason
-  }
-}
-
 export type McpApply = (input: McpRuntimeInput, permit: ResourceActivationPermit) => Promise<void>
 export type McpLifecycleAdapter = Readonly<{
   reconcile(input: {
@@ -201,15 +152,10 @@ type Options = Readonly<{
   profile: string
   credentials: McpCredentialResolver
   /**
-   * Parallel injection path for `secretBinding.kind === 'oauth'`, worker-side (spec §3.2/§3.5). Not
-   * folded into `credentials` above: that resolver's contract is string-in-string-out (a plain
-   * SecretRef), while OAuth needs a structured access/refresh-token object plus a refresh callback --
-   * widening the existing resolver's return type would leak OAuth-specific shape into every other
-   * secretBinding kind's resolution path for no benefit. Optional: a resource generation with no
-   * oauth-bound MCP servers never needs one configured, and an oauth-bound server resolved with none
-   * configured fails closed (`McpOAuthNeedsReconnectError`), not silently.
+   * Where `secretBinding.kind === 'oauth'` servers keep their sign-in. Optional: a generation with no
+   * OAuth server never needs it, and an OAuth server without it needs sign-in (it fails closed).
    */
-  oauthCredentials?: McpOAuthCredentialResolver
+  oauthStore?: McpOAuthStore
   /** Fixed deployment environment only. Definitions cannot add raw values or override reserved names. */
   baseEnvironment?: Readonly<Record<string, string>>
   /** Explicit deployment allowlist. Stdio is refused if an executable is not named here. */
@@ -229,16 +175,6 @@ type Options = Readonly<{
   onStatus?(status: McpStatus): void
 }>
 
-/**
- * How long before an OAuth access token's real `expiresAt` `resolvedConfig()` treats it as already
- * expired and refreshes eagerly. 30s covers the gap between resolvedConfig() reading the credential
- * and the actual MCP
- * connect request landing on the wire -- normally milliseconds, not seconds -- without refreshing on
- * every single connection attempt the way a near-zero leeway would once a token is within its final
- * seconds of life.
- */
-export const OAUTH_REFRESH_LEEWAY_MS = 30_000
-
 const ZERO_REVISION = '0'.repeat(64)
 const RESERVED_ENV = new Set(['PATH', 'HOME', 'SHELL', 'NODE_OPTIONS', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES'])
 const HOST_BASE_ENV = new Set(['PATH', 'HOME', 'TMP', 'TEMP', 'LANG', 'LC_ALL'])
@@ -250,6 +186,9 @@ const cloneInput = (input: McpManagedInput): McpManagedInput =>
 const sameDefinition = (left: McpServerDefinitionInput, right: McpServerDefinitionInput) =>
   jcs(left) === jcs(right)
 const resourceId = (serverId: string) => `mcp/${serverId}`
+/** The secret binding of a remote server, the one an HTTP 401 or 403 is about; none for stdio. */
+const httpBindingKind = (definition: McpServerDefinitionInput) =>
+  definition.transport.kind === 'stdio' ? undefined : definition.secretBinding.kind
 
 function fixedEnvironment(input: Readonly<Record<string, string>> | undefined): Record<string, string> {
   const output: Record<string, string> = {}
@@ -343,46 +282,12 @@ function validateManagedTransport(
   }
 }
 
-/**
- * Resolves the `Authorization` header value for an `oauth`-bound MCP server: returns the stored
- * access token directly if it is not near expiry, otherwise refreshes it first (spec §3.5). On a
- * refresh failure, performs exactly one optimistic re-read-and-compare retry before giving up:
- * another worker process connecting to the same MCP server may
- * have already refreshed and persisted a new credential between this call's initial read and its
- * failed refresh attempt, and the credential store has no file lock -- re-reading once and checking
- * whether the access token actually changed is cheaper and safer than either locking or giving up
- * on a token another worker already fixed.
- */
-async function resolveOAuthAuthorization(
-  serverId: string,
-  serverUrl: URL,
-  staticClientId: string | undefined,
-  oauthCredentials: McpOAuthCredentialResolver | undefined,
-  signal: AbortSignal,
-): Promise<string> {
-  if (!oauthCredentials) throw new McpOAuthNeedsReconnectError(serverId)
-  const resolved = await oauthCredentials(serverId, signal, serverUrl, staticClientId)
-  if (!resolved) throw new McpOAuthNeedsReconnectError(serverId)
-  const { credential } = resolved
-  if (credential.expiresAt - OAUTH_REFRESH_LEEWAY_MS > Date.now()) return credential.accessToken
-  try {
-    const refreshed = await resolved.refresh()
-    return refreshed.accessToken
-  } catch (refreshError) {
-    const retried = await oauthCredentials(serverId, signal, serverUrl, staticClientId)
-    if (retried && retried.credential.accessToken !== credential.accessToken)
-      return retried.credential.accessToken
-    throw new McpOAuthNeedsReconnectError(serverId, 'login-required', { cause: refreshError })
-  }
-}
-
 export async function resolvedConfig(
   input: McpManagedInput,
   resolver: McpCredentialResolver,
   signal: AbortSignal,
   baseEnv: Readonly<Record<string, string>>,
   policies: Pick<Options, 'stdioPolicy' | 'httpPolicy'>,
-  oauth?: Pick<Options, 'oauthCredentials'>,
 ): Promise<McpServerConfig> {
   if (signal.aborted) throw new DOMException('operation aborted', 'AbortError')
   const definition = input.definition
@@ -428,18 +333,9 @@ export async function resolvedConfig(
     if (typeof value !== 'string' || value.includes('\0') || value.includes('\r') || value.includes('\n'))
       throw new Error('invalid resolved credential')
     headers[binding.headerName] = value
-  } else if (binding.kind === 'oauth') {
-    const value = await resolveOAuthAuthorization(
-      definition.serverId,
-      new URL(definition.transport.url),
-      binding.staticClientId,
-      oauth?.oauthCredentials,
-      signal,
-    )
-    if (typeof value !== 'string' || value.includes('\0') || value.includes('\r') || value.includes('\n'))
-      throw new Error('invalid resolved credential')
-    headers.authorization = `Bearer ${value}`
   }
+  // An OAuth server's token is not part of the config: it is read for every request by the
+  // connection's authorizer (`mcpOAuthAuthorizer`).
   return Object.freeze({
     id: definition.serverId,
     // definition.transport.kind is narrowed to 'http' | 'sse' here (the 'stdio' branch above
@@ -650,12 +546,20 @@ export function createMcpResourceManager(options: Options) {
       signal,
       options.baseEnvironment ?? {},
       options,
-      options,
     )
+    const authorize = await mcpOAuthAuthorizer(input.definition, {
+      store: options.oauthStore,
+      resolver: options.credentials,
+      signal,
+    })
     if (signal.aborted) throw new DOMException('operation aborted', 'AbortError')
     let connection: McpConnection | undefined
     try {
-      connection = await options.connect(config, { signal, timeoutMs: options.connectTimeoutMs ?? 10_000 })
+      connection = await options.connect(config, {
+        signal,
+        timeoutMs: options.connectTimeoutMs ?? 10_000,
+        ...(authorize ? { authorize } : {}),
+      })
       if (signal.aborted) throw new DOMException('operation aborted', 'AbortError')
       const inspected = await options.inspectCatalog(connection, config, {
         signal,
@@ -739,20 +643,6 @@ export function createMcpResourceManager(options: Options) {
     try {
       next = await candidate(input, signal)
     } catch (error) {
-      // A distinct SafeError code for the oauth-needs-reauthorization case (this IS the
-      // "resolvedConfig()'s caller" the brief's §Step-4 instruction pointed at -- traced, not
-      // guessed): downstream reporting (onStatus -> worker hello/resourceStatus -> daemon) carries
-      // this SafeError over the wire, so whatever later wires McpServerDescriptor.authorizationStatus
-      // end to end (see oauth-http-handler.ts's module header on why that plumbing lives outside this
-      // worker-side package) can distinguish "the user needs to re-authorize" from every other
-      // connect failure by this code, without this file needing to touch the daemon's journal itself.
-      if (error instanceof McpOAuthNeedsReconnectError)
-        return failed(
-          serverId,
-          'MCP_OAUTH_NEEDS_RECONNECT',
-          'MCP OAuth credential requires re-authorization',
-          input,
-        )
       if ((error as { code?: unknown })?.code === 'E_MCP_SANDBOX_UNAVAILABLE')
         return failed(
           serverId,
@@ -760,7 +650,9 @@ export function createMcpResourceManager(options: Options) {
           'No usable stdio sandbox is available. Explicitly approve off-with-warning or configure a working sandbox.',
           input,
         )
-      const failure = mcpConnectionFailure(error)
+      // A server that needs sign-in keeps the MCP_OAUTH_NEEDS_RECONNECT code all the way to the
+      // daemon, which tells it apart from every other connect failure by that code.
+      const failure = mcpConnectionFailure(error, httpBindingKind(input.definition))
       return failed(serverId, failure.code, failure.message, input)
     }
     return applyActive(serverId, next, operationId)
@@ -847,7 +739,7 @@ export function createMcpResourceManager(options: Options) {
           catalogRevision: transient.catalogRevision,
         })
       } catch (error) {
-        const failure = mcpConnectionFailure(error)
+        const failure = mcpConnectionFailure(error, httpBindingKind(managed.definition))
         return Object.freeze({
           toolCount: 0,
           catalogRevision: ZERO_REVISION,

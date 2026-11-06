@@ -18,14 +18,41 @@ const MESSAGES: Readonly<Record<string, string>> = {
   MCP_CONNECT_FAILED: 'MCP connection failed',
 }
 
-/** Public status contains fixed diagnostic text, never arbitrary transport errors or stderr. */
-export function mcpConnectionFailure(error: unknown): SafeError {
-  let value: unknown
+const SIGN_IN_MESSAGES: Readonly<Record<string, string>> = {
+  'insufficient-scope': 'MCP server needs more permissions; sign in again',
+  'endpoint-changed': 'MCP server address changed since sign-in; sign in again',
+}
+const NEEDS_SIGN_IN = 'MCP server needs sign-in'
+
+/** Reads one property of an untrusted transport error, including its accessors. */
+function field(error: unknown, name: 'code' | 'reason'): unknown {
   try {
-    value = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+    return error && typeof error === 'object' && name in error
+      ? (error as Record<string, unknown>)[name]
+      : undefined
   } catch {
-    // Transport errors are untrusted objects, including their accessors.
+    return undefined
   }
+}
+
+/**
+ * Public status contains fixed diagnostic text, never arbitrary transport errors or stderr.
+ *
+ * `bindingKind` is the server's secret binding. A server with none that answers 401 or 403 asks
+ * for sign-in; an OAuth server still answering 401 after its one refresh needs sign-in again; a
+ * saved bearer or header credential that is refused stays an authentication failure.
+ */
+export function mcpConnectionFailure(error: unknown, bindingKind?: string): SafeError {
+  const value = field(error, 'code')
+  if (value === 'MCP_OAUTH_NEEDS_RECONNECT') {
+    const reason = field(error, 'reason')
+    const message = typeof reason === 'string' ? SIGN_IN_MESSAGES[reason] : undefined
+    return { code: 'MCP_OAUTH_NEEDS_RECONNECT', message: message ?? NEEDS_SIGN_IN }
+  }
+  if ((value === 401 || value === 403) && bindingKind === 'none')
+    return { code: 'MCP_AUTH_REQUIRED', message: 'MCP server requires sign-in' }
+  if (value === 401 && bindingKind === 'oauth')
+    return { code: 'MCP_OAUTH_NEEDS_RECONNECT', message: NEEDS_SIGN_IN }
   const code =
     value === 401 || value === 403
       ? 'MCP_AUTH_FAILED'

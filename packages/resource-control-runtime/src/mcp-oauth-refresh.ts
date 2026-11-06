@@ -1,7 +1,7 @@
 import { refreshAuthorization } from '@modelcontextprotocol/sdk/client/auth.js'
 import { InvalidGrantError } from '@modelcontextprotocol/sdk/server/auth/errors.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
-import { McpOAuthNeedsReconnectError } from './mcp.js'
+import { McpOAuthNeedsReconnectError } from './mcp-oauth-error.js'
 import {
   canonicalUrl,
   clientAuthentication,

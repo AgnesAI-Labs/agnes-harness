@@ -1,8 +1,8 @@
 export * from './activation.js'
 export * from './mcp.js'
 export * from './mcp-failure.js'
-// The credential resolver is consumed by @agnes/resource-control-worker through this export.
-export * from './mcp-oauth-credentials.js'
+// The per-request authorizer is consumed by @agnes/resource-control-worker through this export.
+export { createMcpOAuthAuthorizer, mcpOAuthAuthorizer } from './mcp-oauth-authorizer.js'
 // Sign-in steps used by the launcher (browser side) and the daemon (code exchange).
 export {
   beginMcpOAuthLogin,
