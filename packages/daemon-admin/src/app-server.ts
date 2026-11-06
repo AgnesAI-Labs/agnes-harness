@@ -28,11 +28,10 @@ import type {
 } from '@agnes/protocol/gen/app-server'
 import {
   completeMcpOAuthLogin,
-  McpOAuthLoginEndpointChanged,
-  McpOAuthLoginSuperseded,
   McpOAuthNeedsReconnectError,
   type McpOAuthRead,
   type McpOAuthSummary,
+  mcpOAuthFailureReason,
   refreshMcpOAuth,
   signOutMcpOAuth,
   summarizeMcpOAuth,
@@ -226,9 +225,7 @@ export function createAppServerAdmin(options: {
           fetchImpl: options.fetchImpl ?? fetch,
         })
       } catch (error) {
-        if (error instanceof McpOAuthLoginSuperseded || error instanceof McpOAuthLoginEndpointChanged)
-          throw rpcError('SEMANTIC_REJECTED', { reason: error.code })
-        throw error
+        throw readableOAuthError(error)
       }
       return {}
     },
@@ -254,7 +251,7 @@ export function createAppServerAdmin(options: {
         return { signedIn: record.requiredScope.length === 0 }
       } catch (error) {
         if (error instanceof McpOAuthNeedsReconnectError) return { signedIn: false }
-        throw error
+        throw readableOAuthError(error)
       }
     },
     /** Writes the signed-out record (`epoch` + 1, no client, server or tokens); revokes nothing at
@@ -317,3 +314,9 @@ export function createAppServerAdmin(options: {
   }
 }
 export type AppServerAdmin = ReturnType<typeof createAppServerAdmin>
+
+/** A known sign-in failure becomes a refusal with a readable reason; anything else is unchanged. */
+function readableOAuthError(error: unknown): unknown {
+  const reason = mcpOAuthFailureReason(error)
+  return reason ? rpcError('SEMANTIC_REJECTED', { ...reason }) : error
+}

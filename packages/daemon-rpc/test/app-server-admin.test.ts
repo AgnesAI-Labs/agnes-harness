@@ -127,7 +127,10 @@ describe('MCP OAuth sign-in in the daemon', () => {
   const REDIRECT = 'http://127.0.0.1:4177/oauth/srv-1/callback'
   const VERIFIER = 'v'.repeat(43)
 
-  async function setup(secretBinding: Record<string, unknown> = { kind: 'oauth' }) {
+  async function setup(
+    secretBinding: Record<string, unknown> = { kind: 'oauth' },
+    answer?: (url: URL) => Response | undefined,
+  ) {
     const fixtureRoot = await mkdtemp(join(tmpdir(), 'agh-mcp-oauth-admin-'))
     const home = join(fixtureRoot, 'home')
     createPrivateDirectorySync(home)
@@ -136,11 +139,14 @@ describe('MCP OAuth sign-in in the daemon', () => {
     // No metadata anywhere: the token endpoint is the server origin's /token.
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(String(input))
+      const answered = answer?.(url)
+      if (answered && url.pathname !== '/token') return answered
       if (url.pathname !== '/token') return new Response('', { status: 404 })
       tokenRequests.push({
         headers: new Headers(init?.headers),
         form: new URLSearchParams(String(init?.body)),
       })
+      if (answered) return answered
       return Response.json({
         access_token: 'issued-access',
         token_type: 'Bearer',
@@ -332,6 +338,59 @@ describe('MCP OAuth sign-in in the daemon', () => {
       expect(JSON.stringify(response)).toContain('MCP_OAUTH_LOGIN_SUPERSEDED')
       expect(t.tokenRequests).toEqual([])
       expect(await t.store.read('srv-1')).toMatchObject({ epoch: 1, rev: 1 })
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('refuses a client authentication method it cannot do, with a readable reason and the method', async () => {
+    const t = await setup()
+    try {
+      const response = await t.complete({
+        client: { clientId: 'client-1', tokenEndpointAuthMethod: 'private_key_jwt' },
+      })
+      expect(response).toMatchObject({
+        error: {
+          data: { reason: 'MCP_OAUTH_CLIENT_AUTH_UNSUPPORTED', method: 'private_key_jwt' },
+        },
+      })
+      expect(t.tokenRequests).toEqual([])
+      expect(JSON.stringify(response)).not.toContain('code-1')
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('reports metadata that cannot be used as a discovery failure', async () => {
+    // The protected resource metadata names another resource than the server address.
+    const t = await setup({ kind: 'oauth' }, (url) =>
+      url.pathname.startsWith('/.well-known/oauth-protected-resource')
+        ? Response.json({
+            resource: 'https://other.example.test/mcp',
+            authorization_servers: ['https://mcp.example.test/'],
+          })
+        : undefined,
+    )
+    try {
+      const response = await t.complete()
+      expect(response).toMatchObject({ error: { data: { reason: 'MCP_OAUTH_DISCOVERY_FAILED' } } })
+      expect(t.tokenRequests).toEqual([])
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('reports a code the authorization server refuses as a rejected grant, without the code', async () => {
+    const t = await setup({ kind: 'oauth' }, (url) =>
+      url.pathname === '/token'
+        ? Response.json({ error: 'invalid_grant', error_description: 'code code-1 expired' }, { status: 400 })
+        : undefined,
+    )
+    try {
+      const response = await t.complete()
+      expect(response).toMatchObject({ error: { data: { reason: 'MCP_OAUTH_GRANT_REJECTED' } } })
+      expect(JSON.stringify(response)).not.toContain('code-1')
+      expect(await t.store.read('srv-1')).toBeNull()
     } finally {
       await t.close()
     }
