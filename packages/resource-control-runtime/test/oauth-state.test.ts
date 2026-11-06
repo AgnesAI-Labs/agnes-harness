@@ -12,6 +12,7 @@ describe('oauth-state', () => {
     expectedEpoch: 2,
     client: { clientId: 'client-1', tokenEndpointAuthMethod: 'none' },
     requestedScope: ['read', 'offline_access'],
+    authorization: { tokenEndpoint: 'https://as.example/token', resource: 'https://mcp.example/mcp' },
   }
 
   it('round-trips a valid state', async () => {
@@ -27,6 +28,8 @@ describe('oauth-state', () => {
       { ...payload, expectedEpoch: -1 },
       { ...payload, client: { clientId: 'client-1', clientSecret: 'leak' } },
       { ...payload, requestedScope: [1] },
+      { ...payload, authorization: { tokenEndpoint: 'https://as.example/token' } },
+      { ...payload, authorization: { ...payload.authorization, clientSecret: 'leak' } },
     ]) {
       const sealed = await sealOAuthState(bad as typeof payload, { secret })
       await expect(openOAuthState(sealed, { secret, maxAgeMs: 60_000 })).rejects.toThrow()

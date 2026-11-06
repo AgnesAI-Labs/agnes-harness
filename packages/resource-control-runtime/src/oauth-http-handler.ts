@@ -323,6 +323,7 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
         expectedEpoch: started.expectedEpoch,
         client,
         requestedScope: [...started.requestedScope],
+        authorization: started.authorization,
         ...(returnTo ? { returnTo } : {}),
       },
       { secret: opts.secret },
@@ -429,6 +430,7 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
           ...(pending.clientSecret ? { clientSecret: pending.clientSecret } : {}),
         },
         requestedScope: payload.requestedScope,
+        authorization: payload.authorization,
       })
     } catch {
       await markStatus(serverId, 'error')

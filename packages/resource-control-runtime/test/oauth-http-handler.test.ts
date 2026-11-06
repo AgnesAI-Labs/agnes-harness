@@ -644,6 +644,11 @@ describe('oauth-http-handler', () => {
         code: 'auth-code-9',
         redirectUri: 'http://127.0.0.1:4177/oauth/srv-1/callback',
         client: { clientId: 'dcr-client', clientSecret: 'dcr-secret-9' },
+        authorization: {
+          tokenEndpoint: `${fake.httpsUrl.origin}/token`,
+          issuer: fake.httpsUrl.origin,
+          resource: new URL('/mcp', fake.url).href,
+        },
       })
       expect([...params.requestedScope].sort()).toEqual(['read', 'write'])
       expect(params.codeVerifier).toMatch(/^[A-Za-z0-9._~-]{43,128}$/)
@@ -935,6 +940,7 @@ describe('oauth-http-handler', () => {
           expectedEpoch: 0,
           client: { clientId: 'static-client-id' },
           requestedScope: [],
+          authorization: { tokenEndpoint: 'http://127.0.0.1:1/token', resource: 'http://127.0.0.1:1/' },
           returnTo: 'https://evil.example.com/steal',
         },
         { secret },

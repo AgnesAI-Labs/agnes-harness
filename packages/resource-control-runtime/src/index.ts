@@ -8,13 +8,16 @@ export {
   beginMcpOAuthLogin,
   completeMcpOAuthLogin,
   type McpOAuthCompleteParams,
+  type McpOAuthLoginAuthorization,
+  McpOAuthLoginEndpointChanged,
   type McpOAuthLoginStart,
   McpOAuthLoginSuperseded,
   type McpOAuthSummary,
   summarizeMcpOAuth,
 } from './mcp-oauth-login.js'
 export * from './mcp-oauth-protocol.js'
-export * from './mcp-oauth-refresh.js'
+// The drift comparison stays package-private.
+export { refreshMcpOAuth } from './mcp-oauth-refresh.js'
 // Types only; the host provides the implementation.
 export * from './mcp-oauth-store.js'
 export * from './notify.js'

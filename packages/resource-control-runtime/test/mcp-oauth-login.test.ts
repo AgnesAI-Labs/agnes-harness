@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   beginMcpOAuthLogin,
   completeMcpOAuthLogin,
+  McpOAuthLoginEndpointChanged,
   type McpOAuthLoginStart,
   McpOAuthLoginSuperseded,
   type McpOAuthSummary,
@@ -73,6 +74,7 @@ describe('MCP OAuth sign-in', () => {
       redirectUri: REDIRECT,
       client: login.client,
       requestedScope: login.requestedScope,
+      authorization: login.authorization,
       store,
       fetchImpl: server.fetchImpl,
       now: () => NOW,
@@ -280,6 +282,81 @@ describe('MCP OAuth sign-in', () => {
     await expect(complete(server, store, login, code)).rejects.toBeInstanceOf(McpOAuthLoginSuperseded)
     expect((await record(store)).tokens).toBeUndefined()
     expect(store.writes(SERVER_ID)).toBe(0)
+  })
+
+  it('begin records the authorization side it used', async () => {
+    const server = await start()
+    const login = started(await begin(server))
+    expect(login.authorization).toEqual({
+      tokenEndpoint: `${server.httpsUrl.origin}/token`,
+      issuer: server.httpsUrl.origin,
+      resource: new URL('/mcp', server.url).href,
+    })
+  })
+
+  it.each([
+    ['a token endpoint', { tokenEndpoint: 'https://other.example/token' }],
+    ['an issuer', { issuer: 'https://other.example' }],
+    ['a resource', { resource: 'https://other.example/mcp' }],
+  ])(
+    '%s that changed since the sign-in started is refused before the code is spent',
+    async (_name, change) => {
+      const server = await start()
+      const store = createMemoryOAuthStore()
+      const login = started(await begin(server))
+      const code = await authorize(server, login)
+
+      const error = await completeMcpOAuthLogin({
+        serverId: SERVER_ID,
+        serverUrl: server.serverUrl,
+        expectedEpoch: login.expectedEpoch,
+        code,
+        codeVerifier: login.codeVerifier,
+        redirectUri: REDIRECT,
+        client: login.client,
+        requestedScope: login.requestedScope,
+        authorization: { ...login.authorization, ...change },
+        store,
+        fetchImpl: server.fetchImpl,
+        now: () => NOW,
+      }).catch((caught: unknown) => caught)
+
+      expect(error).toBeInstanceOf(McpOAuthLoginEndpointChanged)
+      expect((error as McpOAuthLoginEndpointChanged).code).toBe('MCP_OAUTH_LOGIN_ENDPOINT_CHANGED')
+      expect(server.requests()).toEqual([])
+      expect(await store.read(SERVER_ID)).toBeNull()
+      expect(store.writes(SERVER_ID)).toBe(0)
+    },
+  )
+
+  it('the same authorization side written differently still completes', async () => {
+    const server = await start()
+    const store = createMemoryOAuthStore()
+    const login = started(await begin(server))
+    const upper = (value: string) => value.replace('https://127.0.0.1', 'HTTPS://127.0.0.1')
+    const authorization = {
+      ...login.authorization,
+      tokenEndpoint: upper(login.authorization.tokenEndpoint),
+      resource: `${login.authorization.resource}/`,
+    }
+
+    await completeMcpOAuthLogin({
+      serverId: SERVER_ID,
+      serverUrl: server.serverUrl,
+      expectedEpoch: login.expectedEpoch,
+      code: await authorize(server, login),
+      codeVerifier: login.codeVerifier,
+      redirectUri: REDIRECT,
+      client: login.client,
+      requestedScope: login.requestedScope,
+      authorization,
+      store,
+      fetchImpl: server.fetchImpl,
+      now: () => NOW,
+    })
+
+    expect(server.requests()).toHaveLength(1)
+    expect((await record(store)).tokens?.accessToken).toBe('at-1')
   })
 
   it('requiredScope is cleared only when the new grant covers it', async () => {

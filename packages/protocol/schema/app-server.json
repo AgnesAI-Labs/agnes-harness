@@ -2864,6 +2864,28 @@
             "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
           },
           "maxItems": 128
+        },
+        "authorization": {
+          "type": "object",
+          "properties": {
+            "tokenEndpoint": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "issuer": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "resource": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          },
+          "required": ["tokenEndpoint", "resource"],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -2874,7 +2896,8 @@
         "codeVerifier",
         "redirectUri",
         "client",
-        "requestedScope"
+        "requestedScope",
+        "authorization"
       ],
       "additionalProperties": false
     },

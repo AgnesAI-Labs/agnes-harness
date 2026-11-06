@@ -28,6 +28,7 @@ import type {
 } from '@agnes/protocol/gen/app-server'
 import {
   completeMcpOAuthLogin,
+  McpOAuthLoginEndpointChanged,
   McpOAuthLoginSuperseded,
   type McpOAuthSummary,
   summarizeMcpOAuth,
@@ -215,7 +216,7 @@ export function createAppServerAdmin(options: {
           fetchImpl: options.fetchImpl ?? fetch,
         })
       } catch (error) {
-        if (error instanceof McpOAuthLoginSuperseded)
+        if (error instanceof McpOAuthLoginSuperseded || error instanceof McpOAuthLoginEndpointChanged)
           throw rpcError('SEMANTIC_REJECTED', { reason: error.code })
         throw error
       }

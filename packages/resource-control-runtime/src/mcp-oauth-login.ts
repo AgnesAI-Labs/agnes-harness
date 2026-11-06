@@ -1,6 +1,7 @@
 import { exchangeAuthorization, startAuthorization } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { clientAuthentication, requestedScope, tokensFromResponse } from './mcp-oauth-protocol.js'
+import { serverDrifted } from './mcp-oauth-refresh.js'
 import type { McpOAuthClient, McpOAuthNext, McpOAuthRead, McpOAuthStore } from './mcp-oauth-store.js'
 import { discoverMcpOAuth, type McpOAuthDiscovery, registerDynamicClient } from './oauth-client.js'
 import { withTimeout } from './oauth-http-handler.js'
@@ -18,6 +19,13 @@ export type McpOAuthSummary = Readonly<{
   client?: Readonly<{ clientId: string; redirectUri: string }>
 }>
 
+/** The authorization side a sign-in started with; the code may only be spent there. */
+export type McpOAuthLoginAuthorization = Readonly<{
+  tokenEndpoint: string
+  issuer?: string
+  resource: string
+}>
+
 /** Everything the browser step needs, plus what the completion must send back unchanged. */
 export type McpOAuthLoginStart = Readonly<{
   authorizationUrl: URL
@@ -25,6 +33,7 @@ export type McpOAuthLoginStart = Readonly<{
   client: Readonly<{ clientId: string; clientSecret?: string; tokenEndpointAuthMethod?: string }>
   requestedScope: readonly string[]
   expectedEpoch: number
+  authorization: McpOAuthLoginAuthorization
 }>
 
 /** The daemon's sign-in completion request, without the profile. */
@@ -36,6 +45,7 @@ export type McpOAuthCompleteParams = Readonly<{
   redirectUri: string
   client: McpOAuthLoginStart['client']
   requestedScope: readonly string[]
+  authorization: McpOAuthLoginAuthorization
 }>
 
 /** The user signed out (or signed in again elsewhere) while this sign-in was in the browser. */
@@ -44,6 +54,18 @@ export class McpOAuthLoginSuperseded extends Error {
   constructor(serverId: string) {
     super(`MCP server "${serverId}" was signed out during this sign-in; sign in again`)
     this.name = 'McpOAuthLoginSuperseded'
+  }
+}
+
+/**
+ * The server's authorization side (token endpoint, issuer or resource) is not the one the sign-in
+ * started with, so the authorization code is not sent anywhere.
+ */
+export class McpOAuthLoginEndpointChanged extends Error {
+  readonly code = 'MCP_OAUTH_LOGIN_ENDPOINT_CHANGED'
+  constructor(serverId: string) {
+    super(`The OAuth settings of MCP server "${serverId}" changed during this sign-in; sign in again`)
+    this.name = 'McpOAuthLoginEndpointChanged'
   }
 }
 
@@ -132,14 +154,20 @@ export async function beginMcpOAuthLogin(input: {
     client,
     requestedScope: scope,
     expectedEpoch: summary.epoch,
+    authorization: {
+      tokenEndpoint: discovery.tokenEndpoint.href,
+      ...(discovery.issuer ? { issuer: discovery.issuer } : {}),
+      resource: discovery.resource.href,
+    },
   }
 }
 
 /**
  * Exchanges the authorization code and writes the credential. The sign-in is dropped, with nothing
  * written, when the stored `epoch` is no longer the one the sign-in started from (the user signed
- * out meanwhile); this is checked before the code is spent and again under the store's lock. A
- * file that cannot be read is replaced. `requiredScope` is cleared only when the new grant covers
+ * out meanwhile); this is checked before the code is spent and again under the store's lock. It is
+ * also refused, before any token request, when discovery now names another token endpoint, issuer
+ * or resource than the sign-in started with. A file that cannot be read is replaced. `requiredScope` is cleared only when the new grant covers
  * it. A static client's secret is used for the request but never stored; a registered client's
  * secret and method are stored, and taken from the stored record when the caller has none.
  */
@@ -153,6 +181,7 @@ export async function completeMcpOAuthLogin(input: {
   redirectUri: string
   client: McpOAuthLoginStart['client']
   requestedScope: readonly string[]
+  authorization: McpOAuthLoginAuthorization
   store: McpOAuthStore
   fetchImpl: FetchLike
   now?: () => number
@@ -178,6 +207,9 @@ export async function completeMcpOAuthLogin(input: {
     : (client.tokenEndpointAuthMethod ?? kept?.tokenEndpointAuthMethod)
 
   const discovery = await discover(input.serverUrl, fetchImpl)
+  // The code, the PKCE verifier and any client secret go only to the token endpoint the sign-in
+  // started with, for the same resource.
+  if (serverDrifted(input.authorization, discovery)) throw new McpOAuthLoginEndpointChanged(serverId)
   const response = await exchangeAuthorization(discovery.authorizationServer, {
     ...(discovery.metadata ? { metadata: discovery.metadata } : {}),
     clientInformation: {

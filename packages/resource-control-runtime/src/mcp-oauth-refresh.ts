@@ -107,7 +107,11 @@ export async function refreshMcpOAuth(input: {
   return outcome.record
 }
 
-function serverDrifted(recorded: McpOAuthServer, found: McpOAuthDiscovery): boolean {
+/** Whether discovery now names another token endpoint, issuer or resource than the one recorded. */
+export function serverDrifted(
+  recorded: Pick<McpOAuthServer, 'tokenEndpoint' | 'issuer' | 'resource'>,
+  found: McpOAuthDiscovery,
+): boolean {
   return (
     canonicalUrl(recorded.tokenEndpoint) !== canonicalUrl(found.tokenEndpoint) ||
     recorded.issuer !== found.issuer ||

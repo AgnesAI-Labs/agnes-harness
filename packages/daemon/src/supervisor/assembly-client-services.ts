@@ -5,8 +5,7 @@ import { createFollowUpRunner } from '@agnes/daemon-rpc/local/follow-up-runner'
 import type { AgnesContext } from '@agnes/daemon-rpc/local/methods/agnes'
 import { createPlanCommands } from '@agnes/daemon-rpc/local/plan-commands'
 import type { Host } from '@agnes/host'
-import { type McpServerDescriptor, rpcError } from '@agnes/protocol'
-import type { ResourceAuthority } from '@agnes/resource-control-store'
+import { rpcError } from '@agnes/protocol'
 import type { DispatchState } from './assembly-client-dispatch.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
 import type { AssemblyBase } from './assembly-options.js'
@@ -14,16 +13,9 @@ import type { RuntimeState } from './assembly-runtime.js'
 import type { SessionsState } from './assembly-session-services.js'
 import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
+import { mcpOAuthServerLookup } from './mcp-oauth-server.js'
 import { newSessionActorResolver } from './new-session-actor.js'
 import { webhookSessions, webhookTriggerActor } from './webhook-sessions.js'
-
-/** Reads one MCP server definition for the daemon's OAuth sign-in completion; nothing else. */
-const MCP_OAUTH_AUTHORITY: ResourceAuthority = Object.freeze({
-  audience: 'admin',
-  principalId: 'system:mcp-oauth',
-  clientId: 'mcp-oauth',
-  permissions: Object.freeze(['mcp.read'] as const),
-})
 
 export function openClientServices(
   state: AssemblyBase & StoresState & WorkersState & DispatchState & RuntimeState & SessionsState,
@@ -88,19 +80,7 @@ export function openClientServices(
     resolveProfile: o.reloadProfile ?? (async () => o.profile),
     ...(o.inspectProfile ? { inspectProfile: o.inspectProfile } : {}),
     workspaces: () => workspaceCatalog.list(),
-    mcpServer: async (profile, serverId) => {
-      try {
-        const descriptor = (await resourceControl.service.call(
-          '_agnes/v1/mcp.servers.get',
-          { profile, serverId },
-          MCP_OAUTH_AUTHORITY,
-        )) as McpServerDescriptor
-        return descriptor.definition
-      } catch {
-        // Unknown server, another profile, or a store refusal: no server to sign in to.
-        return undefined
-      }
-    },
+    mcpServer: mcpOAuthServerLookup(resourceControl.service),
     plan: createPlanCommands({
       activationBarrier,
       journal,

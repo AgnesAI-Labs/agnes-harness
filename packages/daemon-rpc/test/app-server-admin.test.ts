@@ -187,6 +187,8 @@ describe('MCP OAuth sign-in in the daemon', () => {
         redirectUri: REDIRECT,
         client: { clientId: 'client-1' },
         requestedScope: ['read'],
+        // No metadata in this fixture: the token endpoint is the server origin's /token.
+        authorization: { tokenEndpoint: 'https://mcp.example.test/token', resource: SERVER_URL },
         ...extra,
       })
     return {
@@ -259,6 +261,11 @@ describe('MCP OAuth sign-in in the daemon', () => {
         error: { code: -32602 },
       })
       expect(await t.complete({ serverId: '../other' })).toMatchObject({ error: { code: -32602 } })
+      expect(
+        await t.complete({
+          authorization: { tokenEndpoint: 'https://mcp.example.test/token', resource: SERVER_URL, extra: 1 },
+        }),
+      ).toMatchObject({ error: { code: -32602 } })
       expect(t.tokenRequests).toEqual([])
       expect(await t.store.read('srv-1')).toBeNull()
     } finally {
@@ -296,6 +303,21 @@ describe('MCP OAuth sign-in in the daemon', () => {
       const stored = await t.store.read('srv-1')
       expect(stored).toMatchObject({ epoch: 0, rev: 1, tokens: { accessToken: 'issued-access' } })
       expect(JSON.stringify(stored)).not.toContain('static-secret-value')
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('refuses a sign-in whose token endpoint changed since it started, with a readable reason', async () => {
+    const t = await setup()
+    try {
+      const response = await t.complete({
+        authorization: { tokenEndpoint: 'https://elsewhere.example.test/token', resource: SERVER_URL },
+      })
+      expect(response).toHaveProperty('error')
+      expect(JSON.stringify(response)).toContain('MCP_OAUTH_LOGIN_ENDPOINT_CHANGED')
+      expect(t.tokenRequests).toEqual([])
+      expect(await t.store.read('srv-1')).toBeNull()
     } finally {
       await t.close()
     }
