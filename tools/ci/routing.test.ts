@@ -185,7 +185,7 @@ describe('CI scope', () => {
       expect(steps.indexOf(step)).toBeGreaterThan(steps.findIndex((s) => s.includes('id: suite')))
     }
     const rows = platformCheckRows(workflow)
-    expect(rows).toHaveLength(5)
+    expect(rows).toHaveLength(7)
     const osNames: Record<string, string> = {
       'ubuntu-latest': 'Linux',
       'macos-latest': 'macOS',
@@ -226,7 +226,7 @@ describe('CI scope', () => {
       expect(extra, event).toEqual(
         event === 'pull_request'
           ? [
-              ['macos-latest', ''],
+              ['macos-latest', '1/3'],
               ['windows-latest', '1/3'],
             ]
           : [],
@@ -336,6 +336,9 @@ function results(docsOnly: boolean): Record<string, { result: string; outputs?: 
     'runtime-package': { result: docsOnly ? 'skipped' : 'success' },
     sea: { result: docsOnly ? 'skipped' : 'success' },
     'native-linux': { result: 'success' },
+    'local-linux': { result: 'success' },
+    'local-macos': { result: docsOnly ? 'skipped' : 'success' },
+    'local-windows': { result: docsOnly ? 'skipped' : 'success' },
     'native-macos': { result: docsOnly ? 'skipped' : 'success' },
     'native-windows': { result: docsOnly ? 'skipped' : 'success' },
     'linux-fast': { result: docsOnly ? 'skipped' : 'success' },
@@ -360,6 +363,9 @@ describe('CI result', () => {
     'native-linux',
     'native-macos',
     'native-windows',
+    'local-linux',
+    'local-macos',
+    'local-windows',
     'linux-fast',
     'web',
     'web-result',

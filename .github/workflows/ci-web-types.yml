@@ -6,6 +6,8 @@ on:
       native: { type: string, required: true }
     outputs:
       artifact: { value: '${{ jobs.prepare.outputs.artifact }}' }
+      macos-matrix: { value: '${{ jobs.prepare.outputs.macos-matrix }}' }
+      linux-matrix: { value: '${{ jobs.prepare.outputs.linux-matrix }}' }
 permissions: { contents: read }
 env: { AGNES_NATIVE_BUILDER: glibc228 }
 jobs:
@@ -14,6 +16,8 @@ jobs:
     timeout-minutes: 15
     outputs:
       artifact: ${{ steps.identity.outputs.artifact }}
+      macos-matrix: ${{ steps.matrix.outputs.macos-matrix }}
+      linux-matrix: ${{ steps.matrix.outputs.linux-matrix }}
     steps:
       - id: identity
         env: { EXISTING: '${{ inputs.artifact }}' }
@@ -46,6 +50,9 @@ jobs:
           pnpm typecheck
           pnpm exec tsc -b tools/e2e-web
           pnpm exec vitest run tools/guards/src --maxWorkers=1
+      - id: matrix
+        if: inputs.artifact == ''
+        run: node tools/ci/web-matrix.mjs
       - name: Pack declarations
         if: inputs.artifact == ''
         run: node tools/ci/prepared-artifact.mjs pack types .agnes-tmp/prepared-types

@@ -40,6 +40,8 @@ jobs:
     outputs:
       types: ${{ steps.prepared.outputs.types }}
       native: ${{ steps.prepared.outputs.native }}
+      macos-matrix: ${{ steps.prepared.outputs.macos-matrix }}
+      linux-matrix: ${{ steps.prepared.outputs.linux-matrix }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
@@ -68,6 +70,7 @@ jobs:
           echo "native=prepared-native-ubuntu-latest-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
           node tools/ci/prepared-artifact.mjs pack types .agnes-tmp/prepared-types
           node tools/ci/prepared-artifact.mjs pack native .agnes-tmp/prepared-native
+          node tools/ci/web-matrix.mjs
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: ${{ steps.prepared.outputs.types }}
@@ -102,6 +105,29 @@ jobs:
     if: needs.changes.outputs.docs-only != 'true'
     uses: ./.github/workflows/ci-native.yml
     with: { runner: windows-latest }
+  local-linux:
+    needs: [changes, static, native-linux]
+    uses: ./.github/workflows/ci-local.yml
+    with:
+      runner: ubuntu-latest
+      native: ${{ needs.native-linux.outputs.artifact }}
+      types: ${{ needs.static.outputs.types }}
+  local-macos:
+    needs: [changes, static, native-macos]
+    if: needs.changes.outputs.docs-only != 'true'
+    uses: ./.github/workflows/ci-local.yml
+    with:
+      runner: macos-latest
+      native: ${{ needs.native-macos.outputs.artifact }}
+      types: ${{ needs.static.outputs.types }}
+  local-windows:
+    needs: [changes, static, native-windows]
+    if: needs.changes.outputs.docs-only != 'true'
+    uses: ./.github/workflows/ci-local.yml
+    with:
+      runner: windows-latest
+      native: ${{ needs.native-windows.outputs.artifact }}
+      types: ${{ needs.static.outputs.types }}
   linux-fast:
     needs: [changes, static, native-linux]
     if: needs.changes.outputs.docs-only != 'true'
@@ -110,12 +136,15 @@ jobs:
       types: ${{ needs.static.outputs.types }}
       native: ${{ needs.native-linux.outputs.artifact }}
   web:
-    needs: [changes, static, native-linux]
+    needs: [changes, static, native-linux, local-linux]
     if: needs.changes.outputs.web == 'true'
     uses: ./.github/workflows/e2e-web.yml
     with:
       types: ${{ needs.static.outputs.types }}
       native-linux: ${{ needs.native-linux.outputs.artifact }}
+      local-linux: ${{ needs.local-linux.outputs.artifact }}
+      macos-matrix: ${{ needs.static.outputs.macos-matrix }}
+      linux-matrix: ${{ needs.static.outputs.linux-matrix }}
       external-fast: ${{ needs.changes.outputs.docs-only != 'true' }}
       external-heavy: ${{ needs.changes.outputs.docs-only != 'true' }}
   web-result:
@@ -138,31 +167,34 @@ jobs:
           elif [ "$DOCS" = false ]; then test "$FAST" = success && test "$HEAVY" = success
           else exit 1; fi
   check-linux:
-    needs: [changes, static, native-linux]
+    needs: [changes, static, native-linux, local-linux]
     if: needs.changes.outputs.docs-only != 'true'
     uses: ./.github/workflows/ci-platform-check.yml
     with:
       runner: ubuntu-latest
       native: ${{ needs.native-linux.outputs.artifact }}
       types: ${{ needs.static.outputs.types }}
+      local: ${{ needs.local-linux.outputs.artifact }}
       shards: '[""]'
   check-macos:
-    needs: [changes, static, native-macos]
+    needs: [changes, static, native-macos, local-macos]
     if: needs.changes.outputs.docs-only != 'true'
     uses: ./.github/workflows/ci-platform-check.yml
     with:
       runner: macos-latest
       native: ${{ needs.native-macos.outputs.artifact }}
       types: ${{ needs.static.outputs.types }}
-      shards: '[""]'
+      local: ${{ needs.local-macos.outputs.artifact }}
+      shards: '["1/3","2/3","3/3"]'
   check-windows:
-    needs: [changes, static, native-windows]
+    needs: [changes, static, native-windows, local-windows]
     if: needs.changes.outputs.docs-only != 'true'
     uses: ./.github/workflows/ci-platform-check.yml
     with:
       runner: windows-latest
       native: ${{ needs.native-windows.outputs.artifact }}
       types: ${{ needs.static.outputs.types }}
+      local: ${{ needs.local-windows.outputs.artifact }}
       shards: '["1/3","2/3","3/3"]'
   check:
     name: check results
@@ -189,29 +221,32 @@ jobs:
   # Real daemon, worker and CLI process tests, and large-ledger or timer-bound tests. Every PR runs
   # them on Linux; pushes to main, the nightly schedule and manual runs cover all three platforms.
   heavy-linux:
-    needs: [changes, static, native-linux]
+    needs: [changes, static, native-linux, local-linux]
     if: needs.changes.outputs.docs-only != 'true'
     uses: ./.github/workflows/ci-platform-heavy.yml
     with:
       runner: ubuntu-latest
       native: ${{ needs.native-linux.outputs.artifact }}
       types: ${{ needs.static.outputs.types }}
+      local: ${{ needs.local-linux.outputs.artifact }}
   heavy-macos:
-    needs: [changes, static, native-macos]
+    needs: [changes, static, native-macos, local-macos]
     if: needs.changes.outputs.docs-only != 'true' && github.event_name != 'pull_request'
     uses: ./.github/workflows/ci-platform-heavy.yml
     with:
       runner: macos-latest
       native: ${{ needs.native-macos.outputs.artifact }}
       types: ${{ needs.static.outputs.types }}
+      local: ${{ needs.local-macos.outputs.artifact }}
   heavy-windows:
-    needs: [changes, static, native-windows]
+    needs: [changes, static, native-windows, local-windows]
     if: needs.changes.outputs.docs-only != 'true' && github.event_name != 'pull_request'
     uses: ./.github/workflows/ci-platform-heavy.yml
     with:
       runner: windows-latest
       native: ${{ needs.native-windows.outputs.artifact }}
       types: ${{ needs.static.outputs.types }}
+      local: ${{ needs.local-windows.outputs.artifact }}
   heavy:
     name: heavy results
     needs: [changes, heavy-linux, heavy-macos, heavy-windows]
@@ -333,7 +368,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, static, native-linux, native-macos, native-windows, linux-fast, check, windows-check-result, heavy, runtime-package, sea, web, web-result]
+    needs: [changes, static, native-linux, native-macos, native-windows, local-linux, local-macos, local-windows, linux-fast, check, windows-check-result, heavy, runtime-package, sea, web, web-result]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

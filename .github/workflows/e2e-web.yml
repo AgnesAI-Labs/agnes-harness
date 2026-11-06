@@ -16,6 +16,9 @@ on:
       suite: { type: string, default: gate }
       types: { type: string, default: '' }
       native-linux: { type: string, default: '' }
+      local-linux: { type: string, default: '' }
+      macos-matrix: { type: string, default: '' }
+      linux-matrix: { type: string, default: '' }
       external-fast: { type: boolean, default: false }
       external-heavy: { type: boolean, default: false }
 permissions: { contents: read }
@@ -39,6 +42,23 @@ jobs:
     with:
       artifact: ${{ inputs.types || '' }}
       native: ${{ needs.web-native-linux.outputs.artifact }}
+  web-local-linux:
+    if: inputs.suite != 'benchmark'
+    needs: [web-types, web-native-linux]
+    uses: ./.github/workflows/ci-local.yml
+    with:
+      runner: ubuntu-24.04
+      types: ${{ needs.web-types.outputs.artifact }}
+      native: ${{ needs.web-native-linux.outputs.artifact }}
+      artifact: ${{ inputs.local-linux || '' }}
+  web-local-macos:
+    if: inputs.suite != 'benchmark'
+    needs: [web-types, web-native-macos]
+    uses: ./.github/workflows/ci-local.yml
+    with:
+      runner: macos-15
+      types: ${{ needs.web-types.outputs.artifact }}
+      native: ${{ needs.web-native-macos.outputs.artifact }}
   web-quality-linux:
     if: inputs.suite != 'benchmark'
     needs: [web-types, web-native-linux]
@@ -77,48 +97,10 @@ jobs:
   # A spec too long for one job is split by title: a --grep list and its exact --grep-invert.
   e2e-web:
     name: macOS Web E2E (${{ matrix.id }})
-    needs: [web-types, web-native-macos, web-quality-macos]
+    needs: [web-types, web-native-macos, web-quality-macos, web-local-macos]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { id: main-1, args: "fact-chain.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-24, args: "diagnostics.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-2, args: "first-run.spec.ts --grep 'first-run en|first run Demo'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-3, args: "first-run.spec.ts --grep 'first-run zh-CN'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-4, args: "memory.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-5, args: "prompt-trace.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-6, args: "runtime.spec.ts --grep 'consented role takeover|session admission keeps|bundled deliverables survive|streaming follows the bottom|fresh first run, keyless demo'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-20, args: "runtime.spec.ts --grep-invert 'consented role takeover|session admission keeps|bundled deliverables survive|streaming follows the bottom|fresh first run, keyless demo'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-7, args: "ui-flows.spec.ts --grep 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-13, args: "ui-flows.spec.ts --grep 'UI folder install|Playwright MCP preset|Checking a source with no plugin manifest'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-21, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs|UI folder install|Playwright MCP preset|Checking a source with no plugin manifest'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-8, args: "ui-gate.spec.ts --grep ' en/light$'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-25, args: "ui-gate.spec.ts --grep ' en/dark$'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-14, args: "ui-gate.spec.ts --grep 'zh-CN/light$|live language switching'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-19, args: "ui-gate.spec.ts --grep 'zh-CN/dark$'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-9, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-10, args: "human-controls.spec.ts references.spec.ts intelligent-ui.spec.ts question-surfaces.spec.ts large-upload.spec.ts credentials.spec.ts observability.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-11, args: "auto-review.spec.ts webhooks.spec.ts business-agents.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-22, args: "feedback.spec.ts plugin-purpose.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-16, args: "v3-actions.spec.ts --grep 'forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-23, args: "plugin-config.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-17, args: "v3-actions.spec.ts --grep-invert 'forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-12, args: "v3-navigation.spec.ts --grep 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-18, args: "v3-navigation.spec.ts --grep-invert 'permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/'", gate-minutes: 10, narrow-widths: "" }
-          # Sized from Linux per-case durations times the measured macOS 15 / Linux ratio (about 1.3).
-          # --grep applies to every file in a list, so the first agent-sweep list also names answer tables.
-          - { id: main-26, args: "agent-sweep.spec.ts answer-tables.spec.ts --grep 'operations#desk|data-report#|finance-reconcile#|builtin:general|knowledge-qa#|Answer tables'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-27, args: "agent-sweep.spec.ts base-conversation.spec.ts mcp-management.spec.ts mcp-oauth.spec.ts browser.spec.ts browser-layout.spec.ts --grep-invert 'operations#desk|data-report#|finance-reconcile#|builtin:general|knowledge-qa#'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-28, args: "session-activity.spec.ts session-create.spec.ts tool-recovery.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          # The human review-to-publish case alone; the update/skill inbox case with the full-access case.
-          - { id: candidate-review, args: "candidate-review.spec.ts --grep 'refuses edited approval'", gate-minutes: 10, narrow-widths: "" }
-          - { id: candidate-review-2, args: "candidate-review.spec.ts --grep-invert 'refuses edited approval'", gate-minutes: 10, narrow-widths: "" }
-          # Per PR: independent phone/tablet audits retain all twelve captures within each step's budget.
-          # The nightly suite (e2e-web-nightly.yml) runs every locale/theme at all three widths.
-          - { id: narrow-phone, args: "narrow.spec.ts --grep '375 en/light$'", narrow-widths: "375", gate-minutes: 10 }
-          - { id: narrow-tablet, args: "narrow.spec.ts --grep '768 en/light$'", narrow-widths: "768", gate-minutes: 10 }
+      matrix: ${{ fromJSON(inputs.macos-matrix || needs.web-types.outputs.macos-matrix) }}
     if: inputs.suite != 'narrow-nightly' && inputs.suite != 'benchmark'
     runs-on: macos-15
     timeout-minutes: 15
@@ -152,12 +134,31 @@ jobs:
       - name: Provision pinned Chromium
         if: steps.browser-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install chromium
-      - name: Real daemon and Web gate (zero retries)
-        timeout-minutes: ${{ matrix.gate-minutes || 10 }}
-        env: { AGH_NARROW_WIDTHS: "${{ matrix.narrow-widths }}" }
-        run: |
-          node tools/e2e-web/ci.mjs prepare --prepared-local .agnes-tmp/prepared-local
-          node tools/e2e-web/ci.mjs test --prepared-local .agnes-tmp/prepared-local ${{ matrix.args }} --workers=1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.web-local-macos.outputs.artifact }}
+          path: .agnes-tmp/prepared-local
+      - name: Restore shared local runtime
+        id: local
+        run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-local
+      - name: Browser batch 1 (${{ matrix.batches[0].id }}, zero retries)
+        if: ${{ !cancelled() && steps.local.outcome == 'success' && matrix.batches[0] != null }}
+        timeout-minutes: ${{ matrix.batches[0].timeoutMinutes || 10 }}
+        env:
+          CI_WEB_BATCH: ${{ toJSON(matrix.batches[0]) }}
+        run: node tools/e2e-web/run-ci-batch.mjs --prepared-local packages/cli/dist/local/.ci-preparation
+      - name: Browser batch 2 (${{ matrix.batches[1].id }}, zero retries)
+        if: ${{ !cancelled() && steps.local.outcome == 'success' && matrix.batches[1] != null }}
+        timeout-minutes: ${{ matrix.batches[1].timeoutMinutes || 10 }}
+        env:
+          CI_WEB_BATCH: ${{ toJSON(matrix.batches[1]) }}
+        run: node tools/e2e-web/run-ci-batch.mjs --prepared-local packages/cli/dist/local/.ci-preparation
+      - name: Browser batch 3 (${{ matrix.batches[2].id }}, zero retries)
+        if: ${{ !cancelled() && steps.local.outcome == 'success' && matrix.batches[2] != null }}
+        timeout-minutes: ${{ matrix.batches[2].timeoutMinutes || 10 }}
+        env:
+          CI_WEB_BATCH: ${{ toJSON(matrix.batches[2]) }}
+        run: node tools/e2e-web/run-ci-batch.mjs --prepared-local packages/cli/dist/local/.ci-preparation
       - name: Upload report, screenshots, traces and process evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -172,33 +173,10 @@ jobs:
           retention-days: 14
   e2e-web-linux:
     name: Linux Web E2E (${{ matrix.id }})
-    needs: [web-types, web-native-linux, web-quality-linux]
+    needs: [web-types, web-native-linux, web-quality-linux, web-local-linux]
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { id: main-1, args: "agent-sweep.spec.ts answer-tables.spec.ts auto-review.spec.ts base-conversation.spec.ts browser-layout.spec.ts browser.spec.ts business-agents.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-2, args: "candidate-review.spec.ts credentials.spec.ts diagnostics.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-3, args: "fact-chain.spec.ts feedback.spec.ts human-controls.spec.ts intelligent-ui.spec.ts large-upload.spec.ts question-surfaces.spec.ts references.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-4, args: "first-run.spec.ts mcp-management.spec.ts mcp-oauth.spec.ts observability.spec.ts webhooks.spec.ts tool-recovery.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-5, args: "memory.spec.ts plugin-config.spec.ts session-create.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-6, args: "plugin-purpose.spec.ts prompt-trace.spec.ts session-activity.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-7, args: "runtime.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-8, args: "ui-flows.spec.ts --grep 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-9, args: "ui-flows.spec.ts --grep-invert 'UI first run|UI MCP stdio|UI ask, plan|UI background jobs'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-10, args: "ui-gate.spec.ts --grep ' en/(light|dark)$'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-11, args: "ui-gate.spec.ts --grep 'zh-CN/light$|live language switching'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-16, args: "ui-gate.spec.ts --grep 'zh-CN/dark$'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-12, args: "v3-actions.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-13, args: "v3-navigation.spec.ts", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-14, args: "workbench.spec.ts --grep 'workspace dock|file tabs open|session terminal'", gate-minutes: 10, narrow-widths: "" }
-          - { id: main-15, args: "workbench.spec.ts --grep-invert 'workspace dock|file tabs open|session terminal'", gate-minutes: 10, narrow-widths: "" }
-          - { id: narrow-phone, args: "narrow.spec.ts --grep '375 en/light$'", narrow-widths: "375", gate-minutes: 10 }
-          - { id: narrow-tablet, args: "narrow.spec.ts --grep '768 en/light$'", narrow-widths: "768", gate-minutes: 10 }
-    # Explicit lists from hosted-Linux timings: count-based --shard cannot balance cases that take
-    # two seconds to three minutes. Every case appears in exactly one list (README: Gate).
-    # Functional, accessibility and layout assertions; layout still depends on this image and its
-    # explicitly provisioned font families. Neither platform has a pixel gate (README: Gate).
+      matrix: ${{ fromJSON(inputs.linux-matrix || needs.web-types.outputs.linux-matrix) }}
     if: inputs.suite != 'narrow-nightly' && inputs.suite != 'benchmark'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
@@ -238,13 +216,31 @@ jobs:
         id: chromium
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm exec playwright install --with-deps chromium
-      - name: Build local runtime
-        id: build
-        run: node tools/e2e-web/ci.mjs prepare --prepared-local .agnes-tmp/prepared-local
-      - name: Real daemon and Web gate (zero retries)
-        timeout-minutes: ${{ matrix.gate-minutes || 10 }}
-        env: { AGH_NARROW_WIDTHS: "${{ matrix.narrow-widths }}" }
-        run: node tools/e2e-web/ci.mjs test --prepared-local .agnes-tmp/prepared-local ${{ matrix.args }} --workers=1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.web-local-linux.outputs.artifact }}
+          path: .agnes-tmp/prepared-local
+      - name: Restore shared local runtime
+        id: local
+        run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-local
+      - name: Browser batch 1 (${{ matrix.batches[0].id }}, zero retries)
+        if: ${{ !cancelled() && steps.local.outcome == 'success' && matrix.batches[0] != null }}
+        timeout-minutes: ${{ matrix.batches[0].timeoutMinutes || 10 }}
+        env:
+          CI_WEB_BATCH: ${{ toJSON(matrix.batches[0]) }}
+        run: node tools/e2e-web/run-ci-batch.mjs --prepared-local packages/cli/dist/local/.ci-preparation
+      - name: Browser batch 2 (${{ matrix.batches[1].id }}, zero retries)
+        if: ${{ !cancelled() && steps.local.outcome == 'success' && matrix.batches[1] != null }}
+        timeout-minutes: ${{ matrix.batches[1].timeoutMinutes || 10 }}
+        env:
+          CI_WEB_BATCH: ${{ toJSON(matrix.batches[1]) }}
+        run: node tools/e2e-web/run-ci-batch.mjs --prepared-local packages/cli/dist/local/.ci-preparation
+      - name: Browser batch 3 (${{ matrix.batches[2].id }}, zero retries)
+        if: ${{ !cancelled() && steps.local.outcome == 'success' && matrix.batches[2] != null }}
+        timeout-minutes: ${{ matrix.batches[2].timeoutMinutes || 10 }}
+        env:
+          CI_WEB_BATCH: ${{ toJSON(matrix.batches[2]) }}
+        run: node tools/e2e-web/run-ci-batch.mjs --prepared-local packages/cli/dist/local/.ci-preparation
       - name: Upload report, screenshots, traces and process evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -349,7 +345,7 @@ jobs:
         run: node tools/ci/run-migrated-heavy.mjs --shard=${{ matrix.shard }}/3
   web-e2e-gate:
     name: Web E2E gate
-    needs: [web-types, web-native-linux, web-native-macos, web-quality-linux, web-quality-macos, e2e-web, e2e-web-linux, linux-contracts, linux-fast, linux-migrated-heavy]
+    needs: [web-types, web-native-linux, web-native-macos, web-local-linux, web-local-macos, web-quality-linux, web-quality-macos, e2e-web, e2e-web-linux, linux-contracts, linux-fast, linux-migrated-heavy]
     if: always() && inputs.suite != 'narrow-nightly' && inputs.suite != 'benchmark'
     runs-on: ubuntu-latest
     timeout-minutes: 1
@@ -367,31 +363,31 @@ jobs:
   # 20 minutes here; the steps are the platform jobs' own (YAML anchors), not a copy.
   e2e-web-narrow-nightly:
     name: macOS Web E2E nightly (${{ matrix.id }})
-    needs: [web-types, web-native-macos, web-quality-macos]
+    needs: [web-types, web-native-macos, web-quality-macos, web-local-macos]
     if: inputs.suite == 'narrow-nightly'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'", gate-minutes: 20, narrow-widths: "" }
-          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'", gate-minutes: 20, narrow-widths: "" }
-          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'", gate-minutes: 20, narrow-widths: "" }
-          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'", gate-minutes: 20, narrow-widths: "" }
+          - {"id": "narrow-en-light", "batches": [{"id": "narrow-en-light", "args": ["narrow.spec.ts", "--grep", "en/light$"], "widths": "", "timeoutMinutes": 20}]}
+          - {"id": "narrow-en-dark", "batches": [{"id": "narrow-en-dark", "args": ["narrow.spec.ts", "--grep", "en/dark$"], "widths": "", "timeoutMinutes": 20}]}
+          - {"id": "narrow-zh-CN-light", "batches": [{"id": "narrow-zh-CN-light", "args": ["narrow.spec.ts", "--grep", "zh-CN/light$"], "widths": "", "timeoutMinutes": 20}]}
+          - {"id": "narrow-zh-CN-dark", "batches": [{"id": "narrow-zh-CN-dark", "args": ["narrow.spec.ts", "--grep", "zh-CN/dark$"], "widths": "", "timeoutMinutes": 20}]}
     runs-on: macos-15
     timeout-minutes: 30
     steps: *macos-web-steps
   e2e-web-linux-narrow-nightly:
     name: Linux Web E2E nightly (${{ matrix.id }})
-    needs: [web-types, web-native-linux, web-quality-linux]
+    needs: [web-types, web-native-linux, web-quality-linux, web-local-linux]
     if: inputs.suite == 'narrow-nightly'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { id: narrow-en-light, args: "narrow.spec.ts --grep 'en/light$'", gate-minutes: 20, narrow-widths: "" }
-          - { id: narrow-en-dark, args: "narrow.spec.ts --grep 'en/dark$'", gate-minutes: 20, narrow-widths: "" }
-          - { id: narrow-zh-CN-light, args: "narrow.spec.ts --grep 'zh-CN/light$'", gate-minutes: 20, narrow-widths: "" }
-          - { id: narrow-zh-CN-dark, args: "narrow.spec.ts --grep 'zh-CN/dark$'", gate-minutes: 20, narrow-widths: "" }
+          - {"id": "narrow-en-light", "batches": [{"id": "narrow-en-light", "args": ["narrow.spec.ts", "--grep", "en/light$"], "widths": "", "timeoutMinutes": 20}]}
+          - {"id": "narrow-en-dark", "batches": [{"id": "narrow-en-dark", "args": ["narrow.spec.ts", "--grep", "en/dark$"], "widths": "", "timeoutMinutes": 20}]}
+          - {"id": "narrow-zh-CN-light", "batches": [{"id": "narrow-zh-CN-light", "args": ["narrow.spec.ts", "--grep", "zh-CN/light$"], "widths": "", "timeoutMinutes": 20}]}
+          - {"id": "narrow-zh-CN-dark", "batches": [{"id": "narrow-zh-CN-dark", "args": ["narrow.spec.ts", "--grep", "zh-CN/dark$"], "widths": "", "timeoutMinutes": 20}]}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps: *linux-web-steps

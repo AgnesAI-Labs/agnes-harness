@@ -18,6 +18,8 @@ describe('single-run coverage routing', () => {
         'web-types': { result: 'success' },
         'web-native-linux': { result: 'success' },
         'web-native-macos': { result: 'success' },
+        'web-local-linux': { result: 'success' },
+        'web-local-macos': { result: 'success' },
         'web-quality-linux': { result: 'success' },
         'web-quality-macos': { result: 'success' },
         'e2e-web': { result: 'success' },
@@ -56,7 +58,7 @@ describe('independent platform preparation', () => {
     for (const platform of ['linux', 'macos', 'windows']) {
       for (const layer of ['check', 'heavy']) {
         const body = workflowJob('ci.yml', `${layer}-${platform}`)
-        expect(body).toContain(`needs: [changes, static, native-${platform}]`)
+        expect(body).toContain(`needs: [changes, static, native-${platform}, local-${platform}]`)
         for (const other of ['linux', 'macos', 'windows'].filter((name) => name !== platform))
           expect(body).not.toContain(`needs.native-${other}`)
       }
@@ -96,5 +98,34 @@ describe('platform result aggregation', () => {
         }
       }
     }
+  })
+})
+
+describe('shared preparation contracts', () => {
+  it('keeps fresh Windows native compilation prerequisites on every check and heavy runner', () => {
+    for (const file of ['ci-platform-check.yml', 'ci-platform-heavy.yml']) {
+      const source = readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8')
+      expect(source).toContain('prepare-windows-native.ps1')
+      expect(source.indexOf('prepare-windows-native.ps1')).toBeLessThan(
+        source.indexOf('run --project fast') < 0
+          ? source.indexOf('run-heavy-shard.mjs')
+          : source.indexOf('run --project fast'),
+      )
+      expect(source).toContain("if: runner.os == 'Windows'")
+    }
+  })
+
+  it('preserves independent batch deadlines and continues selected batches after a sibling failure', () => {
+    const source = readFileSync(new URL('../../.github/workflows/e2e-web.yml', import.meta.url), 'utf8')
+    for (let index = 0; index < 3; index++) {
+      expect(source).toContain(
+        `!cancelled() && steps.local.outcome == 'success' && matrix.batches[${index}] != null`,
+      )
+      expect(source).toContain(
+        'timeout-minutes: $' + '{{ matrix.batches[' + index + '].timeoutMinutes || 10 }}',
+      )
+    }
+    expect(source).not.toContain('continue-on-error')
+    expect(source).not.toContain('ci.mjs prepare')
   })
 })

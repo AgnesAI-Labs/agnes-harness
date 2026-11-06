@@ -5,6 +5,7 @@ on:
       runner: { type: string, required: true }
       native: { type: string, required: true }
       types: { type: string, required: true }
+      local: { type: string, required: true }
 permissions: { contents: read }
 env: { AGNES_NATIVE_BUILDER: glibc228 }
 jobs:
@@ -65,6 +66,11 @@ jobs:
           "TMP=$temp" >> $env:GITHUB_ENV
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm run doctor:toolchain
+      # Fresh-runtime tests still compile their own addon; shared binaries do not replace headers.
+      - name: Prepare Windows native headers for source-build tests
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ inputs.native }}
@@ -87,7 +93,13 @@ jobs:
           sudo apt-get update && sudo apt-get install -y bubblewrap zsh
           bash tools/e2e-web/provision-linux-sandbox.sh
       # The demo, agent-sweep and built-distribution gates start packages/cli/dist/local.
-      - run: pnpm --filter @agnes/cli build:local
+      - name: Download prepared local package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ inputs.local }}
+          path: .agnes-tmp/prepared-local
+      - name: Restore prepared local package
+        run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-local
       # The multi-tab transport and agent-sweep tests launch the pinned Playwright Chromium.
       - name: provision pinned Chromium
         run: pnpm exec playwright install ${{ runner.os == 'Linux' && '--with-deps' || '' }} chromium

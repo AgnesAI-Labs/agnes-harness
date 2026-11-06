@@ -17,6 +17,9 @@ export function verifyResults(needs) {
   if (!['true', 'false'].includes(webSelected)) throw new Error('Missing or invalid Web selection')
   Object.assign(expected, {
     'native-linux': 'success',
+    'local-linux': 'success',
+    'local-macos': docsOnly === 'true' ? 'skipped' : 'success',
+    'local-windows': docsOnly === 'true' ? 'skipped' : 'success',
     'native-macos': docsOnly === 'true' ? 'skipped' : 'success',
     'native-windows': docsOnly === 'true' ? 'skipped' : 'success',
     'linux-fast': docsOnly === 'true' ? 'skipped' : 'success',

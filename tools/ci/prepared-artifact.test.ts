@@ -13,20 +13,26 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const helper = fileURLToPath(new URL('./prepared-artifact.mjs', import.meta.url))
 const cache = fileURLToPath(new URL('../e2e-web/build-cache.mjs', import.meta.url))
 type Manifest = Record<string, unknown> & { files: Array<{ path: string; mode: number }> }
 const directories: string[] = []
-const environment = {
-  ...process.env,
+function fixtureEnvironment(overrides: NodeJS.ProcessEnv, inherited: NodeJS.ProcessEnv = process.env) {
+  const names = new Set(Object.keys(overrides).map((key) => key.toLowerCase()))
+  return {
+    ...Object.fromEntries(Object.entries(inherited).filter(([key]) => !names.has(key.toLowerCase()))),
+    ...overrides,
+  }
+}
+const environment = fixtureEnvironment({
   GITHUB_RUN_ID: '12345',
   GITHUB_RUN_ATTEMPT: '1',
   ImageOS: 'fixture-os',
   ImageVersion: 'fixture-image',
-}
+})
 function temporary() {
   const path = mkdtempSync(join(tmpdir(), 'agh-prepared-'))
   directories.push(path)
@@ -87,8 +93,12 @@ function fixture() {
     write(path, 'native fixture\n')
     chmodSync(join(cwd, path), 0o755)
   }
-  const run = (args: string[], env = environment) =>
-    spawnSync(process.execPath, [helper, ...args], { cwd, env, encoding: 'utf8' })
+  const run = (args: string[], overrides: NodeJS.ProcessEnv = {}) =>
+    spawnSync(process.execPath, [helper, ...args], {
+      cwd,
+      env: fixtureEnvironment(overrides, environment),
+      encoding: 'utf8',
+    })
   const manifest = () => JSON.parse(readFileSync(join(artifact, 'manifest.json'), 'utf8')) as Manifest
   const rewrite = (change: (value: Manifest) => void) => {
     const value = manifest()
@@ -121,11 +131,11 @@ function fixture() {
       [
         '--input-type=module',
         '-e',
-        `import {sourceHash} from ${JSON.stringify(cache)}; console.log(await sourceHash())`,
+        `import {sourceHash} from ${JSON.stringify(pathToFileURL(cache).href)}; console.log(await sourceHash())`,
       ],
       { cwd, encoding: 'utf8' },
     )
-    expect(hash.status).toBe(0)
+    expect(hash.status, hash.stderr).toBe(0)
     write(
       'packages/cli/dist/local/.e2e-build.json',
       JSON.stringify({
@@ -253,11 +263,11 @@ describe('prepared CI artifacts', () => {
       [
         '--input-type=module',
         '-e',
-        `import {sourceHash} from ${JSON.stringify(cache)}; console.log(await sourceHash({platform:'linux',arch:'x64'}))`,
+        `import {sourceHash} from ${JSON.stringify(pathToFileURL(cache).href)}; console.log(await sourceHash({platform:'linux',arch:'x64'}))`,
       ],
       { cwd: f.cwd, encoding: 'utf8' },
     )
-    expect(hash.status).toBe(0)
+    expect(hash.status, hash.stderr).toBe(0)
     f.rewrite((value) => {
       value.platform = 'linux'
       value.arch = 'x64'
@@ -294,6 +304,7 @@ describe('prepared CI artifacts', () => {
 
   it('roundtrips the source owners native helper executable modes', () => {
     const f = fixture()
+    const observedModes = f.native.map((path) => ({ path, mode: statSync(join(f.cwd, path)).mode & 0o777 }))
     success(f.run(['pack', 'native', f.artifact]))
     expect(f.manifest().nodeAbi).toBe(process.versions.modules)
     expect(f.manifest().napi).toBe(process.versions.napi)
@@ -307,6 +318,11 @@ describe('prepared CI artifacts', () => {
     success(f.run(['restore', f.artifact]))
     if (process.platform !== 'win32')
       expect(statSync(join(f.cwd, f.native[0] as string)).mode & 0o777).toBe(0o755)
+    else
+      for (const { path, mode } of observedModes) {
+        expect(f.manifest().files.find((file) => file.path === path)?.mode).toBe(mode)
+        expect(statSync(join(f.cwd, path)).mode & 0o777).toBe(mode)
+      }
   })
 
   it('refuses absent native outputs and lost executable bits', () => {
@@ -357,6 +373,16 @@ describe('prepared CI artifacts', () => {
   it('roundtrips local distribution preserving Node bootstraps at 0644 and native executables at 0755', () => {
     const f = fixture()
     f.local()
+    const observedModes = [
+      'agnes.mjs',
+      'daemon.mjs',
+      'worker.mjs',
+      process.platform === 'win32' ? 'ripgrep/rg.exe' : 'ripgrep/rg',
+      'node_modules/@agnes/system-node/dist/native/agnes-system.node',
+    ].map((name) => {
+      const path = `packages/cli/dist/local/${name}`
+      return { path, mode: statSync(join(f.cwd, path)).mode & 0o777 }
+    })
     success(f.run(['pack', 'local', f.artifact]))
     rmSync(join(f.cwd, 'packages/cli/dist/local'), { recursive: true })
     success(f.run(['restore', f.artifact]))
@@ -368,7 +394,11 @@ describe('prepared CI artifacts', () => {
         expect(statSync(join(f.cwd, 'packages/cli/dist/local', name)).mode & 0o777).toBe(0o644)
       expect(statSync(join(f.cwd, 'packages/cli/dist/local/ripgrep/rg')).mode & 0o777).toBe(0o755)
       expect(statSync(join(f.cwd, 'packages/cli/dist/local/native/pty-relay')).mode & 0o777).toBe(0o755)
-    }
+    } else
+      for (const { path, mode } of observedModes) {
+        expect(f.manifest().files.find((file) => file.path === path)?.mode).toBe(mode)
+        expect(statSync(join(f.cwd, path)).mode & 0o777).toBe(mode)
+      }
   })
 
   it('refuses stale local stamps and missing distribution native helpers', () => {

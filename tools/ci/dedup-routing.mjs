@@ -10,6 +10,8 @@ export function verifyWebResults(needs, { externalFast = false, externalHeavy = 
     'web-types': 'success',
     'web-native-linux': 'success',
     'web-native-macos': 'success',
+    'web-local-linux': 'success',
+    'web-local-macos': 'success',
     'web-quality-linux': 'success',
     'web-quality-macos': 'success',
     'e2e-web': 'success',
