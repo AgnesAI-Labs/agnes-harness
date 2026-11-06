@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { resolve, win32 } from 'node:path'
 import type { EventEnvelope, SessionJobsReadResult, UITimeline } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { ShellJobs } from '../../packages/base/extensions/jobs/src/registry.js'
@@ -7,11 +7,28 @@ import { runShellJob } from '../../packages/base/extensions/jobs/src/shell.js'
 import { presets as basePresets, sandboxWorkspaceProbe } from '../../packages/base/src/index.js'
 import { fakeToolContext } from '../../packages/base/testkit/tool-context.js'
 import { presets as codePresets } from '../../packages/code/src/index.js'
-import { testFsPolicy } from '../../packages/core/testkit/index.js'
+import { fencedFs, testFsPolicy } from '../../packages/core/testkit/index.js'
 import { resolvePreset } from '../../packages/host-common/src/presets/resolve.js'
 import { normalizeSandboxStaticConfig } from '../../packages/host-common/src/workspace-policy.js'
 import { createSandboxSeam } from '../../packages/host-infrastructure/src/sandbox-seam.js'
 import { assertRunbookBackendRefusal } from './agent-outcome.js'
+
+function runbookContext(cwd: string) {
+  const policy = testFsPolicy(cwd)
+  const ctx = fakeToolContext({ cwd: policy.workspaceRoot })
+  const memoryFs = ctx.fs
+  const fs = fencedFs(
+    {
+      ...memoryFs,
+      stat: async (path) => {
+        if (path === policy.workspaceRoot) return { kind: 'dir', size: 0, mtimeMs: 0 }
+        return memoryFs.stat(path)
+      },
+    },
+    policy,
+  )
+  return { policy, ctx: { ...ctx, fs } }
+}
 
 // Minimal durable facts from the Windows failure; no machine paths, credentials or captured prompts.
 const evidence = () => ({
@@ -151,6 +168,20 @@ it('rejects a receipt attached to a supposedly unavailable diagnostic backend', 
   expect(() => check(changed)).toThrow()
 })
 
+it.each([
+  ['native', resolve('/work/proj'), resolve],
+  ['Windows', String.raw`D:\work\proj`, win32.resolve],
+] as const)(
+  'the runbook fixture recognizes its root without admitting other paths (%s)',
+  async (_label, cwd, resolvePath) => {
+    const { ctx } = runbookContext(cwd)
+    await expect(ctx.fs.stat(resolvePath(ctx.cwd))).resolves.toMatchObject({ kind: 'dir' })
+    await expect(ctx.fs.stat(resolvePath(ctx.cwd, 'missing'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(ctx.fs.stat(resolvePath(ctx.cwd, '..', 'outside'))).rejects.toThrow('FS_DENIED')
+    await expect(ctx.fs.stat(resolvePath(ctx.cwd, '.git'))).rejects.toThrow('FS_DENIED')
+  },
+)
+
 it('the shipped runbook refuses Windows jobs before reaching the raw process port', async () => {
   const manifest = JSON.parse(
     readFileSync(new URL('../../examples/fde/ops-runbook/package.json', import.meta.url), 'utf8'),
@@ -161,8 +192,7 @@ it('the shipped runbook refuses Windows jobs before reaching the raw process por
     ...manifest.agnes.bundles['ops-runbook'].presets,
   })
   const config = normalizeSandboxStaticConfig(preset.doc)
-  const policy = testFsPolicy(resolve('/work/proj'))
-  const ctx = fakeToolContext({ cwd: policy.workspaceRoot })
+  const { policy, ctx } = runbookContext(resolve('/work/proj'))
   let rawStarts = 0
   const backend = await sandboxWorkspaceProbe({
     ...config,

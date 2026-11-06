@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { access, readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { expect, it } from 'vitest'
 import { isolatedRuntime } from './runtime.js'
 
@@ -13,7 +13,7 @@ it('lets daemon stop finish a legitimate drain within its existing inner deadlin
     process.execPath,
     [
       '--import',
-      require.resolve('tsx'),
+      pathToFileURL(require.resolve('tsx')).href,
       fileURLToPath(new URL('./test/slow-shutdown.ts', import.meta.url)),
       runtime.home,
     ],
