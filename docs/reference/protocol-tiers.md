@@ -270,6 +270,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/mcp.servers.reconnect`
 - `_agnes/v1/mcp.servers.oauth.status`
 - `_agnes/v1/mcp.servers.oauth.status.set`
+- `_agnes/v1/mcp.servers.oauth.signOut`
 
 ### Extension calls and surfaces
 

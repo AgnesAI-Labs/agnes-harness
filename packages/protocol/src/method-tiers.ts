@@ -103,6 +103,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/mcp.servers.enable': 'admin',
   '_agnes/v1/mcp.servers.disable': 'admin',
   '_agnes/v1/mcp.servers.reconnect': 'admin',
+  '_agnes/v1/mcp.servers.oauth.signOut': 'admin',
   '_agnes/v1/mcp.servers.oauth.status': 'admin',
   '_agnes/v1/mcp.servers.oauth.status.set': 'admin',
   '_agnes/v1/extension.ack': 'admin',

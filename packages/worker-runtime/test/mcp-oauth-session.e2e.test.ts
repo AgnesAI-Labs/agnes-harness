@@ -13,6 +13,7 @@ import {
   completeMcpOAuthLogin,
   createMcpOAuthAuthorizer,
   createOAuthHttpHandler,
+  signOutMcpOAuth,
   summarizeMcpOAuth,
 } from '@agnes/resource-control-runtime'
 import { createWorkerMcpServerOpener } from '@agnes/resource-control-worker'
@@ -259,7 +260,7 @@ async function sessionRows(store: McpOAuthStore, remote: Remote) {
       },
     )
   }
-  return { host, runtime, applied, call }
+  return { host, runtime, entry, applied, call }
 }
 
 const tool = (host: Host) => host.kernel.tools.resolve(TOOL)
@@ -416,19 +417,17 @@ describe('OAuth MCP servers in session rows', () => {
     expect(remote.refreshGrants()).toHaveLength(1)
   })
 
-  it('after sign-out the server sees no request with the old token', async () => {
+  it('after logout and signOut the server sees no further request with the old token, and the row is unavailable', async () => {
     const remote = await startRemote()
     const store = createMcpOAuthStore({ root: await tempRoot('mcp-oauth-store-') })
     await seedSignIn(store, remote, { access: 'at-0', expiresAt: Date.now() + 3_600_000 })
-    const { runtime, applied, call } = await sessionRows(store, remote)
+    const { host, runtime, entry, applied, call } = await sessionRows(store, remote)
     expect(applied.statuses.get(SERVER_ID)).toMatchObject({ connectionState: 'ready' })
     const before = remote.mcpEvents().length
+    const eventsBefore = remote.events.length
 
-    // Sign-out: the logged-out record, epoch + 1.
-    await store.update(SERVER_ID, async (current) => ({
-      value: undefined,
-      next: { epoch: (current && 'epoch' in current ? current.epoch : 0) + 1, requiredScope: [] },
-    }))
+    // Logout: the signed-out record, epoch + 1. The live row refuses before anything is sent.
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 1 })
     const result = await call()
 
     expect(result.isError).toBe(true)
@@ -442,5 +441,17 @@ describe('OAuth MCP servers in session rows', () => {
       { timeout: 5_000 },
     )
     expect(remote.mcpEvents().slice(before)).toEqual([])
+
+    // The sign-out then drops the row: no candidate connection, the tool is gone, the row is
+    // unavailable and needs sign-in, and nothing reaches the server afterwards.
+    runtime.signOut(SERVER_ID)
+    const dropped = await runtime.apply([entry])
+    expect(dropped.statuses.get(SERVER_ID)).toMatchObject({
+      connectionState: 'unavailable',
+      lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT' },
+    })
+    expect(tool(host)).toBeUndefined()
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(remote.events.slice(eventsBefore)).toEqual([])
   })
 })

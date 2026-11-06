@@ -249,6 +249,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/mcp.servers.enable',
         '_agnes/v1/mcp.servers.get',
         '_agnes/v1/mcp.servers.list',
+        '_agnes/v1/mcp.servers.oauth.signOut',
         '_agnes/v1/mcp.servers.oauth.status',
         '_agnes/v1/mcp.servers.oauth.status.set',
         '_agnes/v1/mcp.servers.reconnect',
@@ -394,7 +395,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(240)
+    expect(Object.keys(METHODS)).toHaveLength(241)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({

@@ -9405,6 +9405,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'McpServerReconnectParams',
     result: 'ResourceOperationReceipt',
   },
+  '_agnes/v1/mcp.servers.oauth.signOut': {
+    fileId: 'https://agnes.ai/schema/resource-control.json',
+    params: 'McpServerReconnectParams',
+    result: 'ResourceOperationReceipt',
+  },
   '_agnes/v1/mcp.servers.oauth.status': {
     fileId: 'https://agnes.ai/schema/resource-control.json',
     params: 'McpServerGetParams',
@@ -10644,6 +10649,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/mcp.servers.enable': ResourceControlSamples.McpServerEnableParams,
   '_agnes/v1/mcp.servers.disable': ResourceControlSamples.McpServerDisableParams,
   '_agnes/v1/mcp.servers.reconnect': ResourceControlSamples.McpServerReconnectParams,
+  '_agnes/v1/mcp.servers.oauth.signOut': ResourceControlSamples.McpServerReconnectParams,
   '_agnes/v1/mcp.servers.oauth.status': ResourceControlSamples.McpServerGetParams,
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusSetParams,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogListParams as Sample,
@@ -11469,6 +11475,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/mcp.servers.enable': ResourceControlSamples.ResourceOperationReceipt,
   '_agnes/v1/mcp.servers.disable': ResourceControlSamples.ResourceOperationReceipt,
   '_agnes/v1/mcp.servers.reconnect': ResourceControlSamples.ResourceOperationReceipt,
+  '_agnes/v1/mcp.servers.oauth.signOut': ResourceControlSamples.ResourceOperationReceipt,
   '_agnes/v1/mcp.servers.oauth.status': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogPage as Sample,

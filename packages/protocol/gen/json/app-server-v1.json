@@ -1269,6 +1269,21 @@
         "identity": "principal-client-command"
       }
     },
+    "_agnes/v1/mcp.servers.oauth.signOut": {
+      "kind": "request",
+      "direction": "c2s",
+      "params": {
+        "$ref": "#/$defs/_agnes_v1_mcp_servers_oauth_signOutParams"
+      },
+      "result": {
+        "$ref": "#/$defs/_agnes_v1_mcp_servers_oauth_signOutResult"
+      },
+      "administration": {
+        "execution": "effect",
+        "permission": "mcp.manage",
+        "identity": "principal-client-command"
+      }
+    },
     "_agnes/v1/mcp.servers.oauth.status": {
       "kind": "request",
       "direction": "c2s",
@@ -19241,6 +19256,12 @@
       "$ref": "#/$defs/D9ee282c8b4bb_McpServerReconnectParams"
     },
     "_agnes_v1_mcp_servers_reconnectResult": {
+      "$ref": "#/$defs/D9ee282c8b4bb_ResourceOperationReceipt"
+    },
+    "_agnes_v1_mcp_servers_oauth_signOutParams": {
+      "$ref": "#/$defs/D9ee282c8b4bb_McpServerReconnectParams"
+    },
+    "_agnes_v1_mcp_servers_oauth_signOutResult": {
       "$ref": "#/$defs/D9ee282c8b4bb_ResourceOperationReceipt"
     },
     "_agnes_v1_mcp_servers_oauth_statusParams": {

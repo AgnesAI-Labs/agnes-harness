@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { isIP } from 'node:net'
 import { mcpConnectionFailure } from './mcp-failure.js'
 import { mcpOAuthAuthorizer } from './mcp-oauth-authorizer.js'
+import { McpOAuthNeedsReconnectError } from './mcp-oauth-error.js'
 import type { McpOAuthStore } from './mcp-oauth-store.js'
 
 export {
@@ -142,6 +143,13 @@ export type McpLifecycleAdapter = Readonly<{
     definition: McpServerDefinitionInput
     signal: AbortSignal
   }): Promise<{ status: McpStatus; tools?: McpToolCatalogPage; error?: SafeError }>
+  /** After a sign-out: closes the active connection and starts no candidate. */
+  signOut?(input: {
+    profile: string
+    serverId: string
+    definition: McpServerDefinitionInput
+    signal: AbortSignal
+  }): Promise<{ status: McpStatus; error?: SafeError }>
 }>
 
 type Active = Readonly<{
@@ -724,6 +732,21 @@ export function createMcpResourceManager(options: Options) {
     }) {
       assertProfile(input.profile)
       return connectManaged(input.serverId, input.definition, input.signal, `mcp-reconnect:${input.serverId}`)
+    },
+    async signOut(input: {
+      profile: string
+      serverId: string
+      definition: McpServerDefinitionInput
+      signal: AbortSignal
+    }) {
+      assertProfile(input.profile)
+      // Unlike reconnect, no candidate: the stored sign-in is gone, so the old connection must not
+      // be kept for want of a new one.
+      const retired = await applyActive(input.serverId, undefined, `mcp-sign-out:${input.serverId}`)
+      if (retired.error) return retired
+      const signedOut = mcpConnectionFailure(new McpOAuthNeedsReconnectError(input.serverId))
+      const { status: left } = failed(input.serverId, signedOut.code, signedOut.message)
+      return Object.freeze({ status: left })
     },
     async test(input: {
       profile: string

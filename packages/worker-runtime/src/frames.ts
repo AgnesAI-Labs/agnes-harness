@@ -111,6 +111,7 @@ export type WorkerMethod =
   | 'resourceMcpTools'
   | 'resourceMcpApply'
   | 'resourceMcpReconnect'
+  | 'resourceMcpSignOut'
   | 'resource.stale'
 
 export type WorkerHello = {

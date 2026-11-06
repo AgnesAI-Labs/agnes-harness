@@ -724,6 +724,8 @@ export type _agnes_v1_mcp_servers_disableParams = D9ee282c8b4bb_McpServerDisable
 export type _agnes_v1_mcp_servers_disableResult = D9ee282c8b4bb_ResourceOperationReceipt
 export type _agnes_v1_mcp_servers_reconnectParams = D9ee282c8b4bb_McpServerReconnectParams
 export type _agnes_v1_mcp_servers_reconnectResult = D9ee282c8b4bb_ResourceOperationReceipt
+export type _agnes_v1_mcp_servers_oauth_signOutParams = D9ee282c8b4bb_McpServerReconnectParams
+export type _agnes_v1_mcp_servers_oauth_signOutResult = D9ee282c8b4bb_ResourceOperationReceipt
 export type _agnes_v1_mcp_servers_oauth_statusParams = D9ee282c8b4bb_McpServerGetParams
 export type _agnes_v1_mcp_servers_oauth_statusResult = D9ee282c8b4bb_McpOAuthStatusResult
 export type _agnes_v1_mcp_servers_oauth_status_setParams = D9ee282c8b4bb_McpOAuthStatusSetParams
@@ -2226,6 +2228,7 @@ export interface AppServerMethods {
   "_agnes/v1/mcp.servers.enable": {params:_agnes_v1_mcp_servers_enableParams; result:_agnes_v1_mcp_servers_enableResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/mcp.servers.disable": {params:_agnes_v1_mcp_servers_disableParams; result:_agnes_v1_mcp_servers_disableResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/mcp.servers.reconnect": {params:_agnes_v1_mcp_servers_reconnectParams; result:_agnes_v1_mcp_servers_reconnectResult; direction:"c2s"; kind:"request"}
+  "_agnes/v1/mcp.servers.oauth.signOut": {params:_agnes_v1_mcp_servers_oauth_signOutParams; result:_agnes_v1_mcp_servers_oauth_signOutResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/mcp.servers.oauth.status": {params:_agnes_v1_mcp_servers_oauth_statusParams; result:_agnes_v1_mcp_servers_oauth_statusResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/mcp.servers.oauth.status.set": {params:_agnes_v1_mcp_servers_oauth_status_setParams; result:_agnes_v1_mcp_servers_oauth_status_setResult; direction:"c2s"; kind:"request"}
   "_agnes/v1/extension.ack": {params:_agnes_v1_extension_ackParams; result:_agnes_v1_extension_ackResult; direction:"c2s"; kind:"request"}

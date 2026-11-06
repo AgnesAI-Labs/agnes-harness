@@ -475,6 +475,11 @@ export class McpResourceStore {
             code: 'RESOURCE_REMOVE_BLOCKED',
             reason: 'disable and settle the MCP resource before removal',
           })
+        if (
+          method === '_agnes/v1/mcp.servers.oauth.signOut' &&
+          prior?.definition.secretBinding.kind !== 'oauth'
+        )
+          throw rpcError('SEMANTIC_REJECTED', { code: 'MCP_OAUTH_NOT_CONFIGURED' })
         if (params.expectedRevision && prior?.revision !== params.expectedRevision)
           throw rpcError('SEMANTIC_REJECTED', { code: 'REVISION_CONFLICT' })
         const existingRevision = prior?.revision ?? cancellation?.operation.revision
@@ -675,6 +680,18 @@ export class McpResourceStore {
       await this.observe(profile, serverId, result.status)
       return
     }
+    if (op.operation.kind === '_agnes/v1/mcp.servers.oauth.signOut') {
+      // The credential is already signed out when this runs, so the sign-in reads pending first,
+      // whatever happens to the connection. Unlike reconnect there is no candidate to keep the old
+      // generation for: the host drops it and its status (needs sign-in) is published as is.
+      await this.markSignedOut(profile, serverId)
+      if (!this.adapter.signOut)
+        throw new McpLifecycleFailure(fail('MCP_SIGN_OUT_UNAVAILABLE', 'MCP host cannot drop the connection'))
+      const result = await this.adapter.signOut({ profile, serverId, definition: row.definition, signal })
+      await this.observe(profile, serverId, result.status, true)
+      if (result.error) throw new McpLifecycleFailure(result.error)
+      return
+    }
     if (op.operation.kind === '_agnes/v1/mcp.servers.remove') {
       await this.adapter.unstage?.(serverId)
       await this.journal.txn(profile, (j) => {
@@ -695,7 +712,14 @@ export class McpResourceStore {
     if (result.error && !disclosureOnlyUpdate(op.operation.kind, op.params.previous, row.definition))
       throw new McpLifecycleFailure(result.error)
   }
-  private async observe(profile: string, serverId: string, observed: McpStatus): Promise<void> {
+  /** `signedOut` keeps the sign-in pending: the needs-sign-in status a sign-out leaves behind must
+   *  not read as a sign-in that stopped working. */
+  private async observe(
+    profile: string,
+    serverId: string,
+    observed: McpStatus,
+    signedOut = false,
+  ): Promise<void> {
     if (!validateResourceControlData('McpStatus', observed).ok) throw new Error('invalid MCP observation')
     await this.journal.txn(profile, (j) => {
       const row = j.servers[serverId]
@@ -705,12 +729,25 @@ export class McpResourceStore {
               ...j,
               servers: {
                 ...j.servers,
-                [serverId]: { ...row, ...authorizationFrom(row, observed), status: copy(observed) },
+                [serverId]: {
+                  ...row,
+                  ...(signedOut ? {} : authorizationFrom(row, observed)),
+                  status: copy(observed),
+                },
               },
             }
           : j,
         result: undefined,
       }
+    })
+  }
+  /** An absent authorizationStatus is the wire value 'pending' (see descriptor()). */
+  private async markSignedOut(profile: string, serverId: string): Promise<void> {
+    await this.journal.txn(profile, (j) => {
+      const row = j.servers[serverId]
+      if (!row) return { next: j, result: undefined }
+      const { authorizationStatus: _signedOut, ...pending } = row
+      return { next: { ...j, servers: { ...j.servers, [serverId]: pending } }, result: undefined }
     })
   }
   private async restorePrevious(profile: string, op: McpOperation): Promise<void> {

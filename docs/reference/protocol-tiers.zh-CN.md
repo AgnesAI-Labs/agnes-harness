@@ -263,6 +263,7 @@
 - `_agnes/v1/mcp.servers.reconnect`
 - `_agnes/v1/mcp.servers.oauth.status`
 - `_agnes/v1/mcp.servers.oauth.status.set`
+- `_agnes/v1/mcp.servers.oauth.signOut`
 
 ### 扩展调用与界面
 
