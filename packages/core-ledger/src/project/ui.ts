@@ -713,6 +713,7 @@ export class UIProjectionCell {
             id,
             seq,
             content: structuredClone(message.content),
+            ...(message.commandId ? { commandId: message.commandId } : {}),
             actorLabel: clip(event.actor.id, 128),
             origin: event.origin === 'system' ? 'system' : 'principal',
             ...(event.origin === 'system' && message.system

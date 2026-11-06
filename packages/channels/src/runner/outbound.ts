@@ -33,6 +33,8 @@ type OutboundDeps = {
   noticeRetry?: { attempts?: number; baseMs?: number; maxMs?: number; jitter?: () => number }
   stopSettleMs?: number
   maxDetachedWork?: number
+  /** Bound sessions reconcile missed live notifications without replaying delivered nodes. */
+  reconcileMs?: number
   onHistoryRefused?: (key: string, error: unknown) => Promise<boolean>
 }
 
@@ -48,6 +50,8 @@ type Lane = {
   degraded: Set<DegradedCap>
   watermark?: Watermark
   pumping?: Promise<void>
+  reconcileTimer?: ReturnType<typeof setInterval>
+  reconciling?: boolean
 }
 
 export class Outbound {
@@ -78,6 +82,18 @@ export class Outbound {
     }
     this.lanes.set(sessionKey, lane)
     lane.pumping = this.pump(sessionKey, lane)
+    if (afterSeq !== undefined) {
+      lane.reconcileTimer = setInterval(() => {
+        if (!this.isCurrent(sessionKey, lane) || lane.reconciling) return
+        lane.reconciling = true
+        void this.flush(sessionKey)
+          .catch(() => this.safeError('channel bound session reconciliation failed', { sessionKey }))
+          .finally(() => {
+            lane.reconciling = false
+          })
+      }, this.dependencies.reconcileMs ?? 5000)
+      lane.reconcileTimer.unref()
+    }
   }
 
   detach(sessionKey: string, options: { retire?: boolean } = {}): void {
@@ -86,6 +102,7 @@ export class Outbound {
     lane.stop.abort()
     if (options.retire === true) this.dependencies.refs.retireSession(sessionKey, lane.session.id)
     if (lane.timer !== undefined) clearTimeout(lane.timer)
+    if (lane.reconcileTimer !== undefined) clearInterval(lane.reconcileTimer)
     this.lanes.delete(sessionKey)
     this.trackDetached(lane.flushing)
     if (lane.pumping !== undefined) this.trackDetached(lane.pumping)

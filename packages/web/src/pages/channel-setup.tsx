@@ -121,8 +121,8 @@ export function ChannelSetup({
         data.requestProfileApproval?.(result.receipt)
         setMessage(
           zh
-            ? '请完成原生审批，再点击“继续连接”。'
-            : 'Confirm the native approval, then Continue connecting.',
+            ? `请完成原生审批，再点击“${existing ? '继续保存' : '继续连接'}”。`
+            : `Confirm the native approval, then ${existing ? 'Continue saving' : 'Continue connecting'}.`,
         )
       } else if (['refused', 'cancelled'].includes(result.receipt.state)) {
         setPending(undefined)
@@ -232,12 +232,20 @@ export function ChannelSetup({
               onClick={() => void save()}
             >
               {pending
-                ? zh
-                  ? '继续连接'
-                  : 'Continue connecting'
-                : zh
-                  ? '连接并继续'
-                  : 'Connect and continue'}
+                ? existing
+                  ? zh
+                    ? '继续保存'
+                    : 'Continue saving'
+                  : zh
+                    ? '继续连接'
+                    : 'Continue connecting'
+                : existing
+                  ? zh
+                    ? '保存修改'
+                    : 'Save changes'
+                  : zh
+                    ? '连接并继续'
+                    : 'Connect and continue'}
             </Button>
           </div>
         </>

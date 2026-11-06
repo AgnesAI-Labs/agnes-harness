@@ -157,7 +157,10 @@ it('owns two isolated instances, reuses inbound/outbound routing and stops them 
       generation: 1,
       opState: null,
       turns: [],
-      nodes: [{ kind: 'assistant', id: 'old', seq: 2, text: 'private-history' }],
+      nodes: [
+        { kind: 'assistant', id: 'old', seq: 2, text: 'private-history' },
+        { kind: 'user', id: 'old-user', seq: 3, content: [{ type: 'text', text: 'private-user-history' }] },
+      ],
     })
     await runtime.binding!(
       'bind',
@@ -186,19 +189,46 @@ it('owns two isolated instances, reuses inbound/outbound routing and stops them 
   for (let index = 0; index < 2; index++)
     f.clients[index]!.setTimeline(sessions[index]!, {
       sessionId: sessions[index]!,
-      upto: 6,
+      upto: 8,
       generation: 1,
       opState: null,
       turns: [],
       nodes: [
         { kind: 'assistant', id: 'old', seq: 2, text: 'private-history' },
-        { kind: 'assistant', id: 'reply', seq: 6, text: 'result' },
+        {
+          kind: 'user',
+          id: 'channel-input',
+          seq: 6,
+          commandId: (
+            f.clients[index]!.calls.find((call) => call.method === 'followUp')!.args[1] as {
+              commandId: string
+            }
+          ).commandId,
+          content: [{ type: 'text', text: 'new task' }],
+        },
+        {
+          kind: 'user',
+          id: 'web-input',
+          seq: 7,
+          commandId: 'web-input',
+          content: [{ type: 'text', text: 'new task' }],
+        },
+        { kind: 'assistant', id: 'reply', seq: 8, text: 'result' },
       ],
     })
   // Shutdown drains pending output through the same durable runner rather than a new send path.
   await f.stop()
   expect(f.adapters.every((a) => JSON.stringify(a.sent).includes('result'))).toBe(true)
   expect(f.adapters.every((a) => !JSON.stringify(a.sent).includes('private-history'))).toBe(true)
+  expect(f.adapters.every((a) => !JSON.stringify(a.sent).includes('private-user-history'))).toBe(true)
+  for (const adapter of f.adapters) {
+    const messages = adapter.sent
+      .flatMap((row) => row.msg.blocks)
+      .filter((block) => block.kind === 'text')
+      .map((block) => block.markdown)
+    expect(messages).toContain('来自 AGH 的用户消息：\n\nnew task')
+    expect(messages.filter((text) => text.includes('new task'))).toHaveLength(1)
+  }
   expect(f.adapters.every((a) => !a.connected)).toBe(true)
   expect(f.clients.every((c) => c.calls.some((call) => call.method === 'close'))).toBe(true)
   const restarted = await startChannelBridge(f.provider, f.init, f.options)

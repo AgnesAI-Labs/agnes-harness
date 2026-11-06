@@ -77,7 +77,19 @@ export function whatToDraw(
   context: { costLine: boolean; artifactsUrl?: string; caps: ChannelCapabilities },
 ): ChannelMessage | null {
   switch (node.kind) {
-    case 'user':
+    case 'user': {
+      // All channel submissions are suppressed, including those from another bound adapter.
+      // Do not guess origin from message text: identical text typed in AGH is still a new input.
+      // Old projections have no correlation: never backfill their previously private user input.
+      if (!node.commandId || node.origin === 'system' || /^channel:[a-f0-9]{64}$/.test(node.commandId))
+        return null
+      const lines = node.content.flatMap((block) => {
+        if (block.type === 'text') return block.reference ? [] : [block.text]
+        return ['[附件请在 AGH 中查看]']
+      })
+      const body = lines.join('\n')
+      return body.trim() ? { blocks: [{ kind: 'text', markdown: `来自 AGH 的用户消息：\n\n${body}` }] } : null
+    }
     case 'compaction':
       return null
     case 'assistant':
@@ -193,7 +205,7 @@ export function whatToDraw(
       // Advisory diagnostic rows for /context, a background experience review's progress, and
       // harness-internal notices (hook notes, per-request fact snapshots) riding the user/message
       // channel -- none is a message meant for a chat surface's human audience, so this gets the
-      // same treatment as 'user'/'compaction' above: no channel message for this node.
+      // same treatment as system inputs and compaction above: no channel message for this node.
       return null
   }
 }

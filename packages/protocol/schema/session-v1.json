@@ -518,6 +518,7 @@
       "additionalProperties": false,
       "required": ["content"],
       "properties": {
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Originating inbox command correlation. Presentation and deduplication only; never grants authority." },
         "system": { "$ref": "#/$defs/SystemInput" },
         "content": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/ContentBlock" } },
         "kind": { "enum": ["prompt", "steer", "follow_up", "runtime_context"] },

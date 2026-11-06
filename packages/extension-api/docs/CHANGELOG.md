@@ -2,6 +2,15 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.7.0
+
+### Added
+
+- Optional `ChannelManifest.icon`: a PNG/JPEG data URL up to 32768 characters. Harness renders
+  validated artwork in channel lists and connection dialogs, with a default channel glyph when
+  absent or invalid. No external asset requests or new permissions. Existing channel providers
+  remain compatible; providers declaring this field should require `^5.7.0`.
+
 ## 5.6.0
 
 ### Added

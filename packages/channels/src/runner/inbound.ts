@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { AGNES_ERRORS } from '@agnes/protocol'
+import { AGNES_ERRORS, attachmentErrorCode } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk'
 import type {
   ChannelAdapter,
@@ -233,10 +233,43 @@ export class Inbound {
   }
 
   private async dispatch(session: BoundSession, intent: InboundIntent): Promise<void> {
+    try {
+      await this.submit(session, intent)
+    } catch (error) {
+      const reason = attachmentErrorCode(error)
+      if (
+        !(error instanceof JsonRpcError) ||
+        !['ATTACHMENT_DATA', 'ATTACHMENT_PIXELS', 'ATTACHMENT_MIME'].includes(reason ?? '') ||
+        !intent.content.some((block) => block.type === 'image')
+      )
+        throw error
+      // A definitive image-admission refusal may degrade to ordinary files. Never retry uncertain
+      // submissions, quotas, authorization failures or storage outages under a new command id.
+      await this.submit(session, {
+        ...intent,
+        messageId: `${intent.messageId}:image-as-file`,
+        content: [
+          ...intent.content.map((block, index) =>
+            block.type === 'image'
+              ? {
+                  ...block,
+                  type: 'file' as const,
+                  name: `channel-image-${index + 1}.${block.mimeType === 'image/png' ? 'png' : 'jpg'}`,
+                }
+              : block,
+          ),
+          { type: 'text', text: '[渠道图片未能作为视觉输入接收，已按普通附件保存；尚未识别图片内容。]' },
+        ],
+      })
+    }
+  }
+
+  private async submit(session: BoundSession, intent: InboundIntent): Promise<void> {
     if (this.paused.has(intent.sessionKey) || this.dependencies.cache.current(intent.sessionKey) !== session)
       return
     if (this.refused.has(intent.sessionKey)) return
-    const options = { commandId: commandIdFor(intent.sessionKey, intent.messageId) }
+    // Correlation survives queuing and restart. This namespace prevents echo; it grants no authority.
+    const options = { commandId: `channel:${commandIdFor(intent.sessionKey, intent.messageId)}` }
     if (this.dependencies.cache.busy(intent.sessionKey)) {
       try {
         await session.steer(intent.content, options)

@@ -1,4 +1,4 @@
-import { Button, SettingsInput, useDocumentLanguage } from '@agnes/web-ui'
+import { Button, ChannelIcon, SettingsInput, useDocumentLanguage } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { openChannelDialog } from './channel-dialog-state.js'
 import { channelsChanged, useChannelOverview } from './channel-model.js'
@@ -106,11 +106,7 @@ export function ChannelsPanel({ data }: { data: HomePageData }) {
             data-testid={`channel-provider-${group.provider.manifest.id}`}
           >
             <div className="channel-group-heading">
-              <span className="channel-glyph" aria-hidden="true">
-                {(group.provider.manifest.displayName || group.provider.manifest.id)
-                  .slice(0, 1)
-                  .toUpperCase()}
-              </span>
+              <ChannelIcon className="channel-glyph" icon={group.provider.manifest.icon} />
               <div>
                 <h3>{group.provider.manifest.displayName || group.provider.manifest.id}</h3>
                 <small>

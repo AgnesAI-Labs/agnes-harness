@@ -412,14 +412,47 @@ describe('Inbound', () => {
 
     await inbound.handle(message('1'))
     expect(client.calls.find((call) => call.method === 'followUp')?.args[1]).toEqual({
-      commandId: commandIdFor(key, 'message-1'),
+      commandId: `channel:${commandIdFor(key, 'message-1')}`,
     })
 
     cache.markTurn(key, true)
     await inbound.handle(message('2'))
     expect(client.calls.find((call) => call.method === 'steer')?.args[1]).toEqual({
-      commandId: commandIdFor(key, 'message-2'),
+      commandId: `channel:${commandIdFor(key, 'message-2')}`,
     })
+  })
+
+  it('preserves image bytes as files only after definitive image refusal, never after uncertainty or authorization failure', async () => {
+    for (const code of ['ATTACHMENT_DATA', 'ATTACHMENT_PIXELS', 'ATTACHMENT_NOT_AUTHORIZED', 'UNCERTAIN']) {
+      const { adapter, cache, client, inbound } = setup()
+      const key = 'agnes:tenant:agent:fake:group:chat-1'
+      const session = (await cache.get(key)).session
+      const content = [
+        { type: 'image' as const, data: 'AQID', mimeType: 'image/png' },
+        { type: 'file' as const, name: 'clip.mp4', data: 'BAUG', mimeType: 'video/mp4' },
+      ]
+      const intent = adapter.toSession(message(code), { tenant: 'tenant', agent: 'agent' })!
+      vi.spyOn(adapter, 'toSession').mockReturnValue({ ...intent, content })
+      const refused = new JsonRpcError({ code: -32603, message: code, data: { code } })
+      const submit = vi.spyOn(session, 'followUp').mockRejectedValueOnce(refused).mockResolvedValue(5)
+      if (code === 'ATTACHMENT_DATA' || code === 'ATTACHMENT_PIXELS') {
+        await inbound.handle(message(code))
+        expect(submit.mock.calls[1]?.[0]).toEqual([
+          { type: 'file', name: 'channel-image-1.png', data: 'AQID', mimeType: 'image/png' },
+          content[1],
+          expect.objectContaining({ type: 'text', text: expect.stringContaining('尚未识别图片内容') }),
+        ])
+        expect(submit.mock.calls[1]?.[1]?.commandId).toBe(
+          `channel:${commandIdFor(key, `message-${code}:image-as-file`)}`,
+        )
+        client.claimResults.set(`channel-event:fake:account:event-${code}`, false)
+        await inbound.handle(message(code))
+        expect(submit).toHaveBeenCalledTimes(2)
+      } else {
+        await expect(inbound.handle(message(code))).rejects.toBe(refused)
+        expect(submit).toHaveBeenCalledTimes(1)
+      }
+    }
   })
 
   it('finishes an admitted busy dispatch through followUp when stop occurs during steer', async () => {

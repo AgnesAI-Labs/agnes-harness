@@ -2,13 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChannelOverview } from './channel-types.js'
 import type { HomePageData } from './host.js'
 
-export function useChannelOverview(data: HomePageData) {
+export function useChannelOverview(data: Pick<HomePageData, 'call' | 'channelCall'>, enabled = true) {
   const [overview, setOverview] = useState<ChannelOverview>()
   const [error, setError] = useState(false)
   const alive = useRef(false)
   const reading = useRef(false)
   const refresh = useCallback(async () => {
-    if (reading.current) return
+    if (!enabled || reading.current) return
     reading.current = true
     try {
       const value = await (data.channelCall ?? data.call)<ChannelOverview>('channels.overview', {})
@@ -23,8 +23,13 @@ export function useChannelOverview(data: HomePageData) {
     } finally {
       reading.current = false
     }
-  }, [data])
+  }, [data, enabled])
   useEffect(() => {
+    if (!enabled) {
+      setOverview(undefined)
+      setError(false)
+      return
+    }
     alive.current = true
     void refresh()
     const focus = () => void refresh()
@@ -39,7 +44,7 @@ export function useChannelOverview(data: HomePageData) {
       window.removeEventListener('focus', focus)
       window.removeEventListener('agnes-channels-changed', focus)
     }
-  }, [refresh])
+  }, [refresh, enabled])
   return { overview, error, refresh }
 }
 export const channelsChanged = () => window.dispatchEvent(new Event('agnes-channels-changed'))

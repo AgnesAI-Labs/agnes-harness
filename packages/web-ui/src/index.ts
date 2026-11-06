@@ -177,6 +177,7 @@ export { AttachmentThumbnail, AttachmentThumbnailGroup } from './ui/attachment-t
 export { Badge } from './ui/badge.js'
 export { Banner, type BannerProps } from './ui/banner.js'
 export { Button, type ButtonProps } from './ui/button.js'
+export { ChannelIcon } from './ui/channel-icon.js'
 export { Chart, type ChartProps, type ChartSeries } from './ui/chart.js'
 export { CompletionCheck, type CompletionCheckProps } from './ui/completion-check.js'
 export { ConfirmDialog, type ConfirmDialogProps } from './ui/confirm-dialog.js'

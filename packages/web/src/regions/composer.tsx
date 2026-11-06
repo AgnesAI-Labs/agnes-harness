@@ -8,7 +8,7 @@ import {
   type VoiceComposer,
 } from '@agnes/web-client'
 import { RegisteredConversationCard } from '@agnes/web-conversation/conversation-registry'
-import { Button, createRegionRenderer, useDocumentLanguage } from '@agnes/web-ui'
+import { createRegionRenderer, useDocumentLanguage } from '@agnes/web-ui'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
 import {
   Composer,
@@ -23,7 +23,7 @@ import { flushSync } from 'react-dom'
 import { loadHeadsUp } from '../heads-up.js'
 import { HeadsUpNote } from '../heads-up-view.js'
 import { ModelPickerControl } from '../model-picker.js'
-import { openChannelDialog } from '../pages/channel-dialog-state.js'
+import { SessionChannelControl } from '../pages/channel-session-control.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
 import { VoiceComposerButtons } from '../voice/composer-buttons.js'
 import { ApplicationComposerContext, ApplicationWorkActions } from '../workbench/application-actions.js'
@@ -114,13 +114,7 @@ export function ComposerDshFrame({
             ),
             model: (
               <>
-                <Button
-                  size="small"
-                  data-testid="composer-channel-binding"
-                  onClick={() => openChannelDialog({ sessionId })}
-                >
-                  {language === 'zh-CN' ? '渠道绑定' : 'Channels'}
-                </Button>
+                <SessionChannelControl sessionId={sessionId} />
                 {outlet('conversation.input.model')}
               </>
             ),

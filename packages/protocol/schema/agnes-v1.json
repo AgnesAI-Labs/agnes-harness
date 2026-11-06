@@ -3755,6 +3755,7 @@
                 "$ref": "#/$defs/ContentBlock"
               }
             },
+            "commandId": { "type": "string", "minLength": 1, "maxLength": 128, "description": "Originating inbox command correlation; not an authorization fact." },
             "origin": { "enum": ["principal", "system"] },
             "system": { "$ref": "#/$defs/SystemInput" },
             "actorLabel": {

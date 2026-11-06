@@ -14,8 +14,48 @@ const caps: ChannelCapabilities = {
 const context = { costLine: true, caps }
 
 describe('whatToDraw', () => {
-  it('does not echo user, partial assistant, compaction, or sidebar nodes', () => {
+  it('forwards correlated human input but omits legacy input, channel echoes, partial answers and internal nodes', () => {
     expect(whatToDraw({ kind: 'user', id: 'u', seq: 1, content: [] }, context)).toBeNull()
+    const input: UINode = {
+      kind: 'user',
+      id: 'typed',
+      seq: 2,
+      commandId: 'web-input',
+      content: [{ type: 'text', text: 'hello' }],
+    }
+    expect(whatToDraw(input, context)).toEqual({
+      blocks: [{ kind: 'text', markdown: '来自 AGH 的用户消息：\n\nhello' }],
+    })
+    expect(whatToDraw({ ...input, commandId: `channel:${'a'.repeat(64)}` }, context)).toBeNull()
+    expect(whatToDraw({ ...input, origin: 'system' }, context)).toBeNull()
+    expect(
+      whatToDraw(
+        { ...input, content: [{ type: 'image', data: 'private-bytes', mimeType: 'image/png' }] },
+        context,
+      ),
+    ).toEqual({ blocks: [{ kind: 'text', markdown: '来自 AGH 的用户消息：\n\n[附件请在 AGH 中查看]' }] })
+    expect(
+      whatToDraw(
+        {
+          ...input,
+          content: [
+            {
+              type: 'text',
+              text: 'private reference',
+              reference: {
+                source: 'file',
+                id: 'private',
+                label: 'private',
+                hash: 'a'.repeat(64),
+                truncated: false,
+              },
+            },
+          ],
+        },
+        context,
+      ),
+    ).toBeNull()
+
     expect(
       whatToDraw({ kind: 'assistant', id: 'a', seq: 2, text: 'partial', streaming: true }, context),
     ).toBeNull()

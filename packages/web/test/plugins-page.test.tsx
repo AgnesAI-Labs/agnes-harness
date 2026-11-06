@@ -14,6 +14,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChannelDialogHost } from '../src/pages/channel-dialog.js'
 import { closeChannelDialog } from '../src/pages/channel-dialog-state.js'
+import { SessionChannelControl } from '../src/pages/channel-session-control.js'
 import { ChannelsPanel } from '../src/pages/channels.js'
 import type { HomePageData } from '../src/pages/host.js'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
@@ -94,6 +95,8 @@ it('shows session and peer names per connection and reconciles unbind with the s
   await act(async () => root.render(createElement(ChannelsPanel, { data })))
   await vi.waitFor(() => expect(host.textContent).toContain('Design review'))
   expect(host.textContent).toContain('Engineering team')
+  expect(host.querySelector('.channel-glyph svg')).not.toBeNull()
+  expect(host.querySelector('.channel-glyph img')).toBeNull()
   expect(host.querySelector('a')?.getAttribute('href')).toBe('?session=current-session')
   expect(host.querySelector('input[aria-label="Instance ID"]')).toBeNull()
   const unbind = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Unbind')!
@@ -220,6 +223,51 @@ it('discovers installed channels and configures inside a dialog using immutable 
     closeChannelDialog()
     root.unmount()
   })
+  credentials.mockRestore()
+})
+
+it('shows this session’s channel states and opens the exact existing connection for editing', async () => {
+  const credentials = vi.spyOn(CredentialsApi.prototype, 'list').mockResolvedValue([{ id: 'secret://generic/token', label: 'Saved token', kind: 'api-key', createdAt: '2026-11-06T00:00:00Z', references: [] }])
+  const host = document.body.appendChild(document.createElement('div')), root = createRoot(host)
+  let bound = true, disconnected = false, fail = false
+  const call = vi.fn(async (method: string, input: unknown) => {
+    if (method === 'channels.context') return { sessionId: 'current', title: 'Current session', workspace: 'D:/work', agent: 'default', agentTitle: { en: 'General assistant', 'zh-CN': '通用助手' }, instanceId: (input as { instanceId: string }).instanceId }
+    if (fail) throw new Error('temporary overview failure')
+    return { sessions: [{ sessionId: 'current', title: 'Current session', cwd: 'D:/work' }], channels: ['one', 'two'].map(name => ({
+      provider: { extension: 'plugin/' + name, revision: 'one', bindingAvailable: true, manifest: { id: name, displayName: 'Future ' + name, credentials: { required: ['token'], optional: [] } }, configSchema: { type: 'object', properties: { label: { type: 'string', title: 'Bot label' } } } },
+      configurationRevision: 'revision', instances: [{ id: 'bot-' + name, workspace: 'D:/work', agent: 'default', credentialRefs: { token: 'secret://generic/token' }, allowFrom: [], requireMention: true, config: { label: 'Saved value' }, version: 1, unavailable: false, connection: { channel: disconnected ? 'closed' : 'connected', daemon: 'connected' }, bindings: bound ? [{ sessionId: 'current', sessionTitle: 'Current session', targetId: 'peer-' + name, label: 'Peer ' + name, state: 'active' }] : [] },
+      { id: 'unbound-' + name, intendedSession: { sessionId: 'current' }, bindings: [] }],
+    })) }
+  })
+  const data = { call, sessionId: () => 'current', openSettings: vi.fn(), startDraft: vi.fn() } as unknown as HomePageData
+  const render = (sessionId: string | undefined) => createElement('div', null, createElement(SessionChannelControl, { sessionId, data }), createElement(ChannelDialogHost, { data }))
+  await act(async () => root.render(render('current')))
+  await vi.waitFor(() => expect(host.textContent).toContain('Future one · Connected'))
+  expect(host.textContent).toContain('Future two · Connected')
+  expect(host.querySelectorAll('[data-testid="composer-channel-binding"]')).toHaveLength(2)
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-channel-binding"]')!.click())
+  await vi.waitFor(() => expect(host.querySelector<HTMLInputElement>('input[aria-label="Bot label"]')?.value).toBe('Saved value'))
+  expect(host.textContent).toContain('Edit channel connection')
+  expect(host.textContent).toContain('Saved token')
+  expect(host.textContent).toContain('Save changes')
+  expect(host.querySelector('.channel-picker')).toBeNull()
+  expect(host.querySelector('.channel-steps')).toBeNull()
+  expect(call).toHaveBeenCalledWith('channels.context', { extension: 'plugin/one', sessionId: 'current', instanceId: 'bot-one' })
+  await act(async () => closeChannelDialog())
+  await act(async () => root.render(render('other')))
+  expect(host.querySelector('[data-testid="composer-channel-binding"]')?.textContent).toBe('Channels')
+  disconnected = true
+  await act(async () => { root.render(render('current')); window.dispatchEvent(new Event('agnes-channels-changed')) })
+  await vi.waitFor(() => expect(host.textContent).toContain('Future one · Disconnected'))
+  fail = true
+  await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
+  await vi.waitFor(() => expect(host.textContent).toContain('Future one · Status unavailable'))
+  fail = false; bound = false
+  await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="composer-channel-binding"]')?.textContent).toBe('Channels'))
+  await act(async () => root.render(render(undefined)))
+  expect(host.textContent).toBe('Channels')
+  await act(async () => { closeChannelDialog(); root.unmount() })
   credentials.mockRestore()
 })
 

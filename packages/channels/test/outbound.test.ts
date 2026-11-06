@@ -49,6 +49,7 @@ async function setup(
     stopSettleMs?: number
     sessionPerSec?: number
     maxDetachedWork?: number
+    reconcileMs?: number
     noticeRetry?: { attempts?: number; baseMs?: number; maxMs?: number; jitter?: () => number }
     onHistoryRefused?: (key: string, error: unknown) => Promise<boolean>
   } = {},
@@ -74,6 +75,7 @@ async function setup(
     limits: manifest.limits,
     log,
     debounceMs: options.debounceMs ?? 5,
+    ...(options.reconcileMs === undefined ? {} : { reconcileMs: options.reconcileMs }),
     rates: {
       sessionPerSec: options.sessionPerSec ?? 10_000,
     },
@@ -118,6 +120,73 @@ it('publishes recovered surfaces through the existing outbound dedupe without cr
 })
 
 describe('Outbound', () => {
+  it('forwards bound AGH input once, suppresses channel input across recovery, and keeps the history floor', async () => {
+    vi.useFakeTimers()
+    try {
+      const { adapter, client, outbound, refs, session, cache } = await setup({ reconcileMs: 20 })
+      outbound.detach('k')
+      outbound.attach('k', session, { chatId: 'chat-1' }, 5)
+      client.setTimeline(
+        'k',
+        timeline(
+          [
+            { kind: 'user', id: 'old', seq: 4, content: [{ type: 'text', text: 'private history' }] },
+            {
+              kind: 'user',
+              id: 'legacy-after-binding',
+              seq: 6,
+              content: [{ type: 'text', text: 'private legacy input after binding' }],
+            },
+            {
+              kind: 'user',
+              id: 'incoming',
+              seq: 7,
+              commandId: `channel:${'a'.repeat(64)}`,
+              content: [{ type: 'text', text: 'same text' }],
+            },
+            {
+              kind: 'user',
+              id: 'web',
+              seq: 8,
+              commandId: 'web-7',
+              content: [{ type: 'text', text: 'same text' }],
+            },
+            { kind: 'assistant', id: 'answer', seq: 9, text: 'answer' },
+          ],
+          9,
+        ),
+      )
+      // No live events arrive: the bound-session reconciliation must still deliver both nodes.
+      await vi.advanceTimersByTimeAsync(25)
+      expect(adapter.sent).toHaveLength(2)
+      expect(adapter.sent.map((row) => row.msg.blocks)).toEqual([
+        [{ kind: 'text', markdown: '来自 AGH 的用户消息：\n\nsame text' }],
+        [{ kind: 'text', markdown: 'answer' }],
+      ])
+      await outbound.stop()
+      const recovered = new Outbound({
+        adapter,
+        refs,
+        cache,
+        cfg: { outbound: { costLine: true } },
+        caps: adapter.capabilities(),
+        limits: adapter.manifest.limits,
+        log,
+        rates: { sessionPerSec: 10000 },
+      })
+      try {
+        recovered.attach('k', session, { chatId: 'chat-1' }, 5)
+        await recovered.flush('k')
+        expect(adapter.sent).toHaveLength(2)
+      } finally {
+        await recovered.stop()
+        refs.close()
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('publishes the complete durable plan before its approval card, including markup and the tail', async () => {
     const { adapter, client, session, outbound } = await setup({ textChars: 256 })
     const plan = 'review正文\n'.repeat(1000) + '<script>EXACT-TAIL</script>'

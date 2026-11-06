@@ -196,6 +196,9 @@
     font-weight: 600;
     border: 1px solid var(--agnes-line-primary);
   }
+  .channel-glyph > img {
+    object-fit: contain;
+  }
   .channel-connection-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
@@ -445,5 +448,32 @@
     .channel-steps li {
       gap: var(--s4);
     }
+  }
+  .channel-composer-connections {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--s4);
+    max-width: 100%;
+  }
+  .channel-composer-status {
+    max-width: 100%;
+  }
+  .channel-composer-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--agnes-text-tertiary);
+    margin-inline-end: var(--s4);
+  }
+  .channel-composer-dot[data-tone="ok"] {
+    background: var(--agnes-status-success-text);
+  }
+  .channel-composer-dot[data-tone="warn"] {
+    background: var(--agnes-status-warning-text);
+  }
+  .channel-selected > .agh-tag {
+    margin-inline-start: auto;
   }
 }

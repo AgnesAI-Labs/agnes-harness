@@ -21,6 +21,9 @@ describe('channel manifest', () => {
       },
     }
     expect(() => channelKind.validate(provider)).not.toThrow()
+    const icon = 'data:image/png;base64,aGVsbG8='
+    expect(checkManifest({ ...manifest, icon }).icon).toBe(icon)
+    expect(() => channelKind.validate({ ...provider, manifest: { ...manifest, icon } })).not.toThrow()
     expect(() => channelKind.validate({ ...provider, id: 'another-channel' })).toThrow()
     expect(() => channelKind.validate({ ...provider, create: undefined } as never)).toThrow()
   })
@@ -29,6 +32,13 @@ describe('channel manifest', () => {
     for (const invalid of [
       { ...base, id: 'ExampleIM' },
       { ...base, extra: 1 },
+      ...[
+        'https://example.com/icon.png',
+        './icon.png',
+        'data:image/svg+xml;base64,PHN2Zz4=',
+        '',
+        `data:image/png;base64,${'A'.repeat(32768)}`,
+      ].map((icon) => ({ ...base, icon })),
       { ...base, limits: { textChars: 0, cardBytes: 1, editWindowMs: 0 } },
     ]) {
       try {

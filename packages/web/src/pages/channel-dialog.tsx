@@ -1,9 +1,11 @@
 import { CredentialsApi } from '@agnes/resource-control-web/credentials-api'
-import { Button, Dialog, Field, Select, useDocumentLanguage } from '@agnes/web-ui'
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { Button, ChannelIcon, Dialog, Field, Select, useDocumentLanguage } from '@agnes/web-ui'
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { type ChannelDialogRequest, channelDialogState, closeChannelDialog } from './channel-dialog-state.js'
 import { useChannelOverview } from './channel-model.js'
+import { ChannelStatus, channelConnectionState } from './channel-presentation.js'
 import { ChannelSetup } from './channel-setup.js'
+import type { ManagedInstance } from './channel-types.js'
 import type { HomePageData } from './host.js'
 
 export function ChannelDialogHost({ data }: { data: HomePageData }) {
@@ -43,27 +45,35 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
   )
   const session = overview?.sessions.find((item) => item.sessionId === sessionId)
   const existing = group?.instances.find((item) => item.id === request.instanceId)
+  const pinned = useRef<ManagedInstance>()
+  if (existing) pinned.current = existing
+  const selected = existing ?? pinned.current
+  const editing = !!request.instanceId
   return (
     <Dialog
       open
       size="md"
       className="channel-dialog"
-      title={zh ? '连接渠道' : 'Connect a channel'}
+      title={
+        editing ? (zh ? '编辑渠道连接' : 'Edit channel connection') : zh ? '连接渠道' : 'Connect a channel'
+      }
       footer={null}
       onCancel={closeChannelDialog}
       mask={{ closable: false }}
     >
       <div className="channel-dialog-body">
-        <ol className="channel-steps" aria-label={zh ? '绑定步骤' : 'Binding steps'}>
-          {[zh ? '选择渠道' : 'Channel', zh ? '连接机器人' : 'Connection', zh ? '绑定会话' : 'Session'].map(
-            (label, index) => (
-              <li key={label} data-active={index === (!group ? 0 : step)}>
-                <span>{index + 1}</span>
-                {label}
-              </li>
-            ),
-          )}
-        </ol>
+        {!editing && (
+          <ol className="channel-steps" aria-label={zh ? '绑定步骤' : 'Binding steps'}>
+            {[zh ? '选择渠道' : 'Channel', zh ? '连接机器人' : 'Connection', zh ? '绑定会话' : 'Session'].map(
+              (label, index) => (
+                <li key={label} data-active={index === (!group ? 0 : step)}>
+                  <span>{index + 1}</span>
+                  {label}
+                </li>
+              ),
+            )}
+          </ol>
+        )}
         {error && (
           <p role="alert">
             {zh ? '无法读取渠道，请重试。' : 'Unable to load channels. Try again.'}
@@ -71,7 +81,7 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
           </p>
         )}
         {!overview && !error && <p role="status">{zh ? '正在读取渠道…' : 'Loading channels…'}</p>}
-        {overview && !group && (
+        {overview && !group && !editing && (
           <>
             <p className="channel-muted">
               {zh ? '将当前会话连接到你使用的聊天工具。' : 'Continue this session in your chat app.'}
@@ -84,11 +94,7 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
                   disabled={!item.provider.bindingAvailable || !!item.error}
                   onClick={() => setExtension(item.provider.extension)}
                 >
-                  <span className="channel-glyph" aria-hidden="true">
-                    {(item.provider.manifest.displayName || item.provider.manifest.id)
-                      .slice(0, 1)
-                      .toUpperCase()}
-                  </span>
+                  <ChannelIcon className="channel-glyph" icon={item.provider.manifest.icon} />
                   <span>
                     <strong>{item.provider.manifest.displayName || item.provider.manifest.id}</strong>
                     <small>
@@ -113,15 +119,22 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
             )}
           </>
         )}
-        {group && (
+        {overview && editing && (!group || !selected) && (
+          <p role="alert">
+            {zh
+              ? '此渠道连接已不存在或暂不可用，请刷新后重试。'
+              : 'This connection is missing or unavailable. Refresh and try again.'}
+            <Button onClick={() => void refresh()}>{zh ? '刷新' : 'Refresh'}</Button>
+          </p>
+        )}
+        {group && (!editing || selected) && (
           <>
             <div className="channel-selected">
-              <span className="channel-glyph" aria-hidden="true">
-                {(group.provider.manifest.displayName || group.provider.manifest.id)
-                  .slice(0, 1)
-                  .toUpperCase()}
-              </span>
+              <ChannelIcon className="channel-glyph" icon={group.provider.manifest.icon} />
               <strong>{group.provider.manifest.displayName || group.provider.manifest.id}</strong>
+              {editing && selected && (
+                <ChannelStatus state={channelConnectionState(selected.connection)} zh={zh} />
+              )}
               {!request.instanceId && (
                 <Button appearance="ghost" onClick={() => setExtension(undefined)}>
                   {zh ? '更换' : 'Change'}
@@ -159,7 +172,7 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
                 data={data}
                 group={error ? { ...group, error: true } : group}
                 sessionId={sessionId}
-                existing={existing}
+                existing={selected}
                 credentials={credentials}
                 zh={zh}
                 onStage={setStep}
