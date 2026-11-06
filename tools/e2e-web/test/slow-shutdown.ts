@@ -17,9 +17,13 @@ const lock = await acquireOwnerLock(home, {
 const lifetime = new AssemblyLifetime(30_000)
 lifetime.own({
   async drain() {
-    await writeFile(join(home, 'drain-start'), String(Date.now()))
-    await new Promise((done) => setTimeout(done, 21_000))
-    await writeFile(join(home, 'drain-complete'), String(Date.now()))
+    const started = performance.now()
+    await writeFile(join(home, 'drain-start'), String(started))
+    const deadline = started + 21_000
+    // Timers may wake early, and wall-clock corrections must not shorten this drain.
+    while (performance.now() < deadline)
+      await new Promise((done) => setTimeout(done, Math.ceil(deadline - performance.now())))
+    await writeFile(join(home, 'drain-complete'), String(performance.now()))
   },
   dispose: () => lock.release(),
 })

@@ -220,7 +220,7 @@ class ResourceAdminPage {
     if (tabChanged || workspaceChanged) this.#clearScope()
     this.#tab = scope.tab
     this.#workspaceId = nextWorkspace
-    this.#selected = undefined
+    if (tabChanged || workspaceChanged) this.#selected = undefined
     if (tabChanged || workspaceChanged) await this.#ensureLoaded()
     else if (options.refresh) await this.reload()
   }
