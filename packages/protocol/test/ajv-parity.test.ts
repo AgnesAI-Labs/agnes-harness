@@ -7763,6 +7763,7 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
     McpHttpSecretBinding: ok(httpBinding, [stdioBinding]),
     McpOAuthSecretBinding: ok(oauthBinding, [
       { kind: 'oauth', staticClientId: 'test-oauth-client', extraField: 'nope' },
+      { kind: 'oauth', staticClientId: 'test-oauth-client', clientSecretRef: 'plain-secret' },
     ]),
     McpToolPolicy: ok({ allow: ['search'] }),
     McpToolDisclosure: ok('on-demand', ['lazy']),
@@ -8072,32 +8073,173 @@ const AppSamples: Record<string, Sample> = {
     ],
     note: 'safe aggregate with no paths or secrets',
   },
-  AdminMcpOAuthSave: {
+  AdminMcpOAuthGet: {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', extra: 1 },
+    ],
+    note: 'sign-in summary lookup',
+  },
+  AdminMcpOAuthSummary: {
     valid: {
-      serverId: 'github',
-      credential: {
-        provider: 'fixture',
-        accessToken: 'fixture-token',
-        refreshToken: 'synthetic-refresh',
-        expiresAt: 0,
+      epoch: 0,
+      signedIn: true,
+      refreshable: true,
+      expiresAt: 1,
+      scope: ['read'],
+      requiredScope: [],
+      client: { clientId: 'client-1', redirectUri: 'http://127.0.0.1:4177/oauth/github/callback' },
+    },
+    invalid: [
+      { epoch: 0, signedIn: true, refreshable: true, scope: [], requiredScope: [], accessToken: 'leak' },
+      { epoch: -1, signedIn: false, refreshable: false, scope: [], requiredScope: [] },
+      { epoch: 0, signedIn: false, refreshable: false, scope: ['a b'], requiredScope: [] },
+      {
+        epoch: 0,
+        signedIn: false,
+        refreshable: false,
         scope: [],
-        grantId: 'fixture-grant',
+        requiredScope: [],
+        client: { clientId: 'c', redirectUri: 'r', clientSecret: 'leak' },
+      },
+    ],
+    note: 'sign-in summary never carries tokens or secrets',
+  },
+  AdminMcpOAuthComplete: {
+    valid: {
+      profile: 'local-dev',
+      serverId: 'github',
+      expectedEpoch: 0,
+      code: 'code-1',
+      codeVerifier: 'v'.repeat(43),
+      redirectUri: 'http://127.0.0.1:4177/oauth/github/callback',
+      client: {
+        clientId: 'client-1',
+        clientSecret: 'dcr-secret',
+        tokenEndpointAuthMethod: 'client_secret_post',
+      },
+      requestedScope: ['read', 'offline_access'],
+      authorization: {
+        tokenEndpoint: 'https://as.example/token',
+        issuer: 'https://as.example',
+        resource: 'https://mcp.example/mcp',
       },
     },
     invalid: [
       {
-        serverId: '../other',
-        credential: {
-          provider: 'fixture',
-          accessToken: 'fixture-token',
-          refreshToken: 'synthetic-refresh',
-          expiresAt: 0,
-          scope: [],
-          grantId: 'fixture-grant',
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+        extra: 1,
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(42),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: -1,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1', accessToken: 'x' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          resource: 'https://mcp.example/mcp',
+          clientSecret: 'x',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: { tokenEndpoint: '', resource: 'https://mcp.example/mcp' },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: `https://as.example/${'t'.repeat(2030)}`,
+          resource: 'https://mcp.example/mcp',
         },
       },
     ],
-    note: 'daemon-only OAuth credential persistence',
+    note: 'daemon exchanges the authorization code',
   },
   JsonValue: { valid: { nested: [null, false, 3] }, invalid: [undefined], note: 'App Server boundary shape' },
   AppServerErrorCause: {
@@ -8680,12 +8822,10 @@ for (const [file, , id, samples] of SELF_OWNED_DOCS)
 runParity('acp', ACP_ID, fromSchemaDefs(ACP_ID, ACP_DEFS), ACP_SAMPLES)
 runParity('format-checkers', FORMATS_ID, fromFormatDefs(), FORMAT_SAMPLES)
 
-// mcp-oauth-authorization plan, Task 1: the 'oauth' secretBinding kind is not yet a branch of
-// McpHttpSecretBinding's oneOf. These pin the exact shape the new McpOAuthSecretBinding $def must
-// accept once added — staticClientId is optional, and additionalProperties:false must still reject
-// unknown fields — and were written and watched red before the schema change landed (see
-// task-1-brief.md Step 2/3).
-describe('McpHttpSecretBinding: oauth secretBinding kind (mcp-oauth-authorization Task 1)', () => {
+// The 'oauth' secretBinding kind is a branch of McpHttpSecretBinding's oneOf. These pin the exact
+// shape the McpOAuthSecretBinding $def accepts — staticClientId is optional, and
+// additionalProperties:false still rejects unknown fields.
+describe('McpHttpSecretBinding: oauth secretBinding kind', () => {
   const check = ajvDef('https://agnes.ai/schema/resource-control.json', 'McpHttpSecretBinding')
   it('accepts kind "oauth" with staticClientId', () => {
     const sample = { kind: 'oauth', staticClientId: 'test-oauth-client' }
@@ -8702,13 +8842,25 @@ describe('McpHttpSecretBinding: oauth secretBinding kind (mcp-oauth-authorizatio
     expect(check(sample)).toBe(false)
     expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, sample)).toBe(false)
   })
+  it('accepts a client secret only as a secret reference', () => {
+    const reference = {
+      kind: 'oauth',
+      staticClientId: 'test-oauth-client',
+      clientSecretRef: 'secret://mcp/x',
+    }
+    expect(check(reference)).toBe(true)
+    expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, reference)).toBe(true)
+    const raw = { kind: 'oauth', staticClientId: 'test-oauth-client', clientSecretRef: 'raw-value' }
+    expect(check(raw)).toBe(false)
+    expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, raw)).toBe(false)
+  })
 })
 
-// mcp-oauth-authorization plan, Task 1: McpServerDescriptor.authorizationStatus is optional (a
+// McpServerDescriptor.authorizationStatus is optional (a
 // non-oauth binding omits it or sets it null) and, when present, constrained to the four states.
 // Exercised on a fully composed oauth-bound http descriptor rather than just the bare field, for the
 // same reason as the McpServerDefinitionInput composed check above.
-describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorization Task 1)', () => {
+describe('McpServerDescriptor: authorizationStatus field', () => {
   const check = ajvDef('https://agnes.ai/schema/resource-control.json', 'McpServerDescriptor')
   const descriptor = {
     kind: 'mcp',
@@ -8978,9 +9130,14 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'PackageListParams',
     result: 'PackageSourcePolicy',
   },
-  '_agnes/v1/admin.mcp.oauth.save': {
+  '_agnes/v1/admin.mcp.oauth.get': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
-    params: 'AdminMcpOAuthSave',
+    params: 'AdminMcpOAuthGet',
+    result: 'AdminMcpOAuthSummary',
+  },
+  '_agnes/v1/admin.mcp.oauth.complete': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthComplete',
     result: 'AdminEmpty',
   },
   '_agnes/v1/admin.bundles.get': {
@@ -10202,32 +10359,148 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{ profile: '../escape' }],
     note: 'profile boundary',
   },
-  '_agnes/v1/admin.mcp.oauth.save': {
+  '_agnes/v1/admin.mcp.oauth.get': {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', extra: 1 },
+    ],
+    note: 'sign-in summary lookup',
+  },
+  '_agnes/v1/admin.mcp.oauth.complete': {
     valid: {
+      profile: 'local-dev',
       serverId: 'github',
-      credential: {
-        provider: 'fixture',
-        accessToken: 'fixture-token',
-        refreshToken: 'synthetic-refresh',
-        expiresAt: 0,
-        scope: [],
-        grantId: 'fixture-grant',
+      expectedEpoch: 0,
+      code: 'code-1',
+      codeVerifier: 'v'.repeat(43),
+      redirectUri: 'http://127.0.0.1:4177/oauth/github/callback',
+      client: {
+        clientId: 'client-1',
+        clientSecret: 'dcr-secret',
+        tokenEndpointAuthMethod: 'client_secret_post',
+      },
+      requestedScope: ['read', 'offline_access'],
+      authorization: {
+        tokenEndpoint: 'https://as.example/token',
+        issuer: 'https://as.example',
+        resource: 'https://mcp.example/mcp',
       },
     },
     invalid: [
       {
-        serverId: '../other',
-        credential: {
-          provider: 'fixture',
-          accessToken: 'fixture-token',
-          refreshToken: 'synthetic-refresh',
-          expiresAt: 0,
-          scope: [],
-          grantId: 'fixture-grant',
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+        extra: 1,
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(42),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: -1,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1', accessToken: 'x' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          resource: 'https://mcp.example/mcp',
+          clientSecret: 'x',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: { tokenEndpoint: '', resource: 'https://mcp.example/mcp' },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: `https://as.example/${'t'.repeat(2030)}`,
+          resource: 'https://mcp.example/mcp',
         },
       },
     ],
-    note: 'daemon-only OAuth credential persistence',
+    note: 'daemon exchanges the authorization code',
   },
   '_agnes/v1/admin.bundles.get': { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
   '_agnes/v1/admin.bundles.save': {
@@ -10906,10 +11179,35 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/plugins.candidates.list': PackageAdminSamples.AuthoringCandidateList as Sample,
   '_agnes/v1/packages.provenance': PackageAdminSamples.PackageProvenance as Sample,
   '_agnes/v1/packages.sourcePolicy': PackageAdminSamples.PackageSourcePolicy as Sample,
-  '_agnes/v1/admin.mcp.oauth.save': {
+  '_agnes/v1/admin.mcp.oauth.get': {
+    valid: {
+      epoch: 0,
+      signedIn: true,
+      refreshable: true,
+      expiresAt: 1,
+      scope: ['read'],
+      requiredScope: [],
+      client: { clientId: 'client-1', redirectUri: 'http://127.0.0.1:4177/oauth/github/callback' },
+    },
+    invalid: [
+      { epoch: 0, signedIn: true, refreshable: true, scope: [], requiredScope: [], accessToken: 'leak' },
+      { epoch: -1, signedIn: false, refreshable: false, scope: [], requiredScope: [] },
+      { epoch: 0, signedIn: false, refreshable: false, scope: ['a b'], requiredScope: [] },
+      {
+        epoch: 0,
+        signedIn: false,
+        refreshable: false,
+        scope: [],
+        requiredScope: [],
+        client: { clientId: 'c', redirectUri: 'r', clientSecret: 'leak' },
+      },
+    ],
+    note: 'sign-in summary never carries tokens or secrets',
+  },
+  '_agnes/v1/admin.mcp.oauth.complete': {
     valid: {},
     invalid: [{ extra: 1 }],
-    note: 'write acknowledges without returning a credential',
+    note: 'completion acknowledges without returning a credential',
   },
   '_agnes/v1/admin.bundles.get': {
     valid: { revision: 0, bundles: [], effect: 'restart-required' },

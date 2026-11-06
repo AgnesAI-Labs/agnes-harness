@@ -395,6 +395,18 @@ export { createExec, type ExecAdapter, type ExecResult } from '@agnes/host-infra
 export { resolveFileSecretsDirectory } from '@agnes/host-infrastructure/adapters/file-secrets-dir'
 export { createFs, type HostFs } from '@agnes/host-infrastructure/adapters/fs'
 export {
+  type CreateMcpOAuthStoreOptions,
+  createMcpOAuthStore,
+  type McpOAuthClient,
+  type McpOAuthNext,
+  type McpOAuthRead,
+  type McpOAuthRecord,
+  type McpOAuthServer,
+  type McpOAuthStore,
+  type McpOAuthTokens,
+  type McpOAuthUpdateOptions,
+} from '@agnes/host-infrastructure/adapters/mcp-oauth-store'
+export {
   CAPABILITY_IDS,
   type CapabilityId,
   type CapabilityLevel,

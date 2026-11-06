@@ -33,8 +33,14 @@ const observedAt = (): string => new Date().toISOString()
  * is running, and a timestamp. `revision` is this row's own mount identity input, not a live read -
  * a row survives unchanged across `apply()` calls exactly because its revision did not change, so
  * whichever revision is current when the event fires is the one this status is about.
+ * `bindingKind` is a remote server's secret binding, which decides what a 401 or 403 means.
  */
-function toMcpStatus(serverId: string, revision: string, event: ConnectionStatusEvent): McpStatus {
+function toMcpStatus(
+  serverId: string,
+  revision: string,
+  event: ConnectionStatusEvent,
+  bindingKind?: string,
+): McpStatus {
   if (event.state === 'ready')
     return {
       serverId,
@@ -48,13 +54,16 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
         : {}),
     }
   if (event.state === 'unavailable') {
-    const failure = mcpConnectionFailure(event.error)
+    const failure = mcpConnectionFailure(event.error, bindingKind)
+    // A server that needs sign-in says so even after the retries ran out: only a sign-in helps.
     const code =
-      event.reason === 'exhausted'
-        ? 'MCP_RECONNECT_EXHAUSTED'
-        : event.reason === 'lost'
-          ? 'MCP_CONNECTION_LOST'
-          : failure.code
+      failure.code === 'MCP_OAUTH_NEEDS_RECONNECT' && event.reason !== 'lost'
+        ? failure.code
+        : event.reason === 'exhausted'
+          ? 'MCP_RECONNECT_EXHAUSTED'
+          : event.reason === 'lost'
+            ? 'MCP_CONNECTION_LOST'
+            : failure.code
     return {
       serverId,
       connectionState: 'unavailable',
@@ -97,12 +106,6 @@ function statusForSkip(serverId: string, reason: string): McpStatus {
       ...base,
       connectionState: 'unavailable',
       lastSafeError: { code: 'MCP_UNTRUSTED_REVISION', message: reason },
-    }
-  if (reason.startsWith('oauth secretBinding'))
-    return {
-      ...base,
-      connectionState: 'unavailable',
-      lastSafeError: { code: 'MCP_OAUTH_UNSUPPORTED', message: 'sessions do not connect OAuth servers' },
     }
   return {
     ...base,
@@ -199,6 +202,7 @@ export function createMcpRowRuntime(
   const catalogs = new Map<string, Catalog>()
   const statusChanged = new Set<() => void>()
   const displayNames = new Map<string, string>()
+  const bindingKinds = new Map<string, string>()
   const cap = deps.firstAttemptTimeoutMs ?? FIRST_ATTEMPT_TIMEOUT_MS
   const attempts = new Map<Promise<unknown>, number>()
   return Object.freeze({
@@ -215,9 +219,12 @@ export function createMcpRowRuntime(
             for (const notify of statusChanged) notify()
           }
         displayNames.clear()
+        bindingKinds.clear()
         for (const entry of entries) {
           revisions.set(entry.definition.serverId, entry.revision)
           displayNames.set(entry.definition.serverId, entry.definition.displayName)
+          if (entry.definition.transport.kind !== 'stdio')
+            bindingKinds.set(entry.definition.serverId, entry.definition.secretBinding.kind)
         }
         // A row's extension starts while Host applies it, so by the time Host's apply resolves this
         // holds exactly the rows Host (re)mounted in this call -- never an unchanged row.
@@ -236,7 +243,7 @@ export function createMcpRowRuntime(
           onStatus: (serverId, event) => {
             const revision = revisions.get(serverId)
             if (revision === undefined) return
-            const status = toMcpStatus(serverId, revision, event)
+            const status = toMcpStatus(serverId, revision, event, bindingKinds.get(serverId))
             statuses.set(serverId, status)
             if (event.state === 'ready')
               catalogs.set(serverId, { revision, catalogRevision: event.catalogRevision, tools: event.tools })

@@ -1,7 +1,15 @@
 import { createServer, type Server as HttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createOAuthHttpHandler, type OAuthCredentialStoreWriter } from '../src/oauth-http-handler.js'
+import {
+  completeMcpOAuthLogin,
+  type McpOAuthCompleteParams,
+  type McpOAuthSummary,
+  summarizeMcpOAuth,
+} from '../src/mcp-oauth-login.js'
+import { createOAuthHttpHandler } from '../src/oauth-http-handler.js'
 import { sealOAuthState } from '../src/oauth-state.js'
+import { startFakeOAuthServer } from './helpers/fake-oauth.js'
+import { createMemoryOAuthStore, type MemoryOAuthStore } from './helpers/memory-oauth-store.js'
 
 /**
  * Real `node:http` throughout - both the fixture "authorization server" this handler talks to, and
@@ -90,7 +98,7 @@ describe('oauth-http-handler', () => {
         }
         res.writeHead(200, { 'content-type': 'application/json' }).end(
           JSON.stringify({
-            resource: `${server_url().toString()}/`,
+            resource: server_url().toString(),
             authorization_servers: protectedResourceAuthorizationServers,
           }),
         )
@@ -174,8 +182,30 @@ describe('oauth-http-handler', () => {
     return { url, requestCount: () => count }
   }
 
-  function fakeCredentialStore(): OAuthCredentialStoreWriter & { putOAuth: ReturnType<typeof vi.fn> } {
-    return { putOAuth: vi.fn(async () => undefined) }
+  const EMPTY: McpOAuthSummary = {
+    epoch: 0,
+    signedIn: false,
+    refreshable: false,
+    scope: [],
+    requiredScope: [],
+  }
+
+  /** The daemon side as a stub: an empty summary, and a completion that only records its call. */
+  function fakeLogin() {
+    return {
+      get: vi.fn(async (_serverId: string) => EMPTY),
+      complete: vi.fn(async (_params: McpOAuthCompleteParams) => undefined),
+    }
+  }
+
+  /** The daemon side for real: the code exchange and the credential write, against an in-memory store. */
+  function realLogin(serverUrl: URL, store: MemoryOAuthStore) {
+    return {
+      get: vi.fn(async (serverId: string) => summarizeMcpOAuth(await store.read(serverId))),
+      complete: vi.fn(async (params: McpOAuthCompleteParams) =>
+        completeMcpOAuthLogin({ ...params, serverUrl, store, fetchImpl: fetch }),
+      ),
+    }
   }
 
   const SECRET = 'test-secret-32-bytes-minimum-xxxxxxxxxxxx'
@@ -183,10 +213,10 @@ describe('oauth-http-handler', () => {
   describe('start', () => {
     it('issues a signed state and a redirect to the authorization endpoint', async () => {
       const fixture = await startFixtureAuthServer()
-      const credentialStore = fakeCredentialStore()
+      const login = fakeLogin()
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore,
+        login,
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async (serverId) =>
           serverId === 'srv-1' ? { serverUrl: fixture.url, staticClientId: 'static-client-id' } : undefined,
@@ -206,14 +236,14 @@ describe('oauth-http-handler', () => {
       expect(redirectUrl.searchParams.get('code_challenge_method')).toBe('S256')
       expect(redirectUrl.searchParams.get('code_challenge')).toBeTruthy()
       expect(redirectUrl.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:4177/oauth/srv-1/callback')
-      expect(credentialStore.putOAuth).not.toHaveBeenCalled()
+      expect(login.complete).not.toHaveBeenCalled()
     })
 
     it('returns 404 without contacting any authorization server when the server is unknown', async () => {
       const resolveServer = vi.fn(async () => undefined)
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer,
       })
@@ -229,7 +259,7 @@ describe('oauth-http-handler', () => {
       const fixture = await startFixtureAuthServer()
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         // No staticClientId, and the fixture's metadata has no registration_endpoint - DCR is
         // skipped, not attempted, so registerOAuthClient must fall back to pendingClientId.
@@ -246,7 +276,7 @@ describe('oauth-http-handler', () => {
     it('declines a request outside its own route space, leaving server.ts free to keep looking', async () => {
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async () => undefined,
       })
@@ -271,7 +301,7 @@ describe('oauth-http-handler', () => {
 
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async (serverId) =>
           serverId === 'srv-1' ? { serverUrl: fixture.url, staticClientId: 'static-client-id' } : undefined,
@@ -308,7 +338,7 @@ describe('oauth-http-handler', () => {
 
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async () => ({ serverUrl: redirectingUrl, staticClientId: 'static-client-id' }),
       })
@@ -334,7 +364,7 @@ describe('oauth-http-handler', () => {
       const resolveServer = vi.fn(async () => undefined)
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer,
       })
@@ -353,7 +383,7 @@ describe('oauth-http-handler', () => {
       const resolveServer = vi.fn(async () => undefined)
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer,
       })
@@ -371,7 +401,7 @@ describe('oauth-http-handler', () => {
       const fixture = await startFixtureAuthServer()
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async () => ({ serverUrl: fixture.url, staticClientId: 'static-client-id' }),
       })
@@ -396,10 +426,10 @@ describe('oauth-http-handler', () => {
   describe('startAuthorization (JSON capability)', () => {
     it('returns an authorizeUrl carrying a signed state, mirroring the HTTP /start redirect target exactly', async () => {
       const fixture = await startFixtureAuthServer()
-      const credentialStore = fakeCredentialStore()
+      const login = fakeLogin()
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore,
+        login,
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async (serverId) =>
           serverId === 'srv-1' ? { serverUrl: fixture.url, staticClientId: 'static-client-id' } : undefined,
@@ -416,14 +446,14 @@ describe('oauth-http-handler', () => {
       expect(authorizeUrl.searchParams.get('client_id')).toBe('static-client-id')
       expect(authorizeUrl.searchParams.get('code_challenge_method')).toBe('S256')
       expect(authorizeUrl.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:4177/oauth/srv-1/callback')
-      expect(credentialStore.putOAuth).not.toHaveBeenCalled()
+      expect(login.complete).not.toHaveBeenCalled()
     })
 
     it('returns {error: mcp_server_not_found} without contacting any authorization server for an unknown serverId', async () => {
       const resolveServer = vi.fn(async () => undefined)
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer,
       })
@@ -438,7 +468,7 @@ describe('oauth-http-handler', () => {
       const resolveServer = vi.fn(async () => undefined)
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer,
       })
@@ -453,7 +483,7 @@ describe('oauth-http-handler', () => {
       const fixture = await startFixtureAuthServer()
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         // No staticClientId, and the fixture's metadata has no registration_endpoint - DCR is
         // skipped, matching the HTTP route's own equivalent test.
@@ -473,10 +503,10 @@ describe('oauth-http-handler', () => {
     // between the two entry points, this would fail with invalid_oauth_state or a 409.
     it("an authorizeUrl minted here completes through this same instance's HTTP /callback", async () => {
       const fixture = await startFixtureAuthServer()
-      const credentialStore = fakeCredentialStore()
+      const login = fakeLogin()
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore,
+        login,
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async () => ({ serverUrl: fixture.url, staticClientId: 'static-client-id' }),
       })
@@ -502,9 +532,13 @@ describe('oauth-http-handler', () => {
       const response = await fetch(callbackUrl, { redirect: 'manual' })
 
       expect(response.status).toBe(302)
-      expect(credentialStore.putOAuth).toHaveBeenCalledWith(
-        'secret://mcp-oauth/srv-1',
-        expect.objectContaining({ accessToken: 'tok', refreshToken: 'refresh' }),
+      expect(login.complete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          serverId: 'srv-1',
+          code: 'auth-code-1',
+          expectedEpoch: 0,
+          client: { clientId: 'static-client-id' },
+        }),
       )
     })
 
@@ -518,7 +552,7 @@ describe('oauth-http-handler', () => {
       fixture.setProtectedResourceMetadata([victim.url.toString()])
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore: fakeCredentialStore(),
+        login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async (serverId) =>
           serverId === 'srv-1' ? { serverUrl: fixture.url, staticClientId: 'static-client-id' } : undefined,
@@ -537,8 +571,6 @@ describe('oauth-http-handler', () => {
     /** Drives a full start -> (simulated consent) -> callback round trip and returns the pieces a
      * test needs to then tamper with the state or replay it. */
     async function completeStart(opts: {
-      fixture: Awaited<ReturnType<typeof startFixtureAuthServer>>
-      credentialStore: OAuthCredentialStoreWriter
       served: { url: string }
       onAuthorizationStatus?: (serverId: string, status: string) => Promise<void>
       returnTo?: string
@@ -555,65 +587,144 @@ describe('oauth-http-handler', () => {
       onAuthorizationStatus?: (serverId: string, status: string) => Promise<void>
     }) {
       const fixture = await startFixtureAuthServer()
-      const credentialStore = fakeCredentialStore()
+      const store = createMemoryOAuthStore()
+      const login = realLogin(fixture.url, store)
       const handler = createOAuthHttpHandler({
         secret: SECRET,
-        credentialStore,
+        login,
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async (serverId) =>
           serverId === 'srv-1' ? { serverUrl: fixture.url, staticClientId: 'static-client-id' } : undefined,
         ...(opts?.onAuthorizationStatus ? { onAuthorizationStatus: opts.onAuthorizationStatus } : {}),
       })
       const served = await serveHandler(handler)
-      return { fixture, credentialStore, served }
+      return { fixture, login, store, served }
     }
 
-    it('rejects a tampered state before touching the credential store', async () => {
-      const { served, credentialStore } = await setupHandler()
+    it('hands the daemon the epoch, client and scope the sign-in started with; a registered secret never enters state', async () => {
+      const fake = await startFakeOAuthServer({
+        prm: { resource: '/mcp', scopes: ['read'] },
+        registration: { clientId: 'dcr-client', clientSecret: 'dcr-secret-9' },
+      })
+      cleanup.push(() => fake.close())
+      const login = fakeLogin()
+      login.get.mockResolvedValue({
+        ...EMPTY,
+        epoch: 5,
+        signedIn: true,
+        scope: ['read'],
+        requiredScope: ['write'],
+      })
+      const handler = createOAuthHttpHandler({
+        secret: SECRET,
+        login,
+        baseUrl: new URL('http://127.0.0.1:4177'),
+        resolveServer: async () => ({ serverUrl: fake.serverUrl }),
+        fetchImpl: fake.fetchImpl,
+      })
+      const served = await serveHandler(handler)
+
+      const result = await handler.startAuthorization('srv-1')
+      const authorizeUrl = new URL((result as { authorizeUrl: string }).authorizeUrl)
+      const state = authorizeUrl.searchParams.get('state') as string
+      expect(Buffer.from(state.split('.')[0] as string, 'base64url').toString('utf8')).not.toContain(
+        'dcr-secret-9',
+      )
+      expect(login.get).toHaveBeenCalledWith('srv-1')
+
+      const callback = new URL(`${served.url}/oauth/srv-1/callback`)
+      callback.searchParams.set('state', state)
+      callback.searchParams.set('code', 'auth-code-9')
+      expect((await fetch(callback, { redirect: 'manual' })).status).toBe(302)
+
+      const [params] = login.complete.mock.calls[0] as [McpOAuthCompleteParams]
+      expect(params).toMatchObject({
+        serverId: 'srv-1',
+        expectedEpoch: 5,
+        code: 'auth-code-9',
+        redirectUri: 'http://127.0.0.1:4177/oauth/srv-1/callback',
+        client: { clientId: 'dcr-client', clientSecret: 'dcr-secret-9' },
+        authorization: {
+          tokenEndpoint: `${fake.httpsUrl.origin}/token`,
+          issuer: fake.httpsUrl.origin,
+          resource: new URL('/mcp', fake.url).href,
+        },
+      })
+      expect([...params.requestedScope].sort()).toEqual(['read', 'write'])
+      expect(params.codeVerifier).toMatch(/^[A-Za-z0-9._~-]{43,128}$/)
+    })
+
+    it('a completion the daemon refuses is reported as an error, not as signed in', async () => {
+      const statusUpdates: string[] = []
+      const fixture = await startFixtureAuthServer()
+      const login = fakeLogin()
+      login.complete.mockRejectedValue(new Error('signed out meanwhile'))
+      const handler = createOAuthHttpHandler({
+        secret: SECRET,
+        login,
+        baseUrl: new URL('http://127.0.0.1:4177'),
+        resolveServer: async () => ({ serverUrl: fixture.url, staticClientId: 'static-client-id' }),
+        onAuthorizationStatus: async (_serverId, status) => {
+          statusUpdates.push(status)
+        },
+      })
+      const served = await serveHandler(handler)
+      const { state } = await completeStart({ served })
+
+      const response = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`, {
+        redirect: 'manual',
+      })
+
+      expect(response.status).toBe(302)
+      expect(statusUpdates).toEqual(['error'])
+    })
+
+    it('rejects a tampered state before asking the daemon to complete anything', async () => {
+      const { served, login } = await setupHandler()
 
       const response = await fetch(`${served.url}/oauth/srv-1/callback?code=abc&state=tampered`)
 
       expect(response.status).toBe(400)
-      expect(credentialStore.putOAuth).not.toHaveBeenCalled()
+      expect(login.complete).not.toHaveBeenCalled()
     })
 
     it('rejects a state whose sealed payload names a different serverId than the URL', async () => {
-      const { fixture, served, credentialStore } = await setupHandler()
-      const { state } = await completeStart({ fixture, credentialStore, served })
+      const { served, login } = await setupHandler()
+      const { state } = await completeStart({ served })
 
       // The state really was issued for srv-1 (proven by the happy-path test below reusing the
       // identical flow successfully) - only the callback URL's serverId segment is switched.
       const response = await fetch(`${served.url}/oauth/srv-2/callback?code=abc&state=${state}`)
 
       expect(response.status).toBe(400)
-      expect(credentialStore.putOAuth).not.toHaveBeenCalled()
+      expect(login.complete).not.toHaveBeenCalled()
     })
 
     it('rejects a replayed state on the second use', async () => {
-      const { fixture, served, credentialStore } = await setupHandler()
+      const { fixture, served, login } = await setupHandler()
       fixture.setTokenResponse({
         status: 200,
         body: { access_token: 'at-1', refresh_token: 'rt-1', token_type: 'bearer', expires_in: 3600 },
       })
-      const { state } = await completeStart({ fixture, credentialStore, served })
+      const { state } = await completeStart({ served })
 
       const first = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`, {
         redirect: 'manual',
       })
       expect(first.status).toBe(302)
-      expect(credentialStore.putOAuth).toHaveBeenCalledTimes(1)
+      expect(login.complete).toHaveBeenCalledTimes(1)
 
       const second = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`, {
         redirect: 'manual',
       })
       expect(second.status).toBe(400)
-      // The replay must not touch the credential store a second time.
-      expect(credentialStore.putOAuth).toHaveBeenCalledTimes(1)
+      // The replay must not reach the completion a second time.
+      expect(login.complete).toHaveBeenCalledTimes(1)
     })
 
-    it('completes the full round trip: stores the exchanged credential under a secret:// ref and redirects back', async () => {
+    it('completes the full round trip: hands the code to the daemon side, which stores the exchanged credential, and redirects back', async () => {
       const statusUpdates: Array<{ serverId: string; status: string }> = []
-      const { fixture, served, credentialStore } = await setupHandler({
+      const { fixture, served, login, store } = await setupHandler({
         onAuthorizationStatus: async (serverId, status) => {
           statusUpdates.push({ serverId, status })
         },
@@ -629,8 +740,6 @@ describe('oauth-http-handler', () => {
         },
       })
       const { state } = await completeStart({
-        fixture,
-        credentialStore,
         served,
         returnTo: '/admin/resources',
       })
@@ -643,16 +752,29 @@ describe('oauth-http-handler', () => {
       const redirectLocation = new URL(response.headers.get('location') as string)
       expect(redirectLocation.pathname).toBe('/admin/resources')
 
-      expect(credentialStore.putOAuth).toHaveBeenCalledTimes(1)
-      const [ref, value] = credentialStore.putOAuth.mock.calls[0] as [string, Record<string, unknown>]
-      expect(ref).toBe('secret://mcp-oauth/srv-1')
-      expect(value).toMatchObject({
-        accessToken: 'access-token-value',
-        refreshToken: 'refresh-token-value',
-        scope: ['read', 'write'],
+      expect(login.complete).toHaveBeenCalledTimes(1)
+      const [params] = login.complete.mock.calls[0] as [McpOAuthCompleteParams]
+      expect(params).toMatchObject({
+        serverId: 'srv-1',
+        expectedEpoch: 0,
+        code: 'auth-code-1',
+        redirectUri: 'http://127.0.0.1:4177/oauth/srv-1/callback',
+        client: { clientId: 'static-client-id' },
+        requestedScope: [],
       })
-      expect(typeof value.expiresAt).toBe('number')
-      expect(value.expiresAt as number).toBeGreaterThan(Date.now())
+      const stored = await store.read('srv-1')
+      expect(stored).toMatchObject({
+        version: 2,
+        epoch: 0,
+        rev: 1,
+        tokens: {
+          accessToken: 'access-token-value',
+          refreshToken: 'refresh-token-value',
+          scope: ['read', 'write'],
+        },
+      })
+      const expiresAt = stored && 'tokens' in stored ? stored.tokens?.expiresAt : undefined
+      expect(expiresAt).toBeGreaterThan(Date.now())
 
       // Token exchange really carried the PKCE verifier and the exact redirect_uri used at start -
       // not merely "some POST happened".
@@ -672,12 +794,12 @@ describe('oauth-http-handler', () => {
     // replay-protected `state` - is what actually authenticates it; this proves that holds even
     // when every Fetch Metadata signal says "cross-site", not merely that no check was added.
     it('completes successfully even when sec-fetch-site/origin say cross-site, exactly like a real redirect back from the authorization server', async () => {
-      const { fixture, served, credentialStore } = await setupHandler()
+      const { fixture, served, login } = await setupHandler()
       fixture.setTokenResponse({
         status: 200,
         body: { access_token: 'at', refresh_token: 'rt', token_type: 'bearer', expires_in: 3600 },
       })
-      const { state } = await completeStart({ fixture, credentialStore, served })
+      const { state } = await completeStart({ served })
 
       const response = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`, {
         redirect: 'manual',
@@ -685,11 +807,11 @@ describe('oauth-http-handler', () => {
       })
 
       expect(response.status).toBe(302)
-      expect(credentialStore.putOAuth).toHaveBeenCalledTimes(1)
+      expect(login.complete).toHaveBeenCalledTimes(1)
     })
 
     it('rejects a request with a syntactically valid but unsigned state', async () => {
-      const { served, credentialStore } = await setupHandler()
+      const { served, login } = await setupHandler()
       const forged = Buffer.from(JSON.stringify({ serverId: 'srv-1' })).toString('base64url')
 
       const response = await fetch(
@@ -697,25 +819,26 @@ describe('oauth-http-handler', () => {
       )
 
       expect(response.status).toBe(400)
-      expect(credentialStore.putOAuth).not.toHaveBeenCalled()
+      expect(login.complete).not.toHaveBeenCalled()
     })
 
     it('marks the server as needing attention and redirects back without storing anything when the token exchange fails', async () => {
       const statusUpdates: Array<{ serverId: string; status: string }> = []
-      const { fixture, served, credentialStore } = await setupHandler({
+      const { fixture, served, login, store } = await setupHandler({
         onAuthorizationStatus: async (serverId, status) => {
           statusUpdates.push({ serverId, status })
         },
       })
       fixture.setTokenResponse({ status: 400, body: { error: 'invalid_grant' } })
-      const { state } = await completeStart({ fixture, credentialStore, served })
+      const { state } = await completeStart({ served })
 
       const response = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`, {
         redirect: 'manual',
       })
 
       expect(response.status).toBe(302)
-      expect(credentialStore.putOAuth).not.toHaveBeenCalled()
+      expect(login.complete).toHaveBeenCalledTimes(1)
+      expect(await store.read('srv-1')).toBeNull()
       expect(statusUpdates).toEqual([{ serverId: 'srv-1', status: 'error' }])
     })
 
@@ -729,8 +852,8 @@ describe('oauth-http-handler', () => {
     // endpoint leaks the full POST body (code, code_verifier, client_id) to wherever it points.
     it('refuses to follow a redirect from the token endpoint instead of leaking the authorization code there', async () => {
       const victim = await startVictimServer()
-      const { fixture, served, credentialStore } = await setupHandler()
-      const { state } = await completeStart({ fixture, credentialStore, served })
+      const { fixture, served, login, store } = await setupHandler()
+      const { state } = await completeStart({ served })
       fixture.setTokenRedirect(victim.url.toString())
 
       const response = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`, {
@@ -740,38 +863,37 @@ describe('oauth-http-handler', () => {
       // The refused redirect makes the token exchange fail closed (same "mark as error, redirect
       // back" path as any other exchange failure) - never a silent leak to wherever it pointed.
       expect(response.status).toBe(302)
-      expect(credentialStore.putOAuth).not.toHaveBeenCalled()
+      expect(login.complete).toHaveBeenCalledTimes(1)
+      expect(await store.read('srv-1')).toBeNull()
       expect(victim.requestCount()).toBe(0)
     })
 
     it('treats a provider-side denial (error query param) as a failure without exchanging any code', async () => {
       const statusUpdates: Array<{ serverId: string; status: string }> = []
-      const { fixture, served, credentialStore } = await setupHandler({
+      const { fixture, served, login } = await setupHandler({
         onAuthorizationStatus: async (serverId, status) => {
           statusUpdates.push({ serverId, status })
         },
       })
-      const { state } = await completeStart({ fixture, credentialStore, served })
+      const { state } = await completeStart({ served })
 
       const response = await fetch(`${served.url}/oauth/srv-1/callback?error=access_denied&state=${state}`, {
         redirect: 'manual',
       })
 
       expect(response.status).toBe(302)
-      expect(credentialStore.putOAuth).not.toHaveBeenCalled()
+      expect(login.complete).not.toHaveBeenCalled()
       expect(fixture.tokenRequests).toEqual([])
       expect(statusUpdates).toEqual([{ serverId: 'srv-1', status: 'error' }])
     })
 
     it('never redirects to an attacker-supplied off-origin returnTo target', async () => {
-      const { fixture, served, credentialStore } = await setupHandler()
+      const { fixture, served } = await setupHandler()
       fixture.setTokenResponse({
         status: 200,
         body: { access_token: 'at', refresh_token: 'rt', token_type: 'bearer', expires_in: 3600 },
       })
       const { state } = await completeStart({
-        fixture,
-        credentialStore,
         served,
         returnTo: 'https://evil.example.com/steal',
       })
@@ -797,10 +919,10 @@ describe('oauth-http-handler', () => {
     // `safeReturnTo` during implementation (see the Task 4 report).
     it("the callback's own safeReturnTo check independently rejects an off-origin returnTo, even if it reached state some other way", async () => {
       const secret = 'test-secret-32-bytes-minimum-xxxxxxxxxxxx'
-      const credentialStore = fakeCredentialStore()
+      const login = fakeLogin()
       const handler = createOAuthHttpHandler({
         secret,
-        credentialStore,
+        login,
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async () => undefined,
       })
@@ -815,6 +937,10 @@ describe('oauth-http-handler', () => {
           codeVerifier: 'verifier',
           nonce: 'nonce-bypassing-start',
           issuedAt: Date.now(),
+          expectedEpoch: 0,
+          client: { clientId: 'static-client-id' },
+          requestedScope: [],
+          authorization: { tokenEndpoint: 'http://127.0.0.1:1/token', resource: 'http://127.0.0.1:1/' },
           returnTo: 'https://evil.example.com/steal',
         },
         { secret },

@@ -30,7 +30,7 @@ Local IPC authenticates the OS owner on the daemon's private Unix socket or veri
 
 Browser WebSocket traffic retains loopback, Origin, bearer and session authorization checks. Local BFF HTTP paths retain exact-origin and fixed-scope checks and use a private Node SDK connection. Browsers receive no local daemon credential. Source-auth, portal and channel clients retain their existing server-established grants; client labels are not permissions.
 
-Daemon-owned settings use `_agnes/v1/admin.*`: `bundles.get`, `bundles.save`, `composition.get`, `search.get`, `search.save`, `search.test`, `context`, `history.search`, `plan`, and `mcp.oauth.save`. These methods require a local administrator grant. Writes require activation permission; context and plan only inspect registered, available workspaces. Bundle saves report `restart-required`. Existing package/resource/config methods remain in the same contract.
+Daemon-owned settings use `_agnes/v1/admin.*`: `bundles.get`, `bundles.save`, `composition.get`, `search.get`, `search.save`, `search.test`, `context`, `history.search`, `plan`, `mcp.oauth.get`, and `mcp.oauth.complete`. These methods require a local administrator grant. Writes require activation permission; context and plan only inspect registered, available workspaces. Bundle saves report `restart-required`. Existing package/resource/config methods remain in the same contract.
 
 HTTP paths remain compatibility adapters: `/admin/plugins/api/*`, `/admin/resources/api/*`, `/api/context`, `/api/history-search`, `/api/plan-mode`, and client-module service/effect routes. Native workspace pickers and browser OAuth redirects remain client transport capabilities; the daemon owns their resulting workspace admission and credential operations.
 

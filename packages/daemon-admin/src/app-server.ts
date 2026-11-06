@@ -5,8 +5,10 @@ import { AutoReviewSettingsStore } from '@agnes/base/approval-policy'
 import { createSearchAdmin } from '@agnes/base/search'
 import { HistoryIndexError, searchHistoryDirectory } from '@agnes/history-index'
 import {
+  CredentialStoreError,
   createCompositionAdmin,
   createCredentialStore,
+  createMcpOAuthStore,
   createSecretsEnv,
   createSecretsFile,
   fileSecretsDir,
@@ -14,16 +16,23 @@ import {
   resolveFileSecretsDirectory,
 } from '@agnes/host'
 import { withPackageVerification } from '@agnes/package-manager'
-import { type AutoReviewConfig, rpcError } from '@agnes/protocol'
+import { type AutoReviewConfig, type McpServerDescriptor, rpcError } from '@agnes/protocol'
 import type {
   AdminBundlesSave,
   AdminContextParams,
   AdminHistoryParams,
-  AdminMcpOAuthSave,
+  AdminMcpOAuthComplete,
+  AdminMcpOAuthGet,
   AdminMemoryParams,
   AdminPlanParams,
 } from '@agnes/protocol/gen/app-server'
-import { credentialRefFor } from '@agnes/resource-control-runtime'
+import {
+  completeMcpOAuthLogin,
+  McpOAuthLoginEndpointChanged,
+  McpOAuthLoginSuperseded,
+  type McpOAuthSummary,
+  summarizeMcpOAuth,
+} from '@agnes/resource-control-runtime'
 import { type CredentialConfiguration, savedCredentialConfigurations } from './credential-references.js'
 import { createCredentialAdmin } from './credentials.js'
 import { createWebhookService, type TriggerSessionInput } from './webhooks/service.js'
@@ -53,6 +62,10 @@ export function createAppServerAdmin(options: {
   credentialConfigurations?(): Promise<CredentialConfiguration[]>
   plan?(input: AdminPlanParams): Promise<{ active: boolean; text: string }>
   workspaces(): Promise<{ items: { path: string; available: boolean }[] }>
+  /** One MCP server definition of a profile, or undefined when there is none. */
+  mcpServer?(profile: string, serverId: string): Promise<McpServerDescriptor['definition'] | undefined>
+  /** Test seam for the sign-in code exchange; production uses global fetch. */
+  fetchImpl?: typeof fetch
 }) {
   const composition = createCompositionAdmin({
     profileDir: options.profileDir,
@@ -61,6 +74,23 @@ export function createAppServerAdmin(options: {
   })
   resolveFileSecretsDirectory({ home: options.home, dataDir: options.dataDir })
   const credentials = createCredentialStore({ root: options.home })
+  const oauthStore = createMcpOAuthStore({ root: options.home })
+  const oauthServer = async (profile: string, serverId: string) => {
+    const definition = await options.mcpServer?.(profile, serverId)
+    const { transport, secretBinding } = definition ?? {}
+    // Sign-in is for a remote server whose credential is OAuth, or not set yet.
+    if (
+      !transport ||
+      transport.kind === 'stdio' ||
+      !secretBinding ||
+      !['oauth', 'none'].includes(secretBinding.kind)
+    )
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'MCP_OAUTH_SERVER_UNAVAILABLE' })
+    return {
+      serverUrl: new URL(transport.url),
+      binding: secretBinding.kind === 'oauth' ? secretBinding : undefined,
+    }
+  }
   const search = createSearchAdmin({
     dataDir: options.dataDir,
     credentials: {
@@ -146,8 +176,50 @@ export function createAppServerAdmin(options: {
       if (result.status !== 200) throw rpcError('SEMANTIC_REJECTED', { reason: 'SEARCH_INVALID' })
       return result.body
     },
-    async saveMcpOAuth(input: AdminMcpOAuthSave) {
-      await credentials.putOAuth(credentialRefFor(input.serverId), input.credential)
+    /** Sign-in state without any token or secret. A credential file that cannot be read shows as
+     * signed out, so a fresh sign-in can replace it. */
+    async getMcpOAuth(input: AdminMcpOAuthGet): Promise<McpOAuthSummary> {
+      await oauthServer(input.profile, input.serverId)
+      try {
+        return summarizeMcpOAuth(await oauthStore.read(input.serverId))
+      } catch (error) {
+        if (
+          error instanceof CredentialStoreError &&
+          (error.reason === 'schema' || error.reason === 'invalid-json')
+        )
+          return summarizeMcpOAuth(null)
+        throw error
+      }
+    },
+    /** Exchanges the code here, so a static client secret is read from the credential store and
+     * never leaves the daemon. A registered client's secret comes from the caller. */
+    async completeMcpOAuth(input: AdminMcpOAuthComplete) {
+      const { serverUrl, binding } = await oauthServer(input.profile, input.serverId)
+      let staticClient: { clientId: string; clientSecret?: string } | undefined
+      if (binding?.staticClientId) {
+        const ref = binding.clientSecretRef
+        const stored = ref ? await credentials.read(ref) : undefined
+        if (ref && stored?.kind !== 'api-key')
+          throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_NOT_FOUND' })
+        staticClient = {
+          clientId: binding.staticClientId,
+          ...(stored?.kind === 'api-key' ? { clientSecret: stored.value } : {}),
+        }
+      }
+      const { profile: _profile, ...params } = input
+      try {
+        await completeMcpOAuthLogin({
+          ...params,
+          serverUrl,
+          ...(staticClient ? { staticClient } : {}),
+          store: oauthStore,
+          fetchImpl: options.fetchImpl ?? fetch,
+        })
+      } catch (error) {
+        if (error instanceof McpOAuthLoginSuperseded || error instanceof McpOAuthLoginEndpointChanged)
+          throw rpcError('SEMANTIC_REJECTED', { reason: error.code })
+        throw error
+      }
       return {}
     },
     async history(input: AdminHistoryParams) {

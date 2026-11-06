@@ -8,6 +8,7 @@ import {
   HeadsUpWatcher,
   inheritFreshSession,
   installKeybindings,
+  mcpSignInNotice,
   mouseFromEnv,
   outcomeLine,
   startedNotices,
@@ -232,6 +233,12 @@ export async function runTui(
       )
     if (io.worktree)
       tui.noteLocal('--worktree', startedNotices(io.worktree, resolveLocale(io.env)).join('\n'))
+    // Not awaited either: a daemon that is slow to list servers must not delay the composer.
+    void mcpSignInNotice(booted.client, booted.profileName, resolveLocale(io.env))
+      .then((text) => {
+        if (text !== undefined && !io.signal()) tui.noteLocal('MCP', text)
+      })
+      .catch(() => undefined)
     if (!opening) timingMark('composer-ready', io.env)
     timingMark('session-ready', io.env)
     if (io.signal()) quit()

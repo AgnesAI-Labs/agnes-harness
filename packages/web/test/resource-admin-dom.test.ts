@@ -453,6 +453,33 @@ it.each(['stdio-env', 'http-bearer', 'http-header'])(
   },
 )
 
+it('oauth secret ref goes into clientSecretRef', async () => {
+  byId('mcp-create').click()
+  byId('mcp-method-remote').click()
+  change('mcp-id', 'signed')
+  change('mcp-name', 'Signed MCP')
+  change('mcp-url', 'https://example.com/mcp')
+  const oauth = byId<HTMLInputElement>('mcp-oauth')
+  oauth.checked = true
+  oauth.dispatchEvent(new Event('change', { bubbles: true }))
+  expect(byId('mcp-oauth-secret-row').hidden).toBe(false)
+  // The same limit as the protocol schema's staticClientId.
+  expect(byId<HTMLInputElement>('mcp-oauth-client').maxLength).toBe(512)
+  change('mcp-oauth-secret', 'plain-secret')
+  expect(byId('mcp-error').textContent).not.toBe('')
+  expect(byId<HTMLInputElement>('mcp-oauth-secret').getAttribute('aria-invalid')).toBe('true')
+  change('mcp-oauth-secret', 'secret://dom/client')
+  expect(byId('mcp-error').textContent).not.toBe('')
+  change('mcp-oauth-client', 'client-1')
+  expect(byId('mcp-error').textContent).toBe('')
+  await submitMcpForm()
+  await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
+  expect(submitted('mcp/create')[0]?.body.definition).toMatchObject({
+    transport: { kind: 'http', url: 'https://example.com/mcp' },
+    secretBinding: { kind: 'oauth', staticClientId: 'client-1', clientSecretRef: 'secret://dom/client' },
+  })
+})
+
 it('flags an illegal tool name inline while typing and clears it once fixed', () => {
   byId('mcp-create').click()
   byId('mcp-method-local').click()

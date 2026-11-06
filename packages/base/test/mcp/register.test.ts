@@ -823,6 +823,22 @@ describe('registerRemoteToolsStrict', () => {
     },
   )
 
+  it('a needs-sign-in error becomes the tool error text, even for a mutating tool', async () => {
+    const message =
+      'MCP server "gh" needs sign-in. Ask the user to sign in to it from the MCP page in the web UI.'
+    const conn = connection()
+    conn.callTool = async () =>
+      Promise.reject(Object.assign(new Error(message), { code: 'MCP_OAUTH_NEEDS_RECONNECT' }))
+    const { api, tools } = fakeApi()
+    await registerRemoteToolsStrict(api, conn, stdio)
+    for (const tool of tools)
+      await expect(tool.execute({}, ctxOf())).resolves.toEqual({
+        content: [{ type: 'text', text: message }],
+        isError: true,
+      })
+    expect(tools.map((tool) => tool.meta?.isReadOnly)).toEqual([true, false])
+  })
+
   it('gives the remote call the tool deadline instead of the SDK default', async () => {
     const conn = connection()
     const seen: Array<number | undefined> = []
