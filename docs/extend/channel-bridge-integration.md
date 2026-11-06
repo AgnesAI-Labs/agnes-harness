@@ -4,7 +4,7 @@ English | [简体中文](channel-bridge-integration.zh-CN.md)
 
 [Author kit](README.md) · [Channel overview](channel-plugins.md) · [Architecture](../develop/channel-plugins.md)
 
-This implementation guide targets new Feishu, WeCom, WeChat and other messaging adapters. It describes the current worktree's Extension API **5.7.0** and channel bridge, including lessons from the independent DingTalk adapter. It does not certify every platform, protocol or operating system. The recipient needs a Harness build containing the bridge, not just a matching version label.
+This implementation guide targets new Feishu, WeCom, WeChat and other messaging adapters. It describes the current worktree's Extension API **5.8.0** and channel bridge, including lessons from the independent DingTalk adapter. It does not certify every platform, protocol or operating system. The recipient needs a Harness build containing the bridge, not just a matching version label.
 
 ## 1. Ownership and delivery
 
@@ -59,6 +59,25 @@ Import channel contracts from `@agnes/plugin-runtime/channel-contract`, general 
 The npm package name, plugin row ID and provider/channel ID are different identities. Keep the channel type independent of bot account and instance IDs. `provider.id` must equal `manifest.id`. The schema rejects extra fields, requires the default connection mode to be declared, disallows overlapping required/optional credentials and requires card support for cardAction events. `credentials.exposes` allows identity raw fields, not secrets.
 
 AGH freezes the registration manifest. The adapter must return the same contents, including artwork; effective capabilities can be reduced per instance but cannot exceed the declared ceiling. See the [wire schema](../../packages/protocol/schema/channel.json).
+
+### Localized channel names
+
+Extension API 5.8.0 adds optional localized names to the channel manifest:
+
+```json
+{
+  "id": "example-im",
+  "displayName": "Example IM",
+  "displayNames": { "en": "Example IM", "zh-CN": "示例渠道" }
+}
+```
+
+`displayNames` accepts only the optional `en` and `zh-CN` keys. Each name must contain a non-whitespace character and be 1–64 characters long. Providers using this field must declare `apiRange: "^5.8.0"`.
+
+Harness selects the current UI language, falling back to `displayName`, then `id`; it does not select a different translation when the current language is missing. Overview headings, filters, binding dialogs and composer status buttons share this behavior and update when the UI language changes. Existing providers remain compatible.
+
+Names are presentation only. Never change provider/channel IDs, instance IDs, credential references or persisted bindings based on language. Keep the same manifest in the provider and adapter. DingTalk can declare `{ "en": "DingTalk", "zh-CN": "钉钉" }`; Feishu can declare `{ "en": "Feishu", "zh-CN": "飞书" }`.
+
 
 ## 5. Register through the managed bridge
 
@@ -120,7 +139,7 @@ pkg.agnes = {
   provides: ['service'],
   metadata: { displayName: 'Example Chat', summary: 'Independent Example Chat channel' },
   plugins: [{
-    id: 'ext:your-org.channel-example', export: 'main', apiRange: '^5.7.0',
+    id: 'ext:your-org.channel-example', export: 'main', apiRange: '^5.8.0',
     runtime: 'in-process', default: true,
     inject: ['profileRuntime', 'services', 'providers'],
     configSchema: CHANNEL_CONFIG_SCHEMA, config: { instances: [] }, configReload: 'live',

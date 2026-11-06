@@ -2,6 +2,7 @@ import { Button, ChannelIcon, SettingsInput, useDocumentLanguage } from '@agnes/
 import { useEffect, useRef, useState } from 'react'
 import { openChannelDialog } from './channel-dialog-state.js'
 import { channelsChanged, useChannelOverview } from './channel-model.js'
+import { channelName } from './channel-name.js'
 import { ChannelStatus, channelConnectionState } from './channel-presentation.js'
 import type { ChannelGroup, ManagedInstance } from './channel-types.js'
 import type { HomePageData } from './host.js'
@@ -68,7 +69,7 @@ export function ChannelsPanel({ data }: { data: HomePageData }) {
               appearance={filter === group.provider.extension ? 'primary' : 'ghost'}
               onClick={() => setFilter(group.provider.extension)}
             >
-              {group.provider.manifest.displayName || group.provider.manifest.id}
+              {channelName(group.provider.manifest, zh)}
               <span className="channel-count">{group.instances.length}</span>
             </Button>
           ))}
@@ -108,7 +109,7 @@ export function ChannelsPanel({ data }: { data: HomePageData }) {
             <div className="channel-group-heading">
               <ChannelIcon className="channel-glyph" icon={group.provider.manifest.icon} />
               <div>
-                <h3>{group.provider.manifest.displayName || group.provider.manifest.id}</h3>
+                <h3>{channelName(group.provider.manifest, zh)}</h3>
                 <small>
                   {group.instances.length} {zh ? '个连接' : 'connections'}
                 </small>

@@ -2,6 +2,7 @@ import { Button, useDocumentLanguage } from '@agnes/web-ui'
 import { callChannel } from './channel-api.js'
 import { openChannelDialog } from './channel-dialog-state.js'
 import { useChannelOverview } from './channel-model.js'
+import { channelName } from './channel-name.js'
 import { channelConnectionState } from './channel-presentation.js'
 import type { HomePageData } from './host.js'
 
@@ -58,7 +59,7 @@ export function SessionChannelControl({
   return (
     <span className="channel-composer-connections">
       {bound.map(({ group, instance, binding }) => {
-        const name = group.provider.manifest.displayName || group.provider.manifest.id
+        const name = channelName(group.provider.manifest, zh)
         const state = status(
           channelConnectionState(instance.connection),
           binding.state,

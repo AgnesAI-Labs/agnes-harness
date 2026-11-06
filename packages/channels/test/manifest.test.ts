@@ -21,6 +21,12 @@ describe('channel manifest', () => {
       },
     }
     expect(() => channelKind.validate(provider)).not.toThrow()
+    const displayNames = { en: 'Example IM', 'zh-CN': '示例渠道' }
+    expect(checkManifest({ ...manifest, displayNames }).displayNames).toEqual(displayNames)
+    expect(() => channelKind.validate({ ...provider, manifest: { ...manifest, displayNames } })).not.toThrow()
+    expect(checkManifest({ ...manifest, displayNames: { en: 'Example' } }).displayNames).toEqual({
+      en: 'Example',
+    })
     const icon = 'data:image/png;base64,aGVsbG8='
     expect(checkManifest({ ...manifest, icon }).icon).toBe(icon)
     expect(() => channelKind.validate({ ...provider, manifest: { ...manifest, icon } })).not.toThrow()
@@ -32,6 +38,15 @@ describe('channel manifest', () => {
     for (const invalid of [
       { ...base, id: 'ExampleIM' },
       { ...base, extra: 1 },
+      ...[
+        null,
+        'Example',
+        { fr: 'Exemple' },
+        { en: '' },
+        { en: '   ' },
+        { en: 'a'.repeat(65) },
+        { en: 7 },
+      ].map((displayNames) => ({ ...base, displayNames })),
       ...[
         'https://example.com/icon.png',
         './icon.png',

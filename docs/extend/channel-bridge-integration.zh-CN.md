@@ -4,7 +4,7 @@
 
 [作者工具包](README.zh-CN.md) · [渠道插件概览](channel-plugins.zh-CN.md) · [架构与兼容性](../develop/channel-plugins.zh-CN.md)
 
-本手册面向开发飞书、企业微信、微信及其他聊天平台适配器的作者。依据当前工作树的 Extension API **5.7.0**、统一渠道桥和独立钉钉插件接入经验编写。它描述已实现的合同，不代表所有平台、协议或操作系统均已完成真实账号验收。接收方的底座必须包含渠道桥实现，不能只检查版本号。
+本手册面向开发飞书、企业微信、微信及其他聊天平台适配器的作者。依据当前工作树的 Extension API **5.8.0**、统一渠道桥和独立钉钉插件接入经验编写。它描述已实现的合同，不代表所有平台、协议或操作系统均已完成真实账号验收。接收方的底座必须包含渠道桥实现，不能只检查版本号。
 
 ## 1. 接入目标与职责
 
@@ -107,6 +107,25 @@ channel-example/
 
 底座会冻结登记时的清单，adapter 必须使用同一份内容；`capabilities()` 不能超过声明上限。可按实例关闭卡片/编辑等可选能力，不可运行中扩大能力。所有清单字段以[协议 schema](../../packages/protocol/schema/channel.json)为准。
 
+
+### 渠道名称的中英文显示
+
+从 Extension API 5.8.0 起，在渠道 manifest 中保留默认名称，并可提供翻译：
+
+```json
+{
+  "id": "example-im",
+  "displayName": "示例渠道",
+  "displayNames": { "en": "Example IM", "zh-CN": "示例渠道" }
+}
+```
+
+`displayNames` 为可选对象，当前支持 `en`、`zh-CN` 两个可选键。每个名称须包含非空白字符，长度为 1–64 个字符；不支持其他键。声明此字段的插件应使用 `apiRange: "^5.8.0"`。
+
+底座根据当前界面语言选取对应名称；缺少当前语言时回退到 `displayName`，再回退到 `id`，不会自动选择另一语言。渠道总览、筛选项、绑定弹窗与会话渠道状态按钮共用该规则，切换语言后同步更新。旧插件无需修改。
+
+名称仅用于显示，禁止按界面语言改变 `provider.id`、`manifest.id`、实例标识、凭据引用或已保存的绑定。provider 与 adapter 应继续使用同一份 manifest。钉钉可声明 `{ "en": "DingTalk", "zh-CN": "钉钉" }`，飞书可声明 `{ "en": "Feishu", "zh-CN": "飞书" }`。
+
 ## 5. 注册提供者
 
 `src/index.ts` 示例；`createExampleAdapter` 由作者在下一节实现：
@@ -167,7 +186,7 @@ pkg.agnes = {
   provides: ['service'],
   metadata: { displayName: 'Example Chat', summary: 'Independent Example Chat channel' },
   plugins: [{
-    id: 'ext:your-org.channel-example', export: 'main', apiRange: '^5.7.0',
+    id: 'ext:your-org.channel-example', export: 'main', apiRange: '^5.8.0',
     runtime: 'in-process', default: true,
     inject: ['profileRuntime', 'services', 'providers'],
     configSchema: CHANNEL_CONFIG_SCHEMA, config: { instances: [] }, configReload: 'live',

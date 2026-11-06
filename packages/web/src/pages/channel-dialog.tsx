@@ -3,6 +3,7 @@ import { Button, ChannelIcon, Dialog, Field, Select, useDocumentLanguage } from 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { type ChannelDialogRequest, channelDialogState, closeChannelDialog } from './channel-dialog-state.js'
 import { useChannelOverview } from './channel-model.js'
+import { channelName } from './channel-name.js'
 import { ChannelStatus, channelConnectionState } from './channel-presentation.js'
 import { ChannelSetup } from './channel-setup.js'
 import type { ManagedInstance } from './channel-types.js'
@@ -96,7 +97,7 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
                 >
                   <ChannelIcon className="channel-glyph" icon={item.provider.manifest.icon} />
                   <span>
-                    <strong>{item.provider.manifest.displayName || item.provider.manifest.id}</strong>
+                    <strong>{channelName(item.provider.manifest, zh)}</strong>
                     <small>
                       {item.instances.length} {zh ? '个连接' : 'connections'}
                     </small>
@@ -131,7 +132,7 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
           <>
             <div className="channel-selected">
               <ChannelIcon className="channel-glyph" icon={group.provider.manifest.icon} />
-              <strong>{group.provider.manifest.displayName || group.provider.manifest.id}</strong>
+              <strong>{channelName(group.provider.manifest, zh)}</strong>
               {editing && selected && (
                 <ChannelStatus state={channelConnectionState(selected.connection)} zh={zh} />
               )}

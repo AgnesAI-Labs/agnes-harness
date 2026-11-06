@@ -2,6 +2,15 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.8.0
+
+### Added
+
+- Optional `ChannelManifest.displayNames` with `en` and `zh-CN` names (1–64 characters).
+  Channel lists, binding dialogs and composer status select the current UI language, falling back
+  to `displayName`, then `id`. Names do not change routing or persisted identities. Existing providers
+  remain compatible; providers declaring this field should require `^5.8.0`.
+
 ## 5.7.0
 
 ### Added
