@@ -15,7 +15,7 @@ providers:
   sandbox: { provider: local }
 ```
 
-`local` is the default and the current host sandbox: Seatbelt on macOS, bubblewrap on Linux, and the current Windows posture. Omit the field to keep that default. `docker` is the example provider in `examples/sandbox/docker`. It is not loaded until a plugin registers it.
+`local` is the default and the current host sandbox: Seatbelt on macOS, bubblewrap on Linux, and the [Windows write restriction](#windows-write-restriction) on Windows. Omit the field to keep that default. `docker` is the example provider in `examples/sandbox/docker`. It is not loaded until a plugin registers it.
 
 The choice is fixed for the life of the process. `catalog()` marks every entry `restartRequired: true`. Editing the profile does not move a command that is already running, and it does not retarget the running process. Start the process again to select a different id.
 
@@ -72,13 +72,42 @@ The macOS Seatbelt profile permits reads and writes to the exact `/dev/null` lit
 
 Local stdio MCP isolation uses the same compiler, so its strict, workspace-write and network profiles have the same device exceptions. Its runtime read list already includes `/dev/null` and `/dev/urandom`; runtime reads alone do not authorize writes.
 
-Linux bubblewrap already supplies an isolated minimal device tree through `--dev /dev`, rather than exposing host raw devices. Its device permissions are not identical to Seatbelt's literal rules. Landlock is currently a diagnostic ABI check, not an alternative command confinement backend. Windows has no implemented local L1 backend; the Windows compiler refuses confinement, and the explicit conditional startup policy described below remains the only unimplemented-platform exception. Neither Linux nor Windows needs a device-policy change for this macOS defect.
+Linux bubblewrap already supplies an isolated minimal device tree through `--dev /dev`, rather than exposing host raw devices. Its device permissions are not identical to Seatbelt's literal rules. Landlock is currently a diagnostic ABI check, not an alternative command confinement backend. Windows has no implemented local L1 backend; the Windows compiler refuses confinement. Read-only and workspace-write commands use the [Windows write restriction](#windows-write-restriction) instead, and full access runs directly. Neither Linux nor Windows needs a device-policy change for this macOS defect.
+
+## Windows write restriction
+
+On Windows, `local` runs commands for `read-only` and `workspace-write` sessions under a Windows ACL write restriction: a restricted token, Low integrity, NTFS ACL grants and a Job Object that the Host owns. This is partial protection. It limits file writes only. It is not the full L1 isolation of macOS and Linux, and it is not a strict path sandbox. It needs an NTFS workspace and a working native module.
+
+| Permission | Windows behavior |
+| --- | --- |
+| `read-only` | No write grant. Commands cannot write to the workspace or the temporary directory. The tool policy still decides which commands run |
+| `workspace-write` | Commands can write only inside the workspace root and a private temporary directory that belongs to the session's lease |
+| `full-access` | Runs directly with the current account, without isolation and without changing any ACL |
+
+File reads and network access are not restricted. A command can read files outside the workspace and reach the network. Protected paths are still checked for file tools; an arbitrary script does not get the same protection.
+
+`sandbox.windows_mode` selects the behavior and is either `write-restricted` or `require-full`. The default is `require-full`, which refuses the restriction. The official `read-only` and `workspace-write` permission overlays select `write-restricted`. `required: true`, custom deny paths, network restrictions and other stronger requirements are refused; they are never downgraded to the write restriction.
+
+The start is refused, and the command never runs directly, when the restriction cannot be set up: a non-NTFS volume, a drive root, a UNC path, a junction root that is not verified, a missing native module, or a failed ACL change.
+
+Side effects on the workspace:
+
+- Grants stay on the workspace until explicitly removed. Ending a command or closing a session does not remove them.
+- The grant adds a Low integrity label and an Everyone delete-child deny to the workspace directory. They are permanent until removed, and while they stay, other programs of the same Windows user that run at Low integrity can also write there.
+- A hard-linked file inside the workspace, for example a pnpm store file, can be changed through the grant from its other names outside the workspace.
+- Moving a directory on the same volume can carry its ACLs with the moved object. Moves are not tracked.
+- Session extra directories and `extra_paths` get no write access. Commands that write there are denied.
+- A workspace directory that was replaced by another one at the same path is not trusted. The session refuses commands and keeps its history until the replacement is confirmed in that same session.
+
+Sessions created by an earlier version keep their history. A session that used an official permission overlay moves to the new rule on its next command. A session with a stricter custom requirement is refused and its record is kept.
+
+`agh doctor windows-acl --cwd <root>` shows the grant state for a workspace and lists sessions whose workspace directory was replaced. It is read-only by default. `--repair` removes AGH's own grant entries and confirms the replaced workspaces in place; entries that someone else changed are kept and reported. A grant that a running session still uses is not removed. Run it in a normal terminal as the Windows user that runs AGH; it does not elevate. `--json` prints the report.
 
 ## Conditional local isolation
 
 `l1Implementation` describes implementation support (`implemented`, `unimplemented`, or `unknown`), separately from command availability and the actual workspace probe. Missing support is unknown. Only the trusted builtin local backend can grant the unimplemented exception; a third-party declaration cannot authorize a fallback to local execution.
 
-Ordinary presets use L1, `required: false`, `on_unavailable: allow-if-unimplemented`. Windows local execution is unimplemented and runs without OS isolation; macOS/Linux must still pass the real backend probe. A failed implemented backend refuses. `required: true` takes priority. The conditional value is invalid with L0. Explicit legacy `allow`/`deny` keep their semantics. Remote transports need their existing explicit policy; the new local conditional policy does not grant them an exception.
+Ordinary presets use L1, `required: false`, `on_unavailable: allow-if-unimplemented`. On Windows, L1 is unimplemented. Read-only and workspace-write sessions run under the [Windows write restriction](#windows-write-restriction) and are refused if it cannot be set up; they are never run directly. Full access runs without OS isolation. macOS/Linux must still pass the real backend probe. A failed implemented backend refuses. `required: true` takes priority. The conditional value is invalid with L0. Explicit legacy `allow`/`deny` keep their semantics. Remote transports need their existing explicit policy; the new local conditional policy does not grant them an exception.
 
 Named role children retain the parent's approved local fallback: a `partial / file` report does not itself require L1 when Host has already admitted that unimplemented-platform exception. Existing OS confinement, inherited mandatory isolation and a role's own stricter sandbox requirements remain enforced. A file-only parent that has not been granted the fallback is not an exception. File-tool boundaries, tool permissions and approval restrictions are unchanged; an unconfined shell still has no OS sandbox.
 

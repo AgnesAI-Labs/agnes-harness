@@ -15,7 +15,7 @@ providers:
   sandbox: { provider: local }
 ```
 
-`local` 是默认值，也是当前的宿主沙箱：macOS 使用 Seatbelt，Linux 使用 bubblewrap，Windows 保持现有姿态。省略该字段即使用这个默认值。`docker` 是 `examples/sandbox/docker` 里的示例提供者，只有插件注册之后才会出现。
+`local` 是默认值，也是当前的宿主沙箱：macOS 使用 Seatbelt，Linux 使用 bubblewrap，Windows 使用 [Windows 写限制](#windows-写限制)。省略该字段即使用这个默认值。`docker` 是 `examples/sandbox/docker` 里的示例提供者，只有插件注册之后才会出现。
 
 这个选择在进程的整个生命周期内保持不变。`catalog()` 给每条记录标上 `restartRequired: true`。修改 profile 不会搬走已经在跑的命令，也不会改换当前进程的目标。要换 id，需要重新启动进程。
 
@@ -62,13 +62,42 @@ macOS Seatbelt 配置仅为精确路径 `/dev/null` 允许读写，并为精确�
 
 本机 stdio MCP 隔离复用同一编译器，因此 strict、workspace-write、network 配置具有相同设备例外。其运行时读取列表已经包含 `/dev/null` 和 `/dev/urandom`；仅有读取授权并不足以允许写入。
 
-Linux bubblewrap 已通过 `--dev /dev` 提供隔离的最小设备树，不暴露宿主原始设备；其设备权限与 Seatbelt 的精确路径规则并不完全相同。目前 Landlock 仅用于 ABI 诊断，不是另一套命令隔离后端。Windows 尚无已实现的本机 L1 后端，Windows 编译器拒绝隔离请求，仅下文明确的条件启动策略可授予未实现平台例外。本次 macOS 缺陷无需调整 Linux 或 Windows 的设备策略。
+Linux bubblewrap 已通过 `--dev /dev` 提供隔离的最小设备树，不暴露宿主原始设备；其设备权限与 Seatbelt 的精确路径规则并不完全相同。目前 Landlock 仅用于 ABI 诊断，不是另一套命令隔离后端。Windows 尚无已实现的本机 L1 后端，Windows 编译器拒绝隔离请求。只读和可修改工作区的命令改用 [Windows 写限制](#windows-写限制)，完全访问则直接运行。本次 macOS 缺陷无需调整 Linux 或 Windows 的设备策略。
+
+## Windows 写限制
+
+Windows 上，`local` 对 `read-only` 和 `workspace-write` 会话的命令使用 Windows ACL 写限制：受限令牌、Low 完整性级别、NTFS ACL 授权，以及由 Host 持有的 Job Object。这是部分保护，只限制文件写入。它不是 macOS、Linux 那样完整的 L1 隔离，也不是严格的路径沙箱。需要 NTFS 工作区和可用的原生模块。
+
+| 权限 | Windows 上的行为 |
+| --- | --- |
+| `read-only` | 不授予写权限。命令不能写入工作区或临时目录。哪些命令可以运行仍由工具策略决定 |
+| `workspace-write` | 命令只能写入工作区根目录，以及属于该会话租约的私有临时目录 |
+| `full-access` | 以当前账户直接运行，不隔离，也不修改任何 ACL |
+
+文件读取和网络不受限制。命令可以读取工作区外的文件，也可以访问网络。受保护路径仍由文件工具检查；任意脚本没有同等保护。
+
+`sandbox.windows_mode` 决定这一行为，取值为 `write-restricted` 或 `require-full`，默认 `require-full`，即拒绝写限制。官方 `read-only` 和 `workspace-write` 权限覆盖层选择 `write-restricted`。`required: true`、自定义拒绝路径、网络限制及其他更强的要求会被拒绝，不会降级为写限制。
+
+写限制无法建立时拒绝启动，命令不会直接运行。常见原因：非 NTFS 卷、磁盘根目录、UNC 路径、未验证的 junction 根目录、缺少原生模块、ACL 修改失败。
+
+对工作区的副作用：
+
+- 授权会一直保留在工作区上，直到被明确移除。命令结束或会话关闭都不会移除。
+- 授权会在工作区目录上添加 Low 完整性标签和 Everyone 的删除子项拒绝项。它们一直保留，直到被移除；期间同一 Windows 用户下以 Low 完整性运行的其他程序也可以写入该目录。
+- 工作区内的硬链接文件（例如 pnpm 存储中的文件），可通过授权从工作区外的其他名称被修改。
+- 在同一卷内移动目录时，ACL 可能跟随被移动的对象。移动不会被追踪。
+- 会话的额外目录和 `extra_paths` 没有写权限，命令写入那里会被拒绝访问。
+- 同一路径下的工作区目录被另一个目录替换后不再被信任。会话拒绝执行命令并保留历史，直到在同一会话中确认该替换。
+
+旧版本创建的会话保留历史。使用官方权限覆盖层的会话在下一条命令时改用新规则；带有更严格自定义要求的会话会被拒绝，记录保留。
+
+`agh doctor windows-acl --cwd <root>` 显示某个工作区的授权状态，并列出工作区目录被替换的会话。默认只读。`--repair` 移除 AGH 自己添加的授权项，并就地确认被替换的工作区；他人改过的项会保留并报告。仍被运行中会话使用的授权不会被移除。请在普通终端中以运行 AGH 的 Windows 用户身份执行，命令不会提权。`--json` 输出报告。
 
 ## 本机条件隔离
 
 `l1Implementation` 表示实现支持状态（`implemented`、`unimplemented`、`unknown`），与命令是否可执行、工作区实际探测分别记录。缺字段为未知。只有可信内置本机后端可授予未实现例外；第三方声明不能授权回退本机执行。
 
-普通预设使用 L1、`required: false`、`on_unavailable: allow-if-unimplemented`。Windows 本机尚未实现，使用无系统隔离的原生命令；macOS/Linux 必须通过真实后端探测，已实现但探测失败仍拒绝。`required: true` 优先。L0 搭配此条件值无效，原有显式 `allow`/`deny` 语义保留。远程传输沿用原来的明确策略，新本机条件不授予远程例外。
+普通预设使用 L1、`required: false`、`on_unavailable: allow-if-unimplemented`。Windows 上 L1 尚未实现：只读和可修改工作区的会话使用 [Windows 写限制](#windows-写限制)，无法建立时拒绝启动，不会直接运行；完全访问不经系统隔离直接运行。macOS/Linux 必须通过真实后端探测，已实现但探测失败仍拒绝。`required: true` 优先。L0 搭配此条件值无效，原有显式 `allow`/`deny` 语义保留。远程传输沿用原来的明确策略，新本机条件不授予远程例外。
 
 具名角色子会话保留父会话已经获准的本机降级：Host 已准入未实现平台例外时，`partial / file` 报告本身不应额外要求 L1。已经提供的系统隔离、继承的强制隔离以及角色自身更严格的沙箱要求仍然有效。只有文件约束但未获准降级的父会话不属于例外。文件工具边界、工具权限和审批限制保持不变；降级后的 shell 仍没有系统沙箱隔离。
 

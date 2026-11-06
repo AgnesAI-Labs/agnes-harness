@@ -58,9 +58,9 @@ Web「工作区内修改」将文件访问限制在所选工作区内，执行�
 
 ## 平台与进程
 
-在 `workspace-write`、`read-only` 权限下，随附的预设请求 L1，使用 `required: false` 和 `on_unavailable: allow-if-unimplemented`。可信本机后端声明系统隔离是否已实现。macOS/Linux 已实现，必须实际通过 Seatbelt/bubblewrap 探测；缺少程序、namespace 禁用或策略拒绝仍以 `E_SANDBOX_WORKSPACE` 拒绝初始化，不能当作“未实现”。Windows 本机后端声明尚未实现，所以允许原生命令，不探测 POSIX 后端。未知能力、远程目标不能借此自动放行。`required: true` 始终要求真正隔离。
+在 `workspace-write`、`read-only` 权限下，随附的预设请求 L1，使用 `required: false` 和 `on_unavailable: allow-if-unimplemented`。可信本机后端声明系统隔离是否已实现。macOS/Linux 已实现，必须实际通过 Seatbelt/bubblewrap 探测；缺少程序、namespace 禁用或策略拒绝仍以 `E_SANDBOX_WORKSPACE` 拒绝初始化，不能当作“未实现”。Windows 本机后端声明 L1 尚未实现，也不探测 POSIX 后端；这些权限改用部分的 Windows ACL 写限制运行命令，无法建立时会话拒绝执行命令。未知能力、远程目标不能借此自动放行。`required: true` 始终要求真正隔离。
 
-Windows 保留工具审批、只读限制、文件工具的工作区与保护路径检查，以及用户明确设置的审批模式。获准命令使用当前系统账户执行，应用检查不能隔离任意 shell 的文件或网络操作。设置页、会话运行信息和输入框分别显示权限与实际隔离状态。
+Windows 保留工具审批、只读限制、文件工具的工作区与保护路径检查，以及用户明确设置的审批模式。写限制只限制命令能写入的位置；文件读取和网络仍不受限，应用检查依然不能隔离任意 shell 的读取或网络操作。完全访问以当前系统账户直接运行命令。见 [Windows 写限制](sandbox-providers.zh-CN.md#windows-写限制)。设置页、会话运行信息和输入框分别显示权限与实际隔离状态。
 
 <a id="permissions-and-presets"></a>
 
@@ -70,8 +70,8 @@ Windows 保留工具审批、只读限制、文件工具的工作区与保护路
 
 | 权限 | 文件范围 | 普通审批 | 持久能力 | OS 隔离 |
 | --- | --- | --- | --- | --- |
-| **只读**（`read-only`） | 查看允许范围的文件和公开网页 | 修改与命令执行会被拒绝 | Agent 不写入；管理信任独立 | macOS/Linux 需通过 L1 探测；Windows 此平台命令未隔离 |
-| **可修改工作区**（`workspace-write`，默认） | 文件工具可改工作区和明确授权的额外目录；官方记忆经受控提供方访问 | 命令需审批；范围内文件修改预批准，仍服从明确拒绝 | 记忆 off 拒绝，ask 精确 diff 确认，auto 保留归属、大小和 CAS 校验；其他工作区及用户记忆对 Agent 只读 | 命令隔离取决于平台：macOS/Linux 实测 L1；Windows 此平台命令未隔离 |
+| **只读**（`read-only`） | 查看允许范围的文件和公开网页 | 修改与命令执行会被拒绝 | Agent 不写入；管理信任独立 | macOS/Linux 需通过 L1 探测；Windows 命令不能写入（部分写限制，读取与网络不受限） |
+| **可修改工作区**（`workspace-write`，默认） | 文件工具可改工作区和明确授权的额外目录；官方记忆经受控提供方访问 | 命令需审批；范围内文件修改预批准，仍服从明确拒绝 | 记忆 off 拒绝，ask 精确 diff 确认，auto 保留归属、大小和 CAS 校验；其他工作区及用户记忆对 Agent 只读 | 命令隔离取决于平台：macOS/Linux 实测 L1；Windows 将命令写入限制在工作区和私有临时目录（部分隔离，读取与网络不受限） |
 | **完全访问**（`full-access`） | 工作区内外普通文件；保护目录仍拒绝 | 权限裁决自动允许 | 候选发布与询问模式记忆保留精确授权及硬拒绝，见[例外](#full-access-exceptions) | 配置 L0；macOS/Linux 注册记忆提供方时，有 L1 就用它拒绝记忆树，否则命令不经隔离执行；Windows 无 OS 隔离 |
 
 | 预设 | 设定内容 |
