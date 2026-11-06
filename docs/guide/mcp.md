@@ -24,7 +24,7 @@ The tool catalog shows each tool’s name and a short purpose. Expand a tool for
 
 After editing the command, URL, credentials or other connection settings, the new revision is saved untrusted and disabled. The old enablement request does not start the new definition; review and enable it again. Changing only tool loading still preserves trust and enablement.
 
-**Current implementation:** Session MCP services run as individual Host rows. OAuth bindings are still skipped on this session path; see [runtime behavior and versions](#runtime-behavior-and-versions). Supported and unsupported MCP and Skill behavior, including resources, prompt templates, and OAuth, is listed in [MCP and Skills support](mcp-skills-support.md). See [verification](../maintainers/verification.md) for versioned results.
+**Current implementation:** Session MCP services run as individual Host rows, OAuth bindings included; see [runtime behavior and versions](#runtime-behavior-and-versions). Supported and unsupported MCP and Skill behavior, including resources, prompt templates, and OAuth, is listed in [MCP and Skills support](mcp-skills-support.md). See [verification](../maintainers/verification.md) for versioned results.
 
 <a id="在会话中接入"></a>
 
@@ -183,7 +183,7 @@ Changing a definition changes the row's revision, while unchanged servers can re
 
 A successfully applied MCP set remains effective if the independent Skills refresh fails, so a disabled or removed server cannot be restored by that failure. If MCP application leaves an uncertain state, the worker refuses further turns until recovery: the next turn tries the reload again, and once a reload fully succeeds turns are admitted again. If that retry fails as well, the shared worker exits and the daemon restarts it, rebuilding the rows from the snapshot. A resource change normally waits for turns already running in other sessions to finish; one that is still running after 30 seconds (waiting on an approval, for example) no longer holds back the other sessions. They run on the current resources, and the change applies at the next turn that finds the worker idle or after another 30 seconds.
 
-**OAuth limitation:** The current per-server row path skips definitions with `secretBinding.kind === 'oauth'`. The dedicated resource-management service worker retains the manager path. Successful connection/testing in the management interface therefore does not establish session tool availability. Verify an actual call in the target session; management status alone does not prove OAuth session support.
+**OAuth on the session path:** A server with `secretBinding.kind === 'oauth'` connects with the sign-in made on the web MCP page. Every request reads the stored sign-in: the token is refreshed shortly before it expires and once after a 401, a token written by another process is used as is, and after a sign-out the server receives no further request with the old token. Without a usable sign-in, or after the server address changed since sign-in, the server is unavailable with `MCP_OAUTH_NEEDS_RECONNECT` and its tool calls return a message asking the user to sign in.
 
 The runner's source and tests are linked below. Check [verification](../maintainers/verification.md) for the actual runtime version and external-service coverage.
 

@@ -103,13 +103,7 @@ type PendingRegistration = Readonly<{
   expiresAt: number
 }>
 
-/**
- * Exported so `mcp-oauth-credentials.ts`'s
- * worker-side lazy-refresh resolver reads and writes the exact same credential-store ref this
- * handler's callback route uses to persist the initial token exchange - the two must agree on the
- * ref format byte-for-byte or a refresh would silently write to (or read from) a different file than
- * the one `resolvedConfig()` actually resolves against.
- */
+/** The credential reference a server's sign-in is filed under in the credential store. */
 export function credentialRefFor(serverId: string): string {
   return `secret://mcp-oauth/${serverId}`
 }
