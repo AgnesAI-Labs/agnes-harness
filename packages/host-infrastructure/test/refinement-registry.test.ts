@@ -13,7 +13,27 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { RefinementEntryKind } from '@agnes/core-ledger/reduce/refinement-run'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+const lockFault = vi.hoisted(() => ({
+  open: undefined as undefined | (() => void),
+  write: undefined as undefined | (() => void),
+}))
+vi.mock('node:fs', async (original) => {
+  const fs = await original<typeof import('node:fs')>()
+  return {
+    ...fs,
+    openSync: (...args: Parameters<typeof fs.openSync>) => {
+      if (String(args[0]).endsWith('.json.lock') && args[1] === 'wx') lockFault.open?.()
+      return fs.openSync(...args)
+    },
+    writeFileSync: (...args: Parameters<typeof fs.writeFileSync>) => {
+      if (typeof args[0] === 'number') lockFault.write?.()
+      return fs.writeFileSync(...args)
+    },
+  }
+})
+
 import {
   APPROVAL_TTL_MS,
   normalizedContentHash,
@@ -29,12 +49,16 @@ import {
 } from '../src/refinement-registry.js'
 
 const dirs: string[] = []
+const nativePlatform = process.platform
 const tempDir = () => {
   const dir = mkdtempSync(join(tmpdir(), 'agnes-registry-'))
   dirs.push(dir)
   return dir
 }
 afterEach(() => {
+  lockFault.open = lockFault.write = undefined
+  vi.restoreAllMocks()
+  Object.defineProperty(process, 'platform', { value: nativePlatform })
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -612,6 +636,17 @@ describe('RefinementRegistry', () => {
   describe('the write lock', () => {
     const lockOf = (dir: string) => `${fileOf(dir, '/work/a')}.lock`
     const options = { lockStaleMs: 5_000, lockWaitMs: 300 }
+    const simulatedWait = (platform: NodeJS.Platform) => {
+      Object.defineProperty(process, 'platform', { value: platform })
+      const start = Date.now()
+      let now = start
+      vi.spyOn(Date, 'now').mockImplementation(() => now)
+      vi.spyOn(Atomics, 'wait').mockImplementation((_array, _index, _value, timeout) => {
+        now += timeout ?? 0
+        return 'timed-out'
+      })
+      return () => now - start
+    }
 
     it('is gone after an update, also after one that fails', () => {
       const { dir } = make()
@@ -650,6 +685,83 @@ describe('RefinementRegistry', () => {
       utimesSync(lockOf(dir), old, old)
       expect(() => registry.update(() => {}, registry.read().revision)).not.toThrow()
       expect(existsSync(lockOf(dir))).toBe(false)
+    })
+
+    it('keeps acknowledged writes when Windows lock deletion briefly refuses exclusive creation', () => {
+      const { dir } = make()
+      const registry = new RefinementRegistry(dir, '/work/a', clockAt(), options)
+      registry.update((draft) => draft.paragraphs.push(paragraph()), registry.read().revision)
+      const elapsed = simulatedWait('win32')
+      lockFault.open = () => {
+        if (elapsed() < 200) throw Object.assign(new Error('pending deletion'), { code: 'EPERM' })
+      }
+      registry.update((draft) => draft.paragraphs.push(paragraph({ id: 'p2' })), registry.read().revision)
+      expect(registry.read().paragraphs.map((entry) => entry.id)).toEqual(['p1', 'p2'])
+      expect(elapsed()).toBe(200)
+      expect(existsSync(lockOf(dir))).toBe(false)
+    })
+
+    it.each([0, 200])(
+      'preserves permanent Windows EPERM and an existing lock after %d ms of earlier contention',
+      (contentionMs) => {
+        const { dir } = make()
+        const registry = new RefinementRegistry(dir, '/work/a', clockAt(), options)
+        registry.update((draft) => draft.paragraphs.push(paragraph()), registry.read().revision)
+        const before = readFileSync(fileOf(dir, '/work/a'), 'utf8')
+        writeFileSync(lockOf(dir), 'another writer')
+        // With no earlier EEXIST, even an old lock must never be taken over because of EPERM.
+        if (contentionMs === 0) {
+          const old = new Date(Date.now() - 60_000)
+          utimesSync(lockOf(dir), old, old)
+        }
+        const elapsed = simulatedWait('win32')
+        const refusal = Object.assign(new Error('permission refused'), { code: 'EPERM' })
+        lockFault.open = () => {
+          if (elapsed() >= contentionMs) throw refusal
+        }
+        let caught: unknown
+        try {
+          registry.update(() => {}, registry.read().revision)
+        } catch (error) {
+          caught = error
+        }
+        expect(caught).toBe(refusal)
+        expect(elapsed()).toBe(300)
+        expect(readFileSync(fileOf(dir, '/work/a'), 'utf8')).toBe(before)
+        expect(readFileSync(lockOf(dir), 'utf8')).toBe('another writer')
+      },
+    )
+
+    it.each([
+      ['darwin', 'EPERM'],
+      ['linux', 'EPERM'],
+      ['win32', 'EACCES'],
+      ['win32', 'EIO'],
+    ] as const)('propagates %s lock creation %s without waiting or writing', (platform, code) => {
+      const { dir } = make()
+      const registry = new RefinementRegistry(dir, '/work/a', clockAt(), options)
+      const elapsed = simulatedWait(platform)
+      const refusal = Object.assign(new Error('open refused'), { code })
+      lockFault.open = () => {
+        throw refusal
+      }
+      expect(() => registry.update(() => {}, registry.read().revision)).toThrowError(refusal)
+      expect(elapsed()).toBe(0)
+      expect(existsSync(fileOf(dir, '/work/a'))).toBe(false)
+      expect(existsSync(lockOf(dir))).toBe(false)
+    })
+
+    it('propagates Windows token write EPERM without retrying acquisition or writing the registry', () => {
+      const { dir } = make()
+      const registry = new RefinementRegistry(dir, '/work/a', clockAt(), options)
+      const elapsed = simulatedWait('win32')
+      const refusal = Object.assign(new Error('token write refused'), { code: 'EPERM' })
+      lockFault.write = () => {
+        throw refusal
+      }
+      expect(() => registry.update(() => {}, registry.read().revision)).toThrowError(refusal)
+      expect(elapsed()).toBe(0)
+      expect(existsSync(fileOf(dir, '/work/a'))).toBe(false)
     })
 
     it('sweeps a temporary file a crashed write left behind', () => {

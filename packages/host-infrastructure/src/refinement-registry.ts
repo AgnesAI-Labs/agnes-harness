@@ -306,7 +306,8 @@ const exists = (error: unknown): boolean => (error as { code?: string } | null)?
  * Writes may come from several processes. Each `update` holds an exclusive lock file
  * (`<file>.lock`, created with `wx`) around read, compare and rename, takes over a lock older than
  * `lockStaleMs`, and gives up with `REGISTRY_LOCK_TIMEOUT` after `lockWaitMs`. The file is replaced in one
- * rename, so a reader never sees half a write.
+ * rename, so a reader never sees half a write. Windows pending-delete creation refusals share the same
+ * wait budget; a persistent permission refusal is rethrown as the original filesystem error.
  *
  * The file is `<dataDir>/refinement/workspaces/<sha256(workspaceRoot)>.json`; `workspaceRoot` is the same
  * string the memory provider is opened with. A caller that knows only that hash (the workspace id resource
@@ -520,20 +521,29 @@ export class RefinementRegistry {
     const token = randomUUID()
     const deadline = Date.now() + this.lockWaitMs
     for (;;) {
+      let handle: number
       try {
-        const handle = openSync(lock, 'wx', 0o600)
-        try {
-          writeFileSync(handle, token)
-        } finally {
-          closeSync(handle)
-        }
-        break
+        handle = openSync(lock, 'wx', 0o600)
       } catch (error) {
-        if (!exists(error)) throw error
-        if (this.takeOverIfAbandoned(lock)) continue
-        if (Date.now() >= deadline) throw failure('REGISTRY_LOCK_TIMEOUT')
+        if (exists(error)) {
+          if (this.takeOverIfAbandoned(lock)) continue
+          if (Date.now() >= deadline) throw failure('REGISTRY_LOCK_TIMEOUT')
+        } else {
+          // Windows may refuse creation while the previous lock is pending deletion. This alone
+          // never permits takeover, and a lasting permission refusal must retain its filesystem code.
+          const windows = process.platform === 'win32' // guards-allow-platform: Windows pending-deletion refusal.
+          const pendingDelete = windows && (error as NodeJS.ErrnoException)?.code === 'EPERM'
+          if (!pendingDelete || Date.now() >= deadline) throw error
+        }
         sleep(LOCK_POLL_MS)
+        continue
       }
+      try {
+        writeFileSync(handle, token)
+      } finally {
+        closeSync(handle)
+      }
+      break
     }
     try {
       return section()
