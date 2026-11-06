@@ -126,6 +126,12 @@ it('accepts only the authorized runbook backend refusal and rejects missing or c
       e.events[0]!.data.result!.response!.option = 'rejected'
     },
     (e: ReturnType<typeof evidence>) => {
+      Object.assign(e.events[0]?.data.result ?? {}, { reason: 'pending' })
+    },
+    (e: ReturnType<typeof evidence>) => {
+      Object.assign(e.events[0] ?? {}, { seq: 56 })
+    },
+    (e: ReturnType<typeof evidence>) => {
       e.events[0]!.data.request!.spec.subject.call.toolUseId = 'other-call'
     },
     (e: ReturnType<typeof evidence>) => {
