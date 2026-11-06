@@ -84,6 +84,20 @@ describe('clientAuthentication', () => {
     ).toThrow(McpOAuthClientAuthUnsupported)
   })
 
+  it('a registered public client uses none even when the server does not list none', async () => {
+    // Keycloak registers a public client for `none` but never lists `none` among its methods.
+    const { headers, params } = await applyAuth(
+      clientAuthentication({
+        clientId: 'id',
+        registeredMethod: 'none',
+        supportedMethods: ['client_secret_basic', 'client_secret_post', 'private_key_jwt'],
+      }),
+    )
+    expect(headers.has('authorization')).toBe(false)
+    expect(params.get('client_id')).toBe('id')
+    expect(params.has('client_secret')).toBe(false)
+  })
+
   it('no secret: none sends client_id in the form', async () => {
     const { headers, params } = await applyAuth(clientAuthentication({ clientId: 'id' }))
     expect(headers.has('authorization')).toBe(false)
