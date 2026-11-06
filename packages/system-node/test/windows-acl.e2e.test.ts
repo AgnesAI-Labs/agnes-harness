@@ -24,6 +24,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   applyWindowsAclGrant,
   inspectWindowsAcl,
+  readWindowsObjectIdentity,
   restoreWindowsAclGrant,
   type WindowsAclSnapshot,
   windowsAclFingerprint,
@@ -157,6 +158,18 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
     writeFileSync(join(base, 'file'), '')
     expect(() => inspectWindowsAcl(join(base, 'file'))).toThrow(code('ENOTDIR'))
     expect(() => inspectWindowsAcl(join(base, 'missing'))).toThrow(code('ENOENT'))
+  })
+
+  it('reads a root identity under the same refusals, without the tree', () => {
+    const root = workspace()
+    expect(readWindowsObjectIdentity(root)).toEqual(inspectWindowsAcl(root).identity)
+    const link = join(base, 'identity-link')
+    symlinkSync(root, link, 'junction')
+    links.push(link)
+    expect(() => readWindowsObjectIdentity(link)).toThrow(code('E_ACL_REPARSE'))
+    expect(() => readWindowsObjectIdentity(join(link, 'src'))).toThrow(code('E_ACL_REPARSE'))
+    expect(() => readWindowsObjectIdentity(parse(base).root)).toThrow(code('E_ACL_DRIVE_ROOT'))
+    expect(() => readWindowsObjectIdentity(join(base, 'missing'))).toThrow(code('ENOENT'))
   })
 
   it('records a link that stays inside the root and refuses one that leaves it', () => {

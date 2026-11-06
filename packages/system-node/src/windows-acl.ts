@@ -150,7 +150,8 @@ function identityOf(volumeId: unknown, fileId: unknown): WindowsObjectIdentity {
   return Object.freeze({ volumeId, fileId })
 }
 
-function writeSidOf(value: unknown): string {
+/** A canonical capability SID (S-1-4-...): never an account, group or well-known principal. */
+export function windowsWriteSid(value: unknown): string {
   const parts = typeof value === 'string' ? /^S-1-4((?:-(?:0|[1-9]\d{0,9})){1,15})$/.exec(value) : null
   if (
     !parts?.[1] ||
@@ -179,7 +180,7 @@ export function windowsAclFingerprint(identity: WindowsObjectIdentity, securityD
 /** The three entries a grant adds to its root: capability allow, delete-child deny, Low label. */
 export function windowsAclGrantEntries(writeSid: string): readonly WindowsAclEntry[] {
   return Object.freeze([
-    Object.freeze({ kind: 'allow', sid: writeSidOf(writeSid), mask: GRANT_MASK, flags: 0x03 } as const),
+    Object.freeze({ kind: 'allow', sid: windowsWriteSid(writeSid), mask: GRANT_MASK, flags: 0x03 } as const),
     Object.freeze({ kind: 'deny', sid: 'S-1-1-0', mask: 0x40, flags: 0x02 } as const),
     Object.freeze({ kind: 'label', sid: 'S-1-16-4096', mask: 0x01, flags: 0x03 } as const),
   ])
@@ -254,6 +255,22 @@ export function inspectWindowsAcl(path: string): WindowsAclSnapshot {
 }
 
 /**
+ * Volume and file ID of a directory, read from a handle opened the way a grant opens its root
+ * (normalized drive path, no link or reparse point on the way, local NTFS) without reading the
+ * tree below it. Refuses like inspectWindowsAcl.
+ */
+export function readWindowsObjectIdentity(path: string): WindowsObjectIdentity {
+  const target = rootPath(path)
+  const raw = windowsAclBinding().identity(target)
+  try {
+    if (!record(raw)) throw malformed()
+    return identityOf(raw.volumeId, raw.fileId)
+  } catch {
+    throw malformed()
+  }
+}
+
+/**
  * Adds the grant entries after proving the root and recorded descendants still match `before`.
  * Besides the inspection refusals it refuses, before any write: E_ACL_IDENTITY_MISMATCH (another
  * directory now has the path), E_ACL_CHANGED (permissions changed since `before`), E_ACL_BUSY,
@@ -264,7 +281,7 @@ export function applyWindowsAclGrant(input: WindowsAclApply): WindowsAclMutation
   if (!record(input)) throw invalid('Invalid Windows ACL grant')
   const before = snapshotOf(input.before)
   const grantId = grantIdOf(input.grantId)
-  const writeSid = writeSidOf(input.writeSid)
+  const writeSid = windowsWriteSid(input.writeSid)
   const target = rootPath(before.path)
   const evidence = before.descendants.map(
     ({ identity, fingerprint }) => `${identity.volumeId}:${identity.fileId}:${fingerprint}`,
@@ -317,7 +334,7 @@ function removalOf(value: unknown): { allowSid: string; deny: boolean; label: bo
   for (const entry of value) {
     if (!record(entry) || kinds.has(entry.kind)) throw invalid('Invalid removable Windows ACL entry')
     kinds.add(entry.kind)
-    if (shaped(entry, allow)) removal.allowSid = writeSidOf(entry.sid)
+    if (shaped(entry, allow)) removal.allowSid = windowsWriteSid(entry.sid)
     else if (shaped(entry, deny) && entry.sid === deny?.sid) removal.deny = true
     else if (shaped(entry, label) && entry.sid === label?.sid) removal.label = true
     else throw invalid('Only the exact entries a grant adds can be removed')

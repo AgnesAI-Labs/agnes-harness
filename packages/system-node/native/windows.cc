@@ -830,6 +830,19 @@ static napi_value processExecutableIdentity(napi_env env, napi_callback_info inf
   napi_set_named_property(env, result, "imageBinding", bindingValue);
   return result;
 }
+#ifdef AGNES_TEST_FAULTS
+// Failure injection, compiled only into the separate test build of this module: AGNES_TEST_FAULT
+// names one restricted launch step, which then fails as if its system call had.
+static bool injectedFault(const wchar_t* step) {
+  wchar_t value[32] = {};
+  const DWORD length = GetEnvironmentVariableW(L"AGNES_TEST_FAULT", value, 32);
+  if (length == 0 || length >= 32 || wcscmp(value, step) != 0) return false;
+  SetLastError(ERROR_NOT_SUPPORTED);
+  return true;
+}
+#else
+static bool injectedFault(const wchar_t*) { return false; }
+#endif
 #include "private-append.h"
 #include "process-job.h"
 #include "process-spawn.h"
@@ -913,6 +926,7 @@ static napi_value listCanonicalDirectory(napi_env env, napi_callback_info info) 
 }
 
 #include "windows-acl.h"
+#include "process-restricted.h"
 
 static napi_value initialize(napi_env env, napi_value exports) {
   if (uv_version() != UV_VERSION_HEX) {
@@ -929,6 +943,7 @@ static napi_value initialize(napi_env env, napi_value exports) {
     {"connectVerifiedPipe", nullptr, guarded<connectVerifiedPipe>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"reservePipeName", nullptr, guarded<reservePipeName>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"spawnInherited", nullptr, guarded<spawnInherited>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"spawnRestricted", nullptr, guarded<spawnRestricted>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"environmentNamesEqual", nullptr, guarded<environmentNamesEqual>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"createProcessJob", nullptr, guarded<createProcessJob>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"createPrivateFile", nullptr, guarded<createFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
@@ -951,10 +966,16 @@ static napi_value initialize(napi_env env, napi_value exports) {
     {"aclInspect", nullptr, guarded<aclInspect>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"aclApply", nullptr, guarded<aclApply>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"aclRestore", nullptr, guarded<aclRestore>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"aclIdentity", nullptr, guarded<aclIdentity>, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
   napi_define_properties(env, exports, sizeof(functions) / sizeof(functions[0]), functions);
   napi_value version; napi_create_int32(env, 1, &version);
   napi_set_named_property(env, exports, "abiVersion", version);
+#ifdef AGNES_TEST_FAULTS
+  // Marks the test build, which the package loader and the process broker refuse to use.
+  napi_value testFaults; napi_get_boolean(env, true, &testFaults);
+  napi_set_named_property(env, exports, "testFaults", testFaults);
+#endif
   return exports;
 }
 NAPI_MODULE(agnes_system, initialize)

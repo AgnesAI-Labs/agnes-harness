@@ -633,6 +633,21 @@ static napi_value aclInspect(napi_env env, napi_callback_info info) {
   return result;
 }
 
+/** Root identity alone: the same checks as opening the root for inspection, without the walk. */
+static napi_value aclIdentity(napi_env env, napi_callback_info info) {
+  napi_value args[1];
+  std::wstring input;
+  if (!arguments(env, info, 1, args) || !stringArgument(env, args[0], input)) return nullptr;
+  AclProblem problem;
+  AclRoot root;
+  if (!aclOpenRoot(input, false, root, problem)) return aclThrow(env, problem);
+  napi_value result = nullptr;
+  napi_create_object(env, &result);
+  napi_set_named_property(env, result, "volumeId", canonicalWindowsText(env, root.facts.volumeId));
+  napi_set_named_property(env, result, "fileId", canonicalWindowsText(env, root.facts.fileId));
+  return result;
+}
+
 // Adding and removing the grant entries.
 
 struct AclBefore {

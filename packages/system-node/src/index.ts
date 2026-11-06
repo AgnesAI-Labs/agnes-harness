@@ -50,6 +50,8 @@ type Native = {
   renameDirectoryNoReplace?(from: string, to: string): void
   syncDescriptor?(fd: number, full: boolean): void
   abiVersion: number
+  /** Set only by the test build with failure injection, which is never loaded here. */
+  testFaults?: boolean
   spawnDetached?(executable: string, command: string, cwd: string, env: string): OwnedDetachedProcess
   reservePipeName(path: string, maximum: number): PipeReservation
   connectVerifiedPipe(path: string, pid: number, start: string): OwnedPipe
@@ -73,6 +75,7 @@ type Native = {
   aclInspect?: WindowsAclBinding['inspect']
   aclApply?: WindowsAclBinding['apply']
   aclRestore?: WindowsAclBinding['restore']
+  aclIdentity?: WindowsAclBinding['identity']
 }
 
 /** Bind an ephemeral TCP listener strictly to one numeric loopback address; caller owns the fd. */
@@ -181,6 +184,7 @@ function native(): Native {
       : ['deletePrivateArtifact']
     if (
       candidate.abiVersion !== 1 ||
+      candidate.testFaults !== undefined ||
       required.some((name) => typeof candidate[name as keyof Native] !== 'function')
     )
       throw new Error('ABI mismatch')
@@ -240,6 +244,8 @@ export type WindowsProcessJob = {
   terminationComplete(): boolean
   /** Idempotent; force-terminates remaining members. Termination is asynchronous. */
   close(): void
+  /** Whether another live process with this creation time is a member; absent in older artifacts. */
+  contains?(pid: number, expectedStartTime: string): boolean
 }
 
 /** Raw Windows ACL primitives. Applications use the windows-acl entry point, which validates them. */
@@ -262,16 +268,22 @@ export type WindowsAclBinding = Readonly<{
     deny: boolean,
     label: boolean,
   ): unknown
+  identity(path: string): unknown
 }>
 export function windowsAclBinding(): WindowsAclBinding {
   if (!windows) throw Object.assign(new Error('Windows ACL primitives are unavailable'), { code: 'ENOSYS' })
-  const { aclInspect, aclApply, aclRestore } = native()
+  const { aclInspect, aclApply, aclRestore, aclIdentity } = native()
   // Optional, so an artifact built before these primitives still loads for everything else.
-  if (typeof aclInspect !== 'function' || typeof aclApply !== 'function' || typeof aclRestore !== 'function')
+  if (
+    typeof aclInspect !== 'function' ||
+    typeof aclApply !== 'function' ||
+    typeof aclRestore !== 'function' ||
+    typeof aclIdentity !== 'function'
+  )
     throw Object.assign(new Error('Rebuild native artifact for Windows ACL support'), {
       code: 'E_SYSTEM_NATIVE_UNAVAILABLE',
     })
-  return { inspect: aclInspect, apply: aclApply, restore: aclRestore }
+  return { inspect: aclInspect, apply: aclApply, restore: aclRestore, identity: aclIdentity }
 }
 
 export function createWindowsProcessJob(): WindowsProcessJob {

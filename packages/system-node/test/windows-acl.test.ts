@@ -9,9 +9,11 @@ type Snapshot = import('../src/windows-acl.js').WindowsAclSnapshot
 const fake = vi.hoisted(() => ({
   loads: 0,
   present: true,
+  testBuild: false,
   aclInspect: vi.fn(),
   aclApply: vi.fn(),
   aclRestore: vi.fn(),
+  aclIdentity: vi.fn(),
 }))
 
 vi.mock('node:module', async (importOriginal) => {
@@ -22,7 +24,8 @@ vi.mock('node:module', async (importOriginal) => {
       {
         get: (target, key) => {
           if (key === 'abiVersion') return target.abiVersion
-          if (key === 'aclInspect' || key === 'aclApply' || key === 'aclRestore')
+          if (key === 'testFaults') return fake.testBuild ? true : undefined
+          if (key === 'aclInspect' || key === 'aclApply' || key === 'aclRestore' || key === 'aclIdentity')
             return fake.present ? fake[key] : undefined
           return () => {}
         },
@@ -55,9 +58,11 @@ async function load(platform: NodeJS.Platform): Promise<AclModule> {
 afterEach(() => {
   fake.loads = 0
   fake.present = true
+  fake.testBuild = false
   fake.aclInspect.mockReset()
   fake.aclApply.mockReset()
   fake.aclRestore.mockReset()
+  fake.aclIdentity.mockReset()
 })
 
 const volumeId = '00000000a1b2c3d4'
@@ -217,6 +222,7 @@ describe('Windows ACL off Windows', () => {
           removableChanges: allow ? [allow] : [],
         }),
       ).toThrow(code('ENOSYS'))
+      expect(() => acl.readWindowsObjectIdentity('C:\\Users\\me\\project')).toThrow(code('ENOSYS'))
       expect(fake.loads).toBe(0)
     },
   )
@@ -226,6 +232,7 @@ describe('Windows ACL off Windows', () => {
     expect(typeof entry.inspectWindowsAcl).toBe('function')
     expect(typeof entry.applyWindowsAclGrant).toBe('function')
     expect(typeof entry.restoreWindowsAclGrant).toBe('function')
+    expect(typeof entry.readWindowsObjectIdentity).toBe('function')
   })
 })
 
@@ -371,9 +378,50 @@ describe('Windows ACL native results', () => {
     )
   })
 
+  it('refuses the test build of the native artifact', async () => {
+    fake.testBuild = true
+    const acl = await load('win32')
+    expect(() => acl.readWindowsObjectIdentity('C:\\Users\\me\\project')).toThrow(
+      code('E_SYSTEM_NATIVE_UNAVAILABLE'),
+    )
+    expect(fake.aclIdentity).not.toHaveBeenCalled()
+  })
+
   it('reports a native artifact that predates the ACL primitives', async () => {
     fake.present = false
     const acl = await load('win32')
     expect(() => acl.inspectWindowsAcl('C:\\Users\\me\\project')).toThrow(code('E_SYSTEM_NATIVE_UNAVAILABLE'))
+  })
+
+  it('reads a root identity without inspecting its tree', async () => {
+    const acl = await load('win32')
+    fake.aclIdentity.mockReturnValue({ volumeId, fileId })
+    const identity = acl.readWindowsObjectIdentity('C:\\Users\\me\\工作 区\\')
+    expect(fake.aclIdentity).toHaveBeenCalledWith('\\\\?\\C:\\Users\\me\\工作 区')
+    expect(fake.aclInspect).not.toHaveBeenCalled()
+    expect(identity).toEqual({ volumeId, fileId })
+    expect(Object.isFrozen(identity)).toBe(true)
+  })
+
+  it('validates identity paths and native identities', async () => {
+    const acl = await load('win32')
+    for (const path of ['', 'project', 'C:project', '\\\\server\\share\\x', 'C:\\a\0b', 'C:\\a:s'])
+      expect(() => acl.readWindowsObjectIdentity(path)).toThrow(code('EINVAL'))
+    expect(() => acl.readWindowsObjectIdentity('D:\\')).toThrow(code('E_ACL_DRIVE_ROOT'))
+    expect(fake.loads).toBe(0)
+    for (const raw of [
+      undefined,
+      {},
+      { volumeId: 'x', fileId },
+      { volumeId, fileId: fileId.toUpperCase() },
+    ]) {
+      fake.aclIdentity.mockReturnValue(raw)
+      expect(() => acl.readWindowsObjectIdentity('C:\\x')).toThrow(code('E_SYSTEM_NATIVE_UNAVAILABLE'))
+    }
+    const refusal = Object.assign(new Error('E_ACL_REPARSE: link'), { code: 'E_ACL_REPARSE' })
+    fake.aclIdentity.mockImplementation(() => {
+      throw refusal
+    })
+    expect(() => acl.readWindowsObjectIdentity('C:\\x')).toThrow(refusal)
   })
 })
