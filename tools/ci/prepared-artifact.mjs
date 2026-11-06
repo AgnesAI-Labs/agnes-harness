@@ -249,6 +249,8 @@ async function identity(kind, producer) {
     imageOS: imageOS ?? '',
     imageVersion: imageVersion ?? '',
     node: process.version,
+    nodeAbi: process.versions.modules,
+    napi: process.versions.napi,
     pnpm,
     lockHash: digest(readFileSync('pnpm-lock.yaml')),
     sourceHash: await sourceHash(
@@ -438,7 +440,7 @@ async function restore(directory) {
     'pnpm',
     'lockHash',
     'sourceHash',
-    ...(manifest.kind === 'types' ? [] : ['platform', 'arch', 'osMajor', 'imageOS', 'imageVersion']),
+    ...(manifest.kind === 'types' ? [] : ['platform', 'arch', 'osMajor', 'imageOS', 'nodeAbi', 'napi']),
   ]
   for (const key of keys) if (manifest[key] !== expected[key]) fail(`identity mismatch: ${key}`)
   const required =

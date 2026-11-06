@@ -43,6 +43,9 @@ jobs:
         run: |
           pnpm --filter @agnes/host build:native
           pnpm --filter @agnes/system-node build:native
+      - name: Load native helpers before publishing
+        if: inputs.artifact == ''
+        run: node --input-type=module -e "import setup from './tools/native-test-setup.mjs'; setup()"
       - name: Pack native helpers
         if: inputs.artifact == ''
         run: node tools/ci/prepared-artifact.mjs pack native .agnes-tmp/prepared-native

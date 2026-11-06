@@ -269,21 +269,34 @@ describe('prepared CI artifacts', () => {
     success(f.run(['restore', f.artifact]))
   })
 
-  it.each(['platform', 'arch', 'osMajor', 'imageOS', 'imageVersion'])(
-    'refuses native reuse on a different %s',
-    (field) => {
+  describe.each(['native', 'local'])('%s compatibility', (kind) => {
+    it.each(['platform', 'arch', 'osMajor', 'imageOS', 'nodeAbi', 'napi'])(
+      'refuses reuse on a different %s',
+      (field) => {
+        const f = fixture()
+        if (kind === 'local') f.local()
+        success(f.run(['pack', kind, f.artifact]))
+        f.rewrite((value) => {
+          value[field] = 'other'
+        })
+        expect(f.run(['restore', f.artifact]).status).not.toBe(0)
+      },
+    )
+
+    it('accepts different weekly image revisions with the same image family and runtime', () => {
       const f = fixture()
-      success(f.run(['pack', 'native', f.artifact]))
-      f.rewrite((value) => {
-        value[field] = 'other'
-      })
-      expect(f.run(['restore', f.artifact]).status).not.toBe(0)
-    },
-  )
+      if (kind === 'local') f.local()
+      success(f.run(['pack', kind, f.artifact], { ...environment, ImageVersion: '20261030.294.1' }))
+      expect(f.manifest().imageVersion).toBe('20261030.294.1')
+      success(f.run(['restore', f.artifact], { ...environment, ImageVersion: '20261102.0473.1' }))
+    })
+  })
 
   it('roundtrips the source owners native helper executable modes', () => {
     const f = fixture()
     success(f.run(['pack', 'native', f.artifact]))
+    expect(f.manifest().nodeAbi).toBe(process.versions.modules)
+    expect(f.manifest().napi).toBe(process.versions.napi)
     expect(
       f
         .manifest()

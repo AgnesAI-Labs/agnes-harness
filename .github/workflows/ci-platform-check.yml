@@ -1,0 +1,153 @@
+name: Platform check
+on:
+  workflow_call:
+    inputs:
+      runner: { type: string, required: true }
+      native: { type: string, required: true }
+      types: { type: string, required: true }
+      shards: { type: string, default: '[""]' }
+permissions: { contents: read }
+env: { AGNES_NATIVE_BUILDER: glibc228 }
+jobs:
+  check:
+    name: check (${{ inputs.runner }}${{ matrix.shard != '' && format(' shard {0}', matrix.shard) || '' }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(inputs.shards) }}
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 60
+    steps:
+      # Keep the same committed LF bytes on every platform, including Windows.
+      - name: preserve repository line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      # Hosted Windows runners keep the workspace and RUNNER_TEMP on the D: work disk, but TEMP
+      # defaults to the C: system disk. Tests put their stores, ledgers, locks and flushes under
+      # os.tmpdir(), so they share the system disk with everything else on the VM.
+      # One number per disk in the log, so a slow run can be told apart from a slow disk.
+      - name: measure flushed writes on the Windows system and work disks
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $script = @'
+          const fs = require('node:fs'), path = require('node:path')
+          for (const root of process.argv.slice(1)) {
+            const dir = fs.mkdtempSync(path.join(root, 'flush-'))
+            const started = performance.now()
+            for (let i = 0; i < 200; i++) fs.writeFileSync(path.join(dir, `f${i}`), 'x'.repeat(4096), { flush: true })
+            console.log(`${root}: ${((performance.now() - started) / 200).toFixed(2)} ms per flushed 4 KiB write`)
+            fs.rmSync(dir, { recursive: true, force: true })
+          }
+          '@
+          node -e $script -- $env:TEMP $env:RUNNER_TEMP
+      # Like the per-user Temp it replaces, the folder grants only this user, SYSTEM and
+      # Administrators, so the private homes and stores tests create under it pass validation.
+      # RUNNER_TEMP itself inherits the D: drive's broad grants.
+      - name: keep temporary files on the Windows work disk
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $temp = Join-Path $env:RUNNER_TEMP 'private-temp'
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+          $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls $temp /inheritance:r /grant:r "*${user}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot make the temporary folder private' }
+          "TEMP=$temp" >> $env:GITHUB_ENV
+          "TMP=$temp" >> $env:GITHUB_ENV
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .node-version, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run doctor:toolchain
+      # The completion tests load the generated script in real bash and zsh. macOS ships zsh;
+      # the Ubuntu image does not.
+      - name: install zsh
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y zsh
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ inputs.native }}
+          path: .agnes-tmp/prepared-native
+      - name: Restore and load native helpers
+        run: |
+          node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-native
+          node --input-type=module -e "import setup from './tools/native-test-setup.mjs'; setup()"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ inputs.types }}
+          path: .agnes-tmp/prepared-types
+      - run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-types
+      # Bound worker fan-out so hundreds of isolated test files do not exhaust small hosted runners.
+      # Split Windows files across three runners while keeping two workers per runner.
+      # The fast tier discovers and runs the complete Protocol fixture tree through the same
+      # conformance core as the package CLI, so a newly added fixture cannot bypass CI. The heavy
+      # tier (*.e2e.test.ts, *.slow.test.ts) runs in its own job below.
+      - name: test fast tier (includes Protocol conformance)
+        id: suite
+        if: runner.os != 'Linux'
+        # Files run alone below on Windows are held out here.
+        env:
+          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts' || '' }}
+        run: pnpm exec vitest run --project fast --maxWorkers=2 ${{ matrix.shard != '' && format('--shard={0}', matrix.shard) || '' }}
+      # Keep this native Windows gate on PRs after moving real-process tests to the heavy tier.
+      # Other events already execute it once in Windows heavy shard 3.
+      - name: Windows PowerShell private scripts on pull requests
+        if: runner.os == 'Windows' && matrix.shard == '1/3' && github.event_name == 'pull_request'
+        run: pnpm exec vitest run packages/host-infrastructure/test/adapters/powershell-file.e2e.test.ts --maxWorkers=1
+      # Registry writers start real Node processes. Preserve their PR coverage on the native
+      # platforms absent from the PR heavy matrix; other events use heavy shard 3 exactly once.
+      - name: macOS registry processes on pull requests
+        if: runner.os == 'macOS' && github.event_name == 'pull_request'
+        run: pnpm exec vitest run --project heavy packages/host-infrastructure/test/refinement-registry-processes.e2e.test.ts --maxWorkers=1
+      - name: Windows registry processes on pull requests
+        if: runner.os == 'Windows' && matrix.shard == '1/3' && github.event_name == 'pull_request'
+        run: pnpm exec vitest run --project heavy packages/host-infrastructure/test/refinement-registry-processes.e2e.test.ts --maxWorkers=1
+      # The Skill install flow polls for completion with a three-second bound; run this
+      # disk-backed integration file without other Vitest files competing on Windows.
+      - name: Windows Skill install requests
+        if: runner.os == 'Windows' && matrix.shard == '2/3'
+        run: pnpm exec vitest run packages/daemon/test/skill-install-requests.slow.test.ts --maxWorkers=1
+      # These files drive real daemon startup and MCP server processes under fixed startup and
+      # shutdown deadlines; run each alone so parallel Vitest files do not starve them.
+      - name: Windows daemon startup directories
+        if: runner.os == 'Windows' && matrix.shard == '1/3'
+        run: pnpm exec vitest run packages/daemon/test/windows-startup-directories.test.ts --maxWorkers=1
+      - name: Windows conversation MCP registration
+        if: runner.os == 'Windows' && matrix.shard == '2/3'
+        run: pnpm exec vitest run packages/daemon/test/conversation-mcp.e2e.test.ts --maxWorkers=1
+      # Keep boot/session creation in the functional gate above. The isolated run reports wall-clock
+      # time in the job summary even if another test fails; a stable performance runner can opt into
+      # the 300 ms assertion. Do not restart this test after a cancelled or skipped suite.
+      - name: startup budget (shared-runner diagnostic)
+        if: ${{ !cancelled() && (runner.os == 'Linux' || steps.suite.outcome != 'skipped') && (runner.os != 'Windows' || matrix.shard == '1/3') }}
+        env: { AGH_BOOT_BUDGET_REPORT: '1' }
+        run: pnpm exec vitest run packages/cli/test/boot-budget.test.ts --maxWorkers=1
+      - name: build local acceptance package on each platform
+        if: ${{ runner.os != 'Windows' || matrix.shard == '1/3' }}
+        run: pnpm --filter @agnes/cli build:local
+      - name: verify packaged directory publication capability
+        if: ${{ runner.os != 'Windows' || matrix.shard == '1/3' }}
+        run: node packages/system-node/scripts/check-directory-publication.mjs packages/cli/dist/local/node_modules/@agnes/system-node/dist/native/agnes-system.node
+      - name: verify local delivery with Windows PowerShell 5.1
+        if: runner.os == 'Windows' && matrix.shard == '1/3'
+        shell: powershell
+        env:
+          AGNES_LOCAL_CLI: ${{ github.workspace }}/packages/cli/dist/local/agnes.mjs
+        run: |
+          $env:AGNES_ACCEPTANCE_POWERSHELL = (Get-Process -Id $PID).Path
+          if (-not $env:AGNES_ACCEPTANCE_POWERSHELL) { throw 'Cannot identify the acceptance PowerShell process' }
+          pnpm exec vitest run tools/acceptance/shared-local-delivery.e2e.test.ts
+      - name: verify local delivery with PowerShell 7
+        if: runner.os == 'Windows' && matrix.shard == '1/3'
+        shell: pwsh
+        env:
+          AGNES_LOCAL_CLI: ${{ github.workspace }}/packages/cli/dist/local/agnes.mjs
+        run: |
+          $env:AGNES_ACCEPTANCE_POWERSHELL = (Get-Process -Id $PID).Path
+          if (-not $env:AGNES_ACCEPTANCE_POWERSHELL) { throw 'Cannot identify the acceptance PowerShell process' }
+          pnpm exec vitest run tools/acceptance/shared-local-delivery.e2e.test.ts
+      # Installation and builds must not rewrite committed source or the lockfile.
+      - name: verify working tree is clean
+        run: git diff --exit-code

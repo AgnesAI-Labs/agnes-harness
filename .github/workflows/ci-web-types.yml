@@ -37,7 +37,9 @@ jobs:
           path: .agnes-tmp/prepared-native
       - name: Restore native helpers
         if: inputs.artifact == ''
-        run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-native
+        run: |
+          node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-native
+          node --input-type=module -e "import setup from './tools/native-test-setup.mjs'; setup()"
       - name: Types and repository guards
         if: inputs.artifact == ''
         run: |

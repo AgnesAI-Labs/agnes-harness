@@ -41,7 +41,10 @@ jobs:
         with:
           name: ${{ inputs.native }}
           path: .agnes-tmp/benchmark-native
-      - run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/benchmark-native
+      - name: Restore and load native helpers
+        run: |
+          node tools/ci/prepared-artifact.mjs restore .agnes-tmp/benchmark-native
+          node --input-type=module -e "import setup from './tools/native-test-setup.mjs'; setup()"
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: ${{ inputs.types }}

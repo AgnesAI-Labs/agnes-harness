@@ -1,5 +1,6 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { ciWebSelected, verifyWebResults } from './dedup-routing.mjs'
+import { ciWebSelected, verifyPlatformResults, verifyWebResults } from './dedup-routing.mjs'
 
 describe('single-run coverage routing', () => {
   it('keeps only the original PR and main-push Web union in CI', () => {
@@ -17,7 +18,8 @@ describe('single-run coverage routing', () => {
         'web-types': { result: 'success' },
         'web-native-linux': { result: 'success' },
         'web-native-macos': { result: 'success' },
-        'web-quality': { result: 'success' },
+        'web-quality-linux': { result: 'success' },
+        'web-quality-macos': { result: 'success' },
         'e2e-web': { result: 'success' },
         'e2e-web-linux': { result: 'success' },
         'linux-contracts': { result: 'success' },
@@ -41,5 +43,58 @@ describe('single-run coverage routing', () => {
 
   it('does not accept success instead of a declared unselected duplicate', () => {
     expect(() => verifyWebResults({}, { externalFast: true, externalHeavy: true })).toThrow()
+  })
+})
+
+function workflowJob(file: string, name: string) {
+  const source = readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8')
+  return source.split(`\n  ${name}:\n`)[1]?.split(/\n {2}[a-z][a-z0-9-]*:\n/)[0] ?? ''
+}
+
+describe('independent platform preparation', () => {
+  it('never makes a platform check or heavy tier wait for another platform native producer', () => {
+    for (const platform of ['linux', 'macos', 'windows']) {
+      for (const layer of ['check', 'heavy']) {
+        const body = workflowJob('ci.yml', `${layer}-${platform}`)
+        expect(body).toContain(`needs: [changes, static, native-${platform}]`)
+        for (const other of ['linux', 'macos', 'windows'].filter((name) => name !== platform))
+          expect(body).not.toContain(`needs.native-${other}`)
+      }
+    }
+  })
+
+  it('keeps Linux and macOS browser quality dependencies independent until the final gate', () => {
+    for (const platform of ['linux', 'macos']) {
+      const native = `web-native-${platform}`
+      const quality = `web-quality-${platform}`
+      const body = workflowJob('e2e-web.yml', quality)
+      expect(body).toContain(`needs: [web-types, ${native}]`)
+      const browser = workflowJob('e2e-web.yml', platform === 'linux' ? 'e2e-web-linux' : 'e2e-web')
+      expect(browser).toContain(quality)
+      expect(browser).not.toContain(`web-quality-${platform === 'linux' ? 'macos' : 'linux'}`)
+    }
+  })
+})
+
+describe('platform result aggregation', () => {
+  it.each(['check', 'heavy'])('requires exactly the selected %s platforms', (layer) => {
+    for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch']) {
+      const needs: Record<string, { result: string; outputs?: Record<string, string> }> = {
+        changes: { result: 'success', outputs: { 'docs-only': 'false' } },
+      }
+      for (const platform of ['linux', 'macos', 'windows'])
+        needs[`${layer}-${platform}`] = {
+          result:
+            layer === 'heavy' && event === 'pull_request' && platform !== 'linux' ? 'skipped' : 'success',
+        }
+      expect(() => verifyPlatformResults(needs, layer, event)).not.toThrow()
+      for (const platform of ['linux', 'macos', 'windows']) {
+        const job = `${layer}-${platform}`
+        for (const state of ['failure', 'cancelled', 'skipped', 'missing']) {
+          if (state === needs[job]?.result) continue
+          expect(() => verifyPlatformResults({ ...needs, [job]: { result: state } }, layer, event)).toThrow()
+        }
+      }
+    }
   })
 })
