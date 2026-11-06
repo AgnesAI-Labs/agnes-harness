@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { verifyResults } from './result.mjs'
+import { heavyShard } from './run-heavy-shard.mjs'
 import { changedPaths, detectDocsOnly, isDocsOnly } from './scope.mjs'
 import { verifyStoryResult } from './story-results.mjs'
 
@@ -58,6 +59,32 @@ function fixture() {
   return { cwd, git, write, commit, base: commit() }
 }
 
+function workflowJob(source: string, name: string) {
+  return source.split(`\n  ${name}:\n`)[1]?.split(/\n {2}[a-z][a-z0-9-]*:\n/)[0] ?? ''
+}
+function platformCheckRows(workflow: string) {
+  return ['linux', 'macos', 'windows'].flatMap((platform) => {
+    const body = workflowJob(workflow, `check-${platform}`)
+    const runner = /^ {6}runner: (.+)$/m.exec(body)?.[1]
+    const shards = /^ {6}shards: '([^']+)'$/m.exec(body)?.[1]
+    if (!runner || !shards) throw new Error('Missing platform check runner or shards')
+    return (JSON.parse(shards) as string[]).map((shard) => ['', runner, shard])
+  })
+}
+function platformHeavyOs(workflow: string, event: string): string[] {
+  return ['linux', 'macos', 'windows'].flatMap((platform) => {
+    const body = workflowJob(workflow, `heavy-${platform}`)
+    const runner = /^ {6}runner: (.+)$/m.exec(body)?.[1]
+    const condition = /^ {4}if: (.+)$/m.exec(body)?.[1]
+    const expected =
+      "needs.changes.outputs.docs-only != 'true'" +
+      (platform === 'linux' ? '' : " && github.event_name != 'pull_request'")
+    expect(condition).toBe(expected)
+    if (!runner) throw new Error('Missing heavy runner')
+    return platform === 'linux' || event !== 'pull_request' ? [runner] : []
+  })
+}
+
 describe('CI scope', () => {
   it('uses the repository Node pin in every setup-node step', () => {
     const workflows = fileURLToPath(new URL('../../.github/workflows/', import.meta.url))
@@ -66,6 +93,149 @@ describe('CI scope', () => {
       const setups = workflow.match(/uses: actions\/setup-node@/g) ?? []
       expect(workflow, name).not.toMatch(/\bnode-version:/)
       expect(workflow.match(/node-version-file: \.node-version\b/g) ?? [], name).toHaveLength(setups.length)
+    }
+  })
+
+  it('runs the native PowerShell file once on Windows for PRs and every full-platform event', () => {
+    const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')
+    const file = 'packages/host-infrastructure/test/adapters/powershell-file.e2e.test.ts'
+    const check = workflowJob(
+      readFileSync(new URL('../../.github/workflows/ci-platform-check.yml', import.meta.url), 'utf8'),
+      'check',
+    )
+    const steps = check.split(/\n {6}- /)
+    const isolated = steps.filter((step) => step.includes(`run: pnpm exec vitest run ${file}`))
+    expect(isolated).toHaveLength(1)
+    const step = isolated[0] as string
+    const command = /^ {8}run: (.+)$/m.exec(step)?.[1]?.trim().split(/\s+/)
+    expect(command).toEqual(['pnpm', 'exec', 'vitest', 'run', file, '--maxWorkers=1'])
+    expect(steps.indexOf(step)).toBeGreaterThan(steps.findIndex((s) => s.includes('id: suite')))
+    const condition = /^ {8}if: (.+)$/m.exec(step)?.[1] ?? ''
+    const checkRows = platformCheckRows(workflow)
+    expect(checkRows.length).toBeGreaterThan(0)
+    const osNames: Record<string, string> = {
+      'ubuntu-latest': 'Linux',
+      'macos-latest': 'macOS',
+      'windows-latest': 'Windows',
+    }
+    const matches = (os: string, shard: string, event: string) => {
+      const context: Record<string, string> = {
+        'runner.os': os,
+        'matrix.shard': shard,
+        'github.event_name': event,
+      }
+      return condition.split(/\s*&&\s*/).every((clause) => {
+        const equality = /^(runner\.os|matrix\.shard|github\.event_name) == '([^']+)'$/.exec(clause)
+        if (!equality) throw new Error('unsupported isolated-step condition')
+        return context[equality[1] as string] === equality[2]
+      })
+    }
+    const heavy = workflowJob(
+      readFileSync(new URL('../../.github/workflows/ci-platform-heavy.yml', import.meta.url), 'utf8'),
+      'heavy',
+    )
+    const { lists } = JSON.parse(readFileSync(new URL('./heavy-shards.json', import.meta.url), 'utf8'))
+    const excluded = /AGNES_TEST_EXCLUDE: \$\{\{ runner.os == 'Windows' && '([^']*)' \|\| '' \}\}/.exec(heavy)
+    expect(excluded === null).toBe(false)
+    const held = new Set(excluded?.[1]?.split(',') ?? [])
+    const shardOwners = [1, 2, 3, 4, 5, 6].filter((index) => {
+      const shard = heavyShard(`${index}/6`, lists)
+      return !held.has(file) && (shard.files ? shard.files.includes(file) : !shard.exclude?.includes(file))
+    })
+    expect(shardOwners).toEqual([6])
+    for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch']) {
+      const extra = checkRows.filter((row) => matches(osNames[row[1] as string] ?? '', row[2] ?? '', event))
+      expect(
+        extra.map((row) => [row[1], row[2]]),
+        event,
+      ).toEqual(event === 'pull_request' ? [['windows-latest', '1/6']] : [])
+      const heavyOs = platformHeavyOs(workflow, event)
+      const nativeHeavy = heavyOs.includes('windows-latest') ? shardOwners.length : 0
+      expect(extra.length + nativeHeavy, event).toBe(1)
+    }
+  })
+
+  it('keeps the registry process file in one native lane per OS for PRs and full-platform events', () => {
+    const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')
+    const file = 'packages/host-infrastructure/test/refinement-registry-processes.e2e.test.ts'
+    const check = workflowJob(
+      readFileSync(new URL('../../.github/workflows/ci-platform-check.yml', import.meta.url), 'utf8'),
+      'check',
+    )
+    const steps = check.split(/\n {6}- /)
+    const isolated = steps.filter((step) =>
+      step.includes(`run: pnpm exec vitest run --project heavy ${file}`),
+    )
+    expect(isolated).toHaveLength(2)
+    const commands = check
+      .split('\n')
+      .filter((line) => line.trimStart().startsWith('run:') && line.includes(file))
+    expect(commands).toHaveLength(isolated.length)
+    for (const step of isolated) {
+      expect(/^ {8}run: (.+)$/m.exec(step)?.[1]?.trim().split(/\s+/)).toEqual([
+        'pnpm',
+        'exec',
+        'vitest',
+        'run',
+        '--project',
+        'heavy',
+        file,
+        '--maxWorkers=1',
+      ])
+      expect(steps.indexOf(step)).toBeGreaterThan(steps.findIndex((s) => s.includes('id: suite')))
+    }
+    const rows = platformCheckRows(workflow)
+    expect(rows).toHaveLength(13)
+    const osNames: Record<string, string> = {
+      'ubuntu-latest': 'Linux',
+      'macos-latest': 'macOS',
+      'windows-latest': 'Windows',
+    }
+    const matches = (step: string, os: string, shard: string, event: string) => {
+      const context: Record<string, string> = {
+        'runner.os': os,
+        'matrix.shard': shard,
+        'github.event_name': event,
+      }
+      const condition = /^ {8}if: (.+)$/m.exec(step)?.[1] ?? ''
+      return condition.split(/\s*&&\s*/).every((clause) => {
+        const equality = /^(runner\.os|matrix\.shard|github\.event_name) == '([^']+)'$/.exec(clause)
+        if (!equality) throw new Error('unsupported isolated-step condition')
+        return context[equality[1] as string] === equality[2]
+      })
+    }
+    const heavy = workflowJob(
+      readFileSync(new URL('../../.github/workflows/ci-platform-heavy.yml', import.meta.url), 'utf8'),
+      'heavy',
+    )
+    const { lists } = JSON.parse(readFileSync(new URL('./heavy-shards.json', import.meta.url), 'utf8'))
+    const excluded = /AGNES_TEST_EXCLUDE: \$\{\{ runner.os == 'Windows' && '([^']*)' \|\| '' \}\}/.exec(heavy)
+    expect(excluded === null).toBe(false)
+    expect(new Set(excluded?.[1]?.split(',') ?? []).has(file)).toBe(false)
+    const owners = [1, 2, 3, 4, 5, 6].filter((index) => {
+      const shard = heavyShard(`${index}/6`, lists)
+      return shard.files ? shard.files.includes(file) : !shard.exclude?.includes(file)
+    })
+    expect(owners).toEqual([6])
+    for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch']) {
+      const extra = rows.flatMap((row) =>
+        isolated
+          .filter((step) => matches(step, osNames[row[1] as string] ?? '', row[2] ?? '', event))
+          .map(() => [row[1], row[2]]),
+      )
+      expect(extra, event).toEqual(
+        event === 'pull_request'
+          ? [
+              ['macos-latest', '1/6'],
+              ['windows-latest', '1/6'],
+            ]
+          : [],
+      )
+      const heavyOs = platformHeavyOs(workflow, event)
+      for (const os of Object.keys(osNames)) {
+        const nativeExtra = extra.filter((row) => row[0] === os).length
+        expect(nativeExtra + (heavyOs.includes(os) ? owners.length : 0), `${event}/${os}`).toBe(1)
+      }
     }
   })
 
@@ -158,13 +328,23 @@ describe('CI scope', () => {
 
 function results(docsOnly: boolean): Record<string, { result: string; outputs?: Record<string, string> }> {
   return {
-    changes: { result: 'success', outputs: { 'docs-only': String(docsOnly) } },
+    changes: { result: 'success', outputs: { 'docs-only': String(docsOnly), web: 'true' } },
     static: { result: 'success' },
     check: { result: docsOnly ? 'skipped' : 'success' },
     'windows-check-result': { result: docsOnly ? 'skipped' : 'success' },
     heavy: { result: docsOnly ? 'skipped' : 'success' },
     'runtime-package': { result: docsOnly ? 'skipped' : 'success' },
     sea: { result: docsOnly ? 'skipped' : 'success' },
+    'native-linux': { result: 'success' },
+    'local-linux': { result: 'success' },
+    'local-macos': { result: docsOnly ? 'skipped' : 'success' },
+    'local-windows': { result: docsOnly ? 'skipped' : 'success' },
+    'native-macos': { result: docsOnly ? 'skipped' : 'success' },
+    'native-windows': { result: docsOnly ? 'skipped' : 'success' },
+    'linux-fast': { result: docsOnly ? 'skipped' : 'success' },
+    web: { result: 'success' },
+    'web-result': { result: 'success' },
+    'browser-acceptance': { result: 'success' },
   }
 }
 
@@ -173,17 +353,43 @@ describe('CI result', () => {
     expect(() => verifyResults(results(docsOnly))).not.toThrow()
   })
 
-  it.each(['changes', 'static', 'check', 'windows-check-result', 'heavy', 'runtime-package', 'sea'])(
-    'fails closed for a failed, cancelled, skipped or missing code job: %s',
-    (job) => {
-      for (const state of ['failure', 'cancelled', 'skipped', undefined]) {
-        const needs = results(false)
-        if (state) needs[job] = { ...needs[job], result: state }
-        else delete needs[job]
-        expect(() => verifyResults(needs)).toThrow()
-      }
-    },
-  )
+  it.each([
+    'changes',
+    'static',
+    'check',
+    'windows-check-result',
+    'heavy',
+    'runtime-package',
+    'sea',
+    'native-linux',
+    'native-macos',
+    'native-windows',
+    'local-linux',
+    'local-macos',
+    'local-windows',
+    'linux-fast',
+    'web',
+    'web-result',
+    'browser-acceptance',
+  ])('fails closed for a failed, cancelled, skipped or missing code job: %s', (job) => {
+    for (const state of ['failure', 'cancelled', 'skipped', undefined]) {
+      const needs = results(false)
+      if (state) needs[job] = { ...needs[job], result: state }
+      else delete needs[job]
+      expect(() => verifyResults(needs)).toThrow()
+    }
+  })
+
+  it('accepts intentional browser exclusion while still requiring code validation', () => {
+    const needs = results(false)
+    needs.changes.outputs = { 'docs-only': 'false', web: 'false' }
+    needs.web.result = 'skipped'
+    needs['web-result'].result = 'skipped'
+    needs['browser-acceptance'].result = 'skipped'
+    expect(() => verifyResults(needs)).not.toThrow()
+    needs['linux-fast'].result = 'skipped'
+    expect(() => verifyResults(needs)).toThrow('linux-fast')
+  })
 
   it('does not hide a documentation check failure behind intentional runtime skips', () => {
     const needs = results(true)

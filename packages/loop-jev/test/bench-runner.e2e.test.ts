@@ -374,7 +374,10 @@ describe('bench runner', () => {
     const jev = records.find((x) => x.lane === 'jev')
     expect(jev.metrics.sideCall).toBeGreaterThan(0)
     expect(jev.metrics.reconciled).toBe(true)
-    expect(records.every((x) => x.score.probesPass)).toBe(true)
+    expect(
+      records.every((x) => x.score.probesPass),
+      JSON.stringify(records.map((x) => x.probes)),
+    ).toBe(true)
     expect(report.totals.byLane.jev.passes + report.totals.byLane.default.passes).toBeGreaterThan(0)
     const md = readFileSync(join(dir, 'report.md'), 'utf8')
     expect(md).toContain('# Bench report: bench-mini')
@@ -419,7 +422,10 @@ describe('bench runner', () => {
     })
     const records = readRecords(dir)
     expect(records.map((x) => x.lane).sort()).toEqual(['default', 'jev'])
-    expect(records.every((x) => x.score.probesPass)).toBe(true)
+    expect(
+      records.every((x) => x.score.probesPass),
+      JSON.stringify(records.map((x) => x.probes)),
+    ).toBe(true)
     expect(records.every((x) => x.tools.join(',') === 'edit,find,grep,ls,read,shell,write')).toBe(true)
     const jev = records.find((x) => x.lane === 'jev')
     expect(jev.metrics.sideCall).toBeGreaterThan(0)

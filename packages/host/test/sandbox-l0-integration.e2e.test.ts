@@ -201,10 +201,13 @@ async function assembleWithSandbox(opts: {
         ? (input) =>
             sandboxWorkspaceProbe({
               ...input,
+              // Model an implemented POSIX backend whose execution probe fails on every host.
+              platform: 'linux',
+              shell: 'posix',
               probeExec: async () => ({ code: 1, stdout: '', stderr: '', truncated: false, timedOut: false }),
             })
         : sandboxWorkspaceProbe,
-      sandboxImplementation,
+      sandboxImplementation: opts.osBoundaryUnavailable ? () => 'implemented' : sandboxImplementation,
       ...(opts.memory
         ? {
             plugins: [

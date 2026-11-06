@@ -57,6 +57,7 @@ const wait = async (predicate: () => boolean) => {
   }
 }
 function npmFixture(bin: string, fixture: string) {
+  // A trusted executable must live outside the acquisition cwd: Windows rejects workspace PATH tools.
   if (process.platform === 'win32') {
     writeFileSync(join(bin, 'fixture.cjs'), fixture)
     writeFileSync(join(bin, 'npm.cmd'), '@echo off\r\nnode "%~dp0fixture.cjs" %*\r\n')
@@ -74,7 +75,7 @@ function npmFixture(bin: string, fixture: string) {
 }
 it.each([false, true])('default npm process cancellation awaits close (ignore TERM: %s)', async (ignore) => {
   const root = temp(),
-    bin = join(root, 'bin')
+    bin = join(temp(), 'bin')
   mkdirSync(bin)
   const marker = join(root, 'ready'),
     finished = join(root, 'finished')
@@ -101,7 +102,7 @@ it.each([false, true])('default npm process cancellation awaits close (ignore TE
 })
 it('cancels an npm child and its SIGTERM-ignoring grandchild as one process group', async () => {
   const root = temp(),
-    bin = join(root, 'bin')
+    bin = join(temp(), 'bin')
   mkdirSync(bin)
   const marker = join(root, 'pids'),
     into = join(root, 'installed')

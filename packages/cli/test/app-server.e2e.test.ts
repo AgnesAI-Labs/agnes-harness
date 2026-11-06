@@ -1,17 +1,15 @@
-import { type ChildProcessWithoutNullStreams, execFile, spawn } from 'node:child_process'
+import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { createInterface } from 'node:readline'
+import { pathToFileURL } from 'node:url'
 import { promisify } from 'node:util'
 import { createConfigurationService, initializeHome } from '@agnes/host'
 import { expect, it } from 'vitest'
 
 const exec = promisify(execFile)
-const buildSelection = process.env.AGNES_NATIVE_BUILDER
-  ? { AGNES_NATIVE_BUILDER: process.env.AGNES_NATIVE_BUILDER }
-  : {}
 it('embeds JSONL on the shared daemon, streams a turn, answers approval, and leaves daemon alive on EOF', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agh-as-'))
   const distribution = join(root, 'distribution')
@@ -64,6 +62,10 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
   })
   const env = {
     PATH: process.env.PATH,
+    SystemRoot: process.env.SystemRoot,
+    PATHEXT: process.env.PATHEXT,
+    TEMP: root,
+    TMP: root,
     HOME: root,
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
@@ -71,13 +73,24 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
   }
   const cli = (args: string[]) =>
     exec(process.execPath, [entry, ...args], { env, cwd, timeout: 30_000, maxBuffer: 2 * 1024 * 1024 })
-  const children: ChildProcessWithoutNullStreams[] = []
-  const bridge = () => {
-    const child = spawn(process.execPath, [entry, 'app-server', '--stdio', '--cwd', cwd], {
-      env,
-      cwd,
-      stdio: 'pipe',
-    })
+  const children: ChildProcess[] = []
+  const bridge = (controlledSignal = false) => {
+    const child = spawn(
+      process.execPath,
+      [
+        ...(controlledSignal
+          ? ['--import', pathToFileURL(resolve('packages/cli/test/fixtures/controlled-signal.mjs')).href]
+          : []),
+        entry,
+        'app-server',
+        '--stdio',
+        '--cwd',
+        cwd,
+      ],
+      { env, cwd, stdio: ['pipe', 'pipe', 'pipe', 'ipc'] },
+    )
+    const { stdin, stdout, stderr: errorStream } = child
+    if (!stdin || !stdout || !errorStream) throw new Error('bridge pipes are unavailable')
     children.push(child)
     let serial = 0,
       stderr = ''
@@ -87,11 +100,11 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
       { resolve: (v: any) => void; reject: (e: unknown) => void; timer: ReturnType<typeof setTimeout> }
     >()
     let approval = false
-    child.stderr.on('data', (data) => {
+    errorStream.on('data', (data) => {
       stderr += String(data)
     })
-    const lines = createInterface({ input: child.stdout })
-    const send = (message: unknown) => child.stdin.write(JSON.stringify(message) + '\n')
+    const lines = createInterface({ input: stdout })
+    const send = (message: unknown) => stdin.write(JSON.stringify(message) + '\n')
     lines.on('line', (line) => {
       const message = JSON.parse(line)
       if (message.method === 'session/request_permission') {
@@ -140,7 +153,7 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
             code === 0 ? resolve() : reject(new Error('bridge exit ' + code + ': ' + stderr)),
           )
         })
-        child.stdin.end()
+        stdin.end()
         await exited
         lines.close()
       },
@@ -150,8 +163,8 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
     await exec(
       process.execPath,
       ['--import', 'tsx', resolve('packages/cli/tools/build-local.ts'), '--output-dir', distribution],
-      // Linux distribution staging refuses host-built helpers; keep CI's portable builder selection.
-      { env: { ...env, ...buildSelection }, timeout: 90_000, maxBuffer: 16 * 1024 * 1024 },
+      // Compilation needs the prepared headers/toolchain; daemon children keep the isolated env above.
+      { env: { ...process.env, ...env }, timeout: 90_000, maxBuffer: 16 * 1024 * 1024 },
     )
     await new Promise<void>((resolve, reject) => {
       provider.once('error', reject)
@@ -166,7 +179,8 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
       model: 'deepseek-flash',
       expectedRevision: 0,
     })
-    const first = bridge()
+    // The signal-control preloader must not keep a normally EOF-closed bridge alive.
+    const first = bridge(true)
     const init = {
       protocolVersion: 1,
       clientCapabilities: {
@@ -195,18 +209,27 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
     ).toBe(true)
     expect(JSON.stringify(first.events)).toContain('AGH_STDIO_APPROVED')
     await first.close()
-    const second = bridge()
+    const windows = process.platform === 'win32'
+    const second = bridge(windows)
     await second.call('initialize', init)
     expect(JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8')).pid).toBe(owner.pid)
     const list = await second.call('_agnes/v1/session.list', {})
     expect(list.items.some((item: { sessionId: string }) => item.sessionId === session.sessionId)).toBe(true)
     const signalled = new Promise<number | null>((done) => second.child.once('exit', done))
-    second.child.kill('SIGTERM')
+    if (windows) second.child.send('test:SIGTERM')
+    else second.child.kill('SIGTERM')
     expect(await signalled).toBe(143)
     expect((await cli(['daemon', 'status'])).stdout).toContain(String(owner.pid))
   } finally {
-    for (const child of children)
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    await Promise.all(
+      children.map(async (child) => {
+        if (child.exitCode !== null || child.signalCode !== null) return
+        await new Promise<void>((resolve) => {
+          child.once('close', () => resolve())
+          child.kill('SIGKILL')
+        })
+      }),
+    )
     await cli(['daemon', 'stop']).catch(() => undefined)
     provider.closeAllConnections()
     await new Promise<void>((resolve) => provider.close(() => resolve()))

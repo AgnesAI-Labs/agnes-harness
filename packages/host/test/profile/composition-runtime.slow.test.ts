@@ -1,13 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -36,6 +27,7 @@ import { defineTool } from '@agnes/plugin-runtime'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
 import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { Type } from '@sinclair/typebox'
 import { expect, it, vi } from 'vitest'
 import { assertHostPublication } from '../../src/runtime/lifecycle/host-facade.js'
@@ -450,13 +442,13 @@ it('isolates preset compositions and keeps session bundle choices immutable', as
       expect.arrayContaining([
         expect.objectContaining({
           sessionId: reader.key,
-          path: realpathSync(root),
+          path: nativeRealpathSync(root),
           preset: 'reader',
           provider: 'local',
         }),
         expect.objectContaining({
           sessionId: writer.key,
-          path: realpathSync(root),
+          path: nativeRealpathSync(root),
           preset: 'writer',
           provider: 'local',
         }),

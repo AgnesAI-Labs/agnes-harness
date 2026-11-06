@@ -12,7 +12,12 @@ import {
   resolvedConfig,
   validateManagedHttpUrl,
 } from '@agnes/resource-control-runtime'
-import { type McpSandboxContext, mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
+import {
+  type McpSandboxContext,
+  mcpConnectionBudget,
+  mcpSandboxProfile,
+  sandboxMcpConfig,
+} from './mcp-sandbox.js'
 import type { WorkerResourceBootstrapInput } from './runtime-bootstrap.js'
 import { deploymentMcpPolicy } from './skill-bootstrap.js'
 
@@ -141,31 +146,40 @@ export function createMcpServerOpener(deps: McpServerOpenerDeps): McpServerOpene
       resolver: deps.resolver,
       signal,
     })
-    const config = await sandboxMcpConfig(
-      {
-        ...resolved,
-        ...(definition.transport.kind === 'stdio'
-          ? {
-              sandboxProfile: mcpSandboxProfile(definition, deps.sandbox) as NonNullable<
-                typeof resolved.sandboxProfile
-              >,
-            }
-          : {}),
-      },
-      deps.sandbox,
-      signal,
-    )
+    const candidate = {
+      ...resolved,
+      ...(definition.transport.kind === 'stdio'
+        ? {
+            sandboxProfile: mcpSandboxProfile(definition, deps.sandbox) as NonNullable<
+              typeof resolved.sandboxProfile
+            >,
+          }
+        : {}),
+    }
+    const budget =
+      candidate.transport === 'stdio' && candidate.sandboxProfile !== 'off-with-warning'
+        ? mcpConnectionBudget(deps.connectTimeoutMs)
+        : undefined
+    const config = await sandboxMcpConfig(candidate, deps.sandbox, signal, budget)
     // Worker-local HMAC avoids persisting credentials or exposing guessable credential digests.
     const key = createHmac('sha256', salt).update(jcs({ definition, config })).digest('hex')
     return Object.freeze({
       key,
-      connect: (signal: AbortSignal) =>
-        connectMcp(config, undefined, {
+      // A prepared confined config belongs to this attempt's deadline. Keep only the numeric
+      // deadline: the pool connects immediately with its own signal, independent of this lease.
+      connect: async (signal: AbortSignal) => {
+        if (budget) signal.throwIfAborted()
+        return connectMcp(config, undefined, {
           signal,
-          ...(deps.connectTimeoutMs !== undefined ? { connectTimeoutMs: deps.connectTimeoutMs } : {}),
+          ...(budget
+            ? { connectTimeoutMs: budget.remaining() }
+            : deps.connectTimeoutMs !== undefined
+              ? { connectTimeoutMs: deps.connectTimeoutMs }
+              : {}),
           validateRedirectUrl: (url) => validateManagedHttpUrl(url, deps.httpPolicy),
           ...(authorize ? { authorize } : {}),
-        }),
+        })
+      },
     })
   }
   return Object.freeze({

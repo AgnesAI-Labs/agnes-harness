@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 
 const marker = 'packages/cli/dist/local/.e2e-build.json'
-export async function sourceHash() {
+export async function sourceHash({ platform = process.platform, arch = process.arch } = {}) {
   const files = execFileSync(
     'git',
     [
@@ -14,6 +14,7 @@ export async function sourceHash() {
       '-z',
       'packages',
       'examples',
+      'tools/e2e-web',
       'tools/build-local.ts',
       'tools/third-party-notices.mjs',
       'tools/web-style-source.mjs',
@@ -30,7 +31,7 @@ export async function sourceHash() {
     .split('\0')
     .filter(Boolean)
     .sort()
-  const hash = createHash('sha256').update(process.version).update(process.platform).update(process.arch)
+  const hash = createHash('sha256').update(process.version).update(platform).update(arch)
   for (const file of files) {
     if (/\.(test|spec)\.|\/test[s]?\//.test(file)) continue
     hash

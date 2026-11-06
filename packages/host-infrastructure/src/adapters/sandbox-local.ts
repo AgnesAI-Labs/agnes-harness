@@ -93,6 +93,7 @@ export function createLocalSandboxProvider(
           try {
             handle = await exec.openProcess([...request.argv], {
               cwd: request.cwd,
+              ...(request.stdin === undefined ? {} : { stdin: request.stdin }),
               ...(request.env || activation ? { env: { ...request.env, ...activation?.env } } : {}),
               ...(activation ? { loopbackFd: activation.fd, onExit: activation.close } : {}),
               ...(request.pty ? { pty: request.pty } : {}),

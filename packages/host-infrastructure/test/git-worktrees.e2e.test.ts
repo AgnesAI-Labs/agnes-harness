@@ -5,7 +5,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -14,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { WorkspaceInvocationView } from '@agnes/core'
 import type { WorktreeCreateResult } from '@agnes/git-worktree-contract'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   createGitWorktreeService,
@@ -31,7 +31,7 @@ afterEach(() => {
   for (const dir of directories.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 function fixture(repo = true, ignored = true) {
-  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-worktree-中文 ')))
+  const directory = nativeRealpathSync(mkdtempSync(join(tmpdir(), 'agnes-worktree-中文 ')))
   directories.push(directory)
   const root = join(directory, 'repository')
   const dataDir = join(directory, 'data')

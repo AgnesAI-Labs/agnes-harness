@@ -1,6 +1,6 @@
 import type { SeamWorkspace } from '@agnes/core'
 import { testFsPolicy } from '@agnes/core/testkit'
-import { SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
+import { SHELL_SENTINEL, SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { createSandboxSeam } from '../src/sandbox-seam.js'
 
@@ -193,4 +193,29 @@ describe('Host-bound sandbox seam over a remote workspace', () => {
       code: 'E_SANDBOX_WORKSPACE',
     })
   })
+})
+
+it('ends configured one-shot shell input without closing a persistent stdin shell', async () => {
+  const handle = {
+    enforcement: { level: 'none' as const, scope: [] },
+    exited: Promise.resolve({ code: 0 }),
+    onOutput: () => () => {},
+    write: async () => {},
+    resize: async () => {},
+    signal: async () => {},
+    close: async () => {},
+  }
+  const openProcess = vi.fn(async (_argv: readonly string[], _opts: unknown) => handle)
+  const ws = workspace({
+    shell: 'powershell',
+    shellCommand: (command) => ['powershell', '-Command', command],
+    openProcess,
+  })
+  const seam = await createSandboxSeam().forWorkspace(ws.value)
+  await seam.openProcess!({ argv: [SHELL_SENTINEL, 'exit 7'] })
+  expect(openProcess).toHaveBeenLastCalledWith(expect.any(Array), expect.objectContaining({ stdin: '' }))
+  await seam.openProcess!({ argv: [SHELL_STDIN_SENTINEL] })
+  expect(openProcess.mock.calls.at(-1)?.[1]).not.toHaveProperty('stdin')
+  await seam.openProcess!({ argv: [SHELL_SENTINEL, 'interactive'], pty: { columns: 80, rows: 24 } })
+  expect(openProcess.mock.calls.at(-1)?.[1]).not.toHaveProperty('stdin')
 })

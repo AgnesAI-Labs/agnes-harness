@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, realpath, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { expect, test } from 'vitest'
 
 test('prepares a stable external root and isolates data directories', async () => {
@@ -60,7 +60,7 @@ test.each(['after-mkdir', 'after-marker', 'after-prepared', 'before-ready'] as c
     const before = await readdir(join(documents, 'Agnes Harness'))
     const reopened = await prepareManagedChatRoot(input)
     const registered = point === 'after-prepared' || point === 'before-ready'
-    expect(before.includes(reopened.root.split('/').at(-1)!)).toBe(registered)
+    expect(before.includes(basename(reopened.root))).toBe(registered)
     expect((await readdir(join(documents, 'Agnes Harness'))).length).toBe(registered ? 1 : 2)
   },
 )
@@ -77,22 +77,25 @@ test('refuses documents overlapping a protected root without falling back', asyn
   ).rejects.toThrow()
 })
 
-test('refuses a writable-by-others managed parent without touching its files', async () => {
-  const { prepareManagedChatRoot } = await import('../src/supervisor/managed-chat-root.js')
-  const { chmod, writeFile, readdir } = await import('node:fs/promises')
-  const base = await mkdtemp(join(tmpdir(), 'managed-root-'))
-  const documents = join(base, 'docs')
-  const parent = join(documents, 'Agnes Harness')
-  await mkdir(parent, { recursive: true })
-  await chmod(parent, 0o777)
-  await writeFile(join(parent, 'stranger'), 'preserve')
-  await expect(
-    prepareManagedChatRoot({
-      dataDir: join(base, 'data'),
-      privateRoots: [],
-      documentsDirectory: async () => documents,
-    }),
-  ).rejects.toThrow()
-  expect(await readFile(join(parent, 'stranger'), 'utf8')).toBe('preserve')
-  expect(await readdir(parent)).toEqual(['stranger'])
-})
+test.skipIf(process.platform === 'win32')(
+  'refuses a POSIX writable-by-others managed parent without touching its files',
+  async () => {
+    const { prepareManagedChatRoot } = await import('../src/supervisor/managed-chat-root.js')
+    const { chmod, writeFile, readdir } = await import('node:fs/promises')
+    const base = await mkdtemp(join(tmpdir(), 'managed-root-'))
+    const documents = join(base, 'docs')
+    const parent = join(documents, 'Agnes Harness')
+    await mkdir(parent, { recursive: true })
+    await chmod(parent, 0o777)
+    await writeFile(join(parent, 'stranger'), 'preserve')
+    await expect(
+      prepareManagedChatRoot({
+        dataDir: join(base, 'data'),
+        privateRoots: [],
+        documentsDirectory: async () => documents,
+      }),
+    ).rejects.toThrow()
+    expect(await readFile(join(parent, 'stranger'), 'utf8')).toBe('preserve')
+    expect(await readdir(parent)).toEqual(['stranger'])
+  },
+)

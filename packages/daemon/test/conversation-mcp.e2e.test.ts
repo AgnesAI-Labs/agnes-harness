@@ -221,6 +221,18 @@ it('a conversation approves registration and calls the real stdio server on its 
     await vi.waitFor(() => expect(rows?.status('fixture')?.connectionState).toBe('ready'), {
       timeout: 10_000,
     })
+    // Connection readiness can precede Host publication. Finish the durable operation before
+    // the next turn captures its immutable tool snapshot.
+    await vi.waitFor(
+      async () => {
+        const journal = JSON.parse(
+          await readFile(join(root, 'resources', 'mcp', 'local-dev.mcp.json'), 'utf8'),
+        ) as { operations: { operation: { state: string } }[] }
+        expect(journal.operations.length).toBeGreaterThan(0)
+        expect(journal.operations.every(({ operation }) => operation.state === 'succeeded')).toBe(true)
+      },
+      { timeout: 10_000 },
+    )
     await session.enqueue('next-turn', {
       actor: session.d.actor,
       content: [{ type: 'text', text: 'Call its echo tool' }],
@@ -228,19 +240,6 @@ it('a conversation approves registration and calls the real stdio server on its 
     await session.run({ until: 'turn-end', signal: AbortSignal.timeout(10_000) })
     const result = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
     expect(JSON.stringify(result)).toContain('AGH_CONVERSATION_MCP_OK')
-    await vi.waitFor(
-      async () => {
-        const journal = JSON.parse(
-          await readFile(join(root, 'resources', 'mcp', 'local-dev.mcp.json'), 'utf8'),
-        ) as { operations: { operation: { state: string } }[] }
-        expect(
-          journal.operations.every(({ operation }) =>
-            ['succeeded', 'failed', 'cancelled'].includes(operation.state),
-          ),
-        ).toBe(true)
-      },
-      { timeout: 10_000 },
-    )
     await session.close()
     await h.host.applyRuntimeTarget(
       decodeRuntimeTargetArtifact(withoutPackageRows(target, '@agnes/mcp-helper')),

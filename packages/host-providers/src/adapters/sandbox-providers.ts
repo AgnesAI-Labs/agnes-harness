@@ -438,6 +438,7 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
       const handle = await selected.openProcess({
         argv,
         cwd: opts.cwd,
+        ...(opts.stdin === undefined ? {} : { stdin: opts.stdin }),
         policy,
         enforcement: actual,
         ...(opts.env ? { env: opts.env } : {}),

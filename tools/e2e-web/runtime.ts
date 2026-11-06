@@ -148,10 +148,13 @@ export async function isolatedRuntime(
     }
   const cli = (args: string[]) =>
     new Promise<string>((done, reject) => {
+      // stopDaemon already waits up to 35s (the daemon drains for 30s). Let that result settle,
+      // including CLI startup and identity checks, instead of killing its waiter after 20s.
+      const timeout = args.length === 2 && args[0] === 'daemon' && args[1] === 'stop' ? 40_000 : 20_000
       const child = execFile(
         process.execPath,
         [entry, ...args],
-        { cwd: workspace, env, timeout: 20_000, maxBuffer: 2 * 1024 * 1024 },
+        { cwd: workspace, env, timeout, maxBuffer: 2 * 1024 * 1024 },
         (error, stdout, stderr) => {
           log += `CLI ${args[0]}\n${stdout}${stderr}`
           error

@@ -5,6 +5,7 @@ import { sandboxWorkspaceProbe } from '@agnes/base'
 import type { Host, HostSession } from '@agnes/host'
 import { attachTestSeamPlugins, baseSeamFactories, seamFactories } from '@agnes/host/testkit'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { sourceTranspileCache } from '../../daemon/test/source-transpile-cache.js'
 import { parseArgs } from '../src/args.js'
 import { bootLocal, hostRootFrom } from '../src/boot/local.js'
 import { BootError, UsageError } from '../src/errors.js'
@@ -174,18 +175,17 @@ describe('bootLocal', () => {
   // own constructor already puts it in front of the message and asBootError put it there again.
   // The refusal the real path reaches today is the empty provider-route contract, which exercises
   // the same wrapping after I6 supplied the Base seam factories.
-  // The real jiti loader + real packageDirs resolution this now exercises (see the comment on the
-  // next real-path test) is genuine disk I/O and TypeScript transpilation - comfortably under the
-  // 5000ms default in isolation, but the full repo suite runs 350+ files as concurrent workers, and
-  // under that contention this test has been observed to exceed the default. It takes about 6s alone
-  // on a developer machine and has reached 31s on a hosted Ubuntu runner while four isolated workers
-  // transpile the package graph, so allow 60s for this real-path integration boundary without
-  // changing the timeout of injected unit paths.
+  // Keep the real jiti loader and packageDirs path. Like the source-worker fixtures, share only
+  // source-hash-validated transpilation entries so each isolated home does not rebuild every plugin.
+  // The profile, runtime state and refusal assertions remain independent of that cache.
   it('a host refusal carries its code exactly once', async () => {
     const dir = home()
     writeScratchProfile(dir)
     const { createHostImpl: _drop, ...deps } = testDeps(dir)
-    const e = await bootLocal(parseArgs(['-p', 'x']), deps).catch((x: unknown) => x)
+    const e = await bootLocal(parseArgs(['-p', 'x']), {
+      ...deps,
+      transpileCacheDir: sourceTranspileCache(),
+    }).catch((x: unknown) => x)
     expect((e as Error).message.match(/E_PRESET_UNRESOLVED/g)).toHaveLength(1)
   }, 60_000)
 
@@ -217,13 +217,15 @@ describe('bootLocal', () => {
   // seam factories, so the scratch profile now reaches its next honest boundary: it declares no
   // provider route. This pins where the remaining work is rather than leaving the untested branch
   // to be discovered on a first run.
-  // See the timeout comment on the previous test - same real jiti/packageDirs work, same
-  // contention-under-full-suite-parallelism reason for the explicit 30s.
+  // Reuse only the source transpilation cache, as in the previous real-loader case.
   it('without an injected host and without a loader, the real path reaches provider routing', async () => {
     const dir = home()
     writeScratchProfile(dir)
     const { createHostImpl: _drop, ...deps } = testDeps(dir)
-    const err = await bootLocal(parseArgs(['-p', 'x']), deps).catch((e: unknown) => e)
+    const err = await bootLocal(parseArgs(['-p', 'x']), {
+      ...deps,
+      transpileCacheDir: sourceTranspileCache(),
+    }).catch((e: unknown) => e)
     expect(err).toMatchObject({ name: 'BootError', code: 2 })
     expect((err as Error).message).toContain('E_PRESET_UNRESOLVED')
     expect((err as Error).message).toContain('no-routes: Configure a model account in Settings → Models')

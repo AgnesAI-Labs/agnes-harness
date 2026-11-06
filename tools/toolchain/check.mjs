@@ -37,6 +37,10 @@ export function verificationEnvironment(source = process.env) {
 export function pnpmInvocation(env = process.env) {
   if (env.npm_execpath && /[/\\]pnpm\.[cm]?js$/.test(env.npm_execpath) && existsSync(env.npm_execpath))
     return [env.npm_execpath]
+  // pnpm/action-setup exports this .bin directory, but `pnpm exec` omits npm_execpath.
+  // Reuse its installed JavaScript instead of asking a separate Corepack cache to download it.
+  const installed = env.PNPM_HOME && join(env.PNPM_HOME, '../pnpm/bin/pnpm.cjs')
+  if (installed && existsSync(installed)) return [installed]
   const bin = dirname(process.execPath)
   const corepack = [
     join(bin, '../lib/node_modules/corepack/dist/corepack.js'),
@@ -59,6 +63,7 @@ export function checkToolchain(env = process.env) {
   assertRuntime(runtime)
   const args = pnpmInvocation(env)
   const run = (...argv) => {
+    const started = performance.now()
     try {
       return execFileSync(process.execPath, [...args, ...argv], {
         cwd: root,
@@ -67,10 +72,20 @@ export function checkToolchain(env = process.env) {
         timeout: 30_000,
         stdio: ['ignore', 'pipe', 'pipe'],
       }).trim()
-    } catch {
-      // A stale Node may not even support the probe's flags. Still give the standard repair,
-      // without printing package-manager stderr that could contain private registry settings.
-      fail(`could not run ${packageManager} ${argv[0] === '--version' ? '--version' : 'test-runner probe'}`)
+    } catch (error) {
+      // Never expose stderr, message or cause: package-manager failures can contain registry secrets.
+      const facts = {
+        launcher: args.length === 1 ? 'pnpm-cli' : 'corepack',
+        code:
+          typeof error?.code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code) ? error.code : null,
+        status: Number.isInteger(error?.status) ? error.status : null,
+        signal:
+          typeof error?.signal === 'string' && /^SIG[A-Z0-9]{1,16}$/.test(error.signal) ? error.signal : null,
+        elapsedMs: Math.round(performance.now() - started),
+      }
+      fail(
+        `could not run ${packageManager} ${argv[0] === '--version' ? '--version' : 'test-runner probe'}; ${JSON.stringify(facts)}`,
+      )
     }
   }
   const actual = run('--version')

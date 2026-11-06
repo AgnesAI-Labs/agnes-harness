@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { MemorySessionWorkspaces } from '@agnes/daemon-foundation/storage/lister'
 import { expect, test } from 'vitest'
 import { openWorkspaceCatalog } from '../src/supervisor/workspace-catalog.js'
@@ -167,7 +167,7 @@ test.each(['deleted', 'tampered'] as const)(
     expect(() =>
       reopened.remove(workspaceId, prior.revision, { running: () => false, archive: () => {} }),
     ).toThrow()
-    expect(await readdir(join(documents, 'Agnes Harness'))).toEqual([root.split('/').at(-1)])
+    expect(await readdir(join(documents, 'Agnes Harness'))).toEqual([basename(root)])
     await tables.close()
   },
 )

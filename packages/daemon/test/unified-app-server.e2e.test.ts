@@ -6,19 +6,21 @@ import { fileURLToPath } from 'node:url'
 import { createConfigurationService, createPlatform, resolveProfile } from '@agnes/host'
 import { createClient, memoryJournal, wsTransport } from '@agnes/sdk'
 import { createPrivateDirectorySync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, onTestFailed, vi } from 'vitest'
 import { buildConfig } from '../src/supervisor/config.js'
 import { startProductionSupervisor } from '../src/supervisor/supervisor.js'
 import { localSdkTransport } from './local-socket-path.js'
+import { sourceTranspileCache } from './source-transpile-cache.js'
 
 const processIdentity = async (pid: number) =>
   pid === process.pid
     ? ({ state: 'alive', startId: 'unified-app-server' } as const)
     : ({ state: 'dead' } as const)
 
-const workerExits = vi.hoisted(
-  () => [] as Array<Promise<{ pid: number | undefined; code: number | null; signal: string | null }>>,
-)
+const { workerExits, workerProgress } = vi.hoisted(() => ({
+  workerExits: [] as Array<Promise<{ pid: number | undefined; code: number | null; signal: string | null }>>,
+  workerProgress: [] as Array<{ pid: number | undefined; exited: boolean }>,
+}))
 vi.mock('node:child_process', async (original) => {
   const actual = await original<typeof import('node:child_process')>()
   const spawn = new Proxy(actual.spawn, {
@@ -28,6 +30,11 @@ vi.mock('node:child_process', async (original) => {
         | import('node:child_process').SpawnOptions
         | undefined
       if (options?.env?.AGNES_WORKER_TOKEN) {
+        const progress = { pid: child.pid, exited: false }
+        workerProgress.push(progress)
+        child.once('exit', () => {
+          progress.exited = true
+        })
         workerExits.push(
           new Promise((resolve) =>
             child.once('exit', (code, signal) => resolve({ pid: child.pid, code, signal })),
@@ -50,13 +57,23 @@ afterEach(async () => {
 
 // One shared Worker serves every live session; daemon restart starts its replacement. Each one
 // assembles the production package graph from TypeScript source before it says hello, which takes
-// about 30 s on a loaded hosted runner, so widen the startup window (and the SDK request budget
-// that can wait on it) beyond that, and allow both generations plus fixture/RPC cleanup.
+// about 30 s on a loaded hosted runner. The SDK request and history-load idle budgets must both
+// cover that startup window; allow both generations plus fixture/RPC cleanup.
 const sourceWorkerStartupMs = 90_000
 const integrationTimeoutMs = sourceWorkerStartupMs * 2 + 10_000
 it(
   'Web saves one profile, CLI executes it, both retain history after daemon restart',
   async () => {
+    const started = performance.now()
+    const phases: Array<{ name: string; elapsedMs: number }> = []
+    const stage = (name: string) => phases.push({ name, elapsedMs: Math.round(performance.now() - started) })
+    workerProgress.length = 0
+    onTestFailed(() => {
+      process.stderr.write(
+        `unified fixture progress ${JSON.stringify({ phases, workers: workerProgress })}\n`,
+      )
+    })
+    stage('fixture')
     const fixtureRoot = await mkdtemp(join(tmpdir(), 'au-'))
     const home = join(fixtureRoot, 'home')
     createPrivateDirectorySync(home)
@@ -108,7 +125,7 @@ it(
     if (!address || typeof address === 'string') throw new Error('missing provider address')
     const baseUrl = `http://127.0.0.1:${address.port}/v1`
     const configuration = createConfigurationService({ home, profile: 'local-dev' })
-    const userBase = { name: 'local-dev', dataDir: data, cacheDir: join(home, 'cache') }
+    const userBase = { name: 'local-dev', dataDir: data, cacheDir: sourceTranspileCache() }
     // The built-in payload-only adapter's route, declared before the saved accounts' routes.
     const jevRoute = {
       route: 'jev',
@@ -176,13 +193,15 @@ it(
     let daemon: Awaited<ReturnType<typeof start>> | undefined
     const clients: ReturnType<typeof createClient>[] = []
     try {
+      stage('daemon.start')
       daemon = await start()
+      stage('daemon.started')
       const ws = daemon.ws
       if (!ws) throw new Error('no Web listener')
       const web = createClient({
         journal: memoryJournal('web-setup'),
         auth: { kind: 'local' },
-        timeouts: { request: sourceWorkerStartupMs },
+        timeouts: { request: sourceWorkerStartupMs, loadIdle: sourceWorkerStartupMs },
         transportFactories: {
           ws: (option) =>
             wsTransport({ ...option, url: ws.url, headers: { Origin: 'http://127.0.0.1:4180' } }),
@@ -192,10 +211,11 @@ it(
       const cli = createClient({
         journal: memoryJournal('cli-shared'),
         auth: { kind: 'local' },
-        timeouts: { request: sourceWorkerStartupMs },
+        timeouts: { request: sourceWorkerStartupMs, loadIdle: sourceWorkerStartupMs },
         transport: localSdkTransport(daemon.socketPath),
       })
       clients.push(web, cli)
+      stage('config')
       expect(await web.config.get()).toMatchObject({ configured: false, revision: 0 })
       await expect(
         web.config.test({ providerId: 'deepseek', baseUrl, apiKey: 'wrong-key' }),
@@ -220,7 +240,9 @@ it(
       expect(saved).toMatchObject({ configured: true, effect: 'new-sessions' })
       expect(await cli.config.get()).toEqual(saved)
       expect(JSON.stringify(saved)).not.toContain('fixture-key')
+      stage('first-session.new')
       const session = await cli.session.new({ cwd: work })
+      stage('first-session.prompt')
       expect((await session.prompt('Say hello.')).reason).toBe('completed')
       expect(requests).toContainEqual({
         model: 'deepseek-flash',
@@ -232,10 +254,12 @@ it(
         preset: 'standard',
         permission: 'workspace-write',
       })
+      stage('same-session.load')
       const same = await web.session.load(session.id, { cwd: work })
       expect(JSON.stringify(await same.projectUI(undefined, { surface: 'web' }))).toContain(
         'Shared daemon works.',
       )
+      stage('hot-update.gate')
       const inflight = session.prompt('HOT_UPDATE_GATE')
       // Wait for the gated request itself rather than polling for it under a fixed deadline: on a
       // loaded runner the prompt can take longer than a poll allows to reach the provider. A prompt
@@ -246,6 +270,7 @@ it(
           throw new Error(`the gated prompt settled before its request was held: ${result.reason}`)
         }),
       ])
+      stage('hot-update.save')
       const replacement = await web.config.save({
         providerId: 'deepseek',
         baseUrl,
@@ -269,6 +294,7 @@ it(
       ).rejects.toBeDefined()
       expect(await cli.config.get()).toEqual(replacement)
       availableModels = ['deepseek-flash', 'deepseek-v4-pro']
+      stage('hot-account.save')
       const added = await web.config.save({
         accountId: 'hot-added',
         providerId: 'deepseek',
@@ -285,6 +311,7 @@ it(
       // The profile declares the built-in payload-only route first; no model list offers it, and the
       // slots a preset leaves at `default` still land on the saved account (the prompts above ran).
       expect(listedModels?.some((model) => model.route === 'jev')).toBe(false)
+      stage('hot-model.set')
       await same.setModel({ slot: 'primary', route: 'account-hot-added', model: 'deepseek-v4-pro' })
       expect((await same.prompt('Use the hot-added model.')).reason).toBe('completed')
       expect(requests.at(-1)).toMatchObject({
@@ -292,12 +319,14 @@ it(
         path: '/v2/chat/completions',
         authorization: 'Bearer replacement-key',
       })
+      stage('default-account.change')
       const changedDefault = await web.config.account({
         accountId: 'hot-added',
         action: 'default',
         expectedRevision: added.revision,
       })
       expect(changedDefault.effect).toBe('new-sessions')
+      stage('default-session.new')
       const newDefault = await cli.session.new({
         cwd: work,
         sessionKey: 'agnes:local:local-dev:cli:dm:hot-default',
@@ -325,6 +354,7 @@ it(
         same.setModel({ slot: 'primary', route: 'account-hot-added', model: 'deepseek-v4-pro' }),
       ).rejects.toBeDefined()
       await same.setModel({ slot: 'primary', route: saved.provider.route, model: 'deepseek-flash' })
+      stage('replacement-session.new')
       const fresh = await cli.session.new({
         cwd: work,
         sessionKey: 'agnes:local:local-dev:cli:dm:replacement-profile',
@@ -335,41 +365,56 @@ it(
       expect((await session.prompt('Once more.')).reason).toBe('completed')
       expect(requests.at(-1)?.authorization).toBe('Bearer replacement-key')
       await cli.close()
+      stage('daemon.stop')
       await daemon.close()
+      stage('daemon.stopped')
       daemon = undefined
+      stage('daemon.restart')
       daemon = await start()
+      stage('daemon.restarted')
       // The saved configuration restarts the daemon on its file-backed secret store; the prompt after
       // the restart below authenticates with the replacement key read back from that store.
       const restored = createClient({
         journal: memoryJournal(),
         auth: { kind: 'local' },
-        timeouts: { request: sourceWorkerStartupMs },
+        timeouts: { request: sourceWorkerStartupMs, loadIdle: sourceWorkerStartupMs },
         transport: localSdkTransport(daemon.socketPath),
       })
       clients.push(restored)
       expect((await restored.session.list({})).items.some((item) => item.sessionId === session.id)).toBe(true)
       // A Web history reader knows only the durable session id after restart. The daemon must recover
       // its immutable workspace binding instead of treating the required ACP empty cwd as a new root.
+      stage('history.default.load')
       const unavailable = await restored.session.load(newDefault.id)
+      stage('history.default.reject-removed-model')
       await expect(
         unavailable.setModel({ slot: 'primary', route: 'account-hot-added', model: 'deepseek-v4-pro' }),
       ).rejects.toBeDefined()
+      stage('history.default.set-available-model')
       await unavailable.setModel({ slot: 'primary', route: saved.provider.route, model: 'deepseek-flash' })
+      stage('history.default.prompt')
       expect((await unavailable.prompt('Continue after replacing removed model.')).reason).toBe('completed')
+      stage('history.original.load')
       const loaded = await restored.session.load(session.id)
       expect(JSON.stringify(await loaded.projectUI(undefined, { surface: 'web' }))).toContain(
         'Shared daemon works.',
       )
+      stage('history.original.prompt')
       expect((await loaded.prompt('After restart.')).reason).toBe('completed')
       expect(requests.at(-1)?.authorization).toBe('Bearer replacement-key')
     } finally {
+      stage('cleanup.clients')
       releaseRequest()
       await Promise.all(clients.map((client) => client.close()))
+      stage('cleanup.daemon')
       await daemon?.close()
+      stage('cleanup.upstream')
       await new Promise<void>((resolve, reject) =>
         upstream.close((error) => (error ? reject(error) : resolve())),
       )
+      stage('cleanup.files')
       await rm(fixtureRoot, { recursive: true, force: true })
+      stage('cleanup.done')
     }
   },
   integrationTimeoutMs,
