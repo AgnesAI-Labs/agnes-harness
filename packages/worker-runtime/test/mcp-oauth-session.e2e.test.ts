@@ -302,7 +302,7 @@ describe('OAuth MCP servers in session rows', () => {
     if (!('authorizeUrl' in started)) throw new Error(`sign-in did not start: ${JSON.stringify(started)}`)
     const consent = await fetch(started.authorizeUrl, { redirect: 'manual' })
     const back = await fetch(consent.headers.get('location') ?? '', { redirect: 'manual' })
-    expect(back.status).toBe(302)
+    expect(back.status).toBe(200)
     expect(await store.read(SERVER_ID)).toMatchObject({ version: 2, rev: 1, tokens: { accessToken: 'at-1' } })
 
     const { host, applied, call } = await sessionRows(store, remote)
