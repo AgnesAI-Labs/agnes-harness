@@ -1,16 +1,12 @@
 import { randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { exchangeAuthorization, startAuthorization } from '@modelcontextprotocol/sdk/client/auth.js'
-import type {
-  AuthorizationServerMetadata,
-  OAuthClientInformation,
-} from '@modelcontextprotocol/sdk/shared/auth.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
-  registerOAuthClient,
-  resolveAuthorizationServerUrl,
-  tryDiscoverAuthorizationServerMetadata,
-} from './oauth-client.js'
+  beginMcpOAuthLogin,
+  type McpOAuthCompleteParams,
+  McpOAuthDiscoveryFailed,
+  type McpOAuthSummary,
+} from './mcp-oauth-login.js'
 import { claimOAuthNonce, openOAuthState, sealOAuthState } from './oauth-state.js'
 
 /**
@@ -22,7 +18,9 @@ import { claimOAuthNonce, openOAuthState, sealOAuthState } from './oauth-state.j
  * `onAuthorizationStatus`) so this handler can be unit-tested against a fake and reused by whichever
  * process actually owns that state (see the two type doc comments below for exactly why).
  *
- * `resolveServer` supplies the target URL and optional static client ID. Authorization status
+ * `resolveServer` supplies the target URL and optional static client ID. `login` reads the sign-in
+ * summary and completes a sign-in: the authorization code is exchanged by whoever implements it
+ * (the daemon), never here, so a static client secret never reaches this process. Authorization status
  * belongs to the daemon's single-writer resource-control journal; the launcher must report through
  * `_agnes/v1/mcp.servers.oauth.status.set` rather than write that journal from another process.
  * The injected `onAuthorizationStatus` hook stays optional for callers without a daemon connection.
@@ -64,30 +62,16 @@ export type OAuthStartResult =
  * of failure for the browser sitting on the other end of the redirect. */
 export type OnOAuthAuthorizationStatus = (serverId: string, status: OAuthAuthorizationStatus) => Promise<void>
 
-/** Exactly the shape `packages/host-infrastructure/src/adapters/credential-store.ts`'s `OAuthCredential` requires
- * for `CredentialStore.putOAuth`. Deliberately NOT importing that type from `@agnes/host` - this
- * package (`resource-control-runtime`) has no dependency on `@agnes/host` today, and adding one just
- * to name a type would be a needless new package edge for a shape any structurally-compatible object
- * already satisfies (the same decoupling `oauth-client.ts`'s own `OAuthCredential` already
- * establishes for the same reason - see that file's doc comment). */
-export type OAuthStoredCredential = Readonly<{
-  provider: string
-  accessToken: string
-  refreshToken: string
-  expiresAt: number
-  scope: readonly string[]
-  grantId: string
-}>
-
-/** Structural subset of `CredentialStore` (only the one method this handler calls). */
-export type OAuthCredentialStoreWriter = Readonly<{
-  putOAuth(ref: string, value: OAuthStoredCredential): Promise<void>
+/** Sign-in summary and completion, both owned by the daemon. */
+export type OAuthLoginOwner = Readonly<{
+  get(serverId: string): Promise<McpOAuthSummary>
+  complete(params: McpOAuthCompleteParams): Promise<void>
 }>
 
 export type CreateOAuthHttpHandlerOptions = Readonly<{
   /** HMAC secret for `sealOAuthState`/`openOAuthState` - see oauth-state.ts. */
   secret: string
-  credentialStore: OAuthCredentialStoreWriter
+  login: OAuthLoginOwner
   /** This process's own externally-reachable origin (e.g. `http://127.0.0.1:4177`), used to build
    * `redirect_uri` and the post-callback redirect back to the Web UI. */
   baseUrl: URL
@@ -105,21 +89,14 @@ export type CreateOAuthHttpHandlerOptions = Readonly<{
    * human-interactive waits), short enough that an abandoned flow does not sit in memory
    * indefinitely. */
   stateTtlMs?: number
-  /** Bounds every network call this handler makes to an authorization server (discovery,
-   * registration, token exchange) - matches the order of magnitude of
-   * `packages/base/src/mcp/connect.ts`'s `DEFAULT_MCP_CONNECT_TIMEOUT_MS`
-   * (10s) for the same reason: a slow or malicious remote endpoint must not be able to hang this
-   * handler (and, transitively, the single-threaded Node HTTP server it runs inside of)
-   * indefinitely. */
-  requestTimeoutMs?: number
 }>
 
 const DEFAULT_STATE_TTL_MS = 10 * 60_000
-const DEFAULT_REQUEST_TIMEOUT_MS = 10_000
 const ROUTE = /^\/oauth\/([^/]+)\/(start|callback)$/
 const SERVER_ID_PATTERN = /^[a-z][a-z0-9._-]{0,127}$/
 const INVALID_STATE_BODY = JSON.stringify({ error: { code: 'invalid_oauth_state' } })
 
+/** A registered client's secret stays in this process's memory; it never travels in `state`. */
 type PendingRegistration = Readonly<{
   clientId: string
   clientSecret?: string
@@ -138,11 +115,10 @@ export function credentialRefFor(serverId: string): string {
 }
 
 /**
- * Exported so `mcp-oauth-credentials.ts`'s
- * `refreshAuthorization` call gets the identical timeout + `redirect: 'error'` guard as every other
- * SDK network call in this OAuth flow, instead of risking a second, independently-written (and
- * possibly subtly different) copy of this security-reviewed wrapper - see the SHARP EDGE comment at
- * this function's call site below for why that specific risk is not hypothetical here.
+ * The one timeout + `redirect: 'error'` guard for every OAuth network call (discovery,
+ * registration, code exchange, refresh). Every SDK call that accepts a `fetchFn`/`fetchImpl` must
+ * receive a fetch wrapped by this; the option is easy to forget on a new call, and leaving it out
+ * exempts that request from both protections.
  */
 export function withTimeout(fetchImpl: FetchLike | undefined, timeoutMs: number): FetchLike {
   const base = fetchImpl ?? fetch
@@ -150,10 +126,8 @@ export function withTimeout(fetchImpl: FetchLike | undefined, timeoutMs: number)
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      // `redirect: 'error'` (found by independent security review): every fetch this handler makes
-      // (PRM discovery, RFC 8414 discovery, DCR registration, token exchange - see the "SHARP EDGE"
-      // checklist comment where this function is called from, which is what actually keeps this
-      // list true; this doc comment describing the intent is not itself what enforces it) targets a
+      // `redirect: 'error'` (found by independent security review): every OAuth fetch (PRM
+      // discovery, RFC 8414 discovery, DCR registration, token exchange) targets a
       // URL that has already been validated (see oauth-client.ts's SSRF guards), but a redirect response's own
       // `Location` header is not itself something that validation ever inspects - a compromised or
       // malicious endpoint could otherwise 30x this daemon-side request to an arbitrary internal host
@@ -273,40 +247,15 @@ export type OAuthHttpHandler = ((request: IncomingMessage, response: ServerRespo
 export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAuthHttpHandler {
   const now = opts.now ?? (() => Date.now())
   const stateTtlMs = opts.stateTtlMs ?? DEFAULT_STATE_TTL_MS
-  const requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-  // SHARP EDGE (found the hard way by independent security review, second round: `handleCallback`'s
-  // `exchangeAuthorization` call below was missing `fetchFn: fetchImpl` entirely, silently exempting
-  // the single most sensitive request in this whole flow - the POST carrying the authorization code,
-  // PKCE `code_verifier` and any client secret - from both the timeout and the redirect:'error' guard
-  // this wrapper exists to provide). Every SDK function call in this file (and in oauth-client.ts,
-  // which this file calls into) that accepts a `fetchFn`/`fetchImpl` option MUST receive this exact
-  // value - there is no central client/transport object here the way
-  // `packages/base/src/mcp/connect.ts` injects `policedHttpFetch` into once for
-  // every request a transport issues; each SDK call is independent and the option is easy to forget
-  // on a new one. Current checklist (recheck this comment if you add a new SDK call): oauth-client.ts's
-  // `resolveAuthorizationServerUrl`/`tryDiscoverAuthorizationServerMetadata`/`registerOAuthClient`
-  // (all take `fetchImpl` as a parameter, already threaded through from here) and this file's own
-  // `exchangeAuthorization` call in `handleCallback`. `startAuthorization` is the one exception - its
-  // signature has no `fetchFn` option at all, because it never fetches anything (pure PKCE generation
-  // + URL construction) - omitting it there is correct, not a second instance of this bug.
-  //
-  // `mcp-oauth-credentials.ts` (worker-side lazy token refresh - a separate process
-  // from this handler) makes its own independent `resolveAuthorizationServerUrl`/
-  // `tryDiscoverAuthorizationServerMetadata`/`refreshAuthorization` calls and needs this exact same
-  // discipline extended to that call site. It does not reuse this closure's `fetchImpl` value
-  // (different process, no shared memory) - it builds its own via the `withTimeout` export above,
-  // the same function, not a parallel reimplementation.
-  const fetchImpl = withTimeout(opts.fetchImpl, requestTimeoutMs)
+  // Every network call (discovery, registration) goes through `beginMcpOAuthLogin`, which wraps
+  // this in `withTimeout` (10 s, `redirect: 'error'`). The token request is made by `login.complete`
+  // in the daemon, under the same guard.
+  const fetchImpl: FetchLike = opts.fetchImpl ?? fetch
 
-  // Bridges `start` -> `callback` within this one process's lifetime: the client_id/secret a real
-  // Dynamic Client Registration call resolves at `start` time MUST be the exact same one used to
-  // exchange the code at `callback` time (the authorization code is bound server-side to the
-  // client_id that requested it), so it cannot simply be re-derived by calling
-  // `registerOAuthClient` a second time at callback - for a DCR-backed server that would register a
-  // *second*, different client and the token exchange would be rejected. This is a parallel,
-  // equally single-process-scoped in-memory map alongside oauth-state.ts's own `claimedNonces`, not
-  // a new persistence layer - same lifetime, same "does not survive a daemon restart" scoping
-  // already documented there, keyed by the same nonce.
+  // Bridges `start` -> `callback` within this one process's lifetime: a dynamically registered
+  // client's secret must reach the code exchange, but must not travel through the browser inside
+  // `state`. Same lifetime as oauth-state.ts's own `claimedNonces`, keyed by the same nonce; a
+  // missing entry at callback time means this process restarted in between.
   const pendingRegistrations = new Map<string, PendingRegistration>()
 
   function sweepExpiredRegistrations(nowMs: number): void {
@@ -323,14 +272,6 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
     }
   }
 
-  async function discover(
-    serverUrl: URL,
-  ): Promise<{ authorizationServerUrl: URL; metadata: AuthorizationServerMetadata | undefined }> {
-    const authorizationServerUrl = await resolveAuthorizationServerUrl(serverUrl, fetchImpl)
-    const metadata = await tryDiscoverAuthorizationServerMetadata(authorizationServerUrl, fetchImpl)
-    return { authorizationServerUrl, metadata }
-  }
-
   type BeginAuthorizationResult =
     | Readonly<{ kind: 'not_found' }>
     | Readonly<{ kind: 'discovery_failed' }>
@@ -338,14 +279,10 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
     | Readonly<{ kind: 'authorization_start_failed' }>
     | Readonly<{ kind: 'ok'; authorizationUrl: URL }>
 
-  /** The one place "generate PKCE + sign state + get an authorization URL" happens - shared, not
-   * duplicated, between `handleStart` (HTTP `GET /start`, 302s to the result) and
-   * `startAuthorization` (JSON capability, below). Every SDK network call it makes
-   * (resolveAuthorizationServerUrl/tryDiscoverAuthorizationServerMetadata/registerOAuthClient/
-   * startAuthorization) goes through the same guarded `fetchImpl` this closure built above - see the
-   * SHARP EDGE checklist comment there; because both callers below route through this one function,
-   * there is exactly one call site to keep that checklist honest for, not two that could quietly
-   * drift apart. */
+  /** The one place a sign-in starts - shared, not duplicated, between `handleStart` (HTTP
+   * `GET /start`, 302s to the result) and `startAuthorization` (JSON capability, below). The
+   * request itself (client, scope, resource, PKCE) is built by `beginMcpOAuthLogin`; this adds the
+   * signed `state` that carries what the callback must hand back to `login.complete`. */
   async function beginAuthorization(
     serverId: string,
     returnTo: string | undefined,
@@ -355,45 +292,27 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
 
     const redirectUri = new URL(`/oauth/${serverId}/callback`, opts.baseUrl).toString()
 
-    let authorizationServerUrl: URL
-    let metadata: AuthorizationServerMetadata | undefined
+    let started: Awaited<ReturnType<typeof beginMcpOAuthLogin>>
     try {
-      ;({ authorizationServerUrl, metadata } = await discover(info.serverUrl))
-    } catch {
-      return { kind: 'discovery_failed' }
-    }
-
-    const registration = await registerOAuthClient(info.serverUrl, {
-      ...(info.staticClientId ? { staticClientId: info.staticClientId } : {}),
-      redirectUri,
-      fetchImpl,
-    })
-    if ('pendingClientId' in registration) return { kind: 'pending_client_id' }
-
-    const clientInformation: OAuthClientInformation = {
-      client_id: registration.clientId,
-      ...(registration.clientSecret ? { client_secret: registration.clientSecret } : {}),
-    }
-
-    let started: { authorizationUrl: URL; codeVerifier: string }
-    try {
-      // startAuthorization() is the SDK's own PKCE generator (an S256 code_verifier/code_challenge
-      // pair via its internal pkceChallenge()) - reused here rather than hand-rolled with
-      // node:crypto directly, per the plan's explicit instruction to check for an SDK helper first.
-      // It also refuses a server that advertises code_challenge_methods_supported without S256 in
-      // it, so PKCE can never be silently downgraded away (design §1.3's hard requirement).
-      started = await startAuthorization(authorizationServerUrl, {
-        ...(metadata ? { metadata } : {}),
-        clientInformation,
-        redirectUrl: redirectUri,
+      started = await beginMcpOAuthLogin({
+        serverId,
+        serverUrl: info.serverUrl,
+        ...(info.staticClientId ? { staticClientId: info.staticClientId } : {}),
+        summary: await opts.login.get(serverId),
+        redirectUri,
+        fetchImpl,
       })
-    } catch {
-      return { kind: 'authorization_start_failed' }
+    } catch (error) {
+      return {
+        kind: error instanceof McpOAuthDiscoveryFailed ? 'discovery_failed' : 'authorization_start_failed',
+      }
     }
+    if ('pendingClientId' in started) return { kind: 'pending_client_id' }
 
     const nowMs = now()
     sweepExpiredRegistrations(nowMs)
     const nonce = randomBytes(16).toString('hex')
+    const { clientSecret, ...client } = started.client
     const sealed = await sealOAuthState(
       {
         serverId,
@@ -401,13 +320,16 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
         codeVerifier: started.codeVerifier,
         nonce,
         issuedAt: nowMs,
+        expectedEpoch: started.expectedEpoch,
+        client,
+        requestedScope: [...started.requestedScope],
         ...(returnTo ? { returnTo } : {}),
       },
       { secret: opts.secret },
     )
     pendingRegistrations.set(nonce, {
-      clientId: registration.clientId,
-      ...(registration.clientSecret ? { clientSecret: registration.clientSecret } : {}),
+      clientId: client.clientId,
+      ...(clientSecret ? { clientSecret } : {}),
       expiresAt: nowMs + stateTtlMs,
     })
 
@@ -464,9 +386,9 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
     const codeParam = requestUrl.searchParams.get('code')
     const errorParam = requestUrl.searchParams.get('error')
 
-    // Every rejection from here down happens before `credentialStore.putOAuth` or
-    // `exchangeAuthorization` is ever reached - a tampered, expired, mismatched or replayed state
-    // must be rejected before the authorization code (if any) is used for anything at all.
+    // Every rejection from here down happens before `login.complete` is ever reached - a tampered,
+    // expired, mismatched or replayed state must be rejected before the authorization code (if any)
+    // is used for anything at all.
     if (!stateParam) return invalidState(response)
 
     let payload: Awaited<ReturnType<typeof openOAuthState>>
@@ -486,93 +408,28 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
     pendingRegistrations.delete(payload.nonce)
     const returnUrl = safeReturnTo(payload.returnTo, opts.baseUrl)
 
-    if (!pending) {
-      // Nonce genuinely claimed for the first time, yet no matching registration bookkeeping - the
-      // only realistic cause is this process having restarted between start and callback (both the
-      // nonce table and this map are process-lifetime only, by design - see oauth-state.ts).
+    // No bookkeeping for a genuinely first-claimed nonce: this process restarted between start and
+    // callback (both the nonce table and this map are process-lifetime only, by design). An error
+    // from the authorization server (or the user declining consent) or a missing code: never try
+    // an exchange.
+    if (!pending || pending.clientId !== payload.client.clientId || errorParam || !codeParam) {
       await markStatus(serverId, 'error')
       return redirect(response, returnUrl)
     }
 
-    if (errorParam) {
-      // The authorization server (or the user, declining consent) reported a failure - never
-      // attempt a token exchange for this state.
-      await markStatus(serverId, 'error')
-      return redirect(response, returnUrl)
-    }
-    if (!codeParam) {
-      await markStatus(serverId, 'error')
-      return redirect(response, returnUrl)
-    }
-
-    const info = await opts.resolveServer(serverId)
-    if (!info) {
-      await markStatus(serverId, 'error')
-      return redirect(response, returnUrl)
-    }
-
-    let authorizationServerUrl: URL
-    let metadata: AuthorizationServerMetadata | undefined
     try {
-      ;({ authorizationServerUrl, metadata } = await discover(info.serverUrl))
-    } catch {
-      await markStatus(serverId, 'error')
-      return redirect(response, returnUrl)
-    }
-
-    const clientInformation: OAuthClientInformation = {
-      client_id: pending.clientId,
-      ...(pending.clientSecret ? { client_secret: pending.clientSecret } : {}),
-    }
-
-    let tokens: Awaited<ReturnType<typeof exchangeAuthorization>>
-    try {
-      tokens = await exchangeAuthorization(authorizationServerUrl, {
-        ...(metadata ? { metadata } : {}),
-        clientInformation,
-        authorizationCode: codeParam,
+      await opts.login.complete({
+        serverId,
+        expectedEpoch: payload.expectedEpoch,
+        code: codeParam,
         codeVerifier: payload.codeVerifier,
         redirectUri: payload.redirectUri,
-        // Found missing by independent security review, second round: without this, the SDK's
-        // executeTokenRequest() falls back to raw global fetch - no timeout, and (critically)
-        // fetch's own default redirect:'follow', silently exempting the single most sensitive
-        // request in this whole flow (the POST carrying the authorization code, PKCE
-        // code_verifier and any client secret) from both protections withTimeout exists to
-        // provide. `fetchImpl` is never undefined here (see its declaration above), so this can
-        // be assigned directly rather than needing the conditional-spread dance the DCR call
-        // above uses for its optional metadata field.
-        fetchFn: fetchImpl,
+        client: {
+          ...payload.client,
+          ...(pending.clientSecret ? { clientSecret: pending.clientSecret } : {}),
+        },
+        requestedScope: payload.requestedScope,
       })
-    } catch {
-      await markStatus(serverId, 'error')
-      return redirect(response, returnUrl)
-    }
-
-    // OAuth 2.1 allows a token response to omit `refresh_token` (RFC 6749 §5.1 makes it optional),
-    // but `credential-store.ts`'s existing, untouched `isOAuthInput` schema requires both
-    // `refreshToken` and `expiresAt` to be present - see design §3.5's explicit decision to treat
-    // this as a hard failure (not silently degrade the stored shape or fabricate a value) rather
-    // than weaken that shared, already-tested validation.
-    if (!tokens.refresh_token || tokens.expires_in === undefined) {
-      await markStatus(serverId, 'error')
-      return redirect(response, returnUrl)
-    }
-
-    const scope = (tokens.scope ?? '').split(/\s+/).filter((value) => value.length > 0)
-    const credential: OAuthStoredCredential = {
-      provider: 'mcp-oauth',
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      expiresAt: now() + tokens.expires_in * 1000,
-      scope,
-      // No provider-issued grant identifier is available from a standard RFC 6749 token response;
-      // the serverId is a stable, human-legible, always-available substitute (the credentialRef
-      // already encodes it too, so this is redundant-but-harmless, never misleading).
-      grantId: serverId,
-    }
-
-    try {
-      await opts.credentialStore.putOAuth(credentialRefFor(serverId), credential)
     } catch {
       await markStatus(serverId, 'error')
       return redirect(response, returnUrl)

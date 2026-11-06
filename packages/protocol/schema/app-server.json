@@ -2718,52 +2718,164 @@
       "required": ["active", "text"],
       "additionalProperties": false
     },
-    "AdminMcpOAuthSave": {
+    "AdminMcpOAuthGet": {
       "type": "object",
       "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+        }
+      },
+      "required": ["profile", "serverId"],
+      "additionalProperties": false
+    },
+    "AdminMcpOAuthSummary": {
+      "type": "object",
+      "properties": {
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "signedIn": {
+          "type": "boolean"
+        },
+        "refreshable": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+          },
+          "maxItems": 128
+        },
+        "requiredScope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+          },
+          "maxItems": 128
+        },
+        "client": {
+          "type": "object",
+          "properties": {
+            "clientId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "redirectUri": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          },
+          "required": ["clientId", "redirectUri"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["epoch", "signedIn", "refreshable", "scope", "requiredScope"],
+      "additionalProperties": false
+    },
+    "AdminMcpOAuthComplete": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+        },
         "serverId": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[a-z][a-z0-9._-]{0,127}$"
         },
-        "credential": {
+        "expectedEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "codeVerifier": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._~-]+$"
+        },
+        "redirectUri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "client": {
           "type": "object",
           "properties": {
-            "provider": {
+            "clientId": {
               "type": "string",
-              "maxLength": 4096
-            },
-            "accessToken": {
-              "type": "string",
-              "maxLength": 65536
-            },
-            "refreshToken": {
-              "type": "string",
-              "maxLength": 65536
-            },
-            "expiresAt": {
-              "type": "number",
-              "minimum": 0
-            },
-            "scope": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "maxLength": 1024
-              },
-              "maxItems": 128
-            },
-            "grantId": {
-              "type": "string",
+              "minLength": 1,
               "maxLength": 512
+            },
+            "clientSecret": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536
+            },
+            "tokenEndpointAuthMethod": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           },
-          "required": ["provider", "accessToken", "refreshToken", "expiresAt", "scope", "grantId"],
+          "required": ["clientId"],
           "additionalProperties": false
+        },
+        "requestedScope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+          },
+          "maxItems": 128
         }
       },
-      "required": ["serverId", "credential"],
+      "required": [
+        "profile",
+        "serverId",
+        "expectedEpoch",
+        "code",
+        "codeVerifier",
+        "redirectUri",
+        "client",
+        "requestedScope"
+      ],
       "additionalProperties": false
     },
     "DoctorParams": {
@@ -3912,8 +4024,12 @@
       "params": "AdminPlanParams",
       "result": "AdminPlanResult"
     },
-    "_agnes/v1/admin.mcp.oauth.save": {
-      "params": "AdminMcpOAuthSave",
+    "_agnes/v1/admin.mcp.oauth.get": {
+      "params": "AdminMcpOAuthGet",
+      "result": "AdminMcpOAuthSummary"
+    },
+    "_agnes/v1/admin.mcp.oauth.complete": {
+      "params": "AdminMcpOAuthComplete",
       "result": "AdminEmpty"
     },
     "_agnes/v1/doctor.run": {

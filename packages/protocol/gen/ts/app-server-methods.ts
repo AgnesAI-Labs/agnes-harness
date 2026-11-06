@@ -16,7 +16,8 @@ export interface AppServerMethods {
   "_agnes/v1/admin.context": { params: Static<typeof import("./app-server.js").AdminContextParams>; result: Static<typeof import("./app-server.js").AdminContextResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.history.search": { params: Static<typeof import("./app-server.js").AdminHistoryParams>; result: Static<typeof import("./app-server.js").AdminHistoryResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.plan": { params: Static<typeof import("./app-server.js").AdminPlanParams>; result: Static<typeof import("./app-server.js").AdminPlanResult>; direction: "c2s"; kind: "request" }
-  "_agnes/v1/admin.mcp.oauth.save": { params: Static<typeof import("./app-server.js").AdminMcpOAuthSave>; result: Static<typeof import("./app-server.js").AdminEmpty>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.mcp.oauth.get": { params: Static<typeof import("./app-server.js").AdminMcpOAuthGet>; result: Static<typeof import("./app-server.js").AdminMcpOAuthSummary>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/admin.mcp.oauth.complete": { params: Static<typeof import("./app-server.js").AdminMcpOAuthComplete>; result: Static<typeof import("./app-server.js").AdminEmpty>; direction: "c2s"; kind: "request" }
   "_agnes/v1/doctor.run": { params: Static<typeof import("./app-server.js").DoctorParams>; result: Static<typeof import("./app-server.js").DoctorResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.memory": { params: Static<typeof import("./app-server.js").AdminMemoryParams>; result: Static<typeof import("./app-server.js").AdminMemoryResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.observability": { params: Static<typeof import("./app-server.js").AdminObservabilityParams>; result: Static<typeof import("./app-server.js").AdminObservabilityResult>; direction: "c2s"; kind: "request" }

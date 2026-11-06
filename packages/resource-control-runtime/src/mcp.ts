@@ -94,8 +94,7 @@ export type McpCredentialResolver = (ref: string, signal: AbortSignal) => Promis
  * with a structural
  * counterpart of `packages/host-infrastructure/src/adapters/credential-store.ts`'s `OAuthCredential`, deliberately
  * NOT imported from `@agnes/host` -- this package has no dependency on it today, matching the same
- * decoupling `oauth-http-handler.ts`'s own `OAuthStoredCredential` type documents for the identical
- * shape.
+ * decoupling `mcp-oauth-store.ts` documents.
  */
 export type McpOAuthCredential = Readonly<{
   provider: string

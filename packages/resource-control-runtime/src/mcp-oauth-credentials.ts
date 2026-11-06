@@ -26,8 +26,7 @@ import { credentialRefFor, withTimeout } from './oauth-http-handler.js'
 
 /** Structural subset of `packages/host-infrastructure/src/adapters/credential-store.ts`'s `CredentialStore`
  * (`read`/`putOAuth` only). Deliberately NOT importing that type from `@agnes/host` - same
- * decoupling reasoning as `oauth-http-handler.ts`'s own `OAuthCredentialStoreWriter`/
- * `OAuthStoredCredential` types (this package has no dependency on `@agnes/host` today). `read()`'s
+ * decoupling reasoning as `mcp-oauth-store.ts` (this package has no dependency on `@agnes/host`). `read()`'s
  * result type is intentionally loose (`kind: string`, every oauth-shaped field optional) rather than
  * reusing `McpOAuthCredential` directly: the real store's `read()` can also return an api-key
  * credential (a completely different shape, sharing only `kind`/`version`), and this resolver must

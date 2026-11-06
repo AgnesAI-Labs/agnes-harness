@@ -168,7 +168,8 @@
 - `_agnes/v1/admin.context`
 - `_agnes/v1/admin.history.search`
 - `_agnes/v1/admin.plan`
-- `_agnes/v1/admin.mcp.oauth.save`
+- `_agnes/v1/admin.mcp.oauth.get`
+- `_agnes/v1/admin.mcp.oauth.complete`
 - `_agnes/v1/admin.memory`
 - `_agnes/v1/admin.triggers`
 - `_agnes/v1/sessions.migrate`

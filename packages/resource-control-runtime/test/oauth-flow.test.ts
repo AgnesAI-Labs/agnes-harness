@@ -10,10 +10,12 @@ import {
   type McpOAuthCredentialStore,
 } from '../src/mcp-oauth-credentials.js'
 import {
-  createOAuthHttpHandler,
-  credentialRefFor,
-  type OAuthCredentialStoreWriter,
-} from '../src/oauth-http-handler.js'
+  completeMcpOAuthLogin,
+  type McpOAuthCompleteParams,
+  summarizeMcpOAuth,
+} from '../src/mcp-oauth-login.js'
+import { createOAuthHttpHandler, credentialRefFor } from '../src/oauth-http-handler.js'
+import { createMemoryOAuthStore } from './helpers/memory-oauth-store.js'
 
 // Loaded via createRequire (untyped) rather than a static import: the SDK's server-side
 // StreamableHTTPServerTransport options are not exactOptionalPropertyTypes-clean (the
@@ -54,14 +56,11 @@ const { ListToolsRequestSchema } = sdkRequire('@modelcontextprotocol/sdk/types.j
  *   proving the code got redirected to the right places but never that the S256 challenge/verifier
  *   pairing genuinely round-trips through a server that actually enforces it (design §1.3's hard
  *   PKCE requirement).
- * - The credential store is one real, shared, Map-backed object (not a per-task-isolated fake)
- *   satisfying BOTH `OAuthCredentialStoreWriter` (`oauth-http-handler.ts`'s callback write path) and
- *   `McpOAuthCredentialStore` (`mcp-oauth-credentials.ts`'s worker-side read path) - the exact
- *   structural interface both modules already deliberately depend on instead of importing
- *   `@agnes/host`'s concrete `CredentialStore` type (see both files' own doc comments on that
- *   decoupling). Using the SAME instance for both proves the write path and the read path genuinely
- *   agree on the ref format (`credentialRefFor`) and the stored shape - something no earlier task's
- *   test could prove, because each one only ever exercised its own half against its own store.
+ * - The sign-in completion is the real one the daemon runs (`completeMcpOAuthLogin`: code
+ *   exchange plus the credential v2 write), against an in-memory store with the host store's
+ *   contract; the handler reaches it only through its injected `login` owner, as in production.
+ * - The step from a stored credential to a live connection is a separate test below: it seeds the
+ *   credential the worker-side resolver reads and drives it to a real SDK client.
  * - The final connection is a real `@modelcontextprotocol/sdk` `Client` over a real
  *   `StreamableHTTPClientTransport`, constructed the same way `packages/base/src/mcp/connect.ts`'s
  *   `createHttpTransport` builds one in production
@@ -258,25 +257,16 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
     }
   }
 
-  /** A real, shared, Map-backed credential store satisfying both the write-side interface
-   * `oauth-http-handler.ts`'s callback route uses and the read-side interface
-   * `mcp-oauth-credentials.ts`'s worker resolver uses - see this file's header comment for why using
-   * one instance for both (rather than one fake per module, like every earlier task's own test) is
-   * the actual point of this fixture. */
-  function sharedCredentialStore(): OAuthCredentialStoreWriter &
-    McpOAuthCredentialStore & {
-      snapshot(ref: string): Promise<Awaited<ReturnType<McpOAuthCredentialStore['read']>>>
-    } {
-    const store = new Map<string, Record<string, unknown>>()
+  /** A Map-backed store with the read-side interface `mcp-oauth-credentials.ts`'s worker resolver
+   * uses, seeded directly with a stored credential. */
+  function resolverCredentialStore(ref: string, value: Record<string, unknown>): McpOAuthCredentialStore {
+    const store = new Map<string, Record<string, unknown>>([[ref, value]])
     return {
-      async read(ref) {
-        return store.has(ref) ? (store.get(ref) as never) : null
+      async read(key) {
+        return store.has(key) ? (store.get(key) as never) : null
       },
-      async putOAuth(ref, value) {
-        store.set(ref, { kind: 'oauth', version: 1, ...value })
-      },
-      async snapshot(ref) {
-        return store.has(ref) ? (store.get(ref) as never) : null
+      async putOAuth(key, next) {
+        store.set(key, { kind: 'oauth', version: 1, ...next })
       },
     }
   }
@@ -299,15 +289,16 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
   const STATIC_CLIENT_ID = 'agnes-e2e-test-client'
   const SERVER_ID = 'fixture-oauth-srv'
 
-  it('a full authorization_code flow produces a working MCP connection', async () => {
+  it('a full authorization_code flow through the handler and the daemon-side completion writes the credential v2 record', async () => {
     // 1. Real fixture MCP server that is also its own OAuth authorization server.
     const remote = await startFixtureRemoteMcpServer()
-    remote.setTokenIssuance({
+    const issuance = {
       accessToken: 'e2e-access-token-1',
       refreshToken: 'e2e-refresh-token-1',
       expiresIn: 3600,
       scope: 'mcp:read mcp:write',
-    })
+    }
+    remote.setTokenIssuance(issuance)
 
     // 2. The "daemon launcher" callback surface: a real node:http server hosting
     // createOAuthHttpHandler, bound first so baseUrl is the handler's genuine, dialable origin (not
@@ -316,13 +307,24 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
     const baseUrl = await listen(oauthServer)
     cleanup.push(() => closeHttpServer(oauthServer))
 
-    // 3. Create an oauth-bound MCP server definition (Task 1's schema): a server whose secretBinding
+    // 3. Create an oauth-bound MCP server definition: a server whose secretBinding
     // is `{kind: 'oauth', staticClientId}`, matching what `oauth-admin.ts`'s production
-    // `resolveServer` would build from a real `mcp.servers.get` descriptor.
-    const store = sharedCredentialStore()
+    // `resolveServer` would build from a real `mcp.servers.get` descriptor. The daemon side of the
+    // sign-in is the real completion against an in-memory credential store.
+    const store = createMemoryOAuthStore()
     const handler = createOAuthHttpHandler({
       secret: SECRET,
-      credentialStore: store,
+      login: {
+        get: async (serverId) => summarizeMcpOAuth(await store.read(serverId)),
+        complete: (params: McpOAuthCompleteParams) =>
+          completeMcpOAuthLogin({
+            ...params,
+            serverUrl: remote.origin,
+            staticClient: { clientId: STATIC_CLIENT_ID },
+            store,
+            fetchImpl: fetch,
+          }),
+      },
       baseUrl,
       resolveServer: async (serverId) =>
         serverId === SERVER_ID ? { serverUrl: remote.origin, staticClientId: STATIC_CLIENT_ID } : undefined,
@@ -334,7 +336,7 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
     })
 
     // 4. Begin authorization via the JSON capability directly - NOT `mcp.servers.oauth.start` (see
-    // this file's header comment: that RPC method does not exist, by Task 5's confirmed design).
+    // this file's header comment: that RPC method does not exist, by design).
     const startResult = await handler.startAuthorization(SERVER_ID)
     if (!('authorizeUrl' in startResult))
       throw new Error(`expected {authorizeUrl}, got ${JSON.stringify(startResult)}`)
@@ -344,18 +346,40 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
     expect(callbackResponse.status).toBe(302)
     expect(remote.authorizeCount()).toBe(1)
 
-    // 6. Assert a real OAuthCredential actually landed in the credential store, under the exact ref
-    // format both the write side (this handler) and the read side (step 7's resolver) share.
-    const stored = await store.snapshot(credentialRefFor(SERVER_ID))
-    expect(stored).toMatchObject({
+    // 6. Assert a real credential v2 record landed in the store, with what a later refresh needs.
+    expect(await store.read(SERVER_ID)).toMatchObject({
+      version: 2,
       kind: 'oauth',
+      epoch: 0,
+      rev: 1,
+      client: {
+        clientId: STATIC_CLIENT_ID,
+        redirectUri: new URL(`/oauth/${SERVER_ID}/callback`, baseUrl).href,
+      },
+      server: { endpoint: remote.origin.href, tokenEndpoint: new URL('/token', remote.origin).href },
+      tokens: {
+        accessToken: issuance.accessToken,
+        refreshToken: issuance.refreshToken,
+        scope: ['mcp:read', 'mcp:write'],
+      },
+      requiredScope: [],
+    })
+  })
+
+  it('a stored credential reaches the MCP server as a bearer token through the resolver', async () => {
+    const remote = await startFixtureRemoteMcpServer()
+    const store = resolverCredentialStore(credentialRefFor(SERVER_ID), {
+      kind: 'oauth',
+      version: 1,
       provider: 'mcp-oauth',
       accessToken: 'e2e-access-token-1',
       refreshToken: 'e2e-refresh-token-1',
+      expiresAt: Date.now() + 3_600_000,
       scope: ['mcp:read', 'mcp:write'],
+      grantId: SERVER_ID,
     })
 
-    // 7. Assert resolvedConfig() (Task 6) can use that stored credential to build a live connection
+    // 7. Assert resolvedConfig() can use that stored credential to build a live connection
     // config - through the real worker-side resolver (mcp-oauth-credentials.ts), not a stub.
     const oauthCredentials = createMcpOAuthCredentialResolver({ credentialStore: store })
     const failIfCalled = async (): Promise<string> => {

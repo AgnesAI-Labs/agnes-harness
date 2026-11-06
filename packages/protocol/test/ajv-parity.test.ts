@@ -7763,6 +7763,7 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
     McpHttpSecretBinding: ok(httpBinding, [stdioBinding]),
     McpOAuthSecretBinding: ok(oauthBinding, [
       { kind: 'oauth', staticClientId: 'test-oauth-client', extraField: 'nope' },
+      { kind: 'oauth', staticClientId: 'test-oauth-client', clientSecretRef: 'plain-secret' },
     ]),
     McpToolPolicy: ok({ allow: ['search'] }),
     McpToolDisclosure: ok('on-demand', ['lazy']),
@@ -8072,32 +8073,98 @@ const AppSamples: Record<string, Sample> = {
     ],
     note: 'safe aggregate with no paths or secrets',
   },
-  AdminMcpOAuthSave: {
+  AdminMcpOAuthGet: {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', extra: 1 },
+    ],
+    note: 'sign-in summary lookup',
+  },
+  AdminMcpOAuthSummary: {
     valid: {
-      serverId: 'github',
-      credential: {
-        provider: 'fixture',
-        accessToken: 'fixture-token',
-        refreshToken: 'synthetic-refresh',
-        expiresAt: 0,
+      epoch: 0,
+      signedIn: true,
+      refreshable: true,
+      expiresAt: 1,
+      scope: ['read'],
+      requiredScope: [],
+      client: { clientId: 'client-1', redirectUri: 'http://127.0.0.1:4177/oauth/github/callback' },
+    },
+    invalid: [
+      { epoch: 0, signedIn: true, refreshable: true, scope: [], requiredScope: [], accessToken: 'leak' },
+      { epoch: -1, signedIn: false, refreshable: false, scope: [], requiredScope: [] },
+      { epoch: 0, signedIn: false, refreshable: false, scope: ['a b'], requiredScope: [] },
+      {
+        epoch: 0,
+        signedIn: false,
+        refreshable: false,
         scope: [],
-        grantId: 'fixture-grant',
+        requiredScope: [],
+        client: { clientId: 'c', redirectUri: 'r', clientSecret: 'leak' },
       },
+    ],
+    note: 'sign-in summary never carries tokens or secrets',
+  },
+  AdminMcpOAuthComplete: {
+    valid: {
+      profile: 'local-dev',
+      serverId: 'github',
+      expectedEpoch: 0,
+      code: 'code-1',
+      codeVerifier: 'v'.repeat(43),
+      redirectUri: 'http://127.0.0.1:4177/oauth/github/callback',
+      client: {
+        clientId: 'client-1',
+        clientSecret: 'dcr-secret',
+        tokenEndpointAuthMethod: 'client_secret_post',
+      },
+      requestedScope: ['read', 'offline_access'],
     },
     invalid: [
       {
-        serverId: '../other',
-        credential: {
-          provider: 'fixture',
-          accessToken: 'fixture-token',
-          refreshToken: 'synthetic-refresh',
-          expiresAt: 0,
-          scope: [],
-          grantId: 'fixture-grant',
-        },
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        extra: 1,
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(42),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: -1,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1', accessToken: 'x' },
+        requestedScope: [],
       },
     ],
-    note: 'daemon-only OAuth credential persistence',
+    note: 'daemon exchanges the authorization code',
   },
   JsonValue: { valid: { nested: [null, false, 3] }, invalid: [undefined], note: 'App Server boundary shape' },
   AppServerErrorCause: {
@@ -8702,6 +8769,18 @@ describe('McpHttpSecretBinding: oauth secretBinding kind (mcp-oauth-authorizatio
     expect(check(sample)).toBe(false)
     expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, sample)).toBe(false)
   })
+  it('accepts a client secret only as a secret reference', () => {
+    const reference = {
+      kind: 'oauth',
+      staticClientId: 'test-oauth-client',
+      clientSecretRef: 'secret://mcp/x',
+    }
+    expect(check(reference)).toBe(true)
+    expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, reference)).toBe(true)
+    const raw = { kind: 'oauth', staticClientId: 'test-oauth-client', clientSecretRef: 'raw-value' }
+    expect(check(raw)).toBe(false)
+    expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, raw)).toBe(false)
+  })
 })
 
 // mcp-oauth-authorization plan, Task 1: McpServerDescriptor.authorizationStatus is optional (a
@@ -8978,9 +9057,14 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'PackageListParams',
     result: 'PackageSourcePolicy',
   },
-  '_agnes/v1/admin.mcp.oauth.save': {
+  '_agnes/v1/admin.mcp.oauth.get': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
-    params: 'AdminMcpOAuthSave',
+    params: 'AdminMcpOAuthGet',
+    result: 'AdminMcpOAuthSummary',
+  },
+  '_agnes/v1/admin.mcp.oauth.complete': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthComplete',
     result: 'AdminEmpty',
   },
   '_agnes/v1/admin.bundles.get': {
@@ -10202,32 +10286,73 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{ profile: '../escape' }],
     note: 'profile boundary',
   },
-  '_agnes/v1/admin.mcp.oauth.save': {
+  '_agnes/v1/admin.mcp.oauth.get': {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', extra: 1 },
+    ],
+    note: 'sign-in summary lookup',
+  },
+  '_agnes/v1/admin.mcp.oauth.complete': {
     valid: {
+      profile: 'local-dev',
       serverId: 'github',
-      credential: {
-        provider: 'fixture',
-        accessToken: 'fixture-token',
-        refreshToken: 'synthetic-refresh',
-        expiresAt: 0,
-        scope: [],
-        grantId: 'fixture-grant',
+      expectedEpoch: 0,
+      code: 'code-1',
+      codeVerifier: 'v'.repeat(43),
+      redirectUri: 'http://127.0.0.1:4177/oauth/github/callback',
+      client: {
+        clientId: 'client-1',
+        clientSecret: 'dcr-secret',
+        tokenEndpointAuthMethod: 'client_secret_post',
       },
+      requestedScope: ['read', 'offline_access'],
     },
     invalid: [
       {
-        serverId: '../other',
-        credential: {
-          provider: 'fixture',
-          accessToken: 'fixture-token',
-          refreshToken: 'synthetic-refresh',
-          expiresAt: 0,
-          scope: [],
-          grantId: 'fixture-grant',
-        },
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        extra: 1,
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(42),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: -1,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1', accessToken: 'x' },
+        requestedScope: [],
       },
     ],
-    note: 'daemon-only OAuth credential persistence',
+    note: 'daemon exchanges the authorization code',
   },
   '_agnes/v1/admin.bundles.get': { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
   '_agnes/v1/admin.bundles.save': {
@@ -10906,10 +11031,35 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/plugins.candidates.list': PackageAdminSamples.AuthoringCandidateList as Sample,
   '_agnes/v1/packages.provenance': PackageAdminSamples.PackageProvenance as Sample,
   '_agnes/v1/packages.sourcePolicy': PackageAdminSamples.PackageSourcePolicy as Sample,
-  '_agnes/v1/admin.mcp.oauth.save': {
+  '_agnes/v1/admin.mcp.oauth.get': {
+    valid: {
+      epoch: 0,
+      signedIn: true,
+      refreshable: true,
+      expiresAt: 1,
+      scope: ['read'],
+      requiredScope: [],
+      client: { clientId: 'client-1', redirectUri: 'http://127.0.0.1:4177/oauth/github/callback' },
+    },
+    invalid: [
+      { epoch: 0, signedIn: true, refreshable: true, scope: [], requiredScope: [], accessToken: 'leak' },
+      { epoch: -1, signedIn: false, refreshable: false, scope: [], requiredScope: [] },
+      { epoch: 0, signedIn: false, refreshable: false, scope: ['a b'], requiredScope: [] },
+      {
+        epoch: 0,
+        signedIn: false,
+        refreshable: false,
+        scope: [],
+        requiredScope: [],
+        client: { clientId: 'c', redirectUri: 'r', clientSecret: 'leak' },
+      },
+    ],
+    note: 'sign-in summary never carries tokens or secrets',
+  },
+  '_agnes/v1/admin.mcp.oauth.complete': {
     valid: {},
     invalid: [{ extra: 1 }],
-    note: 'write acknowledges without returning a credential',
+    note: 'completion acknowledges without returning a credential',
   },
   '_agnes/v1/admin.bundles.get': {
     valid: { revision: 0, bundles: [], effect: 'restart-required' },

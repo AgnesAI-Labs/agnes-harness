@@ -11,6 +11,7 @@ import { compilePluginConfig } from '@agnes/extension-api'
 import {
   createCredentialStore,
   createExtensionActivationBarrier,
+  createMcpOAuthStore,
   createPlatform,
   createSecretsFile,
   resolveProfile,
@@ -18,7 +19,7 @@ import {
 import { jcs } from '@agnes/protocol'
 import type { AdminCredentialMetadata } from '@agnes/protocol/gen/app-server'
 import { createPrivateDirectorySync } from '@agnes/system-node'
-import { expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CommandQueue } from '../src/local/command-queue.js'
 import { createAppServerAdmin, registerAppServerAdmin } from '../src/local/methods/admin.js'
 import { createPlanCommands } from '../src/local/plan-commands.js'
@@ -57,24 +58,6 @@ it('owns settings and plan writes behind local admin and registered-workspace au
     })
     endpoint.conn.authKind = 'local'
     endpoint.conn.credentialKind = 'local'
-    const credential = {
-      provider: 'mcp-oauth',
-      accessToken: 'fixture-token',
-      expiresAt: 2000000000000,
-      refreshToken: 'synthetic-refresh',
-      scope: ['read'],
-      grantId: 'synthetic-grant',
-    }
-    expect(await call('_agnes/v1/admin.mcp.oauth.save', { serverId: 'srv-1', credential })).toMatchObject({
-      result: {},
-    })
-    expect(await createCredentialStore({ root: home }).read('secret://mcp-oauth/srv-1')).toMatchObject({
-      kind: 'oauth',
-      ...credential,
-    })
-    expect(await call('_agnes/v1/admin.mcp.oauth.save', { serverId: '../other', credential })).toMatchObject({
-      error: { code: -32602, data: { messageKey: 'appServer.errors.invalidParams' } },
-    })
     expect(await call('_agnes/v1/admin.context', { cwd: home, config: { timeZone: 'UTC' } })).toMatchObject({
       error: { code: -32006 },
     })
@@ -127,10 +110,9 @@ it('owns settings and plan writes behind local admin and registered-workspace au
     ).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
     authority = localPackageAdminAuthority()
     endpoint.conn.authKind = 'jwt'
-    expect(await call('_agnes/v1/admin.mcp.oauth.save', { serverId: 'srv-1', credential })).toHaveProperty(
-      'error.data.code',
-      'CAPABILITY_DENIED',
-    )
+    expect(
+      await call('_agnes/v1/admin.mcp.oauth.get', { profile: 'local-dev', serverId: 'srv-1' }),
+    ).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
     expect(
       await call('_agnes/v1/admin.history.search', { query: '', title: '', workspace: '' }),
     ).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
@@ -138,6 +120,213 @@ it('owns settings and plan writes behind local admin and registered-workspace au
     await endpoint.close()
     await rm(fixtureRoot, { recursive: true, force: true })
   }
+})
+
+describe('MCP OAuth sign-in in the daemon', () => {
+  const SERVER_URL = 'https://mcp.example.test/mcp'
+  const REDIRECT = 'http://127.0.0.1:4177/oauth/srv-1/callback'
+  const VERIFIER = 'v'.repeat(43)
+
+  async function setup(secretBinding: Record<string, unknown> = { kind: 'oauth' }) {
+    const fixtureRoot = await mkdtemp(join(tmpdir(), 'agh-mcp-oauth-admin-'))
+    const home = join(fixtureRoot, 'home')
+    createPrivateDirectorySync(home)
+    await mkdir(join(home, 'data'))
+    const tokenRequests: { headers: Headers; form: URLSearchParams }[] = []
+    // No metadata anywhere: the token endpoint is the server origin's /token.
+    const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input))
+      if (url.pathname !== '/token') return new Response('', { status: 404 })
+      tokenRequests.push({
+        headers: new Headers(init?.headers),
+        form: new URLSearchParams(String(init?.body)),
+      })
+      return Response.json({
+        access_token: 'issued-access',
+        token_type: 'Bearer',
+        refresh_token: 'issued-refresh',
+      })
+    }) as typeof fetch
+    const service = createAppServerAdmin({
+      home,
+      dataDir: join(home, 'data'),
+      profileDir: join(home, 'profiles/local-dev'),
+      resolveProfile: async () =>
+        resolveProfile(
+          { builtin: 'local-dev' },
+          { platform: createPlatform().snapshot(), agnesVersion: '0.0.0', now: new Date().toISOString() },
+        ),
+      workspaces: async () => ({ items: [] }),
+      mcpServer: async (profile, serverId) =>
+        profile === 'local-dev' && serverId === 'srv-1'
+          ? ({
+              serverId,
+              displayName: 'Server',
+              transport: { kind: 'http', url: SERVER_URL },
+              secretBinding,
+              toolPolicy: { allow: [] },
+            } as never)
+          : undefined,
+      fetchImpl,
+    })
+    const endpoint = new LocalEndpoint({ clock: Date.now, principalId: 'local' })
+    endpoint.conn.initialized = true
+    endpoint.conn.authKind = 'local'
+    endpoint.conn.credentialKind = 'local'
+    registerAppServerAdmin(endpoint, service, localPackageAdminAuthority())
+    let id = 0
+    const call = (method: string, params: unknown) =>
+      endpoint.handle({ jsonrpc: '2.0', id: ++id, method, params })
+    const complete = (extra: Record<string, unknown> = {}) =>
+      call('_agnes/v1/admin.mcp.oauth.complete', {
+        profile: 'local-dev',
+        serverId: 'srv-1',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: VERIFIER,
+        redirectUri: REDIRECT,
+        client: { clientId: 'client-1' },
+        requestedScope: ['read'],
+        ...extra,
+      })
+    return {
+      home,
+      call,
+      complete,
+      tokenRequests,
+      store: createMcpOAuthStore({ root: home }),
+      async close() {
+        await endpoint.close()
+        await rm(fixtureRoot, { recursive: true, force: true })
+      },
+    }
+  }
+
+  it('admin.mcp.oauth.get returns no secret fields', async () => {
+    const t = await setup()
+    try {
+      await t.store.update('srv-1', async () => ({
+        value: undefined,
+        next: {
+          epoch: 3,
+          client: { clientId: 'client-1', clientSecret: 'dcr-secret-9', redirectUri: REDIRECT },
+          server: {
+            endpoint: SERVER_URL,
+            authorizationServer: 'https://mcp.example.test/',
+            tokenEndpoint: 'https://mcp.example.test/token',
+            resource: SERVER_URL,
+          },
+          tokens: {
+            accessToken: 'stored-access',
+            refreshToken: 'stored-refresh',
+            expiresAt: 5,
+            scope: ['read'],
+          },
+          requiredScope: [],
+        },
+      }))
+      const response = await t.call('_agnes/v1/admin.mcp.oauth.get', {
+        profile: 'local-dev',
+        serverId: 'srv-1',
+      })
+      expect(response).toMatchObject({
+        result: {
+          epoch: 3,
+          signedIn: true,
+          refreshable: true,
+          expiresAt: 5,
+          scope: ['read'],
+          requiredScope: [],
+          client: { clientId: 'client-1', redirectUri: REDIRECT },
+        },
+      })
+      const text = JSON.stringify(response)
+      for (const leak of ['accessToken', 'refreshToken', 'clientSecret', 'stored-access', 'dcr-secret-9'])
+        expect(text).not.toContain(leak)
+      expect(
+        await t.call('_agnes/v1/admin.mcp.oauth.get', { profile: 'local-dev', serverId: 'other' }),
+      ).toHaveProperty('error')
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('admin.mcp.oauth.complete rejects unknown params', async () => {
+    const t = await setup()
+    try {
+      expect(await t.complete({ accessToken: 'smuggled' })).toMatchObject({ error: { code: -32602 } })
+      expect(await t.complete({ client: { clientId: 'client-1', refreshToken: 'x' } })).toMatchObject({
+        error: { code: -32602 },
+      })
+      expect(await t.complete({ serverId: '../other' })).toMatchObject({ error: { code: -32602 } })
+      expect(t.tokenRequests).toEqual([])
+      expect(await t.store.read('srv-1')).toBeNull()
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('admin.mcp.oauth.save is gone', async () => {
+    const t = await setup()
+    try {
+      expect(
+        await t.call('_agnes/v1/admin.mcp.oauth.save', { serverId: 'srv-1', credential: {} }),
+      ).toMatchObject({
+        error: { code: -32601 },
+      })
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('completes with the static client secret read from its reference, and stores no copy of it', async () => {
+    const t = await setup({
+      kind: 'oauth',
+      staticClientId: 'static-client',
+      clientSecretRef: 'secret://mcp/client',
+    })
+    try {
+      await createCredentialStore({ root: t.home }).putApiKey('secret://mcp/client', 'static-secret-value')
+      expect(await t.complete({ client: { clientId: 'static-client' } })).toMatchObject({ result: {} })
+      const [request] = t.tokenRequests
+      expect(request?.headers.get('authorization')).toBe(
+        `Basic ${Buffer.from('static-client:static-secret-value').toString('base64')}`,
+      )
+      expect(request?.form.get('resource')).toBe(SERVER_URL)
+      const stored = await t.store.read('srv-1')
+      expect(stored).toMatchObject({ epoch: 0, rev: 1, tokens: { accessToken: 'issued-access' } })
+      expect(JSON.stringify(stored)).not.toContain('static-secret-value')
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('refuses a sign-in that a sign-out overtook, with a readable reason', async () => {
+    const t = await setup()
+    try {
+      await t.store.update('srv-1', async () => ({ value: undefined, next: { epoch: 1, requiredScope: [] } }))
+      const response = await t.complete({ expectedEpoch: 0 })
+      expect(response).toHaveProperty('error')
+      expect(JSON.stringify(response)).toContain('MCP_OAUTH_LOGIN_SUPERSEDED')
+      expect(t.tokenRequests).toEqual([])
+      expect(await t.store.read('srv-1')).toMatchObject({ epoch: 1, rev: 1 })
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('refuses a server whose credential is a bearer or header secret, or that runs locally', async () => {
+    const t = await setup({ kind: 'http-bearer', credentialRef: 'secret://mcp/token' })
+    try {
+      expect(await t.complete()).toHaveProperty('error')
+      expect(
+        await t.call('_agnes/v1/admin.mcp.oauth.get', { profile: 'local-dev', serverId: 'srv-1' }),
+      ).toHaveProperty('error')
+      expect(t.tokenRequests).toEqual([])
+    } finally {
+      await t.close()
+    }
+  })
 })
 
 it('keeps doctor local-only and refuses caller-supplied homes and implicit model probes', async () => {

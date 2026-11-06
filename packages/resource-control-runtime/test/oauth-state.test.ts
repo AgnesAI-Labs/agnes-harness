@@ -9,12 +9,28 @@ describe('oauth-state', () => {
     codeVerifier: 'verifier-abc',
     nonce: 'nonce-1',
     issuedAt: Date.now(),
+    expectedEpoch: 2,
+    client: { clientId: 'client-1', tokenEndpointAuthMethod: 'none' },
+    requestedScope: ['read', 'offline_access'],
   }
 
   it('round-trips a valid state', async () => {
     const sealed = await sealOAuthState(payload, { secret })
     const opened = await openOAuthState(sealed, { secret, maxAgeMs: 60_000 })
     expect(opened).toEqual(payload)
+  })
+
+  it('rejects a state without the sign-in fields or with a secret in the client', async () => {
+    const { expectedEpoch: _epoch, ...noEpoch } = payload
+    for (const bad of [
+      noEpoch,
+      { ...payload, expectedEpoch: -1 },
+      { ...payload, client: { clientId: 'client-1', clientSecret: 'leak' } },
+      { ...payload, requestedScope: [1] },
+    ]) {
+      const sealed = await sealOAuthState(bad as typeof payload, { secret })
+      await expect(openOAuthState(sealed, { secret, maxAgeMs: 60_000 })).rejects.toThrow()
+    }
   })
 
   it('rejects a tampered state', async () => {
