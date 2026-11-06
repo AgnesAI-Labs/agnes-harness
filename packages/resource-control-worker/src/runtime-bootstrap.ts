@@ -19,7 +19,7 @@ import {
   type ResourceActivationBarrier,
   validateManagedHttpUrl,
 } from '@agnes/resource-control-runtime'
-import { mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
+import { mcpConnectionBudget, mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
 import { syncManagedMcpExecutableAllowlist } from './mcp-server-opener.js'
 import { deploymentMcpPolicy, scanSkills } from './skill-bootstrap.js'
 import { removeFilesystemSkill } from './skill-remove.js'
@@ -201,35 +201,39 @@ export async function bootstrapWorkerResources(
         }),
     },
     httpPolicy: { allowLoopbackHttp: mcpPolicy.allowLoopbackHttp, localDaemon: mcpPolicy.localDaemon },
-    connect: async (config, options) =>
-      connectMcp(
-        await sandboxMcpConfig(
-          config,
-          {
-            dataDir: input.profile.dataDir,
-            ...(input.agnesHomeDir ? { home: input.agnesHomeDir } : {}),
-            ...(input.profile.adapters?.secrets.path
-              ? { secretsDir: input.profile.adapters.secrets.path }
-              : {}),
-            ...(input.cwd ? { workspace: input.cwd } : {}),
-            ...(input.env.PATH ? { path: input.env.PATH } : {}),
-          },
-          options.signal,
-        ),
-        undefined,
+    connect: async (config, options) => {
+      const budget =
+        config.transport === 'stdio' && config.sandboxProfile !== 'off-with-warning'
+          ? mcpConnectionBudget(options.timeoutMs)
+          : undefined
+      const confined = await sandboxMcpConfig(
+        config,
         {
-          signal: options.signal,
-          connectTimeoutMs: options.timeoutMs,
-          ...(options.authorize ? { authorize: options.authorize } : {}),
-          // An HTTP redirect target gets the same HTTPS/loopback policy check the configured URL
-          // already passed, so a compromised server cannot bounce the connection past it (SSRF).
-          validateRedirectUrl: (url) =>
-            validateManagedHttpUrl(url, {
-              allowLoopbackHttp: mcpPolicy.allowLoopbackHttp,
-              localDaemon: mcpPolicy.localDaemon,
-            }),
+          dataDir: input.profile.dataDir,
+          ...(input.agnesHomeDir ? { home: input.agnesHomeDir } : {}),
+          ...(input.profile.adapters?.secrets.path
+            ? { secretsDir: input.profile.adapters.secrets.path }
+            : {}),
+          ...(input.cwd ? { workspace: input.cwd } : {}),
+          ...(input.env.PATH ? { path: input.env.PATH } : {}),
         },
-      ),
+        options.signal,
+        budget,
+      )
+      if (budget) options.signal.throwIfAborted()
+      return connectMcp(confined, undefined, {
+        signal: options.signal,
+        connectTimeoutMs: budget?.remaining() ?? options.timeoutMs,
+        ...(options.authorize ? { authorize: options.authorize } : {}),
+        // An HTTP redirect target gets the same HTTPS/loopback policy check the configured URL
+        // already passed, so a compromised server cannot bounce the connection past it (SSRF).
+        validateRedirectUrl: (url) =>
+          validateManagedHttpUrl(url, {
+            allowLoopbackHttp: mcpPolicy.allowLoopbackHttp,
+            localDaemon: mcpPolicy.localDaemon,
+          }),
+      })
+    },
     inspectCatalog: inspectRemoteCatalog,
     // Deliberately still a no-op, not the cross-worker notifier this docstring's function name might
     // suggest (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`). This function

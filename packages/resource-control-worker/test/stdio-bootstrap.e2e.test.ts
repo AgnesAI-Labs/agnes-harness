@@ -1,13 +1,48 @@
 import { existsSync } from 'node:fs'
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bootstrapWorkerResources } from '../src/runtime-bootstrap.js'
 import { observeMcpProcesses } from './child-process-observer.js'
 
+const inspection = vi.hoisted(() => ({ delayMs: 0, marker: '' }))
+vi.mock('node:child_process', async (original) => {
+  const actual = await original<typeof import('node:child_process')>()
+  const { promisify } = await import('node:util')
+  const execute = promisify(actual.execFile)
+  const script = `import {writeFile} from 'node:fs/promises'; import {setTimeout} from 'node:timers/promises'; import {execFile} from 'node:child_process'; import {promisify} from 'node:util';
+await writeFile(process.argv[1],String(process.pid)); await setTimeout(Number(process.argv[2]));
+const {stdout,stderr}=await promisify(execFile)('/usr/bin/otool',process.argv.slice(3)); process.stdout.write(stdout); process.stderr.write(stderr);`
+  return {
+    ...actual,
+    execFile: new Proxy((...args: unknown[]) => Reflect.apply(actual.execFile, undefined, args), {
+      get(_target, property) {
+        if (property !== promisify.custom) return Reflect.get(actual.execFile, property)
+        return (file: string, args: string[], options: object) =>
+          file === '/usr/bin/otool' && inspection.delayMs
+            ? execute(
+                process.execPath,
+                [
+                  '--input-type=module',
+                  '-e',
+                  script,
+                  '--',
+                  inspection.marker,
+                  String(inspection.delayMs),
+                  ...args,
+                ],
+                options,
+              )
+            : execute(file, args, options)
+      },
+    }),
+  }
+})
+
 const roots: string[] = []
 afterEach(async () => {
+  inspection.delayMs = 0
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })))
 })
 
@@ -240,6 +275,153 @@ describe('worker stdio MCP bootstrap', () => {
     } finally {
       await state?.runtime.mcp.close()
     }
+  })
+})
+
+describe.skipIf(process.platform !== 'darwin')('confined stdio connection budget', () => {
+  async function fixture(timeoutMs = 10_000, handshakeMs = 0) {
+    const { createMcpServerOpener } = await import('../src/mcp-server-opener.js')
+    const root = await mkdtemp(join(tmpdir(), 'agnes-mcp-budget-'))
+    roots.push(root)
+    const workspace = join(root, 'workspace')
+    await mkdir(workspace)
+    const entry = join(root, 'mcp', 'fixture', 'entered')
+    const server = join(workspace, 'server.mjs')
+    await writeFile(
+      server,
+      String.raw`import readline from 'node:readline'; import {writeFileSync} from 'node:fs';
+writeFileSync(${JSON.stringify(entry)},String(process.pid));
+const reply=(id,result)=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id,result})+'\n');
+readline.createInterface({input:process.stdin}).on('line',line=>{const r=JSON.parse(line);if(r.method==='initialize')setTimeout(()=>reply(r.id,{protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'budget',version:'1'}}),${handshakeMs});else if(r.method==='tools/list')reply(r.id,{tools:[{name:'status',inputSchema:{type:'object',properties:{}}}]});else if(r.id!==undefined)reply(r.id,{})});`,
+    )
+    inspection.marker = join(root, 'inspection-started')
+    const definition = {
+      serverId: 'fixture',
+      displayName: 'Fixture',
+      sandboxProfile: 'strict' as const,
+      workspacePath: workspace,
+      transport: { kind: 'stdio' as const, executable: process.execPath, args: [server] },
+      secretBinding: { kind: 'none' as const },
+    }
+    const opener = createMcpServerOpener({
+      resolver: async () => '',
+      baseEnv: {},
+      stdioPolicy: { allowedExecutables: [process.execPath] },
+      httpPolicy: {},
+      connectTimeoutMs: timeoutMs,
+      sandbox: { home: join(root, 'home'), dataDir: root },
+    })
+    return { root, workspace, entry, definition, opener }
+  }
+
+  it.each(['bootstrap', 'opener'])(
+    'allows a real 2.5s inspection within the existing 10s %s budget',
+    async (mode) => {
+      const f = await fixture()
+      inspection.delayMs = 2_500
+      if (mode === 'opener') {
+        const connection = await f.opener.connect(f.definition, new AbortController().signal)
+        try {
+          expect((await connection.listTools()).map((tool) => tool.name)).toEqual(['status'])
+        } finally {
+          await connection.close()
+        }
+      } else {
+        const snapshot = join(f.root, 'snapshot.json')
+        await writeFile(
+          snapshot,
+          JSON.stringify({
+            version: 1,
+            mcpAuthority: 'resource-control',
+            skills: { control: { desired: [], trust: [] } },
+            mcp: [
+              { definition: f.definition, revision: 'a'.repeat(64), desired: 'enabled', trust: 'trusted' },
+            ],
+          }),
+        )
+        const state = await bootstrapWorkerResources({
+          env: {
+            AGNES_RESOURCE_SNAPSHOT: snapshot,
+            AGNES_RESOURCE_CONTROL: '1',
+            AGNES_RESOURCE_MCP_POLICY: JSON.stringify({
+              allowedExecutables: [process.execPath],
+              localDaemon: true,
+            }),
+          },
+          cwd: f.workspace,
+          agnesHomeDir: join(f.root, 'home'),
+          profile: { name: 'local-dev', dataDir: f.root } as never,
+          createBarrier: () => barrier,
+          createSecrets: () => {
+            throw Error('none-bound fixture')
+          },
+        })
+        try {
+          expect(state?.mcp).toMatchObject([{ connectionState: 'ready', toolCount: 1 }])
+        } finally {
+          await state?.runtime.mcp.close()
+        }
+      }
+      expect(existsSync(inspection.marker)).toBe(true)
+      expect(existsSync(f.entry)).toBe(true)
+    },
+  )
+
+  it.each(['expiry', 'cancel'])('stops inspection on %s without starting the MCP server', async (mode) => {
+    const f = await fixture(mode === 'expiry' ? 300 : 10_000)
+    inspection.delayMs = 2_500
+    const controller = new AbortController()
+    const pending = f.opener.connect(f.definition, controller.signal)
+    const rejected = expect(pending).rejects.toMatchObject(
+      mode === 'expiry' ? { code: 'MCP_CONNECT_TIMEOUT' } : { name: 'AbortError' },
+    )
+    await vi.waitFor(() => expect(existsSync(inspection.marker)).toBe(true))
+    const pid = Number(await readFile(inspection.marker, 'utf8'))
+    if (mode === 'cancel') controller.abort()
+    await rejected
+    await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow())
+    expect(existsSync(f.entry)).toBe(false)
+  })
+
+  it('does not restart the budget between inspection and handshake', async () => {
+    const f = await fixture(3_500, 2_000)
+    inspection.delayMs = 2_500
+    await expect(f.opener.connect(f.definition, new AbortController().signal)).rejects.toMatchObject({
+      code: 'MCP_CONNECT_TIMEOUT',
+    })
+    expect(existsSync(f.entry)).toBe(true)
+    const pid = Number(await readFile(f.entry, 'utf8'))
+    await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow())
+  })
+
+  it('connects with a fresh signal after the preparation caller has cancelled', async () => {
+    const f = await fixture()
+    const controller = new AbortController()
+    const prepared = await f.opener.prepare?.(f.definition, controller.signal)
+    if (!prepared) throw Error('missing prepared configuration')
+    controller.abort()
+    const connection = await prepared.connect(new AbortController().signal)
+    try {
+      expect((await connection.listTools()).map((tool) => tool.name)).toEqual(['status'])
+    } finally {
+      await connection.close()
+    }
+  })
+
+  it('refuses an expired prepared configuration even with a fresh connection signal', async () => {
+    const f = await fixture(500)
+    const prepareController = new AbortController()
+    const prepared = await f.opener.prepare?.(f.definition, prepareController.signal)
+    if (!prepared) throw Error('missing prepared configuration')
+    prepareController.abort()
+    await new Promise((resolve) => setTimeout(resolve, 550))
+    await expect(
+      prepared.connect(new AbortController().signal).then(async (connection) => {
+        await connection.close()
+        return connection
+      }),
+    ).rejects.toMatchObject({ code: 'MCP_CONNECT_TIMEOUT' })
+    expect(existsSync(f.entry)).toBe(false)
   })
 })
 
