@@ -49,7 +49,7 @@ export function applySaveState(button: HTMLButtonElement, input: SaveStateInput)
 }
 
 /** The empty choice of the default model, named after what the draft is still missing. */
-export function modelChoiceLabel(chosen: number, listed: boolean, compatible: boolean): string {
+export function modelChoiceLabel(chosen: number, catalogueKnown: boolean): string {
   if (chosen > 0) return tr('settings.model.chooseSaved')
-  return compatible && listed ? tr('settings.model.chooseAbove') : tr('settings.model.testFirst')
+  return catalogueKnown ? tr('settings.model.chooseAbove') : tr('settings.model.testFirst')
 }

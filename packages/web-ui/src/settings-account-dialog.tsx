@@ -122,6 +122,33 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                 </div>
                 <fieldset className="config-section account-connection">
                   <legend>{t('accounts.connectionLegend')}</legend>
+                  {/* The address comes first: a compatible account has to say where it talks to. */}
+                  <div className="account-field form-field-wide account-endpoint">
+                    <div className="account-field-head">
+                      <Field
+                        className="form-field"
+                        label={t('accounts.baseUrlLabel')}
+                        htmlFor="config-base-url"
+                      />
+                      <Button
+                        id="config-base-url-reset"
+                        appearance="link"
+                        size="small"
+                        htmlType="button"
+                        hidden
+                      >
+                        {t('accounts.resetBaseUrl')}
+                      </Button>
+                    </div>
+                    <SettingsInput
+                      id="config-base-url"
+                      className="account-mono"
+                      autoComplete="url"
+                      aria-describedby="config-base-url-hint"
+                    />
+                    <p id="config-base-url-hint" className="field-hint" />
+                    <p id="config-base-url-error" className="account-field-error" />
+                  </div>
                   {/* The select holds the choice; the controller shows it as two segments. */}
                   <div id="config-auth-method-field" className="account-auth-method">
                     <span hidden>
@@ -225,32 +252,6 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                         {t('accounts.nameHint')}
                       </p>
                       <p id="config-account-name-error" className="account-field-error" />
-                    </div>
-                    <div className="account-field">
-                      <div className="account-field-head">
-                        <Field
-                          className="form-field"
-                          label={t('accounts.baseUrlLabel')}
-                          htmlFor="config-base-url"
-                        />
-                        <Button
-                          id="config-base-url-reset"
-                          appearance="link"
-                          size="small"
-                          htmlType="button"
-                          hidden
-                        >
-                          {t('accounts.resetBaseUrl')}
-                        </Button>
-                      </div>
-                      <SettingsInput
-                        id="config-base-url"
-                        className="account-mono"
-                        autoComplete="url"
-                        aria-describedby="config-base-url-hint"
-                      />
-                      <p id="config-base-url-hint" className="field-hint" />
-                      <p id="config-base-url-error" className="account-field-error" />
                     </div>
                     <div className="account-field">
                       <div id="config-account-network" />

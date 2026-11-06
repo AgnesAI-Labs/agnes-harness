@@ -42,12 +42,11 @@ export function compatibleModelsPanel(host: HTMLElement | undefined, changed: ()
       host,
       <div className="account-field account-compatible-models">
         <div className="account-field-head">
-          <Field className="form-field" label={tr('accounts.compatible.models')} />
+          <Field className="form-field account-group-heading" label={tr('accounts.compatible.models')} />
           <Button appearance="link" size="small" htmlType="button" disabled={disabled} onClick={fetch}>
             {tr('accounts.compatible.fetch')}
           </Button>
         </div>
-        <p className="field-hint">{tr('accounts.compatible.choose')}</p>
         {error && (
           <p className="field-hint" data-tone="warn" role="status">
             {`${catalogueErrorText(error)} ${tr('accounts.compatible.manualStill')}`}

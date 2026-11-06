@@ -64,6 +64,29 @@ function SettingsFixture() {
               </div>
               <fieldset className="config-section account-connection">
                 <legend>{text('accounts.connectionLegend', '连接')}</legend>
+                <div className="account-field form-field-wide account-endpoint">
+                  <div className="account-field-head">
+                    <label className="form-field" htmlFor="config-base-url">
+                      <span>{text('settings-shell.baseUrlLabel', 'Base URL')}</span>
+                    </label>
+                    <Button
+                      id="config-base-url-reset"
+                      htmlType="button"
+                      appearance="link"
+                      size="small"
+                      hidden
+                    >
+                      <span>{text('accounts.resetBaseUrl', '恢复默认')}</span>
+                    </Button>
+                  </div>
+                  <SettingsInput
+                    id="config-base-url"
+                    autoComplete="url"
+                    aria-describedby="config-base-url-hint"
+                  />
+                  <p id="config-base-url-hint" className="field-hint" />
+                  <p id="config-base-url-error" className="account-field-error" />
+                </div>
                 <div id="config-auth-method-field" className="account-auth-method">
                   <span hidden>
                     <SettingsSelect id="config-auth-method" />
@@ -178,29 +201,6 @@ function SettingsFixture() {
                     </label>
                     <p id="config-account-name-hint" className="field-hint" />
                     <p id="config-account-name-error" className="account-field-error" />
-                  </div>
-                  <div className="account-field">
-                    <div className="account-field-head">
-                      <label className="form-field" htmlFor="config-base-url">
-                        <span>{text('settings-shell.baseUrlLabel', 'Base URL')}</span>
-                      </label>
-                      <Button
-                        id="config-base-url-reset"
-                        htmlType="button"
-                        appearance="link"
-                        size="small"
-                        hidden
-                      >
-                        <span>{text('accounts.resetBaseUrl', '恢复默认')}</span>
-                      </Button>
-                    </div>
-                    <SettingsInput
-                      id="config-base-url"
-                      autoComplete="url"
-                      aria-describedby="config-base-url-hint"
-                    />
-                    <p id="config-base-url-hint" className="field-hint" />
-                    <p id="config-base-url-error" className="account-field-error" />
                   </div>
                   <div className="account-field">
                     <div id="config-account-network" />

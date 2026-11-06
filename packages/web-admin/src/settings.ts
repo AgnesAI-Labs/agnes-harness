@@ -180,6 +180,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     },
     () => void test(),
   )
+  // A saved account has already been connected, so its models count as known even before a re-listing.
+  const catalogueKnown = (): boolean =>
+    isCompatible() && (compatible.hasListed() || !!selectedAccount()?.models.length)
   const canUseSavedModels = (): boolean => {
     const account = selectedAccount()
     return (
@@ -325,7 +328,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       provider: providers.find((row) => row.id === providerId()),
       oauth: oauthSelected,
       tested,
-      catalogue: isCompatible() && compatible.hasListed(),
+      catalogue: catalogueKnown(),
       timeouts: networkFields.values(),
     })
     ui.save.setAttribute('aria-busy', String(busy))
@@ -342,7 +345,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const renderModels = (models: readonly ConfigModel[] = tested?.models ?? []): void => {
     const previousModel = ui.models.value
     setSettingsSelectOptions(ui.models, [
-      option(modelChoiceLabel(models.length, compatible.hasListed(), isCompatible()), ''),
+      option(modelChoiceLabel(models.length, catalogueKnown()), ''),
       ...models.map((model) => option(`${model.name} · ${model.id}`, model.id)),
     ])
     const savedModel = models.some((model) => model.id === previousModel)
@@ -928,8 +931,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     suggestLabel(selected?.label ?? '')
     // A compatible endpoint's registry address is a stand-in; the person gives the real one.
     ui.baseUrl.value = isCompatible() ? '' : (selected?.baseUrl ?? '')
-    // Its address is the first thing it needs, so the section holding it opens.
-    if (isCompatible() && advanced) setDisclosureOpen(advanced, true)
     ui.apiKey.value = ''
     compatible.reset([])
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']

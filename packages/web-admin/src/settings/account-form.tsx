@@ -108,7 +108,7 @@ export function accountForm(ui: SettingsElements) {
   }
 
   /** The closed advanced options name what they hold; a changed value is marked. */
-  const summary = (state: AccountFormState, custom: boolean) => {
+  const summary = (state: AccountFormState) => {
     const label = name?.value.trim()
     const timeouts = Object.entries(state.timeouts).map(([key, ms]) => ({
       text: `${tr(`accounts.network.${key}`)} ${tr('accounts.network.seconds', { count: String(ms / 1000) })}`,
@@ -116,7 +116,6 @@ export function accountForm(ui: SettingsElements) {
     }))
     const tags = [
       ...(label ? [{ text: tr('accounts.summaryName', { name: label }), set: false }] : []),
-      { text: tr(custom ? 'accounts.summaryCustomUrl' : 'accounts.summaryDefaultUrl'), set: custom },
       ...(timeouts.length ? timeouts : [{ text: tr('accounts.summaryTimeouts'), set: false }]),
     ]
     return (
@@ -234,7 +233,7 @@ export function accountForm(ui: SettingsElements) {
             ? tr('accounts.baseUrlHint', { url: provider.baseUrl })
             : ''
       const meta = byId('config-account-advanced-meta')
-      if (meta) renderRegion(meta, summary(state, custom))
+      if (meta) renderRegion(meta, summary(state))
     },
     /** The default thinking effort and context budget as entered, checked against the model. */
     readModelSettings(model: ConfigModel | undefined): ModelSettings {
