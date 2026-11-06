@@ -11,10 +11,12 @@ import type {
   OAuthProtectedResourceMetadata,
   OAuthTokens,
 } from '@modelcontextprotocol/sdk/shared/auth.js'
-import { checkResourceAllowed } from '@modelcontextprotocol/sdk/shared/auth-utils.js'
+import {
+  checkResourceAllowed,
+  resourceUrlFromServerUrl,
+} from '@modelcontextprotocol/sdk/shared/auth-utils.js'
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { validateManagedHttpUrl } from './mcp.js'
-import { canonicalUrl } from './mcp-oauth-protocol.js'
 
 /**
  * OAuth 2.1 client registration chain (Client ID Metadata Documents / Dynamic Client Registration
@@ -262,11 +264,11 @@ export type McpOAuthDiscovery = Readonly<{
  * Everything a login or a refresh needs to know about the server's authorization side, from one
  * round of discovery. The protected resource named by the metadata must be on the server's own
  * origin and its path must be a prefix of the server's path; anything else throws. Without such
- * metadata the resource is the canonical form of the server address.
+ * metadata the resource is the server address without its fragment.
  */
 export async function discoverMcpOAuth(serverUrl: URL, fetchImpl?: FetchLike): Promise<McpOAuthDiscovery> {
   const resourceMetadata = await tryDiscoverResourceMetadata(serverUrl, fetchImpl)
-  let resource = new URL(canonicalUrl(serverUrl))
+  let resource = resourceUrlFromServerUrl(serverUrl)
   if (resourceMetadata) {
     const advertised = new URL(resourceMetadata.resource)
     if (!checkResourceAllowed({ requestedResource: serverUrl, configuredResource: advertised }))

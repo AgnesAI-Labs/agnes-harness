@@ -238,7 +238,7 @@ type Options = Readonly<{
  * every single connection attempt the way a near-zero leeway would once a token is within its final
  * seconds of life.
  */
-const OAUTH_REFRESH_LEEWAY_MS = 30_000
+export const OAUTH_REFRESH_LEEWAY_MS = 30_000
 
 const ZERO_REVISION = '0'.repeat(64)
 const RESERVED_ENV = new Set(['PATH', 'HOME', 'SHELL', 'NODE_OPTIONS', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES'])

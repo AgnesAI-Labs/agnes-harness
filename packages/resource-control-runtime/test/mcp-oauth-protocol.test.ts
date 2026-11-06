@@ -1,4 +1,6 @@
+import { resourceUrlFromServerUrl } from '@modelcontextprotocol/sdk/shared/auth-utils.js'
 import { afterEach, describe, expect, it } from 'vitest'
+import { OAUTH_REFRESH_LEEWAY_MS } from '../src/mcp.js'
 import {
   canonicalUrl,
   clientAuthentication,
@@ -128,6 +130,20 @@ describe('tokensFromResponse', () => {
     )
   })
 
+  it('a zero, negative or tiny expires_in does not land inside the early-refresh window', () => {
+    const leeway = OAUTH_REFRESH_LEEWAY_MS
+    for (const expiresIn of [0, -5, Number.NaN, 5]) {
+      const { expiresAt } = tokensFromResponse(
+        { ...response, expires_in: expiresIn },
+        { now: 0, requested: [] },
+      )
+      expect(expiresAt).toBeGreaterThan(leeway)
+    }
+    expect(tokensFromResponse({ ...response, expires_in: 0 }, { now: 0, requested: [] }).expiresAt).toBe(
+      3_600_000,
+    )
+  })
+
   it('without refresh_token keeps the previous one', () => {
     const previous = { accessToken: 'old', refreshToken: 'rt-old', expiresAt: 1, scope: ['a'] }
     expect(tokensFromResponse(response, { now: 0, previous, requested: [] }).refreshToken).toBe('rt-old')
@@ -213,7 +229,8 @@ describe('discoverMcpOAuth', () => {
     fake = await startFakeOAuthServer()
     const serverUrl = new URL('/mcp/', fake.url)
     const found = await discoverMcpOAuth(serverUrl, fake.fetchImpl)
-    expect(found.resource.href).toBe(canonicalUrl(serverUrl))
+    expect(found.resource.href).toBe(resourceUrlFromServerUrl(serverUrl).href)
+    expect(found.resource.href).toBe(serverUrl.href)
     expect(found.scopesSupported).toEqual([])
   })
 

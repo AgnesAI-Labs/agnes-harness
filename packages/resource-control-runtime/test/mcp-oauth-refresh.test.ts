@@ -238,6 +238,21 @@ describe('refreshMcpOAuth', () => {
     expect(refreshed.rev).toBe(seen.rev + 1)
   })
 
+  it('metadata outage reads as login-required, not endpoint-changed, and keeps the tokens', async () => {
+    const server = await start()
+    const seen = recordFor(server)
+    const { store, run } = setup(server, seen)
+    const outage: FetchLike = async (input, init) => {
+      if (String(input).includes('/.well-known/')) throw new TypeError('fetch failed')
+      return server.fetchImpl(input, init)
+    }
+
+    expect(await reconnectReason(run(seen, { fetchImpl: outage }))).toBe('login-required')
+    expect(server.requests()).toEqual([])
+    expect(await store.read(SERVER_ID)).toEqual(seen)
+    expect(store.writes(SERVER_ID)).toBe(0)
+  })
+
   it('no refresh token: throws login-required', async () => {
     const server = await start()
     const seen = recordFor(server, {

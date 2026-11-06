@@ -51,6 +51,10 @@ export async function refreshMcpOAuth(input: {
   } catch (cause) {
     throw needsLogin('endpoint-changed', cause)
   }
+  // The login found authorization server metadata but this round found none: the server could not be
+  // reached, which says nothing about whether it moved. Keep the tokens and ask for a retry.
+  if (!discovery.metadata && seen.server.issuer)
+    throw needsLogin('login-required', new Error('authorization server metadata could not be fetched'))
   if (serverDrifted(seen.server, discovery)) throw needsLogin('endpoint-changed')
 
   const outcome = await store.update<Outcome>(serverId, async (current) => {

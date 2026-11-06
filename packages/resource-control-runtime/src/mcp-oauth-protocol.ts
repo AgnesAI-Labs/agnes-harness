@@ -1,9 +1,16 @@
 import type { AddClientAuthentication } from '@modelcontextprotocol/sdk/client/auth.js'
 import type { OAuthTokens } from '@modelcontextprotocol/sdk/shared/auth.js'
+import { OAUTH_REFRESH_LEEWAY_MS } from './mcp.js'
 import type { McpOAuthTokens } from './mcp-oauth-store.js'
 
 /** Token lifetime assumed when the token response carries no `expires_in`. */
 const DEFAULT_EXPIRES_IN_MS = 3_600_000
+/**
+ * Shortest lifetime stored for a token: twice the early-refresh window, so a token the server
+ * calls short-lived is never already due for refresh the moment it is stored (every request checks
+ * the expiry, so that would turn each request into a token request).
+ */
+const MIN_LIFETIME_MS = OAUTH_REFRESH_LEEWAY_MS * 2
 const MAX_SCOPE_TOKEN_LENGTH = 1024
 const MAX_SCOPE_TOKENS = 128
 /** RFC 6749 scope-token: `%x21 / %x23-5B / %x5D-7E` (printable ASCII without space, `"` and `\`). */
@@ -68,10 +75,15 @@ export function tokensFromResponse(
   return {
     accessToken: response.access_token,
     ...(refreshToken ? { refreshToken } : {}),
-    expiresAt:
-      input.now + (response.expires_in === undefined ? DEFAULT_EXPIRES_IN_MS : response.expires_in * 1000),
+    expiresAt: input.now + lifetimeMs(response.expires_in),
     scope,
   }
+}
+
+/** A missing, zero, negative or non-finite `expires_in` means one hour; anything short is raised to the minimum. */
+function lifetimeMs(expiresIn: number | undefined): number {
+  if (expiresIn === undefined || !Number.isFinite(expiresIn) || expiresIn <= 0) return DEFAULT_EXPIRES_IN_MS
+  return Math.max(expiresIn * 1000, MIN_LIFETIME_MS)
 }
 
 export class McpOAuthClientAuthUnsupported extends Error {
