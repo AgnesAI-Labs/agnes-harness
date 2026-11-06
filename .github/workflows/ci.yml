@@ -187,6 +187,18 @@ jobs:
           $env:AGNES_ACCEPTANCE_POWERSHELL = (Get-Process -Id $PID).Path
           if (-not $env:AGNES_ACCEPTANCE_POWERSHELL) { throw 'Cannot identify the acceptance PowerShell process' }
           pnpm exec vitest run tools/acceptance/shared-local-delivery.e2e.test.ts
+      # Pull requests run the heavy job on Linux only, where these real-Windows files skip. Run them
+      # here, after the local package is built; on every other event the Windows heavy shards run
+      # them and this step does not (tools/ci/routing.test.ts holds them to one Windows run).
+      - name: Windows ACL execution heavy files
+        if: runner.os == 'Windows' && matrix.shard == '1/3' && github.event_name == 'pull_request'
+        run: >-
+          pnpm exec vitest run --project heavy --maxWorkers=1
+          packages/system-node/test/windows-acl.e2e.test.ts
+          packages/system-node/test/process-restricted.e2e.test.ts
+          packages/host-infrastructure/test/windows-acl-recovery.e2e.test.ts
+          packages/host/test/windows-acl-execution.e2e.test.ts
+          packages/daemon/test/windows-acl-detached.e2e.test.ts
       # Installation and builds must not rewrite committed source or the lockfile.
       - name: verify working tree is clean
         run: git diff --exit-code
