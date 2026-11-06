@@ -309,6 +309,33 @@ describe('MCP OAuth sign-in', () => {
     ).toHaveLength(1)
   })
 
+  it('a sign-out before a first sign-in completes rejects it; a sign-in begun afterwards completes', async () => {
+    const server = await start()
+    const store = createMemoryOAuthStore()
+    const first = started(await begin(server, { summary: summarizeMcpOAuth(await store.read(SERVER_ID)) }))
+    expect(first.expectedEpoch).toBe(0)
+    const code = await authorize(server, first)
+
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 1 })
+    const error = await complete(server, store, first, code).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(McpOAuthLoginSuperseded)
+    expect(await store.read(SERVER_ID)).toEqual({
+      version: 2,
+      kind: 'oauth',
+      epoch: 1,
+      rev: 1,
+      requiredScope: [],
+    })
+    expect(store.writes(SERVER_ID)).toBe(1)
+    expect(server.requests()).toEqual([])
+
+    const again = started(await begin(server, { summary: summarizeMcpOAuth(await store.read(SERVER_ID)) }))
+    expect(again.expectedEpoch).toBe(1)
+    await complete(server, store, again, await authorize(server, again))
+    expect(await record(store)).toMatchObject({ epoch: 1, rev: 2, tokens: { accessToken: 'at-1' } })
+  })
+
   it('begin records the authorization side it used', async () => {
     const server = await start()
     const login = started(await begin(server))
@@ -539,11 +566,16 @@ describe('MCP OAuth sign-out', () => {
     })
   })
 
-  it('with no credential at all there is nothing to sign out and nothing is written', async () => {
+  it('with no credential at all the signed-out record is written at epoch 1', async () => {
     const store = createMemoryOAuthStore()
-    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 0 })
-    expect(await store.read(SERVER_ID)).toBeNull()
-    expect(store.writes(SERVER_ID)).toBe(0)
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 1 })
+    expect(await store.read(SERVER_ID)).toEqual({
+      version: 2,
+      kind: 'oauth',
+      epoch: 1,
+      rev: 1,
+      requiredScope: [],
+    })
   })
 
   it('a file that cannot be read is replaced only when asked', async () => {

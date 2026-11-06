@@ -433,11 +433,20 @@ describe('MCP OAuth sign-in in the daemon', () => {
     }
   })
 
-  it('logout with nothing stored writes nothing; an unreadable file becomes a sign-out record', async () => {
+  it('logout with nothing stored still writes the sign-out record; an unreadable file becomes one too', async () => {
     const t = await setup()
     try {
-      expect(await t.call('_agnes/v1/admin.mcp.oauth.logout', target)).toMatchObject({ result: { epoch: 0 } })
-      expect(await t.store.read('srv-1')).toBeNull()
+      expect(await t.call('_agnes/v1/admin.mcp.oauth.logout', target)).toMatchObject({ result: { epoch: 1 } })
+      expect(await t.store.read('srv-1')).toEqual({
+        version: 2,
+        kind: 'oauth',
+        epoch: 1,
+        rev: 1,
+        requiredScope: [],
+      })
+      // A first sign-in begun before that logout cannot complete.
+      expect(JSON.stringify(await t.complete({ expectedEpoch: 0 }))).toContain('MCP_OAUTH_LOGIN_SUPERSEDED')
+      expect(t.tokenRequests).toEqual([])
       await t.store.update('srv-1', async () => ({ value: undefined, next: signedIn() }))
       await writeFile(join(t.home, 'auth', 'mcp-oauth', 'srv-1.json'), '{not json', { mode: 0o600 })
       await expect(t.store.read('srv-1')).rejects.toThrow()

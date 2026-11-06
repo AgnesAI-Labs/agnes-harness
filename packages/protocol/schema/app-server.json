@@ -2919,7 +2919,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991,
-          "description": "The sign-out count after this call; 0 when there was no stored sign-in to remove."
+          "description": "The sign-out count after this call. It always grows, also when nothing was stored, so a sign-in started earlier cannot complete."
         }
       },
       "required": ["epoch"],

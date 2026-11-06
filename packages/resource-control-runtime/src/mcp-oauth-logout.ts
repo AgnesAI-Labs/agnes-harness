@@ -6,8 +6,9 @@ import type { McpOAuthStore } from './mcp-oauth-store.js'
  * started before can no longer write (both compare `epoch` under the same lock). Nothing is sent to
  * the authorization server.
  *
- * With no credential file there is nothing to sign out, and nothing is written. A file that cannot be
- * read makes the store throw; `replaceUnreadable` turns it into a signed-out record instead.
+ * A missing credential file counts as epoch 0 and still gets the signed-out record, so a first
+ * sign-in already in progress (begun at epoch 0) is refused too. A file that cannot be read makes the
+ * store throw; `replaceUnreadable` turns it into a signed-out record instead.
  */
 export async function signOutMcpOAuth(input: {
   serverId: string
@@ -17,8 +18,6 @@ export async function signOutMcpOAuth(input: {
   return input.store.update(
     input.serverId,
     async (current) => {
-      // Under `replaceUnreadable` a null is the unreadable file, which is replaced like any other.
-      if (current === null && !input.replaceUnreadable) return { value: { epoch: 0 } }
       const epoch = (current && !('legacy' in current) ? current.epoch : 0) + 1
       return { value: { epoch }, next: { epoch, requiredScope: [] } }
     },
