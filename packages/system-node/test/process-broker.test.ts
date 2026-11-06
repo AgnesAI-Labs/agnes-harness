@@ -104,6 +104,7 @@ const payload = () => ({
   cwd: 'C:\\work',
   environment: 'A=1\0B=2\0\0',
   writeSids: ['S-1-4-1-2', 'S-1-4-3-4'],
+  isolationSid: 'S-1-4-5-6-7-8',
   readOnly: false,
 })
 
@@ -117,7 +118,15 @@ describe('process broker restricted launch', () => {
     expect(run.calls()).toEqual([
       {
         call: 'spawnRestricted',
-        args: [sent.application, sent.commandLine, sent.cwd, sent.environment, sent.writeSids, sent.readOnly],
+        args: [
+          sent.application,
+          sent.commandLine,
+          sent.cwd,
+          sent.environment,
+          sent.writeSids,
+          sent.readOnly,
+          sent.isolationSid,
+        ],
       },
     ])
     run.child.send({ type: 'resume' })
@@ -156,6 +165,8 @@ describe('process broker restricted launch', () => {
     ['three write SIDs', { writeSids: ['S-1-4-1', 'S-1-4-2', 'S-1-4-3'] }],
     ['a non-string write SID', { writeSids: [1] }],
     ['a non-boolean mode', { readOnly: 'yes' }],
+    ['no isolation SID', { isolationSid: undefined }],
+    ['an empty isolation SID', { isolationSid: '' }],
   ])('exits without launching on %s', async (_name, change) => {
     const run = start('ok')
     await run.next()

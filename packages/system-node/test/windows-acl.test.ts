@@ -71,6 +71,8 @@ const childId = '00000000000000000002000000000def'
 const rootSddl = 'O:S-1-5-21-1-2-3-1001G:S-1-5-21-1-2-3-513D:AI(A;OICIID;FA;;;SY)'
 const childSddl = 'O:S-1-5-21-1-2-3-1001G:S-1-5-21-1-2-3-513D:PAI(A;;FA;;;SY)'
 const writeSid = 'S-1-4-123456-654321'
+const owned = 'a'.repeat(64)
+const ownedAfter = 'd'.repeat(64)
 const print = (identity: { volumeId: string; fileId: string }, sddl: string): string =>
   createHash('sha256')
     .update(Buffer.from(`agnes-windows-acl-v1\n${identity.volumeId}\n${identity.fileId}\n${sddl}`, 'utf16le'))
@@ -84,6 +86,7 @@ function snapshot(): Snapshot {
     identity,
     securityDescriptor: rootSddl,
     fingerprint: print(identity, rootSddl),
+    ownedFingerprint: owned,
     descendants: [
       {
         path: 'C:\\Users\\me\\工作 区\\private',
@@ -245,6 +248,7 @@ describe('Windows ACL native results', () => {
       fileId,
       securityDescriptor: rootSddl,
       fingerprint: before.fingerprint,
+      ownedFingerprint: owned,
       descendants: [
         {
           path: before.descendants[0]?.path,
@@ -273,6 +277,31 @@ describe('Windows ACL native results', () => {
     expect(() => acl.inspectWindowsAcl('C:\\Users\\me\\project')).toThrow(code('E_SYSTEM_NATIVE_UNAVAILABLE'))
     fake.aclInspect.mockReturnValue({ ...rawRoot(), descendants: undefined })
     expect(() => acl.inspectWindowsAcl('C:\\Users\\me\\project')).toThrow(code('E_SYSTEM_NATIVE_UNAVAILABLE'))
+    for (const ownedFingerprint of [undefined, 'A'.repeat(64), 'a'.repeat(63)]) {
+      fake.aclInspect.mockReturnValue({ ...rawRoot(), ownedFingerprint })
+      expect(() => acl.inspectWindowsAcl('C:\\Users\\me\\project')).toThrow(
+        code('E_SYSTEM_NATIVE_UNAVAILABLE'),
+      )
+    }
+  })
+
+  it('reports the owned fingerprint of the root after a complete change', async () => {
+    const acl = await load('win32')
+    const before = snapshot()
+    const result = { complete: true, changes: [], failures: [], inheritedDescendants: 0 }
+    fake.aclApply.mockReturnValue({ ...result, ownedFingerprint: ownedAfter })
+    expect(acl.applyWindowsAclGrant({ before, grantId: 'grant-1', writeSid }).ownedFingerprint).toBe(
+      ownedAfter,
+    )
+    // A complete change always read the root back; without its owned fingerprint it is malformed.
+    fake.aclApply.mockReturnValue(result)
+    expect(() => acl.applyWindowsAclGrant({ before, grantId: 'grant-1', writeSid })).toThrow(
+      code('E_SYSTEM_NATIVE_UNAVAILABLE'),
+    )
+    fake.aclApply.mockReturnValue({ ...result, complete: false })
+    expect(acl.applyWindowsAclGrant({ before, grantId: 'grant-1', writeSid })).not.toHaveProperty(
+      'ownedFingerprint',
+    )
   })
 
   it('passes native refusals through unchanged', async () => {
@@ -287,13 +316,20 @@ describe('Windows ACL native results', () => {
   it('sends the expected root and descendant evidence to the native grant', async () => {
     const acl = await load('win32')
     const before = snapshot()
-    fake.aclApply.mockReturnValue({ complete: true, changes: [], failures: [], inheritedDescendants: 12 })
+    fake.aclApply.mockReturnValue({
+      complete: true,
+      changes: [],
+      failures: [],
+      inheritedDescendants: 12,
+      ownedFingerprint: ownedAfter,
+    })
     expect(acl.applyWindowsAclGrant({ before, grantId: 'grant-1', writeSid })).toEqual({
       grantId: 'grant-1',
       complete: true,
       changes: [],
       failures: [],
       inheritedDescendants: 12,
+      ownedFingerprint: ownedAfter,
     })
     expect(fake.aclApply).toHaveBeenCalledWith(
       '\\\\?\\C:\\Users\\me\\工作 区',
@@ -359,7 +395,13 @@ describe('Windows ACL native results', () => {
     const acl = await load('win32')
     const before = snapshot()
     const [allow, , label] = acl.windowsAclGrantEntries(writeSid)
-    fake.aclRestore.mockReturnValue({ complete: true, changes: [], failures: [], inheritedDescendants: 0 })
+    fake.aclRestore.mockReturnValue({
+      complete: true,
+      changes: [],
+      failures: [],
+      inheritedDescendants: 0,
+      ownedFingerprint: ownedAfter,
+    })
     const result = acl.restoreWindowsAclGrant({
       before,
       grantId: 'grant-1',

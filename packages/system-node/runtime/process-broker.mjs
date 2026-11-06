@@ -78,6 +78,7 @@ function runRestricted(message) {
     !Array.isArray(message.writeSids) ||
     message.writeSids.length > 2 ||
     !message.writeSids.every(text) ||
+    !text(message.isolationSid) ||
     typeof message.readOnly !== 'boolean'
   )
     return process.exit(1)
@@ -93,6 +94,7 @@ function runRestricted(message) {
       message.environment,
       message.writeSids,
       message.readOnly,
+      message.isolationSid,
     )
   } catch (error) {
     return fail(error)

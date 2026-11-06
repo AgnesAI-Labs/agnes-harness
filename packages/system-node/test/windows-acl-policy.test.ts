@@ -43,6 +43,26 @@ static void lists(int argc, char** argv, int from, std::vector<AclAce>& dacl, st
     (second ? label : dacl).push_back(entry(argv[i]));
   }
 }
+// Splits the entries after \`from\` into groups separated by "--".
+static std::vector<std::vector<AclAce>> groups(int argc, char** argv, int from, std::size_t count) {
+  std::vector<std::vector<AclAce>> out(count);
+  std::size_t group = 0;
+  for (int i = from; i < argc; i++) {
+    if (!std::strcmp(argv[i], "--")) { if (++group >= count) std::exit(2); continue; }
+    out[group].push_back(entry(argv[i]));
+  }
+  return out;
+}
+static std::vector<std::wstring> words(int argc, char** argv, int from, std::size_t count, std::size_t which) {
+  std::vector<std::wstring> out;
+  std::size_t group = 0;
+  for (int i = from; i < argc; i++) {
+    if (!std::strcmp(argv[i], "--")) { ++group; continue; }
+    if (group == which) out.push_back(wide(argv[i]));
+  }
+  if (group + 1 > count) std::exit(2);
+  return out;
+}
 static void show(const std::vector<AclAce>& list) {
   for (const auto& ace : list) { std::printf("%x:%x:%lx:", ace.type, ace.flags, static_cast<unsigned long>(ace.mask)); put(ace.sid); std::printf(" "); }
 }
@@ -88,6 +108,7 @@ int main(int argc, char** argv) {
     const AclGrantPlan plan = aclPlanGrant(dacl, label, wide(argv[2]));
     if (plan.status == AclPlanStatus::SidInUse) { std::fputs("sid-in-use", stdout); return 0; }
     if (plan.status == AclPlanStatus::LabelConflict) { std::fputs("label-conflict", stdout); return 0; }
+    if (plan.status == AclPlanStatus::BroadWrite) { std::fputs("broad-write", stdout); return 0; }
     std::printf("allow=%d deny=%d label=%d dacl=", plan.addAllow, plan.addDeny, plan.addLabel);
     show(aclGrantedDacl(dacl, plan, wide(argv[2])));
     std::printf("label=");
@@ -131,6 +152,25 @@ int main(int argc, char** argv) {
   }
   if (command == "fingerprint") {
     put(aclFingerprintText(wide(argv[2]), wide(argv[3]), wide(argv[4])));
+    return 0;
+  }
+  if (command == "broad") {
+    std::vector<AclAce> dacl, label; lists(argc, argv, 2, dacl, label);
+    std::fputs(aclBroadWrite(dacl) ? "broad" : "clear", stdout);
+    return 0;
+  }
+  if (command == "holdable") {
+    std::fputs(aclHoldableDirectory(argv[2][0] == '1', static_cast<std::uint32_t>(std::strtoul(argv[3], nullptr, 16))) ? "hold" : "refuse", stdout);
+    return 0;
+  }
+  if (command == "inherits") {
+    // container daclProtected labelProtected owner group parentDacl -- parentLabel -- childDacl -- childLabel
+    const auto lists4 = groups(argc, argv, 7, 4);
+    std::fputs(aclInheritanceMatches(lists4[0], lists4[1], lists4[2], lists4[3], wide(argv[5]), wide(argv[6]), argv[2][0] == '1', argv[3][0] == '1', argv[4][0] == '1') ? "matches" : "stale", stdout);
+    return 0;
+  }
+  if (command == "owned") {
+    put(aclOwnedText(wide(argv[2]), wide(argv[3]), wide(argv[4]), wide(argv[5]), argv[6][0] == '1', argv[7][0] == '1', words(argc, argv, 8, 2, 0), words(argc, argv, 8, 2, 1)));
     return 0;
   }
   if (command == "volume") {
@@ -239,6 +279,138 @@ describe.skipIf(!hasCompiler())('Windows ACL grant policy', () => {
     )
     expect(run('plan', SID, user, '--', inheritedLow)).toBe(
       `allow=1 deny=1 label=1 dacl=${deny} ${user} ${allow} label=${label} ${inheritedLow}`,
+    )
+  })
+
+  it('refuses a root whose existing entries let every confined process write', () => {
+    const everyoneWrite = '0:3:1f01ff:S-1-1-0'
+    expect(run('plan', SID, user, everyoneWrite)).toBe('broad-write')
+    expect(run('plan', SID, user, '0:13:2:S-1-1-0')).toBe('broad-write')
+    expect(run('plan', SID, user, '0:b:10000000:S-1-5-5-0-12345')).toBe('broad-write')
+    expect(run('plan', SID, user, '0:13:1200a9:S-1-1-0', '0:13:1200a9:S-1-5-5-0-1')).toBe(
+      `allow=1 deny=1 label=1 dacl=${deny} ${user} ${allow} 0:13:1200a9:S-1-1-0 0:13:1200a9:S-1-5-5-0-1 label=${label}`,
+    )
+    // Denies, labels and principals outside the confined token's restricting list do not count.
+    expect(run('broad', '1:3:1f01ff:S-1-1-0', '0:3:1f01ff:S-1-5-11', '0:3:1f01ff:S-1-5-32-545')).toBe('clear')
+    expect(run('broad', '0:0:40000:S-1-5-5-0-9')).toBe('broad')
+    expect(run('broad', '0:0:80000:S-1-1-0')).toBe('broad')
+    expect(run('broad', '0:0:10000:S-1-1-0')).toBe('broad')
+    expect(run('broad', '0:0:40:S-1-1-0')).toBe('broad')
+    expect(run('broad', '0:0:120089:S-1-1-0', '0:0:120089:S-1-5-5-0-9')).toBe('clear')
+  })
+
+  it('holds real directories and cloud placeholders but no name surrogate', () => {
+    expect(run('holdable', '0', '0')).toBe('hold')
+    expect(run('holdable', '1', '9000001a')).toBe('hold')
+    expect(run('holdable', '1', '9000701a')).toBe('hold')
+    expect(run('holdable', '1', 'a0000003')).toBe('refuse')
+    expect(run('holdable', '1', 'a000000c')).toBe('refuse')
+    expect(run('holdable', '1', 'a000001d')).toBe('refuse')
+  })
+
+  it('finds inherited entries the current parent would not produce', () => {
+    const owner = 'S-1-5-21-1-2-3-1001'
+    const group = 'S-1-5-21-1-2-3-513'
+    const ok = (...args: string[]) => run('inherits', '1', '0', '0', owner, group, ...args)
+    // A parent's inheritable entries reach a directory as inherited, keeping OI/CI.
+    const system = '0:3:1f01ff:S-1-5-18'
+    expect(ok(system, '--', '--', '0:13:1f01ff:S-1-5-18', '--')).toBe('matches')
+    // An entry the parent no longer has (a folder moved from elsewhere on the volume) is stale.
+    expect(ok(system, '--', '--', '0:13:1f01ff:S-1-5-18', '0:13:1f01ff:S-1-5-21-9-9-9-1001', '--')).toBe(
+      'stale',
+    )
+    // So is a missing one.
+    expect(ok(system, '0:3:1200a9:S-1-5-32-545', '--', '--', '0:13:1f01ff:S-1-5-18', '--')).toBe('stale')
+    // Explicit entries of the child are its own, never compared with the parent.
+    expect(ok(system, '--', '--', '0:13:1f01ff:S-1-5-18', `0:3:1f01ff:${owner}`, '--')).toBe('matches')
+    // CREATOR OWNER and generic rights split into an effective entry and an inherit-only one.
+    expect(
+      ok('0:b:10000000:S-1-3-0', '--', '--', `0:10:1f01ff:${owner}`, '0:1b:10000000:S-1-3-0', '--'),
+    ).toBe('matches')
+    expect(ok('0:b:10000000:S-1-3-0', '--', '--', '0:1b:10000000:S-1-3-0', '--')).toBe('stale')
+    expect(
+      ok('0:b:e0010000:S-1-5-11', '--', '--', '0:10:1301bf:S-1-5-11', '0:1b:e0010000:S-1-5-11', '--'),
+    ).toBe('matches')
+    // Inherit-only for files: a directory keeps it inherit-only; this-folder-only entries stay behind.
+    expect(
+      ok('0:9:1200a9:S-1-5-32-545', '0:0:4:S-1-5-11', '--', '--', '0:19:1200a9:S-1-5-32-545', '--'),
+    ).toBe('matches')
+    // No-propagate: the directory gets the effective entry only.
+    expect(ok('0:7:1200a9:S-1-5-32-545', '--', '--', '0:10:1200a9:S-1-5-32-545', '--')).toBe('matches')
+    // Files take object-inherit entries as effective entries only.
+    expect(
+      run(
+        'inherits',
+        '0',
+        '0',
+        '0',
+        owner,
+        group,
+        system,
+        '0:2:1200a9:S-1-5-32-545',
+        '--',
+        '--',
+        '0:10:1f01ff:S-1-5-18',
+        '--',
+      ),
+    ).toBe('matches')
+    // Labels inherit the same way.
+    const medium = '11:3:1:S-1-16-8192'
+    const inheritedMedium = '11:13:1:S-1-16-8192'
+    expect(ok(system, '--', medium, '--', '0:13:1f01ff:S-1-5-18', '--', inheritedMedium)).toBe('matches')
+    expect(ok(system, '--', '--', '0:13:1f01ff:S-1-5-18', '--', inheritedMedium)).toBe('stale')
+    // A protected DACL or label inherits nothing, so its entries are not compared.
+    expect(
+      run(
+        'inherits',
+        '1',
+        '1',
+        '1',
+        owner,
+        group,
+        system,
+        '--',
+        '--',
+        '0:13:1f01ff:S-1-5-21-9',
+        '--',
+        inheritedLow,
+      ),
+    ).toBe('matches')
+    // Entries a grant propagates are the grant's own and are rewritten by its change anyway.
+    expect(
+      ok(
+        system,
+        '--',
+        '--',
+        '0:13:1f01ff:S-1-5-18',
+        `0:13:110156:${SID}`,
+        '1:12:40:S-1-1-0',
+        '--',
+        inheritedLow,
+      ),
+    ).toBe('matches')
+  })
+
+  it('fingerprints only what a grant owns on its root', () => {
+    expect(
+      run(
+        'owned',
+        '1a2b',
+        '3c4d',
+        'S-1-5-21-1',
+        'S-1-5-21-2',
+        '1',
+        '0',
+        '00031400',
+        '01021400',
+        '--',
+        '11031400',
+      ),
+    ).toBe(
+      'agnes-windows-acl-owned-v1\n1a2b\n3c4d\nO:S-1-5-21-1\nG:S-1-5-21-2\nD:P:00031400,01021400\nS:-:11031400',
+    )
+    expect(run('owned', '1a2b', '3c4d', 'S-1-5-21-1', 'S-1-5-21-2', '0', '1', '--')).toBe(
+      'agnes-windows-acl-owned-v1\n1a2b\n3c4d\nO:S-1-5-21-1\nG:S-1-5-21-2\nD:-:\nS:P:',
     )
   })
 

@@ -7,6 +7,7 @@
 // label) follows the write-restricted ACL backend of DeepSeek Harness
 // (packages/sandbox/sandbox-windows-acl), MIT License, Copyright (c) 2026 DeepSeek; see
 // DEEPSEEK-LICENSE.txt in this directory.
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -17,6 +18,8 @@ constexpr std::uint8_t kAclDenyType = 0x01;
 constexpr std::uint8_t kAclLabelType = 0x11;
 constexpr std::uint8_t kAclObjectInherit = 0x01;
 constexpr std::uint8_t kAclContainerInherit = 0x02;
+constexpr std::uint8_t kAclNoPropagate = 0x04;
+constexpr std::uint8_t kAclInheritOnly = 0x08;
 constexpr std::uint8_t kAclInherited = 0x10;
 // Write data, append, extended attributes, attributes, delete, delete child and synchronize.
 // READ_CONTROL, WRITE_DAC and WRITE_OWNER stay out, so a confined child can neither rewrite an
@@ -24,6 +27,14 @@ constexpr std::uint8_t kAclInherited = 0x10;
 constexpr std::uint32_t kAclGrantMask = 0x00110156;
 constexpr std::uint32_t kAclDeleteChild = 0x00000040;
 constexpr std::uint32_t kAclNoWriteUp = 0x00000001;
+// Every right a write-restricted token's second check can be asked for on a file or directory:
+// write data/add file, append/add subdirectory, extended attributes, delete child, attributes,
+// delete, WRITE_DAC, WRITE_OWNER, GENERIC_ALL and GENERIC_WRITE.
+constexpr std::uint32_t kAclWriteBits = 0x500D0156;
+constexpr std::uint32_t kAclGenericRead = 0x80000000;
+constexpr std::uint32_t kAclGenericWrite = 0x40000000;
+constexpr std::uint32_t kAclGenericExecute = 0x20000000;
+constexpr std::uint32_t kAclGenericAll = 0x10000000;
 constexpr std::uint32_t kAclNameSurrogate = 0x20000000;
 constexpr std::uint32_t kAclTagMountPoint = 0xA0000003;
 constexpr std::uint32_t kAclTagSymlink = 0xA000000C;
@@ -58,7 +69,20 @@ inline AclAce aclLabelEntry() {
   return AclAce{kAclLabelType, kAclObjectInherit | kAclContainerInherit, kAclNoWriteUp, L"S-1-16-4096"};
 }
 
-enum class AclPlanStatus { Ready, SidInUse, LabelConflict };
+// The confined token's restricting list holds Everyone and the logon session's SID next to the
+// write SIDs (see process-restricted.h), so an allow entry that gives either of them a write right
+// passes its second access check, and the Low label a grant adds no longer stops it either. Such an
+// object would be writable by every confined process on the machine, read-only ones included.
+inline bool aclBroadPrincipal(const std::wstring& sid) {
+  return sid == L"S-1-1-0" || sid.compare(0, 8, L"S-1-5-5-") == 0;
+}
+inline bool aclBroadWrite(const std::vector<AclAce>& dacl) {
+  for (const auto& ace : dacl)
+    if (ace.type == kAclAllowType && (ace.mask & kAclWriteBits) && aclBroadPrincipal(ace.sid)) return true;
+  return false;
+}
+
+enum class AclPlanStatus { Ready, SidInUse, LabelConflict, BroadWrite };
 struct AclGrantPlan {
   AclPlanStatus status;
   bool addAllow;
@@ -85,6 +109,7 @@ inline AclGrantPlan aclPlanGrant(const std::vector<AclAce>& dacl, const std::vec
     else if (aclExplicit(ace) || ace.type != low.type || ace.mask != low.mask || ace.sid != low.sid)
       if (plan.status == AclPlanStatus::Ready) plan.status = AclPlanStatus::LabelConflict;
   }
+  if (plan.status == AclPlanStatus::Ready && aclBroadWrite(dacl)) plan.status = AclPlanStatus::BroadWrite;
   return plan;
 }
 
@@ -200,6 +225,115 @@ inline bool aclInheritOnly(const AclObjectShape& shape) {
   return true;
 }
 
+// File generic mapping (FILE_GENERIC_READ/WRITE/EXECUTE, FILE_ALL_ACCESS).
+inline std::uint32_t aclMapGeneric(std::uint32_t mask) {
+  std::uint32_t out = mask & ~(kAclGenericRead | kAclGenericWrite | kAclGenericExecute | kAclGenericAll);
+  if (mask & kAclGenericRead) out |= 0x00120089;
+  if (mask & kAclGenericWrite) out |= 0x00120116;
+  if (mask & kAclGenericExecute) out |= 0x001200A0;
+  if (mask & kAclGenericAll) out |= 0x001F01FF;
+  return out;
+}
+// What an inherited entry means for one object: an entry that applies to the object itself
+// (inherit == 0) or one it passes on to new children (the OI/CI/NP flags it passes them with).
+// The system may store an inheritable entry with generic rights or CREATOR OWNER as one entry or
+// split into an effective and an inherit-only copy; both read as the same parts here.
+struct AclInheritedPart {
+  std::uint8_t type;
+  std::uint8_t inherit;
+  std::uint32_t mask;
+  std::wstring sid;
+  bool operator<(const AclInheritedPart& other) const {
+    if (type != other.type) return type < other.type;
+    if (inherit != other.inherit) return inherit < other.inherit;
+    if (mask != other.mask) return mask < other.mask;
+    return sid < other.sid;
+  }
+  bool operator==(const AclInheritedPart& other) const {
+    return type == other.type && inherit == other.inherit && mask == other.mask && sid == other.sid;
+  }
+};
+inline bool aclModelled(const AclAce& ace) {
+  return ace.type == kAclAllowType || ace.type == kAclDenyType || ace.type == kAclLabelType;
+}
+// A grant's own entries are rewritten by the grant's change itself (and an incomplete earlier
+// propagation of them is what a repair finishes), so they never count as foreign inheritance.
+inline bool aclGrantShape(const AclInheritedPart& part) {
+  return (part.type == kAclAllowType && part.sid.compare(0, 6, L"S-1-4-") == 0) ||
+         (part.type == kAclDenyType && part.sid == L"S-1-1-0" && part.mask == kAclDeleteChild) ||
+         (part.type == kAclLabelType && part.sid == L"S-1-16-4096" && part.mask == kAclNoWriteUp);
+}
+inline void aclAddPart(std::vector<AclInheritedPart>& out, const AclInheritedPart& part) {
+  if (!aclGrantShape(part)) out.push_back(part);
+}
+// Parts the entries a parent passes on produce on a child directory (`container`) or file. The
+// effective copy maps generic rights and puts the child's owner or group in place of CREATOR OWNER
+// (S-1-3-0) or CREATOR GROUP (S-1-3-1).
+inline void aclPartsFromParent(const std::vector<AclAce>& parent, bool container, const std::wstring& owner,
+                               const std::wstring& group, std::vector<AclInheritedPart>& out) {
+  for (const auto& ace : parent) {
+    if (!aclModelled(ace)) continue;
+    const bool objects = (ace.flags & kAclObjectInherit) != 0, containers = (ace.flags & kAclContainerInherit) != 0;
+    const bool propagate = (ace.flags & kAclNoPropagate) == 0;
+    const std::wstring sid = ace.sid == L"S-1-3-0" ? owner : ace.sid == L"S-1-3-1" ? group : ace.sid;
+    const std::uint32_t mask = aclMapGeneric(ace.mask);
+    if (container ? containers : objects) aclAddPart(out, {ace.type, 0, mask, sid.empty() ? ace.sid : sid});
+    if (container && propagate && (objects || containers))
+      aclAddPart(out, {ace.type, static_cast<std::uint8_t>(ace.flags & (kAclObjectInherit | kAclContainerInherit)),
+                       mask, ace.sid});
+  }
+}
+// Parts the inherited entries an object carries now stand for. Explicit entries are its own.
+inline void aclPartsInherited(const std::vector<AclAce>& list, std::vector<AclInheritedPart>& out) {
+  for (const auto& ace : list) {
+    if (aclExplicit(ace) || !aclModelled(ace)) continue;
+    const std::uint32_t mask = aclMapGeneric(ace.mask);
+    if (!(ace.flags & kAclInheritOnly)) aclAddPart(out, {ace.type, 0, mask, ace.sid});
+    const auto inherit = static_cast<std::uint8_t>(ace.flags & (kAclObjectInherit | kAclContainerInherit | kAclNoPropagate));
+    if (ace.flags & (kAclObjectInherit | kAclContainerInherit)) aclAddPart(out, {ace.type, inherit, mask, ace.sid});
+  }
+}
+inline bool aclSameParts(std::vector<AclInheritedPart> left, std::vector<AclInheritedPart> right) {
+  for (auto* list : {&left, &right}) {
+    std::sort(list->begin(), list->end());
+    list->erase(std::unique(list->begin(), list->end()), list->end());
+  }
+  return left == right;
+}
+// Whether an object's inherited entries are exactly what its current parent passes on. A folder
+// moved within a volume keeps the entries it inherited at its old place; writing any descriptor
+// above it makes the system recompute them from the new parent, which would silently and
+// permanently replace them. A grant or repair refuses such a tree (E_ACL_STALE_INHERITANCE) before
+// it changes anything. A protected DACL or label inherits nothing and is not compared; entry types
+// other than allow, deny and mandatory label are not compared either.
+inline bool aclInheritanceMatches(const std::vector<AclAce>& parentDacl, const std::vector<AclAce>& parentLabel,
+                                  const std::vector<AclAce>& dacl, const std::vector<AclAce>& label,
+                                  const std::wstring& owner, const std::wstring& group, bool container,
+                                  bool daclProtected, bool labelProtected) {
+  const auto matches = [&](const std::vector<AclAce>& from, const std::vector<AclAce>& now) {
+    std::vector<AclInheritedPart> expected, actual;
+    aclPartsFromParent(from, container, owner, group, expected);
+    aclPartsInherited(now, actual);
+    return aclSameParts(expected, actual);
+  };
+  return (daclProtected || matches(parentDacl, dacl)) && (labelProtected || matches(parentLabel, label));
+}
+
+// What a grant owns on its root, as hashed text: owner, group, protection and the explicit entries
+// (as their stored bytes in hex). Inherited entries belong to the parents: a grant on an enclosing
+// root changes them without touching anything this grant made.
+inline std::wstring aclOwnedText(const std::wstring& volumeId, const std::wstring& fileId, const std::wstring& owner,
+                                 const std::wstring& group, bool daclProtected, bool labelProtected,
+                                 const std::vector<std::wstring>& dacl, const std::vector<std::wstring>& label) {
+  const auto join = [](const std::vector<std::wstring>& list) {
+    std::wstring out;
+    for (std::size_t i = 0; i < list.size(); ++i) out += (i ? L"," : L"") + list[i];
+    return out;
+  };
+  return L"agnes-windows-acl-owned-v1\n" + volumeId + L"\n" + fileId + L"\nO:" + owner + L"\nG:" + group + L"\nD:" +
+         (daclProtected ? L"P:" : L"-:") + join(dacl) + L"\nS:" + (labelProtected ? L"P:" : L"-:") + join(label);
+}
+
 struct AclLinkDecision {
   bool traverse;
   bool record;
@@ -217,6 +351,10 @@ inline AclLinkDecision aclLinkDecision(bool directory, bool reparse, std::uint32
   }
   return {directory, true, false};
 }
+
+// A workspace root and its ancestors are held as real directories. A name surrogate there would
+// redirect the path; any other reparse point (a cloud placeholder) is a real directory.
+inline bool aclHoldableDirectory(bool reparse, std::uint32_t tag) { return !aclLinkDecision(true, reparse, tag, false).refuse; }
 
 inline bool aclDriveLetter(wchar_t c) { return (c >= L'A' && c <= L'Z') || (c >= L'a' && c <= L'z'); }
 // Resolves "." and ".." in a drive-absolute path ("C:\a\..\b" -> "C:\b") without touching the file

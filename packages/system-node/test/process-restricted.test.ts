@@ -297,6 +297,7 @@ describe('Windows confined launch', () => {
         .join('')
         .concat('\0'),
       writeSids: [workspaceSid, tempSid],
+      isolationSid: expect.stringMatching(/^S-1-4(-\d+){4}$/),
       readOnly: false,
     })
     expect(current.assign).toHaveBeenCalledWith(4242, '133')
@@ -325,6 +326,24 @@ describe('Windows confined launch', () => {
       readOnly: true,
     })
     expect(await child.completion).toMatchObject({ code: 0, cancelled: false })
+  })
+
+  it('gives every launch its own isolation SID, read-only ones included', async () => {
+    const spawn = await load('win32')
+    const sent: Message[] = []
+    for (const confinement of [writable, writable, readOnly, readOnly]) {
+      const gate = broker(restricted(0))
+      const child = await spawn.startWindowsJobProcess([tool], {
+        ...options(),
+        confinement: spawn.sealWindowsConfinement(confinement),
+      })
+      await child.completion
+      sent.push(gate.sent[0] as Message)
+    }
+    const sids = sent.map((message) => message.isolationSid as string)
+    for (const sid of sids) expect(sid).toMatch(/^S-1-4(-(0|[1-9]\d{0,9})){4}$/)
+    expect(new Set(sids).size).toBe(sids.length)
+    for (const sid of sids) expect([workspaceSid, tempSid]).not.toContain(sid)
   })
 
   it('runs a batch file through cmd.exe with the verbatim command line', async () => {

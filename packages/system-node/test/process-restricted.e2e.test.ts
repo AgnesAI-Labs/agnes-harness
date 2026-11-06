@@ -195,6 +195,39 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
     expect(existsSync(join(workspace, 'denied.txt'))).toBe(false)
   })
 
+  it('keeps a running workspace-write target closed to a read-only target', async () => {
+    const workspace = temporary()
+    const temp = temporary()
+    const writer = await confined([process.execPath, '-e', 'setInterval(() => {}, 1000)'], {
+      mode: 'workspace-write',
+      root: workspace,
+      writeSids: [grant(workspace), grant(temp)],
+      tempRoot: temp,
+    })
+    // The compiler Add-Type runs needs a writable temp; an open directory gives the reader one.
+    const scratch = open()
+    const script = `$ErrorActionPreference = 'Stop'
+      Add-Type -Namespace Agh -Name Native -MemberDefinition '[DllImport("kernel32.dll", SetLastError = true)] public static extern System.IntPtr OpenProcess(uint access, bool inherit, uint pid);'
+      $query = [Agh.Native]::OpenProcess(0x1000, $false, ${writer.pid})
+      $write = [Agh.Native]::OpenProcess(0x20, $false, ${writer.pid})
+      $error5 = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+      $all = [Agh.Native]::OpenProcess(0x1FFFFF, $false, ${writer.pid})
+      [Console]::Out.Write((@{ query = ($query -ne [IntPtr]::Zero); write = ($write -ne [IntPtr]::Zero); writeError = $error5; all = ($all -ne [IntPtr]::Zero) } | ConvertTo-Json -Compress))`
+    const reader = await confined(
+      [powershell, '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '-'],
+      readOnly(temporary()),
+      {
+        env: { ...env(), TEMP: scratch, TMP: scratch },
+      },
+    )
+    const result = await run(reader, script)
+    expect(result.completion.code).toBe(0)
+    // The reader can find the writer, but can neither write its memory nor open it fully.
+    expect(JSON.parse(result.stdout)).toEqual({ query: true, write: false, writeError: 5, all: false })
+    writer.terminate()
+    await writer.completion
+  })
+
   it('pipes a restricted child of the target and reaps a resident descendant after the main exit', async () => {
     const child = await confined(
       [

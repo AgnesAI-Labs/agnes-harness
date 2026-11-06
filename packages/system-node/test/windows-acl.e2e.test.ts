@@ -30,6 +30,7 @@ import {
   windowsAclFingerprint,
   windowsAclGrantEntries,
 } from '../src/windows-acl.js'
+import { createWindowsAclWorker } from '../src/windows-acl-worker.js'
 
 const USERS = '*S-1-5-32-545'
 let base = ''
@@ -107,6 +108,54 @@ function workspace(): string {
   icacls(join(root, 'own'), '/grant', `${USERS}:(OI)(CI)(RX)`)
   icacls(root, '/grant', `${USERS}:(RX)`)
   return root
+}
+
+// Gives an empty directory a reparse point with a third-party, non-name-surrogate tag, which is
+// what a cloud-file placeholder (OneDrive Files On-Demand) looks like to everything but its filter.
+function setPlaceholderTag(path: string): void {
+  const script = join(scripts, 'placeholder.ps1')
+  writeFileSync(
+    script,
+    `param([string]$Path)
+Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+public static class AghPlaceholder {
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+  static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  static extern bool DeviceIoControl(SafeFileHandle handle, uint code, byte[] input, uint inputSize, IntPtr output, uint outputSize, out uint returned, IntPtr overlapped);
+  public static void Apply(string path) {
+    using (SafeFileHandle handle = CreateFileW(path, 0x40000000, 7, IntPtr.Zero, 3, 0x02000000 | 0x00200000, IntPtr.Zero)) {
+      if (handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
+      byte[] buffer = new byte[28];
+      BitConverter.GetBytes(0x00000234u).CopyTo(buffer, 0);
+      BitConverter.GetBytes((ushort)4).CopyTo(buffer, 4);
+      Guid.NewGuid().ToByteArray().CopyTo(buffer, 8);
+      uint returned;
+      if (!DeviceIoControl(handle, 0x000900A4, buffer, (uint)buffer.Length, IntPtr.Zero, 0, out returned, IntPtr.Zero))
+        throw new Win32Exception(Marshal.GetLastWin32Error());
+    }
+  }
+}
+'@
+[AghPlaceholder]::Apply($Path)
+`,
+  )
+  execFileSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, path],
+    { stdio: 'pipe' },
+  )
+}
+
+function logonSid(): string {
+  const text = execFileSync('whoami', ['/logonid'], { encoding: 'utf8' }).trim()
+  const sid = /S-1-5-5-\d+-\d+/.exec(text)?.[0]
+  if (!sid) throw new Error(`Cannot read the logon SID from: ${text}`)
+  return sid
 }
 
 function grant(before: WindowsAclSnapshot, sid: string) {
@@ -356,6 +405,179 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
     })
     expect(restored.complete).toBe(true)
     expect(execFileSync('icacls', [outside], { encoding: 'utf8' })).not.toContain(sid)
+  })
+
+  it('accepts a root that is a non-surrogate reparse point, as a cloud-file placeholder is', () => {
+    const root = join(base, 'placeholder')
+    mkdirSync(root)
+    setPlaceholderTag(root)
+    try {
+      expect(statSync(root).isDirectory()).toBe(true)
+      expect(readWindowsObjectIdentity(root)).toMatchObject({
+        volumeId: expect.any(String),
+        fileId: expect.any(String),
+      })
+    } finally {
+      execFileSync('fsutil', ['reparsepoint', 'delete', root], { stdio: 'ignore' })
+    }
+  })
+
+  it('holds the root and its parent against renames while a walk runs', async () => {
+    const root = join(base, 'held', 'tree')
+    for (let folder = 0; folder < 60; folder++) {
+      const path = join(root, `folder-${folder}`)
+      mkdirSync(path, { recursive: true })
+      for (let file = 0; file < 60; file++) writeFileSync(join(path, `file-${file}.txt`), 'x')
+    }
+    const worker = createWindowsAclWorker()
+    try {
+      await worker.inspect(join(base, 'held'))
+      let done = false
+      const walk = worker.inspect(root).finally(() => {
+        done = true
+      })
+      const refusals: string[] = []
+      Atomics.wait(pause, 0, 0, 20)
+      while (!done) {
+        for (const [from, to] of [
+          [root, join(base, 'held', 'moved')],
+          [join(base, 'held'), join(base, 'held-moved')],
+        ] as const) {
+          try {
+            renameSync(from, to)
+            renameSync(to, from)
+            if (!done) throw new Error(`${from} was renamed while it was held`)
+          } catch (error) {
+            const found = (error as { code?: string }).code
+            if (found !== 'EBUSY' && found !== 'EPERM' && found !== 'EACCES') throw error
+            refusals.push(found)
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      expect((await walk).inheritedDescendants).toBeGreaterThan(3600)
+      expect(refusals.length).toBeGreaterThan(0)
+    } finally {
+      await worker.close()
+    }
+  })
+
+  it('runs the primitives on a worker thread with the same results', async () => {
+    const root = workspace()
+    const worker = createWindowsAclWorker()
+    try {
+      const before = await worker.inspect(root)
+      expect(before).toEqual(inspectWindowsAcl(root))
+      const sid = writeSid()
+      const result = await worker.apply({ before, grantId: 'grant-1', writeSid: sid })
+      expect(result.complete).toBe(true)
+      expect(result.ownedFingerprint).toBe(inspectWindowsAcl(root).ownedFingerprint)
+      const change = result.changes.find((item) => key(item) === key(before))
+      const restored = await worker.restore({
+        before,
+        grantId: 'grant-1',
+        expectedCurrentFingerprint: change?.afterFingerprint ?? '',
+        removableChanges: change?.added ?? [],
+      })
+      expect(restored.complete).toBe(true)
+      expect(inspectWindowsAcl(root).fingerprint).toBe(before.fingerprint)
+    } finally {
+      await worker.close()
+    }
+  })
+
+  it('keeps the owned fingerprint of an inner root while an outer grant comes and goes', () => {
+    const outer = workspace()
+    const inner = join(outer, 'src')
+    const innerSid = writeSid()
+    const innerBefore = inspectWindowsAcl(inner)
+    const { root: innerChange } = grant(innerBefore, innerSid)
+    const innerGranted = inspectWindowsAcl(inner)
+    const outerBefore = inspectWindowsAcl(outer)
+    const { result, root: outerChange } = grant(outerBefore, writeSid())
+    expect(result.complete).toBe(true)
+    const nested = inspectWindowsAcl(inner)
+    expect(nested.fingerprint).not.toBe(innerGranted.fingerprint)
+    expect(nested.ownedFingerprint).toBe(innerGranted.ownedFingerprint)
+    restoreWindowsAclGrant({
+      before: outerBefore,
+      grantId: 'grant-1',
+      expectedCurrentFingerprint: outerChange?.afterFingerprint ?? '',
+      removableChanges: outerChange?.added ?? [],
+    })
+    expect(inspectWindowsAcl(inner).ownedFingerprint).toBe(innerGranted.ownedFingerprint)
+    restoreWindowsAclGrant({
+      before: innerBefore,
+      grantId: 'grant-1',
+      expectedCurrentFingerprint: inspectWindowsAcl(inner).fingerprint,
+      removableChanges: innerChange?.added ?? [],
+    })
+    expect(inspectWindowsAcl(inner).fingerprint).toBe(innerBefore.fingerprint)
+  })
+
+  it('refuses a root or object that gives Everyone or the logon session a write right', () => {
+    const everyone = workspace()
+    icacls(everyone, '/grant', '*S-1-1-0:(OI)(CI)(M)')
+    const before = inspectWindowsAcl(everyone)
+    expect(() => applyWindowsAclGrant({ before, grantId: 'grant-1', writeSid: writeSid() })).toThrow(
+      code('E_ACL_BROAD_WRITE'),
+    )
+    expect(inspectWindowsAcl(everyone).fingerprint).toBe(before.fingerprint)
+
+    rmSync(join(base, '工作 区'), { recursive: true, force: true })
+    const root = workspace()
+    icacls(join(root, 'src', 'a.txt'), '/grant', `*${logonSid()}:(W)`)
+    const snapshot = inspectWindowsAcl(root)
+    expect(() =>
+      applyWindowsAclGrant({ before: snapshot, grantId: 'grant-1', writeSid: writeSid() }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'E_ACL_BROAD_WRITE',
+        path: realpathSync.native(join(root, 'src', 'a.txt')),
+      }),
+    )
+    expect(inspectWindowsAcl(root)).toEqual(snapshot)
+    // Read access for everyone is ordinary and stays allowed.
+    icacls(join(root, 'src', 'a.txt'), '/remove:g', `*${logonSid()}`)
+    icacls(root, '/grant', '*S-1-1-0:(OI)(CI)(RX)')
+    expect(grant(inspectWindowsAcl(root), writeSid()).result.complete).toBe(true)
+  })
+
+  it('refuses a tree with entries inherited from where it was before a move, changing nothing', () => {
+    // A folder moved within a volume keeps what it inherited at its old place.
+    const old = join(base, 'old-parent')
+    const fresh = join(base, 'new-parent')
+    mkdirSync(join(old, 'proj', 'inner'), { recursive: true })
+    mkdirSync(fresh)
+    icacls(old, '/grant', '*S-1-5-32-546:(OI)(CI)(RX)')
+    const root = join(fresh, 'proj')
+    renameSync(join(old, 'proj'), root)
+    const before = inspectWindowsAcl(root)
+    expect(() => applyWindowsAclGrant({ before, grantId: 'grant-1', writeSid: writeSid() })).toThrow(
+      code('E_ACL_STALE_INHERITANCE'),
+    )
+    expect(inspectWindowsAcl(root)).toEqual(before)
+    expect(inspectWindowsAcl(join(root, 'inner')).securityDescriptor).toContain(';;;BG)')
+
+    // Re-applying inheritance from the current parent clears it; then the grant goes ahead.
+    icacls(root, '/reset', '/T')
+    expect(grant(inspectWindowsAcl(root), writeSid()).result.complete).toBe(true)
+
+    // The same for a folder moved into a workspace: it is named, and nothing below is replaced.
+    mkdirSync(join(old, 'moved-in'))
+    const workspaceRoot = workspace()
+    renameSync(join(old, 'moved-in'), join(workspaceRoot, 'src', 'moved-in'))
+    const snapshot = inspectWindowsAcl(workspaceRoot)
+    expect(() =>
+      applyWindowsAclGrant({ before: snapshot, grantId: 'grant-1', writeSid: writeSid() }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'E_ACL_STALE_INHERITANCE',
+        path: realpathSync.native(join(workspaceRoot, 'src', 'moved-in')),
+      }),
+    )
+    expect(inspectWindowsAcl(workspaceRoot)).toEqual(snapshot)
+    expect(inspectWindowsAcl(join(workspaceRoot, 'src', 'moved-in')).securityDescriptor).toContain(';;;BG)')
   })
 
   it('refuses to write over a concurrent ACL change', () => {

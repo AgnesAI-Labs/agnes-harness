@@ -28,6 +28,7 @@ struct AclSecurity {
   BYTE daclRevision = ACL_REVISION;
   BYTE labelRevision = ACL_REVISION;
   std::vector<AclRecord> dacl, label;
+  std::wstring owner, group;  // SID strings; empty when the descriptor has none.
   std::wstring sddl;
 };
 struct AclFacts {
@@ -149,6 +150,16 @@ static DWORD aclReadAces(PACL acl, std::vector<AclRecord>& out) {
   return ERROR_SUCCESS;
 }
 
+static DWORD aclSidText(PSID sid, std::wstring& out) {
+  out.clear();
+  if (!sid) return ERROR_SUCCESS;
+  LPWSTR text = nullptr;
+  if (!ConvertSidToStringSidW(sid, &text)) return GetLastError();
+  Local owned(text);
+  out = text;
+  return ERROR_SUCCESS;
+}
+
 static DWORD aclReadSecurity(HANDLE handle, AclSecurity& out) {
   PSECURITY_DESCRIPTOR raw = nullptr;
   const DWORD status = GetSecurityInfo(handle, SE_FILE_OBJECT, aclParts, nullptr, nullptr, nullptr, nullptr, &raw);
@@ -158,10 +169,15 @@ static DWORD aclReadSecurity(HANDLE handle, AclSecurity& out) {
   DWORD revision = 0;
   BOOL daclPresent = FALSE, labelPresent = FALSE, defaulted = FALSE;
   PACL dacl = nullptr, label = nullptr;
+  PSID owner = nullptr, group = nullptr;
   if (!GetSecurityDescriptorControl(raw, &control, &revision) ||
       !GetSecurityDescriptorDacl(raw, &daclPresent, &dacl, &defaulted) ||
-      !GetSecurityDescriptorSacl(raw, &labelPresent, &label, &defaulted))
+      !GetSecurityDescriptorSacl(raw, &labelPresent, &label, &defaulted) ||
+      !GetSecurityDescriptorOwner(raw, &owner, &defaulted) || !GetSecurityDescriptorGroup(raw, &group, &defaulted))
     return GetLastError();
+  DWORD named = aclSidText(owner, out.owner);
+  if (named == ERROR_SUCCESS) named = aclSidText(group, out.group);
+  if (named != ERROR_SUCCESS) return named;
   if (!daclPresent) dacl = nullptr;
   if (!labelPresent) label = nullptr;
   // A missing DACL and a NULL DACL both grant everyone everything; an empty DACL grants nothing.
@@ -214,7 +230,25 @@ class AclHasher {
   }
   // SHA-256 of the UTF-16LE fingerprint text; see aclFingerprintText.
   DWORD fingerprint(const AclFacts& facts, std::wstring& out) const {
-    const std::wstring text = aclFingerprintText(facts.volumeId, facts.fileId, facts.security.sddl);
+    return hash(aclFingerprintText(facts.volumeId, facts.fileId, facts.security.sddl), out);
+  }
+  // SHA-256 of what a grant owns on a root (aclOwnedText): inherited entries are left out, so a
+  // grant on an enclosing root does not change it.
+  DWORD owned(const AclFacts& facts, std::wstring& out) const {
+    const auto explicitHex = [](const std::vector<AclRecord>& records) {
+      std::vector<std::wstring> list;
+      for (const auto& record : records)
+        if (aclExplicit(record.ace)) list.push_back(aclHex(record.bytes.data(), record.bytes.size()));
+      return list;
+    };
+    const AclSecurity& security = facts.security;
+    return hash(aclOwnedText(facts.volumeId, facts.fileId, security.owner, security.group, security.daclProtected,
+                             security.labelProtected, explicitHex(security.dacl), explicitHex(security.label)),
+                out);
+  }
+
+ private:
+  DWORD hash(const std::wstring& text, std::wstring& out) const {
     BCRYPT_HASH_HANDLE raw = nullptr;
     NTSTATUS status = BCryptCreateHash(algorithm_, &raw, nullptr, 0, nullptr, 0, 0);
     if (status < 0) return static_cast<DWORD>(status);
@@ -227,8 +261,6 @@ class AclHasher {
     out = aclHex(digest, sizeof(digest));
     return ERROR_SUCCESS;
   }
-
- private:
   BCRYPT_ALG_HANDLE algorithm_ = nullptr;
 };
 
@@ -253,11 +285,21 @@ struct AclRoot {
   std::wstring path;     // Final namespaced path; objects below are opened beneath it.
   std::wstring display;  // Normalized drive path, for link containment.
   AclFacts facts;
+  AclSecurity parent;    // The parent's descriptor; read only for a change.
 };
 
-// Opens a workspace root by identity-bearing handle. Every ancestor is held without
-// FILE_SHARE_DELETE, so neither the root nor a parent can be renamed or replaced while the
-// operation runs, and none of them may be a reparse point.
+// A directory hold. Share access is only checked and recorded for an open that asks for a data
+// right (read, write, append, execute or DELETE), so a hold asks for FILE_TRAVERSE (ancestors) or
+// FILE_LIST_DIRECTORY (the root and walked directories) and leaves out FILE_SHARE_DELETE. While it
+// is open nobody can open that directory for DELETE, so it cannot be renamed, removed or replaced
+// by a link. Holding every directory from the drive root down to the one being read pins every
+// component of the paths objects are opened by.
+static const DWORD kAclHoldShare = FILE_SHARE_READ | FILE_SHARE_WRITE;
+
+// Opens a workspace root by identity-bearing handle. The root and every ancestor are held (see
+// kAclHoldShare), so neither the root nor a parent can be renamed or replaced while the operation
+// runs. None of them may be a name surrogate (junction, symbolic link); other reparse points, such
+// as cloud-file placeholders, are real directories. A change also reads the parent's descriptor.
 static bool aclOpenRoot(const std::wstring& input, bool mutate, AclRoot& root, AclProblem& problem) {
   if (input.size() == 7 && aclDrivePath(input)) {
     problem = aclRefusal("E_ACL_DRIVE_ROOT", input, "a drive root cannot carry a workspace grant");
@@ -275,43 +317,42 @@ static bool aclOpenRoot(const std::wstring& input, bool mutate, AclRoot& root, A
     problem = aclRefusal("EINVAL", input, "expected a normalized \\\\?\\ drive path");
     return false;
   }
-  for (size_t end = 6; end < input.size(); ++end) {
-    if (input[end] != L'\\') continue;
-    const std::wstring prefix = input.substr(0, end == 6 ? 7 : end);
-    auto ancestor = std::make_unique<Handle>(CreateFileW(prefix.c_str(), FILE_READ_ATTRIBUTES,
-      FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
-      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+  // The tag comes from the held handle, so it describes the directory that stays held.
+  const auto holdable = [&](HANDLE handle, const std::wstring& path, const char* what, const char* link) {
     BY_HANDLE_FILE_INFORMATION information = {};
-    if (ancestor->value == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(ancestor->value, &information)) {
-      problem = aclWin32Problem(GetLastError(), prefix, "open workspace ancestor");
+    FILE_ATTRIBUTE_TAG_INFO tag = {};
+    if (handle == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(handle, &information) ||
+        !GetFileInformationByHandleEx(handle, FileAttributeTagInfo, &tag, sizeof(tag))) {
+      problem = aclWin32Problem(GetLastError(), path, what);
       return false;
     }
-    if (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-      problem = aclRefusal("E_ACL_REPARSE", prefix, "a workspace ancestor is a link or reparse point");
+    if (!aclHoldableDirectory((information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0, tag.ReparseTag)) {
+      problem = aclRefusal("E_ACL_REPARSE", path, link);
       return false;
     }
     if (!(information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-      problem = aclWin32Problem(ERROR_DIRECTORY, prefix, "open workspace ancestor");
+      problem = aclWin32Problem(ERROR_DIRECTORY, path, what);
       return false;
     }
+    return true;
+  };
+  size_t last = 6;
+  for (size_t end = 6; end < input.size(); ++end)
+    if (input[end] == L'\\') last = end;
+  for (size_t end = 6; end < input.size(); ++end) {
+    if (input[end] != L'\\') continue;
+    const std::wstring prefix = input.substr(0, end == 6 ? 7 : end);
+    // The parent's descriptor decides what the root inherits; a change compares the two.
+    const DWORD access = FILE_TRAVERSE | FILE_READ_ATTRIBUTES | (mutate && end == last ? READ_CONTROL : 0);
+    auto ancestor = std::make_unique<Handle>(CreateFileW(prefix.c_str(), access, kAclHoldShare, nullptr,
+      OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+    if (!holdable(ancestor->value, prefix, "open workspace ancestor", "a workspace ancestor is a link")) return false;
     root.held.push_back(std::move(ancestor));
   }
-  const DWORD access = READ_CONTROL | FILE_READ_ATTRIBUTES | (mutate ? WRITE_DAC | WRITE_OWNER : 0);
-  root.handle = std::make_unique<Handle>(CreateFileW(input.c_str(), access, FILE_SHARE_READ | FILE_SHARE_WRITE,
-    nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
-  BY_HANDLE_FILE_INFORMATION information = {};
-  if (root.handle->value == INVALID_HANDLE_VALUE || !GetFileInformationByHandle(root.handle->value, &information)) {
-    problem = aclWin32Problem(GetLastError(), input, "open workspace root");
-    return false;
-  }
-  if (information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) {
-    problem = aclRefusal("E_ACL_REPARSE", input, "the workspace root is a link or reparse point");
-    return false;
-  }
-  if (!(information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-    problem = aclWin32Problem(ERROR_DIRECTORY, input, "open workspace root");
-    return false;
-  }
+  const DWORD access = READ_CONTROL | FILE_READ_ATTRIBUTES | FILE_LIST_DIRECTORY | (mutate ? WRITE_DAC | WRITE_OWNER : 0);
+  root.handle = std::make_unique<Handle>(CreateFileW(input.c_str(), access, kAclHoldShare, nullptr, OPEN_EXISTING,
+    FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
+  if (!holdable(root.handle->value, input, "open workspace root", "the workspace root is a link")) return false;
   // Check the volume before asking for anything only NTFS answers, such as the 128-bit file ID.
   wchar_t fileSystem[MAX_PATH + 1] = {};
   DWORD flags = 0;
@@ -347,7 +388,23 @@ static bool aclOpenRoot(const std::wstring& input, bool mutate, AclRoot& root, A
     problem = aclObjectProblem("E_ACL_NULL_DACL", root.facts, "the workspace root has no access control list");
     return false;
   }
+  if (mutate && !root.held.empty()) {
+    error = aclReadSecurity(root.held.back()->value, root.parent);
+    if (error != ERROR_SUCCESS) {
+      problem = aclWin32Problem(error, input, "read workspace parent security");
+      return false;
+    }
+  }
   return true;
+}
+
+// Whether the inherited entries of an object are what its parent passes on now (see
+// aclInheritanceMatches). `dacl`/`label` false skip a list whose inheritance is broken above.
+static bool aclInherits(const AclSecurity& parent, const AclFacts& facts, bool dacl, bool label) {
+  return aclInheritanceMatches(aclEntries(parent.dacl), aclEntries(parent.label), aclEntries(facts.security.dacl),
+                               aclEntries(facts.security.label), facts.security.owner, facts.security.group,
+                               facts.directory, !dacl || facts.security.daclProtected,
+                               !label || facts.security.labelProtected);
 }
 
 // Serializes grant changes to one root object across processes in this logon session. A holder
@@ -439,6 +496,7 @@ struct AclFrame {
   std::unique_ptr<Handle> directory;  // Null for the root, which the caller holds.
   std::unique_ptr<CanonicalSearch> search;
   std::wstring path;
+  AclSecurity security;  // What the directory passes on to the objects listed in it.
   bool inheritsDacl = true;
   bool inheritsLabel = true;
   bool pending = false;
@@ -447,6 +505,9 @@ struct AclFrame {
 struct AclWalk {
   bool rights = false;    // Also demand the rights a propagated change needs on every object.
   bool tolerate = false;  // After a write: record each problem and keep going.
+  // Before a write: every object the change propagates to must carry exactly what its parent
+  // passes on now, or the propagation would replace its inherited entries for good.
+  bool inheritance = false;
   // Gets every object below the root with whether its DACL and label still inherit from the
   // root. Returning false stops a strict walk with the problem it filled in.
   std::function<bool(const AclFacts&, bool, bool, AclProblem&)> visit;
@@ -474,11 +535,13 @@ static bool aclKeepGoing(AclWalk& walk, const AclProblem& found, AclProblem& pro
 }
 
 // Depth-first walk below the root that never follows a link. Each directory being listed, and
-// every directory above it, is held without FILE_SHARE_DELETE, so the listing by path cannot be
-// redirected elsewhere. An object removed meanwhile is skipped.
+// every directory above it up to the drive root, is held (kAclHoldShare), so no component of a
+// path an object is opened by can be renamed or replaced meanwhile, and a link can only be the
+// last component, which is opened as the link itself. An object removed meanwhile is skipped.
 static bool aclWalk(const AclRoot& root, AclWalk& walk, AclProblem& problem) {
   std::vector<AclFrame> frames(1);
   frames[0].path = root.path;
+  frames[0].security = root.facts.security;
   DWORD error = aclStartSearch(frames[0]);
   if (error != ERROR_SUCCESS) return aclKeepGoing(walk, aclWin32Problem(error, root.path, "list workspace"), problem);
   while (!frames.empty()) {
@@ -500,9 +563,10 @@ static bool aclWalk(const AclRoot& root, AclWalk& walk, AclProblem& problem) {
     const std::wstring path = parent + L"\\" + entry.cFileName;
     const bool listedLink = (entry.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) && (entry.dwReserved0 & kAclNameSurrogate);
     const bool hold = (entry.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && !listedLink;
-    const DWORD access = READ_CONTROL | FILE_READ_ATTRIBUTES | (walk.rights ? WRITE_DAC | WRITE_OWNER : 0);
+    const DWORD access = READ_CONTROL | FILE_READ_ATTRIBUTES | (hold ? FILE_LIST_DIRECTORY : 0) |
+                         (walk.rights ? WRITE_DAC | WRITE_OWNER : 0);
     auto handle = std::make_unique<Handle>(CreateFileW(path.c_str(), access,
-      FILE_SHARE_READ | FILE_SHARE_WRITE | (hold ? 0 : FILE_SHARE_DELETE), nullptr, OPEN_EXISTING,
+      hold ? kAclHoldShare : FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
       FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
     if (handle->value == INVALID_HANDLE_VALUE) {
       error = GetLastError();
@@ -543,6 +607,13 @@ static bool aclWalk(const AclRoot& root, AclWalk& walk, AclProblem& problem) {
     }
     const bool inheritsDacl = parentDacl && !facts.security.daclProtected;
     const bool inheritsLabel = parentLabel && !facts.security.labelProtected;
+    if (walk.inheritance && !aclInherits(frames.back().security, facts, parentDacl, parentLabel)) {
+      if (!aclKeepGoing(walk, aclObjectProblem("E_ACL_STALE_INHERITANCE", facts,
+                                               "an object carries permissions inherited from another location"),
+                        problem))
+        return false;
+      continue;
+    }
     if (!walk.visit(facts, inheritsDacl, inheritsLabel, problem)) return false;
     if (!link.traverse) continue;
     if (frames.size() >= 4096) {
@@ -553,6 +624,7 @@ static bool aclWalk(const AclRoot& root, AclWalk& walk, AclProblem& problem) {
     AclFrame child;
     child.directory = std::move(handle);
     child.path = path;
+    child.security = facts.security;
     child.inheritsDacl = inheritsDacl;
     child.inheritsLabel = inheritsLabel;
     error = aclStartSearch(child);
@@ -586,9 +658,10 @@ static napi_value aclInspect(napi_env env, napi_callback_info info) {
   AclRoot root;
   if (!aclOpenRoot(input, false, root, problem)) return aclThrow(env, problem);
   AclHasher hasher;
-  std::wstring rootPrint;
+  std::wstring rootPrint, ownedPrint;
   DWORD error = hasher.open();
   if (error == ERROR_SUCCESS) error = hasher.fingerprint(root.facts, rootPrint);
+  if (error == ERROR_SUCCESS) error = hasher.owned(root.facts, ownedPrint);
   if (error != ERROR_SUCCESS) return aclThrow(env, aclWin32Problem(error, root.path, "fingerprint workspace root"));
   struct Recorded {
     std::wstring path, volumeId, fileId, sddl, print;
@@ -628,6 +701,7 @@ static napi_value aclInspect(napi_env env, napi_callback_info info) {
                      aclObjectValue(env, item.path, item.volumeId, item.fileId, item.sddl, item.print));
   }
   napi_set_named_property(env, result, "descendants", descendants);
+  napi_set_named_property(env, result, "ownedFingerprint", canonicalWindowsText(env, ownedPrint));
   napi_create_double(env, inherited, &count);
   napi_set_named_property(env, result, "inheritedDescendants", count);
   return result;
@@ -663,6 +737,7 @@ struct AclOutcome {
   std::vector<AclProblem> failures;
   std::unordered_set<std::wstring> reported;
   double inherited = 0;
+  std::wstring owned;  // The root's owned fingerprint after the write, when it could be read.
 };
 struct AclWritePlan {
   std::vector<AclRecord> dacl, label;
@@ -795,18 +870,33 @@ static bool aclBeginChange(const std::wstring& input, const std::wstring& volume
     problem = aclObjectProblem("E_ACL_CHANGED", root.facts, "the workspace root permissions changed since they were recorded");
     return false;
   }
+  // Writing the root makes the system recompute its inherited entries from its parent. Entries a
+  // folder kept from where it was before a move would be lost for good, so such a root is refused.
+  if (!root.held.empty() && !aclInherits(root.parent, root.facts, true, true)) {
+    problem = aclObjectProblem("E_ACL_STALE_INHERITANCE", root.facts,
+                               "the workspace root carries permissions inherited from another location");
+    return false;
+  }
   return true;
 }
 
-// Before any write: every object must be readable and changeable, and every link must stay inside.
-// Objects with their own permissions keep their state for the change report. When `expected` is
-// given (a grant), each of them must be one the caller recorded, still unchanged.
+// Before any write: every object must be readable and changeable, every link must stay inside,
+// and every object the change propagates to must inherit what its parent passes on now. Objects
+// with their own permissions keep their state for the change report. When `expected` is given (a
+// grant), each of them must be one the caller recorded, still unchanged, and no object may give
+// Everyone or the logon session a write right (aclBroadWrite), since the grant's Low label would
+// then let every confined process write it.
 static bool aclPrepare(const AclRoot& root, const AclHasher& hasher,
                        const std::unordered_map<std::wstring, std::wstring>* expected,
                        std::unordered_map<std::wstring, AclBefore>& before, AclProblem& problem) {
   AclWalk walk;
   walk.rights = true;
+  walk.inheritance = true;
   walk.visit = [&](const AclFacts& facts, bool, bool, AclProblem& found) {
+    if (expected && aclBroadWrite(aclEntries(facts.security.dacl))) {
+      found = aclObjectProblem("E_ACL_BROAD_WRITE", facts, "an object lets every confined process write it");
+      return false;
+    }
     const std::wstring key = facts.volumeId + L":" + facts.fileId;
     const std::wstring* wanted = nullptr;
     if (expected) {
@@ -853,12 +943,24 @@ static void aclVerifyRoot(const AclRoot& root, const AclHasher& hasher, const st
   std::wstring afterPrint;
   DWORD error = aclReadFacts(root.handle->value, root.path, after);
   if (error == ERROR_SUCCESS) error = hasher.fingerprint(after, afterPrint);
+  if (error == ERROR_SUCCESS) error = hasher.owned(after, outcome.owned);
   if (error != ERROR_SUCCESS) {
+    outcome.owned.clear();
     outcome.failures.push_back(aclObjectProblem("E_ACL_VERIFY_FAILED", root.facts, "read back workspace root", error));
     return;
   }
+  // The explicit entries must be exactly the planned ones, in order. The inherited ones are the
+  // system's to recompute: they must be what the parent passes on, not the bytes read before.
+  const auto explicitOnly = [](const std::vector<AclRecord>& records) {
+    std::vector<AclRecord> out;
+    for (const auto& record : records)
+      if (aclExplicit(record.ace)) out.push_back(record);
+    return out;
+  };
   const std::vector<AclRecord>& label = plan.writeLabel ? plan.label : root.facts.security.label;
-  if (written && (!aclSameBytes(after.security.dacl, plan.dacl) || !aclSameBytes(after.security.label, label) ||
+  if (written && (!aclSameBytes(explicitOnly(after.security.dacl), explicitOnly(plan.dacl)) ||
+                  !aclSameBytes(explicitOnly(after.security.label), explicitOnly(label)) ||
+                  (!root.held.empty() && !aclInherits(root.parent, after, true, true)) ||
                   after.security.daclProtected != root.facts.security.daclProtected ||
                   after.security.labelProtected != root.facts.security.labelProtected))
     outcome.failures.push_back(
@@ -969,6 +1071,8 @@ static napi_value aclOutcomeValue(napi_env env, const AclOutcome& outcome) {
   napi_set_named_property(env, result, "failures", failures);
   napi_create_double(env, outcome.inherited, &value);
   napi_set_named_property(env, result, "inheritedDescendants", value);
+  if (!outcome.owned.empty())
+    napi_set_named_property(env, result, "ownedFingerprint", canonicalWindowsText(env, outcome.owned));
   return result;
 }
 
@@ -1039,6 +1143,8 @@ static napi_value aclApply(napi_env env, napi_callback_info info) {
     return aclThrow(env, aclObjectProblem("E_ACL_SID_IN_USE", root.facts, "the write SID already appears on the workspace root"));
   if (plan.status == AclPlanStatus::LabelConflict)
     return aclThrow(env, aclObjectProblem("E_ACL_LABEL_CONFLICT", root.facts, "the workspace root carries another integrity label"));
+  if (plan.status == AclPlanStatus::BroadWrite)
+    return aclThrow(env, aclObjectProblem("E_ACL_BROAD_WRITE", root.facts, "the workspace root lets every confined process write it"));
   std::unordered_map<std::wstring, AclBefore> before;
   if (!aclPrepare(root, hasher, &expected, before, problem)) return aclThrow(env, problem);
   AclWritePlan write;

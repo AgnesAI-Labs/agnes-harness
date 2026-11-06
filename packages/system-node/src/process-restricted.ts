@@ -1,6 +1,7 @@
 // Write-restricted launch parameters for the Windows Job gate. The broker the Host has already
 // assigned to the command's Job creates the target suspended with a restricted Low integrity token
 // (native/process-restricted.h); the Host resumes it only after proving it is in that Job.
+import { randomBytes } from 'node:crypto'
 import { windowsCommand } from '../runtime/windows-command.mjs'
 import { windowsDetachedCommand, windowsDetachedEnvironment } from './process-detached.js'
 import { windowsWriteSid } from './windows-acl.js'
@@ -26,6 +27,13 @@ export type RestrictedLaunch = {
   /** Complete UTF-16 environment block. */
   environment: string
   writeSids: string[]
+  /**
+   * Fresh capability SID of this launch alone (S-1-4 and 128 random bits). The native launch adds
+   * it to the token's restricting list and makes it the only restricting principal in the token's
+   * default DACL, so the target and its descendants can open the processes, threads and pipes they
+   * create, and no other confined process can open them for writing.
+   */
+  isolationSid: string
   readOnly: boolean
 }
 
@@ -100,6 +108,12 @@ export function restrictedLaunch(
     commandLine,
     environment: windowsDetachedEnvironment(env, parentEnv),
     writeSids: [...confinement.writeSids],
+    isolationSid: isolationSid(),
     readOnly: confinement.mode === 'read-only',
   }
+}
+
+function isolationSid(): string {
+  const bytes = randomBytes(16)
+  return `S-1-4-${[0, 4, 8, 12].map((offset) => bytes.readUInt32BE(offset)).join('-')}`
 }

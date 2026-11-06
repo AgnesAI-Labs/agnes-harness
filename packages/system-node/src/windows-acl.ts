@@ -24,6 +24,12 @@ export type WindowsAclObject = Readonly<{
 
 export type WindowsAclSnapshot = WindowsAclObject &
   Readonly<{
+    /**
+     * Fingerprint of what a grant owns on the root: identity, owner, group, protection and the
+     * explicit entries. Inherited entries are left out, so a grant on an enclosing root (which
+     * changes them) does not read as a change of this root's own grant.
+     */
+    ownedFingerprint: string
     /** Objects below the root whose descriptor inheritance alone does not determine, in full. */
     descendants: readonly WindowsAclObject[]
     /** Objects below the root that only inherit; restoring the root restores them. */
@@ -95,6 +101,8 @@ export type WindowsAclMutation = Readonly<{
   changes: readonly WindowsAclChange[]
   failures: readonly WindowsAclFailure[]
   inheritedDescendants: number
+  /** The root's owned fingerprint (see WindowsAclSnapshot) after the write; always set when complete. */
+  ownedFingerprint?: string
 }>
 
 const GRANT_MASK = 0x110156
@@ -202,8 +210,9 @@ function aclObject(value: unknown): WindowsAclObject {
 function snapshotOf(value: unknown): WindowsAclSnapshot {
   if (!record(value)) throw invalid('Invalid Windows ACL snapshot')
   const root = aclObject(value)
-  const { descendants, inheritedDescendants } = value
+  const { descendants, inheritedDescendants, ownedFingerprint } = value
   if (
+    !hex(ownedFingerprint, 64) ||
     !Array.isArray(descendants) ||
     descendants.length > MAX_RECORDED ||
     typeof inheritedDescendants !== 'number' ||
@@ -219,7 +228,12 @@ function snapshotOf(value: unknown): WindowsAclSnapshot {
     seen.add(key)
     return object
   })
-  return Object.freeze({ ...root, descendants: Object.freeze(objects), inheritedDescendants })
+  return Object.freeze({
+    ...root,
+    ownedFingerprint,
+    descendants: Object.freeze(objects),
+    inheritedDescendants,
+  })
 }
 
 function grantIdOf(value: unknown): string {
@@ -229,29 +243,56 @@ function grantIdOf(value: unknown): string {
 }
 
 /**
+ * One validated call of a tree-walking primitive: the native method, its arguments and the
+ * validation of its raw result. The synchronous functions below run it on the calling thread;
+ * createWindowsAclWorker (windows-acl-worker.ts) runs it on a worker thread.
+ */
+export type WindowsAclRequest<T> = Readonly<{
+  method: 'inspect' | 'apply' | 'restore'
+  args: readonly unknown[]
+  result(raw: unknown): T
+}>
+
+function invoke<T>(request: WindowsAclRequest<T>): T {
+  const binding = windowsAclBinding()
+  return request.result(Reflect.apply(binding[request.method], binding, request.args))
+}
+
+/** The request behind inspectWindowsAcl; validates `path` before anything runs. */
+export function windowsAclInspectRequest(path: string): WindowsAclRequest<WindowsAclSnapshot> {
+  return Object.freeze({
+    method: 'inspect',
+    args: Object.freeze([rootPath(path)]),
+    result: (raw: unknown) => {
+      try {
+        if (!record(raw)) throw malformed()
+        return snapshotOf({
+          ...raw,
+          identity: { volumeId: raw.volumeId, fileId: raw.fileId },
+          descendants: Array.isArray(raw.descendants)
+            ? raw.descendants.map((item: unknown) =>
+                record(item) ? { ...item, identity: { volumeId: item.volumeId, fileId: item.fileId } } : item,
+              )
+            : raw.descendants,
+        })
+      } catch {
+        throw malformed()
+      }
+    },
+  })
+}
+
+/**
  * Snapshot of a workspace root by identity; refuses roots a grant could not later restore. Throws
- * without changing anything: EINVAL, E_ACL_DRIVE_ROOT, E_ACL_REPARSE (the root, an ancestor, or a
- * link below it that leads outside), E_ACL_UNSUPPORTED_VOLUME (anything but local NTFS),
- * E_ACL_NULL_DACL, E_ACL_TOO_LARGE, errno-style codes with `win32Code` for system failures (EACCES
- * when a right is missing), and ENOSYS off Windows.
+ * without changing anything: EINVAL, E_ACL_DRIVE_ROOT, E_ACL_REPARSE (the root or an ancestor is a
+ * junction or symbolic link, or a link below the root leads outside it; cloud-file placeholders
+ * are real directories), E_ACL_UNSUPPORTED_VOLUME (anything but local NTFS), E_ACL_NULL_DACL,
+ * E_ACL_TOO_LARGE, errno-style codes with `win32Code` for system failures (EACCES when a right is
+ * missing, EBUSY when another program holds a directory open for deletion), and ENOSYS off Windows.
+ * Walks the whole tree on the calling thread; a Host uses createWindowsAclWorker instead.
  */
 export function inspectWindowsAcl(path: string): WindowsAclSnapshot {
-  const target = rootPath(path)
-  const raw = windowsAclBinding().inspect(target)
-  try {
-    if (!record(raw)) throw malformed()
-    return snapshotOf({
-      ...raw,
-      identity: { volumeId: raw.volumeId, fileId: raw.fileId },
-      descendants: Array.isArray(raw.descendants)
-        ? raw.descendants.map((item: unknown) =>
-            record(item) ? { ...item, identity: { volumeId: item.volumeId, fileId: item.fileId } } : item,
-          )
-        : raw.descendants,
-    })
-  } catch {
-    throw malformed()
-  }
+  return invoke(windowsAclInspectRequest(path))
 }
 
 /**
@@ -270,54 +311,73 @@ export function readWindowsObjectIdentity(path: string): WindowsObjectIdentity {
   }
 }
 
-/**
- * Adds the grant entries after proving the root and recorded descendants still match `before`.
- * Besides the inspection refusals it refuses, before any write: E_ACL_IDENTITY_MISMATCH (another
- * directory now has the path), E_ACL_CHANGED (permissions changed since `before`), E_ACL_BUSY,
- * E_ACL_SID_IN_USE and E_ACL_LABEL_CONFLICT. Once the write is attempted the result reports the
- * actual state instead; if the call still throws, check the state against `before`.
- */
-export function applyWindowsAclGrant(input: WindowsAclApply): WindowsAclMutation {
+/** The request behind applyWindowsAclGrant; validates `input` before anything runs. */
+export function windowsAclApplyRequest(input: WindowsAclApply): WindowsAclRequest<WindowsAclMutation> {
   if (!record(input)) throw invalid('Invalid Windows ACL grant')
   const before = snapshotOf(input.before)
   const grantId = grantIdOf(input.grantId)
   const writeSid = windowsWriteSid(input.writeSid)
-  const target = rootPath(before.path)
   const evidence = before.descendants.map(
     ({ identity, fingerprint }) => `${identity.volumeId}:${identity.fileId}:${fingerprint}`,
   )
-  const raw = windowsAclBinding().apply(
-    target,
-    before.identity.volumeId,
-    before.identity.fileId,
-    before.fingerprint,
-    evidence,
-    writeSid,
-  )
-  return mutationOf(raw, grantId)
+  return Object.freeze({
+    method: 'apply',
+    args: Object.freeze([
+      rootPath(before.path),
+      before.identity.volumeId,
+      before.identity.fileId,
+      before.fingerprint,
+      evidence,
+      writeSid,
+    ]),
+    result: (raw: unknown) => mutationOf(raw, grantId),
+  })
 }
 
 /**
- * Removes exactly the listed grant entries once the root still reads `expectedCurrentFingerprint`;
- * refuses like a grant, with E_ACL_CHANGED when an entry to remove is no longer there exactly.
+ * Adds the grant entries after proving the root and recorded descendants still match `before`.
+ * Besides the inspection refusals it refuses, before any write: E_ACL_IDENTITY_MISMATCH (another
+ * directory now has the path), E_ACL_CHANGED (permissions changed since `before`), E_ACL_BUSY,
+ * E_ACL_SID_IN_USE, E_ACL_LABEL_CONFLICT, E_ACL_BROAD_WRITE (an entry on the root or below gives
+ * Everyone or the logon session a write right, which the grant's Low label would open to every
+ * confined process) and E_ACL_STALE_INHERITANCE (the root or an object below it carries entries
+ * inherited from where it was before a move, which the change would replace for good; re-apply
+ * inheritance from its current parent first). Once the write is attempted the result reports the
+ * actual state instead; if the call still throws, check the state against `before`.
  */
-export function restoreWindowsAclGrant(input: WindowsAclRestore): WindowsAclMutation {
+export function applyWindowsAclGrant(input: WindowsAclApply): WindowsAclMutation {
+  return invoke(windowsAclApplyRequest(input))
+}
+
+/** The request behind restoreWindowsAclGrant; validates `input` before anything runs. */
+export function windowsAclRestoreRequest(input: WindowsAclRestore): WindowsAclRequest<WindowsAclMutation> {
   if (!record(input)) throw invalid('Invalid Windows ACL restore')
   const before = snapshotOf(input.before)
   const grantId = grantIdOf(input.grantId)
   if (!hex(input.expectedCurrentFingerprint, 64)) throw invalid('Invalid expected Windows ACL fingerprint')
   const removal = removalOf(input.removableChanges)
-  const target = rootPath(before.path)
-  const raw = windowsAclBinding().restore(
-    target,
-    before.identity.volumeId,
-    before.identity.fileId,
-    input.expectedCurrentFingerprint,
-    removal.allowSid,
-    removal.deny,
-    removal.label,
-  )
-  return mutationOf(raw, grantId)
+  return Object.freeze({
+    method: 'restore',
+    args: Object.freeze([
+      rootPath(before.path),
+      before.identity.volumeId,
+      before.identity.fileId,
+      input.expectedCurrentFingerprint,
+      removal.allowSid,
+      removal.deny,
+      removal.label,
+    ]),
+    result: (raw: unknown) => mutationOf(raw, grantId),
+  })
+}
+
+/**
+ * Removes exactly the listed grant entries once the root still reads `expectedCurrentFingerprint`;
+ * refuses like a grant, with E_ACL_CHANGED when an entry to remove is no longer there exactly and
+ * E_ACL_STALE_INHERITANCE like a grant (the broad-write refusal does not apply to a removal).
+ */
+export function restoreWindowsAclGrant(input: WindowsAclRestore): WindowsAclMutation {
+  return invoke(windowsAclRestoreRequest(input))
 }
 
 function removalOf(value: unknown): { allowSid: string; deny: boolean; label: boolean } {
@@ -424,13 +484,17 @@ function mutationOf(raw: unknown, grantId: string): WindowsAclMutation {
     )
       throw malformed()
     const failures = Object.freeze(raw.failures.map(failureOf))
+    // A listed failure always wins over the native flag: partial success is never reported complete.
+    const complete = raw.complete && failures.length === 0
+    const owned = raw.ownedFingerprint
+    if ((owned !== undefined && !hex(owned, 64)) || (complete && owned === undefined)) throw malformed()
     return Object.freeze({
       grantId,
-      // A listed failure always wins over the native flag: partial success is never reported complete.
-      complete: raw.complete && failures.length === 0,
+      complete,
       changes: Object.freeze(raw.changes.map(changeOf)),
       failures,
       inheritedDescendants: raw.inheritedDescendants,
+      ...(owned === undefined ? {} : { ownedFingerprint: owned }),
     })
   } catch {
     throw malformed()

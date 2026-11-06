@@ -117,9 +117,11 @@ static bool restrictedWriteSids(napi_env env, napi_value list, napi_value mode, 
   }
   return true;
 }
-// A primary token that may write only where an allow entry names the logon session, Everyone or a
-// write SID (as well as the user), at Low integrity, without privileges beyond change notification.
-static bool restrictedToken(napi_env env, std::vector<std::vector<BYTE>>& writeSids, Handle& out) {
+// A primary token that may write only where an allow entry names the logon session, Everyone, a
+// write SID or this launch's isolation SID (as well as the user), at Low integrity, without
+// privileges beyond change notification.
+static bool restrictedToken(napi_env env, std::vector<std::vector<BYTE>>& writeSids, std::vector<BYTE>& isolation,
+                            Handle& out) {
   HANDLE raw = nullptr;
   if (!OpenProcessToken(GetCurrentProcess(),
                         TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT, &raw)) {
@@ -139,8 +141,15 @@ static bool restrictedToken(napi_env env, std::vector<std::vector<BYTE>>& writeS
   if (!aclWellKnownSid(WinWorldSid, everyone) || !aclWellKnownSid(WinLowLabelSid, low)) {
     failure(env, "CreateWellKnownSid restricted", GetLastError()); return false;
   }
-  // Without the logon SID and Everyone, early DLL initialization and CNG fail in the target.
-  std::vector<SID_AND_ATTRIBUTES> restricting = {{logon, 0}, {everyone.data(), 0}};
+  // The restricting list only decides writes (the token is write-restricted; reads are checked as
+  // usual). The logon SID and Everyone stay in it because the target's own startup writes objects
+  // whose DACLs name only them: the console connection and the window station and desktop of the
+  // logon session name the logon SID, and devices such as \Device\CNG and the session's named
+  // object directories grant Everyone. Without them early DLL initialization and CNG fail in the
+  // target. They do not open one confined process to another: no object a confined process
+  // creates names either of them for writing (see the default DACL below), and a grant refuses a
+  // workspace where an entry gives either of them a write right (aclBroadWrite).
+  std::vector<SID_AND_ATTRIBUTES> restricting = {{logon, 0}, {everyone.data(), 0}, {isolation.data(), 0}};
   for (auto& sid : writeSids) restricting.push_back({sid.data(), 0});
   HANDLE restricted = nullptr;
   if (injectedFault(L"token") ||
@@ -149,22 +158,30 @@ static bool restrictedToken(napi_env env, std::vector<std::vector<BYTE>>& writeS
     failure(env, "CreateRestrictedToken", GetLastError()); return false;
   }
   out.value = restricted;
-  // Objects the target creates without an inherited DACL (pipes for its own children, events)
-  // take the default DACL. Its user entry alone fails the restricted write check, so the logon
-  // session, a restricting SID, is added; no other principal gains access.
+  // The process, its threads and every object the target creates without an inherited DACL
+  // (pipes for its own children, events, sections) take the default DACL, and so do the objects of
+  // its descendants, which inherit this token. Its user entry passes the normal access check, so
+  // the restricting SIDs decide who may write such an object. Only this launch's isolation SID gets
+  // an entry: the target and its descendants hold it and no other process does, so another
+  // confined process (another session, a read-only one, another workspace) cannot open them for
+  // writing, injecting code or duplicating their handles. Any entry the default DACL already has
+  // for the logon SID or Everyone, which every confined token holds, is removed.
   std::vector<BYTE> defaults;
   if (!restrictedTokenInformation(env, restricted, TokenDefaultDacl, defaults)) return false;
   PACL dacl = reinterpret_cast<const TOKEN_DEFAULT_DACL*>(defaults.data())->DefaultDacl;
   if (!dacl) { failure(env, "TokenDefaultDacl restricted", ERROR_INVALID_ACL); return false; }
-  EXPLICIT_ACCESSW entry = {};
-  entry.grfAccessPermissions = GENERIC_ALL;
-  entry.grfAccessMode = GRANT_ACCESS;
-  entry.grfInheritance = NO_INHERITANCE;
-  entry.Trustee.TrusteeForm = TRUSTEE_IS_SID;
-  entry.Trustee.TrusteeType = TRUSTEE_IS_GROUP;
-  entry.Trustee.ptstrName = static_cast<LPWSTR>(logon);
+  EXPLICIT_ACCESSW entries[3] = {};
+  const PSID trustees[3] = {logon, everyone.data(), isolation.data()};
+  for (int i = 0; i < 3; ++i) {
+    entries[i].grfAccessPermissions = i == 2 ? GENERIC_ALL : 0;
+    entries[i].grfAccessMode = i == 2 ? GRANT_ACCESS : REVOKE_ACCESS;
+    entries[i].grfInheritance = NO_INHERITANCE;
+    entries[i].Trustee.TrusteeForm = TRUSTEE_IS_SID;
+    entries[i].Trustee.TrusteeType = TRUSTEE_IS_GROUP;
+    entries[i].Trustee.ptstrName = static_cast<LPWSTR>(trustees[i]);
+  }
   PACL merged = nullptr;
-  const DWORD merge = SetEntriesInAclW(1, &entry, dacl, &merged);
+  const DWORD merge = SetEntriesInAclW(3, entries, dacl, &merged);
   if (merge != ERROR_SUCCESS) { failure(env, "SetEntriesInAcl restricted", merge); return false; }
   Local mergedOwner(merged);
   TOKEN_DEFAULT_DACL value = {merged};
@@ -221,10 +238,11 @@ static bool restrictedStdio(napi_env env, std::vector<std::unique_ptr<Handle>>& 
   return true;
 }
 
-// (application, commandLine, cwd, environment block, writeSids, readOnly) -> suspended target.
+// (application, commandLine, cwd, environment block, writeSids, readOnly, isolationSid)
+// -> suspended target.
 static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
-  napi_value args[6];
-  if (!arguments(env, info, 6, args)) return nullptr;
+  napi_value args[7];
+  if (!arguments(env, info, 7, args)) return nullptr;
   std::wstring application, commandLine, cwd, environment;
   if (!stringArgument(env, args[0], application) || !stringArgument(env, args[1], commandLine) ||
       !stringArgument(env, args[2], cwd) || !detachedEnvironment(env, args[3], environment)) return nullptr;
@@ -233,6 +251,13 @@ static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
   }
   std::vector<std::vector<BYTE>> writeSids;
   if (!restrictedWriteSids(env, args[4], args[5], writeSids)) return nullptr;
+  // A fresh capability SID per launch, never one of the grants' SIDs.
+  std::wstring isolationText;
+  std::vector<BYTE> isolation;
+  if (!stringArgument(env, args[6], isolationText)) return nullptr;
+  if (!aclCapabilitySid(isolationText, isolation) || std::find(writeSids.begin(), writeSids.end(), isolation) != writeSids.end()) {
+    napi_throw_type_error(env, "EINVAL", "Expected a distinct isolation SID (S-1-4-...)"); return nullptr;
+  }
   auto owner = std::make_unique<RestrictedProcess>();
   napi_value result;
   const napi_property_descriptor methods[] = {
@@ -248,7 +273,7 @@ static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
   }
   auto* target = owner.release();  // The result's finalizer owns it from here, even on failure.
   Handle token(nullptr);
-  if (!restrictedToken(env, writeSids, token)) return nullptr;
+  if (!restrictedToken(env, writeSids, isolation, token)) return nullptr;
   std::vector<std::unique_ptr<Handle>> copies;
   HANDLE handles[3] = {};
   RestrictedAttributes attributes;
