@@ -126,6 +126,87 @@ describe('CI scope', () => {
     }
   })
 
+  it('keeps the registry process file in one native lane per OS for PRs and full-platform events', () => {
+    const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')
+    const file = 'packages/host-infrastructure/test/refinement-registry-processes.e2e.test.ts'
+    const check = workflow.split('\n  check:\n')[1]?.split('\n  windows-check-result:')[0] ?? ''
+    const steps = check.split(/\n {6}- /)
+    const isolated = steps.filter((step) =>
+      step.includes(`run: pnpm exec vitest run --project heavy ${file}`),
+    )
+    expect(isolated).toHaveLength(2)
+    const commands = workflow
+      .split('\n')
+      .filter((line) => line.trimStart().startsWith('run:') && line.includes(file))
+    expect(commands).toHaveLength(isolated.length)
+    for (const step of isolated) {
+      expect(/^ {8}run: (.+)$/m.exec(step)?.[1]?.trim().split(/\s+/)).toEqual([
+        'pnpm',
+        'exec',
+        'vitest',
+        'run',
+        '--project',
+        'heavy',
+        file,
+        '--maxWorkers=1',
+      ])
+      expect(steps.indexOf(step)).toBeGreaterThan(steps.findIndex((s) => s.includes('id: suite')))
+    }
+    const rows = [...check.matchAll(/^\s*- \{ os: ([^,]+),.* shard: '([^']*)' \}/gm)]
+    expect(rows).toHaveLength(5)
+    const osNames: Record<string, string> = {
+      'ubuntu-latest': 'Linux',
+      'macos-latest': 'macOS',
+      'windows-latest': 'Windows',
+    }
+    const matches = (step: string, os: string, shard: string, event: string) => {
+      const context: Record<string, string> = {
+        'runner.os': os,
+        'matrix.shard': shard,
+        'github.event_name': event,
+      }
+      const condition = /^ {8}if: (.+)$/m.exec(step)?.[1] ?? ''
+      return condition.split(/\s*&&\s*/).every((clause) => {
+        const equality = /^(runner\.os|matrix\.shard|github\.event_name) == '([^']+)'$/.exec(clause)
+        if (!equality) throw new Error('unsupported isolated-step condition')
+        return context[equality[1] as string] === equality[2]
+      })
+    }
+    const heavy = workflow.split('\n  heavy:\n')[1]?.split('\n  runtime-package:')[0] ?? ''
+    const matrix =
+      /os: \$\{\{ fromJSON\(github.event_name == '([^']+)' && '([^']+)' \|\| '([^']+)'\) \}\}/.exec(heavy)
+    expect(matrix === null).toBe(false)
+    const { lists } = JSON.parse(readFileSync(new URL('./heavy-shards.json', import.meta.url), 'utf8'))
+    const excluded = /AGNES_TEST_EXCLUDE: \$\{\{ runner.os == 'Windows' && '([^']*)' \|\| '' \}\}/.exec(heavy)
+    expect(excluded === null).toBe(false)
+    expect(new Set(excluded?.[1]?.split(',') ?? []).has(file)).toBe(false)
+    const owners = [1, 2, 3].filter((index) => {
+      const shard = heavyShard(`${index}/3`, lists)
+      return shard.files ? shard.files.includes(file) : !shard.exclude?.includes(file)
+    })
+    expect(owners).toEqual([3])
+    for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch']) {
+      const extra = rows.flatMap((row) =>
+        isolated
+          .filter((step) => matches(step, osNames[row[1] as string] ?? '', row[2] ?? '', event))
+          .map(() => [row[1], row[2]]),
+      )
+      expect(extra, event).toEqual(
+        event === 'pull_request'
+          ? [
+              ['macos-latest', ''],
+              ['windows-latest', '1/3'],
+            ]
+          : [],
+      )
+      const heavyOs = JSON.parse((event === matrix?.[1] ? matrix?.[2] : matrix?.[3]) ?? '[]') as string[]
+      for (const os of Object.keys(osNames)) {
+        const nativeExtra = extra.filter((row) => row[0] === os).length
+        expect(nativeExtra + (heavyOs.includes(os) ? owners.length : 0), `${event}/${os}`).toBe(1)
+      }
+    }
+  })
+
   it('allows only root documentation and Markdown under docs', () => {
     expect(isDocsOnly(['README.zh-CN.md', 'docs/guide/使用 说明.md', 'SECURITY.md'])).toBe(true)
   })

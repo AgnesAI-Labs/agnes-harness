@@ -148,6 +148,14 @@ jobs:
       - name: Windows PowerShell private scripts on pull requests
         if: runner.os == 'Windows' && matrix.shard == '1/3' && github.event_name == 'pull_request'
         run: pnpm exec vitest run packages/host-infrastructure/test/adapters/powershell-file.e2e.test.ts --maxWorkers=1
+      # Registry writers start real Node processes. Preserve their PR coverage on the native
+      # platforms absent from the PR heavy matrix; other events use heavy shard 3 exactly once.
+      - name: macOS registry processes on pull requests
+        if: runner.os == 'macOS' && github.event_name == 'pull_request'
+        run: pnpm exec vitest run --project heavy packages/host-infrastructure/test/refinement-registry-processes.e2e.test.ts --maxWorkers=1
+      - name: Windows registry processes on pull requests
+        if: runner.os == 'Windows' && matrix.shard == '1/3' && github.event_name == 'pull_request'
+        run: pnpm exec vitest run --project heavy packages/host-infrastructure/test/refinement-registry-processes.e2e.test.ts --maxWorkers=1
       # The Skill install flow polls for completion with a three-second bound; run this
       # disk-backed integration file without other Vitest files competing on Windows.
       - name: Windows Skill install requests
