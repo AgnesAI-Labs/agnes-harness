@@ -233,7 +233,12 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     descriptionKey: 'commands.skill',
     summaryKey: 'commands.skillSummary',
   },
-  { name: '/mcp', args: '<action> ...', descriptionKey: 'commands.mcp', summaryKey: 'commands.mcpSummary' },
+  {
+    name: '/mcp',
+    args: 'login [server]|logout <server>|<action> ...',
+    descriptionKey: 'commands.mcp',
+    summaryKey: 'commands.mcpSummary',
+  },
   { name: '/context', descriptionKey: 'commands.context', summaryKey: 'commands.contextSummary' },
   {
     name: '/agents',

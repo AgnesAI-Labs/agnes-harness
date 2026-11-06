@@ -4,6 +4,17 @@ import { mcpConnectionFailure } from '../src/mcp-failure.js'
 
 const httpError = (code: number) => Object.assign(new Error(`HTTP ${code}`), { code })
 
+describe('the sign-in message the model reads', () => {
+  it('names the TUI and terminal commands and the web page', () => {
+    expect(new McpOAuthNeedsReconnectError('docs').message).toBe(
+      'MCP server "docs" needs sign-in. Ask the user to run /mcp login docs in the TUI or agh mcp login docs in a terminal, or to sign in from the MCP page in the web UI.',
+    )
+    expect(new McpOAuthNeedsReconnectError('docs', 'insufficient-scope').message).toBe(
+      'MCP server "docs" needs more permissions. Ask the user to sign in to it again: /mcp login docs in the TUI, agh mcp login docs in a terminal, or the MCP page in the web UI.',
+    )
+  })
+})
+
 describe('mcpConnectionFailure', () => {
   it.each([
     ['login-required', 'MCP server needs sign-in'],

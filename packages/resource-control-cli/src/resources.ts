@@ -119,6 +119,7 @@ const VALUE_FLAGS = new Set([
   '--header-ref',
   '--oauth-client-id',
   '--oauth-client-secret-ref',
+  '--oauth-callback-port',
   '--allow-tool',
   '--workspace-id',
 ])
@@ -331,6 +332,7 @@ function buildDefinition(parsed: Parsed, serverId: string): McpServerDefinitionI
     oauth: parsed.flags.has('--oauth'),
     oauthClientId: one(parsed, '--oauth-client-id'),
     oauthClientSecretRef: one(parsed, '--oauth-client-secret-ref'),
+    oauthCallbackPort: one(parsed, '--oauth-callback-port'),
   }
   for (const tool of many(parsed, '--allow-tool')) valid(tool, TOOL, 'tool allowlist entry')
   if (stdio) {
@@ -701,6 +703,7 @@ export async function runResourceCommand(
           '--oauth',
           '--oauth-client-id',
           '--oauth-client-secret-ref',
+          '--oauth-callback-port',
           '--allow-tool',
         ],
         'agh mcp add <serverId> ...',
@@ -771,6 +774,7 @@ export async function runResourceCommand(
           '--oauth',
           '--oauth-client-id',
           '--oauth-client-secret-ref',
+          '--oauth-callback-port',
           '--allow-tool',
         ],
         'agh mcp update <serverId> ...',

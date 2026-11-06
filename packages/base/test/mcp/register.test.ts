@@ -825,7 +825,7 @@ describe('registerRemoteToolsStrict', () => {
 
   it('a needs-sign-in error becomes the tool error text, even for a mutating tool', async () => {
     const message =
-      'MCP server "gh" needs sign-in. Ask the user to sign in to it from the MCP page in the web UI.'
+      'MCP server "gh" needs sign-in. Ask the user to run /mcp login gh in the TUI or agh mcp login gh in a terminal, or to sign in from the MCP page in the web UI.'
     const conn = connection()
     conn.callTool = async () =>
       Promise.reject(Object.assign(new Error(message), { code: 'MCP_OAUTH_NEEDS_RECONNECT' }))

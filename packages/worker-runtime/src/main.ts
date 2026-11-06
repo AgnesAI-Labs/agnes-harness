@@ -89,6 +89,7 @@ import {
   sessionScopedKey,
 } from './hosted-sessions.js'
 import { createMcpRowRuntime } from './mcp-row-runtime.js'
+import { signOutMcpRow } from './mcp-sign-out.js'
 import { frameFailure, installWorkerProcessGuards, sessionFailure } from './process-guards.js'
 import {
   createRuntimeTargetSlot,
@@ -717,6 +718,11 @@ export async function runWorker(
             if (!status) throw new Error(`MCP server ${p.serverId} is not part of the current snapshot`)
             return status
           }
+          if (command.method === 'resourceMcpSignOut')
+            return signOutMcpRow(
+              { host: requireHost(), resources: resourceSlot, workerResourcesInput },
+              p.serverId,
+            )
           if (command.method === 'resourceMcpTools') {
             if (typeof p.serverId !== 'string' || typeof p.expectedRevision !== 'string')
               throw new TypeError('invalid MCP tools request')

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   completeMcpOAuthLogin,
   type McpOAuthCompleteParams,
+  McpOAuthDiscoveryFailed,
   type McpOAuthSummary,
   summarizeMcpOAuth,
 } from '../src/mcp-oauth-login.js'
@@ -61,6 +62,22 @@ describe('oauth-http-handler', () => {
       cleanup.push(() => closeHttpServer(server))
       return { url: url.origin, close: () => closeHttpServer(server) }
     })
+  }
+
+  const PAGE_HEADERS = {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
+    'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff',
+  }
+
+  /** The answer is a readable HTML page with the security headers: no redirect, no JSON body. */
+  async function expectResultPage(response: Response, status: number, text: string): Promise<void> {
+    expect(response.status).toBe(status)
+    expect(response.headers.get('location')).toBeNull()
+    for (const [name, value] of Object.entries(PAGE_HEADERS)) expect(response.headers.get(name)).toBe(value)
+    expect(await response.text()).toContain(text)
   }
 
   type TokenResponse = { status: number; body: unknown }
@@ -251,26 +268,101 @@ describe('oauth-http-handler', () => {
 
       const response = await fetch(`${served.url}/oauth/unknown-server/start`)
 
-      expect(response.status).toBe(404)
+      await expectResultPage(response, 404, 'Sign-in failed.')
       expect(resolveServer).toHaveBeenCalledWith('unknown-server')
     })
 
-    it('returns a client-registration-required response when no client_id can be resolved', async () => {
-      const fixture = await startFixtureAuthServer()
+    it('shows a client-ID-required page when no client_id can be resolved', async () => {
+      const fake = await startFakeOAuthServer({ prm: { resource: '/mcp' }, noRegistration: true })
+      cleanup.push(() => fake.close())
       const handler = createOAuthHttpHandler({
         secret: SECRET,
         login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
-        // No staticClientId, and the fixture's metadata has no registration_endpoint - DCR is
-        // skipped, not attempted, so registerOAuthClient must fall back to pendingClientId.
-        resolveServer: async () => ({ serverUrl: fixture.url }),
+        // No staticClientId, and the metadata has no registration_endpoint - DCR is skipped, not
+        // attempted, so the sign-in must fall back to pendingClientId.
+        resolveServer: async () => ({ serverUrl: fake.serverUrl }),
+        fetchImpl: fake.fetchImpl,
       })
       const served = await serveHandler(handler)
 
       const response = await fetch(`${served.url}/oauth/srv-1/start`, { redirect: 'manual' })
 
-      expect(response.status).toBe(409)
-      expect(fixture.authorizeRequests).toEqual([])
+      await expectResultPage(response, 400, 'needs a client ID')
+      expect(fake.paths()).not.toContain('/authorize')
+    })
+
+    it('with Accept: application/json returns the authorize URL and the callback address instead of redirecting', async () => {
+      const fixture = await startFixtureAuthServer()
+      const handler = createOAuthHttpHandler({
+        secret: SECRET,
+        login: fakeLogin(),
+        baseUrl: new URL('http://127.0.0.1:4177'),
+        resolveServer: async () => ({ serverUrl: fixture.url, staticClientId: 'static-client-id' }),
+      })
+      const served = await serveHandler(handler)
+
+      const response = await fetch(`${served.url}/oauth/srv-1/start`, {
+        headers: { accept: 'application/json' },
+        redirect: 'manual',
+      })
+
+      expect(response.status).toBe(200)
+      expect(response.headers.get('location')).toBeNull()
+      const body = (await response.json()) as { authorizeUrl: string; redirectUri: string }
+      expect(body.redirectUri).toBe('http://127.0.0.1:4177/oauth/srv-1/callback')
+      const authorizeUrl = new URL(body.authorizeUrl)
+      expect(authorizeUrl.pathname).toBe('/authorize')
+      expect(authorizeUrl.searchParams.get('redirect_uri')).toBe(body.redirectUri)
+      expect(authorizeUrl.searchParams.get('state')).toMatch(/^.+\..+$/)
+    })
+
+    it.each([
+      ['an unknown server', 404, 'mcp_server_not_found'],
+      ['a server without a client ID', 400, 'oauth_client_id_required'],
+    ] as const)('with Accept: application/json answers %s as {error}', async (name, status, error) => {
+      const fake = await startFakeOAuthServer({ prm: { resource: '/mcp' }, noRegistration: true })
+      cleanup.push(() => fake.close())
+      const handler = createOAuthHttpHandler({
+        secret: SECRET,
+        login: fakeLogin(),
+        baseUrl: new URL('http://127.0.0.1:4177'),
+        resolveServer: async (serverId) =>
+          name === 'an unknown server' || serverId !== 'srv-1' ? undefined : { serverUrl: fake.serverUrl },
+        fetchImpl: fake.fetchImpl,
+      })
+      const served = await serveHandler(handler)
+
+      const response = await fetch(`${served.url}/oauth/srv-1/start`, {
+        headers: { accept: 'application/json' },
+      })
+
+      expect(response.status).toBe(status)
+      expect(await response.json()).toEqual({ error })
+    })
+
+    it('shows a discovery-failed page when the server settings cannot be read', async () => {
+      // A resource server whose metadata names some other address than the one being signed in to.
+      const resourceServer = createServer((req, res) => {
+        if (req.url?.startsWith('/.well-known/oauth-protected-resource'))
+          res
+            .writeHead(200, { 'content-type': 'application/json' })
+            .end(JSON.stringify({ resource: 'http://other.example/', authorization_servers: [] }))
+        else res.writeHead(404).end()
+      })
+      const resourceUrl = await listen(resourceServer)
+      cleanup.push(() => closeHttpServer(resourceServer))
+      const handler = createOAuthHttpHandler({
+        secret: SECRET,
+        login: fakeLogin(),
+        baseUrl: new URL('http://127.0.0.1:4177'),
+        resolveServer: async () => ({ serverUrl: resourceUrl, staticClientId: 'cid' }),
+      })
+      const served = await serveHandler(handler)
+
+      const response = await fetch(`${served.url}/oauth/srv-1/start`, { redirect: 'manual' })
+
+      await expectResultPage(response, 502, 'could not be read')
     })
 
     it('declines a request outside its own route space, leaving server.ts free to keep looking', async () => {
@@ -374,7 +466,7 @@ describe('oauth-http-handler', () => {
         headers: { 'sec-fetch-site': 'cross-site' },
       })
 
-      expect(response.status).toBe(403)
+      await expectResultPage(response, 403, 'Sign-in failed.')
       // The origin check happens before any server lookup at all.
       expect(resolveServer).not.toHaveBeenCalled()
     })
@@ -393,7 +485,7 @@ describe('oauth-http-handler', () => {
         headers: { origin: 'http://evil.example.com' },
       })
 
-      expect(response.status).toBe(403)
+      await expectResultPage(response, 403, 'Sign-in failed.')
       expect(resolveServer).not.toHaveBeenCalled()
     })
 
@@ -480,20 +572,22 @@ describe('oauth-http-handler', () => {
     })
 
     it("returns {pendingClientId: true} when auto-registration fails, exactly like the HTTP route's 409", async () => {
-      const fixture = await startFixtureAuthServer()
+      const fake = await startFakeOAuthServer({ prm: { resource: '/mcp' }, noRegistration: true })
+      cleanup.push(() => fake.close())
       const handler = createOAuthHttpHandler({
         secret: SECRET,
         login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
-        // No staticClientId, and the fixture's metadata has no registration_endpoint - DCR is
-        // skipped, matching the HTTP route's own equivalent test.
-        resolveServer: async () => ({ serverUrl: fixture.url }),
+        // No staticClientId, and the metadata has no registration_endpoint - DCR is skipped,
+        // matching the HTTP route's own equivalent test.
+        resolveServer: async () => ({ serverUrl: fake.serverUrl }),
+        fetchImpl: fake.fetchImpl,
       })
 
       const result = await handler.startAuthorization('srv-1')
 
       expect(result).toEqual({ pendingClientId: true })
-      expect(fixture.authorizeRequests).toEqual([])
+      expect(fake.paths()).not.toContain('/authorize')
     })
 
     // Load-bearing proof for the whole "shared logic, not duplicated" design: an authorizeUrl minted
@@ -531,7 +625,7 @@ describe('oauth-http-handler', () => {
       callbackUrl.searchParams.set('code', 'auth-code-1')
       const response = await fetch(callbackUrl, { redirect: 'manual' })
 
-      expect(response.status).toBe(302)
+      await expectResultPage(response, 200, 'sign-in complete')
       expect(login.complete).toHaveBeenCalledWith(
         expect.objectContaining({
           serverId: 'srv-1',
@@ -635,7 +729,7 @@ describe('oauth-http-handler', () => {
       const callback = new URL(`${served.url}/oauth/srv-1/callback`)
       callback.searchParams.set('state', state)
       callback.searchParams.set('code', 'auth-code-9')
-      expect((await fetch(callback, { redirect: 'manual' })).status).toBe(302)
+      await expectResultPage(await fetch(callback, { redirect: 'manual' }), 200, 'sign-in complete')
 
       const [params] = login.complete.mock.calls[0] as [McpOAuthCompleteParams]
       expect(params).toMatchObject({
@@ -675,7 +769,7 @@ describe('oauth-http-handler', () => {
         redirect: 'manual',
       })
 
-      expect(response.status).toBe(302)
+      await expectResultPage(response, 400, 'Sign-in failed.')
       expect(statusUpdates).toEqual(['error'])
     })
 
@@ -684,7 +778,7 @@ describe('oauth-http-handler', () => {
 
       const response = await fetch(`${served.url}/oauth/srv-1/callback?code=abc&state=tampered`)
 
-      expect(response.status).toBe(400)
+      await expectResultPage(response, 400, 'expired or was already used')
       expect(login.complete).not.toHaveBeenCalled()
     })
 
@@ -696,7 +790,7 @@ describe('oauth-http-handler', () => {
       // identical flow successfully) - only the callback URL's serverId segment is switched.
       const response = await fetch(`${served.url}/oauth/srv-2/callback?code=abc&state=${state}`)
 
-      expect(response.status).toBe(400)
+      await expectResultPage(response, 400, 'expired or was already used')
       expect(login.complete).not.toHaveBeenCalled()
     })
 
@@ -711,18 +805,18 @@ describe('oauth-http-handler', () => {
       const first = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`, {
         redirect: 'manual',
       })
-      expect(first.status).toBe(302)
+      await expectResultPage(first, 200, 'sign-in complete')
       expect(login.complete).toHaveBeenCalledTimes(1)
 
       const second = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`, {
         redirect: 'manual',
       })
-      expect(second.status).toBe(400)
+      await expectResultPage(second, 400, 'expired or was already used')
       // The replay must not reach the completion a second time.
       expect(login.complete).toHaveBeenCalledTimes(1)
     })
 
-    it('completes the full round trip: hands the code to the daemon side, which stores the exchanged credential, and redirects back', async () => {
+    it('completes the full round trip: hands the code to the daemon side, which stores the exchanged credential, and shows the signed-in page', async () => {
       const statusUpdates: Array<{ serverId: string; status: string }> = []
       const { fixture, served, login, store } = await setupHandler({
         onAuthorizationStatus: async (serverId, status) => {
@@ -739,18 +833,13 @@ describe('oauth-http-handler', () => {
           scope: 'read write',
         },
       })
-      const { state } = await completeStart({
-        served,
-        returnTo: '/admin/resources',
-      })
+      const { state } = await completeStart({ served })
 
       const response = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`, {
         redirect: 'manual',
       })
 
-      expect(response.status).toBe(302)
-      const redirectLocation = new URL(response.headers.get('location') as string)
-      expect(redirectLocation.pathname).toBe('/admin/resources')
+      await expectResultPage(response, 200, 'sign-in complete')
 
       expect(login.complete).toHaveBeenCalledTimes(1)
       const [params] = login.complete.mock.calls[0] as [McpOAuthCompleteParams]
@@ -806,7 +895,7 @@ describe('oauth-http-handler', () => {
         headers: { 'sec-fetch-site': 'cross-site', origin: fixture.url.origin },
       })
 
-      expect(response.status).toBe(302)
+      await expectResultPage(response, 200, 'sign-in complete')
       expect(login.complete).toHaveBeenCalledTimes(1)
     })
 
@@ -818,11 +907,11 @@ describe('oauth-http-handler', () => {
         `${served.url}/oauth/srv-1/callback?code=abc&state=${forged}.not-a-real-signature`,
       )
 
-      expect(response.status).toBe(400)
+      await expectResultPage(response, 400, 'expired or was already used')
       expect(login.complete).not.toHaveBeenCalled()
     })
 
-    it('marks the server as needing attention and redirects back without storing anything when the token exchange fails', async () => {
+    it('marks the server as needing attention and shows a failure page without storing anything when the token exchange fails', async () => {
       const statusUpdates: Array<{ serverId: string; status: string }> = []
       const { fixture, served, login, store } = await setupHandler({
         onAuthorizationStatus: async (serverId, status) => {
@@ -836,7 +925,7 @@ describe('oauth-http-handler', () => {
         redirect: 'manual',
       })
 
-      expect(response.status).toBe(302)
+      await expectResultPage(response, 400, 'Sign-in failed.')
       expect(login.complete).toHaveBeenCalledTimes(1)
       expect(await store.read('srv-1')).toBeNull()
       expect(statusUpdates).toEqual([{ serverId: 'srv-1', status: 'error' }])
@@ -860,15 +949,15 @@ describe('oauth-http-handler', () => {
         redirect: 'manual',
       })
 
-      // The refused redirect makes the token exchange fail closed (same "mark as error, redirect
-      // back" path as any other exchange failure) - never a silent leak to wherever it pointed.
-      expect(response.status).toBe(302)
+      // The refused redirect makes the token exchange fail closed (same "mark as error, show a
+      // failure page" path as any other exchange failure) - never a silent leak to wherever it pointed.
+      await expectResultPage(response, 400, 'Sign-in failed.')
       expect(login.complete).toHaveBeenCalledTimes(1)
       expect(await store.read('srv-1')).toBeNull()
       expect(victim.requestCount()).toBe(0)
     })
 
-    it('treats a provider-side denial (error query param) as a failure without exchanging any code', async () => {
+    it('shows a cancelled page for a provider-side denial, without exchanging any code', async () => {
       const statusUpdates: Array<{ serverId: string; status: string }> = []
       const { fixture, served, login } = await setupHandler({
         onAuthorizationStatus: async (serverId, status) => {
@@ -881,13 +970,54 @@ describe('oauth-http-handler', () => {
         redirect: 'manual',
       })
 
-      expect(response.status).toBe(302)
+      await expectResultPage(response, 400, 'Sign-in was cancelled')
       expect(login.complete).not.toHaveBeenCalled()
       expect(fixture.tokenRequests).toEqual([])
       expect(statusUpdates).toEqual([{ serverId: 'srv-1', status: 'error' }])
     })
 
-    it('never redirects to an attacker-supplied off-origin returnTo target', async () => {
+    it('shows another provider error as a failure with the error escaped', async () => {
+      const { served, login } = await setupHandler()
+      const { state } = await completeStart({ served })
+
+      const response = await fetch(
+        `${served.url}/oauth/srv-1/callback?error=${encodeURIComponent('<b>boom</b>')}&state=${state}`,
+      )
+
+      await expectResultPage(response, 400, '&lt;b&gt;boom&lt;/b&gt;')
+      expect(login.complete).not.toHaveBeenCalled()
+    })
+
+    it('shows a failure page when the callback carries no code', async () => {
+      const { served, login } = await setupHandler()
+      const { state } = await completeStart({ served })
+
+      const response = await fetch(`${served.url}/oauth/srv-1/callback?state=${state}`)
+
+      await expectResultPage(response, 400, 'The callback carried no code.')
+      expect(login.complete).not.toHaveBeenCalled()
+    })
+
+    it('shows an expired page when there is no state at all', async () => {
+      const { served, login } = await setupHandler()
+
+      const response = await fetch(`${served.url}/oauth/srv-1/callback?code=abc`)
+
+      await expectResultPage(response, 400, 'expired or was already used')
+      expect(login.complete).not.toHaveBeenCalled()
+    })
+
+    it('shows a discovery-failed page when the daemon cannot read the server settings during completion', async () => {
+      const { served, login } = await setupHandler()
+      login.complete.mockRejectedValue(new McpOAuthDiscoveryFailed())
+      const { state } = await completeStart({ served })
+
+      const response = await fetch(`${served.url}/oauth/srv-1/callback?code=auth-code-1&state=${state}`)
+
+      await expectResultPage(response, 502, 'could not be read')
+    })
+
+    it('ignores a returnTo on /start: the callback answers a page and never redirects', async () => {
       const { fixture, served } = await setupHandler()
       fixture.setTokenResponse({
         status: 200,
@@ -902,22 +1032,10 @@ describe('oauth-http-handler', () => {
         redirect: 'manual',
       })
 
-      expect(response.status).toBe(302)
-      const redirectLocation = response.headers.get('location') as string
-      expect(redirectLocation.startsWith('http://127.0.0.1:4177/')).toBe(true)
-      expect(redirectLocation).not.toContain('evil.example.com')
+      await expectResultPage(response, 200, 'sign-in complete')
     })
 
-    // The test above proves the end-to-end behavior, but `/start` already strips an off-origin
-    // `returnTo` before it is ever sealed into the state (see the matching filter in
-    // `handleStart`) - so that test alone never actually exercises the callback's OWN independent
-    // `safeReturnTo` check. A mutation that deletes `safeReturnTo`'s guard still leaves the test
-    // above green, because the malicious value never reaches it. This test closes that gap by
-    // sealing a state whose `returnTo` is off-origin directly (bypassing `/start`'s filter, as a
-    // second, independent line of defense should assume a future bug in that filter might), and
-    // asserts the callback's own check catches it - proven by a real reverse mutation on
-    // `safeReturnTo` during implementation (see the Task 4 report).
-    it("the callback's own safeReturnTo check independently rejects an off-origin returnTo, even if it reached state some other way", async () => {
+    it('answers a page, not a redirect, even for a signed state that still carries a returnTo', async () => {
       const secret = 'test-secret-32-bytes-minimum-xxxxxxxxxxxx'
       const login = fakeLogin()
       const handler = createOAuthHttpHandler({
@@ -927,9 +1045,7 @@ describe('oauth-http-handler', () => {
         resolveServer: async () => undefined,
       })
       const served = await serveHandler(handler)
-      // No matching pendingRegistrations entry exists (this state was never issued by `/start`),
-      // so the callback takes its "no pending registration" failure branch - which still redirects
-      // through `safeReturnTo(payload.returnTo, baseUrl)`, exercising exactly the code under test.
+      // This state was never issued by `/start`, so no registration is pending for it.
       const state = await sealOAuthState(
         {
           serverId: 'srv-1',
@@ -950,10 +1066,7 @@ describe('oauth-http-handler', () => {
         redirect: 'manual',
       })
 
-      expect(response.status).toBe(302)
-      const redirectLocation = response.headers.get('location') as string
-      expect(redirectLocation.startsWith('http://127.0.0.1:4177/')).toBe(true)
-      expect(redirectLocation).not.toContain('evil.example.com')
+      await expectResultPage(response, 400, 'expired or was already used')
     })
   })
 })

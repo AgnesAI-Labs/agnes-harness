@@ -410,7 +410,8 @@
       "properties": {
         "kind": { "const": "oauth" },
         "staticClientId": { "type": "string", "minLength": 1, "maxLength": 512 },
-        "clientSecretRef": { "$ref": "profile.json#/$defs/SecretRef" }
+        "clientSecretRef": { "$ref": "profile.json#/$defs/SecretRef" },
+        "callbackPort": { "type": "integer", "minimum": 1024, "maximum": 65535 }
       }
     },
     "McpHttpSecretBinding": {

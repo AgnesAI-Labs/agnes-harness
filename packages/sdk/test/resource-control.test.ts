@@ -85,6 +85,7 @@ describe('Node resource control client', () => {
       '_agnes/v1/mcp.servers.reconnect': () => receipt,
       '_agnes/v1/mcp.servers.oauth.status': () => ({ authorizationStatus: 'pending' }),
       '_agnes/v1/mcp.servers.oauth.status.set': () => ({ authorizationStatus: 'authorized' }),
+      '_agnes/v1/mcp.servers.oauth.signOut': () => receipt,
     })
     const client = createClient({
       transport: { kind: 'inproc', endpoint: endpoint.endpoint },
@@ -134,6 +135,7 @@ describe('Node resource control client', () => {
       await client.mcp.servers.reconnect({ ...identity, serverId: 'example', expectedRevision: revision })
       await client.mcp.servers.oauth.status({ profile, serverId: 'example' })
       await client.mcp.servers.oauth.statusSet({ profile, serverId: 'example', status: 'authorized' })
+      await client.mcp.servers.oauth.signOut({ ...identity, serverId: 'example', expectedRevision: revision })
       expect(endpoint.calls.find((call) => call.method === '_agnes/v1/resources.list')?.params).toMatchObject(
         { profile, cursor: 'next' },
       )
@@ -146,6 +148,14 @@ describe('Node resource control client', () => {
       expect(
         endpoint.calls.find((call) => call.method === '_agnes/v1/mcp.servers.oauth.status.set')?.params,
       ).toMatchObject({ profile, serverId: 'example', status: 'authorized' })
+      expect(
+        endpoint.calls.find((call) => call.method === '_agnes/v1/mcp.servers.oauth.signOut')?.params,
+      ).toMatchObject({
+        profile,
+        serverId: 'example',
+        expectedRevision: revision,
+        commandId: 'resource-command',
+      })
     } finally {
       await client.close()
     }

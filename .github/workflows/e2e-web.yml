@@ -54,7 +54,7 @@ jobs:
           # Sized from Linux per-case durations times the measured macOS 15 / Linux ratio (about 1.3).
           # --grep applies to every file in a list, so the first agent-sweep list also names answer tables.
           - { id: main-26, args: "agent-sweep.spec.ts answer-tables.spec.ts --grep 'operations#desk|data-report#|finance-reconcile#|builtin:general|knowledge-qa#|Answer tables'" }
-          - { id: main-27, args: "agent-sweep.spec.ts base-conversation.spec.ts mcp-management.spec.ts browser.spec.ts browser-layout.spec.ts --grep-invert 'operations#desk|data-report#|finance-reconcile#|builtin:general|knowledge-qa#'" }
+          - { id: main-27, args: "agent-sweep.spec.ts base-conversation.spec.ts mcp-management.spec.ts mcp-oauth.spec.ts browser.spec.ts browser-layout.spec.ts --grep-invert 'operations#desk|data-report#|finance-reconcile#|builtin:general|knowledge-qa#'" }
           - { id: main-28, args: "session-activity.spec.ts session-create.spec.ts tool-recovery.spec.ts" }
           # The human review-to-publish case alone; the update/skill inbox case with the full-access case.
           - { id: candidate-review, args: "candidate-review.spec.ts --grep 'refuses edited approval'" }
@@ -113,7 +113,7 @@ jobs:
           - { id: main-1, args: "agent-sweep.spec.ts answer-tables.spec.ts auto-review.spec.ts base-conversation.spec.ts browser-layout.spec.ts browser.spec.ts business-agents.spec.ts" }
           - { id: main-2, args: "candidate-review.spec.ts credentials.spec.ts diagnostics.spec.ts" }
           - { id: main-3, args: "fact-chain.spec.ts feedback.spec.ts human-controls.spec.ts intelligent-ui.spec.ts large-upload.spec.ts question-surfaces.spec.ts references.spec.ts" }
-          - { id: main-4, args: "first-run.spec.ts mcp-management.spec.ts observability.spec.ts webhooks.spec.ts tool-recovery.spec.ts" }
+          - { id: main-4, args: "first-run.spec.ts mcp-management.spec.ts mcp-oauth.spec.ts observability.spec.ts webhooks.spec.ts tool-recovery.spec.ts" }
           - { id: main-5, args: "memory.spec.ts plugin-config.spec.ts session-create.spec.ts" }
           - { id: main-6, args: "plugin-purpose.spec.ts prompt-trace.spec.ts session-activity.spec.ts" }
           - { id: main-7, args: "runtime.spec.ts" }

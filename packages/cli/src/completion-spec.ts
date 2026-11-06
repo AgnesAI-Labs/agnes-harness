@@ -43,6 +43,8 @@ export const SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
     'test',
     'reconnect',
     'remove',
+    'login',
+    'logout',
   ],
   package: [
     'inspect',

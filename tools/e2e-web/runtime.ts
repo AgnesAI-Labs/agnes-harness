@@ -18,7 +18,13 @@ const requestedEntry = process.env.AGH_WEB_TEST_ENTRY
 const entry = resolve(requestedEntry ?? 'packages/cli/dist/local/agnes.mjs')
 export async function isolatedRuntime(
   launcher: 'root' | 'installed' = 'root',
-  options: { localExamples?: boolean; realModel?: boolean; browserArchive?: string } = {},
+  options: {
+    localExamples?: boolean
+    realModel?: boolean
+    browserArchive?: string
+    /** Extra variables for the runtime and its CLI, beyond the fixed minimum. */
+    extraEnv?: Readonly<Record<string, string>>
+  } = {},
 ) {
   // Short paths avoid macOS Unix socket limits. Never inherit the user's profile or credentials.
   const parent = options.realModel ? join(homedir(), 'agh-real-eval') : sep === '\\' ? tmpdir() : '/tmp'
@@ -63,6 +69,7 @@ export async function isolatedRuntime(
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
     AGNES_WEB_ORIGIN: url,
+    ...options.extraEnv,
   }
   // Seed the reviewed test archive before enabling the default plugin; no startup network race.
   if (options.browserArchive) {

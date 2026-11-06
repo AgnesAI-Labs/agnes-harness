@@ -84,6 +84,20 @@ describe('clientAuthentication', () => {
     ).toThrow(McpOAuthClientAuthUnsupported)
   })
 
+  it('a registered public client uses none even when the server does not list none', async () => {
+    // Keycloak registers a public client for `none` but never lists `none` among its methods.
+    const { headers, params } = await applyAuth(
+      clientAuthentication({
+        clientId: 'id',
+        registeredMethod: 'none',
+        supportedMethods: ['client_secret_basic', 'client_secret_post', 'private_key_jwt'],
+      }),
+    )
+    expect(headers.has('authorization')).toBe(false)
+    expect(params.get('client_id')).toBe('id')
+    expect(params.has('client_secret')).toBe(false)
+  })
+
   it('no secret: none sends client_id in the form', async () => {
     const { headers, params } = await applyAuth(clientAuthentication({ clientId: 'id' }))
     expect(headers.has('authorization')).toBe(false)
@@ -243,5 +257,49 @@ describe('discoverMcpOAuth', () => {
     expect(found.metadata).toBeUndefined()
     expect(found.issuer).toBeUndefined()
     expect(found.resource.href).toBe('https://nometa.example/mcp')
+  })
+
+  describe('an authorization side that is refused', () => {
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
+    const metadata = (tokenEndpoint: string) => ({
+      issuer: 'https://as.example',
+      authorization_endpoint: 'https://as.example/authorize',
+      token_endpoint: tokenEndpoint,
+      response_types_supported: ['code'],
+    })
+    const serving =
+      (authorizationServer: string, tokenEndpoint: string): typeof fetch =>
+      async (input) => {
+        const path = new URL(String(input)).pathname
+        if (path.startsWith('/.well-known/oauth-protected-resource'))
+          return json({ resource: 'https://mcp.example/mcp', authorization_servers: [authorizationServer] })
+        if (path.startsWith('/.well-known/oauth-authorization-server')) return json(metadata(tokenEndpoint))
+        return new Response(null, { status: 404 })
+      }
+
+    it('is recorded when the protected resource names a plain http authorization server', async () => {
+      const found = await discoverMcpOAuth(
+        new URL('https://mcp.example/mcp'),
+        serving('http://localhost:3911/', 'http://localhost:3911/token'),
+      )
+      expect(found.refusedEndpoint).toBe('http://localhost:3911/')
+    })
+
+    it('is recorded when the authorization server metadata names a plain http endpoint', async () => {
+      const found = await discoverMcpOAuth(
+        new URL('https://mcp.example/mcp'),
+        serving('https://as.example/', 'http://as.example/token'),
+      )
+      expect(found.refusedEndpoint).toBe('http://as.example/token')
+    })
+
+    it('is absent for an https authorization side', async () => {
+      const found = await discoverMcpOAuth(
+        new URL('https://mcp.example/mcp'),
+        serving('https://as.example/', 'https://as.example/token'),
+      )
+      expect(found.refusedEndpoint).toBeUndefined()
+    })
   })
 })

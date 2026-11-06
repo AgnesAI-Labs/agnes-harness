@@ -127,7 +127,10 @@ describe('MCP OAuth sign-in in the daemon', () => {
   const REDIRECT = 'http://127.0.0.1:4177/oauth/srv-1/callback'
   const VERIFIER = 'v'.repeat(43)
 
-  async function setup(secretBinding: Record<string, unknown> = { kind: 'oauth' }) {
+  async function setup(
+    secretBinding: Record<string, unknown> = { kind: 'oauth' },
+    answer?: (url: URL) => Response | undefined,
+  ) {
     const fixtureRoot = await mkdtemp(join(tmpdir(), 'agh-mcp-oauth-admin-'))
     const home = join(fixtureRoot, 'home')
     createPrivateDirectorySync(home)
@@ -136,11 +139,14 @@ describe('MCP OAuth sign-in in the daemon', () => {
     // No metadata anywhere: the token endpoint is the server origin's /token.
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(String(input))
+      const answered = answer?.(url)
+      if (answered && url.pathname !== '/token') return answered
       if (url.pathname !== '/token') return new Response('', { status: 404 })
       tokenRequests.push({
         headers: new Headers(init?.headers),
         form: new URLSearchParams(String(init?.body)),
       })
+      if (answered) return answered
       return Response.json({
         access_token: 'issued-access',
         token_type: 'Bearer',
@@ -337,13 +343,196 @@ describe('MCP OAuth sign-in in the daemon', () => {
     }
   })
 
+  it('refuses a client authentication method it cannot do, with a readable reason and the method', async () => {
+    const t = await setup()
+    try {
+      const response = await t.complete({
+        client: { clientId: 'client-1', tokenEndpointAuthMethod: 'private_key_jwt' },
+      })
+      expect(response).toMatchObject({
+        error: {
+          data: { reason: 'MCP_OAUTH_CLIENT_AUTH_UNSUPPORTED', method: 'private_key_jwt' },
+        },
+      })
+      expect(t.tokenRequests).toEqual([])
+      expect(JSON.stringify(response)).not.toContain('code-1')
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('reports metadata that cannot be used as a discovery failure', async () => {
+    // The protected resource metadata names another resource than the server address.
+    const t = await setup({ kind: 'oauth' }, (url) =>
+      url.pathname.startsWith('/.well-known/oauth-protected-resource')
+        ? Response.json({
+            resource: 'https://other.example.test/mcp',
+            authorization_servers: ['https://mcp.example.test/'],
+          })
+        : undefined,
+    )
+    try {
+      const response = await t.complete()
+      expect(response).toMatchObject({ error: { data: { reason: 'MCP_OAUTH_DISCOVERY_FAILED' } } })
+      expect(t.tokenRequests).toEqual([])
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('reports a code the authorization server refuses as a rejected grant, without the code', async () => {
+    const t = await setup({ kind: 'oauth' }, (url) =>
+      url.pathname === '/token'
+        ? Response.json({ error: 'invalid_grant', error_description: 'code code-1 expired' }, { status: 400 })
+        : undefined,
+    )
+    try {
+      const response = await t.complete()
+      expect(response).toMatchObject({ error: { data: { reason: 'MCP_OAUTH_GRANT_REJECTED' } } })
+      expect(JSON.stringify(response)).not.toContain('code-1')
+      expect(await t.store.read('srv-1')).toBeNull()
+    } finally {
+      await t.close()
+    }
+  })
+
+  const signedIn = (extra: Record<string, unknown> = {}) => ({
+    epoch: 3,
+    client: { clientId: 'client-1', redirectUri: REDIRECT },
+    server: {
+      endpoint: SERVER_URL,
+      authorizationServer: 'https://mcp.example.test/',
+      tokenEndpoint: 'https://mcp.example.test/token',
+      resource: SERVER_URL,
+    },
+    tokens: { accessToken: 'stored-access', refreshToken: 'stored-refresh', expiresAt: 5, scope: ['read'] },
+    requiredScope: [],
+    ...extra,
+  })
+  const target = { profile: 'local-dev', serverId: 'srv-1' }
+
+  it('refresh with a stored refresh token signs in without a browser', async () => {
+    const t = await setup()
+    try {
+      await t.store.update('srv-1', async () => ({ value: undefined, next: signedIn() }))
+      expect(await t.call('_agnes/v1/admin.mcp.oauth.refresh', target)).toMatchObject({
+        result: { signedIn: true },
+      })
+      expect(t.tokenRequests.map((request) => request.form.get('refresh_token'))).toEqual(['stored-refresh'])
+      expect(await t.store.read('srv-1')).toMatchObject({
+        epoch: 3,
+        rev: 2,
+        tokens: { accessToken: 'issued-access', refreshToken: 'issued-refresh' },
+      })
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('refresh skips the request when requiredScope is pending', async () => {
+    const t = await setup()
+    try {
+      await t.store.update('srv-1', async () => ({
+        value: undefined,
+        next: signedIn({ requiredScope: ['write'] }),
+      }))
+      expect(await t.call('_agnes/v1/admin.mcp.oauth.refresh', target)).toEqual(
+        expect.objectContaining({ result: { signedIn: false } }),
+      )
+      expect(t.tokenRequests).toEqual([])
+      expect(await t.store.read('srv-1')).toMatchObject({ rev: 1, tokens: { accessToken: 'stored-access' } })
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('refresh answers signedIn false, with no request, when there is nothing to refresh or the server moved', async () => {
+    const t = await setup()
+    try {
+      const refresh = () => t.call('_agnes/v1/admin.mcp.oauth.refresh', target)
+      expect(await refresh()).toMatchObject({ result: { signedIn: false } })
+      await t.store.update('srv-1', async () => ({
+        value: undefined,
+        next: signedIn({ tokens: { accessToken: 'stored-access', expiresAt: 5, scope: [] } }),
+      }))
+      expect(await refresh()).toMatchObject({ result: { signedIn: false } })
+      await t.store.update('srv-1', async () => ({
+        value: undefined,
+        next: signedIn({
+          server: { ...signedIn().server, endpoint: 'https://elsewhere.example.test/mcp' },
+        }),
+      }))
+      expect(await refresh()).toMatchObject({ result: { signedIn: false } })
+      expect(t.tokenRequests).toEqual([])
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('logout bumps epoch and drops tokens and client', async () => {
+    const t = await setup()
+    try {
+      await t.store.update('srv-1', async () => ({
+        value: undefined,
+        next: signedIn({ requiredScope: ['write'] }),
+      }))
+      expect(await t.call('_agnes/v1/admin.mcp.oauth.logout', target)).toMatchObject({ result: { epoch: 4 } })
+      expect(await t.store.read('srv-1')).toEqual({
+        version: 2,
+        kind: 'oauth',
+        epoch: 4,
+        rev: 2,
+        requiredScope: [],
+      })
+      expect(t.tokenRequests).toEqual([])
+      // A sign-in that started before the sign-out cannot write any more.
+      expect(JSON.stringify(await t.complete({ expectedEpoch: 3 }))).toContain('MCP_OAUTH_LOGIN_SUPERSEDED')
+    } finally {
+      await t.close()
+    }
+  })
+
+  it('logout with nothing stored still writes the sign-out record; an unreadable file becomes one too', async () => {
+    const t = await setup()
+    try {
+      expect(await t.call('_agnes/v1/admin.mcp.oauth.logout', target)).toMatchObject({ result: { epoch: 1 } })
+      expect(await t.store.read('srv-1')).toEqual({
+        version: 2,
+        kind: 'oauth',
+        epoch: 1,
+        rev: 1,
+        requiredScope: [],
+      })
+      // A first sign-in begun before that logout cannot complete.
+      expect(JSON.stringify(await t.complete({ expectedEpoch: 0 }))).toContain('MCP_OAUTH_LOGIN_SUPERSEDED')
+      expect(t.tokenRequests).toEqual([])
+      await t.store.update('srv-1', async () => ({ value: undefined, next: signedIn() }))
+      await writeFile(join(t.home, 'auth', 'mcp-oauth', 'srv-1.json'), '{not json', { mode: 0o600 })
+      await expect(t.store.read('srv-1')).rejects.toThrow()
+      expect(await t.call('_agnes/v1/admin.mcp.oauth.logout', target)).toMatchObject({ result: { epoch: 1 } })
+      expect(await t.store.read('srv-1')).toEqual({
+        version: 2,
+        kind: 'oauth',
+        epoch: 1,
+        rev: 1,
+        requiredScope: [],
+      })
+      // An unreadable file reads as signed out for a refresh as well: the browser sign-in replaces it.
+      await writeFile(join(t.home, 'auth', 'mcp-oauth', 'srv-1.json'), '{not json', { mode: 0o600 })
+      expect(await t.call('_agnes/v1/admin.mcp.oauth.refresh', target)).toMatchObject({
+        result: { signedIn: false },
+      })
+    } finally {
+      await t.close()
+    }
+  })
+
   it('refuses a server whose credential is a bearer or header secret, or that runs locally', async () => {
     const t = await setup({ kind: 'http-bearer', credentialRef: 'secret://mcp/token' })
     try {
       expect(await t.complete()).toHaveProperty('error')
-      expect(
-        await t.call('_agnes/v1/admin.mcp.oauth.get', { profile: 'local-dev', serverId: 'srv-1' }),
-      ).toHaveProperty('error')
+      for (const method of ['get', 'refresh', 'logout'])
+        expect(await t.call(`_agnes/v1/admin.mcp.oauth.${method}`, target)).toHaveProperty('error')
       expect(t.tokenRequests).toEqual([])
     } finally {
       await t.close()

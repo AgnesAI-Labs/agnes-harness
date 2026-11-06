@@ -14,6 +14,7 @@ import {
   startedNotices,
   type TimelineFacts,
   TuiApp,
+  type TuiMcpLogin,
   timelineFacts,
   type WorktreeInfo,
   waitingIn,
@@ -45,6 +46,8 @@ export async function runTui(
     registerInterruptGuard?(ignored: () => boolean): void
     signal(): SignalName | undefined
     resourceController?: TuiResourceController
+    /** `/mcp login` and `/mcp logout`; the launcher builds it, as this layer may not reach the sign-in code. */
+    mcpLogin?: TuiMcpLogin
     composerSelectionPath?: string
     historyPath?: string
     /** Personal custom slash commands (`<AGH_HOME>/commands`). */
@@ -193,6 +196,7 @@ export async function runTui(
         ...(io.agnesVersion ? { version: io.agnesVersion } : {}),
       },
       controlClient: booted.client,
+      ...(io.mcpLogin ? { mcpLogin: io.mcpLogin } : {}),
       ...(io.resourceController ? { resourceController: io.resourceController } : {}),
       screenAlreadyEntered: true,
       ...(p.noAltScreen ? { noAltScreen: true } : {}),

@@ -7,7 +7,10 @@ import {
   McpOAuthDiscoveryFailed,
   type McpOAuthSummary,
 } from './mcp-oauth-login.js'
+import { type OAuthResultPage, renderOAuthResultPage } from './oauth-result-page.js'
 import { claimOAuthNonce, openOAuthState, sealOAuthState } from './oauth-state.js'
+
+export { withTimeout } from './oauth-fetch.js'
 
 /**
  * The daemon HTTP callback endpoints for the OAuth 2.1 authorization_code flow (`/oauth/:serverId/start`
@@ -94,7 +97,6 @@ export type CreateOAuthHttpHandlerOptions = Readonly<{
 const DEFAULT_STATE_TTL_MS = 10 * 60_000
 const ROUTE = /^\/oauth\/([^/]+)\/(start|callback)$/
 const SERVER_ID_PATTERN = /^[a-z][a-z0-9._-]{0,127}$/
-const INVALID_STATE_BODY = JSON.stringify({ error: { code: 'invalid_oauth_state' } })
 
 /** A registered client's secret stays in this process's memory; it never travels in `state`. */
 type PendingRegistration = Readonly<{
@@ -102,56 +104,6 @@ type PendingRegistration = Readonly<{
   clientSecret?: string
   expiresAt: number
 }>
-
-/**
- * The one timeout + `redirect: 'error'` guard for every OAuth network call (discovery,
- * registration, code exchange, refresh). Every SDK call that accepts a `fetchFn`/`fetchImpl` must
- * receive a fetch wrapped by this; the option is easy to forget on a new call, and leaving it out
- * exempts that request from both protections.
- */
-export function withTimeout(fetchImpl: FetchLike | undefined, timeoutMs: number): FetchLike {
-  const base = fetchImpl ?? fetch
-  return async (input, init) => {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
-    try {
-      // `redirect: 'error'` (found by independent security review): every OAuth fetch (PRM
-      // discovery, RFC 8414 discovery, DCR registration, token exchange) targets a
-      // URL that has already been validated (see oauth-client.ts's SSRF guards), but a redirect response's own
-      // `Location` header is not itself something that validation ever inspects - a compromised or
-      // malicious endpoint could otherwise 30x this daemon-side request to an arbitrary internal host
-      // after the fact, silently bypassing every check already done on the *requested* URL. `fetch`'s
-      // own default (`redirect: 'follow'`) would do exactly that. None of these calls have a
-      // legitimate reason to redirect (they are metadata/credential exchanges, not content fetches),
-      // so refusing outright - matching `packages/base/src/mcp/connect.ts`'s
-      // `policedHttpFetch` own no-validator fallback behavior, rather than reimplementing its full
-      // revalidate-then-follow loop for a flow that never needs it - is the correct default.
-      return await base(input, { ...init, redirect: 'error', signal: init?.signal ?? controller.signal })
-    } finally {
-      clearTimeout(timer)
-    }
-  }
-}
-
-/** Same core principle as `packages/daemon/src/surfaces/routes.ts:491`'s `safeRedirect`: never
- * redirect to anything other than a same-origin relative path (reject a scheme-qualified URL and a
- * protocol-relative `//host/...` URL, both of which a bare `startsWith('/')` check alone would miss
- * the `//` case for). That function itself is not reused here - it is not exported, and its second
- * half (`routeTarget` against a `ResolvedSurface[]` mount table) validates a completely different
- * thing: whether a location is a *registered Surface channel mount*, not whether it is "somewhere on
- * this process's own Web UI origin". Reimplementing just the reusable half, with this comment
- * pointing at the precedent, follows the spirit of "don't hand-roll redirect validation" without
- * forcing a fit that does not apply. */
-function safeReturnTo(returnTo: string | undefined, baseUrl: URL): URL {
-  if (returnTo?.startsWith('/') && !returnTo.startsWith('//')) {
-    try {
-      return new URL(returnTo, baseUrl)
-    } catch {
-      // Falls through to the default below.
-    }
-  }
-  return new URL('/', baseUrl)
-}
 
 /**
  * CSRF/drive-by guard for `/start` only (found by independent security review): `server.ts` calls
@@ -198,16 +150,18 @@ function rejectsCrossOriginNavigation(request: IncomingMessage, baseUrl: URL): b
   return false
 }
 
-function json(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' }).end(JSON.stringify(body))
-}
-
-function invalidState(response: ServerResponse): void {
-  response.writeHead(400, { 'content-type': 'application/json; charset=utf-8' }).end(INVALID_STATE_BODY)
+function page(response: ServerResponse, kind: OAuthResultPage, detail?: string, status?: number): void {
+  const rendered = renderOAuthResultPage(kind, detail)
+  response.writeHead(status ?? rendered.status, rendered.headers).end(rendered.body)
 }
 
 function redirect(response: ServerResponse, target: URL): void {
   response.writeHead(302, { location: target.toString() }).end()
+}
+
+function wantsJson(request: IncomingMessage): boolean {
+  const accept = request.headers.accept
+  return typeof accept === 'string' && accept.includes('application/json')
 }
 
 /**
@@ -230,7 +184,7 @@ function redirect(response: ServerResponse, target: URL): void {
  */
 export type OAuthHttpHandler = ((request: IncomingMessage, response: ServerResponse) => Promise<boolean>) &
   Readonly<{
-    startAuthorization(serverId: string, options?: Readonly<{ returnTo?: string }>): Promise<OAuthStartResult>
+    startAuthorization(serverId: string): Promise<OAuthStartResult>
   }>
 
 export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAuthHttpHandler {
@@ -266,16 +220,13 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
     | Readonly<{ kind: 'discovery_failed' }>
     | Readonly<{ kind: 'pending_client_id' }>
     | Readonly<{ kind: 'authorization_start_failed' }>
-    | Readonly<{ kind: 'ok'; authorizationUrl: URL }>
+    | Readonly<{ kind: 'ok'; authorizationUrl: URL; redirectUri: string }>
 
   /** The one place a sign-in starts - shared, not duplicated, between `handleStart` (HTTP
    * `GET /start`, 302s to the result) and `startAuthorization` (JSON capability, below). The
    * request itself (client, scope, resource, PKCE) is built by `beginMcpOAuthLogin`; this adds the
    * signed `state` that carries what the callback must hand back to `login.complete`. */
-  async function beginAuthorization(
-    serverId: string,
-    returnTo: string | undefined,
-  ): Promise<BeginAuthorizationResult> {
+  async function beginAuthorization(serverId: string): Promise<BeginAuthorizationResult> {
     const info = await opts.resolveServer(serverId)
     if (!info) return { kind: 'not_found' }
 
@@ -313,7 +264,6 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
         client,
         requestedScope: [...started.requestedScope],
         authorization: started.authorization,
-        ...(returnTo ? { returnTo } : {}),
       },
       { secret: opts.secret },
     )
@@ -324,28 +274,66 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
     })
 
     started.authorizationUrl.searchParams.set('state', sealed)
-    return { kind: 'ok', authorizationUrl: started.authorizationUrl }
+    return { kind: 'ok', authorizationUrl: started.authorizationUrl, redirectUri }
   }
 
-  function parseReturnTo(raw: string | undefined): string | undefined {
-    return raw?.startsWith('/') && !raw.startsWith('//') ? raw : undefined
+  type StartFailure = Readonly<{
+    page: OAuthResultPage
+    status: number
+    error:
+      | 'mcp_server_not_found'
+      | 'oauth_discovery_failed'
+      | 'oauth_client_id_required'
+      | 'oauth_authorization_start_failed'
+  }>
+
+  const START_FAILURES: Readonly<
+    Record<
+      'not_found' | 'discovery_failed' | 'pending_client_id' | 'authorization_start_failed',
+      StartFailure
+    >
+  > = {
+    not_found: { page: 'failed', status: 404, error: 'mcp_server_not_found' },
+    discovery_failed: { page: 'discovery-failed', status: 502, error: 'oauth_discovery_failed' },
+    pending_client_id: { page: 'client-id-required', status: 400, error: 'oauth_client_id_required' },
+    authorization_start_failed: { page: 'failed', status: 502, error: 'oauth_authorization_start_failed' },
   }
 
+  /** A failed `/start` answers a result page, or `{ error }` JSON when the caller asked for JSON. */
+  function startFailed(
+    request: IncomingMessage,
+    response: ServerResponse,
+    failure: StartFailure | { page: 'failed'; status: 403; error: 'origin_rejected' },
+  ): void {
+    if (wantsJson(request)) {
+      response
+        .writeHead(failure.status, { 'content-type': 'application/json; charset=utf-8' })
+        .end(JSON.stringify({ error: failure.error }))
+      return
+    }
+    page(response, failure.page, undefined, failure.status)
+  }
+
+  /** A plain navigation is redirected to the authorization server; a JSON caller (the Web UI)
+   * gets the URL and the callback address instead, so it can check the address before leaving. */
   async function handleStart(
     serverId: string,
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
-    const requestUrl = new URL(request.url ?? '', opts.baseUrl)
-    const returnTo = parseReturnTo(requestUrl.searchParams.get('returnTo') ?? undefined)
-    const result = await beginAuthorization(serverId, returnTo)
-    if (result.kind === 'not_found') return json(response, 404, { error: { code: 'mcp_server_not_found' } })
-    if (result.kind === 'discovery_failed')
-      return json(response, 502, { error: { code: 'oauth_discovery_failed' } })
-    if (result.kind === 'pending_client_id')
-      return json(response, 409, { error: { code: 'oauth_client_registration_required' } })
-    if (result.kind === 'authorization_start_failed')
-      return json(response, 502, { error: { code: 'oauth_authorization_start_failed' } })
+    const result = await beginAuthorization(serverId)
+    if (result.kind !== 'ok') return startFailed(request, response, START_FAILURES[result.kind])
+    if (wantsJson(request)) {
+      response
+        .writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+        .end(
+          JSON.stringify({
+            authorizeUrl: result.authorizationUrl.toString(),
+            redirectUri: result.redirectUri,
+          }),
+        )
+      return
+    }
     redirect(response, result.authorizationUrl)
   }
 
@@ -353,12 +341,9 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
    * comment for why this is exposed as a plain function rather than a second HTTP route or a daemon
    * RPC method. `serverId` is validated the same way the HTTP route's dispatcher validates it
    * (SERVER_ID_PATTERN) since this entry point bypasses that dispatcher entirely. */
-  async function startAuthorizationJson(
-    serverId: string,
-    options?: Readonly<{ returnTo?: string }>,
-  ): Promise<OAuthStartResult> {
+  async function startAuthorizationJson(serverId: string): Promise<OAuthStartResult> {
     if (!SERVER_ID_PATTERN.test(serverId)) return { error: 'mcp_server_not_found' }
-    const result = await beginAuthorization(serverId, parseReturnTo(options?.returnTo))
+    const result = await beginAuthorization(serverId)
     if (result.kind === 'ok') return { authorizeUrl: result.authorizationUrl.toString() }
     if (result.kind === 'pending_client_id') return { pendingClientId: true }
     if (result.kind === 'not_found') return { error: 'mcp_server_not_found' }
@@ -379,32 +364,37 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
     // Every rejection from here down happens before `login.complete` is ever reached - a tampered,
     // expired, mismatched or replayed state must be rejected before the authorization code (if any)
     // is used for anything at all.
-    if (!stateParam) return invalidState(response)
+    if (!stateParam) return page(response, 'state-expired')
 
     let payload: Awaited<ReturnType<typeof openOAuthState>>
     try {
       payload = await openOAuthState(stateParam, { secret: opts.secret, maxAgeMs: stateTtlMs })
     } catch {
-      return invalidState(response)
+      return page(response, 'state-expired')
     }
     // The state's own serverId must match the URL's serverId segment - otherwise a validly-signed
     // state minted for one server could be replayed against a different server's callback route.
-    if (payload.serverId !== serverId) return invalidState(response)
+    if (payload.serverId !== serverId) return page(response, 'state-expired')
 
     const claimed = await claimOAuthNonce(payload.nonce, payload.issuedAt + stateTtlMs)
-    if (!claimed) return invalidState(response)
+    if (!claimed) return page(response, 'state-expired')
 
     const pending = pendingRegistrations.get(payload.nonce)
     pendingRegistrations.delete(payload.nonce)
-    const returnUrl = safeReturnTo(payload.returnTo, opts.baseUrl)
 
     // No bookkeeping for a genuinely first-claimed nonce: this process restarted between start and
     // callback (both the nonce table and this map are process-lifetime only, by design). An error
     // from the authorization server (or the user declining consent) or a missing code: never try
     // an exchange.
-    if (!pending || pending.clientId !== payload.client.clientId || errorParam || !codeParam) {
+    if (!pending || pending.clientId !== payload.client.clientId) {
       await markStatus(serverId, 'error')
-      return redirect(response, returnUrl)
+      return page(response, 'state-expired')
+    }
+    if (errorParam || !codeParam) {
+      await markStatus(serverId, 'error')
+      if (errorParam)
+        return page(response, errorParam === 'access_denied' ? 'cancelled' : 'failed', errorParam)
+      return page(response, 'failed', 'The callback carried no code.')
     }
 
     try {
@@ -421,13 +411,12 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
         requestedScope: payload.requestedScope,
         authorization: payload.authorization,
       })
-    } catch {
+    } catch (error) {
       await markStatus(serverId, 'error')
-      return redirect(response, returnUrl)
+      return page(response, error instanceof McpOAuthDiscoveryFailed ? 'discovery-failed' : 'failed')
     }
-
     await markStatus(serverId, 'authorized')
-    redirect(response, returnUrl)
+    page(response, 'signed-in')
   }
 
   const httpHandler = async (request: IncomingMessage, response: ServerResponse): Promise<boolean> => {
@@ -440,11 +429,11 @@ export function createOAuthHttpHandler(opts: CreateOAuthHttpHandlerOptions): OAu
       return true
     }
     if (!SERVER_ID_PATTERN.test(rawServerId)) {
-      json(response, 404, { error: { code: 'mcp_server_not_found' } })
+      startFailed(request, response, START_FAILURES.not_found)
       return true
     }
     if (action === 'start' && rejectsCrossOriginNavigation(request, opts.baseUrl)) {
-      json(response, 403, { error: { code: 'origin_rejected' } })
+      startFailed(request, response, { page: 'failed', status: 403, error: 'origin_rejected' })
       return true
     }
     if (action === 'start') await handleStart(rawServerId, request, response)

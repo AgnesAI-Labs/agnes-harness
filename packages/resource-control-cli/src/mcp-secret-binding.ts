@@ -13,6 +13,7 @@ export type McpSecretFlags = Readonly<{
   oauth: boolean
   oauthClientId?: string | undefined
   oauthClientSecretRef?: string | undefined
+  oauthCallbackPort?: string | undefined
 }>
 
 type StdioSecretBinding = Extract<McpServerDefinitionInput, { transport: { kind: 'stdio' } }>['secretBinding']
@@ -30,9 +31,19 @@ function usesOAuth(flags: McpSecretFlags): boolean {
   return flags.oauth || flags.oauthClientId !== undefined || flags.oauthClientSecretRef !== undefined
 }
 
+/** The fixed local port of the sign-in callback, for a client whose registered redirect address
+ * names one. Unprivileged ports only, written as a plain whole number. */
+function callbackPort(value: string): number {
+  const port = /^[1-9][0-9]{3,4}$/.test(value) ? Number(value) : Number.NaN
+  if (!(port >= 1024 && port <= 65535))
+    throw new ResourceUsageError('--oauth-callback-port must be a whole number from 1024 to 65535')
+  return port
+}
+
 /** A local (stdio) server takes secrets only as environment references. */
 export function stdioSecretBinding(flags: McpSecretFlags): StdioSecretBinding {
-  if (usesOAuth(flags)) throw new ResourceUsageError('OAuth flags need an HTTP or SSE server')
+  if (usesOAuth(flags) || flags.oauthCallbackPort !== undefined)
+    throw new ResourceUsageError('OAuth flags need an HTTP or SSE server')
   if (flags.bearer || flags.header)
     throw new ResourceUsageError('stdio only accepts --secret-env NAME=secret://<id>')
   if (!flags.secretEnv.length) return { kind: 'none' }
@@ -50,8 +61,8 @@ export function stdioSecretBinding(flags: McpSecretFlags): StdioSecretBinding {
 
 /**
  * A remote (HTTP or SSE) server takes one of: a bearer reference, a header reference, or OAuth
- * sign-in. OAuth may name a client ID it already has, and that client's secret only as a
- * reference.
+ * sign-in. OAuth may name a client ID it already has, that client's secret only as a reference,
+ * and a fixed callback port; the port alone does not choose OAuth.
  */
 export function remoteSecretBinding(flags: McpSecretFlags): RemoteSecretBinding {
   if (flags.secretEnv.length || (flags.bearer && flags.header))
@@ -69,8 +80,13 @@ export function remoteSecretBinding(flags: McpSecretFlags): RemoteSecretBinding 
       ...(flags.oauthClientSecretRef !== undefined
         ? { clientSecretRef: secretRef(flags.oauthClientSecretRef, '--oauth-client-secret-ref') }
         : {}),
+      ...(flags.oauthCallbackPort !== undefined
+        ? { callbackPort: callbackPort(flags.oauthCallbackPort) }
+        : {}),
     }
   }
+  if (flags.oauthCallbackPort !== undefined)
+    throw new ResourceUsageError('--oauth-callback-port needs --oauth')
   if (flags.bearer) return { kind: 'http-bearer', credentialRef: secretRef(flags.bearer, '--bearer-ref') }
   if (flags.header) {
     const at = flags.header.indexOf('=')

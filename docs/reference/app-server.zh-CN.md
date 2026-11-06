@@ -30,7 +30,7 @@ workspace 必须通过 `_agnes/v1/workspace.add` 登记，客户端提供 `cwd` 
 
 浏览器 WebSocket 保留 loopback、Origin、bearer 和会话权限检查。本地 BFF HTTP 保留同源和固定 scope 检查，通过私有 Node SDK 连接访问 daemon；浏览器拿不到本地 daemon 凭据。source-auth、portal 和渠道继续使用服务端授予的权限，client label 不是权限。
 
-`_agnes/v1/admin.*` 管理 daemon 侧设置：`bundles.get`、`bundles.save`、`composition.get`、`search.get`、`search.save`、`search.test`、`context`、`history.search`、`plan`、`mcp.oauth.get`、`mcp.oauth.complete`。这些方法要求本地管理员授权；写入要求 activation 权限，context 和 plan 只检查已登记且可用的 workspace。bundle 保存返回 `restart-required`。已有 package、resource 和 config 方法也属于同一合同。
+`_agnes/v1/admin.*` 管理 daemon 侧设置：`bundles.get`、`bundles.save`、`composition.get`、`search.get`、`search.save`、`search.test`、`context`、`history.search`、`plan`、`mcp.oauth.get`、`mcp.oauth.complete`、`mcp.oauth.refresh`、`mcp.oauth.logout`。这些方法要求本地管理员授权；写入要求 activation 权限，context 和 plan 只检查已登记且可用的 workspace。bundle 保存返回 `restart-required`。已有 package、resource 和 config 方法也属于同一合同。
 
 `/admin/plugins/api/*`、`/admin/resources/api/*`、`/api/context`、`/api/history-search`、`/api/plan-mode` 与 client-module service/effect HTTP 路径保留为兼容适配器。原生 workspace picker 和浏览器 OAuth redirect 是客户端传输能力；最终的 workspace 登记和凭据操作由 daemon 管理。
 

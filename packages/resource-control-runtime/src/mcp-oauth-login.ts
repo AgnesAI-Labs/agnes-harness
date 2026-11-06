@@ -4,7 +4,7 @@ import { clientAuthentication, requestedScope, tokensFromResponse } from './mcp-
 import { serverDrifted } from './mcp-oauth-refresh.js'
 import type { McpOAuthClient, McpOAuthNext, McpOAuthRead, McpOAuthStore } from './mcp-oauth-store.js'
 import { discoverMcpOAuth, type McpOAuthDiscovery, registerDynamicClient } from './oauth-client.js'
-import { withTimeout } from './oauth-http-handler.js'
+import { withTimeout } from './oauth-fetch.js'
 
 const REQUEST_TIMEOUT_MS = 10_000
 
@@ -78,6 +78,26 @@ export class McpOAuthDiscoveryFailed extends Error {
   }
 }
 
+/** The server named an authorization server address that is not allowed (it is not https). */
+export class McpOAuthEndpointNotAllowed extends Error {
+  readonly code = 'MCP_OAUTH_ENDPOINT_NOT_ALLOWED'
+  /** Scheme, host and port only: the rest of the address could carry credentials. */
+  readonly endpoint: string
+  constructor(address: string) {
+    super('An OAuth address is not allowed; OAuth addresses must use https')
+    this.endpoint = originOf(address)
+    this.name = 'McpOAuthEndpointNotAllowed'
+  }
+}
+
+function originOf(address: string): string {
+  try {
+    return new URL(address).origin
+  } catch {
+    return 'an invalid address'
+  }
+}
+
 export function summarizeMcpOAuth(read: McpOAuthRead): McpOAuthSummary {
   if (!read || 'legacy' in read)
     return { epoch: 0, signedIn: false, refreshable: false, scope: [], requiredScope: [] }
@@ -95,9 +115,9 @@ export function summarizeMcpOAuth(read: McpOAuthRead): McpOAuthSummary {
 }
 
 /**
- * Builds the authorization request. The client is, in order: the static client ID, the client a
- * previous registration stored for the same redirect address, or a new dynamic registration;
- * without any of them the caller must ask for a client ID. Scope is what was granted plus what a
+ * Builds the authorization request. The client is, in order: the static client ID, a new dynamic
+ * registration, or, when the server no longer registers clients, the one stored for the same
+ * redirect address; without any of them the caller must ask for a client ID. Scope is what was granted plus what a
  * refused call required, else what the resource advertises, with `offline_access` when the
  * authorization server supports it. `resource` is always sent.
  */
@@ -115,22 +135,31 @@ export async function beginMcpOAuthLogin(input: {
 
   let client: McpOAuthLoginStart['client']
   if (input.staticClientId) client = { clientId: input.staticClientId }
-  else if (summary.client && summary.client.redirectUri === input.redirectUri)
-    client = { clientId: summary.client.clientId }
   else {
+    // The authorization server may have forgotten a client it registered earlier, and the browser
+    // would then only show it an error. A new registration is cheap, so each sign-in makes one;
+    // the stored client stays for refresh until this sign-in replaces it.
     const registered = await registerDynamicClient(
       discovery.authorizationServer,
       discovery.metadata,
       input.redirectUri,
       fetchImpl,
     )
-    if ('pendingClientId' in registered) return { pendingClientId: true }
-    client = {
-      clientId: registered.clientId,
-      ...(registered.clientSecret ? { clientSecret: registered.clientSecret } : {}),
-      ...(registered.tokenEndpointAuthMethod
-        ? { tokenEndpointAuthMethod: registered.tokenEndpointAuthMethod }
-        : {}),
+    if ('pendingClientId' in registered) {
+      if (!summary.client || summary.client.redirectUri !== input.redirectUri) {
+        // Asking for a client ID would blame the server's registration; say what was really refused.
+        if (discovery.refusedEndpoint) throw new McpOAuthEndpointNotAllowed(discovery.refusedEndpoint)
+        return { pendingClientId: true }
+      }
+      client = { clientId: summary.client.clientId }
+    } else {
+      client = {
+        clientId: registered.clientId,
+        ...(registered.clientSecret ? { clientSecret: registered.clientSecret } : {}),
+        ...(registered.tokenEndpointAuthMethod
+          ? { tokenEndpointAuthMethod: registered.tokenEndpointAuthMethod }
+          : {}),
+      }
     }
   }
 

@@ -8241,6 +8241,16 @@ const AppSamples: Record<string, Sample> = {
     ],
     note: 'daemon exchanges the authorization code',
   },
+  AdminMcpOAuthRefreshResult: {
+    valid: { signedIn: false },
+    invalid: [{}, { signedIn: 'yes' }, { signedIn: true, accessToken: 'leak' }],
+    note: 'refresh answers only whether a browser sign-in is still needed',
+  },
+  AdminMcpOAuthLogoutResult: {
+    valid: { epoch: 0 },
+    invalid: [{}, { epoch: -1 }, { epoch: 1.5 }, { epoch: 1, extra: 1 }],
+    note: 'sign-out returns the new epoch only',
+  },
   JsonValue: { valid: { nested: [null, false, 3] }, invalid: [undefined], note: 'App Server boundary shape' },
   AppServerErrorCause: {
     valid: { code: 'CONFIG_CREDENTIAL_REQUIRED' },
@@ -8854,6 +8864,18 @@ describe('McpHttpSecretBinding: oauth secretBinding kind', () => {
     expect(check(raw)).toBe(false)
     expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, raw)).toBe(false)
   })
+  it('accepts a sign-in callback port only as a whole number from 1024 to 65535', () => {
+    for (const callbackPort of [1024, 8765, 65535]) {
+      const sample = { kind: 'oauth', staticClientId: 'test-oauth-client', callbackPort }
+      expect(check(sample)).toBe(true)
+      expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, sample)).toBe(true)
+    }
+    for (const callbackPort of [80, 1023, 65536, 8765.5, '8765']) {
+      const sample = { kind: 'oauth', callbackPort }
+      expect(check(sample)).toBe(false)
+      expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, sample)).toBe(false)
+    }
+  })
 })
 
 // McpServerDescriptor.authorizationStatus is optional (a
@@ -9140,6 +9162,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'AdminMcpOAuthComplete',
     result: 'AdminEmpty',
   },
+  '_agnes/v1/admin.mcp.oauth.refresh': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthGet',
+    result: 'AdminMcpOAuthRefreshResult',
+  },
+  '_agnes/v1/admin.mcp.oauth.logout': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthGet',
+    result: 'AdminMcpOAuthLogoutResult',
+  },
   '_agnes/v1/admin.bundles.get': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminEmpty',
@@ -9381,6 +9413,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'ResourceOperationReceipt',
   },
   '_agnes/v1/mcp.servers.reconnect': {
+    fileId: 'https://agnes.ai/schema/resource-control.json',
+    params: 'McpServerReconnectParams',
+    result: 'ResourceOperationReceipt',
+  },
+  '_agnes/v1/mcp.servers.oauth.signOut': {
     fileId: 'https://agnes.ai/schema/resource-control.json',
     params: 'McpServerReconnectParams',
     result: 'ResourceOperationReceipt',
@@ -10502,6 +10539,22 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     ],
     note: 'daemon exchanges the authorization code',
   },
+  '_agnes/v1/admin.mcp.oauth.refresh': {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', refreshToken: 'x' },
+    ],
+    note: 'refresh names the server only',
+  },
+  '_agnes/v1/admin.mcp.oauth.logout': {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', epoch: 1 },
+    ],
+    note: 'sign-out names the server only',
+  },
   '_agnes/v1/admin.bundles.get': { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
   '_agnes/v1/admin.bundles.save': {
     valid: { revision: 0, bundles: [] },
@@ -10608,6 +10661,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/mcp.servers.enable': ResourceControlSamples.McpServerEnableParams,
   '_agnes/v1/mcp.servers.disable': ResourceControlSamples.McpServerDisableParams,
   '_agnes/v1/mcp.servers.reconnect': ResourceControlSamples.McpServerReconnectParams,
+  '_agnes/v1/mcp.servers.oauth.signOut': ResourceControlSamples.McpServerReconnectParams,
   '_agnes/v1/mcp.servers.oauth.status': ResourceControlSamples.McpServerGetParams,
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusSetParams,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogListParams as Sample,
@@ -11209,6 +11263,16 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
     invalid: [{ extra: 1 }],
     note: 'completion acknowledges without returning a credential',
   },
+  '_agnes/v1/admin.mcp.oauth.refresh': {
+    valid: { signedIn: true },
+    invalid: [{ signedIn: true, accessToken: 'leak' }, {}],
+    note: 'refresh never returns a credential',
+  },
+  '_agnes/v1/admin.mcp.oauth.logout': {
+    valid: { epoch: 2 },
+    invalid: [{ epoch: -1 }, { epoch: 2, extra: 1 }],
+    note: 'sign-out returns the new epoch only',
+  },
   '_agnes/v1/admin.bundles.get': {
     valid: { revision: 0, bundles: [], effect: 'restart-required' },
     invalid: [null],
@@ -11423,6 +11487,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/mcp.servers.enable': ResourceControlSamples.ResourceOperationReceipt,
   '_agnes/v1/mcp.servers.disable': ResourceControlSamples.ResourceOperationReceipt,
   '_agnes/v1/mcp.servers.reconnect': ResourceControlSamples.ResourceOperationReceipt,
+  '_agnes/v1/mcp.servers.oauth.signOut': ResourceControlSamples.ResourceOperationReceipt,
   '_agnes/v1/mcp.servers.oauth.status': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogPage as Sample,
