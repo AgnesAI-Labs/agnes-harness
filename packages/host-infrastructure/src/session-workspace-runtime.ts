@@ -390,6 +390,8 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
               enforcement: {
                 level: enforcement.level,
                 scope: [...enforcement.scope],
+                // The partial Windows contract is only told apart from a degraded partial by this.
+                ...(enforcement.boundary ? { boundary: { ...enforcement.boundary } } : {}),
               },
             }
           : {}),

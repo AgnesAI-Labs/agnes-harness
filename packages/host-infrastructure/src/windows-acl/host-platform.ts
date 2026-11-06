@@ -61,3 +61,26 @@ export async function createWindowsAclExecution(input: {
     localProviderId: input.localProviderId,
   })
 }
+
+/**
+ * The authority alone, for maintenance outside a Host: inspecting and repairing grants under the
+ * account's LocalAppData folder. It acquires nothing, so it needs no workspace admission roots.
+ */
+export async function createWindowsAclMaintenanceAuthority(input: {
+  localAppData: string
+  pid: number
+}): Promise<
+  Readonly<{
+    authority: Pick<WindowsExecutionAuthority, 'inspect' | 'repair' | 'dispose'>
+    platform: Pick<WindowsAclPlatform, 'canonicalPath' | 'rootIdentity'>
+  }>
+> {
+  const platform = await windowsAclHostPlatform(input.pid)
+  const authority = new WindowsExecutionAuthority({
+    ...windowsAclLocations(input.localAppData, platform.paths),
+    privateRoots: [],
+    native: { inspect: inspectWindowsAcl, apply: applyWindowsAclGrant, restore: restoreWindowsAclGrant },
+    platform,
+  })
+  return { authority, platform }
+}

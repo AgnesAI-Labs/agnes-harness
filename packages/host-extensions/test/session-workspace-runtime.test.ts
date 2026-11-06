@@ -683,6 +683,34 @@ describe('sandbox resources of a runtime', () => {
     await built.readiness.revoke()
   })
 
+  it('reports the actual enforcement with its Windows boundary, per session', async () => {
+    const boundary = {
+      contract: 'windows-write-restricted-v1',
+      fileWrite: 'acl-partial',
+      fileRead: 'unrestricted',
+      network: 'unrestricted',
+      processTree: 'job-object',
+    } as const
+    const seam = (enforcement: import('@agnes/core').Enforcement): import('@agnes/core').SandboxSeam => ({
+      enforcement: () => enforcement,
+      forWorkspace: async () => {
+        throw new Error('not used')
+      },
+      confine: async (argv) => argv,
+      exec: async () => ({ code: 0, stdout: '', stderr: '', truncated: false }),
+      fsPolicy: () => policy(),
+    })
+    const acl = await runtime('acl', [], { seam: seam({ level: 'partial', scope: ['file'], boundary }) })
+    const open = await runtime('open', [], { seam: seam({ level: 'none', scope: [] }) })
+    const table = new SessionWorkspaceRuntimeTable()
+    await table.open(acl.value.binding, async () => acl.value)
+    await table.open(open.value.binding, async () => open.value)
+    expect(table.securityStatus('acl')?.enforcement).toEqual({ level: 'partial', scope: ['file'], boundary })
+    expect(table.securityStatus('open')?.enforcement).toEqual({ level: 'none', scope: [] })
+    await table.closeAll()
+    await Promise.all([acl.readiness.revoke(), open.readiness.revoke()])
+  })
+
   it('keeps another session resources when one session is released', async () => {
     const events: string[] = []
     const a = await runtime('session-a', [], { closeSandbox: () => void events.push('a') })

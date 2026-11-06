@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import {
   coldHeadId,
   describeColdSession,
+  describeHostSession,
   describeSessionRuntime,
   generationSessions,
   mergeGenerationStatus,
@@ -195,6 +196,55 @@ describe('describeSessionRuntime', () => {
       { kind: 'approval', provider: 'builtin', pinned: false },
       { kind: 'sandbox', provider: 'builtin', pinned: false },
     ])
+  })
+
+  it('describes each session with its own actual sandbox boundary from the Host status', () => {
+    const boundary = {
+      contract: 'windows-write-restricted-v1',
+      fileWrite: 'acl-partial',
+      fileRead: 'unrestricted',
+      network: 'unrestricted',
+      processTree: 'job-object',
+    } as const
+    const workspaces = [
+      {
+        sessionId: 'acl',
+        path: 'C:\\work',
+        preset: 'standard',
+        provider: 'local',
+        state: 'ready' as const,
+        policyDigest: 'digest-acl',
+        enforcement: { level: 'partial' as const, scope: ['file'], boundary },
+      },
+      {
+        sessionId: 'open',
+        path: 'C:\\work',
+        preset: 'standard',
+        provider: 'local',
+        state: 'ready' as const,
+        enforcement: { level: 'none' as const, scope: [] },
+      },
+    ]
+    const host = {
+      securityStatus: () => ({ workspaces }),
+      kernel: { get: () => undefined },
+      sessionCapabilities: () => capabilities,
+      providers: { catalog: () => oldCatalog },
+      profile: { seams: {}, hash: 'profile-1' },
+      providerFingerprint: null,
+      extensionRows: { current: () => [] },
+    } as unknown as Parameters<typeof describeHostSession>[0]
+    const describe = (key: string) =>
+      describeHostSession(host, host, key, { failed: false, restartRequired: [] })
+    const acl = describe('acl')
+    expect(validateAgainst(SessionRuntimeDescriptor, acl).ok).toBe(true)
+    expect(acl.policy?.sandbox).toEqual({
+      provider: 'local',
+      onUnavailable: 'deny',
+      policyDigest: 'digest-acl',
+      enforcement: { level: 'partial', scope: ['file'], boundary },
+    })
+    expect(describe('open').policy?.sandbox.enforcement).toEqual({ level: 'none', scope: [] })
   })
 
   it('reports a session pinned to an old generation while a new one is current', () => {

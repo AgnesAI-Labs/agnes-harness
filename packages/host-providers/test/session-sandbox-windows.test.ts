@@ -391,8 +391,15 @@ describe('version 2 records', () => {
     expect(() => store.verifyWindowsExecution('s', replaced, true)).toThrow(refusedForConfirmation)
     expect(readFileSync(recordFile(profileDir, 's'), 'utf8')).toBe(bytes)
 
+    // The session is listed for confirmation at its saved root, and only there.
+    expect(store.windowsWorkspaces()).toEqual([
+      { sessionKey: 's', workspaceRoot: 'C:\\work', rootIdentity: ROOT_ID },
+    ])
     // The confirmation stays in this session and starts a new generation at the current directory.
-    const confirmed = store.confirmWindowsWorkspace('s', replaced)
+    const confirmed = store.confirmWindowsWorkspace('s', {
+      workspaceRoot: 'C:\\work',
+      rootIdentity: { volumeId: 'vol-1', fileId: 'file-2' },
+    })
     expect(confirmed).toMatchObject({
       reason: 'workspace-confirmed',
       rootIdentity: { volumeId: 'vol-1', fileId: 'file-2' },
@@ -401,28 +408,40 @@ describe('version 2 records', () => {
     expect(store.verifyWindowsExecution('s', replaced, true)).toEqual(confirmed)
   })
 
-  it('confirms only a replaced directory, never another workspace or permission', () => {
-    const { store } = setup()
+  it('confirms only a replaced directory at the saved root, never another workspace or a new session', () => {
+    const { profileDir, store } = setup()
     store.verifyWindowsExecution('s', verified(), false)
-    expect(() => store.confirmWindowsWorkspace('s', verified())).toThrow(refusedAsInvalid)
+    const bytes = readFileSync(recordFile(profileDir, 's'), 'utf8')
+    // The same directory needs no confirmation; another root is another workspace.
     expect(() =>
-      store.confirmWindowsWorkspace(
-        's',
-        verified({
-          currentExecution: { ...aclExecution, workspaceRoot: 'C:\\elsewhere' },
-          rootIdentity: { volumeId: 'v', fileId: 'other' },
-        }),
-      ),
+      store.confirmWindowsWorkspace('s', { workspaceRoot: 'C:\\work', rootIdentity: ROOT_ID }),
     ).toThrow(refusedAsInvalid)
     expect(() =>
-      store.confirmWindowsWorkspace(
-        's',
-        verified({
-          ...withIntent({ permission: 'read-only', access: 'read-only' }),
-          rootIdentity: { volumeId: 'v', fileId: 'other' },
-        }),
-      ),
+      store.confirmWindowsWorkspace('s', {
+        workspaceRoot: 'C:\\elsewhere',
+        rootIdentity: { volumeId: 'v', fileId: 'other' },
+      }),
     ).toThrow(refusedAsInvalid)
+    // A session without a record is not created by a confirmation.
+    expect(() =>
+      store.confirmWindowsWorkspace('missing', {
+        workspaceRoot: 'C:\\work',
+        rootIdentity: { volumeId: 'v', fileId: 'other' },
+      }),
+    ).toThrow(refusedAsInvalid)
+    expect(existsSync(recordFile(profileDir, 'missing'))).toBe(false)
+    expect(readFileSync(recordFile(profileDir, 's'), 'utf8')).toBe(bytes)
+  })
+
+  it('lists only readable version 2 records, without failing on a damaged or older one', () => {
+    const { profileDir, store } = setup()
+    expect(store.windowsWorkspaces()).toEqual([])
+    store.verifyWindowsExecution('a', verified(), false)
+    store.verify('legacy', legacyExecution, false)
+    writeFileSync(recordFile(profileDir, 'broken'), '{not json')
+    expect(store.windowsWorkspaces()).toEqual([
+      { sessionKey: 'a', workspaceRoot: 'C:\\work', rootIdentity: ROOT_ID },
+    ])
   })
 
   it.each([

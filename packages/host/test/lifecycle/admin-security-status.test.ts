@@ -106,3 +106,80 @@ it('a composed Host answers with the probe a session Host measured, not the unpr
   })
   expect(combinedSecurityStatus(session, [partial]).platform.l1.level).toBe('partial')
 })
+
+const boundary = {
+  contract: 'windows-write-restricted-v1',
+  fileWrite: 'acl-partial',
+  fileRead: 'unrestricted',
+  network: 'unrestricted',
+  processTree: 'job-object',
+} as const
+const windowsPlatform = {
+  os: 'win32',
+  capability: () => ({ level: 'unavailable', scope: [] }),
+  sandboxProbed: () => true,
+} as unknown as Parameters<typeof adminSecurityStatus>[1]
+const permissionProfile = {
+  ...profile,
+  presets: { allowed: ['standard'] },
+  permissions: { allowed: ['read-only', 'workspace-write', 'full-access'] },
+} as unknown as ResolvedProfile
+const catalog = { ...basePresets, ...codePresets } as Record<string, PresetDoc>
+
+it('shows the Windows partial contract for read-only and workspace-write, never full protection or a closed network', () => {
+  const windows = adminSecurityStatus(permissionProfile, windowsPlatform, catalog, [], noWorkspaces)
+  expect(Value.Check(RuntimeSecurityStatus, windows)).toBe(true)
+  const levels = Object.fromEntries((windows.permissionPolicies ?? []).map((policy) => [policy.id, policy]))
+  for (const id of ['read-only', 'workspace-write'])
+    expect(levels[id]).toMatchObject({ level: 'L1', networkMode: 'unrestricted', boundary })
+  expect(levels['full-access']).toMatchObject({ level: 'L0', networkMode: 'unrestricted' })
+  expect(levels['full-access']).not.toHaveProperty('boundary')
+  // Another platform keeps its closed command network and no Windows contract.
+  const posix = adminSecurityStatus(permissionProfile, createPosixPlatform(), catalog, [], noWorkspaces)
+  for (const policy of posix.permissionPolicies ?? []) expect(policy).not.toHaveProperty('boundary')
+  expect(posix.permissionPolicies?.find((policy) => policy.id === 'workspace-write')?.networkMode).toBe(
+    'deny',
+  )
+})
+
+it('reports each session with its own access and actual boundary, not one platform value', () => {
+  type Session = Parameters<typeof adminSecurityStatus>[3] extends Iterable<infer S> ? S : never
+  const session = (key: string, policy: string, permission: string) =>
+    ({
+      key,
+      workspaceRoot: 'C:\\work',
+      preset: { name: 'standard', permission, approval: { policy } },
+    }) as unknown as Session
+  const actual: Record<string, import('@agnes/core').Enforcement> = {
+    ro: { level: 'partial', scope: ['file'], boundary },
+    rw: { level: 'partial', scope: ['file'], boundary },
+    full: { level: 'none', scope: [] },
+  }
+  const workspaces = {
+    securityStatus: (key: string) => ({
+      root: 'C:\\work',
+      policyDigest: 'd'.repeat(64),
+      state: 'ready',
+      enforcement: actual[key],
+    }),
+  } as unknown as SessionWorkspaceRuntimeTable
+  const status = adminSecurityStatus(
+    permissionProfile,
+    windowsPlatform,
+    catalog,
+    [
+      session('ro', 'read-only', 'read-only'),
+      session('rw', 'default', 'workspace-write'),
+      session('full', 'full-access', 'full-access'),
+    ],
+    workspaces,
+  )
+  expect(Value.Check(RuntimeSecurityStatus, status)).toBe(true)
+  expect(
+    status.workspaces.map(({ sessionId, access, enforcement }) => ({ sessionId, access, enforcement })),
+  ).toEqual([
+    { sessionId: 'ro', access: 'read-only', enforcement: actual.ro },
+    { sessionId: 'rw', access: 'workspace-write', enforcement: actual.rw },
+    { sessionId: 'full', access: 'full-access', enforcement: actual.full },
+  ])
+})

@@ -19,10 +19,14 @@ import { doctorBinary, doctorStorage, type Section } from './doctor-local.js'
 import { doctorPlatform, doctorResolvedProfile, resolveDoctorProfile } from './doctor-profile.js'
 import { doctorProvider } from './doctor-provider.js'
 import { doctorSubagents } from './doctor-subagents.js'
+import { doctorWindowsAcl, type WindowsAclDoctorDeps, windowsAclDoctorDeps } from './doctor-windows-acl.js'
 import { doctorText } from './first-run-locales.js'
 
 export type { Section } from './doctor-local.js'
-export type DoctorCommandDeps = LocalBootDeps
+export type DoctorCommandDeps = LocalBootDeps & {
+  /** Where `doctor windows-acl` reaches this account's grants; the real one opens no Host. */
+  windowsAcl?: WindowsAclDoctorDeps
+}
 
 export const DOCTOR_SECTIONS = [
   'platform',
@@ -111,6 +115,20 @@ export async function doctorCommand(
   if (parsed.positional[0] === 'subagents') {
     const result = await doctorSubagents(deps, { repair: parsed.repair, json: parsed.json })
     return { text: result.text, json: [result.section], exitCode: result.exitCode }
+  }
+  if (parsed.positional[0] === 'windows-acl') {
+    if (parsed.positional.length !== 1)
+      return { text: 'unknown or extra doctor section', json: [], exitCode: 2 }
+    const { section, payload } = await doctorWindowsAcl(
+      parsed.cwd ?? deps.cwd,
+      { repair: parsed.repair, ...(deps.signal ? { signal: deps.signal } : {}) },
+      deps.windowsAcl ?? windowsAclDoctorDeps(deps, profileNameFrom(parsed, deps.env)),
+    )
+    return {
+      text: parsed.json ? JSON.stringify(payload, null, 2) : renderSections([section]),
+      json: [section],
+      exitCode: section.status === 'fail' ? 1 : 0,
+    }
   }
   if (parsed.positional.length === 0) {
     const report = await runtimeDoctor({

@@ -410,6 +410,54 @@ function parse(bytes: string): unknown {
   }
 }
 
+/** Where a readable version 2 record says its session's workspace is now bound. */
+export type WindowsWorkspaceBinding = Readonly<{
+  sessionKey: string
+  workspaceRoot: string
+  rootIdentity?: RootIdentity
+}>
+
+/** The binding of one record file; undefined for anything that is not a valid version 2 record. */
+export function windowsWorkspaceBinding(bytes: string): WindowsWorkspaceBinding | undefined {
+  let value: unknown
+  try {
+    value = JSON.parse(bytes)
+  } catch {
+    return undefined
+  }
+  if (!isRecord(value) || value.version !== 2 || typeof value.sessionKey !== 'string') return undefined
+  const head = readRecord(value.sessionKey, value)?.generations.at(-1)
+  if (!head) return undefined
+  return {
+    sessionKey: value.sessionKey,
+    workspaceRoot: head.workspaceRoot,
+    ...(head.rootIdentity ? { rootIdentity: head.rootIdentity } : {}),
+  }
+}
+
+/**
+ * The verification a confirmation stands on: the record's own current facts and intent with the
+ * root object read now. The user confirms only that the directory now at the saved root is this
+ * session's workspace; every other fact is checked again against the Host when the session opens.
+ */
+export function workspaceConfirmation(
+  key: string,
+  bytes: string | undefined,
+  input: Readonly<{ workspaceRoot: string; rootIdentity: RootIdentity }>,
+): WindowsExecutionVerification {
+  const record = bytes === undefined ? undefined : readRecord(key, parse(bytes))
+  const head = record?.generations.at(-1)
+  if (!record || !head || head.workspaceRoot !== input.workspaceRoot || !isIdentity(input.rootIdentity))
+    throw executionRecordRefusal()
+  const { generationId: _id, rootIdentity: _root, reason: _reason, evidenceDigest: _digest, ...facts } = head
+  return {
+    currentExecution: execution(facts),
+    // Only an adoption of a version 1 record reads this hash, and a confirmation never adopts one.
+    permissionEvidence: { intent: record.permissionIntent, legacyStaticConfigHash: head.staticConfigHash },
+    rootIdentity: input.rootIdentity,
+  }
+}
+
 /**
  * Decides what a Windows session's record must say for this open. `bytes` is the record on disk,
  * absent when there is none. `confirm` is the user's confirmation of a replaced workspace directory

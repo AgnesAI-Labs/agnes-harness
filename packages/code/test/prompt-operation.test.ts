@@ -1,4 +1,4 @@
-import { type OpContext, readPreset } from '@agnes/core'
+import { type Enforcement, type OpContext, readPreset } from '@agnes/core'
 import { actor, fakeProvider, openSession, textTurn } from '@agnes/core/testkit'
 import { describe, expect, it } from 'vitest'
 import { createPromptOperation, operations, PROMPT_SECTIONS } from '../src/index.js'
@@ -20,11 +20,14 @@ function ctxFor(over: {
   model?: string
   route?: string
   presetName?: string
+  enforcement?: Enforcement
+  toolPolicy?: string
 }): OpContext {
   return {
     session: {
       key: 'agnes:local:demo:cli:workspace:abcd',
       d: {
+        runtime: { enforcement: () => over.enforcement ?? { level: 'none', scope: [] } },
         cwd: over.cwd ?? '/w/repo',
         ...(over.extraDirectories ? { extraDirectories: over.extraDirectories } : {}),
         agnesVersion: '0.1.0',
@@ -34,6 +37,7 @@ function ctxFor(over: {
     preset: {
       name: over.presetName ?? 'standard',
       disclosure: over.disclosure ?? 'standard',
+      approval: over.toolPolicy ? { policy: over.toolPolicy } : {},
       ...(over.promptSections ? { model: { promptSections: over.promptSections } } : {}),
     },
     state: null,
@@ -234,5 +238,84 @@ describe('the prompt operation', () => {
     expect(flatten({ presetName: 'renamed-preset' })).toBe(base)
     expect(flatten({ cwd: '/a/totally/different/workspace' })).toBe(base)
     expect(flatten({ model: 'm2', route: 'r2', presetName: 'p2', cwd: '/x' })).toBe(base)
+  })
+})
+
+describe('the command isolation fact', () => {
+  const boundary = {
+    contract: 'windows-write-restricted-v1',
+    fileWrite: 'acl-partial',
+    fileRead: 'unrestricted',
+    network: 'unrestricted',
+    processTree: 'job-object',
+  } as const
+  const acl: Enforcement = { level: 'partial', scope: ['file'], boundary }
+  const full: Enforcement = { level: 'full', scope: ['file', 'network', 'process'] }
+  const none: Enforcement = { level: 'none', scope: [] }
+  const host = (os: string) => ({
+    adapters: {
+      platform: {
+        ...platform,
+        shell: () => (os === 'win32' ? 'powershell' : 'posix'),
+        snapshot: () => ({ os, arch: 'x64' }),
+        // One platform value for the whole Host: it must not decide any session's fact.
+        capability: () => ({ level: 'full' }),
+      },
+    },
+  })
+  const facts = (deps: ReturnType<typeof host>, over: Parameters<typeof ctxFor>[0]) => {
+    const c = createPromptOperation(deps).contribute?.(ctxFor(over))
+    return {
+      env: (c?.runtimeContext?.environment ?? {}) as Record<string, unknown>,
+      system: (c?.promptSections ?? []).map((section) => section.text).join('\n'),
+    }
+  }
+  const WRITE =
+    'Windows：工作区和本次临时目录使用 ACL 部分写限制，非严格路径隔离；读取与网络未隔离。受保护文件仍由文件工具检查，任意脚本不具备同等保护。'
+  const READ = 'Windows：不授予工作区或临时目录写能力；读取与网络未隔离，工具仍按只读规则使用。'
+
+  it('states the actual boundary of each permission as the last environment fact, never in the system text', () => {
+    const windows = host('win32')
+    const write = facts(windows, { enforcement: acl, toolPolicy: 'default' })
+    expect(write.env.commandIsolation).toBe(
+      `${WRITE}工作区内的硬链接若指向工作区外的文件（如 pnpm 存储），那些文件也可经此写入；会话的额外目录没有 ACL 写权限，命令写入那里会被拒绝访问。`,
+    )
+    expect(Object.keys(write.env).at(-1)).toBe('commandIsolation')
+    expect(write.system).not.toContain('ACL')
+    expect(facts(windows, { enforcement: acl, toolPolicy: 'read-only' }).env.commandIsolation).toBe(READ)
+    expect(facts(windows, { enforcement: none, toolPolicy: 'full-access' }).env.commandIsolation).toBe(
+      'Windows：完全访问，命令未隔离',
+    )
+  })
+
+  it('reads each session on one Host from its own enforcement, not the platform or its name', () => {
+    const windows = host('win32')
+    // The Host's platform claims full isolation; the sessions say otherwise and are believed.
+    expect(facts(windows, { enforcement: acl, toolPolicy: 'default' }).env.commandIsolation).toContain(
+      'ACL 部分写限制',
+    )
+    expect(facts(windows, { enforcement: none, toolPolicy: 'full-access' }).env.commandIsolation).toBe(
+      'Windows：完全访问，命令未隔离',
+    )
+    // A partial level without the exact contract is not the Windows boundary.
+    expect(
+      facts(windows, { enforcement: { level: 'partial', scope: ['file'] }, toolPolicy: 'default' }).env,
+    ).not.toHaveProperty('commandIsolation')
+    // Another provider's full boundary, or a session that is not full access, gets no Windows line.
+    expect(facts(windows, { enforcement: full, toolPolicy: 'default' }).env).not.toHaveProperty(
+      'commandIsolation',
+    )
+    expect(facts(windows, { enforcement: none, toolPolicy: 'default' }).env).not.toHaveProperty(
+      'commandIsolation',
+    )
+  })
+
+  it('leaves other platforms exactly as they were', () => {
+    for (const toolPolicy of ['default', 'read-only', 'full-access'])
+      for (const enforcement of [full, none]) {
+        const { env } = facts(host('darwin'), { enforcement, toolPolicy })
+        expect(env).not.toHaveProperty('commandIsolation')
+        expect(env.enforcement).toBe('full')
+      }
   })
 })

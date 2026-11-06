@@ -40768,6 +40768,39 @@
                         "type": "string"
                       }
                     ]
+                  },
+                  "boundary": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "properties": {
+                      "contract": {
+                        "const": "windows-write-restricted-v1",
+                        "type": "string"
+                      },
+                      "fileWrite": {
+                        "const": "acl-partial",
+                        "type": "string"
+                      },
+                      "fileRead": {
+                        "const": "unrestricted",
+                        "type": "string"
+                      },
+                      "network": {
+                        "const": "unrestricted",
+                        "type": "string"
+                      },
+                      "processTree": {
+                        "const": "job-object",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "contract",
+                      "fileWrite",
+                      "fileRead",
+                      "network",
+                      "processTree"
+                    ]
                   }
                 },
                 "required": [
@@ -40847,6 +40880,39 @@
                         "type": "string"
                       }
                     ]
+                  },
+                  "boundary": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "properties": {
+                      "contract": {
+                        "const": "windows-write-restricted-v1",
+                        "type": "string"
+                      },
+                      "fileWrite": {
+                        "const": "acl-partial",
+                        "type": "string"
+                      },
+                      "fileRead": {
+                        "const": "unrestricted",
+                        "type": "string"
+                      },
+                      "network": {
+                        "const": "unrestricted",
+                        "type": "string"
+                      },
+                      "processTree": {
+                        "const": "job-object",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "contract",
+                      "fileWrite",
+                      "fileRead",
+                      "network",
+                      "processTree"
+                    ]
                   }
                 },
                 "required": [
@@ -40885,6 +40951,22 @@
                     "minLength": 1,
                     "maxLength": 1024,
                     "type": "string"
+                  },
+                  "access": {
+                    "anyOf": [
+                      {
+                        "const": "read-only",
+                        "type": "string"
+                      },
+                      {
+                        "const": "workspace-write",
+                        "type": "string"
+                      },
+                      {
+                        "const": "full-access",
+                        "type": "string"
+                      }
+                    ]
                   },
                   "provider": {
                     "minLength": 1,
@@ -40940,6 +41022,39 @@
                           "maxLength": 1024,
                           "type": "string"
                         }
+                      },
+                      "boundary": {
+                        "additionalProperties": false,
+                        "type": "object",
+                        "properties": {
+                          "contract": {
+                            "const": "windows-write-restricted-v1",
+                            "type": "string"
+                          },
+                          "fileWrite": {
+                            "const": "acl-partial",
+                            "type": "string"
+                          },
+                          "fileRead": {
+                            "const": "unrestricted",
+                            "type": "string"
+                          },
+                          "network": {
+                            "const": "unrestricted",
+                            "type": "string"
+                          },
+                          "processTree": {
+                            "const": "job-object",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "contract",
+                          "fileWrite",
+                          "fileRead",
+                          "network",
+                          "processTree"
+                        ]
                       }
                     },
                     "required": [
@@ -48586,6 +48701,39 @@
                         "maxLength": 1024,
                         "type": "string"
                       }
+                    },
+                    "boundary": {
+                      "additionalProperties": false,
+                      "type": "object",
+                      "properties": {
+                        "contract": {
+                          "const": "windows-write-restricted-v1",
+                          "type": "string"
+                        },
+                        "fileWrite": {
+                          "const": "acl-partial",
+                          "type": "string"
+                        },
+                        "fileRead": {
+                          "const": "unrestricted",
+                          "type": "string"
+                        },
+                        "network": {
+                          "const": "unrestricted",
+                          "type": "string"
+                        },
+                        "processTree": {
+                          "const": "job-object",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "contract",
+                        "fileWrite",
+                        "fileRead",
+                        "network",
+                        "processTree"
+                      ]
                     }
                   },
                   "required": [

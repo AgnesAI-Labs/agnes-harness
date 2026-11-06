@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import type { Logger, WindowsWriteBoundary } from '@agnes/extension-api'
@@ -9,6 +9,9 @@ import {
   planWindowsExecution,
   type SessionExecutionGeneration,
   type WindowsExecutionVerification,
+  type WindowsWorkspaceBinding,
+  windowsWorkspaceBinding,
+  workspaceConfirmation,
 } from './session-sandbox-windows.js'
 
 export type SandboxExecutionRecord = Readonly<{
@@ -100,9 +103,48 @@ export class SessionSandboxStore {
     return this.windows(key, input, hasHistory, 'verify')
   }
 
-  /** The user confirmed, in this session, that a replaced workspace directory is still its workspace. */
-  confirmWindowsWorkspace(key: string, input: WindowsExecutionVerification): SessionExecutionGeneration {
-    return this.windows(key, input, true, 'confirm')
+  /**
+   * The user confirmed that the directory now at the session's saved workspace root, a different
+   * object than the one it was verified with, is still its workspace. The session keeps its key,
+   * history and files; a missing record or another root is refused, never started anew.
+   */
+  confirmWindowsWorkspace(
+    key: string,
+    input: Readonly<{
+      workspaceRoot: string
+      rootIdentity: NonNullable<WindowsWorkspaceBinding['rootIdentity']>
+    }>,
+  ): SessionExecutionGeneration {
+    let bytes: string | undefined
+    try {
+      bytes = readFileSync(this.file(key), 'utf8')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw refusal()
+    }
+    return this.windows(key, workspaceConfirmation(key, bytes, input), true, 'confirm')
+  }
+
+  /** Every readable version 2 record and the workspace it is bound to; others are left out. */
+  windowsWorkspaces(): WindowsWorkspaceBinding[] {
+    let names: string[]
+    try {
+      names = readdirSync(this.root)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
+    const bindings: WindowsWorkspaceBinding[] = []
+    for (const name of names.filter((entry) => /^[0-9a-f]{64}\.json$/.test(entry)).sort()) {
+      let bytes: string
+      try {
+        bytes = readFileSync(join(this.root, name), 'utf8')
+      } catch {
+        continue
+      }
+      const binding = windowsWorkspaceBinding(bytes)
+      if (binding && this.file(binding.sessionKey) === join(this.root, name)) bindings.push(binding)
+    }
+    return bindings
   }
 
   private windows(

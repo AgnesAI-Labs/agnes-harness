@@ -8,8 +8,18 @@ import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
 import type { PlatformBackend } from '@agnes/host-infrastructure/adapters/platform'
 import type { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { RuntimeSecurityStatus } from '@agnes/protocol'
+import { windowsPolicyBoundary } from '../assemble/workspace-windows-acl.js'
 import type { HostSession } from './host.js'
+
+type WorkspaceStatus = RuntimeSecurityStatus['workspaces'][number]
+
+/** What a session's commands may change, read from its tool policy the way its sandbox config is. */
+const sessionAccess = (session: HostSession): NonNullable<WorkspaceStatus['access']> => {
+  const policy = session.preset.approval.policy
+  return policy === 'read-only' ? 'read-only' : policy === 'full-access' ? 'full-access' : 'workspace-write'
+}
 
 /** What a recipe, or a recipe under one permission level, grants: sandbox, approval policy, network. */
 function securityPolicy(
@@ -19,12 +29,15 @@ function securityPolicy(
   target: { target?: 'win32' },
   permission?: Permission,
 ) {
+  const providerId = profile.sandbox?.provider ?? 'local'
   // A permission level is shown on the standard recipe; a recipe is shown under its own level.
   const doc = resolvePreset(permission ? 'standard' : id, presets, {
     limits: profile.limits,
     ...(permission ? { permission } : {}),
   }).doc
   const sandbox = normalizeSandboxStaticConfig(doc, target)
+  // On a local Windows Host the opted-in levels run under the partial contract: reads and network open.
+  const boundary = windowsPolicyBoundary(sandbox, providerId, RELEASE_DEFAULTS.sandboxProvider)
   return {
     id,
     level: sandbox.level,
@@ -32,13 +45,14 @@ function securityPolicy(
     onUnavailable: sandbox.onUnavailable,
     approvalPolicy: presetProvider(doc, 'tool-policy') ?? 'default',
     networkMode:
-      sandbox.level === 'L0'
+      sandbox.level === 'L0' || boundary
         ? ('unrestricted' as const)
         : sandbox.loopbackServe
           ? ('loopback-serve' as const)
           : sandbox.networkAllow.length
             ? ('allow-list' as const)
             : ('deny' as const),
+    ...(boundary ? { boundary: { ...boundary } } : {}),
   }
 }
 
@@ -86,6 +100,7 @@ export function adminSecurityStatus(
         path: workspace?.root ?? session.workspaceRoot,
         preset: session.preset.name,
         ...(session.preset.permission ? { permission: session.preset.permission } : {}),
+        access: sessionAccess(session),
         provider: profile.sandbox?.provider ?? 'local',
         state: workspace?.state ?? 'unavailable',
         ...(workspace?.policyDigest ? { policyDigest: workspace.policyDigest } : {}),
@@ -94,6 +109,9 @@ export function adminSecurityStatus(
               enforcement: {
                 level: workspace.enforcement.level,
                 scope: [...workspace.enforcement.scope],
+                ...(workspace.enforcement.boundary
+                  ? { boundary: { ...workspace.enforcement.boundary } }
+                  : {}),
               },
             }
           : {}),

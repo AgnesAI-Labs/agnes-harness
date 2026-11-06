@@ -1,5 +1,5 @@
 import type { Enforcement, HostSpawnSandboxWorkspaceBackend, SandboxExecBackend } from '@agnes/core'
-import type { SandboxExecutionLease } from '@agnes/extension-api'
+import type { SandboxExecutionLease, WindowsWriteBoundary } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import type { SandboxStaticConfig } from '@agnes/host-common/workspace-policy'
 import {
@@ -10,6 +10,7 @@ import {
 import {
   isWindowsWriteBoundary,
   resolveWindowsExecution,
+  WINDOWS_WRITE_BOUNDARY,
   type WindowsExecutionInput,
 } from '@agnes/host-infrastructure/windows-acl/policy'
 
@@ -41,6 +42,26 @@ function windowsFacts(
     networkMode: config.loopbackServe ? 'loopback-serve' : config.networkAllow.length > 0 ? 'hosts' : 'allow',
     providerId,
   }
+}
+
+/**
+ * The contract a policy describes on a local Windows Host: the partial boundary where the trusted
+ * local provider would run it, otherwise none (explicit full access, another provider or a policy
+ * the partial contract refuses keep their own description). It describes; it admits nothing, and
+ * a session's actual boundary still comes from its own probe.
+ */
+export function windowsPolicyBoundary(
+  config: SandboxStaticConfig,
+  providerId: string,
+  localProviderId: string,
+): WindowsWriteBoundary | undefined {
+  if (config.windowsMode !== 'write-restricted') return undefined
+  const decision = resolveWindowsExecution({
+    ...windowsFacts(config, false, providerId),
+    localProviderId,
+    availableBoundary: WINDOWS_WRITE_BOUNDARY,
+  })
+  return decision.kind === 'windows-write-restricted-v1' ? decision.boundary : undefined
 }
 
 const refusal = (reason: string): HostError =>
