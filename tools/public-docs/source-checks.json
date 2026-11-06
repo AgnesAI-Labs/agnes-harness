@@ -33,7 +33,7 @@
   },
   {
     "path": "packages/worker-runtime/src/mcp-server-rows.ts",
-    "includes": ["mcpServerRowsFromDefinitions", "oauth secretBinding is not supported"]
+    "includes": ["mcpServerRowsFromDefinitions", "An OAuth server is a row like any other"]
   },
   {
     "path": "packages/package-manager/src/plugin-manifest.ts",
@@ -163,11 +163,7 @@
   },
   {
     "path": "packages/worker-runtime/src/mcp-server-rows.ts",
-    "includes": [
-      "entry.desired !== 'enabled'",
-      "entry.trust !== 'trusted'",
-      "definition.secretBinding.kind === 'oauth'"
-    ]
+    "includes": ["entry.desired !== 'enabled'", "entry.trust !== 'trusted'"]
   },
   {
     "path": "packages/resource-control-worker/src/runtime-bootstrap.ts",

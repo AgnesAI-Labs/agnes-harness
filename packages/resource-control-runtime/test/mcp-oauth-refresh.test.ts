@@ -220,6 +220,25 @@ describe('refreshMcpOAuth', () => {
     expect(store.writes(SERVER_ID)).toBe(0)
   })
 
+  it('refuses to follow a redirect from the token endpoint and keeps the tokens', async () => {
+    const server = await start()
+    const seen = recordFor(server)
+    const { store, run } = setup(server, seen)
+    const redirects: unknown[] = []
+    // Like fetch itself: `redirect: 'error'` fails the request; any other mode would follow the 302.
+    const redirecting: FetchLike = async (input, init) => {
+      if (!String(input).endsWith('/token')) return server.fetchImpl(input, init)
+      redirects.push(init?.redirect)
+      if (init?.redirect === 'error') throw new TypeError('fetch failed: redirect mode is set to error')
+      return new Response(null, { status: 302, headers: { location: 'http://127.0.0.1:1/elsewhere' } })
+    }
+
+    expect(await reconnectReason(run(seen, { fetchImpl: redirecting }))).toBe('login-required')
+    expect(redirects).toEqual(['error'])
+    expect(await store.read(SERVER_ID)).toEqual(seen)
+    expect(store.writes(SERVER_ID)).toBe(0)
+  })
+
   it.each([
     [
       'token endpoint',

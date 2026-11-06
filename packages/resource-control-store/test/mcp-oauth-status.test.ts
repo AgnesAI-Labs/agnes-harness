@@ -10,13 +10,12 @@ import {
 } from '../src/index.js'
 
 /**
- * Task 5 (mcp-oauth-authorization plan) - `mcp.servers.oauth.status` (read) and
+ * `mcp.servers.oauth.status` (read) and
  * `mcp.servers.oauth.status.set` (write). Both are pure durable-journal operations dispatched
  * directly inside McpResourceStore.call(), the exact same test harness (a real McpResourceStore on
  * a temp directory, driven through createResourceControlService(store).call(method, params,
  * authority)) packages/resource-control-store/test/mcp-control.test.ts already uses for the sibling
- * mcp.servers.* methods - no new test-driving mechanism introduced, per the Task 5 brief's own
- * instruction to copy the existing fixture style.
+ * mcp.servers.* methods.
  */
 const profile = 'local-dev'
 const scope = { allowedProfiles: [profile] }
@@ -73,9 +72,10 @@ const ready = (serverId: string) => observation(serverId, 'ready')
 /** mcp.servers.create always kicks off an async drive() -> adapter.reconcile() in the background
  * (see McpResourceStore.effect()), even though none of the tests below care about connection state
  * - only reconnect/test/tools are genuinely unreachable from a status-only flow. reconcile answers
- * with a trivial "ready" status rather than throwing, matching mcp-control.test.ts's own `ready()`
- * fixture precedent: a throwing reconcile would still run to completion via drive()'s catch/finish
- * path, racing this file's own afterEach directory cleanup for no test-relevant reason. */
+ * with a trivial "connecting" status rather than throwing (a ready observation would now imply
+ * authorization for an oauth row): a throwing reconcile would still run to completion via drive()'s
+ * catch/finish path, racing this file's own afterEach directory cleanup for no test-relevant
+ * reason. */
 function statusOnlyAdapter() {
   const unreachable = () => {
     throw new Error('adapter should not be invoked by an oauth-status-only test')

@@ -8822,12 +8822,10 @@ for (const [file, , id, samples] of SELF_OWNED_DOCS)
 runParity('acp', ACP_ID, fromSchemaDefs(ACP_ID, ACP_DEFS), ACP_SAMPLES)
 runParity('format-checkers', FORMATS_ID, fromFormatDefs(), FORMAT_SAMPLES)
 
-// mcp-oauth-authorization plan, Task 1: the 'oauth' secretBinding kind is not yet a branch of
-// McpHttpSecretBinding's oneOf. These pin the exact shape the new McpOAuthSecretBinding $def must
-// accept once added — staticClientId is optional, and additionalProperties:false must still reject
-// unknown fields — and were written and watched red before the schema change landed (see
-// task-1-brief.md Step 2/3).
-describe('McpHttpSecretBinding: oauth secretBinding kind (mcp-oauth-authorization Task 1)', () => {
+// The 'oauth' secretBinding kind is a branch of McpHttpSecretBinding's oneOf. These pin the exact
+// shape the McpOAuthSecretBinding $def accepts — staticClientId is optional, and
+// additionalProperties:false still rejects unknown fields.
+describe('McpHttpSecretBinding: oauth secretBinding kind', () => {
   const check = ajvDef('https://agnes.ai/schema/resource-control.json', 'McpHttpSecretBinding')
   it('accepts kind "oauth" with staticClientId', () => {
     const sample = { kind: 'oauth', staticClientId: 'test-oauth-client' }
@@ -8858,11 +8856,11 @@ describe('McpHttpSecretBinding: oauth secretBinding kind (mcp-oauth-authorizatio
   })
 })
 
-// mcp-oauth-authorization plan, Task 1: McpServerDescriptor.authorizationStatus is optional (a
+// McpServerDescriptor.authorizationStatus is optional (a
 // non-oauth binding omits it or sets it null) and, when present, constrained to the four states.
 // Exercised on a fully composed oauth-bound http descriptor rather than just the bare field, for the
 // same reason as the McpServerDefinitionInput composed check above.
-describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorization Task 1)', () => {
+describe('McpServerDescriptor: authorizationStatus field', () => {
   const check = ajvDef('https://agnes.ai/schema/resource-control.json', 'McpServerDescriptor')
   const descriptor = {
     kind: 'mcp',

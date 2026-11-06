@@ -103,11 +103,6 @@ type PendingRegistration = Readonly<{
   expiresAt: number
 }>
 
-/** The credential reference a server's sign-in is filed under in the credential store. */
-export function credentialRefFor(serverId: string): string {
-  return `secret://mcp-oauth/${serverId}`
-}
-
 /**
  * The one timeout + `redirect: 'error'` guard for every OAuth network call (discovery,
  * registration, code exchange, refresh). Every SDK call that accepts a `fetchFn`/`fetchImpl` must
