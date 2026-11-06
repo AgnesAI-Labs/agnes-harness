@@ -4,6 +4,8 @@ export * from './mcp-failure.js'
 // The credential resolver is consumed by @agnes/resource-control-worker through this export.
 export * from './mcp-oauth-credentials.js'
 // Types only; the host provides the implementation.
+export * from './mcp-oauth-protocol.js'
+export * from './mcp-oauth-refresh.js'
 export * from './mcp-oauth-store.js'
 export * from './notify.js'
 // State and client helpers remain package-private. The HTTP handler is consumed by @agnes/cli

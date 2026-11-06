@@ -128,6 +128,8 @@ export type McpOAuthCredentialResolver = (
   staticClientId: string | undefined,
 ) => Promise<Readonly<{ credential: McpOAuthCredential; refresh(): Promise<McpOAuthCredential> }> | undefined>
 
+export type McpOAuthLoginReason = 'login-required' | 'insufficient-scope' | 'endpoint-changed'
+
 /**
  * Thrown by `resolvedConfig()` when an `oauth`-bound MCP server's credential cannot be resolved or
  * refreshed: no resolver configured, no credential stored yet, or refresh failed even after the
@@ -137,13 +139,27 @@ export type McpOAuthCredentialResolver = (
  * it into every other candidate()/connect failure, and react by surfacing `needs-reconnect` --
  * `connectManaged()` below is that caller (traced per the brief's own instruction to find
  * `resolvedConfig()`'s actual call site rather than guess at a daemon-side file).
+ *
+ * The message is written for the model: it says what to ask the user, not what failed inside.
  */
 export class McpOAuthNeedsReconnectError extends Error {
+  readonly code = 'MCP_OAUTH_NEEDS_RECONNECT'
   readonly serverId: string
-  constructor(serverId: string, options?: { cause?: unknown }) {
-    super(`MCP OAuth credential for server "${serverId}" requires re-authorization`, options)
+  readonly reason: McpOAuthLoginReason
+  constructor(
+    serverId: string,
+    reason: McpOAuthLoginReason = 'login-required',
+    options?: { cause?: unknown },
+  ) {
+    super(
+      reason === 'insufficient-scope'
+        ? `MCP server "${serverId}" needs more permissions. Ask the user to sign in to it again from the MCP page in the web UI.`
+        : `MCP server "${serverId}" needs sign-in. Ask the user to sign in to it from the MCP page in the web UI.`,
+      options,
+    )
     this.name = 'McpOAuthNeedsReconnectError'
     this.serverId = serverId
+    this.reason = reason
   }
 }
 
@@ -357,7 +373,7 @@ async function resolveOAuthAuthorization(
     const retried = await oauthCredentials(serverId, signal, serverUrl, staticClientId)
     if (retried && retried.credential.accessToken !== credential.accessToken)
       return retried.credential.accessToken
-    throw new McpOAuthNeedsReconnectError(serverId, { cause: refreshError })
+    throw new McpOAuthNeedsReconnectError(serverId, 'login-required', { cause: refreshError })
   }
 }
 
