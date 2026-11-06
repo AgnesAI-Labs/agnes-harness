@@ -1,5 +1,5 @@
 import { test as base, expect } from '@playwright/test'
-import { testCertificate } from './oauth-fixture.js'
+import { testCertificatePath } from './oauth-fixture.js'
 import { isolatedRuntime, type Runtime } from './runtime.js'
 
 export const test = base.extend<{
@@ -21,8 +21,8 @@ export const test = base.extend<{
         ) && process.env.AGH_BROWSER_TEST_ARCHIVE
           ? { browserArchive: process.env.AGH_BROWSER_TEST_ARCHIVE }
           : {}),
-        ...(info.file.endsWith('/mcp-oauth.spec.ts')
-          ? { extraEnv: { NODE_EXTRA_CA_CERTS: (await testCertificate()).certPath } }
+        ...(info.file.replaceAll('\\', '/').endsWith('/mcp-oauth.spec.ts')
+          ? { extraEnv: { NODE_EXTRA_CA_CERTS: testCertificatePath } }
           : {}),
         realModel:
           info.title.startsWith('application permission switch') ||

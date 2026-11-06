@@ -1,37 +1,19 @@
-import { execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { createServer } from 'node:https'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { promisify } from 'node:util'
+import { fileURLToPath } from 'node:url'
 
-const run = promisify(execFile)
 const ISSUED_VALUE = 'e2e-issued-value'
 
-export type TestCertificate = Readonly<{ certPath: string; cert: string; key: string }>
-
-let certificate: Promise<TestCertificate> | undefined
-
 /**
- * A throwaway self-signed certificate for 127.0.0.1. The sign-in code only talks to `https:`
- * authorization servers, so the fake one needs TLS; the runtime trusts this certificate through
- * `NODE_EXTRA_CA_CERTS`, which must be set before it starts.
+ * The repository's public throwaway certificate for 127.0.0.1. The sign-in code only talks to
+ * `https:` authorization servers, so the fake one needs TLS; the runtime trusts this certificate
+ * through `NODE_EXTRA_CA_CERTS`, which must be set before it starts.
  */
-export function testCertificate(): Promise<TestCertificate> {
-  certificate ??= (async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'agh-e2e-tls-'))
-    const certPath = join(dir, 'cert.pem')
-    const keyPath = join(dir, 'key.pem')
-    await run('openssl', [
-      ...['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1'],
-      ...['-keyout', keyPath, '-out', certPath, '-subj', '/CN=127.0.0.1'],
-      ...['-addext', 'subjectAltName=IP:127.0.0.1'],
-    ])
-    return { certPath, cert: await readFile(certPath, 'utf8'), key: await readFile(keyPath, 'utf8') }
-  })()
-  return certificate
-}
+export const testCertificatePath = fileURLToPath(
+  new URL('../test-fixtures/tls/localhost-cert.pem', import.meta.url),
+)
+const testKeyPath = fileURLToPath(new URL('../test-fixtures/tls/localhost-key.pem', import.meta.url))
 
 export type OAuthFixture = Readonly<{
   /** The address a test passes as the MCP server URL. */
@@ -47,7 +29,8 @@ export type OAuthFixture = Readonly<{
  * that checks the PKCE verifier before issuing a token.
  */
 export async function startOAuthFixture(): Promise<OAuthFixture> {
-  const { cert, key } = await testCertificate()
+  const cert = readFileSync(testCertificatePath, 'utf8')
+  const key = readFileSync(testKeyPath, 'utf8')
   const challenges = new Map<string, { challenge: string; redirectUri: string }>()
   const tokenRequests: URLSearchParams[] = []
   let origin = ''
