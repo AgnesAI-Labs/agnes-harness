@@ -1,6 +1,7 @@
 import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { afterEach, describe, expect, it } from 'vitest'
 import { McpOAuthNeedsReconnectError } from '../src/mcp.js'
+import { signOutMcpOAuth } from '../src/mcp-oauth-logout.js'
 import { McpOAuthClientAuthUnsupported } from '../src/mcp-oauth-protocol.js'
 import { refreshMcpOAuth } from '../src/mcp-oauth-refresh.js'
 import type { McpOAuthClient, McpOAuthRecord, McpOAuthServer } from '../src/mcp-oauth-store.js'
@@ -339,5 +340,66 @@ describe('refreshMcpOAuth', () => {
     expect(other).toBe('done')
     release()
     expect((await refreshing).rev).toBe(seen.rev + 1)
+  })
+
+  /** Holds every request whose URL contains `part` until `release` is called. */
+  function gate(server: FakeOAuthServer, part: string) {
+    let release: () => void = () => undefined
+    const open = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let reached: () => void = () => undefined
+    const arrived = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const fetchImpl: FetchLike = async (input, init) => {
+      if (String(input).includes(part)) {
+        reached()
+        await open
+      }
+      return server.fetchImpl(input, init)
+    }
+    return { fetchImpl, arrived, release }
+  }
+
+  const signedOut = (epoch: number, rev: number): McpOAuthRecord => ({
+    version: 2,
+    kind: 'oauth',
+    epoch,
+    rev,
+    requiredScope: [],
+  })
+
+  it('a sign-out during a refresh: the refresh sends no token request and writes nothing', async () => {
+    const server = await start()
+    const seen = recordFor(server)
+    const { store, run } = setup(server, seen)
+    const held = gate(server, '/.well-known/')
+
+    const refreshing = run(seen, { fetchImpl: held.fetchImpl })
+    await held.arrived
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: seen.epoch + 1 })
+    held.release()
+
+    expect(await reconnectReason(refreshing)).toBe('login-required')
+    expect(server.requests()).toEqual([])
+    expect(store.writes(SERVER_ID)).toBe(1)
+    expect(await store.read(SERVER_ID)).toEqual(signedOut(seen.epoch + 1, seen.rev + 1))
+  })
+
+  it('a sign-out while the token request is in flight waits for it and still wins', async () => {
+    const server = await start()
+    const seen = recordFor(server)
+    const { store, run } = setup(server, seen)
+    const held = gate(server, '/token')
+
+    const refreshing = run(seen, { fetchImpl: held.fetchImpl })
+    await held.arrived
+    const signingOut = signOutMcpOAuth({ serverId: SERVER_ID, store })
+    held.release()
+
+    expect((await refreshing).tokens?.accessToken).toBe('at-1')
+    expect(await signingOut).toEqual({ epoch: seen.epoch + 1 })
+    expect(await store.read(SERVER_ID)).toEqual(signedOut(seen.epoch + 1, seen.rev + 2))
   })
 })

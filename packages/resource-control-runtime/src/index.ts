@@ -15,6 +15,7 @@ export {
   type McpOAuthSummary,
   summarizeMcpOAuth,
 } from './mcp-oauth-login.js'
+export { signOutMcpOAuth } from './mcp-oauth-logout.js'
 export * from './mcp-oauth-protocol.js'
 // The drift comparison stays package-private.
 export { refreshMcpOAuth } from './mcp-oauth-refresh.js'

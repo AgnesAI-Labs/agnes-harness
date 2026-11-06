@@ -8241,6 +8241,16 @@ const AppSamples: Record<string, Sample> = {
     ],
     note: 'daemon exchanges the authorization code',
   },
+  AdminMcpOAuthRefreshResult: {
+    valid: { signedIn: false },
+    invalid: [{}, { signedIn: 'yes' }, { signedIn: true, accessToken: 'leak' }],
+    note: 'refresh answers only whether a browser sign-in is still needed',
+  },
+  AdminMcpOAuthLogoutResult: {
+    valid: { epoch: 0 },
+    invalid: [{}, { epoch: -1 }, { epoch: 1.5 }, { epoch: 1, extra: 1 }],
+    note: 'sign-out returns the new epoch only',
+  },
   JsonValue: { valid: { nested: [null, false, 3] }, invalid: [undefined], note: 'App Server boundary shape' },
   AppServerErrorCause: {
     valid: { code: 'CONFIG_CREDENTIAL_REQUIRED' },
@@ -9139,6 +9149,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminMcpOAuthComplete',
     result: 'AdminEmpty',
+  },
+  '_agnes/v1/admin.mcp.oauth.refresh': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthGet',
+    result: 'AdminMcpOAuthRefreshResult',
+  },
+  '_agnes/v1/admin.mcp.oauth.logout': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthGet',
+    result: 'AdminMcpOAuthLogoutResult',
   },
   '_agnes/v1/admin.bundles.get': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
@@ -10502,6 +10522,22 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     ],
     note: 'daemon exchanges the authorization code',
   },
+  '_agnes/v1/admin.mcp.oauth.refresh': {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', refreshToken: 'x' },
+    ],
+    note: 'refresh names the server only',
+  },
+  '_agnes/v1/admin.mcp.oauth.logout': {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', epoch: 1 },
+    ],
+    note: 'sign-out names the server only',
+  },
   '_agnes/v1/admin.bundles.get': { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
   '_agnes/v1/admin.bundles.save': {
     valid: { revision: 0, bundles: [] },
@@ -11208,6 +11244,16 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
     valid: {},
     invalid: [{ extra: 1 }],
     note: 'completion acknowledges without returning a credential',
+  },
+  '_agnes/v1/admin.mcp.oauth.refresh': {
+    valid: { signedIn: true },
+    invalid: [{ signedIn: true, accessToken: 'leak' }, {}],
+    note: 'refresh never returns a credential',
+  },
+  '_agnes/v1/admin.mcp.oauth.logout': {
+    valid: { epoch: 2 },
+    invalid: [{ epoch: -1 }, { epoch: 2, extra: 1 }],
+    note: 'sign-out returns the new epoch only',
   },
   '_agnes/v1/admin.bundles.get': {
     valid: { revision: 0, bundles: [], effect: 'restart-required' },

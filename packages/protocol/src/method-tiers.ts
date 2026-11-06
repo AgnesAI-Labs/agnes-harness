@@ -32,6 +32,8 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/admin.plan': 'admin',
   '_agnes/v1/admin.mcp.oauth.get': 'admin',
   '_agnes/v1/admin.mcp.oauth.complete': 'admin',
+  '_agnes/v1/admin.mcp.oauth.refresh': 'admin',
+  '_agnes/v1/admin.mcp.oauth.logout': 'admin',
   '_agnes/v1/doctor.run': 'admin',
   '_agnes/v1/admin.memory': 'admin',
   '_agnes/v1/admin.observability': 'admin',

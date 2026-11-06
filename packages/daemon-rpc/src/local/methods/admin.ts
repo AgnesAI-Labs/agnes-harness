@@ -73,6 +73,12 @@ export function registerAppServerAdmin(
   register('_agnes/v1/admin.mcp.oauth.complete', true, (input) =>
     service.completeMcpOAuth(input as AdminMcpOAuthComplete),
   )
+  register('_agnes/v1/admin.mcp.oauth.refresh', true, (input) =>
+    service.refreshMcpOAuth(input as AdminMcpOAuthGet),
+  )
+  register('_agnes/v1/admin.mcp.oauth.logout', true, (input) =>
+    service.logoutMcpOAuth(input as AdminMcpOAuthGet),
+  )
   // Config writes are optional on context; conservatively require activate for this combined method.
   register('_agnes/v1/admin.triggers', true, (input) =>
     service.triggers(input as import('@agnes/protocol/gen/app-server').WebhookRequest),

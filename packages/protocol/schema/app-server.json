@@ -2901,6 +2901,30 @@
       ],
       "additionalProperties": false
     },
+    "AdminMcpOAuthRefreshResult": {
+      "type": "object",
+      "properties": {
+        "signedIn": {
+          "type": "boolean",
+          "description": "True when the stored refresh token gave a new access token; false means a browser sign-in is needed."
+        }
+      },
+      "required": ["signedIn"],
+      "additionalProperties": false
+    },
+    "AdminMcpOAuthLogoutResult": {
+      "type": "object",
+      "properties": {
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "The sign-out count after this call; 0 when there was no stored sign-in to remove."
+        }
+      },
+      "required": ["epoch"],
+      "additionalProperties": false
+    },
     "DoctorParams": {
       "type": "object",
       "properties": {
@@ -4054,6 +4078,14 @@
     "_agnes/v1/admin.mcp.oauth.complete": {
       "params": "AdminMcpOAuthComplete",
       "result": "AdminEmpty"
+    },
+    "_agnes/v1/admin.mcp.oauth.refresh": {
+      "params": "AdminMcpOAuthGet",
+      "result": "AdminMcpOAuthRefreshResult"
+    },
+    "_agnes/v1/admin.mcp.oauth.logout": {
+      "params": "AdminMcpOAuthGet",
+      "result": "AdminMcpOAuthLogoutResult"
     },
     "_agnes/v1/doctor.run": {
       "params": "DoctorParams",
