@@ -252,6 +252,8 @@ describe('the command isolation fact', () => {
   const acl: Enforcement = { level: 'partial', scope: ['file'], boundary }
   const full: Enforcement = { level: 'full', scope: ['file', 'network', 'process'] }
   const none: Enforcement = { level: 'none', scope: [] }
+  // What a Windows full-access session really reports: the local probe's unconfined file-only posture.
+  const unconfined: Enforcement = { level: 'partial', scope: ['file'] }
   const host = (os: string) => ({
     adapters: {
       platform: {
@@ -283,9 +285,28 @@ describe('the command isolation fact', () => {
     expect(Object.keys(write.env).at(-1)).toBe('commandIsolation')
     expect(write.system).not.toContain('ACL')
     expect(facts(windows, { enforcement: acl, toolPolicy: 'read-only' }).env.commandIsolation).toBe(READ)
-    expect(facts(windows, { enforcement: none, toolPolicy: 'full-access' }).env.commandIsolation).toBe(
+    expect(facts(windows, { enforcement: unconfined, toolPolicy: 'full-access' }).env.commandIsolation).toBe(
       'Windows：完全访问，命令未隔离',
     )
+  })
+
+  it('says a full-access session is not isolated whatever level its unconfined posture reports', () => {
+    const windows = host('win32')
+    for (const enforcement of [unconfined, none])
+      expect(facts(windows, { enforcement, toolPolicy: 'full-access' }).env.commandIsolation).toBe(
+        'Windows：完全访问，命令未隔离',
+      )
+    // A full boundary is isolation, not the unconfined local path.
+    expect(facts(windows, { enforcement: full, toolPolicy: 'full-access' }).env).not.toHaveProperty(
+      'commandIsolation',
+    )
+  })
+
+  it('never names the Windows boundary off Windows, whoever reports it', () => {
+    for (const toolPolicy of ['default', 'read-only', 'full-access'])
+      expect(facts(host('linux'), { enforcement: acl, toolPolicy }).env).not.toHaveProperty(
+        'commandIsolation',
+      )
   })
 
   it('reads each session on one Host from its own enforcement, not the platform or its name', () => {
@@ -312,7 +333,7 @@ describe('the command isolation fact', () => {
 
   it('leaves other platforms exactly as they were', () => {
     for (const toolPolicy of ['default', 'read-only', 'full-access'])
-      for (const enforcement of [full, none]) {
+      for (const enforcement of [full, none, unconfined]) {
         const { env } = facts(host('darwin'), { enforcement, toolPolicy })
         expect(env).not.toHaveProperty('commandIsolation')
         expect(env.enforcement).toBe('full')

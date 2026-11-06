@@ -92,7 +92,9 @@ describe('sandbox provider enforcement boundary', () => {
     },
   })
 
-  it('accepts the closed Windows write boundary next to the old fields', () => {
+  // Registration checks only the shape. The Host applies the contract itself and ignores it in any
+  // provider's report but its own local one, so a well-formed declaration here grants nothing.
+  it('accepts a well-formed Windows write boundary as data next to the old fields', () => {
     expect(() =>
       sandboxKind.validate(provider({ level: 'partial', scope: ['process'], boundary })),
     ).not.toThrow()

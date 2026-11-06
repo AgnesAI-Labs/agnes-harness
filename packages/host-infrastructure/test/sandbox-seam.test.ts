@@ -259,4 +259,20 @@ describe('Host-started Windows write restriction', () => {
         code: 'E_SANDBOX_WORKSPACE',
       })
   })
+
+  it.each([
+    ['another provider', { providerId: 'docker' }],
+    ['an unconfined local workspace', { execBackend: 'none' }],
+    ['a full local backend', { execBackend: 'l1' }],
+    ['a remote workspace', { execBackend: 'remote' }],
+  ] as const)('refuses the Windows boundary on %s, where nothing applies it', async (_name, overrides) => {
+    const ws = workspace({
+      ...overrides,
+      enforcement: { level: 'partial', scope: ['file'], boundary },
+    })
+    await expect(createSandboxSeam().forWorkspace(ws.value)).rejects.toMatchObject({
+      code: 'E_SANDBOX_WORKSPACE',
+    })
+    expect(ws.ready).not.toHaveBeenCalled()
+  })
 })

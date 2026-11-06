@@ -61,10 +61,12 @@ const WINDOWS_READ = 'Windows：不授予工作区或临时目录写能力；读
 const WINDOWS_FULL = 'Windows：完全访问，命令未隔离'
 
 /**
- * What a session's commands can actually reach on Windows, from the enforcement its sandbox
- * reports. The partial contract is named only when that enforcement carries it; the full-access
- * line only for an explicit full-access session whose commands run unconfined on Windows. Every
- * other platform and provider keeps the facts it had, so nothing is said there.
+ * What a session's commands can actually reach on a Windows Host, from the enforcement its sandbox
+ * reports. The partial contract is named only when that enforcement carries it. The full-access line
+ * is for an explicit full-access session without that contract and without a full boundary: Windows
+ * has no full local backend, so such a session's commands run unconfined, whether its posture reads
+ * `none` or the unconfined `partial` file-only fallback. Other platforms keep the facts they had, so
+ * nothing is said there.
  */
 export function windowsCommandIsolation(input: {
   enforcement: Readonly<{ level: string; boundary?: unknown }>
@@ -72,9 +74,11 @@ export function windowsCommandIsolation(input: {
   os: string
 }): string | undefined {
   const { enforcement, access } = input
+  if (input.os !== 'win32') return undefined
   if (enforcement.level === 'partial' && isWindowsBoundary(enforcement.boundary))
     return access === 'read-only' ? WINDOWS_READ : access === 'workspace-write' ? WINDOWS_WRITE : undefined
-  if (input.os === 'win32' && access === 'full-access' && enforcement.level === 'none') return WINDOWS_FULL
+  if (access === 'full-access' && enforcement.boundary === undefined && enforcement.level !== 'full')
+    return WINDOWS_FULL
   return undefined
 }
 

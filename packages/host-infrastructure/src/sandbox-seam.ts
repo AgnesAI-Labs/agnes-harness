@@ -49,7 +49,9 @@ function assertWorkspace(workspace: SeamWorkspace): void {
       workspace.execBackend !== 'windows-acl') ||
     (workspace.shell !== 'posix' && workspace.shell !== 'powershell') ||
     (workspace.providerId !== undefined && !/^[a-z][a-z0-9-]{0,63}$/.test(workspace.providerId)) ||
-    (workspace.execBackend === 'windows-acl') !== (workspace.hostSpawn !== undefined)
+    (workspace.execBackend === 'windows-acl') !== (workspace.hostSpawn !== undefined) ||
+    // Only the Host-started Windows backend applies the Windows boundary; nothing else may name it.
+    (workspace.execBackend === 'windows-acl') !== (workspace.enforcement?.boundary !== undefined)
   )
     throw fault('E_SANDBOX_WORKSPACE', 'Host supplied an invalid bound workspace')
   if (workspace.execBackend !== 'windows-acl') return

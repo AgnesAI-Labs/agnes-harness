@@ -69,7 +69,11 @@ export interface PlatformView extends PlatformFacts {
 export type SandboxEnforcement = Readonly<{
   level: 'full' | 'partial' | 'none'
   scope: readonly ('file' | 'network' | 'process')[]
-  /** Names the exact partial contract behind `level: 'partial'`; absent for every other enforcement. */
+  /**
+   * Names the exact partial contract behind `level: 'partial'`; absent for every other enforcement.
+   * Only the Host's own local provider applies this contract. A provider registration may carry a
+   * well-formed one, but the Host drops it from any other provider's report.
+   */
   boundary?: WindowsWriteBoundary
 }>
 

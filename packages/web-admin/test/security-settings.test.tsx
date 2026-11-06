@@ -397,16 +397,19 @@ it('states each Windows session’s actual boundary and never marks the partial 
     sessionId: string,
     access: 'read-only' | 'workspace-write' | 'full-access',
     enforcement: object,
+    provider = 'local',
   ) => ({
     sessionId,
     path: `C:\\${sessionId}`,
     preset: 'standard',
     permission: access,
     access,
-    provider: 'local',
+    provider,
     state: 'ready' as const,
     enforcement,
   })
+  // What a Windows full-access session really reports: the local probe's unconfined file-only posture.
+  const unconfined = { level: 'partial' as const, scope: ['file'] }
   const windowsPolicy = (id: string) => ({
     ...policy(id, 'default', 'unrestricted'),
     required: false,
@@ -423,7 +426,7 @@ it('states each Windows session’s actual boundary and never marks the partial 
     workspaces: [
       session('ro', 'read-only', acl),
       session('rw', 'workspace-write', acl),
-      session('full', 'full-access', { level: 'none', scope: [] }),
+      session('full', 'full-access', unconfined),
     ],
   } as unknown as Parameters<typeof SecurityStatusPanel>[0]['status']
   const details = await mount(createElement(SecurityStatusPanel, { status, t: text, view: 'details' }))
@@ -453,14 +456,40 @@ it('states each Windows session’s actual boundary and never marks the partial 
   expect(rows.map((row) => row.querySelector('.agnes-settings-tag')?.getAttribute('data-tone'))).toEqual([
     'warn',
     'warn',
-    'error',
+    'warn',
   ])
   expect(rows.map((row) => row.querySelector('[data-testid="workspace-enforcement"]')?.textContent)).toEqual([
     `Partly in effect${text('windowsBoundary.read-only')}`,
     `Partly in effect${text('windowsBoundary.workspace-write')}`,
-    `Unavailable${text('windowsBoundary.full-access')}`,
+    `Partly in effect${text('windowsBoundary.full-access')}`,
   ])
   expect(summary.querySelector('[data-testid="windows-acl-side-effects"]')).not.toBeNull()
+  await act(async () => root?.unmount())
+
+  // Full access says so whatever level its unconfined posture reports.
+  const noneLevel = {
+    ...status,
+    workspaces: [session('full', 'full-access', { level: 'none', scope: [] })],
+  } as unknown as Parameters<typeof SecurityStatusPanel>[0]['status']
+  await mount(createElement(SecurityStatusPanel, { status: noneLevel, t: text, view: 'details' }))
+  expect(enforcement()).toEqual([text('windowsBoundary.full-access')])
+  await act(async () => root?.unmount())
+
+  // Another provider's sessions never get the Windows wording, even when they name the boundary.
+  const thirdParty = {
+    ...status,
+    permissionPolicies: [],
+    workspaces: [
+      session('box', 'workspace-write', acl, 'plugin-box'),
+      session('box-full', 'full-access', unconfined, 'plugin-box'),
+    ],
+  } as unknown as Parameters<typeof SecurityStatusPanel>[0]['status']
+  const other = await mount(
+    createElement(SecurityStatusPanel, { status: thirdParty, t: text, view: 'details' }),
+  )
+  expect(enforcement().some((value) => value?.includes(text('windowsBoundary.workspace-write')))).toBe(false)
+  expect(enforcement()).not.toContain(text('windowsBoundary.full-access'))
+  expect(other.querySelector('[data-testid="windows-acl-side-effects"]')).toBeNull()
   await act(async () => root?.unmount())
 
   // A full boundary claim beside the partial contract still reads as partial.
@@ -475,6 +504,36 @@ it('states each Windows session’s actual boundary and never marks the partial 
       .querySelector('[data-testid="workspace-sandbox-status"] .agnes-settings-tag')
       ?.getAttribute('data-tone'),
   ).toBe('warn')
+})
+
+it('never names the Windows boundary off Windows', async () => {
+  const boundary = {
+    contract: 'windows-write-restricted-v1',
+    fileWrite: 'acl-partial',
+    fileRead: 'unrestricted',
+    network: 'unrestricted',
+    processTree: 'job-object',
+  } as const
+  const status = {
+    platform: { os: 'linux', l1: { level: 'full' as const, scope: ['file', 'process', 'network'] } },
+    presetPolicies: [],
+    workspaces: [
+      {
+        sessionId: 'a',
+        path: '/a',
+        preset: 'standard',
+        access: 'workspace-write' as const,
+        provider: 'local',
+        state: 'ready' as const,
+        enforcement: { level: 'partial' as const, scope: ['file' as const], boundary },
+      },
+    ],
+  }
+  const details = await mount(createElement(SecurityStatusPanel, { status, t: text, view: 'details' }))
+  expect(details.querySelector('[data-testid="workspace-enforcement"]')?.textContent).not.toContain(
+    text('windowsBoundary.workspace-write'),
+  )
+  expect(details.querySelector('[data-testid="windows-acl-side-effects"]')).toBeNull()
 })
 
 it('keeps other platforms’ workspace text unchanged', async () => {
