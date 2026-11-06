@@ -13,6 +13,16 @@ export function verifyResults(needs) {
     'runtime-package': docsOnly === 'true' ? 'skipped' : 'success',
     sea: docsOnly === 'true' ? 'skipped' : 'success',
   }
+  const webSelected = needs.changes?.outputs?.web
+  if (!['true', 'false'].includes(webSelected)) throw new Error('Missing or invalid Web selection')
+  Object.assign(expected, {
+    'native-linux': 'success',
+    'native-macos': docsOnly === 'true' ? 'skipped' : 'success',
+    'native-windows': docsOnly === 'true' ? 'skipped' : 'success',
+    'linux-fast': docsOnly === 'true' ? 'skipped' : 'success',
+    web: webSelected === 'true' ? 'success' : 'skipped',
+    'web-result': webSelected === 'true' ? 'success' : 'skipped',
+  })
   for (const [job, result] of Object.entries(expected)) {
     if (needs[job]?.result !== result) {
       throw new Error(`${job}: expected ${result}, received ${needs[job]?.result ?? 'missing'}`)

@@ -1,0 +1,56 @@
+name: Prepare native helpers
+on:
+  workflow_call:
+    inputs:
+      runner: { type: string, required: true }
+      artifact: { type: string, default: '' }
+    outputs:
+      artifact: { value: '${{ jobs.prepare.outputs.artifact }}' }
+permissions: { contents: read }
+env: { AGNES_NATIVE_BUILDER: glibc228 }
+jobs:
+  prepare:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 15
+    outputs:
+      artifact: ${{ steps.identity.outputs.artifact }}
+    steps:
+      - id: identity
+        shell: bash
+        env: { EXISTING: '${{ inputs.artifact }}' }
+        run: echo "artifact=${EXISTING:-prepared-native-${{ inputs.runner }}-${{ github.run_id }}-${{ github.run_attempt }}}" >> "$GITHUB_OUTPUT"
+      - name: Preserve repository line endings
+        if: inputs.artifact == ''
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: inputs.artifact == ''
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+        if: inputs.artifact == ''
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        if: inputs.artifact == ''
+        with: { node-version-file: .node-version, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+        if: inputs.artifact == ''
+      - run: pnpm run doctor:toolchain
+        if: inputs.artifact == ''
+      - name: prepare Windows native headers
+        if: inputs.artifact == '' && runner.os == 'Windows'
+        shell: pwsh
+        run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
+      - name: Build source native helpers
+        if: inputs.artifact == ''
+        run: |
+          pnpm --filter @agnes/host build:native
+          pnpm --filter @agnes/system-node build:native
+      - name: Pack native helpers
+        if: inputs.artifact == ''
+        run: node tools/ci/prepared-artifact.mjs pack native .agnes-tmp/prepared-native
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: inputs.artifact == ''
+        with:
+          name: ${{ steps.identity.outputs.artifact }}
+          path: .agnes-tmp/prepared-native
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 2

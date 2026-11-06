@@ -296,13 +296,19 @@ describe('CI scope', () => {
 
 function results(docsOnly: boolean): Record<string, { result: string; outputs?: Record<string, string> }> {
   return {
-    changes: { result: 'success', outputs: { 'docs-only': String(docsOnly) } },
+    changes: { result: 'success', outputs: { 'docs-only': String(docsOnly), web: 'true' } },
     static: { result: 'success' },
     check: { result: docsOnly ? 'skipped' : 'success' },
     'windows-check-result': { result: docsOnly ? 'skipped' : 'success' },
     heavy: { result: docsOnly ? 'skipped' : 'success' },
     'runtime-package': { result: docsOnly ? 'skipped' : 'success' },
     sea: { result: docsOnly ? 'skipped' : 'success' },
+    'native-linux': { result: 'success' },
+    'native-macos': { result: docsOnly ? 'skipped' : 'success' },
+    'native-windows': { result: docsOnly ? 'skipped' : 'success' },
+    'linux-fast': { result: docsOnly ? 'skipped' : 'success' },
+    web: { result: 'success' },
+    'web-result': { result: 'success' },
   }
 }
 
@@ -311,17 +317,38 @@ describe('CI result', () => {
     expect(() => verifyResults(results(docsOnly))).not.toThrow()
   })
 
-  it.each(['changes', 'static', 'check', 'windows-check-result', 'heavy', 'runtime-package', 'sea'])(
-    'fails closed for a failed, cancelled, skipped or missing code job: %s',
-    (job) => {
-      for (const state of ['failure', 'cancelled', 'skipped', undefined]) {
-        const needs = results(false)
-        if (state) needs[job] = { ...needs[job], result: state }
-        else delete needs[job]
-        expect(() => verifyResults(needs)).toThrow()
-      }
-    },
-  )
+  it.each([
+    'changes',
+    'static',
+    'check',
+    'windows-check-result',
+    'heavy',
+    'runtime-package',
+    'sea',
+    'native-linux',
+    'native-macos',
+    'native-windows',
+    'linux-fast',
+    'web',
+    'web-result',
+  ])('fails closed for a failed, cancelled, skipped or missing code job: %s', (job) => {
+    for (const state of ['failure', 'cancelled', 'skipped', undefined]) {
+      const needs = results(false)
+      if (state) needs[job] = { ...needs[job], result: state }
+      else delete needs[job]
+      expect(() => verifyResults(needs)).toThrow()
+    }
+  })
+
+  it('retains CI-only validation without adding Web to manual and scheduled runs', () => {
+    const needs = results(false)
+    needs.changes.outputs = { 'docs-only': 'false', web: 'false' }
+    needs.web.result = 'skipped'
+    needs['web-result'].result = 'skipped'
+    expect(() => verifyResults(needs)).not.toThrow()
+    needs['linux-fast'].result = 'skipped'
+    expect(() => verifyResults(needs)).toThrow('linux-fast')
+  })
 
   it('does not hide a documentation check failure behind intentional runtime skips', () => {
     const needs = results(true)

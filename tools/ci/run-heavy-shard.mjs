@@ -5,6 +5,17 @@ import { fileURLToPath } from 'node:url'
 
 const HEAVY = /\.(?:e2e|slow)\.test\.(?:ts|tsx|jsx)$/
 
+/** Refuse missing or duplicate migration selections before they become Vitest filters. */
+export function migratedHeavyFiles(files, exists = existsSync) {
+  if (!files.length) throw new Error('Migrated heavy selection is empty')
+  const duplicate = files.find((file, at) => files.indexOf(file) !== at)
+  if (duplicate) throw new Error(`${duplicate} is listed more than once`)
+  for (const file of files)
+    if (!HEAVY.test(file) || !exists(file))
+      throw new Error(`${file} is not a heavy test file in this checkout`)
+  return files
+}
+
 /**
  * The heavy-tier files of one CI shard. Shard k of n (k < n) is the k-th list in
  * heavy-shards.json; the last shard is every other heavy file, so each heavy file runs in exactly
