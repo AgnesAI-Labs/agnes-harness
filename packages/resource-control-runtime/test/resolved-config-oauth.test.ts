@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createMcpResourceManager, type McpConnectOptions, resolvedConfig } from '../src/mcp.js'
+import { signOutMcpOAuth } from '../src/mcp-oauth-logout.js'
 import type { McpOAuthRecord } from '../src/mcp-oauth-store.js'
 import { createMemoryOAuthStore } from './helpers/memory-oauth-store.js'
 
@@ -43,6 +44,7 @@ function manager(options: {
   oauthStore?: ReturnType<typeof createMemoryOAuthStore>
   credentials?: () => Promise<string>
 }) {
+  let closes = 0
   const connect = vi.fn(async (_config: unknown, connectOptions: McpConnectOptions) => {
     // Like the real transport: the first request asks the authorizer, and a refusal ends the connect.
     const headers = await connectOptions.authorize?.headers()
@@ -51,7 +53,9 @@ function manager(options: {
       id: 'remote-server',
       listTools: async () => [],
       callTool: async () => ({ content: [] }),
-      close: async () => undefined,
+      close: async () => {
+        closes++
+      },
     }
   })
   const credentials = vi.fn(options.credentials ?? (async () => 'unused'))
@@ -65,7 +69,7 @@ function manager(options: {
     inspectCatalog: async () => ({ tools: [], skipped: [] }),
     apply: async () => undefined,
   })
-  return { created, connect, credentials }
+  return { created, connect, credentials, closes: () => closes }
 }
 
 const reconcile = (created: ReturnType<typeof createMcpResourceManager>, binding?: Record<string, string>) =>
@@ -128,5 +132,32 @@ describe('OAuth servers through resolvedConfig and the resource manager', () => 
     expect(result.status).toMatchObject({ connectionState: 'ready' })
     expect(credentials).toHaveBeenCalledWith('secret://mcp/remote-client', expect.any(AbortSignal))
     await created.close()
+  })
+
+  it('signOut closes the connection, starts no new one and reports that sign-in is needed', async () => {
+    const oauthStore = createMemoryOAuthStore({ 'remote-server': record })
+    const { created, connect, closes } = manager({ oauthStore })
+    created.stage(managed())
+    expect((await reconcile(created)).status).toMatchObject({ connectionState: 'ready' })
+    await signOutMcpOAuth({ serverId: 'remote-server', store: oauthStore })
+
+    const result = await created.signOut({
+      profile: 'local-dev',
+      serverId: 'remote-server',
+      definition: definition(),
+      signal: new AbortController().signal,
+    })
+
+    expect(result).toEqual({
+      status: expect.objectContaining({
+        connectionState: 'unavailable',
+        lastSafeError: expect.objectContaining({ code: 'MCP_OAUTH_NEEDS_RECONNECT' }),
+      }),
+    })
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(closes()).toBe(1)
+    expect(created.snapshot().list()).toEqual([])
+    expect(created.tools('remote-server')).toBeUndefined()
+    expect(created.status('remote-server')).toMatchObject({ connectionState: 'unavailable' })
   })
 })

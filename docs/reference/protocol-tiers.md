@@ -177,6 +177,8 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/admin.plan`
 - `_agnes/v1/admin.mcp.oauth.get`
 - `_agnes/v1/admin.mcp.oauth.complete`
+- `_agnes/v1/admin.mcp.oauth.refresh`
+- `_agnes/v1/admin.mcp.oauth.logout`
 - `_agnes/v1/admin.memory`
 - `_agnes/v1/admin.triggers`
 - `_agnes/v1/sessions.migrate`
@@ -268,6 +270,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/mcp.servers.reconnect`
 - `_agnes/v1/mcp.servers.oauth.status`
 - `_agnes/v1/mcp.servers.oauth.status.set`
+- `_agnes/v1/mcp.servers.oauth.signOut`
 
 ### Extension calls and surfaces
 

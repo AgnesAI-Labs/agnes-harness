@@ -161,6 +161,10 @@ function McpDialogScaffold() {
               placeholder="secret://namespace/name"
             />
           </label>
+          <label id="mcp-oauth-port-row" className="form-field" hidden htmlFor="mcp-oauth-port">
+            <span>{t('wizard.oauthPort')}</span>
+            <SettingsInput id="mcp-oauth-port" inputMode="numeric" autoComplete="off" placeholder="8765" />
+          </label>
         </div>
         <label className="form-field" htmlFor="mcp-credential">
           <span>{t('wizard.credential')}</span>

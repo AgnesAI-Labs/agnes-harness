@@ -8,6 +8,7 @@ import {
   type McpOAuthSummary,
   summarizeMcpOAuth,
 } from '../src/mcp-oauth-login.js'
+import { signOutMcpOAuth } from '../src/mcp-oauth-logout.js'
 import type { McpOAuthRecord } from '../src/mcp-oauth-store.js'
 import { type FakeOAuthOptions, type FakeOAuthServer, startFakeOAuthServer } from './helpers/fake-oauth.js'
 import { createMemoryOAuthStore, type MemoryOAuthStore } from './helpers/memory-oauth-store.js'
@@ -284,6 +285,57 @@ describe('MCP OAuth sign-in', () => {
     expect(store.writes(SERVER_ID)).toBe(0)
   })
 
+  it('a sign-out between begin and complete rejects the completion', async () => {
+    const server = await start()
+    const store = createMemoryOAuthStore()
+    const first = started(await begin(server))
+    await complete(server, store, first, await authorize(server, first))
+    const login = started(await begin(server, { summary: summarizeMcpOAuth(await store.read(SERVER_ID)) }))
+    const code = await authorize(server, login)
+
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 1 })
+    const error = await complete(server, store, login, code).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(McpOAuthLoginSuperseded)
+    expect(await store.read(SERVER_ID)).toEqual({
+      version: 2,
+      kind: 'oauth',
+      epoch: 1,
+      rev: 2,
+      requiredScope: [],
+    })
+    expect(
+      server.requests().filter((request) => request.form.grant_type === 'authorization_code'),
+    ).toHaveLength(1)
+  })
+
+  it('a sign-out before a first sign-in completes rejects it; a sign-in begun afterwards completes', async () => {
+    const server = await start()
+    const store = createMemoryOAuthStore()
+    const first = started(await begin(server, { summary: summarizeMcpOAuth(await store.read(SERVER_ID)) }))
+    expect(first.expectedEpoch).toBe(0)
+    const code = await authorize(server, first)
+
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 1 })
+    const error = await complete(server, store, first, code).catch((caught: unknown) => caught)
+
+    expect(error).toBeInstanceOf(McpOAuthLoginSuperseded)
+    expect(await store.read(SERVER_ID)).toEqual({
+      version: 2,
+      kind: 'oauth',
+      epoch: 1,
+      rev: 1,
+      requiredScope: [],
+    })
+    expect(store.writes(SERVER_ID)).toBe(1)
+    expect(server.requests()).toEqual([])
+
+    const again = started(await begin(server, { summary: summarizeMcpOAuth(await store.read(SERVER_ID)) }))
+    expect(again.expectedEpoch).toBe(1)
+    await complete(server, store, again, await authorize(server, again))
+    expect(await record(store)).toMatchObject({ epoch: 1, rev: 2, tokens: { accessToken: 'at-1' } })
+  })
+
   it('begin records the authorization side it used', async () => {
     const server = await start()
     const login = started(await begin(server))
@@ -466,5 +518,80 @@ describe('MCP OAuth sign-in', () => {
       },
     })
     expect(result).toEqual({ pendingClientId: true })
+  })
+})
+
+describe('MCP OAuth sign-out', () => {
+  const signedIn: McpOAuthRecord = {
+    version: 2,
+    kind: 'oauth',
+    epoch: 4,
+    rev: 7,
+    client: { clientId: 'c', clientSecret: 'dcr-secret', redirectUri: REDIRECT },
+    server: {
+      endpoint: 'https://x/mcp',
+      authorizationServer: 'https://x/',
+      tokenEndpoint: 'https://x/token',
+      resource: 'https://x/mcp',
+    },
+    tokens: { accessToken: 'a', refreshToken: 'r', expiresAt: 5, scope: ['read'] },
+    requiredScope: ['write'],
+  }
+
+  it('leaves only the epoch, one higher, and forgets the client, server, tokens and required scope', async () => {
+    const store = createMemoryOAuthStore()
+    store.seed(SERVER_ID, signedIn)
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 5 })
+    expect(await store.read(SERVER_ID)).toEqual({
+      version: 2,
+      kind: 'oauth',
+      epoch: 5,
+      rev: 8,
+      requiredScope: [],
+    })
+    // Signing out again still moves the epoch, so a sign-in started in between is refused too.
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 6 })
+  })
+
+  it('a credential written before this record format becomes a signed-out record', async () => {
+    const store = createMemoryOAuthStore()
+    store.seed(SERVER_ID, { legacy: true })
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 1 })
+    expect(await store.read(SERVER_ID)).toEqual({
+      version: 2,
+      kind: 'oauth',
+      epoch: 1,
+      rev: 1,
+      requiredScope: [],
+    })
+  })
+
+  it('with no credential at all the signed-out record is written at epoch 1', async () => {
+    const store = createMemoryOAuthStore()
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store })).toEqual({ epoch: 1 })
+    expect(await store.read(SERVER_ID)).toEqual({
+      version: 2,
+      kind: 'oauth',
+      epoch: 1,
+      rev: 1,
+      requiredScope: [],
+    })
+  })
+
+  it('a file that cannot be read is replaced only when asked', async () => {
+    const store = createMemoryOAuthStore()
+    store.seedUnreadable(SERVER_ID)
+    await expect(signOutMcpOAuth({ serverId: SERVER_ID, store })).rejects.toThrow()
+    expect(store.writes(SERVER_ID)).toBe(0)
+    expect(await signOutMcpOAuth({ serverId: SERVER_ID, store, replaceUnreadable: true })).toEqual({
+      epoch: 1,
+    })
+    expect(await store.read(SERVER_ID)).toEqual({
+      version: 2,
+      kind: 'oauth',
+      epoch: 1,
+      rev: 1,
+      requiredScope: [],
+    })
   })
 })

@@ -480,6 +480,57 @@ it('oauth secret ref goes into clientSecretRef', async () => {
   })
 })
 
+it('oauth callback port goes into callbackPort and comes back when the server is edited', async () => {
+  byId('mcp-create').click()
+  byId('mcp-method-remote').click()
+  change('mcp-id', 'ported')
+  change('mcp-name', 'Ported MCP')
+  change('mcp-url', 'https://example.com/mcp')
+  expect(byId('mcp-oauth-port-row').hidden).toBe(true)
+  const oauth = byId<HTMLInputElement>('mcp-oauth')
+  oauth.checked = true
+  oauth.dispatchEvent(new Event('change', { bubbles: true }))
+  expect(byId('mcp-oauth-port-row').hidden).toBe(false)
+  change('mcp-oauth-port', '80')
+  expect(byId('mcp-error').textContent).toContain('1024')
+  expect(byId<HTMLInputElement>('mcp-oauth-port').getAttribute('aria-invalid')).toBe('true')
+  change('mcp-oauth-port', '8765')
+  expect(byId('mcp-error').textContent).toBe('')
+  expect(byId<HTMLInputElement>('mcp-oauth-port').getAttribute('aria-invalid')).toBeNull()
+  await submitMcpForm()
+  await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
+  expect(submitted('mcp/create')[0]?.body.definition).toMatchObject({
+    secretBinding: { kind: 'oauth', callbackPort: 8765 },
+  })
+  await vi.waitFor(() => expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(false), {
+    timeout: 5_000,
+  })
+
+  const definition = {
+    serverId: 'fixture',
+    displayName: 'Fixture MCP',
+    transport: { kind: 'http' as const, url: 'https://example.com/mcp' },
+    secretBinding: { kind: 'oauth' as const, staticClientId: 'client-1', callbackPort: 9123 },
+  }
+  current = {
+    ...current,
+    transportKind: 'http',
+    secretBindingKind: 'oauth',
+    authorizationStatus: 'pending',
+    definition,
+  }
+  await resourceMount.sync({ tab: 'mcp' }, { refresh: true })
+  byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
+  const edit = [...byId('resource-detail').querySelectorAll('button')].find(
+    (button) => button.textContent === 'Edit',
+  )
+  edit?.click()
+  expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(true)
+  expect(byId<HTMLInputElement>('mcp-oauth').checked).toBe(true)
+  expect(byId('mcp-oauth-port-row').hidden).toBe(false)
+  expect(byId<HTMLInputElement>('mcp-oauth-port').value).toBe('9123')
+})
+
 it('flags an illegal tool name inline while typing and clears it once fixed', () => {
   byId('mcp-create').click()
   byId('mcp-method-local').click()

@@ -42,6 +42,10 @@ export const resourceDetailLocaleCatalog: LocaleCatalog = {
     'mcp.oauth.error': 'Authorization failed',
     'mcp.oauth.authorize': 'Authorize',
     'mcp.oauth.again': 'Authorize again',
+    'mcp.oauth.leave.title': 'Leave to sign in',
+    'mcp.oauth.leave.text':
+      'After you authorize, the browser will go to {address}, which may not open from here. Use same-port forwarding, or run `agh mcp login {id}` in a terminal and paste the address back.',
+    'mcp.oauth.leave.continue': 'Continue',
     'safe-error': '{code}: {message}',
     'mcp.credentials': 'Credentials: {kind}',
     'mcp.status.show': 'View connection status',
@@ -104,6 +108,10 @@ export const resourceDetailLocaleCatalog: LocaleCatalog = {
     'mcp.oauth.error': '授权未完成',
     'mcp.oauth.authorize': '去授权',
     'mcp.oauth.again': '重新授权',
+    'mcp.oauth.leave.title': '前往登录',
+    'mcp.oauth.leave.text':
+      '授权完成后浏览器会跳到 {address}，从这里可能打不开。请用同端口转发，或在终端运行 `agh mcp login {id}`，把网址粘贴回去。',
+    'mcp.oauth.leave.continue': '继续',
     'safe-error': '{code}：{message}',
     'mcp.credentials': '凭据：{kind}',
     'mcp.status.show': '查看连接状态',

@@ -28,8 +28,8 @@ export class McpOAuthNeedsReconnectError extends Error {
   ) {
     super(
       reason === 'insufficient-scope'
-        ? `MCP server "${serverId}" needs more permissions. Ask the user to sign in to it again from the MCP page in the web UI.`
-        : `MCP server "${serverId}" needs sign-in. Ask the user to sign in to it from the MCP page in the web UI.`,
+        ? `MCP server "${serverId}" needs more permissions. Ask the user to sign in to it again: /mcp login ${serverId} in the TUI, agh mcp login ${serverId} in a terminal, or the MCP page in the web UI.`
+        : `MCP server "${serverId}" needs sign-in. Ask the user to run /mcp login ${serverId} in the TUI or agh mcp login ${serverId} in a terminal, or to sign in from the MCP page in the web UI.`,
       options,
     )
     this.name = 'McpOAuthNeedsReconnectError'

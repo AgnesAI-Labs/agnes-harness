@@ -28,9 +28,12 @@ import type {
 } from '@agnes/protocol/gen/app-server'
 import {
   completeMcpOAuthLogin,
-  McpOAuthLoginEndpointChanged,
-  McpOAuthLoginSuperseded,
+  McpOAuthNeedsReconnectError,
+  type McpOAuthRead,
   type McpOAuthSummary,
+  mcpOAuthFailureReason,
+  refreshMcpOAuth,
+  signOutMcpOAuth,
   summarizeMcpOAuth,
 } from '@agnes/resource-control-runtime'
 import { type CredentialConfiguration, savedCredentialConfigurations } from './credential-references.js'
@@ -89,6 +92,31 @@ export function createAppServerAdmin(options: {
     return {
       serverUrl: new URL(transport.url),
       binding: secretBinding.kind === 'oauth' ? secretBinding : undefined,
+    }
+  }
+  /** A static client ID and, when it has one, its secret read from the credential store. */
+  const staticClientOf = async (
+    binding: { staticClientId?: string; clientSecretRef?: string } | undefined,
+  ): Promise<{ clientId: string; clientSecret?: string } | undefined> => {
+    if (!binding?.staticClientId) return undefined
+    const ref = binding.clientSecretRef
+    const stored = ref ? await credentials.read(ref) : undefined
+    if (ref && stored?.kind !== 'api-key')
+      throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_NOT_FOUND' })
+    return {
+      clientId: binding.staticClientId,
+      ...(stored?.kind === 'api-key' ? { clientSecret: stored.value } : {}),
+    }
+  }
+  const unreadable = (error: unknown) =>
+    error instanceof CredentialStoreError && (error.reason === 'schema' || error.reason === 'invalid-json')
+  /** The stored sign-in, or null when there is none or the file cannot be read. */
+  const readOAuth = async (serverId: string): Promise<McpOAuthRead> => {
+    try {
+      return await oauthStore.read(serverId)
+    } catch (error) {
+      if (unreadable(error)) return null
+      throw error
     }
   }
   const search = createSearchAdmin({
@@ -180,32 +208,13 @@ export function createAppServerAdmin(options: {
      * signed out, so a fresh sign-in can replace it. */
     async getMcpOAuth(input: AdminMcpOAuthGet): Promise<McpOAuthSummary> {
       await oauthServer(input.profile, input.serverId)
-      try {
-        return summarizeMcpOAuth(await oauthStore.read(input.serverId))
-      } catch (error) {
-        if (
-          error instanceof CredentialStoreError &&
-          (error.reason === 'schema' || error.reason === 'invalid-json')
-        )
-          return summarizeMcpOAuth(null)
-        throw error
-      }
+      return summarizeMcpOAuth(await readOAuth(input.serverId))
     },
     /** Exchanges the code here, so a static client secret is read from the credential store and
      * never leaves the daemon. A registered client's secret comes from the caller. */
     async completeMcpOAuth(input: AdminMcpOAuthComplete) {
       const { serverUrl, binding } = await oauthServer(input.profile, input.serverId)
-      let staticClient: { clientId: string; clientSecret?: string } | undefined
-      if (binding?.staticClientId) {
-        const ref = binding.clientSecretRef
-        const stored = ref ? await credentials.read(ref) : undefined
-        if (ref && stored?.kind !== 'api-key')
-          throw rpcError('SEMANTIC_REJECTED', { reason: 'CONFIG_CREDENTIAL_NOT_FOUND' })
-        staticClient = {
-          clientId: binding.staticClientId,
-          ...(stored?.kind === 'api-key' ? { clientSecret: stored.value } : {}),
-        }
-      }
+      const staticClient = await staticClientOf(binding)
       const { profile: _profile, ...params } = input
       try {
         await completeMcpOAuthLogin({
@@ -216,11 +225,45 @@ export function createAppServerAdmin(options: {
           fetchImpl: options.fetchImpl ?? fetch,
         })
       } catch (error) {
-        if (error instanceof McpOAuthLoginSuperseded || error instanceof McpOAuthLoginEndpointChanged)
-          throw rpcError('SEMANTIC_REJECTED', { reason: error.code })
-        throw error
+        throw readableOAuthError(error)
       }
       return {}
+    },
+    /** Signs in again with the stored refresh token, so no browser is needed. Answers `signedIn:
+     * false` without any request when there is no refresh token, or when more scope is needed: a
+     * refresh keeps the granted scope, so only the browser sign-in can ask for it. A refresh the
+     * server refuses, or that finds the server moved, also answers false; other faults are errors. */
+    async refreshMcpOAuth(input: AdminMcpOAuthGet): Promise<{ signedIn: boolean }> {
+      const { serverUrl, binding } = await oauthServer(input.profile, input.serverId)
+      const seen = await readOAuth(input.serverId)
+      if (!seen || 'legacy' in seen || seen.requiredScope.length || !seen.tokens?.refreshToken)
+        return { signedIn: false }
+      const staticClient = await staticClientOf(binding)
+      try {
+        const record = await refreshMcpOAuth({
+          serverId: input.serverId,
+          serverUrl,
+          seen,
+          store: oauthStore,
+          ...(staticClient ? { staticClient } : {}),
+          fetchImpl: options.fetchImpl ?? fetch,
+        })
+        return { signedIn: record.requiredScope.length === 0 }
+      } catch (error) {
+        if (error instanceof McpOAuthNeedsReconnectError) return { signedIn: false }
+        throw readableOAuthError(error)
+      }
+    },
+    /** Writes the signed-out record (`epoch` + 1, no client, server or tokens); revokes nothing at
+     * the authorization server. A credential file that cannot be read is replaced by that record. */
+    async logoutMcpOAuth(input: AdminMcpOAuthGet): Promise<{ epoch: number }> {
+      await oauthServer(input.profile, input.serverId)
+      try {
+        return await signOutMcpOAuth({ serverId: input.serverId, store: oauthStore })
+      } catch (error) {
+        if (!unreadable(error)) throw error
+        return signOutMcpOAuth({ serverId: input.serverId, store: oauthStore, replaceUnreadable: true })
+      }
     },
     async history(input: AdminHistoryParams) {
       try {
@@ -271,3 +314,9 @@ export function createAppServerAdmin(options: {
   }
 }
 export type AppServerAdmin = ReturnType<typeof createAppServerAdmin>
+
+/** A known sign-in failure becomes a refusal with a readable reason; anything else is unchanged. */
+function readableOAuthError(error: unknown): unknown {
+  const reason = mcpOAuthFailureReason(error)
+  return reason ? rpcError('SEMANTIC_REJECTED', { ...reason }) : error
+}

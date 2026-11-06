@@ -21,6 +21,8 @@ type SchemaNode = {
   minLength?: number
   maxLength?: number
   maxItems?: number
+  minimum?: number
+  maximum?: number
   properties?: Record<string, SchemaNode>
   items?: SchemaNode
   $defs?: Record<string, SchemaNode>
@@ -53,7 +55,7 @@ function schemaPattern(path: string): RegExp {
   return new RegExp(source)
 }
 
-function schemaNumber(path: string, limit: 'maxLength' | 'maxItems'): number {
+function schemaNumber(path: string, limit: 'maxLength' | 'maxItems' | 'minimum' | 'maximum'): number {
   const value = schemaNode(path)[limit]
   if (value === undefined) throw new Error(`MCP form schema limit missing: ${path}.${limit}`)
   return value
@@ -79,6 +81,8 @@ export const MCP_FORM_LIMITS = {
   urlMaxLength: schemaNumber('McpHttpTransport.url', 'maxLength'),
   workspaceMaxLength: schemaNumber('McpServerDefinitionInput.workspacePath', 'maxLength'),
   oauthClientIdMaxLength: schemaNumber('McpOAuthSecretBinding.staticClientId', 'maxLength'),
+  oauthCallbackPortMin: schemaNumber('McpOAuthSecretBinding.callbackPort', 'minimum'),
+  oauthCallbackPortMax: schemaNumber('McpOAuthSecretBinding.callbackPort', 'maximum'),
 } as const
 
 /** Shared UI schema validation keeps the existing managed MCP form/confirmation DOM intact. */
@@ -106,6 +110,7 @@ export type McpFormFieldId =
   | 'mcp-token-env'
   | 'mcp-workspace'
   | 'mcp-oauth-secret'
+  | 'mcp-oauth-port'
 
 export type McpFormFieldIssue = Readonly<{
   field: McpFormFieldId
@@ -126,6 +131,8 @@ export type McpFormFieldSnapshot = Readonly<{
   sandboxProfile?: string
   /** OAuth client secret reference; the client ID itself travels in `secretText`. */
   oauthSecretRef?: string
+  /** Fixed port of the OAuth sign-in callback, as typed. */
+  oauthCallbackPort?: string
 }>
 
 const URL_CREDENTIAL_QUERY = /(?:token|secret|password|api[_-]?key|credential)/i
@@ -236,6 +243,18 @@ function oauthSecretIssues(snapshot: McpFormFieldSnapshot, t: LocaleTranslator):
   return []
 }
 
+/** A callback port is a plain whole number in the schema's range. */
+function oauthPortIssues(snapshot: McpFormFieldSnapshot, t: LocaleTranslator): McpFormFieldIssue[] {
+  const text = snapshot.oauthCallbackPort ?? ''
+  if (snapshot.secretKind !== 'oauth' || !text) return []
+  const min = MCP_FORM_LIMITS.oauthCallbackPortMin
+  const max = MCP_FORM_LIMITS.oauthCallbackPortMax
+  const port = /^[1-9][0-9]*$/.test(text) ? Number(text) : Number.NaN
+  return port >= min && port <= max
+    ? []
+    : [{ field: 'mcp-oauth-port', message: t('validation.oauth-port', { min, max }) }]
+}
+
 function toolIssues(toolsText: string, t: LocaleTranslator): McpFormFieldIssue[] {
   const tools = lines(toolsText)
   if (tools.length > MCP_FORM_LIMITS.toolsMaxItems)
@@ -316,6 +335,7 @@ export function mcpFormIssues(
     issues.push({ field: 'mcp-secret', message: t('error.form.secret') })
   else issues.push(...secretIssues(snapshot.secretKind, snapshot.secretText, t))
   issues.push(...oauthSecretIssues(snapshot, t))
+  issues.push(...oauthPortIssues(snapshot, t))
   issues.push(...toolIssues(snapshot.toolsText, t))
   return issues
 }

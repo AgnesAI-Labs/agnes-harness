@@ -316,7 +316,7 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
 
     // 5. Simulate the user consenting in a browser: real /authorize -> real 302 -> real /callback.
     const callbackResponse = await simulateUserConsent(startResult.authorizeUrl)
-    expect(callbackResponse.status).toBe(302)
+    expect(callbackResponse.status).toBe(200)
     expect(remote.authorizeCount()).toBe(1)
 
     // 6. Assert a real credential v2 record landed in the store, with what a later refresh needs.

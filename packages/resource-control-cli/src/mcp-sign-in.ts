@@ -10,6 +10,8 @@ export function mcpNeedsSignIn(server: McpServerDescriptor): boolean {
   return server.authorizationStatus === 'pending' || server.authorizationStatus === 'needs-reconnect'
 }
 
-/** The suffix a server's list line carries when it needs sign-in. */
+/** The suffix a server's list line carries when it needs sign-in, with the ways to sign in. */
 export const mcpSignInMark = (server: McpServerDescriptor): string =>
-  mcpNeedsSignIn(server) ? ' needs sign-in' : ''
+  mcpNeedsSignIn(server)
+    ? ` needs sign-in (agh mcp login ${server.serverId}, /mcp login ${server.serverId} in the TUI, or the web MCP page)`
+    : ''

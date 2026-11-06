@@ -6,6 +6,7 @@ import { CD_DICT, type CdKey } from './locale-cd.js'
 import { DALTONIZED_DICT, type DaltonizedKey } from './locale-daltonized.js'
 import { HANDOFF_DICT, type HandoffKey } from './locale-handoff.js'
 import { HEADS_UP_DICT, type HeadsUpKey } from './locale-heads-up.js'
+import { MCP_LOGIN_DICT, type McpLoginKey } from './locale-mcp-login.js'
 import { MEMORY_DICT, type MemoryKey } from './locale-memory.js'
 import { PROMPT_CLICK_DICT, type PromptClickKey } from './locale-prompt-click.js'
 import { PROVIDER_DICT, type ProviderKey } from './locale-provider.js'
@@ -151,6 +152,7 @@ export type TerminalKey =
   | CdKey
   | DaltonizedKey
   | ProviderKey
+  | McpLoginKey
   | RefineKey
 
 export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
@@ -173,6 +175,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...CD_DICT.en,
     ...DALTONIZED_DICT.en,
     ...PROVIDER_DICT.en,
+    ...MCP_LOGIN_DICT.en,
     'paste.chip': '[Pasted #{n} · {lines} lines]',
     'resume.hint': 'Resume this session: agh --resume {id}',
     'exit.cancelUnconfirmed':
@@ -308,6 +311,7 @@ export const TERMINAL_DICT: Record<Locale, Record<TerminalKey, string>> = {
     ...CD_DICT['zh-CN'],
     ...DALTONIZED_DICT['zh-CN'],
     ...PROVIDER_DICT['zh-CN'],
+    ...MCP_LOGIN_DICT['zh-CN'],
     'paste.chip': '[粘贴 #{n} · {lines} 行]',
     'resume.hint': '恢复此会话：agh --resume {id}',
     'exit.cancelUnconfirmed': '取消未确认，任务可能仍在运行，可用 agh --resume {id} 重新连接查看',

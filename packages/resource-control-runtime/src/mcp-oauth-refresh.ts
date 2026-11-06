@@ -10,7 +10,7 @@ import {
 } from './mcp-oauth-protocol.js'
 import type { McpOAuthNext, McpOAuthRecord, McpOAuthServer, McpOAuthStore } from './mcp-oauth-store.js'
 import { discoverMcpOAuth, type McpOAuthDiscovery } from './oauth-client.js'
-import { withTimeout } from './oauth-http-handler.js'
+import { withTimeout } from './oauth-fetch.js'
 
 const REQUEST_TIMEOUT_MS = 10_000
 

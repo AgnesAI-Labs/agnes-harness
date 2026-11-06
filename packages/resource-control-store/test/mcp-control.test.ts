@@ -496,6 +496,157 @@ describe('MCP durable resource control', () => {
     },
   )
 
+  describe('OAuth sign-out', () => {
+    const oauth = {
+      serverId: 'docs',
+      displayName: 'Docs',
+      transport: { kind: 'http' as const, url: 'https://mcp.example.test/mcp' },
+      secretBinding: { kind: 'oauth' as const },
+    }
+    const needsSignIn = {
+      code: 'MCP_OAUTH_NEEDS_RECONNECT',
+      message: 'MCP server "docs" needs sign-in',
+    }
+    const unavailable = (serverId: string) => ({
+      ...ready(serverId),
+      connectionState: 'unavailable' as const,
+      observedRevision: null,
+      catalogRevision: null,
+      toolCount: 0,
+      lastSafeError: needsSignIn,
+    })
+
+    /** An enabled, trusted, signed-in OAuth server whose adapter records which effects ran. */
+    async function signedInServer(
+      signOut?: (serverId: string) => Promise<{ status: ReturnType<typeof unavailable> }>,
+    ) {
+      directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-sign-out-'))
+      const effects: string[] = []
+      const store = new McpResourceStore(directory, scope, {
+        reconcile: async ({ serverId, enabled }) => {
+          effects.push('reconcile')
+          return {
+            status: enabled
+              ? { ...ready(serverId), observedRevision: revision(oauth) }
+              : { ...ready(serverId), connectionState: 'disabled' as const },
+          }
+        },
+        // A candidate that cannot connect: the store keeps the previous generation.
+        reconnect: async ({ serverId }) => {
+          effects.push('reconnect')
+          return { status: unavailable(serverId), error: needsSignIn }
+        },
+        ...(signOut
+          ? {
+              signOut: async ({ serverId }: { serverId: string }) => {
+                effects.push('signOut')
+                return signOut(serverId)
+              },
+            }
+          : {}),
+        test: async () => ({ toolCount: 1, catalogRevision: 'a'.repeat(64) }),
+        tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
+      })
+      const service = drivenService(store)
+      const command = async (method: string, commandId: string, extra: Record<string, unknown> = {}) => {
+        const receipt = await service.call(
+          method as Parameters<TestService['call']>[0],
+          {
+            profile,
+            serverId: oauth.serverId,
+            expectedRevision: revision(oauth),
+            clientId: 'client',
+            commandId,
+            ...extra,
+          },
+          authority,
+        )
+        return settled(service, receipt.operationId)
+      }
+      const create = await service.call(
+        '_agnes/v1/mcp.servers.create',
+        { profile, definition: oauth, clientId: 'client', commandId: 'create-oauth' },
+        authority,
+      )
+      await settled(service, create.operationId)
+      await command('_agnes/v1/mcp.servers.trust.set', 'trust-oauth', { trust: 'trusted' })
+      await command('_agnes/v1/mcp.servers.enable', 'enable-oauth')
+      const get = () =>
+        service.call(
+          '_agnes/v1/mcp.servers.get',
+          { profile, serverId: oauth.serverId },
+          authority,
+        ) as Promise<unknown>
+      expect(await get()).toMatchObject({ actual: 'ready', authorizationStatus: 'authorized' })
+      effects.length = 0
+      return { service, command, get, effects }
+    }
+
+    it('signOut drops the active generation without a candidate and sets pending', async () => {
+      const { service, command, get, effects } = await signedInServer(async (serverId) => ({
+        status: unavailable(serverId),
+      }))
+      // A reconnect starts a candidate; one that cannot connect leaves the old generation in place.
+      expect(await command('_agnes/v1/mcp.servers.reconnect', 'reconnect-oauth')).toMatchObject({
+        state: 'failed',
+      })
+      expect(await get()).toMatchObject({ actual: 'ready', authorizationStatus: 'authorized' })
+
+      expect(await command('_agnes/v1/mcp.servers.oauth.signOut', 'sign-out-oauth')).toMatchObject({
+        state: 'succeeded',
+      })
+
+      expect(effects).toEqual(['reconnect', 'signOut'])
+      expect(await get()).toMatchObject({
+        actual: 'unavailable',
+        authorizationStatus: 'pending',
+        lastSafeError: needsSignIn,
+      })
+      await expect(
+        service.call('_agnes/v1/mcp.servers.tools.list', { profile, serverId: oauth.serverId }, authority),
+      ).rejects.toMatchObject({ data: { code: 'MCP_CATALOG_UNAVAILABLE' } })
+    })
+
+    it('the sign-in reads pending even when the host cannot drop the connection', async () => {
+      const { command, get, effects } = await signedInServer()
+      expect(await command('_agnes/v1/mcp.servers.oauth.signOut', 'sign-out-oauth')).toMatchObject({
+        state: 'failed',
+      })
+      expect(effects).toEqual([])
+      expect(await get()).toMatchObject({ authorizationStatus: 'pending' })
+    })
+
+    it('refuses to sign out a server that does not sign in with OAuth', async () => {
+      directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-sign-out-'))
+      const store = new McpResourceStore(directory, scope, {
+        reconcile: async ({ serverId }) => ({ status: ready(serverId) }),
+        reconnect: async ({ serverId }) => ({ status: ready(serverId) }),
+        test: async () => ({ toolCount: 1, catalogRevision: 'a'.repeat(64) }),
+        tools: async ({ serverId }) => ({ serverId, catalogRevision: 'a'.repeat(64), items: [] }),
+      })
+      const service = drivenService(store)
+      const create = await service.call(
+        '_agnes/v1/mcp.servers.create',
+        { profile, definition, clientId: 'client', commandId: 'create-plain' },
+        authority,
+      )
+      await settled(service, create.operationId)
+      await expect(
+        service.call(
+          '_agnes/v1/mcp.servers.oauth.signOut',
+          {
+            profile,
+            serverId: definition.serverId,
+            expectedRevision: revision(definition),
+            clientId: 'client',
+            commandId: 'sign-out-plain',
+          },
+          authority,
+        ),
+      ).rejects.toMatchObject({ data: { code: 'MCP_OAUTH_NOT_CONFIGURED' } })
+    })
+  })
+
   it('does not delegate a catalog read after the definition has been removed', async () => {
     directory = await mkdtemp(join(tmpdir(), 'agnes-mcp-remove-catalog-'))
     const tools = vi.fn(async ({ serverId }: { serverId: string }) => ({

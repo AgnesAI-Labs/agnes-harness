@@ -95,14 +95,15 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
   /** Forces a server's row to remount and reconnect right now (design §3.3), through the same
    *  run-admission barrier a session turn's own reload uses - a turn in flight is let to finish
    *  before rows are replaced. `resourceMcpReconnect` additionally bumps a worker-local epoch so a
-   *  reconnect remounts even when the daemon's own revision for this server is unchanged. */
-  const applyRow = async (serverId: string, reconnect: boolean, signal: AbortSignal): Promise<McpStatus> => {
+   *  reconnect remounts even when the daemon's own revision for this server is unchanged;
+   *  `resourceMcpSignOut` instead unmounts the row until the server is signed in again. */
+  const applyRow = async (
+    serverId: string,
+    method: 'resourceMcpApply' | 'resourceMcpReconnect' | 'resourceMcpSignOut',
+    signal: AbortSignal,
+  ): Promise<McpStatus> => {
     const link = await sharedWorker(signal)
-    const raw = await link.command(
-      reconnect ? 'resourceMcpReconnect' : 'resourceMcpApply',
-      { serverId },
-      { timeoutMs: 31_000 },
-    )
+    const raw = await link.command(method, { serverId }, { timeoutMs: 31_000 })
     if (!validateResourceControlData('McpStatus', raw).ok)
       throw new Error('invalid resource MCP status reply')
     return raw as McpStatus
@@ -345,7 +346,7 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
         if (profile !== o.profile.name) throw new Error('resource profile mismatch')
         // The daemon's own snapshot write (this profile's write-then-drive sequencing) already
         // landed before this runs; the shared worker re-reads it fresh, no definition to hand it.
-        const status = await applyRow(serverId, false, signal)
+        const status = await applyRow(serverId, 'resourceMcpApply', signal)
         if (enabled && status.connectionState !== 'ready')
           return {
             status,
@@ -358,7 +359,7 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
       },
       reconnect: async ({ profile, serverId, signal }) => {
         if (profile !== o.profile.name) throw new Error('resource profile mismatch')
-        const status = await applyRow(serverId, true, signal)
+        const status = await applyRow(serverId, 'resourceMcpReconnect', signal)
         if (status.connectionState !== 'ready')
           return {
             status,
@@ -368,6 +369,12 @@ export function installResourceServiceAdapters(input: ResourceAdapterOptions): {
             },
           }
         return { status }
+      },
+      // No candidate: the worker drops the row, and the status it leaves (needs sign-in) is the
+      // outcome, not a failure.
+      signOut: async ({ profile, serverId, signal }) => {
+        if (profile !== o.profile.name) throw new Error('resource profile mismatch')
+        return { status: await applyRow(serverId, 'resourceMcpSignOut', signal) }
       },
       test: async ({ profile, serverId, definition, signal }) => {
         if (profile !== o.profile.name) throw new Error('resource profile mismatch')

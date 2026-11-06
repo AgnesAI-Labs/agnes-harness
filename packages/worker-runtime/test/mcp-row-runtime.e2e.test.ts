@@ -441,6 +441,61 @@ describe('createMcpRowRuntime against a real Host', () => {
     await vi.waitFor(() => expect(connects.filter((id) => id === 'alpha')).toHaveLength(3))
   })
 
+  it('signOut() drops a server on the next apply() and starts nothing for it until reconnect()', async () => {
+    const host = await testHost()
+    const { opener, connects, closes } = countingOpener()
+    const reported: string[] = []
+    const runtime = createMcpRowRuntime({
+      host,
+      opener,
+      onStatus: (serverId, status) => reported.push(`${serverId}:${status.connectionState}`),
+    })
+    await runtime.apply([entry('alpha'), entry('beta')])
+    await vi.waitFor(() => expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeDefined())
+    reported.length = 0
+
+    runtime.signOut('alpha')
+    const result = await runtime.apply([entry('alpha'), entry('beta')])
+
+    await vi.waitFor(() => expect(closes).toEqual(['alpha']))
+    expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeUndefined()
+    expect(tool(host, `${BETA_PREFIX}ping`)).toBeDefined()
+    const signedOut = {
+      connectionState: 'unavailable',
+      catalogRevision: null,
+      lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT' },
+    }
+    expect(result.statuses.get('alpha')).toMatchObject(signedOut)
+    expect(runtime.tools('alpha', 'r1')).toBeUndefined()
+    // The daemon records this status from the sign-out reply itself, as a sign-out, not as a
+    // sign-in that stopped working.
+    expect(reported.filter((line) => line.startsWith('alpha:'))).toEqual([])
+
+    // Later applies keep it down; a new sign-in reconnects it.
+    await runtime.apply([entry('alpha'), entry('beta')])
+    expect(runtime.status('alpha')).toMatchObject(signedOut)
+    runtime.reconnect('alpha')
+    const back = await runtime.apply([entry('alpha'), entry('beta')])
+    expect(back.statuses.get('alpha')).toMatchObject({ connectionState: 'ready' })
+    expect(connects.filter((id) => id === 'alpha')).toHaveLength(2)
+    expect(connects.filter((id) => id === 'beta')).toHaveLength(1)
+  })
+
+  it('a signed-out server comes back when its definition changes', async () => {
+    const host = await testHost()
+    const { opener, connects } = countingOpener()
+    const runtime = createMcpRowRuntime({ host, opener })
+    await runtime.apply([entry('alpha', 'r1')])
+    runtime.signOut('alpha')
+    await runtime.apply([entry('alpha', 'r1')])
+    expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeUndefined()
+
+    const edited = await runtime.apply([entry('alpha', 'r2')])
+
+    expect(edited.statuses.get('alpha')).toMatchObject({ connectionState: 'ready', observedRevision: 'r2' })
+    expect(connects).toEqual(['alpha', 'alpha'])
+  })
+
   it('an identical snapshot re-applied touches nothing', async () => {
     const host = await testHost()
     const { opener, connects, closes } = countingOpener()
