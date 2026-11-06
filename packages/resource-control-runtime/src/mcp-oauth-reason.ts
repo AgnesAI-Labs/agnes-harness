@@ -1,6 +1,7 @@
 import { InvalidGrantError } from '@modelcontextprotocol/sdk/server/auth/errors.js'
 import {
   McpOAuthDiscoveryFailed,
+  McpOAuthEndpointNotAllowed,
   McpOAuthLoginEndpointChanged,
   McpOAuthLoginSuperseded,
 } from './mcp-oauth-login.js'
@@ -15,6 +16,7 @@ export type McpOAuthFailureReason = Readonly<
         | 'MCP_OAUTH_DISCOVERY_FAILED'
         | 'MCP_OAUTH_GRANT_REJECTED'
     }
+  | { reason: 'MCP_OAUTH_ENDPOINT_NOT_ALLOWED'; endpoint: string }
   | { reason: 'MCP_OAUTH_CLIENT_AUTH_UNSUPPORTED'; method: string }
 >
 
@@ -27,6 +29,8 @@ export function mcpOAuthFailureReason(error: unknown): McpOAuthFailureReason | u
   if (error instanceof McpOAuthLoginSuperseded || error instanceof McpOAuthLoginEndpointChanged)
     return { reason: error.code }
   if (error instanceof McpOAuthDiscoveryFailed) return { reason: 'MCP_OAUTH_DISCOVERY_FAILED' }
+  if (error instanceof McpOAuthEndpointNotAllowed)
+    return { reason: 'MCP_OAUTH_ENDPOINT_NOT_ALLOWED', endpoint: error.endpoint }
   if (error instanceof McpOAuthClientAuthUnsupported)
     return { reason: 'MCP_OAUTH_CLIENT_AUTH_UNSUPPORTED', method: error.method }
   if (error instanceof InvalidGrantError) return { reason: 'MCP_OAUTH_GRANT_REJECTED' }

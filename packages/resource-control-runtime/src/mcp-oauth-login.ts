@@ -78,6 +78,26 @@ export class McpOAuthDiscoveryFailed extends Error {
   }
 }
 
+/** The server named an authorization server address that is not allowed (it is not https). */
+export class McpOAuthEndpointNotAllowed extends Error {
+  readonly code = 'MCP_OAUTH_ENDPOINT_NOT_ALLOWED'
+  /** Scheme, host and port only: the rest of the address could carry credentials. */
+  readonly endpoint: string
+  constructor(address: string) {
+    super('An OAuth address is not allowed; OAuth addresses must use https')
+    this.endpoint = originOf(address)
+    this.name = 'McpOAuthEndpointNotAllowed'
+  }
+}
+
+function originOf(address: string): string {
+  try {
+    return new URL(address).origin
+  } catch {
+    return 'an invalid address'
+  }
+}
+
 export function summarizeMcpOAuth(read: McpOAuthRead): McpOAuthSummary {
   if (!read || 'legacy' in read)
     return { epoch: 0, signedIn: false, refreshable: false, scope: [], requiredScope: [] }
@@ -126,8 +146,11 @@ export async function beginMcpOAuthLogin(input: {
       fetchImpl,
     )
     if ('pendingClientId' in registered) {
-      if (!summary.client || summary.client.redirectUri !== input.redirectUri)
+      if (!summary.client || summary.client.redirectUri !== input.redirectUri) {
+        // Asking for a client ID would blame the server's registration; say what was really refused.
+        if (discovery.refusedEndpoint) throw new McpOAuthEndpointNotAllowed(discovery.refusedEndpoint)
         return { pendingClientId: true }
+      }
       client = { clientId: summary.client.clientId }
     } else {
       client = {

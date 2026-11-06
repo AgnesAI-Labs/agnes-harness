@@ -4,6 +4,7 @@ import {
   beginMcpOAuthLogin,
   guardedOAuthFetch,
   McpOAuthDiscoveryFailed,
+  McpOAuthEndpointNotAllowed,
   type McpOAuthSummary,
 } from '@agnes/resource-control-runtime'
 import type { NodeClient } from '@agnes/sdk'
@@ -55,7 +56,10 @@ export function mcpLoginFailureText(serverId: string, error: unknown): string {
 
 function failureText(serverId: string, error: unknown): string {
   if (error instanceof McpOAuthDiscoveryFailed) return discoveryFailed(serverId)
-  const data = (error as { data?: { reason?: unknown; code?: unknown; method?: unknown } } | null)?.data
+  if (error instanceof McpOAuthEndpointNotAllowed) return endpointNotAllowed(serverId, error.endpoint)
+  const data = (
+    error as { data?: { reason?: unknown; code?: unknown; method?: unknown; endpoint?: unknown } } | null
+  )?.data
   switch (data?.reason ?? data?.code) {
     case 'MCP_OAUTH_LOGIN_SUPERSEDED':
       return `"${serverId}" was signed out during sign-in; run the command again`
@@ -67,6 +71,8 @@ function failureText(serverId: string, error: unknown): string {
       return 'the authorization server refused the sign-in code (it may have expired or been used); run the command again'
     case 'MCP_OAUTH_CLIENT_AUTH_UNSUPPORTED':
       return `the authorization server of "${serverId}" requires a client authentication method AGH does not support: ${String(data?.method ?? 'unknown')}`
+    case 'MCP_OAUTH_ENDPOINT_NOT_ALLOWED':
+      return endpointNotAllowed(serverId, String(data?.endpoint ?? ''))
     case 'MCP_OAUTH_SERVER_UNAVAILABLE':
       return `"${serverId}" is not an HTTP server that can sign in with OAuth`
     case 'CONFIG_CREDENTIAL_NOT_FOUND':
@@ -74,6 +80,9 @@ function failureText(serverId: string, error: unknown): string {
   }
   return error instanceof Error ? error.message : String(error)
 }
+
+const endpointNotAllowed = (serverId: string, endpoint: string) =>
+  `the OAuth address ${endpoint} of "${serverId}" is not allowed: OAuth addresses must use https`
 
 const discoveryFailed = (serverId: string) =>
   `the OAuth settings of "${serverId}" could not be read from the server; check its address and try again`

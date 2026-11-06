@@ -273,21 +273,23 @@ describe('oauth-http-handler', () => {
     })
 
     it('shows a client-ID-required page when no client_id can be resolved', async () => {
-      const fixture = await startFixtureAuthServer()
+      const fake = await startFakeOAuthServer({ prm: { resource: '/mcp' }, noRegistration: true })
+      cleanup.push(() => fake.close())
       const handler = createOAuthHttpHandler({
         secret: SECRET,
         login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
-        // No staticClientId, and the fixture's metadata has no registration_endpoint - DCR is
-        // skipped, not attempted, so registerOAuthClient must fall back to pendingClientId.
-        resolveServer: async () => ({ serverUrl: fixture.url }),
+        // No staticClientId, and the metadata has no registration_endpoint - DCR is skipped, not
+        // attempted, so the sign-in must fall back to pendingClientId.
+        resolveServer: async () => ({ serverUrl: fake.serverUrl }),
+        fetchImpl: fake.fetchImpl,
       })
       const served = await serveHandler(handler)
 
       const response = await fetch(`${served.url}/oauth/srv-1/start`, { redirect: 'manual' })
 
       await expectResultPage(response, 400, 'needs a client ID')
-      expect(fixture.authorizeRequests).toEqual([])
+      expect(fake.paths()).not.toContain('/authorize')
     })
 
     it('with Accept: application/json returns the authorize URL and the callback address instead of redirecting', async () => {
@@ -319,13 +321,15 @@ describe('oauth-http-handler', () => {
       ['an unknown server', 404, 'mcp_server_not_found'],
       ['a server without a client ID', 400, 'oauth_client_id_required'],
     ] as const)('with Accept: application/json answers %s as {error}', async (name, status, error) => {
-      const fixture = await startFixtureAuthServer()
+      const fake = await startFakeOAuthServer({ prm: { resource: '/mcp' }, noRegistration: true })
+      cleanup.push(() => fake.close())
       const handler = createOAuthHttpHandler({
         secret: SECRET,
         login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
         resolveServer: async (serverId) =>
-          name === 'an unknown server' || serverId !== 'srv-1' ? undefined : { serverUrl: fixture.url },
+          name === 'an unknown server' || serverId !== 'srv-1' ? undefined : { serverUrl: fake.serverUrl },
+        fetchImpl: fake.fetchImpl,
       })
       const served = await serveHandler(handler)
 
@@ -568,20 +572,22 @@ describe('oauth-http-handler', () => {
     })
 
     it("returns {pendingClientId: true} when auto-registration fails, exactly like the HTTP route's 409", async () => {
-      const fixture = await startFixtureAuthServer()
+      const fake = await startFakeOAuthServer({ prm: { resource: '/mcp' }, noRegistration: true })
+      cleanup.push(() => fake.close())
       const handler = createOAuthHttpHandler({
         secret: SECRET,
         login: fakeLogin(),
         baseUrl: new URL('http://127.0.0.1:4177'),
-        // No staticClientId, and the fixture's metadata has no registration_endpoint - DCR is
-        // skipped, matching the HTTP route's own equivalent test.
-        resolveServer: async () => ({ serverUrl: fixture.url }),
+        // No staticClientId, and the metadata has no registration_endpoint - DCR is skipped,
+        // matching the HTTP route's own equivalent test.
+        resolveServer: async () => ({ serverUrl: fake.serverUrl }),
+        fetchImpl: fake.fetchImpl,
       })
 
       const result = await handler.startAuthorization('srv-1')
 
       expect(result).toEqual({ pendingClientId: true })
-      expect(fixture.authorizeRequests).toEqual([])
+      expect(fake.paths()).not.toContain('/authorize')
     })
 
     // Load-bearing proof for the whole "shared logic, not duplicated" design: an authorizeUrl minted

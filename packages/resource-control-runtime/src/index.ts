@@ -9,6 +9,7 @@ export {
   completeMcpOAuthLogin,
   type McpOAuthCompleteParams,
   McpOAuthDiscoveryFailed,
+  McpOAuthEndpointNotAllowed,
   type McpOAuthLoginAuthorization,
   McpOAuthLoginEndpointChanged,
   type McpOAuthLoginStart,

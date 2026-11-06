@@ -1,4 +1,5 @@
 import { connect, createServer } from 'node:net'
+import { McpOAuthEndpointNotAllowed } from '@agnes/resource-control-runtime'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { McpLoginPortBusy } from '../../src/mcp-login/loopback.js'
 import { McpLoginRefused } from '../../src/mcp-login/paste.js'
@@ -282,10 +283,20 @@ describe('terminal MCP sign-in', () => {
     expect(t.daemon.names()).not.toContain('mcp.servers.reconnect')
   })
 
+  it('an address the sign-in refused locally reads as a sentence naming it', () => {
+    expect(mcpLoginFailureText('docs', new McpOAuthEndpointNotAllowed('http://localhost:3911/token'))).toBe(
+      'the OAuth address http://localhost:3911 of "docs" is not allowed: OAuth addresses must use https',
+    )
+  })
+
   it.each([
     [{ reason: 'MCP_OAUTH_LOGIN_ENDPOINT_CHANGED' }, /OAuth settings of "docs" changed during sign-in/],
     [{ reason: 'MCP_OAUTH_DISCOVERY_FAILED' }, /OAuth settings of "docs" could not be read/],
     [{ reason: 'MCP_OAUTH_GRANT_REJECTED' }, /refused the sign-in code/],
+    [
+      { reason: 'MCP_OAUTH_ENDPOINT_NOT_ALLOWED', endpoint: 'http://localhost:3911' },
+      /address http:\/\/localhost:3911 of "docs" is not allowed: OAuth addresses must use https/,
+    ],
     [
       { reason: 'MCP_OAUTH_CLIENT_AUTH_UNSUPPORTED', method: 'private_key_jwt' },
       /does not support: private_key_jwt/,
