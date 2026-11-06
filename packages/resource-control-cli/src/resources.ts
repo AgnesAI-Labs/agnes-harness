@@ -2,11 +2,15 @@ import { randomUUID } from 'node:crypto'
 import type { McpServerDefinitionInput, ResourceDescriptor, ResourceOperation } from '@agnes/protocol'
 import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import type { NodeClient } from '@agnes/sdk'
+import {
+  type McpSecretFlags,
+  ResourceUsageError,
+  remoteSecretBinding,
+  stdioSecretBinding,
+} from './mcp-secret-binding.js'
 
-/** Resource parser failures remain typed without importing the outer CLI command layer. */
-export class ResourceUsageError extends Error {
-  override readonly name = 'UsageError'
-}
+export { ResourceUsageError }
+
 const UsageError = ResourceUsageError
 
 /** A resource operation reached a safe terminal failure; callers must not render a stack trace. */
@@ -112,9 +116,13 @@ const VALUE_FLAGS = new Set([
   '--secret-env',
   '--bearer-ref',
   '--header-ref',
+  '--oauth-client-id',
+  '--oauth-client-secret-ref',
   '--allow-tool',
   '--workspace-id',
 ])
+/** Flags that take no value. */
+const BARE_FLAGS = new Set(['--yes', '--oauth'])
 const FORBIDDEN_SECRET_FLAGS = new Set([
   '--env',
   '--token',
@@ -132,7 +140,7 @@ function parse(argv: readonly string[]): Parsed {
     if (FORBIDDEN_SECRET_FLAGS.has(value))
       throw new UsageError(`${value} is not accepted; use a secret:// reference flag instead`)
     if (value.startsWith('-')) {
-      if (value === '--yes') {
+      if (BARE_FLAGS.has(value)) {
         flags.set(value, ['true'])
         continue
       }
@@ -291,11 +299,6 @@ async function waitForOperation(
   throw new ResourceOperationTimeout(receipt.operationId)
 }
 
-function secretRef(value: string, flag: string): string {
-  if (!/^secret:\/\/[a-z0-9-]+\/[a-z0-9._-]+$/.test(value))
-    throw new UsageError(`${flag} must use secret://<id>; raw secret values are rejected`)
-  return value
-}
 function buildDefinition(parsed: Parsed, serverId: string): McpServerDefinitionInput {
   const stdio = one(parsed, '--stdio')
   const http = one(parsed, '--http')
@@ -320,25 +323,17 @@ function buildDefinition(parsed: Parsed, serverId: string): McpServerDefinitionI
     one(parsed, '--name'),
     'agh mcp add <serverId> --name <displayName> (--stdio <executable> | --http <url> | --sse <url>)',
   )
-  const secretEnv = many(parsed, '--secret-env')
-  const bearer = one(parsed, '--bearer-ref')
-  const header = one(parsed, '--header-ref')
+  const secrets: McpSecretFlags = {
+    secretEnv: many(parsed, '--secret-env'),
+    bearer: one(parsed, '--bearer-ref'),
+    header: one(parsed, '--header-ref'),
+    oauth: parsed.flags.has('--oauth'),
+    oauthClientId: one(parsed, '--oauth-client-id'),
+    oauthClientSecretRef: one(parsed, '--oauth-client-secret-ref'),
+  }
   for (const tool of many(parsed, '--allow-tool')) valid(tool, TOOL, 'tool allowlist entry')
   if (stdio) {
-    if (bearer || header) throw new UsageError('stdio only accepts --secret-env NAME=secret://<id>')
-    const env: Record<string, string> = {}
-    for (const item of secretEnv) {
-      const at = item.indexOf('=')
-      const name = item.slice(0, at)
-      const value = item.slice(at + 1)
-      if (
-        at < 1 ||
-        !/^[A-Z][A-Z0-9_]{0,63}$/.test(name) ||
-        ['PATH', 'HOME', 'SHELL', 'NODE_OPTIONS', 'LD_PRELOAD', 'DYLD_INSERT_LIBRARIES'].includes(name)
-      )
-        throw new UsageError('--secret-env name must be a permitted uppercase environment name')
-      env[name] = secretRef(value, '--secret-env')
-    }
+    const secretBinding = stdioSecretBinding(secrets)
     const args = [...many(parsed, '--arg')]
     if (args.some((arg) => /^(?:-c|\/c)$/i.test(arg)))
       throw new UsageError('--arg may not use a shell command switch')
@@ -350,29 +345,13 @@ function buildDefinition(parsed: Parsed, serverId: string): McpServerDefinitionI
       ...(sandboxProfile
         ? { sandboxProfile: sandboxProfile as 'strict' | 'workspace-write' | 'network' | 'off-with-warning' }
         : {}),
-      secretBinding: secretEnv.length ? { kind: 'stdio-env', env } : { kind: 'none' },
+      secretBinding,
       ...(many(parsed, '--allow-tool').length
         ? { toolPolicy: { allow: [...many(parsed, '--allow-tool')] } }
         : {}),
     }
   }
-  if (secretEnv.length || (bearer && header))
-    throw new UsageError(
-      'HTTP/SSE accepts one of --bearer-ref, --header-ref x-api-key|x-api-token=secret://<id>, or no credential',
-    )
-  let secretBinding: McpServerDefinitionInput['secretBinding'] = { kind: 'none' }
-  if (bearer) secretBinding = { kind: 'http-bearer', credentialRef: secretRef(bearer, '--bearer-ref') }
-  if (header) {
-    const at = header.indexOf('=')
-    const headerName = header.slice(0, at)
-    if ((headerName !== 'x-api-key' && headerName !== 'x-api-token') || at < 1)
-      throw new UsageError('--header-ref must be x-api-key=secret://<id> or x-api-token=secret://<id>')
-    secretBinding = {
-      kind: 'http-header',
-      headerName,
-      credentialRef: secretRef(header.slice(at + 1), '--header-ref'),
-    }
-  }
+  const secretBinding = remoteSecretBinding(secrets)
   if (http) {
     return {
       serverId,
@@ -718,6 +697,9 @@ export async function runResourceCommand(
           '--secret-env',
           '--bearer-ref',
           '--header-ref',
+          '--oauth',
+          '--oauth-client-id',
+          '--oauth-client-secret-ref',
           '--allow-tool',
         ],
         'agh mcp add <serverId> ...',
@@ -785,6 +767,9 @@ export async function runResourceCommand(
           '--secret-env',
           '--bearer-ref',
           '--header-ref',
+          '--oauth',
+          '--oauth-client-id',
+          '--oauth-client-secret-ref',
           '--allow-tool',
         ],
         'agh mcp update <serverId> ...',

@@ -346,6 +346,137 @@ describe('resource CLI argument boundary', () => {
   )
 })
 
+describe('MCP credential flags', () => {
+  async function added(args: string[]): Promise<unknown> {
+    let definition: unknown
+    const client = {
+      clientId: async () => 'client',
+      mcp: {
+        servers: {
+          create: async (params: unknown) => {
+            definition = (params as { definition: unknown }).definition
+            return { operationId: 'op-add', state: 'received' as const }
+          },
+        },
+      },
+      resources: {
+        operation: {
+          get: async () => ({
+            operationId: 'op-add',
+            kind: 'mcp.reconcile',
+            state: 'succeeded' as const,
+            profile: 'local-dev',
+            target: 'mcp/example',
+            revision: 'a'.repeat(64),
+            createdAt: '2026-09-18T00:00:00.000Z',
+            updatedAt: '2026-09-18T00:00:01.000Z',
+            progress: 100,
+          }),
+        },
+      },
+    }
+    await runResourceCommand('mcp', ['add', 'example', '--name', 'Example', ...args], client as never, {
+      write: () => undefined,
+      confirm: async () => true,
+    })
+    return definition
+  }
+  const usage = (args: string[]) =>
+    runResourceCommand('mcp', ['add', 'example', '--name', 'Example', ...args], {} as never, {
+      write: () => undefined,
+    })
+
+  it('mcp add --bearer-ref and --header-ref build their bindings', async () => {
+    expect(
+      await added(['--http', 'https://example.com/mcp', '--bearer-ref', 'secret://mcp/token']),
+    ).toMatchObject({
+      secretBinding: { kind: 'http-bearer', credentialRef: 'secret://mcp/token' },
+    })
+    expect(
+      await added(['--sse', 'https://example.com/sse', '--header-ref', 'x-api-key=secret://mcp/key']),
+    ).toMatchObject({
+      secretBinding: { kind: 'http-header', headerName: 'x-api-key', credentialRef: 'secret://mcp/key' },
+    })
+    await expect(usage(['--http', 'https://example.com/mcp', '--bearer-ref', 'raw-token'])).rejects.toThrow(
+      'secret://',
+    )
+    await expect(
+      usage(['--http', 'https://example.com/mcp', '--header-ref', 'authorization=secret://mcp/key']),
+    ).rejects.toThrow('--header-ref must be')
+    await expect(
+      usage([
+        '--http',
+        'https://example.com/mcp',
+        '--bearer-ref',
+        'secret://mcp/token',
+        '--header-ref',
+        'x-api-key=secret://mcp/key',
+      ]),
+    ).rejects.toThrow('HTTP/SSE accepts one of')
+    await expect(usage(['--stdio', 'example', '--bearer-ref', 'secret://mcp/token'])).rejects.toThrow(
+      'stdio only accepts',
+    )
+  })
+
+  it('mcp add --oauth --oauth-client-id c --oauth-client-secret-ref secret://x/y builds the oauth binding', async () => {
+    expect(
+      await added([
+        '--http',
+        'https://example.com/mcp',
+        '--oauth',
+        '--oauth-client-id',
+        'c',
+        '--oauth-client-secret-ref',
+        'secret://x/y',
+      ]),
+    ).toMatchObject({
+      secretBinding: { kind: 'oauth', staticClientId: 'c', clientSecretRef: 'secret://x/y' },
+    })
+    expect(await added(['--http', 'https://example.com/mcp', '--oauth'])).toMatchObject({
+      secretBinding: { kind: 'oauth' },
+    })
+    expect(await added(['--http', 'https://example.com/mcp', '--oauth-client-id', 'c'])).toMatchObject({
+      secretBinding: { kind: 'oauth', staticClientId: 'c' },
+    })
+  })
+
+  it('--oauth-client-secret-ref without --oauth-client-id is a usage error', async () => {
+    await expect(
+      usage(['--http', 'https://example.com/mcp', '--oauth', '--oauth-client-secret-ref', 'secret://x/y']),
+    ).rejects.toThrow('--oauth-client-secret-ref needs --oauth-client-id')
+    await expect(
+      usage([
+        '--http',
+        'https://example.com/mcp',
+        '--oauth-client-id',
+        'c',
+        '--oauth-client-secret-ref',
+        'raw',
+      ]),
+    ).rejects.toThrow('secret://')
+  })
+
+  it('--oauth with --bearer-ref is a usage error', async () => {
+    await expect(
+      usage(['--http', 'https://example.com/mcp', '--oauth', '--bearer-ref', 'secret://mcp/token']),
+    ).rejects.toThrow('OAuth flags cannot be combined with --bearer-ref or --header-ref')
+    await expect(
+      usage([
+        '--http',
+        'https://example.com/mcp',
+        '--oauth-client-id',
+        'c',
+        '--header-ref',
+        'x-api-key=secret://m/k',
+      ]),
+    ).rejects.toThrow('OAuth flags cannot be combined with --bearer-ref or --header-ref')
+    await expect(usage(['--stdio', 'example', '--oauth'])).rejects.toThrow(
+      'OAuth flags need an HTTP or SSE server',
+    )
+    await expect(usage(['--http', 'https://example.com/mcp', '--oauth', 'yes'])).rejects.toThrow()
+  })
+})
+
 describe('resource terminal output ownership', () => {
   it('keeps a cancelled operation terminal and renders its safe result once', async () => {
     let output = ''
