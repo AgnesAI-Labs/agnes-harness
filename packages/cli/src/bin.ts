@@ -385,6 +385,16 @@ export async function main(argv: string[], io: MainIO, boot: Partial<LocalBootDe
       }
     }
     if (p.command === 'packages') return await (await branches()).runPackagesBranch(p, branchContext)
+    if (p.command === 'mcp' && (p.rest[0] === 'login' || p.rest[0] === 'logout'))
+      return await (await import('./mcp-login/command.js')).runMcpLoginCommand({
+        action: p.rest[0],
+        args: p.rest.slice(1),
+        io,
+        boot: (profile) =>
+          bootDefault({ ...p, ...(profile ? { profile } : {}) }, deps, {
+            useEmbedded: Object.keys(boot).length > 0,
+          }),
+      })
     if (
       (p.command === 'resources' || p.command === 'skills' || p.command === 'mcp') &&
       !(p.command === 'mcp' && p.rest[0] === 'serve')

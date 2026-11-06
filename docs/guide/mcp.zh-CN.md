@@ -136,7 +136,9 @@ stdio 使用 `--stdio EXECUTABLE` 与重复的 `--arg VALUE`；不要把完整 s
 
 凭据使用已有 secret 引用：`--secret-env NAME=secret://namespace/name`（stdio）、`--bearer-ref secret://namespace/name` 或 `--header-ref x-api-key=secret://namespace/name`（HTTP/SSE）。不把真实密钥放在命令行、截图或文档中。`--allow-tool TOOL_NAME` 可以重复指定允许的工具。
 
-用 OAuth 登录的 HTTP/SSE 服务加 `--oauth`。已经有这个服务的客户端 ID 时加 `--oauth-client-id ID`；这个客户端还有密钥时，先把密钥存成凭据，再加 `--oauth-client-secret-ref secret://namespace/name`。密钥引用必须和 `--oauth-client-id` 一起用，OAuth 参数不能和 `--bearer-ref`、`--header-ref` 一起用。客户端登记的回调地址带固定端口时，加 `--oauth-callback-port N`（1024 到 65535，和 `--oauth` 或 `--oauth-client-id` 一起用）：本机登录回调 `http://localhost:N/callback` 就只用这个端口，端口被占时报错、不换端口；不加时随机选一个空闲端口。在网页 MCP 页登录时仍用网页自己的地址。网页向导的 OAuth 部分有同样三个可选项，客户端密钥填 `secret://` 引用，不填密钥本身。客户端密钥只在守护进程完成登录时读取，不出现在服务定义、操作记录和日志里。保存后在网页 MCP 页打开这个服务，点「去授权」登录。
+用 OAuth 登录的 HTTP/SSE 服务加 `--oauth`。已经有这个服务的客户端 ID 时加 `--oauth-client-id ID`；这个客户端还有密钥时，先把密钥存成凭据，再加 `--oauth-client-secret-ref secret://namespace/name`。密钥引用必须和 `--oauth-client-id` 一起用，OAuth 参数不能和 `--bearer-ref`、`--header-ref` 一起用。客户端登记的回调地址带固定端口时，加 `--oauth-callback-port N`（1024 到 65535，和 `--oauth` 或 `--oauth-client-id` 一起用）：本机登录回调 `http://localhost:N/callback` 就只用这个端口，端口被占时报错、不换端口；不加时随机选一个空闲端口。在网页 MCP 页登录时仍用网页自己的地址。网页向导的 OAuth 部分有同样三个可选项，客户端密钥填 `secret://` 引用，不填密钥本身。客户端密钥只在守护进程完成登录时读取，不出现在服务定义、操作记录和日志里。保存后用 `agh mcp login ID` 登录，或在网页 MCP 页打开这个服务，点「去授权」登录。
+
+**在终端登录：** `agh mcp login ID [--profile NAME]` 适用于使用 OAuth、或还没设凭据的 HTTP/SSE 服务；stdio 服务会被拒绝。保存的登录能续期、并且没有待申请的权限时，直接续期，命令显示 `Already signed in`。否则命令打印授权网址，尽力打开浏览器，并在 127.0.0.1 上等浏览器跳回 `http://localhost:PORT/callback`（服务设了回调端口就用它，否则用已保存的客户端注册时的端口，再否则随机选一个空闲端口）。在可交互的终端里，也可以把浏览器最后跳转到的完整网址粘贴进来；只接受这次登录的完整回调地址，带 `error=` 的网址会报出原因，空行表示取消。stdin 或 stdout 不是终端时，命令只等浏览器回调，并提示可以用 SSH 转发端口（`ssh -L PORT:localhost:PORT`），或用 `ssh -t` 重新运行。5 分钟内没完成就放弃。授权码由守护进程换成令牌并保存；原来没设凭据的服务改为 OAuth 登录；然后重新连接这个服务。重新连接失败时命令会说明，登录本身仍然保存。`agh mcp logout ID` 删除保存的登录，并关掉这个服务现有的连接；不会到授权服务器撤销令牌。
 
 ## MCP 工具如何提供给模型
 
@@ -171,9 +173,9 @@ session worker 启动及资源变化后的轮次边界调用 `createMcpRowRuntim
 
 MCP 集合成功应用后，即使独立的 Skills 刷新失败，也保留新的 MCP 集合；该失败不会恢复已禁用或删除的服务器。若 MCP 应用后状态不确定，Worker 会拒绝后续轮次，直到完成恢复：下一轮会再次尝试重载，重载完全成功后轮次恢复放行；如果这次重试也失败，共享 Worker 会退出，由 daemon 重启并按快照重建各行。资源变更通常要等其他会话中已在运行的轮次结束；某一轮 30 秒后仍未结束（例如在等审批）时，不再拖住其他会话：它们先用当前资源运行，变更在下一次 Worker 空闲时的轮次或再过 30 秒后生效。
 
-**会话路径上的 OAuth：** `secretBinding.kind === 'oauth'` 的服务使用在网页 MCP 页完成的登录。每个请求都读取保存的登录：令牌快到期前续期，收到 401 时续期一次；别的进程写入的新令牌直接使用；登出后，服务端不会再收到带旧令牌的请求。没有可用的登录，或登录后服务地址变了，该服务不可用，错误码为 `MCP_OAUTH_NEEDS_RECONNECT`，工具调用返回请用户登录的提示。
+**会话路径上的 OAuth：** `secretBinding.kind === 'oauth'` 的服务使用在网页 MCP 页或用 `agh mcp login` 完成的登录。每个请求都读取保存的登录：令牌快到期前续期，收到 401 时续期一次；别的进程写入的新令牌直接使用；登出后，服务端不会再收到带旧令牌的请求。没有可用的登录，或登录后服务地址变了，该服务不可用，错误码为 `MCP_OAUTH_NEEDS_RECONNECT`，工具调用返回请用户登录的提示。
 
-**服务需要登录时：** 这个状态记在服务上，所有列出服务的地方都能看到。还没登录、或登录已经失效的 OAuth 服务，在网页 MCP 页显示“需要登录”，在 `agh mcp list` 里带 `needs sign-in`。没有设凭据的服务在连接时回 401 或 403，该服务不可用，错误码为 `MCP_AUTH_REQUIRED`，同样会被标出；已经设了 bearer 或 header 凭据的服务仍报 `MCP_AUTH_FAILED`。TUI 启动时还会提示一次已启用且需要登录的服务（同一进程里每个服务只提示一次）：`这些 MCP 服务需要登录：a、b。运行 /mcp 查看。` 请在网页的 MCP 页登录；正在运行的会话在下一个请求就会用上新的登录。
+**服务需要登录时：** 这个状态记在服务上，所有列出服务的地方都能看到。还没登录、或登录已经失效的 OAuth 服务，在网页 MCP 页显示“需要登录”，在 `agh mcp list` 里带 `needs sign-in` 和登录办法。没有设凭据的服务在连接时回 401 或 403，该服务不可用，错误码为 `MCP_AUTH_REQUIRED`，同样会被标出；已经设了 bearer 或 header 凭据的服务仍报 `MCP_AUTH_FAILED`。TUI 启动时还会提示一次已启用且需要登录的服务（同一进程里每个服务只提示一次）：`这些 MCP 服务需要登录：a、b。运行 /mcp 查看。` 请用 `agh mcp login ID` 或在网页的 MCP 页登录；正在运行的会话在下一个请求就会用上新的登录。
 
 逐服务器运行器的源码与测试可在下方查阅。实际运行版本及外部服务验证范围见[验证记录](../maintainers/verification.zh-CN.md)。
 

@@ -175,8 +175,10 @@ describe('resource CLI argument boundary', () => {
           actual: 'ready',
         }),
       ])
-      expect(lines[0]).toMatch(/^fresh .* needs sign-in$/)
-      expect(lines[1]).toMatch(/^expired .* needs sign-in$/)
+      expect(lines[0]).toMatch(
+        /^fresh .* needs sign-in \(agh mcp login fresh, \/mcp login fresh in the TUI, or the web MCP page\)$/,
+      )
+      expect(lines[1]).toMatch(/^expired .* needs sign-in \(agh mcp login expired, /)
       expect(lines[2]).toMatch(/^signed-in /)
       expect(lines[2]).not.toContain('needs sign-in')
     })
@@ -191,7 +193,7 @@ describe('resource CLI argument boundary', () => {
           lastSafeError: { code: 'MCP_CONNECT_FAILED', message: 'could not connect' },
         }),
       ])
-      expect(lines[0]).toMatch(/^open .* needs sign-in$/)
+      expect(lines[0]).toMatch(/^open .* needs sign-in \(agh mcp login open, /)
       expect(lines[1]).not.toContain('needs sign-in')
     })
   })

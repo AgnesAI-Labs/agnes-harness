@@ -4,7 +4,7 @@ import { clientAuthentication, requestedScope, tokensFromResponse } from './mcp-
 import { serverDrifted } from './mcp-oauth-refresh.js'
 import type { McpOAuthClient, McpOAuthNext, McpOAuthRead, McpOAuthStore } from './mcp-oauth-store.js'
 import { discoverMcpOAuth, type McpOAuthDiscovery, registerDynamicClient } from './oauth-client.js'
-import { withTimeout } from './oauth-http-handler.js'
+import { withTimeout } from './oauth-fetch.js'
 
 const REQUEST_TIMEOUT_MS = 10_000
 
