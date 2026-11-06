@@ -49,7 +49,7 @@ describe('createMcpOAuthAuthorizer', () => {
   function setup(
     server: FakeOAuthServer,
     record: McpOAuthRead = recordFor(server),
-    options: { serverUrl?: URL; store?: McpOAuthStore } = {},
+    options: { serverUrl?: URL; store?: McpOAuthStore; now?: () => number } = {},
   ) {
     const memory = createMemoryOAuthStore()
     memory.seed(SERVER_ID, record)
@@ -59,7 +59,7 @@ describe('createMcpOAuthAuthorizer', () => {
       serverUrl: options.serverUrl ?? server.serverUrl,
       store,
       fetchImpl: server.fetchImpl,
-      now: () => NOW,
+      now: options.now ?? (() => NOW),
     })
     return { authorizer, memory }
   }
@@ -145,7 +145,7 @@ describe('createMcpOAuthAuthorizer', () => {
     })
     memory.seed(SERVER_ID, moved)
     // A 401 for the old token after someone else wrote a new one: resend with the new one.
-    expect(await authorizer.rejected(refused(401), sent)).toBe('retry')
+    expect(await authorizer.rejected(refused(401), sent, false)).toBe('retry')
     expect(await authorizer.headers()).toEqual({ authorization: 'Bearer new-access' })
     expect(server.requests()).toEqual([])
   })
@@ -154,7 +154,7 @@ describe('createMcpOAuthAuthorizer', () => {
     const server = await start()
     const { authorizer, memory } = setup(server)
     const sent = await authorizer.headers()
-    expect(await authorizer.rejected(refused(401, 'Bearer error="invalid_token"'), sent)).toBe('retry')
+    expect(await authorizer.rejected(refused(401, 'Bearer error="invalid_token"'), sent, false)).toBe('retry')
     expect(refreshGrants(server)).toHaveLength(1)
     expect(await authorizer.headers()).toEqual({ authorization: 'Bearer at-1' })
     expect(await memory.read(SERVER_ID)).toMatchObject({ rev: 5, requiredScope: [] })
@@ -167,7 +167,7 @@ describe('createMcpOAuthAuthorizer', () => {
     })
     const { authorizer } = setup(server, record)
     const sent = await authorizer.headers()
-    expect(await reason(authorizer.rejected(refused(401), sent))).toBe('login-required')
+    expect(await reason(authorizer.rejected(refused(401), sent, false))).toBe('login-required')
     expect(refreshGrants(server)).toHaveLength(1)
   })
 
@@ -176,7 +176,7 @@ describe('createMcpOAuthAuthorizer', () => {
     server.setTokenResponse(() => ({ error: 'invalid_grant' }))
     const { authorizer, memory } = setup(server)
     const sent = await authorizer.headers()
-    expect(await reason(authorizer.rejected(refused(401), sent))).toBe('login-required')
+    expect(await reason(authorizer.rejected(refused(401), sent, false))).toBe('login-required')
     expect((await memory.read(SERVER_ID)) as McpOAuthRecord).not.toHaveProperty('tokens')
   })
 
@@ -207,7 +207,7 @@ describe('createMcpOAuthAuthorizer', () => {
     }
     const { authorizer } = setup(server, noRefresh, { store })
     const sent = await authorizer.headers()
-    expect(await authorizer.rejected(refused(401), sent)).toBe('retry')
+    expect(await authorizer.rejected(refused(401), sent, false)).toBe('retry')
     expect(await authorizer.headers()).toEqual({ authorization: 'Bearer again' })
     expect(server.requests()).toEqual([])
   })
@@ -217,10 +217,96 @@ describe('createMcpOAuthAuthorizer', () => {
     const { authorizer, memory } = setup(server)
     const sent = await authorizer.headers()
     expect(
-      await authorizer.rejected(refused(401, 'Bearer error="invalid_token", scope="read extra"'), sent),
+      await authorizer.rejected(
+        refused(401, 'Bearer error="invalid_token", scope="read extra"'),
+        sent,
+        false,
+      ),
     ).toBe('retry')
     expect(refreshGrants(server)).toHaveLength(1)
     expect(await memory.read(SERVER_ID)).toMatchObject({ epoch: 1, rev: 6, requiredScope: ['extra'] })
+  })
+
+  it('a write elsewhere that only added requiredScope is no new token: a 401 refreshes and resends with a new one', async () => {
+    const server = await start()
+    const { authorizer, memory } = setup(server)
+    const sent = await authorizer.headers()
+    memory.seed(SERVER_ID, recordFor(server, { rev: 5, requiredScope: ['extra'] }))
+    expect(await authorizer.rejected(refused(401), sent, false)).toBe('retry')
+    expect(refreshGrants(server)).toHaveLength(1)
+    expect(await authorizer.headers(undefined, sent)).toEqual({ authorization: 'Bearer at-1' })
+    expect(await memory.read(SERVER_ID)).toMatchObject({ rev: 6, requiredScope: ['extra'] })
+  })
+
+  it('a due token whose record only gained requiredScope meanwhile is still refreshed, so its 401 is a real refusal', async () => {
+    const server = await start()
+    const memory = createMemoryOAuthStore()
+    const due = recordFor(server, {
+      tokens: {
+        accessToken: 'old-access',
+        refreshToken: 'old-refresh',
+        expiresAt: NOW + 10_000,
+        scope: ['read'],
+      },
+    })
+    memory.seed(SERVER_ID, due)
+    let raced = false
+    // Another process records a required scope between this read and the refresh taking the lock.
+    const store: McpOAuthStore = {
+      read: memory.read,
+      update(serverId, change, options) {
+        if (!raced) {
+          raced = true
+          memory.seed(SERVER_ID, { ...due, rev: 5, requiredScope: ['extra'] })
+        }
+        return memory.update(serverId, change, options)
+      },
+    }
+    const { authorizer } = setup(server, due, { store })
+    expect(await authorizer.headers()).toEqual({ authorization: 'Bearer at-1' })
+    expect(refreshGrants(server)).toHaveLength(1)
+  })
+
+  it('the resend after a refresh does not refresh again, even when the new token is already close to expiry', async () => {
+    const server = await start()
+    let clock = NOW
+    const { authorizer } = setup(server, recordFor(server), { now: () => clock })
+    const sent = await authorizer.headers()
+    expect(await authorizer.rejected(refused(401), sent, false)).toBe('retry')
+    clock += HOUR - 10_000
+    expect(await authorizer.headers(undefined, sent)).toEqual({ authorization: 'Bearer at-1' })
+    expect(refreshGrants(server)).toHaveLength(1)
+  })
+
+  it('the resend with a token written elsewhere uses it as is, even when it is close to expiry', async () => {
+    const server = await start()
+    const { authorizer, memory } = setup(server)
+    const sent = await authorizer.headers()
+    memory.seed(
+      SERVER_ID,
+      recordFor(server, {
+        rev: 5,
+        tokens: {
+          accessToken: 'new-access',
+          refreshToken: 'new-refresh',
+          expiresAt: NOW + 10_000,
+          scope: ['read'],
+        },
+      }),
+    )
+    expect(await authorizer.rejected(refused(401), sent, false)).toBe('retry')
+    expect(await authorizer.headers(undefined, sent)).toEqual({ authorization: 'Bearer new-access' })
+    expect(server.requests()).toEqual([])
+  })
+
+  it('a 401 for the resend: login-required, no second refresh', async () => {
+    const server = await start()
+    const { authorizer } = setup(server)
+    const sent = await authorizer.headers()
+    expect(await authorizer.rejected(refused(401), sent, false)).toBe('retry')
+    const resent = await authorizer.headers(undefined, sent)
+    expect(await reason(authorizer.rejected(refused(401), resent, true))).toBe('login-required')
+    expect(refreshGrants(server)).toHaveLength(1)
   })
 
   it('403 insufficient_scope records requiredScope and throws insufficient-scope', async () => {
@@ -230,6 +316,7 @@ describe('createMcpOAuthAuthorizer', () => {
     const answer = authorizer.rejected(
       refused(403, 'Bearer error="insufficient_scope", scope="write admin"'),
       sent,
+      false,
     )
     expect(await reason(answer)).toBe('insufficient-scope')
     expect(await memory.read(SERVER_ID)).toMatchObject({
@@ -246,8 +333,10 @@ describe('createMcpOAuthAuthorizer', () => {
     const server = await start()
     const { authorizer, memory } = setup(server)
     const sent = await authorizer.headers()
-    expect(await authorizer.rejected(refused(403), sent)).toBe('fail')
-    expect(await authorizer.rejected(refused(403, 'Bearer error="invalid_request"'), sent)).toBe('fail')
+    expect(await authorizer.rejected(refused(403), sent, false)).toBe('fail')
+    expect(await authorizer.rejected(refused(403, 'Bearer error="invalid_request"'), sent, false)).toBe(
+      'fail',
+    )
     expect(memory.writes(SERVER_ID)).toBe(0)
   })
 

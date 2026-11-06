@@ -106,11 +106,13 @@ const start = { http: startHttp, sse: startSse }
 
 function authorizer(
   headers: () => Record<string, string>,
-  rejected: (response: Response) => Promise<'retry' | 'fail'> = async () => 'fail',
+  rejected: (response: Response, final: boolean) => Promise<'retry' | 'fail'> = async () => 'fail',
 ) {
   return {
-    headers: vi.fn(async () => headers()),
-    rejected: vi.fn(rejected),
+    headers: vi.fn(async (_signal?: AbortSignal, _resendOf?: Readonly<Record<string, string>>) => headers()),
+    rejected: vi.fn(async (response: Response, _sent: Readonly<Record<string, string>>, final: boolean) =>
+      rejected(response, final),
+    ),
   } satisfies McpHttpAuthorizer
 }
 
@@ -177,11 +179,58 @@ describe('connectMcp with a per-request authorizer', () => {
         authorize: auth,
       }),
     )
-    // The second 401 comes back to the SDK as is: no second rejected() call and no third send.
+    // The resend's 401 is shown as final: 'retry' then counts as 'fail', so there is no third send.
     expect((error as { code?: unknown }).code).toBe(401)
     expect(server.seen).toHaveLength(2)
-    expect(auth.rejected).toHaveBeenCalledTimes(1)
+    expect(auth.rejected.mock.calls.map((call) => call[2])).toEqual([false, true])
     expect(auth.headers).toHaveBeenCalledTimes(2)
+    // The resend's headers are asked for with the first send's headers, so a refresh is not repeated.
+    expect(auth.headers.mock.calls[1]?.[1]).toEqual({ authorization: 'Bearer t-1' })
+  })
+
+  it.each(['http', 'sse'] as const)(
+    'a 401 on the resend goes to the authorizer as final, and its error reaches the call (%s)',
+    async (kind) => {
+      let refuseAll = false
+      const server = await start[kind]((req) => (refuseAll && req.method === 'POST' ? 401 : undefined))
+      const refusal = Object.assign(new Error('needs sign-in'), { code: 'MCP_OAUTH_NEEDS_RECONNECT' })
+      const auth = authorizer(
+        () => ({ authorization: 'Bearer t-1' }),
+        async (_response, final) => {
+          if (final) throw refusal
+          return 'retry'
+        },
+      )
+      const conn = await connectMcp({ id: 'a', transport: kind, url: server.url, defer: false }, undefined, {
+        authorize: auth,
+      })
+      // POSTs only: the Streamable HTTP client opens its event stream (a GET) in the background.
+      const posts = () => server.seen.filter((request) => request.method === 'POST').length
+      const sent = posts()
+      refuseAll = true
+      expect(await failure(conn.callTool('echo', {}, { signal: signal() }))).toBe(refusal)
+      expect(posts()).toBe(sent + 2)
+      await conn.close()
+    },
+  )
+
+  it('a 401 on the resend of the SSE event stream: the final refusal is what connect reports', async () => {
+    const server = await startSse(() => 401)
+    const refusal = Object.assign(new Error('needs sign-in'), { code: 'MCP_OAUTH_NEEDS_RECONNECT' })
+    const auth = authorizer(
+      () => ({ authorization: 'Bearer t-1' }),
+      async (_response, final) => {
+        if (final) throw refusal
+        return 'retry'
+      },
+    )
+    const error = await failure(
+      connectMcp({ id: 'a', transport: 'sse', url: server.url, defer: false }, undefined, {
+        authorize: auth,
+      }),
+    )
+    expect(error).toBe(refusal)
+    expect(server.seen).toHaveLength(2)
   })
 
   it('a refusal answered with fail is returned without being sent again', async () => {

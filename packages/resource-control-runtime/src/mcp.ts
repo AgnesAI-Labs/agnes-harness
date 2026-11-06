@@ -60,11 +60,19 @@ export type McpRuntimeInput = Readonly<{ list(): readonly McpRuntimeServer[] }>
  * this layer cannot import.
  */
 export type McpHttpAuthorizer = Readonly<{
-  /** Headers for this request. Throwing refuses to send it; the error reaches the caller as is. */
-  headers(signal?: AbortSignal): Promise<Readonly<Record<string, string>>>
-  /** Called at most once per request, with its 401 or 403 response and the object `headers()`
-   * returned for it. 'retry' resends it once with fresh headers. */
-  rejected(response: Response, sent: Readonly<Record<string, string>>): Promise<'retry' | 'fail'>
+  /** Headers for one send of a request. Throwing refuses to send it; the error reaches the caller as
+   * is. `resendOf` is set for the one resend: the headers the first send carried. */
+  headers(
+    signal?: AbortSignal,
+    resendOf?: Readonly<Record<string, string>>,
+  ): Promise<Readonly<Record<string, string>>>
+  /** Shown each 401 or 403 answer, with the object `headers()` returned for that send. For the
+   * first send, 'retry' resends it once; the resend's answer is `final` and is never resent. */
+  rejected(
+    response: Response,
+    sent: Readonly<Record<string, string>>,
+    final: boolean,
+  ): Promise<'retry' | 'fail'>
 }>
 export type McpConnectOptions = Readonly<{
   signal: AbortSignal

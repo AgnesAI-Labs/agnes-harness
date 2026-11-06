@@ -152,6 +152,19 @@ describe('refreshMcpOAuth', () => {
     expect(store.writes(SERVER_ID)).toBe(0)
   })
 
+  it('a write that changed only requiredScope is no new token: the refresh still happens and keeps that write', async () => {
+    const server = await start()
+    const seen = recordFor(server)
+    const { store, run } = setup(server, { ...seen, rev: seen.rev + 1, requiredScope: ['extra', 'more'] })
+
+    const refreshed = await run(seen)
+
+    expect(server.requests().filter((request) => request.grantType === 'refresh_token')).toHaveLength(1)
+    expect(refreshed.tokens?.accessToken).toBe('at-1')
+    expect(refreshed).toMatchObject({ rev: seen.rev + 2, requiredScope: ['extra', 'more'] })
+    expect(await store.read(SERVER_ID)).toEqual(refreshed)
+  })
+
   it('logged-out record: throws login-required without a token request', async () => {
     const server = await start()
     const loggedOut: McpOAuthRecord = { version: 2, kind: 'oauth', epoch: 3, rev: 6, requiredScope: [] }

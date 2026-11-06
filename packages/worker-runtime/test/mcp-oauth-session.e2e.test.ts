@@ -74,13 +74,14 @@ type Event = Readonly<
 async function startRemote() {
   const events: Event[] = []
   const revoked = new Set<string>()
+  let refuseAll = false
   const codes = new Map<string, { challenge: string; redirectUri: string }>()
   let issued = 0
 
   async function mcp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const authorization = req.headers.authorization
     const token = authorization?.replace(/^Bearer /, '')
-    const refused = !token || revoked.has(token)
+    const refused = !token || refuseAll || revoked.has(token)
     // No standalone event stream: the client takes 405 as "not offered".
     const status = refused ? 401 : req.method === 'GET' ? 405 : 200
     events.push({
@@ -170,6 +171,9 @@ async function startRemote() {
     mcpEvents,
     refreshGrants: () => events.filter((event) => event.kind === 'token' && event.grant === 'refresh_token'),
     revoke: (value: string) => revoked.add(value),
+    refuseEveryToken: () => {
+      refuseAll = true
+    },
   }
 }
 type Remote = Awaited<ReturnType<typeof startRemote>>
@@ -348,6 +352,50 @@ describe('OAuth MCP servers in session rows', () => {
       { kind: 'mcp', method: 'POST', authorization: 'Bearer at-0', status: 401 },
       { kind: 'mcp', method: 'POST', authorization: 'Bearer at-1', status: 200 },
     ])
+  })
+
+  it('a server refusing every token: a mutating call is refused with the sign-in text, one refresh per attempt', async () => {
+    const remote = await startRemote()
+    const store = createMcpOAuthStore({ root: await tempRoot('mcp-oauth-store-') })
+    await seedSignIn(store, remote, { access: 'at-0', expiresAt: Date.now() + 3_600_000 })
+    const { host, runtime, applied, call } = await sessionRows(store, remote)
+    expect(applied.statuses.get(SERVER_ID)).toMatchObject({ connectionState: 'ready' })
+    // `echo` carries no hints, so it counts as a tool that changes things.
+    expect(tool(host)?.meta).toMatchObject({ isReadOnly: false, replay: 'never' })
+    const before = remote.events.length
+    remote.refuseEveryToken()
+
+    // Returned, not thrown: the server refused, so the call is known not to have run.
+    const result = await call()
+
+    expect(result.isError).toBe(true)
+    expect(lastText(result)).toContain(`MCP server "${SERVER_ID}" needs sign-in`)
+    const during = remote.events.slice(before)
+    expect(during).toEqual([
+      { kind: 'mcp', method: 'POST', authorization: 'Bearer at-0', status: 401 },
+      expect.objectContaining({ kind: 'token', grant: 'refresh_token' }),
+      { kind: 'mcp', method: 'POST', authorization: 'Bearer at-1', status: 401 },
+    ])
+    await vi.waitFor(
+      () =>
+        expect(runtime.status(SERVER_ID)).toMatchObject({
+          connectionState: 'unavailable',
+          lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT' },
+        }),
+      { timeout: 5_000 },
+    )
+    // Every attempt (the call, then each reconnect) is a refused send, one refresh, one refused
+    // resend: between two refreshes there are exactly two sends, never a third.
+    const later = remote.events.slice(before)
+    expect(later.every((event) => event.kind === 'token' || event.status === 401)).toBe(true)
+    const sendsBetweenRefreshes = later
+      .map((event) => (event.kind === 'token' ? '|' : 's'))
+      .join('')
+      .split('|')
+    expect(sendsBetweenRefreshes[0]).toBe('s')
+    for (const run of sendsBetweenRefreshes.slice(1, -1)) expect(run).toBe('ss')
+    expect(['', 's', 'ss']).toContain(sendsBetweenRefreshes.at(-1))
+    expect(remote.refreshGrants().length).toBeGreaterThanOrEqual(2)
   })
 
   it('two stores on one root refresh at once: one refresh grant', async () => {

@@ -13,9 +13,9 @@ import { refreshMcpOAuth } from './mcp-oauth-refresh.js'
 import type { McpOAuthNext, McpOAuthRead, McpOAuthRecord, McpOAuthStore } from './mcp-oauth-store.js'
 
 type Usable = McpOAuthRecord & Required<Pick<McpOAuthRecord, 'client' | 'server' | 'tokens'>>
-/** What one request was sent with: the record revision its token came from, and whether getting it
- * took a refresh. */
-type Sent = Readonly<{ rev: number; refreshed: boolean }>
+/** One send of a request: the token it carried, whether getting that token took a refresh, and
+ * whether it is the request's one resend. */
+type Sent = Readonly<{ token: string; refreshed: boolean; resend: boolean }>
 
 /**
  * Credentials for one OAuth MCP server, looked up for every HTTP request of one connection.
@@ -82,7 +82,7 @@ export function createMcpOAuthAuthorizer(input: {
     }
     // Another process may have refreshed or signed in again in the meantime: look once more.
     const again = await read().catch(() => undefined)
-    if (again && again.rev !== seen.rev && !due(again)) return again
+    if (again && again.tokens.accessToken !== seen.tokens.accessToken && !due(again)) return again
     throw failure instanceof McpOAuthNeedsReconnectError ? failure : needsLogin('login-required', failure)
   }
 
@@ -115,21 +115,24 @@ export function createMcpOAuthAuthorizer(input: {
     }
   }
 
-  function bearer(record: Usable, refreshedNow: boolean): Readonly<Record<string, string>> {
+  function bearer(record: Usable, how: Omit<Sent, 'token'>): Readonly<Record<string, string>> {
     const headers = Object.freeze({ authorization: `Bearer ${record.tokens.accessToken}` })
-    sent.set(headers, { rev: record.rev, refreshed: refreshedNow })
+    sent.set(headers, { token: record.tokens.accessToken, ...how })
     return headers
   }
 
   return Object.freeze({
-    async headers(signal?: AbortSignal) {
+    async headers(signal?: AbortSignal, resendOf?: Readonly<Record<string, string>>) {
       if (signal?.aborted) throw new DOMException('operation aborted', 'AbortError')
       const record = await read()
-      if (!due(record)) return bearer(record, false)
+      // The resend follows a refresh, or a new token found, for this same request: it is sent as
+      // it is, so one request never costs a second refresh.
+      if (resendOf !== undefined) return bearer(record, { refreshed: false, resend: true })
+      if (!due(record)) return bearer(record, { refreshed: false, resend: false })
       // A refreshed token is used as it comes back, even if it is already close to expiry.
-      return bearer(await refreshed(record), true)
+      return bearer(await refreshed(record), { refreshed: true, resend: false })
     },
-    async rejected(response: Response, headers: Readonly<Record<string, string>>) {
+    async rejected(response: Response, headers: Readonly<Record<string, string>>, final: boolean) {
       const challenge = extractWWWAuthenticateParams(response)
       if (response.status === 403) {
         if (challenge.error !== 'insufficient_scope') return 'fail'
@@ -138,9 +141,12 @@ export function createMcpOAuthAuthorizer(input: {
       }
       if (response.status !== 401) return 'fail'
       const request = sent.get(headers)
+      // The resend, with a refreshed or newly written token, was refused too: only a sign-in helps.
+      if (final || request?.resend) throw needsLogin()
       const record = await read()
-      // Someone else wrote a new token after this request left: resend with it, no refresh.
-      const moved = request !== undefined && record.rev !== request.rev
+      // Someone else wrote a new token after this request left: resend with it, no refresh. Other
+      // writes (a recorded `requiredScope`) leave the token, so they do not count.
+      const moved = request !== undefined && record.tokens.accessToken !== request.token
       // The token came straight from the authorization server for this request and was still refused.
       if (!moved && request?.refreshed) throw needsLogin()
       if (challenge.scope) {

@@ -22,7 +22,7 @@ type Outcome = Readonly<{ record: McpOAuthRecord }> | Readonly<{ error: unknown 
  *
  * Discovery runs first, outside the store's lock, and is compared with what the login recorded;
  * only then does the locked step run: re-read, return the stored record when someone else already
- * wrote (`rev` or `epoch` moved), otherwise make the one token request and write the result.
+ * wrote a new token (or `epoch` moved), otherwise make the one token request and write the result.
  * Failures that need the user (`McpOAuthNeedsReconnectError`) never leave a half-written record:
  * `invalid_grant` drops the tokens and keeps the client and server; a network failure or any other
  * error leaves everything as it was.
@@ -60,7 +60,10 @@ export async function refreshMcpOAuth(input: {
   const outcome = await store.update<Outcome>(serverId, async (current) => {
     if (!current || 'legacy' in current || !current.client || !current.server || !current.tokens)
       return { value: { error: needsLogin('login-required') } }
-    if (current.rev !== seen.rev || current.epoch !== seen.epoch) return { value: { record: current } }
+    // Another writer left a new token (or a sign-out and in): use it. A write that only changed
+    // something else, such as `requiredScope`, leaves the same token, which still needs a refresh.
+    if (current.epoch !== seen.epoch || current.tokens.accessToken !== seen.tokens?.accessToken)
+      return { value: { record: current } }
     const { client, server, tokens } = current
     if (!tokens.refreshToken) return { value: { error: needsLogin('login-required') } }
 
