@@ -130,29 +130,41 @@ export async function registerOAuthClient(
     return { clientId: opts.clientMetadataUrl }
   }
 
-  if (metadata?.registration_endpoint && opts.redirectUri) {
-    try {
-      const info = await registerClient(authorizationServerUrl, {
-        metadata,
-        clientMetadata: buildDcrClientMetadata(opts.redirectUri),
-        // SDK's fetchFn?: FetchLike has no explicit `| undefined` in its property type, so under
-        // this repo's exactOptionalPropertyTypes the property must be omitted rather than set to
-        // undefined - conditional spread does that instead of `fetchFn: opts.fetchImpl`.
-        ...(opts.fetchImpl ? { fetchFn: opts.fetchImpl } : {}),
-      })
-      return {
-        clientId: info.client_id,
-        clientSecret: info.client_secret,
-        tokenEndpointAuthMethod: info.token_endpoint_auth_method,
-      }
-    } catch {
-      // Registration endpoint exists but rejected us (unreachable, malformed response, policy
-      // refusal, ...) - fall through to pendingClientId rather than propagating a discovery-time
-      // error out of what is meant to be a best-effort chain.
-    }
-  }
+  if (!opts.redirectUri) return { pendingClientId: true }
+  return registerDynamicClient(authorizationServerUrl, metadata, opts.redirectUri, opts.fetchImpl)
+}
 
-  return { pendingClientId: true }
+/**
+ * RFC 7591 Dynamic Client Registration against already-discovered metadata. Never throws: no
+ * registration endpoint, or a registration the server refuses, is `{ pendingClientId: true }`.
+ */
+export async function registerDynamicClient(
+  authorizationServerUrl: URL,
+  metadata: AuthorizationServerMetadata | undefined,
+  redirectUri: string,
+  fetchImpl?: FetchLike,
+): Promise<RegisterOAuthClientResult> {
+  if (!metadata?.registration_endpoint) return { pendingClientId: true }
+  try {
+    const info = await registerClient(authorizationServerUrl, {
+      metadata,
+      clientMetadata: buildDcrClientMetadata(redirectUri),
+      // SDK's fetchFn?: FetchLike has no explicit `| undefined` in its property type, so under
+      // this repo's exactOptionalPropertyTypes the property must be omitted rather than set to
+      // undefined - conditional spread does that instead of `fetchFn: fetchImpl`.
+      ...(fetchImpl ? { fetchFn: fetchImpl } : {}),
+    })
+    return {
+      clientId: info.client_id,
+      clientSecret: info.client_secret,
+      tokenEndpointAuthMethod: info.token_endpoint_auth_method,
+    }
+  } catch {
+    // Registration endpoint exists but rejected us (unreachable, malformed response, policy
+    // refusal, ...) - fall through to pendingClientId rather than propagating a discovery-time
+    // error out of what is meant to be a best-effort chain.
+    return { pendingClientId: true }
+  }
 }
 
 /**

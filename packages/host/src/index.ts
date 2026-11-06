@@ -404,6 +404,7 @@ export {
   type McpOAuthServer,
   type McpOAuthStore,
   type McpOAuthTokens,
+  type McpOAuthUpdateOptions,
 } from '@agnes/host-infrastructure/adapters/mcp-oauth-store'
 export {
   CAPABILITY_IDS,

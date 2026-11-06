@@ -11,6 +11,8 @@ import type { FetchLike } from '@modelcontextprotocol/sdk/shared/transport.js'
 export type FakeOAuthOptions = Readonly<{
   /** `token_endpoint_auth_methods_supported`; the field is left out when undefined. */
   authMethods?: string[]
+  /** Authorization server `scopes_supported`; the field is left out when undefined. */
+  asScopes?: string[]
   /** Protected resource metadata. `resource` is an absolute URL or a path on this server. */
   prm?: Readonly<{ resource: string; scopes?: string[] }>
   /** What `/register` hands back. */
@@ -87,6 +89,7 @@ export async function startFakeOAuthServer(options: FakeOAuthOptions = {}): Prom
         grant_types_supported: ['authorization_code', 'refresh_token'],
         code_challenge_methods_supported: ['S256'],
         ...(options.authMethods ? { token_endpoint_auth_methods_supported: options.authMethods } : {}),
+        ...(options.asScopes ? { scopes_supported: options.asScopes } : {}),
       })
     }
     if (url.pathname === '/register' && req.method === 'POST') {

@@ -50,12 +50,21 @@ export type McpOAuthRead = McpOAuthRecord | Readonly<{ legacy: true }> | null
 
 export type McpOAuthNext = Omit<McpOAuthRecord, 'version' | 'kind' | 'rev'>
 
+export type McpOAuthUpdateOptions = Readonly<{
+  /**
+   * A file that exists but cannot be read (damaged JSON or an invalid record) is handed to `change`
+   * as `null`, so a fresh sign-in can replace it. Without this, such a file makes `update` throw.
+   */
+  replaceUnreadable?: boolean
+}>
+
 export type McpOAuthStore = Readonly<{
   read(serverId: string): Promise<McpOAuthRead>
   /** Locks the server, re-reads, runs `change`; writes `next` with rev + 1 when it returns one. */
   update<T>(
     serverId: string,
     change: (current: McpOAuthRead) => Promise<Readonly<{ value: T; next?: McpOAuthNext }>>,
+    options?: McpOAuthUpdateOptions,
   ): Promise<T>
 }>
 
@@ -193,9 +202,17 @@ export function createMcpOAuthStore(options: CreateMcpOAuthStoreOptions): McpOAu
 
   return {
     read,
-    update: (serverId, change) =>
+    update: (serverId, change, updateOptions) =>
       locked(serverId, async () => {
-        const current = await read(serverId)
+        const current = await read(serverId).catch((error: unknown) => {
+          if (
+            updateOptions?.replaceUnreadable &&
+            error instanceof CredentialStoreError &&
+            (error.reason === 'schema' || error.reason === 'invalid-json')
+          )
+            return null
+          throw error
+        })
         const { value, next } = await change(current)
         if (next === undefined) return value
         const ref = refOf(serverId)

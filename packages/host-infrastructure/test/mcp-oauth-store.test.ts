@@ -166,6 +166,38 @@ describe.runIf(process.getuid !== undefined)('MCP OAuth credential store', () =>
     expect(await store.read('a')).toMatchObject({ rev: 1 })
   })
 
+  it('an unreadable file blocks updates unless the caller asks to replace it', async () => {
+    const store = createMcpOAuthStore({ root })
+    await store.update('a', async () => ({ value: 0, next: next() }))
+    const good = JSON.parse(readFileSync(file('a'), 'utf8'))
+    for (const contents of ['{not json', `${JSON.stringify({ ...good, extra: 1 })}\n`]) {
+      writeFileSync(file('a'), contents, { mode: 0o600 })
+      chmodSync(file('a'), 0o600)
+      expect(await reason(store.update('a', async () => ({ value: 0, next: next() })))).toMatch(
+        /^(?:schema|invalid-json)$/,
+      )
+      let seen: unknown = 'not called'
+      await store.update(
+        'a',
+        async (current) => {
+          seen = current
+          return { value: 0, next: next({ epoch: 0 }) }
+        },
+        { replaceUnreadable: true },
+      )
+      expect(seen).toBeNull()
+      expect(await store.read('a')).toMatchObject({ version: 2, rev: 1, epoch: 0 })
+    }
+  })
+
+  it('replacing unreadable files never hides a conflicting api-key file', async () => {
+    const store = createMcpOAuthStore({ root })
+    await createCredentialStore({ root }).putApiKey(ref('a'), 'key-value-1')
+    expect(
+      await reason(store.update('a', async () => ({ value: 0, next: next() }), { replaceUnreadable: true })),
+    ).toBe('kind-conflict')
+  })
+
   it('refuses to write a record that fails the same checks', async () => {
     const store = createMcpOAuthStore({ root })
     expect(
