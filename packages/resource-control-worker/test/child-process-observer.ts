@@ -5,12 +5,14 @@ type Stage = 'runtime-inspection' | 'sandbox'
 type Observation = {
   stage: Stage
   attempt: number
-  event: 'start' | 'spawn' | 'spawn-error' | 'exit'
+  event: 'start' | 'spawn' | 'spawn-error' | 'exit' | 'close'
   elapsedMs: number
   pid?: number
   code?: number | string | null
   signal?: string | null
   killed?: boolean
+  stdoutBytes?: number | null
+  stderrBytes?: number | null
 }
 
 /** Observe actual Node spawn calls without changing their promises, streams or error listeners. */
@@ -40,14 +42,21 @@ export function observeMcpProcesses(
       typeof child.pid === 'number' && Number.isSafeInteger(child.pid) && child.pid > 0
         ? { pid: child.pid }
         : {}
+    const bytesRead = (stream: ChildProcess['stdout']) =>
+      stream && 'bytesRead' in stream && typeof stream.bytesRead === 'number' ? stream.bytesRead : null
+    const output = () => ({ stdoutBytes: bytesRead(child.stdout), stderrBytes: bytesRead(child.stderr) })
     const detach = () => {
       child.removeListener('spawn', spawned)
       child.removeListener('exit', exited)
+      child.removeListener('close', closed)
       active.delete(child)
     }
     const spawned = () => record({ ...facts(), event: 'spawn', ...pid() })
     const exited = (code: number | null, signal: NodeJS.Signals | null) => {
-      record({ ...facts(), event: 'exit', ...pid(), code, signal, killed: child.killed })
+      record({ ...facts(), event: 'exit', ...pid(), code, signal, killed: child.killed, ...output() })
+    }
+    const closed = (code: number | null, signal: NodeJS.Signals | null) => {
+      record({ ...facts(), event: 'close', ...pid(), code, signal, killed: child.killed, ...output() })
       detach()
     }
     active.set(child, {
@@ -63,6 +72,7 @@ export function observeMcpProcesses(
     })
     child.once('spawn', spawned)
     child.once('exit', exited)
+    child.once('close', closed)
     record({ stage, attempt, event: 'start', elapsedMs: 0 })
   }
   const onError = (message: unknown) => {

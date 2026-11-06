@@ -5,10 +5,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type ResolvedProfile, resolveProfile } from '@agnes/host'
+import { publicErrorContract } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
+import { workerStderrEvidence } from '../src/supervisor/runtime-log.js'
 import { listenUnix } from '../src/supervisor/socket.js'
 import { daemonSocketPaths } from '../src/supervisor/socket-paths.js'
 import { startSupervisor } from '../src/supervisor/supervisor.js'
@@ -35,6 +37,13 @@ it('boots the source worker through the real extension loader and answers after 
     limits: { ...DEFAULT_LIMITS, workerStartupMs: 30_000 },
   }
   let stderr = ''
+  const stderrEvidence = workerStderrEvidence()
+  const auditEvidence = workerStderrEvidence()
+  const auditKinds: string[] = []
+  const auditCodes: string[] = []
+  let closeObserved = false
+  let termination: { code: number | null; signal: NodeJS.Signals | null } | undefined
+  let failure: { error: unknown } | undefined
   const pool = new WorkerPool({
     config,
     profile,
@@ -56,31 +65,61 @@ it('boots the source worker through the real extension loader and answers after 
         stdio: ['ignore', 'ignore', 'pipe', 'pipe', 'ipc'],
       })
       child.stderr?.on('data', (chunk: Buffer | string) => {
-        stderr += String(chunk)
+        stderr = (stderr + String(chunk)).slice(0, 64 * 1024)
+        stderrEvidence.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+      })
+      child.once('close', (code, signal) => {
+        termination = { code, signal }
+        closeObserved = true
       })
       return child
     }) as typeof spawn,
     onEvent: () => undefined,
     onRequest: async () => undefined,
+    onRuntimeLog: (record) => {
+      const line = JSON.stringify(record) ?? ''
+      auditEvidence.push(Buffer.from(line))
+      if (/^worker\.(?:start_failed|exited|stderr)$/.test((record as { kind: string }).kind))
+        auditKinds.push((record as { kind: string }).kind)
+      const code = (record as { detail?: { code?: unknown } }).detail?.code
+      if (typeof code === 'string' && publicErrorContract(code)) auditCodes.push(code)
+    },
     notices: { emit() {} },
   })
   const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
   try {
-    const worker = await pool.acquireSharedWorker().catch((error) => {
-      throw new Error(`${String(error)}\n${stderr}`)
-    })
+    const worker = await pool.acquireSharedWorker()
     expect(await worker.hello).toMatchObject({ workerKey: '@shared', profileHash: profile.hash })
     const runtime = /AGH_TOOLCHAIN_RUNTIME (\{[^\n]+\})/.exec(stderr)?.[1]
-    if (!runtime) throw new Error(`Worker did not report its runtime\n${stderr}`)
+    if (!runtime) throw new Error('Worker did not report its runtime')
     expect(JSON.parse(runtime)).toEqual({ version: process.version, execPath: process.execPath })
     console.log(`Worker runtime ${runtime}`)
     await expect(worker.command('ping', {})).resolves.toBeDefined()
+  } catch (error) {
+    failure = { error }
   } finally {
-    await pool.closeAll(2000).catch(() => pool.killAll())
-    await pool.waitForExitRecovery()
-    await server.close()
-    rmSync(root, { recursive: true, force: true })
+    try {
+      await pool.closeAll(2000).catch(() => pool.killAll())
+      await pool.waitForExitRecovery()
+      await server.close()
+    } catch (error) {
+      failure ??= { error }
+    } finally {
+      console.error(
+        'WORKER_BOOT_EVIDENCE',
+        JSON.stringify({
+          stderr: stderrEvidence.snapshot(),
+          audit: auditEvidence.snapshot(),
+          kinds: auditKinds.slice(-8),
+          codes: auditCodes.slice(-8),
+          termination,
+          closeObserved,
+        }),
+      )
+      rmSync(root, { recursive: true, force: true })
+    }
   }
+  if (failure) throw failure.error
 }, 45_000)
 
 it('shares every service-kind token with loader-loaded plugins in a fresh process', async () => {
@@ -180,7 +219,14 @@ it('opens a client session through the source daemon and its production worker',
   const tables = sqliteTables(join(root, 'daemon.sqlite'))
   let supervisor: Awaited<ReturnType<typeof startSupervisor>> | undefined
   let sdk: ReturnType<typeof createClient> | undefined
+  const started = performance.now()
+  const phase = (phase: string) =>
+    console.error(
+      'SOURCE_DAEMON_PHASE',
+      JSON.stringify({ phase, elapsedMs: Math.round(performance.now() - started) }),
+    )
   try {
+    phase('supervisor.begin')
     supervisor = await startSupervisor({
       config: {
         home: root,
@@ -200,17 +246,24 @@ it('opens a client session through the source daemon and its production worker',
       workerExecArgv: ['--import', 'tsx'],
       workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
     })
+    phase('supervisor.ready')
     sdk = createClient({ journal: memoryJournal(), transport: localSdkTransport(supervisor.socketPath) })
+    phase('session.new.begin')
     const session = await sdk.session.new({
       cwd: root,
       sessionKey: 'source-worker-boot',
       preset: profile.presets.default,
     })
+    phase('session.new.done')
     expect(session.id).toBe('source-worker-boot')
   } finally {
+    phase('sdk.close.begin')
     await sdk?.close()
+    phase('supervisor.close.begin')
     await supervisor?.close()
+    phase('tables.close.begin')
     await tables.close()
+    phase('cleanup.done')
     rmSync(root, { recursive: true, force: true })
     if (process.platform !== 'win32') rmSync(dirname(paths.socketPath), { recursive: true, force: true })
   }

@@ -29,6 +29,8 @@ it.each([0, 7])('passively observes a real exit %s without changing output or fa
       `process.stdout.write('PRIVATE_STDOUT'); process.stderr.write('PRIVATE_STDERR'); process.exitCode=${code}`,
     ])
     expect(pending.child.listenerCount('error')).toBe(1)
+    expect(pending.child.stdout?.listenerCount('data')).toBe(1)
+    expect(pending.child.stderr?.listenerCount('data')).toBe(1)
     if (code === 0)
       await expect(pending).resolves.toMatchObject({ stdout: 'PRIVATE_STDOUT', stderr: 'PRIVATE_STDERR' })
     else
@@ -55,9 +57,23 @@ it.each([0, 7])('passively observes a real exit %s without changing output or fa
         code,
         signal: null,
         killed: false,
+        stdoutBytes: expect.any(Number),
+        stderrBytes: expect.any(Number),
+      },
+      {
+        stage: 'runtime-inspection',
+        attempt: 1,
+        event: 'close',
+        elapsedMs: expect.any(Number),
+        pid: pending.child.pid,
+        code,
+        signal: null,
+        killed: false,
+        stdoutBytes: 14,
+        stderrBytes: 14,
       },
     ])
-    expect(JSON.stringify(observer.events)).not.toMatch(/PRIVATE_|spawnargs|options|env|stdout|stderr/)
+    expect(JSON.stringify(observer.events)).not.toMatch(/PRIVATE_|spawnargs|options|env|"stdout":|"stderr":/)
   } finally {
     observer.dispose()
   }
@@ -85,8 +101,9 @@ it('preserves the caller timeout and records its actual killed exit', async () =
   try {
     const pending = execute(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { timeout: 100 })
     await expect(pending).rejects.toMatchObject({ killed: true, signal: 'SIGTERM' })
-    expect(observer.events).toHaveLength(3)
+    expect(observer.events).toHaveLength(4)
     expect(observer.events[2]).toMatchObject({ event: 'exit', code: null, signal: 'SIGTERM', killed: true })
+    expect(observer.events[3]).toMatchObject({ event: 'close', code: null, signal: 'SIGTERM', killed: true })
   } finally {
     observer.dispose()
   }
@@ -99,10 +116,12 @@ it('unsubscribes and detaches a still-running child without signalling it', asyn
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
   try {
     expect(child.listenerCount('exit')).toBe(1)
+    expect(child.listenerCount('close')).toBe(1)
     expect(start.hasSubscribers).toBe(true)
     observer.dispose()
     observer.dispose()
     expect(child.listenerCount('exit')).toBe(0)
+    expect(child.listenerCount('close')).toBe(0)
     expect(child.killed).toBe(false)
     expect(start.hasSubscribers).toBe(before)
   } finally {

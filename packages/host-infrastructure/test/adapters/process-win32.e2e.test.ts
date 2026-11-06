@@ -185,7 +185,29 @@ describe.skipIf(process.platform !== 'win32')('Windows configured job shells', (
         callSignal.abort()
         const id = (background.details as { jobId: string }).jobId
         ctx.signal = new AbortController().signal
+        const readerSignal = ctx.signal
+        const waitStarted = performance.now()
         const done = await jobs.wait(ctx, id, 15000)
+        if (done.status !== 'completed' || done.stdout !== 'survived') {
+          console.error(
+            'AGH_WINDOWS_BACKGROUND_WAIT',
+            JSON.stringify({
+              waitRequestedMs: 15000,
+              waitElapsedMs: Math.round(performance.now() - waitStarted),
+              jobId: id,
+              sameJobId: done.id === id,
+              status: done.status,
+              code: done.code,
+              signal: done.signal ?? null,
+              stdoutBytes: Buffer.byteLength(done.stdout),
+              stderrBytes: Buffer.byteLength(done.stderr),
+              truncated: done.truncated,
+              originalCallAborted: callSignal.signal.aborted,
+              readerAborted: readerSignal.aborted,
+              sameReaderSignal: ctx.signal === readerSignal,
+            }),
+          )
+        }
         expect(done).toMatchObject({ status: 'completed', stdout: 'survived' })
         const running = await run('Start-Sleep -Seconds 60', { timeoutMs: 20 })
         expect(running.isError).toBeUndefined()

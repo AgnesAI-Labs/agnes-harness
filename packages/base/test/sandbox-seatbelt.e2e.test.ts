@@ -22,34 +22,61 @@ import { LOOPBACK_GATE_PATH_PREFIX, openLoopbackListener } from '@agnes/system-n
 import { expect, it, vi } from 'vitest'
 import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 
-function run(argv: string[], env?: NodeJS.ProcessEnv, timeout = 3000) {
+function run(argv: string[], env?: NodeJS.ProcessEnv, timeout = 3000, probe = 'unlabeled') {
   const [file, ...args] = argv
   if (!file) throw new Error('missing executable')
   const started = performance.now()
+  const phases: { spawnMs?: number; exitMs?: number } = {}
+  const elapsed = () => Math.round(performance.now() - started)
   return new Promise<{ code: number; stdout: string }>((resolve, reject) => {
-    execFile(file, args, { timeout, ...(env ? { env } : {}) }, (error, stdout) => {
+    const child = execFile(file, args, { timeout, ...(env ? { env } : {}) }, (error, stdout, stderr) => {
       if (!error) resolve({ code: 0, stdout })
       else if (!error.killed && typeof error.code === 'number') resolve({ code: error.code, stdout })
       else {
         // Do not mistake a harness timeout or failed launch for an OS policy denial.
-        const failure = new Error(
-          `Probe did not exit normally: ${JSON.stringify({
-            code: error.code ?? null,
-            signal: error.signal ?? null,
-            killed: error.killed,
-            elapsedMs: Math.round(performance.now() - started),
-          })}`,
-        )
-        Object.assign(failure, { code: error.code, signal: error.signal, killed: error.killed })
+        const facts = {
+          probe,
+          pid: child.pid ?? null,
+          code: error.code ?? null,
+          signal: error.signal ?? null,
+          killed: error.killed,
+          elapsedMs: elapsed(),
+          ...phases,
+          stdoutBytes: Buffer.byteLength(stdout),
+          stderrBytes: Buffer.byteLength(stderr),
+        }
+        const failure = new Error(`Probe did not exit normally: ${JSON.stringify(facts)}`)
+        Object.assign(failure, facts)
         reject(failure)
       }
+    })
+    child.once('spawn', () => {
+      phases.spawnMs = elapsed()
+    })
+    child.once('exit', () => {
+      phases.exitMs = elapsed()
     })
   })
 }
 it('does not treat a failed launch or timed-out probe as sandbox enforcement', async () => {
   const missing = join(tmpdir(), `agh-no-executable-${process.pid}-${Date.now()}`)
-  await expect(run([missing])).rejects.toMatchObject({ code: 'ENOENT' })
-  await expect(run([process.execPath, '-e', 'setTimeout(() => {}, 6000)'])).rejects.toMatchObject({
+  await expect(run([missing], undefined, undefined, 'missing-control')).rejects.toMatchObject({
+    probe: 'missing-control',
+    code: 'ENOENT',
+    stdoutBytes: 0,
+    stderrBytes: 0,
+  })
+  await expect(
+    run([process.execPath, '-e', 'setTimeout(() => {}, 6000)'], undefined, undefined, 'timeout-control'),
+  ).rejects.toMatchObject({
+    probe: 'timeout-control',
+    pid: expect.any(Number),
+    spawnMs: expect.any(Number),
+    exitMs: expect.any(Number),
+    code: null,
+    signal: 'SIGTERM',
+    stdoutBytes: 0,
+    stderrBytes: 0,
     killed: true,
   })
 })
@@ -436,8 +463,12 @@ seatbelt(
         allowPaths: [allowed],
         denyPaths: [denied],
       })
+    const probe = (label: string, argv: string[], env?: NodeJS.ProcessEnv, timeout?: number) =>
+      run(argv, env, timeout, label)
     try {
-      expect(await run(confine('printf ok > "$1"; cat "$1"', join(allowed, 'ok')))).toEqual({
+      expect(
+        await probe('allowed-write-read', confine('printf ok > "$1"; cat "$1"', join(allowed, 'ok'))),
+      ).toEqual({
         code: 0,
         stdout: 'ok',
       })
@@ -448,25 +479,33 @@ seatbelt(
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_CONFIG_GLOBAL: '/dev/null',
       }
-      expect((await run(['/usr/bin/git', 'init', '--quiet', '--template=', allowed], env, 10_000)).code).toBe(
-        0,
-      )
-      const status = await run(confine('git -C "$1" status --short', allowed), env)
+      expect(
+        (await probe('git-init', ['/usr/bin/git', 'init', '--quiet', '--template=', allowed], env, 10_000))
+          .code,
+      ).toBe(0)
+      const status = await probe('git-status', confine('git -C "$1" status --short', allowed), env)
       expect(status.code).toBe(0)
       expect(status.stdout).toContain('?? ok')
-      expect(await run(confine('echo x > /dev/null; exec 3<> /dev/null'))).toEqual({ code: 0, stdout: '' })
+      expect(await probe('null-rw', confine('echo x > /dev/null; exec 3<> /dev/null'))).toEqual({
+        code: 0,
+        stdout: '',
+      })
       const denyNull = seatbeltDenyNetworkArgv(['/bin/sh', '-c', 'echo x > /dev/null'], {
         allowPaths: [allowed],
         denyPaths: [denied, '/dev/null'],
       })
-      expect((await run(denyNull)).code).not.toBe(0)
-      expect((await run(confine('echo x > /dev/zero'))).code).not.toBe(0)
-      expect((await run(confine('printf bad > "$1"', join(root, 'outside')))).code).not.toBe(0)
+      expect((await probe('deny-null', denyNull)).code).not.toBe(0)
+      expect((await probe('deny-zero', confine('echo x > /dev/zero'))).code).not.toBe(0)
+      expect(
+        (await probe('deny-outside', confine('printf bad > "$1"', join(root, 'outside')))).code,
+      ).not.toBe(0)
       expect(existsSync(join(root, 'outside'))).toBe(false)
-      expect((await run(confine('cat "$1"', secret))).code).not.toBe(0)
-      expect((await run(confine('printf bad > "$1"', secret))).code).not.toBe(0)
-      expect((await run(confine('cat "$1"', join(allowed, 'link')))).code).not.toBe(0)
-      expect((await run(confine('/bin/sh -c \'cat "$1"\' child "$1"', secret))).code).not.toBe(0)
+      expect((await probe('deny-secret-read', confine('cat "$1"', secret))).code).not.toBe(0)
+      expect((await probe('deny-secret-write', confine('printf bad > "$1"', secret))).code).not.toBe(0)
+      expect((await probe('deny-symlink', confine('cat "$1"', join(allowed, 'link')))).code).not.toBe(0)
+      expect(
+        (await probe('deny-descendant', confine('/bin/sh -c \'cat "$1"\' child "$1"', secret))).code,
+      ).not.toBe(0)
       expect(readFileSync(secret, 'utf8')).toBe('private')
     } finally {
       rmSync(root, { recursive: true, force: true })
