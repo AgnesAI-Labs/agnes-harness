@@ -23,8 +23,14 @@ function hasCompiler(): boolean {
 }
 
 // Entries are written type:flags:mask:sid in hex; "--" separates the DACL from the label list.
+// On Windows, stdout starts in text mode and would turn every "\n" into "\r\n"; the driver prints
+// in binary mode so its text is byte for byte what the policy produced.
 const driver = `#include <cstdio>
 #include <cstdlib>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 #include <cstring>
 #include <string>
 #include <vector>
@@ -77,6 +83,9 @@ static bool asciiEqual(const std::wstring& left, const std::wstring& right) {
   return true;
 }
 int main(int argc, char** argv) {
+#ifdef _WIN32
+  _setmode(_fileno(stdout), _O_BINARY);
+#endif
   if (argc < 2) return 2;
   const std::string command = argv[1];
   if (command == "constants") {
@@ -447,6 +456,17 @@ describe.skipIf(!hasCompiler())('Windows ACL grant policy', () => {
     expect(run('carries', SID, '1', '1', '1', `0:13:110156:${SID}`, inheritedDeny, '--', inheritedLow)).toBe(
       'carries',
     )
+    // An inner root granted first keeps its own Low label; the system then does not add the outer
+    // root's label next to it, and the object is at Low integrity either way.
+    expect(run('carries', SID, '1', '1', '1', `0:13:110156:${SID}`, inheritedDeny, '--', label)).toBe(
+      'carries',
+    )
+    expect(
+      run('carries', SID, '1', '1', '1', `0:13:110156:${SID}`, inheritedDeny, '--', '11:b:1:S-1-16-4096'),
+    ).toBe('missing')
+    expect(
+      run('carries', SID, '1', '1', '1', `0:13:110156:${SID}`, inheritedDeny, '--', '11:3:3:S-1-16-4096'),
+    ).toBe('missing')
     expect(run('carries', SID, '0', '1', '1', allow, '--', inheritedLow)).toBe('missing')
     expect(run('carries', SID, '0', '1', '1', inheritedAllow)).toBe('missing')
     expect(run('carries', SID, '0', '0', '0', user)).toBe('carries')

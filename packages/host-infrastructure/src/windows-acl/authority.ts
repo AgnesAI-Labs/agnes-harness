@@ -525,7 +525,13 @@ export class WindowsExecutionAuthority {
     if (!mutation.complete || !change) {
       entry = this.#journal.write({ ...entry.record, state: 'needs-attention' })
       await this.#restore(entry)
-      throw aclError('E_ACL_GRANT_INCOMPLETE', `The Windows ACL grant on ${root} did not complete`)
+      // The objects and native codes say what stopped it; they are also kept on the record.
+      throw Object.assign(
+        aclError('E_ACL_GRANT_INCOMPLETE', `The Windows ACL grant on ${root} did not complete`),
+        {
+          issues: failures,
+        },
+      )
     }
     const after = await native.inspect(root)
     if (

@@ -189,8 +189,14 @@ static DWORD aclReadSecurity(HANDLE handle, AclSecurity& out) {
   DWORD error = aclReadAces(dacl, out.dacl);
   if (error == ERROR_SUCCESS) error = aclReadAces(label, out.label);
   if (error != ERROR_SUCCESS) return error;
+  // An unprotected label list without entries means the same as none: no integrity level is set
+  // and one can still be inherited. Removing a grant's label leaves such an empty list where there
+  // was none, so the descriptor text leaves it out; a restored object then reads exactly as it did
+  // before the grant. A protected list, or one with any entry, is always part of the text.
+  const SECURITY_INFORMATION shown =
+    out.label.empty() && !out.labelProtected ? aclParts & ~LABEL_SECURITY_INFORMATION : aclParts;
   LPWSTR text = nullptr;
-  if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(raw, SDDL_REVISION_1, aclParts, &text, nullptr))
+  if (!ConvertSecurityDescriptorToStringSecurityDescriptorW(raw, SDDL_REVISION_1, shown, &text, nullptr))
     return GetLastError();
   Local owned(text);
   out.sddl = text;
@@ -316,6 +322,21 @@ static bool aclOpenRoot(const std::wstring& input, bool mutate, AclRoot& root, A
   if (!canonical) {
     problem = aclRefusal("EINVAL", input, "expected a normalized \\\\?\\ drive path");
     return false;
+  }
+  // A volume that cannot carry a grant is refused before anything on it is opened: FAT32 fails the
+  // directory holds below with a bare parameter error. The volume is read again from the root's own
+  // handle once it is held, which is what decides; a path this lookup cannot resolve goes on to it.
+  {
+    const std::wstring plain = input.substr(4);
+    wchar_t volume[MAX_PATH + 1] = {};
+    wchar_t volumeSystem[MAX_PATH + 1] = {};
+    DWORD volumeFlags = 0;
+    if (GetVolumePathNameW(plain.c_str(), volume, MAX_PATH + 1) &&
+        GetVolumeInformationW(volume, nullptr, 0, nullptr, nullptr, &volumeFlags, volumeSystem, MAX_PATH + 1) &&
+        !aclVolumeSupported(volumeSystem, (volumeFlags & FILE_PERSISTENT_ACLS) != 0, GetDriveTypeW(volume))) {
+      problem = aclRefusal("E_ACL_UNSUPPORTED_VOLUME", input, "only local NTFS volumes can carry a workspace grant");
+      return false;
+    }
   }
   // The tag comes from the held handle, so it describes the directory that stays held.
   const auto holdable = [&](HANDLE handle, const std::wstring& path, const char* what, const char* link) {

@@ -121,7 +121,7 @@ static bool restrictedWriteSids(napi_env env, napi_value list, napi_value mode, 
 // write SID or this launch's isolation SID (as well as the user), at Low integrity, without
 // privileges beyond change notification.
 static bool restrictedToken(napi_env env, std::vector<std::vector<BYTE>>& writeSids, std::vector<BYTE>& isolation,
-                            Handle& out) {
+                            Handle& out, std::vector<BYTE>& objectDacl) {
   HANDLE raw = nullptr;
   if (!OpenProcessToken(GetCurrentProcess(),
                         TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_ADJUST_DEFAULT, &raw)) {
@@ -184,6 +184,8 @@ static bool restrictedToken(napi_env env, std::vector<std::vector<BYTE>>& writeS
   const DWORD merge = SetEntriesInAclW(3, entries, dacl, &merged);
   if (merge != ERROR_SUCCESS) { failure(env, "SetEntriesInAcl restricted", merge); return false; }
   Local mergedOwner(merged);
+  const auto* mergedBytes = reinterpret_cast<const BYTE*>(merged);
+  objectDacl.assign(mergedBytes, mergedBytes + merged->AclSize);
   TOKEN_DEFAULT_DACL value = {merged};
   if (injectedFault(L"dacl") || !SetTokenInformation(restricted, TokenDefaultDacl, &value, sizeof(value))) {
     failure(env, "SetTokenInformation default DACL", GetLastError()); return false;
@@ -273,7 +275,17 @@ static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
   }
   auto* target = owner.release();  // The result's finalizer owns it from here, even on failure.
   Handle token(nullptr);
-  if (!restrictedToken(env, writeSids, isolation, token)) return nullptr;
+  std::vector<BYTE> objectDacl;
+  if (!restrictedToken(env, writeSids, isolation, token, objectDacl)) return nullptr;
+  // The target's own process and thread objects get that same DACL explicitly. Without a descriptor
+  // the system may build them from the creating process's default DACL, which can give the logon
+  // session write access; every confined token holds the logon SID, so another confined process
+  // (a read-only one included) could then write the target's memory or take over its threads.
+  SECURITY_DESCRIPTOR descriptor;
+  if (!InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION) ||
+      !SetSecurityDescriptorDacl(&descriptor, TRUE, reinterpret_cast<PACL>(objectDacl.data()), FALSE))
+    return failure(env, "restricted process security descriptor", GetLastError());
+  SECURITY_ATTRIBUTES objectSecurity = {static_cast<DWORD>(sizeof(objectSecurity)), &descriptor, FALSE};
   std::vector<std::unique_ptr<Handle>> copies;
   HANDLE handles[3] = {};
   RestrictedAttributes attributes;
@@ -290,7 +302,7 @@ static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
   // No console flag: a restricted target that must create its own console fails to initialize, so
   // it attaches to this gate's hidden console, and its own console descendants do the same.
   if (injectedFault(L"create") ||
-      !CreateProcessAsUserW(token.value, application.c_str(), commandLine.data(), nullptr, nullptr, TRUE,
+      !CreateProcessAsUserW(token.value, application.c_str(), commandLine.data(), &objectSecurity, &objectSecurity, TRUE,
                             CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT | EXTENDED_STARTUPINFO_PRESENT,
                             environment.data(), cwd.c_str(), &startup.StartupInfo, &child))
     return failure(env, "CreateProcessAsUserW", GetLastError());

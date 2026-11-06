@@ -190,12 +190,20 @@ inline bool aclHasInherited(const std::vector<AclAce>& list, const AclAce& wante
   return false;
 }
 // Whether an object below the root carries what the root grant propagates to it. The flags say
-// whether the object's DACL and label still inherit along the path from the root.
+// whether the object's DACL and label still inherit along the path from the root. An object with
+// its own Low label of the grant's shape (the root of a grant made inside this one first) does not
+// receive the inherited label as well, since an object has one integrity label; it is at Low
+// integrity either way.
 inline bool aclCarriesGrant(const std::vector<AclAce>& dacl, const std::vector<AclAce>& label,
                             const std::wstring& writeSid, bool directory, bool inheritsDacl, bool inheritsLabel) {
   if (inheritsDacl && !aclHasInherited(dacl, aclAllowEntry(writeSid))) return false;
   if (inheritsDacl && directory && !aclHasInherited(dacl, aclDenyEntry())) return false;
-  return !inheritsLabel || aclHasInherited(label, aclLabelEntry());
+  const AclAce low = aclLabelEntry();
+  const auto ownLow = [&](const AclAce& ace) {
+    return aclExplicit(ace) && !(ace.flags & kAclInheritOnly) && ace.type == low.type && ace.mask == low.mask &&
+           ace.sid == low.sid;
+  };
+  return !inheritsLabel || aclHasInherited(label, low) || std::any_of(label.begin(), label.end(), ownLow);
 }
 inline bool aclNamesSid(const std::vector<AclAce>& list, const std::wstring& sid) {
   for (const auto& ace : list)
