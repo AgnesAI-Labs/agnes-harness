@@ -2,9 +2,10 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import type { Page } from '@playwright/test'
+import { assertRunbookBackendRefusal } from './agent-outcome.js'
 import { installDeveloperExample } from './developer-example.js'
 import { expect, test } from './fixtures.js'
-import { readSessionEvents } from './ledger.js'
+import { createSessionEventSnapshot } from './ledger.js'
 import { chooseWorkspace, expand, expandActivityGroups, homePage, preferences, send } from './ui.js'
 
 type Launch = { title?: { en: string }; prompt?: { text: { en: string } }; pages?: string[] }
@@ -127,6 +128,8 @@ test.describe('shipped agent acceptance', () => {
   for (const agent of catalog.filter((agent) => !filter || filter.some((id) => agent.ref.includes(id))))
     test(`agent launch sweep: ${agent.ref}`, async ({ page, runtime }, info) => {
       test.setTimeout(9 * 60_000)
+      const windows = process.platform === 'win32' // guards-allow-platform: acceptance owns the documented Windows refusal expectation.
+      const backendRefusal = windows && agent.ref === '@agnes-fde/ops-runbook#ops-runbook'
       const client = await runtime.connect()
       if (real) {
         if (!process.env.AGH_DEMO_API_KEY) throw new Error('Explicit real sweep requires AGH_DEMO_API_KEY')
@@ -182,6 +185,8 @@ test.describe('shipped agent acceptance', () => {
         status: 'fail',
       }
       let session: Awaited<ReturnType<typeof client.session.load>> | undefined
+      let readEvidence: ReturnType<typeof createSessionEventSnapshot> | undefined
+      let settled = false
       let runTimer: ReturnType<typeof setTimeout> | undefined
       try {
         if (totalUsd > 5) throw new Error('AGH-recorded $5 budget exhausted')
@@ -299,6 +304,7 @@ test.describe('shipped agent acceptance', () => {
         if (!id) throw new Error('Launch did not select a session')
         row.sessionId = id
         session = await client.session.load(id, { cwd: runtime.workspace })
+        readEvidence = createSessionEventSnapshot(session)
         if (!general) expect((await session.projectUI()).turns).toHaveLength(0)
         row.capabilities = await session.capabilities()
         runTimer = setTimeout(() => {
@@ -314,6 +320,7 @@ test.describe('shipped agent acceptance', () => {
             throw new Error('AGH-recorded $5 budget exhausted')
           }
           const last = timeline.turns.at(-1)
+          if (backendRefusal && last?.status === 'failed') break
           if (last?.status === 'failed' || last?.status === 'cancelled')
             throw new Error(`Turn ${last.status}`)
           if (last?.status === 'completed' && !(await page.getByTestId('question-card').isVisible())) break
@@ -321,7 +328,19 @@ test.describe('shipped agent acceptance', () => {
         }
         const timeline = await session.projectUI(undefined, { surface: 'web' })
         row.timeline = timeline
-        expect(timeline.turns.at(-1)?.status, 'Six-minute completion cap').toBe('completed')
+        expect(timeline.turns.at(-1)?.status, 'Six-minute completion cap').toBe(
+          backendRefusal ? 'failed' : 'completed',
+        )
+        // Nothing below starts business work. Both outcome and billing consume this terminal cut.
+        settled = true
+        clearTimeout(runTimer)
+        if (backendRefusal) {
+          assertRunbookBackendRefusal(timeline, await readEvidence(), await session.jobsRead())
+          expect((await session.deliverables()).items).toEqual([])
+          expect(readdirSync(runtime.workspace).filter((name) => name === 'fde-output')).toEqual([])
+          row.outcome = 'expected-backend-refusal'
+          row.refusalCode = 'SHELL_JOB_BACKEND_UNAVAILABLE'
+        }
         // The session runs the launched role, not the general assistant.
         if (!general) expect((await client.session.runtime(id)).preset?.bundles).toContain(agent.ref)
         // A showcase role's draft is a natural-language business task. The offline teaching model
@@ -344,10 +363,10 @@ test.describe('shipped agent acceptance', () => {
             expect(detail.result.content).toEqual([
               expect.objectContaining({ type: 'text', text: expect.stringContaining('ENOENT') }),
             ])
-          else if (planned)
+          else if (planned && !backendRefusal)
             expect(detail.result?.isError, `${node.name}: ${JSON.stringify(detail.result)}`).not.toBe(true)
         }
-        if (agent.ref.startsWith('@agnes-fde/')) {
+        if (agent.ref.startsWith('@agnes-fde/') && !backendRefusal) {
           expect(tools.some((node) => node.kind === 'tool' && node.name === 'present')).toBe(true)
           await expect(
             page.getByTestId('conversation-turn').getByText('report.md', { exact: true }).first(),
@@ -380,16 +399,16 @@ test.describe('shipped agent acceptance', () => {
         row.error = error instanceof Error ? error.message : String(error)
       } finally {
         clearTimeout(runTimer)
-        if (row.status !== 'pass' && session) await session.cancel()
+        if (!settled && session) await session.cancel()
         row.browserErrors = browserErrors.slice(errorOffset)
         await page.screenshot({
           path: info.outputPath(`${evidenceName(agent.ref)}-result.png`),
         })
         const close = page.getByTestId('agent-launch-close')
         if (await close.isVisible()) await close.click()
-        if (session) {
+        if (session && readEvidence) {
           row.timeline ??= await session.projectUI(undefined, { surface: 'web' })
-          const events = await readSessionEvents(session)
+          const events = await readEvidence()
           const costs = events.filter((event) => event.type === 'cost/ledger')
           row.costs = costs.map((event) => event.data)
           if (

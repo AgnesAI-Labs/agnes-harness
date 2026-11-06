@@ -77,6 +77,20 @@ export class InstallFlow {
     return !!this.review?.operationId && this.review.operationId === operation.operationId
   }
 
+  beginReview(enableAfter: boolean): Review | undefined {
+    if (!this.review || this.review.busy) return
+    this.review = { ...this.review, busy: true, enableAfter }
+    return this.review
+  }
+
+  /** A late submission cannot attach its receipt or refusal to another review. */
+  settleReview(review: Review, operationId: string | undefined, error?: AdminError): void {
+    if (this.review !== review) return
+    this.review = operationId
+      ? { ...review, operationId }
+      : { busy: false, error, enableAfter: review.enableAfter ?? false }
+  }
+
   state(
     preview: PackagePreview | undefined,
     mode: PreviewMode,

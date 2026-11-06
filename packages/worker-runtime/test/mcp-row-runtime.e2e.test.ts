@@ -1085,8 +1085,8 @@ describe('createMcpRowRuntime against real MCP servers (real-machine collision v
       expect(denied.statuses.get('managed')).toMatchObject({
         connectionState: 'unavailable',
         lastSafeError: {
-          code: 'MCP_CONNECT_FAILED',
-          message: expect.stringContaining('E_MCP_SANDBOX_UNAVAILABLE'),
+          code: 'E_MCP_SANDBOX_UNAVAILABLE',
+          message: 'No usable stdio sandbox is available. Configure a working sandbox before retrying.',
         },
       })
       const name = `${mcpStablePrefix('managed')}read`

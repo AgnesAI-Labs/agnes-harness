@@ -170,17 +170,25 @@ describe('Task 5 production workspace acceptance', () => {
       // file here instead of fakeSeams' argv echo, which is not a file listing.
       seams: {
         sandbox: {
-          exec: async (argv) => ({
-            code: 0,
-            stdout: argv.includes('--files')
-              ? `${path}\0`
-              : `${JSON.stringify({
-                  type: 'match',
-                  data: { path: { text: path }, lines: { text: readFileSync(path, 'utf8') }, line_number: 1 },
-                })}\n`,
-            stderr: '',
-            truncated: false,
-          }),
+          exec: async (argv) => {
+            const file = argv.at(-1)
+            if (!file) throw new Error('search fixture requires a target path')
+            return {
+              code: 0,
+              stdout: argv.includes('--files')
+                ? `${path}\0`
+                : `${JSON.stringify({
+                    type: 'match',
+                    data: {
+                      path: { text: file },
+                      lines: { text: readFileSync(file, 'utf8') },
+                      line_number: 1,
+                    },
+                  })}\n`,
+              stderr: '',
+              truncated: false,
+            }
+          },
         },
       },
       packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },

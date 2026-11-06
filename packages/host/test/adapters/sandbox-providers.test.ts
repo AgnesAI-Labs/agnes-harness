@@ -781,3 +781,38 @@ describe('Windows write-restricted dispatch', () => {
     expect(local.runs).toHaveLength(0)
   })
 })
+
+it('preserves explicit finite stdin across provider dispatch and the local instance', async () => {
+  const seen: unknown[] = []
+  const provider = createLocalSandboxProvider(
+    {
+      run: async () => {
+        throw new Error('unexpected finite exec')
+      },
+      killAll: async () => {},
+      openProcess: async (_argv, opts) => {
+        seen.push(opts)
+        return {
+          enforcement,
+          exited: Promise.resolve({ code: 0 }),
+          onOutput: () => () => {},
+          write: async () => {},
+          resize: async () => {},
+          signal: async () => {},
+          close: async () => {},
+        }
+      },
+    },
+    process.platform,
+  )
+  const instance = await provider.create({ workspaceRoot: cwd })
+  const dispatch = createSandboxDispatchExec(createExec(), { selected: instance })
+  try {
+    await dispatch.openProcess!(['finite'], { cwd, sandbox: binding, stdin: '' })
+    expect(seen[0]).toMatchObject({ stdin: '' })
+    await dispatch.openProcess!(['interactive'], { cwd, sandbox: binding })
+    expect(seen[1]).not.toHaveProperty('stdin')
+  } finally {
+    await instance.dispose()
+  }
+})

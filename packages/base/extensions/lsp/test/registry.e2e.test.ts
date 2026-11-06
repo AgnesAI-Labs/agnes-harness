@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { basename, delimiter, join, resolve, sep } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createEditTool } from '../../tools-core/src/tools/edit.js'
 import { createWriteTool } from '../../tools-core/src/tools/write.js'
@@ -48,7 +48,8 @@ describe('automatic diagnostics', () => {
     )
     expect(await lsp.diagnosticsFor(ctx, TS, 'fine\n')).toBeUndefined()
     // The server is started once, at the project root, without the call's signal.
-    expect(harness.opened[0]?.request.cwd).toBe('/work/proj')
+    const cwd = harness.opened[0]?.request.cwd
+    expect(cwd && resolve(cwd)).toBe(resolve(ctx.session.workspaceRoot))
     expect('signal' in (harness.opened[0]?.request ?? {})).toBe(false)
   })
 
@@ -94,8 +95,9 @@ describe('automatic diagnostics', () => {
       GIT_CONFIG_NOSYSTEM: '1',
     })
     // HOME is never moved into the repository, where a clone could have planted config in it.
-    expect(env.HOME?.startsWith('/work/proj')).not.toBe(true)
-    expect(new TextDecoder().decode(await ctx.fs.read('/work/proj/.agnes-lsp/.gitignore'))).toBe('*\n')
+    expect(env.HOME && resolve(env.HOME).startsWith(resolve(ctx.session.workspaceRoot))).not.toBe(true)
+    const ignore = join(resolve(ctx.session.workspaceRoot), '.agnes-lsp', '.gitignore')
+    expect(new TextDecoder().decode(await ctx.fs.read(ignore))).toBe('*\n')
   })
 
   it.each(['/.agnes-lsp', '/.agnes-lsp/gopls', '/.agnes-lsp/go-build'])(
@@ -104,7 +106,7 @@ describe('automatic diagnostics', () => {
       const lsp = setup({ gopls: [] })
       const ctx = lspContext(harness)
       ctx.fs.stat = (async (p: string) =>
-        p.endsWith(link)
+        p.split(sep).join('/').endsWith(link)
           ? { kind: 'symlink', size: 0, mtimeMs: 0 }
           : Promise.reject(new Error('ENOENT'))) as never
       expect(await lsp.diagnosticsFor(ctx, '/work/proj/a.go', BAD)).toBeUndefined()
@@ -238,7 +240,7 @@ describe('starting without running workspace code', () => {
 
   it('ignores empty and relative PATH entries', async () => {
     const lsp = setup({ gopls: [] })
-    lsp.configure({ searchPath: `:bin:./bin:${install.searchPath}` })
+    lsp.configure({ searchPath: ['', 'bin', './bin', install.searchPath].join(delimiter) })
     const [report] = await lsp.check(lspContext(harness, { 'm.go': 'x' }), ['m.go'])
     expect(report?.diags).toEqual([])
     expect(harness.opened[0]?.request.env?.PATH).toBe(install.searchPath)
@@ -247,7 +249,7 @@ describe('starting without running workspace code', () => {
   it('drops PATH entries inside the workspace from both resolution and the server environment', async () => {
     const lsp = setup({ gopls: [] })
     const system = fakeInstall(['gopls'])
-    lsp.configure({ searchPath: `${install.searchPath}:${system.searchPath}` })
+    lsp.configure({ searchPath: [install.searchPath, system.searchPath].join(delimiter) })
     const ctx = lspContext(harness, { [`${install.root}/m.go`]: 'x' })
     Object.assign(ctx.session, { workspaceRoot: install.root })
     const [report] = await lsp.check(ctx, [`${install.root}/m.go`])

@@ -1118,9 +1118,11 @@ describe('session extras: list, preset/model switching and durable fork', () => 
     ).toHaveProperty('result')
     const reset = await project()
     expect(reset).toMatchObject({
-      result: { usage: { context: { window: 128000 }, model: { settings: { contextWindow: 128000 } } } },
+      result: { usage: { context: { window: 128000 }, model: { settings: {} } } },
     })
-    expect(reset).not.toMatchObject({ result: { usage: { model: { settings: { thinking: 'high' } } } } })
+    // Automatic mode follows the model window without persisting a manual override.
+    expect(reset).not.toHaveProperty('result.usage.model.settings.contextWindow')
+    expect(reset).not.toHaveProperty('result.usage.model.settings.thinking')
     await ep.close()
     await h.close()
   })

@@ -11,12 +11,17 @@ import {
   sha256hex,
   sqlitePersistenceProvider,
 } from '@agnes/host'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { openHistoryIndex } from '../../history-index/src/store.js'
 import { openArtifactRefIndex } from '../../host-artifacts/src/artifact-ref-index.js'
 import { DATA_DIR_VERSION } from '../../host-infrastructure/src/adapters/storage-sqlite.js'
 import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
 import { type StartSupervisorOptions, startProductionSupervisor } from '../src/supervisor/supervisor.js'
+
+vi.mock('@agnes/host-infrastructure/documents-directory', async (original) => ({
+  ...(await original<typeof import('@agnes/host-infrastructure/documents-directory')>()),
+  resolveDocumentsDirectory: (await import('./managed-documents-fixture.js')).fixtureDocumentsDirectory,
+}))
 
 function profile(dataDir: string): ResolvedProfile {
   const body = {

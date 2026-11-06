@@ -421,7 +421,7 @@ describe('WorkerPool', () => {
     }
   }, 5_000)
 
-  it('bounds identical pre-hello seam failures across concurrent acquirers and resets on changed inputs', async () => {
+  const runBootBreakerGroup = async (group: 'concurrency' | 'codes' | 'hello' | 'semantics') => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-boot-breaker-'))
     let bootCode = 'E_SEAM_INIT'
     let bootReason: string | undefined
@@ -474,86 +474,118 @@ describe('WorkerPool', () => {
       data: { code: 'WORKER_BOOT_BLOCKED', bootCode: 'E_SEAM_INIT', failures: 3, retryable: false },
     }
     try {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const results = await clients()
-        expect(results.every((result) => result.status === 'rejected')).toBe(true)
-        if (attempt === 2)
-          for (const result of results) expect(result).toMatchObject({ status: 'rejected', reason: blocked })
-      }
-      for (let attempt = 0; attempt < 5; attempt++)
-        await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
-      expect(spawns).toBe(3)
-      expect(peak).toBe(1)
-      expect(active).toBe(0)
-      pool.reloadProfile({ profile: { name: 'p', hash: 'h1' } as never, profileFile: 'same-profile.json' })
-      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
-      expect(spawns).toBe(3)
-      pool.reloadProfile({ profile: { name: 'p', hash: 'h2' } as never, profileFile: 'changed-profile.json' })
-      await clients()
-      expect(spawns).toBe(4)
-      pool.noteRuntimeTarget('new-package-target')
-      await clients()
-      expect(spawns).toBe(5)
-      pool.retryWorkerBoot()
-      await clients()
-      expect(spawns).toBe(6)
-      bootCode = 'E_EXT_LOAD'
-      await clients()
-      bootCode = 'E_SEAM_INIT'
-      await clients()
-      await clients()
-      expect(spawns).toBe(9) // A different code starts a new consecutive streak.
-      await clients()
-      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
-      expect(spawns).toBe(10)
-      pool.noteRuntimeTarget('new-package-target') // Re-delivery of unchanged inputs cannot reset.
-      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
-      pool.retryWorkerBoot()
-      bootCode = 'untrusted-code-with-credential-marker'
-      for (let attempt = 0; attempt < 4; attempt++) await clients()
-      expect(spawns).toBe(14) // Unknown code stays transient and never enters the closed breaker.
-      pool.reloadProfile({
-        profile: { name: 'p', hash: 'h1' } as never,
-        profileFile: join(dir, 'profile.json'),
-      })
-      pool.retryWorkerBoot()
-      bootCode = 'E_SEAM_INIT'
-      await clients()
-      await clients()
-      writeFileSync(join(dir, 'profile.json'), JSON.stringify({ name: 'p', hash: 'h1' }))
-      pool.setLinkInitializer(async () => {
-        throw new Error('synthetic post-hello refusal')
-      })
-      bootCode = 'hello'
-      await expect(pool.acquireSharedWorker()).rejects.toThrow('activation initialization failed')
-      bootCode = 'E_SEAM_INIT'
-      await clients()
-      await clients()
-      expect(spawns).toBe(19) // Valid hello breaks the streak even when later initialization fails.
-      await clients()
-      await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
-      expect(spawns).toBe(20)
-      for (const [code, reason] of [
-        ['E_SECRET_UNRESOLVED', undefined],
-        ['E_PACKAGE_INTEGRITY', 'clean-home-required'],
-        ['E_PACKAGE_INTEGRITY', 'private-token'],
-      ] as const) {
-        pool.retryWorkerBoot()
-        bootCode = code
-        bootReason = reason
-        const beforeSpawns = spawns
-        for (let attempt = 0; attempt < 4; attempt++) {
+      if (group === 'concurrency') {
+        for (let attempt = 0; attempt < 3; attempt++) {
           const results = await clients()
-          for (const result of results) {
-            expect(result).toMatchObject({ status: 'rejected', reason: { code: -32011, data: { code } } })
-            if (reason === 'clean-home-required')
-              expect(result).toMatchObject({ reason: { data: { reason } } })
-            expect(JSON.stringify(result)).not.toContain('private-token')
-          }
+          expect(results.every((result) => result.status === 'rejected')).toBe(true)
+          if (attempt === 2)
+            for (const result of results)
+              expect(result).toMatchObject({ status: 'rejected', reason: blocked })
         }
-        expect(spawns - beforeSpawns).toBe(3)
+        for (let attempt = 0; attempt < 5; attempt++)
+          await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+        expect(spawns).toBe(3)
+        expect(peak).toBe(1)
+        expect(active).toBe(0)
+        pool.reloadProfile({ profile: { name: 'p', hash: 'h1' } as never, profileFile: 'same-profile.json' })
+        await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+        expect(spawns).toBe(3)
+        pool.reloadProfile({
+          profile: { name: 'p', hash: 'h2' } as never,
+          profileFile: 'changed-profile.json',
+        })
+        await clients()
+        expect(spawns).toBe(4)
+        pool.noteRuntimeTarget('new-package-target')
+        await clients()
+        expect(spawns).toBe(5)
+        pool.retryWorkerBoot()
+        await clients()
+        expect(spawns).toBe(6)
+      } else if (group === 'codes') {
+        pool.reloadProfile({
+          profile: { name: 'p', hash: 'h2' } as never,
+          profileFile: 'changed-profile.json',
+        })
+        pool.noteRuntimeTarget('new-package-target')
+        await clients()
+        expect(spawns).toBe(1)
+        bootCode = 'E_EXT_LOAD'
+        await clients()
+        bootCode = 'E_SEAM_INIT'
+        await clients()
+        await clients()
+        expect(spawns).toBe(4) // A different code starts a new consecutive streak.
+        await clients()
+        await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+        expect(spawns).toBe(5)
+        pool.noteRuntimeTarget('new-package-target') // Re-delivery of unchanged inputs cannot reset.
+        await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+        pool.retryWorkerBoot()
+        bootCode = 'untrusted-code-with-credential-marker'
+        for (let attempt = 0; attempt < 4; attempt++) await clients()
+        expect(spawns).toBe(9) // Unknown code stays transient and never enters the closed breaker.
+      } else if (group === 'hello') {
+        pool.noteRuntimeTarget('new-package-target')
+        pool.reloadProfile({
+          profile: { name: 'p', hash: 'h2' } as never,
+          profileFile: 'changed-profile.json',
+        })
+        bootCode = 'untrusted-code-with-credential-marker'
+        for (let attempt = 0; attempt < 4; attempt++) await clients()
+        expect(spawns).toBe(4)
+        pool.reloadProfile({
+          profile: { name: 'p', hash: 'h1' } as never,
+          profileFile: join(dir, 'profile.json'),
+        })
+        pool.retryWorkerBoot()
+        bootCode = 'E_SEAM_INIT'
+        await clients()
+        await clients()
+        writeFileSync(join(dir, 'profile.json'), JSON.stringify({ name: 'p', hash: 'h1' }))
+        pool.setLinkInitializer(async () => {
+          throw new Error('synthetic post-hello refusal')
+        })
+        bootCode = 'hello'
+        await expect(pool.acquireSharedWorker()).rejects.toThrow('activation initialization failed')
+        bootCode = 'E_SEAM_INIT'
+        await clients()
+        await clients()
+        expect(spawns).toBe(9) // Valid hello breaks the streak even when later initialization fails.
+        await clients()
+        await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+        expect(spawns).toBe(10)
+      } else {
+        pool.noteRuntimeTarget('new-package-target')
+        writeFileSync(join(dir, 'profile.json'), JSON.stringify({ name: 'p', hash: 'h1' }))
+        pool.setLinkInitializer(async () => {
+          throw new Error('synthetic post-hello refusal')
+        })
+        for (let attempt = 0; attempt < 3; attempt++) await clients()
+        await expect(pool.acquireSharedWorker()).rejects.toMatchObject(blocked)
+        expect(spawns).toBe(3)
+        for (const [code, reason] of [
+          ['E_SECRET_UNRESOLVED', undefined],
+          ['E_PACKAGE_INTEGRITY', 'clean-home-required'],
+          ['E_PACKAGE_INTEGRITY', 'private-token'],
+        ] as const) {
+          pool.retryWorkerBoot()
+          bootCode = code
+          bootReason = reason
+          const beforeSpawns = spawns
+          for (let attempt = 0; attempt < 4; attempt++) {
+            const results = await clients()
+            for (const result of results) {
+              expect(result).toMatchObject({ status: 'rejected', reason: { code: -32011, data: { code } } })
+              if (reason === 'clean-home-required')
+                expect(result).toMatchObject({ reason: { data: { reason } } })
+              expect(JSON.stringify(result)).not.toContain('private-token')
+            }
+          }
+          expect(spawns - beforeSpawns).toBe(3)
+        }
       }
-
+      expect(active).toBe(0)
       expect(peak).toBe(1)
     } finally {
       pool.killAll()
@@ -567,7 +599,27 @@ describe('WorkerPool', () => {
       await server.close()
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 10_000)
+  }
+  it(
+    'concurrent boot breaker blocks and resets only on changed inputs',
+    () => runBootBreakerGroup('concurrency'),
+    10_000,
+  )
+  it(
+    'consecutive boot codes and transient unknown codes keep their distinct streaks',
+    () => runBootBreakerGroup('codes'),
+    10_000,
+  )
+  it(
+    'a real hello clears the pre-hello streak even when activation refuses',
+    () => runBootBreakerGroup('hello'),
+    10_000,
+  )
+  it(
+    'semantic boot errors preserve public reasons and hide private reasons after reset',
+    () => runBootBreakerGroup('semantics'),
+    10_000,
+  )
 
   it('reloads the profile hash and snapshot path together for a new service worker', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-profile-reload-'))

@@ -185,6 +185,11 @@ async function tempRoot(prefix: string): Promise<string> {
   return root
 }
 
+async function oauthStoreRoot(): Promise<string> {
+  // The store creates and protects its own home; mkdtemp's inherited Windows DACL is not protected.
+  return join(await tempRoot('mcp-oauth-store-'), '.agh')
+}
+
 /** Writes a signed-in record the way a completed sign-in leaves it. */
 async function seedSignIn(
   store: McpOAuthStore,
@@ -269,7 +274,8 @@ const lastText = (result: { content: Array<{ text: string }> }) => result.conten
 describe('OAuth MCP servers in session rows', () => {
   it('web sign-in then a session row lists and calls the tool', async () => {
     const remote = await startRemote()
-    const store = createMcpOAuthStore({ root: await tempRoot('mcp-oauth-store-') })
+    const store = createMcpOAuthStore({ root: await oauthStoreRoot() })
+    await expect(store.read(SERVER_ID)).resolves.toBeNull()
     const serverUrl = new URL(remote.mcpUrl)
     const callback = createServer()
     const baseUrl = new URL(await listen(callback))
@@ -318,7 +324,7 @@ describe('OAuth MCP servers in session rows', () => {
 
   it('expired token is refreshed before connect', async () => {
     const remote = await startRemote()
-    const store = createMcpOAuthStore({ root: await tempRoot('mcp-oauth-store-') })
+    const store = createMcpOAuthStore({ root: await oauthStoreRoot() })
     await seedSignIn(store, remote, { access: 'at-0', expiresAt: Date.now() - 1 })
     const { applied } = await sessionRows(store, remote)
     expect(applied.statuses.get(SERVER_ID)).toMatchObject({ connectionState: 'ready' })
@@ -337,7 +343,7 @@ describe('OAuth MCP servers in session rows', () => {
 
   it('401 mid-call: refresh and one retry succeed', async () => {
     const remote = await startRemote()
-    const store = createMcpOAuthStore({ root: await tempRoot('mcp-oauth-store-') })
+    const store = createMcpOAuthStore({ root: await oauthStoreRoot() })
     await seedSignIn(store, remote, { access: 'at-0', expiresAt: Date.now() + 3_600_000 })
     const { applied, call } = await sessionRows(store, remote)
     expect(applied.statuses.get(SERVER_ID)).toMatchObject({ connectionState: 'ready' })
@@ -357,7 +363,7 @@ describe('OAuth MCP servers in session rows', () => {
 
   it('a server refusing every token: a mutating call is refused with the sign-in text, one refresh per attempt', async () => {
     const remote = await startRemote()
-    const store = createMcpOAuthStore({ root: await tempRoot('mcp-oauth-store-') })
+    const store = createMcpOAuthStore({ root: await oauthStoreRoot() })
     await seedSignIn(store, remote, { access: 'at-0', expiresAt: Date.now() + 3_600_000 })
     const { host, runtime, applied, call } = await sessionRows(store, remote)
     expect(applied.statuses.get(SERVER_ID)).toMatchObject({ connectionState: 'ready' })
@@ -401,7 +407,7 @@ describe('OAuth MCP servers in session rows', () => {
 
   it('two stores on one root refresh at once: one refresh grant', async () => {
     const remote = await startRemote()
-    const root = await tempRoot('mcp-oauth-store-')
+    const root = await oauthStoreRoot()
     await seedSignIn(createMcpOAuthStore({ root }), remote, { access: 'at-0', expiresAt: Date.now() - 1 })
     // Two processes: each has its own store on the same files and its own authorizer.
     const authorizers = [createMcpOAuthStore({ root }), createMcpOAuthStore({ root })].map((store) =>
@@ -419,7 +425,7 @@ describe('OAuth MCP servers in session rows', () => {
 
   it('after logout and signOut the server sees no further request with the old token, and the row is unavailable', async () => {
     const remote = await startRemote()
-    const store = createMcpOAuthStore({ root: await tempRoot('mcp-oauth-store-') })
+    const store = createMcpOAuthStore({ root: await oauthStoreRoot() })
     await seedSignIn(store, remote, { access: 'at-0', expiresAt: Date.now() + 3_600_000 })
     const { host, runtime, entry, applied, call } = await sessionRows(store, remote)
     expect(applied.statuses.get(SERVER_ID)).toMatchObject({ connectionState: 'ready' })

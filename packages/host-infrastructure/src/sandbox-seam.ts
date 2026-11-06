@@ -171,6 +171,8 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
       const argv = external || hostSpawn ? raw : [...(await backend.confine({ argv: raw, cwd }))]
       return workspace.openProcess(argv, {
         cwd,
+        // Configured one-shot commands never consume caller input; persistent shells keep it open.
+        ...(!request.pty && request.argv[0] === SHELL_SENTINEL ? { stdin: '' } : {}),
         ...(request.signal ? { signal: request.signal } : {}),
         ...(request.env ? { env: { ...request.env } } : {}),
         ...(request.pty ? { pty: request.pty } : {}),

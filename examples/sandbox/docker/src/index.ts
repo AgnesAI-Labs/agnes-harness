@@ -34,7 +34,7 @@ function missing(reason: string): SandboxCapabilities {
   })
 }
 
-/** Ask the docker CLI whether a daemon is reachable. A failure stays unavailable. */
+/** This demo runs Linux containers; a reachable Windows daemon is not enough. */
 export function probeDocker(signal?: AbortSignal): Promise<SandboxCapabilities> {
   return new Promise((resolve) => {
     let settled = false
@@ -45,14 +45,16 @@ export function probeDocker(signal?: AbortSignal): Promise<SandboxCapabilities> 
     }
     let child: ChildProcess
     try {
-      child = spawn('docker', ['version', '--format', '{{.Server.Version}}'], {
-        stdio: ['ignore', 'ignore', 'ignore'],
+      child = spawn('docker', ['info', '--format', '{{.OSType}}'], {
+        stdio: ['ignore', 'pipe', 'ignore'],
         windowsHide: true,
       })
     } catch {
       finish(missing('docker CLI is not available'))
       return
     }
+    const output = { text: '', truncated: false }
+    capture(child.stdout, 64, output)
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
       finish(missing('docker CLI is not available'))
@@ -71,7 +73,7 @@ export function probeDocker(signal?: AbortSignal): Promise<SandboxCapabilities> 
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
       finish(
-        code === 0
+        code === 0 && !output.truncated && output.text.trim() === 'linux'
           ? Object.freeze({
               network: true,
               fsWrite: Object.freeze([]),
@@ -79,7 +81,11 @@ export function probeDocker(signal?: AbortSignal): Promise<SandboxCapabilities> 
               available: true,
               enforcement: { level: 'partial' as const, scope: ['network', 'process'] as const },
             })
-          : missing('docker CLI is not available'),
+          : missing(
+              code === 0
+                ? 'this Docker sandbox requires a Linux container daemon'
+                : 'docker CLI or daemon is not available',
+            ),
       )
     })
   })
@@ -94,12 +100,17 @@ function assertPath(path: string): void {
     path.includes('\n')
   )
     throw sandboxUnavailable('sandbox path is not a bindable absolute path')
+  if (needsPathMapping(path)) throw sandboxUnavailable('host path mapping to Linux containers is unavailable')
   if (
     process.platform === 'win32'
       ? !/^[A-Za-z]:[\\/]/.test(path) && !path.startsWith('\\\\')
       : !path.startsWith('/')
   )
     throw sandboxUnavailable('sandbox path is not absolute')
+}
+
+function needsPathMapping(path: string): boolean {
+  return /^[A-Za-z]:[\\/]/.test(path) || /^[\\/]{2}/.test(path)
 }
 
 function imageOf(config: SandboxProviderConfig): string {
@@ -156,16 +167,19 @@ export function createDockerSandboxProvider(probe: DockerProbe = probeDocker): S
       capabilities = probed
       const image = imageOf(config)
       const workspace = config.workspaceRoot
-      if (workspace !== undefined) assertPath(workspace)
-      const instanceCapabilities: SandboxCapabilities = probed.available
-        ? Object.freeze({
-            network: true,
-            fsWrite: Object.freeze(workspace === undefined ? [] : [Object.freeze({ path: workspace })]),
-            platform: hostPlatform(),
-            available: true,
-            enforcement: { level: 'partial' as const, scope: ['network', 'process'] as const },
-          })
-        : probed
+      const unmapped = workspace !== undefined && needsPathMapping(workspace)
+      if (workspace !== undefined && !unmapped) assertPath(workspace)
+      const instanceCapabilities: SandboxCapabilities = !probed.available
+        ? probed
+        : unmapped
+          ? missing('host path mapping to Linux containers is unavailable')
+          : Object.freeze({
+              network: true,
+              fsWrite: Object.freeze(workspace === undefined ? [] : [Object.freeze({ path: workspace })]),
+              platform: hostPlatform(),
+              available: true,
+              enforcement: { level: 'partial' as const, scope: ['network', 'process'] as const },
+            })
       const live = new Set<Live>()
       const kill = (entry: Live) => {
         entry.child.kill('SIGKILL')
@@ -176,7 +190,7 @@ export function createDockerSandboxProvider(probe: DockerProbe = probeDocker): S
       return {
         id: 'docker',
         capabilities: instanceCapabilities,
-        exec(request) {
+        async exec(request) {
           if (!instanceCapabilities.available)
             return Promise.reject(
               sandboxUnavailable(instanceCapabilities.unavailableReason ?? 'docker CLI is not available'),

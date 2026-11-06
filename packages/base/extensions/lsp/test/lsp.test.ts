@@ -13,7 +13,16 @@ import factory, { createLspExtension, LspSessions } from '../src/index.js'
 import { findTsserver, launchArgv, resolveBinary, safeEntries } from '../src/resolve.js'
 import { findRoot, serverFor } from '../src/servers.js'
 import { createLspDiagnosticsTool } from '../src/tool.js'
-import { fakeInstall } from './harness.js'
+import { fakeInstall, lspContext } from './harness.js'
+
+it.each([
+  ['C:\\lsp-fixture\\m.go', 'C:/lsp-fixture/m.go'],
+  ['/work/proj\\nested\\m.go', 'nested/m.go'],
+])('reads fixture seed %s through the path the LSP tool requests', async (seed, input) => {
+  const ctx = lspContext(undefined, { [seed]: 'package fixture\n' })
+  const [report] = await new LspSessions().check(ctx, [input])
+  expect(report?.note).toBe('language servers need a local sandbox, and this session has none')
+})
 
 describe('framing', () => {
   const messages = [{ a: 1 }, { text: '你好，世界 🌍' }]

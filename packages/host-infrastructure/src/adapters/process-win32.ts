@@ -153,6 +153,7 @@ async function openStarted(
   }
   try {
     if (stdinShell) await handle.write(`${powerShellEncoding.replaceAll('\n', '; ')}\n`)
+    else if (request.stdin !== undefined) child.stdin.end(request.stdin)
     request.signal?.throwIfAborted()
     // Core aborts its call signal even on successful background handoff. Do not carry it into Job lifetime.
     request.signal?.removeEventListener('abort', abort)

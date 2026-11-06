@@ -9,9 +9,6 @@ import { createConfigurationService, initializeHome } from '@agnes/host'
 import { expect, it, vi } from 'vitest'
 
 const exec = promisify(execFile)
-const buildSelection = process.env.AGNES_NATIVE_BUILDER
-  ? { AGNES_NATIVE_BUILDER: process.env.AGNES_NATIVE_BUILDER }
-  : {}
 
 // A real built `agh`, a real daemon in an isolated home and a loopback provider. The provider holds
 // the first model request open, so `agh queue` from a separate process lands while a turn is running.
@@ -53,6 +50,10 @@ it('agh queue from another process runs after the current turn ends', async () =
   })
   const env = {
     PATH: process.env.PATH,
+    SystemRoot: process.env.SystemRoot,
+    PATHEXT: process.env.PATHEXT,
+    TEMP: root,
+    TMP: root,
     HOME: root,
     AGH_HOME: home,
     AGNES_PROFILE: 'local-dev',
@@ -65,8 +66,8 @@ it('agh queue from another process runs after the current turn ends', async () =
     await exec(
       process.execPath,
       ['--import', 'tsx', resolve('packages/cli/tools/build-local.ts'), '--output-dir', distribution],
-      // Linux distribution staging refuses host-built helpers; keep CI's portable builder selection.
-      { env: { ...env, ...buildSelection }, timeout: 90_000, maxBuffer: 16 * 1024 * 1024 },
+      // Compilation needs the prepared headers/toolchain; daemon children keep the isolated env above.
+      { env: { ...process.env, ...env }, timeout: 90_000, maxBuffer: 16 * 1024 * 1024 },
     )
     await new Promise<void>((done, fail) => {
       provider.once('error', fail)
@@ -128,7 +129,12 @@ it('agh queue from another process runs after the current turn ends', async () =
     )
   } finally {
     release()
-    if (bridge && bridge.exitCode === null) bridge.kill('SIGKILL')
+    const child = bridge
+    if (child && child.exitCode === null && child.signalCode === null)
+      await new Promise<void>((resolve) => {
+        child.once('close', () => resolve())
+        child.kill('SIGKILL')
+      })
     await cli(['daemon', 'stop']).catch(() => undefined)
     provider.closeAllConnections()
     await new Promise<void>((done) => provider.close(() => done()))

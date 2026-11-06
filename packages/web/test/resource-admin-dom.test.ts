@@ -776,6 +776,21 @@ it('resets incompatible SecretRef selection on transport change and cancellation
   expect(submitted('mcp/create')).toHaveLength(0)
 })
 
+it.each([false, true])('keeps an open MCP detail after same-scope sync (refresh=%s)', async (refresh) => {
+  await resourceMount.sync({ tab: 'mcp' }, { refresh })
+  await resourceMount.reload()
+  expect(byId<HTMLDialogElement>('resource-detail').open).toBe(true)
+  expect(byId('resource-detail').textContent).toContain('Fixture MCP')
+})
+
+it.each([{ tab: 'skills' as const }, { tab: 'mcp' as const, workspaceId: 'b'.repeat(64) }])(
+  'closes the previous detail when its resource scope changes to %j',
+  async (scope) => {
+    await resourceMount.sync(scope)
+    expect(byId<HTMLDialogElement>('resource-detail').open).toBe(false)
+  },
+)
+
 it('does not pop a detail modal from merely loading a list', async () => {
   // 上一版详情是常驻的右列，列表载入后会替用户选中第一项。详情改成模态框之后，
   // 同一个"顺手选中"就变成了一进 Tab 就弹出第一个资源的详情。

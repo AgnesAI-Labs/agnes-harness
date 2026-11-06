@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { createInterface } from 'node:readline/promises'
 import { createClient, memoryJournal } from '@agnes/sdk'
 
@@ -107,9 +107,17 @@ export async function runtime(check, limits = {}) {
       limitsConfigured = true
       await cli(['daemon', 'start'])
     }
-    const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8'))
+    const status = JSON.parse(await cli(['daemon', 'status']))
+    assert.ok(status.running && status.socketReachable && status.owner, 'Demo daemon is unavailable')
+    const owner = status.owner
     client = createClient({
-      transport: { kind: 'unix', path: owner.socketPath },
+      transport: {
+        kind: 'unix',
+        path: owner.socketPath,
+        ...(owner.socketPath.startsWith('\\\\.\\pipe\\')
+          ? { serverIdentity: { pid: owner.pid, processStartId: owner.processStartId } }
+          : {}),
+      },
       auth: { kind: 'local' },
       journal: memoryJournal(),
     })
@@ -231,8 +239,9 @@ export async function complete(client, receipt) {
   )
 }
 export async function install(rt, directory) {
+  // Package file references contain literal paths, not percent-encoded file URLs.
   const client = rt.client,
-    source = { type: 'file', ref: `file:${resolve(directory)}` }
+    source = { type: 'file', ref: `file:${resolve(directory).split(sep).join('/')}` }
   const { preview } = await complete(
     client,
     await client.packages.inspect({ ...(await command(client)), source }),
