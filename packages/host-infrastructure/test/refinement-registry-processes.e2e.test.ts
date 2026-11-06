@@ -32,6 +32,8 @@ const startWriter = (args: string[]) => {
 }
 const writer = (dataDir: string, tag: string, count: number) =>
   startWriter([
+    '--import',
+    import.meta.resolve('tsx'),
     here('./fixtures/registry-writer.mjs'),
     pathToFileURL(here('../src/refinement-registry.ts')).href,
     dataDir,

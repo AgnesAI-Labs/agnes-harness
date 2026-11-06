@@ -21,6 +21,7 @@ import {
   type SaveRefusal,
   type SaveSource,
 } from '@agnes/core-ledger/reduce/refinement-save'
+import { createPlatform } from './adapters/platform.js'
 
 export type { SaveInitiator, SaveKind, SaveReceipt, SaveRefusal, SaveSource }
 /** How many separate confirmations an automatic save needs (shared with Core, which offers the saves). */
@@ -531,7 +532,7 @@ export class RefinementRegistry {
         } else {
           // Windows may refuse creation while the previous lock is pending deletion. This alone
           // never permits takeover, and a lasting permission refusal must retain its filesystem code.
-          const windows = process.platform === 'win32' // guards-allow-platform: Windows pending-deletion refusal.
+          const windows = createPlatform().os === 'win32'
           const pendingDelete = windows && (error as NodeJS.ErrnoException)?.code === 'EPERM'
           if (!pendingDelete || Date.now() >= deadline) throw error
         }
