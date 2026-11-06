@@ -335,8 +335,8 @@ describe('references of a text the output guard cut', () => {
   it('ls lists only the entries whose whole name is in the kept head or tail', async () => {
     const r = await lsTool.execute({}, ctxOf({ ...small, files: manyFiles(100) }))
     const s = expectCut(r, 100)
-    // Rows are 14 bytes apart: rows 0-35 end inside the first 512 bytes, rows 91-99 start inside the last 128.
-    const kept = [...Array.from({ length: 36 }, (_, i) => i), ...Array.from({ length: 9 }, (_, i) => 91 + i)]
+    // Rows are 14 bytes apart: rows 0-21 end inside the first 320 bytes, rows 78-99 start inside the last 320.
+    const kept = [...Array.from({ length: 22 }, (_, i) => i), ...Array.from({ length: 22 }, (_, i) => 78 + i)]
     expect(s.references.map((x) => x.path)).toEqual(kept.map((i) => `entry-${pad(i)}.txt`))
   })
   it('find marks a cut text truncated', async () => {
