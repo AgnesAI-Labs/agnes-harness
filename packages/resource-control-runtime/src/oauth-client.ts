@@ -227,6 +227,14 @@ export async function tryDiscoverAuthorizationServerMetadata(
   authorizationServerUrl: URL,
   fetchImpl?: FetchLike,
 ): Promise<AuthorizationServerMetadata | undefined> {
+  return (await discoverMetadataChecked(authorizationServerUrl, fetchImpl)).metadata
+}
+
+/** The metadata, or the endpoint that made it unusable because it is not an allowed address. */
+async function discoverMetadataChecked(
+  authorizationServerUrl: URL,
+  fetchImpl?: FetchLike,
+): Promise<{ metadata?: AuthorizationServerMetadata; refusedEndpoint?: string }> {
   let metadata: AuthorizationServerMetadata | undefined
   try {
     metadata = await discoverAuthorizationServerMetadata(authorizationServerUrl, {
@@ -235,11 +243,11 @@ export async function tryDiscoverAuthorizationServerMetadata(
   } catch {
     // No RFC 8414 / OpenID discovery metadata at all - every downstream branch that depends on
     // `metadata` degrades to "unsupported", which is the correct outcome (not a fatal error).
-    return undefined
+    return {}
   }
   // `discoverAuthorizationServerMetadata` itself can resolve to `undefined` (not only throw) - a
   // 404 with no fallback candidate left, per the SDK's own return type.
-  if (!metadata) return undefined
+  if (!metadata) return {}
   // SSRF guard (same finding as resolveAuthorizationServerUrl above): `token_endpoint` (required by
   // the SDK's own OAuthMetadataSchema) and `registration_endpoint` (optional) are both attacker/
   // compromised-server-controlled values straight out of this response body, each later handed
@@ -252,14 +260,23 @@ export async function tryDiscoverAuthorizationServerMetadata(
   // fallback for "no RFC 8414 metadata at all" (the legacy 2025-03-26 same-origin behavior, or DCR
   // simply being skipped) - degrading to that path here is exactly the same safe default a server
   // that never implemented discovery gets treated to, not a new failure mode.
-  try {
-    validateManagedHttpUrl(new URL(metadata.token_endpoint), undefined)
-    if (metadata.registration_endpoint)
-      validateManagedHttpUrl(new URL(metadata.registration_endpoint), undefined)
-  } catch {
-    return undefined
+  for (const endpoint of [metadata.token_endpoint, metadata.registration_endpoint]) {
+    if (!endpoint) continue
+    try {
+      validateManagedHttpUrl(new URL(endpoint), undefined)
+    } catch {
+      return { refusedEndpoint: endpoint }
+    }
   }
-  return metadata
+  return { metadata }
+}
+
+function isAddress(value: string, url: URL): boolean {
+  try {
+    return new URL(value).href === url.href
+  } catch {
+    return false
+  }
 }
 
 export type McpOAuthDiscovery = Readonly<{
@@ -270,6 +287,8 @@ export type McpOAuthDiscovery = Readonly<{
   /** What the access token is for; sent as `resource` on every authorization and token request. */
   resource: URL
   scopesSupported: readonly string[]
+  /** An authorization server address the server named that is not allowed (not https). */
+  refusedEndpoint?: string
 }>
 
 /**
@@ -288,7 +307,9 @@ export async function discoverMcpOAuth(serverUrl: URL, fetchImpl?: FetchLike): P
     resource = advertised
   }
   const authorizationServer = authorizationServerFrom(resourceMetadata, serverUrl)
-  const metadata = await tryDiscoverAuthorizationServerMetadata(authorizationServer, fetchImpl)
+  const named = resourceMetadata?.authorization_servers?.[0]
+  const { metadata, refusedEndpoint } = await discoverMetadataChecked(authorizationServer, fetchImpl)
+  const refused = named && !isAddress(named, authorizationServer) ? named : refusedEndpoint
   return {
     authorizationServer,
     ...(metadata ? { metadata } : {}),
@@ -296,6 +317,7 @@ export async function discoverMcpOAuth(serverUrl: URL, fetchImpl?: FetchLike): P
     ...(metadata?.issuer ? { issuer: metadata.issuer } : {}),
     resource,
     scopesSupported: resourceMetadata?.scopes_supported ?? [],
+    ...(refused ? { refusedEndpoint: refused } : {}),
   }
 }
 

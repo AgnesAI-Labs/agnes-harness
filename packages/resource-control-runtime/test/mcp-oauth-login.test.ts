@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   beginMcpOAuthLogin,
   completeMcpOAuthLogin,
+  McpOAuthEndpointNotAllowed,
   McpOAuthLoginEndpointChanged,
   type McpOAuthLoginStart,
   McpOAuthLoginSuperseded,
@@ -154,6 +155,29 @@ describe('MCP OAuth sign-in', () => {
 
     expect(login.client).toEqual({ clientId: 'new-client', clientSecret: 'dcr-secret' })
     expect(server.paths()).toContain('/register')
+  })
+
+  it('begin names an authorization server that is not https instead of asking for a client ID', async () => {
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } })
+    const fetchImpl: typeof fetch = async (input) => {
+      const path = new URL(String(input)).pathname
+      if (path.startsWith('/.well-known/oauth-protected-resource'))
+        return json({
+          resource: 'https://mcp.example/mcp',
+          authorization_servers: ['http://localhost:3911/'],
+        })
+      return new Response(null, { status: 404 })
+    }
+    const refused = beginMcpOAuthLogin({
+      serverId: SERVER_ID,
+      serverUrl: new URL('https://mcp.example/mcp'),
+      summary: EMPTY,
+      redirectUri: REDIRECT,
+      fetchImpl,
+    })
+    await expect(refused).rejects.toBeInstanceOf(McpOAuthEndpointNotAllowed)
+    await expect(refused).rejects.toMatchObject({ endpoint: 'http://localhost:3911' })
   })
 
   it('begin prefers a static client ID over registration', async () => {
