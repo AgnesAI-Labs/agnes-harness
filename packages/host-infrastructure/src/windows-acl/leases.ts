@@ -46,6 +46,24 @@ export function assertWorkspaceDisjoint(
       throw aclError('E_ACL_ROOT_OVERLAP', `The workspace ${workspace} overlaps the Host ${role} ${path}`)
 }
 
+/** Refuses a workspace that is, or contains, any of `roots`; lying inside one is allowed. */
+export function assertWorkspaceExcludes(
+  paths: WindowsAclPaths,
+  workspace: string,
+  roots: readonly Readonly<{ path: string; role: string }>[],
+  next?: string,
+): void {
+  const fold = (path: string) => (paths.caseInsensitive ? path.toLowerCase() : path)
+  for (const { path, role } of roots) {
+    const rest = paths.relative(fold(workspace), fold(path))
+    if (rest === '' || (rest.split(/[\\/]/)[0] !== '..' && !paths.isAbsolute(rest)))
+      throw aclError(
+        'E_ACL_ROOT_OVERLAP',
+        `The workspace ${workspace} contains the Host ${role} ${path}${next ? `; ${next}` : ''}`,
+      )
+  }
+}
+
 const TEMP_NAME = /^lease-[0-9a-f]{32}$/
 
 /** A fresh, unguessable directory name for one lease; never derived from the session or reused. */

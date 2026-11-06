@@ -2,14 +2,12 @@
 // `@agnes/system-node`, NTFS paths and this process's identity. Only a Windows Host creates them.
 import { realpathSync } from 'node:fs'
 import { lstat, mkdir, rm } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { win32 } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { hasPrivateDaclSync, windowsEnsurePrivateDirectorySync } from '@agnes/system-node'
-import {
-  applyWindowsAclGrant,
-  inspectWindowsAcl,
-  readWindowsObjectIdentity,
-  restoreWindowsAclGrant,
-} from '@agnes/system-node/windows-acl'
+import { readWindowsObjectIdentity } from '@agnes/system-node/windows-acl'
+import { createWindowsAclWorker } from '@agnes/system-node/windows-acl-worker'
 import { windowsProcessIdentity } from '../adapters/process-identity-win32.js'
 import { type WindowsAclPlatform, WindowsExecutionAuthority, windowsAclLocations } from './authority.js'
 import { WindowsAclExecution } from './execution.js'
@@ -38,21 +36,51 @@ export async function windowsAclHostPlatform(pid: number): Promise<WindowsAclPla
 }
 
 /**
+ * Directories of code this Host runs without confinement: its own executable and code, the Node
+ * executable that starts process brokers, the broker's package and the native artifact. A module
+ * that cannot be resolved here cannot be run by this Host either, so it is left out.
+ */
+export function windowsAclRuntimeRoots(nodeExecutable?: string): string[] {
+  const require = createRequire(import.meta.url)
+  const resolved = (id: string, levels: number) => {
+    try {
+      let path = require.resolve(id)
+      for (let level = 0; level < levels; level++) path = win32.dirname(path)
+      return [path]
+    } catch {
+      return []
+    }
+  }
+  return [
+    win32.dirname(process.execPath),
+    ...(nodeExecutable ? [win32.dirname(nodeExecutable)] : []),
+    win32.dirname(fileURLToPath(import.meta.url)),
+    // The broker lives in <package>/runtime; the whole package runs in the Host and the broker.
+    ...resolved('@agnes/system-node/process-broker', 2),
+    ...resolved('@agnes/system-node/native', 1),
+  ]
+}
+
+/**
  * The Host's Windows execution facade over the real authority. Its journal and temp directories
  * live under the account's LocalAppData folder; `privateRoots` are AGH's own data roots, which no
- * workspace may contain or lie inside.
+ * workspace may contain or lie inside, and no workspace may contain the Host's runtime (see
+ * windowsAclRuntimeRoots; pass `nodeExecutable` when brokers run under another Node than this
+ * process). The tree walks run on a worker thread.
  */
 export async function createWindowsAclExecution(input: {
   localAppData: string
   privateRoots: readonly string[]
   localProviderId: string
   pid: number
+  nodeExecutable?: string
 }): Promise<WindowsAclExecution> {
   const platform = await windowsAclHostPlatform(input.pid)
   const authority = new WindowsExecutionAuthority({
     ...windowsAclLocations(input.localAppData, platform.paths),
     privateRoots: input.privateRoots,
-    native: { inspect: inspectWindowsAcl, apply: applyWindowsAclGrant, restore: restoreWindowsAclGrant },
+    runtimeRoots: windowsAclRuntimeRoots(input.nodeExecutable),
+    native: createWindowsAclWorker(),
     platform,
   })
   return new WindowsAclExecution({
@@ -79,7 +107,7 @@ export async function createWindowsAclMaintenanceAuthority(input: {
   const authority = new WindowsExecutionAuthority({
     ...windowsAclLocations(input.localAppData, platform.paths),
     privateRoots: [],
-    native: { inspect: inspectWindowsAcl, apply: applyWindowsAclGrant, restore: restoreWindowsAclGrant },
+    native: createWindowsAclWorker(),
     platform,
   })
   return { authority, platform }

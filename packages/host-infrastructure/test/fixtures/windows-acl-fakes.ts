@@ -1,7 +1,8 @@
 // In-memory stand-ins for the Windows ACL primitives and the Host platform, for the authority's
 // tests on any OS, with this OS's own path rules. Directories are real (under a temporary
 // directory) so canonical paths, links and the journal behave as on disk; permissions are modelled
-// per directory as SDDL entry lists.
+// per directory as SDDL entry lists. Every entry is inheritable, so a modelled directory inside
+// another one carries the outer one's entries as inherited entries ("ID"), as NTFS propagates them.
 import { randomBytes } from 'node:crypto'
 import { lstatSync, mkdirSync, realpathSync, rmSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative } from 'node:path'
@@ -43,7 +44,11 @@ export const identityOf = (): WindowsObjectIdentity => ({
   fileId: randomBytes(16).toString('hex'),
 })
 
-/** Models NTFS permissions of directories; counts every native call like a mutation spy would. */
+/**
+ * Models NTFS permissions of directories; counts every native call like a mutation spy would. Its
+ * primitives answer asynchronously, as the Host's worker thread does, so a caller that forgets to
+ * wait for one reads a promise instead of a result.
+ */
 export class FakeNtfs implements WindowsAclNative {
   readonly calls = { inspect: 0, apply: 0, restore: 0 }
   readonly objects = new Map<string, FakeObject>()
@@ -68,7 +73,24 @@ export class FakeNtfs implements WindowsAclNative {
 
   sddl(path: string): string {
     const object = this.#object(path)
-    return `O:BAG:BAD:AI${object.dacl.join('')}S:${object.label.join('')}`
+    const inherited = this.#inherited(path)
+    return `O:BAG:BAD:AI${[...object.dacl, ...inherited.dacl].join('')}S:${[...object.label, ...inherited.label].join('')}`
+  }
+
+  /** What the nearest modelled ancestor passes on: its own and its inherited entries, marked ID. */
+  #inherited(path: string): { dacl: string[]; label: string[] } {
+    for (let parent = dirname(path); parent !== dirname(parent); parent = dirname(parent)) {
+      const object = this.objects.get(parent)
+      if (!object) continue
+      const above = this.#inherited(parent)
+      const mark = (ace: string) =>
+        ace.includes('ID;') ? ace : ace.replace(/^\(([A-Z]+);([A-Z]*);/, '($1;$2ID;')
+      return {
+        dacl: [...object.dacl, ...above.dacl].map(mark),
+        label: [...object.label, ...above.label].map(mark),
+      }
+    }
+    return { dacl: [], label: [] }
   }
 
   thirdPartyChange(path: string): void {
@@ -84,8 +106,14 @@ export class FakeNtfs implements WindowsAclNative {
     return this.#object(path).identity
   }
 
-  inspect(path: string): WindowsAclSnapshot {
+  async inspect(path: string): Promise<WindowsAclSnapshot> {
+    await Promise.resolve()
     this.calls.inspect++
+    return this.snapshot(path)
+  }
+
+  /** The snapshot inspect reports, read at once. */
+  snapshot(path: string): WindowsAclSnapshot {
     const object = this.#object(path)
     const securityDescriptor = this.sddl(path)
     return {
@@ -93,19 +121,26 @@ export class FakeNtfs implements WindowsAclNative {
       identity: object.identity,
       securityDescriptor,
       fingerprint: windowsAclFingerprint(object.identity, securityDescriptor),
+      ownedFingerprint: windowsAclFingerprint(
+        object.identity,
+        `owned:O:BAG:BAD:${object.dacl.join('')}S:${object.label.join('')}`,
+      ),
       descendants: [],
       inheritedDescendants: 0,
     }
   }
 
-  apply(input: WindowsAclApply): WindowsAclMutation {
+  async apply(input: WindowsAclApply): Promise<WindowsAclMutation> {
+    await Promise.resolve()
     this.calls.apply++
     this.beforeApply?.(input)
     const object = this.#object(input.before.path)
     if (object.identity.fileId !== input.before.identity.fileId)
       throw Object.assign(new Error('identity'), { code: 'E_ACL_IDENTITY_MISMATCH' })
-    if (this.inspect(input.before.path).fingerprint !== input.before.fingerprint)
+    if (this.snapshot(input.before.path).fingerprint !== input.before.fingerprint)
       throw Object.assign(new Error('changed'), { code: 'E_ACL_CHANGED' })
+    if (object.dacl.some((ace) => /^\(A;[A-Z]*;(FA|0x1f01ff);;;(WD|S-1-1-0|S-1-5-5-[0-9-]+)\)$/.test(ace)))
+      throw Object.assign(new Error('broad write'), { code: 'E_ACL_BROAD_WRITE' })
     const beforePrint = input.before.fingerprint
     const added: WindowsAclEntry[] = [{ kind: 'allow', sid: input.writeSid, mask: ALLOW_MASK, flags: 0x03 }]
     object.dacl.push(allowAce(input.writeSid))
@@ -119,12 +154,13 @@ export class FakeNtfs implements WindowsAclNative {
       added.push({ kind: 'label', sid: 'S-1-16-4096', mask: 0x01, flags: 0x03 })
     }
     if (this.applyOutcome === 'crash-after-write') throw crashError()
-    const after = this.inspect(input.before.path)
+    const after = this.snapshot(input.before.path)
     const incomplete = this.applyOutcome === 'incomplete'
     this.afterApply?.(input.before.path)
     return {
       grantId: input.grantId,
       complete: !incomplete,
+      ownedFingerprint: after.ownedFingerprint,
       changes: [
         {
           path: after.path,
@@ -142,10 +178,11 @@ export class FakeNtfs implements WindowsAclNative {
     }
   }
 
-  restore(input: WindowsAclRestore): WindowsAclMutation {
+  async restore(input: WindowsAclRestore): Promise<WindowsAclMutation> {
+    await Promise.resolve()
     this.calls.restore++
     const object = this.#object(input.before.path)
-    const now = this.inspect(input.before.path)
+    const now = this.snapshot(input.before.path)
     if (now.fingerprint !== input.expectedCurrentFingerprint)
       throw Object.assign(new Error('changed'), { code: 'E_ACL_CHANGED' })
     const remove = (list: string[], ace: string) => {
@@ -162,10 +199,11 @@ export class FakeNtfs implements WindowsAclNative {
     object.dacl = dacl
     object.label = label
     if (this.restoreOutcome === 'crash-after-write') throw crashError()
-    const after = this.inspect(input.before.path)
+    const after = this.snapshot(input.before.path)
     return {
       grantId: input.grantId,
       complete: true,
+      ownedFingerprint: after.ownedFingerprint,
       changes: [
         {
           path: after.path,
@@ -283,7 +321,13 @@ export type AclHost = Readonly<{
 
 export function aclHost(
   world: AclWorld,
-  options: { pid?: number; tempRoot?: string; stateRoot?: string; privateRoots?: string[] } = {},
+  options: {
+    pid?: number
+    tempRoot?: string
+    stateRoot?: string
+    privateRoots?: string[]
+    runtimeRoots?: string[]
+  } = {},
 ): AclHost {
   const platform = fakePlatform(world.ntfs, options.pid)
   const files = new FaultyFiles()
@@ -291,6 +335,7 @@ export function aclHost(
     stateRoot: options.stateRoot ?? world.stateRoot,
     tempRoot: options.tempRoot ?? world.tempRoot,
     privateRoots: options.privateRoots ?? [world.home],
+    ...(options.runtimeRoots ? { runtimeRoots: options.runtimeRoots } : {}),
     native: world.ntfs,
     platform,
     files,

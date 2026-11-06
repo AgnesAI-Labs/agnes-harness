@@ -219,6 +219,36 @@ describe('recovery after an interrupted grant', () => {
     expect(workspaceRecords()).toMatchObject([{ state: 'revoked', issues: [{ code: 'E_ACL_BUSY' }] }])
     expect(original()).toBe(before)
   })
+
+  it('a grant whose native call did not answer in time needs attention, however the tree reads', async () => {
+    const before = original()
+    const { authority } = aclHost(world)
+    world.ntfs.beforeApply = () => {
+      throw Object.assign(new Error('no answer'), { code: 'E_ACL_WORKER_TIMEOUT' })
+    }
+    await expect(authority.acquire(writeLease(world.workspace))).rejects.toThrow(code('E_ACL_WORKER_TIMEOUT'))
+    // The call may still be running: nothing reads as revoked, and nothing new is granted.
+    expect(workspaceRecords()).toMatchObject([
+      {
+        state: 'needs-attention',
+        issues: [{ code: 'E_ACL_WORKER_TIMEOUT', reason: expect.stringMatching(/^unconfirmed/) }],
+      },
+    ])
+    expect(original()).toBe(before)
+    delete world.ntfs.beforeApply
+    await expect(authority.acquire(writeLease(world.workspace, 'session-b'))).rejects.toThrow(
+      code('E_ACL_NEEDS_ATTENTION'),
+    )
+  })
+
+  it('refuses a root every confined process could write once it is labelled Low', async () => {
+    world.ntfs.objects.get(world.workspace)?.dacl.push('(A;OICI;FA;;;WD)')
+    const before = original()
+    const { authority } = aclHost(world)
+    await expect(authority.acquire(writeLease(world.workspace))).rejects.toThrow(code('E_ACL_BROAD_WRITE'))
+    expect(workspaceRecords()).toMatchObject([{ state: 'revoked', issues: [{ code: 'E_ACL_BROAD_WRITE' }] }])
+    expect(original()).toBe(before)
+  })
 })
 
 describe('damaged records and the cross-process lock', () => {
@@ -352,9 +382,9 @@ describe('third-party changes and repair rules', () => {
       lockWaitMs: 150,
     })
     await journal.open()
-    const before = world.ntfs.inspect(world.workspace)
+    const before = await world.ntfs.inspect(world.workspace)
     const writeSid = 'S-1-4-7-7-7-7'
-    const mutation = world.ntfs.apply({ before, grantId: 'second', writeSid })
+    const mutation = await world.ntfs.apply({ before, grantId: 'second', writeSid })
     const change = mutation.changes[0]
     if (!change) throw new Error('no change')
     journal.write({
@@ -365,7 +395,7 @@ describe('third-party changes and repair rules', () => {
       writeSid,
       state: 'active',
       before,
-      applied: { fingerprint: change.afterFingerprint, added: change.added },
+      applied: { fingerprint: mutation.ownedFingerprint ?? '', added: change.added },
       issues: [],
     })
     const repaired = await host.authority.repair({
@@ -383,5 +413,76 @@ describe('third-party changes and repair rules', () => {
     const launcher = new Launcher()
     const claim = await launcher.launch(await host.authority.acquire(writeLease(world.workspace)))
     expect(claim.writeSids[0]).toBe(writeSid)
+  })
+})
+
+describe('nested roots', () => {
+  const repair = async (host: ReturnType<typeof aclHost>, root: string) => {
+    const report = await host.authority.inspect(root)
+    return host.authority.repair({
+      root,
+      grantId: report.grantId ?? '',
+      expectedRecordDigest: report.recordDigest ?? '',
+    })
+  }
+
+  it('an inner root granted first keeps working when the outer root is granted and repaired', async () => {
+    const inner = join(world.workspace, 'inner')
+    world.ntfs.directory(inner)
+    const host = aclHost(world)
+    const launcher = new Launcher()
+    const innerLease = await host.authority.acquire(writeLease(inner, 'session-inner'))
+    const innerRecord = () => workspaceRecords().find((record) => record.root === inner)
+    const recorded = innerRecord()
+    await launcher.launch(innerLease)
+
+    // The outer grant's entries reach the inner root as inherited entries.
+    const outerLease = await host.authority.acquire(writeLease(world.workspace, 'session-outer'))
+    expect(world.ntfs.sddl(inner)).toContain('ID;0x110156')
+    await launcher.launch(innerLease)
+    const again = await host.authority.acquire(writeLease(inner, 'session-inner-2'))
+    await launcher.launch(again)
+    await launcher.launch(outerLease)
+    expect((await host.authority.inspect(inner)).state).toBe('active')
+    // Nothing rewrote the inner grant's record.
+    expect(innerRecord()).toEqual(recorded)
+
+    // Repairing the outer root removes the inherited copies again; the inner grant is untouched.
+    await outerLease.close()
+    expect((await repair(host, world.workspace)).state).toBe('revoked')
+    expect(world.ntfs.sddl(inner)).not.toContain('ID;0x110156')
+    await launcher.launch(innerLease)
+    await launcher.launch(await host.authority.acquire(writeLease(inner, 'session-inner-3')))
+    expect(await host.authority.inspect(inner)).toMatchObject({ state: 'active', issues: [] })
+    expect(innerRecord()).toEqual(recorded)
+    expect(launcher.count).toBe(6)
+  })
+
+  it('an outer root granted first does not block or break an inner grant', async () => {
+    const inner = join(world.workspace, 'inner')
+    world.ntfs.directory(inner)
+    const host = aclHost(world)
+    const launcher = new Launcher()
+    const outerLease = await host.authority.acquire(writeLease(world.workspace, 'session-outer'))
+    const innerLease = await host.authority.acquire(writeLease(inner, 'session-inner'))
+    await launcher.launch(outerLease)
+    await launcher.launch(innerLease)
+    await outerLease.close()
+    expect((await repair(host, world.workspace)).state).toBe('revoked')
+    await launcher.launch(innerLease)
+    await launcher.launch(await host.authority.acquire(writeLease(inner, 'session-inner-2')))
+    expect(launcher.count).toBe(4)
+  })
+
+  it('still refuses a third-party change of the inner root itself', async () => {
+    const inner = join(world.workspace, 'inner')
+    world.ntfs.directory(inner)
+    const host = aclHost(world)
+    await host.authority.acquire(writeLease(inner, 'session-inner'))
+    await host.authority.acquire(writeLease(world.workspace, 'session-outer'))
+    world.ntfs.thirdPartyChange(inner)
+    await expect(host.authority.acquire(writeLease(inner, 'session-inner-2'))).rejects.toThrow(
+      code('E_ACL_CHANGED'),
+    )
   })
 })

@@ -154,6 +154,39 @@ describe('roots that overlap Host directories', () => {
   })
 })
 
+describe('roots that contain code the Host runs unconfined', () => {
+  it('refuses a workspace that contains a runtime directory, but not one inside it', async () => {
+    const runtime = join(base, 'install', 'node_modules', '@agnes', 'system-node', 'runtime')
+    mkdirSync(runtime, { recursive: true })
+    const { authority } = aclHost(world, { runtimeRoots: [runtime] })
+    for (const root of [join(base, 'install'), runtime]) {
+      world.ntfs.directory(root)
+      await expect(authority.acquire(writeLease(root))).rejects.toThrow(code('E_ACL_ROOT_OVERLAP'))
+    }
+    // A workspace inside a runtime directory cannot reach the code above it.
+    const inside = join(runtime, 'scratch')
+    world.ntfs.directory(inside)
+    await expect(authority.acquire(writeLease(inside))).resolves.toBeDefined()
+    // A runtime directory that does not exist yet is judged by where it will be.
+    const later = aclHost(world, { pid: 505, runtimeRoots: [join(world.workspace, 'node', 'bin')] })
+    await expect(later.authority.acquire(writeLease(world.workspace))).rejects.toThrow(
+      code('E_ACL_ROOT_OVERLAP'),
+    )
+    // Only the workspace inside the runtime directory was granted (with its lease temp).
+    expect(world.ntfs.calls.apply).toBe(2)
+  })
+
+  it('refuses new leases while a granted workspace contains a runtime directory, also after a cold start', async () => {
+    await aclHost(world).authority.acquire(writeLease(world.workspace))
+    const applied = world.ntfs.calls.apply
+    const other = join(base, 'other')
+    world.ntfs.directory(other)
+    const cold = aclHost(world, { pid: 606, runtimeRoots: [join(world.workspace, 'checkout', 'runtime')] })
+    await expect(cold.authority.acquire(writeLease(other))).rejects.toThrow(code('E_ACL_ROOT_OVERLAP'))
+    expect(world.ntfs.calls.apply).toBe(applied)
+  })
+})
+
 describe('launch permits', () => {
   it('re-checks the root, the record and the grant generation before each permit', async () => {
     const a = aclHost(world, { pid: 101 })

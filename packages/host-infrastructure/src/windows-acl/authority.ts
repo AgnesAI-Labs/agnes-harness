@@ -31,6 +31,7 @@ import {
 } from './journal.js'
 import {
   assertWorkspaceDisjoint,
+  assertWorkspaceExcludes,
   claimWindowsLaunchPermit,
   freshWriteSid,
   grantUsage,
@@ -47,11 +48,17 @@ import {
 export type { WindowsAclLaunchClaim, WindowsAclLaunchPermit, WindowsAclPaths } from './leases.js'
 export { claimWindowsLaunchPermit }
 
-/** The native primitives of `@agnes/system-node/windows-acl`; synchronous and tree-walking. */
+type Awaitable<T> = T | PromiseLike<T>
+
+/**
+ * The tree-walking native primitives of `@agnes/system-node/windows-acl`. The Host runs them on a
+ * worker thread (createWindowsAclWorker), so a walk of a large tree never stalls its event loop;
+ * the synchronous functions also fit, for tools and tests.
+ */
 export type WindowsAclNative = Readonly<{
-  inspect(path: string): WindowsAclSnapshot
-  apply(input: WindowsAclApply): WindowsAclMutation
-  restore(input: WindowsAclRestore): WindowsAclMutation
+  inspect(path: string): Awaitable<WindowsAclSnapshot>
+  apply(input: WindowsAclApply): Awaitable<WindowsAclMutation>
+  restore(input: WindowsAclRestore): Awaitable<WindowsAclMutation>
 }>
 
 /** File system and process facts the authority relies on, provided by the Host. */
@@ -79,6 +86,13 @@ export type WindowsExecutionAuthorityOptions = Readonly<{
   tempRoot: string
   /** AGH private data roots; a workspace may neither contain nor lie inside one. */
   privateRoots: readonly string[]
+  /**
+   * Directories holding code the Host runs without confinement: the Node executable that starts
+   * every process broker, the broker script, the native artifact and the Host's own code. A
+   * workspace may not contain one (lying inside one is harmless: the grant only reaches below the
+   * workspace), or a confined command could change what the Host runs next.
+   */
+  runtimeRoots?: readonly string[]
   native: WindowsAclNative
   platform: WindowsAclPlatform
   files?: WindowsAclStateFiles
@@ -206,7 +220,7 @@ export class WindowsExecutionAuthority {
         throw aclError('E_ACL_JOURNAL_CORRUPT', 'A Windows ACL record is damaged; inspect before granting')
       await this.#assertTempRootFree(grants.entries.map(({ record }) => record))
       await this.#sweepStaleLeases()
-      const workspace = this.#workspaceGrant(root)
+      const workspace = await this.#workspaceGrant(root)
       const { join } = this.#options.platform.paths
       await this.#options.platform.ensurePrivateDirectory(this.#options.tempRoot)
       const tempPath = join(await this.#resolve(this.#options.tempRoot), leaseTempName())
@@ -224,7 +238,7 @@ export class WindowsExecutionAuthority {
       let temp: WindowsGrantEntry | undefined
       try {
         await this.#options.platform.createDirectory(tempPath)
-        temp = this.#grant(this.#options.native.inspect(tempPath), tempPath, 'temp', leaseId)
+        temp = await this.#grant(await this.#options.native.inspect(tempPath), tempPath, 'temp', leaseId)
         record = { ...record, tempGrantId: temp.record.grantId }
         this.#journal.writeLease(record)
       } catch (error) {
@@ -269,7 +283,7 @@ export class WindowsExecutionAuthority {
       issues.push({ object: record.root, reason: 'interrupted: the grant is in progress or was interrupted' })
     if (record.state === 'needs-attention') issues.push(...record.issues)
     if (record.state === 'active') {
-      const live = this.#liveCheck(record)
+      const live = await this.#liveCheck(record)
       if (live) {
         state = 'needs-attention'
         issues.push(live)
@@ -321,7 +335,7 @@ export class WindowsExecutionAuthority {
       )
       if (usage.kind !== 'none') return refuse(usage.reason)
       request.signal?.throwIfAborted()
-      const result = this.#restore(entry)
+      const result = await this.#restore(entry)
       if (result.entry.record.state === 'revoked' && result.entry.record.kind === 'temp')
         await this.#forgetTemp(result.entry.record, usage.stale)
       return reportOf(this.#reportState(result.entry.record), result.entry, result.issues, true, path)
@@ -400,7 +414,7 @@ export class WindowsExecutionAuthority {
     if (temp && !grants.some((entry) => entry.record.grantId === temp.record.grantId)) grants.push(temp)
     for (const entry of grants) {
       if (entry.record.state === 'revoked') continue
-      const result = this.#restore(entry)
+      const result = await this.#restore(entry)
       if (result.entry.record.state !== 'revoked')
         throw aclError('E_ACL_TEMP_RESTORE', `The temp grant ${entry.record.grantId} could not be revoked`)
     }
@@ -430,9 +444,14 @@ export class WindowsExecutionAuthority {
         this.#journal.removeLease(lease.leaseId)
   }
 
-  /** Reuses the standing grant of this root object, or makes a new one. */
-  #workspaceGrant(root: string): WindowsGrantEntry {
-    const snapshot = this.#options.native.inspect(root)
+  /**
+   * Reuses the standing grant of this root object, or makes a new one. Reuse compares only what
+   * the grant owns on the root (its owned fingerprint: explicit entries, owner, group and
+   * protection). A grant on an enclosing or nested root changes this root's inherited entries,
+   * never what this grant made, so nested roots granted in either order keep each other working.
+   */
+  async #workspaceGrant(root: string): Promise<WindowsGrantEntry> {
+    const snapshot = await this.#options.native.inspect(root)
     const related = this.#journal
       .grants()
       .entries.filter(
@@ -446,7 +465,7 @@ export class WindowsExecutionAuthority {
       )
     const active = related[0]
     if (!active) return this.#grant(snapshot, root, 'workspace')
-    if (snapshot.fingerprint !== active.record.applied?.fingerprint) {
+    if (snapshot.ownedFingerprint !== active.record.applied?.fingerprint) {
       this.#journal.write({
         ...active.record,
         state: 'needs-attention',
@@ -466,12 +485,12 @@ export class WindowsExecutionAuthority {
    * One grant transaction: durable prepared record (with the complete snapshot), then the native
    * change, then the recorded result, then an independent read-back, and only then active.
    */
-  #grant(
+  async #grant(
     before: WindowsAclSnapshot,
     root: string,
     kind: WindowsGrantKind,
     lease?: string,
-  ): WindowsGrantEntry {
+  ): Promise<WindowsGrantEntry> {
     const { native } = this.#options
     const grantId = randomUUID()
     const writeSid = freshWriteSid()
@@ -488,27 +507,32 @@ export class WindowsExecutionAuthority {
     })
     let mutation: WindowsAclMutation
     try {
-      mutation = native.apply({ before, grantId, writeSid })
+      mutation = await native.apply({ before, grantId, writeSid })
     } catch (error) {
-      this.#settleFailedApply(entry, error)
+      await this.#settleFailedApply(entry, error)
       throw error
     }
     const change = mutation.changes.find((item) => sameIdentity(item.identity, before.identity))
     const failures = mutation.failures.map((failure) =>
       issueOf(failure.path, 'apply-failed: the grant did not complete here', failure),
     )
+    const owned = mutation.ownedFingerprint
     entry = this.#journal.write({
       ...entry.record,
-      ...(change ? { applied: { fingerprint: change.afterFingerprint, added: change.added } } : {}),
+      ...(change && owned ? { applied: { fingerprint: owned, added: change.added } } : {}),
       issues: failures,
     })
     if (!mutation.complete || !change) {
       entry = this.#journal.write({ ...entry.record, state: 'needs-attention' })
-      this.#restore(entry)
+      await this.#restore(entry)
       throw aclError('E_ACL_GRANT_INCOMPLETE', `The Windows ACL grant on ${root} did not complete`)
     }
-    const after = native.inspect(root)
-    if (!sameIdentity(after.identity, before.identity) || after.fingerprint !== change.afterFingerprint) {
+    const after = await native.inspect(root)
+    if (
+      !sameIdentity(after.identity, before.identity) ||
+      after.fingerprint !== change.afterFingerprint ||
+      after.ownedFingerprint !== owned
+    ) {
       this.#journal.write({
         ...entry.record,
         state: 'needs-attention',
@@ -519,12 +543,28 @@ export class WindowsExecutionAuthority {
     return this.#journal.write({ ...entry.record, state: 'active' })
   }
 
-  /** After a native refusal, a record whose objects all read as before is revoked; anything else needs attention. */
-  #settleFailedApply(entry: WindowsGrantEntry, error: unknown): void {
+  /**
+   * After a native refusal, a record whose objects all read as before is revoked; anything else
+   * needs attention. A call that did not answer in time may still be changing permissions, so its
+   * record needs attention whatever the tree reads like now.
+   */
+  async #settleFailedApply(entry: WindowsGrantEntry, error: unknown): Promise<void> {
     const { record } = entry
+    if (unanswered(error)) {
+      try {
+        this.#journal.write({
+          ...record,
+          state: 'needs-attention',
+          issues: [
+            issueOf(record.root, 'unconfirmed: the grant did not answer in time and may still finish', error),
+          ],
+        })
+      } catch {}
+      return
+    }
     const issue = issueOf(record.root, 'apply-failed: the grant was refused', error)
     try {
-      const now = this.#options.native.inspect(record.root)
+      const now = await this.#options.native.inspect(record.root)
       const prints = (snapshot: WindowsAclSnapshot) =>
         [
           snapshot.fingerprint,
@@ -545,7 +585,9 @@ export class WindowsExecutionAuthority {
    * Restores one grant under the lock. The record reads needs-attention from before the native call
    * until the result is confirmed, so a crash in between never reads as active or as revoked.
    */
-  #restore(entry: WindowsGrantEntry): { entry: WindowsGrantEntry; issues: readonly WindowsAclIssue[] } {
+  async #restore(
+    entry: WindowsGrantEntry,
+  ): Promise<{ entry: WindowsGrantEntry; issues: readonly WindowsAclIssue[] }> {
     const { native } = this.#options
     const { record } = entry
     const settle = (state: WindowsGrantRecord['state'], issues: WindowsAclIssue[], extra = {}) => {
@@ -561,7 +603,7 @@ export class WindowsExecutionAuthority {
     }
     let current: WindowsAclSnapshot
     try {
-      current = native.inspect(record.root)
+      current = await native.inspect(record.root)
     } catch (error) {
       return settle('needs-attention', [
         issueOf(record.root, 'unreadable: the root cannot be inspected', error),
@@ -585,7 +627,7 @@ export class WindowsExecutionAuthority {
     })
     let mutation: WindowsAclMutation
     try {
-      mutation = native.restore({
+      mutation = await native.restore({
         before: current,
         grantId: record.grantId,
         expectedCurrentFingerprint: current.fingerprint,
@@ -594,7 +636,13 @@ export class WindowsExecutionAuthority {
     } catch (error) {
       return settle('needs-attention', [
         ...issues,
-        issueOf(current.path, 'restore-refused: nothing was removed', error),
+        unanswered(error)
+          ? issueOf(
+              current.path,
+              'unconfirmed: the removal did not answer in time and may still finish',
+              error,
+            )
+          : issueOf(current.path, 'restore-refused: nothing was removed', error),
       ])
     }
     if (!mutation.complete)
@@ -604,13 +652,12 @@ export class WindowsExecutionAuthority {
           issueOf(failure.path, 'restore-failed: the removal did not complete here', failure),
         ),
       ])
-    const after =
-      mutation.changes.find((item) => sameIdentity(item.identity, current.identity))?.afterFingerprint ??
-      current.fingerprint
-    this.#rebase(record, current.fingerprint, after)
+    // A complete removal always read the root back, so its owned fingerprint is there.
+    const after = mutation.ownedFingerprint ?? current.ownedFingerprint
+    this.#rebase(record, current.ownedFingerprint, after)
     // Without a recorded result the deny and label may still be this grant's: only the original
     // state proves everything is gone.
-    const residue = !record.applied && after !== record.before.fingerprint
+    const residue = !record.applied && after !== record.before.ownedFingerprint
     return settle(residue ? 'needs-attention' : 'revoked', issues, {
       removed: [...(record.removed ?? []), ...plan.removable],
       ...(record.applied ? { applied: { ...record.applied, fingerprint: after } } : {}),
@@ -629,12 +676,12 @@ export class WindowsExecutionAuthority {
         this.#journal.write({ ...other, applied: { ...other.applied, fingerprint: to } })
   }
 
-  #liveCheck(record: WindowsGrantRecord): WindowsAclIssue | undefined {
+  async #liveCheck(record: WindowsGrantRecord): Promise<WindowsAclIssue | undefined> {
     try {
-      const now = this.#options.native.inspect(record.root)
+      const now = await this.#options.native.inspect(record.root)
       if (!sameIdentity(now.identity, record.rootIdentity))
         return { object: record.root, reason: 'replaced: another directory now has this path' }
-      if (now.fingerprint !== record.applied?.fingerprint)
+      if (now.ownedFingerprint !== record.applied?.fingerprint)
         return { object: record.root, reason: 'changed: permissions changed after the grant' }
     } catch (error) {
       return issueOf(record.root, 'unreadable: the root cannot be inspected', error)
@@ -679,20 +726,39 @@ export class WindowsExecutionAuthority {
         `The workspace ${root} is not its canonical path ${canonical}`,
       )
     assertWorkspaceDisjoint(platform.paths, canonical, await this.#reserved())
+    // This also refuses running AGH on its own source checkout (or on a workspace that holds its
+    // installation): confined commands could otherwise rewrite the broker or Host code that the
+    // next command runs unconfined. Run AGH from a separate installation to work on its source.
+    assertWorkspaceExcludes(platform.paths, canonical, await this.#runtime())
     return canonical
   }
 
-  /** A recorded grant that covers a Host directory would flow into every new lease temp: refuse. */
+  /**
+   * A recorded grant that covers a Host directory would flow into every new lease temp, or let
+   * confined commands change code the Host runs: refuse until that grant is repaired.
+   */
   async #assertTempRootFree(records: readonly WindowsGrantRecord[]): Promise<void> {
     const reserved = await this.#reserved()
+    const runtime = await this.#runtime()
+    const { paths } = this.#options.platform
     for (const record of records)
-      if (record.kind === 'workspace' && record.state !== 'revoked')
+      if (record.kind === 'workspace' && record.state !== 'revoked') {
         for (const { path, role } of reserved)
-          if (pathsOverlap(this.#options.platform.paths, record.root, path))
+          if (pathsOverlap(paths, record.root, path))
             throw aclError(
               'E_ACL_ROOT_OVERLAP',
               `The granted workspace ${record.root} overlaps the Host ${role} ${path}; repair that grant first`,
             )
+        assertWorkspaceExcludes(paths, record.root, runtime, 'repair that grant first')
+      }
+  }
+
+  async #runtime(): Promise<{ path: string; role: string }[]> {
+    return Promise.all(
+      (this.#options.runtimeRoots ?? []).map((root) =>
+        this.#resolve(root).then((path) => ({ path, role: 'runtime directory' })),
+      ),
+    )
   }
 
   async #reserved(): Promise<{ path: string; role: string }[]> {
@@ -718,6 +784,9 @@ export class WindowsExecutionAuthority {
     }
   }
 }
+
+/** A native call that did not answer in time; it may still be running. */
+const unanswered = (error: unknown): boolean => codeOf(error) === 'E_ACL_WORKER_TIMEOUT'
 
 function reportOf(
   state: WindowsAclReport['state'],

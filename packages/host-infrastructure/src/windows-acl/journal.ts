@@ -29,7 +29,11 @@ export type WindowsGrantKind = 'workspace' | 'temp'
 export type WindowsAclIssue = Readonly<{ object: string; reason: string; code?: string }>
 
 export type WindowsGrantApplied = Readonly<{
-  /** Root fingerprint after the latest change AGH made to this object. */
+  /**
+   * The root's owned fingerprint (explicit entries, owner, group, protection; see
+   * WindowsAclSnapshot) after the latest change AGH made to this object. Inherited entries are
+   * left out, so a grant on an enclosing root does not read as a change of this one.
+   */
   fingerprint: string
   /** Entries this grant added to the root; entries that already stood there exactly are not listed. */
   added: readonly WindowsAclEntry[]
@@ -156,6 +160,8 @@ function validObject(value: unknown): value is WindowsAclObject {
 function validSnapshot(value: unknown): value is WindowsAclSnapshot {
   return (
     validObject(value) &&
+    typeof (value as Record<string, unknown>).ownedFingerprint === 'string' &&
+    HEX64.test((value as Record<string, unknown>).ownedFingerprint as string) &&
     Array.isArray((value as Record<string, unknown>).descendants) &&
     ((value as Record<string, unknown>).descendants as unknown[]).every(validObject) &&
     Number.isSafeInteger((value as Record<string, unknown>).inheritedDescendants)
@@ -450,12 +456,12 @@ export function planGrantRestore(
       kind: 'refuse',
       issues: [{ object: grant.root, reason: 'replaced: another directory now has this path' }],
     }
-  if (current.fingerprint === grant.before.fingerprint) return { kind: 'unchanged' }
+  if (current.ownedFingerprint === grant.before.ownedFingerprint) return { kind: 'unchanged' }
   const [allow, deny, label] = grantEntries(grant.writeSid)
   const pending = (entry: WindowsAclEntry | undefined): entry is WindowsAclEntry =>
     entry !== undefined && !(grant.removed ?? []).some((item) => sameEntry(item, entry))
   const issues: WindowsAclIssue[] = []
-  if (grant.applied && current.fingerprint !== grant.applied.fingerprint)
+  if (grant.applied && current.ownedFingerprint !== grant.applied.fingerprint)
     issues.push({
       object: current.path,
       reason: 'changed: permissions changed after the grant; they are kept',

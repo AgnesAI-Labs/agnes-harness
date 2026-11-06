@@ -11,6 +11,7 @@ import {
   inspectWindowsAcl,
   restoreWindowsAclGrant,
 } from '@agnes/system-node/windows-acl'
+import { createWindowsAclWorker } from '@agnes/system-node/windows-acl-worker'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { windowsProcessIdentity } from '../src/adapters/process-identity-win32.js'
 import {
@@ -193,6 +194,37 @@ describe.skipIf(process.platform !== 'win32')('Windows execution authority on NT
     await lease.close()
     expect((await repairFully(authority, outer)).state).toBe('revoked')
     expect([inspectWindowsAcl(outer).fingerprint, inspectWindowsAcl(inner).fingerprint]).toEqual(originals)
+  })
+
+  it('nested roots granted inner first: the outer grant and its repair leave the inner one working', async () => {
+    const outer = directory('work')
+    const inner = directory('work', 'inner')
+    const originals = [inspectWindowsAcl(outer).fingerprint, inspectWindowsAcl(inner).fingerprint]
+    // The Host runs the tree walks on a worker thread; so does this case.
+    const worker = createWindowsAclWorker()
+    try {
+      const authority = await authorityFor({ native: worker })
+      const innerLease = await authority.acquire(writeLease(inner, 'session-inner'))
+      claimWindowsLaunchPermit(await innerLease.prepareLaunch()).abandoned()
+      const innerOwned = inspectWindowsAcl(inner).ownedFingerprint
+      const outerLease = await authority.acquire(writeLease(outer, 'session-outer'))
+      // The outer grant changed what the inner root inherits, not what its own grant made.
+      expect(inspectWindowsAcl(inner).ownedFingerprint).toBe(innerOwned)
+      claimWindowsLaunchPermit(await innerLease.prepareLaunch()).abandoned()
+      const again = await authority.acquire(writeLease(inner, 'session-inner-2'))
+      claimWindowsLaunchPermit(await again.prepareLaunch()).abandoned()
+      expect(await authority.inspect(inner)).toMatchObject({ state: 'active', issues: [] })
+      await outerLease.close()
+      expect((await repairFully(authority, outer)).state).toBe('revoked')
+      claimWindowsLaunchPermit(await innerLease.prepareLaunch()).abandoned()
+      expect(await authority.inspect(inner)).toMatchObject({ state: 'active', issues: [] })
+      await innerLease.close()
+      await again.close()
+      expect((await repairFully(authority, inner)).state).toBe('revoked')
+      expect([inspectWindowsAcl(outer).fingerprint, inspectWindowsAcl(inner).fingerprint]).toEqual(originals)
+    } finally {
+      await worker.close()
+    }
   })
 
   it('records how long a larger tree takes to grant and repair', async () => {
