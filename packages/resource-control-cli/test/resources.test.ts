@@ -512,6 +512,86 @@ describe('MCP credential flags', () => {
     ).rejects.toThrow('secret://')
   })
 
+  it('--oauth-callback-port fixes the sign-in callback port, on add and on update', async () => {
+    expect(
+      await added([
+        '--http',
+        'https://example.com/mcp',
+        '--oauth-client-id',
+        'c',
+        '--oauth-callback-port',
+        '8765',
+      ]),
+    ).toMatchObject({ secretBinding: { kind: 'oauth', staticClientId: 'c', callbackPort: 8765 } })
+    expect(
+      await added(['--sse', 'https://example.com/sse', '--oauth', '--oauth-callback-port', '1024']),
+    ).toMatchObject({ secretBinding: { kind: 'oauth', callbackPort: 1024 } })
+
+    let updated: unknown
+    const client = {
+      clientId: async () => 'client',
+      mcp: {
+        servers: {
+          update: async (params: unknown) => {
+            updated = (params as { definition: unknown }).definition
+            return { operationId: 'op-update', state: 'received' as const }
+          },
+        },
+      },
+      resources: {
+        operation: {
+          get: async () => ({
+            operationId: 'op-update',
+            kind: 'mcp.reconcile',
+            state: 'succeeded' as const,
+            profile: 'local-dev',
+            target: 'mcp/example',
+            revision: 'a'.repeat(64),
+            createdAt: '2026-09-18T00:00:00.000Z',
+            updatedAt: '2026-09-18T00:00:01.000Z',
+            progress: 100,
+          }),
+        },
+      },
+    }
+    await runResourceCommand(
+      'mcp',
+      [
+        'update',
+        'example',
+        '--expected-revision',
+        'a'.repeat(64),
+        '--name',
+        'Example',
+        '--http',
+        'https://example.com/mcp',
+        '--oauth',
+        '--oauth-callback-port',
+        '65535',
+      ],
+      client as never,
+      { write: () => undefined, confirm: async () => true },
+    )
+    expect(updated).toMatchObject({ secretBinding: { kind: 'oauth', callbackPort: 65535 } })
+  })
+
+  it('--oauth-callback-port needs OAuth and a port from 1024 to 65535', async () => {
+    const http = ['--http', 'https://example.com/mcp']
+    await expect(usage([...http, '--oauth-callback-port', '8765'])).rejects.toThrow(
+      '--oauth-callback-port needs --oauth',
+    )
+    await expect(
+      usage([...http, '--bearer-ref', 'secret://mcp/token', '--oauth-callback-port', '8765']),
+    ).rejects.toThrow('--oauth-callback-port needs --oauth')
+    await expect(usage(['--stdio', 'example', '--oauth-callback-port', '8765'])).rejects.toThrow(
+      'OAuth flags need an HTTP or SSE server',
+    )
+    for (const port of ['80', '1023', '65536', '8765.5', '08765', '87a5'])
+      await expect(usage([...http, '--oauth', '--oauth-callback-port', port])).rejects.toThrow(
+        '--oauth-callback-port must be a whole number from 1024 to 65535',
+      )
+  })
+
   it('--oauth with --bearer-ref is a usage error', async () => {
     await expect(
       usage(['--http', 'https://example.com/mcp', '--oauth', '--bearer-ref', 'secret://mcp/token']),

@@ -27,6 +27,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   const oauth = document.getElementById('mcp-oauth') as HTMLInputElement | null
   const oauthClient = document.getElementById('mcp-oauth-client') as HTMLInputElement | null
   const oauthSecret = document.getElementById('mcp-oauth-secret') as HTMLInputElement | null
+  const oauthPort = document.getElementById('mcp-oauth-port') as HTMLInputElement | null
   if (oauthClient) oauthClient.maxLength = MCP_FORM_LIMITS.oauthClientIdMaxLength
   /** The name and ID follow what was pasted until the user names the server themselves. */
   function deriveName() {
@@ -53,6 +54,8 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
     if (client) client.hidden = !on
     const secret = document.getElementById('mcp-oauth-secret-row')
     if (secret) secret.hidden = !on
+    const port = document.getElementById('mcp-oauth-port-row')
+    if (port) port.hidden = !on
     credential.disabled = on
     // A saved credential and an OAuth sign-in are alternatives: show one at a time.
     const saved = credential.closest('label')
@@ -211,6 +214,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
   if (oauth) on(oauth, 'change', applyCredential)
   if (oauthClient) on(oauthClient, 'input', applyCredential)
   if (oauthSecret) on(oauthSecret, 'input', applyCredential)
+  if (oauthPort) on(oauthPort, 'input', applyCredential)
   for (const id of ['mcp-executable', 'mcp-args'] as const)
     on($(id, id === 'mcp-args' ? 'textarea' : 'input'), 'input', () => {
       command.value = formatMcpCommand([
@@ -290,6 +294,7 @@ export function mountMcpWizard(text: () => LocaleTranslator, sync: () => void) {
       if (oauthClient) oauthClient.value = ''
       // An edit keeps the reference the definition already filled in.
       if (oauthSecret && !editing) oauthSecret.value = ''
+      if (oauthPort && !editing) oauthPort.value = ''
       fallbackId = `mcp-service-${crypto.randomUUID().slice(0, 8)}`
       command.value = ''
       command.setCustomValidity('')

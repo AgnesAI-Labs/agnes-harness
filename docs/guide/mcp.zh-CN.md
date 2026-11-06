@@ -136,7 +136,7 @@ stdio 使用 `--stdio EXECUTABLE` 与重复的 `--arg VALUE`；不要把完整 s
 
 凭据使用已有 secret 引用：`--secret-env NAME=secret://namespace/name`（stdio）、`--bearer-ref secret://namespace/name` 或 `--header-ref x-api-key=secret://namespace/name`（HTTP/SSE）。不把真实密钥放在命令行、截图或文档中。`--allow-tool TOOL_NAME` 可以重复指定允许的工具。
 
-用 OAuth 登录的 HTTP/SSE 服务加 `--oauth`。已经有这个服务的客户端 ID 时加 `--oauth-client-id ID`；这个客户端还有密钥时，先把密钥存成凭据，再加 `--oauth-client-secret-ref secret://namespace/name`。密钥引用必须和 `--oauth-client-id` 一起用，OAuth 参数不能和 `--bearer-ref`、`--header-ref` 一起用。网页向导的 OAuth 部分有同样两个可选项，客户端密钥填 `secret://` 引用，不填密钥本身。客户端密钥只在守护进程完成登录时读取，不出现在服务定义、操作记录和日志里。保存后在网页 MCP 页打开这个服务，点「去授权」登录。
+用 OAuth 登录的 HTTP/SSE 服务加 `--oauth`。已经有这个服务的客户端 ID 时加 `--oauth-client-id ID`；这个客户端还有密钥时，先把密钥存成凭据，再加 `--oauth-client-secret-ref secret://namespace/name`。密钥引用必须和 `--oauth-client-id` 一起用，OAuth 参数不能和 `--bearer-ref`、`--header-ref` 一起用。客户端登记的回调地址带固定端口时，加 `--oauth-callback-port N`（1024 到 65535，和 `--oauth` 或 `--oauth-client-id` 一起用）：本机登录回调 `http://localhost:N/callback` 就只用这个端口，端口被占时报错、不换端口；不加时随机选一个空闲端口。在网页 MCP 页登录时仍用网页自己的地址。网页向导的 OAuth 部分有同样三个可选项，客户端密钥填 `secret://` 引用，不填密钥本身。客户端密钥只在守护进程完成登录时读取，不出现在服务定义、操作记录和日志里。保存后在网页 MCP 页打开这个服务，点「去授权」登录。
 
 ## MCP 工具如何提供给模型
 

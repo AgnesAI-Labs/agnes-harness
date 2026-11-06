@@ -211,11 +211,16 @@ describe('an OAuth sign-in needs no saved secret', () => {
 })
 
 describe('MCP form OAuth client fields', () => {
-  const oauth = (secretText: string, oauthSecretRef: string): McpFormFieldSnapshot => ({
+  const oauth = (
+    secretText: string,
+    oauthSecretRef: string,
+    oauthCallbackPort = '',
+  ): McpFormFieldSnapshot => ({
     ...http('https://example.com/mcp'),
     secretKind: 'oauth',
     secretText,
     oauthSecretRef,
+    oauthCallbackPort,
   })
 
   it('oauth secret ref goes into clientSecretRef', () => {
@@ -226,6 +231,32 @@ describe('MCP form OAuth client fields', () => {
     })
     expect(oauthSecretBinding('c', '')).toEqual({ kind: 'oauth', staticClientId: 'c' })
     expect(oauthSecretBinding('', '')).toEqual({ kind: 'oauth' })
+  })
+
+  it('a callback port goes into callbackPort, as a number', () => {
+    expect(oauthSecretBinding('c', '', '8765')).toEqual({
+      kind: 'oauth',
+      staticClientId: 'c',
+      callbackPort: 8765,
+    })
+    expect(oauthSecretBinding('', '', '1024')).toEqual({ kind: 'oauth', callbackPort: 1024 })
+    expect(oauthSecretBinding('', '', '')).toEqual({ kind: 'oauth' })
+  })
+
+  it('the callback port range is the protocol schema range', () => {
+    expect(MCP_FORM_LIMITS.oauthCallbackPortMin).toBe(1024)
+    expect(MCP_FORM_LIMITS.oauthCallbackPortMax).toBe(65535)
+  })
+
+  it('a callback port must be a whole number in that range', () => {
+    expect(mcpFormIssues(oauth('', '', '8765'), submit)).toEqual([])
+    expect(mcpFormIssues(oauth('c', '', '65535'), submit)).toEqual([])
+    for (const port of ['80', '1023', '65536', '87.5', 'abc', '08765'])
+      expect(mcpFormIssues(oauth('c', '', port), live)).toEqual([
+        { field: 'mcp-oauth-port', message: 'Use a whole number from 1024 to 65535 for the callback port.' },
+      ])
+    // Only an OAuth sign-in has a callback port.
+    expect(mcpFormIssues({ ...oauth('', '', 'abc'), secretKind: 'none' }, live)).toEqual([])
   })
 
   it('the client ID limit is the protocol schema limit', () => {

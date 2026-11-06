@@ -8864,6 +8864,18 @@ describe('McpHttpSecretBinding: oauth secretBinding kind', () => {
     expect(check(raw)).toBe(false)
     expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, raw)).toBe(false)
   })
+  it('accepts a sign-in callback port only as a whole number from 1024 to 65535', () => {
+    for (const callbackPort of [1024, 8765, 65535]) {
+      const sample = { kind: 'oauth', staticClientId: 'test-oauth-client', callbackPort }
+      expect(check(sample)).toBe(true)
+      expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, sample)).toBe(true)
+    }
+    for (const callbackPort of [80, 1023, 65536, 8765.5, '8765']) {
+      const sample = { kind: 'oauth', callbackPort }
+      expect(check(sample)).toBe(false)
+      expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, sample)).toBe(false)
+    }
+  })
 })
 
 // McpServerDescriptor.authorizationStatus is optional (a

@@ -7,19 +7,22 @@ import { type McpFormFieldId, type McpFormFieldSnapshot, mcpFormIssues } from '.
 
 export class McpFormValidationError extends Error {}
 
-/** OAuth sign-in, with the client ID and client secret reference when the user gave them. */
+/** OAuth sign-in, with the client ID, client secret reference and callback port when the user gave them. */
 export function oauthSecretBinding(
   clientId: string,
   secretRef: string,
+  callbackPort = '',
 ): Extract<McpServerDefinitionInput['secretBinding'], { kind: 'oauth' }> {
   return {
     kind: 'oauth',
     ...(clientId ? { staticClientId: clientId } : {}),
     ...(clientId && secretRef ? { clientSecretRef: secretRef } : {}),
+    ...(callbackPort ? { callbackPort: Number(callbackPort) } : {}),
   }
 }
 
 const oauthSecretInput = () => document.getElementById('mcp-oauth-secret') as HTMLInputElement | null
+const oauthPortInput = () => document.getElementById('mcp-oauth-port') as HTMLInputElement | null
 
 export function createMcpForm(input: {
   transport: HTMLSelectElement
@@ -51,6 +54,7 @@ export function createMcpForm(input: {
       workspacePath: $('mcp-workspace', 'input').value.trim(),
       sandboxProfile: $('mcp-sandbox', 'select').value,
       oauthSecretRef: oauthSecretInput()?.value.trim() ?? '',
+      oauthCallbackPort: oauthPortInput()?.value.trim() ?? '',
     }
   }
   /**
@@ -74,10 +78,12 @@ export function createMcpForm(input: {
     )
     for (const [id, tag] of MCP_FIELD_CONTROLS) $(id, tag).removeAttribute('aria-invalid')
     oauthSecretInput()?.removeAttribute('aria-invalid')
+    oauthPortInput()?.removeAttribute('aria-invalid')
     for (const issue of issues) {
       const control = MCP_FIELD_CONTROLS.find(([fieldId]) => fieldId === issue.field)
       if (control) $(control[0], control[1]).setAttribute('aria-invalid', 'true')
       if (issue.field === 'mcp-oauth-secret') oauthSecretInput()?.setAttribute('aria-invalid', 'true')
+      if (issue.field === 'mcp-oauth-port') oauthPortInput()?.setAttribute('aria-invalid', 'true')
     }
     $('mcp-error', 'p').textContent = issues[0]?.message ?? ''
     const command = document.getElementById('mcp-command')
@@ -170,7 +176,11 @@ export function createMcpForm(input: {
         ? { kind: 'none' as const }
         : secretKind === 'oauth'
           ? // Sign-in happens after saving; an existing client ID and its secret are optional.
-            oauthSecretBinding(secret, oauthSecretInput()?.value.trim() ?? '')
+            oauthSecretBinding(
+              secret,
+              oauthSecretInput()?.value.trim() ?? '',
+              oauthPortInput()?.value.trim() ?? '',
+            )
           : secretKind === 'http-bearer'
             ? { kind: 'http-bearer' as const, credentialRef: secret }
             : {
