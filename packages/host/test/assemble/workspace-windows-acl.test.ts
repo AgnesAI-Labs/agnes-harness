@@ -37,7 +37,7 @@ function facade() {
   }))
   const rootIdentity = vi.fn(async () => ({ volumeId: 'v', fileId: 'f' }))
   const execution = new WindowsAclExecution({
-    authority: { acquire: acquire as never },
+    authority: { acquire: acquire as never, dispose: async () => undefined },
     rootIdentity,
     localProviderId: 'local',
   })
@@ -140,7 +140,6 @@ describe('session gate', () => {
       staticConfig: official(),
       requiresFileIsolation: false,
       providerId: 'local',
-      sessionExecutionId: 'session-a',
       root: ROOT,
       policyDigest: DIGEST,
       ...overrides,
@@ -164,6 +163,7 @@ describe('session gate', () => {
     const { execution, acquire } = facade()
     acquire.mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'E_ACL_BUSY' }))
     const session = gate(execution, { staticConfig: official({}, 'read-only') })
+    session.bind('generation-a')
     await expect(session.lease()).rejects.toMatchObject({ code: 'E_ACL_BUSY' })
     const first = await session.lease()
     expect(await session.lease()).toBe(first)
@@ -174,7 +174,7 @@ describe('session gate', () => {
     })
     expect(acquire).toHaveBeenCalledTimes(2)
     expect(acquire).toHaveBeenLastCalledWith({
-      sessionExecutionId: 'session-a',
+      sessionExecutionId: 'generation-a',
       canonicalRoot: ROOT,
       policyDigest: DIGEST,
       mode: 'read-only',
@@ -185,5 +185,85 @@ describe('session gate', () => {
 
   it('refuses a stale offer', () => {
     expect(() => gate(facade().execution, { policyDigest: 'b'.repeat(64) })).toThrow()
+  })
+
+  it('refuses a lease until the session record is verified, and never relabels it', async () => {
+    const { execution, acquire } = facade()
+    const session = gate(execution)
+    await expect(session.lease()).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+    expect(acquire).not.toHaveBeenCalled()
+    session.bind('generation-a')
+    session.bind('generation-a')
+    expect(() => session.bind('generation-b')).toThrow(
+      expect.objectContaining({ code: 'E_SANDBOX_WORKSPACE' }),
+    )
+    await session.lease()
+    expect(acquire).toHaveBeenCalledWith(expect.objectContaining({ sessionExecutionId: 'generation-a' }))
+  })
+
+  it('changes nothing when the session ran no command', async () => {
+    const { execution, acquire } = facade()
+    const releaseInstance = vi.fn(async () => false)
+    const session = gate(execution, { releaseInstance })
+    session.bind('generation-a')
+    await session.close()
+    expect(acquire).not.toHaveBeenCalled()
+    expect(releaseInstance).not.toHaveBeenCalled()
+  })
+
+  it('releases the lease through its provider instance, which stops its processes first', async () => {
+    const { execution, acquire } = facade()
+    const release = vi.spyOn(execution, 'release')
+    const releaseInstance = vi.fn(async () => true)
+    const session = gate(execution, { releaseInstance })
+    session.bind('generation-a')
+    const lease = await session.lease()
+    await session.close()
+    expect(releaseInstance).toHaveBeenCalledWith(lease)
+    expect(release).not.toHaveBeenCalled()
+    await expect(session.lease()).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
+    expect(acquire).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes the lease itself when no provider instance was created for it', async () => {
+    const { execution, acquire } = facade()
+    const session = gate(execution, { releaseInstance: async () => false })
+    session.bind('generation-a')
+    const lease = await session.lease()
+    await session.close()
+    const held = (await acquire.mock.results[0]!.value) as { close: ReturnType<typeof vi.fn> }
+    expect(held.close).toHaveBeenCalledTimes(1)
+    expect(() => execution.lease(lease)).toThrow()
+  })
+
+  it('keeps B leased when A is released, and gives a reopened session a new lease', async () => {
+    const { execution, acquire } = facade()
+    const a = gate(execution, { releaseInstance: async () => false })
+    const b = gate(execution, { releaseInstance: async () => false })
+    a.bind('generation-a')
+    b.bind('generation-b')
+    const leaseA = await a.lease()
+    const leaseB = await b.lease()
+    await a.close()
+    expect(() => execution.lease(leaseA)).toThrow()
+    expect(execution.lease(leaseB)).toBeDefined()
+    expect(await b.lease()).toBe(leaseB)
+    // Resuming A opens a new runtime and gate: a new lease, so a new private temp.
+    const resumed = gate(execution, { releaseInstance: async () => false })
+    resumed.bind('generation-a')
+    const again = await resumed.lease()
+    expect(again.id).not.toBe(leaseA.id)
+    expect(acquire).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not close a lease whose acquisition failed', async () => {
+    const { execution, acquire } = facade()
+    acquire.mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'E_ACL_BUSY' }))
+    const releaseInstance = vi.fn(async () => false)
+    const session = gate(execution, { releaseInstance })
+    session.bind('generation-a')
+    await expect(session.lease()).rejects.toMatchObject({ code: 'E_ACL_BUSY' })
+    await session.close()
+    expect(releaseInstance).not.toHaveBeenCalled()
   })
 })

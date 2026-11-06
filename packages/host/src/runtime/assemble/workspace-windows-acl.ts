@@ -96,10 +96,26 @@ export function assertHostSpawnProbe(
     )
 }
 
+/** A session's Windows gate with the Host-side half of its lease lifetime. */
+export type WindowsSessionGate = WindowsAclGate &
+  Readonly<{
+    /**
+     * Binds the execution generation the session's record was verified and saved with. No lease is
+     * taken before; a running lease is never moved to another generation.
+     */
+    bind(generationId: string): void
+    /**
+     * Releases the session's lease when its runtime is released: the provider instance created for
+     * the lease stops its own processes and then closes it; without one, the lease closes here.
+     */
+    close(): Promise<void>
+  }>
+
 /**
  * One session's gate under the Windows write restriction. The decision is taken again with this
  * session's own facts (an explicit private file isolation request refuses it), and the lease is
  * acquired on the first command, then reused; a failed acquisition is retried by the next command.
+ * Finishing a reply or a command never releases it; only the runtime's own release does.
  */
 export function windowsSessionGate(input: {
   execution: WindowsAclExecution | undefined
@@ -107,10 +123,11 @@ export function windowsSessionGate(input: {
   staticConfig: SandboxStaticConfig
   requiresFileIsolation: boolean
   providerId: string
-  sessionExecutionId: string
   root: string
   policyDigest: string
-}): WindowsAclGate {
+  /** Disposes the provider instance created for a lease; false when there is none. */
+  releaseInstance?(lease: SandboxExecutionLease): Promise<boolean>
+}): WindowsSessionGate {
   const { execution, hostSpawn } = input
   if (!execution || !hostSpawn || hostSpawn.policyDigest !== input.policyDigest) throw refusal('unavailable')
   const decision = execution.decide(
@@ -119,12 +136,20 @@ export function windowsSessionGate(input: {
   if (decision.kind !== 'windows-write-restricted-v1')
     throw refusal(decision.kind === 'refusal' ? decision.reason : 'unconfined')
   let pending: Promise<SandboxExecutionLease> | undefined
+  let generation: string | undefined
+  let closed = false
   return Object.freeze({
     hostSpawn,
+    bind: (generationId: string) => {
+      if (generation !== undefined && generation !== generationId) throw refusal('generation-changed')
+      generation = generationId
+    },
     lease: () => {
+      if (closed) return Promise.reject(refusal('released'))
+      if (generation === undefined) return Promise.reject(refusal('unverified'))
       if (!pending) {
         const attempt = execution.acquire({
-          sessionExecutionId: input.sessionExecutionId,
+          sessionExecutionId: generation,
           canonicalRoot: input.root,
           policyDigest: input.policyDigest,
           mode: decision.mode,
@@ -136,6 +161,20 @@ export function windowsSessionGate(input: {
       }
       return pending
     },
+    close: async () => {
+      closed = true
+      const attempt = pending
+      pending = undefined
+      if (!attempt) return
+      let lease: SandboxExecutionLease
+      try {
+        lease = await attempt
+      } catch {
+        return
+      }
+      if (await input.releaseInstance?.(lease)) return
+      await execution.release(lease)
+    },
   })
 }
 
@@ -145,7 +184,7 @@ export type WorkspacePosture = Readonly<{
   enforcement: Enforcement
   hostSpawn?: HostSpawnSandboxWorkspaceBackend
   /** The session's Windows gate; created once per session runtime so its lease is reused. */
-  windowsAcl?: WindowsAclGate
+  windowsAcl?: WindowsSessionGate
 }>
 
 export function workspacePosture(
@@ -156,7 +195,7 @@ export function workspacePosture(
     hostSpawn?: HostSpawnSandboxWorkspaceBackend
   }>,
   previous: WorkspacePosture | undefined,
-  windowsGate: () => WindowsAclGate,
+  windowsGate: () => WindowsSessionGate,
 ): WorkspacePosture {
   const { execBackend, enforcement } = raw
   if (!execBackend || !enforcement)

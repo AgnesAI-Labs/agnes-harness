@@ -273,6 +273,63 @@ describe('refusals start nothing', () => {
   })
 })
 
+describe('workspace root invalidation', () => {
+  it.each([
+    ['replaced', (path: string) => world.ntfs.replace(path), 'E_ACL_IDENTITY_MISMATCH'],
+    ['missing', (path: string) => world.ntfs.forget(path), 'ENOENT'],
+  ])(
+    'refuses the next launch and stops the Jobs this lease owns when the root is %s',
+    async (_name, invalidate, code) => {
+      const local = provider()
+      const { instance, policy } = await leased('workspace-write', local)
+      const other = await leased('workspace-write', local, 'session-other')
+      const running = job()
+      mocks.start.mockResolvedValueOnce(running)
+      const background = await instance.openProcess!(call(policy))
+      const otherJob = job()
+      mocks.start.mockResolvedValueOnce(otherJob)
+      await other.instance.openProcess!(call(other.policy))
+      invalidate(world.workspace)
+      await expect(instance.exec(call(policy))).rejects.toMatchObject({ code })
+      expect(running.terminate).toHaveBeenCalledTimes(1)
+      await expect(background.exited).resolves.toBeDefined()
+      expect(mocks.start).toHaveBeenCalledTimes(2)
+      // The check happens at this lease's own launch; another session's Jobs are its own to stop.
+      expect(otherJob.terminate).not.toHaveBeenCalled()
+    },
+  )
+})
+
+describe('lease lifetime in the facade', () => {
+  it('releases a lease once, and disposes every lease it still holds with the authority', async () => {
+    const first = await leased('workspace-write')
+    const second = await leased('read-only')
+    await execution.release(first.lease)
+    await execution.release(first.lease)
+    expect(() => execution.lease(first.lease)).toThrow()
+    expect(execution.lease(second.lease)).toBeDefined()
+    await execution.dispose()
+    expect(() => execution.lease(second.lease)).toThrow()
+    await expect(
+      execution.acquire({
+        sessionExecutionId: 'later',
+        canonicalRoot: world.workspace,
+        policyDigest: DIGEST,
+        mode: 'read-only',
+      }),
+    ).rejects.toMatchObject({ code: 'E_ACL_DISPOSED' })
+    instances.splice(0)
+  })
+
+  it('reads the current root identity without a tree walk', async () => {
+    const before = world.ntfs.calls.inspect
+    await expect(execution.rootIdentity(world.workspace)).resolves.toEqual(
+      world.ntfs.identity(world.workspace),
+    )
+    expect(world.ntfs.calls.inspect).toBe(before)
+  })
+})
+
 describe('launch failure', () => {
   it('never calls a raw launch when the restricted launch fails, and settles the permit', async () => {
     const { instance, policy } = await leased('workspace-write')

@@ -4,6 +4,12 @@ import { dirname, join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import type { Logger, WindowsWriteBoundary } from '@agnes/extension-api'
 import { mkdirDurablySync, publishFileDurablySync, removeFileDurablySync } from '@agnes/package-manager'
+import {
+  executionRecordRefusal,
+  planWindowsExecution,
+  type SessionExecutionGeneration,
+  type WindowsExecutionVerification,
+} from './session-sandbox-windows.js'
 
 export type SandboxExecutionRecord = Readonly<{
   workspaceId: string
@@ -23,13 +29,7 @@ export type SandboxExecutionRecord = Readonly<{
   }>
 }>
 
-const refusal = () =>
-  Object.assign(
-    new Error(
-      'E_SANDBOX_WORKSPACE: saved execution policy is missing or incompatible; keep this history and create a new session',
-    ),
-    { code: 'E_SANDBOX_WORKSPACE', reason: 'session-execution-record-invalid' },
-  )
+const refusal = executionRecordRefusal
 
 /**
  * Before execution records existed, historical sessions required OS isolation (L1).
@@ -54,11 +54,14 @@ export class SessionSandboxStore {
   ) {
     this.root = join(profileDir, '.session-sandbox')
   }
+  private file(key: string): string {
+    return join(this.root, createHash('sha256').update(key).digest('hex') + '.json')
+  }
   release(key: string): void {
-    removeFileDurablySync(join(this.root, createHash('sha256').update(key).digest('hex') + '.json'))
+    removeFileDurablySync(this.file(key))
   }
   verify(key: string, execution: SandboxExecutionRecord, hasHistory: boolean): void {
-    const file = join(this.root, createHash('sha256').update(key).digest('hex') + '.json')
+    const file = this.file(key)
     const expected = { version: 1, sessionKey: key, execution }
     const read = (): unknown => {
       try {
@@ -81,5 +84,56 @@ export class SessionSandboxStore {
       this.log?.info('Adopted missing session execution record under full L1 isolation', {
         sessionHash: createHash('sha256').update(key).digest('hex'),
       })
+  }
+
+  /**
+   * Windows sessions keep a version 2 record: the original version 1 value stays as written, and
+   * the execution generation the next commands run under is appended only when the saved evidence
+   * proves it. The record is durable before this returns; nothing may run under the generation
+   * before that.
+   */
+  verifyWindowsExecution(
+    key: string,
+    input: WindowsExecutionVerification,
+    hasHistory: boolean,
+  ): SessionExecutionGeneration {
+    return this.windows(key, input, hasHistory, 'verify')
+  }
+
+  /** The user confirmed, in this session, that a replaced workspace directory is still its workspace. */
+  confirmWindowsWorkspace(key: string, input: WindowsExecutionVerification): SessionExecutionGeneration {
+    return this.windows(key, input, true, 'confirm')
+  }
+
+  private windows(
+    key: string,
+    input: WindowsExecutionVerification,
+    hasHistory: boolean,
+    mode: 'verify' | 'confirm',
+  ): SessionExecutionGeneration {
+    const file = this.file(key)
+    const read = (): string | undefined => {
+      try {
+        return readFileSync(file, 'utf8')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+        throw refusal()
+      }
+    }
+    const bytes = read()
+    const plan = planWindowsExecution({ key, bytes, verification: input, hasHistory, mode, canAdoptHistory })
+    if (!plan.changed) return plan.generation
+    const next = JSON.stringify(plan.record)
+    mkdirDurablySync(this.root, dirname(this.profileDir))
+    // A record that appeared meanwhile is accepted only if it says exactly the same.
+    publishFileDurablySync(file, next, bytes === undefined ? {} : { replace: true })
+    if (read() !== next) throw refusal()
+    if (hasHistory)
+      this.log?.info('Adopted session execution history under a new execution generation', {
+        sessionHash: createHash('sha256').update(key).digest('hex'),
+        reason: plan.generation.reason,
+        backend: plan.generation.backend,
+      })
+    return plan.generation
   }
 }

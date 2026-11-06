@@ -87,6 +87,11 @@ export type SessionWorkspaceRuntimeFactoryInput = Readonly<{
     }>,
   ): BoundSandboxReadiness
   fitSandbox?(runtime: Omit<SessionWorkspaceRuntime, 'hooks' | 'services' | 'seam'>): Promise<SandboxSeam>
+  /**
+   * Releases the session's sandbox execution resources (an execution lease and the provider instance
+   * that runs under it). Runs only with the runtime's own release, after hooks and services.
+   */
+  closeSandbox?(): Promise<void> | void
   openHooks?(runtime: Omit<SessionWorkspaceRuntime, 'hooks' | 'services'>): Promise<unknown>
   closeHooks?(hooks: unknown): Promise<void> | void
   openServices?(runtime: Omit<SessionWorkspaceRuntime, 'services'>): Promise<unknown>
@@ -156,6 +161,7 @@ export async function createSessionWorkspaceRuntime(
       sandboxBackend,
       ...(input.invocation ? { invocation: input.invocation } : {}),
     })
+    if (input.closeSandbox) closers.push(() => input.closeSandbox?.())
     const seam = input.fitSandbox ? await input.fitSandbox(base) : undefined
     const withSeam = Object.freeze({ ...base, ...(seam === undefined ? {} : { seam }) })
     const hooks = input.openHooks ? await input.openHooks(withSeam) : undefined

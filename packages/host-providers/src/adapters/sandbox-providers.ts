@@ -81,6 +81,8 @@ export class SandboxProviderRegistry extends Service {
   private selection: { id: string; instance: SandboxProviderInstance } | undefined
   private selectedId: string | undefined
   private readonly workspaceInstances = new Map<string, Promise<SandboxProviderInstance>>()
+  /** The instance key of each execution lease that has an instance. */
+  private readonly leaseInstances = new Map<string, string>()
 
   constructor(
     ctx: Context,
@@ -201,12 +203,34 @@ export class SandboxProviderRegistry extends Service {
     }
     const pending = this.createInstance(id, config, signal)
     this.workspaceInstances.set(key, pending)
+    if (lease) this.leaseInstances.set(lease.id, key)
     try {
       return await pending
     } catch (error) {
       this.workspaceInstances.delete(key)
+      if (lease && this.leaseInstances.get(lease.id) === key) this.leaseInstances.delete(lease.id)
       throw error
     }
+  }
+
+  /**
+   * Disposes the instance created for one execution lease, which stops the processes it launched
+   * and then releases the lease. False when the lease has no instance (or it was released already).
+   */
+  async releaseLease(leaseId: string): Promise<boolean> {
+    const key = this.leaseInstances.get(leaseId)
+    const pending = key === undefined ? undefined : this.workspaceInstances.get(key)
+    this.leaseInstances.delete(leaseId)
+    if (key === undefined || !pending) return false
+    this.workspaceInstances.delete(key)
+    let instance: SandboxProviderInstance
+    try {
+      instance = await pending
+    } catch {
+      return false
+    }
+    await instance.dispose()
+    return true
   }
 
   private async createInstance(

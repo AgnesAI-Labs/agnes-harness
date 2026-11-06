@@ -31,7 +31,6 @@ import {
   bindStartupSandboxProvider,
   sandboxProviderIdFrom,
 } from '@agnes/host-providers/adapters/sandbox-providers'
-import { SessionSandboxStore } from '@agnes/host-providers/profile/sandbox-state'
 import { isWorkspaceHooksTrusted, RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { remoteSandboxModule } from '../adapters/index.js'
 import type { AssemblyContext } from './context.js'
@@ -45,6 +44,12 @@ import {
   localSandboxImplementation,
   loopbackServeSupported,
 } from './workspace-readiness.js'
+import {
+  officialPresetNames,
+  type PresetOrigin,
+  sessionRecordVerifier,
+  windowsModeSource,
+} from './workspace-session-record.js'
 import {
   sandboxConfigTarget,
   type WorkspacePosture,
@@ -145,6 +150,7 @@ export type WorkspaceRuntimeFactory = Readonly<{
     preset?: PresetDoc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
     ceiling?: import('@agnes/core').FsPolicy,
+    origin?: PresetOrigin,
   ): Promise<SessionWorkspaceRuntime>
 }>
 
@@ -166,11 +172,16 @@ export function createWorkspaceRuntimeFactory(
   const { adapters, sandboxProviderSlot } = proc
   const workspacePlans = new Map<string, Awaited<ReturnType<typeof compileWorkspacePolicy>>>()
   const readinessManager = createReadinessManager(ctx, pkgs, proc, workspacePlans)
+  const official = officialPresetNames(ctx.profile, pkgs.modules)
+  const windowsHost = sandboxConfigTarget(adapters).target === 'win32'
   const openWorkspaceRuntime = async (
     binding: WorkspaceBinding,
     preset: PresetDoc = presets.defaultPreset.doc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
     ceiling?: import('@agnes/core').FsPolicy,
+    origin: PresetOrigin | undefined = preset === presets.defaultPreset.doc
+      ? presets.defaultPreset
+      : undefined,
   ): Promise<SessionWorkspaceRuntime> => {
     const { implementation, unconfined, requiresFileIsolation, sandboxConfig } = workspaceSandboxPolicy(
       ctx,
@@ -185,48 +196,25 @@ export function createWorkspaceRuntimeFactory(
       binding,
       allowsUnconfined: unconfined && !requiresFileIsolation,
       ...(invocation ? { invocation } : {}),
-      verifySession: async (key) => {
-        if (!savedPlan || !posture)
-          throw new HostError('E_SANDBOX_WORKSPACE', 'execution policy is not ready')
-        const [history] = await adapters.storage.scan(key, {
-          type: ['session/start'],
-          order: 'desc',
-          limit: 1,
-        })
-        // A newly reserved child reads its parent's prefix before it writes its own session/start.
-        // Use the storage-owned origin, not a key asserted in event data, to distinguish that prefix.
-        const [origin] = history
-          ? await adapters.storage.scanIntegrity(key, { fromSeq: history.seq, toSeq: history.seq, limit: 1 })
-          : []
-        const inheritedStart =
-          origin?.event.id === history?.id && origin !== undefined && origin.sessionKey !== key
-        const provider = sandboxProviderSlot.registry
-          ?.catalog()
-          .find((entry) => entry.id === sandboxProviderIdFrom(ctx.profile))
-        if (!provider) throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox provider identity is missing')
-        new SessionSandboxStore(deps.profileDir, deps.log).verify(
-          key,
-          {
-            workspaceId: binding.workspaceId,
-            workspaceRoot: savedPlan.policy.workspaceRoot,
-            policyDigest: savedPlan.policy.digest,
-            staticConfigHash: savedPlan.staticConfigHash,
-            provider: provider.id,
-            providerVersion: provider.version,
-            target: adapters.transport ? 'remote' : adapters.platform.os,
-            implementation,
-            probeState:
-              posture.execBackend === 'l1' || posture.execBackend === 'windows-acl'
-                ? 'ready'
-                : sandboxConfig.level === 'L1' && implementation === 'implemented'
-                  ? 'failed'
-                  : 'unprobed',
-            backend: posture.execBackend,
-            enforcement: posture.enforcement,
-          },
-          history !== undefined && !inheritedStart,
-        )
-      },
+      verifySession: sessionRecordVerifier({
+        profileDir: deps.profileDir,
+        ...(deps.log ? { log: deps.log } : {}),
+        proc,
+        providerId: sandboxProviderIdFrom(ctx.profile),
+        ownerKey: binding.sessionKey,
+        workspaceId: binding.workspaceId,
+        implementation,
+        requestedLevel: sandboxConfig.level,
+        ...(windowsHost
+          ? {
+              windows: {
+                ...(origin ? { origin } : {}),
+                windowsModeSource: windowsModeSource(origin, presets.presets, official),
+              },
+            }
+          : {}),
+        state: () => ({ ...(savedPlan ? { plan: savedPlan } : {}), ...(posture ? { posture } : {}) }),
+      }),
       openWorkspace: async (workspaceBinding) => {
         // The Linux mount anchor exists before the workspace measures its case semantics. The probe
         // needs an entry to respell: creating `.agh` later would turn a fresh, empty workspace from
@@ -280,9 +268,10 @@ export function createWorkspaceRuntimeFactory(
                 staticConfig: plan.staticConfig,
                 requiresFileIsolation,
                 providerId: sandboxProviderIdFrom(ctx.profile),
-                sessionExecutionId: binding.sessionKey,
                 root: plan.policy.workspaceRoot,
                 policyDigest: plan.policy.digest,
+                releaseInstance: async (lease) =>
+                  (await sandboxProviderSlot.registry?.releaseLease(lease.id)) ?? false,
               }),
             )
             if (raw.name)
@@ -306,6 +295,7 @@ export function createWorkspaceRuntimeFactory(
             })
           },
         ),
+      closeSandbox: () => posture?.windowsAcl?.close(),
       fitSandbox: async (runtime) => {
         if (!fence || !posture)
           throw new HostError('E_SANDBOX_WORKSPACE', 'sandbox posture was not activated', {

@@ -104,7 +104,16 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
     sandboxDispatch: sandboxProviderSlot,
     ...backend,
   })
-  rollback.push('adapters', () => adapters.close())
+  let windowsAcl: WindowsAclExecution | undefined
+  rollback.push('adapters', async () => {
+    try {
+      await adapters.close()
+    } finally {
+      // The Windows leases close only once the processes they launched are gone, which closing the
+      // adapters ensures; the runtimes released theirs already when the workspace table closed.
+      await windowsAcl?.dispose()
+    }
+  })
   const gitWorktrees = createSessionGitWorktreeService({
     workspaceInvocationFor,
     dataDir,
@@ -122,7 +131,7 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
   rollback.push('computer-use-locked-package-mutations', () => lockedPackageMutations.close())
   const secrets = (ref: string): string => adapters.secrets.resolve(ref)
   const nativePlatform = createPlatform().os
-  const windowsAcl = await openWindowsAcl(ctx, adapters)
+  windowsAcl = await openWindowsAcl(ctx, adapters)
   const profileActivations = new ProfileActivations(
     adapters.storage.metadata.namespace('@agnes/host', `activation:${ctx.profile.name}`),
   )

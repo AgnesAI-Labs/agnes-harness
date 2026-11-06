@@ -649,15 +649,19 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             ...(o.permission !== undefined ? { permission: o.permission } : {}),
             ...(o.defaultPermission !== undefined ? { defaultPermission: o.defaultPermission } : {}),
           })
-          let runtimePreset = resolvePreset(runtimeSelection.name, a.presets, {
+          const resolvedPreset = resolvePreset(runtimeSelection.name, a.presets, {
             ...a.sessionPresetLimits(),
             ...(runtimeSelection.permission ? { permission: runtimeSelection.permission } : {}),
             ...(runtimeSelection.fallback ? { carry: runtimeSelection.fallback } : {}),
-          }).doc
+          })
           const authority = o.roleDelegation ? roleAuthority(o.roleDelegation) : undefined
-          runtimePreset = roleWorkspacePreset(runtimePreset, authority)
+          const runtimePreset = roleWorkspacePreset(resolvedPreset.doc, authority)
+          const origin = {
+            chain: resolvedPreset.chain,
+            ...(resolvedPreset.permission ? { permission: resolvedPreset.permission } : {}),
+          }
           const runtime = await workspaceRuntimes.open(binding, (invocation) =>
-            openWorkspaceRuntime(binding, runtimePreset, invocation, authority?.filesystem),
+            openWorkspaceRuntime(binding, runtimePreset, invocation, authority?.filesystem, origin),
           )
           workspace = Object.freeze({
             runtime,

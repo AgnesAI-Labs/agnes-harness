@@ -8,7 +8,11 @@ import {
   sandboxUnavailable,
 } from '@agnes/extension-api'
 import { RELEASE_DEFAULTS } from '@agnes/package-manager'
-import { WINDOWS_ACL_ENFORCEMENT, type WindowsAclExecution } from '../windows-acl/execution.js'
+import {
+  WINDOWS_ACL_ENFORCEMENT,
+  type WindowsAclExecution,
+  workspaceRootInvalid,
+} from '../windows-acl/execution.js'
 import type { WindowsAclLaunchPermit } from '../windows-acl/leases.js'
 import { honoursWindowsBoundary } from '../windows-acl/policy.js'
 import type { ExecAdapter } from './exec.js'
@@ -123,6 +127,19 @@ export function createLocalSandboxProvider(
       }
       const processes = new Set<import('@agnes/extension-api').SandboxProcess>()
       const pending = new Set<Promise<Awaited<ReturnType<ExecAdapter['run']>>>>()
+      // Each launch re-checks the leased root. A root that is gone or is another directory now
+      // refuses the launch and stops every process this instance still runs there.
+      const permit = async (lease: NonNullable<typeof windowsLease>, request: LaunchRequest) => {
+        try {
+          return await lease.permit(request)
+        } catch (error) {
+          if (workspaceRootInvalid(error)) {
+            for (const controller of controllers) controller.abort(error)
+            await Promise.allSettled([...processes].map((handle) => handle.close()))
+          }
+          throw error
+        }
+      }
       return {
         id: RELEASE_DEFAULTS.sandboxProvider,
         capabilities,
@@ -147,7 +164,7 @@ export function createLocalSandboxProvider(
           if (request.pty && actual.boundary)
             throw sandboxUnavailable('a Windows write-restricted process cannot open a PTY')
           if (!windowsLease) assertUnleased(request)
-          const permit = windowsLease ? await windowsLease.permit(request) : undefined
+          const launch = windowsLease ? await permit(windowsLease, request) : undefined
           const activation = activate(request.policy, actual, request.signal)
           let handle: import('@agnes/extension-api').SandboxProcess
           try {
@@ -157,7 +174,7 @@ export function createLocalSandboxProvider(
               ...(activation ? { loopbackFd: activation.fd, onExit: activation.close } : {}),
               ...(request.pty ? { pty: request.pty } : {}),
               ...(request.signal ? { signal: request.signal } : {}),
-              ...(permit ? { windowsAcl: permit } : {}),
+              ...(launch ? { windowsAcl: launch } : {}),
             })
           } catch (error) {
             activation?.close()
@@ -214,7 +231,7 @@ export function createLocalSandboxProvider(
           )
             throw sandboxUnavailable('the local OS sandbox cannot enforce this policy')
           if (!windowsLease) assertUnleased(request)
-          const permit = windowsLease ? await windowsLease.permit(request) : undefined
+          const launch = windowsLease ? await permit(windowsLease, request) : undefined
           const activation = activate(request.policy, actual, request.signal)
           const controller = new AbortController()
           controllers.add(controller)
@@ -234,7 +251,7 @@ export function createLocalSandboxProvider(
                 ...(request.limits?.maxOutputBytes === undefined
                   ? {}
                   : { maxOutputBytes: request.limits.maxOutputBytes }),
-                ...(permit ? { windowsAcl: permit } : {}),
+                ...(launch ? { windowsAcl: launch } : {}),
               })
               .finally(() => activation?.close())
           } catch (error) {

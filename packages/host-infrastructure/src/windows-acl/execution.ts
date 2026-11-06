@@ -87,7 +87,7 @@ export function windowsPartialPolicy(
 }
 
 export type WindowsAclExecutionOptions = Readonly<{
-  authority: Pick<WindowsExecutionAuthority, 'acquire'>
+  authority: Pick<WindowsExecutionAuthority, 'acquire' | 'dispose'>
   /** Cheap identity read of a workspace root; refuses links, drive roots and unsupported volumes. */
   rootIdentity(path: string): Promise<WindowsObjectIdentity>
   /** The Host's built-in provider id; only that provider runs the ACL path. */
@@ -123,6 +123,11 @@ export class WindowsAclExecution {
       localProviderId: this.#options.localProviderId,
       availableBoundary: WINDOWS_WRITE_BOUNDARY,
     })
+  }
+
+  /** The workspace root object as it is now; refuses a missing root, links and drive roots. */
+  rootIdentity(root: string): Promise<WindowsObjectIdentity> {
+    return this.#options.rootIdentity(root)
   }
 
   /** Probes the actual root, then offers the Host-started boundary for exactly this policy. */
@@ -162,11 +167,27 @@ export class WindowsAclExecution {
     return held.lease
   }
 
-  /** Closes a lease after its provider stopped its processes; a refused close keeps it held. */
+  /**
+   * Closes a lease after its provider stopped its processes; a refused close keeps it held. A lease
+   * already released is not released again.
+   */
   async release(ref: SandboxExecutionLease): Promise<void> {
+    if (!this.#leases.has(ref.id)) return
     const lease = this.lease(ref)
     await lease.close()
     this.#leases.delete(ref.id)
+  }
+
+  /**
+   * Refuses new leases and closes every held one; run after the Host stopped the processes its
+   * runtimes launched, since a lease closes only once its processes have exited.
+   */
+  async dispose(): Promise<void> {
+    try {
+      await this.#options.authority.dispose()
+    } finally {
+      this.#leases.clear()
+    }
   }
 
   /**
@@ -199,6 +220,20 @@ export class WindowsAclExecution {
     if (policy.digest !== lease.policyDigest || policy.fsWrite.allow.some((path) => !writable.has(path)))
       throw sandboxUnavailable('the call names writable roots outside its Windows execution lease')
   }
+}
+
+const ROOT_INVALID = new Set([
+  'ENOENT',
+  'ENOTDIR',
+  'E_ACL_ROOT_MISSING',
+  'E_ACL_IDENTITY_MISMATCH',
+  'E_ACL_REPARSE',
+])
+
+/** Whether a launch was refused because the workspace root is gone or is another directory now. */
+export function workspaceRootInvalid(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code
+  return typeof code === 'string' && ROOT_INVALID.has(code)
 }
 
 /** Host-owned gate state of a session bound to the Windows write restriction. */

@@ -636,6 +636,7 @@ describe('Windows write-restricted dispatch', () => {
   ) {
     const configs: SandboxProviderConfig[] = []
     const runs: unknown[] = []
+    const disposed: Array<string | null> = []
     const provider: SandboxProvider = {
       ...box(LOCAL_SANDBOX_PROVIDER_ID),
       create: (config) => {
@@ -655,20 +656,27 @@ describe('Windows write-restricted dispatch', () => {
               ...(enforcement ? { enforcement } : {}),
             } as never
           },
-          dispose() {},
+          dispose() {
+            disposed.push(config.executionLease?.id ?? null)
+          },
         }
       },
     }
-    return { provider, configs, runs }
+    return { provider, configs, runs, disposed }
   }
-  async function dispatchFor(provider: SandboxProvider, id = LOCAL_SANDBOX_PROVIDER_ID) {
+  async function dispatchWithRegistry(provider: SandboxProvider, id = LOCAL_SANDBOX_PROVIDER_ID) {
     const root = new Context()
     const registry = installSandboxProviders(root)
     root.providers.registerHost(sandboxKind, '@agnes/host', provider)
     const slot: SandboxProviderSlot = { registry }
     slot.selected = await registry.select(id, { workspaceRoot: cwd })
-    return createSandboxDispatchExec({ run: async () => ({}) as never, killAll: async () => {} }, slot)
+    return {
+      registry,
+      dispatch: createSandboxDispatchExec({ run: async () => ({}) as never, killAll: async () => {} }, slot),
+    }
   }
+  const dispatchFor = async (provider: SandboxProvider, id = LOCAL_SANDBOX_PROVIDER_ID) =>
+    (await dispatchWithRegistry(provider, id)).dispatch
   const windowsBinding = (value: SandboxExecutionLease | undefined, extra: object = {}) => ({
     policyDigest: policy.digest,
     backend: 'windows-acl' as const,
@@ -696,6 +704,22 @@ describe('Windows write-restricted dispatch', () => {
       'lease-a',
     ])
     expect(local.runs).toHaveLength(4)
+  })
+
+  it('disposes only the instance of a released lease, and never one twice', async () => {
+    const local = recordingLocal((request) => request.enforcement)
+    const { registry, dispatch } = await dispatchWithRegistry(local.provider)
+    const [a, b] = [lease('lease-a'), lease('lease-b')]
+    await dispatch.run(['node'], { cwd, sandbox: windowsBinding(a) })
+    await dispatch.run(['node'], { cwd, sandbox: windowsBinding(b) })
+    await expect(registry.releaseLease('lease-a')).resolves.toBe(true)
+    expect(local.disposed).toEqual(['lease-a'])
+    await expect(registry.releaseLease('lease-a')).resolves.toBe(false)
+    await expect(registry.releaseLease('never-used')).resolves.toBe(false)
+    // B keeps its instance; a command under A again would need a new instance, not the disposed one.
+    await dispatch.run(['node'], { cwd, sandbox: windowsBinding(b) })
+    expect(local.configs.filter((config) => config.executionLease?.id === 'lease-b')).toHaveLength(1)
+    expect(local.disposed).toEqual(['lease-a'])
   })
 
   it('refuses a missing lease, a named provider and a result without the exact boundary', async () => {
