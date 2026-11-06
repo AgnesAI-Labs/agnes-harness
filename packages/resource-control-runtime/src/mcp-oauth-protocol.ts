@@ -107,7 +107,7 @@ function isSupportedMethod(method: string): method is SupportedMethod {
 /**
  * Chooses how the client proves itself at the token endpoint, once, when the hook is built:
  * 1. the method the registration settled on, if it is one Agnes can do and the server lists it
- *    (or lists nothing);
+ *    (or lists nothing); a registered `none` without a secret needs no listing;
  * 2. otherwise, with a secret: basic when the server lists no methods at all or lists basic, else
  *    post when listed, else unsupported;
  * 3. without a secret: `none` (only `client_id`).
@@ -142,6 +142,9 @@ export function clientAuthentication(input: {
   function chooseMethod(options: typeof input): SupportedMethod {
     if (options.registeredMethod !== undefined) {
       const registered = options.registeredMethod
+      // A public client sends only its client_id. The server accepted that registration, and some
+      // (Keycloak) never list `none` among the methods they advertise.
+      if (registered === 'none' && !clientSecret) return 'none'
       if (!isSupportedMethod(registered) || (supportedMethods && !supportedMethods.includes(registered)))
         throw new McpOAuthClientAuthUnsupported(registered)
       if (registered === 'client_secret_basic' && !clientSecret)
