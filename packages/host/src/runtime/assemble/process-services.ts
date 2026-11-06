@@ -70,6 +70,7 @@ async function openWindowsAcl(
     }),
     localProviderId: RELEASE_DEFAULTS.sandboxProvider,
     pid: process.pid,
+    nodeExecutable: adapters.windowsNodeExecutable,
   })
 }
 
