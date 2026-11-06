@@ -194,3 +194,69 @@ describe('Host-bound sandbox seam over a remote workspace', () => {
     })
   })
 })
+
+describe('Host-started Windows write restriction', () => {
+  const boundary = {
+    contract: 'windows-write-restricted-v1',
+    fileWrite: 'acl-partial',
+    fileRead: 'unrestricted',
+    network: 'unrestricted',
+    processTree: 'job-object',
+  } as const
+  const windows = (overrides: Record<string, unknown> = {}) => {
+    const ws = workspace({ shell: 'powershell', execBackend: 'windows-acl' })
+    const hostSpawn = {
+      enforcementLocation: 'host-spawn' as const,
+      boundary,
+      owner: 'local',
+      policyDigest: ws.value.policy.digest,
+    }
+    Object.assign(ws.value, {
+      enforcement: { level: 'partial', scope: ['file'], boundary },
+      hostSpawn,
+      openProcess: vi.fn(async () => ({ enforcement: ws.value.enforcement })),
+      ...overrides,
+    })
+    return { ...ws, hostSpawn }
+  }
+
+  it('hands the raw argv to the Host with the exact offer, and never confines it', async () => {
+    const ws = windows()
+    const seam = await createSandboxSeam().forWorkspace(ws.value)
+    await seam.exec(['node', '-v'], { cwd: '/work/proj' })
+    await seam.openProcess!({ argv: [SHELL_STDIN_SENTINEL] })
+    expect(ws.confine).not.toHaveBeenCalled()
+    const sandbox = {
+      policyDigest: ws.value.policy.digest,
+      backend: 'windows-acl',
+      hostSpawn: ws.hostSpawn,
+      enforcement: { level: 'partial', scope: ['file'], boundary },
+    }
+    expect(ws.exec).toHaveBeenCalledWith(['node', '-v'], {
+      cwd: '/work/proj',
+      sandbox: expect.objectContaining(sandbox),
+    })
+    expect(ws.value.openProcess).toHaveBeenCalledWith([SHELL_STDIN_SENTINEL], {
+      cwd: '/work/proj',
+      sandbox: expect.objectContaining(sandbox),
+    })
+    await expect(seam.confine(['node'])).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
+    expect(seam.enforcement()).toEqual({ level: 'partial', scope: ['file'], boundary })
+  })
+
+  it('refuses a Windows binding that is not exact', async () => {
+    const ws = windows()
+    const cases: Record<string, unknown>[] = [
+      { hostSpawn: undefined },
+      { hostSpawn: { ...ws.hostSpawn, policyDigest: 'e'.repeat(64) } },
+      { hostSpawn: { ...ws.hostSpawn, boundary: { ...boundary, network: 'acl-partial' } as never } },
+      { enforcement: { level: 'full', scope: ['file', 'network', 'process'] } },
+      { providerId: 'remote-box' },
+      { execBackend: 'none' },
+    ]
+    for (const overrides of cases)
+      await expect(createSandboxSeam().forWorkspace(windows(overrides).value)).rejects.toMatchObject({
+        code: 'E_SANDBOX_WORKSPACE',
+      })
+  })
+})

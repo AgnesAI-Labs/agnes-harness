@@ -16,6 +16,7 @@ function securityPolicy(
   id: string,
   presets: Record<string, PresetDoc>,
   profile: ResolvedProfile,
+  target: { target?: 'win32' },
   permission?: Permission,
 ) {
   // A permission level is shown on the standard recipe; a recipe is shown under its own level.
@@ -23,7 +24,7 @@ function securityPolicy(
     limits: profile.limits,
     ...(permission ? { permission } : {}),
   }).doc
-  const sandbox = normalizeSandboxStaticConfig(doc)
+  const sandbox = normalizeSandboxStaticConfig(doc, target)
   return {
     id,
     level: sandbox.level,
@@ -49,6 +50,8 @@ export function adminSecurityStatus(
   workspaces: SessionWorkspaceRuntimeTable,
 ): RuntimeSecurityStatus {
   const l1 = platform.capability('sandbox.l1')
+  // The same config target the workspace runtime normalizes with on a Windows Host.
+  const target = platform.os === 'win32' ? ({ target: 'win32' } as const) : {}
   return {
     platform: {
       os: platform.os,
@@ -61,13 +64,13 @@ export function adminSecurityStatus(
           }
         : { level: 'unprobed', scope: [] },
     },
-    presetPolicies: profile.presets.allowed.map((id) => securityPolicy(id, presets, profile)),
+    presetPolicies: profile.presets.allowed.map((id) => securityPolicy(id, presets, profile, target)),
     // A catalogue without the permission documents (a hand-built one) has nothing to describe.
     permissionPolicies: allowedPermissions(profile)
       .filter((permission) => presets[overlayName(permission)] !== undefined)
       .flatMap((permission) => {
         try {
-          return [securityPolicy(permission, presets, profile, permission)]
+          return [securityPolicy(permission, presets, profile, target, permission)]
         } catch (error) {
           // Fixed-policy recipes and required isolation can refuse an overlay. Reporting that
           // unavailable choice must not fail the status read or relax session admission.

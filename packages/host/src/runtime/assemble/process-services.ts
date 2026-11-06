@@ -1,5 +1,6 @@
+import { dirname } from 'node:path'
 import { hasChildControl, recoverCreatingChildAttempts } from '@agnes/core'
-import { ownHomes, ownStateRoots } from '@agnes/host-common/paths'
+import { ownHomes, ownStateRoots, privateStateRoots } from '@agnes/host-common/paths'
 import {
   createHostLockedPackageMutationRuntime,
   type HostLockedPackageMutationRuntime,
@@ -10,7 +11,10 @@ import { ProfileStreams } from '@agnes/host-extensions/profile/streams'
 import { ProfileWakeBindings } from '@agnes/host-extensions/profile/wakes'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import { createSessionGitWorktreeService } from '@agnes/host-infrastructure/git-worktrees'
+import type { WindowsAclExecution } from '@agnes/host-infrastructure/windows-acl/execution'
+import { createWindowsAclExecution } from '@agnes/host-infrastructure/windows-acl/host-platform'
 import type { SandboxProviderSlot } from '@agnes/host-providers/adapters/sandbox-providers'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { type AdapterBundle, openAdapters } from '../adapters/index.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
@@ -36,7 +40,38 @@ export type ProcessServices = Readonly<{
   secrets(ref: string): string
   /** The OS this process runs on, which a remote adapter's platform may differ from. */
   nativePlatform: ReturnType<typeof createPlatform>['os']
+  /** Trusted Windows write-restriction facade; only a local Windows Host with the Job runner has one. */
+  windowsAcl?: WindowsAclExecution
 }>
+
+/**
+ * The Windows execution authority of a local Windows Host that runs commands under owned Jobs.
+ * Without it, a Windows policy that opted into the partial contract is refused, never run raw.
+ */
+async function openWindowsAcl(
+  ctx: AssemblyContext,
+  adapters: AdapterBundle,
+): Promise<WindowsAclExecution | undefined> {
+  const localAppData = ctx.env.LOCALAPPDATA
+  if (
+    adapters.platform.os !== 'win32' ||
+    adapters.transport ||
+    !adapters.windowsNodeExecutable ||
+    !localAppData
+  )
+    return undefined
+  return createWindowsAclExecution({
+    localAppData,
+    privateRoots: privateStateRoots({
+      home: dirname(dirname(ctx.deps.profileDir)),
+      dataDir: ctx.dataDir,
+      profileDir: ctx.deps.profileDir,
+      ...(ctx.profile.adapters?.secrets.path ? { secretsDir: ctx.profile.adapters.secrets.path } : {}),
+    }),
+    localProviderId: RELEASE_DEFAULTS.sandboxProvider,
+    pid: process.pid,
+  })
+}
 
 /**
  * Step `adapters` - the fs fence opens on the bootstrap policy (workspace allow plus the
@@ -87,6 +122,7 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
   rollback.push('computer-use-locked-package-mutations', () => lockedPackageMutations.close())
   const secrets = (ref: string): string => adapters.secrets.resolve(ref)
   const nativePlatform = createPlatform().os
+  const windowsAcl = await openWindowsAcl(ctx, adapters)
   const profileActivations = new ProfileActivations(
     adapters.storage.metadata.namespace('@agnes/host', `activation:${ctx.profile.name}`),
   )
@@ -125,5 +161,6 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
     lockedPackageMutations,
     secrets,
     nativePlatform,
+    ...(windowsAcl ? { windowsAcl } : {}),
   }
 }

@@ -19,7 +19,8 @@ import {
   providerSource,
 } from '@agnes/host-common/assemble/provider-registry'
 import { PROVIDER_ID, sandboxProviderIdFrom } from '@agnes/host-common/profile/sandbox-startup'
-import type { ExecAdapter } from '@agnes/host-infrastructure/adapters/exec'
+import type { ExecAdapter, SandboxExecBinding } from '@agnes/host-infrastructure/adapters/exec'
+import { honoursWindowsBoundary } from '@agnes/host-infrastructure/windows-acl/policy'
 import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 
@@ -172,10 +173,25 @@ export class SandboxProviderRegistry extends Service {
     }
     this.registrations.resolve(id)
     this.selectedId = id
+    const lease = config.executionLease
+    // A leased instance belongs to one session's lease: its id, root object, digest and contract.
     const key = JSON.stringify([
       id,
       config.workspaceRoot ?? null,
       Object.entries(config.options ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+      ...(lease
+        ? [
+            [
+              lease.id,
+              lease.rootIdentity.volumeId,
+              lease.rootIdentity.fileId,
+              lease.policyDigest,
+              lease.contract,
+              lease.mode,
+              lease.tempRoot ?? null,
+            ],
+          ]
+        : []),
     ])
     const existing = this.workspaceInstances.get(key)
     if (existing) {
@@ -377,6 +393,33 @@ function externalEnforcement(
 }
 
 /**
+ * The instance one authorized call runs on. A Windows write-restricted call runs only on the Host's
+ * own local provider, on the instance of the lease the gate bound it to; anything else is refused.
+ */
+async function instanceFor(
+  slot: SandboxProviderSlot,
+  selected: NonNullable<SandboxProviderSlot['selected']>,
+  sandbox: SandboxExecBinding | undefined,
+): Promise<NonNullable<SandboxProviderSlot['selected']>> {
+  const windows = sandbox?.backend === 'windows-acl'
+  if (
+    windows &&
+    (selected.id !== RELEASE_DEFAULTS.sandboxProvider ||
+      sandbox.provider !== undefined ||
+      !sandbox.lease ||
+      !sandbox.policy ||
+      !slot.registry)
+  )
+    throw sandboxUnavailable('Windows write-restricted execution runs only under its Host lease')
+  if (!slot.registry || !sandbox?.policy) return selected
+  return slot.registry.select(selected.id, {
+    workspaceRoot: sandbox.policy.workspaceRoot,
+    ...(slot.options ? { options: slot.options } : {}),
+    ...(windows && sandbox.lease ? { executionLease: sandbox.lease } : {}),
+  })
+}
+
+/**
  * Every local and third-party execution uses the selected public instance after
  * the policy gate. Resolve by the authorized workspace, never the last fitted cwd.
  * Missing policy or unavailable enforcement refuses execution.
@@ -388,11 +431,7 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
       let selected = slot.selected
       if (!selected || !policy)
         throw sandboxUnavailable('interactive execution requires a bound provider policy')
-      if (slot.registry)
-        selected = await slot.registry.select(selected.id, {
-          workspaceRoot: policy.workspaceRoot,
-          ...(slot.options ? { options: slot.options } : {}),
-        })
+      selected = await instanceFor(slot, selected, opts.sandbox)
       if (!selected.capabilities.available || !selected.openProcess)
         throw sandboxUnavailable('the selected provider does not support interactive execution')
       if (
@@ -409,7 +448,8 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
       if (
         !actual ||
         (policy.requiredEnforcement.level === 'full' && actual.level !== 'full') ||
-        policy.requiredEnforcement.scope.some((scope) => !actual.scope.includes(scope))
+        policy.requiredEnforcement.scope.some((scope) => !actual.scope.includes(scope)) ||
+        !honoursWindowsBoundary(policy.requiredEnforcement, actual)
       )
         throw sandboxUnavailable('interactive provider cannot enforce this policy')
       const handle = await selected.openProcess({
@@ -423,7 +463,8 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
       })
       if (
         (policy.requiredEnforcement.level === 'full' && handle.enforcement.level !== 'full') ||
-        policy.requiredEnforcement.scope.some((scope) => !handle.enforcement.scope.includes(scope))
+        policy.requiredEnforcement.scope.some((scope) => !handle.enforcement.scope.includes(scope)) ||
+        !honoursWindowsBoundary(policy.requiredEnforcement, handle.enforcement)
       ) {
         await handle.close()
         throw sandboxUnavailable('interactive provider did not supply required enforcement')
@@ -433,11 +474,7 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
     async run(argv, opts) {
       let selected = slot.selected
       if (!selected) throw sandboxUnavailable('no sandbox provider is bound to this workspace')
-      if (slot.registry && opts.sandbox?.policy)
-        selected = await slot.registry.select(selected.id, {
-          workspaceRoot: opts.sandbox.policy.workspaceRoot,
-          ...(slot.options ? { options: slot.options } : {}),
-        })
+      selected = await instanceFor(slot, selected, opts.sandbox)
       if (!selected.capabilities.available)
         throw sandboxUnavailable(selected.capabilities.unavailableReason ?? 'sandbox provider is unavailable')
       const named = opts.sandbox?.provider
@@ -452,8 +489,9 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
           ? opts.sandbox?.enforcement
           : externalEnforcement(selected, policy)
       if (
-        required.level === 'full' &&
-        (offered?.level !== 'full' || required.scope.some((scope) => !offered.scope.includes(scope)))
+        (required.level === 'full' &&
+          (offered?.level !== 'full' || required.scope.some((scope) => !offered.scope.includes(scope)))) ||
+        !honoursWindowsBoundary(required, offered)
       )
         throw sandboxUnavailable('the provider cannot supply the required enforcement')
       if (opts.bridge && selected.capabilities.programmatic !== true)
@@ -478,7 +516,8 @@ export function createSandboxDispatchExec(local: ExecAdapter, slot: SandboxProvi
       if (
         !actual ||
         (required.level === 'full' && actual.level !== 'full') ||
-        required.scope.some((scope) => !actual.scope.includes(scope))
+        required.scope.some((scope) => !actual.scope.includes(scope)) ||
+        !honoursWindowsBoundary(required, actual)
       )
         throw sandboxUnavailable('the provider did not report the required enforcement')
       return {

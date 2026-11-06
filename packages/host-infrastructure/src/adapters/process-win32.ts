@@ -6,6 +6,8 @@ import {
   sandboxUnavailable,
 } from '@agnes/extension-api'
 import { mergeWindowsEnvironment, startWindowsJobProcess } from '@agnes/system-node/process-spawn'
+import { type WindowsLaunch, windowsLaunch } from '../windows-acl/launch.js'
+import type { WindowsAclLaunchPermit } from '../windows-acl/leases.js'
 import { commandOutputDecoder } from './command-output.js'
 import type { PowerShellDescriptor } from './powershell.js'
 import { powerShellEncoding } from './powershell-command.js'
@@ -18,13 +20,29 @@ export async function openWindowsProcess(
     nodeExecutable: string
     baseEnv: Record<string, string>
     powerShell?: PowerShellDescriptor
+    /** Host-issued launch permit; the process then starts write-restricted or not at all. */
+    windowsAcl?: WindowsAclLaunchPermit
   },
 ): Promise<SandboxProcess> {
-  request.signal?.throwIfAborted()
-  if (request.pty) throw sandboxUnavailable('local Windows PTY needs a ConPTY provider')
+  const launch = options.windowsAcl ? windowsLaunch(options.windowsAcl) : undefined
+  try {
+    request.signal?.throwIfAborted()
+    if (request.pty) throw sandboxUnavailable('local Windows PTY needs a ConPTY provider')
+    if (request.argv[0] === SHELL_STDIN_SENTINEL && (request.argv.length !== 1 || !options.powerShell))
+      throw sandboxUnavailable('configured PowerShell stdin shell is unavailable')
+  } catch (error) {
+    launch?.abandoned()
+    throw error
+  }
+  return openStarted(request, options, launch)
+}
+
+async function openStarted(
+  request: SandboxProcessRequest,
+  options: Parameters<typeof openWindowsProcess>[1],
+  launch: WindowsLaunch | undefined,
+): Promise<SandboxProcess> {
   const stdinShell = request.argv[0] === SHELL_STDIN_SENTINEL
-  if (stdinShell && (request.argv.length !== 1 || !options.powerShell))
-    throw sandboxUnavailable('configured PowerShell stdin shell is unavailable')
   const argv = stdinShell
     ? [
         options.powerShell!.path,
@@ -37,7 +55,13 @@ export async function openWindowsProcess(
         '-',
       ]
     : [...request.argv]
-  const prepared = preparePowerShellFile(options.powerShell, argv)
+  let prepared: ReturnType<typeof preparePowerShellFile>
+  try {
+    prepared = preparePowerShellFile(options.powerShell, argv)
+  } catch (error) {
+    launch?.abandoned()
+    throw error
+  }
   const startup = new AbortController()
   const abort = () => startup.abort(request.signal?.reason)
   request.signal?.addEventListener('abort', abort, { once: true })
@@ -46,11 +70,13 @@ export async function openWindowsProcess(
   try {
     child = await startWindowsJobProcess(prepared.argv, {
       cwd: request.cwd,
-      env: mergeWindowsEnvironment(options.baseEnv, request.env),
+      env: mergeWindowsEnvironment(options.baseEnv, request.env, launch?.env),
       nodeExecutable: options.nodeExecutable,
       signal: startup.signal,
+      ...(launch ? { confinement: launch.confinement } : {}),
     })
   } catch (cause) {
+    launch?.abandoned()
     request.signal?.removeEventListener('abort', abort)
     try {
       prepared.dispose()
@@ -59,6 +85,7 @@ export async function openWindowsProcess(
     }
     throw cause
   }
+  launch?.started(child.completion)
   const listeners = new Set<(chunk: ProcessOutput) => void>()
   const pending: ProcessOutput[] = []
   let bytes = 0,

@@ -60,7 +60,9 @@
     "./windows-acl/policy": "./src/windows-acl/policy.ts",
     "./windows-acl/journal": "./src/windows-acl/journal.ts",
     "./windows-acl/leases": "./src/windows-acl/leases.ts",
-    "./windows-acl/authority": "./src/windows-acl/authority.ts"
+    "./windows-acl/authority": "./src/windows-acl/authority.ts",
+    "./windows-acl/execution": "./src/windows-acl/execution.ts",
+    "./windows-acl/host-platform": "./src/windows-acl/host-platform.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

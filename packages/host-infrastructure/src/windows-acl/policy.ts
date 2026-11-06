@@ -101,3 +101,22 @@ export function resolveWindowsExecution(input: WindowsExecutionInput): WindowsEx
   if (!isWindowsWriteBoundary(input.availableBoundary)) return refuse('boundary-mismatch')
   return { kind: 'windows-write-restricted-v1', boundary: WINDOWS_WRITE_BOUNDARY, mode: input.access }
 }
+
+type EnforcementLike = Readonly<{ level: string; boundary?: unknown }>
+
+/**
+ * The extra check for a requirement that names the partial Windows contract: the offered or actual
+ * enforcement must be exactly that contract. It is added next to the full-level and scope checks,
+ * never in their place; a requirement without a boundary is unaffected.
+ */
+export function honoursWindowsBoundary(
+  required: EnforcementLike,
+  actual: EnforcementLike | undefined,
+): boolean {
+  if (required.boundary === undefined) return true
+  return (
+    isWindowsWriteBoundary(required.boundary) &&
+    actual?.level === 'partial' &&
+    isWindowsWriteBoundary(actual.boundary)
+  )
+}

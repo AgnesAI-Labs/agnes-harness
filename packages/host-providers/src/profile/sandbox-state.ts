@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import type { Logger } from '@agnes/extension-api'
+import type { Logger, WindowsWriteBoundary } from '@agnes/extension-api'
 import { mkdirDurablySync, publishFileDurablySync, removeFileDurablySync } from '@agnes/package-manager'
 
 export type SandboxExecutionRecord = Readonly<{
@@ -15,8 +15,12 @@ export type SandboxExecutionRecord = Readonly<{
   target: string
   implementation: 'implemented' | 'unimplemented' | 'unknown'
   probeState: 'ready' | 'failed' | 'unprobed'
-  backend: 'none' | 'l1' | 'remote'
-  enforcement: Readonly<{ level: 'none' | 'partial' | 'full'; scope: readonly string[] }>
+  backend: 'none' | 'l1' | 'remote' | 'windows-acl'
+  enforcement: Readonly<{
+    level: 'none' | 'partial' | 'full'
+    scope: readonly string[]
+    boundary?: WindowsWriteBoundary
+  }>
 }>
 
 const refusal = () =>

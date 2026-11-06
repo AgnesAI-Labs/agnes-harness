@@ -131,11 +131,13 @@ export function createRoleChildren(deps: {
       if (sandbox.network === 'allow') filesystem.networkAllow = ['*']
       const enforcement = parent.d.runtime.enforcement()
       // A file fence is not an OS boundary. Preserve confinement unless Host already admitted
-      // this local file-only session through the existing explicit unconfined fallback.
+      // this local file-only session through the existing explicit unconfined fallback; the
+      // Windows write restriction names its boundary and is never that fallback.
       const unconfined =
         sandbox.local &&
         sandbox.allowsUnconfined === true &&
         enforcement.level === 'partial' &&
+        enforcement.boundary === undefined &&
         enforcement.scope.length === 1 &&
         enforcement.scope[0] === 'file'
       const enforced =

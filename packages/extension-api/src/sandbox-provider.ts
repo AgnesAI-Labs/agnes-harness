@@ -105,6 +105,22 @@ export type SandboxProviderConfig = Readonly<{
   workspaceRoot?: string
   /** Provider-specific strings, such as a container image. */
   options?: Readonly<Record<string, string>>
+  /**
+   * Identity of a Windows execution lease the Host acquired for one session. It is not a launch
+   * permit: only the Host's built-in local provider accepts it, and only for a lease the Host holds.
+   */
+  executionLease?: SandboxExecutionLease
+}>
+
+/** The lease a Windows write-restricted command runs under, named by identity only. */
+export type SandboxExecutionLease = Readonly<{
+  id: string
+  contract: 'windows-write-restricted-v1'
+  policyDigest: string
+  rootIdentity: Readonly<{ volumeId: string; fileId: string }>
+  mode: 'read-only' | 'workspace-write'
+  /** The lease's private temp directory; read-only leases have none. */
+  tempRoot?: string
 }>
 
 /** What the Host hands a remote provider when it opens the channel. The Host owns the result. */
