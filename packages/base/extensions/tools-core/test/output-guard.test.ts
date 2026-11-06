@@ -241,16 +241,19 @@ describe('guardOutput', () => {
   })
 
   it('keeps the limits at the documented values', () => {
-    // One number moves all three: half and an eighth are the proportions the limit has always had.
-    expect(outputLimits(8192)).toEqual({ maxBytes: 8192, maxLines: 2000, headBytes: 4096, tailBytes: 1024 })
+    // One number moves all three. A cut keeps five eighths of the limit, split evenly between the head
+    // and the tail: a command's error or a test run's summary is usually at the end.
+    expect(outputLimits(8192)).toEqual({ maxBytes: 8192, maxLines: 2000, headBytes: 2560, tailBytes: 2560 })
+    expect(outputLimits(32768)).toMatchObject({ headBytes: 10240, tailBytes: 10240 })
     expect(OUTPUT_LIMITS).toEqual(outputLimits(32768))
   })
 
   it('takes its limit from the context: head, tail and the call limit follow it', async () => {
     const ctx = ctxOf({ outputMaxBytes: 16384 })
-    const r = await guardOutput(ctx, `${'h'.repeat(8192)}${'m'.repeat(9000)}${'t'.repeat(2048)}`)
-    expect(r.text.startsWith('h'.repeat(8192))).toBe(true)
-    expect(r.text.endsWith('t'.repeat(2048))).toBe(true)
+    const r = await guardOutput(ctx, `${'h'.repeat(5120)}${'m'.repeat(9000)}${'t'.repeat(5120)}`)
+    expect(r.text.startsWith('h'.repeat(5120))).toBe(true)
+    expect(r.text.endsWith('t'.repeat(5120))).toBe(true)
+    expect(r.text).not.toContain('m'.repeat(9000))
     expect(r.text).toContain('over the 16384-byte limit')
     expect(callOutputLimitBytes(ctx)).toBe(16384)
   })
@@ -262,7 +265,8 @@ describe('guardOutput', () => {
     const kept = r.kept as { head: number; tail: number }
     expect(r.text.startsWith(text.slice(0, kept.head))).toBe(true)
     expect(r.text.endsWith(text.slice(text.length - kept.tail))).toBe(true)
-    expect(kept).toEqual({ head: 2730, tail: 2048 })
+    // 5120 bytes each: 1706 three-byte characters at the start, 3072 m and 2048 t at the end.
+    expect(kept).toEqual({ head: 1706, tail: 5120 })
     expect((await guardOutput(ctx, 'short')).kept).toBeUndefined()
   })
 })
