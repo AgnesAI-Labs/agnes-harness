@@ -60,6 +60,9 @@ jobs:
         run: |
           node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-native
           node --input-type=module -e "import setup from './tools/native-test-setup.mjs'; setup()"
+      - name: Initialize the real compiler environment without compiling
+        shell: pwsh
+        run: ./.github/scripts/prepare-windows-msvc.ps1
       - name: Original runtime cases with phase evidence and unchanged deadlines
         env: { AGNES_NATIVE_BUILD_TRACE: '1' }
         run: pnpm exec vitest run packages/cli/test/windows-runtime.test.ts --maxWorkers=1
