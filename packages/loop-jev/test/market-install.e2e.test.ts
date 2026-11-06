@@ -1,10 +1,10 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type FakeSystemOne, startFakeSystemOne } from '@agnes/ai/testkit'
-import { initializeHome } from '@agnes/host'
+import { createCredentialStore, createSecretsFile, initializeHome } from '@agnes/host'
 import { type PackageOperationReceipt, publicErrorContract } from '@agnes/protocol'
 import { createClient, memoryJournal, unixTransport } from '@agnes/sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -79,8 +79,10 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
     })
     initializeHome(root, PROFILE)
     const secrets = join(root, 'credentials')
-    mkdirSync(join(secrets, 'jev'), { recursive: true, mode: 0o700 })
-    writeFileSync(join(secrets, 'jev', 'key'), JEV_KEY, { mode: 0o600 })
+    // The managed writer establishes Windows private DACLs; POSIX modes alone do not.
+    await createCredentialStore({ root }).putApiKey('secret://jev/key', JEV_KEY)
+    renameSync(join(root, 'secrets'), secrets)
+    expect(createSecretsFile({ dir: secrets }).resolve('secret://jev/key') === JEV_KEY).toBe(true)
     const model = (over: Record<string, unknown>) => ({
       name: over.id,
       reasoning: false,
