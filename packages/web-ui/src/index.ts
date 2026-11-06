@@ -72,6 +72,7 @@ export {
 export { PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog } from './locales/plugin-presentation.js'
 export { RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog } from './locales/resource-detail.js'
 export { RESOURCE_LIST_LOCALE_NAMESPACE, resourceListLocaleCatalog } from './locales/resource-list.js'
+export * from './mcp-oauth-authorize.js'
 export * from './model-settings.js'
 export { getOverlayContainer, overlayLayers } from './overlay-policy.js'
 export { Toast, type ToastProps } from './overlay-toast.js'
