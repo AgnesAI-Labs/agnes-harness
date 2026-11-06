@@ -355,6 +355,10 @@
               "items": {
                 "type": "string"
               }
+            },
+            "windows_mode": {
+              "enum": ["write-restricted", "require-full"],
+              "description": "Windows only. write-restricted lets Host run restricted commands with an ACL-based partial write restriction instead of refusing them; file reads and network stay unrestricted. require-full (the default) accepts only a complete isolation backend. It never lowers required or an explicit read or network restriction."
             }
           }
         },

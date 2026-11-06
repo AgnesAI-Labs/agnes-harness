@@ -56,7 +56,8 @@
     "./request-traces": "./src/request-traces.ts",
     "./sandbox-read-paths": "./src/sandbox-read-paths.ts",
     "./sandbox-workspace-ancestor": "./src/sandbox-workspace-ancestor.ts",
-    "./documents-directory": "./src/documents-directory.ts"
+    "./documents-directory": "./src/documents-directory.ts",
+    "./windows-acl/policy": "./src/windows-acl/policy.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

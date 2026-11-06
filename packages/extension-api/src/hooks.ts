@@ -2,7 +2,7 @@ import { HOOK_EVENTS as PROTOCOL_HOOK_EVENTS } from '@agnes/protocol'
 import type * as Wire from '@agnes/protocol/gen/hooks'
 import type { AiErrorCode } from '@agnes/protocol/gen/model'
 import type { Actor, JsonValue } from '@agnes/protocol/gen/session-v1'
-import type { LeaseView, Logger, PlatformFacts, Seq, SessionRef } from './common.js'
+import type { LeaseView, Logger, PlatformFacts, Seq, SessionRef, WindowsWriteBoundary } from './common.js'
 import type { ProjectionReader } from './projections.js'
 import type { ResourceEntry } from './resources.js'
 import type { PlanItem, ToolMeta, ToolResult } from './tool.js'
@@ -84,6 +84,7 @@ export interface HookPayloadMap {
     readonly enforcement: {
       readonly level: 'full' | 'partial' | 'none'
       readonly scope: ReadonlyArray<'file' | 'network' | 'process'>
+      readonly boundary?: WindowsWriteBoundary
     }
   }
   turn_stopping: {

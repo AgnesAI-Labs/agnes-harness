@@ -92,6 +92,38 @@ describe('sandbox providers', () => {
     expect(() => readSandboxStartupConfig({ provider: 'Docker' })).toThrow(/provider id/)
   })
 
+  it('freezes a copy of the Windows write boundary and refuses an altered one', () => {
+    const boundary = {
+      contract: 'windows-write-restricted-v1',
+      fileWrite: 'acl-partial',
+      fileRead: 'unrestricted',
+      network: 'unrestricted',
+      processTree: 'job-object',
+    } as const
+    const withBoundary = (id: string, value: unknown): SandboxProvider => {
+      const base = box(id)
+      const capabilities = {
+        ...base.capabilities,
+        platform: ['win32'],
+        enforcement: { level: 'partial', scope: ['process'], boundary: value },
+      } as SandboxProvider['capabilities']
+      return { ...base, capabilities, probe: () => capabilities }
+    }
+    const root = new Context()
+    const registry = installSandboxProviders(root)
+    root.providers.registerHost(sandboxKind, '@agnes/host', withBoundary('boxed', { ...boundary }))
+    const entry = registry.catalog().find((one) => one.id === 'boxed')
+    expect(entry?.capabilities.enforcement).toEqual({ level: 'partial', scope: ['process'], boundary })
+    expect(Object.isFrozen(entry?.capabilities.enforcement?.boundary)).toBe(true)
+    expect(() =>
+      root.providers.registerHost(
+        sandboxKind,
+        '@agnes/host',
+        withBoundary('forged', { ...boundary, fileRead: 'denied' }),
+      ),
+    ).toThrow(/invalid sandbox provider/)
+  })
+
   it('catalogs the local provider and refuses a second id until restart', async () => {
     const root = new Context()
     const registry = installSandboxProviders(root)

@@ -43,6 +43,13 @@ describe('permission overlays preserve real recipe documents', () => {
     const want = withoutDefaultPolicy(expected) as Record<string, unknown>
     const got = withoutDefaultPolicy(resolved.doc) as Record<string, unknown>
     if (name !== 'minimal-rl') {
+      // The default permission's overlay now states the Windows write mode, which the legacy document
+      // predates. Check it is the one added field, then compare the rest as before.
+      const sandbox = got.sandbox as Record<string, unknown>
+      expect(sandbox.windows_mode).toBe('write-restricted')
+      delete sandbox.windows_mode
+    }
+    if (name !== 'minimal-rl') {
       // Compaction now follows primary; tool discovery is a prompt section and UI has a guide.
       // Transform only these reviewed fields, then compare the complete document as before.
       const model = want.model as { route: Record<string, unknown>; prompt_sections: string[] }
@@ -136,6 +143,46 @@ describe('resolving a recipe under a chosen permission', () => {
     expect(resolvePreset('claw', docs, { permission: 'read-only' }).doc.sandbox).toMatchObject({
       required: true,
       level: 'L1',
+    })
+  })
+
+  it('lets an overlay choose the Windows write restriction but never a recipe fix it for itself', () => {
+    for (const permission of ['read-only', 'workspace-write'] as const)
+      expect(resolvePreset('standard', docs, { permission }).doc.sandbox).toMatchObject({
+        windows_mode: 'write-restricted',
+      })
+    expect(resolvePreset('standard', docs, { permission: 'full-access' }).doc.sandbox).not.toHaveProperty(
+      'windows_mode',
+    )
+    // A recipe that states the mode is fixing its own permission, like one that states a level.
+    const own = {
+      ...docs,
+      own: { name: 'own', extends: 'standard', sandbox: { windows_mode: 'require-full' } },
+    }
+    expect(() => resolvePreset('own', own, { permission: 'workspace-write' })).toThrow(
+      'carries its own permission settings',
+    )
+    expect(resolvePreset('own', own).doc.sandbox).toMatchObject({ windows_mode: 'require-full' })
+  })
+
+  it('keeps windows_mode strictly separate from required isolation in an overlay', () => {
+    const overlay = docs['permission-workspace-write']!
+    const carrying = (sandbox: Record<string, unknown>) => ({
+      ...docs,
+      'permission-workspace-write': { ...overlay, sandbox: { ...(overlay.sandbox as object), ...sandbox } },
+    })
+    expect(() =>
+      resolvePreset('standard', carrying({ required: false }), { permission: 'workspace-write' }),
+    ).toThrow('sandbox.required')
+    expect(() =>
+      resolvePreset('standard', carrying({ windows_mode: 'write-restricted' }), {
+        permission: 'workspace-write',
+      }),
+    ).not.toThrow()
+    // The recipe's own required isolation survives the overlay's windows_mode.
+    expect(resolvePreset('claw', docs, { permission: 'workspace-write' }).doc.sandbox).toMatchObject({
+      required: true,
+      windows_mode: 'write-restricted',
     })
   })
 

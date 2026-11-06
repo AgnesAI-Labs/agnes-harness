@@ -173,6 +173,27 @@ export function sandboxUnavailable(reason: string): Error & { code: 'SANDBOX_UNA
 export const SANDBOX_PROVIDER_ID_PATTERN = /^[a-z][a-z0-9-]{0,63}$/
 const SANDBOX_PLATFORMS: readonly string[] = ['darwin', 'linux', 'win32']
 
+const WINDOWS_WRITE_BOUNDARY_KEYS = {
+  contract: 'windows-write-restricted-v1',
+  fileWrite: 'acl-partial',
+  fileRead: 'unrestricted',
+  network: 'unrestricted',
+  processTree: 'job-object',
+} as const
+
+/** True only for exactly the Windows write contract: every key, every value, nothing else. */
+function validWindowsWriteBoundary(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  const keys = Object.keys(WINDOWS_WRITE_BOUNDARY_KEYS)
+  return (
+    Object.keys(record).length === keys.length &&
+    keys.every(
+      (key) => record[key] === WINDOWS_WRITE_BOUNDARY_KEYS[key as keyof typeof WINDOWS_WRITE_BOUNDARY_KEYS],
+    )
+  )
+}
+
 /** Structural check of a capability report; a failed probe must not turn into working flags. */
 export function validSandboxCapabilities(capabilities: SandboxCapabilities | undefined): boolean {
   if (
@@ -190,7 +211,8 @@ export function validSandboxCapabilities(capabilities: SandboxCapabilities | und
     enforcement &&
     (!['none', 'partial', 'full'].includes(enforcement.level) ||
       !Array.isArray(enforcement.scope) ||
-      enforcement.scope.some((scope) => !['file', 'network', 'process'].includes(scope)))
+      enforcement.scope.some((scope) => !['file', 'network', 'process'].includes(scope)) ||
+      (enforcement.boundary !== undefined && !validWindowsWriteBoundary(enforcement.boundary)))
   )
     return false
   if (!Array.isArray(capabilities.platform) || !Array.isArray(capabilities.fsWrite)) return false

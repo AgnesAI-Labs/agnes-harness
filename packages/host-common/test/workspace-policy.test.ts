@@ -58,6 +58,80 @@ describe('Host workspace policy compiler', () => {
     ).toThrow('E_SANDBOX_WORKSPACE')
   })
 
+  describe('windows_mode', () => {
+    const config = (windowsMode?: unknown) => ({
+      sandbox: {
+        level: 'L1',
+        on_unavailable: 'allow-if-unimplemented',
+        ...(windowsMode === undefined ? {} : { windows_mode: windowsMode }),
+      },
+    })
+
+    it('defaults to require-full and reports a chosen mode only for a Windows target', () => {
+      expect(normalizeSandboxStaticConfig(config(), { target: 'win32' }).windowsMode).toBe('require-full')
+      expect(normalizeSandboxStaticConfig({}, { target: 'win32' }).windowsMode).toBe('require-full')
+      for (const mode of ['write-restricted', 'require-full'] as const)
+        expect(normalizeSandboxStaticConfig(config(mode), { target: 'win32' }).windowsMode).toBe(mode)
+    })
+
+    it('leaves the config and its hash unchanged for every other target', () => {
+      const plain = normalizeSandboxStaticConfig(config())
+      for (const target of [undefined, 'posix'] as const) {
+        for (const mode of [undefined, 'write-restricted', 'require-full'] as const) {
+          const other = normalizeSandboxStaticConfig(config(mode), target ? { target } : undefined)
+          expect('windowsMode' in other).toBe(false)
+          expect(other).toEqual(plain)
+          expect(sandboxStaticConfigHash(other)).toBe(sandboxStaticConfigHash(plain))
+        }
+      }
+      // Pinned digest of an input that existed before the field: it must never move.
+      expect(
+        sandboxStaticConfigHash(
+          normalizeSandboxStaticConfig({ sandbox: { level: 'L1', required: true, deny_paths: ['secret'] } }),
+        ),
+      ).toBe('976bc7f95f48f52dc8284d1fb3b451b3a0dab8e82ff1ba89d97a0c1f9c01147e')
+    })
+
+    it('puts the actual mode into the Windows summary', () => {
+      const full = normalizeSandboxStaticConfig(config('require-full'), { target: 'win32' })
+      const restricted = normalizeSandboxStaticConfig(config('write-restricted'), { target: 'win32' })
+      const omitted = normalizeSandboxStaticConfig(config(), { target: 'win32' })
+      expect(sandboxStaticConfigHash(restricted)).not.toBe(sandboxStaticConfigHash(full))
+      expect(sandboxStaticConfigHash(omitted)).toBe(sandboxStaticConfigHash(full))
+      expect(sandboxStaticConfigHash(restricted)).not.toBe(
+        sandboxStaticConfigHash(normalizeSandboxStaticConfig(config('write-restricted'))),
+      )
+    })
+
+    it('validates the field whatever the target, and rejects unknown keys', () => {
+      for (const target of [undefined, 'posix', 'win32'] as const)
+        for (const bad of ['full', 'Write-Restricted', '', true, null, 1, ['write-restricted']])
+          expect(() => normalizeSandboxStaticConfig(config(bad), target ? { target } : undefined)).toThrow(
+            'E_SANDBOX_WORKSPACE',
+          )
+      expect(() =>
+        normalizeSandboxStaticConfig({ sandbox: { level: 'L1', windows: 'write-restricted' } }),
+      ).toThrow('E_SANDBOX_WORKSPACE')
+    })
+
+    it('survives the session-extras and subagent derivations of the plan', async () => {
+      const staticConfig = normalizeSandboxStaticConfig(config('write-restricted'), { target: 'win32' })
+      const plan = await compileWorkspacePolicy({
+        canonicalRoot: '/work',
+        dataDir: '/data',
+        homeDir: '/home/user',
+        protectedPaths: [],
+        semantics: { flavor: 'posix', caseSensitive: true },
+        staticConfig,
+        canonicalize,
+      })
+      expect(plan.staticConfig.windowsMode).toBe('write-restricted')
+      expect(plan.staticConfigHash).toBe(sandboxStaticConfigHash(staticConfig))
+      const narrowed = intersectWorkspacePlan(plan, plan.policy)
+      expect(narrowed.staticConfig.windowsMode).toBe('write-restricted')
+    })
+  })
+
   it.each(['implemented', 'unknown', 'unimplemented'] as const)(
     'preserves memory isolation for %s except explicitly permitted missing local implementation',
     (support) => {

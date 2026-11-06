@@ -1,5 +1,6 @@
 import type { Seq } from '@agnes/core-common/types'
 import type { HarnessEdit } from '@agnes/core-ledger/reduce/shapes'
+import type { WindowsWriteBoundary } from '@agnes/extension-api'
 import type {
   ApprovalGrantQuery,
   ApprovalSeam,
@@ -46,13 +47,32 @@ export type {
   CheckpointWorkspaceBinding,
   CheckpointWorkspaceFs,
 } from '@agnes/extension-api/seams'
-export type Enforcement = { level: 'full' | 'partial' | 'none'; scope: ('file' | 'network' | 'process')[] }
+export type Enforcement = {
+  level: 'full' | 'partial' | 'none'
+  scope: ('file' | 'network' | 'process')[]
+  boundary?: WindowsWriteBoundary
+}
 
 /** Opaque process boundary selected and cached by Host for one canonical workspace. */
 export interface SandboxWorkspaceBackend {
   confine(
     request: Readonly<{ argv: readonly string[]; cwd: string }>,
   ): readonly string[] | Promise<readonly string[]>
+}
+
+/**
+ * A boundary the Host itself applies when it starts a command, instead of argv a provider wraps. It
+ * names the exact contract and the lease that owns the resources behind it. It is not yet part of
+ * `SandboxWorkspaceBackend`, so existing consumers keep matching only the argv form.
+ */
+export interface HostSpawnSandboxWorkspaceBackend {
+  readonly enforcementLocation: 'host-spawn'
+  readonly boundary: WindowsWriteBoundary
+  readonly lease: Readonly<{
+    id: string
+    policyDigest: string
+    rootIdentity: Readonly<{ volumeId: string; fileId: string }>
+  }>
 }
 
 /** Root-bound readiness. Callers cannot resubmit a root, backend id, policy, cache key or probe. */

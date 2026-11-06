@@ -3,7 +3,6 @@ import {
   ProviderError,
   type SandboxCapabilities,
   type SandboxExecutionPolicy,
-  type SandboxPlatform,
   type SandboxProvider,
   type SandboxProviderCatalogEntry,
   type SandboxProviderConfig,
@@ -11,6 +10,7 @@ import {
   SHELL_STDIN_SENTINEL,
   sandboxKind,
   sandboxUnavailable,
+  validSandboxCapabilities,
 } from '@agnes/extension-api'
 import { ProviderLifetime } from '@agnes/host-common/assemble/provider-lifetime'
 import {
@@ -31,8 +31,6 @@ declare module '@agnes/cordis' {
     sandboxProviders: SandboxProviderRegistry
   }
 }
-
-const PLATFORMS = new Set<SandboxPlatform>(['darwin', 'linux', 'win32'])
 
 type Registration = {
   id: string
@@ -63,6 +61,9 @@ function freezeCapabilities(capabilities: SandboxCapabilities): SandboxCapabilit
           enforcement: Object.freeze({
             level: capabilities.enforcement.level,
             scope: Object.freeze([...capabilities.enforcement.scope]),
+            ...(capabilities.enforcement.boundary
+              ? { boundary: Object.freeze({ ...capabilities.enforcement.boundary }) }
+              : {}),
           }),
         }
       : {}),
@@ -70,30 +71,6 @@ function freezeCapabilities(capabilities: SandboxCapabilities): SandboxCapabilit
       ? {}
       : { unavailableReason: capabilities.unavailableReason }),
   })
-}
-
-function validCapabilities(capabilities: SandboxCapabilities | undefined): boolean {
-  if (
-    !capabilities ||
-    typeof capabilities.network !== 'boolean' ||
-    typeof capabilities.available !== 'boolean' ||
-    (capabilities.l1Implementation !== undefined &&
-      !['implemented', 'unimplemented', 'unknown'].includes(capabilities.l1Implementation)) ||
-    (capabilities.programmatic !== undefined && typeof capabilities.programmatic !== 'boolean') ||
-    (capabilities.shellStdin !== undefined && typeof capabilities.shellStdin !== 'boolean')
-  )
-    return false
-  const enforcement = capabilities.enforcement
-  if (
-    enforcement &&
-    (!['none', 'partial', 'full'].includes(enforcement.level) ||
-      !Array.isArray(enforcement.scope) ||
-      enforcement.scope.some((scope) => !['file', 'network', 'process'].includes(scope)))
-  )
-    return false
-  if (!Array.isArray(capabilities.platform) || !Array.isArray(capabilities.fsWrite)) return false
-  if (capabilities.platform.some((platform) => !PLATFORMS.has(platform))) return false
-  return capabilities.fsWrite.every((scope) => typeof scope?.path === 'string' && scope.path.length > 0)
 }
 
 /** Per-Cordis-root catalog. The selected id is fixed until the process starts again. */
@@ -225,7 +202,7 @@ export class SandboxProviderRegistry extends Service {
     const record = this.records.get(provider)!
     this.registrations.select('process', id)
     const probed = (await provider.probe?.(signal)) ?? provider.capabilities
-    if (!validCapabilities(probed))
+    if (!validSandboxCapabilities(probed))
       throw new ProviderError('E_PROVIDER_INVALID', `sandbox provider returned invalid capabilities: ${id}`, {
         kind: 'sandbox',
         provider: id,
@@ -251,7 +228,7 @@ export class SandboxProviderRegistry extends Service {
       instance.id === id &&
       typeof instance.exec === 'function' &&
       typeof instance.dispose === 'function' &&
-      validCapabilities(instance.capabilities)
+      validSandboxCapabilities(instance.capabilities)
     const lifetime = new ProviderLifetime('sandbox', id)
     const opened = new Set<import('@agnes/extension-api').SandboxProcess>()
     const opening = new Set<Promise<import('@agnes/extension-api').SandboxProcess>>()

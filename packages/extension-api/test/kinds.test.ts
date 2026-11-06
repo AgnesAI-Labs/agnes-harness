@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type ModelAdapter, modelAdapterKind } from '../src/index.js'
+import { type ModelAdapter, modelAdapterKind, type SandboxProvider, sandboxKind } from '../src/index.js'
 
 const adapter = (capabilities: Record<string, unknown> = {}): ModelAdapter => ({
   id: 'sample',
@@ -66,5 +66,53 @@ describe('model adapter registration', () => {
       'tools',
       'streaming',
     ])
+  })
+})
+
+describe('sandbox provider enforcement boundary', () => {
+  const boundary = {
+    contract: 'windows-write-restricted-v1',
+    fileWrite: 'acl-partial',
+    fileRead: 'unrestricted',
+    network: 'unrestricted',
+    processTree: 'job-object',
+  } as const
+  const provider = (enforcement?: unknown): SandboxProvider => ({
+    id: 'sample',
+    version: '1.0.0',
+    capabilities: {
+      network: true,
+      fsWrite: [],
+      platform: ['win32'],
+      available: true,
+      ...(enforcement === undefined ? {} : { enforcement }),
+    } as unknown as SandboxProvider['capabilities'],
+    create() {
+      throw new Error('not used by registration checks')
+    },
+  })
+
+  it('accepts the closed Windows write boundary next to the old fields', () => {
+    expect(() =>
+      sandboxKind.validate(provider({ level: 'partial', scope: ['process'], boundary })),
+    ).not.toThrow()
+    expect(() => sandboxKind.validate(provider({ level: 'partial', scope: ['process'] }))).not.toThrow()
+  })
+
+  it.each([
+    ['another contract', { ...boundary, contract: 'windows-write-restricted-v2' }],
+    ['another write mode', { ...boundary, fileWrite: 'acl-full' }],
+    ['a read claim', { ...boundary, fileRead: 'denied' }],
+    ['a network claim', { ...boundary, network: 'denied' }],
+    ['another process tree', { ...boundary, processTree: 'none' }],
+    ['an extra key', { ...boundary, extra: true }],
+    ['a missing key', { contract: boundary.contract }],
+    ['a string', 'windows-write-restricted-v1'],
+    ['null', null],
+    ['an array', []],
+  ])('rejects %s', (_name, bad) => {
+    expect(() =>
+      sandboxKind.validate(provider({ level: 'partial', scope: ['process'], boundary: bad })),
+    ).toThrow('invalid sandbox provider registration')
   })
 })

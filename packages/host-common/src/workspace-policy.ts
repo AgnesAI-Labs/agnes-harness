@@ -19,6 +19,19 @@ export type SandboxStaticConfig = Readonly<{
   denyPaths: readonly string[]
   networkAllow: readonly string[]
   loopbackServe?: boolean
+  /**
+   * Present only when the plan is built for a Windows host. `write-restricted` accepts the ACL-based
+   * partial write restriction for commands; `require-full` (also the value for an omitted setting)
+   * accepts only a complete isolation backend.
+   */
+  windowsMode?: WindowsMode
+}>
+
+export type WindowsMode = 'write-restricted' | 'require-full'
+
+export type SandboxStaticConfigOptions = Readonly<{
+  /** Host family the plan is for. Only `win32` carries Windows settings; the default keeps other hosts unchanged. */
+  target?: 'win32' | 'posix'
 }>
 
 export type WorkspacePolicyPlan = Readonly<{
@@ -48,6 +61,7 @@ const CONFIG_KEYS = new Set([
   'deny_paths',
   'network_allow',
   'loopback_serve',
+  'windows_mode',
 ])
 
 function stringList(value: unknown, field: string): readonly string[] {
@@ -58,7 +72,11 @@ function stringList(value: unknown, field: string): readonly string[] {
 }
 
 /** The single normalized static sandbox plan consumed by policy compilation and readiness identity. */
-export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unknown>>): SandboxStaticConfig {
+export function normalizeSandboxStaticConfig(
+  preset: Readonly<Record<string, unknown>>,
+  options: SandboxStaticConfigOptions = {},
+): SandboxStaticConfig {
+  const windows = options.target === 'win32' ? ({ windowsMode: 'require-full' } as const) : {}
   const policy = presetProvider(preset, 'tool-policy')
   const access =
     policy === 'read-only' ? 'read-only' : policy === 'full-access' ? 'full-access' : 'workspace-write'
@@ -72,6 +90,7 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
       extraPaths: Object.freeze([]),
       denyPaths: Object.freeze([]),
       networkAllow: Object.freeze([]),
+      ...windows,
     })
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw))
     throw fault('sandbox config is not a mapping')
@@ -87,6 +106,9 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
     throw fault('sandbox.on_unavailable is invalid')
   if (level !== 'L1' && onUnavailable === 'allow-if-unimplemented')
     throw fault('allow-if-unimplemented requires an L1 request')
+  const windowsMode = input.windows_mode === undefined ? 'require-full' : input.windows_mode
+  if (windowsMode !== 'write-restricted' && windowsMode !== 'require-full')
+    throw fault('sandbox.windows_mode is not write-restricted or require-full')
   const loopbackServe = input.loopback_serve === undefined ? false : input.loopback_serve
   if (typeof loopbackServe !== 'boolean') throw fault('sandbox.loopback_serve is not boolean')
   if (
@@ -108,6 +130,7 @@ export function normalizeSandboxStaticConfig(preset: Readonly<Record<string, unk
     extraPaths: stringList(input.extra_paths, 'extra_paths'),
     denyPaths: stringList(input.deny_paths, 'deny_paths'),
     networkAllow: stringList(input.network_allow, 'network_allow'),
+    ...(options.target === 'win32' ? { windowsMode } : {}),
   })
 }
 
@@ -152,6 +175,7 @@ export function sandboxStaticConfigHash(config: SandboxStaticConfig): string {
         [...config.denyPaths],
         [...config.networkAllow],
         ...(config.loopbackServe ? [true] : []),
+        ...(config.windowsMode ? [`windows_mode:${config.windowsMode}`] : []),
       ]),
     )
     .digest('hex')
