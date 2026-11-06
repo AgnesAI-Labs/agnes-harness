@@ -81,6 +81,44 @@ describe('repeat reminder', () => {
     expect(minutes[2]).toBeUndefined()
   })
 
+  it('does not count a countdown in seconds as a repeat', () => {
+    const seen = notes({}, [
+      ['job_output', { id: 'j1' }, 'running, 30s left'],
+      ['job_output', { id: 'j1' }, 'running, 20s left'],
+      ['job_output', { id: 'j1' }, 'running, 10s left'],
+    ])
+    expect(seen[2]).toBeUndefined()
+    const words = notes({}, [
+      ['job_output', { id: 'j1' }, '30 seconds remaining'],
+      ['job_output', { id: 'j1' }, '20 seconds remaining'],
+      ['job_output', { id: 'j1' }, '10 seconds remaining'],
+    ])
+    expect(words[2]).toBeUndefined()
+  })
+
+  it('does not read a number at the end of a line and a word on the next line as a duration', () => {
+    const seen = notes({}, [
+      ['bash', { cmd: 'retry' }, 'Retry count: 3\nsec ago'],
+      ['bash', { cmd: 'retry' }, 'Retry count: 4\nsec ago'],
+      ['bash', { cmd: 'retry' }, 'Retry count: 5\nsec ago'],
+    ])
+    expect(seen[2]).toBeUndefined()
+  })
+
+  it('compares blocks that are not text as they are', () => {
+    const image = (size: number): ToolResult => ({
+      content: [
+        { type: 'image', ref: { sha256: '0'.repeat(64), size, mime: 'image/png' }, mime: 'image/png' },
+      ],
+    })
+    const run = (sizes: number[]) => {
+      const owner = {}
+      return sizes.map((n) => withRepeatReminder(owner, 'shot', {}, image(n))).at(-1)?.content.length
+    }
+    expect(run([1, 1, 1])).toBe(2)
+    expect(run([1, 2, 3])).toBe(1)
+  })
+
   it('starts again after a different call in between', () => {
     const owner = {}
     const same: [string, unknown, string] = ['read', { path: 'a.txt' }, 'same']

@@ -4,7 +4,8 @@ import type { ToolResult } from '@agnes/extension-api'
 /**
  * A note on a tool result when the model runs the same call again and again: the same tool, the same
  * arguments and the same result, in a row. The result is part of the key on purpose: polling a job or a
- * status repeats its arguments while the answer changes, and that is not a loop. The note rides at the end
+ * status repeats its arguments while the answer changes, and that is not a loop. Times and short durations in the
+ * result are ignored (see `withoutTiming`), since they differ on every run of the same command. The note rides at the end
  * of the result the ledger keeps, so it adds no message of its own and moves no cached prefix. It only
  * advises; the call itself is never refused or rewritten.
  */
@@ -19,10 +20,12 @@ const GENTLE =
 
 // Times and short durations differ on every run of the same command, so they are blanked before the
 // result is compared: a failing test that prints "Done in 2.31s" and then "Done in 2.34s" is one loop, not
-// two answers. Minutes and longer are kept, so a countdown ("10 minutes left") still reads as progress.
+// two answers. A wait that counts down ("30s left", "10 seconds remaining") and minutes or longer are kept,
+// so they still read as progress.
 const CLOCK =
   /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?|(?<![\d:])\d{1,2}:\d{2}:\d{2}(?:\.\d+)?(?![\d:])/g
-const SHORT_DURATION = /(?<![\w.-])\d+(?:\.\d+)?\s?(?:ms|s|secs?|seconds?)\b/g
+const SHORT_DURATION =
+  /(?<![\w.-])\d+(?:\.\d+)?[ ]?(?:ms|s|secs?|seconds?)\b(?!\s+(?:left|remaining|to go|until|more)\b)/g
 
 function withoutTiming(content: ToolResult['content']): ToolResult['content'] {
   return content.map((block) =>
