@@ -16,7 +16,8 @@
     "./native": "./dist/native/agnes-system.node",
     "./deployment-network": "./src/deployment-network.ts",
     "./realpath": "./src/realpath.ts",
-    "./command-path": "./src/command-path.ts"
+    "./command-path": "./src/command-path.ts",
+    "./windows-acl": "./src/windows-acl.ts"
   },
   "scripts": {
     "build:native": "node scripts/build-native.mjs",

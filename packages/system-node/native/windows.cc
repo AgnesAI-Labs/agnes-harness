@@ -912,6 +912,8 @@ static napi_value listCanonicalDirectory(napi_env env, napi_callback_info info) 
   return result;
 }
 
+#include "windows-acl.h"
+
 static napi_value initialize(napi_env env, napi_value exports) {
   if (uv_version() != UV_VERSION_HEX) {
     napi_throw_error(env, "E_SYSTEM_NATIVE_UNAVAILABLE", "Rebuild Windows native artifact for the current Node.js/libuv runtime");
@@ -946,6 +948,9 @@ static napi_value initialize(napi_env env, napi_value exports) {
     {"appendPrivateFile", nullptr, guarded<appendPrivateFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"protectPrivateDirectory", nullptr, guarded<protectPrivateDirectory>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"protectPrivateFile", nullptr, guarded<protectPrivateFile>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"aclInspect", nullptr, guarded<aclInspect>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"aclApply", nullptr, guarded<aclApply>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"aclRestore", nullptr, guarded<aclRestore>, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
   napi_define_properties(env, exports, sizeof(functions) / sizeof(functions[0]), functions);
   napi_value version; napi_create_int32(env, 1, &version);

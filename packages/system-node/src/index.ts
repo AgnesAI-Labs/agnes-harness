@@ -70,6 +70,9 @@ type Native = {
   appendPrivateFile(path: string, bytes: Buffer, flush: boolean): void
   protectPrivateDirectory(path: string): void
   protectPrivateFile?(path: string): void
+  aclInspect?: WindowsAclBinding['inspect']
+  aclApply?: WindowsAclBinding['apply']
+  aclRestore?: WindowsAclBinding['restore']
 }
 
 /** Bind an ephemeral TCP listener strictly to one numeric loopback address; caller owns the fd. */
@@ -237,6 +240,38 @@ export type WindowsProcessJob = {
   terminationComplete(): boolean
   /** Idempotent; force-terminates remaining members. Termination is asynchronous. */
   close(): void
+}
+
+/** Raw Windows ACL primitives. Applications use the windows-acl entry point, which validates them. */
+export type WindowsAclBinding = Readonly<{
+  inspect(path: string): unknown
+  apply(
+    path: string,
+    volumeId: string,
+    fileId: string,
+    fingerprint: string,
+    descendants: string[],
+    writeSid: string,
+  ): unknown
+  restore(
+    path: string,
+    volumeId: string,
+    fileId: string,
+    fingerprint: string,
+    allowSid: string,
+    deny: boolean,
+    label: boolean,
+  ): unknown
+}>
+export function windowsAclBinding(): WindowsAclBinding {
+  if (!windows) throw Object.assign(new Error('Windows ACL primitives are unavailable'), { code: 'ENOSYS' })
+  const { aclInspect, aclApply, aclRestore } = native()
+  // Optional, so an artifact built before these primitives still loads for everything else.
+  if (typeof aclInspect !== 'function' || typeof aclApply !== 'function' || typeof aclRestore !== 'function')
+    throw Object.assign(new Error('Rebuild native artifact for Windows ACL support'), {
+      code: 'E_SYSTEM_NATIVE_UNAVAILABLE',
+    })
+  return { inspect: aclInspect, apply: aclApply, restore: aclRestore }
 }
 
 export function createWindowsProcessJob(): WindowsProcessJob {
