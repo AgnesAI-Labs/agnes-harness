@@ -58,6 +58,14 @@ export type InboundDeps = {
 }
 
 export class Inbound {
+  private readonly paused = new Set<string>()
+  async pause(key: string): Promise<void> {
+    this.paused.add(key)
+    await this.lanes.get(key)
+  }
+  resume(key: string): void {
+    this.paused.delete(key)
+  }
   private readonly lanes = new Map<string, Promise<void>>()
   // Keep refusals even after cache eviction: queued/new messages must never reopen that history.
   private readonly refused = new Set<string>()
@@ -69,7 +77,7 @@ export class Inbound {
       tenant: this.dependencies.config.tenant,
       agent: this.dependencies.config.agent,
     })
-    if (intent === null) return Promise.resolve()
+    if (intent === null || this.paused.has(intent.sessionKey)) return Promise.resolve()
     if (this.refused.has(intent.sessionKey) && !isNewSession(intent)) return Promise.resolve()
 
     const maxPendingLanes = Math.max(1, this.dependencies.maxPendingLanes ?? 1_024)
@@ -122,6 +130,7 @@ export class Inbound {
   }
 
   private async process(event: ChannelEvent, intent: InboundIntent): Promise<void> {
+    if (this.paused.has(intent.sessionKey)) return
     if (this.isStopped() || (this.refused.has(intent.sessionKey) && !isNewSession(intent))) return
     const attention =
       this.dependencies.adapter.attention?.(event) ??
@@ -224,6 +233,8 @@ export class Inbound {
   }
 
   private async dispatch(session: BoundSession, intent: InboundIntent): Promise<void> {
+    if (this.paused.has(intent.sessionKey) || this.dependencies.cache.current(intent.sessionKey) !== session)
+      return
     if (this.refused.has(intent.sessionKey)) return
     const options = { commandId: commandIdFor(intent.sessionKey, intent.messageId) }
     if (this.dependencies.cache.busy(intent.sessionKey)) {

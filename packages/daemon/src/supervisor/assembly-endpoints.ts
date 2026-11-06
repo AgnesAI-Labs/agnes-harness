@@ -78,6 +78,12 @@ export function createEndpoints(state: EndpointInput, _lifetime: AssemblyLifetim
       ...(o.audit ? { audit: o.audit } : {}),
     })
     registerPluginRuntimeIngress(ep, pool, transport)
+    ep.register('_agnes/v1/channels.catalog', async (_params, call) => {
+      if (call.conn.authKind !== 'local' || call.conn.credentialKind !== 'local')
+        throw rpcError('CAPABILITY_DENIED')
+      const link = await pool.acquireSharedWorker()
+      return link.command('channels.catalog', {})
+    })
     const context = createEndpointContext(state, transport, ep)
     registerSessionEndpoints(state, transport, ep, context)
     registerEvidenceEndpoints(state, transport, ep, context)
@@ -636,13 +642,15 @@ function registerExtensionEndpoints(
     resolveServiceSession: async (sessionId, call) => {
       const userId = call.conn.credential?.userId
       const subjectPrincipal =
-        typeof userId === 'string' && userId.length > 0
-          ? call.conn.credentialKind === 'jwt'
-            ? `jwt:${userId}`
-            : call.conn.credentialKind === 'sso'
-              ? `portal:${userId}`
-              : undefined
-          : undefined
+        call.conn.authKind === 'local' && call.conn.credentialKind === 'local'
+          ? call.conn.principalId
+          : typeof userId === 'string' && userId.length > 0
+            ? call.conn.credentialKind === 'jwt'
+              ? `jwt:${userId}`
+              : call.conn.credentialKind === 'sso'
+                ? `portal:${userId}`
+                : undefined
+            : undefined
       let owner: ReturnType<typeof sessionOwnership.resolve>
       try {
         owner = sessionOwnership.resolve(sessionId)

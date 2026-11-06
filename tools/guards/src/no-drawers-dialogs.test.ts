@@ -2,6 +2,8 @@
 // a one-question ConfirmDialog. No right-side drawers and no large form dialogs. The files that still
 // open a Drawer, Dialog or Modal are listed with a ceiling that only goes down; a new file or one more
 // use fails. Community detail and its explicit check/install progress window are scoped product exceptions.
+// Session channel binding is an explicitly requested compact in-context workflow (2026-11-06);
+// its single dialog hosts channel selection, credentials and verified-target confirmation.
 // Removing a use needs no edit here, so windows converting pages in parallel never conflict.
 import { readFileSync } from 'node:fs'
 import { join, sep } from 'node:path'

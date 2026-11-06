@@ -2,6 +2,28 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.6.0
+
+### Added
+
+- Optional channel provider configuration schemas and session binding methods. The shared channel
+  page configures managed resources through native profile approval. `channelServiceCapabilities`
+  declares the backend-owned session query, bind and unbind services; packages must review these
+  new grants before binding is available. Existing 5.5 adapters still load with configuration only.
+- Explicit bindings attach existing authorized sessions, persist routing metadata and start after
+  the binding projection watermark. No history is exported. Reconnect requires an inbound target
+  confirmation; incomplete transitions remain paused. Native approval decisions stay in AGH.
+
+## 5.5.0
+
+### Added
+
+- Optional `PluginProfileRuntimePort.registerChannel`: registers a platform provider and its
+  backend-owned profile channel resource. `channelKind`, `CHANNEL_CONFIG_SCHEMA` and the public
+  `channel-contract` entry expose the existing adapter contract without private runner imports.
+- Multi-instance channel configuration uses AGH secret references and explicit workspace/agent
+  bindings. Existing generic runner imports and existing plugins retain their behavior.
+
 ## 5.4.0
 
 ### Added

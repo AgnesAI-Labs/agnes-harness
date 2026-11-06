@@ -79,6 +79,7 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock('@agnes/sdk', () => ({
+  unixTransport: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
   createClient: vi.fn(() => ({
     request: mocks.request,
@@ -300,6 +301,40 @@ it('relays only a same-origin typed browser service request and strips page-supp
       input: { text: 'hello', nested: { keep: 1 } },
     })
     const profileCall = { rowId: 'web:acme/panel', service: 'panel.report', input: {} }
+    const channelCall = {
+      method: '_agnes/v1/extension.call',
+      params: {
+        sessionId: 'session-a',
+        extension: 'plugin/0123456789abcdef',
+        service: 'channel.bind',
+        commandId: 'channel-bind-1',
+        input: { instanceId: 'one', targetId: 'a'.repeat(32), expectedVersion: 0 },
+      },
+    }
+    const sendChannel = (body: unknown, from = origin) =>
+      fetch(`${origin}/api/channels`, {
+        method: 'POST',
+        headers: { Origin: from, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    mocks.request.mockResolvedValueOnce({
+      providers: [{ extension: 'plugin/0123456789abcdef', bindingAvailable: true }],
+    } as never)
+    mocks.request.mockResolvedValueOnce({ output: { bound: true } } as never)
+    const bound = await sendChannel(channelCall)
+    expect(bound.status).toBe(200)
+    expect(await bound.json()).toEqual({ output: { bound: true } })
+    expect(mocks.request).toHaveBeenCalledWith(channelCall.method, channelCall.params)
+    expect((await sendChannel(channelCall, 'http://attacker.invalid')).status).toBe(403)
+    expect((await sendChannel({ ...channelCall, method: '_agnes/v1/packages.remove' })).status).toBe(400)
+    expect(
+      (await sendChannel({ ...channelCall, params: { ...channelCall.params, actor: 'owner' } })).status,
+    ).toBe(400)
+    mocks.request.mockResolvedValueOnce({ providers: [] } as never)
+    expect((await sendChannel(channelCall)).status).toBe(403)
+    for (const forged of [{ actor: 'owner' }, { profile: 'foreign' }, { workspace: 'D:/foreign' }, { agent: 'default' }]) {
+      expect((await sendChannel({ method: 'channels.context', params: { extension: channelCall.params.extension, sessionId: 'session-a', ...forged } })).status).toBe(400)
+    }
     const profile = await fetch(`${origin}/api/client-modules/profile`, {
       method: 'POST',
       headers: { Origin: origin, 'Content-Type': 'application/json' },

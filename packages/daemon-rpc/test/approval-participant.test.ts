@@ -13,7 +13,7 @@ const initialize = {
 
 const credential = {
   kind: 'channel' as const,
-  channel: 'dingtalk',
+  channel: 'example-im',
   accountId: 'account-1',
   userId: 'user-1',
   chatId: 'chat-1',
@@ -65,7 +65,7 @@ describe('participant RPC', () => {
           {
             actor: { id: 'resolved-user-1', org: 'example', role: 'member' },
             joinedAt: expect.any(String),
-            surface: 'dingtalk',
+            surface: 'example-im',
           },
         ],
       },
@@ -105,7 +105,7 @@ describe('participant RPC', () => {
           trust: 'untrusted',
           data: expect.objectContaining({
             action: 'join',
-            surface: 'dingtalk',
+            surface: 'example-im',
             credentialKind: 'channel',
             participant: expect.objectContaining({ id: 'resolved-user-1' }),
           }),

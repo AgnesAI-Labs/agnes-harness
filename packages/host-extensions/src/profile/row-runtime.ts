@@ -4,10 +4,13 @@ import type {
   PluginServicesPort,
   ProfileManagedDefinition,
 } from '@agnes/extension-api'
+import { CHANNEL_CONFIG_SCHEMA, channelKind, channelServiceCapabilities } from '@agnes/extension-api'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import type { PluginCapabilities } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
+import { frozenJson } from '../ext-host/frozen-json.js'
 import { pluginRowSource } from '../ext-host/row-extension-host.js'
+import type { ChannelRuntimeFactory } from './channel-runtime.js'
 import type { ProfileManagedResources } from './managed.js'
 import { registerManagedServices } from './managed-services.js'
 import { ownedStore } from './owned-store.js'
@@ -17,6 +20,14 @@ export function installProfileRuntime(
   root: Context,
   origins: RowOriginLookup,
   deps: {
+    channelRuntime?: ChannelRuntimeFactory
+    channelStateDirectory?: string
+    channelScope?: { home: string; profile: string; dataDir: string; workspace: string }
+    resolveSecret?(ref: string): string
+    channelLog?: import('@agnes/extension-api').Logger
+    channelDirectory?: Map<string, () => import('@agnes/protocol').JsonValue>
+    channelCurrent?(owner: string, integrity: string, revision: string): unknown
+    channelRemember?(packageId: string, owner: string): void
     managed: ProfileManagedResources
     streams: ProfileStreams
     namespace(owner: string, name: string): import('@agnes/extension-api').PersistenceMetadataNamespace
@@ -55,6 +66,111 @@ export function installProfileRuntime(
     }
   }
   const facet: PluginProfileRuntimePort = {
+    registerChannel(this: { ctx: Context }, provider, config = { instances: [] }) {
+      const row = resolve(this.ctx)
+      if (
+        !deps.channelRuntime ||
+        !deps.channelStateDirectory ||
+        !deps.channelScope ||
+        !deps.resolveSecret ||
+        !deps.channelLog ||
+        !row.capabilities?.network?.length
+      )
+        throw rpcError('CAPABILITY_DENIED')
+      channelKind.validate(provider)
+      deps.channelRemember?.(row.origin.packageId, row.owner)
+      const registered = Object.freeze({
+        id: provider.id,
+        version: provider.version,
+        manifest: frozenJson(structuredClone(provider.manifest)),
+        ...(provider.configSchema
+          ? { configSchema: frozenJson(structuredClone(provider.configSchema)) }
+          : {}),
+        create: provider.create.bind(provider),
+      })
+      // Register through the same row-attributed provider port; no plugin can select another owner.
+      this.ctx.get('providers').register(channelKind, registered)
+      const handle = (this.ctx.get('profileRuntime') as PluginProfileRuntimePort).register({
+        id: 'channel',
+        configSchema: CHANNEL_CONFIG_SCHEMA,
+        defaultConfig: config as unknown as import('@agnes/protocol').JsonValue,
+        start: (init) =>
+          deps.channelRuntime!(registered, init, {
+            ...deps.channelScope!,
+            owner: row.owner,
+            stateDirectory: deps.channelStateDirectory!,
+            resolveSecret: (ref) => {
+              init.assertCurrent()
+              const grants = row.capabilities?.secrets ?? []
+              if (
+                !grants.some(
+                  (grant) =>
+                    grant === ref ||
+                    (/^secret:\/\/[a-z0-9-]+\/\*$/.test(grant) && ref.startsWith(grant.slice(0, -1))),
+                )
+              )
+                throw rpcError('CAPABILITY_DENIED')
+              return deps.resolveSecret!(ref)
+            },
+            log: deps.channelLog!,
+          }),
+        async check(value) {
+          return value.status()
+        },
+      })
+      const capabilities = channelServiceCapabilities()
+      const bindingAvailable = capabilities.every((cap) =>
+        row.capabilities?.services?.some((d) => d.name === cap.name && d.scope === 'session'),
+      )
+      if (bindingAvailable) {
+        const services = this.ctx.get('services') as PluginServicesPort
+        for (const capability of capabilities)
+          services.register({
+            ...capability,
+            async handler(input, context) {
+              row.assert()
+              if (!context.session || context.actor.role === 'agent') throw rpcError('CAPABILITY_DENIED')
+              const runtime = await deps.managed.currentValue<import('@agnes/extension-api').ChannelRuntime>(
+                row.owner,
+                'channel',
+                row.integrity,
+              )
+              const session = { id: context.session.key, workspace: context.session.workspaceRoot }
+              if (capability.name === 'channel.session') {
+                if (!runtime.session) throw rpcError('CAPABILITY_DENIED')
+                return runtime.session(session)
+              }
+              // Session effects reach handlers only after native command-journal admission.
+              if (!runtime.binding) throw rpcError('CAPABILITY_DENIED')
+              return runtime.binding(
+                capability.name === 'channel.bind' ? 'bind' : 'unbind',
+                input as { instanceId: string; targetId?: string; expectedVersion: number },
+                session,
+              )
+            },
+          })
+      }
+      const describe = () => {
+        row.assert()
+        const activation = deps.channelCurrent?.(row.owner, row.integrity, row.revision)
+        return {
+          extension: row.owner,
+          packageId: row.origin.packageId,
+          rowId: row.origin.rowId,
+          revision: typeof activation === 'string' ? `${row.revision}:${activation}` : row.revision,
+          manifest: registered.manifest,
+          configSchema: registered.configSchema ?? { type: 'object', properties: {} },
+          bindingAvailable,
+        } as unknown as import('@agnes/protocol').JsonValue
+      }
+      row.fiber.effect(() => {
+        deps.channelDirectory?.set(row.owner, describe)
+        return () => {
+          if (deps.channelDirectory?.get(row.owner) === describe) deps.channelDirectory.delete(row.owner)
+        }
+      }, 'channel.directory')
+      return handle
+    },
     register<T>(this: { ctx: Context }, definition: ProfileManagedDefinition<T>) {
       const row = resolve(this.ctx),
         descriptor = row.capabilities?.managedServices?.find(

@@ -3,6 +3,11 @@ import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
+import {
+  CHANNEL_CONFIG_SCHEMA,
+  channelServiceCapabilities,
+  managedServiceCapabilities,
+} from '@agnes/extension-api'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import * as processIdentity from '@agnes/host-infrastructure/adapters/process-identity-default'
@@ -23,6 +28,213 @@ import { createTestHost } from '../../testkit/index.js'
 import { packageDirs, scratch } from './plugin-extension-fixture.js'
 
 afterEach(() => vi.restoreAllMocks())
+
+it('publishes and retires a channel factory through current-profile managed resources', async () => {
+  const directory = scratch(),
+    dataDir = scratch(),
+    packageId = '@sample/channel'
+  const snapshotId = `sha256-${'c'.repeat(64)}`,
+    rowId = 'ext:sample/channel'
+  const manifest = JSON.parse(
+    readFileSync(
+      new URL('../../../channels/testkit/fixtures/example-im.channel.json', import.meta.url),
+      'utf8',
+    ),
+  )
+  const inject = ['profileRuntime', 'services', 'providers']
+  const services = [
+    ...managedServiceCapabilities('channel', CHANNEL_CONFIG_SCHEMA),
+    ...channelServiceCapabilities(),
+  ]
+  writeFileSync(
+    join(directory, 'package.json'),
+    JSON.stringify({
+      name: packageId,
+      version: '1.0.0',
+      type: 'module',
+      exports: './index.js',
+      agnes: {
+        plugins: [
+          {
+            id: rowId,
+            export: 'main',
+            apiRange: '^5.5.0',
+            inject,
+            capabilities: {
+              store: true,
+              network: ['*'],
+              services,
+              managedServices: [
+                {
+                  id: 'channel',
+                  scope: 'profile',
+                  artifact: { kind: 'in-process' },
+                  listeners: [],
+                  requires: [],
+                  healthPath: '/health',
+                  apiVersion: '1.0.0',
+                  startupTimeoutMs: 1000,
+                  shutdownTimeoutMs: 1000,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+  )
+  writeFileSync(
+    join(directory, 'index.js'),
+    `export const main = { inject: ${JSON.stringify(inject)},
+    apply(ctx) { ctx.profileRuntime.registerChannel({ id: ${JSON.stringify(manifest.id)},
+      version: '1.0.0', manifest: ${JSON.stringify(manifest)}, create() { throw Error('unused') } }) }
+  }`,
+  )
+  const source: RuntimePluginSnapshot = {
+    snapshot: {
+      snapshotId,
+      profile: 'local-dev',
+      packageId,
+      version: '1.0.0',
+      integrity: snapshotId,
+      treeIntegrity: hashDirectory(directory, { exclude: [] }),
+      capabilityHash: 'fixture',
+      directory,
+      contributions: [],
+    },
+    generation: 1,
+    trusted: true,
+  }
+  const row = createPluginRow({
+    id: rowId,
+    plugin: `${packageId}@${snapshotId}/main`,
+    snapshotDigest: snapshotId,
+    exportName: 'main',
+    entryRevision: snapshotId,
+    extrasRevision: 'none',
+    mountRevision: 'host-ordinary-row:v1',
+    inject,
+    configReload: 'live',
+  })
+  const target = (disabled: boolean) =>
+    buildRuntimeTarget({
+      rows: [{ ...row, disabled }],
+      resources: { mcp: [], skills: {} },
+      resourceRevision: '0'.repeat(64),
+      compositeRevision: '0'.repeat(64),
+    })
+  let starts = 0,
+    stops = 0
+  const configurations: unknown[] = []
+  const channelStores: import('@agnes/extension-api').OwnedStore[] = []
+  const owner = pluginRowSource(rowId)
+  const { host } = await createTestHost({
+    dataDir,
+    runtimePluginCatalogue: [source],
+    extensionLoader: createLoader({
+      cacheDir: join(dataDir, 'cache'),
+      hostRoot: directory,
+      agnesVersion: '0.0.0',
+    }),
+    channelRuntime: async (provider, init, context) => {
+      starts++
+      configurations.push(structuredClone(init.config))
+      channelStores.push(init.store)
+      if (starts === 1) {
+        init.store.set('managed-config:channel', {
+          instances: [
+            {
+              id: 'saved',
+              workspace: dataDir,
+              agent: 'default',
+              credentialRefs: {},
+              allowFrom: [],
+              requireMention: true,
+            },
+          ],
+        })
+        init.store.set('bindings:saved', { sessionId: 'previous-session' })
+        init.store.set('other-state', { retained: true })
+      }
+      expect(() => context.resolveSecret('secret://unreviewed/key')).toThrow()
+      init.onShutdown(async () => {
+        stops++
+        return { state: 'settled' }
+      })
+      init.ready()
+      return {
+        status: () => ({ provider: provider.id, instances: [] }),
+        session: async (session) => ({ identity: session.id, workspace: session.workspace }),
+        binding: async (_action, _input, session) => ({ identity: session.id }),
+      }
+    },
+    serviceAuthority: {
+      resolve: async () => ({
+        source: 'client-web',
+        subjectCredential: { kind: 'local' },
+        grants: services.map((s) => ({ extension: owner, name: s.name, range: '*' })),
+      }),
+    },
+  })
+  const check = { extension: owner, service: 'channel.check', input: {} }
+  const publish = async (disabled: boolean) => {
+    try {
+      return await host.applyRuntimeTarget(target(disabled))
+    } catch (cause) {
+      throw new Error(`Channel target disabled=${disabled}`, { cause })
+    }
+  }
+  try {
+    await publish(false)
+    expect(host.channelCatalog?.()).toMatchObject({
+      providers: [{ extension: owner, packageId, bindingAvailable: true }],
+    })
+    await host.createSession({ key: 'binding-session', cwd: dataDir })
+    await expect(
+      host.callService(
+        { sessionId: 'binding-session', extension: owner, service: 'channel.session', input: {} },
+        { kind: 'local' },
+      ),
+    ).resolves.toMatchObject({ output: { identity: 'binding-session' } })
+    await expect(
+      host.callService(
+        {
+          sessionId: 'binding-session',
+          extension: owner,
+          service: 'channel.bind',
+          commandId: 'bind',
+          input: { instanceId: 'one', targetId: 'a'.repeat(32), expectedVersion: 0 },
+        },
+        { kind: 'local' },
+        undefined,
+        { commandId: 'bind' },
+      ),
+    ).resolves.toMatchObject({ output: { identity: 'binding-session' } })
+    await expect(host.profileServices!.call(check, { kind: 'local' })).resolves.toMatchObject({
+      output: { provider: manifest.id },
+    })
+    await publish(true)
+    expect(host.channelCatalog?.()).toEqual({ providers: [] })
+    await expect(host.profileServices!.call(check, { kind: 'local' })).rejects.toBeDefined()
+    await publish(false)
+    await expect(host.profileServices!.call(check, { kind: 'local' })).resolves.toMatchObject({
+      output: { provider: manifest.id },
+    })
+    expect(starts).toBe(2)
+    expect(stops).toBe(1)
+    expect(configurations[1]).toMatchObject({ instances: [{ id: 'saved' }] })
+    expect(() => host.clearChannelState?.(packageId)).toThrow('not stopped')
+    await publish(true)
+    host.clearChannelState?.(packageId)
+    host.clearChannelState?.(packageId)
+    await publish(false)
+    expect(configurations[2]).toEqual({ instances: [] })
+    expect(channelStores[2]?.get('bindings:saved')).toBeUndefined()
+    expect(channelStores[2]?.get('other-state')).toEqual({ retained: true })
+  } finally {
+    await host.close()
+  }
+})
 
 it('binds the actual browser package to one current resource across plugin activation and pinned sessions', async () => {
   const directory = join(scratch(), 'browser')

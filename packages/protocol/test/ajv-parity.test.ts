@@ -8120,6 +8120,11 @@ const AppSamples: Record<string, Sample> = {
     note: 'App Server boundary shape',
   },
   AdminEmpty: { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
+  ChannelCatalogResult: {
+    valid: { providers: [] },
+    invalid: [{}, { providers: 'invalid' }],
+    note: 'Read-only active channel descriptors',
+  },
   AdminBundlesSave: {
     valid: { revision: 0, bundles: [] },
     invalid: [null],
@@ -8751,6 +8756,11 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/channels.catalog': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminEmpty',
+    result: 'ChannelCatalogResult',
+  },
   '_agnes/v1/packages.skillImport': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'SkillImportParams',
@@ -9773,6 +9783,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/channels.catalog': {
+    valid: {},
+    invalid: [{ unexpected: true }],
+    note: 'Local channel metadata catalog',
+  },
   '_agnes/v1/packages.skillImport': {
     valid: {
       profile: 'local-dev',
@@ -10657,6 +10672,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/channels.catalog': {
+    valid: { providers: [] },
+    invalid: [{}, { providers: 'invalid' }],
+    note: 'Channel catalog result',
+  },
   '_agnes/v1/packages.skillImport': {
     valid: { state: 'selection_required', candidates: ['archify'] },
     invalid: [{ state: 'executed' }, { state: 'prepared', actor: 'forged' }],

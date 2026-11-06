@@ -159,6 +159,8 @@ export interface Host {
   /** Authenticated management port. It is not registered as a model tool or extension service. */
   readonly approvalGrants: Assembled['approvalGrants']
   readonly profileServices?: Assembled['profileServices']
+  readonly channelCatalog?: Assembled['channelCatalog']
+  readonly clearChannelState?: Assembled['clearChannelState']
   resolveService(
     sessionId: string,
     names: readonly string[],
@@ -339,6 +341,8 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     activationBarrier: a.activationBarrier,
     approvalGrants: a.approvalGrants,
     profileServices: a.profileServices,
+    channelCatalog: a.channelCatalog,
+    clearChannelState: a.clearChannelState,
     resolveService: async (sessionId, names) => {
       if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
       const session = a.kernel.get(sessionId)

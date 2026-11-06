@@ -88,14 +88,14 @@ async function setup(
 
 it('publishes recovered surfaces through the existing outbound dedupe without creating a channel action', async () => {
   const { adapter, client, session, outbound } = await setup()
-  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
+  const { choiceSurface } = await import('../testkit/choice-surface.js')
   client.setSurfaces(session.id, {
     sessionId: session.id,
     lastSeq: 1,
     actions: [],
     surfaces: [
       {
-        surface: questionSurface('q', [{ id: 'pick', question: 'Pick', options: ['A', 'B'] }]),
+        surface: choiceSurface('q'),
         status: 'open',
         owner: 'agnes/intelligent-ui',
         lane: 'main',

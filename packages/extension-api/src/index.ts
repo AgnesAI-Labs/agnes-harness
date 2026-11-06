@@ -4,6 +4,7 @@ export type { SystemInput, SystemInputPresentation } from '@agnes/protocol'
 
 export * from './api-range.js'
 export * from './attachments.js'
+export * from './channel.js'
 export * from './child-agent.js'
 export type * from './child-control.js'
 export * from './common.js'
@@ -77,5 +78,4 @@ export * from './version.js'
 export * from './webhook-trigger.js'
 export * from './workflow-run.js'
 export * from './workspace-hooks.js'
-
 export * from './workspace-state.js'

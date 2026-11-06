@@ -69,6 +69,8 @@ export type SessionMethod =
 
 /** Process-wide methods available before runtime-target delivery exists. */
 export type WorkerMethod =
+  | 'channels.catalog'
+  | 'channels.clear'
   | 'ping'
   | 'pluginGenerations.status'
   | 'pluginGenerations.publicationStatus'

@@ -1,0 +1,52 @@
+# Channel plugins
+
+English | [简体中文](channel-plugins.zh-CN.md)
+
+The channel bridge is owned by the backend. An installed plugin supplies one platform adapter
+through the public `@agnes/plugin-runtime/channel-contract` contract. It does not copy the runner,
+discover the daemon, or read credential files. No vendor adapter is bundled with Harness.
+
+The bridge reuses the existing channel runner and the daemon's current-profile managed resources.
+`profileRuntime.registerChannel` registers a `channelKind` provider and a managed resource named
+`channel`. Its ordinary profile services (`channel.configuration`, `channel.configure`,
+`channel.status`, `channel.check`, `channel.retry`, `channel.reconcile`) retain native effect
+admission, package trust, activation checks and shutdown confirmation. The daemon composes the
+bridge factory; embedders without that factory refuse channel registration.
+
+Configuration contains an `instances` array. Every instance has a unique id, an absolute workspace,
+an agent reference and credential references. Credentials must be `secret://` references, resolved
+by the backend only when starting the instance and only within the plugin's reviewed `secrets`
+grants. The credential mapping never accepts raw secrets; adapter options must remain non-sensitive.
+Each instance owns its SDK journal and outbound references. The instance id namespaces session
+keys so two installations of the same IM do not share conversations. Existing session authorization,
+participant binding and approval replay checks remain in the runner and daemon.
+
+This adds an optional author API in Extension API 5.5. Existing plugins and the generic runner
+remain compatible. Legacy external DingTalk YAML files are not automatically imported: operators
+create AGH credentials and configure the corresponding references. No migration deletes old data.
+
+The first implementation uses the existing daemon-owned profile resource lifecycle rather than
+introducing another supervisor or system service. A future process-isolated implementation may
+replace this implementation behind the same channel contract. The stateless adapter factory is
+generation-scoped, allowing plugin enable/disable and upgrades without restarting the daemon;
+its running instances remain current-profile managed resources, never session-owned resources.
+
+Profile activation publication lives in `assemble/profile-publication.ts`; extracting this existing
+owner operation keeps the runtime-target assembler within its stage budget. The architecture
+guard records the exact moved `RuntimeTarget` references rather than relaxing any size ceiling.
+
+Extension API 5.6 adds Plugins → Channels and a Channels button beside the composer. Configuration
+uses native `channel.configure` approval; provider `configSchema` renders non-sensitive options.
+Packages must declare `channelServiceCapabilities()` for Host-owned session query/bind/unbind services.
+Only authenticated, observed chat targets in the session's canonical workspace can be bound.
+Unbound chats do not create sessions. Binding exports only projection nodes after its watermark;
+restart requires a fresh inbound target confirmation. Each instance has at most one target per
+session and one session per target. Unbind pauses and drains forwarding. Incomplete transitions
+remain pending across restart. Native approvals remain in AGH rather than replaying existing
+approvals into the external chat. Other platform plugins reuse the same interface and bridge.
+
+Browser SDK control-plane restrictions remain unchanged. The fixed same-origin channel BFF checks
+the method, typed parameters and current provider catalog. Backend session ownership, workspace
+identity and native command receipts remain authoritative.
+
+The compact session dialog and connection overview discover provider declarations without a vendor list. The fixed same-origin BFF derives workspace, agent and instance identity from authorized session reads, merges managed configuration and rejects stale configuration digests. Native approvals, effect receipts and binding versions remain the authority. The overview labels only readable sessions; inaccessible bindings hide identities and prevent replacement. Removed or replaced instance fingerprints are pruned so restoring old configuration cannot restore old routing.

@@ -35,6 +35,8 @@ export type AssembleDeps = HostPaths &
     childRoles?: KernelOptions['childRoles']
     referenceLimits?: Partial<import('@agnes/extension-api').ReferenceLimits>
     homeDir?: string
+    /** Daemon-owned channel bridge; absent embedders refuse channel activation. */
+    channelRuntime?: import('@agnes/host-extensions/profile/channel-runtime').ChannelRuntimeFactory
     loader: PackageLoader
     packageDirs?: Map<string, string>
     extensionLoader?: { import(file: string): Promise<Record<string, unknown>> }

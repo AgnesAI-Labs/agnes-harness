@@ -1,11 +1,17 @@
 import { pathToFileURL } from 'node:url'
+import type { WorkerHostDeps } from '@agnes/worker-runtime'
 import {
   reportWorkerBootFailure,
   runRuntimeTargetProbeExecutable,
-  runWorkerExecutable,
+  runWorkerExecutable as runRuntimeWorkerExecutable,
 } from '@agnes/worker-runtime'
+import { daemonChannelRuntime } from '../channels/runtime.js'
 
 export * from '@agnes/worker-runtime'
+
+export function runWorkerExecutable(deps: WorkerHostDeps = {}): Promise<void> {
+  return runRuntimeWorkerExecutable({ channelRuntime: daemonChannelRuntime, ...deps })
+}
 
 declare const AGNES_COMPOSED_WORKER: boolean | undefined
 

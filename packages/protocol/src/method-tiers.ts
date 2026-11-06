@@ -110,6 +110,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/profile.decisions.list': 'client',
   '_agnes/v1/profile.decisions.answer': 'client',
   '_agnes/v1/extension.call': 'admin',
+  '_agnes/v1/channels.catalog': 'admin',
   '_agnes/v1/sessionSelection.loops': 'admin',
   '_agnes/v1/sessionSelection.runtime': 'admin',
   '_agnes/v1/sessionSelection.reloadLocal': 'admin',

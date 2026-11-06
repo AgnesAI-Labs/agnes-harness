@@ -329,6 +329,10 @@ async function openRuntimeActivation(
   const compositeActivation = runtimeStore
     ? createCompositeTargetActivation({
         store: runtimeStore,
+        clearChannels: async (packageId) => {
+          const worker = await pool.acquireSharedWorker()
+          await worker.command('channels.clear', { packageId })
+        },
         ...(revertFailedDesired ? { revertFailedDesired } : {}),
         settle: {
           timeoutMs: o.config.limits.workerStartupMs + 45_000,

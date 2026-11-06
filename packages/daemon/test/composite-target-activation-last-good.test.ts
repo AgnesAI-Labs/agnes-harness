@@ -4,7 +4,7 @@ import {
   encodeRuntimeTargetArtifact,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
 import { createCompositeTargetActivation } from '../src/supervisor/publication/composite-target-activation.js'
@@ -70,6 +70,31 @@ async function reconcile(activation: ReturnType<typeof setup>['activation'], pac
 }
 
 describe('composite-target-activation: dropUnpinnedLastGood plugin-id parsing', () => {
+  it('clears channel state only during committed removal of a stopped package', async () => {
+    const store = new CompositeTargetStore(sqliteTables().table('channel-remove'), 'default')
+    const empty = target([])
+    store.publishDesired(empty)
+    const clearChannels = vi.fn(async () => {})
+    const activation = createCompositeTargetActivation({
+      store,
+      clearChannels,
+      probe: async () => {},
+      desiredFor: () => empty,
+    })
+    const input = {
+      profile: 'default',
+      packageId: 'pkg-a',
+      operationId: 'remove',
+      signal: new AbortController().signal,
+    }
+    await activation.reconcile({ ...input, operation: 'disable' })
+    expect(clearChannels).not.toHaveBeenCalled()
+    await activation.reconcile({ ...input, operation: 'remove' })
+    expect(clearChannels).toHaveBeenCalledWith('pkg-a')
+    store.publishDesired(target([pluginRow('ext:pkg-a/main', `pkg-a@${snap1}/main`, snap1)]))
+    await expect(activation.reconcile({ ...input, operation: 'remove' })).rejects.toThrow('still running')
+    expect(clearChannels).toHaveBeenCalledTimes(1)
+  })
   it('keeps lastGood when a multi-client package snapshot is unchanged (regression)', async () => {
     // pkg-a: one ext: row plus two client-exposed contributions -> "pkg-a@snap1/client/c1" and
     // "pkg-a@snap1/client/c2" -- the multi-slash shape composite-desired.ts's rowsForPackage emits for

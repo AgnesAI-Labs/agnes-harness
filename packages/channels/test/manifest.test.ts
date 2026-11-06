@@ -1,21 +1,33 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { channelKind } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { checkManifest, loadManifest } from '../src/manifest.js'
 
-const fixture = new URL('../testkit/fixtures/dingtalk.channel.json', import.meta.url)
+const fixture = new URL('../testkit/fixtures/example-im.channel.json', import.meta.url)
 const base = JSON.parse(readFileSync(fixture, 'utf8')) as Record<string, unknown>
 
 describe('channel manifest', () => {
-  it('loads and validates the dingtalk fixture', async () => {
+  it('loads and validates the example-im fixture', async () => {
     const manifest = await loadManifest(fileURLToPath(fixture))
-    expect(manifest.id).toBe('dingtalk')
+    expect(manifest.id).toBe('example-im')
     expect(manifest.capabilities.card).toBe(true)
+    const provider = {
+      id: manifest.id,
+      version: '1.0.0',
+      manifest,
+      create() {
+        throw new Error('unused')
+      },
+    }
+    expect(() => channelKind.validate(provider)).not.toThrow()
+    expect(() => channelKind.validate({ ...provider, id: 'another-channel' })).toThrow()
+    expect(() => channelKind.validate({ ...provider, create: undefined } as never)).toThrow()
   })
 
   it('reports schema violations as E_MANIFEST_INVALID with validator detail', () => {
     for (const invalid of [
-      { ...base, id: 'DingTalk' },
+      { ...base, id: 'ExampleIM' },
       { ...base, extra: 1 },
       { ...base, limits: { textChars: 0, cardBytes: 1, editWindowMs: 0 } },
     ]) {

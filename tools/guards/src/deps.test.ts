@@ -147,8 +147,8 @@ const LAYER: Record<string, number> = {
   '@agnes/daemon-admin': 8.3,
   '@agnes/daemon-rpc': 8.4,
   '@agnes/daemon': 9,
-  // Channel's outer client launcher consumes the daemon's public discovery reader, like other clients.
-  '@agnes/channels': 10,
+  // Generic channel forwarding consumes SDK; daemon composes discovery and owns its lifecycle.
+  '@agnes/channels': 3.5,
   '@agnes/bridges': 9,
   '@agnes/web-foundation': 9.1,
   '@agnes/web-admin': 9.2,

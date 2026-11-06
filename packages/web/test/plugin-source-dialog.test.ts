@@ -142,16 +142,21 @@ it('shows an example for the selected source type instead of the npm one', async
   await vi.waitFor(() => expect(placeholder()).toMatch(/^npm:/))
 })
 
-it('sends a well-formed source and closes the dialog once the check has been accepted', async () => {
+it.each([
+  ['file', '/path/to/my-plugin.tgz', 'file:/path/to/my-plugin.tgz'],
+  ['file', 'D:\\plugins\\my-plugin.tgz', 'file:D:/plugins/my-plugin.tgz'],
+  ['path', 'D:\\plugins\\my-plugin', 'path:D:/plugins/my-plugin'],
+  ['file', 'file:D:\\plugins\\my-plugin.tgz', 'file:D:/plugins/my-plugin.tgz'],
+])('sends a well-formed %s source %s and closes the accepted dialog', async (type, input, expected) => {
   const fetcher = backend(() => Response.json({ operationId: 'inspect-1', profile: 'local-dev' }))
   await mount(fetcher)
   await openSourceDialog()
 
-  submit('file', '/path/to/my-plugin.tgz')
+  submit(type, input)
 
   await vi.waitFor(() => expect(inspectCalls(fetcher)).toHaveLength(1))
   const sent = JSON.parse(String(inspectCalls(fetcher)[0]?.[1]?.body)) as { source: unknown }
-  expect(sent.source).toEqual({ type: 'file', ref: 'file:/path/to/my-plugin.tgz' })
+  expect(sent.source).toEqual({ type, ref: expected })
   await vi.waitFor(() => expect(sourceDialog().open).toBe(false))
 })
 

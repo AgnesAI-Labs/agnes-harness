@@ -76,6 +76,39 @@ const ackRequest = (id: number, commandId: string) => ({
 })
 
 describe('S5 extension.call daemon boundary', () => {
+  it('admits only local channel binding facades, retains session ownership and journals effects', async () => {
+    const service = vi.fn(async () => ({ output: { ok: true } })) as unknown as Host['callService']
+    const local = endpoint(service, false)
+    local.ep.conn.authKind = 'local'
+    local.ep.conn.credentialKind = 'local'
+    const call = {
+      ...request(1, { instanceId: 'one', targetId: 'a'.repeat(32), expectedVersion: 0 }, 'bind-1'),
+      params: {
+        ...request(1, {}).params,
+        service: 'channel.bind',
+        commandId: 'bind-1',
+        input: { instanceId: 'one', targetId: 'a'.repeat(32), expectedVersion: 0 },
+      },
+    }
+    await expect(local.ep.handle(call)).resolves.toMatchObject({ result: { output: { ok: true } } })
+    await expect(local.ep.handle({ ...call, id: 2 })).resolves.toMatchObject({
+      result: { output: { ok: true } },
+    })
+    expect(service).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(service).mock.calls[0]?.[1]).toMatchObject({
+      source: 'client-web',
+      subjectCredential: { kind: 'local' },
+    })
+    await expect(local.ep.handle(request(3, {}, 'other-effect'))).resolves.toMatchObject({
+      error: { data: { code: 'CAPABILITY_DENIED' } },
+    })
+    local.ep.conn.authKind = 'jwt'
+    await expect(local.ep.handle({ ...call, id: 4 })).resolves.toMatchObject({
+      error: { data: { code: 'CAPABILITY_DENIED' } },
+    })
+    await local.queue.close()
+    await local.ep.close()
+  })
   it('fails closed before inspection for stale or substituted session ids', async () => {
     const callService = vi.fn(async () => ({ output: { ok: true } })) as unknown as Host['callService']
     const stale = endpoint(

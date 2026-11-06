@@ -205,9 +205,9 @@ describe('whatToDraw', () => {
 })
 
 it('renders numbered surface choices with an authenticated Web fallback and no permission buttons', async () => {
-  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
+  const { choiceSurface } = await import('../testkit/choice-surface.js')
   const record = {
-    surface: questionSurface('questions', [{ id: 'pick', question: 'Choose', options: ['A', 'B'] }]),
+    surface: choiceSurface('questions'),
     status: 'open' as const,
     owner: 'agnes/intelligent-ui',
     lane: 'main',

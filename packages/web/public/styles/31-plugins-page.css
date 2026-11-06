@@ -99,6 +99,24 @@
   .plugins-page-tabs > .ant-tabs-nav {
     margin-bottom: var(--s20, 1.25rem);
   }
+  .plugins-page-tabs .ant-tabs-tab-btn {
+    white-space: nowrap;
+  }
+  /* Keep six section labels readable; rc-tabs owns overflow rather than squeezing each label. */
+  @media (max-width: 767px) {
+    .plugins-page-tabs > .ant-tabs-nav .ant-tabs-nav-list {
+      flex: 0 0 auto;
+      width: max-content;
+      min-width: 0;
+    }
+    .plugins-page-tabs > .ant-tabs-nav .ant-tabs-tab {
+      flex: none;
+    }
+    .plugins-page-tabs > .ant-tabs-nav .ant-tabs-tab-btn {
+      width: auto;
+      overflow-wrap: normal;
+    }
+  }
   .plugins-page-panel {
     min-width: 0;
     display: grid;

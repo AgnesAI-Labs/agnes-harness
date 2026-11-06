@@ -54,7 +54,8 @@
     "./profile/wakes": "./src/profile/wakes.ts",
     "./profile/managed": "./src/profile/managed.ts",
     "./profile/streams": "./src/profile/streams.ts",
-    "./assemble/host-grants": "./src/assemble/host-grants.ts"
+    "./assemble/host-grants": "./src/assemble/host-grants.ts",
+    "./profile/channel-runtime": "./src/profile/channel-runtime.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

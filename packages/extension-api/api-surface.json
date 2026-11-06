@@ -1,9 +1,10 @@
 {
-  "apiVersion": "5.4.0",
+  "apiVersion": "5.6.0",
   "runtimeExports": [
     "API_VERSION",
     "APPROVAL_DEFAULTS",
     "APPROVAL_SCOPE_PATTERN",
+    "CHANNEL_CONFIG_SCHEMA",
     "DEFAULT_LOOP",
     "DEFAULT_OUTPUT_MAX_BYTES",
     "DEFAULT_PERSISTENCE_PROVIDER_ID",
@@ -45,6 +46,8 @@
     "TOOL_POLICY_VERSION_PATTERN",
     "bundledExtensionManifest",
     "bundledPackageJson",
+    "channelKind",
+    "channelServiceCapabilities",
     "checkApiRange",
     "checkManifest",
     "checkResolvedToolCallPolicy",

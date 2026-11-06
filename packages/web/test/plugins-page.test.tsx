@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import type { PackageCatalogDescriptor, PackageCatalogPage, SkillImportResult } from '@agnes/protocol'
+import { CredentialsApi } from '@agnes/resource-control-web/credentials-api'
 import {
   ComputerUseCapability,
   type SettingsComputerUseView,
@@ -11,6 +12,10 @@ import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ChannelDialogHost } from '../src/pages/channel-dialog.js'
+import { closeChannelDialog } from '../src/pages/channel-dialog-state.js'
+import { ChannelsPanel } from '../src/pages/channels.js'
+import type { HomePageData } from '../src/pages/host.js'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
 import { ExternalOperationResult } from '../src/pages/plugins/external-operation-result.js'
 import { MarketTab } from '../src/pages/plugins/market-tab.js'
@@ -30,6 +35,193 @@ import { SkillFolders } from '../src/pages/plugins/skill-folders.js'
 import { SkillInstallDialog } from '../src/pages/plugins/skill-import.js'
 
 afterEach(() => document.body.replaceChildren())
+
+it('shows session and peer names per connection and reconciles unbind with the same command', async () => {
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const provider = {
+    extension: 'plugin/example',
+    manifest: { id: 'example', displayName: 'Example Chat' },
+    bindingAvailable: true,
+  }
+  let bound = true,
+    fail = true
+  const call = vi.fn(async (method: string) => {
+    if (method === 'channels.overview')
+      return {
+        sessions: [],
+        channels: [
+          {
+            provider,
+            configurationRevision: 'revision',
+            instances: [
+              {
+                id: 'bot',
+                workspace: 'D:/work',
+                agent: 'default',
+                version: 7,
+                connection: { channel: 'connected', daemon: 'connected' },
+                bindings: bound
+                  ? [
+                      {
+                        sessionId: 'current-session',
+                        sessionTitle: 'Design review',
+                        targetId: 'peer',
+                        label: 'Engineering team',
+                        state: 'active',
+                      },
+                    ]
+                  : [],
+                unavailable: false,
+              },
+            ],
+          },
+        ],
+      }
+    if (fail) {
+      fail = false
+      throw new Error('lost response')
+    }
+    bound = false
+    return { output: {} }
+  })
+  const data = {
+    call,
+    sessionId: () => 'current-session',
+    openSettings: vi.fn(),
+    startDraft: vi.fn(),
+  } as unknown as HomePageData
+  await act(async () => root.render(createElement(ChannelsPanel, { data })))
+  await vi.waitFor(() => expect(host.textContent).toContain('Design review'))
+  expect(host.textContent).toContain('Engineering team')
+  expect(host.querySelector('a')?.getAttribute('href')).toBe('?session=current-session')
+  expect(host.querySelector('input[aria-label="Instance ID"]')).toBeNull()
+  const unbind = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Unbind')!
+  await act(async () => unbind.click())
+  expect(host.textContent).toContain('Unbind unconfirmed')
+  await act(async () => unbind.click())
+  await vi.waitFor(() => expect(host.textContent).not.toContain('Engineering team'))
+  const attempts = call.mock.calls.filter(([method]) => method === '_agnes/v1/extension.call') as unknown as [
+    string,
+    { commandId: string; sessionId: string; input: unknown },
+  ][]
+  expect(attempts).toHaveLength(2)
+  expect(attempts[0]![1]).toEqual(attempts[1]![1])
+  expect(attempts[0]![1]).toMatchObject({
+    sessionId: 'current-session',
+    input: { instanceId: 'bot', expectedVersion: 7 },
+  })
+  await act(async () => root.unmount())
+})
+
+it('discovers installed channels and configures inside a dialog using immutable session context and native approval', async () => {
+  const credentials = vi.spyOn(CredentialsApi.prototype, 'list').mockResolvedValue([])
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const provider = {
+    extension: 'plugin/future',
+    revision: 'v1',
+    bindingAvailable: true,
+    configSchema: { type: 'object', properties: {} },
+    manifest: { id: 'future', displayName: 'Future Chat', credentials: { required: [], optional: [] } },
+  }
+  const requestProfileApproval = vi.fn()
+  let approved = false
+  let failOverview = false
+  const call = vi.fn(async (method: string) => {
+    if (method === 'channels.overview' && failOverview) throw new Error('temporary catalog failure')
+    if (method === 'channels.overview')
+      return {
+        sessions: [{ sessionId: 'current', title: 'Release planning', cwd: 'D:/session' }],
+        channels: [{ provider, configurationRevision: 'revision', instances: [] }],
+      }
+    if (method === 'channels.context')
+      return {
+        sessionId: 'current',
+        title: 'Release planning',
+        workspace: 'D:/session',
+        agent: 'default',
+        agentTitle: { en: 'General assistant', 'zh-CN': '通用助手' },
+        instanceId: 's-123456abcdef-123456',
+      }
+    if (method === 'channels.configure')
+      return {
+        receipt: { state: approved ? 'completed' : 'approval-required' },
+        instanceId: 's-123456abcdef-123456',
+      }
+    return {
+      output: {
+        instances: [
+          {
+            id: 's-123456abcdef-123456',
+            version: 1,
+            connection: { channel: 'connected', daemon: 'connected' },
+            targets: [],
+            bindings: [{ targetId: 'peer', label: 'Verified chat', state: 'active' }],
+          },
+        ],
+      },
+    }
+  })
+  const data = {
+    call,
+    requestProfileApproval,
+    sessionId: () => 'current',
+    openSettings: vi.fn(),
+    startDraft: vi.fn(),
+  } as unknown as HomePageData
+  await act(async () => {
+    root.render(createElement(ChannelDialogHost, { data }))
+  })
+  // The composer lives in another lazy bundle: exercise the shell event, not a module-local store.
+  await act(async () => window.dispatchEvent(new CustomEvent('agnes-channel-dialog', { detail: { sessionId: 'current' } })))
+  await vi.waitFor(() => expect(host.textContent).toContain('Future Chat'))
+  await act(async () =>
+    [...host.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('Future Chat'))!
+      .click(),
+  )
+  await vi.waitFor(() => expect(host.textContent).toContain('Release planning'))
+  expect(host.textContent).toContain('D:/session')
+  expect(host.querySelector('input[aria-label="Instance ID"]')).toBeNull()
+  expect(host.querySelector('input[aria-label="Absolute workspace path"]')).toBeNull()
+  await act(async () =>
+    [...host.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Connect and continue')!
+      .click(),
+  )
+  expect(requestProfileApproval).toHaveBeenCalledWith({ state: 'approval-required' })
+  approved = true
+  await act(async () =>
+    [...host.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Continue connecting')!
+      .click(),
+  )
+  await vi.waitFor(() => expect(host.textContent).toContain('Verified chat'))
+  failOverview = true
+  await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
+  await vi.waitFor(() => expect(host.textContent).toContain('Unable to load channels'))
+  expect(host.textContent).toContain('Verified chat')
+  failOverview = false
+  await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
+  const inputs = call.mock.calls.filter(([method]) => method === 'channels.configure') as unknown as [
+    string,
+    Record<string, unknown>,
+  ][]
+  expect(inputs[0]![1]).toEqual(inputs[1]![1])
+  expect(inputs[0]![1]).toMatchObject({
+    sessionId: 'current',
+    instanceId: 's-123456abcdef-123456',
+    configurationRevision: 'revision',
+  })
+  expect(inputs[0]![1]).not.toHaveProperty('workspace')
+  expect(inputs[0]![1]).not.toHaveProperty('agent')
+  await act(async () => {
+    closeChannelDialog()
+    root.unmount()
+  })
+  credentials.mockRestore()
+})
 
 it.each(['failed', 'skipped'] as const)('shows persisted partial capability results (%s)', (status) => {
   const host = document.body.appendChild(document.createElement('div')),

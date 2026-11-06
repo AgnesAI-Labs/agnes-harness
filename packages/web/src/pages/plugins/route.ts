@@ -1,6 +1,6 @@
 import { homeNavigation } from '@agnes/web-client'
 
-export const PLUGIN_TABS = ['plugins', 'skills', 'mcp', 'review', 'market'] as const
+export const PLUGIN_TABS = ['plugins', 'channels', 'skills', 'mcp', 'review', 'market'] as const
 export type PluginTab = (typeof PLUGIN_TABS)[number]
 /** Built-in capabilities that are not packages; each opens a detail whose settings tab holds its configuration. */
 export const CAPABILITIES = ['search', 'computer-use', 'subagents'] as const

@@ -38,6 +38,7 @@ type OutboundDeps = {
 
 type Watermark = Pick<UITimeline, 'generation' | 'upto'>
 type Lane = {
+  afterSeq: number | undefined
   session: OutboundSession
   chat: ChatTarget
   timer?: ReturnType<typeof setTimeout>
@@ -61,9 +62,10 @@ export class Outbound {
     this.accountBucket = new TokenBucket({ tokensPerSecond: rate, capacity: Math.max(1, rate) })
   }
 
-  attach(sessionKey: string, session: OutboundSession, chat: ChatTarget): void {
+  attach(sessionKey: string, session: OutboundSession, chat: ChatTarget, afterSeq?: number): void {
     if (this.stopped || this.lanes.has(sessionKey)) return
     const lane: Lane = {
+      afterSeq,
       session,
       chat,
       bucket: new TokenBucket({
@@ -87,6 +89,12 @@ export class Outbound {
     this.lanes.delete(sessionKey)
     this.trackDetached(lane.flushing)
     if (lane.pumping !== undefined) this.trackDetached(lane.pumping)
+  }
+
+  async detachAndWait(key: string): Promise<void> {
+    const pending = this.lanes.get(key)?.flushing
+    this.detach(key)
+    await pending
   }
 
   keys(): string[] {
@@ -221,6 +229,7 @@ export class Outbound {
     const known = this.dependencies.refs.forSession(sessionKey, lane.session.id)
     const messages: Array<{ id: string; message: ChannelMessage }> = []
     for (const node of timeline.nodes) {
+      if (lane.afterSeq !== undefined && (node.seq ?? 0) <= lane.afterSeq) continue
       if (!this.isCurrent(sessionKey, lane)) return
       const message = whatToDraw(node, {
         costLine: this.dependencies.cfg.outbound.costLine,
@@ -240,7 +249,9 @@ export class Outbound {
           page.surfaces.push(...next.surfaces)
           cursor = next.nextCursor
         }
-        for (const record of page.surfaces)
+        for (const record of page.surfaces.filter(
+          (record) => lane.afterSeq === undefined || record.createdSeq > lane.afterSeq,
+        ))
           messages.push({
             id: `surface:${record.surface.id}`,
             message: drawSurfaceMessage(record, lane.session.id, this.dependencies.cfg.outbound.webUrl),

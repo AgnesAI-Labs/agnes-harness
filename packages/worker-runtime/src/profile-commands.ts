@@ -32,6 +32,13 @@ export async function profileServiceCommand(
 ): Promise<unknown> {
   const p = cmd.params
   switch (cmd.method) {
+    case 'channels.clear':
+      if (!host?.clearChannelState || typeof p.packageId !== 'string') throw rpcError('CAPABILITY_DENIED')
+      host.clearChannelState(p.packageId)
+      return {}
+    case 'channels.catalog':
+      if (!host?.channelCatalog) throw rpcError('CAPABILITY_DENIED')
+      return host.channelCatalog()
     case 'profileManaged.status': {
       const manager = host?.profileServices?.managed
       if (!manager) throw rpcError('CAPABILITY_DENIED')
@@ -103,6 +110,6 @@ export async function profileServiceCommand(
 }
 
 export const isProfileCommand = (method: string) =>
-  ['profileManaged.', 'profileStreams.', 'profileService.', 'boundWake.'].some((prefix) =>
+  ['channels.', 'profileManaged.', 'profileStreams.', 'profileService.', 'boundWake.'].some((prefix) =>
     method.startsWith(prefix),
   )

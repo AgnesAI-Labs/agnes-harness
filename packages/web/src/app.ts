@@ -89,6 +89,7 @@ import type { ModelPickerOption } from './model-picker.js'
 import { businessAgentSuggestions } from './pages/business-agents.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages, watchActiveHomeEntry } from './pages/host.js'
+import { callChannel } from './pages/channel-api.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { coalesceBurst, createRefreshCoordinator } from './refresh-coordinator.js'
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
@@ -1024,6 +1025,8 @@ const homePages = mountHomePages(hosts.homePage, {
   data: {
     call: (method, params) => client.call(method, params),
     sessionId: () => sessionBinding.session?.id,
+    requestProfileApproval: clientModules.requestProfileApproval,
+    channelCall: callChannel,
     selectedWorkspace: () => (selectedWorkspace?.available ? selectedWorkspace.path : undefined),
     openSettings: openSettingsSection,
     startDraft: (prompt) =>

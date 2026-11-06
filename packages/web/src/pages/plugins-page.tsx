@@ -4,6 +4,7 @@ import type { UiExtensionContext } from '@agnes/web-client'
 import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
 import { Button, Count, Icon, IconButton, Menu, Tabs, useUiText } from '@agnes/web-ui'
 import { useEffect, useMemo, useState } from 'react'
+import { ChannelsPanel } from './channels.js'
 import type { HomePageData } from './host.js'
 import { HomePageFrame } from './page-frame.js'
 import {
@@ -175,7 +176,9 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     </span>
   )
   const body = (tab: PluginTab) =>
-    tab !== route.tab ? null : tab === 'skills' || tab === 'mcp' ? (
+    tab !== route.tab ? null : tab === 'channels' ? (
+      <ChannelsPanel data={data} />
+    ) : tab === 'skills' || tab === 'mcp' ? (
       <ResourcesTab
         tab={tab}
         t={t}

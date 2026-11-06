@@ -6,6 +6,8 @@ const sourceText = createCatalogTranslator(pluginAdminLocaleCatalog, 'en')
 
 export function sourceFromForm(type: string, ref: string): PackageSource | undefined {
   if (!ref) return undefined
+  // Native file paths enter the portable source contract at the client boundary.
+  if (type === 'file' || type === 'path') ref = ref.replaceAll('\\', '/')
   if (type === 'npm' || type === 'workspace') return { type, ref }
   if (type === 'file' || type === 'path' || type === 'git' || type === 'url')
     return { type, ref: ref.startsWith(type + ':') ? ref : type + ':' + ref }

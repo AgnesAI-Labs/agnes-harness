@@ -28,6 +28,11 @@ export interface ProfileManagedHandle<T> {
   get(): Promise<T>
 }
 export interface PluginProfileRuntimePort {
+  /** Register a platform with the backend-owned channel resource. Added in 5.5. */
+  registerChannel?(
+    provider: import('./channel.js').ChannelProvider,
+    config?: import('./channel.js').ChannelConfiguration,
+  ): ProfileManagedHandle<import('./channel.js').ChannelRuntime>
   /** The reviewed managedServices declaration owns listeners and deadlines.
    * Registers generic `<id>.status`, `.retry`, `.reconcile`, `.configure` and `.check` profile services.
    * Configuration/retry retain native effect admission; status never returns private credentials. */

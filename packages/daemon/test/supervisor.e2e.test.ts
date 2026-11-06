@@ -611,7 +611,7 @@ describe('agnesd supervisor: real end-to-end', () => {
 
           const participantCredential = {
             kind: 'channel',
-            channel: 'dingtalk',
+            channel: 'example-im',
             accountId: 'account-e2e',
             userId: 'participant-e2e',
             chatId: 'chat-e2e',
@@ -624,7 +624,7 @@ describe('agnesd supervisor: real end-to-end', () => {
             }),
           ).toMatchObject({ result: { seq: expect.any(Number) } })
           expect(await c.call(41, '_agnes/v1/participant.list', { sessionId })).toMatchObject({
-            result: { participants: [{ actor: { id: 'participant-e2e' }, surface: 'dingtalk' }] },
+            result: { participants: [{ actor: { id: 'participant-e2e' }, surface: 'example-im' }] },
           })
           expect(
             await c.call(42, '_agnes/v1/participant.leave', {
