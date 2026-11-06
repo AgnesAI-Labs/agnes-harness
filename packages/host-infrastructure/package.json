@@ -57,7 +57,10 @@
     "./sandbox-read-paths": "./src/sandbox-read-paths.ts",
     "./sandbox-workspace-ancestor": "./src/sandbox-workspace-ancestor.ts",
     "./documents-directory": "./src/documents-directory.ts",
-    "./windows-acl/policy": "./src/windows-acl/policy.ts"
+    "./windows-acl/policy": "./src/windows-acl/policy.ts",
+    "./windows-acl/journal": "./src/windows-acl/journal.ts",
+    "./windows-acl/leases": "./src/windows-acl/leases.ts",
+    "./windows-acl/authority": "./src/windows-acl/authority.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",
