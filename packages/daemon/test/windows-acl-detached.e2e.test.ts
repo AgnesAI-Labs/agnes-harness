@@ -299,19 +299,21 @@ for (const version of ['5.1', '7'] as const)
         expect(written.stdout).toContain('create=ok;directory=ok;rename=ok;remove=ok;temp=ok;outside=denied')
         expect(existsSync(outsideFile)).toBe(false)
 
+        // A read-only session runs no background job (that capability is denied); its commands come
+        // through the shell tool, and their output is on the timeline.
         const readOnly = await newSession('read-only')
-        const refused = await (
-          await job(
-            readOnly,
-            `${steps([
+        const refused = await readOnly.prompt(
+          shellCall({
+            command: `${steps([
               ['create', `Set-Content -LiteralPath 'read-only.txt' -Value 'x'`],
               ['outside', `Set-Content -LiteralPath ${literal(outsideFile)} -Value 'x'`],
             ])}\nWrite-Host -NoNewline (';temp=' + $env:TEMP)`,
-          )
-        ).done()
-        expect(refused, JSON.stringify(refused)).toMatchObject({ status: 'completed', code: 0 })
-        expect(refused.stdout).toContain('create=denied;outside=denied')
-        expect(refused.stdout).not.toContain(daemon.tempRoot)
+          }),
+        )
+        expect(refused.reason).toBe('completed')
+        const shown = await timeline(readOnly)
+        expect(shown).toContain('create=denied;outside=denied')
+        expect(shown).not.toContain(daemon.tempRoot.replaceAll('\\', '\\\\'))
         expect(existsSync(join(daemon.workspace, 'read-only.txt'))).toBe(false)
       })
 

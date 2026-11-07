@@ -537,7 +537,7 @@ describe.skipIf(process.platform !== 'win32')(
         ],
         { stdio: 'pipe', timeout: 600_000 },
       )
-    })
+    }, 600_000)
     afterAll(() => rmSync(output, { recursive: true, force: true, maxRetries: 5 }))
 
     // Launches the marker writer read-only; on success it resumes and waits for the target to exit.
