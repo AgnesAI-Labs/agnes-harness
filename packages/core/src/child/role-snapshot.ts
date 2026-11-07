@@ -50,6 +50,7 @@ function snapshot(value: unknown): RoleDelegation {
     (value.parentTainted !== undefined && typeof value.parentTainted !== 'boolean') ||
     (value.humanApprovals !== undefined && typeof value.humanApprovals !== 'boolean') ||
     typeof value.sandboxRequired !== 'boolean' ||
+    (value.windowsWriteRestricted !== undefined && value.windowsWriteRestricted !== true) ||
     !object(value.filesystem) ||
     (value.resources !== undefined &&
       (!object(value.resources) || !strings(value.resources.mcp) || !strings(value.resources.skills))) ||

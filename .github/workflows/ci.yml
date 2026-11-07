@@ -259,6 +259,16 @@ jobs:
       types: ${{ needs.static.outputs.types }}
       local: ${{ needs.local-windows.outputs.artifact }}
       browsers: ${{ needs.changes.outputs.web == 'true' }}
+  # The real-Windows ACL execution files skip on Linux, so pull requests run them in their own
+  # Windows job; on other events the Windows heavy shards run them and this job is skipped.
+  windows-acl:
+    needs: [changes, static, native-windows, local-windows]
+    if: needs.changes.outputs.docs-only != 'true' && github.event_name == 'pull_request'
+    uses: ./.github/workflows/ci-windows-acl.yml
+    with:
+      native: ${{ needs.native-windows.outputs.artifact }}
+      types: ${{ needs.static.outputs.types }}
+      local: ${{ needs.local-windows.outputs.artifact }}
   heavy:
     name: heavy results
     needs: [changes, heavy-linux, heavy-macos, heavy-windows]
@@ -380,7 +390,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, static, native-linux, native-macos, native-windows, local-linux, local-macos, local-windows, linux-fast, check, windows-check-result, heavy, runtime-package, sea, web, web-result, browser-acceptance]
+    needs: [changes, static, native-linux, native-macos, native-windows, local-linux, local-macos, local-windows, linux-fast, check, windows-check-result, heavy, windows-acl, runtime-package, sea, web, web-result, browser-acceptance]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

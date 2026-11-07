@@ -5,6 +5,7 @@ import {
   type RuntimeSnapshotFacts,
   renderEnvironment,
   renderTools,
+  windowsCommandIsolation,
 } from './environment.js'
 import { createSdkRenderer } from './sdk/memo.js'
 import { renderTypeScript } from './sdk/render-typescript.js'
@@ -60,6 +61,14 @@ export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentF
 export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeSnapshotFacts {
   const platform = deps.adapters.platform
   const extras = ctx.session.d.extraDirectories
+  // The session's own sandbox answer, read now: one Host serves sessions under different boundaries.
+  const policy = ctx.preset.approval.policy
+  const commandIsolation = windowsCommandIsolation({
+    enforcement: ctx.session.d.runtime.enforcement(),
+    access:
+      policy === 'read-only' ? 'read-only' : policy === 'full-access' ? 'full-access' : 'workspace-write',
+    os: platform.snapshot().os,
+  })
   return {
     // Use the session clock so replay and a fixed-clock test retain their original UTC date.
     date: new Date(ctx.session.d.clock()).toISOString().slice(0, 10),
@@ -73,6 +82,7 @@ export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeS
     cwd: ctx.session.d.cwd,
     // Paths only, never contents; omitted when empty so sessions without extras stay byte-identical.
     ...(extras?.length ? { extraDirectories: [...extras].sort() } : {}),
+    ...(commandIsolation ? { commandIsolation } : {}),
   }
 }
 

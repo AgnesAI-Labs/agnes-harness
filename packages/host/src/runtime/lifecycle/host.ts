@@ -2,6 +2,7 @@ import { CoreError, roleAuthority } from '@agnes/core'
 import { isProfileDecisionJournal, rpcError } from '@agnes/protocol'
 import { bestEffort } from '../../best-effort.js'
 import { restoreRolePolicy, roleWorkspacePreset } from '../sessions/role-policy.js'
+import { forkOwnWorkspace } from './fork-workspace.js'
 import '../provided-contracts.js'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -450,6 +451,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
         a.presets,
         a.kernel.sessions.values(),
         workspaceRuntimes,
+        a.adapters.transport,
       ),
     systemPromptPreview(config) {
       if (!a.systemPromptProvider)
@@ -572,7 +574,9 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           | undefined
         let forkExtension = false
         let pendingChildWorkspace: Awaited<ReturnType<SessionWorkspaceRuntimeTable['reserve']>> | undefined
-        if (o.binding && o.parent) {
+        const ownFork = await forkOwnWorkspace(workspaceRuntimes, a.adapters.storage, o)
+        if (ownFork) o = { ...o, binding: ownFork }
+        if (o.binding && o.parent && !ownFork) {
           const binding = o.binding as WorkspaceBinding
           assertWorkspaceBinding(binding)
           const childKey = o.key
@@ -617,7 +621,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             forkExtension = true
           }
         }
-        if (o.binding && (!o.parent || forkExtension)) {
+        if (o.binding && (!o.parent || forkExtension || ownFork)) {
           const openWorkspaceRuntime = opts.openWorkspaceRuntime ?? a.openWorkspaceRuntime
           const binding = o.binding as WorkspaceBinding
           const inheritedView = o.parent ? a.kernel.get(o.parent.key)?.preset : undefined
@@ -649,15 +653,19 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
             ...(o.permission !== undefined ? { permission: o.permission } : {}),
             ...(o.defaultPermission !== undefined ? { defaultPermission: o.defaultPermission } : {}),
           })
-          let runtimePreset = resolvePreset(runtimeSelection.name, a.presets, {
+          const resolvedPreset = resolvePreset(runtimeSelection.name, a.presets, {
             ...a.sessionPresetLimits(),
             ...(runtimeSelection.permission ? { permission: runtimeSelection.permission } : {}),
             ...(runtimeSelection.fallback ? { carry: runtimeSelection.fallback } : {}),
-          }).doc
+          })
           const authority = o.roleDelegation ? roleAuthority(o.roleDelegation) : undefined
-          runtimePreset = roleWorkspacePreset(runtimePreset, authority)
+          const runtimePreset = roleWorkspacePreset(resolvedPreset.doc, authority)
+          const origin = {
+            chain: resolvedPreset.chain,
+            ...(resolvedPreset.permission ? { permission: resolvedPreset.permission } : {}),
+          }
           const runtime = await workspaceRuntimes.open(binding, (invocation) =>
-            openWorkspaceRuntime(binding, runtimePreset, invocation, authority?.filesystem),
+            openWorkspaceRuntime(binding, runtimePreset, invocation, authority?.filesystem, origin),
           )
           workspace = Object.freeze({
             runtime,

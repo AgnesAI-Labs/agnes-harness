@@ -7,6 +7,14 @@ import {
   windowsEnvironmentNamesEqual,
   windowsProcessStartTimeSync,
 } from './index.js'
+import {
+  claimWindowsConfinement,
+  type RestrictedLaunch,
+  restrictedLaunch,
+  type WindowsConfinement,
+} from './process-restricted.js'
+
+export { sealWindowsConfinement, type WindowsConfinement } from './process-restricted.js'
 
 const windows = process.platform === 'win32' // guards-allow-platform: shared Windows lifecycle leaf.
 
@@ -28,8 +36,11 @@ type Options = {
   startupTimeoutMs?: number
   /** Extra parsing only for a known batch wrapper forwarding %* to a native program. */
   windowsBatch?: 'script' | 'argv-proxy'
+  /** Run the target with a write-restricted Low integrity token; see sealWindowsConfinement. */
+  confinement?: WindowsConfinement
 }
 const error = (code: string, message: string): Error => Object.assign(new Error(message), { code })
+const validPid = (value: unknown): boolean => Number.isSafeInteger(value) && Number(value) > 0
 
 /** Windows names are case-insensitive; later layers (including empty values) override earlier ones. */
 export function mergeWindowsEnvironment(
@@ -68,12 +79,49 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
     )
   )
     return Promise.reject(error('EINVAL', 'Invalid Windows process gate options'))
+  const confinement =
+    options.confinement === undefined ? undefined : claimWindowsConfinement(options.confinement)
+  if (options.confinement !== undefined && !confinement)
+    return Promise.reject(
+      error('E_WINDOWS_CONFINEMENT_INVALID', 'Windows confinement is not an unused sealed value'),
+    )
   if (options.signal?.aborted)
     return Promise.reject(options.signal.reason ?? error('ABORT_ERR', 'Process start cancelled'))
   argv = [...argv]
-  options = { ...options, env: mergeWindowsEnvironment(options.env) }
+  options = {
+    ...options,
+    env: mergeWindowsEnvironment(
+      options.env,
+      confinement?.tempRoot === undefined ? {} : { TEMP: confinement.tempRoot, TMP: confinement.tempRoot },
+    ),
+  }
+  // NODE_OPTIONS/NODE_PATH and the business environment must not execute code before assignment.
+  const bootstrapEnv = Object.fromEntries(
+    ['SystemRoot', 'TEMP', 'TMP'].flatMap((key) =>
+      process.env[key] === undefined ? [] : [[key, process.env[key] as string]],
+    ),
+  )
+  let restricted: RestrictedLaunch | undefined
+  try {
+    if (confinement)
+      restricted = restrictedLaunch(
+        argv,
+        options.cwd,
+        options.env,
+        options.windowsBatch ?? 'script',
+        confinement,
+        bootstrapEnv,
+      )
+  } catch (cause) {
+    return Promise.reject(cause)
+  }
   return new Promise((resolve, reject) => {
     const job = createWindowsProcessJob()
+    if (restricted && typeof job.contains !== 'function') {
+      job.close()
+      reject(error('E_SYSTEM_NATIVE_UNAVAILABLE', 'Rebuild native artifact for restricted Windows launches'))
+      return
+    }
     let brokerPath: string
     try {
       brokerPath = createRequire(import.meta.url).resolve('@agnes/system-node/process-broker')
@@ -82,12 +130,6 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
       reject(cause)
       return
     }
-    // NODE_OPTIONS/NODE_PATH and the business environment must not execute code before assignment.
-    const bootstrapEnv = Object.fromEntries(
-      ['SystemRoot', 'TEMP', 'TMP'].flatMap((key) =>
-        process.env[key] === undefined ? [] : [[key, process.env[key] as string]],
-      ),
-    )
     let broker: ChildProcessWithoutNullStreams
     try {
       broker = spawn(options.nodeExecutable, [brokerPath], {
@@ -104,6 +146,8 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
     }
     let started = false
     let released = false
+    // A restricted target stays suspended until the Host has proven it is inside this Job.
+    let created: number | undefined
     let stopped = false
     let cancelled = false
     let failure: Error | undefined
@@ -169,13 +213,15 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
           job.assign(pid, identity)
           released = true
           broker.send(
-            {
-              type: 'run',
-              argv,
-              cwd: options.cwd,
-              env: options.env,
-              windowsBatch: options.windowsBatch ?? 'script',
-            },
+            restricted
+              ? { type: 'run-restricted', cwd: options.cwd, ...restricted }
+              : {
+                  type: 'run',
+                  argv,
+                  cwd: options.cwd,
+                  env: options.env,
+                  windowsBatch: options.windowsBatch ?? 'script',
+                },
             (cause) => {
               if (cause) fail(cause)
             },
@@ -184,11 +230,29 @@ export function startWindowsJobProcess(argv: string[], options: Options): Promis
           fail(cause as Error)
         }
       } else if (
+        message.type === 'created' &&
+        restricted &&
+        released &&
+        created === undefined &&
+        validPid(message.pid) &&
+        typeof message.start === 'string'
+      ) {
+        created = Number(message.pid)
+        try {
+          if (!job.contains?.(created, message.start))
+            throw error('E_JOB_MEMBERSHIP', 'Restricted Windows process is outside its Job')
+          broker.send({ type: 'resume' }, (cause) => {
+            if (cause) fail(cause)
+          })
+        } catch (cause) {
+          fail(cause as Error)
+        }
+      } else if (
         message.type === 'started' &&
         released &&
         !started &&
-        Number.isSafeInteger(message.pid) &&
-        Number(message.pid) > 0
+        validPid(message.pid) &&
+        (!restricted || (created !== undefined && Number(message.pid) === created))
       ) {
         started = true
         clearTimeout(timer)

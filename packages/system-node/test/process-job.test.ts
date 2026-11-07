@@ -99,6 +99,27 @@ describe.skipIf(process.platform !== 'win32')('Windows process job handles', () 
     expect(() => owned.assign(root.pid, root.start)).toThrow('closed')
   })
 
+  it('proves membership by process identity without assigning anything', async () => {
+    const root = await controlled()
+    const sibling = await controlled()
+    const owned = job()
+    const contains = (pid: number, start: string) => {
+      if (!owned.contains) throw new Error('Rebuild the native artifact')
+      return owned.contains(pid, start)
+    }
+    owned.assign(root.pid, root.start)
+    expect(contains(root.pid, root.start)).toBe(true)
+    expect(contains(sibling.pid, sibling.start)).toBe(false)
+    expect(owned.activeProcessCount()).toBe(1)
+    expect(() => contains(root.pid, String(BigInt(root.start) + 1n))).toThrow('identity changed')
+    for (const pid of [0, -1, 1.5, NaN, 0x100000000, process.pid]) expect(() => contains(pid, '1')).toThrow()
+    expect(() => owned.contains?.call({} as never, root.pid, root.start)).toThrow('receiver')
+    owned.terminate()
+    expect(() => contains(sibling.pid, sibling.start)).toThrow('terminated')
+    owned.close()
+    expect(() => contains(sibling.pid, sibling.start)).toThrow('closed')
+  })
+
   it('rejects invalid arguments, self-assignment and forged method receivers', () => {
     const owned = job()
     for (const pid of [0, -1, 1.5, NaN, 0x100000000, process.pid])

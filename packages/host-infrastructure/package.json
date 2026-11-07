@@ -56,7 +56,13 @@
     "./request-traces": "./src/request-traces.ts",
     "./sandbox-read-paths": "./src/sandbox-read-paths.ts",
     "./sandbox-workspace-ancestor": "./src/sandbox-workspace-ancestor.ts",
-    "./documents-directory": "./src/documents-directory.ts"
+    "./documents-directory": "./src/documents-directory.ts",
+    "./windows-acl/policy": "./src/windows-acl/policy.ts",
+    "./windows-acl/journal": "./src/windows-acl/journal.ts",
+    "./windows-acl/leases": "./src/windows-acl/leases.ts",
+    "./windows-acl/authority": "./src/windows-acl/authority.ts",
+    "./windows-acl/execution": "./src/windows-acl/execution.ts",
+    "./windows-acl/host-platform": "./src/windows-acl/host-platform.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

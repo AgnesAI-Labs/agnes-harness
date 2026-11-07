@@ -1126,7 +1126,7 @@ let draftPreset: string | undefined
 // The level chosen in this draft's permission control; the recipe in `draftPreset` is independent.
 let draftPermission: PermissionMode | undefined
 let draftBundles: string[] = []
-let sessionIsolation: { sessionId: string; disabled: boolean } | undefined
+let sessionIsolation: import('./app/isolation-note.js').SessionIsolation | undefined
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
 const startupRequest = new URLSearchParams(location.search)
 // Settings and nested pages keep their address across reload and history traversal.

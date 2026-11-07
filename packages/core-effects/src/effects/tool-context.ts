@@ -339,7 +339,12 @@ export function buildToolContext(
         const e = d.workspace
           ? d.runtime.enforcement(d.workspace.sandbox)
           : { level: 'none' as const, scope: [] }
-        return Object.freeze({ level: e.level, scope: Object.freeze([...e.scope]) })
+        return Object.freeze({
+          level: e.level,
+          scope: Object.freeze([...e.scope]),
+          // Names the partial Windows contract; without it the same level reads as a degraded one.
+          ...(e.boundary ? { boundary: Object.freeze({ ...e.boundary }) } : {}),
+        })
       },
     },
     // Facts read at call time, probe passed through; no manifest gate.

@@ -9,6 +9,7 @@ import { bindWebSession, loadWebSession } from '../session-binding.js'
 import { sessionPermissionLevel } from '../session-permission.js'
 import { receiptFromTurns, recordRunEvent, webView } from '../view.js'
 import { broadcast } from './global-events.js'
+import { sessionIsolationOf } from './isolation-note.js'
 import type { SessionBindingOwner } from './session-owner.js'
 
 export function createSessionController(
@@ -187,13 +188,9 @@ export function createSessionController(
         .then(() => context.client.session.runtime(loaded.id))
         .then((runtime) => {
           if (!context.sessionBinding.isCurrent(epoch, loaded)) return
-          const sandbox = runtime.policy?.sandbox
-          if (sandbox?.provider === 'local' && sandbox.enforcement) {
-            context.sessionIsolation = {
-              sessionId: loaded.id,
-              disabled:
-                sandbox.enforcement.level !== 'full' && !sandbox.enforcement.scope.includes('process'),
-            }
+          const isolation = sessionIsolationOf(loaded.id, runtime.policy?.sandbox)
+          if (isolation) {
+            context.sessionIsolation = isolation
             context.renderControls()
           }
         })

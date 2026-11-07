@@ -1,5 +1,6 @@
 import { type Static, Type } from '@sinclair/typebox'
 import { SessionIntegrityStatus } from './session-integrity.js'
+import { windowsWriteBoundary } from './windows-boundary.js'
 
 const text = Type.String({ minLength: 1, maxLength: 1024 })
 const hash = Type.String({ minLength: 1, maxLength: 256 })
@@ -143,6 +144,7 @@ export const SessionRuntimeDescriptor = Type.Object(
                   {
                     level: Type.Union([Type.Literal('none'), Type.Literal('partial'), Type.Literal('full')]),
                     scope: Type.Array(text, { maxItems: 64 }),
+                    boundary: Type.Optional(windowsWriteBoundary),
                   },
                   { additionalProperties: false },
                 ),

@@ -16,6 +16,7 @@ import {
 import { useEffect } from 'react'
 
 import { SECURITY_NAMESPACE, securityUxCatalog } from './security-locale.js'
+import { hasWindowsBoundary, windowsBoundaryText } from './windows-boundary.js'
 
 type Text = (key: string) => string
 type Policy = RuntimeSecurityStatus['presetPolicies'][number]
@@ -65,6 +66,13 @@ export function SecurityStatusPanel({
     occurrences.set(identity, occurrence + 1)
     return { workspace, key: `${identity}:${occurrence}` }
   })
+  const windows = (workspace: (typeof status.workspaces)[number], detail: boolean) =>
+    windowsBoundaryText(workspace, status.platform.os, t, detail)
+  const sideEffects = hasWindowsBoundary(status) && (
+    <p className="agnes-settings-note" data-testid="windows-acl-side-effects">
+      {t('windowsAclSideEffects')}
+    </p>
+  )
   // A Host that reports permission levels apart lists them in their own table; an older one keeps
   // them among the presets, shown as before.
   const levels = status.permissionPolicies
@@ -92,7 +100,7 @@ export function SecurityStatusPanel({
             {rows.map((policy) => (
               <tr key={policy.id}>
                 <td>{choice(policy.id)}</td>
-                <td>{policy.level}</td>
+                <td>{policy.boundary ? t('windowsAclLevel') : policy.level}</td>
                 <td>{t(policy.required ? 'yes' : 'no')}</td>
                 <td>{t(policy.onUnavailable)}</td>
                 <td>{provider(policy.approvalPolicy)}</td>
@@ -151,19 +159,20 @@ export function SecurityStatusPanel({
                   <dt>{t('enforcement')}</dt>
                   <dd>
                     <span data-testid="workspace-enforcement">
-                      {workspace.provider === 'local' &&
-                      workspace.enforcement &&
-                      workspace.enforcement.level !== 'full' &&
-                      !workspace.enforcement.scope.includes('process') ? (
-                        t('noOsIsolation')
-                      ) : workspace.enforcement ? (
-                        <>
-                          <span>{t(`enforcement.${workspace.enforcement.level}`)}</span>{' '}
-                          {scopes(workspace.enforcement.scope) || '—'}
-                        </>
-                      ) : (
-                        t('unmeasured')
-                      )}
+                      {windows(workspace, true) ??
+                        (workspace.provider === 'local' &&
+                        workspace.enforcement &&
+                        workspace.enforcement.level !== 'full' &&
+                        !workspace.enforcement.scope.includes('process') ? (
+                          t('noOsIsolation')
+                        ) : workspace.enforcement ? (
+                          <>
+                            <span>{t(`enforcement.${workspace.enforcement.level}`)}</span>{' '}
+                            {scopes(workspace.enforcement.scope) || '—'}
+                          </>
+                        ) : (
+                          t('unmeasured')
+                        ))}
                     </span>
                   </dd>
                 </dl>
@@ -183,6 +192,7 @@ export function SecurityStatusPanel({
             ))}
           </SettingsList>
         )}
+        {sideEffects}
       </div>
     )
   const level = status.platform.l1.level
@@ -257,7 +267,10 @@ export function SecurityStatusPanel({
         <SettingsBlock label={ux('perWorkspace')} data-testid="security-workspaces">
           {!status.workspaces.length && <SettingsItem label={t('noWorkspacePosture')} />}
           {workspaces.map(({ workspace, key }) => {
-            const enforcement = workspace.enforcement?.level ?? 'unprobed'
+            // The Windows contract is partial whatever level arrives beside it.
+            const enforcement = workspace.enforcement?.boundary
+              ? 'partial'
+              : (workspace.enforcement?.level ?? 'unprobed')
             const workspaceTone =
               enforcement === 'full'
                 ? 'ok'
@@ -281,12 +294,14 @@ export function SecurityStatusPanel({
               >
                 <span className="agnes-settings-value" data-testid="workspace-enforcement">
                   <SettingsTag tone={workspaceTone}>{ux(`state.${enforcement}`)}</SettingsTag>
-                  {workspace.enforcement ? scopes(workspace.enforcement.scope) || '—' : ''}
+                  {windows(workspace, false) ??
+                    (workspace.enforcement ? scopes(workspace.enforcement.scope) || '—' : '')}
                 </span>
               </SettingsItem>
             )
           })}
         </SettingsBlock>
+        {sideEffects}
         <p className="agnes-settings-note">{ux('platformOnly')}</p>
       </SettingsDrill>
     </SettingsBlock>

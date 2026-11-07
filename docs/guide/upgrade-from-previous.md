@@ -98,7 +98,7 @@ Once the backup has been checked and you no longer need its contents, permanent 
 
 ## Install and start again
 
-Follow [Installation](install.md) to build the new revision with its pinned toolchain, then [Quickstart](quickstart.md) to run `node agnes.mjs serve` and open the printed URL. The source preview does not promise a published npm installer. Windows still has no completed end-to-end acceptance or verified L1 command sandbox; see [platform limitations](../reference/limitations.md).
+Follow [Installation](install.md) to build the new revision with its pinned toolchain, then [Quickstart](quickstart.md) to run `node agnes.mjs serve` and open the printed URL. The source preview does not promise a published npm installer. Windows still has no completed end-to-end acceptance or L1 command sandbox, only a partial write restriction; see [platform limitations](../reference/limitations.md).
 
 Add model accounts and credentials again, select a default model, reinstall and review your plugins, and recreate needed settings, workspace registrations and automation tasks. Use the [local Demo](demo.md) to check the fresh environment without a paid model. Old sessions will not appear in the new history.
 

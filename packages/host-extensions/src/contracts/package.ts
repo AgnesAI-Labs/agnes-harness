@@ -3,6 +3,7 @@ import type {
   CompactionPlan,
   DirectProposal,
   Enforcement,
+  HostSpawnSandboxWorkspaceBackend,
   InspectOutcome,
   InspectRequest,
   Operation,
@@ -220,15 +221,18 @@ export type SandboxWorkspaceProbeFactory = (input: {
   }>
   log: Logger
   signal?: AbortSignal
+  /** The Host's own Windows write-restriction offer; the probe never rewrites argv for it. */
+  hostSpawn?: HostSpawnSandboxWorkspaceBackend
 }) => Promise<
   SandboxWorkspaceBackend &
     Readonly<{
-      name: 'none' | 'bwrap' | 'seatbelt'
+      name: 'none' | 'bwrap' | 'seatbelt' | 'windows-acl'
       execBackend: SandboxExecBackend
       enforcement: Enforcement
       degraded: boolean
       implementation?: 'implemented' | 'unimplemented' | 'unknown'
       probeState?: 'ready' | 'failed' | 'unprobed'
+      hostSpawn?: HostSpawnSandboxWorkspaceBackend
     }>
 >
 

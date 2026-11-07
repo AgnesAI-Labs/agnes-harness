@@ -8,9 +8,18 @@ import { linuxBuild } from '../../../tools/native/linux-build.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
+// The Windows test build compiles in failure injection for restricted launches. It must go to its
+// own directory: the package loader and the process broker refuse it, and it is never shipped.
+const testFaults = args.at(-1) === '--test-faults'
+if (testFaults) args.pop()
 if (args.length && (args.length !== 2 || args[0] !== '--output-dir' || !isAbsolute(args[1])))
   throw new Error('Expected --output-dir with an absolute directory')
 const output = args[1] ?? join(root, 'dist', 'native')
+if (
+  testFaults &&
+  (process.platform !== 'win32' || !args.length || resolve(output) === resolve(root, 'dist', 'native')) // guards-allow-platform: the test build exists for Windows only.
+)
+  throw new Error('--test-faults builds the Windows test artifact into its own --output-dir')
 mkdirSync(output, { recursive: true })
 
 if (process.platform === 'darwin') {
@@ -201,6 +210,7 @@ runMsvcPhase(
     '/O2',
     '/std:c++17',
     '/DNAPI_VERSION=8',
+    ...(testFaults ? ['/DAGNES_TEST_FAULTS'] : []),
     `/I${include}`,
     join(root, 'native', 'windows.cc'),
     join(root, 'native', 'node-delay-load.cc'),

@@ -20,6 +20,7 @@ function setup(
     workspaceRoot?: string
     remainingMs?: number
     defaultTimeoutMs?: number
+    workspace?: Parameters<typeof buildToolContext>[0]['workspace']
   } = {},
 ) {
   const created: unknown[] = []
@@ -73,6 +74,7 @@ function setup(
       registerArtifact: over.registerArtifact ?? (async () => undefined),
       artifactJobEvent: async () => undefined,
       lease: { remainingMs: () => over.remainingMs ?? 1_000 },
+      ...(over.workspace ? { workspace: over.workspace } : {}),
     },
     {
       toolUseId: 'tool-1',
@@ -355,6 +357,26 @@ describe('ToolContext platform view and sandbox enforcement (spec 2026-09-15 §4
     expect(Object.keys(context.sandbox).sort()).toEqual(['confine', 'enforcement'])
     await expect(context.sandbox.confine(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')
     await expect(context.exec(['echo'])).rejects.toThrow('E_WORKSPACE_CLOSED')
+  })
+
+  it('keeps the Windows boundary of the workspace sandbox, so a partial contract is not read as degraded', () => {
+    const boundary = {
+      contract: 'windows-write-restricted-v1',
+      fileWrite: 'acl-partial',
+      fileRead: 'unrestricted',
+      network: 'unrestricted',
+      processTree: 'job-object',
+    } as const
+    const sandbox = { enforcement: () => ({ level: 'partial' as const, scope: ['file' as const], boundary }) }
+    const { context } = setup(fakeSeams(), undefined, {
+      workspace: {
+        sandbox,
+        confine: async (argv: readonly string[]) => argv,
+        checkpoint: {},
+      } as unknown as Parameters<typeof buildToolContext>[0]['workspace'],
+    })
+    expect(context.sandbox.enforcement()).toEqual({ level: 'partial', scope: ['file'], boundary })
+    expect(Object.isFrozen(context.sandbox.enforcement().boundary)).toBe(true)
   })
 
   it('degrades sandbox.enforcement() to none/[] instead of throwing when the seam throws (fail-closed regression, I4)', () => {

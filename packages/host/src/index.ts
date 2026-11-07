@@ -569,6 +569,12 @@ export {
 } from './runtime/lifecycle/host-facade.js'
 export { closeHost, Rollback } from './runtime/lifecycle/lifecycle.js'
 export { sessionPermissionCatalog } from './runtime/lifecycle/permission-catalog.js'
+export {
+  openWindowsAclMaintenance,
+  type WindowsAclMaintenance,
+  type WindowsAclRepairRequest,
+  type WindowsAclReport,
+} from './runtime/lifecycle/windows-acl-maintenance.js'
 export { manageMemory } from './runtime/memory/admin.js'
 export * from './runtime/profile/bundle-selection.js'
 export {

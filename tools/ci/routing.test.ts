@@ -326,13 +326,17 @@ describe('CI scope', () => {
   })
 })
 
-function results(docsOnly: boolean): Record<string, { result: string; outputs?: Record<string, string> }> {
+function results(
+  docsOnly: boolean,
+  event = 'pull_request',
+): Record<string, { result: string; outputs?: Record<string, string> }> {
   return {
     changes: { result: 'success', outputs: { 'docs-only': String(docsOnly), web: 'true' } },
     static: { result: 'success' },
     check: { result: docsOnly ? 'skipped' : 'success' },
     'windows-check-result': { result: docsOnly ? 'skipped' : 'success' },
     heavy: { result: docsOnly ? 'skipped' : 'success' },
+    'windows-acl': { result: !docsOnly && event === 'pull_request' ? 'success' : 'skipped' },
     'runtime-package': { result: docsOnly ? 'skipped' : 'success' },
     sea: { result: docsOnly ? 'skipped' : 'success' },
     'native-linux': { result: 'success' },
@@ -350,7 +354,21 @@ function results(docsOnly: boolean): Record<string, { result: string; outputs?: 
 
 describe('CI result', () => {
   it.each([true, false])('accepts all expected results (docs-only: %s)', (docsOnly) => {
-    expect(() => verifyResults(results(docsOnly))).not.toThrow()
+    for (const event of ['pull_request', 'push', 'schedule', 'workflow_dispatch'])
+      expect(() => verifyResults(results(docsOnly, event), event), event).not.toThrow()
+  })
+
+  it('requires the Windows ACL job on code pull requests only', () => {
+    for (const event of ['push', 'schedule', 'workflow_dispatch']) {
+      const needs = results(false, event)
+      needs['windows-acl'] = { result: 'success' }
+      expect(() => verifyResults(needs, event), event).toThrow('windows-acl: expected skipped')
+    }
+    const docs = results(true)
+    docs['windows-acl'] = { result: 'success' }
+    expect(() => verifyResults(docs, 'pull_request')).toThrow('windows-acl: expected skipped')
+    expect(() => verifyResults(results(false), undefined)).toThrow('event name')
+    expect(() => verifyResults(results(false), 'merge_group')).toThrow('event name')
   })
 
   it.each([
@@ -359,6 +377,7 @@ describe('CI result', () => {
     'check',
     'windows-check-result',
     'heavy',
+    'windows-acl',
     'runtime-package',
     'sea',
     'native-linux',
@@ -376,7 +395,7 @@ describe('CI result', () => {
       const needs = results(false)
       if (state) needs[job] = { ...needs[job], result: state }
       else delete needs[job]
-      expect(() => verifyResults(needs)).toThrow()
+      expect(() => verifyResults(needs, 'pull_request')).toThrow()
     }
   })
 
@@ -386,26 +405,317 @@ describe('CI result', () => {
     needs.web.result = 'skipped'
     needs['web-result'].result = 'skipped'
     needs['browser-acceptance'].result = 'skipped'
-    expect(() => verifyResults(needs)).not.toThrow()
+    expect(() => verifyResults(needs, 'pull_request')).not.toThrow()
     needs['linux-fast'].result = 'skipped'
-    expect(() => verifyResults(needs)).toThrow('linux-fast')
+    expect(() => verifyResults(needs, 'pull_request')).toThrow('linux-fast')
   })
 
   it('does not hide a documentation check failure behind intentional runtime skips', () => {
     const needs = results(true)
     needs.static.result = 'failure'
-    expect(() => verifyResults(needs)).toThrow('static')
-    expect(() => verifyResults({ ...needs, changes: { result: 'success' } })).toThrow('classification')
+    expect(() => verifyResults(needs, 'pull_request')).toThrow('static')
+    expect(() => verifyResults({ ...needs, changes: { result: 'success' } }, 'pull_request')).toThrow(
+      'classification',
+    )
   })
 
   it('returns a nonzero exit status when a selected job fails', () => {
     const needs = results(false)
     needs.check.result = 'failure'
     const run = spawnSync(process.execPath, [fileURLToPath(new URL('./result.mjs', import.meta.url))], {
-      env: { ...process.env, CI_NEEDS: JSON.stringify(needs) },
+      env: { ...process.env, CI_NEEDS: JSON.stringify(needs), GITHUB_EVENT_NAME: 'pull_request' },
       encoding: 'utf8',
     })
     expect(run.status).not.toBe(0)
     expect(run.stderr).toContain('check: expected success, received failure')
+  })
+})
+
+// The real-Windows ACL execution files skip off Windows, so only a Windows runner covers them. Pull
+// requests skip the Windows heavy shards; a pull-request-only Windows job runs these files there
+// instead. On every event each file must run exactly once on Windows: never zero times, never twice.
+const repository = fileURLToPath(new URL('../../', import.meta.url))
+const workflowDirectory = join(repository, '.github/workflows')
+const actualWorkflows: Readonly<Record<string, string>> = Object.fromEntries(
+  readdirSync(workflowDirectory)
+    .filter((name) => /\.ya?ml$/.test(name))
+    .map((name) => [name, readFileSync(join(workflowDirectory, name), 'utf8')]),
+)
+const heavyLists: string[][] = JSON.parse(
+  readFileSync(new URL('./heavy-shards.json', import.meta.url), 'utf8'),
+).lists
+const EVENTS = ['pull_request', 'push', 'schedule', 'workflow_dispatch'] as const
+const ACL_HEAVY = /(?:^|\/)(?:windows-acl[\w-]*|process-restricted)\.e2e\.test\.ts$/
+
+/** Committed and new heavy files whose real-Windows coverage is the Windows ACL execution path. */
+function aclHeavyFiles(): string[] {
+  return execFileSync(
+    'git',
+    ['ls-files', '--cached', '--others', '--exclude-standard', '--', '*.e2e.test.ts'],
+    { cwd: repository, encoding: 'utf8' },
+  )
+    .split('\n')
+    .filter((file) => ACL_HEAVY.test(file))
+    .sort()
+}
+
+type Leg = Readonly<{ os: string; shard: string }>
+type Step = Readonly<{ condition?: string; run: string; env: string }>
+type Job = { text: string; steps: Step[] }
+
+const runnerOs = (label: string) =>
+  /^windows/.test(label)
+    ? 'Windows'
+    : /^macos/.test(label)
+      ? 'macOS'
+      : /^ubuntu/.test(label)
+        ? 'Linux'
+        : label
+
+/** Job blocks and their step items, read from these workflows' layout: two-space jobs, six-space steps. */
+function workflowJobs(text: string): Map<string, Job> {
+  const jobs = new Map<string, Job>()
+  let job: Job | undefined
+  let step: string[] | undefined
+  const flush = () => {
+    if (job && step) job.steps.push(stepOf(step))
+    step = undefined
+  }
+  const lines = text.split('\n')
+  for (const line of lines.slice(lines.indexOf('jobs:') + 1)) {
+    const key = /^ {2}([\w-]+):\s*$/.exec(line)
+    if (key?.[1]) {
+      flush()
+      job = { text: '', steps: [] }
+      jobs.set(key[1], job)
+      continue
+    }
+    if (job) job.text += `${line}\n`
+    if (/^ {6}- /.test(line)) {
+      flush()
+      step = [line.slice(8)]
+    } else if (step && (/^ {8}/.test(line) || line.trim() === '')) step.push(line.slice(8))
+    else flush()
+  }
+  flush()
+  return jobs
+}
+
+function stepOf(lines: readonly string[]): Step {
+  const fields = new Map<string, string>()
+  let open: string | undefined
+  for (const line of lines) {
+    const field = /^([\w-]+):\s?(.*)$/.exec(line)
+    if (field?.[1]) {
+      const value = field[2] ?? ''
+      open = value === '' || value === '|' || value === '>-' ? field[1] : undefined
+      fields.set(field[1], open ? '' : value)
+    } else if (open) fields.set(open, `${fields.get(open)}\n${line.trim()}`)
+  }
+  const condition = fields.get('if')
+  return {
+    ...(condition === undefined ? {} : { condition }),
+    run: fields.get('run') ?? '',
+    env: fields.get('env') ?? '',
+  }
+}
+
+/** One `key: value` line of a job block at the given indentation. */
+const jobField = (job: Job, key: string, indent: number) =>
+  new RegExp(`^ {${indent}}${key}: (.+)$`, 'm').exec(job.text)?.[1]?.trim()
+
+/** Evaluates the `&&` comparisons a job or step condition here may use; anything else fails the check. */
+function holds(condition: string | undefined, context: Readonly<Record<string, string>>): boolean {
+  if (condition === undefined) return true
+  const expression = condition.replace(/^\$\{\{\s*/, '').replace(/\s*\}\}$/, '')
+  return expression.split('&&').every((part) => {
+    const match =
+      /^(runner\.os|matrix\.shard|github\.event_name|needs\.changes\.outputs\.docs-only) (==|!=) (?:'([^']*)'|(\d+))$/.exec(
+        part.trim(),
+      )
+    if (!match?.[1]) throw new Error(`unsupported condition: ${part.trim()}`)
+    const same = context[match[1]] === (match[3] ?? match[4])
+    return match[2] === '==' ? same : !same
+  })
+}
+
+/** The runner and matrix shard of every leg a ci.yml job starts, directly or through a reusable workflow. */
+function legs(caller: Job, called: Job | undefined): Leg[] {
+  const job = called ?? caller
+  const runsOn = jobField(job, 'runs-on', 4)
+  const label =
+    called && /^\$\{\{ inputs\.runner \}\}$/.test(runsOn ?? '') ? jobField(caller, 'runner', 6) : runsOn
+  if (!label || label.includes('${{')) throw new Error(`unsupported runner: ${runsOn}`)
+  const matrix = /^ {8}shard: (.+)$/m.exec(job.text)?.[1]?.trim()
+  let shards = ['']
+  if (called && /^\$\{\{ fromJSON\(inputs\.shards\) \}\}$/.test(matrix ?? '')) {
+    const configured = /^ {6}shards: '([^']+)'$/m.exec(caller.text)?.[1]
+    shards = configured ? JSON.parse(configured) : ['']
+  } else if (matrix) {
+    const list = /^\[([\d, ]+)\]$/.exec(matrix)?.[1]
+    if (!list) throw new Error(`unsupported shard matrix: ${matrix}`)
+    shards = list.split(',').map((shard) => shard.trim())
+  }
+  return shards.map((shard) => ({ os: runnerOs(label), shard }))
+}
+
+/** Whether one leg of the shared heavy tier step runs the file, given its shard and Windows exclusion. */
+function heavyTierRuns(step: Step, leg: Leg, file: string): number {
+  const count = /--shard=\$\{\{ matrix\.shard \}\}\/(\d+)/.exec(step.run)?.[1]
+  const exclusion = /AGNES_TEST_EXCLUDE: \$\{\{ runner\.os == 'Windows' && '([^']*)' \|\| '' \}\}/.exec(
+    step.env,
+  )
+  if (!count || !exclusion) throw new Error('unexpected heavy tier step')
+  if (leg.os === 'Windows' && exclusion[1]?.split(',').includes(file)) return 0
+  const shard = heavyShard(`${leg.shard}/${count}`, heavyLists)
+  return (shard.files ? shard.files.includes(file) : !shard.exclude?.includes(file)) ? 1 : 0
+}
+
+/** Every Windows run of a file for one event: explicit file lists plus the heavy tier's shards. */
+function windowsRuns(workflows: Readonly<Record<string, string>>, file: string, event: string): number {
+  let runs = 0
+  for (const caller of workflowJobs(workflows['ci.yml'] ?? '').values()) {
+    const uses = jobField(caller, 'uses', 4)
+    const reusable = uses && /^\.\/\.github\/workflows\/(.+)$/.exec(uses)?.[1]
+    if (uses && (!reusable || workflows[reusable] === undefined))
+      throw new Error(`unknown reusable workflow: ${uses}`)
+    const called = reusable ? [...workflowJobs(workflows[reusable] ?? '').values()] : [undefined]
+    for (const job of called) {
+      const nested = job && jobField(job, 'uses', 4)
+      if (nested) {
+        const text = workflows[nested.replace('./.github/workflows/', '')] ?? ''
+        if (text.includes('run-heavy-shard.mjs') || text.split(/\s+/).includes(file))
+          throw new Error(`unsupported nested heavy workflow: ${nested}`)
+      }
+      const steps = (job ?? caller).steps.filter(
+        (step) => step.run.includes('tools/ci/run-heavy-shard.mjs') || step.run.split(/\s+/).includes(file),
+      )
+      if (steps.length === 0) continue
+      if (job && jobField(job, 'if', 4) !== undefined) throw new Error('unsupported reusable job condition')
+      const windows = legs(caller, job).filter((leg) => leg.os === 'Windows')
+      const scope = { 'github.event_name': event, 'needs.changes.outputs.docs-only': 'false' }
+      if (windows.length === 0 || !holds(jobField(caller, 'if', 4), scope)) continue
+      for (const leg of windows)
+        for (const step of steps) {
+          if (!holds(step.condition, { ...scope, 'runner.os': leg.os, 'matrix.shard': leg.shard })) continue
+          runs += step.run.split(/\s+/).filter((token) => token === file).length
+          if (step.run.includes('tools/ci/run-heavy-shard.mjs')) runs += heavyTierRuns(step, leg, file)
+        }
+    }
+  }
+  return runs
+}
+
+/** Every way the Windows ACL heavy files could lose their Windows coverage or run twice. */
+function windowsAclCoverage(workflows: Readonly<Record<string, string>>, files: readonly string[]): string[] {
+  const problems: string[] = []
+  for (const file of files)
+    for (const event of EVENTS) {
+      const runs = windowsRuns(workflows, file, event)
+      if (runs !== 1) problems.push(`${file} runs ${runs} times on Windows for ${event}`)
+    }
+  for (const text of Object.values(workflows))
+    for (const { steps } of workflowJobs(text).values())
+      for (const step of steps) {
+        const tokens = step.run.split(/\s+/)
+        if (!files.some((file) => tokens.includes(file))) continue
+        for (const token of tokens.filter((token) => token.endsWith('.test.ts')))
+          if (!files.includes(token)) problems.push(`${token} is not a Windows ACL heavy file`)
+      }
+  return problems
+}
+
+/** The workflows with one text replacement in one file; the replacement must apply. */
+function edited(file: string, from: string, to: string): Record<string, string> {
+  const text = actualWorkflows[file] ?? ''
+  const changed = text.replace(from, to)
+  expect(changed, `${file} does not contain ${from}`).not.toBe(text)
+  return { ...actualWorkflows, [file]: changed }
+}
+
+/** The workflows with one ci.yml job's text replaced. */
+function editedJob(job: string, from: string, to: string): Record<string, string> {
+  const text = actualWorkflows['ci.yml'] ?? ''
+  const body = text.split(`\n  ${job}:\n`)[1]?.split(/\n {2}[a-z][a-z0-9-]*:\n/)[0] ?? ''
+  expect(body, `ci.yml job ${job} does not contain ${from}`).toContain(from)
+  return edited('ci.yml', body, body.replace(from, to))
+}
+
+describe('Windows ACL heavy coverage', () => {
+  const files = aclHeavyFiles()
+  const host = 'packages/host/test/windows-acl-execution.e2e.test.ts'
+  const others = ['push', 'schedule', 'workflow_dispatch']
+
+  it('finds every real-Windows ACL execution file', () => {
+    expect(files).toEqual([
+      'packages/daemon/test/windows-acl-detached.e2e.test.ts',
+      'packages/host-infrastructure/test/windows-acl-recovery.e2e.test.ts',
+      host,
+      'packages/system-node/test/process-restricted.e2e.test.ts',
+      'packages/system-node/test/windows-acl.e2e.test.ts',
+    ])
+  })
+
+  it('runs each one exactly once on Windows for every event', () => {
+    expect(windowsAclCoverage(actualWorkflows, files)).toEqual([])
+  })
+
+  it('reports a file that pull requests would not run on Windows', () => {
+    const dropped = edited('ci-windows-acl.yml', `\n          ${host}`, '')
+    expect(windowsAclCoverage(dropped, files)).toEqual([`${host} runs 0 times on Windows for pull_request`])
+    const added = 'packages/system-node/test/windows-acl-added.e2e.test.ts'
+    expect(windowsAclCoverage(actualWorkflows, [...files, added])).toEqual([
+      `${added} runs 0 times on Windows for pull_request`,
+    ])
+    const unused = editedJob(
+      'windows-acl',
+      'uses: ./.github/workflows/ci-windows-acl.yml',
+      'runs-on: windows-latest',
+    )
+    expect(windowsAclCoverage(unused, files)).toEqual(
+      files.map((file) => `${file} runs 0 times on Windows for pull_request`),
+    )
+  })
+
+  it('reports a file the Windows heavy shards hold out on the other events', () => {
+    const held = edited(
+      'ci-platform-heavy.yml',
+      "runner.os == 'Windows' && 'packages/daemon/test/skill-install-requests.slow.test.ts,",
+      `runner.os == 'Windows' && '${host},packages/daemon/test/skill-install-requests.slow.test.ts,`,
+    )
+    expect(windowsAclCoverage(held, files)).toEqual(
+      others.map((event) => `${host} runs 0 times on Windows for ${event}`),
+    )
+  })
+
+  it('reports a second Windows run when the pull request job also runs on the other events', () => {
+    const everyEvent = editedJob('windows-acl', " && github.event_name == 'pull_request'", '')
+    expect(windowsAclCoverage(everyEvent, files)).toEqual(
+      files.flatMap((file) => others.map((event) => `${file} runs 2 times on Windows for ${event}`)),
+    )
+  })
+
+  it('reports a second Windows run when pull requests also run the Windows heavy shards', () => {
+    const windowsHeavy = editedJob('heavy-windows', " && github.event_name != 'pull_request'", '')
+    expect(windowsAclCoverage(windowsHeavy, files)).toEqual(
+      files.map((file) => `${file} runs 2 times on Windows for pull_request`),
+    )
+  })
+
+  it('reports a file listed twice and an unrelated file in the pull request job', () => {
+    const twice = edited(
+      'ci-windows-acl.yml',
+      `\n          ${host}`,
+      `\n          ${host}\n          ${host}`,
+    )
+    expect(windowsAclCoverage(twice, files)).toEqual([`${host} runs 2 times on Windows for pull_request`])
+    const unrelated = edited(
+      'ci-windows-acl.yml',
+      `\n          ${host}`,
+      `\n          ${host}\n          packages/daemon/test/supervisor.e2e.test.ts`,
+    )
+    expect(windowsAclCoverage(unrelated, files)).toEqual([
+      'packages/daemon/test/supervisor.e2e.test.ts is not a Windows ACL heavy file',
+    ])
   })
 })

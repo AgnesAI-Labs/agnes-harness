@@ -11,7 +11,7 @@
 | 发布 | pre-alpha；项目自有代码采用 [Apache-2.0](../../LICENSE)，第三方例外见 [NOTICE](../../NOTICE)；没有公共 npm 发布、消费者安装器或自动更新承诺 |
 | 平台 | macOS 与 Linux 已有持续维护的原生、进程及 Chromium 检查；两个平台都没有像素门禁，截图只作为证据。Windows 完整端到端验收未验证；全新机器安装、签名与升级交付仍需独立发行检查 |
 | Windows Web 静态资源 | 主线已将 URL 路径规范化改为 posix 路径，修复 vendor 资源路由；相关测试在 macOS 通过不等于真实 Windows 浏览器通过 |
-| Windows 安全 | 没有已验证的 L1 命令沙箱，受限 token 与网络隔离仍不可用。私有凭据 ACL 不代表命令已隔离或达到 macOS/Linux 等价支持 |
+| Windows 安全 | 没有 L1 命令沙箱。只读和可修改工作区的命令使用部分的 Windows ACL 写限制（受限令牌、Low 完整性、NTFS ACL）：只限制文件写入，读取与网络不受限，并需要 NTFS 和原生模块。网络隔离仍不可用。私有凭据 ACL 不代表达到 macOS/Linux 等价支持 |
 | Web | 本机回环工作台，不是带远程登录/反向代理支持的公共服务；每个浏览器能力须单独验证 |
 | 普通插件 | 受信进程内代码；`ctx.hooks` 可注册全部 16 类 hook；Service/Projection/Slot/Resource 走各自的 facet，并按行校验 |
 | 联动 | 需 `agnes.plugins` 后端行 + 同 rowId 的 `agnes.clientDescriptors` + 服务定义/策略与当前会话 allow-list；不能把任意 Cordis service 自动远程化 |

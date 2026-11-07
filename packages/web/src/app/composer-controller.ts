@@ -19,6 +19,7 @@ import { defaultPermissionLevel, defaultRecipe, permissionModeOf } from '../sess
 import { webView } from '../view.js'
 import { renderWorkbench, unmountWorkbenchSoon } from '../workbench/dock.js'
 import { currentChats } from '../workspace-picker.js'
+import { isolationNoteKey } from './isolation-note.js'
 
 /** Ends the progress of the session being opened, while one is. */
 let endSessionRead: (() => void) | undefined
@@ -218,6 +219,13 @@ export function createComposerController(
       (context.permissionRefreshPending || context.sessionYoloEnabled === undefined)
     // When the session's model is gone, the first model the configured accounts offer is the way on.
     const fallbackModel = context.runtimeModels[0]
+    const isolationNote = isolationNoteKey({
+      connected: context.connected,
+      os: context.runtimeCatalog?.security?.platform.os,
+      draftingNew: context.draftingNew,
+      currentId: context.current?.id,
+      isolation: context.sessionIsolation,
+    })
     const selectedRecord = context.runtimeModels.find(
       (m) => m.route === context.knownSessionModel?.route && m.id === context.knownSessionModel?.id,
     )
@@ -382,19 +390,7 @@ export function createComposerController(
           }
         : {}),
       permission: {
-        ...(context.connected &&
-        (context.runtimeCatalog?.security?.platform.os === 'win32' ||
-          (!context.draftingNew &&
-            context.sessionIsolation?.sessionId === context.current?.id &&
-            context.sessionIsolation?.disabled))
-          ? {
-              isolationNote: context.t(
-                context.runtimeCatalog?.security?.platform.os === 'win32'
-                  ? 'session.runtime.platformNoCommandIsolation'
-                  : 'session.runtime.noOsIsolation',
-              ),
-            }
-          : {}),
+        ...(isolationNote ? { isolationNote: context.t(isolationNote) } : {}),
         disabled:
           !available ||
           (!context.current && !context.draftingNew) ||

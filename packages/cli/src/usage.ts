@@ -36,6 +36,7 @@ export function usage(locale = 'en'): string {
     'agh computer-use operation [operationId] [--json] | cancel <operationId> [--json]',
     'agh computer-use permissions status|grant [--json]',
     'agh doctor subagents [--json] [--repair]',
+    'agh doctor windows-acl [confirm-replaced] --cwd <root> [--json] [--repair]   inspect AGH’s ACL grant; --repair removes it; confirm-replaced trusts a replaced workspace directory',
     'agh profile list | inspect <p> [--resolved] | trust <deployDir>',
     'agh package [--profile <p>] status|catalog [query]|inspect <src>|add <src>|trust <id> [<integrity> <capabilityHash>] [--yes]',
     '              enable|disable|rollback|remove <id> | operation|cancel <operationId> | source-policy',
