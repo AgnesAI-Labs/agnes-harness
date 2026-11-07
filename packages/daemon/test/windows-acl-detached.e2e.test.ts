@@ -299,15 +299,13 @@ for (const version of ['5.1', '7'] as const)
         expect(written.stdout).toContain('create=ok;directory=ok;rename=ok;remove=ok;temp=ok;outside=denied')
         expect(existsSync(outsideFile)).toBe(false)
 
-        // A read-only session runs no background job (that capability is denied); its commands come
-        // through the shell tool, and their output is on the timeline.
+        // A read-only session refuses a command that writes before it reaches the operating system
+        // (the preset's own rule), and says which boundary a command it did run would be under. What
+        // the token itself denies a read-only command is proved in the system-node and Host files.
         const readOnly = await newSession('read-only')
         const refused = await readOnly.prompt(
           shellCall({
-            command: `${steps([
-              ['create', `Set-Content -LiteralPath 'read-only.txt' -Value 'x'`],
-              ['outside', `Set-Content -LiteralPath ${literal(outsideFile)} -Value 'x'`],
-            ])}\nWrite-Host -NoNewline (';temp=' + $env:TEMP)`,
+            command: `Set-Content -LiteralPath 'read-only.txt' -Value 'x'; Set-Content -LiteralPath ${literal(outsideFile)} -Value 'x'`,
           }),
         )
         expect(refused.reason).toBe('completed')
@@ -317,8 +315,9 @@ for (const version of ['5.1', '7'] as const)
             .filter((node) => node.kind === 'tool')
             .map(({ argsPreview: _command, ...rest }) => rest),
         )
-        expect(answer, answer.slice(0, 3000)).toContain('create=denied;outside=denied')
-        expect(answer).not.toContain(JSON.stringify(daemon.tempRoot).slice(1, -1))
+        expect(answer, answer.slice(0, 3000)).toContain('read-only preset refuses changes')
+        expect(answer).toContain('windows-write-restricted-v1')
+        expect(existsSync(outsideFile)).toBe(false)
         expect(existsSync(join(daemon.workspace, 'read-only.txt'))).toBe(false)
       })
 
