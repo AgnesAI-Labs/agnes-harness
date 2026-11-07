@@ -14,11 +14,10 @@ A business agent needs models and system integrations, along with task records, 
 
 ## Compare design choices
 
-These are source-based architectural comparisons, not performance rankings. The linked dsh and pi revisions fix the scope of the reading; no competitor runtime or paid model benchmark was run for this comparison. Products continue to evolve.
+These are source-based architectural comparisons, not performance rankings. The linked pi revision fixes the scope of the reading; no competitor runtime or paid model benchmark was run for this comparison. Products continue to evolve.
 
 | Approach | Useful starting point | AGH's choice and cost |
 | --- | --- | --- |
-| [dsh](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/boot/hmr/src/index.ts) | Cordis module/configuration reload is a developer iteration path; its [system-prompt composer](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/core/system-prompt/src/index.ts) organizes sections and persona overrides. | AGH makes durable per-session code snapshots an explicit contract, distinct from module reload. Old/new versions coexist, costing retained storage and lifecycle coordination. Live resources still refresh. This comparison does not claim dsh cannot support other versioning designs. |
 | [pi coding agent](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/core/session-manager.ts) | Its JSONL session manager exposes branches and conversation history, a useful base for a coding client. | AGH adds a shared authenticated App Server and installable business compositions, candidate review and UI evidence. This brings more control-plane and package-management machinery; choose the smaller client when those surfaces are unnecessary. |
 | [LangGraph persistence](https://docs.langchain.com/oss/python/langgraph/persistence) | Threads, checkpoints and pending writes support stateful graph applications. | AGH supplies a business-agent product shell around plugin Loops and ledger-owned effects. Graph libraries leave more application policy and UI assembly to the integrator. Neither checkpointing nor AGH's ledger creates an atomic transaction with arbitrary external systems. |
 
