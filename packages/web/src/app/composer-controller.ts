@@ -221,6 +221,10 @@ export function createComposerController(
     const selectedRecord = context.runtimeModels.find(
       (m) => m.route === context.knownSessionModel?.route && m.id === context.knownSessionModel?.id,
     )
+    const displayedModel = context.knownSessionModel && {
+      ...context.knownSessionModel,
+      ...(selectedRecord?.name ? { name: selectedRecord.name } : {}),
+    }
     const imageUnsupported =
       images.some((block) => block.type === 'image') && !userImagePolicy(selectedRecord).supported
     const queueAction = context.submissions.queueAction
@@ -350,7 +354,7 @@ export function createComposerController(
       loading: context.sessionPending,
       model: {
         auxiliaryAvailable: !!context.current,
-        accessibleName: modelSelectAccessibleName(context.knownSessionModel, context.t),
+        accessibleName: modelSelectAccessibleName(displayedModel, context.t),
         disabled:
           !available ||
           (!context.current && !context.draftingNew) ||
@@ -360,7 +364,7 @@ export function createComposerController(
           !context.runtimeModels.length,
         // A running reply is the one temporary lock worth explaining on the trigger.
         ...(available && busy ? { disabledReason: context.t('settings.modelPicker.busy') } : {}),
-        label: modelSelectLabel(context.knownSessionModel, context.t),
+        label: modelSelectLabel(displayedModel, context.t),
         options: context.runtimeModels,
         pending: context.modelChangePending,
         ...(context.knownSessionModel ? { selected: context.knownSessionModel } : {}),

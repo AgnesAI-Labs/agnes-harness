@@ -85,6 +85,7 @@ import {
   loopIdentity,
   type NewSessionCatalog,
 } from './loop-picker.js'
+import { namedModels } from './model-picker/state.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { businessAgentSuggestions } from './pages/business-agents.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
@@ -1110,7 +1111,7 @@ let sessionPending = new URLSearchParams(location.search).get('new') === '1'
 let stopAfterSeq = 0
 let approvalBusy = false
 let runtimeModels: ModelPickerOption[] = []
-let accountLabels = new Map<string, string>()
+let configuredAccounts: ConfigSnapshot['accounts'] = []
 let accountProvider: { route?: string; id?: string; model?: string } | null = null
 let knownSessionModel: KnownSessionModel | undefined
 let initialModelPending: KnownSessionModel | undefined
@@ -1861,10 +1862,7 @@ async function refreshModels(catalogReady?: Promise<void>): Promise<ModelPickerO
   const apis = await client.apis()
   // Start the model read immediately; defaults and labels must settle before selection is applied.
   await catalogReady
-  const models = (apis.profile.models ?? []).map((model) => ({
-    ...model,
-    ...(accountLabels.has(model.route) ? { label: accountLabels.get(model.route) as string } : {}),
-  }))
+  const models = namedModels(apis.profile.models ?? [], configuredAccounts ?? [])
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models
@@ -2082,7 +2080,7 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
   firstRun.updated(saved)
   notice.setKind('')
   accountProvider = saved.provider
-  accountLabels = new Map((saved.accounts ?? []).map((row) => [row.route, row.label]))
+  configuredAccounts = saved.accounts
   await modelRefresh.request()
   const savedModels = runtimeModels
   const published = savedModels.some(
@@ -2253,7 +2251,7 @@ onHistoryNavigation(() => {
 async function refreshModelConfiguration(): Promise<void> {
   const snapshot = await client.config.get()
   accountProvider = snapshot.provider
-  accountLabels = new Map((snapshot.accounts ?? []).map((row) => [row.route, row.label]))
+  configuredAccounts = snapshot.accounts
   const catalogReady = refreshSessionCatalog()
   await Promise.all([catalogReady, refreshModels(catalogReady)])
 }
@@ -2335,7 +2333,7 @@ run(async () => {
   void skinGroup.refresh()
   // A session selection reads its own roster. Defer the profile-only read until we know there
   // is no session to open, so startup never verifies and imports the same modules twice.
-  accountLabels = new Map((snapshot.accounts ?? []).map((row) => [row.route, row.label]))
+  configuredAccounts = snapshot.accounts
   // Existing conversations do not need a model catalog to open. Keep its read in flight while
   // the session and workspace lists resolve; only new-draft defaults depend on its result.
   const models = refreshModels().then(

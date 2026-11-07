@@ -6,7 +6,7 @@ import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { createRegionRenderer, installFeedbackSink, type RegionRenderer } from '@agnes/web-ui'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { groupModels } from '../src/model-picker/state.js'
+import { groupModels, namedModels } from '../src/model-picker/state.js'
 import {
   ModelPickerControl,
   type ModelPickerOption,
@@ -176,6 +176,21 @@ afterEach(() => {
 })
 
 describe('model catalog grouping', () => {
+  it('resolves names by account and API id without changing runtime identities or capabilities', () => {
+    const catalog = [currentModel, { ...currentModel, route: 'other' }, { route: 'unknown', id: 'raw' }]
+    const accounts = ['openai', 'other'].map((route) => ({
+      route,
+      label: route,
+      models: [{ id: currentModel.id, name: `${route} model` }],
+    }))
+    const result = namedModels(catalog, accounts)
+    expect(result.map((model) => model.name)).toEqual(['openai model', 'other model', undefined])
+    expect(result.map(({ name: _name, label: _label, ...model }) => model)).toEqual(
+      catalog.map(({ label: _label, ...model }) => model),
+    )
+    expect(catalog[0]).not.toHaveProperty('name')
+  })
+
   it('groups by provider account in catalog order and numbers the visible rows', () => {
     const groups = groupModels(models, '', '已配置账户')
     expect(groups.map((group) => [group.label, group.entries.map((entry) => entry.option.id)])).toEqual([
@@ -193,10 +208,24 @@ describe('model catalog grouping', () => {
     expect(groupModels(models, '本机', 'x')[0]?.entries[0]?.option.id).toBe('local-model')
     expect(groupModels(models, 'deepseek', 'x')[0]?.entries[0]?.index).toBe(0)
     expect(groupModels(models, 'nothing', 'x')).toEqual([])
+    const named = { ...currentModel, name: 'Full model name' }
+    expect(groupModels([named], 'Full model', 'x')[0]?.entries[0]?.option).toEqual(named)
   })
 })
 
 describe('model picker', () => {
+  it('shows the model name while selection keeps its original route and API id', async () => {
+    const named = { ...currentModel, name: 'Full model name' }
+    const { trigger, onSelect } = mountPicker({ options: [named], selected: undefined })
+    await open(trigger)
+    const entry = row('Full model name')
+    expect(entry.getAttribute('title')).toBe(currentModel.id)
+    entry.click()
+    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith(named))
+    expect(named.id).toBe(currentModel.id)
+    expect(named.route).toBe(currentModel.route)
+  })
+
   it('shows the model and its reasoning level on the trigger', () => {
     const { trigger, render } = mountPicker()
     expect(trigger.querySelector('[data-model-label]')?.textContent).toBe('gpt-5.6')

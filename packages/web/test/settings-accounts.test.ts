@@ -346,6 +346,7 @@ it('creates a distinct same-provider account and manages defaults with revision 
   expect(h.input('config-model').value).toBe('m')
   expect(h.input('config-save').disabled).toBe(false)
   expect(h.input('config-model-trigger').disabled).toBe(false)
+  expect(h.input('config-model-trigger').textContent).toBe('Model')
   await h.click('#config-model-trigger')
   await h.click('#config-model-listbox-0')
   // An empty choice is not a default model to save, so the button says so.
