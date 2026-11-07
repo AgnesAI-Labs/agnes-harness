@@ -171,19 +171,20 @@ export function renderAccountKeyHint(
     saved &&
     ui.baseUrl.value.trim() &&
     saved.baseUrl.replace(/\/$/, '') !== ui.baseUrl.value.trim().replace(/\/$/, '')
-  ui.keyHint.textContent = tr(
-    oauth
-      ? 'settings.key.oauthHint'
-      : endpointChanged
-        ? providerId === COMPATIBLE_PROVIDER
-          ? 'settings.key.optionalHint'
-          : 'settings.key.endpointChanged'
-        : connected && saved?.id === providerId && saved.credentialConfigured
-          ? 'settings.key.savedHint'
-          : connected
-            ? providerId === COMPATIBLE_PROVIDER
-              ? 'settings.key.optionalHint'
-              : 'settings.key.inputHint'
-            : 'settings.key.offlineCleared',
-  )
+  // A compatible endpoint's key is optional, and the field's placeholder already says so; a second
+  // line repeating it is noise.
+  ui.keyHint.textContent =
+    !oauth && providerId === COMPATIBLE_PROVIDER
+      ? ''
+      : tr(
+          oauth
+            ? 'settings.key.oauthHint'
+            : endpointChanged
+              ? 'settings.key.endpointChanged'
+              : connected && saved?.id === providerId && saved.credentialConfigured
+                ? 'settings.key.savedHint'
+                : connected
+                  ? 'settings.key.inputHint'
+                  : 'settings.key.offlineCleared',
+        )
 }
