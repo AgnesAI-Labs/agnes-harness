@@ -1,4 +1,5 @@
 import {
+  accountSaveDisabledReason,
   Button,
   createRegionRenderer,
   Disclosure,
@@ -63,6 +64,29 @@ function SettingsFixture() {
               </div>
               <fieldset className="config-section account-connection">
                 <legend>{text('accounts.connectionLegend', '连接')}</legend>
+                <div className="account-field form-field-wide account-endpoint">
+                  <div className="account-field-head">
+                    <label className="form-field" htmlFor="config-base-url">
+                      <span>{text('settings-shell.baseUrlLabel', 'Base URL')}</span>
+                    </label>
+                    <Button
+                      id="config-base-url-reset"
+                      htmlType="button"
+                      appearance="link"
+                      size="small"
+                      hidden
+                    >
+                      <span>{text('accounts.resetBaseUrl', '恢复默认')}</span>
+                    </Button>
+                  </div>
+                  <SettingsInput
+                    id="config-base-url"
+                    autoComplete="url"
+                    aria-describedby="config-base-url-hint"
+                  />
+                  <p id="config-base-url-hint" className="field-hint" />
+                  <p id="config-base-url-error" className="account-field-error" />
+                </div>
                 <div id="config-auth-method-field" className="account-auth-method">
                   <span hidden>
                     <SettingsSelect id="config-auth-method" />
@@ -179,29 +203,6 @@ function SettingsFixture() {
                     <p id="config-account-name-error" className="account-field-error" />
                   </div>
                   <div className="account-field">
-                    <div className="account-field-head">
-                      <label className="form-field" htmlFor="config-base-url">
-                        <span>{text('settings-shell.baseUrlLabel', 'Base URL')}</span>
-                      </label>
-                      <Button
-                        id="config-base-url-reset"
-                        htmlType="button"
-                        appearance="link"
-                        size="small"
-                        hidden
-                      >
-                        <span>{text('accounts.resetBaseUrl', '恢复默认')}</span>
-                      </Button>
-                    </div>
-                    <SettingsInput
-                      id="config-base-url"
-                      autoComplete="url"
-                      aria-describedby="config-base-url-hint"
-                    />
-                    <p id="config-base-url-hint" className="field-hint" />
-                    <p id="config-base-url-error" className="account-field-error" />
-                  </div>
-                  <div className="account-field">
                     <div id="config-account-network" />
                     <p id="config-account-network-error" className="account-field-error" />
                   </div>
@@ -232,7 +233,14 @@ function SettingsFixture() {
               <Button id="config-account-cancel" htmlType="button" appearance="secondary">
                 <span>{text('accounts.cancel', '取消')}</span>
               </Button>
-              <Button id="config-save" form="config-form" disabled htmlType="submit" appearance="primary">
+              <Button
+                id="config-save"
+                form="config-form"
+                disabled
+                htmlType="submit"
+                appearance="primary"
+                disabledReason={accountSaveDisabledReason}
+              >
                 <span>{text('settings-shell.saveAccount', '保存账户')}</span>
               </Button>
             </div>
