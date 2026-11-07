@@ -84,8 +84,7 @@ export type WindowsExecutionPlan = Readonly<{
 export const executionRecordRefusal = (why?: string): Error =>
   Object.assign(
     new Error(
-      // TEMPORARY DIAGNOSIS: the reason rides in the message until the Windows reopen failure is found.
-      `E_SANDBOX_WORKSPACE: saved execution policy is missing or incompatible; keep this history and create a new session${why ? ` [${why}]` : ''}`,
+      'E_SANDBOX_WORKSPACE: saved execution policy is missing or incompatible; keep this history and create a new session',
       why ? { cause: new Error(why) } : undefined,
     ),
     { code: 'E_SANDBOX_WORKSPACE', reason: 'session-execution-record-invalid' },

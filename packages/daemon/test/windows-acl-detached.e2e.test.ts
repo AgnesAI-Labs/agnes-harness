@@ -311,9 +311,14 @@ for (const version of ['5.1', '7'] as const)
           }),
         )
         expect(refused.reason).toBe('completed')
-        const shown = await timeline(readOnly)
-        expect(shown).toContain('create=denied;outside=denied')
-        expect(shown).not.toContain(daemon.tempRoot.replaceAll('\\', '\\\\'))
+        // What the session answered, without the command it was given.
+        const answer = JSON.stringify(
+          (JSON.parse(await timeline(readOnly)).nodes as Array<{ kind: string }>).filter(
+            (node) => node.kind !== 'user',
+          ),
+        )
+        expect(answer, answer.slice(0, 3000)).toContain('create=denied;outside=denied')
+        expect(answer).not.toContain(JSON.stringify(daemon.tempRoot).slice(1, -1))
         expect(existsSync(join(daemon.workspace, 'read-only.txt'))).toBe(false)
       })
 
