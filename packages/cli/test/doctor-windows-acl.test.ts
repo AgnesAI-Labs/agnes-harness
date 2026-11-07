@@ -77,7 +77,7 @@ describe('agh doctor windows-acl', () => {
     expect(result.text).toContain('Low integrity label')
     // Removing the grant and trusting a replaced directory are two separate commands.
     expect(result.text).toContain(`agh doctor windows-acl --cwd ${root} --repair `)
-    expect(result.text).toContain(`agh doctor windows-acl --cwd ${root} --confirm-replaced`)
+    expect(result.text).toContain(`agh doctor windows-acl confirm-replaced --cwd ${root}`)
   })
 
   it('repairs only after inspecting, with the inspected grant and record digest, and confirms nothing', async () => {
@@ -94,12 +94,12 @@ describe('agh doctor windows-acl', () => {
     expect(result.exitCode).toBe(0)
     expect(result.text).toContain('grant revoked')
     expect(result.text).toContain('session-a')
-    expect(result.text).toContain('--confirm-replaced')
+    expect(result.text).toContain('confirm-replaced')
   })
 
   it('confirms replaced sessions only when asked, and never touches the grant', async () => {
     const { deps, maintenance } = setup({ replaced: ['session-a', 'session-b'] })
-    const result = await run(deps, '--confirm-replaced')
+    const result = await run(deps, 'confirm-replaced')
     expect(maintenance.repair).not.toHaveBeenCalled()
     expect(maintenance.confirmWorkspace).toHaveBeenCalledWith(root, 'session-a')
     expect(maintenance.confirmWorkspace).toHaveBeenCalledWith(root, 'session-b')
@@ -113,22 +113,21 @@ describe('agh doctor windows-acl', () => {
     maintenance.confirmWorkspace.mockRejectedValueOnce(
       Object.assign(new Error('record moved'), { code: 'E_ACL_STATE_UNSAFE' }),
     )
-    const result = await run(deps, '--confirm-replaced')
+    const result = await run(deps, 'confirm-replaced')
     expect(result.exitCode).toBe(1)
     expect(result.text).toContain('not confirmed session-a')
   })
 
-  it('does both only when both were asked for', async () => {
-    const { deps, maintenance } = setup({ replaced: ['session-a'] })
-    const result = await run(deps, '--repair', '--confirm-replaced')
-    expect(maintenance.repair).toHaveBeenCalledOnce()
-    expect(maintenance.confirmWorkspace).toHaveBeenCalledWith(root, 'session-a')
-    expect(result.exitCode).toBe(0)
+  it('refuses to confirm and repair in one command', async () => {
+    const { deps, open } = setup({ replaced: ['session-a'] })
+    const result = await run(deps, 'confirm-replaced', '--repair')
+    expect(result.exitCode).toBe(2)
+    expect(open).not.toHaveBeenCalled()
   })
 
   it('says there is nothing to confirm when no directory was replaced', async () => {
     const { deps, maintenance } = setup()
-    const result = await run(deps, '--confirm-replaced')
+    const result = await run(deps, 'confirm-replaced')
     expect(maintenance.confirmWorkspace).not.toHaveBeenCalled()
     expect(result.exitCode).toBe(0)
     expect(result.text).toContain('no replaced workspace to confirm')

@@ -394,7 +394,7 @@ describe('version 2 records', () => {
     expect(() => store.verifyWindowsExecution('s', replaced, true)).toThrow(refusedForConfirmation)
     // The refusal names the one command that confirms it, run outside the session.
     expect(() => store.verifyWindowsExecution('s', replaced, true)).toThrow(
-      'agh doctor windows-acl --cwd C:\\work --confirm-replaced',
+      'agh doctor windows-acl confirm-replaced --cwd C:\\work',
     )
     expect(readFileSync(recordFile(profileDir, 's'), 'utf8')).toBe(bytes)
 

@@ -96,7 +96,6 @@ export type ParsedArgs = {
   standalone?: boolean
   json: boolean
   repair: boolean
-  confirmReplaced: boolean
   upgrade: boolean
   format?: 'agnes' | 'sharegpt' | 'claude-code'
   html: boolean

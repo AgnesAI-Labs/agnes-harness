@@ -91,7 +91,6 @@ describe('parseArgs: the common forms', () => {
       html: false,
       raw: false,
       repair: false,
-      confirmReplaced: false,
       upgrade: false,
       resolved: false,
       archived: false,

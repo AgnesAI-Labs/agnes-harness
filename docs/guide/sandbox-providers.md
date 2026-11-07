@@ -97,7 +97,7 @@ Side effects on the workspace:
 - A hard-linked file inside the workspace, for example a pnpm store file, can be changed through the grant from its other names outside the workspace.
 - Moving a directory on the same volume can carry its ACLs with the moved object. Moves are not tracked.
 - Session extra directories and `extra_paths` get no write access. Commands that write there are denied.
-- A workspace directory that was replaced by another one at the same path is not trusted. The session refuses its commands and does not open again, and its history is kept. The confirmation happens outside the session: check the new directory, run `agh doctor windows-acl --cwd <root> --confirm-replaced`, then open the session again in place. A session whose saved workspace path or id no longer matches is not a replaced directory; no confirmation accepts it, its history is kept, and it needs a new session.
+- A workspace directory that was replaced by another one at the same path is not trusted. The session refuses its commands and does not open again, and its history is kept. The confirmation happens outside the session: check the new directory, run `agh doctor windows-acl confirm-replaced --cwd <root>`, then open the session again in place. A session whose saved workspace path or id no longer matches is not a replaced directory; no confirmation accepts it, its history is kept, and it needs a new session.
 
 Limits inside a confined command:
 
@@ -109,7 +109,7 @@ Each session has its own lease, with its own private temporary directory. A fork
 
 Sessions created by an earlier version keep their history. A session that used an official permission overlay moves to the new rule when the session is opened; only the lease is taken, on the first command. A session with a stricter custom requirement is refused and its record is kept.
 
-`agh doctor windows-acl --cwd <root>` shows the grant state for a workspace and lists sessions whose workspace directory was replaced. It is read-only by default. `--repair` removes AGH's own grant entries; entries that someone else changed are kept and reported. `--confirm-replaced` trusts the directory now at the root for the sessions listed as replaced, in place (this is the only way to confirm one); it does not touch the grant, and `--repair` never confirms a replaced directory. A grant that a running session still uses is not removed. Run it in a normal terminal as the Windows user that runs AGH; it does not elevate. `--json` prints the report.
+`agh doctor windows-acl --cwd <root>` shows the grant state for a workspace and lists sessions whose workspace directory was replaced. It is read-only by default. `--repair` removes AGH's own grant entries; entries that someone else changed are kept and reported. `agh doctor windows-acl confirm-replaced --cwd <root>` trusts the directory now at the root for the sessions listed as replaced, in place (this is the only way to confirm one); it does not touch the grant, and `--repair` never confirms a replaced directory. A grant that a running session still uses is not removed. Run it in a normal terminal as the Windows user that runs AGH; it does not elevate. `--json` prints the report.
 
 ## Conditional local isolation
 

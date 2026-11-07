@@ -95,7 +95,7 @@ export async function doctorWindowsAcl(
         )
       if (replaced.length > 0)
         detail.push(
-          `check the directory now at ${root}, then run agh doctor windows-acl --cwd ${root} --confirm-replaced to trust it for the sessions listed above`,
+          `check the directory now at ${root}, then run agh doctor windows-acl confirm-replaced --cwd ${root} to trust it for the sessions listed above`,
         )
       const status = inspected.state === 'needs-attention' ? 'fail' : replaced.length > 0 ? 'warn' : 'ok'
       return done(
@@ -139,7 +139,7 @@ export async function doctorWindowsAcl(
     } else if (replaced.length > 0) {
       // Cleaning up permissions never trusts a replaced directory; that is its own decision.
       detail.push(
-        `sessions whose workspace directory was replaced are not confirmed: ${replaced.join(', ')}; check the directory now at ${root}, then run agh doctor windows-acl --cwd ${root} --confirm-replaced`,
+        `sessions whose workspace directory was replaced are not confirmed: ${replaced.join(', ')}; check the directory now at ${root}, then run agh doctor windows-acl confirm-replaced --cwd ${root}`,
       )
     }
     const final = repaired ?? inspected

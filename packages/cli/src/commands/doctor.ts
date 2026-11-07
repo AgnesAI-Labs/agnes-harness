@@ -117,13 +117,17 @@ export async function doctorCommand(
     return { text: result.text, json: [result.section], exitCode: result.exitCode }
   }
   if (parsed.positional[0] === 'windows-acl') {
-    if (parsed.positional.length !== 1)
+    // `confirm-replaced` is its own decision, never a side effect of --repair: it trusts a directory.
+    const confirmReplaced = parsed.positional[1] === 'confirm-replaced'
+    if (parsed.positional.length !== (confirmReplaced ? 2 : 1))
       return { text: 'unknown or extra doctor section', json: [], exitCode: 2 }
+    if (confirmReplaced && parsed.repair)
+      return { text: 'doctor windows-acl confirm-replaced does not take --repair', json: [], exitCode: 2 }
     const { section, payload } = await doctorWindowsAcl(
       parsed.cwd ?? deps.cwd,
       {
         repair: parsed.repair,
-        confirmReplaced: parsed.confirmReplaced,
+        confirmReplaced,
         ...(deps.signal ? { signal: deps.signal } : {}),
       },
       deps.windowsAcl ?? windowsAclDoctorDeps(deps, profileNameFrom(parsed, deps.env)),
