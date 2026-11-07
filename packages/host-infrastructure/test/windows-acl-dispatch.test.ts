@@ -192,7 +192,8 @@ describe('same root, separate sessions', () => {
     })
     expect(sealed(0)).toMatchObject({ mode: 'workspace-write' })
     expect(sealed(1)).toEqual({ mode: 'read-only', root: world.workspace, writeSids: [] })
-    expect(launched(1).env.TEMP).toBeUndefined()
+    // A read-only target has no private temp; it keeps whatever temp the caller's environment had.
+    expect(launched(1).env.TEMP).toBe(process.env.TEMP)
     // Full access is the existing unconfined Job launch; no permit, no confinement.
     expect(launched(2).confinement).toBeUndefined()
     expect(mocks.seal).toHaveBeenCalledTimes(2)

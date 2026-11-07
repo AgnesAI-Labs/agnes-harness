@@ -80,10 +80,12 @@ export type WindowsExecutionPlan = Readonly<{
   changed: boolean
 }>
 
-export const executionRecordRefusal = (): Error =>
+/** `why` names the check that refused, as the error's cause; the message the person sees is unchanged. */
+export const executionRecordRefusal = (why?: string): Error =>
   Object.assign(
     new Error(
       'E_SANDBOX_WORKSPACE: saved execution policy is missing or incompatible; keep this history and create a new session',
+      why ? { cause: new Error(why) } : undefined,
     ),
     { code: 'E_SANDBOX_WORKSPACE', reason: 'session-execution-record-invalid' },
   )
@@ -485,7 +487,7 @@ export function planWindowsExecution(input: {
     !isIntent(permissionIntent) ||
     (current.backend === 'windows-acl' && !rootIdentity)
   )
-    throw executionRecordRefusal()
+    throw executionRecordRefusal('current execution, permission intent or root identity is not usable')
   const fresh = (
     reason: ExecutionGenerationReason,
     legacy?: Readonly<{ record: LegacyRecord; digest: string }>,
@@ -506,7 +508,9 @@ export function planWindowsExecution(input: {
   }
   if (input.bytes === undefined) {
     if (input.mode === 'confirm' || (input.hasHistory && !input.canAdoptHistory(current)))
-      throw executionRecordRefusal()
+      throw executionRecordRefusal(
+        `no record, mode ${input.mode}, history ${input.hasHistory}, backend ${current.backend}, enforcement ${current.enforcement}`,
+      )
     return fresh(input.hasHistory ? 'history-adoption' : 'new-session')
   }
   const value = parse(input.bytes)
@@ -519,7 +523,11 @@ export function planWindowsExecution(input: {
   const record = readRecord(key, value)
   const head = record?.generations.at(-1)
   if (!record || !head || !isDeepStrictEqual(record.permissionIntent, permissionIntent))
-    throw executionRecordRefusal()
+    throw executionRecordRefusal(
+      record && head
+        ? `permission intent changed: recorded ${JSON.stringify(record.permissionIntent)}, now ${JSON.stringify(permissionIntent)}`
+        : 'the saved record cannot be read',
+    )
   const append = (reason: ExecutionGenerationReason): WindowsExecutionPlan => {
     const next = generation(
       key,
@@ -545,14 +553,16 @@ export function planWindowsExecution(input: {
   const { generationId: _id, rootIdentity: _root, reason: _reason, evidenceDigest: _digest, ...facts } = head
   if (input.mode === 'confirm') {
     if (!sameWorkspace || !replaced || !isDeepStrictEqual(execution(facts), current))
-      throw executionRecordRefusal()
+      throw executionRecordRefusal('the workspace to confirm is not the replaced one this session recorded')
     return append('workspace-confirmed')
   }
   // Another workspace is not a replaced directory: no confirmation can accept it.
-  if (!sameWorkspace) throw executionRecordRefusal()
+  if (!sameWorkspace) throw executionRecordRefusal('another workspace')
   if (replaced) throw confirmationRefusal(current.workspaceRoot)
   if (isDeepStrictEqual(execution(facts), current) && sameIdentity(head.rootIdentity, rootIdentity))
     return { record, generation: head, changed: false }
   if (strengthens(facts, current, permissionIntent)) return append('backend-change')
-  throw executionRecordRefusal()
+  throw executionRecordRefusal(
+    `execution weakened or changed: recorded ${JSON.stringify(execution(facts))}, now ${JSON.stringify(current)}`,
+  )
 }

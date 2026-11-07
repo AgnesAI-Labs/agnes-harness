@@ -105,6 +105,31 @@ async function run(child: WindowsJobProcess, input = '') {
   const completion = await child.completion
   return { completion, stdout: await stdout, stderr: await stderr }
 }
+/** The security descriptor (owner, DACL, label) of a process object, read from this unrestricted test. */
+function processSddl(pid: number): string {
+  const script = `$ErrorActionPreference = 'Stop'
+    Add-Type -TypeDefinition @'
+    using System; using System.Runtime.InteropServices;
+    public static class Agh {
+      [DllImport("kernel32.dll", SetLastError = true)] public static extern IntPtr OpenProcess(uint a, bool i, uint p);
+      [DllImport("advapi32.dll")] public static extern uint GetSecurityInfo(IntPtr h, int t, uint i, IntPtr o, IntPtr g, IntPtr d, IntPtr s, out IntPtr sd);
+      [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool ConvertSecurityDescriptorToStringSecurityDescriptor(IntPtr sd, uint r, uint i, out IntPtr s, out uint n);
+    }
+'@
+    $h = [Agh]::OpenProcess(0x20000, $false, ${pid})
+    $sd = [IntPtr]::Zero
+    [void][Agh]::GetSecurityInfo($h, 6, 0x15, [IntPtr]::Zero, [IntPtr]::Zero, [IntPtr]::Zero, [IntPtr]::Zero, [ref]$sd)
+    $text = [IntPtr]::Zero; $n = 0
+    [void][Agh]::ConvertSecurityDescriptorToStringSecurityDescriptor($sd, 1, 0x15, [ref]$text, [ref]$n)
+    [Runtime.InteropServices.Marshal]::PtrToStringUni($text)`
+  try {
+    return execFileSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
+      encoding: 'utf8',
+    }).trim()
+  } catch (error) {
+    return `unreadable: ${String(error).slice(0, 300)}`
+  }
+}
 const settle = () => new Promise((resolve) => setTimeout(resolve, 500))
 
 describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { timeout: 120_000 }, () => {
@@ -223,9 +248,39 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
     const result = await run(reader, script)
     expect(result.completion.code, result.stderr).toBe(0)
     // The reader can find the writer, but can neither write its memory nor open it fully.
-    expect(JSON.parse(result.stdout)).toEqual({ query: true, write: false, writeError: 5, all: false })
+    expect(
+      JSON.parse(result.stdout),
+      `writer ${writer.pid} reader ${reader.pid}; writer process descriptor: ${processSddl(writer.pid)}; reader: ${processSddl(reader.pid)}`,
+    ).toEqual({ query: true, write: false, writeError: 5, all: false })
     writer.terminate()
     await writer.completion
+  })
+
+  it('shows which child launches a restricted target can make', async () => {
+    const probe = `const cp = require('node:child_process'); const net = require('node:net'); const out = {};
+      const run = (name, fn) => { try { fn(); out[name] = 'ok' } catch (e) { out[name] = e.code + ' ' + e.syscall } };
+      const node = process.execPath;
+      run('ignore', () => cp.execFileSync(node, ['-e', '0'], { stdio: 'ignore' }));
+      run('pipe-out', () => cp.execFileSync(node, ['-e', '0'], { stdio: ['ignore', 'pipe', 'ignore'] }));
+      run('pipe-in', () => cp.execFileSync(node, ['-e', '0'], { stdio: ['pipe', 'ignore', 'ignore'] }));
+      run('inherit', () => cp.execFileSync(node, ['-e', '0'], { stdio: 'inherit' }));
+      run('cmd', () => cp.execFileSync(process.env.ComSpec, ['/c', 'exit 0'], { stdio: 'ignore' }));
+      const done = () => process.stdout.write(JSON.stringify(out));
+      const server = net.createServer();
+      server.on('error', (e) => { out['named-pipe'] = e.code + ' ' + e.syscall; done() });
+      server.listen('\\\\\\\\.\\\\pipe\\\\agh-probe-' + process.pid, () => { out['named-pipe'] = 'ok'; server.close(done) });`
+    const child = await confined([process.execPath, '-e', probe], readOnly(temporary()))
+    const result = await run(child)
+    // Temporary diagnosis: prints the probe; the assertion below only fails while a launch is refused.
+    console.log('restricted child launch probe', result.stdout, result.stderr)
+    expect(JSON.parse(result.stdout)).toEqual({
+      ignore: 'ok',
+      'pipe-out': 'ok',
+      'pipe-in': 'ok',
+      inherit: 'ok',
+      cmd: 'ok',
+      'named-pipe': 'ok',
+    })
   })
 
   it('pipes a restricted child of the target and reaps a resident descendant after the main exit', async () => {
@@ -284,6 +339,10 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
     ['PowerShell 7', 'pwsh.exe', '7'],
   ])('runs %s with stdin and its exit code', async (_name, shell, major) => {
     const workspace = temporary()
+    // PowerShell probes its temp for a script policy file and runs in Constrained Language Mode,
+    // which refuses [Console]::Out.Write, when it cannot write there; an open directory gives it one.
+    const scratch = open()
+    const withTemp = { env: { ...env(), TEMP: scratch, TMP: scratch } }
     const command = await confined(
       [
         shell,
@@ -294,6 +353,7 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
         '[Console]::Out.Write("ps" + $PSVersionTable.PSVersion.Major); exit 7',
       ],
       readOnly(workspace),
+      withTemp,
     )
     const result = await run(command)
     expect(result.completion.code, result.stderr).toBe(7)
@@ -301,6 +361,7 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
     const piped = await confined(
       [shell, '-NoLogo', '-NoProfile', '-NonInteractive', '-OutputFormat', 'Text', '-Command', '-'],
       readOnly(workspace),
+      withTemp,
     )
     const fromStdin = await run(piped, '[Console]::Out.Write("from-stdin")\nexit 4\n')
     expect(fromStdin.completion.code, fromStdin.stderr).toBe(4)

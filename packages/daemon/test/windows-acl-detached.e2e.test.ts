@@ -216,9 +216,16 @@ for (const version of ['5.1', '7'] as const)
         daemon?.stop()
       }, 120_000)
 
+      let opened = 0
+      // One workspace names one session unless the caller names another, and an open session of one
+      // level refuses to be opened at a different level, so every session here has its own key.
       async function newSession(permission: 'workspace-write' | 'read-only' = 'workspace-write') {
         const session = await answered(`session.new ${permission}`, () =>
-          client.session.new({ cwd: daemon.workspace, permission }),
+          client.session.new({
+            cwd: daemon.workspace,
+            permission,
+            sessionKey: `acl-${version}-${++opened}-${permission}`,
+          }),
         )
         session.onPermissionRequest(async () => ({ verdict: 'allowed-once' }))
         return session
@@ -271,7 +278,9 @@ for (const version of ['5.1', '7'] as const)
               ([name, body]) =>
                 `try { ${body} | Out-Null; $results += ${literal(`${name}=ok`)} } catch { $results += ${literal(`${name}=denied`)} }`,
             ),
-            "[Console]::Out.Write($results -join ';')",
+            // A read-only PowerShell has no writable temp and runs in Constrained Language Mode, which
+            // refuses method calls such as [Console]::Out.Write.
+            "Write-Host -NoNewline ($results -join ';')",
           ].join('\n')
         const written = await (
           await job(
@@ -297,7 +306,7 @@ for (const version of ['5.1', '7'] as const)
             `${steps([
               ['create', `Set-Content -LiteralPath 'read-only.txt' -Value 'x'`],
               ['outside', `Set-Content -LiteralPath ${literal(outsideFile)} -Value 'x'`],
-            ])}\n[Console]::Out.Write(';temp=' + $env:TEMP)`,
+            ])}\nWrite-Host -NoNewline (';temp=' + $env:TEMP)`,
           )
         ).done()
         expect(refused, JSON.stringify(refused)).toMatchObject({ status: 'completed', code: 0 })
