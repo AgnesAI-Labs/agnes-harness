@@ -339,7 +339,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     const previousModel = ui.models.value
     setSettingsSelectOptions(ui.models, [
       option(models.length ? tr('settings.model.chooseSaved') : tr('settings.model.testFirst'), ''),
-      ...models.map((model) => option(`${model.name} · ${model.id}`, model.id)),
+      ...models.map((model) => option(model.name.trim() || model.id, model.id)),
     ])
     const savedModel = models.some((model) => model.id === previousModel)
       ? previousModel
