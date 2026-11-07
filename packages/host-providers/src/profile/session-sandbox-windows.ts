@@ -97,7 +97,7 @@ export const executionRecordRefusal = (why?: string): Error =>
 const confirmationRefusal = (root: string): Error =>
   Object.assign(
     new Error(
-      `E_SANDBOX_WORKSPACE: the workspace directory at ${root} was replaced since this session was verified; check it, then run \`agh doctor windows-acl --cwd ${root} --repair\` outside the session to confirm it and open the session again (its history and files are kept)`,
+      `E_SANDBOX_WORKSPACE: the workspace directory at ${root} was replaced since this session was verified; check it, then run \`agh doctor windows-acl --cwd ${root} --confirm-replaced\` outside the session to confirm it and open the session again (its history and files are kept)`,
     ),
     { code: 'E_SANDBOX_WORKSPACE', reason: 'session-workspace-confirmation-required' },
   )

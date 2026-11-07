@@ -121,7 +121,11 @@ export async function doctorCommand(
       return { text: 'unknown or extra doctor section', json: [], exitCode: 2 }
     const { section, payload } = await doctorWindowsAcl(
       parsed.cwd ?? deps.cwd,
-      { repair: parsed.repair, ...(deps.signal ? { signal: deps.signal } : {}) },
+      {
+        repair: parsed.repair,
+        confirmReplaced: parsed.confirmReplaced,
+        ...(deps.signal ? { signal: deps.signal } : {}),
+      },
       deps.windowsAcl ?? windowsAclDoctorDeps(deps, profileNameFrom(parsed, deps.env)),
     )
     return {

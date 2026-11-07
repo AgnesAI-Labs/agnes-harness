@@ -75,10 +75,12 @@ describe('agh doctor windows-acl', () => {
     expect(result.text).toContain('grant active')
     expect(result.text).toContain('session-a')
     expect(result.text).toContain('Low integrity label')
-    expect(result.text).toContain(`agh doctor windows-acl --cwd ${root} --repair`)
+    // Removing the grant and trusting a replaced directory are two separate commands.
+    expect(result.text).toContain(`agh doctor windows-acl --cwd ${root} --repair `)
+    expect(result.text).toContain(`agh doctor windows-acl --cwd ${root} --confirm-replaced`)
   })
 
-  it('repairs only after inspecting, with the inspected grant and record digest, then confirms replaced sessions', async () => {
+  it('repairs only after inspecting, with the inspected grant and record digest, and confirms nothing', async () => {
     const { deps, maintenance } = setup({ replaced: ['session-a'] })
     const result = await run(deps, '--repair')
     const [inspected] = maintenance.inspect.mock.invocationCallOrder
@@ -87,10 +89,49 @@ describe('agh doctor windows-acl', () => {
     expect(maintenance.repair).toHaveBeenCalledWith(
       expect.objectContaining({ root, grantId: 'grant-1', expectedRecordDigest: 'digest-1' }),
     )
-    expect(maintenance.confirmWorkspace).toHaveBeenCalledWith(root, 'session-a')
+    // A replaced directory is never trusted as a side effect of cleaning up permissions.
+    expect(maintenance.confirmWorkspace).not.toHaveBeenCalled()
     expect(result.exitCode).toBe(0)
     expect(result.text).toContain('grant revoked')
+    expect(result.text).toContain('session-a')
+    expect(result.text).toContain('--confirm-replaced')
+  })
+
+  it('confirms replaced sessions only when asked, and never touches the grant', async () => {
+    const { deps, maintenance } = setup({ replaced: ['session-a', 'session-b'] })
+    const result = await run(deps, '--confirm-replaced')
+    expect(maintenance.repair).not.toHaveBeenCalled()
+    expect(maintenance.confirmWorkspace).toHaveBeenCalledWith(root, 'session-a')
+    expect(maintenance.confirmWorkspace).toHaveBeenCalledWith(root, 'session-b')
+    expect(result.exitCode).toBe(0)
     expect(result.text).toContain('confirmed session-a')
+    expect(result.text).toContain('confirmed session-b')
+  })
+
+  it('fails when a replaced session cannot be confirmed', async () => {
+    const { deps, maintenance } = setup({ replaced: ['session-a'] })
+    maintenance.confirmWorkspace.mockRejectedValueOnce(
+      Object.assign(new Error('record moved'), { code: 'E_ACL_STATE_UNSAFE' }),
+    )
+    const result = await run(deps, '--confirm-replaced')
+    expect(result.exitCode).toBe(1)
+    expect(result.text).toContain('not confirmed session-a')
+  })
+
+  it('does both only when both were asked for', async () => {
+    const { deps, maintenance } = setup({ replaced: ['session-a'] })
+    const result = await run(deps, '--repair', '--confirm-replaced')
+    expect(maintenance.repair).toHaveBeenCalledOnce()
+    expect(maintenance.confirmWorkspace).toHaveBeenCalledWith(root, 'session-a')
+    expect(result.exitCode).toBe(0)
+  })
+
+  it('says there is nothing to confirm when no directory was replaced', async () => {
+    const { deps, maintenance } = setup()
+    const result = await run(deps, '--confirm-replaced')
+    expect(maintenance.confirmWorkspace).not.toHaveBeenCalled()
+    expect(result.exitCode).toBe(0)
+    expect(result.text).toContain('no replaced workspace to confirm')
   })
 
   it.each([
