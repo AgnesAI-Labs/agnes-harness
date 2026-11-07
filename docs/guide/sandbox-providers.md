@@ -99,6 +99,12 @@ Side effects on the workspace:
 - Session extra directories and `extra_paths` get no write access. Commands that write there are denied.
 - A workspace directory that was replaced by another one at the same path is not trusted. The session refuses its commands and does not open again, and its history is kept. The confirmation happens outside the session: check the new directory, run `agh doctor windows-acl --cwd <root> --repair`, then open the session again in place. A session whose saved workspace path or id no longer matches is not a replaced directory; no confirmation accepts it, its history is kept, and it needs a new session.
 
+Limits inside a confined command:
+
+- A Node program cannot start a child and capture its output or feed it input (`stdio: 'pipe'`, which is also the default of `execFileSync` and `execSync`): the start fails with `EPERM`. A child that inherits or ignores stdio starts, and PowerShell pipelines work.
+- A read-only command has no writable temporary directory, so PowerShell starts in Constrained Language Mode: `Add-Type`, .NET method calls such as `[Console]::Out.Write`, COM and reflection fail, while cmdlets work. A workspace-write command is not affected.
+- The restriction covers file writes only. Confined commands of one Windows user are not isolated from each other as processes: a read-only command can open the process of a workspace-write command that runs at the same time.
+
 Each session has its own lease, with its own private temporary directory. A forked session opens its own lease and does not share its parent's; subagents that work inside a session's turn share that session's lease. A fork of a role session is refused under the write restriction, because the fork would not keep the role's captured limits.
 
 Sessions created by an earlier version keep their history. A session that used an official permission overlay moves to the new rule on its next command. A session with a stricter custom requirement is refused and its record is kept.

@@ -159,13 +159,14 @@ static bool restrictedToken(napi_env env, std::vector<std::vector<BYTE>>& writeS
   }
   out.value = restricted;
   // The process, its threads and every object the target creates without an inherited DACL
-  // (pipes for its own children, events, sections) take the default DACL, and so do the objects of
-  // its descendants, which inherit this token. Its user entry passes the normal access check, so
-  // the restricting SIDs decide who may write such an object. Only this launch's isolation SID gets
-  // an entry: the target and its descendants hold it and no other process does, so another
-  // confined process (another session, a read-only one, another workspace) cannot open them for
-  // writing, injecting code or duplicating their handles. Any entry the default DACL already has
-  // for the logon SID or Everyone, which every confined token holds, is removed.
+  // (anonymous pipes for its own children, events, sections) take the default DACL, and so do the
+  // objects of its descendants, which inherit this token. Its user entry passes the normal access
+  // check, so the restricting SIDs decide who may write such an object: an object the target makes
+  // must name a restricting SID, or its own children fail to open their pipe ends. Only this launch's
+  // isolation SID gets an entry, and an entry the default DACL has for the logon SID or Everyone,
+  // which every confined token holds, is removed. That does not keep another confined process from
+  // opening the target's process: a real-Windows run showed a read-only target opening a
+  // workspace-write one with full access, so processes of one user are not isolated from each other.
   std::vector<BYTE> defaults;
   if (!restrictedTokenInformation(env, restricted, TokenDefaultDacl, defaults)) return false;
   PACL dacl = reinterpret_cast<const TOKEN_DEFAULT_DACL*>(defaults.data())->DefaultDacl;
@@ -277,10 +278,8 @@ static napi_value spawnRestricted(napi_env env, napi_callback_info info) {
   Handle token(nullptr);
   std::vector<BYTE> objectDacl;
   if (!restrictedToken(env, writeSids, isolation, token, objectDacl)) return nullptr;
-  // The target's own process and thread objects get that same DACL explicitly. Without a descriptor
-  // the system may build them from the creating process's default DACL, which can give the logon
-  // session write access; every confined token holds the logon SID, so another confined process
-  // (a read-only one included) could then write the target's memory or take over its threads.
+  // The target's own process and thread objects get that same DACL explicitly, so they do not take
+  // the creating process's default DACL.
   SECURITY_DESCRIPTOR descriptor;
   if (!InitializeSecurityDescriptor(&descriptor, SECURITY_DESCRIPTOR_REVISION) ||
       !SetSecurityDescriptorDacl(&descriptor, TRUE, reinterpret_cast<PACL>(objectDacl.data()), FALSE))
