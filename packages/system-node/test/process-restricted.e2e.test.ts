@@ -195,7 +195,7 @@ describe.skipIf(process.platform !== 'win32')('restricted Windows launch', { tim
     expect(existsSync(join(workspace, 'denied.txt'))).toBe(false)
   })
 
-  // The same limit DSH documents: libuv opens the client end of a named pipe for write, and no
+  // A documented limit of the write restriction: libuv opens the client end of a named pipe for write, and no
   // restricting SID is granted that on a pipe's default descriptor, so a confined Node program cannot
   // capture a child's output. Inherited and ignored stdio and PowerShell pipelines work.
   it('starts children with inherited, ignored and PowerShell-piped stdio, and refuses Node-captured stdio', async () => {
