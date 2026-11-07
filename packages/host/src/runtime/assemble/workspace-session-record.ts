@@ -60,9 +60,12 @@ export function windowsPermissionIntent(
   origin: PresetOrigin | undefined,
   source: WindowsPermissionIntent['windowsModeSource'],
 ): WindowsPermissionIntent {
+  const access = config.access ?? 'workspace-write'
   return {
-    ...(origin?.permission ? { permission: origin.permission } : {}),
-    access: config.access ?? 'workspace-write',
+    // A recipe that fixes its own permission carries no selection, so a session that switched to one
+    // reopens without the permission it was opened with; its effective access stands in for it.
+    permission: origin?.permission ?? access,
+    access,
     windowsMode: config.windowsMode ?? 'require-full',
     windowsModeSource: source,
     required: config.required,

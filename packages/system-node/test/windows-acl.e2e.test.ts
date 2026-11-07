@@ -441,34 +441,45 @@ describe.skipIf(process.platform !== 'win32')('Windows ACL primitives on NTFS', 
     const worker = createWindowsAclWorker()
     try {
       await worker.inspect(join(base, 'held'))
-      let done = false
-      const walk = worker.inspect(root).finally(() => {
-        done = true
-      })
-      walk.catch(() => undefined)
-      // Each attempt in order: 'renamed', or the code that refused it. The worker takes its holds a
-      // moment after the request and the result arrives a moment after it lets them go, so a rename
-      // may succeed at either end; none may succeed between two refused ones.
-      const attempts = { root: [] as string[], parent: [] as string[] }
-      Atomics.wait(pause, 0, 0, 20)
-      while (!done) {
-        for (const [name, from, to] of [
-          ['root', root, join(base, 'held', 'moved')],
-          ['parent', join(base, 'held'), join(base, 'held-moved')],
-        ] as const) {
-          try {
-            renameSync(from, to)
-            renameSync(to, from)
-            attempts[name].push('renamed')
-          } catch (error) {
-            const found = (error as { code?: string }).code
-            if (found !== 'EBUSY' && found !== 'EPERM' && found !== 'EACCES') throw error
-            attempts[name].push(found)
+      // A rename that lands before the worker opens the root makes the walk fail with ENOENT; that is
+      // the directory being absent, not a hold failing, so the attempt is repeated.
+      let attempts = { root: [] as string[], parent: [] as string[] }
+      let walked: Awaited<ReturnType<typeof worker.inspect>> | undefined
+      for (let round = 0; round < 4 && !walked; round++) {
+        attempts = { root: [], parent: [] }
+        let done = false
+        const walk = worker.inspect(root).finally(() => {
+          done = true
+        })
+        walk.catch(() => undefined)
+        // Each attempt in order: 'renamed', or the code that refused it. The worker takes its holds a
+        // moment after the request and the result arrives a moment after it lets them go, so a rename
+        // may succeed at either end; none may succeed between two refused ones.
+        Atomics.wait(pause, 0, 0, 20)
+        while (!done) {
+          for (const [name, from, to] of [
+            ['root', root, join(base, 'held', 'moved')],
+            ['parent', join(base, 'held'), join(base, 'held-moved')],
+          ] as const) {
+            try {
+              renameSync(from, to)
+              renameSync(to, from)
+              attempts[name].push('renamed')
+            } catch (error) {
+              const found = (error as { code?: string }).code
+              if (found !== 'EBUSY' && found !== 'EPERM' && found !== 'EACCES') throw error
+              attempts[name].push(found)
+            }
           }
+          await new Promise((resolve) => setTimeout(resolve, 5))
         }
-        await new Promise((resolve) => setTimeout(resolve, 5))
+        try {
+          walked = await walk
+        } catch (error) {
+          if ((error as { code?: string }).code !== 'ENOENT') throw error
+        }
       }
-      expect((await walk).inheritedDescendants).toBeGreaterThan(3600)
+      expect(walked?.inheritedDescendants).toBeGreaterThan(3600)
       const held = (list: string[]) =>
         list.slice(
           list.findIndex((item) => item !== 'renamed'),
