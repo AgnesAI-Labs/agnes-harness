@@ -7,14 +7,14 @@ export const refinementSettingsCatalog: LocaleCatalog = {
     'refinement.group.main': 'Task experience (RSI)',
     'refinement.enabled': 'Learn from finished work',
     'refinement.enabled.hint':
-      'Off by default. When on, Agnes reviews your sessions in the background and keeps useful lessons as experience for later turns.',
+      'Off by default. When on, you or the model can request a background review and keep useful lessons for later turns. When off, reviews and the experience tools are unavailable.',
     'refinement.enabled.info':
       'Applies to sessions opened after you turn it on; sessions already open are not affected. Turning it off applies to all sessions at once. To keep lessons for later sessions, also turn workspace memory on (Settings → General → Personalization → Memory: "Ask me first" or "Automatic"); while it is off, lessons last only for the session they were learned in.',
     'refinement.mode': 'How reviews start',
     'refinement.mode.hint':
-      'Manual: a review runs only when you ask with /refine. Automatic: reviews can also start by themselves, within spending limits.',
-    'refinement.mode.manual': 'Manual only',
-    'refinement.mode.auto': 'Manual and automatic',
+      'On demand: use /refine, or let the model request a review for this session. With automatic triggers: the system also considers reviews after a successful summary compaction or repeated tool failures, subject to budget, cooldown and frequency limits. The model needs automatic triggers enabled to save lessons beyond this session; memory settings still apply.',
+    'refinement.mode.manual': 'On demand',
+    'refinement.mode.auto': 'On demand + automatic triggers',
     'refinement.group.allows': 'What turning it on allows',
     'refinement.allows.install': 'Install proven skills in the workspace',
     'refinement.allows.install.hint':
@@ -47,13 +47,15 @@ export const refinementSettingsCatalog: LocaleCatalog = {
   'zh-CN': {
     'refinement.group.main': '任务经验（RSI）',
     'refinement.enabled': '从完成的工作中学习',
-    'refinement.enabled.hint': '默认关闭。开启后，Agnes 会在后台复盘你的会话，把有用的经验留给之后的轮次。',
+    'refinement.enabled.hint':
+      '默认关闭。开启后，你或模型可以发起后台复盘，把有用的经验留给之后的轮次；关闭后不再复盘，也不提供经验工具。',
     'refinement.enabled.info':
       '打开后，之后新开的会话生效；已经打开的会话不受影响。关闭立即对所有会话生效。要把经验留给之后的会话，还需打开工作区记忆（设置 → 通用 → 个性化 → 记忆：「先问我」或「自动」）；记忆为「关闭」时，经验只在学到它的会话里有效。',
     'refinement.mode': '复盘如何开始',
-    'refinement.mode.hint': '手动：只有你用 /refine 提出时才复盘。自动：也会在费用限额内自行开始复盘。',
-    'refinement.mode.manual': '仅手动',
-    'refinement.mode.auto': '手动和自动',
+    'refinement.mode.hint':
+      '按需：你用 /refine，或由模型主动发起当前会话的复盘。开启自动触发后：系统还会在摘要压缩成功、同类工具错误重复出现时尝试复盘，受预算、冷却时间和次数限制。模型主动把经验保存到工作区或用户记忆，需要开启自动触发；记忆设置仍然有效。',
+    'refinement.mode.manual': '按需复盘',
+    'refinement.mode.auto': '按需＋自动触发',
     'refinement.group.allows': '开启即表示允许',
     'refinement.allows.install': '把已证实的技能安装到工作区',
     'refinement.allows.install.hint':
