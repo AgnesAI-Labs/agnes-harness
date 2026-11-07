@@ -86,7 +86,7 @@ On Windows, `local` runs commands for `read-only` and `workspace-write` sessions
 
 File reads and network access are not restricted. A command can read files outside the workspace and reach the network. Protected paths are still checked for file tools; an arbitrary script does not get the same protection.
 
-`sandbox.windows_mode` selects the behavior and is either `write-restricted` or `require-full`. The official `read-only` and `workspace-write` permission overlays select `write-restricted`. With it, `required: true`, custom deny paths, network restrictions and other stronger requirements are refused; they are never downgraded to the write restriction. The default is `require-full`, which never uses the restriction. Windows has no full local backend, so `on_unavailable` decides as before: a custom recipe with `allow-if-unimplemented` runs its commands directly without isolation, `deny` refuses each command, and `required: true` refuses the workspace. The name of the operating system gives a custom recipe no other downgrade.
+`sandbox.windows_mode` selects the behavior and is either `write-restricted` or `require-full`. The official `read-only` and `workspace-write` permission overlays select `write-restricted`, and so does `standard-windows`, the Windows default recipe, which sets it itself and takes no overlay. With it, `required: true`, custom deny paths, network restrictions and other stronger requirements are refused; they are never downgraded to the write restriction. The default is `require-full`, which never uses the restriction. Windows has no full local backend, so `on_unavailable` decides as before: a custom recipe with `allow-if-unimplemented` runs its commands directly without isolation, `deny` refuses each command, and `required: true` refuses the workspace. The name of the operating system gives a custom recipe no other downgrade.
 
 The start is refused, and the command never runs directly, when the restriction cannot be set up: a non-NTFS volume, a drive root, a UNC path, a junction root that is not verified, a missing native module, or a failed ACL change.
 
@@ -107,7 +107,7 @@ Limits inside a confined command:
 
 Each session has its own lease, with its own private temporary directory. A forked session opens its own lease and does not share its parent's; subagents that work inside a session's turn share that session's lease. A fork of a role session is refused under the write restriction, because the fork would not keep the role's captured limits.
 
-Sessions created by an earlier version keep their history. A session that used an official permission overlay moves to the new rule on its next command. A session with a stricter custom requirement is refused and its record is kept.
+Sessions created by an earlier version keep their history. A session that used an official permission overlay moves to the new rule when the session is opened; only the lease is taken, on the first command. A session with a stricter custom requirement is refused and its record is kept.
 
 `agh doctor windows-acl --cwd <root>` shows the grant state for a workspace and lists sessions whose workspace directory was replaced. It is read-only by default. `--repair` removes AGH's own grant entries and confirms the replaced workspaces in place (this is the only way to confirm one); entries that someone else changed are kept and reported. A grant that a running session still uses is not removed. Run it in a normal terminal as the Windows user that runs AGH; it does not elevate. `--json` prints the report.
 

@@ -76,7 +76,7 @@ Windows 上，`local` 对 `read-only` 和 `workspace-write` 会话的命令使�
 
 文件读取和网络不受限制。命令可以读取工作区外的文件，也可以访问网络。受保护路径仍由文件工具检查；任意脚本没有同等保护。
 
-`sandbox.windows_mode` 决定这一行为，取值为 `write-restricted` 或 `require-full`。官方 `read-only` 和 `workspace-write` 权限覆盖层选择 `write-restricted`；此时 `required: true`、自定义拒绝路径、网络限制及其他更强的要求会被拒绝，不会降级为写限制。默认值 `require-full` 从不使用写限制。Windows 没有完整的本机后端，因此仍由 `on_unavailable` 决定：自定义配方使用 `allow-if-unimplemented` 时命令不经隔离直接运行，`deny` 拒绝每条命令，`required: true` 拒绝打开工作区。操作系统名称不会给自定义配方任何其他降级。
+`sandbox.windows_mode` 决定这一行为，取值为 `write-restricted` 或 `require-full`。官方 `read-only` 和 `workspace-write` 权限覆盖层选择 `write-restricted`，Windows 默认配方 `standard-windows` 也是，它自己设置该项，不使用覆盖层；此时 `required: true`、自定义拒绝路径、网络限制及其他更强的要求会被拒绝，不会降级为写限制。默认值 `require-full` 从不使用写限制。Windows 没有完整的本机后端，因此仍由 `on_unavailable` 决定：自定义配方使用 `allow-if-unimplemented` 时命令不经隔离直接运行，`deny` 拒绝每条命令，`required: true` 拒绝打开工作区。操作系统名称不会给自定义配方任何其他降级。
 
 写限制无法建立时拒绝启动，命令不会直接运行。常见原因：非 NTFS 卷、磁盘根目录、UNC 路径、未验证的 junction 根目录、缺少原生模块、ACL 修改失败。
 
@@ -97,7 +97,7 @@ Windows 上，`local` 对 `read-only` 和 `workspace-write` 会话的命令使�
 
 每个会话有自己的租约和私有临时目录。分叉出的会话使用自己的租约，不共用父会话的；在会话某一轮内工作的子代理共用该会话的租约。写限制下，角色会话的分叉会被拒绝，因为分叉不会保留角色已捕获的限制。
 
-旧版本创建的会话保留历史。使用官方权限覆盖层的会话在下一条命令时改用新规则；带有更严格自定义要求的会话会被拒绝，记录保留。
+旧版本创建的会话保留历史。使用官方权限覆盖层的会话在会话打开时改用新规则，只有租约是在第一条命令时才取得；带有更严格自定义要求的会话会被拒绝，记录保留。
 
 `agh doctor windows-acl --cwd <root>` 显示某个工作区的授权状态，并列出工作区目录被替换的会话。默认只读。`--repair` 移除 AGH 自己添加的授权项，并就地确认被替换的工作区（这是确认的唯一方式）；他人改过的项会保留并报告。仍被运行中会话使用的授权不会被移除。请在普通终端中以运行 AGH 的 Windows 用户身份执行，命令不会提权。`--json` 输出报告。
 

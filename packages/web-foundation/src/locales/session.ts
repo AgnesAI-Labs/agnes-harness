@@ -95,7 +95,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.permission.view': 'Read only',
     'session.runtime.noOsIsolation': 'OS sandbox off',
     'session.runtime.platformNoCommandIsolation': 'Commands are not isolated on this platform',
-    'session.runtime.windowsAclIsolation': 'Windows ACL partial write restriction',
+    'session.runtime.windowsAclIsolation': 'Windows write restriction only: reads and network are open',
     'session.runtime.windowsAclIsolationHelp':
       'Commands can write only where the file ACL grant allows (nowhere in read only); this is not strict path isolation, and reads and network are not isolated.',
     'session.runtime.noOsIsolationHelp':
@@ -272,7 +272,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.permission.view': '只读',
     'session.runtime.noOsIsolation': '系统沙箱未启用',
     'session.runtime.platformNoCommandIsolation': '此平台命令未隔离',
-    'session.runtime.windowsAclIsolation': 'Windows ACL 部分写限制',
+    'session.runtime.windowsAclIsolation': 'Windows 仅限制写入：读取与网络未隔离',
     'session.runtime.windowsAclIsolationHelp':
       '命令只能写入文件 ACL 授权的位置（只读时不可写），非严格路径隔离；读取与网络未隔离。',
     'session.runtime.noOsIsolationHelp':
