@@ -311,11 +311,11 @@ for (const version of ['5.1', '7'] as const)
           }),
         )
         expect(refused.reason).toBe('completed')
-        // What the session answered, without the command it was given.
+        // What the shell tool answered, without the command it was given.
         const answer = JSON.stringify(
-          (JSON.parse(await timeline(readOnly)).nodes as Array<{ kind: string }>).filter(
-            (node) => node.kind !== 'user',
-          ),
+          (JSON.parse(await timeline(readOnly)).nodes as Array<{ kind: string; argsPreview?: string }>)
+            .filter((node) => node.kind === 'tool')
+            .map(({ argsPreview: _command, ...rest }) => rest),
         )
         expect(answer, answer.slice(0, 3000)).toContain('create=denied;outside=denied')
         expect(answer).not.toContain(JSON.stringify(daemon.tempRoot).slice(1, -1))
