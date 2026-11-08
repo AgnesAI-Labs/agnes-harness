@@ -17,6 +17,9 @@ type CompatibleEntry = Readonly<{
   baseUrl: string
   capabilities?: Readonly<{ declaredModels?: boolean }>
 }>
+/** What the injected known-model table says about an id; the table itself lives in the AI package. */
+type KnownLimits = Readonly<{ contextWindow: number; maxTokens: number; thinkingReplay: 'native' }>
+type KnownModels = (id: string) => KnownLimits | undefined
 type Listing =
   | Readonly<{ ids: readonly string[]; contextWindows?: Readonly<Record<string, number>> }>
   | Readonly<{ failure: NonNullable<ConfigTestResult['catalogueError']> }>
@@ -47,12 +50,15 @@ const CONTEXT_WINDOW = 128_000
 const MAX_TOKENS = 8_192
 const MAX_MODELS = 4096
 
-const declared = (id: string): ConfigModel => ({
-  id,
-  name: id,
-  contextWindow: CONTEXT_WINDOW,
-  maxTokens: MAX_TOKENS,
-})
+const declared = (id: string, knownModel: KnownModels): ConfigModel => {
+  const known = knownModel(id)
+  return {
+    id,
+    name: id,
+    contextWindow: known?.contextWindow ?? CONTEXT_WINDOW,
+    maxTokens: known?.maxTokens ?? MAX_TOKENS,
+  }
+}
 
 /** The registry's stand-in address is not an address: an account has to give one. */
 function requireAddress(entry: CompatibleEntry, baseUrl: string): void {
@@ -69,6 +75,7 @@ function compatibleModels(
   baseUrl: string,
   value: unknown,
   chatModelAllowed: (id: string) => boolean,
+  knownModel: KnownModels,
   selection?: Pick<ConfigSaveInput, 'model' | 'defaultSettings'>,
 ): ConfigModel[] {
   requireAddress(entry, baseUrl)
@@ -95,7 +102,7 @@ function compatibleModels(
     )
       throw new ConfigurationError('CONFIG_INVALID_INPUT')
     if (!chatModelAllowed(model.id)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')
-    return { ...declared(model.id), ...model }
+    return { ...declared(model.id, knownModel), ...model }
   })
   if (new Set(models.map((model) => model.id)).size !== models.length)
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
@@ -116,6 +123,7 @@ async function testCompatibleAccount(
   },
   deps: {
     chatModelAllowed: (id: string) => boolean
+    knownModel: KnownModels
     list: (api: string, baseUrl: string, credential: string | undefined) => Promise<Listing>
     readCredential: (ref: string) => Promise<{ kind: string; provider: string; value?: string } | null>
   },
@@ -134,7 +142,7 @@ async function testCompatibleAccount(
     models: listing.ids.filter(deps.chatModelAllowed).map((id) => {
       const contextWindow = contexts.get(id)
       return {
-        ...(structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id)),
+        ...(structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id, deps.knownModel)),
         ...(contextWindow === undefined ? {} : { contextWindow }),
       }
     }),
@@ -142,25 +150,31 @@ async function testCompatibleAccount(
   }
 }
 
-/** A declared model as a chat record: text in, native tool calls, no reasoning to replay. */
+/**
+ * A declared model as a chat record: text in, native tool calls. A model the known-model table
+ * describes (DeepSeek V4) reasons, replays that reasoning, and takes the table's limits unless the
+ * person gave their own; any other model has no reasoning to replay and the default capacity.
+ */
 function compatibleModelRecord(
   account: Readonly<{ route: string; baseUrl: string }>,
   api: string,
   model: ConfigModel,
+  knownModel: KnownModels,
 ): ModelRecord {
+  const known = knownModel(model.id)
   const record: ModelRecord = {
     id: model.id,
     name: model.name,
     api,
     route: account.route,
     baseUrl: account.baseUrl,
-    reasoning: false,
+    reasoning: known !== undefined,
     input: ['text'],
     cost: model.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: model.contextWindow ?? CONTEXT_WINDOW,
-    maxTokens: model.maxTokens ?? MAX_TOKENS,
+    contextWindow: model.contextWindow ?? known?.contextWindow ?? CONTEXT_WINDOW,
+    maxTokens: model.maxTokens ?? known?.maxTokens ?? MAX_TOKENS,
     toolCallFormats: ['native'],
-    thinkingReplay: 'drop',
+    thinkingReplay: known?.thinkingReplay ?? 'drop',
     contract_id: null,
   }
   return applyModelConfiguration(record, model)
@@ -178,11 +192,12 @@ function compatibleRoute(
   }>,
   api: string,
   chatModelAllowed: (id: string) => boolean,
+  knownModel: KnownModels,
 ): RouteDecl & { models: ModelRecord[] } {
   if (!chatModelAllowed(account.model)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')
   const models = account.models
     .filter((model) => chatModelAllowed(model.id))
-    .map((model) => compatibleModelRecord(account, api, model))
+    .map((model) => compatibleModelRecord(account, api, model, knownModel))
   models.sort((a, b) => (a.id === account.model ? -1 : b.id === account.model ? 1 : 0))
   return {
     route: account.route,
@@ -196,7 +211,7 @@ function compatibleRoute(
 }
 
 /** Bind the adapter-owned conversation policy at the existing configuration assembly boundary. */
-export function chatModelPolicy(chatModelAllowed: (id: string) => boolean) {
+export function chatModelPolicy(chatModelAllowed: (id: string) => boolean, knownModel: KnownModels) {
   const requireModel = (id: string, payloadOnly = false): void => {
     if (!payloadOnly && !chatModelAllowed(id)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')
   }
@@ -218,12 +233,12 @@ export function chatModelPolicy(chatModelAllowed: (id: string) => boolean) {
       baseUrl: string,
       value: unknown,
       selection?: Pick<ConfigSaveInput, 'model' | 'defaultSettings'>,
-    ) => compatibleModels(entry, baseUrl, value, chatModelAllowed, selection),
+    ) => compatibleModels(entry, baseUrl, value, chatModelAllowed, knownModel, selection),
     testCompatibleAccount: (
       args: Parameters<typeof testCompatibleAccount>[0],
-      deps: Omit<Parameters<typeof testCompatibleAccount>[1], 'chatModelAllowed'>,
-    ) => testCompatibleAccount(args, { ...deps, chatModelAllowed }),
+      deps: Omit<Parameters<typeof testCompatibleAccount>[1], 'chatModelAllowed' | 'knownModel'>,
+    ) => testCompatibleAccount(args, { ...deps, chatModelAllowed, knownModel }),
     compatibleRoute: (account: Parameters<typeof compatibleRoute>[0], api: string) =>
-      compatibleRoute(account, api, chatModelAllowed),
+      compatibleRoute(account, api, chatModelAllowed, knownModel),
   }
 }
