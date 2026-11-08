@@ -183,6 +183,11 @@ export async function trackHostComposition(
     reloadEcosystemExtension: (id, freshInit) =>
       afterPublication(() => host.reloadEcosystemExtension(id, freshInit)),
     applyRuntimeTarget: (target) => afterPublication(() => host.applyRuntimeTarget(target)),
+    applyModelProfile: (next) => afterPublication(() => host.applyModelProfile(next)),
+    extensionRows: {
+      ...host.extensionRows,
+      apply: (rows) => afterPublication(() => host.extensionRows.apply(rows)),
+    },
     async releaseSessionGeneration(key) {
       host.profileServices?.revokeWakeSession(key)
       await host.releaseSessionGeneration?.(key)

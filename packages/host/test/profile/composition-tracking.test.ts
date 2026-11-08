@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { ToolDef } from '@agnes/extension-api'
+import type { ExtensionManifest, ToolDef } from '@agnes/extension-api'
 import { readLiveCompositionSessions } from '@agnes/host-providers/profile/composition-state'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import type { SkillRuntimeInput } from '@agnes/resource-control-runtime'
@@ -141,6 +141,66 @@ it('follows the new registries of an open session after a Skills row refresh', a
       (await readLiveCompositionSessions(profileDir))[0]?.toolGroups?.map((group) => group.packageId) ?? []
     expect(await groups()).toContain('fixture/refreshed')
     remove()
+    await s.close()
+  } finally {
+    await host.close()
+  }
+})
+
+it('describes every open session again after extension rows are applied', async () => {
+  const { host } = await createTestHost({
+    dataDir: root,
+    disableSessionTitle: true,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
+    skillResources: skillInput('a'),
+  })
+  try {
+    const s = await host.createSession({ key: 'k', cwd: root })
+    await vi.advanceTimersByTimeAsync(0)
+    const manifest = {
+      id: 'acme/live-skills',
+      version: '1.0.0',
+      apiRange: '^5.0.0',
+      entry: './index.js',
+      liveResources: ['skills'],
+      capabilities: {},
+    } as unknown as ExtensionManifest
+    const row = host.extensionRows.prepare({
+      extensionId: manifest.id,
+      dynamic: {
+        spec: {
+          id: manifest.id,
+          package: '@acme/live-skills',
+          packageVersion: '1.0.0',
+          dir: root,
+          trust: 'builtin',
+          enabled: true,
+          revision: 'pinned-code',
+        },
+        manifest,
+        factory: () => () => {},
+      },
+    })
+    const spy = vi.spyOn(sessionCapabilityView, 'describeCapabilitySession')
+    // A publication can hand bound sessions new registries without any per-session event.
+    await host.extensionRows.apply([...host.extensionRows.current(), row])
+    await vi.advanceTimersByTimeAsync(0)
+    expect(spy).toHaveBeenCalledTimes(1)
+    await s.close()
+  } finally {
+    await host.close()
+  }
+})
+
+it('describes every open session again after a model profile is applied', async () => {
+  const { host, profile } = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  try {
+    const s = await host.createSession({ key: 'k', cwd: root })
+    await vi.advanceTimersByTimeAsync(0)
+    const spy = vi.spyOn(sessionCapabilityView, 'describeCapabilitySession')
+    await host.applyModelProfile(profile)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(spy).toHaveBeenCalledTimes(1)
     await s.close()
   } finally {
     await host.close()
