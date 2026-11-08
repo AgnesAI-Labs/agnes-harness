@@ -446,7 +446,11 @@ export class PiAdapter extends WireAdapter {
     const dropThinking = record.thinkingReplay === 'drop'
     let context: Context
     try {
-      context = toContext(req, { dropThinking, provider: this.providerId ?? decl.route }).context
+      context = toContext(req, {
+        dropThinking,
+        provider: this.providerId ?? decl.route,
+        replaySignature: decl.api === 'openai-completions',
+      }).context
     } catch (error) {
       yield {
         type: 'error',

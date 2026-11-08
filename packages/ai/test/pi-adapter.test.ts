@@ -431,7 +431,7 @@ describe('toContext', () => {
         },
       ],
     })
-    const asst = toContext(req).context.messages[0] as AssistantMessage
+    const asst = toContext(req, { replaySignature: true }).context.messages[0] as AssistantMessage
     expect(asst.content).toEqual([
       { type: 'thinking', thinking: 'why', thinkingSignature: 'reasoning_content' },
     ])
@@ -448,12 +448,25 @@ describe('toContext', () => {
         },
       ],
     })
-    const { context } = toContext(req)
+    const { context } = toContext(req, { replaySignature: true })
     expect((context.messages[0] as AssistantMessage).content).toEqual([{ type: 'thinking', thinking: 'old' }])
     expect((context.messages[0] as AssistantMessage).content[0]).not.toHaveProperty('thinkingSignature')
     expect((context.messages[2] as AssistantMessage).content).toEqual([
       { type: 'thinking', thinking: 'new', thinkingSignature: 'reasoning_content' },
     ])
+  })
+
+  it('writes no signature unless asked to', () => {
+    const req = fakeRequest({
+      messages: [
+        {
+          role: 'assistant',
+          content: [{ type: 'thinking', text: 'why', signature: 'reasoning_content' }],
+        },
+      ],
+    })
+    const asst = toContext(req).context.messages[0] as AssistantMessage
+    expect(asst.content).toEqual([{ type: 'thinking', thinking: 'why' }])
   })
 
   it('labels replayed messages with the given provider, else the route', () => {
@@ -1277,51 +1290,44 @@ describe('replayed history as pi sees it', () => {
     expect(replayed.provider).toBe(wire.seen[0]?.model.provider)
   })
 
-  it('anthropic route unchanged: the replayed message keeps the openai-completions label', async () => {
-    const anthropic = {
-      route: 'gw',
-      api: 'anthropic-messages',
-      baseUrl: 'https://gw.invalid/v1',
-      credentialRef: 'secret://agnes/gateway',
-      models: [
-        fakeModel({ id: 'flash', route: 'gw', api: 'anthropic-messages', baseUrl: 'https://gw.invalid/v1' }),
-      ],
-    }
-    const wire = fakeStream([done])
-    const adapter = bound({ manualRoutes: [anthropic], streamImpl: wire.impl })
-    const unsigned = [
-      history[0],
-      {
-        role: 'assistant' as const,
-        content: [{ type: 'thinking' as const, text: 'why' }, history[1]?.content[1]],
-      },
-      history[2],
-    ]
-    await collect(
-      adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash', messages: unsigned as never }), opts()),
-    )
-    expect(wire.seen[0]?.model.api).toBe('anthropic-messages')
-    expect(wire.seen[0]?.context.messages[1]).toEqual({
-      role: 'assistant',
-      content: [
-        { type: 'thinking', thinking: 'why' },
-        { type: 'text', text: 'a' },
-      ],
-      api: 'openai-completions',
-      provider: 'gw',
-      model: 'flash',
-      stopReason: 'stop',
-      usage: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 0,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      timestamp: 0,
-    })
-  })
+  it.each(['anthropic-messages', 'pi-messages'] as const)(
+    '%s route unchanged: a signed history reaches pi exactly as an unsigned one did before',
+    async (api) => {
+      const other = {
+        route: 'gw',
+        api,
+        baseUrl: 'https://gw.invalid/v1',
+        credentialRef: 'secret://agnes/gateway',
+        models: [fakeModel({ id: 'flash', route: 'gw', api, baseUrl: 'https://gw.invalid/v1' })],
+      }
+      const wire = fakeStream([done])
+      const adapter = bound({ manualRoutes: [other], streamImpl: wire.impl })
+      await collect(
+        adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash', messages: history }), opts()),
+      )
+      expect(wire.seen[0]?.model.api).toBe(api)
+      expect(wire.seen[0]?.context.messages[1]).toEqual({
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'why' },
+          { type: 'text', text: 'a' },
+        ],
+        api: 'openai-completions',
+        provider: 'gw',
+        model: 'flash',
+        stopReason: 'stop',
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        timestamp: 0,
+      })
+    },
+  )
 })
 
 // A request is bounded until it starts answering, and after that only by silence: a long answer that
