@@ -15,6 +15,7 @@ export class ToolRegistryView extends ToolRegistry {
     this.eager = new Set(eager)
     this.add = source.add.bind(source)
     this.registrations = source.registrations.bind(source)
+    this.onChange = source.onChange.bind(source)
     this.prepareOwnerReplacement = source.prepareOwnerReplacement.bind(source)
     const fixed = typeof names === 'function' ? undefined : new Set(names)
     this.allowed = () => fixed ?? new Set(typeof names === 'function' ? names() : names)
@@ -22,6 +23,7 @@ export class ToolRegistryView extends ToolRegistry {
   private readonly source: ToolRegistry
   override readonly add: ToolRegistry['add']
   override readonly registrations: ToolRegistry['registrations']
+  override readonly onChange: ToolRegistry['onChange']
   override readonly prepareOwnerReplacement: ToolRegistry['prepareOwnerReplacement']
   override resolve(name: string) {
     return this.allowed().has(name) ? this.source.resolve(name) : undefined

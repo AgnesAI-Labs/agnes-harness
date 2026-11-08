@@ -283,7 +283,7 @@ export async function createHost(profile: ResolvedProfile, opts: HostOptions): P
     return createCompositionHost(profile, opts, createHostInstance)
   }
   try {
-    return await trackHostComposition(host, profile, opts.profileDir)
+    return await trackHostComposition(host, profile, opts.profileDir, opts.log)
   } catch (error) {
     await host.close()
     throw error

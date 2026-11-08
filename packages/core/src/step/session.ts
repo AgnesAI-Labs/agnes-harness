@@ -127,6 +127,7 @@ import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 import { turnWaitEvent } from '../execution/turn-wait.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
+import { Listeners } from '../listeners.js'
 import { LoopChildren } from '../loop/children.js'
 import { SessionControls } from '../loop/controls.js'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
@@ -907,7 +908,7 @@ export class SessionImpl {
   /** Narrowed only by `setToolFilter`, and rebuilt from the ledger on open. Never widened. */
   toolFilter: SessionToolFilter = NO_TOOL_FILTER
   setToolFilter(request: unknown): Promise<{ seq: Seq; filter: SessionToolFilter }> {
-    return setToolFilter(this, request)
+    return this.listeners.settings.after(setToolFilter(this, request))
   }
 
   /** Read-only catalog from the same model filtering and authorized discovery as this session. */
@@ -949,6 +950,11 @@ export class SessionImpl {
   onPreview(fn: (p: PreviewDelta) => void): () => void {
     return this.preview.on(fn)
   }
+  private readonly listeners = { closed: new Listeners(), settings: new Listeners() }
+  /** Called once when `close()` finishes, whether it succeeded or failed. */
+  readonly onClosed = this.listeners.closed.on
+  /** Called after `setModel`, `setToolFilter` or `setPreset` resolves; never when one rejects. */
+  readonly onSettingsChanged = this.listeners.settings.on
   /** The text every inference still in flight has streamed so far. */
   previewSnapshot(): PreviewSnapshot[] {
     return this.preview.snapshot()
@@ -2271,7 +2277,7 @@ export class SessionImpl {
   }
 
   setPreset(view: PresetView): Promise<Seq> {
-    return setPreset(this, view)
+    return this.listeners.settings.after(setPreset(this, view))
   }
 
   setModel(sel: {
@@ -2281,7 +2287,7 @@ export class SessionImpl {
     thinking?: ThinkingLevel | null
     contextWindow?: number | null
   }): Promise<Seq> {
-    return setModel(this, sel)
+    return this.listeners.settings.after(setModel(this, sel))
   }
 
   async setYolo(enabled: boolean, operator: Actor): Promise<Seq> {
@@ -2744,6 +2750,7 @@ export class SessionImpl {
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')
       forgetIdleChild(this)
     })
+    this.closePromise = this.closePromise.finally(() => this.listeners.closed.emit())
     return this.closePromise
   }
 }

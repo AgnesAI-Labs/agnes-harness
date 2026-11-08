@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { ToolRegistryView, WithoutToolsView } from '../src/registry/tool-allow.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { modelToolSchema } from '../src/request/tool-schema.js'
+import { filteredTools } from '../src/step/tool-filter.js'
 
 const meta = {
   isReadOnly: true,
@@ -438,4 +439,16 @@ describe('ToolRegistry', () => {
     plain.add(def('read'), { source: 's', trust: 'trusted' })
     expect(new WithoutToolsView(plain, new Set(['hidden'])).snapshot(1).hash).toBe(plain.snapshot(1).hash)
   })
+})
+
+it('onChange fires on add, dispose and through a filtered view', () => {
+  const registry = new ToolRegistry()
+  let n = 0
+  const view = filteredTools(registry, () => ({}))
+  const off = view.onChange(() => n++)
+  const dispose = registry.add(def('t1'), { source: 'agnes/tools-core', trust: 'builtin' })
+  dispose()
+  off()
+  registry.add(def('t2'), { source: 'agnes/tools-core', trust: 'builtin' })
+  expect(n).toBe(2)
 })
