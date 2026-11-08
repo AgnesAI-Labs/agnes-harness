@@ -1837,6 +1837,33 @@ it('publishes the other sessions while one description keeps failing', async () 
   }
 }, 90_000)
 
+it('keeps a session listed until its close completes, through a reverted retirement claim', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    // Idle-child retirement claims the session and reverts the claim when it loses its state CAS.
+    const release = reader.claimIdleRetirement()
+    if (!release) throw new Error('the idle session could not be claimed')
+    expect(reader.closingOrClosed).toBe(true)
+    // A flush inside that window must not drop the reader.
+    await writer.setToolFilter({ deny: ['write'] })
+    expect(await liveKeys(profileDir)).toEqual([reader.key, writer.key])
+    release()
+    // Its registries are still followed after the claim reverted.
+    reader.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
+    expect(await liveTools(profileDir, reader.key)).toContain('live_probe')
+    await reader.close()
+    expect(await liveKeys(profileDir)).toEqual([writer.key])
+    await writer.close()
+    expect(await liveKeys(profileDir)).toEqual([])
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
 it('a failed write is retried on the next change', async () => {
   const { root, options, profileDir } = liveStatusFixture()
   const { host } = await createTestHost(options)

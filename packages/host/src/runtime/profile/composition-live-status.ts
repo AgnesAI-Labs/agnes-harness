@@ -35,14 +35,22 @@ export function createCompositionLiveStatus(
   const dirty = new Set<string>()
   const subscriptions = new Map<string, Subscriptions>()
   const watched = new Map<Container, () => void>()
+  /** Sessions whose close completed; a closed session can stay in its kernel's table. */
+  const finished = new WeakSet<HostSession>()
   let scheduled = false
   let closed = false
-  // A session that started closing no longer counts as open, even before its Host removes it.
+  // A session is listed until its close completes. `closingOrClosed` also covers an idle retirement
+  // claim, which reverts when retirement loses its race, so it only keeps out a session never listed:
+  // one already closing when first seen has no close notice to wait for.
   const open = () => {
     const sessions = new Map<string, { container: Container; session: HostSession }>()
     for (const container of input.containers.values())
       for (const session of container.host.kernel.sessions.values())
-        if (!session.closingOrClosed) sessions.set(session.key, { container, session })
+        if (
+          !finished.has(session) &&
+          (subscriptions.get(session.key)?.session === session || !session.closingOrClosed)
+        )
+          sessions.set(session.key, { container, session })
     return sessions
   }
   const describe = ({ container, session }: { container: Container; session: HostSession }) =>
@@ -65,7 +73,10 @@ export function createCompositionLiveStatus(
     const entry = subscriptions.get(key) ?? { session }
     subscriptions.set(key, entry)
     entry.settings ??= session.onSettingsChanged(() => markDirty([key]))
-    entry.closed ??= session.onClosed(() => markDirty([key]))
+    entry.closed ??= session.onClosed(() => {
+      finished.add(session)
+      markDirty([key])
+    })
     const tools = session.currentTools()
     if (entry.toolsSource !== tools) {
       entry.tools?.()
