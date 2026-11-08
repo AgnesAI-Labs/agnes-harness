@@ -46,6 +46,8 @@ export function createRoleChildren(deps: {
   read(key: string): CompositionBinding | undefined
   pin(binding: CompositionBinding): CompositionBinding
   open(binding: CompositionBinding): Promise<{ host: Host }>
+  /** The child is open and bound to its runtime; its Host announced it before binding its registries. */
+  opened(key: string): void
 }): ChildRolePort {
   const catalogue = async (): Promise<readonly ChildRole[]> => {
     const selection = (await deps.configuration.application?.())?.selection
@@ -94,6 +96,7 @@ export function createRoleChildren(deps: {
       }
       const owned = [...deps.containers.values()].find((entry) => entry.host === container.host)
       if (owned) deps.sessionOwners.set(key, owned)
+      deps.opened(key)
       return child
     },
     async resolve(parent, input) {
@@ -267,6 +270,7 @@ export function createRoleChildren(deps: {
           }
           const owned = [...deps.containers.values()].find((entry) => entry.host === container.host)
           if (owned) deps.sessionOwners.set(key, owned)
+          deps.opened(key)
           return child
         },
       }

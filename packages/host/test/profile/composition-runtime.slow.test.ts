@@ -64,10 +64,18 @@ import {
 vi.mock('@agnes/host-infrastructure/adapters/process-identity-default', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'composition-test-worker' }),
 }))
-// Pass-through observers: which sessions the live status describes, and a writer that can fail once.
+// Pass-through observers: which sessions the live status describes (failing for chosen keys), and a
+// writer that can fail once.
+const failingDescriptions = vi.hoisted(() => new Set<string>())
 vi.mock('../../src/runtime/profile/session-capability-view.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/runtime/profile/session-capability-view.js')>()
-  return { ...actual, describeCapabilitySession: vi.fn(actual.describeCapabilitySession) }
+  return {
+    ...actual,
+    describeCapabilitySession: vi.fn((...args: Parameters<typeof actual.describeCapabilitySession>) => {
+      if (failingDescriptions.has(args[1].key)) throw new Error('describe failed')
+      return actual.describeCapabilitySession(...args)
+    }),
+  }
 })
 const liveWrites = vi.hoisted(() => ({ failures: 0 }))
 vi.mock('@agnes/host-providers/profile/composition-state', async (importOriginal) => {
@@ -1376,8 +1384,9 @@ function liveStatusFixture() {
 
 it('stops recomputing capabilities when nothing changes', async () => {
   const { root, options, profileDir } = liveStatusFixture()
-  // Only intervals are faked: a periodic publisher would be one, and Host startup keeps real timeouts.
-  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  // Every timer is fake from before the Host exists, so neither an interval nor a re-armed timeout
+  // could describe the idle sessions without the advance below running it.
+  vi.useFakeTimers()
   const { host } = await createTestHost(options)
   try {
     const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
@@ -1611,6 +1620,79 @@ it('role child sessions appear and disappear without a timer', async () => {
   }
 }, 90_000)
 
+it('follows a role child to the registries its Host binds after opening it', async () => {
+  const f = await roleChildFixture()
+  try {
+    const parent = await f.host.createSession({ key: 'parent', cwd: f.dataDir, agent: f.ref('assistant') })
+    const child = await parent.d.children.createWithKind!('spawn', {
+      parent: parent.key,
+      cwd: f.dataDir,
+      input: 'Inspect',
+      resident: true,
+      role: f.ref('reader'),
+    })
+    const session = f.host.kernel.get(child.key)
+    if (!session) throw new Error('role child is not open')
+    // The child was announced before its Host bound its runtime registries; this one is the bound one.
+    session.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
+    const expected = f.host.compositionSessions?.().find((entry) => entry.sessionKey === child.key)
+    expect(JSON.stringify(expected)).toContain('live_probe')
+    expect(await liveSession(f.profileDir, child.key)).toEqual(JSON.parse(JSON.stringify(expected)))
+    await session.close()
+    await parent.close()
+  } finally {
+    await f.host.close()
+  }
+}, 90_000)
+
+it('counts a role container idle from its child closing, not from the container opening', async () => {
+  const idleMs = 60_000
+  let created = 0
+  let disposed = 0
+  const f = await roleChildFixture({
+    limits: { 'worker.generation_idle_close_ms': idleMs },
+    provider: (profile) => {
+      created++
+      return new ScriptedProvider({
+        models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+        scripts: [],
+      })
+    },
+    onSeamClose: () => {
+      disposed++
+    },
+  })
+  // Wall time moves only by hand here, and each instant is collected explicitly.
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
+  try {
+    const parent = await f.host.createSession({ key: 'parent', cwd: f.dataDir, agent: f.ref('assistant') })
+    const before = created - disposed
+    const child = await parent.d.children.createWithKind!('spawn', {
+      parent: parent.key,
+      cwd: f.dataDir,
+      input: 'Inspect',
+      resident: true,
+      role: f.ref('reader'),
+    })
+    const opened = created - disposed
+    expect(opened).toBeGreaterThan(before)
+    // The child works for most of an idle period after its container opened, then closes.
+    vi.setSystemTime(Date.now() + idleMs - 1000)
+    await f.host.kernel.get(child.key)?.close()
+    const closedAt = Date.now()
+    vi.setSystemTime(closedAt + idleMs - 1)
+    await f.host.collectPluginGenerations!()
+    expect(created - disposed).toBe(opened)
+    vi.setSystemTime(closedAt + idleMs)
+    await f.host.collectPluginGenerations!()
+    expect(created - disposed).toBe(before)
+    await parent.close()
+  } finally {
+    await f.host.close()
+    vi.useRealTimers()
+  }
+}, 90_000)
+
 it('collects a container opened without a session', async () => {
   let created = 0
   let disposed = 0
@@ -1642,11 +1724,63 @@ it('collects a container opened without a session', async () => {
 
 it('hibernate, collect, reopen', async () => {
   const { root, options, profileDir } = liveStatusFixture()
+  const idleMs = 60_000
   let created = 0
   let disposed = 0
   const { host } = await createTestHost({
     ...options,
-    limits: { 'worker.generation_idle_close_ms': 300 },
+    limits: { 'worker.generation_idle_close_ms': idleMs },
+    provider: (profile) => {
+      created++
+      return options.provider(profile)
+    },
+    onSeamClose: () => {
+      disposed++
+    },
+  })
+  // Wall time moves only by hand here, and each instant is collected explicitly.
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
+  try {
+    const baseline = created - disposed
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const opened = created - disposed
+    expect(opened).toBeGreaterThan(baseline)
+    vi.setSystemTime(Date.now() + 2 * idleMs)
+    // The worker hibernates an idle session by closing it; its container outlives it by the idle period.
+    await writer.close()
+    const closedAt = Date.now()
+    expect(await liveKeys(profileDir)).toEqual([])
+    vi.setSystemTime(closedAt + idleMs - 1)
+    await host.collectPluginGenerations!()
+    expect(created - disposed).toBe(opened)
+    // Waking inside the window reuses the container, which then stays while its session is open.
+    const woken = await host.createSession({ key: 'w', cwd: root })
+    expect(created - disposed).toBe(opened)
+    vi.setSystemTime(closedAt + idleMs)
+    await host.collectPluginGenerations!()
+    expect(created - disposed).toBe(opened)
+    await woken.close()
+    vi.setSystemTime(Date.now() + idleMs)
+    await host.collectPluginGenerations!()
+    expect(created - disposed).toBe(baseline)
+    const reopened = await host.createSession({ key: 'w', cwd: root })
+    expect(reopened.pluginGenerationId).toBe(writer.pluginGenerationId)
+    expect(await liveKeys(profileDir)).toEqual([reopened.key])
+    await reopened.close()
+  } finally {
+    await host.close()
+    vi.useRealTimers()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('starts the idle period of an emptied container even when another description fails', async () => {
+  const { root, options } = liveStatusFixture()
+  let created = 0
+  let disposed = 0
+  const { host } = await createTestHost({
+    ...options,
+    limits: { 'worker.generation_idle_close_ms': 0 },
     provider: (profile) => {
       created++
       return options.provider(profile)
@@ -1656,20 +1790,19 @@ it('hibernate, collect, reopen', async () => {
     },
   })
   try {
-    const baseline = created - disposed
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const before = created - disposed
     const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
-    const opened = created - disposed
-    expect(opened).toBeGreaterThan(baseline)
-    // The worker hibernates an idle session by closing it; its container outlives it by the idle period.
+    expect(created - disposed).toBeGreaterThan(before)
+    // The reader stays dirty and fails first in every later flush, including the writer's close.
+    failingDescriptions.add(reader.key)
+    reader.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
     await writer.close()
-    expect(await liveKeys(profileDir)).toEqual([])
-    expect(created - disposed).toBe(opened)
-    await vi.waitFor(() => expect(created - disposed).toBe(baseline), { timeout: 5000 })
-    const woken = await host.createSession({ key: 'w', cwd: root })
-    expect(woken.pluginGenerationId).toBe(writer.pluginGenerationId)
-    expect(await liveKeys(profileDir)).toEqual([woken.key])
-    await woken.close()
+    await vi.waitFor(() => expect(created - disposed).toBe(before), { timeout: 5000 })
+    failingDescriptions.clear()
+    await reader.close()
   } finally {
+    failingDescriptions.clear()
     await host.close()
     rmSync(root, { recursive: true, force: true })
   }

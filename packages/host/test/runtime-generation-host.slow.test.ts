@@ -6,6 +6,7 @@ import { ScriptedProvider } from '@agnes/ai/testkit'
 import { defaultLoopPlugin, memoryPlugin } from '@agnes/base'
 import { defaultIds, type EventInput, hasChildControl, SessionLogImpl } from '@agnes/core'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { CompositionSessionStore } from '@agnes/host-providers/profile/composition-state'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
   capabilityHash,
@@ -424,6 +425,11 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       openSessions: 1,
       live: true,
     })
+    // A second session in a's composition keeps that container open, so only a's generation is collected.
+    const compositions = new CompositionSessionStore(profileDir)
+    compositions.pin({ ...required(compositions.read(a.key)), sessionKey: 'session-a-peer' })
+    const peer = await host.createSession({ key: 'session-a-peer', cwd: root })
+    expect(peer.pluginGenerationId).not.toBe(firstId)
     await a.close()
     // Automatic idle collection releases memory while the durable archive and the other session survive.
     await vi.waitFor(() =>
@@ -440,9 +446,8 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     })
     expect(host.kernel.get(b.key)).toBeDefined()
     expect(host.kernel.get(a.key)).toBeUndefined()
-    // The same idle period then collects the session's whole composition container, so either is gone.
-    expect(() => kernelAdmission(a.key, {} as never)).toThrow(/E_(GENERATION|COMPOSITION)_NOT_LIVE/)
-    expect(() => host!.memory(root, a.key)).toThrow(/E_(GENERATION|COMPOSITION)_NOT_LIVE/)
+    expect(() => kernelAdmission(a.key, {} as never)).toThrow('E_GENERATION_NOT_LIVE')
+    expect(() => host!.memory(root, a.key)).toThrow('E_GENERATION_NOT_LIVE')
     expect(
       (await host.readSessionRows(a.key, { limit: 3 })).some((row) => row.type === 'session/start'),
     ).toBe(true)
@@ -462,6 +467,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       structured: { limit: 10 },
     })
     await collectedResume.close()
+    await peer.close()
     await host.close()
     // Installed packages and the publisher's process cache disappear; only immutable snapshots remain.
     sources.splice(0)

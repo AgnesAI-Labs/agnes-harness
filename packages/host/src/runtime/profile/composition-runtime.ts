@@ -127,6 +127,7 @@ export async function createCompositionHost(
     writer,
     bundles: profile.bundleCatalog,
     log: options.log,
+    sessionSeen: (container) => idleSince.delete(container),
     onSessionGone: () => collection.idleNow(),
   })
   const projectRows = <T extends RuntimeTarget['tree']['rows'][number]>(
@@ -294,6 +295,7 @@ export async function createCompositionHost(
               read: (key) => store.readIfValid(key),
               pin: (binding) => store.pin(binding),
               open,
+              opened: (key) => liveStatus.markDirty([key]),
             })),
             onGenerationSessionBinding: (key) => {
               // Includes children opened by Core directly, through the same generation callback.
@@ -348,10 +350,8 @@ export async function createCompositionHost(
           draining: target ? draining(target.tree.rows, binding.tree, host) : false,
           ...(applied === undefined ? {} : { applied }),
         }
-        containers.set(identity, container)
         liveStatus.watch(container)
-        // Review and migration open a container that never gets a session.
-        if (reason !== 'boot') collection.idleNow()
+        containers.set(identity, container)
         if (attemptedGeneration) openingFailures.delete(attemptedGeneration)
         return container
       } catch (error) {
@@ -361,7 +361,10 @@ export async function createCompositionHost(
     })()
     opening.set(identity, started)
     try {
-      return await started
+      const container = await started
+      // Review and migration open a container that never gets a session.
+      if (reason !== 'boot') collection.idleNow()
+      return container
     } catch (error) {
       // Direct cold bootstrap can fail before a generation Host exists to record its refusal.
       // Keep that failure visible without creating a throwaway container just for diagnostics.
@@ -605,7 +608,6 @@ export async function createCompositionHost(
               })
               if (agent) await verifyAgentPin(agent, session, binding.tree.hash, prepareAgent, container.host)
               sessionOwners.set(key, container)
-              idleSince.delete(container)
               if (session.pluginGenerationId) openingFailures.delete(session.pluginGenerationId)
               const close = session.close.bind(session)
               session.close = async () => {

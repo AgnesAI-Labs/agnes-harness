@@ -25,7 +25,9 @@ export function createCompositionLiveStatus(
     writer: { writeFragments(fragments: readonly string[]): void }
     bundles: BundleCatalog | undefined
     log: HostOptions['log']
-    /** Called after a flush in which a session closed or left its container. */
+    /** A flush found a live session in this container, so its idle period has not started. */
+    sessionSeen: (container: Container) => void
+    /** A flush found a session closed or gone; called before any description can fail. */
     onSessionGone: () => void
   }>,
 ) {
@@ -83,24 +85,27 @@ export function createCompositionLiveStatus(
     try {
       const sessions = open()
       let gone = false
-      for (const key of new Set([...described.keys(), ...subscriptions.keys()]))
+      for (const key of new Set([...described.keys(), ...subscriptions.keys(), ...dirty]))
         if (!sessions.has(key)) {
           unsubscribe(key)
-          gone = described.delete(key) || gone
+          described.delete(key)
+          dirty.delete(key)
+          gone = true
         }
+      for (const { container } of sessions.values()) input.sessionSeen(container)
+      if (gone) input.onSessionGone()
       // A key leaves the dirty set only once described, so a failure is retried on the next change.
       for (const key of dirty) {
         const found = sessions.get(key)
         if (found) {
           subscribe(key, found.session)
           described.set(key, JSON.stringify(describe(found)))
-        } else gone = true
+        }
         dirty.delete(key)
       }
-      if (gone) input.onSessionGone()
       input.writer.writeFragments([...described.values()])
-    } catch {
-      input.log.warn('Composition live status could not be written')
+    } catch (error) {
+      input.log.warn('Composition live status could not be written', { error: String(error) })
     }
   }
   return {

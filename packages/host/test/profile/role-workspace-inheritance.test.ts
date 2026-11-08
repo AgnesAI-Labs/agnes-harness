@@ -33,6 +33,7 @@ it('reopens a role child with the trusted parent legacy grant derived for its ow
     open: async () => ({ host }),
     containers: new Map(),
     sessionOwners: new Map(),
+    opened: () => undefined,
   } as never)
   await port.reopen?.('child', { cwd: grant.root, workspaceIdentity: parent } as never)
   expect(createSession).toHaveBeenCalledWith(
