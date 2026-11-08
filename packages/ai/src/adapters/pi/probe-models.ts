@@ -109,12 +109,9 @@ export async function fetchProviderModels(options: {
   const resource = options.api === 'anthropic-messages' ? 'v1/models' : 'models'
   url.pathname = `${url.pathname.replace(/\/$/, '')}/${resource}`
   if (options.api === 'google-generative-ai') url.searchParams.set('pageSize', '1000')
-  // Gateways publish max_input_tokens / max_output_tokens only on the detailed listing; plain /models is the fallback.
-  const plainUrl = url
-  if (options.api === 'openai-completions') {
-    url = new URL(plainUrl)
-    url.searchParams.set('detail', 'true')
-  }
+  // Some gateways publish max_input_tokens / max_output_tokens only on the detail listing; plain /models is the fallback.
+  const detailUrl = new URL(url)
+  detailUrl.searchParams.set('detail', 'true')
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (options.api === 'anthropic-messages') headers['anthropic-version'] = '2023-06-01'
   if (credential !== undefined) {
@@ -124,61 +121,76 @@ export async function fetchProviderModels(options: {
   }
   const timeout = AbortSignal.timeout(30_000)
   const signal = options.signal === undefined ? timeout : AbortSignal.any([options.signal, timeout])
-  let response: Response
-  try {
-    // A redirect is reported, never followed: the credential stays with the address it was given for.
-    const get = (target: URL) =>
-      (options.request ?? deploymentFetch)(target, { method: 'GET', redirect: 'manual', headers, signal })
-    response = await get(url)
-    if (url !== plainUrl && !response.ok) {
-      await response.body?.cancel().catch(() => undefined)
-      response = await get(plainUrl)
+  const read = async (target: URL): Promise<ProviderModels> => {
+    let response: Response
+    try {
+      // A redirect is reported, never followed: the credential stays with the address it was given for.
+      response = await (options.request ?? deploymentFetch)(target, {
+        method: 'GET',
+        redirect: 'manual',
+        headers,
+        signal,
+      })
+    } catch (error) {
+      return failed(timeout.aborted || (error as Error)?.name === 'TimeoutError' ? 'timeout' : 'network')
     }
+    if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
+      await response.body?.cancel().catch(() => undefined)
+      if (credential !== undefined && (response.status === 401 || response.status === 403))
+        throw new ApiKeyProviderError('CATALOG_UNAVAILABLE', response.status)
+      if (response.status >= 300 && response.status < 400) return failed('redirect', response.status)
+      return response.ok ? failed('not-json') : failed('http', response.status)
+    }
+    const body = await boundedJson(response)
+    if (!('value' in body)) return failed(body.reason)
+    if (!object(body.value)) return failed('invalid')
+    const data = body.value.data ?? body.value.models
+    if (Array.isArray(data) && data.length === 0) return failed('empty')
+    if (!Array.isArray(data) || data.length > MAX_MODELS) return failed('invalid')
+    const ids: string[] = []
+    const contexts: [string, number][] = []
+    const outputs: [string, number][] = []
+    for (const item of data) {
+      if (!object(item)) return failed('invalid')
+      // Gemini lists resource names (models/{id}); OpenAI/Anthropic list plain ids.
+      // https://ai.google.dev/api/models#Model
+      const id =
+        options.api === 'google-generative-ai' && typeof item.name === 'string'
+          ? item.name.replace(/^models\//, '')
+          : item.id
+      if (
+        typeof id !== 'string' ||
+        !MODEL_ID.test(id) ||
+        (credential !== undefined && id.includes(credential))
+      )
+        return failed('invalid')
+      ids.push(id)
+      const contextWindow = [
+        item.context_length,
+        object(item.limit) ? item.limit.context : undefined,
+        item.context_window,
+        item.max_input_tokens,
+      ].find(positiveSafeInteger)
+      if (contextWindow !== undefined) contexts.push([id, contextWindow])
+      if (positiveSafeInteger(item.max_output_tokens)) outputs.push([id, item.max_output_tokens])
+    }
+    if (new Set(ids).size !== ids.length) return failed('invalid')
+    return {
+      ids: Object.freeze(ids),
+      ...(contexts.length ? { contextWindows: Object.freeze(Object.fromEntries(contexts)) } : {}),
+      ...(outputs.length ? { maxTokens: Object.freeze(Object.fromEntries(outputs)) } : {}),
+    }
+  }
+  if (options.api !== 'openai-completions') return read(url)
+  // Anything but a usable id list from the detail listing falls back to the plain one, whose answer is final.
+  // A deadline or a caller's abort ends the probe instead: a second request would only repeat it.
+  try {
+    const detailed = await read(detailUrl)
+    if ('ids' in detailed || detailed.failure.reason === 'timeout' || options.signal?.aborted) return detailed
   } catch (error) {
-    return failed(timeout.aborted || (error as Error)?.name === 'TimeoutError' ? 'timeout' : 'network')
+    if (!(error instanceof ApiKeyProviderError) || timeout.aborted || options.signal?.aborted) throw error
   }
-  if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
-    await response.body?.cancel().catch(() => undefined)
-    if (credential !== undefined && (response.status === 401 || response.status === 403))
-      throw new ApiKeyProviderError('CATALOG_UNAVAILABLE', response.status)
-    if (response.status >= 300 && response.status < 400) return failed('redirect', response.status)
-    return response.ok ? failed('not-json') : failed('http', response.status)
-  }
-  const body = await boundedJson(response)
-  if (!('value' in body)) return failed(body.reason)
-  if (!object(body.value)) return failed('invalid')
-  const data = body.value.data ?? body.value.models
-  if (Array.isArray(data) && data.length === 0) return failed('empty')
-  if (!Array.isArray(data) || data.length > MAX_MODELS) return failed('invalid')
-  const ids: string[] = []
-  const contexts: [string, number][] = []
-  const outputs: [string, number][] = []
-  for (const item of data) {
-    if (!object(item)) return failed('invalid')
-    // Gemini lists resource names (models/{id}); OpenAI/Anthropic list plain ids.
-    // https://ai.google.dev/api/models#Model
-    const id =
-      options.api === 'google-generative-ai' && typeof item.name === 'string'
-        ? item.name.replace(/^models\//, '')
-        : item.id
-    if (typeof id !== 'string' || !MODEL_ID.test(id) || (credential !== undefined && id.includes(credential)))
-      return failed('invalid')
-    ids.push(id)
-    const contextWindow = [
-      item.context_length,
-      object(item.limit) ? item.limit.context : undefined,
-      item.context_window,
-      item.max_input_tokens,
-    ].find(positiveSafeInteger)
-    if (contextWindow !== undefined) contexts.push([id, contextWindow])
-    if (positiveSafeInteger(item.max_output_tokens)) outputs.push([id, item.max_output_tokens])
-  }
-  if (new Set(ids).size !== ids.length) return failed('invalid')
-  return {
-    ids: Object.freeze(ids),
-    ...(contexts.length ? { contextWindows: Object.freeze(Object.fromEntries(contexts)) } : {}),
-    ...(outputs.length ? { maxTokens: Object.freeze(Object.fromEntries(outputs)) } : {}),
-  }
+  return read(url)
 }
 
 /** Reachability only. Response contents never become catalogue or capability evidence. */

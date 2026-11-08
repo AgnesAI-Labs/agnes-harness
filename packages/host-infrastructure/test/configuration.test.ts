@@ -31,11 +31,14 @@ afterEach(async () => {
 async function fixture(
   model: string | (string | Record<string, unknown>)[],
   status = 200,
+  /** What `?detail=true` lists, for a gateway that publishes more there; otherwise that address is refused. */
+  detail?: (string | Record<string, unknown>)[],
 ): Promise<{ baseUrl: string; requests: IncomingMessage[] }> {
   const requests: IncomingMessage[] = []
   const server = createServer((request, response) => {
     requests.push(request)
-    if (request.url !== '/v1/models') {
+    const rows = request.url === '/v1/models?detail=true' && detail !== undefined ? detail : model
+    if (request.url !== '/v1/models' && rows === model) {
       response.writeHead(404)
       response.end()
       return
@@ -44,7 +47,7 @@ async function fixture(
     response.end(
       JSON.stringify({
         object: 'list',
-        data: [model].flat().map((row) => (typeof row === 'string' ? { id: row } : row)),
+        data: [rows].flat().map((row) => (typeof row === 'string' ? { id: row } : row)),
       }),
     )
   })
@@ -321,7 +324,7 @@ it('uses endpoint context limits over saved fallbacks and preserves them in runt
   expect((await reopened.profileInput()).provider?.routes?.[0]?.models?.[0]?.contextWindow).toBe(1048576)
 })
 
-it('probed output limit overrides the listed value, like the context window', async () => {
+it('probed output limit overrides the saved value, like the context window', async () => {
   const server = await fixture([
     { id: 'probed', max_input_tokens: 1000000, max_output_tokens: 256000 },
     { id: 'silent' },
@@ -347,6 +350,20 @@ it('probed output limit overrides the listed value, like the context window', as
     ['probed', 256000],
     ['silent', 8192],
   ])
+})
+
+it('reads limits that a gateway publishes only on the detail listing', async () => {
+  const server = await fixture(['gated', 'plain'], 200, [
+    { id: 'gated', max_input_tokens: 1000000, max_output_tokens: 256000 },
+    { id: 'plain' },
+  ])
+  const service = createConfigurationService({ home: await home(), profile: 'local-dev' })
+  const result = await service.test({ providerId: 'openai-compatible', baseUrl: server.baseUrl })
+  expect(result.models.map(({ id, contextWindow, maxTokens }) => [id, contextWindow, maxTokens])).toEqual([
+    ['gated', 1000000, 256000],
+    ['plain', 128000, 8192],
+  ])
+  expect(server.requests.map((request) => request.url)).toEqual(['/v1/models?detail=true'])
 })
 
 it('allows correcting a saved budget after the endpoint context limit shrinks', async () => {

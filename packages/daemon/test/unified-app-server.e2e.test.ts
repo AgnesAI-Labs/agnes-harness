@@ -97,7 +97,7 @@ it(
         res.end('invalid fixture credential')
         return
       }
-      if (req.url?.endsWith('/models')) {
+      if (new URL(req.url ?? '/', 'http://fixture').pathname.endsWith('/models')) {
         res.setHeader('content-type', 'application/json')
         res.end(JSON.stringify({ data: availableModels.map((id) => ({ id })) }))
         return

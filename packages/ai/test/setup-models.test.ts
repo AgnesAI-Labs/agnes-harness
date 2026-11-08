@@ -86,6 +86,35 @@ it('asks for detail=true first and falls back to /models on 404', async () => {
   expect(urls).toEqual(['https://relay.invalid/v1/models'])
 })
 
+it('falls back to /models whenever the detail listing cannot be used', async () => {
+  const options = { api: 'openai-completions', baseUrl: 'https://relay.invalid/v1' }
+  const plain = () => Response.json({ data: [{ id: 'plain-model' }] })
+  const via = (detail: () => Response, fallback: () => Response = plain): typeof fetch => {
+    return async (url) => (String(url).includes('detail=true') ? detail() : fallback())
+  }
+  const html = () => new Response('<html>', { headers: { 'content-type': 'text/html' } })
+  const huge = () =>
+    new Response('x'.repeat(1024 * 1024 + 1), { headers: { 'content-type': 'application/json' } })
+  for (const detail of [html, huge, () => Response.json({ data: [] }), () => Response.json({ data: 'x' })])
+    expect(await fetchProviderModels({ ...options, request: via(detail) })).toEqual({ ids: ['plain-model'] })
+  // A refusal of the detail listing is not final; the plain listing's answer is.
+  const refused = () => Response.json({ error: 'no' }, { status: 401 })
+  expect(await fetchProviderModels({ ...options, credential: 'sk-relay', request: via(refused) })).toEqual({
+    ids: ['plain-model'],
+  })
+  await expect(
+    fetchProviderModels({ ...options, credential: 'sk-relay', request: via(refused, refused) }),
+  ).rejects.toMatchObject({ status: 401 })
+  // A deadline or abort is not retried.
+  let calls = 0
+  const late: typeof fetch = async () => {
+    calls += 1
+    throw new DOMException('late', 'TimeoutError')
+  }
+  expect(await fetchProviderModels({ ...options, request: late })).toEqual({ failure: { reason: 'timeout' } })
+  expect(calls).toBe(1)
+})
+
 it('normalizes Gemini resource names and excludes credential-shaped model IDs', async () => {
   let body: unknown = { models: [{ name: 'models/gemini-test' }] }
   let status = 200
