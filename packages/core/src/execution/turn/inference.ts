@@ -1270,7 +1270,15 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     // provider on the next request as part of the assistant turn, and a provider that rejects empty
     // text blocks refuses the whole request over a block core invented.
     const content = [
-      ...(thinking ? [{ type: 'thinking' as const, text: thinking }] : []),
+      ...(thinking
+        ? [
+            {
+              type: 'thinking' as const,
+              text: thinking,
+              ...(done?.thinkingSignature ? { signature: done.thinkingSignature } : {}),
+            },
+          ]
+        : []),
       ...(text ? [{ type: 'text' as const, text }] : []),
     ]
     const stopReason = truncated ? 'max_tokens' : calls.length ? 'tool_use' : 'end_turn'

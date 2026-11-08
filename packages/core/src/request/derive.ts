@@ -474,7 +474,16 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
     const content: RequestMessage['content'] = []
     for (const b of blocksOf(d.content)) {
       if (b.type === 'text') content.push({ type: 'text', text: wrap(String(b.text)) })
-      else if (b.type === 'thinking') content.push({ type: 'thinking', text: wrap(String(b.text)) })
+      else if (b.type === 'thinking')
+        content.push({
+          type: 'thinking',
+          text: wrap(String(b.text)),
+          // Only this harness's own output: an imported signature was minted by some other
+          // provider and means nothing to this one. Scrubbed like the text beside it.
+          ...(!untrusted && typeof b.signature === 'string' && b.signature !== ''
+            ? { signature: sanitize(b.signature) }
+            : {}),
+        })
     }
     msg = { role: 'assistant', seq: node.seq, content }
   }
@@ -963,7 +972,8 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // neither scrubbed nor on this list.
   //
   // Scrubbed: `sections[].id`, `.text`, `.source`; every `messages[].content[]` string — `text`,
-  // `thinking`, the `tool_result` `text` *and* its `toolUseId`, an image's `data` and `mimeType`;
+  // `thinking`, a trusted thinking block's `signature`, the `tool_result` `text` *and* its
+  // `toolUseId`, an image's `data` and `mimeType`;
   // `tools[].name`, `.description` and every string in `.parameters` including property names;
   // `model.slot`, `.route`, `.model`; `contractId`. Untrusted message text is enveloped by
   // `wrapUntrusted`, which scrubs before it wraps.

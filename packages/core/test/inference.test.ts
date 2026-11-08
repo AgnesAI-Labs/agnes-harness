@@ -1552,6 +1552,31 @@ describe('Inference segment (fix round 1)', () => {
     expect(msg.content.map((b) => b.type)).toEqual(['thinking', 'text'])
   })
 
+  it('stores the thinking signature on the assistant message', async () => {
+    const run = async (signature?: string) => {
+      const { session, log } = await primed([
+        [
+          sent(),
+          { type: 'thinking_delta', delta: 'let me think' },
+          { type: 'text_delta', delta: 'the answer' },
+          usage(),
+          { type: 'done', reason: 'stop', ...(signature ? { thinkingSignature: signature } : {}) },
+        ],
+      ])
+      await session.runInference()
+      return (await log.scan({ type: 'assistant/message', limit: 5 }))[0]?.data as {
+        content: Array<Record<string, unknown>>
+      }
+    }
+    expect((await run('reasoning_content')).content).toEqual([
+      { type: 'thinking', text: 'let me think', signature: 'reasoning_content' },
+      { type: 'text', text: 'the answer' },
+    ])
+    const bare = (await run()).content
+    expect(bare[0]).toEqual({ type: 'thinking', text: 'let me think' })
+    expect('signature' in (bare[0] ?? {})).toBe(false)
+  })
+
   it('an interrupted spend is told to the ledger seam, so a failing ledger can still fail closed', async () => {
     const failing: Script[] = [
       [

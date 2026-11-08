@@ -65,7 +65,15 @@ export function translateEvent(
       // A deferred answer is not a finish this package can express yet; it reads as a stop, which is
       // the closest honest reading until the deferred path exists.
       const reason = ev.reason === 'length' ? 'length' : ev.reason === 'toolUse' ? 'toolUse' : 'stop'
-      return [usage, { type: 'done', reason }]
+      // One signature per message, because Core keeps one thinking string per message: the first
+      // reasoning block that has one. The provider's own marker for where the reasoning lives
+      // (e.g. `reasoning_content`) is what a later request needs to put it back in the same place.
+      const signature = ev.message.content.find(
+        (b) =>
+          b.type === 'thinking' && typeof b.thinkingSignature === 'string' && b.thinkingSignature !== '',
+      )
+      const thinkingSignature = signature?.type === 'thinking' ? signature.thinkingSignature : undefined
+      return [usage, { type: 'done', reason, ...(thinkingSignature ? { thinkingSignature } : {}) }]
     }
     case 'error': {
       // The window comes from the model this request actually went to. Passing nothing here left one

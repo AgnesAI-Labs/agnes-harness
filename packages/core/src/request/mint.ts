@@ -13,7 +13,9 @@ export type RequestMessage = {
     // Kept as its own kind rather than folded into `text`: a provider that requires reasoning
     // echoed back beside the tool use it explains needs to know which block it was, and merging it
     // into the visible text would also show the model its own reasoning as something it said.
-    | { type: 'thinking'; text: string }
+    // `signature` is the provider's marker for where this reasoning lives (e.g. `reasoning_content`),
+    // carried so a later request can put it back in the same place.
+    | { type: 'thinking'; text: string; signature?: string }
     | { type: 'image'; data: string; mimeType: string }
     | { type: 'tool_result'; toolUseId: string; text: string; isError: boolean }
   >

@@ -696,6 +696,30 @@ describe('deriveRequest', () => {
     ])
   })
 
+  it("keeps the signature of this harness's own thinking and drops an imported one", () => {
+    seq = 0
+    const content = [
+      { type: 'thinking', text: 'mine', signature: 'reasoning_content' },
+      { type: 'text', text: 'said' },
+    ]
+    const own = computeSurface([ev('assistant/message', { content, stopReason: 'end_turn' })], {})
+    expect(deriveRequest({ ...base(), surface: own, ...NO_RC }).request.messages[0]?.content).toEqual([
+      { type: 'thinking', text: 'mine', signature: 'reasoning_content' },
+      { type: 'text', text: 'said' },
+    ])
+    seq = 0
+    const imported = computeSurface([
+      ev(
+        'assistant/message',
+        { content, stopReason: 'end_turn' },
+        { trust: 'untrusted', origin: 'import:codex' },
+      ),
+    ])
+    const [thinking] = deriveRequest({ ...base(), surface: imported }).request.messages[0]?.content ?? []
+    expect(thinking).toMatchObject({ type: 'thinking' })
+    expect('signature' in (thinking ?? {})).toBe(false)
+  })
+
   it.each(['text', 'thinking'] as const)(
     'keeps imported assistant %s inside an untrusted envelope',
     (type) => {
@@ -1620,7 +1644,7 @@ describe('every string in the body, enumerated rather than remembered', () => {
         ev('assistant/message', {
           content: [
             { type: 'text', text: `a${HOSTILE2}` },
-            { type: 'thinking', text: `k${HOSTILE2}` },
+            { type: 'thinking', text: `k${HOSTILE2}`, signature: `g${HOSTILE2}` },
           ],
           stopReason: 'end_turn',
         }),

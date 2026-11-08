@@ -599,6 +599,32 @@ describe('PiAdapter', () => {
     expect(events[5]).toEqual({ type: 'done', reason: 'toolUse' })
   })
 
+  it('done carries the first thinking block signature', async () => {
+    const signed = assistant({
+      content: [
+        { type: 'thinking', thinking: 'a', thinkingSignature: 'reasoning_content' },
+        { type: 'text', text: 'b' },
+      ],
+    })
+    const run = async (msg: ReturnType<typeof assistant>) => {
+      const { impl } = fakeStream([[{ type: 'done', reason: 'stop', message: msg }]])
+      const a = bound({ manualRoutes: [route], streamImpl: impl })
+      return (await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))).at(-1)
+    }
+    expect(await run(signed)).toEqual({ type: 'done', reason: 'stop', thinkingSignature: 'reasoning_content' })
+    // The first block that has one, not a later one; an empty signature is no signature.
+    const later = assistant({
+      content: [
+        { type: 'thinking', thinking: 'a', thinkingSignature: '' },
+        { type: 'thinking', thinking: 'b', thinkingSignature: 'second' },
+      ],
+    })
+    expect(await run(later)).toEqual({ type: 'done', reason: 'stop', thinkingSignature: 'second' })
+    const bare = assistant({ content: [{ type: 'thinking', thinking: 'a' }, { type: 'text', text: 'b' }] })
+    expect(await run(bare)).toEqual({ type: 'done', reason: 'stop' })
+    expect(await run(assistant())).toEqual({ type: 'done', reason: 'stop' })
+  })
+
   it('maps each stop reason pi reports and carries reasoning tokens when it reports them', async () => {
     const reasons = ['stop', 'length', 'toolUse', 'deferred'] as const
     for (const reason of reasons) {
