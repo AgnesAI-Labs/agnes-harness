@@ -1,6 +1,5 @@
-import type { BundleCatalog } from '@agnes/host-common/profile/composition'
-import type { HostOptions, HostSession } from '../lifecycle/host.js'
-import type { CompositionContainer as Container } from './composition-selection.js'
+import type { BundleCatalog, ResolvedComposition } from '@agnes/host-common/profile/composition'
+import type { Host, HostOptions, HostSession } from '../lifecycle/host.js'
 import { describeCapabilitySession } from './session-capability-view.js'
 
 type Subscriptions = {
@@ -17,18 +16,24 @@ type Subscriptions = {
  * Live composition status, published when one of its inputs changes. Each open session's description
  * is cached as its JSON fragment; a change marks only the affected sessions dirty, and a microtask
  * describes them again and hands every fragment to the writer. Core and the registries swallow
- * listener errors, so a listener only marks a key; all real work and its warning live in `flush`.
+ * listener errors, so a listener only marks a key; all real work and its warnings live in `flush`.
+ * Both Hosts publish through it: the composition Host with one container per composition, a legacy
+ * Host as its own single container. Each Host marks the changes it alone sees (publications, a
+ * failed preset switch, a session its Host bound after the kernel announced it).
  */
-export function createCompositionLiveStatus(
+export function createCompositionLiveStatus<Container extends { host: Host }>(
   input: Readonly<{
-    containers: ReadonlyMap<string, Container>
-    writer: { writeFragments(fragments: readonly string[]): void }
+    /** The containers whose kernels hold the published sessions. */
+    containers: () => Iterable<Container>
+    /** The composition a session of this container is described against. */
+    tree: (container: Container, session: HostSession) => ResolvedComposition
     bundles: BundleCatalog | undefined
-    log: HostOptions['log']
+    writer: { writeFragments(fragments: readonly string[]): void }
+    log?: HostOptions['log'] | undefined
     /** A flush found a live session in this container, so its idle period has not started. */
-    sessionSeen: (container: Container) => void
+    sessionSeen?: (container: Container) => void
     /** A flush found a session closed or gone; called before any description can fail. */
-    onSessionGone: () => void
+    onSessionGone?: () => void
   }>,
 ) {
   const described = new Map<string, string>()
@@ -44,7 +49,7 @@ export function createCompositionLiveStatus(
   // one already closing when first seen has no close notice to wait for.
   const open = () => {
     const sessions = new Map<string, { container: Container; session: HostSession }>()
-    for (const container of input.containers.values())
+    for (const container of input.containers())
       for (const session of container.host.kernel.sessions.values())
         if (
           !finished.has(session) &&
@@ -54,7 +59,7 @@ export function createCompositionLiveStatus(
     return sessions
   }
   const describe = ({ container, session }: { container: Container; session: HostSession }) =>
-    describeCapabilitySession(container.host, session, container.tree, input.bundles)
+    describeCapabilitySession(container.host, session, input.tree(container, session), input.bundles)
   const markDirty = (keys: Iterable<string>): void => {
     for (const key of keys) dirty.add(key)
     if (scheduled || !dirty.size) return
@@ -103,8 +108,8 @@ export function createCompositionLiveStatus(
           dirty.delete(key)
           gone = true
         }
-      for (const { container } of sessions.values()) input.sessionSeen(container)
-      if (gone) input.onSessionGone()
+      if (input.sessionSeen) for (const { container } of sessions.values()) input.sessionSeen(container)
+      if (gone) input.onSessionGone?.()
       // Each session on its own: a failure keeps that session's previous fragment and leaves its key
       // dirty for the next change (no new microtask, so a lasting failure cannot spin), and every
       // other session is still subscribed, described and written.
@@ -117,7 +122,7 @@ export function createCompositionLiveStatus(
           }
           dirty.delete(key)
         } catch (error) {
-          input.log.warn('Composition live status could not describe a session', {
+          input.log?.warn('Composition live status could not describe a session', {
             sessionKey: key,
             error: String(error),
           })
@@ -125,14 +130,13 @@ export function createCompositionLiveStatus(
       }
       input.writer.writeFragments([...described.values()])
     } catch (error) {
-      input.log.warn('Composition live status could not be written', { error: String(error) })
+      input.log?.warn('Composition live status could not be written', { error: String(error) })
     }
   }
   return {
     markDirty,
     /** After a publication every session may have changed, including the registries it reads. */
-    markAll: () =>
-      markDirty([...input.containers.values()].flatMap(({ host }) => [...host.kernel.sessions.keys()])),
+    markAll: () => markDirty([...input.containers()].flatMap(({ host }) => [...host.kernel.sessions.keys()])),
     /** Sessions opened by any path, including role and Core children, which no Host wrapper sees. */
     watch(container: Container): void {
       watched.set(
@@ -144,7 +148,7 @@ export function createCompositionLiveStatus(
     },
     /** Drops the listeners of containers that were collected or closed. */
     unwatchClosed(): void {
-      const live = new Set(input.containers.values())
+      const live = new Set(input.containers())
       for (const [container, off] of watched)
         if (!live.has(container)) {
           off()

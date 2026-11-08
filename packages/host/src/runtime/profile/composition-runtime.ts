@@ -123,7 +123,8 @@ export async function createCompositionHost(
   let latestRows: Parameters<Host['extensionRows']['apply']>[0] | undefined
   const writer = await createLiveCompositionWriter(options.profileDir)
   const liveStatus = createCompositionLiveStatus({
-    containers,
+    containers: () => containers.values(),
+    tree: (container: Container) => container.tree,
     writer,
     bundles: profile.bundleCatalog,
     log: options.log,
