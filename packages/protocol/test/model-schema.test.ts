@@ -3,7 +3,7 @@ import { Value } from '@sinclair/typebox/value'
 import { describe, expect, it } from 'vitest'
 import * as M from '../gen/ts/model.js'
 import * as S from '../gen/ts/session-v1.js'
-import { AI_ERROR_CODES, SLOT_NAMES, validateAgainst } from '../src/index.js'
+import { AI_ERROR_CODES, SLOT_NAMES, validateAgainst, validateEvent } from '../src/index.js'
 
 const doc = JSON.parse(readFileSync(new URL('../schema/model.json', import.meta.url), 'utf8')) as {
   $defs: Record<string, unknown>
@@ -200,6 +200,27 @@ describe('model.json', () => {
     expect(Value.Check(M.RequestBody, body(empty))).toBe(false)
     expect(Value.Check(S.AssistantMessage, stored(empty))).toBe(false)
     expect(Value.Check(M.InferenceEvent, { type: 'done', reason: 'stop', thinkingSignature: '' })).toBe(false)
+  })
+
+  // Every client receiving a row (sdk session) and `agnes export` check it with validateEvent, which
+  // validates `data` against the row type's schema. Pins that a signed assistant/message passes that
+  // whole path on the new schema; an older build, whose thinking item is closed, rejects it there.
+  it('validateEvent accepts an assistant/message envelope carrying a signed thinking block', () => {
+    const envelope = (thinking: Record<string, unknown>) => ({
+      seq: 1,
+      ts: '2026-09-07T00:00:00Z',
+      id: '01J6ZM2Q3R4S5T6V7W8X9Y0ZAB',
+      actor: { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} },
+      origin: 'model',
+      trust: 'trusted',
+      type: 'assistant/message',
+      data: { content: [thinking, { type: 'text', text: 'ok' }], stopReason: 'end_turn', requestSeq: 1 },
+    })
+    expect(
+      validateEvent(envelope({ type: 'thinking', text: 'hmm', signature: 'reasoning_content' })).ok,
+    ).toBe(true)
+    expect(validateEvent(envelope({ type: 'thinking', text: 'hmm' })).ok).toBe(true)
+    expect(validateEvent(envelope({ type: 'thinking', text: 'hmm', signature: '' })).ok).toBe(false)
   })
 
   // `via` distinguishes a call the wire protocol carried natively from one recovered by a decode
