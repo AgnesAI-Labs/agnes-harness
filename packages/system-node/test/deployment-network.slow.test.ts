@@ -184,12 +184,16 @@ it.each([
   else await expect(body).rejects.toMatchObject({ name: 'TimeoutError', message: outcome })
 })
 
-// A POST answer, such as a model's SSE stream, is bounded by the request deadline only until its body
-// starts. After that only the idle timer ends it, so a long answer that keeps arriving is never cut.
-it('a POST stream outlives requestMs once its body has started', async () => {
+// A POST event stream, such as a model's SSE answer, is bounded by the request deadline only until its
+// body starts. After that only the idle timer ends it, so a long answer that keeps arriving is never
+// cut. Any other POST body keeps the request deadline to its end, however steadily it arrives.
+it.each([
+  ['a POST stream outlives requestMs once its body has started', 'text/event-stream'],
+  ['non-stream POST keeps requestMs', 'application/json'],
+] as const)('%s', async (_label, type) => {
   const endpoint = await listen(
     createServer((_request, response) => {
-      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      response.writeHead(200, { 'Content-Type': type })
       let sent = 0
       const tick = setInterval(() => {
         response.write(`data: ${sent}\n\n`)
@@ -198,28 +202,27 @@ it('a POST stream outlives requestMs once its body has started', async () => {
       response.on('close', () => clearInterval(tick))
     }),
   )
+  // Gaps of 50 ms stay far below the idle limit, so only the request deadline can end the body.
   const client = createDeploymentFetch({ requestMs: 200, streamIdleMs: 150 }, {})
   clients.push(client)
-  const body = await client
-    .fetch(endpoint, { method: 'POST', body: '{}' })
-    .then((response) => response.text())
-  expect(body.match(/data: /g)).toHaveLength(12)
+  const started = performance.now()
+  const body = client.fetch(endpoint, { method: 'POST', body: '{}' }).then((response) => response.text())
+  if (type === 'text/event-stream') expect((await body).match(/data: /g)).toHaveLength(12)
+  else {
+    await expect(body).rejects.toMatchObject({ name: 'TimeoutError', message: 'Request timeout' })
+    // About requestMs, well before the 600 ms the body would take to finish.
+    expect(performance.now() - started).toBeLessThan(450)
+  }
 })
 
-it.each([
-  ['a POST whose body never starts aborts at requestMs', 'text/event-stream', undefined],
-  ['non-stream POST keeps requestMs', 'application/json', 400],
-] as const)('%s', async (_label, type, bodyAfterMs) => {
+it('a POST whose body never starts aborts at requestMs', async () => {
   const endpoint = await listen(
     createServer((_request, response) => {
-      response.writeHead(200, { 'Content-Type': type })
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
       response.flushHeaders()
-      if (bodyAfterMs === undefined) return
-      const late = setTimeout(() => response.end('{"late":true}'), bodyAfterMs)
-      response.on('close', () => clearTimeout(late))
     }),
   )
-  // The idle setting is far off, so only the request deadline can end either wait.
+  // The idle setting is far off, so only the request deadline can end the wait.
   const client = createDeploymentFetch({ requestMs: 200, streamIdleMs: 5_000 }, {})
   clients.push(client)
   const body = client.fetch(endpoint, { method: 'POST', body: '{}' }).then((response) => response.text())
