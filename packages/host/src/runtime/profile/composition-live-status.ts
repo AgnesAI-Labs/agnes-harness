@@ -94,14 +94,23 @@ export function createCompositionLiveStatus(
         }
       for (const { container } of sessions.values()) input.sessionSeen(container)
       if (gone) input.onSessionGone()
-      // A key leaves the dirty set only once described, so a failure is retried on the next change.
-      for (const key of dirty) {
+      // Each session on its own: a failure keeps that session's previous fragment and leaves its key
+      // dirty for the next change (no new microtask, so a lasting failure cannot spin), and every
+      // other session is still subscribed, described and written.
+      for (const key of [...dirty]) {
         const found = sessions.get(key)
-        if (found) {
-          subscribe(key, found.session)
-          described.set(key, JSON.stringify(describe(found)))
+        try {
+          if (found) {
+            subscribe(key, found.session)
+            described.set(key, JSON.stringify(describe(found)))
+          }
+          dirty.delete(key)
+        } catch (error) {
+          input.log.warn('Composition live status could not describe a session', {
+            sessionKey: key,
+            error: String(error),
+          })
         }
-        dirty.delete(key)
       }
       input.writer.writeFragments([...described.values()])
     } catch (error) {

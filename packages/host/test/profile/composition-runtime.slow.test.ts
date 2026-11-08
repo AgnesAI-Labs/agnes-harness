@@ -1808,6 +1808,35 @@ it('starts the idle period of an emptied container even when another description
   }
 }, 90_000)
 
+it('publishes the other sessions while one description keeps failing', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const before = await liveSession(profileDir, reader.key)
+    expect(before).toBeDefined()
+    // The reader is marked first, so its failing description comes first in every later flush.
+    failingDescriptions.add(reader.key)
+    reader.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
+    await writer.setToolFilter({ deny: ['write'] })
+    expect(await liveTools(profileDir, writer.key)).not.toContain('write')
+    // The reader keeps its last published description.
+    expect(await liveSession(profileDir, reader.key)).toEqual(before)
+    await writer.close()
+    expect(await liveKeys(profileDir)).toEqual([reader.key])
+    // The failed session is described again with the next change.
+    failingDescriptions.clear()
+    await reader.setToolFilter({ deny: ['read'] })
+    expect(await liveTools(profileDir, reader.key)).toContain('live_probe')
+    await reader.close()
+  } finally {
+    failingDescriptions.clear()
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
 it('a failed write is retried on the next change', async () => {
   const { root, options, profileDir } = liveStatusFixture()
   const { host } = await createTestHost(options)
