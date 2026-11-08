@@ -20,15 +20,22 @@ export async function trackHostComposition(
 ): Promise<Host> {
   const writer = await createLiveCompositionWriter(profileDir)
   const store = new CompositionSessionStore(profileDir)
-  // Resolving a composition is pure in the preset, so each preset is resolved once.
-  const trees = new Map<string, ResolvedComposition>()
+  // Resolving a composition is pure in the preset catalog (one `host.presets` object per assembly)
+  // and the preset name, so a rebuilt catalog is never served a composition resolved from the old one.
+  const trees = new WeakMap<object, Map<string, ResolvedComposition>>()
   const treeFor = (presetName: string): ResolvedComposition => {
-    let tree = trees.get(presetName)
+    const catalog = host.presets
+    let byName = trees.get(catalog)
+    if (!byName) {
+      byName = new Map()
+      trees.set(catalog, byName)
+    }
+    let tree = byName.get(presetName)
     if (!tree) {
       tree = resolveComposition(profile, {
-        preset: resolvePreset(presetName, host.presets, { limits: profile.limits }).doc,
+        preset: resolvePreset(presetName, catalog, { limits: profile.limits }).doc,
       })
-      trees.set(presetName, tree)
+      byName.set(presetName, tree)
     }
     return tree
   }
@@ -40,7 +47,14 @@ export async function trackHostComposition(
   // described again. Listeners only mark a key dirty, all real work runs in the microtask `flush`.
   const described = new Map<string, string>()
   const dirty = new Set<string>()
-  const subscriptions = new Map<string, { session: HostSession; off: () => void }>()
+  type Subscription = {
+    session: HostSession
+    off: () => void
+    /** The registry objects currently listened to; replaced when the session switches to others. */
+    tools?: { source: object; off: () => void }
+    resources?: { source: object; off: () => void }
+  }
+  const subscriptions = new Map<string, Subscription>()
   let scheduled = false,
     closing: Promise<void> | undefined
   const markDirty = (key: string): void => {
@@ -64,15 +78,33 @@ export async function trackHostComposition(
         continue
       }
       try {
+        watchRegistries(key, session)
         described.set(key, JSON.stringify(describe(session)))
       } catch {
-        /* inspection never changes session admission; the previous fragment stays until the next change */
+        // Inspection never changes session admission. The previous fragment stays, and the key is
+        // retried on the next event (no new microtask from here, so a persistent failure cannot spin).
+        dirty.add(key)
       }
     }
     try {
       writer.writeFragments([...described.values()])
     } catch {
       /* inspection never changes session admission */
+    }
+  }
+  /** One fresh closure per subscription: the same closure on one table would dedupe to one. */
+  const watchRegistries = (key: string, session: HostSession): void => {
+    const subscription = subscriptions.get(key)
+    if (!subscription) return
+    const tools = session.currentTools(),
+      resources = session.currentResources()
+    if (subscription.tools?.source !== tools) {
+      subscription.tools?.off()
+      subscription.tools = { source: tools, off: tools.onChange(() => markDirty(key)) }
+    }
+    if (subscription.resources?.source !== resources) {
+      subscription.resources?.off()
+      subscription.resources = { source: resources, off: resources.onChange(() => markDirty(key)) }
     }
   }
   const track = (session: HostSession): void => {
@@ -83,13 +115,16 @@ export async function trackHostComposition(
     const mark = () => markDirty(key),
       offSettings = session.onSettingsChanged(mark),
       offClosed = session.onClosed(mark)
-    subscriptions.set(key, {
+    const subscription: Subscription = {
       session,
       off: () => {
         offSettings()
         offClosed()
+        subscription.tools?.off()
+        subscription.resources?.off()
       },
-    })
+    }
+    subscriptions.set(key, subscription)
   }
   const offOpened = host.kernel.onSessionOpened((session) => {
     // Announced sessions can already be closing; the flush drops any that are gone by then.
@@ -117,10 +152,21 @@ export async function trackHostComposition(
         profile,
         legacy: true,
       })
+      // The Host binds the session to its runtime registries after the kernel announced it, so the
+      // registries watched at announcement time may no longer be the current ones.
+      markDirty(session.key)
       return session
     },
-    // The session announces the new preset itself (`onSettingsChanged`).
-    setSessionPreset: (key, name) => host.setSessionPreset(key, name),
+    // The session announces a completed switch itself (`onSettingsChanged`); a switch that fails
+    // after assigning the preset does not, so a failure marks the key.
+    async setSessionPreset(key, name) {
+      try {
+        return await host.setSessionPreset(key, name)
+      } catch (error) {
+        markDirty(key)
+        throw error
+      }
+    },
     async releaseSessionGeneration(key) {
       host.profileServices?.revokeWakeSession(key)
       await host.releaseSessionGeneration?.(key)
