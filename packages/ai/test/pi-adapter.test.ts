@@ -611,7 +611,11 @@ describe('PiAdapter', () => {
       const a = bound({ manualRoutes: [route], streamImpl: impl })
       return (await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))).at(-1)
     }
-    expect(await run(signed)).toEqual({ type: 'done', reason: 'stop', thinkingSignature: 'reasoning_content' })
+    expect(await run(signed)).toEqual({
+      type: 'done',
+      reason: 'stop',
+      thinkingSignature: 'reasoning_content',
+    })
     // The first block that has one, not a later one; an empty signature is no signature.
     const later = assistant({
       content: [
@@ -620,7 +624,12 @@ describe('PiAdapter', () => {
       ],
     })
     expect(await run(later)).toEqual({ type: 'done', reason: 'stop', thinkingSignature: 'second' })
-    const bare = assistant({ content: [{ type: 'thinking', thinking: 'a' }, { type: 'text', text: 'b' }] })
+    const bare = assistant({
+      content: [
+        { type: 'thinking', thinking: 'a' },
+        { type: 'text', text: 'b' },
+      ],
+    })
     expect(await run(bare)).toEqual({ type: 'done', reason: 'stop' })
     expect(await run(assistant())).toEqual({ type: 'done', reason: 'stop' })
   })

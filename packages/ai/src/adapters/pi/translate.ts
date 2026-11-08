@@ -69,8 +69,7 @@ export function translateEvent(
       // reasoning block that has one. The provider's own marker for where the reasoning lives
       // (e.g. `reasoning_content`) is what a later request needs to put it back in the same place.
       const signature = ev.message.content.find(
-        (b) =>
-          b.type === 'thinking' && typeof b.thinkingSignature === 'string' && b.thinkingSignature !== '',
+        (b) => b.type === 'thinking' && typeof b.thinkingSignature === 'string' && b.thinkingSignature !== '',
       )
       const thinkingSignature = signature?.type === 'thinking' ? signature.thinkingSignature : undefined
       return [usage, { type: 'done', reason, ...(thinkingSignature ? { thinkingSignature } : {}) }]
