@@ -230,6 +230,59 @@ it('describes the session again when a resource is registered on it', async () =
   }
 })
 
+it('describes the session again after a model change and after a tool-filter change', async () => {
+  const { host } = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  const profileDir = join(root, 'profiles', 'local-dev')
+  try {
+    const s = await host.createSession({ key: 'k', cwd: root })
+    s.currentTools().add(tool('filtered_tool'), { source: 'fixture/filtered', trust: 'builtin' } as never)
+    await vi.advanceTimersByTimeAsync(0)
+    const route = host.profile.provider.routes?.find((entry) => entry.models?.length)
+    const model = route?.models?.at(-1)
+    if (!route || !model) throw new Error('test host has no model route')
+    const tools = async () =>
+      (await readLiveCompositionSessions(profileDir))[0]?.toolGroups?.flatMap((group) => group.tools) ?? []
+    expect(await tools()).toContain('filtered_tool')
+    const spy = vi.spyOn(sessionCapabilityView, 'describeCapabilitySession')
+    await s.setModel({ slot: 'primary', route: route.route, model: model.id })
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(
+      (await readLiveCompositionSessions(profileDir))[0]?.capabilities?.modelRoutes.value?.primary,
+    ).toEqual({ route: route.route, model: model.id })
+    await s.setToolFilter({ deny: ['filtered_tool'] })
+    expect(spy).toHaveBeenCalledTimes(2)
+    expect(await tools()).not.toContain('filtered_tool')
+    await s.close()
+  } finally {
+    await host.close()
+  }
+})
+
+it('publishes a child session opened through the kernel until it closes', async () => {
+  const { host } = await createTestHost({ dataDir: root, disableSessionTitle: true })
+  const profileDir = join(root, 'profiles', 'local-dev')
+  const keys = async () =>
+    (await readLiveCompositionSessions(profileDir)).map((session) => session.sessionKey).sort()
+  try {
+    const parent = await host.createSession({ key: 'parent', cwd: root })
+    // Core opens the child itself; no Host createSession wrapper sees it.
+    const child = await parent.d.children.createWithKind!('spawn', {
+      parent: parent.key,
+      cwd: root,
+      input: 'Inspect',
+      resident: true,
+    })
+    const session = host.kernel.get(child.key)
+    if (!session) throw new Error('child session is not open')
+    expect(await keys()).toEqual([child.key, parent.key].sort())
+    await session.close()
+    expect(await keys()).toEqual([parent.key])
+    await parent.close()
+  } finally {
+    await host.close()
+  }
+})
+
 it('marks the session dirty even when a preset switch fails', async () => {
   const { host } = await createTestHost({ dataDir: root, ...readerOptions })
   try {

@@ -1884,6 +1884,84 @@ it('describes the session again after a preset switch fails', async () => {
   }
 }, 90_000)
 
+it('does not describe a session again when tool_describe loads a deferred tool', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-live-disclosure-'))
+  const unbind = bindMcpResourceServer(
+    'allowed',
+    {
+      id: 'allowed',
+      supportsResources: true,
+      listResources: async () => ({ resources: [{ name: 'allowed', uri: 'fixture://allowed' }] }),
+    } as McpConnection,
+    { id: 'allowed', transport: 'stdio', cmd: ['fixture'], defer: false },
+  )
+  const { host } = await createTestHost({
+    dataDir: root,
+    disableSessionTitle: true,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
+    profileInputs: { user: { name: 'local-dev', composition: { mcp: ['mcp/allowed'] } } },
+    script: [
+      [
+        {
+          type: 'toolcall_end' as const,
+          via: 'native' as const,
+          call: { toolUseId: '', name: 'tool_describe', args: { name: 'list_mcp_resources' }, ordinal: 0 },
+        },
+        { type: 'done' as const, reason: 'toolUse' as const },
+      ],
+      [{ type: 'text_delta', delta: 'done' }],
+    ],
+  })
+  try {
+    host.kernel.resources.register(
+      { id: 'mcp/allowed', kind: 'mcp', name: 'allowed', description: 'fixture' },
+      { source: 'agnes/fixture', trust: 'builtin' },
+    )
+    const session = await host.createSession({ key: 'disclosure', cwd: root })
+    const from = describedCount()
+    await session.enqueue('next-turn', {
+      actor: session.d.actor,
+      content: [{ type: 'text', text: 'load the resource tool' }],
+    })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    // Loading is session-level: the tool is disclosed to this session's next model requests only.
+    expect(
+      (await session.scan({ type: 'x/core/tool-disclosed', toSeq: session.lastSeq })).map((row) => row.data),
+    ).toEqual([{ name: 'list_mcp_resources' }])
+    await Promise.resolve()
+    expect(describedKeys(from)).toEqual([])
+    await session.close()
+  } finally {
+    unbind()
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('describes every open session exactly once after one Skills publication', async () => {
+  const { root, options } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const from = describedCount()
+    expect(
+      await host.refreshSkillRow({
+        list: () => [],
+        read: () => ({ ok: false, code: 'NOT_FOUND' }),
+        readFile: () => ({ ok: false, code: 'NOT_FOUND' }),
+      }),
+    ).toMatchObject({ ok: true })
+    await Promise.resolve()
+    expect(describedKeys(from).sort()).toEqual([reader.key, writer.key])
+    await writer.close()
+    await reader.close()
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
 it('a failed write is retried on the next change', async () => {
   const { root, options, profileDir } = liveStatusFixture()
   const { host } = await createTestHost(options)
