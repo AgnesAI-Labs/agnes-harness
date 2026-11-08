@@ -422,6 +422,51 @@ describe('toContext', () => {
     expect(user.content).toEqual([{ type: 'text', text: 'a.txt file:///a.txt' }])
   })
 
+  it('replays a signed thinking block', () => {
+    const req = fakeRequest({
+      messages: [
+        {
+          role: 'assistant',
+          content: [{ type: 'thinking', text: 'why', signature: 'reasoning_content' }],
+        },
+      ],
+    })
+    const asst = toContext(req).context.messages[0] as AssistantMessage
+    expect(asst.content).toEqual([
+      { type: 'thinking', thinking: 'why', thinkingSignature: 'reasoning_content' },
+    ])
+  })
+
+  it('replays a mixed history: an unsigned old thinking block stays unsigned', () => {
+    const req = fakeRequest({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', text: 'old' }] },
+        { role: 'user', content: [{ type: 'text', text: 'next' }] },
+        {
+          role: 'assistant',
+          content: [{ type: 'thinking', text: 'new', signature: 'reasoning_content' }],
+        },
+      ],
+    })
+    const { context } = toContext(req)
+    expect((context.messages[0] as AssistantMessage).content).toEqual([{ type: 'thinking', thinking: 'old' }])
+    expect((context.messages[0] as AssistantMessage).content[0]).not.toHaveProperty('thinkingSignature')
+    expect((context.messages[2] as AssistantMessage).content).toEqual([
+      { type: 'thinking', thinking: 'new', thinkingSignature: 'reasoning_content' },
+    ])
+  })
+
+  it('labels replayed messages with the given provider, else the route', () => {
+    const req = fakeRequest({
+      route: 'gw',
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'a' }] }],
+    })
+    expect((toContext(req).context.messages[0] as AssistantMessage).provider).toBe('gw')
+    expect((toContext(req, { provider: 'agnes-ai' }).context.messages[0] as AssistantMessage).provider).toBe(
+      'agnes-ai',
+    )
+  })
+
   it('marks an assistant turn that asked for tools as having stopped for tool use', () => {
     const withCalls = fakeRequest({
       messages: [
@@ -1183,6 +1228,100 @@ it('checks tool images again after pi combines them into one provider message', 
       retryable: false,
     },
   ])
+})
+
+describe('replayed history as pi sees it', () => {
+  const history = [
+    { role: 'user' as const, content: [{ type: 'text' as const, text: 'q' }] },
+    {
+      role: 'assistant' as const,
+      content: [
+        { type: 'thinking' as const, text: 'why', signature: 'reasoning_content' },
+        { type: 'text' as const, text: 'a' },
+      ],
+    },
+    { role: 'user' as const, content: [{ type: 'text' as const, text: 'q2' }] },
+  ]
+  const done = [{ type: 'done' as const, reason: 'stop' as const, message: assistant() }]
+
+  it('providerId route: the replayed message carries the request model provider', async () => {
+    const wire = fakeStream([done])
+    const adapter = new PiAdapter({
+      manualRoutes: [route],
+      streamImpl: wire.impl,
+      providerId: 'agnes-ai',
+    })
+    adapter.bindCredential('gw', 'sk-1')
+    await collect(
+      adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash', messages: history }), opts()),
+    )
+    const seen = wire.seen[0]
+    const replayed = seen?.context.messages[1] as AssistantMessage
+    expect(replayed.provider).toBe('agnes-ai')
+    expect(replayed.provider).toBe(seen?.model.provider)
+    expect(replayed.content[0]).toEqual({
+      type: 'thinking',
+      thinking: 'why',
+      thinkingSignature: 'reasoning_content',
+    })
+  })
+
+  it('without providerId the replayed provider is the route, as the request model has it', async () => {
+    const wire = fakeStream([done])
+    const adapter = bound({ manualRoutes: [route], streamImpl: wire.impl })
+    await collect(
+      adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash', messages: history }), opts()),
+    )
+    const replayed = wire.seen[0]?.context.messages[1] as AssistantMessage
+    expect(replayed.provider).toBe('gw')
+    expect(replayed.provider).toBe(wire.seen[0]?.model.provider)
+  })
+
+  it('anthropic route unchanged: the replayed message keeps the openai-completions label', async () => {
+    const anthropic = {
+      route: 'gw',
+      api: 'anthropic-messages',
+      baseUrl: 'https://gw.invalid/v1',
+      credentialRef: 'secret://agnes/gateway',
+      models: [
+        fakeModel({ id: 'flash', route: 'gw', api: 'anthropic-messages', baseUrl: 'https://gw.invalid/v1' }),
+      ],
+    }
+    const wire = fakeStream([done])
+    const adapter = bound({ manualRoutes: [anthropic], streamImpl: wire.impl })
+    const unsigned = [
+      history[0],
+      {
+        role: 'assistant' as const,
+        content: [{ type: 'thinking' as const, text: 'why' }, history[1]?.content[1]],
+      },
+      history[2],
+    ]
+    await collect(
+      adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash', messages: unsigned as never }), opts()),
+    )
+    expect(wire.seen[0]?.model.api).toBe('anthropic-messages')
+    expect(wire.seen[0]?.context.messages[1]).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'why' },
+        { type: 'text', text: 'a' },
+      ],
+      api: 'openai-completions',
+      provider: 'gw',
+      model: 'flash',
+      stopReason: 'stop',
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      timestamp: 0,
+    })
+  })
 })
 
 // A request is bounded until it starts answering, and after that only by silence: a long answer that

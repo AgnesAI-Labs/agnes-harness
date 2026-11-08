@@ -37,7 +37,7 @@ function findToolName(req: RequestBody, toolUseId: string): string {
   return 'unknown'
 }
 
-function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): Message {
+function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean, provider: string): Message {
   switch (m.role) {
     case 'user':
       return { role: 'user', content: contentOf(m.content), timestamp: 0 } satisfies UserMessage
@@ -45,7 +45,15 @@ function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): 
       const content: AssistantMessage['content'] = m.content
         .filter((c) => !dropThinking || c.type !== 'thinking')
         .map((c) =>
-          c.type === 'thinking' ? { type: 'thinking', thinking: c.text } : { type: 'text', text: c.text },
+          c.type === 'thinking'
+            ? {
+                type: 'thinking',
+                thinking: c.text,
+                // The wire library writes the reasoning back under this field name, and only when the
+                // block carries it; a turn stored before signatures existed has none and replays as before.
+                ...(c.signature ? { thinkingSignature: c.signature } : {}),
+              }
+            : { type: 'text', text: c.text },
         )
       for (const tc of m.toolCalls ?? [])
         content.push({
@@ -57,8 +65,12 @@ function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): 
       return {
         role: 'assistant',
         content,
+        // The wire library keeps a replayed thinking block only when provider, api and model all match
+        // the request model, so the provider must be the one the caller gives the request model. The api
+        // stays as it is: other wire protocols keep not replaying, because a message's reasoning is merged
+        // into one block here and a merged encrypted signature would be refused by the provider.
         api: 'openai-completions',
-        provider: req.route,
+        provider,
         model: req.model,
         stopReason: m.toolCalls?.length ? 'toolUse' : 'stop',
         // History carries no usage of its own: what a past turn cost is recorded in the ledger, and
@@ -89,10 +101,11 @@ function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): 
 /**
  * The request, as the wire library expects to receive it. Message content is neither summarised,
  * reordered nor dropped. Tool schemas inline local root references for provider compatibility.
+ * `provider` labels replayed assistant messages and defaults to the route.
  */
 export function toContext(
   req: RequestBody,
-  opts: { dropThinking?: boolean } = {},
+  opts: { dropThinking?: boolean; provider?: string } = {},
 ): { context: Context; tools: Tool[] } {
   const tools: Tool[] = req.tools.map((t) => ({
     name: t.name,
@@ -102,7 +115,9 @@ export function toContext(
   return {
     context: {
       systemPrompt: req.system,
-      messages: req.messages.map((m) => toMessage(m, req, opts.dropThinking === true)),
+      messages: req.messages.map((m) =>
+        toMessage(m, req, opts.dropThinking === true, opts.provider ?? req.route),
+      ),
       tools,
     },
     tools,
