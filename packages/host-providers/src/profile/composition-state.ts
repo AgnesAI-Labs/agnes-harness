@@ -194,26 +194,38 @@ export async function createLiveCompositionWriter(profileDir: string) {
   // Status must not make an otherwise valid Host depend on an optional native identity backend.
   // Unknown identity is omitted from live inspection, rather than misreported as an active worker.
   if (identity.state !== 'alive')
-    return { write(_sessions: readonly LiveCompositionSession[]) {}, close() {} }
+    return {
+      write(_sessions: readonly LiveCompositionSession[]) {},
+      writeFragments(_fragments: readonly string[]) {},
+      close() {},
+    }
   const root = join(profileDir, '.composition-live'),
     file = join(root, randomUUID() + '.json')
   mkdirSync(root, { recursive: true, mode: 0o700 })
   let published: string | undefined
+  const publishContent = (content: string) => {
+    if (content === published && existsSync(file)) return
+    const temporary = file + '.tmp'
+    try {
+      writeFileSync(temporary, content, {
+        mode: 0o600,
+        flush: true,
+      })
+      renameSync(temporary, file)
+      published = content
+    } finally {
+      rmSync(temporary, { force: true })
+    }
+  }
   return {
     write(sessions: readonly LiveCompositionSession[]) {
-      const content = JSON.stringify({ pid: process.pid, startId: identity.startId, sessions })
-      if (content === published && existsSync(file)) return
-      const temporary = file + '.tmp'
-      try {
-        writeFileSync(temporary, content, {
-          mode: 0o600,
-          flush: true,
-        })
-        renameSync(temporary, file)
-        published = content
-      } finally {
-        rmSync(temporary, { force: true })
-      }
+      publishContent(JSON.stringify({ pid: process.pid, startId: identity.startId, sessions }))
+    },
+    /** Each fragment is one session's `JSON.stringify` output; the file matches what `write` would produce. */
+    writeFragments(fragments: readonly string[]) {
+      publishContent(
+        `{"pid":${process.pid},"startId":${JSON.stringify(identity.startId)},"sessions":[${fragments.join(',')}]}`,
+      )
     },
     close() {
       rmSync(file, { force: true })
