@@ -71,7 +71,7 @@ import {
   registryCodeRevision,
   targetRows,
 } from './target-code.js'
-import { generationAuthoringAuthority, generationSourceReader, selectGenerationSources } from './trust.js'
+import { generationAuthoringAuthority, generationSourceCatalogue, generationSourceReader } from './trust.js'
 
 export type { PluginGenerationStatus } from './status.js'
 
@@ -146,7 +146,8 @@ export async function createRuntimeGenerationHost(
     })
   const compatibilityFor = (profile: ResolvedProfile) => runPlanFor(profile).processFacets.digest
 
-  const sourcesFor = (target: RuntimeTarget) => selectGenerationSources(options, developmentSources, target)
+  const sourcesFor = async (target: RuntimeTarget) =>
+    (await generationSourceCatalogue(options, developmentSources)).select(target)
   const bindGeneration = (key: string, id: string, host: Host): void => {
     const existing = store.session(key)
     const bound = pinnedBindings(host.seamBindings())
