@@ -136,6 +136,17 @@ export async function trackHostComposition(
     track(session)
     markDirty(session.key)
   }
+  /**
+   * A publication that changes a registry revision gives every bound session new registry objects,
+   * with no per-session event. Whatever the outcome, every tracked session is marked afterwards.
+   */
+  const afterPublication = async <T>(publish: () => Promise<T>): Promise<T> => {
+    try {
+      return await publish()
+    } finally {
+      for (const key of subscriptions.keys()) markDirty(key)
+    }
+  }
   const overrides: HostFacadeOverrides = {
     ...sessionHostRoutes(
       () => host,
@@ -146,15 +157,16 @@ export async function trackHostComposition(
     async createSession(input) {
       if (input.bundles?.length) resolveComposition(profile, { sessionBundles: input.bundles })
       const session = await host.createSession(input)
+      // The Host binds the session to its runtime registries after the kernel announced it, so the
+      // registries watched at announcement time may no longer be the current ones. Marked first, so
+      // a failing pin still moves the subscriptions.
+      markDirty(session.key)
       store.pin({
         sessionKey: session.key,
         tree: treeFor(session.preset.name),
         profile,
         legacy: true,
       })
-      // The Host binds the session to its runtime registries after the kernel announced it, so the
-      // registries watched at announcement time may no longer be the current ones.
-      markDirty(session.key)
       return session
     },
     // The session announces a completed switch itself (`onSettingsChanged`); a switch that fails
@@ -167,6 +179,10 @@ export async function trackHostComposition(
         throw error
       }
     },
+    refreshSkillRow: (fresh) => afterPublication(() => host.refreshSkillRow(fresh)),
+    reloadEcosystemExtension: (id, freshInit) =>
+      afterPublication(() => host.reloadEcosystemExtension(id, freshInit)),
+    applyRuntimeTarget: (target) => afterPublication(() => host.applyRuntimeTarget(target)),
     async releaseSessionGeneration(key) {
       host.profileServices?.revokeWakeSession(key)
       await host.releaseSessionGeneration?.(key)

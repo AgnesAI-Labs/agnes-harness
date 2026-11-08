@@ -1,9 +1,11 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { ToolDef } from '@agnes/extension-api'
 import { readLiveCompositionSessions } from '@agnes/host-providers/profile/composition-state'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
+import type { SkillRuntimeInput } from '@agnes/resource-control-runtime'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import * as sessionCapabilityView from '../../src/runtime/profile/session-capability-view.js'
 import { createTestHost } from '../../testkit/index.js'
@@ -89,6 +91,62 @@ it('republishes when a tool is added to an open session, without any settings ch
   }
 })
 
+/** One ready Skill resource, so a refreshed Skills row changes the registry revision. */
+const skillInput = (hexChar: string): SkillRuntimeInput => {
+  const resourceId = `skill/user/user-agnes/${hexChar.repeat(64)}`
+  return {
+    list: () => [
+      {
+        kind: 'skill',
+        resourceId,
+        name: `skill-${hexChar}`,
+        description: 'A test skill.',
+        revision: 'b'.repeat(64),
+        sourceIdentity: { scope: 'user', rootKey: 'user-agnes', sourceId: 'c'.repeat(64) },
+        priority: 400,
+        resolution: { winner: true, shadowed: [] },
+        trust: 'trusted',
+        desired: 'enabled',
+        actual: 'ready',
+        stale: false,
+      },
+    ],
+    read: (id) =>
+      id === resourceId ? { ok: true, content: 'skill body' } : { ok: false, code: 'NOT_FOUND' },
+    readFile: () => ({ ok: false, code: 'NOT_FOUND' as const }),
+  }
+}
+
+it('follows the new registries of an open session after a Skills row refresh', async () => {
+  const { host } = await createTestHost({
+    dataDir: root,
+    disableSessionTitle: true,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
+    skillResources: skillInput('a'),
+  })
+  const profileDir = join(root, 'profiles', 'local-dev')
+  try {
+    const s = await host.createSession({ key: 'k', cwd: root })
+    await vi.advanceTimersByTimeAsync(0)
+    const before = s.currentTools()
+    await host.refreshSkillRow(skillInput('b'))
+    await vi.advanceTimersByTimeAsync(0)
+    // The publication swapped the session's registries without any settings or close event.
+    expect(s.currentTools()).not.toBe(before)
+    const remove = s
+      .currentTools()
+      .add(tool('added_after_refresh'), { source: 'fixture/refreshed', trust: 'builtin' } as never)
+    await vi.advanceTimersByTimeAsync(0)
+    const groups = async () =>
+      (await readLiveCompositionSessions(profileDir))[0]?.toolGroups?.map((group) => group.packageId) ?? []
+    expect(await groups()).toContain('fixture/refreshed')
+    remove()
+    await s.close()
+  } finally {
+    await host.close()
+  }
+})
+
 it('describes the session again when a resource is registered on it', async () => {
   const { host } = await createTestHost({ dataDir: root })
   try {
@@ -166,14 +224,15 @@ it('resolves a preset once per catalog and again after the catalog is rebuilt', 
     await vi.advanceTimersByTimeAsync(0)
     expect(treeOf('first')).toBeDefined()
     // Same catalog: one resolution serves both sessions.
-    expect(treeOf('second')).toBe(treeOf('first'))
+    const original = treeOf('first')
+    expect(treeOf('second')).toBe(original)
     // A code change with a bound session forks a container, which rebuilds the preset catalog.
     await host.applyRuntimeTarget(boot)
     expect(host.lastChange?.()).toMatchObject({ outcome: 'forked' })
     const third = await host.createSession({ key: 'third', cwd: root })
     await vi.advanceTimersByTimeAsync(0)
     expect(treeOf('third')).toBeDefined()
-    expect(treeOf('third')).not.toBe(treeOf('first'))
+    expect(treeOf('third')).not.toBe(original)
     for (const session of [first, second, third]) await session.close()
   } finally {
     await host.close()
