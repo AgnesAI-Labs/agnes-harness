@@ -440,8 +440,9 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
     })
     expect(host.kernel.get(b.key)).toBeDefined()
     expect(host.kernel.get(a.key)).toBeUndefined()
-    expect(() => kernelAdmission(a.key, {} as never)).toThrow('E_GENERATION_NOT_LIVE')
-    expect(() => host!.memory(root, a.key)).toThrow('E_GENERATION_NOT_LIVE')
+    // The same idle period then collects the session's whole composition container, so either is gone.
+    expect(() => kernelAdmission(a.key, {} as never)).toThrow(/E_(GENERATION|COMPOSITION)_NOT_LIVE/)
+    expect(() => host!.memory(root, a.key)).toThrow(/E_(GENERATION|COMPOSITION)_NOT_LIVE/)
     expect(
       (await host.readSessionRows(a.key, { limit: 3 })).some((row) => row.type === 'session/start'),
     ).toBe(true)

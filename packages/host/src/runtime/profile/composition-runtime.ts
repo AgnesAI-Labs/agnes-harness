@@ -35,7 +35,7 @@ import {
   createHostFacade,
   type HostPublicationReport,
 } from '../lifecycle/host-facade.js'
-import { collectIdleContainers, createHostCallQueue, generationIdleMs } from '../lifecycle/host-idle.js'
+import { createHostCallQueue, createIdleCollection, generationIdleMs } from '../lifecycle/host-idle.js'
 import {
   createKernelFacade,
   createSessionMapFacade,
@@ -50,6 +50,7 @@ import {
   sessionAdmission,
   verifyAgentPin,
 } from './agent-plan.js'
+import { createCompositionLiveStatus } from './composition-live-status.js'
 import { compositionPresets } from './composition-presets.js'
 import {
   type CompositionContainer as Container,
@@ -63,7 +64,6 @@ import { createResolutionSources } from './resolution-sources.js'
 import { lazyRoleChildren } from './role-children.js'
 import { admitSessionBundlePresets } from './session-bundle-presets.js'
 import { resolveSessionCapabilities } from './session-capabilities.js'
-import { describeCapabilitySession } from './session-capability-view.js'
 
 type Factory = (profile: ResolvedProfile, options: HostOptions) => Promise<Host>
 
@@ -122,6 +122,13 @@ export async function createCompositionHost(
   let latestTarget: RuntimeTarget | undefined
   let latestRows: Parameters<Host['extensionRows']['apply']>[0] | undefined
   const writer = await createLiveCompositionWriter(options.profileDir)
+  const liveStatus = createCompositionLiveStatus({
+    containers,
+    writer,
+    bundles: profile.bundleCatalog,
+    log: options.log,
+    onSessionGone: () => collection.idleNow(),
+  })
   const projectRows = <T extends RuntimeTarget['tree']['rows'][number]>(
     rows: readonly T[],
     tree: ResolvedComposition,
@@ -293,6 +300,7 @@ export async function createCompositionHost(
               store.pin({ ...binding, sessionKey: key })
               generationOptions.onGenerationSessionBinding?.(key)
             },
+            onCapabilityInputChanged: (key) => liveStatus.markDirty([key]),
           }),
         pinned?.generationId,
       )
@@ -341,6 +349,9 @@ export async function createCompositionHost(
           ...(applied === undefined ? {} : { applied }),
         }
         containers.set(identity, container)
+        liveStatus.watch(container)
+        // Review and migration open a container that never gets a session.
+        if (reason !== 'boot') collection.idleNow()
         if (attemptedGeneration) openingFailures.delete(attemptedGeneration)
         return container
       } catch (error) {
@@ -401,25 +412,6 @@ export async function createCompositionHost(
     // Shared storage and cold descriptors need no live container; deletion tolerates damaged pins.
     return initial
   }
-  const live = () => {
-    const sessions = new Map([...containers.values()].flatMap(({ host }) => [...host.kernel.sessions]))
-    return [...sessions.values()].map((session) => {
-      const container = owner(session.key)
-      return describeCapabilitySession(container.host, session, container.tree, profile.bundleCatalog)
-    })
-  }
-  const publish = () => {
-    try {
-      writer.write(live())
-    } catch {
-      options.log.warn('Composition live status could not be written')
-    }
-  }
-  const statusTimer = setInterval(() => {
-    publish()
-    scheduleCollection()
-  }, 1000)
-  statusTimer.unref()
   const convergence = (target = latestTarget) => {
     const reports = [...containers.values()].map(({ host, draining }) => {
       const report = host.ordinaryConvergence()
@@ -448,18 +440,17 @@ export async function createCompositionHost(
       rows: [...rows.values()],
     }
   }
-  const collectIdle = () => collectIdleContainers(containers, initial, idleSince, idleMs)
-  let collectionQueued = false
-  const scheduleCollection = () => {
-    if (closed || collectionQueued) return
-    collectionQueued = true
-    void calls
-      .enqueue(collectIdle)
-      .catch((error) => options.log.warn('Composition collection failed', { error: String(error) }))
-      .finally(() => {
-        collectionQueued = false
-      })
-  }
+  const collection = createIdleCollection({
+    containers,
+    keep: () => initial,
+    idleSince,
+    idleMs,
+    enqueue: (run) => calls.enqueue(run),
+    closed: () => closed,
+    log: options.log,
+    afterCollect: () => liveStatus.unwatchClosed(),
+  })
+  const collectIdle = collection.collect
   const broadcast = async (
     operation: HostPublicationReport['operation'],
     apply: (container: Container) => Promise<unknown>,
@@ -480,6 +471,8 @@ export async function createCompositionHost(
         results.push({ compositionHash: container.tree.hash, status: 'failed', error: String(error) })
       }
     }
+    // Every session may read what changed, including a registry its next description subscribes to.
+    liveStatus.markAll()
     lastPublication = Object.freeze({
       operation,
       ok: results.every((result) => result.status === 'applied'),
@@ -529,7 +522,7 @@ export async function createCompositionHost(
     kernel,
     runtimeTargetSnapshot: () => latestTarget ?? initial.host.runtimeTargetSnapshot!(),
     ordinaryConvergence: () => convergence(),
-    compositionSessions: live,
+    compositionSessions: liveStatus.sessions,
     securityStatus: () => {
       const initialStatus = initial.host.securityStatus?.()
       if (!initialStatus) throw new Error('Security status is unavailable')
@@ -612,6 +605,7 @@ export async function createCompositionHost(
               })
               if (agent) await verifyAgentPin(agent, session, binding.tree.hash, prepareAgent, container.host)
               sessionOwners.set(key, container)
+              idleSince.delete(container)
               if (session.pluginGenerationId) openingFailures.delete(session.pluginGenerationId)
               const close = session.close.bind(session)
               session.close = async () => {
@@ -619,11 +613,10 @@ export async function createCompositionHost(
                   await close()
                 } finally {
                   sessionOwners.delete(key)
-                  scheduleCollection()
-                  publish()
+                  liveStatus.markDirty([key])
                 }
               }
-              publish()
+              liveStatus.markDirty([key])
               return session
             } catch (error) {
               if (!generations.session(key)) store.release(key)
@@ -641,7 +634,7 @@ export async function createCompositionHost(
         store.release(key)
         sessionOwners.delete(key)
         await collectIdle()
-        publish()
+        liveStatus.markDirty([key])
       }),
     migrateSessionGeneration: (key, context) =>
       calls.enqueue(async () => {
@@ -655,7 +648,7 @@ export async function createCompositionHost(
         if (container.draining) throw new Error('E_GENERATION_LOOP_INCOMPATIBLE: session bundle is disabled')
         if (!container.host.migrateSessionGeneration) throw new Error('E_GENERATION_MIGRATION_UNAVAILABLE')
         const result = await container.host.migrateSessionGeneration(key, context)
-        publish()
+        liveStatus.markDirty([key])
         return result
       }),
     collectPluginGenerations: () =>
@@ -684,7 +677,7 @@ export async function createCompositionHost(
     setSessionPreset: (key, name) =>
       calls.enqueue(async () => {
         const result = await owner(key, false).host.setSessionPreset(key, name)
-        publish()
+        liveStatus.markDirty([key])
         return result
       }),
     applyRuntimeTarget: (target) =>
@@ -806,7 +799,8 @@ export async function createCompositionHost(
     close() {
       if (closing) return closing
       closed = true
-      clearInterval(statusTimer)
+      liveStatus.close()
+      collection.stop()
       idleSince.clear()
       const hosts = new Map([...containers.values()].map(({ host }) => [host, host.close()]))
       // The allSettled owner below reports these errors; this only prevents early unhandled rejections.

@@ -309,6 +309,7 @@ export async function createKernel(
           publicationDispatch,
           (resources) => {
             discoveredResources.set(session, resources)
+            deps.onCapabilityInputChanged?.(session.key)
             const capabilities = ctx.live.sessionCapabilities.get()(session.key, undefined, {
               session,
               resources,
