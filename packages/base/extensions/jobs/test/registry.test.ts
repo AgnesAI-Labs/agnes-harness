@@ -4,6 +4,7 @@ import { validateMethod } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createJobTools, jobHooks } from '../src/index.js'
+import { createPtyTools } from '../src/pty-tools.js'
 import { SHELL_IDLE_MS, ShellJobs, TERMINAL_IDLE_MS } from '../src/registry.js'
 import { createJobsServices } from '../src/services.js'
 
@@ -489,4 +490,16 @@ it('lists the jobs an unattended turn leaves running before it ends, once', asyn
   } finally {
     await jobs.dispose()
   }
+})
+
+it('job tools load eagerly while pty tools stay auto-deferred', () => {
+  const jobs = new ShellJobs()
+  expect(createJobTools(jobs).map((t) => [t.name, t.meta.deferLoading])).toEqual([
+    ['job_list', false],
+    ['job_output', false],
+    ['job_kill', false],
+  ])
+  const pty = createPtyTools(jobs)
+  expect(pty.length).toBeGreaterThan(0)
+  for (const tool of pty) expect(tool.meta.deferLoading).toBe('auto')
 })

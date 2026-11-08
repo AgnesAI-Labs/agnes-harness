@@ -14,7 +14,9 @@ export function createJobTools(jobs: ShellJobs) {
     isOpenWorld: false,
     replay: 'safe' as const,
     costHint: {},
-    deferLoading: 'auto' as const,
+    // The model reaches for these as soon as it runs a background command; loading them through
+    // tool_describe mid-session would change the tool list and force the whole context to be recomputed.
+    deferLoading: false as const,
     requiresApproval: 'never' as const,
   }
   return [
