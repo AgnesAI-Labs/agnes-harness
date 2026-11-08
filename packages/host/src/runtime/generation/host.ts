@@ -1,4 +1,5 @@
 import { resolve as resolvePath } from 'node:path'
+import type { Kernel } from '@agnes/core'
 import { providerRestartRequired } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import { modelProfileDeployment } from '@agnes/host-common/profile/model-compatibility'
@@ -95,6 +96,25 @@ export async function createRuntimeGenerationHost(
   const rowsByGeneration = new Map<string, typeof preparedRows>()
   let latestSkills = options.skillResources
   const bindings = new Map<Host, { id: string }>()
+  // The public Kernel view spans every generation, including ones built after a listener subscribed.
+  type OpenedListener = Parameters<Kernel['onSessionOpened']>[0]
+  const openedListeners = new Set<OpenedListener>()
+  const watchOpened = (host: Host): Host => {
+    host.kernel.onSessionOpened((session) => {
+      for (const listener of [...openedListeners]) {
+        try {
+          listener(session)
+        } catch {
+          // A listener must not disturb session creation.
+        }
+      }
+    })
+    return host
+  }
+  const onSessionOpened = (listener: OpenedListener): (() => void) => {
+    openedListeners.add(listener)
+    return () => void openedListeners.delete(listener)
+  }
   const developmentSources = new Map<string, RuntimePluginSnapshot>()
   const runtimeSources = generationSourceReader(options, developmentSources)
   const authoring = generationAuthoringAuthority(options, profile.name, (key) => {
@@ -110,20 +130,22 @@ export async function createRuntimeGenerationHost(
   let initialBinding: ((key: string) => void) | undefined
   const initialSkills = createGenerationSkills(options.skillResources)
   let initial: Host
-  const createInitial = () =>
-    factory(profile, {
-      ...options,
-      ...(authoring.pluginManage ? { pluginManage: authoring.pluginManage } : {}),
-      profileAuthorityPublication: 'retained',
-      runtimePluginSources: runtimeSources,
-      ...(options.skillResources ? { skillResources: initialSkills.input } : {}),
-      onGenerationBasePackages: (ids) => {
-        for (const id of ids) basePackages.add(id)
-        options.onGenerationBasePackages?.(ids)
-      },
-      onGenerationSessionBinding: (key) => initialBinding?.(key),
-      sessionGeneration: (key) => store.session(key)?.generationId ?? options.sessionGeneration?.(key),
-    })
+  const createInitial = async () =>
+    watchOpened(
+      await factory(profile, {
+        ...options,
+        ...(authoring.pluginManage ? { pluginManage: authoring.pluginManage } : {}),
+        profileAuthorityPublication: 'retained',
+        runtimePluginSources: runtimeSources,
+        ...(options.skillResources ? { skillResources: initialSkills.input } : {}),
+        onGenerationBasePackages: (ids) => {
+          for (const id of ids) basePackages.add(id)
+          options.onGenerationBasePackages?.(ids)
+        },
+        onGenerationSessionBinding: (key) => initialBinding?.(key),
+        sessionGeneration: (key) => store.session(key)?.generationId ?? options.sessionGeneration?.(key),
+      }),
+    )
   let current: LiveGeneration | undefined
   let closed = false
   const calls = createHostCallQueue(() => closed)
@@ -308,6 +330,7 @@ export async function createRuntimeGenerationHost(
         },
       },
     )
+    watchOpened(host)
     try {
       const savedRows = snapshot.resources
         ? await restoreGenerationRows(snapshot.resources, options, rowsByGeneration.get(snapshot.id))
@@ -542,6 +565,7 @@ export async function createRuntimeGenerationHost(
     () => (current?.host ?? initial).kernel,
     (key, coldRead) => owner(key, coldRead).kernel,
     sessions,
+    onSessionOpened,
   )
   const restoreRetainedClaims = (generation: LiveGeneration) => {
     const saved = rowsByGeneration.get(generation.snapshot.id)
