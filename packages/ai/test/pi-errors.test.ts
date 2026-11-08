@@ -4,6 +4,7 @@ import { classifyPiError } from '../src/adapters/pi/errors.js'
 import { PiAdapter } from '../src/adapters/pi/index.js'
 import { networkEvent, networkFailure, watchResponse } from '../src/adapters/pi/network.js'
 import { AGNES_AI_BASE_URL, buffersToolCalls } from '../src/adapters/pi/providers/agnes-ai.js'
+import { translateEvent } from '../src/adapters/pi/translate.js'
 import { AMBIENT_CREDENTIAL_APIS } from '../src/adapters/pi/wire.js'
 import type { WireEvent } from '../src/index.js'
 import { memoryRetryLedger } from '../src/retry.js'
@@ -108,6 +109,44 @@ describe('classifyPiError', () => {
       'OVERFLOW',
     )
     expect(classifyPiError(msg('', 'aborted')).code).toBe('ABORTED')
+  })
+
+  // A gateway that fails with an HTML error page makes the wire library report a JSON parse error,
+  // whose text matches FORMAT. The status said what happened; the text only described the symptom.
+  describe('HTTP status first', () => {
+    const html = 'Unexpected token \'<\', "<!DOCTYPE "... is not valid JSON 520'
+    it('520 with an HTML body is a retryable TRANSPORT', () => {
+      expect(classifyPiError(msg(html), undefined, 520)).toMatchObject({ code: 'TRANSPORT', retryable: true })
+    })
+    it('400 with unexpected token stays FORMAT', () => {
+      expect(classifyPiError(msg("Unexpected token '<'"), undefined, 400)).toMatchObject({
+        code: 'FORMAT',
+        retryable: false,
+      })
+    })
+    it('no status and unexpected token stays FORMAT', () => {
+      expect(classifyPiError(msg("Unexpected token '<'"))).toMatchObject({ code: 'FORMAT', retryable: false })
+    })
+    it('401 stays AUTH', () => {
+      expect(classifyPiError(msg('401 Unauthorized'), undefined, 401)).toMatchObject({
+        code: 'AUTH',
+        retryable: false,
+      })
+    })
+    it('translateEvent hands the recorded wire status to the classifier', () => {
+      const ev = { type: 'error', reason: 'error', error: msg(html) } as const
+      const model = { contextWindow: 128_000 } as Parameters<typeof translateEvent>[1]
+      const [out] = translateEvent(ev, model, () => 0, { status: 520 })
+      expect(out).toMatchObject({ type: 'error', code: 'TRANSPORT', retryable: true })
+      const [bare] = translateEvent(ev, model, () => 0, {})
+      expect(bare).toMatchObject({ type: 'error', code: 'FORMAT', retryable: false })
+    })
+    it('200 status mid-stream error falls through to the text rules', () => {
+      expect(classifyPiError(msg("Unexpected token '<'"), undefined, 200)).toMatchObject({
+        code: 'FORMAT',
+        retryable: false,
+      })
+    })
   })
 
   // A permanent misconfiguration answered as retryable is retried under backoff until the budget is

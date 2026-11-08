@@ -71,7 +71,7 @@ export function translateEvent(
       // The window comes from the model this request actually went to. Passing nothing here left one
       // arm of the classification with a single supplier - a test - and unreachable for a user: an
       // overflow the provider did not spell out is only visible against the declared window.
-      const c = classifyPiError(ev.error, model.contextWindow)
+      const c = classifyPiError(ev.error, model.contextWindow, wire.status)
       return [
         {
           type: 'error',
