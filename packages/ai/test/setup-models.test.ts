@@ -10,6 +10,8 @@ it.each([
   [{ context_length: 0 }, undefined],
   [{ context_length: 1.5 }, undefined],
   [{ context_length: Number.MAX_SAFE_INTEGER + 1 }, undefined],
+  [{ max_input_tokens: 200000 }, 200000],
+  [{ context_length: 1048576, max_input_tokens: 200000 }, 1048576],
 ])('reads valid provider context limits from %j', async (metadata, capacity) => {
   const result = await fetchProviderModels({
     api: 'openai-completions',
@@ -20,6 +22,68 @@ it.each([
     ids: ['kimi-k3'],
     ...(capacity === undefined ? {} : { contextWindows: { 'kimi-k3': capacity } }),
   })
+})
+
+it('reads max_input_tokens and max_output_tokens', async () => {
+  const result = await fetchProviderModels({
+    api: 'openai-completions',
+    baseUrl: 'https://relay.invalid/v1',
+    request: async () =>
+      Response.json({
+        data: [
+          { id: 'limited', max_input_tokens: 1000000, max_output_tokens: 256000 },
+          { id: 'output-only', max_output_tokens: 32768 },
+          { id: 'bad-zero', max_output_tokens: 0 },
+          { id: 'bad-string', max_output_tokens: '8192' },
+          { id: 'bad-fraction', max_output_tokens: 1.5 },
+          { id: 'bad-big', max_output_tokens: Number.MAX_SAFE_INTEGER + 1 },
+          { id: 'plain' },
+        ],
+      }),
+  })
+  expect(result).toEqual({
+    ids: ['limited', 'output-only', 'bad-zero', 'bad-string', 'bad-fraction', 'bad-big', 'plain'],
+    contextWindows: { limited: 1000000 },
+    maxTokens: { limited: 256000, 'output-only': 32768 },
+  })
+})
+
+it('asks for detail=true first and falls back to /models on 404', async () => {
+  const urls: string[] = []
+  const request: typeof fetch = async (url) => {
+    urls.push(String(url))
+    return String(url).includes('detail=true')
+      ? new Response('nope', { status: 404 })
+      : Response.json({ data: [{ id: 'plain-model' }] })
+  }
+  expect(
+    await fetchProviderModels({ api: 'openai-completions', baseUrl: 'https://relay.invalid/v1', request }),
+  ).toEqual({
+    ids: ['plain-model'],
+  })
+  expect(urls).toEqual(['https://relay.invalid/v1/models?detail=true', 'https://relay.invalid/v1/models'])
+  // A detail answer is used as is, with no second request.
+  urls.length = 0
+  const detailed: typeof fetch = async (url) => {
+    urls.push(String(url))
+    return Response.json({ data: [{ id: 'm', max_output_tokens: 4096 }] })
+  }
+  expect(
+    await fetchProviderModels({
+      api: 'openai-completions',
+      baseUrl: 'https://relay.invalid/v1',
+      request: detailed,
+    }),
+  ).toEqual({ ids: ['m'], maxTokens: { m: 4096 } })
+  expect(urls).toEqual(['https://relay.invalid/v1/models?detail=true'])
+  // Other protocols ask once, without the query.
+  urls.length = 0
+  await fetchProviderModels({
+    api: 'openai-responses',
+    baseUrl: 'https://relay.invalid/v1',
+    request: detailed,
+  })
+  expect(urls).toEqual(['https://relay.invalid/v1/models'])
 })
 
 it('normalizes Gemini resource names and excludes credential-shaped model IDs', async () => {
@@ -53,7 +117,8 @@ it('lists an OpenAI-compatible catalogue without a key and names why a listing f
   let respond: () => Response | Promise<Response> = () => Response.json({ data: [{ id: 'qwen-plus' }] })
   const seen: Headers[] = []
   const request: typeof fetch = async (url, options) => {
-    expect(String(url)).toBe('https://relay.invalid/v1/models')
+    // A refused detail request falls back to the plain listing, which carries the answer under test.
+    expect(String(url)).toMatch(/^https:\/\/relay\.invalid\/v1\/models(\?detail=true)?$/)
     seen.push(new Headers(options?.headers))
     return respond()
   }
