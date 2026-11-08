@@ -1864,6 +1864,26 @@ it('keeps a session listed until its close completes, through a reverted retirem
   }
 }, 90_000)
 
+it('describes the session again after a preset switch fails', async () => {
+  const { root, options } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    // Core assigns the preset and rebinds registries before awaits that can reject, and then
+    // announces nothing.
+    const failing = vi.spyOn(reader, 'setPreset').mockRejectedValue(new Error('revocation failed'))
+    const from = describedCount()
+    await expect(host.setSessionPreset(reader.key, 'reader')).rejects.toThrow('revocation failed')
+    await Promise.resolve()
+    expect(describedKeys(from)).toEqual([reader.key])
+    failing.mockRestore()
+    await reader.close()
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
 it('a failed write is retried on the next change', async () => {
   const { root, options, profileDir } = liveStatusFixture()
   const { host } = await createTestHost(options)

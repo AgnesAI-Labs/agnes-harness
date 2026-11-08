@@ -676,11 +676,16 @@ export async function createCompositionHost(
       }
       return mergeGenerationStatuses(statuses)
     },
+    // The session announces a completed switch itself (`onSettingsChanged`); one that fails after
+    // assigning the preset and rebinding registries does not, so a failure marks the key.
     setSessionPreset: (key, name) =>
       calls.enqueue(async () => {
-        const result = await owner(key, false).host.setSessionPreset(key, name)
-        liveStatus.markDirty([key])
-        return result
+        try {
+          return await owner(key, false).host.setSessionPreset(key, name)
+        } catch (error) {
+          liveStatus.markDirty([key])
+          throw error
+        }
       }),
     applyRuntimeTarget: (target) =>
       calls.enqueue(async () => {
