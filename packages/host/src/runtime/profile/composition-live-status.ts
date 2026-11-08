@@ -95,6 +95,14 @@ export function createCompositionLiveStatus<Container extends { host: Host }>(
       entry.resources = resources.onChange(() => markDirty([key]))
     }
   }
+  // The flush runs in a microtask, where a throw would crash the worker; not even a logger may throw.
+  const warn = (message: string, error: unknown, sessionKey?: string) => {
+    try {
+      input.log?.warn(message, { ...(sessionKey === undefined ? {} : { sessionKey }), error: String(error) })
+    } catch {
+      // Inspection never changes session admission.
+    }
+  }
   const flush = (): void => {
     scheduled = false
     if (closed) return
@@ -122,15 +130,12 @@ export function createCompositionLiveStatus<Container extends { host: Host }>(
           }
           dirty.delete(key)
         } catch (error) {
-          input.log?.warn('Composition live status could not describe a session', {
-            sessionKey: key,
-            error: String(error),
-          })
+          warn('Composition live status could not describe a session', error, key)
         }
       }
       input.writer.writeFragments([...described.values()])
     } catch (error) {
-      input.log?.warn('Composition live status could not be written', { error: String(error) })
+      warn('Composition live status could not be written', error)
     }
   }
   return {
