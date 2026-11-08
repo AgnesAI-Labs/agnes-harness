@@ -543,7 +543,11 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["type", "text"],
-                "properties": { "type": { "const": "thinking" }, "text": { "type": "string" } }
+                "properties": {
+                  "type": { "const": "thinking" },
+                  "text": { "type": "string" },
+                  "signature": { "type": "string", "minLength": 1 }
+                }
               }
             ]
           }

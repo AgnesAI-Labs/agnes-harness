@@ -88,7 +88,11 @@
                     "type": "object",
                     "additionalProperties": false,
                     "required": ["type", "text"],
-                    "properties": { "type": { "const": "thinking" }, "text": { "type": "string" } }
+                    "properties": {
+                      "type": { "const": "thinking" },
+                      "text": { "type": "string" },
+                      "signature": { "type": "string", "minLength": 1 }
+                    }
                   }
                 ]
               }
@@ -465,7 +469,8 @@
           "properties": {
             "type": { "const": "done" },
             "timing": { "$ref": "#/$defs/Timing" },
-            "reason": { "enum": ["stop", "length", "toolUse"] }
+            "reason": { "enum": ["stop", "length", "toolUse"] },
+            "thinkingSignature": { "type": "string", "minLength": 1 }
           }
         },
         {
