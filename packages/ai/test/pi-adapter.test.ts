@@ -1258,26 +1258,33 @@ describe('request deadlines', () => {
     ])
   })
 
-  it('a retry after a mid-stream failure gets a fresh first-content window', async () => {
-    const dropped = Object.assign(new Error('socket closed'), {
-      cause: Object.assign(new Error('socket closed'), { code: 'ECONNRESET' }),
-    })
+  it('retries before any content share one first-content window', async () => {
+    const dropped = () =>
+      Object.assign(new Error('socket closed'), {
+        cause: Object.assign(new Error('socket closed'), { code: 'ECONNRESET' }),
+      })
     const adapter = bound({
       manualRoutes: [agnes],
-      maxRetries: 1,
+      maxRetries: 2,
       streamImpl: timed(
         [
           [0, { type: 'start', partial }],
-          [250_000, dropped],
+          [100_000, dropped()],
         ],
         [
-          [250_000, text('a')],
+          [0, { type: 'start', partial }],
+          [100_000, dropped()],
+        ],
+        // The third attempt starts about 201.5 s in and would answer at about 351.5 s, after the
+        // window armed when the call began has closed.
+        [
+          [150_000, text('a')],
           [0, finished],
         ],
       ),
     })
-    // The retry starts about 250.5 s in, so the first window would have closed at 300 s.
-    const events = await play(adapter, { openAt: 300_001, overBy: 501_000 })
-    expect(events.map((event) => event.type)).toEqual(['text_delta', 'usage', 'done'])
+    expect(await play(adapter, { openAt: 299_999, overBy: 300_000 })).toEqual([
+      { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'total timeout', retryable: true },
+    ])
   })
 })

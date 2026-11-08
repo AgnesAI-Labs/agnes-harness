@@ -515,7 +515,8 @@ export class PiAdapter extends WireAdapter {
     // with the caller's own signal into one controller so the request below sees a single cancellation.
     //
     // Before the first content a request is bounded: the first-token deadline asks whether the route
-    // responded at all, and the first-content deadline (`total`) caps that wait. Content spends both.
+    // responded at all, and the first-content deadline (`total`) caps that wait, armed once per call so
+    // that retries before any content share it. Content spends both.
     // From then on the question is no longer "did this route respond" but "is it still answering",
     // and only the idle watchdog asks it: it restarts on every event, so an answer that keeps coming
     // runs as long as it takes, and one that stalls midway is cut. A route that hangs with neither is
@@ -541,9 +542,8 @@ export class PiAdapter extends WireAdapter {
     const onAbort = () => inner.abort()
     if (opts.signal.aborted) inner.abort()
     else opts.signal.addEventListener('abort', onAbort, { once: true })
-    let deadline = Date.now() + firstContentMs
-    const armTotal = () => setTimeout(() => inner.abort(), firstContentMs)
-    let total: ReturnType<typeof setTimeout> | undefined = armTotal()
+    const deadline = Date.now() + firstContentMs
+    let total: ReturnType<typeof setTimeout> | undefined = setTimeout(() => inner.abort(), firstContentMs)
     const armFirst = () =>
       firstTokenMs === undefined ? undefined : setTimeout(() => inner.abort(), firstTokenMs)
     let first: ReturnType<typeof setTimeout> | undefined = armFirst()
@@ -919,14 +919,11 @@ export class PiAdapter extends WireAdapter {
         await this.sleep(retryAfter, inner.signal)
         if (!inner.signal.aborted) {
           // The event that caused a retry is suppressed, so it is not a first response from the
-          // caller's perspective. The replacement is a new request and gets its own first-token and
-          // first-content deadlines.
+          // caller's perspective. Give the replacement request its own first-token deadline while
+          // the first-content deadline armed when the call began keeps bounding every attempt.
           firstSeen = false
           if (first) clearTimeout(first)
           first = armFirst()
-          clearTimeout(total)
-          total = armTotal()
-          deadline = Date.now() + firstContentMs
         }
       }
     } finally {
