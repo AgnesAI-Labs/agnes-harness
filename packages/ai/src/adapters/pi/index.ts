@@ -511,34 +511,39 @@ export class PiAdapter extends WireAdapter {
           throw error
         }
       }
-    // Two deadlines, both enforced here rather than by the wire library, and both merged with the
-    // caller's own signal into one controller so the request below sees a single cancellation.
+    // Two deadlines and a watchdog, all enforced here rather than by the wire library, and all merged
+    // with the caller's own signal into one controller so the request below sees a single cancellation.
     //
-    // The first-token deadline is spent once anything arrives: after that a stream is answering,
-    // and the question stops being "did this route respond" and becomes "will this answer end".
-    // The total deadline is what answers the second one, and the idle timer, armed from the first
-    // content on, catches a stream that stalls midway. Silence before the first content belongs to
-    // the first-token deadline alone. A route that hangs with neither is a turn that never finishes,
-    // and a session that can never be closed.
+    // Before the first content a request is bounded: the first-token deadline asks whether the route
+    // responded at all, and the first-content deadline (`total`) caps that wait. Content spends both.
+    // From then on the question is no longer "did this route respond" but "is it still answering",
+    // and only the idle watchdog asks it: it restarts on every event, so an answer that keeps coming
+    // runs as long as it takes, and one that stalls midway is cut. A route that hangs with neither is
+    // a turn that never finishes, and a session that can never be closed.
     //
     // A gateway that buffers tool calls is silent while the model writes one, before the first
-    // content or between two parts of an answer. There only the total deadline can tell a long tool
-    // call from a hung route, so it bounds both waits.
+    // content or between two parts of an answer. There the first-content deadline alone bounds the
+    // first wait, and the watchdog allows a long silence between parts: BUFFERED_STREAM_IDLE_MS, or
+    // the route's request deadline when that is longer.
     const buffered = buffersToolCalls(decl.baseUrl, this.providerId)
-    const totalMs = Math.min(opts.timeoutMs.total, networkTimeouts?.requestMs ?? 300_000)
+    const BUFFERED_STREAM_IDLE_MS = 600_000
+    const firstContentMs = Math.min(opts.timeoutMs.total, networkTimeouts?.requestMs ?? 300_000)
     const firstTokenMs = buffered ? undefined : opts.timeoutMs.firstToken
-    const idleMs = buffered ? totalMs : (networkTimeouts?.streamIdleMs ?? 60_000)
+    const idleMs = buffered
+      ? Math.max(BUFFERED_STREAM_IDLE_MS, networkTimeouts?.requestMs ?? 0)
+      : (networkTimeouts?.streamIdleMs ?? 60_000)
     const network = createDeploymentFetch({
       ...networkTimeouts,
       streamIdleMs: idleMs,
-      firstByteMs: Math.min(firstTokenMs ?? totalMs, totalMs),
+      firstByteMs: Math.min(firstTokenMs ?? firstContentMs, firstContentMs),
     })
     const inner = new AbortController()
     const onAbort = () => inner.abort()
     if (opts.signal.aborted) inner.abort()
     else opts.signal.addEventListener('abort', onAbort, { once: true })
-    const deadline = Date.now() + totalMs
-    const total = setTimeout(() => inner.abort(), totalMs)
+    let deadline = Date.now() + firstContentMs
+    const armTotal = () => setTimeout(() => inner.abort(), firstContentMs)
+    let total: ReturnType<typeof setTimeout> | undefined = armTotal()
     const armFirst = () =>
       firstTokenMs === undefined ? undefined : setTimeout(() => inner.abort(), firstTokenMs)
     let first: ReturnType<typeof setTimeout> | undefined = armFirst()
@@ -563,7 +568,7 @@ export class PiAdapter extends WireAdapter {
     try {
       let attempt = pending !== undefined && pendingFresh ? pending.count : 0
       if (preservePending) {
-        // A restored server wait consumes the total budget, but is not provider response time.
+        // A restored server wait consumes the first-content budget, but is not provider response time.
         clearTimeout(first)
         first = undefined
         const remaining = (pending?.resumeAt ?? 0) - Date.now()
@@ -754,6 +759,8 @@ export class PiAdapter extends WireAdapter {
                 firstSeen = true
                 clearTimeout(first)
                 first = undefined
+                clearTimeout(total)
+                total = undefined
                 resetIdle()
               }
               if (
@@ -888,7 +895,7 @@ export class PiAdapter extends WireAdapter {
             }
           return
         }
-        // A server wait that outlasts the total deadline would either sleep past the caller's
+        // A server wait that outlasts the first-content deadline would either sleep past the caller's
         // budget or, if capped, retry before the server allows it. Stop and keep the wait.
         if (retryError?.retryAfterMs !== undefined && retryAfter > deadline - Date.now()) {
           yield retryError
@@ -912,11 +919,14 @@ export class PiAdapter extends WireAdapter {
         await this.sleep(retryAfter, inner.signal)
         if (!inner.signal.aborted) {
           // The event that caused a retry is suppressed, so it is not a first response from the
-          // caller's perspective. Give the replacement request its own first-token deadline while
-          // the original total deadline continues to bound the complete operation.
+          // caller's perspective. The replacement is a new request and gets its own first-token and
+          // first-content deadlines.
           firstSeen = false
           if (first) clearTimeout(first)
           first = armFirst()
+          clearTimeout(total)
+          total = armTotal()
+          deadline = Date.now() + firstContentMs
         }
       }
     } finally {

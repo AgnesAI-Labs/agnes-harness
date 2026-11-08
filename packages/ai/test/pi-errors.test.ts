@@ -293,11 +293,12 @@ describe('timeouts and cancellation', () => {
   })
 
   // The Agnes gateway sends a tool call only when it is complete: silence while the model writes one
-  // can come before the first content or after some text. The total deadline bounds both there.
+  // can come before the first content or after some text. Neither wait uses the route's idle setting
+  // there: the first-content deadline bounds the first, a long watchdog the second.
   it.each([
     ['before the first content', false],
     ['after text, while a tool call is written', true],
-  ] as const)('waits for the Agnes gateway up to the total deadline %s', async (_label, textFirst) => {
+  ] as const)('waits for the Agnes gateway past its idle setting %s', async (_label, textFirst) => {
     vi.useFakeTimers()
     try {
       const buffered: StreamImpl = () =>
@@ -338,11 +339,12 @@ describe('timeouts and cancellation', () => {
     expect(buffersToolCalls('https://gw.invalid', undefined)).toBe(false)
   })
 
-  // Once a stream has spoken the first-token deadline is spent, and only the total one is left. A
-  // model that emits one token and then stops is otherwise a turn that never ends. The timeout is
-  // this adapter's own error, so it carries what the HTTP response already said about who answered.
+  // Once a stream has spoken the first-token and first-content deadlines are spent, and only the idle
+  // watchdog is left. A model that emits one token and then stops is otherwise a turn that never
+  // ends. The timeout is this adapter's own error, so it carries what the HTTP response already said
+  // about who answered.
   it.each(['text_delta', 'thinking_delta'] as const)(
-    'a stream with %s that stops fails on the total deadline',
+    'a stream with %s that stops fails on the idle watchdog',
     async (type) => {
       vi.stubGlobal(
         'fetch',
@@ -358,14 +360,19 @@ describe('timeouts and cancellation', () => {
           await new Promise<never>(() => {})
         })()
       try {
-        const out = await drain(adapter({ streamImpl: stall }), { timeoutMs: { firstToken: 20, total: 60 } })
+        const a = adapter({
+          manualRoutes: [{ ...route, networkTimeouts: { streamIdleMs: 60 } }],
+          streamImpl: stall,
+        })
+        a.bindCredential('gw', 'k')
+        const out = await drain(a, { timeoutMs: { firstToken: 20, total: 40 } })
         expect(out).toEqual([
           { type, delta: 'a' },
           {
             type: 'error',
             reason: 'error',
             code: 'TIMEOUT',
-            message: 'total timeout',
+            message: 'stream idle timeout',
             retryable: true,
             response: {
               status: 200,
@@ -380,8 +387,10 @@ describe('timeouts and cancellation', () => {
     },
   )
 
+  // The request deadline bounds only the wait for the first output, so after it the idle setting alone
+  // ends a stall, even when the request deadline is the shorter one.
   it.each([
-    [{ requestMs: 30 }, 'total timeout'],
+    [{ requestMs: 10, streamIdleMs: 30 }, 'stream idle timeout'],
     [{ streamIdleMs: 30 }, 'stream idle timeout'],
   ] as const)('applies account deadline %j after output has started', async (networkTimeouts, message) => {
     vi.useFakeTimers()

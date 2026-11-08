@@ -184,6 +184,48 @@ it.each([
   else await expect(body).rejects.toMatchObject({ name: 'TimeoutError', message: outcome })
 })
 
+// A POST answer, such as a model's SSE stream, is bounded by the request deadline only until its body
+// starts. After that only the idle timer ends it, so a long answer that keeps arriving is never cut.
+it('a POST stream outlives requestMs once its body has started', async () => {
+  const endpoint = await listen(
+    createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      let sent = 0
+      const tick = setInterval(() => {
+        response.write(`data: ${sent}\n\n`)
+        if (++sent === 12) response.end()
+      }, 50)
+      response.on('close', () => clearInterval(tick))
+    }),
+  )
+  const client = createDeploymentFetch({ requestMs: 200, streamIdleMs: 150 }, {})
+  clients.push(client)
+  const body = await client
+    .fetch(endpoint, { method: 'POST', body: '{}' })
+    .then((response) => response.text())
+  expect(body.match(/data: /g)).toHaveLength(12)
+})
+
+it.each([
+  ['a POST whose body never starts aborts at requestMs', 'text/event-stream', undefined],
+  ['non-stream POST keeps requestMs', 'application/json', 400],
+] as const)('%s', async (_label, type, bodyAfterMs) => {
+  const endpoint = await listen(
+    createServer((_request, response) => {
+      response.writeHead(200, { 'Content-Type': type })
+      response.flushHeaders()
+      if (bodyAfterMs === undefined) return
+      const late = setTimeout(() => response.end('{"late":true}'), bodyAfterMs)
+      response.on('close', () => clearTimeout(late))
+    }),
+  )
+  // The idle setting is far off, so only the request deadline can end either wait.
+  const client = createDeploymentFetch({ requestMs: 200, streamIdleMs: 5_000 }, {})
+  clients.push(client)
+  const body = client.fetch(endpoint, { method: 'POST', body: '{}' }).then((response) => response.text())
+  await expect(body).rejects.toMatchObject({ name: 'TimeoutError', message: 'Request timeout' })
+})
+
 it('enforces the connection deadline during proxied TLS negotiation', async () => {
   const proxy = createServer()
   proxy.on('connect', (_request, socket) => {

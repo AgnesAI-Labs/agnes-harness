@@ -1149,3 +1149,135 @@ it('checks tool images again after pi combines them into one provider message', 
     },
   ])
 })
+
+// A request is bounded until it starts answering, and after that only by silence: a long answer that
+// keeps arriving is healthy however long it takes, and one that stops is cut.
+describe('request deadlines', () => {
+  // What a main-turn request gets: it sets no timeoutMs, so the provider default applies.
+  const mainTurn = { firstToken: 120_000, total: 600_000 }
+  const agnes = { ...route, baseUrl: 'https://apihub.agnes-ai.com/v1' }
+  const text = (delta: string): AssistantMessageEvent => ({
+    type: 'text_delta',
+    contentIndex: 0,
+    delta,
+    partial,
+  })
+  const finished: AssistantMessageEvent = { type: 'done', reason: 'stop', message: assistant() }
+  type Step = readonly [waitMs: number, event: AssistantMessageEvent | Error]
+  /** One script per attempt. Each step follows its wait; a script that runs out goes silent. */
+  const timed =
+    (...attempts: Step[][]) =>
+    () => {
+      const steps = attempts.shift() ?? []
+      return (async function* () {
+        for (const [ms, step] of steps) {
+          await new Promise((resolve) => setTimeout(resolve, ms))
+          if (step instanceof Error) throw step
+          yield step
+        }
+        await new Promise<never>(() => {})
+      })()
+    }
+  const every = (gapMs: number, untilMs: number): Step[] =>
+    Array.from({ length: untilMs / gapMs }, (_, i) => [gapMs, text(`${i}`)] as const)
+  /** Runs one request on a fake clock: still open at `openAt`, if given, and over by `overBy`. */
+  async function play(adapter: PiAdapter, at: { openAt?: number; overBy: number }) {
+    vi.useFakeTimers()
+    try {
+      let over = false
+      const run = collect(
+        adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), {
+          ...opts(),
+          timeoutMs: mainTurn,
+        }),
+      ).finally(() => {
+        over = true
+      })
+      if (at.openAt !== undefined) {
+        await vi.advanceTimersByTimeAsync(at.openAt)
+        expect(over, `still answering at ${at.openAt} ms`).toBe(false)
+      }
+      await vi.advanceTimersByTimeAsync(at.overBy - (at.openAt ?? 0))
+      expect(over, `over by ${at.overBy} ms`).toBe(true)
+      return await run
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+  const idleTimeout = {
+    type: 'error',
+    reason: 'error',
+    code: 'TIMEOUT',
+    message: 'stream idle timeout',
+    retryable: true,
+  }
+
+  it.each([undefined, 3_600_000])(
+    'keeps a stream that is still producing past the old total (requestMs %s)',
+    async (requestMs) => {
+      const adapter = bound({
+        manualRoutes: [{ ...agnes, ...(requestMs === undefined ? {} : { networkTimeouts: { requestMs } }) }],
+        streamImpl: timed([...every(10_000, 700_000), [0, finished]]),
+      })
+      const events = await play(adapter, { openAt: 699_999, overBy: 700_001 })
+      expect(events.filter((event) => event.type === 'text_delta')).toHaveLength(70)
+      expect(events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+    },
+  )
+
+  it('buffered route: 600 s of silence after content is a stream-idle TIMEOUT', async () => {
+    const adapter = bound({
+      manualRoutes: [agnes],
+      streamImpl: timed([
+        [0, text('a')],
+        [590_000, text('b')],
+      ]),
+    })
+    const events = await play(adapter, { openAt: 1_189_999, overBy: 1_190_000 })
+    expect(events).toEqual([
+      { type: 'text_delta', delta: 'a' },
+      { type: 'text_delta', delta: 'b' },
+      idleTimeout,
+    ])
+  })
+
+  it('non-buffered route: 60 s of silence after content is TIMEOUT', async () => {
+    const adapter = bound({ manualRoutes: [route], streamImpl: timed(every(50_000, 400_000)) })
+    const events = await play(adapter, { openAt: 459_999, overBy: 460_000 })
+    expect(events.filter((event) => event.type === 'text_delta')).toHaveLength(8)
+    expect(events.at(-1)).toEqual(idleTimeout)
+  })
+
+  it('no content before firstContentMs is TIMEOUT', async () => {
+    const adapter = bound({
+      manualRoutes: [agnes],
+      streamImpl: timed([[0, { type: 'start', partial }]]),
+    })
+    expect(await play(adapter, { openAt: 299_999, overBy: 300_000 })).toEqual([
+      { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'total timeout', retryable: true },
+    ])
+  })
+
+  it('a retry after a mid-stream failure gets a fresh first-content window', async () => {
+    const dropped = Object.assign(new Error('socket closed'), {
+      cause: Object.assign(new Error('socket closed'), { code: 'ECONNRESET' }),
+    })
+    const adapter = bound({
+      manualRoutes: [agnes],
+      maxRetries: 1,
+      streamImpl: timed(
+        [
+          [0, { type: 'start', partial }],
+          [250_000, dropped],
+        ],
+        [
+          [250_000, text('a')],
+          [0, finished],
+        ],
+      ),
+    })
+    // The retry starts about 250.5 s in, so the first window would have closed at 300 s.
+    const events = await play(adapter, { openAt: 300_001, overBy: 501_000 })
+    expect(events.map((event) => event.type)).toEqual(['text_delta', 'usage', 'done'])
+  })
+})

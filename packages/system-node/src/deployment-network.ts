@@ -2,6 +2,10 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { Client, Dispatcher, EnvHttpProxyAgent, setGlobalDispatcher } from 'undici'
 
 export type DeploymentTimeouts = {
+  /**
+   * The request deadline, 1 to 3600000 ms (default 300000). It bounds a response to its end, except
+   * that a POST response is bounded only until its first body chunk and a GET event-stream not at all.
+   */
   requestMs?: number
   connectMs?: number
   streamIdleMs?: number
@@ -117,7 +121,9 @@ export function createDeploymentFetch(
       } as RequestInit)
       // MCP's long-lived stream is a GET event-stream. Silence is normal, and a transport
       // error retires the server, so this response keeps neither the idle timer nor the
-      // request deadline. POST streams, including model SSE, keep both.
+      // request deadline. A POST response, including model SSE, keeps the request deadline only
+      // until its body starts: from then on the idle timer alone ends it, so a long answer that
+      // keeps arriving is not cut.
       const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
       const sseGet =
         method === 'GET' &&
@@ -143,6 +149,7 @@ export function createDeploymentFetch(
               clear()
               sink.close()
             } else {
+              if (method === 'POST') clearTimeout(total)
               resetIdle(idleMs)
               sink.enqueue(next.value)
             }
