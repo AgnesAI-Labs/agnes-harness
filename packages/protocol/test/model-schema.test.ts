@@ -202,9 +202,10 @@ describe('model.json', () => {
     expect(Value.Check(M.InferenceEvent, { type: 'done', reason: 'stop', thinkingSignature: '' })).toBe(false)
   })
 
-  // Every client receiving a row (sdk session) and `agnes export` check it with validateEvent, which
-  // validates `data` against the row type's schema. Pins that a signed assistant/message passes that
-  // whole path on the new schema; an older build, whose thinking item is closed, rejects it there.
+  // The SDK session validates every row it receives with validateEvent, and session import validates
+  // every imported row the same way. validateEvent checks `data` against the row type's schema. Pins
+  // that a signed assistant/message passes on the new schema; an older build, whose thinking item is
+  // closed, rejects it there (SDK drops the row, import skips it).
   it('validateEvent accepts an assistant/message envelope carrying a signed thinking block', () => {
     const envelope = (thinking: Record<string, unknown>) => ({
       seq: 1,
