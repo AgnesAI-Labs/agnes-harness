@@ -22,7 +22,7 @@ it('embeds JSONL on the shared daemon, streams a turn, answers approval, and lea
   let sawApprovedOutput = false
   // Exercise the real model adapter and shell without depending on an account or a live model.
   const provider = createServer(async (request, response) => {
-    if (request.url === '/v1/models') {
+    if (new URL(request.url ?? '/', 'http://fixture').pathname === '/v1/models') {
       response.setHeader('content-type', 'application/json')
       response.end(JSON.stringify({ data: [{ id: 'deepseek-flash' }] }))
       return

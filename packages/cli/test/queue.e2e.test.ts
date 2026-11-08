@@ -26,7 +26,7 @@ it('agh queue from another process runs after the current turn ends', async () =
     release = done
   })
   const provider = createServer(async (request, response) => {
-    if (request.url === '/v1/models') {
+    if (new URL(request.url ?? '/', 'http://fixture').pathname === '/v1/models') {
       response.setHeader('content-type', 'application/json')
       response.end(JSON.stringify({ data: [{ id: 'deepseek-flash' }] }))
       return
