@@ -907,7 +907,7 @@ export class SessionImpl {
   /** Narrowed only by `setToolFilter`, and rebuilt from the ledger on open. Never widened. */
   toolFilter: SessionToolFilter = NO_TOOL_FILTER
   setToolFilter(request: unknown): Promise<{ seq: Seq; filter: SessionToolFilter }> {
-    return setToolFilter(this, request)
+    return this.settled(setToolFilter(this, request))
   }
 
   /** Read-only catalog from the same model filtering and authorized discovery as this session. */
@@ -948,6 +948,32 @@ export class SessionImpl {
   /** Streamed model text as it arrives. It is never a ledger row and carries no seq. */
   onPreview(fn: (p: PreviewDelta) => void): () => void {
     return this.preview.on(fn)
+  }
+  /** Called once when `close()` finishes, whether it succeeded or failed. */
+  onClosed(fn: () => void): () => void {
+    this.closedListeners.add(fn)
+    return () => void this.closedListeners.delete(fn)
+  }
+  /** Called after `setModel`, `setToolFilter` or `setPreset` resolves; never when one rejects. */
+  onSettingsChanged(fn: () => void): () => void {
+    this.settingsListeners.add(fn)
+    return () => void this.settingsListeners.delete(fn)
+  }
+  private readonly closedListeners = new Set<() => void>()
+  private readonly settingsListeners = new Set<() => void>()
+  private notify(listeners: ReadonlySet<() => void>): void {
+    for (const fn of [...listeners]) {
+      try {
+        fn()
+      } catch {
+        // A listener must not disturb the session.
+      }
+    }
+  }
+  private async settled<T>(change: Promise<T>): Promise<T> {
+    const result = await change
+    this.notify(this.settingsListeners)
+    return result
   }
   /** The text every inference still in flight has streamed so far. */
   previewSnapshot(): PreviewSnapshot[] {
@@ -2271,7 +2297,7 @@ export class SessionImpl {
   }
 
   setPreset(view: PresetView): Promise<Seq> {
-    return setPreset(this, view)
+    return this.settled(setPreset(this, view))
   }
 
   setModel(sel: {
@@ -2281,7 +2307,7 @@ export class SessionImpl {
     thinking?: ThinkingLevel | null
     contextWindow?: number | null
   }): Promise<Seq> {
-    return setModel(this, sel)
+    return this.settled(setModel(this, sel))
   }
 
   async setYolo(enabled: boolean, operator: Actor): Promise<Seq> {
@@ -2744,6 +2770,7 @@ export class SessionImpl {
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')
       forgetIdleChild(this)
     })
+    this.closePromise = this.closePromise.finally(() => this.notify(this.closedListeners))
     return this.closePromise
   }
 }

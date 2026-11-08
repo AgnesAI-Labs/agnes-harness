@@ -332,6 +332,7 @@ export class Kernel {
   readonly loops: LoopRegistryPort
   readonly tools = new ToolRegistry()
   readonly sessions = new Map<SessionKey, SessionImpl>()
+  private readonly sessionOpenedListeners = new Set<(session: SessionImpl) => void>()
   readonly clock: Clock
   readonly ids: IdMinter
   // Computed once from the fitted seam at construction; every session's hook engine reuses it.
@@ -404,6 +405,22 @@ export class Kernel {
   /** Clear per-session seam decisions after the Host publishes a new dynamic seam provider. */
   invalidateSeams(): void {
     for (const session of this.sessions.values()) session.d.runtime.invalidate()
+  }
+
+  /** Called right after a session enters the `sessions` table, whether created or resumed. */
+  onSessionOpened(listener: (session: SessionImpl) => void): () => void {
+    this.sessionOpenedListeners.add(listener)
+    return () => void this.sessionOpenedListeners.delete(listener)
+  }
+
+  private notifySessionOpened(session: SessionImpl): void {
+    for (const listener of [...this.sessionOpenedListeners]) {
+      try {
+        listener(session)
+      } catch {
+        // A listener must not disturb session creation.
+      }
+    }
   }
 
   /** All Core-owned registrations, for complete owner cleanup verification. */
@@ -832,6 +849,7 @@ export class Kernel {
         }
         forkChecks.get(log)?.()
         this.sessions.set(key, session)
+        this.notifySessionOpened(session)
         creationSignal.throwIfAborted()
         if (resumed) await recoverChildCompletions(session)
         creationSignal.throwIfAborted()
