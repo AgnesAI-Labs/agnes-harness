@@ -67,6 +67,11 @@ export class ToolRegistry {
     return this.#table.size
   }
 
+  /** Called after every change to the live tool set; returns the unsubscribe function. */
+  onChange(listener: () => void): () => void {
+    return this.#table.onChange(listener)
+  }
+
   add(def: ToolDef, meta: ToolSource): Disposer {
     // Materialize the two caller-owned records exactly once. Accessor-backed definitions and Host
     // metadata must not be able to answer validation, fingerprinting and ownership with different

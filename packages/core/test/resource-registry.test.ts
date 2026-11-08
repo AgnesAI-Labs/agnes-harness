@@ -93,3 +93,14 @@ it('preserves valid large JSON resource schemas rather than imposing the event b
   registry.register({ ...resource(), schema }, meta)
   expect(registry.snapshot()[0]?.entry.schema).toEqual(schema)
 })
+
+it('onChange fires on register and dispose until unsubscribed', () => {
+  const registry = new ResourceRegistry()
+  let n = 0
+  const off = registry.onChange(() => n++)
+  const dispose = registry.register(resource(), meta)
+  dispose()
+  off()
+  registry.register(resource(), meta)
+  expect(n).toBe(2)
+})
