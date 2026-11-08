@@ -31,7 +31,7 @@ describe('compatible account known models', () => {
       { id: 'deepseek-v4.1-flash-1017', name: 'DeepSeek' },
     ])
     expect(record(saved as ConfigModel)).toMatchObject({
-      reasoning: true,
+      reasoning: false,
       thinkingReplay: 'native',
       contextWindow: 1_000_000,
       maxTokens: 256_000,
@@ -57,7 +57,7 @@ describe('compatible account known models', () => {
 
   it('record falls back to the table for a model without capacity', () => {
     expect(record({ id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' })).toMatchObject({
-      reasoning: true,
+      reasoning: false,
       thinkingReplay: 'native',
       contextWindow: 1_000_000,
       maxTokens: 256_000,

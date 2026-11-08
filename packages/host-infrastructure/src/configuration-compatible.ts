@@ -152,8 +152,11 @@ async function testCompatibleAccount(
 
 /**
  * A declared model as a chat record: text in, native tool calls. A model the known-model table
- * describes (DeepSeek V4) reasons, replays that reasoning, and takes the table's limits unless the
- * person gave their own; any other model has no reasoning to replay and the default capacity.
+ * describes (DeepSeek V4) replays its reasoning signature and takes the table's limits unless the
+ * person gave their own; any other model has the default capacity and drops reasoning. Reasoning
+ * stays false for every record: a declared model has no thinking-level map, so with
+ * `reasoning: true` pi-ai would send thinking as disabled on DeepSeek's API and switch the system
+ * prompt to the `developer` role on unknown gateways. Replay needs neither.
  */
 function compatibleModelRecord(
   account: Readonly<{ route: string; baseUrl: string }>,
@@ -168,7 +171,7 @@ function compatibleModelRecord(
     api,
     route: account.route,
     baseUrl: account.baseUrl,
-    reasoning: known !== undefined,
+    reasoning: false,
     input: ['text'],
     cost: model.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: model.contextWindow ?? known?.contextWindow ?? CONTEXT_WINDOW,
