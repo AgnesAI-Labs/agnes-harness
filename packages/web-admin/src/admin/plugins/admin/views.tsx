@@ -563,6 +563,7 @@ export function renderSourcePluginView(this: PluginAdminViewContext): void {
               : ''
         }
         busy={this.sourceBusy}
+        submitDisabled={!this.canEffect('packages.install')}
         onTypeChange={(type) => {
           this.sourceTypeValue = type
           this.syncSourceHint()

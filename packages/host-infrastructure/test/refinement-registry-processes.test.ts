@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { RefinementRegistry } from '../src/refinement-registry.js'
 
@@ -18,7 +18,7 @@ const writer = (dataDir: string, tag: string, count: number) =>
       process.execPath,
       [
         here('./fixtures/registry-writer.mjs'),
-        here('../src/refinement-registry.ts'),
+        pathToFileURL(here('../src/refinement-registry.ts')).href,
         dataDir,
         '/work/shared',
         tag,

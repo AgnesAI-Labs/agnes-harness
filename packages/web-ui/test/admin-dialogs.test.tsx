@@ -15,7 +15,11 @@ function render(element: ReturnType<typeof createElement>): HTMLElement {
 }
 
 describe('admin dialogs', () => {
-  it.each([false, true])('localizes source controls and preserves submission while busy=%s', (busy) => {
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+  ])('gates source submission while busy=%s or unavailable=%s', (busy, unavailable) => {
     const submitted = vi.fn()
     const cancelled = vi.fn()
     const host = render(
@@ -28,6 +32,7 @@ describe('admin dialogs', () => {
         placeholder: 'npm:acme/demo@1.0.0',
         error: '',
         busy,
+        submitDisabled: unavailable,
         onTypeChange: () => undefined,
         onRefChange: () => undefined,
         onSubmit: submitted,
@@ -46,7 +51,10 @@ describe('admin dialogs', () => {
     host
       .querySelector('#source-ref')
       ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-    expect(submitted).toHaveBeenCalledTimes(busy ? 0 : 1)
+    expect(submitted).toHaveBeenCalledTimes(busy || unavailable ? 0 : 1)
+    expect(host.querySelector<HTMLButtonElement>('button.agh-btn--primary')?.disabled).toBe(
+      busy || unavailable,
+    )
     host.querySelector<HTMLButtonElement>('#source-cancel')?.click()
     expect(cancelled).toHaveBeenCalledOnce()
   })
