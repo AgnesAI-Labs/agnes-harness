@@ -251,8 +251,10 @@ static napi_value landlock_abi(napi_env env, napi_callback_info info) {
 }
 
 /* glibc keeps the memory V8 frees after parsing and compiling a bundle; malloc_trim(0) hands its
- * free pages back to the kernel. It walks every arena, so it runs on Node's worker pool. Other C
- * libraries have no malloc_trim: there the promise resolves false and nothing happens. */
+ * free pages back to the kernel. It runs off the event loop, on Node's worker pool, but holds each
+ * arena's lock while trimming it, so it may briefly contend for the main-arena lock with the JS
+ * thread. Call it at turn or idle granularity, not on a hot path. Other C libraries have no
+ * malloc_trim: there the promise resolves false and nothing happens. */
 typedef struct { napi_async_work work; napi_deferred deferred; int released; } heap_trim_job;
 
 static void heap_trim_execute(napi_env env, void* value) {
