@@ -17,6 +17,7 @@ import { open, rename } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { nativeLoadError } from './native-error.js'
 
+export { NODE_MEMORY_FLAGS, withNodeMemoryFlags } from '../runtime/node-flags.mjs'
 export { nodeArtifactGcPreparationRuntime } from './artifact-gc-preparation.js'
 export { commandPath } from './command-path.js'
 

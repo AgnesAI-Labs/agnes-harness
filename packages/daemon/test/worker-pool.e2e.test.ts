@@ -7,6 +7,7 @@ import { duplexPair } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { buildRuntimeTarget, createPluginRow, encodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { windowsProcessStartTimeSync } from '@agnes/system-node'
+import { NODE_MEMORY_FLAGS } from '@agnes/system-node/node-flags'
 import { describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { workspaceBinding } from '../../daemon-foundation/test/workspace-authority.js'
@@ -337,6 +338,40 @@ describe('WorkerPool', () => {
     } finally {
       pool.killAll()
       vi.unstubAllEnvs()
+    }
+  })
+
+  it('starts workers with the Node memory flags ahead of the configured execArgv', async () => {
+    let captured: readonly string[] | undefined
+    const workerEntry = fileURLToPath(new URL('../src/worker/main.js', import.meta.url))
+    const pool = new WorkerPool({
+      workerEntry,
+      execArgv: ['--import', 'tsx'],
+      config: {
+        profileName: 'p',
+        dataDir: '/unused',
+        socketPath: '/unused/client.sock',
+        workersSocketPath: '/unused/worker.sock',
+        limits: DEFAULT_LIMITS,
+      },
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile: '/unused/profile.json',
+      spawn: ((_command: string, args: readonly string[]) => {
+        captured = args
+        const child = erroredChild()
+        queueMicrotask(() => child.emit('error', new Error('argv captured')))
+        return child
+      }) as unknown as typeof import('node:child_process').spawn,
+      clock: () => 0,
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      notices: { emit() {} },
+    })
+    try {
+      await expect(acquire(pool, 'agnes:t:a:x:dm:argv')).rejects.toThrow('argv captured')
+      expect(captured).toEqual([...NODE_MEMORY_FLAGS, '--import', 'tsx', workerEntry])
+    } finally {
+      pool.killAll()
     }
   })
   it('rejects and terminates a worker that is still waiting to hello during shutdown', async () => {
