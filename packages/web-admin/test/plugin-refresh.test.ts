@@ -109,7 +109,9 @@ it.each(['new-content', 'same-content', 'blocked', 'trusted'] as const)(
       features: Object.values(ADMIN_FEATURES),
       readOnly: false,
     }
-    vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({ context, inventory: { packages: [row] } })
+    const overview = vi
+      .spyOn(PluginAdminApi, 'overview')
+      .mockResolvedValue({ context, inventory: { packages: [row] } })
     vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
     vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
     vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
@@ -148,8 +150,26 @@ it.each(['new-content', 'same-content', 'blocked', 'trusted'] as const)(
     const page = new PluginAdminPage({
       surface: { host: document.body.appendChild(document.createElement('div')), render: () => null },
     })
+    let finishRefresh: (() => void) | undefined
     try {
       await page.start()
+      page.openSourceDialog('install')
+      const submit = () => document.querySelector<HTMLButtonElement>('#source-form button.agh-btn--primary')
+      expect(submit()?.disabled).toBe(false)
+      overview.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRefresh = () => resolve({ context, inventory: { packages: [row] } })
+          }),
+      )
+      const refreshing = page.refresh({ settled: true })
+      await vi.waitFor(() => expect(finishRefresh).toBeDefined())
+      expect(submit()?.disabled).toBe(true)
+      expect(document.querySelector<HTMLButtonElement>('#source-cancel')?.disabled).toBe(false)
+      finishRefresh?.()
+      await refreshing
+      expect(submit()?.disabled).toBe(false)
+      page.closeSourceDialog()
       await page.inspect(source, 'install', document.createElement('button'))
       await vi.waitFor(() => expect(page.viewContext().state.preview).toBeDefined())
       expect(page.viewContext().state.previewMode).toBe('update')
@@ -164,6 +184,7 @@ it.each(['new-content', 'same-content', 'blocked', 'trusted'] as const)(
       else expect(update).toHaveBeenCalledWith(row.id, source, preview.integrity, undefined)
       expect(install).not.toHaveBeenCalled()
     } finally {
+      finishRefresh?.()
       page.dispose()
     }
   },
