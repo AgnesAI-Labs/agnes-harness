@@ -5,8 +5,9 @@ export type Classified = { code: AiErrorCode; message: string; retryable: boolea
 
 /**
  * Failure text to a code and a verdict on asking again, in order. The order is the meaning: an
- * authentication failure that also mentions a 500 is an authentication failure, and reading it the
- * other way would retry a request that can never succeed.
+ * authentication failure whose text also mentions a 500 is an authentication failure, and reading it
+ * the other way would retry a request that can never succeed. That 500 is a number quoted in the
+ * text; a 5xx response status is read before this table (see `classifyPiError`).
  */
 const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
   // `no api key` is the wire library refusing to send an unauthenticated request at all, which is a
