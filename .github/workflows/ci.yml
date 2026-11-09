@@ -3,15 +3,10 @@ on:
   push: { branches: [main] }
   pull_request:
   workflow_dispatch:
-  # Nightly run of every job, including the heavy tier on all three platforms.
-  schedule:
-    - cron: '0 18 * * *'
 permissions: { contents: read }
 env:
   AGNES_NATIVE_BUILDER: glibc228
-# The event name keeps a nightly run on main and a push to main from cancelling each other. Only a
-# newer push to the same pull request cancels its older run; runs on main always finish, because
-# they carry the only macOS and Windows heavy-tier results.
+# Newer pushes to a pull request cancel its older run; manual and main runs finish independently.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
