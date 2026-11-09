@@ -692,6 +692,35 @@ describe('PiAdapter', () => {
     expect(await run(assistant())).toEqual({ type: 'done', reason: 'stop' })
   })
 
+  // Only an openai-completions request ever writes a signature back, so only its stream records one:
+  // what the other wire protocols put there (a whole encrypted reasoning item, a redacted block's
+  // payload) would be stored and counted on every step and never sent.
+  it.each(['anthropic-messages', 'openai-responses'] as const)(
+    'done from a %s route carries no signature',
+    async (api) => {
+      const other = {
+        ...route,
+        api,
+        models: [fakeModel({ id: 'flash', route: 'gw', api, baseUrl: 'https://gw.invalid/v1' })],
+      }
+      const message = assistant({
+        api,
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'a',
+            thinkingSignature: '{"type":"reasoning","encrypted_content":"x"}',
+          },
+          { type: 'text', text: 'b' },
+        ],
+      })
+      const { impl } = fakeStream([[{ type: 'done', reason: 'stop', message }]])
+      const a = bound({ manualRoutes: [other], streamImpl: impl })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+    },
+  )
+
   it('maps each stop reason pi reports and carries reasoning tokens when it reports them', async () => {
     const reasons = ['stop', 'length', 'toolUse', 'deferred'] as const
     for (const reason of reasons) {

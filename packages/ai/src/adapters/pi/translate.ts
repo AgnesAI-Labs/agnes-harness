@@ -68,9 +68,19 @@ export function translateEvent(
       // One signature per message, because Core keeps one thinking string per message: the first
       // reasoning block that has one. The provider's own marker for where the reasoning lives
       // (e.g. `reasoning_content`) is what a later request needs to put it back in the same place.
-      const signature = ev.message.content.find(
-        (b) => b.type === 'thinking' && typeof b.thinkingSignature === 'string' && b.thinkingSignature !== '',
-      )
+      // Only an openai-completions stream records one, because only an openai-completions request
+      // writes one back (the adapter's `replaySignature`): what the other wire protocols keep there,
+      // a whole encrypted reasoning item or a redacted block's payload, would be stored and counted
+      // on every step and never sent.
+      const signature =
+        model.api === 'openai-completions'
+          ? ev.message.content.find(
+              (b) =>
+                b.type === 'thinking' &&
+                typeof b.thinkingSignature === 'string' &&
+                b.thinkingSignature !== '',
+            )
+          : undefined
       const thinkingSignature = signature?.type === 'thinking' ? signature.thinkingSignature : undefined
       return [usage, { type: 'done', reason, ...(thinkingSignature ? { thinkingSignature } : {}) }]
     }
