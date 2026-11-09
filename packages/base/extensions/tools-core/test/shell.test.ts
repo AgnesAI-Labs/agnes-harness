@@ -703,7 +703,7 @@ describe('shell near the turn deadline', () => {
       return view as never
     })
     const kill = vi.spyOn(jobs, 'kill').mockResolvedValue(view as never)
-    return { tool: createShellTool(jobs), waits, kill }
+    return { tool: createShellTool(jobs), jobs, view, waits, kill }
   }
 
   // The process keeps running, so the wait hands control back with half of the usable time left
@@ -810,21 +810,28 @@ describe('shell near the turn deadline', () => {
     expect(textOf(r)).toBe('so far\nbackground job job-1 started; use job_output, job_list or job_kill')
   })
 
-  it("keeps a job_output wait inside the turn's time, and leaves the job running", async () => {
+  // The job goes on after a job_output wait exactly as it does after a shell wait, so a timed turn ends
+  // both alike, with half of the usable time still left: one five-minute wait cannot spend the time the
+  // model needs to wrap up.
+  it("keeps a job_output wait inside the turn's time as a shell wait, and leaves the job running", async () => {
     vi.spyOn(Date, 'now').mockImplementation(() => NOW)
-    const jobs = new ShellJobs()
-    const seen: number[] = []
+    const { tool, jobs, view, waits } = jobsFor('running')
     vi.spyOn(jobs, 'syncChildren').mockResolvedValue(undefined as never)
-    vi.spyOn(jobs, 'wait').mockImplementation(async (_ctx, _id, ms) => {
-      seen.push(ms)
-      return { id: 'job-1', status: 'running', stdout: '', stderr: '', code: null } as never
-    })
-    const output = createJobTools(jobs).find((tool) => tool.name === 'job_output')
+    vi.spyOn(jobs, 'output').mockReturnValue({ ...view, startedAt: NOW, cursor: 'c', gap: false } as never)
+    const output = createJobTools(jobs).find((t) => t.name === 'job_output')
     const near = { timeLimitMs: 600_000, deadlineAt: NOW + 40_000 }
     await output?.execute({ jobId: 'job-1', waitMs: 60_000 }, fakeToolContext({ turnTimeLimit: near }))
     await output?.execute({ jobId: 'job-1', waitMs: 60_000 }, fakeToolContext())
-    // 40 s left less the 30 s margin; without a time limit the asked wait stands.
-    expect(seen).toEqual([10_000, 60_000])
+    // Half of 40 s left less the 30 s margin; without a time limit the asked wait stands.
+    expect(waits).toEqual([5_000, 60_000])
+    // 6 minutes of a 30-minute turn left (margin 90 s): a shell wait and a job_output wait both end at 135 s.
+    const later = fakeToolContext({
+      timeoutMs: 1_800_000,
+      turnTimeLimit: { timeLimitMs: 1_800_000, deadlineAt: NOW + 360_000 },
+    })
+    await tool.execute({ command: 'make world', timeoutMs: 600_000 }, later)
+    await output?.execute({ jobId: 'job-1', waitMs: 300_000 }, later)
+    expect(waits).toEqual([5_000, 60_000, 135_000, 135_000])
   })
 })
 

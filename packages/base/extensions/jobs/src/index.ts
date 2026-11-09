@@ -65,8 +65,9 @@ export function createJobTools(jobs: ShellJobs) {
           await jobs.wait(
             ctx,
             args.jobId,
-            // A wait never runs into the turn's deadline; the job itself keeps running.
-            deadlineWait(ctx, Math.min(args.waitMs ?? 0, ctx.timeoutMs)).waitMs,
+            // The job keeps running after the wait, as a continuing shell command does, so a timed turn
+            // ends this wait where it ends a shell wait: with half of the usable time still left.
+            deadlineWait(ctx, Math.min(args.waitMs ?? 0, ctx.timeoutMs), { continues: true }).waitMs,
           )
           const job = jobs.output(ctx, args.jobId, args.cursor)
           // The model now knows how a finished job ended; a completion notice would only repeat it.
