@@ -1300,7 +1300,13 @@ describe('replayed history as pi sees it', () => {
     const seen = wire.seen[0]
     const replayed = seen?.context.messages[1] as AssistantMessage
     expect(replayed.provider).toBe('agnes-ai')
-    expect(replayed.provider).toBe(seen?.model.provider)
+    // The whole triple the wire library compares before it keeps replayed thinking. It always
+    // matches here, which is why Core, not this check, keeps one model's signature from another.
+    expect({ provider: replayed.provider, api: replayed.api, model: replayed.model }).toEqual({
+      provider: seen?.model.provider,
+      api: seen?.model.api,
+      model: seen?.model.id,
+    })
     expect(replayed.content[0]).toEqual({
       type: 'thinking',
       thinking: 'why',

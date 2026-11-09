@@ -77,7 +77,9 @@ function toMessage(
         // (`replaySignature`): a message's reasoning is merged into one block here, and a merged
         // encrypted signature would be refused by the provider. Not every wire protocol filters the
         // history through the api check (pi-messages posts the context as it is), so the other protocols
-        // are kept from receiving a signature here rather than left to that check.
+        // are kept from receiving a signature here rather than left to that check. Every message is
+        // labelled with the request model, so that check cannot catch reasoning another model wrote:
+        // Core sends a stored signature only back to the route and model that produced it.
         api: 'openai-completions',
         provider,
         model: req.model,

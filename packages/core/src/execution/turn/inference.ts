@@ -82,6 +82,7 @@ import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './ga
 import { appendHookData } from './hook-data-note.js'
 import { settleInferenceFailure } from './inference-failure.js'
 import { planModelToolCalls } from './inference-tools.js'
+import { surfaceProducers } from './message-producers.js'
 import { progressCheckNote } from './progress-check.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
@@ -699,6 +700,7 @@ export async function prepareInferenceRequest(
     surface,
     disclosed,
     toolCalls: await surfaceToolCalls(s),
+    producers: await surfaceProducers(s, surface),
     model: {
       slot,
       ...target,

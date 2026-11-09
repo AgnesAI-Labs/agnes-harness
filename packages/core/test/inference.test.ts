@@ -1577,6 +1577,61 @@ describe('Inference segment (fix round 1)', () => {
     expect('signature' in (bare[0] ?? {})).toBe(false)
   })
 
+  // The history goes out labelled with the request's own model, so the wire library cannot tell one
+  // model's reasoning from another's. Core sends a stored signature back only to the route and model
+  // that produced it, as the receipt of that message's own request recorded them.
+  it('sends a stored signature back only to the model that produced it', async () => {
+    const signed = (text: string): Script => [
+      sent(),
+      { type: 'thinking_delta', delta: `why ${text}` },
+      { type: 'text_delta', delta: text },
+      usage(),
+      { type: 'done', reason: 'stop', thinkingSignature: 'reasoning_content' },
+    ]
+    const record = (route: string, id: string): ModelRecord => ({
+      id,
+      name: id,
+      api: 'openai-completions',
+      route,
+      baseUrl: 'https://example.invalid/v1',
+      reasoning: false,
+      input: ['text'],
+      cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 8192,
+      maxTokens: 1024,
+      toolCallFormats: ['native'],
+      thinkingReplay: 'native',
+      contract_id: null,
+    })
+    const provider = fakeProvider([signed('one'), signed('two'), signed('three'), signed('four')])
+    Object.assign(provider, { models: () => [record('default', 'model-a'), record('alt', 'model-b')] })
+    const { session } = await openSession({ provider })
+    const turn = async (text: string) => {
+      await session.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
+      const outcome = await session.run({ until: 'turn-end', signal: new AbortController().signal })
+      expect(outcome.reason).toBe('completed')
+    }
+    const replayed = (i: number) =>
+      provider.requests[i]?.messages
+        .filter((m) => m.role === 'assistant')
+        .map((m) => m.content.find((c) => c.type === 'thinking'))
+    await turn('a')
+    await turn('b')
+    // The same model: its earlier answer goes back with its signature.
+    expect(provider.requests[1]?.model).toBe('model-a')
+    expect(replayed(1)).toEqual([{ type: 'thinking', text: 'why one', signature: 'reasoning_content' }])
+    await session.setModel({ slot: 'primary', route: 'alt', model: 'model-b' })
+    await turn('c')
+    await turn('d')
+    // After the switch, what model-a wrote goes back without its signature, model-b's own keeps it.
+    expect(provider.requests[3]).toMatchObject({ route: 'alt', model: 'model-b' })
+    expect(replayed(3)).toEqual([
+      { type: 'thinking', text: 'why one' },
+      { type: 'thinking', text: 'why two' },
+      { type: 'thinking', text: 'why three', signature: 'reasoning_content' },
+    ])
+  })
+
   it('an interrupted spend is told to the ledger seam, so a failing ledger can still fail closed', async () => {
     const failing: Script[] = [
       [
