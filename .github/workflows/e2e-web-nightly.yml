@@ -1,10 +1,26 @@
-name: Web E2E manual full suite
-# The daily 02:00 Asia/Shanghai run is owned by ci.yml (18:00 UTC).
-# Keep this existing entry point for an explicit full-browser run on a chosen ref.
+name: Nightly E2E dispatcher
+run-name: ${{ github.event_name == 'schedule' && 'Nightly E2E dispatch → develop' || format('Web E2E manual · {0}', github.ref_name) }}
+# GitHub schedules start on the default branch; the tests themselves run on develop.
 on:
+  schedule:
+    - cron: '0 18 * * *'
   workflow_dispatch:
 permissions: { contents: read }
 jobs:
+  dispatch-develop:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { actions: write }
+    steps:
+      - name: Run the full CI and browser suite on develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh workflow run ci.yml --repo "$GH_REPO" --ref develop --field browsers=true
+          echo "Dispatched full CI + Web E2E to develop. Check its result at https://github.com/$GH_REPO/actions/workflows/ci.yml?query=branch%3Adevelop+event%3Aworkflow_dispatch" >> "$GITHUB_STEP_SUMMARY"
   browsers:
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/e2e-web.yml
     with: { suite: nightly }

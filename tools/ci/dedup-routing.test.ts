@@ -1,15 +1,44 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { ciWebSelected, verifyPlatformResults, verifyWebResults } from './dedup-routing.mjs'
 
 describe('single-run coverage routing', () => {
-  it('runs browsers only on the daily schedule or an explicit manual request', () => {
-    expect(ciWebSelected('schedule', 'refs/heads/main')).toBe(true)
+  it('runs browsers on explicit dispatch instead of testing the scheduler default branch', () => {
+    expect(ciWebSelected('schedule', 'refs/heads/main')).toBe(false)
+    expect(ciWebSelected('schedule', 'refs/heads/develop')).toBe(false)
+    expect(ciWebSelected('workflow_dispatch', 'refs/heads/develop', true)).toBe(true)
     expect(ciWebSelected('workflow_dispatch', 'refs/heads/main', true)).toBe(true)
     expect(ciWebSelected('workflow_dispatch', 'refs/heads/main', false)).toBe(false)
     for (const event of ['pull_request', 'push', 'merge_group'])
       expect(ciWebSelected(event, 'refs/heads/main', true)).toBe(false)
     expect(ciWebSelected('push', 'refs/heads/other')).toBe(false)
+  })
+
+  it('has one 02:00 Shanghai scheduler that dispatches the full suite on develop', () => {
+    const directory = new URL('../../.github/workflows/', import.meta.url)
+    const scheduled = readdirSync(directory).filter((file) =>
+      /^  schedule:/m.test(readFileSync(new URL(file, directory), 'utf8')),
+    )
+    expect(scheduled).toEqual(['e2e-web-nightly.yml'])
+    const dispatcher = readFileSync(new URL(scheduled[0]!, directory), 'utf8')
+    expect(dispatcher).toContain("cron: '0 18 * * *'")
+    expect(dispatcher).toContain(
+      'gh workflow run ci.yml --repo "$GH_REPO" --ref develop --field browsers=true',
+    )
+    expect(dispatcher).toContain("dispatch-develop:\n    if: github.event_name == 'schedule'")
+    expect(dispatcher).toContain('actions: write')
+    expect(dispatcher).not.toContain('actions/checkout')
+    expect(dispatcher).not.toContain('continue-on-error')
+  })
+
+  it('preserves the full-browser manual entry on the selected ref', () => {
+    const dispatcher = readFileSync(
+      new URL('../../.github/workflows/e2e-web-nightly.yml', import.meta.url),
+      'utf8',
+    )
+    expect(dispatcher).toContain("browsers:\n    if: github.event_name == 'workflow_dispatch'")
+    expect(dispatcher).toContain('uses: ./.github/workflows/e2e-web.yml')
+    expect(dispatcher).toContain('with: { suite: nightly }')
   })
 
   it.each(['gate', 'nightly', 'narrow-nightly'])(

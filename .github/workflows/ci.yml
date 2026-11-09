@@ -1,4 +1,5 @@
 name: ci
+run-name: ${{ inputs.browsers && format('CI + full Web E2E · {0}', github.ref_name) || format('CI · {0}', github.ref_name) }}
 on:
   push: { branches: [main] }
   pull_request:
@@ -8,15 +9,11 @@ on:
         type: boolean
         default: false
         description: Include the full nightly browser suite
-  # Nightly run of every job, including the heavy tier on all three platforms.
-  schedule:
-    - cron: '0 18 * * *'
 permissions: { contents: read }
 env:
   AGNES_NATIVE_BUILDER: glibc228
-# The event name keeps a nightly run on main and a push to main from cancelling each other. Only a
-# newer push to the same pull request cancels its older run; runs on main always finish, because
-# they carry the only macOS and Windows heavy-tier results.
+# The nightly dispatcher starts a full run on develop, separate from push runs.
+# Only newer pushes to the same pull request cancel its older run; full manual and main runs finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
