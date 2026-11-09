@@ -21,6 +21,7 @@ export function registerManagedServices(
   settled: () => Promise<void>,
   configSchema: ServiceDef['inputSchema'],
   checkSchema?: ServiceDef['inputSchema'],
+  recovery?: () => JsonValue,
 ) {
   for (const capability of managedServiceCapabilities(id, configSchema, checkSchema)) {
     const method = capability.name.slice(id.length + 1)
@@ -35,7 +36,14 @@ export function registerManagedServices(
         if (method === 'reconcile') return handle.reconcile(context)
         if (method === 'retry') return handle.retry()
         if (method === 'configure') return handle.configure(input)
-        return handle.check(input, context.signal)
+        try {
+          return await handle.check(input, context.signal)
+        } catch (error) {
+          context.signal.throwIfAborted()
+          const status = handle.status() as { state?: string; code?: string }
+          if (!recovery || status.state !== 'failed' || status.code === 'shutdown-unconfirmed') throw error
+          return recovery()
+        }
       },
     })
   }

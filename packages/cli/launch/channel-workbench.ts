@@ -23,6 +23,7 @@ type Health = {
   version: number
   connection: { channel: string; daemon: string } | null
   bindings?: Binding[]
+  recovery?: boolean
 }
 const revision = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const prefix = (extension: string, sessionId: string) => `s-${revision([extension, sessionId]).slice(0, 12)}`
@@ -107,7 +108,9 @@ export function channelWorkbench(client: Client, profile: string) {
                     ...binding,
                     sessionTitle: ownedById.get(binding.sessionId)?.title || binding.sessionId,
                   })),
-                unavailable: !health || bindings.some((binding) => !ownedById.has(binding.sessionId)),
+                unavailable: bindings.some((binding) => !ownedById.has(binding.sessionId)),
+                statusUnavailable: !health,
+                recovery: health?.recovery === true,
                 intendedSession: owned.find((session) =>
                   instance.id.startsWith(`${prefix(provider.extension, session.sessionId)}-`),
                 ),
@@ -172,5 +175,33 @@ export function channelWorkbench(client: Client, profile: string) {
     const receipt = await scoped<ProfileServiceReceipt>(extension, 'configure', { instances }, operationId)
     return { receipt, instanceId: identity.instanceId }
   }
-  return { overview, context, configure }
+  const remove = async (params: Record<string, unknown>) => {
+    const extension = String(params.extension),
+      instanceId = String(params.instanceId),
+      operationId = String(params.operationId)
+    if (!(await catalog()).some((provider) => provider.extension === extension)) refuse()
+    // Reconcile the original native operation even if the instance is already gone.
+    try {
+      const receipt = await client.extensions.readOperation({
+        extension, service: 'channel.configure', operationId,
+      })
+      if (receipt.state !== 'approval-required') return { receipt, instanceId }
+    } catch (error) {
+      if ((error as { data?: { code?: string } }).data?.code !== 'CAPABILITY_DENIED') throw error
+    }
+    const configuration = await scoped<{ output: { instances: Instance[] } }>(extension, 'configuration')
+    if (revision(configuration.output) !== params.configurationRevision)
+      throw new Error('Channel configuration changed; refresh before deleting')
+    if (!configuration.output.instances.some((instance) => instance.id === instanceId)) refuse()
+    const check = await scoped<{ output: { instances: Health[] } }>(extension, 'check')
+    const health = check.output.instances.find((instance) => instance.id === instanceId)
+    const owned = new Set((await sessions()).map((session) => session.sessionId))
+    if (!health || health.version !== params.expectedVersion ||
+      !Array.isArray(health.bindings) || health.bindings.some((binding) => !owned.has(binding.sessionId))) refuse()
+    const receipt = await scoped<ProfileServiceReceipt>(extension, 'configure', {
+      instances: configuration.output.instances.filter((instance) => instance.id !== instanceId),
+    }, operationId)
+    return { receipt, instanceId }
+  }
+  return { overview, context, configure, remove }
 }

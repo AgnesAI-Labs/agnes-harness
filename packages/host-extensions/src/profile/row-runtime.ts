@@ -38,6 +38,7 @@ export function installProfileRuntime(
     ): { integrity?: string; declaredCapabilities?: PluginCapabilities } | undefined
   },
 ) {
+  const recoveries = new WeakMap<object, (config: import('@agnes/protocol').JsonValue, store: import('@agnes/extension-api').OwnedStore) => import('@agnes/protocol').JsonValue>()
   const resolve = (context: Context) => {
     let fiber: Fiber = context.fiber
     while (!origins.lookup(fiber) && fiber !== fiber.parent.fiber) fiber = fiber.parent.fiber
@@ -90,7 +91,7 @@ export function installProfileRuntime(
       })
       // Register through the same row-attributed provider port; no plugin can select another owner.
       this.ctx.get('providers').register(channelKind, registered)
-      const handle = (this.ctx.get('profileRuntime') as PluginProfileRuntimePort).register({
+      const definition: ProfileManagedDefinition<import('@agnes/extension-api').ChannelRuntime> = {
         id: 'channel',
         configSchema: CHANNEL_CONFIG_SCHEMA,
         defaultConfig: config as unknown as import('@agnes/protocol').JsonValue,
@@ -117,7 +118,10 @@ export function installProfileRuntime(
         async check(value) {
           return value.status()
         },
-      })
+      }
+      if (deps.channelRuntime.snapshot) recoveries.set(definition, (config, store) =>
+        deps.channelRuntime!.snapshot!(registered, config as unknown as import('@agnes/extension-api').ChannelConfiguration, store, row.owner))
+      const handle = (this.ctx.get('profileRuntime') as PluginProfileRuntimePort).register(definition)
       const capabilities = channelServiceCapabilities()
       const bindingAvailable = capabilities.every((cap) =>
         row.capabilities?.services?.some((d) => d.name === cap.name && d.scope === 'session'),
@@ -194,6 +198,8 @@ export function installProfileRuntime(
         () => deps.managed.settle(),
         definition.configSchema,
         definition.checkSchema,
+        recoveries.has(definition) ? () => recoveries.get(definition)!(handle.configuration(),
+          ownedStore(deps.namespace(row.owner, `managed:${definition.id}`), row.assert, false)) : undefined,
       )
       return handle
     },

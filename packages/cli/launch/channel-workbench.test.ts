@@ -3,6 +3,8 @@ import { expect, it, vi } from 'vitest'
 import { channelWorkbench } from './channel-workbench.js'
 
 function fixture() {
+  let approved = true
+  let recovery = false
   let configuration = { instances: [] as Record<string, unknown>[] }
   let bindings: Record<string, unknown>[] = []
   const receipts = new Map<string, Record<string, unknown>>()
@@ -16,14 +18,15 @@ function fixture() {
           instances: configuration.instances.map((instance) => ({
             id: instance.id,
             version: 7,
-            connection: { channel: 'connected', daemon: 'connected' },
+            connection: recovery ? null : { channel: 'connected', daemon: 'connected' },
+            recovery,
             bindings,
           })),
         },
       }
     if (params.service === 'channel.configure') {
-      configuration = structuredClone(params.input)
-      const receipt = { state: 'completed', operationId: params.operationId }
+      if (approved) configuration = structuredClone(params.input)
+      const receipt = { state: approved ? 'completed' : 'approval-required', operationId: params.operationId }
       receipts.set(params.operationId, receipt)
       return receipt
     }
@@ -50,6 +53,8 @@ function fixture() {
     },
   } as unknown as Client
   return {
+    setRecovery: (value: boolean) => { recovery = value },
+    setApproved: (value: boolean) => { approved = value },
     api: channelWorkbench(client, 'local-dev'),
     client,
     call,
@@ -98,6 +103,48 @@ it('derives connection identity from the owned session, merges connections and r
   ])
   expect((await f.api.overview()).channels[0]!.instances).toHaveLength(1)
 })
+
+it('removes only the reviewed instance through native approval and reconciles its completed operation', async () => {
+  const f = fixture()
+  const keep = { id: 'keep', workspace: 'D:/other', agent: 'default', credentialRefs: { account: 'secret://generic/keep' }, config: { enabled: true } }
+  f.setConfiguration({ instances: [{ id: 'remove', workspace: 'D:/owned' }, keep] })
+  f.setBindings([{ sessionId: 'owned', targetId: 'peer', label: 'Team', state: 'active' }])
+  f.setRecovery(true)
+  expect((await f.api.overview()).channels[0]!.instances[0]).toMatchObject({
+    connection: null, recovery: true, unavailable: false, statusUnavailable: false,
+  })
+  const params = { extension: 'plugin/chat', instanceId: 'remove', operationId: 'remove-1', expectedVersion: 7,
+    configurationRevision: (await f.api.overview()).channels[0]!.configurationRevision }
+  f.setApproved(false)
+  expect(await f.api.remove(params)).toMatchObject({ receipt: { state: 'approval-required' } })
+  expect((await f.api.overview()).channels[0]!.instances).toHaveLength(2)
+  f.setApproved(true)
+  expect(await f.api.remove(params)).toMatchObject({ receipt: { state: 'completed' } })
+  expect(await f.api.remove(params)).toMatchObject({ receipt: { state: 'completed' } })
+  expect((await f.api.overview()).channels[0]!.instances).toMatchObject([keep])
+  expect(f.call.mock.calls.filter(([, p]) => p.service === 'channel.configure').every(([, p]) =>
+    JSON.stringify(p.input) === JSON.stringify({ instances: [keep] }))).toBe(true)
+})
+
+it.each(['configuration', 'binding', 'foreign-binding', 'missing', 'provider', 'health'])(
+  'refuses deletion on a changed or inaccessible %s before configuring', async (failure) => {
+    const f = fixture()
+    f.setConfiguration({ instances: [{ id: 'remove', workspace: 'D:/owned' }] })
+    const configurationRevision = (await f.api.overview()).channels[0]!.configurationRevision
+    if (failure === 'foreign-binding') f.setBindings([{ sessionId: 'private' }])
+    if (failure === 'health') {
+      const original = f.call.getMockImplementation()!
+      f.call.mockImplementation(async (method, params) => params.service === 'channel.check'
+        ? { output: { instances: [] } } : original(method, params))
+    }
+    await expect(f.api.remove({ extension: failure === 'provider' ? 'foreign' : 'plugin/chat',
+      instanceId: failure === 'missing' ? 'missing' : 'remove', operationId: 'remove-failure',
+      expectedVersion: failure === 'binding' ? 8 : 7,
+      configurationRevision: failure === 'configuration' ? 'stale' : configurationRevision,
+    })).rejects.toThrow()
+    expect(f.call.mock.calls.some(([, p]) => p.service === 'channel.configure')).toBe(false)
+  },
+)
 
 it('refuses foreign sessions, stale configuration and forged instance identities before mutation', async () => {
   const f = fixture()

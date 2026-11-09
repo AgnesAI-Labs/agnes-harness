@@ -7,6 +7,7 @@ import type {
   ChannelConfiguration,
   ChannelProvider,
   ChannelRuntime,
+  OwnedStore,
   ProfileManagedInit,
 } from '@agnes/extension-api'
 import { channelKind } from '@agnes/extension-api'
@@ -23,6 +24,24 @@ export interface ChannelBridgeOptions {
   resolveSecret(ref: string): Promise<string> | string
   createClient(config: RunnerConfig, stateDirectory: string): RunnerDeps['client']
   log: Record<'info' | 'warn' | 'error', (message: string) => void>
+}
+
+/** Recovery projection for a stopped failed runtime. No credentials, fresh targets or transport. */
+export function channelBindingSnapshot(
+  provider: ChannelProvider,
+  config: ChannelConfiguration,
+  store: OwnedStore,
+  owner: string,
+) {
+  return {
+    provider: provider.id,
+    instances: config.instances.map((instance) => {
+      const key = createHash('sha256').update(`${owner}\0${instance.id}`).digest('hex').slice(0, 32)
+      const fingerprint = createHash('sha256').update(JSON.stringify(instance)).digest('hex')
+      const bindings = new ChannelBindings(store, `bindings:${key}:${fingerprint}`, () => {})
+      return { id: instance.id, connection: null, recovery: true, ...bindings.summary() }
+    }),
+  }
 }
 
 /** One current-profile resource. All platform-independent forwarding remains in the runner. */
@@ -95,6 +114,7 @@ export async function startChannelBridge(
     void stop().catch(() => {})
   }
   init.signal.addEventListener('abort', aborted, { once: true })
+  let stage = 'state-directory'
   try {
     assertCurrent()
     privateDirectory(options.stateDirectory)
@@ -106,6 +126,7 @@ export async function startChannelBridge(
         return `bindings:${key}:${fingerprint}`
       }),
     )
+    stage = 'binding-store'
     init.store.transaction(() => {
       let cursor: string | undefined
       do {
@@ -119,10 +140,12 @@ export async function startChannelBridge(
     })
     for (const instance of config.instances) {
       assertCurrent()
+      stage = 'workspace'
       const workspace = await realpath(instance.workspace)
       assertCurrent()
       const key = createHash('sha256').update(`${options.owner}\0${instance.id}`).digest('hex').slice(0, 32)
       const state = join(options.stateDirectory, key)
+      stage = 'state-directory'
       privateDirectory(state)
       const cfg: RunnerConfig = {
         channel: provider.id,
@@ -145,6 +168,7 @@ export async function startChannelBridge(
       row.supervisor = createRunnerSupervisor(async () => {
         assertCurrent()
         if (stopped) throw new Error('Channel resource is stopping')
+        stage = 'credentials'
         const secrets: Record<string, string> = {}
         for (const [key, ref] of Object.entries(instance.credentialRefs)) {
           secrets[key] = await options.resolveSecret(ref)
@@ -156,6 +180,7 @@ export async function startChannelBridge(
           warn: () => options.log.warn('channel runtime warning'),
           error: () => options.log.error('channel runtime error'),
         }
+        stage = 'adapter'
         const adapter = await provider.create({ config: instance.config ?? {} })
         let client: RunnerDeps['client'] | undefined
         try {
@@ -174,6 +199,7 @@ export async function startChannelBridge(
             )
           )
             throw new Error('Channel adapter exceeds its declared capabilities')
+          stage = 'backend'
           client = options.createClient(cfg, state)
           const guarded = new Proxy(adapter, {
             get(target, key) {
@@ -249,9 +275,12 @@ export async function startChannelBridge(
         }
       },
     }
-  } catch {
+  } catch (error) {
     await stop()
-    throw new Error('Channel startup failed; check credentials, workspace and backend connectivity')
+    const code = (error as { code?: string } | null)?.code
+    if (code === 'E_CONNECT_FAILED') stage = 'platform'
+    // Fixed phase only: platform exceptions may contain tokens, URLs or response bodies.
+    throw Object.assign(new Error('Channel startup failed'), { code: `channel-${stage}` })
   } finally {
     if (stopped) init.signal.removeEventListener('abort', aborted)
   }

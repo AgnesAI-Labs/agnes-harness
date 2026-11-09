@@ -30,6 +30,8 @@ export type ManagedInstance = Instance & {
   version: number
   bindings: (SessionInstance['bindings'][number] & { sessionId: string; sessionTitle: string })[]
   unavailable: boolean
+  statusUnavailable?: boolean
+  recovery?: boolean
   intendedSession?: SessionMeta
 }
 export type ChannelGroup = {

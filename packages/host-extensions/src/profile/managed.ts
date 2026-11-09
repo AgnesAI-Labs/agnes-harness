@@ -379,7 +379,17 @@ export class ProfileManagedResources {
           : error?.message === 'shutdown-unconfirmed' ||
               (!started && input.store.get(`managed-shutdown:${r.id}`) === true)
             ? 'shutdown-unconfirmed'
-            : 'unavailable'
+            : [
+                  'channel-state-directory',
+                  'channel-binding-store',
+                  'channel-workspace',
+                  'channel-credentials',
+                  'channel-adapter',
+                  'channel-backend',
+                  'channel-platform',
+                ].includes(error?.code)
+              ? error.code
+              : 'unavailable'
       lifetime.abort('failed')
       if (started) {
         const result = await shut('exit')

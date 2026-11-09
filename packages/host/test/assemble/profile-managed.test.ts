@@ -10,6 +10,7 @@ import {
 } from '@agnes/extension-api'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
+import type { ChannelRuntimeFactory } from '@agnes/host-extensions/profile/channel-runtime'
 import * as processIdentity from '@agnes/host-infrastructure/adapters/process-identity-default'
 import {
   capabilityHash,
@@ -124,7 +125,9 @@ it('publishes and retires a channel factory through current-profile managed reso
       compositeRevision: '0'.repeat(64),
     })
   let starts = 0,
-    stops = 0
+    stops = 0,
+    failStartup = false,
+    uncertainShutdown = false
   const configurations: unknown[] = []
   const channelStores: import('@agnes/extension-api').OwnedStore[] = []
   const owner = pluginRowSource(rowId)
@@ -136,38 +139,52 @@ it('publishes and retires a channel factory through current-profile managed reso
       hostRoot: directory,
       agnesVersion: '0.0.0',
     }),
-    channelRuntime: async (provider, init, context) => {
-      starts++
-      configurations.push(structuredClone(init.config))
-      channelStores.push(init.store)
-      if (starts === 1) {
-        init.store.set('managed-config:channel', {
-          instances: [
-            {
-              id: 'saved',
-              workspace: dataDir,
-              agent: 'default',
-              credentialRefs: {},
-              allowFrom: [],
-              requireMention: true,
-            },
-          ],
+    channelRuntime: Object.assign<ChannelRuntimeFactory, Pick<ChannelRuntimeFactory, 'snapshot'>>(
+      async (provider, init, context) => {
+        starts++
+        configurations.push(structuredClone(init.config))
+        channelStores.push(init.store)
+        if (starts === 1) {
+          init.store.set('managed-config:channel', {
+            instances: [
+              {
+                id: 'saved',
+                workspace: dataDir,
+                agent: 'default',
+                credentialRefs: {},
+                allowFrom: [],
+                requireMention: true,
+              },
+            ],
+          })
+          init.store.set('bindings:saved', { sessionId: 'previous-session' })
+          init.store.set('other-state', { retained: true })
+        }
+        expect(() => context.resolveSecret('secret://unreviewed/key')).toThrow()
+        init.onShutdown(async () => {
+          stops++
+          return { state: uncertainShutdown ? 'unknown' : 'settled' }
         })
-        init.store.set('bindings:saved', { sessionId: 'previous-session' })
-        init.store.set('other-state', { retained: true })
-      }
-      expect(() => context.resolveSecret('secret://unreviewed/key')).toThrow()
-      init.onShutdown(async () => {
-        stops++
-        return { state: 'settled' }
-      })
-      init.ready()
-      return {
-        status: () => ({ provider: provider.id, instances: [] }),
-        session: async (session) => ({ identity: session.id, workspace: session.workspace }),
-        binding: async (_action, _input, session) => ({ identity: session.id }),
-      }
-    },
+        if (failStartup)
+          throw Object.assign(new Error('synthetic private detail'), { code: 'channel-credentials' })
+        init.ready()
+        return {
+          status: () => ({ provider: provider.id, instances: [] }),
+          session: async (session) => ({ identity: session.id, workspace: session.workspace }),
+          binding: async (_action, _input, session) => ({ identity: session.id }),
+        }
+      },
+      {
+        snapshot(provider, config, store) {
+          expect(() => store.set('must-not-write', true)).toThrow()
+          return {
+            provider: provider.id,
+            recovery: true,
+            instances: config.instances.map(({ id }) => ({ id })),
+          }
+        },
+      },
+    ),
     serviceAuthority: {
       resolve: async () => ({
         source: 'client-web',
@@ -231,6 +248,21 @@ it('publishes and retires a channel factory through current-profile managed reso
     expect(configurations[2]).toEqual({ instances: [] })
     expect(channelStores[2]?.get('bindings:saved')).toBeUndefined()
     expect(channelStores[2]?.get('other-state')).toEqual({ retained: true })
+    await publish(true)
+    failStartup = true
+    await publish(false)
+    await expect(
+      host.profileServices!.call({ ...check, service: 'channel.status' }, { kind: 'local' }),
+    ).resolves.toMatchObject({
+      output: { state: 'failed', code: 'channel-credentials' },
+    })
+    await expect(host.profileServices!.call(check, { kind: 'local' })).resolves.toMatchObject({
+      output: { provider: manifest.id, recovery: true, instances: [] },
+    })
+    await publish(true)
+    uncertainShutdown = true
+    await publish(false)
+    await expect(host.profileServices!.call(check, { kind: 'local' })).rejects.toBeDefined()
   } finally {
     await host.close()
   }

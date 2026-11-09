@@ -13,6 +13,7 @@ export function SessionBindings({
   zh,
   onBound,
   onChanged,
+  onConfigure,
 }: {
   data: HomePageData
   provider: Provider
@@ -22,17 +23,21 @@ export function SessionBindings({
   zh: boolean
   onBound?(value: boolean): void
   onChanged?(): void
+  onConfigure?(): void
 }) {
   const callbacks = useRef({ onBound, onChanged })
   callbacks.current = { onBound, onChanged }
   const [instances, setInstances] = useState<SessionInstance[]>([])
   const [error, setError] = useState('')
+  const [readError, setReadError] = useState('')
   const [busy, setBusy] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [reading, setReading] = useState(false)
   const [selected, setSelected] = useState<Record<string, string>>({})
   const [consent, setConsent] = useState(false)
   const current = useRef(true)
   const readVersion = useRef(0)
+  const readingVersion = useRef<number>()
   const connectionVersion = useRef(refreshKey)
   const pending = useRef<{
     action: 'bind' | 'unbind'
@@ -41,7 +46,10 @@ export function SessionBindings({
     input: { instanceId: string; expectedVersion: number; targetId?: string }
   }>()
   const refresh = useCallback(async () => {
+    if (readingVersion.current !== undefined) return
     const version = ++readVersion.current
+    readingVersion.current = version
+    setReading(true)
     try {
       const result = await (data.channelCall ?? data.call)<{ output: { instances: SessionInstance[] } }>(
         '_agnes/v1/extension.call',
@@ -49,9 +57,7 @@ export function SessionBindings({
       )
       if (current.current && version === readVersion.current) {
         setInstances(result.output.instances.filter((row) => instanceIds.includes(row.id)))
-        setError((previous) =>
-          previous === (zh ? '无法读取绑定状态。' : 'Unable to read bindings.') ? '' : previous,
-        )
+        setReadError('')
         setLoaded(true)
         callbacks.current.onBound?.(
           result.output.instances.some(
@@ -61,12 +67,32 @@ export function SessionBindings({
         )
       }
     } catch {
+      let failed = false
+      try {
+        const status = await (data.channelCall ?? data.call)<{ output: { state: string } }>(
+          '_agnes/v1/extension.callScoped',
+          { extension: provider.extension, service: 'channel.status', input: {} },
+        )
+        failed = status.output.state === 'failed'
+      } catch {
+        /* A failed status query cannot establish that the runtime is ready. */
+      }
       if (current.current && version === readVersion.current) {
         setInstances([])
         setLoaded(false)
-        callbacks.current.onBound?.(false)
-        setError(zh ? '无法读取绑定状态。' : 'Unable to read bindings.')
+        setReadError(
+          failed
+            ? zh
+              ? '渠道启动失败，无法读取聊天目标。请返回连接配置，重新保存连接并完成审批。'
+              : 'The channel failed to start. Return to connection settings, save and approve the connection again.'
+            : zh
+              ? '无法读取绑定状态，请重试；恢复前不会修改绑定。'
+              : 'Unable to read bindings. Retry; bindings remain unchanged until recovery.',
+        )
       }
+    } finally {
+      if (readingVersion.current === version) readingVersion.current = undefined
+      if (current.current && version === readVersion.current) setReading(false)
     }
   }, [data, provider.extension, sessionId, zh, instanceIds])
   useEffect(() => {
@@ -83,6 +109,7 @@ export function SessionBindings({
     return () => {
       current.current = false
       readVersion.current++
+      readingVersion.current = undefined
       clearInterval(timer)
     }
   }, [refresh, refreshKey])
@@ -134,8 +161,14 @@ export function SessionBindings({
             {zh ? '选择聊天目标，仅同步绑定后的新消息。' : 'Choose a chat. Only new messages are shared.'}
           </p>
         </div>
-        <Button appearance="ghost" size="small" disabled={busy} onClick={() => void refresh()}>
-          {zh ? '刷新绑定和目标' : 'Refresh bindings and targets'}
+        <Button appearance="ghost" size="small" disabled={busy || reading} onClick={() => void refresh()}>
+          {reading
+            ? zh
+              ? '正在刷新…'
+              : 'Refreshing…'
+            : zh
+              ? '刷新绑定和目标'
+              : 'Refresh bindings and targets'}
         </Button>
       </div>
       {loaded && !instances.length && (
@@ -143,7 +176,12 @@ export function SessionBindings({
           {zh ? '当前工作区没有渠道实例，请先添加配置。' : 'Configure an instance for this workspace first.'}
         </p>
       )}
-      {instances.map((row) => (
+      {(loaded
+        ? instances
+        : instanceIds.map(
+            (id) => ({ id, version: 0, connection: null, targets: [], bindings: [] }) as SessionInstance,
+          )
+      ).map((row) => (
         <div key={row.id} className="channel-binding-row">
           <div className="channel-binding-identity">
             <strong>{row.id}</strong>
@@ -177,7 +215,7 @@ export function SessionBindings({
                 aria-label={zh ? '聊天目标' : 'Chat target'}
                 placeholder={zh ? '选择已确认的聊天目标' : 'Choose a verified chat'}
                 value={selected[row.id] ?? null}
-                disabled={busy}
+                disabled={busy || reading}
                 options={row.targets.map((target) => ({
                   value: target.id,
                   label:
@@ -195,7 +233,7 @@ export function SessionBindings({
                 }))}
                 onChange={(id: string) => setSelected((s) => ({ ...s, [row.id]: id }))}
               />
-              {!row.targets.length && (
+              {loaded && !row.targets.length && (
                 <p>
                   {zh
                     ? '请先向机器人发消息；群聊需 @机器人，再刷新目标列表。'
@@ -204,7 +242,15 @@ export function SessionBindings({
               )}
               <Button
                 appearance="primary"
-                disabled={busy || !consent || !selected[row.id]}
+                disabled={
+                  busy ||
+                  !loaded ||
+                  reading ||
+                  !consent ||
+                  !row.targets.some(
+                    (target) => target.id === selected[row.id] && target.confirmed && !target.unavailable,
+                  )
+                }
                 onClick={() => void change(row, 'bind')}
               >
                 {zh ? '绑定当前会话' : 'Bind this session'}
@@ -222,7 +268,16 @@ export function SessionBindings({
         checked={consent}
         onChange={(e) => setConsent(e.target.checked)}
       />
-      {error && <p role="alert">{error}</p>}
+      {(readError || error) && (
+        <div role="alert">
+          <p>{readError || error}</p>
+          {onConfigure && (
+            <Button disabled={busy || reading} onClick={onConfigure}>
+              {zh ? '返回连接配置' : 'Connection settings'}
+            </Button>
+          )}
+        </div>
+      )}
     </section>
   )
 }

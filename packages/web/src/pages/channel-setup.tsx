@@ -260,6 +260,10 @@ export function ChannelSetup({
               refreshKey={context.instanceId}
               zh={zh}
               onChanged={() => channelsChanged()}
+              onConfigure={() => {
+                setPhase('configure')
+                onStage?.(1)
+              }}
               onBound={setBound}
             />
             <div className="channel-dialog-footer">

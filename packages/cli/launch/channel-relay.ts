@@ -28,7 +28,7 @@ export function channelRelay(input: {
     const body = await input.body(request)
     if (
       typeof body?.method === 'string' &&
-      ['channels.overview', 'channels.context', 'channels.configure'].includes(body.method)
+      ['channels.overview', 'channels.context', 'channels.configure', 'channels.remove'].includes(body.method)
     ) {
       const params = body.params
       const record =
@@ -38,6 +38,8 @@ export function channelRelay(input: {
       const fields =
         body.method === 'channels.overview'
           ? []
+          : body.method === 'channels.remove'
+            ? ['extension', 'instanceId', 'operationId', 'configurationRevision', 'expectedVersion']
           : body.method === 'channels.context'
             ? ['extension', 'sessionId', 'instanceId']
             : [
@@ -61,7 +63,11 @@ export function channelRelay(input: {
         Object.keys(body).some((key) => !['method', 'params'].includes(key)) ||
         !record ||
         Object.keys(record).some((key) => !fields.includes(key)) ||
-        (body.method !== 'channels.overview' && (!text('extension') || !text('sessionId'))) ||
+        (body.method !== 'channels.overview' && !text('extension')) ||
+        (['channels.context', 'channels.configure'].includes(body.method) && !text('sessionId')) ||
+        (body.method === 'channels.remove' &&
+          (!text('instanceId') || !text('operationId') || !text('configurationRevision') ||
+            !Number.isSafeInteger(record.expectedVersion) || Number(record.expectedVersion) < 0)) ||
         (body.method === 'channels.configure' &&
           (!text('instanceId') ||
             !text('operationId') ||
@@ -94,7 +100,9 @@ export function channelRelay(input: {
                   String(record.sessionId),
                   typeof record.instanceId === 'string' ? record.instanceId : undefined,
                 )
-              : await api.configure(record)
+              : body.method === 'channels.remove'
+                ? await api.remove(record)
+                : await api.configure(record)
         input.reply(response, 200, result)
       } catch {
         input.reply(response, 503, { error: httpRpcError(503, 'UNAVAILABLE') })

@@ -14,7 +14,10 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChannelDialogHost } from '../src/pages/channel-dialog.js'
 import { closeChannelDialog } from '../src/pages/channel-dialog-state.js'
+import { RemoveConnection } from '../src/pages/channel-remove.js'
+import { SessionBindings } from '../src/pages/channel-session.js'
 import { SessionChannelControl } from '../src/pages/channel-session-control.js'
+import type { ChannelGroup, ManagedInstance } from '../src/pages/channel-types.js'
 import { ChannelsPanel } from '../src/pages/channels.js'
 import type { HomePageData } from '../src/pages/host.js'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
@@ -37,7 +40,57 @@ import { SkillInstallDialog } from '../src/pages/plugins/skill-import.js'
 
 afterEach(() => document.body.replaceChildren())
 
-it('shows session and peer names per connection and reconciles unbind with the same command', async () => {
+it('confirms instance deletion, requests native approval and retries the same uncertain operation', async () => {
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const requestProfileApproval = vi.fn(),
+    onPending = vi.fn()
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce({ receipt: { state: 'approval-required' } })
+    .mockRejectedValueOnce(new Error('lost response'))
+    .mockResolvedValueOnce({ receipt: { state: 'completed' } })
+  const data = { call, requestProfileApproval } as unknown as HomePageData
+  const group = {
+    provider: { extension: 'plugin/example' },
+    configurationRevision: 'revision',
+  } as ChannelGroup
+  const row = { id: 'bot', version: 7 } as ManagedInstance
+  const button = (text: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter((entry) => entry.textContent === text)
+      .at(-1)!
+  try {
+    await act(async () =>
+      root.render(
+        createElement(RemoveConnection, { data, group, row, zh: false, disabled: false, onPending }),
+      ),
+    )
+    await act(async () => host.querySelector<HTMLButtonElement>('button')!.click())
+    expect(call).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Existing sessions and saved credentials are kept')
+    await act(async () => button('Cancel').click())
+    expect(call).not.toHaveBeenCalled()
+    await act(async () => host.querySelector<HTMLButtonElement>('button')!.click())
+    await act(async () => button('Delete instance').click())
+    expect(requestProfileApproval).toHaveBeenCalledWith({ state: 'approval-required' })
+    await act(async () => button('Continue deletion').click())
+    expect(document.body.textContent).toContain('Deletion is unconfirmed')
+    await act(async () => button('Continue deletion').click())
+    expect(call).toHaveBeenCalledTimes(3)
+    expect(call.mock.calls[0]).toEqual(call.mock.calls[1])
+    expect(call.mock.calls[0]).toEqual(call.mock.calls[2])
+    expect(call.mock.calls[0]).toMatchObject([
+      'channels.remove',
+      { instanceId: 'bot', expectedVersion: 7, configurationRevision: 'revision' },
+    ])
+    expect(onPending).toHaveBeenLastCalledWith(false)
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
+
+it.each([false, true])('shows connection names and reconciles unbind (recovery=%s)', async (recovery) => {
   const host = document.body.appendChild(document.createElement('div')),
     root = createRoot(host)
   const provider = {
@@ -61,7 +114,8 @@ it('shows session and peer names per connection and reconciles unbind with the s
                 workspace: 'D:/work',
                 agent: 'default',
                 version: 7,
-                connection: { channel: 'connected', daemon: 'connected' },
+                connection: recovery ? null : { channel: 'connected', daemon: 'connected' },
+                recovery,
                 bindings: bound
                   ? [
                       {
@@ -103,6 +157,11 @@ it('shows session and peer names per connection and reconciles unbind with the s
   expect(details.getAttribute('aria-expanded')).toBe('false')
   await act(async () => details.click())
   expect(details.getAttribute('aria-expanded')).toBe('true')
+  const remove = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+    (button) => button.textContent === 'Delete instance',
+  )!
+  expect(remove.disabled).toBe(false)
+  if (recovery) expect(host.textContent).toContain('Startup failed; instance can be deleted')
   const unbind = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Unbind')!
   await act(async () => unbind.click())
   expect(host.textContent).toContain('Unbind unconfirmed')
@@ -181,7 +240,9 @@ it('discovers installed channels and configures inside a dialog using immutable 
     root.render(createElement(ChannelDialogHost, { data }))
   })
   // The composer lives in another lazy bundle: exercise the shell event, not a module-local store.
-  await act(async () => window.dispatchEvent(new CustomEvent('agnes-channel-dialog', { detail: { sessionId: 'current' } })))
+  await act(async () =>
+    window.dispatchEvent(new CustomEvent('agnes-channel-dialog', { detail: { sessionId: 'current' } })),
+  )
   await vi.waitFor(() => expect(host.textContent).toContain('Future Chat'))
   await act(async () =>
     [...host.querySelectorAll('button')]
@@ -231,23 +292,96 @@ it('discovers installed channels and configures inside a dialog using immutable 
 })
 
 it('shows this session’s channel states and opens the exact existing connection for editing', async () => {
-  const credentials = vi.spyOn(CredentialsApi.prototype, 'list').mockResolvedValue([{ id: 'secret://generic/token', label: 'Saved token', kind: 'api-key', createdAt: '2026-11-06T00:00:00Z', references: [] }])
-  const host = document.body.appendChild(document.createElement('div')), root = createRoot(host)
-  let bound = true, disconnected = false, fail = false
+  const credentials = vi
+    .spyOn(CredentialsApi.prototype, 'list')
+    .mockResolvedValue([
+      {
+        id: 'secret://generic/token',
+        label: 'Saved token',
+        kind: 'api-key',
+        createdAt: '2026-11-06T00:00:00Z',
+        references: [],
+      },
+    ])
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  let bound = true,
+    disconnected = false,
+    fail = false
   let releaseOverview: (() => void) | undefined
   let overviewWaiting = true
   const call = vi.fn(async (method: string, input: unknown) => {
-    if (method === 'channels.context') return { sessionId: 'current', title: 'Current session', workspace: 'D:/work', agent: 'default', agentTitle: { en: 'General assistant', 'zh-CN': '通用助手' }, instanceId: (input as { instanceId: string }).instanceId }
-    if (method === 'channels.overview' && overviewWaiting) await new Promise<void>(resolve => { releaseOverview = resolve })
+    if (method === 'channels.context')
+      return {
+        sessionId: 'current',
+        title: 'Current session',
+        workspace: 'D:/work',
+        agent: 'default',
+        agentTitle: { en: 'General assistant', 'zh-CN': '通用助手' },
+        instanceId: (input as { instanceId: string }).instanceId,
+      }
+    if (method === 'channels.overview' && overviewWaiting)
+      await new Promise<void>((resolve) => {
+        releaseOverview = resolve
+      })
     if (fail) throw new Error('temporary overview failure')
-    return { sessions: [{ sessionId: 'current', title: 'Current session', cwd: 'D:/work' }], channels: ['one', 'two'].map(name => ({
-      provider: { extension: 'plugin/' + name, revision: 'one', bindingAvailable: true, manifest: { id: name, displayName: 'Future ' + name, credentials: { required: ['token'], optional: [] } }, configSchema: { type: 'object', properties: { label: { type: 'string', title: 'Bot label' } } } },
-      configurationRevision: 'revision', instances: [{ id: 'bot-' + name, workspace: 'D:/work', agent: 'default', credentialRefs: { token: 'secret://generic/token' }, allowFrom: [], requireMention: true, config: { label: 'Saved value' }, version: 1, unavailable: false, connection: { channel: disconnected ? 'closed' : 'connected', daemon: 'connected' }, bindings: bound ? [{ sessionId: 'current', sessionTitle: 'Current session', targetId: 'peer-' + name, label: 'Peer ' + name, state: 'active' }] : [] },
-      { id: 'unbound-' + name, intendedSession: { sessionId: 'current' }, bindings: [] }],
-    })) }
+    return {
+      sessions: [{ sessionId: 'current', title: 'Current session', cwd: 'D:/work' }],
+      channels: ['one', 'two'].map((name) => ({
+        provider: {
+          extension: 'plugin/' + name,
+          revision: 'one',
+          bindingAvailable: true,
+          manifest: {
+            id: name,
+            displayName: 'Future ' + name,
+            credentials: { required: ['token'], optional: [] },
+          },
+          configSchema: { type: 'object', properties: { label: { type: 'string', title: 'Bot label' } } },
+        },
+        configurationRevision: 'revision',
+        instances: [
+          {
+            id: 'bot-' + name,
+            workspace: 'D:/work',
+            agent: 'default',
+            credentialRefs: { token: 'secret://generic/token' },
+            allowFrom: [],
+            requireMention: true,
+            config: { label: 'Saved value' },
+            version: 1,
+            unavailable: false,
+            connection: { channel: disconnected ? 'closed' : 'connected', daemon: 'connected' },
+            bindings: bound
+              ? [
+                  {
+                    sessionId: 'current',
+                    sessionTitle: 'Current session',
+                    targetId: 'peer-' + name,
+                    label: 'Peer ' + name,
+                    state: 'active',
+                  },
+                ]
+              : [],
+          },
+          { id: 'unbound-' + name, intendedSession: { sessionId: 'current' }, bindings: [] },
+        ],
+      })),
+    }
   })
-  const data = { call, sessionId: () => 'current', openSettings: vi.fn(), startDraft: vi.fn() } as unknown as HomePageData
-  const render = (sessionId: string | undefined) => createElement('div', null, createElement(SessionChannelControl, { sessionId, data }), createElement(ChannelDialogHost, { data }))
+  const data = {
+    call,
+    sessionId: () => 'current',
+    openSettings: vi.fn(),
+    startDraft: vi.fn(),
+  } as unknown as HomePageData
+  const render = (sessionId: string | undefined) =>
+    createElement(
+      'div',
+      null,
+      createElement(SessionChannelControl, { sessionId, data }),
+      createElement(ChannelDialogHost, { data }),
+    )
   await act(async () => root.render(render('current')))
   expect(host.querySelector('[data-testid="composer-channel-binding"]')).toBeNull()
   overviewWaiting = false
@@ -255,32 +389,49 @@ it('shows this session’s channel states and opens the exact existing connectio
   await vi.waitFor(() => expect(host.textContent).toContain('Future one · Connected'))
   expect(host.textContent).toContain('Future two · Connected')
   expect(host.querySelectorAll('[data-testid="composer-channel-binding"]')).toHaveLength(2)
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="composer-channel-binding"]')!.click())
-  await vi.waitFor(() => expect(host.querySelector<HTMLInputElement>('input[aria-label="Bot label"]')?.value).toBe('Saved value'))
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="composer-channel-binding"]')!.click(),
+  )
+  await vi.waitFor(() =>
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Bot label"]')?.value).toBe('Saved value'),
+  )
   expect(host.textContent).toContain('Edit channel connection')
   expect(host.textContent).toContain('Saved token')
   expect(host.textContent).toContain('Save changes')
   expect(host.querySelector('.channel-picker')).toBeNull()
   expect(host.querySelector('.channel-steps')).toBeNull()
-  expect(call).toHaveBeenCalledWith('channels.context', { extension: 'plugin/one', sessionId: 'current', instanceId: 'bot-one' })
+  expect(call).toHaveBeenCalledWith('channels.context', {
+    extension: 'plugin/one',
+    sessionId: 'current',
+    instanceId: 'bot-one',
+  })
   await act(async () => closeChannelDialog())
   await act(async () => root.render(render('other')))
   expect(host.querySelector('[data-testid="composer-channel-binding"]')?.textContent).toBe('Channels')
   disconnected = true
-  await act(async () => { root.render(render('current')); window.dispatchEvent(new Event('agnes-channels-changed')) })
+  await act(async () => {
+    root.render(render('current'))
+    window.dispatchEvent(new Event('agnes-channels-changed'))
+  })
   await vi.waitFor(() => expect(host.textContent).toContain('Future one · Disconnected'))
   fail = true
   await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
   await vi.waitFor(() => expect(host.textContent).toContain('Future one · Status unavailable'))
-  fail = false; bound = false
+  fail = false
+  bound = false
   await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
-  await vi.waitFor(() => expect(host.querySelector('[data-testid="composer-channel-binding"]')?.textContent).toBe('Channels'))
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="composer-channel-binding"]')?.textContent).toBe('Channels'),
+  )
   await act(async () => root.render(render(undefined)))
   expect(host.querySelector('[data-testid="composer-channel-binding"]')).toBeNull()
   fail = true
   await act(async () => root.render(render('unavailable')))
   expect(host.querySelector('[data-testid="composer-channel-binding"]')).toBeNull()
-  await act(async () => { closeChannelDialog(); root.unmount() })
+  await act(async () => {
+    closeChannelDialog()
+    root.unmount()
+  })
   credentials.mockRestore()
 })
 
@@ -1319,3 +1470,71 @@ it('coalesces pending-review reads and rejects a response invalidated in flight'
     vi.restoreAllMocks()
   }
 })
+
+it.each([false, true])(
+  'keeps the chat selector on an empty or failed runtime and recovers after refresh (failed=%s)',
+  async (failed) => {
+    const host = document.body.appendChild(document.createElement('div')),
+      root = createRoot(host)
+    let unavailable = failed,
+      hasTarget = false
+    const configure = vi.fn()
+    const call = vi.fn(async (_method: string, params: any) => {
+      if (params.service === 'channel.status') return { output: { state: 'failed', code: 'unavailable' } }
+      if (unavailable) throw Error('runtime failed')
+      return {
+        output: {
+          instances: [
+            {
+              id: 'bot',
+              version: 4,
+              connection: { channel: 'connected', daemon: 'connected' },
+              bindings: [],
+              targets: hasTarget
+                ? [{ id: 'peer', label: 'Verified peer', confirmed: true, unavailable: false }]
+                : [],
+            },
+          ],
+        },
+      }
+    })
+    const data = { call } as unknown as HomePageData
+    try {
+      await act(async () =>
+        root.render(
+          createElement(SessionBindings, {
+            data,
+            provider: { extension: 'plugin/wechat' } as any,
+            sessionId: 'session',
+            instanceIds: ['bot'],
+            refreshKey: 'one',
+            zh: false,
+            onConfigure: configure,
+          }),
+        ),
+      )
+      await vi.waitFor(() => expect(host.querySelector('[role="combobox"]')).not.toBeNull())
+      const button = (name: string) =>
+        [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === name)!
+      expect(button('Bind this session').disabled).toBe(true)
+      if (failed) {
+        expect(host.textContent).toContain('channel failed to start')
+        await act(async () => button('Connection settings').click())
+        expect(configure).toHaveBeenCalled()
+      } else expect(host.textContent).toContain('Send the bot a message')
+      unavailable = false
+      hasTarget = true
+      await act(async () => button('Refresh bindings and targets').click())
+      expect(host.textContent).not.toContain('channel failed to start')
+      await act(async () => host.querySelector('[role="combobox"]')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+      expect(document.body.textContent).toContain('Verified peer')
+      expect(
+        call.mock.calls.every(
+          ([, params]) => !['channel.bind', 'channel.configure', 'channel.retry'].includes(params.service),
+        ),
+      ).toBe(true)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)

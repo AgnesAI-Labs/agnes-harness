@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ChannelInstance, ChannelProvider, ProfileManagedInit } from '@agnes/extension-api'
 import { afterEach, expect, it, vi } from 'vitest'
-import { startChannelBridge } from '../src/bridge.js'
+import { channelBindingSnapshot, startChannelBridge } from '../src/bridge.js'
 import { createFakeClient, FAKE_MANIFEST, FakeChannel } from '../testkit/index.js'
 
 const cleanups: (() => Promise<unknown>)[] = []
@@ -297,6 +297,18 @@ it('persists an interrupted bind as paused and requires an explicit unbind to re
     ),
   ).rejects.toBeDefined()
   await f.stop()
+  const stopped = channelBindingSnapshot(
+    f.provider,
+    { instances: [f.instance] },
+    f.init.store,
+    f.options.owner,
+  )
+  expect(stopped).toMatchObject({
+    instances: [
+      { connection: null, recovery: true, bindings: [{ sessionId: session.id, state: 'pending' }] },
+    ],
+  })
+  expect(stopped.instances[0]).not.toHaveProperty('targets')
   const recovered = await startChannelBridge(f.provider, f.init, f.options)
   const pending = (await recovered.session!(session)) as { instances: { version: number }[] }
   expect(pending).toMatchObject({ instances: [{ bindings: [{ state: 'pending' }] }] })
@@ -361,3 +373,27 @@ it('does not confirm an uncertain platform shutdown', async () => {
   }
   await expect(f.stop()).rejects.toThrow('shutdown could not be confirmed')
 })
+
+it.each(['credentials', 'adapter', 'backend'] as const)(
+  'reports only the fixed %s startup phase and closes failed resources',
+  async (phase) => {
+    const f = await fixture()
+    Object.assign(f.init, {
+      config: { instances: [{ ...f.instance, credentialRefs: { token: 'secret://generic/token' } }] },
+    })
+    f.provider = { ...f.provider, manifest: { ...f.provider.manifest, credentials: { ...f.provider.manifest.credentials, required: ['token'], optional: [] } } }
+    f.provider.create = () => new FakeChannel({ manifest: f.provider.manifest })
+    const fail = () => {
+      throw Error('private-token-and-platform-response')
+    }
+    if (phase === 'credentials') f.options.resolveSecret.mockImplementation(fail)
+    if (phase === 'adapter') f.provider.create = fail
+    if (phase === 'backend') f.options.createClient.mockImplementation(fail)
+    await expect(startChannelBridge(f.provider, f.init, f.options)).rejects.toMatchObject({
+      code: `channel-${phase}`,
+      message: 'Channel startup failed',
+    })
+    expect(f.init.ready).not.toHaveBeenCalled()
+    await f.stop()
+  },
+)

@@ -1,12 +1,12 @@
 import { join } from 'node:path'
-import { startChannelBridge } from '@agnes/channels/bridge'
+import { channelBindingSnapshot, startChannelBridge } from '@agnes/channels/bridge'
 import type { HostOptions } from '@agnes/host'
 import { createClient, fileJournal, unixTransport } from '@agnes/sdk'
 import { readDaemonDiscovery } from '../supervisor/discovery.js'
 import { resolveDaemonScope } from '../supervisor/scope.js'
 
 /** The backend selects its own authenticated endpoint; plugin configuration cannot replace it. */
-export const daemonChannelRuntime: NonNullable<HostOptions['channelRuntime']> = (provider, init, context) =>
+const runChannelRuntime: NonNullable<HostOptions['channelRuntime']> = (provider, init, context) =>
   startChannelBridge(provider, init, {
     ...context,
     createClient(_config, stateDirectory) {
@@ -55,3 +55,5 @@ export const daemonChannelRuntime: NonNullable<HostOptions['channelRuntime']> = 
       })
     },
   })
+
+export const daemonChannelRuntime = Object.assign(runChannelRuntime, { snapshot: channelBindingSnapshot })

@@ -39,6 +39,18 @@ configuration (an empty instance list for DingTalk). Disable, update and restart
 credentials and unrelated plugin data are retained. Binding controls in existing sessions use the
 currently enabled channel services while retaining session identity, workspace checks and journals.
 
+To remove one connection, open **Plugins → Channels**, expand its **Details** and choose
+**Delete instance**. Confirm the affected instance, complete native configuration approval,
+then continue the same deletion. This disconnects the instance and clears its observed targets
+and bindings; other instances, conversation history and saved credentials remain. Changed
+configuration, changed bindings or inaccessible bindings refuse deletion until refreshed and
+reviewed. An unconfirmed response must reconcile the same operation rather than claim success.
+For a failed resource whose shutdown is confirmed, the backend can read a persisted binding
+summary without starting a transport, resolving credentials or granting message forwarding.
+This lets administrators delete a broken connection through the same native approval. Unknown
+shutdown or unreadable binding metadata remains blocked; a runtime read failure is not labelled
+as an inaccessible foreign binding.
+
 General assistant sessions can be bound without installing a role agent. Binding always preserves
 the selected session's agent. Start a General assistant session before binding to use the default agent.
 
@@ -76,3 +88,5 @@ The complete string must not exceed 32768 characters. Harness checks image struc
 Channel ingress must submit actual `file`/`image` content through the supported session API so native attachment admission persists and authorizes originals. A synthetic `attachment://hash` URI is not proof of storage. Use bounded downloads and surface partial failures without credentials or temporary URLs. Only definitive image-admission data/MIME/pixel refusals may degrade to ordinary file content with a stable, separate command correlation and explicit notice; uncertainty, authorization, storage and quota errors never trigger this retry. Audio/video originals are files, not a promise of model understanding.
 
 From Extension API 5.8.0, channel manifests may provide `displayNames: { "en": "Example", "zh-CN": "示例" }`. Harness selects the current language, falling back to `displayName`, then `id`. Names must be 1–64 characters and not whitespace-only. Declare `^5.8.0` when using the field; channel and binding identities stay unchanged. See the [bridge integration guide](channel-bridge-integration.md).
+
+The binding dialog keeps a chat selector visible even before any message arrives. An empty target list is different from a failed runtime: refreshing reads state only; it does not restart a resource. If startup failed, return to connection settings, save and complete native approval to reconnect. Fixed `channel-*` startup codes identify the state directory, workspace, binding store, credentials, adapter, backend or platform phase without exposing platform exception text or secrets.
