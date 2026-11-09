@@ -169,6 +169,80 @@ it.each(['new-content', 'same-content', 'blocked', 'trusted'] as const)(
   },
 )
 
+it.each([
+  ['git', 'not-plugin', true, true],
+  ['path', 'manifest-missing', true, true],
+  ['file', 'not-plugin', true, true],
+  ['url', 'not-plugin', true, true],
+  ['git', 'not-plugin', false, false],
+  ['git', 'manifest-invalid', true, false],
+  ['git', 'git-fetch', true, false],
+  ['git', 'source-not-found', true, false],
+  ['npm', 'not-plugin', true, false],
+  ['git', 'not-plugin', true, false, 'update'],
+] as const)(
+  'offers manual %s source to external import only for %s (feature=%s)',
+  async (type, reason, feature, offered, mode: 'install' | 'update' = 'install') => {
+    const context = {
+      profile: 'source-fallback',
+      clientId: 'web',
+      permissions: ['packages.read', 'packages.install'] as const,
+      features: feature ? ['packages.skill-import.v1'] : [],
+      readOnly: false,
+    }
+    vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({ context, inventory: { packages: [] } })
+    vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+    vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
+    vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
+    vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
+    vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
+    vi.spyOn(PluginAdminApi.prototype, 'inspect').mockResolvedValue({
+      operationId: 'manual-check',
+      profile: context.profile,
+    })
+    vi.spyOn(PluginAdminApi.prototype, 'operation').mockResolvedValue({
+      operationId: 'manual-check',
+      operation: 'inspect',
+      state: 'failed',
+      error: { code: 'E_PACKAGE_SOURCE', safeMessage: 'Refused', sourceFailure: reason },
+    } as PackageOperation)
+    const install = vi.spyOn(PluginAdminApi.prototype, 'install')
+    for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+      const dialog = document.createElement('dialog')
+      dialog.id = id
+      document.body.append(dialog)
+    }
+    const importSource = vi.fn()
+    const page = new PluginAdminPage({
+      surface: {
+        host: document.body.appendChild(document.createElement('div')),
+        render: () => null,
+        importSource,
+      },
+    })
+    try {
+      await page.start()
+      page.openSourceDialog(mode)
+      const view = page.viewContext()
+      view.sourceTypeValue = type
+      view.sourceRefValue = type === 'npm' ? 'npm:fixture/skills' : `${type}:fixture/skills`
+      page.submitSource()
+      await vi.waitFor(() => expect(view.sourceBusy).toBe(false))
+      if (offered) {
+        expect(importSource).toHaveBeenCalledWith({ type, ref: `${type}:fixture/skills` })
+        expect(view.sourceError).toBeUndefined()
+        expect(view.sourceDialog.open).toBe(true)
+      } else {
+        expect(importSource).not.toHaveBeenCalled()
+        expect(view.sourceError?.sourceFailure).toBe(reason)
+      }
+      expect(install).not.toHaveBeenCalled()
+    } finally {
+      page.dispose()
+    }
+  },
+)
+
 it('reads the plugin tree on mount, real changes and one explicit refresh, and rests when idle or hidden', async () => {
   vi.useFakeTimers()
   let hidden = false

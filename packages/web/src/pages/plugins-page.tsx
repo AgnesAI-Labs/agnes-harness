@@ -20,6 +20,7 @@ import { PluginsPushPages } from './plugins/push-pages.js'
 import { ResourcesTab } from './plugins/resources-tab.js'
 import { ReviewTab } from './plugins/review-tab.js'
 import { openPlugins, PLUGIN_TABS, type PluginTab, pluginsRoute } from './plugins/route.js'
+import { SkillInstallDialog } from './plugins/skill-import.js'
 import { useCapabilitySummaries } from './plugins/summaries.js'
 
 /** Drafts waiting for review, for the tab's number while another tab is showing. */
@@ -94,7 +95,7 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
   const { t } = useUiText(PLUGINS_PAGE_NAMESPACE, pluginsPageCatalog)
   const route = pluginsRoute(context.selection)
   const sources = useCandidateSources(data)
-  const { host, view } = usePluginAdmin({
+  const { host, view, sourceImport, closeSourceImport } = usePluginAdmin({
     ...data.plugins,
     candidateSessionTitle: sources.sessionTitle,
     candidateSessionTurnTime: sources.sessionTurnTime,
@@ -208,6 +209,9 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     <>
       {/* The controller draws nothing here; it needs a connected node to own while it lives. */}
       <div ref={host} hidden />
+      {view && sourceImport && (
+        <SkillInstallDialog view={view} initialSource={sourceImport} t={t} onClose={closeSourceImport} />
+      )}
       {
         <HomePageFrame
           id="plugins"

@@ -678,6 +678,45 @@ it.each([true, false])(
   },
 )
 
+it.each(['path', 'file', 'url'] as const)(
+  'preserves the manual %s source when selecting a Skill',
+  async (type) => {
+    const source = { type, ref: `${type}:fixture/skills` }
+    const skillImport = vi
+      .fn()
+      .mockResolvedValueOnce({ state: 'selection_required', candidates: ['first', 'second'] })
+      .mockResolvedValue({
+        state: 'prepared',
+        proposalId: 'skill-install-manual',
+        name: 'first',
+        digest: 'a'.repeat(64),
+      })
+    const host = document.body.appendChild(document.createElement('div')),
+      root = createRoot(host)
+    try {
+      flushSync(() =>
+        root.render(
+          createElement(SkillInstallDialog, {
+            view: { api: { skillImport } } as unknown as PluginView,
+            initialSource: source,
+            t: (key) => key,
+            onClose: vi.fn(),
+          }),
+        ),
+      )
+      await act(async () => undefined)
+      expect(skillImport).toHaveBeenLastCalledWith({ action: 'check', source, scope: 'user', enable: false })
+      await act(async () => host.querySelector<HTMLButtonElement>('.skill-candidate')?.click())
+      expect(skillImport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ action: 'check', source, subdirectory: 'first', enable: false }),
+      )
+    } finally {
+      flushSync(() => root.unmount())
+      host.remove()
+    }
+  },
+)
+
 it('cancels a late check response when its installation window has already closed', async () => {
   let finish: (value: { state: 'running'; proposalId: string; phase: string }) => void = () => undefined
   const check = new Promise<{ state: 'running'; proposalId: string; phase: string }>((resolve) => {

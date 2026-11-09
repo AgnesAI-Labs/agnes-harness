@@ -1,4 +1,4 @@
-import type { SkillImportParams, SkillImportResult } from '@agnes/protocol'
+import type { PackageSource, SkillImportParams, SkillImportResult } from '@agnes/protocol'
 import { Button, Dialog, MetaText, SettingsDetails, SettingsState, SettingsToolbar } from '@agnes/web-ui'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PluginView } from './admin-view.js'
@@ -15,7 +15,7 @@ function useSkillInstall({
   onClose,
 }: {
   view: PluginView
-  initialSource: string
+  initialSource: string | PackageSource
   t: Text
   onClose(): void
 }) {
@@ -61,7 +61,7 @@ function useSkillInstall({
     void api
       .skillImport({
         action: 'check',
-        source: { type: 'git', ref: initialSource },
+        source: typeof initialSource === 'string' ? { type: 'git', ref: initialSource } : initialSource,
         scope: 'user',
         enable: false,
       })
@@ -119,7 +119,9 @@ function useSkillInstall({
         action === 'check'
           ? {
               action,
-              source: value?.resolvedSource ?? { type: 'git', ref: initialSource },
+              source:
+                value?.resolvedSource ??
+                (typeof initialSource === 'string' ? { type: 'git', ref: initialSource } : initialSource),
               ...(subdirectory ? { subdirectory } : {}),
               scope: 'user',
               enable: false,
