@@ -39,11 +39,11 @@ describe('home entry names', () => {
     dispose = registerBuiltinHomeEntries()
     expect(homeEntries.get('agents')?.subtitleKey).toBeUndefined()
   })
-  it('offers MHS as a primary bilingual page', () => {
-    expect(enT('home.entry.mhs')).toBe('MHS')
-    expect(zhT('home.entry.mhs')).toBe('MHS')
+  it('offers Explore as a primary bilingual page', () => {
+    expect(enT('home.entry.explore')).toBe('Explore')
+    expect(zhT('home.entry.explore')).toBe('探索')
     dispose = registerBuiltinHomeEntries()
-    expect(homeEntries.get('mhs')?.placement).toBe('primary')
+    expect(homeEntries.get('explore')?.placement).toBe('primary')
   })
   it('shows only the adopted application in primary navigation while keeping both installed pages reachable', async () => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -220,7 +220,7 @@ describe('home entry names', () => {
           [...host.querySelectorAll('[data-testid^="home-entry-"]')].map((node) =>
             node.getAttribute('data-testid'),
           ),
-        ).toEqual(['home-entry-console', 'home-entry-agents', 'home-entry-automation', 'home-entry-mhs'])
+        ).toEqual(['home-entry-console', 'home-entry-agents', 'home-entry-automation', 'home-entry-explore'])
         expect(host.querySelector('[data-testid="home-entry-plugins"]')).toBeNull()
         await act(async () => applicationIdentity.set(undefined))
         expect(
@@ -232,7 +232,7 @@ describe('home entry names', () => {
           'home-entry-agents',
           'home-entry-automation',
           'home-entry-console',
-          'home-entry-mhs',
+          'home-entry-explore',
         ])
         modules = []
         await act(async () => {

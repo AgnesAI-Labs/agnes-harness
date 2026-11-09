@@ -137,6 +137,7 @@ export function mountHomePages(
 }
 
 const LEGACY_PAGES: Readonly<Record<string, string>> = {
+  mhs: 'explore',
   'business-agents': 'agents',
   'business-agent': 'agents',
   'agent-fde': 'agents',

@@ -7,10 +7,10 @@ const AutomationPage = deferHomePage(async () => ({
   default: (await import('./automation-page.js')).AutomationPage,
 }))
 const PluginsPage = deferHomePage(async () => ({ default: (await import('./plugins-page.js')).PluginsPage }))
-const MhsPage = deferHomePage(async () => ({ default: (await import('./mhs-page.js')).MhsPage }))
+const ExplorePage = deferHomePage(async () => ({ default: (await import('./explore-page.js')).ExplorePage }))
 
 /** Built-in IDs for callers that need labels; placement follows the shared registry. */
-export const BUILTIN_HOME_ENTRIES: readonly string[] = ['plugins', 'agents', 'automation', 'mhs']
+export const BUILTIN_HOME_ENTRIES: readonly string[] = ['plugins', 'agents', 'automation', 'explore']
 
 /** Drafts waiting for review: the count beside the plugins entry. */
 function pendingReviewBadge(): HomeEntryBadge & { refresh(): void } {
@@ -76,12 +76,12 @@ export function registerBuiltinHomeEntries(): () => void {
       component: AutomationPage,
     }),
     homeEntries.register({
-      id: 'mhs',
+      id: 'explore',
       order: 40,
       placement: 'primary',
       icon: 'route',
-      titleKey: 'home.entry.mhs',
-      component: MhsPage,
+      titleKey: 'home.entry.explore',
+      component: ExplorePage,
     }),
     // Reviewing happens on a page, so leaving any page is when the count may have changed.
     homeNavigation.subscribe(pending.refresh),

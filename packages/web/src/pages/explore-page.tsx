@@ -10,8 +10,10 @@ import {
   useUiText,
 } from '@agnes/web-ui'
 import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { ExploreCapabilities } from './explore-capabilities.js'
+import { MhsBook } from './mhs-book.js'
 
-const MHS_NAMESPACE = '@agnes/web/mhs'
+const EXPLORE_NAMESPACE = '@agnes/web/explore'
 const requestTypes = ['tech', 'business', 'deployment', 'other'] as const
 const callingCodes = [
   ['+86', 'China', '中国'],
@@ -41,7 +43,7 @@ const steps: readonly (readonly [string, string, string, 'bot' | 'route' | 'send
   ['03', 'coordinateTitle', 'coordinateCopy', 'send'],
 ]
 
-const mhsCatalog: LocaleCatalog = {
+const exploreCatalog: LocaleCatalog = {
   en: {
     brand: 'MHS',
     byline: 'by Agnes',
@@ -81,7 +83,10 @@ const mhsCatalog: LocaleCatalog = {
     workflow: 'How it works',
     previous: 'Previous',
     next: 'Next',
-    pages: 'MHS pages',
+    pages: 'Explore pages',
+    capabilities: 'Paid capabilities',
+    turnToWorkflow: 'Turn to how it works',
+    turnToOverview: 'Back to overview',
     name: 'Name / Company / Organization',
     phone: 'Phone number',
     callingCode: 'Country / region code',
@@ -135,7 +140,10 @@ const mhsCatalog: LocaleCatalog = {
     workflow: '能力流程',
     previous: '上一页',
     next: '下一页',
-    pages: 'MHS 页面',
+    pages: '探索页面',
+    capabilities: '单项能力',
+    turnToWorkflow: '翻页查看能力流程',
+    turnToOverview: '返回产品概览',
     name: '姓名/公司/组织名称',
     phone: '联系方式（手机号）',
     callingCode: '国家/地区区号',
@@ -155,9 +163,10 @@ const mhsCatalog: LocaleCatalog = {
   },
 }
 
-export function MhsPage({ context }: { context: UiExtensionContext }) {
-  const { t, locale } = useUiText(MHS_NAMESPACE, mhsCatalog)
+export function ExplorePage({ context }: { context: UiExtensionContext }) {
+  const { t, locale } = useUiText(EXPLORE_NAMESPACE, exploreCatalog)
   const [slide, setSlide] = useState(0)
+  const [workflow, setWorkflow] = useState(false)
   const [draftOpened, setDraftOpened] = useState(false)
   const [callingCode, setCallingCode] = useState(() => (locale === 'zh-CN' ? '+86' : '+1'))
   const [requestType, setRequestType] = useState('')
@@ -167,7 +176,11 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
   const mediaOrigin =
     locale === 'zh-CN' ? 'https://cos-agent-default.agnes-ai.cn' : 'https://cos-agent-default.agnes-ai.com'
   const salesEmail = locale === 'zh-CN' ? 'support@agnes-ai.cn' : 'support@agnes-ai.com'
-  const labels = [t('overview'), t('workflow'), t('contact')]
+  const labels = [t('overview'), t('capabilities'), t('contact')]
+  const turnBook = () => {
+    video.current?.pause()
+    setWorkflow((value) => !value)
+  }
   const go = (next: number) => {
     if (next === slide) return
     video.current?.pause()
@@ -201,30 +214,43 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
   return (
     <article
       className="mhs-page mhs-deck"
-      data-testid="home-page-mhs"
-      aria-label={context.t('home.entry.mhs')}
+      data-testid="home-page-explore"
+      aria-label={context.t('home.entry.explore')}
     >
       <nav className="mhs-topnav" aria-label={t('pages')}>
-        <Button appearance="ghost" htmlType="button" onClick={() => go(0)}>
+        <Button
+          appearance="ghost"
+          htmlType="button"
+          onClick={() => {
+            go(0)
+            setWorkflow(false)
+          }}
+        >
           <span className="mhs-wordmark">
-            <Icon name="route" /> {t('brand')}
+            <Icon name="route" /> {context.t('home.entry.explore')}
             <span>{t('byline')}</span>
           </span>
         </Button>
         <div className="mhs-deck-links">
-          {labels.map((label, index) => (
-            <Button
-              appearance={index === 2 ? 'primary' : slide === index ? 'secondary' : 'ghost'}
-              key={label}
-              htmlType="button"
-              className={index === 2 ? 'mhs-sales-link' : ''}
-              aria-current={slide === index ? 'page' : undefined}
-              aria-controls={`mhs-slide-${index}`}
-              onClick={() => go(index)}
-            >
-              {label}
-            </Button>
-          ))}
+          {labels.map(
+            (label, index) =>
+              label && (
+                <Button
+                  appearance={index === 2 ? 'primary' : slide === index ? 'secondary' : 'ghost'}
+                  key={label}
+                  htmlType="button"
+                  className={index === 2 ? 'mhs-sales-link' : ''}
+                  aria-current={slide === index ? 'page' : undefined}
+                  aria-controls={`explore-slide-${index}`}
+                  onClick={() => {
+                    go(index)
+                    if (index === 0) setWorkflow(false)
+                  }}
+                >
+                  {label}
+                </Button>
+              ),
+          )}
         </div>
       </nav>
       <div className="mhs-deck-stage">
@@ -240,116 +266,115 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
         )}
         <div ref={panel} className="mhs-deck-viewport">
           <div className={`mhs-deck-panel mhs-deck-panel-${slide}`}>
-            <section
-              className="mhs-hero mhs-slide"
-              id="mhs-slide-0"
-              aria-label={t('overview')}
+            <MhsBook
               hidden={slide !== 0}
+              workflow={workflow}
+              onTurn={turnBook}
+              overviewLabel={t('turnToOverview')}
+              workflowLabel={t('turnToWorkflow')}
             >
-              <div className="mhs-hero-copy">
-                <p className="mhs-eyebrow">{t('eyebrow')}</p>
-                <h1>
-                  <span>{t('titleFirst')}</span>
-                  <span>{t('titleSecond')}</span>
-                </h1>
-                <p className="mhs-lead">{t('lead')}</p>
-                <div className="mhs-actions">
-                  <Button appearance="primary" htmlType="button" onClick={() => go(2)}>
-                    {t('contact')} <Icon name="arrow-right" />
-                  </Button>
-                  <Button appearance="secondary" htmlType="button" onClick={() => go(1)}>
-                    {t('workflow')} <Icon name="arrow-right" />
-                  </Button>
-                </div>
-                <ul className="mhs-proof" aria-label={t('eyebrow')}>
-                  {[t('proofOne'), t('proofTwo'), t('proofThree')].map((item) => (
-                    <li key={item}>
-                      <span aria-hidden="true">✦</span>
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="mhs-hero-demo">
-                <div className="mhs-flow-heading">
-                  <span>{t('robotics')}</span>
-                  <span>{t('heroPreviewCopy')}</span>
-                </div>
-                {/* Supplied localized recordings include subtitles in the video image. */}
-                {/* biome-ignore lint/a11y/useMediaCaption: the supplied recordings have burned-in localized subtitles. */}
-                <video
-                  ref={video}
-                  key={language}
-                  controls
-                  playsInline
-                  preload="metadata"
-                  poster={`${mediaOrigin}/mhs/robot-arm-${language}.png`}
-                  aria-label={t('robotTitle')}
-                >
-                  <source src={`${mediaOrigin}/mhs/robot-arm-${language}.mp4`} type="video/mp4" />
-                </video>
-                <div className="mhs-hero-demo-copy">
-                  <h3>{t('robotTitle')}</h3>
-                  <p>{t('robotCopy')}</p>
-                </div>
-              </div>
-            </section>
-            <section
-              className="mhs-story mhs-slide"
-              id="mhs-slide-1"
-              aria-label={t('workflow')}
-              hidden={slide !== 1}
-            >
-              <div className="mhs-story-heading">
-                <div>
-                  <p className="mhs-eyebrow">{t('architectureKicker')}</p>
-                  <h2>
-                    {t('architectureFirst')}
-                    <br />
-                    <span>{t('architectureSecond')}</span>
-                  </h2>
-                </div>
-                <p>{t('architectureLead')}</p>
-              </div>
-              <div className="mhs-flow-panel">
-                <div className="mhs-flow-heading">
-                  <span>{t('brand')}</span>
-                  <span aria-hidden="true">
-                    {t('hub')} <Icon name="arrow-right" />
-                  </span>
-                </div>
-                <div className="mhs-steps">
-                  {steps.map(([number, title, copy, icon]) => (
-                    <article className="mhs-step" key={number}>
-                      <div className={`mhs-step-visual mhs-step-visual-${number}`} aria-hidden="true">
-                        <span className="mhs-step-halo" />
-                        <span className="mhs-step-symbol">
-                          <Icon name={icon} />
-                        </span>
-                        <span className="mhs-step-satellite mhs-step-satellite-a" />
-                        <span className="mhs-step-satellite mhs-step-satellite-b" />
-                        <span className="mhs-step-satellite mhs-step-satellite-c" />
-                      </div>
-                      <span className="mhs-step-number">{number} /</span>
-                      <h3>{t(title)}</h3>
-                      <p>{t(copy)}</p>
-                    </article>
-                  ))}
-                </div>
-                <aside className="mhs-safety">
-                  <Icon name="route" />
-                  <div>
-                    <strong>{t('safetyTitle')}</strong>
-                    <p>{t('safetyCopy')}</p>
+              <section className="mhs-hero mhs-slide" id="mhs-overview" aria-label={t('overview')}>
+                <div className="mhs-hero-copy">
+                  <p className="mhs-eyebrow">{t('eyebrow')}</p>
+                  <h1>
+                    <span>{t('titleFirst')}</span>
+                    <span>{t('titleSecond')}</span>
+                  </h1>
+                  <p className="mhs-lead">{t('lead')}</p>
+                  <div className="mhs-actions">
+                    <Button appearance="primary" htmlType="button" onClick={() => go(2)}>
+                      {t('contact')} <Icon name="arrow-right" />
+                    </Button>
+                    <Button appearance="secondary" htmlType="button" onClick={turnBook}>
+                      {t('workflow')} <Icon name="arrow-right" />
+                    </Button>
                   </div>
-                </aside>
-              </div>
-            </section>
+                  <ul className="mhs-proof" aria-label={t('eyebrow')}>
+                    {[t('proofOne'), t('proofTwo'), t('proofThree')].map((item) => (
+                      <li key={item}>
+                        <span aria-hidden="true">✦</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="mhs-hero-demo">
+                  <div className="mhs-flow-heading">
+                    <span>{t('robotics')}</span>
+                    <span>{t('heroPreviewCopy')}</span>
+                  </div>
+                  {/* Supplied localized recordings include subtitles in the video image. */}
+                  {/* biome-ignore lint/a11y/useMediaCaption: the supplied recordings have burned-in localized subtitles. */}
+                  <video
+                    ref={video}
+                    key={language}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    poster={`${mediaOrigin}/mhs/robot-arm-${language}.png`}
+                    aria-label={t('robotTitle')}
+                  >
+                    <source src={`${mediaOrigin}/mhs/robot-arm-${language}.mp4`} type="video/mp4" />
+                  </video>
+                  <div className="mhs-hero-demo-copy">
+                    <h3>{t('robotTitle')}</h3>
+                    <p>{t('robotCopy')}</p>
+                  </div>
+                </div>
+              </section>
+              <section className="mhs-story mhs-slide" id="mhs-workflow" aria-label={t('workflow')}>
+                <div className="mhs-story-heading">
+                  <div>
+                    <p className="mhs-eyebrow">{t('architectureKicker')}</p>
+                    <h2>
+                      {t('architectureFirst')}
+                      <br />
+                      <span>{t('architectureSecond')}</span>
+                    </h2>
+                  </div>
+                  <p>{t('architectureLead')}</p>
+                </div>
+                <div className="mhs-flow-panel">
+                  <div className="mhs-flow-heading">
+                    <span>{t('brand')}</span>
+                    <span aria-hidden="true">
+                      {t('hub')} <Icon name="arrow-right" />
+                    </span>
+                  </div>
+                  <div className="mhs-steps">
+                    {steps.map(([number, title, copy, icon]) => (
+                      <article className="mhs-step" key={number}>
+                        <div className={`mhs-step-visual mhs-step-visual-${number}`} aria-hidden="true">
+                          <span className="mhs-step-halo" />
+                          <span className="mhs-step-symbol">
+                            <Icon name={icon} />
+                          </span>
+                          <span className="mhs-step-satellite mhs-step-satellite-a" />
+                          <span className="mhs-step-satellite mhs-step-satellite-b" />
+                          <span className="mhs-step-satellite mhs-step-satellite-c" />
+                        </div>
+                        <span className="mhs-step-number">{number} /</span>
+                        <h3>{t(title)}</h3>
+                        <p>{t(copy)}</p>
+                      </article>
+                    ))}
+                  </div>
+                  <aside className="mhs-safety">
+                    <Icon name="route" />
+                    <div>
+                      <strong>{t('safetyTitle')}</strong>
+                      <p>{t('safetyCopy')}</p>
+                    </div>
+                  </aside>
+                </div>
+              </section>
+            </MhsBook>
+            <ExploreCapabilities hidden={slide !== 1} onContact={() => go(2)} />
 
             <section
               className="mhs-contact mhs-slide"
-              id="mhs-slide-2"
+              id="explore-slide-2"
               aria-label={t('contact')}
               hidden={slide !== 2}
             >
@@ -461,7 +486,7 @@ export function MhsPage({ context }: { context: UiExtensionContext }) {
       <footer className="mhs-pagination">
         <div aria-live="polite">
           <span>0{slide + 1} / 03</span>
-          <strong>{labels[slide]}</strong>
+          {labels[slide] && <strong>{labels[slide]}</strong>}
         </div>
       </footer>
     </article>
