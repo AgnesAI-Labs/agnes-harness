@@ -2,7 +2,7 @@ import { appendFileSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 
 export function ciWebSelected(event, _ref, browsers = false) {
-  return event === 'schedule' || (event === 'workflow_dispatch' && browsers)
+  return event === 'workflow_dispatch' && browsers
 }
 
 export function verifyWebResults(needs, { suite = 'gate' } = {}) {
