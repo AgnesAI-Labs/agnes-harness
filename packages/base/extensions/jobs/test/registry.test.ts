@@ -7,6 +7,7 @@ import { createJobTools, jobHooks } from '../src/index.js'
 import { createPtyTools } from '../src/pty-tools.js'
 import { SHELL_IDLE_MS, ShellJobs, TERMINAL_IDLE_MS } from '../src/registry.js'
 import { createJobsServices } from '../src/services.js'
+import { runShellJob } from '../src/shell.js'
 
 it('unifies child output/cancellation with owner isolation and completion notifications', async () => {
   const jobs = new ShellJobs(),
@@ -48,13 +49,20 @@ it('unifies child output/cancellation with owner isolation and completion notifi
   )
   const firstCursor = (running.structured as { cursor: string }).cursor
   const incremental = await output!.execute({ jobId: 'child:child-1', cursor: firstCursor }, ctx)
-  expect(incremental.content[0]).toEqual({ type: 'text', text: ', and more\n[running; exit pending]' })
+  // A running job says how long it has run, so a poll with nothing new still reads as progress.
+  expect(incremental.content[0]).toEqual({
+    type: 'text',
+    text: expect.stringMatching(/^, and more\n\[running for 0m\d\ds; exit pending\]$/),
+  })
   latest += '中😀'
   const utf8 = await output!.execute(
     { jobId: 'child:child-1', cursor: (incremental.structured as { cursor: string }).cursor },
     ctx,
   )
-  expect(utf8.content[0]).toEqual({ type: 'text', text: '中😀\n[running; exit pending]' })
+  expect(utf8.content[0]).toEqual({
+    type: 'text',
+    text: expect.stringMatching(/^中😀\n\[running for 0m\d\ds; exit pending\]$/),
+  })
   const foreign = { ...fakeToolContext({ sessionKey: 'cursor-foreign' }), subagent: ctx.subagent }
   expect((await output!.execute({ jobId: 'child:child-1', cursor: firstCursor }, foreign)).isError).toBe(true)
   expect((await output!.execute({ jobId: 'child:child-1', cursor: firstCursor + 'x' }, ctx)).isError).toBe(
@@ -487,6 +495,71 @@ it('lists the jobs an unattended turn leaves running before it ends, once', asyn
     const done = await jobs.start('true', tool.cwd, tool)
     await jobs.kill(tool, done.id)
     expect(await hooks.turn_stopping(stopping, at(true))).toEqual({ action: 'stop' })
+  } finally {
+    await jobs.dispose()
+  }
+})
+
+// A long build ran in the background; its end reached the model 20 minutes late, beside ten
+// commands whose end the model had already read in their own results. Now the notice is due at the
+// next request, and only for a job no tool result has shown ended.
+it('announces each ended job once, and never one whose end a tool result already showed', async () => {
+  const jobs = new ShellJobs(),
+    tool = fakeToolContext({ cwd: resolve('/work/proj'), sessionKey: 'notices' })
+  const ends: Array<(code: number) => Promise<void>> = []
+  tool.sandbox.openProcess = async () => {
+    let exit!: (value: import('@agnes/extension-api').ProcessExit) => void
+    const exited = new Promise<import('@agnes/extension-api').ProcessExit>((done) => {
+      exit = done
+    })
+    ends.push(async (code) => {
+      exit({ code })
+      await new Promise((settled) => setTimeout(settled, 0))
+    })
+    return {
+      enforcement: { level: 'none', scope: [] },
+      exited,
+      onOutput: () => () => {},
+      write: async () => {},
+      resize: async () => {},
+      signal: async () => {},
+      close: async () => exit({ code: -1 }),
+    }
+  }
+  const call = (toolUseId: string) => ({ ...tool, session: { ...tool.session, toolUseId } })
+  const hooks = jobHooks(jobs)
+  const context = (session = tool.session) =>
+    hooks.context({} as never, { session, signal: tool.signal } as unknown as HookContext)
+  const notice = (text: string) => ({
+    refreshOnRequest: true,
+    sections: [{ id: 'jobs:completed', order: 117, content: text, delivery: 'live-note' }],
+  })
+  const [, output, kill] = createJobTools(jobs)
+  try {
+    // Asked on every request; with nothing ended it contributes nothing.
+    expect(await context()).toEqual({ refreshOnRequest: true })
+    const build = await jobs.start('make world', tool.cwd, call('build'))
+    const tests = await jobs.start('make check', tool.cwd, call('tests'))
+    const server = await jobs.start('serve', tool.cwd, call('server'))
+    const lint = await jobs.start('make lint', tool.cwd, call('lint'))
+    expect(await context()).toEqual({ refreshOnRequest: true })
+    await ends[0]!(0)
+    expect(await context()).toEqual(notice(`Jobs completed: ${build.id}: completed (exit 0)`))
+    // Unchanged until another job ends, so the live note is not sent again.
+    expect(await context()).toEqual(notice(`Jobs completed: ${build.id}: completed (exit 0)`))
+    // The model read how these ended: job_output on a finished job, job_kill, a foreground command.
+    await ends[1]!(1)
+    expect(JSON.stringify(await output!.execute({ jobId: tests.id }, tool))).toContain('[failed; exit 1]')
+    await kill!.execute({ jobId: server.id }, tool)
+    const foreground = runShellJob(jobs, { command: 'ls' }, call('ls'))
+    await new Promise((settled) => setTimeout(settled, 0))
+    await ends[4]!(0)
+    expect((await foreground).details).toMatchObject({ status: 'completed', code: 0 })
+    expect(await context()).toEqual(notice(`Jobs completed: ${build.id}: completed (exit 0)`))
+    await ends[3]!(2)
+    expect(await context()).toEqual(notice(`Jobs completed: ${lint.id}: failed (exit 2)`))
+    // Another lane of the session owns none of these.
+    expect(await context({ ...tool.session, lane: 'other' })).toEqual({ refreshOnRequest: true })
   } finally {
     await jobs.dispose()
   }

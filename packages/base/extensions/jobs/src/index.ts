@@ -6,6 +6,21 @@ import { deadlineWait } from '../../tools-core/src/shell-guidance.js'
 import { createPtyTools } from './pty-tools.js'
 import { type ShellJobs, standaloneShellJobs } from './registry.js'
 
+/** The longest one job_output call waits for its job; a wait still ends as soon as the job does. */
+export const JOB_OUTPUT_WAIT_MAX_MS = 300_000
+
+/**
+ * How long a job has run, always with its minutes (`0m05s`, `4m20s`, `1h02m03s`). Core's repeat
+ * reminder blanks a bare `45s` as timing noise but keeps a figure written with minutes, so two polls
+ * of a job that is still running never read as the same result.
+ */
+export function runningFor(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const [h, m, sec] = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60]
+  const tail = `${String(sec).padStart(2, '0')}s`
+  return h > 0 ? `${h}h${String(m).padStart(2, '0')}m${tail}` : `${m}m${tail}`
+}
+
 export function createJobTools(jobs: ShellJobs) {
   const meta = {
     isReadOnly: true,
@@ -34,12 +49,12 @@ export function createJobTools(jobs: ShellJobs) {
     defineTool({
       name: 'job_output',
       description:
-        'Read captured output and status of a background shell job. Long output spills to a readable artifact. waitMs optionally waits, without stopping the job. Pass the returned cursor to read only new output; gaps are reported. Cursors are session/lane/job scoped and invalid after restart.',
+        'Read captured output and status of a background shell job. Long output spills to a readable artifact. waitMs optionally waits up to 5 minutes, without stopping the job, and returns as soon as the job ends. Pass the returned cursor to read only new output; gaps are reported. Cursors are session/lane/job scoped and invalid after restart.',
       parameters: Type.Object(
         {
           jobId: Type.String(),
           cursor: Type.Optional(Type.String({ maxLength: 4096 })),
-          waitMs: Type.Optional(Type.Integer({ minimum: 0, maximum: 60000 })),
+          waitMs: Type.Optional(Type.Integer({ minimum: 0, maximum: JOB_OUTPUT_WAIT_MAX_MS })),
         },
         { additionalProperties: false },
       ),
@@ -54,11 +69,15 @@ export function createJobTools(jobs: ShellJobs) {
             deadlineWait(ctx, Math.min(args.waitMs ?? 0, ctx.timeoutMs)).waitMs,
           )
           const job = jobs.output(ctx, args.jobId, args.cursor)
+          // The model now knows how a finished job ended; a completion notice would only repeat it.
+          if (job.status !== 'running') jobs.acknowledge(ctx, job.id)
+          const status =
+            job.status === 'running' ? `running for ${runningFor(Date.now() - job.startedAt)}` : job.status
           return {
             structured: { jobId: job.id, status: job.status, cursor: job.cursor, gap: job.gap },
             ...(await guardedCommandResult(
               ctx,
-              `${job.gap ? '[output gap: job buffer discarded unread output]\n' : ''}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n[${job.status}; exit ${job.code ?? 'pending'}]${job.truncated ? ' [capture limit reached]' : ''}`,
+              `${job.gap ? '[output gap: job buffer discarded unread output]\n' : ''}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n[${status}; exit ${job.code ?? 'pending'}]${job.truncated ? ' [capture limit reached]' : ''}`,
             )),
             details: { jobId: job.id, status: job.status, code: job.code, truncated: job.truncated },
           }
@@ -76,6 +95,7 @@ export function createJobTools(jobs: ShellJobs) {
         try {
           await jobs.syncChildren(ctx)
           const job = await jobs.kill(ctx, args.jobId)
+          jobs.acknowledge(ctx, job.id)
           return {
             content: [{ type: 'text', text: `${job.id}: ${job.status}` }],
             structured: { jobId: job.id, status: job.status },
@@ -92,29 +112,45 @@ const ownerOf = (ctx: Pick<HookContext, 'session'>) => ({
 })
 
 /**
- * The session's job hooks. `turn_stopping` covers an unattended turn (`agh -p`, scheduled runs): jobs
- * it leaves running outlive the answer with nobody to stop them, and may disturb whatever runs next.
- * Whether one is a server the task asked to keep up cannot be told from the job, so the model is
- * shown each still-running job once and decides; nothing is stopped behind its back.
+ * The session's job hooks.
+ *
+ * `context` tells the model about jobs that ended since it was last told, on the next request rather
+ * than whenever the turn's other context changes: it asks to run before every request. The notice is
+ * a live note (`jobs:completed`) holding the newest batch. Core sends a live note only when its text
+ * changes, so the batch reaches the model once, and a request with nothing newly ended carries
+ * nothing new; a note in the shared hook-context message would instead be sent again, or cleared,
+ * whenever another contributor's line changed. Jobs whose end a tool result already showed (a
+ * foreground command, a read of a finished job, a kill) are left out.
+ *
+ * `turn_stopping` covers an unattended turn (`agh -p`, scheduled runs): jobs it leaves running
+ * outlive the answer with nobody to stop them, and may disturb whatever runs next. Whether one is a
+ * server the task asked to keep up cannot be told from the job, so the model is shown each
+ * still-running job once and decides; nothing is stopped behind its back.
  */
 export function jobHooks(jobs: ShellJobs) {
-  const notified = new Map<string, Set<string>>()
+  const notices = new Map<string, string>()
   const listed = new Map<string, Set<string>>()
   const keyOf = (ctx: Pick<HookContext, 'session'>) => ctx.session.key + '\0' + ctx.session.lane
   return {
     async context(_payload: HookPayloadMap['context'], ctx: HookContext): Promise<HookReturnMap['context']> {
       const key = keyOf(ctx)
-      const seen = notified.get(key) ?? new Set<string>()
-      const completed = jobs.completions(ownerOf(ctx)).filter((job) => !seen.has(job.id))
-      for (const job of completed) seen.add(job.id)
-      notified.set(key, seen)
-      return completed.length
-        ? {
-            additionalContext:
-              'Jobs completed: ' +
-              completed.map((job) => job.id + ': ' + job.status + ' (exit ' + job.code + ')').join(', '),
-          }
-        : {}
+      const ended = jobs.announceCompletions(ownerOf(ctx))
+      if (ended.length)
+        notices.set(
+          key,
+          `Jobs completed: ${ended.map((job) => `${job.id}: ${job.status} (exit ${job.code})`).join(', ')}`,
+        )
+      const notice = notices.get(key)
+      return {
+        refreshOnRequest: true,
+        ...(notice
+          ? {
+              sections: [
+                { id: 'jobs:completed', order: 117, content: notice, delivery: 'live-note' as const },
+              ],
+            }
+          : {}),
+      }
     },
     async turn_stopping(
       _payload: HookPayloadMap['turn_stopping'],
@@ -143,7 +179,7 @@ export function jobHooks(jobs: ShellJobs) {
     },
     async shutdown(_payload: HookPayloadMap['shutdown'], ctx: HookContext): Promise<void> {
       await jobs.closeSession(ctx.session.key, ctx.session.lane)
-      notified.delete(keyOf(ctx))
+      notices.delete(keyOf(ctx))
       listed.delete(keyOf(ctx))
     },
   }

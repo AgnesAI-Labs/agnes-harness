@@ -1,5 +1,6 @@
 import { resolve } from 'node:path'
 import { checkToolDef, type HookContext, type ProcessExit, type ProcessOutput } from '@agnes/extension-api'
+import { Value } from '@sinclair/typebox/value'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createJobTools, jobHooks } from '../../jobs/src/index.js'
@@ -59,7 +60,7 @@ describe('shell observation window with a live job registry', () => {
   it.each([
     [10_000, 10_000],
     [30_000, 30_000],
-    [undefined, 120_000],
+    [undefined, 300_000],
   ] as const)(
     'window=%s returns at %s with captured output, preserving the same readable service',
     async (windowMs, expected) => {
@@ -121,7 +122,7 @@ describe('shell observation window with a live job registry', () => {
       h.emit({ stream: 'stdout', text: '中😀' })
       h.emit({ stream: 'stderr', text: 'new error' })
       const delta = await output.execute({ jobId: id, cursor }, h.ctx)
-      expect(textOf(delta)).toBe('中😀\n[stderr]\nnew error\n[running; exit pending]')
+      expect(textOf(delta)).toBe('中😀\n[stderr]\nnew error\n[running for 0m10s; exit pending]')
       expect(
         (
           await output.execute(
@@ -144,6 +145,37 @@ describe('shell observation window with a live job registry', () => {
       )
       expect(textOf(next)).not.toContain('中')
       expect(next.structured).toMatchObject({ gap: false })
+    } finally {
+      await h.jobs.dispose()
+    }
+  })
+  // build-ocaml: the model asked job_output to wait 120 s, was refused at 60 s, and polled the same
+  // build eight times. One wait now covers five minutes and still ends when the job does.
+  it('lets job_output wait up to five minutes, returning as soon as the job ends', async () => {
+    const h = setup()
+    try {
+      const output = createJobTools(h.jobs).find((tool) => tool.name === 'job_output')!
+      expect(Value.Check(output.parameters, { jobId: 'j', waitMs: 300_000 })).toBe(true)
+      expect(Value.Check(output.parameters, { jobId: 'j', waitMs: 300_001 })).toBe(false)
+      expect(output.description).toContain('waits up to 5 minutes')
+      const started = await h.tool.execute({ command: 'make world', background: true }, h.ctx)
+      const jobId = (started.structured as { jobId: string }).jobId
+      let returned = false
+      const full = output.execute({ jobId, waitMs: 300_000 }, h.ctx).then((result) => {
+        returned = true
+        return result
+      })
+      await vi.advanceTimersByTimeAsync(299_999)
+      expect(returned).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(textOf(await full)).toContain('[running for 5m00s; exit pending]')
+      const start = Date.now()
+      const early = output.execute({ jobId, waitMs: 300_000 }, h.ctx)
+      await vi.advanceTimersByTimeAsync(10_000)
+      h.finish({ code: 0 })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(textOf(await early)).toContain('[completed; exit 0]')
+      expect(Date.now() - start).toBe(10_000)
     } finally {
       await h.jobs.dispose()
     }
@@ -266,6 +298,11 @@ describe('shell', () => {
   it('describes session jobs and their control tools', () => {
     expect(shellTool.description).not.toMatch(/background=true|poll the returned job/i)
     expect(shellTool.description).toContain('timeoutToBackground')
+    expect(shellTool.description).toContain('after 5 minutes')
+    // A finished background job is announced, so sleeping between polls only spends steps.
+    expect(shellTool.description).toContain(
+      'You are told when a background job finishes, so do not sleep and poll for it; call job_output (it can wait up to 5 minutes) only when you are blocked on the result.',
+    )
   })
 
   it('declares itself destructive, open-world and left to the command policy for approval', () => {
@@ -696,6 +733,13 @@ describe('shell near the turn deadline', () => {
     // A wait that fits in half the usable time is left alone.
     await tool.execute({ command: 'make', timeoutMs: 30_000 }, ctx)
     expect(waits).toEqual([41_500, 30_000])
+    // The five-minute bound is no exception: 500 s of a 30-minute turn left (margin 90 s) is 205 s.
+    const later = fakeToolContext({
+      timeoutMs: 1_800_000,
+      turnTimeLimit: { timeLimitMs: 1_800_000, deadlineAt: NOW + 500_000 },
+    })
+    await tool.execute({ command: 'make world', timeoutMs: 600_000 }, later)
+    expect(waits).toEqual([41_500, 30_000, 205_000])
   })
 
   // compile-compcert: a 600 s apt-get held the turn for ten minutes because half of a 40-minute turn
@@ -705,21 +749,21 @@ describe('shell near the turn deadline', () => {
     ['without a time limit', undefined],
     ['with most of a long turn left', { timeLimitMs: 2_400_000, deadlineAt: NOW + 2_320_000 }],
   ] as const)(
-    'ends a foreground wait at %s after two minutes and lets the job continue',
+    'ends a foreground wait at %s after five minutes and lets the job continue',
     async (_n, turnTimeLimit) => {
       vi.spyOn(Date, 'now').mockImplementation(() => NOW)
       const { tool, waits, kill } = jobsFor('running')
       const ctx = fakeToolContext({ timeoutMs: 1_800_000, ...(turnTimeLimit ? { turnTimeLimit } : {}) })
       const r = await tool.execute({ command: 'apt-get install -y coq', timeoutMs: 600_000 }, ctx)
-      expect(waits).toEqual([120_000])
+      expect(waits).toEqual([300_000])
       expect(kill).not.toHaveBeenCalled()
       expect(r.details).toMatchObject({ jobId: 'job-1', status: 'running' })
       expect(textOf(r)).toBe(
-        'so far\nbackground job job-1 started (foreground wait stopped at 120000ms, the most one call waits (requested 600000ms); the same process continues); use job_output, job_list or job_kill',
+        'so far\nbackground job job-1 started (foreground wait stopped at 300000ms, the most one call waits (requested 600000ms); the same process continues); use job_output, job_list or job_kill',
       )
       // A command that must not outlive its timeout keeps the time it asked for.
       await tool.execute({ command: 'make check', timeoutMs: 600_000, timeoutToBackground: false }, ctx)
-      expect(waits).toEqual([120_000, 600_000])
+      expect(waits).toEqual([300_000, 600_000])
     },
   )
 
