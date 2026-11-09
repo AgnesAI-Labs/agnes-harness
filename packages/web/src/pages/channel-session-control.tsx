@@ -1,4 +1,4 @@
-import { Button, useDocumentLanguage } from '@agnes/web-ui'
+import { Button, ChannelIcon, Icon, useDocumentLanguage } from '@agnes/web-ui'
 import { callChannel } from './channel-api.js'
 import { openChannelDialog } from './channel-dialog-state.js'
 import { useChannelOverview } from './channel-model.js'
@@ -44,16 +44,21 @@ export function SessionChannelControl({
           .map((binding) => ({ group, instance, binding })),
       ),
     ) ?? []
+  if (!sessionId || !overview) return null
   if (!bound.length)
     return (
       <Button
         size="small"
+        appearance="ghost"
+        className="channel-composer-trigger"
         data-testid="composer-channel-binding"
-        loading={!!sessionId && !overview && !error}
-        disabled={!!sessionId && !overview && !error}
+        title={zh ? '绑定聊天渠道' : 'Connect a chat channel'}
         onClick={() => openChannelDialog({ sessionId })}
       >
-        {error ? (zh ? '渠道状态待刷新' : 'Channel status unavailable') : zh ? '渠道绑定' : 'Channels'}
+        <Icon name="link" />
+        <span>
+          {error ? (zh ? '渠道状态待刷新' : 'Channel status unavailable') : zh ? '渠道绑定' : 'Channels'}
+        </span>
       </Button>
     )
   return (
@@ -71,7 +76,9 @@ export function SessionChannelControl({
           <Button
             key={`${group.provider.extension}:${instance.id}:${binding.targetId}`}
             size="small"
-            className="channel-composer-status"
+            appearance="ghost"
+            className="channel-composer-trigger channel-composer-status"
+            data-tone={state.tone}
             data-testid="composer-channel-binding"
             title={`${name} · ${binding.label} · ${instance.id}`}
             aria-label={`${zh ? '编辑渠道连接' : 'Edit channel connection'}：${label} · ${binding.label}`}
@@ -79,8 +86,10 @@ export function SessionChannelControl({
               openChannelDialog({ sessionId, extension: group.provider.extension, instanceId: instance.id })
             }
           >
+            <ChannelIcon className="channel-composer-icon" icon={group.provider.manifest.icon} />
+            <span className="channel-composer-label">{label}</span>
             <span className="channel-composer-dot" data-tone={state.tone} aria-hidden="true" />
-            {label}
+            <Icon name="chevron-down" className="channel-composer-chevron" />
           </Button>
         )
       })}

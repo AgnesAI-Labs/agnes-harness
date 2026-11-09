@@ -112,12 +112,8 @@ export function ComposerDshFrame({
                 {outlet('conversation.input.left')}
               </span>
             ),
-            model: (
-              <>
-                <SessionChannelControl sessionId={sessionId} />
-                {outlet('conversation.input.model')}
-              </>
-            ),
+            sessionControls: <SessionChannelControl key={sessionId} sessionId={sessionId} />,
+            model: outlet('conversation.input.model'),
             overlay: outlet('conversation.input.overlay'),
             permission: outlet('conversation.input.permission'),
             plan: outlet('conversation.input.plan'),

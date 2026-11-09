@@ -50,8 +50,12 @@ an unknown external operation.
 
 Use fake gateways for lifecycle and refusal tests, then independently verify each real platform.
 See [architecture and compatibility](../develop/channel-plugins.md). In Extension API 5.6, use
-the composer’s Channels dialog to configure instances through native approval; Plugins → Channels
-provides a multi-channel management overview. Declare `channelServiceCapabilities()` to enable Host-owned session binding services;
+the composer’s Channels dialog to configure instances through native approval. The trigger appears only after an existing session is loaded, editable and connected and its initial channel overview is available; it is hidden for loading, read-only, disconnected and draft states. Bound connections show the channel icon/name/status and open their existing configuration directly. Plugins → Channels
+provides a multi-channel management overview. Collapsible channel groups preview three connections
+each, with controls to show more or expand/collapse all groups. Compact rows show session and
+connection status; Details reveals the workspace, instance ID, unbind and move actions. Search
+matches sessions, chats, instance IDs and workspaces, showing all matches regardless of the preview limit.
+Declare `channelServiceCapabilities()` to enable Host-owned session binding services;
 `configSchema` describes non-sensitive provider options. Create a session before binding, send the
 bot a message, then refresh and select its verified chat target. Only the same workspace is allowed.
 Only future messages are exported; unbound chats never create sessions. Reconnect requires inbound

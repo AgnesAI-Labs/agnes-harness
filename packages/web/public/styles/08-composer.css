@@ -880,6 +880,24 @@
     min-width: 0;
     container-type: inline-size;
   }
+  .composer-session-controls {
+    display: inline-flex;
+    min-width: 0;
+    max-width: 100%;
+    flex: 0 1 auto;
+  }
+  .composer-session-controls:empty {
+    display: none;
+  }
+  @media (max-width: 640px) {
+    .composer-controls:has(> .composer-session-controls:not(:empty)) {
+      flex-wrap: wrap;
+    }
+    .composer-session-controls {
+      flex-basis: 100%;
+      order: -1;
+    }
+  }
   #composer-attach {
     display: grid;
     place-items: center;

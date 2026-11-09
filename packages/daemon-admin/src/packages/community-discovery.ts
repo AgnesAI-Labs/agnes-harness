@@ -3,12 +3,13 @@ import { join } from 'node:path'
 import { type PackageCatalogPage, validatePackageAdminData } from '@agnes/protocol'
 import { replaceFileAtomicSync } from '@agnes/system-node'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
+import { COMMUNITY_INDEX_URL, listedCommunityRepositories } from './community-index.js'
 
 export type CommunitySnapshot = NonNullable<PackageCatalogPage['community']>
 type Repository = CommunitySnapshot['items'][number]
 const PERIOD = 6 * 60 * 60 * 1000
 const MAX_BYTES = 2 * 1024 * 1024
-const TOPICS = ['agh-plugin', 'dsh-plugin'] as const
+const TOPICS = ['agh-plugin'] as const
 type Failure = NonNullable<CommunitySnapshot['error']>
 
 class SyncFailure extends Error {
@@ -118,7 +119,7 @@ export async function openCommunityDiscovery(options: {
       (raw.topics !== undefined &&
         (!Array.isArray(raw.topics) ||
           !raw.topics.length ||
-          raw.topics.length > 2 ||
+          raw.topics.length > 1 ||
           raw.topics.some((topic) => !TOPICS.includes(topic as (typeof TOPICS)[number]))))
     )
       throw new Error('configuration')
@@ -130,7 +131,7 @@ export async function openCommunityDiscovery(options: {
       configError = true
     }
   }
-  const fingerprint = topics.join(',')
+  const fingerprint = `${topics.join(',')}|${COMMUNITY_INDEX_URL}`
   const path = join(options.directory, 'community-discovery-cache.json')
   let snapshot: CommunitySnapshot = {
     state: enabled ? 'pending' : 'disabled',
@@ -148,7 +149,7 @@ export async function openCommunityDiscovery(options: {
         snapshot?: CommunitySnapshot
       }
       if (
-        raw.version === 1 &&
+        raw.version === 2 &&
         raw.fingerprint === fingerprint &&
         raw.snapshot &&
         validatePackageAdminData('PackageCatalogPage', {
@@ -175,7 +176,7 @@ export async function openCommunityDiscovery(options: {
   let failures = 0
   const controller = new AbortController()
   const persist = async (value: CommunitySnapshot) => {
-    const data = JSON.stringify({ version: 1, fingerprint, snapshot: value })
+    const data = JSON.stringify({ version: 2, fingerprint, snapshot: value })
     if (Buffer.byteLength(data) > MAX_BYTES) throw new SyncFailure('storage')
     // The profile directory is already private; cache loss on power failure is recoverable.
     replaceFileAtomicSync(path, data)
@@ -192,9 +193,30 @@ export async function openCommunityDiscovery(options: {
     )
     timer.unref()
   }
+  async function request(url: URL | string): Promise<unknown> {
+    const response = await fetcher(url, {
+      redirect: 'error',
+      signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
+      headers: { Accept: 'application/json', 'User-Agent': 'Agnes-Harness-Community' },
+    })
+    if (!response.ok) {
+      await response.body?.cancel()
+      if (response.status === 403 || response.status === 429) {
+        const retryHeader = response.headers.get('retry-after')
+        const retry = Number(retryHeader)
+        const reset = Number(response.headers.get('x-ratelimit-reset')) * 1000
+        const retryAt =
+          Number.isFinite(retry) && retry > 0 ? now() + retry * 1000 : Date.parse(retryHeader ?? '')
+        const validTime = (value: number) =>
+          Number.isFinite(value) && value >= 0 && value < 8.64e15 ? value : 0
+        throw new SyncFailure('rate-limit', Math.max(now() + 60_000, validTime(retryAt), validTime(reset)))
+      }
+      throw new SyncFailure('network')
+    }
+    return boundedJson(response)
+  }
   async function collect(): Promise<{ items: Repository[]; totalReported: number }> {
     const rows = new Map<number, Repository>()
-    let totalReported = 0
     for (const topic of topics) {
       for (let page = 1; page <= 2; page++) {
         controller.signal.throwIfAborted()
@@ -206,29 +228,7 @@ export async function openCommunityDiscovery(options: {
           per_page: '100',
           page: String(page),
         }).toString()
-        const response = await fetcher(url, {
-          redirect: 'error',
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20_000)]),
-          headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Agnes-Harness-Community' },
-        })
-        if (!response.ok) {
-          await response.body?.cancel()
-          if (response.status === 403 || response.status === 429) {
-            const retryHeader = response.headers.get('retry-after')
-            const retry = Number(retryHeader)
-            const reset = Number(response.headers.get('x-ratelimit-reset')) * 1000
-            const retryAt =
-              Number.isFinite(retry) && retry > 0 ? now() + retry * 1000 : Date.parse(retryHeader ?? '')
-            const validTime = (value: number) =>
-              Number.isFinite(value) && value >= 0 && value < 8.64e15 ? value : 0
-            throw new SyncFailure(
-              'rate-limit',
-              Math.max(now() + 60_000, validTime(retryAt), validTime(reset)),
-            )
-          }
-          throw new SyncFailure('network')
-        }
-        const raw = (await boundedJson(response)) as {
+        const raw = (await request(url)) as {
           items?: unknown[]
           total_count?: number
           incomplete_results?: boolean
@@ -242,24 +242,30 @@ export async function openCommunityDiscovery(options: {
           raw.incomplete_results
         )
           throw new SyncFailure('invalid-data')
-        if (page === 1)
-          totalReported = Math.min(Number.MAX_SAFE_INTEGER, totalReported + Number(raw.total_count))
         for (const value of raw.items) {
           const row = repository(value, topic)
-          if (!rows.has(row.id) || row.ecosystem === 'agh') rows.set(row.id, row)
+          if (row.topics.includes('agh-plugin')) rows.set(row.id, row)
         }
         if (raw.items.length < 100) break
       }
     }
+    let listed: ReadonlySet<string>
+    const index = await request(COMMUNITY_INDEX_URL)
+    try {
+      listed = listedCommunityRepositories(index)
+    } catch {
+      throw new SyncFailure('invalid-data')
+    }
+    const matches = [...rows.values()].filter((row) => listed.has(row.fullName.toLowerCase()))
     const items: Repository[] = []
     let bytes = 0
-    for (const row of [...rows.values()].sort((a, b) => b.stars - a.stars)) {
+    for (const row of matches.sort((a, b) => b.stars - a.stars)) {
       const size = Buffer.byteLength(JSON.stringify(row)) + 1
       if (bytes + size > 256 * 1024) break
       bytes += size
       items.push(row)
     }
-    return { items, totalReported }
+    return { items, totalReported: matches.length }
   }
   function sync(): Promise<void> {
     if (active) return active
