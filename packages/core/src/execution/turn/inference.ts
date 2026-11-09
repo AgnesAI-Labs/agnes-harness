@@ -10,7 +10,7 @@ import { type OpStateObj, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type Event, type EventInput, type Seq } from '@agnes/core-common/types'
 import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
-import { isNestedCall } from '@agnes/core-ledger/project/surface'
+import { isNestedCall, type SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import type { InferenceEvent, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { childReceiptNarrative } from '../../child/receipts.js'
@@ -516,6 +516,17 @@ export async function surfaceToolCalls(s: SessionImpl): Promise<NonNullable<Deri
   return out
 }
 
+/**
+ * What the ledger says about the history a request renders, beyond the rows themselves: which
+ * assistant message asked for each tool use, and which model produced each signed message.
+ */
+async function historyFacts(
+  s: SessionImpl,
+  surface: readonly SurfaceNode[],
+): Promise<Pick<DeriveInput, 'toolCalls' | 'producers'>> {
+  return { toolCalls: await surfaceToolCalls(s), producers: await surfaceProducers(s, surface) }
+}
+
 /** The options of the primary turn's own request, told apart from a loop's by identity. */
 const PRIMARY: import('@agnes/extension-api').LoopRequestOptions = Object.freeze({})
 
@@ -699,8 +710,7 @@ export async function prepareInferenceRequest(
     merged,
     surface,
     disclosed,
-    toolCalls: await surfaceToolCalls(s),
-    producers: await surfaceProducers(s, surface),
+    ...(await historyFacts(s, surface)),
     model: {
       slot,
       ...target,
