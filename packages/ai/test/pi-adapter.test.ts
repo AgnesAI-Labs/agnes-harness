@@ -1456,6 +1456,39 @@ describe('request deadlines', () => {
     ])
   })
 
+  it('buffered route: a request deadline above 600 s is the longer silence it allows', async () => {
+    const adapter = bound({
+      manualRoutes: [{ ...agnes, networkTimeouts: { requestMs: 900_000 } }],
+      streamImpl: timed([
+        [0, text('a')],
+        [590_000, text('b')],
+      ]),
+    })
+    // Past the 600 s the route would otherwise allow, and cut at 900 s of silence.
+    const events = await play(adapter, { openAt: 1_489_999, overBy: 1_490_000 })
+    expect(events).toEqual([
+      { type: 'text_delta', delta: 'a' },
+      { type: 'text_delta', delta: 'b' },
+      idleTimeout,
+    ])
+  })
+
+  it('buffered route: the stream idle setting does not shorten its silence', async () => {
+    const adapter = bound({
+      manualRoutes: [{ ...agnes, networkTimeouts: { streamIdleMs: 30_000 } }],
+      streamImpl: timed([
+        [0, text('a')],
+        [590_000, text('b')],
+      ]),
+    })
+    const events = await play(adapter, { openAt: 1_189_999, overBy: 1_190_000 })
+    expect(events).toEqual([
+      { type: 'text_delta', delta: 'a' },
+      { type: 'text_delta', delta: 'b' },
+      idleTimeout,
+    ])
+  })
+
   it('non-buffered route: 60 s of silence after content is TIMEOUT', async () => {
     const adapter = bound({ manualRoutes: [route], streamImpl: timed(every(50_000, 400_000)) })
     const events = await play(adapter, { openAt: 459_999, overBy: 460_000 })
