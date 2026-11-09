@@ -59,6 +59,7 @@ import {
   type SkillDescriptor,
   validateResourceControlData,
 } from '@agnes/protocol'
+import { trimNativeHeap } from '@agnes/system-node'
 import {
   admitWorkerCommand,
   applyMcpRowChange,
@@ -546,6 +547,8 @@ export async function runWorker(
       resources: resourceSlot,
       // Read once: a process-static limit, like every other `worker.` key.
       idleCloseMs: sessionIdleCloseMs(requireHost().profile?.limits),
+      // A finished turn leaves its request and tool buffers freed; hand that memory back.
+      onTurnEnd: () => void trimNativeHeap(),
     })
   if (workerKind === 'session' && !bootSource) hostedSessions = openHostedSessions()
 

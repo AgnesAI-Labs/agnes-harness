@@ -7,10 +7,14 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 
 static napi_value fail(napi_env env, const char* operation, int error) {
   const char* code = "EIO";
@@ -246,6 +250,46 @@ static napi_value landlock_abi(napi_env env, napi_callback_info info) {
   return result;
 }
 
+/* glibc keeps the memory V8 frees after parsing and compiling a bundle; malloc_trim(0) hands its
+ * free pages back to the kernel. It walks every arena, so it runs on Node's worker pool. Other C
+ * libraries have no malloc_trim: there the promise resolves false and nothing happens. */
+typedef struct { napi_async_work work; napi_deferred deferred; int released; } heap_trim_job;
+
+static void heap_trim_execute(napi_env env, void* value) {
+  (void)env;
+  heap_trim_job* job = value;
+#ifdef __GLIBC__
+  job->released = malloc_trim(0);
+#else
+  job->released = 0;
+#endif
+}
+
+static void heap_trim_complete(napi_env env, napi_status status, void* value) {
+  heap_trim_job* job = value;
+  napi_value result;
+  napi_get_boolean(env, status == napi_ok && job->released != 0, &result);
+  napi_resolve_deferred(env, job->deferred, result);
+  napi_delete_async_work(env, job->work);
+  free(job);
+}
+
+static napi_value trim_native_heap(napi_env env, napi_callback_info info) {
+  (void)info;
+  napi_value result, resource;
+  heap_trim_job* job = calloc(1, sizeof(heap_trim_job));
+  if (!job) return fail(env, "native heap trim allocation", ENOMEM);
+  napi_create_string_utf8(env, "native heap trim", NAPI_AUTO_LENGTH, &resource);
+  if (napi_create_promise(env, &job->deferred, &result) != napi_ok ||
+      napi_create_async_work(env, NULL, resource, heap_trim_execute, heap_trim_complete, job, &job->work) != napi_ok) {
+    free(job); return fail(env, "native heap trim creation", EIO);
+  }
+  if (napi_queue_async_work(env, job->work) != napi_ok) {
+    napi_delete_async_work(env, job->work); free(job); return fail(env, "native heap trim queue", EIO);
+  }
+  return result;
+}
+
 #include "canonical-read-posix.h"
 #include "canonical-fs-posix.h"
 
@@ -273,6 +317,8 @@ static napi_value initialize(napi_env env, napi_value exports) {
   napi_set_named_property(env, exports, "renameDirectoryNoReplace", function);
   napi_create_function(env, "landlockAbi", NAPI_AUTO_LENGTH, landlock_abi, NULL, &function);
   napi_set_named_property(env, exports, "landlockAbi", function);
+  napi_create_function(env, "trimNativeHeap", NAPI_AUTO_LENGTH, trim_native_heap, NULL, &function);
+  napi_set_named_property(env, exports, "trimNativeHeap", function);
   return exports;
 }
 

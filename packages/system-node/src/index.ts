@@ -20,6 +20,7 @@ import { nativeLoadError } from './native-error.js'
 export { NODE_MEMORY_FLAGS, withNodeMemoryFlags } from '../runtime/node-flags.mjs'
 export { nodeArtifactGcPreparationRuntime } from './artifact-gc-preparation.js'
 export { commandPath } from './command-path.js'
+export { trimNativeHeap } from './native-heap.js'
 
 import { dirname, isAbsolute, join, parse, resolve, toNamespacedPath } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
