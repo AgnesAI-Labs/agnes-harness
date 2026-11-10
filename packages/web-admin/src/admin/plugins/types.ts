@@ -56,7 +56,7 @@ export type AdminPageState = {
   externalPackages?: PackageListResult['externalPackages']
   surfaceLinks: readonly AdminSurfaceLink[]
   catalog: readonly PackageCatalogDescriptor[]
-  community?: PackageCatalogPage['community']
+  community?: PackageCatalogPage['communityIndex']
   communityReadFailed?: boolean
   nextCursor: string | null
   selectedId?: string | undefined

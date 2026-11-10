@@ -92,14 +92,23 @@ it('serves real local examples through daemon catalog and source inspection', as
     clock: () => now,
   })
 
-  expect(service.features).toEqual(['packages.community-discovery.v1'])
+  expect(service.features).toEqual(['packages.community-discovery.v2'])
+  const legacy = await service.call(
+    '_agnes/v1/packages.catalog.list',
+    { profile, includeCommunity: true },
+    authority,
+  )
+  expect(legacy).not.toHaveProperty('communityIndex')
+  expect(legacy).not.toHaveProperty('community')
+  expect((legacy as PackageCatalogPage).items.length).toBeGreaterThan(0)
+
   const helpers = (await service.call(
     '_agnes/v1/packages.catalog.list',
-    { profile, query: 'skill-helper', limit: 50, includeCommunity: true },
+    { profile, query: 'skill-helper', limit: 50, communityVersion: 2 },
     authority,
   )) as PackageCatalogPage
   expect(helpers.items).toHaveLength(1)
-  expect(helpers.community).toMatchObject({ state: 'pending', items: [] })
+  expect(helpers.communityIndex).toMatchObject({ state: 'pending', items: [] })
   expect(helpers.items[0]).toMatchObject({
     id: '@agnes/skill-helper',
     sourceId: 'builtin-plugins',

@@ -10,7 +10,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { forgetInventory } from '../src/admin/plugins/admin/inventory-cache.js'
 import { OperationBackoff, withOperationDesired } from '../src/admin/plugins/admin/operation-refresh.js'
 import { PluginAdminPage } from '../src/admin/plugins/admin/page.js'
-import { PluginAdminApi } from '../src/admin/plugins/api.js'
+import { type AdminCatalogPage, PluginAdminApi } from '../src/admin/plugins/api.js'
 import { ADMIN_FEATURES } from '../src/admin/plugins/types.js'
 import { visibleRefresh } from '../src/visible-refresh.js'
 
@@ -29,7 +29,7 @@ it('keeps newer catalog community data when an older background read finishes la
     permissions: ['packages.read'] as const,
     readOnly: false,
   }
-  const community = (totalReported: number): NonNullable<PackageCatalogPage['community']> => ({
+  const community = (totalReported: number): NonNullable<PackageCatalogPage['communityIndex']> => ({
     state: 'ready',
     error: null,
     items: [],
@@ -56,7 +56,7 @@ it('keeps newer catalog community data when an older background read finishes la
   try {
     await page.start()
     await page.selectTab('discover')
-    let complete!: (result: PackageCatalogPage) => void
+    let complete!: (result: AdminCatalogPage) => void
     catalog.mockImplementationOnce(
       () =>
         new Promise((resolve) => {

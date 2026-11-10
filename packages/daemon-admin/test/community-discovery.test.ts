@@ -63,7 +63,7 @@ it('serves clones without networking and refreshes independently, persisting the
   snapshot.items.length = 0
   expect(owner.read().items).toHaveLength(1)
   const recorded = JSON.parse(await readFile(join(directory, 'community-discovery-cache.json'), 'utf8'))
-  expect(recorded.version).toBe(3)
+  expect(recorded.version).toBe(4)
   await owner.close()
   const reloaded = await openCommunityDiscovery({ directory, fetch: network, random: () => 0 })
   owners.push(reloaded)
@@ -210,17 +210,25 @@ it('cancels an in-flight index response and never publishes after the owner clos
   })
 })
 
-it('includes every indexed package without topics or a 200/400/1000-entry cutoff and refreshes removals', async () => {
+it.each([
+  [1101, 0],
+  [300, 2000],
+  [600, 2000],
+])('retains all %i entries with %i-character summaries across refresh and restart', async (size, length) => {
   vi.useFakeTimers()
-  let listed = Array.from({ length: 1101 }, (_, i) =>
-    entry(`https://github.com/example/plugin-${i}`, `@example/plugin-${i}`),
-  )
-  const { owner } = await setup(async () => Response.json(index(listed)))
+  let listed = Array.from({ length: size }, (_, i) => ({
+    ...entry(`https://github.com/example/plugin-${i}`, `@example/plugin-${i}`),
+    ...(length ? { description: 'x'.repeat(length) } : {}),
+  }))
+  const { owner, directory } = await setup(async () => Response.json(index(listed)))
   owner.start()
   await vi.advanceTimersByTimeAsync(10_000)
   await vi.waitFor(() => expect(owner.read().state).toBe('ready'))
-  expect(owner.read().items).toHaveLength(1101)
-  expect(owner.read().totalReported).toBe(1101)
+  expect(owner.read().items).toHaveLength(size)
+  expect(owner.read().totalReported).toBe(size)
+  const restarted = await openCommunityDiscovery({ directory, random: () => 0 })
+  owners.push(restarted)
+  expect(restarted.read().items).toEqual(owner.read().items)
   listed = [entry('https://github.com/Example/plugin-1.git/')]
   await vi.advanceTimersByTimeAsync(6 * 3600_000)
   await vi.waitFor(() => expect(owner.read().items).toHaveLength(1))

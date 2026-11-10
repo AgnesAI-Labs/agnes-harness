@@ -5,10 +5,11 @@ import { replaceFileAtomicSync } from '@agnes/system-node'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { COMMUNITY_INDEX_URL, indexedCommunityPlugins } from './community-index.js'
 
-export type CommunitySnapshot = NonNullable<PackageCatalogPage['community']>
+export type CommunitySnapshot = NonNullable<PackageCatalogPage['communityIndex']>
 type Repository = CommunitySnapshot['items'][number]
 const PERIOD = 6 * 60 * 60 * 1000
 const MAX_BYTES = 2 * 1024 * 1024
+const MAX_CACHE_BYTES = 8 * 1024 * 1024
 const LEGACY_TOPICS = ['agh-plugin', 'dsh-plugin'] as const
 type Failure = NonNullable<CommunitySnapshot['error']>
 
@@ -21,11 +22,11 @@ class SyncFailure extends Error {
   }
 }
 
-async function boundedFile(path: string): Promise<unknown> {
+async function boundedFile(path: string, maxBytes = MAX_BYTES): Promise<unknown> {
   const stat = await lstat(path)
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_BYTES) throw new Error('invalid cache')
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > maxBytes) throw new Error('invalid cache')
   const data = await readFile(path)
-  if (data.byteLength > MAX_BYTES) throw new Error('invalid cache')
+  if (data.byteLength > maxBytes) throw new Error('invalid cache')
   return JSON.parse(data.toString('utf8'))
 }
 
@@ -92,7 +93,7 @@ export async function openCommunityDiscovery(options: {
       configError = true
     }
   }
-  const fingerprint = `index-v3|${COMMUNITY_INDEX_URL}`
+  const fingerprint = `index-v4|${COMMUNITY_INDEX_URL}`
   const path = join(options.directory, 'community-discovery-cache.json')
   let snapshot: CommunitySnapshot = {
     state: enabled ? 'pending' : 'disabled',
@@ -104,19 +105,19 @@ export async function openCommunityDiscovery(options: {
   }
   if (enabled) {
     try {
-      const raw = (await boundedFile(path)) as {
+      const raw = (await boundedFile(path, MAX_CACHE_BYTES)) as {
         version?: number
         fingerprint?: string
         snapshot?: CommunitySnapshot
       }
       if (
-        raw.version === 3 &&
+        raw.version === 4 &&
         raw.fingerprint === fingerprint &&
         raw.snapshot &&
         validatePackageAdminData('PackageCatalogPage', {
           items: [],
           nextCursor: null,
-          community: raw.snapshot,
+          communityIndex: raw.snapshot,
         }).ok &&
         (!raw.snapshot.lastSuccessAt || Date.parse(raw.snapshot.lastSuccessAt) <= now()) &&
         (!raw.snapshot.nextAttemptAt || Number.isFinite(Date.parse(raw.snapshot.nextAttemptAt)))
@@ -137,8 +138,8 @@ export async function openCommunityDiscovery(options: {
   let failures = 0
   const controller = new AbortController()
   const persist = async (value: CommunitySnapshot) => {
-    const data = JSON.stringify({ version: 3, fingerprint, snapshot: value })
-    if (Buffer.byteLength(data) > MAX_BYTES) throw new SyncFailure('storage')
+    const data = JSON.stringify({ version: 4, fingerprint, snapshot: value })
+    if (Buffer.byteLength(data) > MAX_CACHE_BYTES) throw new SyncFailure('storage')
     // The profile directory is already private; cache loss on power failure is recoverable.
     replaceFileAtomicSync(path, data)
   }

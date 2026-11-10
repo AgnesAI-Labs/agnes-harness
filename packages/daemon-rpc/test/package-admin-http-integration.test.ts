@@ -126,9 +126,9 @@ it.each([false, true])(
     }
     try {
       const info = await client.initialize()
-      expect(info.features?.includes('packages.community-discovery.v1') ?? false).toBe(communityEnabled)
+      expect(info.features?.includes('packages.community-discovery.v2') ?? false).toBe(communityEnabled)
       const negotiatedContext = await (await fetch(`${origin}/admin/plugins/api/context`)).json()
-      expect(negotiatedContext.features.includes('packages.community-discovery.v1')).toBe(communityEnabled)
+      expect(negotiatedContext.features.includes('packages.community-discovery.v2')).toBe(communityEnabled)
       expect(await client.packages.list({ profile: 'local-dev' })).toEqual({ packages: [] })
       const login = await post('session', { token: 'local-lifecycle-test-token' })
       cookie = login.headers.get('set-cookie')?.split(';')[0] ?? ''

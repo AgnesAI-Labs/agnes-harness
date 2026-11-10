@@ -832,18 +832,22 @@ export function validatePackageAdminData(
   name: PackageAdminDataName,
   value: unknown,
 ): ValidationResult<unknown> {
-  return check(DATA_SCHEMAS[name], value)
+  return check(DATA_SCHEMAS[name], value, name === 'PackageCatalogPage' ? 8 * 1024 * 1024 : 1048576)
 }
 export function validatePackageAdminCall(
   name: PackageAdminMethodName,
   side: 'params' | 'result',
   value: unknown,
 ): ValidationResult<unknown> {
-  // Only the immutable client-asset read needs the 32 MiB raw resource allowance
-  // (base64 plus the JSON envelope). Other administrative payloads remain at 1 MiB.
+  // The index catalog has an 8 MiB derived-snapshot budget. Immutable client assets
+  // retain their raw resource allowance; other administrative payloads stay at 1 MiB.
   return check(
     PACKAGE_ADMIN_METHODS[name][side],
     value,
-    name === '_agnes/v1/clientModules.read' && side === 'result' ? 44739244 + 1024 : 1048576,
+    side === 'result' && name === '_agnes/v1/packages.catalog.list'
+      ? 8 * 1024 * 1024
+      : name === '_agnes/v1/clientModules.read' && side === 'result'
+        ? 44739244 + 1024
+        : 1048576,
   )
 }

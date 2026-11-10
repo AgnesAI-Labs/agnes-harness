@@ -995,7 +995,7 @@ it.each([false, true])(
 )
 
 it('merges indexed plugins into one gallery and reviews pinned versions without remote requests', async () => {
-  const community: NonNullable<PackageCatalogPage['community']> = {
+  const community: NonNullable<PackageCatalogPage['communityIndex']> = {
     state: 'ready',
     error: null,
     totalReported: 13,

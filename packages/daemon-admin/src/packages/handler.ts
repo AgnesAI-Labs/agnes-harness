@@ -450,7 +450,7 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
 class Service implements PackageAdminService {
   get features(): readonly string[] {
     return [
-      ...(this.options.community ? ['packages.community-discovery.v1'] : []),
+      ...(this.options.community ? ['packages.community-discovery.v2'] : []),
       ...(this.options.skillImport ? ['packages.skill-import.v1'] : []),
     ]
   }
@@ -1036,6 +1036,7 @@ class Service implements PackageAdminService {
     cursor?: string
     limit?: number
     includeCommunity?: boolean
+    communityVersion?: 2
   }) {
     await this.options.profileDirectory(params.profile)
     const read = this.options.catalog ? await this.options.catalog.read({ offline: true }) : { entries: [] }
@@ -1045,11 +1046,11 @@ class Service implements PackageAdminService {
     const limit = params.limit ?? 50
     const items = visible.slice(Math.max(0, start), Math.max(0, start) + limit)
     const last = items.at(-1)
-    const community = params.includeCommunity ? this.options.community?.(params.profile) : undefined
+    const community = params.communityVersion === 2 ? this.options.community?.(params.profile) : undefined
     return {
       items,
       nextCursor: last && start + items.length < visible.length ? `${last.id}@${last.version}` : null,
-      ...(community ? { community } : {}),
+      ...(community ? { communityIndex: community } : {}),
     }
   }
 

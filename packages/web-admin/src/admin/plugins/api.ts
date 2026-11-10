@@ -36,6 +36,10 @@ import type { AdminContext, AdminError, AdminSurfaceLinksResult } from './types.
 
 export const ADMIN_API_ROOT = '/admin/plugins/api'
 
+export type AdminCatalogPage = Omit<PackageCatalogPage, 'community'> & {
+  community?: PackageCatalogPage['communityIndex']
+}
+
 type FetchLike = typeof fetch
 const pendingContexts = new WeakMap<FetchLike, Promise<AdminContext>>()
 type AdminOverview = { context: AdminContext; inventory?: PackageListResult }
@@ -534,16 +538,24 @@ export class PluginAdminApi {
     return result
   }
 
-  async catalog(query?: string, cursor?: string): Promise<PackageCatalogPage> {
-    return this.#post('catalog/list', {
+  async catalog(query?: string, cursor?: string): Promise<AdminCatalogPage> {
+    const v2 = this.#context.features?.includes('packages.community-discovery.v2')
+    const result = await this.#post<PackageCatalogPage>('catalog/list', {
       profile: this.#context.profile,
       ...(query ? { query } : {}),
       ...(cursor ? { cursor } : {}),
       limit: 50,
-      ...(this.#context.features?.includes('packages.community-discovery.v1')
-        ? { includeCommunity: true }
-        : {}),
+      ...(v2
+        ? { communityVersion: 2 }
+        : this.#context.features?.includes('packages.community-discovery.v1')
+          ? { includeCommunity: true }
+          : {}),
     })
+    const { community, communityIndex, ...page } = result
+    return {
+      ...page,
+      ...(v2 ? (communityIndex ? { community: communityIndex } : {}) : community ? { community } : {}),
+    }
   }
 
   async catalogGet(id: string, version?: string): Promise<PackageCatalogDescriptor> {

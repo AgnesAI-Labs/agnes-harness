@@ -2,7 +2,7 @@ import { type PackageCatalogPage, validatePackageAdminData } from '@agnes/protoc
 
 /** Listing permits discovery only; it does not identify a publisher as official or authorize installation. */
 export const COMMUNITY_INDEX_URL = 'https://agnesai-labs.github.io/agh-plugin-market/index.json'
-type Item = NonNullable<PackageCatalogPage['community']>['items'][number]
+type Item = NonNullable<PackageCatalogPage['communityIndex']>['items'][number]
 
 function githubRepository(value: unknown): string {
   if (typeof value !== 'string') throw new Error('invalid repository URL')
@@ -81,7 +81,7 @@ export function indexedCommunityPlugins(value: unknown): Item[] {
     !validatePackageAdminData('PackageCatalogPage', {
       items: [],
       nextCursor: null,
-      community: {
+      communityIndex: {
         state: 'ready',
         lastSuccessAt: null,
         nextAttemptAt: null,

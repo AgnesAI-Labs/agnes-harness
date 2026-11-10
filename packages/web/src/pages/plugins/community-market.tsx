@@ -13,7 +13,7 @@ import {
 import { useEffect, useState } from 'react'
 import type { PluginView } from './admin-view.js'
 
-type Snapshot = NonNullable<PackageCatalogPage['community']>
+type Snapshot = NonNullable<PackageCatalogPage['communityIndex']>
 export type CommunityRepository = Snapshot['items'][number]
 type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => string
 const repositoryUrl = (row: CommunityRepository) =>
