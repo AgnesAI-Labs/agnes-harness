@@ -7,10 +7,15 @@ const MAX_MESSAGE_CHARS = 300
 /** Why a failed child's turn ended in error. `message` is clipped, single-line adapter text. */
 export type ChildFailure = { code: string; message: string }
 
-/** One line, no control or invisible characters, at most `max` characters. */
+/**
+ * One line, no control or invisible characters, at most `max` UTF-16 units. The cut drops a
+ * surrogate pair whole: a lone surrogate in the parent's context can fail its next model request.
+ */
 function plain(text: string, max: number): string {
   const line = text.replace(/[\p{C}\s]+/gu, ' ').trim()
-  return line.length <= max ? line : `${line.slice(0, max - 1)}…`
+  if (line.length <= max) return line
+  const last = line.charCodeAt(max - 2)
+  return `${line.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 2 : max - 1)}…`
 }
 
 /**

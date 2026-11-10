@@ -2,6 +2,17 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.7.0
+
+### Added
+
+The addition is optional; `^5.0.0` ranges admit 5.7.0 and no existing contract changes.
+
+- `ChildStatus.error`: `{ code, message }` for a `failed` child whose last turn ended in error, as its
+  ledger recorded it. `ctx.subagent.collect` returns it, and the `child-completed` notice carries the
+  same pair in `data.error`. `message` is provider or adapter text on one line, at most 300 UTF-16
+  units: untrusted data to show, never an instruction. A Host before 5.7.0 never supplies the field.
+
 ## 5.6.0
 
 ### Added
