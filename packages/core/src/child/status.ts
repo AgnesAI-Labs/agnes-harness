@@ -4,6 +4,7 @@ import type { SessionImpl } from '../step/session.js'
 import { childResultSequence } from './collected-result.js'
 import { childCompletionId } from './completion-notice.js'
 import { childExecutionReceipt } from './execution-receipt.js'
+import { lastChildFailure } from './failure.js'
 import { retiredCompletionIdentity } from './idle-retirement-fact.js'
 
 export function snapshotFromRecord(record: ChildTaskRecord): ChildStatus {
@@ -47,8 +48,10 @@ export async function snapshotFromLedger(parent: SessionImpl, record: ChildTaskR
       completionSeq === undefined
         ? undefined
         : ((await retiredCompletionIdentity(parent, record, completionSeq)) ?? base.completionId)
+    const error = record.state === 'failed' ? await lastChildFailure(parent, record) : undefined
     return {
       ...base,
+      ...(error ? { error } : {}),
       ...(completionId && completionSeq !== undefined ? { completionId, completionSeq } : {}),
       lastSeq: tail[0]?.seq ?? base.lastSeq,
       ...(text ? { text } : {}),
@@ -84,9 +87,11 @@ export async function snapshotFromLive(
     .join('')
   const retiredId =
     state === 'done' ? await retiredCompletionIdentity(parent, record, completionSeq) : undefined
+  const error = state === 'error' ? await lastChildFailure(parent, record) : undefined
   return {
     state: state === 'error' || state === 'cancelled' ? 'error' : state === 'done' ? 'done' : 'running',
     lastSeq,
+    ...(error ? { error } : {}),
     ...(idle ? { idle: true } : {}),
     ...(text ? { text } : {}),
     ...(terminal || idle

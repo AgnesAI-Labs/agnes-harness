@@ -100,6 +100,24 @@ function fail(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true }
 }
 
+/** The model argument Core refused before creating a child, said so the model can pick another. */
+function modelRefusal(error: unknown): ToolResult | undefined {
+  if (!(error instanceof CoreError) || error.code !== 'E_MODEL_UNKNOWN') return undefined
+  const { model, route, reason } = error.detail ?? {}
+  const named = typeof model === 'string' ? ` "${model}"` : ''
+  const text =
+    reason === 'no-credential' && typeof route === 'string'
+      ? `Model${named} cannot run a child here: its route ${route} has no credentials. Call list_subagent_models for the models that can.`
+      : `Unknown model${named} for a child. Call list_subagent_models for the models that can run one.`
+  return { ...fail(text), details: { code: error.code } }
+}
+
+/** `: CODE (message)` for a failed child whose ledger recorded why; empty otherwise. */
+function failureReason(status: { status: string; error?: { code: string; message: string } }): string {
+  if (status.status !== 'failed' || !status.error) return ''
+  return `: ${status.error.code}${status.error.message ? ` (${status.error.message})` : ''}`
+}
+
 function allowChild(ctx: ToolContext, model?: string): ToolResult | undefined {
   try {
     assertChildAgentAllowed(ctx.session.key, {
@@ -338,6 +356,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           isolation: worktree ? 'worktree' : 'shared',
         }
         if (worktree) details.worktree = worktree
+        if (collected?.status === 'failed' && collected.error) details.error = collected.error
         const followUp =
           ctx.tools.availability?.('subagent_list').status === 'offered'
             ? 'Use subagent_list for the handle if follow-up is needed'
@@ -349,12 +368,13 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
               text:
                 (sharedNonGit ? 'Child ran in the shared folder because it is not a git repository.\n' : '') +
                 (collected
-                  ? `Delegated task ${collected.status}.\n${collected.text ?? 'No findings returned.'}`
+                  ? `Delegated task ${collected.status}${failureReason(collected)}.\n${collected.text ?? 'No findings returned.'}`
                   : `Task delegated in the background. A completion notice will carry the findings. ${followUp}; do not repeat internal handles to the user.`),
             },
           ],
           details,
           ...(spawned.role ? { structured: details } : {}),
+          ...(collected?.status === 'failed' ? { isError: true } : {}),
         }
       } catch (error) {
         if (childKey) await ctx.subagent.cancel(childKey)
@@ -362,6 +382,9 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         // Core's admission limit refuses creation; failures after a child handle remain uncertain.
         if (!childKey && error instanceof CoreError && error.code === 'E_CHILD_LIMIT')
           return { ...fail(error.message), details: { code: error.code } }
+        // Core refuses an unusable model before it creates anything.
+        const refusedModel = childKey ? undefined : modelRefusal(error)
+        if (refusedModel) return refusedModel
         if (args.role && error instanceof Error) return fail(error.message)
         throw error
       } finally {
@@ -452,6 +475,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
       const details: Record<string, JsonValue> = {
         childKey: result.childKey,
         status: result.status,
+        ...(result.status === 'failed' && result.error ? { error: result.error } : {}),
         ...(result.credits === undefined ? {} : { credits: result.credits }),
       }
 
@@ -461,9 +485,15 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
         if (state) prune(runtime, sessionKey, state)
       }
 
+      const reason = failureReason(result)
+      const status = `child ${args.childKey}: ${result.status}`
+      const text = reason
+        ? [`${status}${reason}.`, result.text].filter(Boolean).join('\n')
+        : (result.text ?? status)
       return {
-        content: [{ type: 'text', text: result.text ?? `child ${args.childKey}: ${result.status}` }],
+        content: [{ type: 'text', text }],
         details,
+        ...(result.status === 'failed' ? { isError: true } : {}),
       }
     },
   }

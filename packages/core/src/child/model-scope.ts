@@ -1,15 +1,23 @@
 import type { PresetView } from '@agnes/core-common/step/preset'
+import { CoreError } from '@agnes/core-common/types'
 import type { ModelRecord, Provider } from '@agnes/protocol'
 
-/** Whether a child agent may choose this model. */
-export type ChildModelScope = (model: Pick<ModelRecord, 'route' | 'id'>) => boolean
+/** Why the Host keeps a usable-looking model from child agents: its route has no credentials. */
+export type ChildModelExclusion = 'no-credential'
+
+/**
+ * Whether a child agent may choose this model. `true` allows it. `false` excludes it without a
+ * reason; a reason excludes it too, and the refusal at child creation repeats it.
+ */
+export type ChildModelScope = (model: Pick<ModelRecord, 'route' | 'id'>) => boolean | ChildModelExclusion
 
 const scopes = new WeakMap<Provider, ChildModelScope>()
 
 /**
  * The Host limits which of a provider's models a child agent can list and start on, for example the
- * models of an adapter that takes no conversation. Only child choice is limited: the provider still
- * publishes every model, so a side call can target any of them. `undefined` removes the limit.
+ * models of an adapter that takes no conversation, or of a route without credentials. Only child
+ * choice is limited: the provider still publishes every model, so a side call can target any of
+ * them. `undefined` removes the limit.
  */
 export function setChildModelScope(provider: Provider, scope: ChildModelScope | undefined): void {
   if (scope) scopes.set(provider, scope)
@@ -20,7 +28,7 @@ export function setChildModelScope(provider: Provider, scope: ChildModelScope | 
 export function childModels(provider: Provider): ModelRecord[] {
   const scope = scopes.get(provider)
   const models = provider.models()
-  return scope ? models.filter((model) => scope(model)) : models
+  return scope ? models.filter((model) => scope(model) === true) : models
 }
 
 /**
@@ -39,9 +47,34 @@ export function resolveChildModel(
     return undefined
   }
   const found = pick(models, preset, selector)
-  return found && (scopes.get(provider)?.({ route: found.route, id: found.model }) ?? true)
+  return found && (scopes.get(provider)?.({ route: found.route, id: found.model }) ?? true) === true
     ? found
     : undefined
+}
+
+/**
+ * The refusal for a `model` argument that `resolveChildModel` did not resolve. When the Host gave a
+ * reason for excluding the model the argument names among everything the provider publishes, the
+ * refusal repeats it; a name nothing publishes, or one excluded without a reason, is only unknown.
+ */
+export function unresolvedChildModel(provider: Provider, preset: PresetView, selector: string): CoreError {
+  const scope = scopes.get(provider)
+  let found: { route: string; model: string } | undefined
+  try {
+    found = scope && pick(provider.models(), preset, selector)
+  } catch {
+    found = undefined
+  }
+  const reason = found && scope?.({ route: found.route, id: found.model })
+  if (!found || typeof reason !== 'string')
+    return new CoreError('E_MODEL_UNKNOWN', `default child factory cannot resolve model ${selector}`, {
+      model: selector,
+    })
+  return new CoreError(
+    'E_MODEL_UNKNOWN',
+    `model ${selector} is not available to child agents: route ${found.route} has no credentials`,
+    { model: selector, route: found.route, reason },
+  )
 }
 
 function pick(

@@ -216,7 +216,7 @@ export {
   retireIdleChildren,
 } from './child/idle-retirement.js'
 export { bindChildAgentSession } from './child/loop-port.js'
-export { type ChildModelScope, setChildModelScope } from './child/model-scope.js'
+export { type ChildModelExclusion, type ChildModelScope, setChildModelScope } from './child/model-scope.js'
 export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
 export {
   IN_PROCESS_CHILD_CAPABILITIES,

@@ -25,7 +25,7 @@ import { cancelOpenAttempt, generationDepthOf, reportFailedCreation, rootTaskIdO
 import { applyHumanChildControl } from './human-control.js'
 import { bindIdleChild, noteChildIdle, withChildAdmission } from './idle-retirement.js'
 import { bindChildLifecycle, childLifecycle } from './lifecycle.js'
-import { childModels, resolveChildModel } from './model-scope.js'
+import { childModels, resolveChildModel, unresolvedChildModel } from './model-scope.js'
 import { openDelegatedSession } from './open-session.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
 import { recoverRoleChildren, resumeRoleChild } from './resume-role.js'
@@ -162,9 +162,7 @@ export class KernelChildren implements ChildrenFactory {
       opts.forkAt ?? (kind === 'fork' ? parent.op()?.meta.triggerSeq : undefined) ?? parent.lastSeq
     const modelTarget = opts.model === undefined ? undefined : this.resolveModel(parent, opts.model)
     if (opts.model !== undefined && modelTarget === undefined)
-      throw new CoreError('E_MODEL_UNKNOWN', `default child factory cannot resolve model ${opts.model}`, {
-        model: opts.model,
-      })
+      throw unresolvedChildModel(parent.d.provider, parent.preset, opts.model)
 
     const rootTaskId = rootTaskIdOf(parent)
     const treeCap = capToMicrocredits(parent.preset.treeBudgetCredits ?? DEFAULT_TREE_BUDGET_CREDITS)

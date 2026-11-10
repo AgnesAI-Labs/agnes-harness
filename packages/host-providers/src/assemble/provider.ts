@@ -80,6 +80,7 @@ export function unresolvedProviderAssembly(): Awaited<ReturnType<typeof buildPro
     },
     contractStore: new NullContractStore(),
     preconfiguredRoutes: [],
+    uncredentialedRoutes: [],
     dispose: async () => undefined,
   }
 }
@@ -123,6 +124,13 @@ export async function buildProvider(
   contractStore: ContractStore
   /** Built-in API-key routes actually fitted during this assembly. */
   preconfiguredRoutes: readonly string[]
+  /**
+   * The built-in API-key routes fitted here without a usable credential. They stay published so a
+   * client can configure them, and answer AUTH if selected. Profile routes are never named: one
+   * without a credential stops assembly, a keyless one needs none, and an OAuth one authenticates
+   * per request.
+   */
+  uncredentialedRoutes: readonly string[]
   dispose(): Promise<void>
 }> {
   // Read before the test-provider escape below, so an unusable rate is refused whatever serves the
@@ -158,6 +166,7 @@ export async function buildProvider(
       provider: withSetupErrors(() => factory(profile, built)),
       contractStore: built.contractStore,
       preconfiguredRoutes: [],
+      uncredentialedRoutes: [],
       dispose: async () => undefined,
     }
   const ownedRoot = deps.modelAdapters ? undefined : new Context()
@@ -321,12 +330,16 @@ export async function buildProvider(
       }),
     )
     verifyRoutes(routes, provider.registry)
+    const preconfiguredRoutes = Object.freeze(
+      apiKeyConfigs.flatMap((config) => config.routes.map((route) => route.route)),
+    )
     return {
       provider: Object.assign(provider, { audio: PROVIDER_AUDIO_FACTS }),
       contractStore: built.contractStore,
       dispose,
-      preconfiguredRoutes: Object.freeze(
-        apiKeyConfigs.flatMap((config) => config.routes.map((route) => route.route)),
+      preconfiguredRoutes,
+      uncredentialedRoutes: Object.freeze(
+        provider.unboundRoutes.filter((route) => preconfiguredRoutes.includes(route)),
       ),
     }
   } catch (error) {

@@ -105,6 +105,35 @@ describe('models a child agent can choose', () => {
     }
   })
 
+  it('says the route has no credentials when the host excluded the model for that reason', async () => {
+    const { kernel, parent, provider } = await parentSession()
+    try {
+      setChildModelScope(provider, (model) => (model.route === 'mixed' ? 'no-credential' : true))
+      expect((await parent.d.children.models?.())?.map((model) => model.selector)).toEqual([
+        'gw/chat-1',
+        'jev/jev-1',
+      ])
+      for (const selector of ['mixed/mixed-1', 'mixed-1']) {
+        const refusal = await start(parent, selector).catch((error: unknown) => error)
+        expect(refusal).toMatchObject({
+          code: 'E_MODEL_UNKNOWN',
+          detail: { model: selector, route: 'mixed', reason: 'no-credential' },
+        })
+        expect((refusal as Error).message).toContain(`${selector}`)
+        expect((refusal as Error).message).toContain('route mixed has no credentials')
+      }
+      // No child record was written for the refused starts.
+      expect(await parent.d.children.list?.()).toEqual([])
+      // A name nothing publishes keeps the plain refusal.
+      await expect(start(parent, 'nowhere-1')).rejects.toMatchObject({
+        code: 'E_MODEL_UNKNOWN',
+        detail: { model: 'nowhere-1' },
+      })
+    } finally {
+      await kernel.close()
+    }
+  })
+
   it('does not change what the provider publishes, so a side call can still target the model', async () => {
     const { kernel, provider } = await parentSession()
     try {

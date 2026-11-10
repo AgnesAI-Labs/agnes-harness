@@ -6,6 +6,7 @@ import type { SystemInput } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { childResultCollected, childResultSequence } from './collected-result.js'
+import { type ChildFailure, childFailure, failureSuffix } from './failure.js'
 import { retiredCompletionIdentity } from './idle-retirement-fact.js'
 import { recordedChildRole } from './roles.js'
 
@@ -32,7 +33,7 @@ function clip(text: string, max: number): string {
 async function childOutcome(
   parent: SessionImpl,
   record: ChildTaskRecord,
-): Promise<{ text: string; endReason?: string; endSeq: number }> {
+): Promise<{ text: string; endReason?: string; endSeq: number; error?: ChildFailure }> {
   const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
   const [message, end] = await Promise.all([
     parent.d.log.storage.scan(record.childKey, {
@@ -44,6 +45,7 @@ async function childOutcome(
     parent.d.log.storage.scan(record.childKey, { type: 'turn/end', fromSeq, order: 'desc', limit: 1 }),
   ])
   const endReason = (end[0]?.data as { reason?: string } | undefined)?.reason
+  const error = childFailure(end[0]?.data)
   const content = (message[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
     ?.content
   return {
@@ -53,6 +55,7 @@ async function childOutcome(
       .map((block) => block.text)
       .join(''),
     ...(endReason ? { endReason } : {}),
+    ...(error ? { error } : {}),
   }
 }
 
@@ -72,8 +75,10 @@ export type ChildCompletionOptions = {
 }
 
 /**
- * `data` is `{ childKey, status, continuable?, result?, truncated?, credits? }`. `status` is the child's
+ * `data` is `{ childKey, status, continuable?, error?, result?, truncated?, credits? }`. `status` is the child's
  * durable terminal state, or `budget_stopped` when it failed because its turn ended on a budget or step cap.
+ * `error` is `{ code, message }` of a `failed` child whose last turn ended in error; the message is
+ * clipped adapter text, and the notice is enqueued untrusted.
  */
 export async function childCompletionInput(
   parent: SessionImpl,
@@ -81,11 +86,12 @@ export async function childCompletionInput(
   outcome: ChildOutcome,
   options: ChildCompletionOptions = {},
 ): Promise<{ system: SystemInput; commandId: string; resultSeq: number }> {
-  const { text, endReason, endSeq } = await childOutcome(parent, record)
+  const { text, endReason, endSeq, error: turnError } = await childOutcome(parent, record)
   const status =
     outcome === 'failed' && (endReason === 'budget' || endReason === 'max_steps')
       ? ('budget_stopped' as const)
       : outcome
+  const error = status === 'failed' ? turnError : undefined
   const role = await recordedChildRole(parent, record.childKey)
   const label = clip(
     role
@@ -98,7 +104,7 @@ export async function childCompletionInput(
   const shown = clip(result, MAX_SUMMARY_RESULT_CHARS)
   const lead = options.continuable
     ? `Background child ${record.childKey} (${label}) finished its turn and is idle; it still accepts messages.`
-    : `Background child ${record.childKey} (${label}) ${status.replace('_', ' ')}.`
+    : `Background child ${record.childKey} (${label}) ${status.replace('_', ' ')}${failureSuffix(error)}.`
   const tail =
     result.length > MAX_SUMMARY_RESULT_CHARS
       ? ' Call subagent_collect with its childKey for the full output.'
@@ -111,6 +117,7 @@ export async function childCompletionInput(
       ...(role ? { role } : {}),
       status,
       ...(options.continuable ? { continuable: true } : {}),
+      ...(error ? { error } : {}),
       ...(result ? { result: clip(result, MAX_RESULT_CHARS), truncated } : {}),
       ...(options.credits === undefined ? {} : { credits: options.credits }),
     },

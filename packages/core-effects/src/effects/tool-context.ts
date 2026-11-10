@@ -30,6 +30,8 @@ export type ChildStatus = {
   state: 'running' | 'done' | 'error'
   lastSeq: Seq
   text?: string
+  /** Why a failed child's last turn ended in error; the message is clipped adapter text. */
+  error?: NonNullable<ChildResult['error']>
   idle?: boolean
   /** Backend-only identity of the completed result returned by this snapshot. */
   completionId?: string
@@ -461,6 +463,7 @@ export function buildToolContext(
                     ? 'failed'
                     : 'running') as 'running' | 'idle' | 'completed' | 'failed' | 'cancelled',
               ...(status.text !== undefined ? { text: status.text } : {}),
+              ...(status.state === 'error' && !status.idle && status.error ? { error: status.error } : {}),
               ...(status.receipt === undefined ? {} : { receipt: status.receipt }),
             }
           }
@@ -476,6 +479,7 @@ export function buildToolContext(
               | 'failed'
               | 'cancelled',
             ...(snap.text !== undefined ? { text: snap.text } : {}),
+            ...(snap.state === 'error' && snap.error ? { error: snap.error } : {}),
             ...(snap.receipt === undefined ? {} : { receipt: snap.receipt }),
           }
         }
