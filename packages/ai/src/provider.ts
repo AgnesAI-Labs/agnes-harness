@@ -388,12 +388,22 @@ export function createProvider(opts: {
    * credential remains an assembly failure; an optional route fails closed with AUTH on request.
    */
   optionalCredentialRefs?: ReadonlySet<string>
-}): Provider & { registry: Registry } {
+}): Provider & {
+  registry: Registry
+  /**
+   * Routes whose optional credential reference did not resolve at assembly. A route that
+   * authenticates per request through its adapter is listed too when its reference is optional:
+   * this says what was not bound here, not what cannot authenticate.
+   */
+  unboundRoutes: readonly string[]
+} {
   const registry = buildRegistry(opts.adapters)
-  resolveCredentials(
-    opts.adapters,
-    opts.secrets,
-    opts.optionalCredentialRefs === undefined ? {} : { optionalRefs: opts.optionalCredentialRefs },
+  const unboundRoutes = Object.freeze(
+    resolveCredentials(
+      opts.adapters,
+      opts.secrets,
+      opts.optionalCredentialRefs === undefined ? {} : { optionalRefs: opts.optionalCredentialRefs },
+    ),
   )
   registry.seal()
   // With no price table the factor is 1, which makes the ledger's credits column a column of
@@ -415,8 +425,9 @@ export function createProvider(opts: {
     },
   }
   const anyCounts = opts.adapters.some((a) => typeof a.count === 'function')
-  const provider: Provider & { registry: Registry } = {
+  const provider: Provider & { registry: Registry; unboundRoutes: readonly string[] } = {
     registry,
+    unboundRoutes,
     // Guarded on the way out, not inside runInference: the guard is a property of what this facade
     // promises a caller, and tests that build the deps by hand still reach the unguarded stream.
     infer: (req, o) => guardSequence(runInference(deps, req, o)),

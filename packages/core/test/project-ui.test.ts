@@ -1595,11 +1595,30 @@ it('reconstructs role attribution from persisted delegation results', async () =
   expect(
     kind((await projectUI(legacy, { sessionKey: 'roles' })).nodes, 'tool')[0]?.delegatedTask,
   ).toMatchObject({ childKey: 'child', status: 'running' })
+  // A waited role child that failed is an error result, and it did create a child: the card stays.
   const failed = structuredClone(events)
-  ;(failed[1]!.data as { isError: boolean }).isError = true
-  expect(
-    kind((await projectUI(failed, { sessionKey: 'roles' })).nodes, 'tool')[0]?.delegatedRole,
-  ).toBeUndefined()
+  Object.assign(failed[1]!.data as object, {
+    isError: true,
+    structured: { childKey: 'child', role: delegatedRole, task: 'Read the evidence', status: 'failed' },
+  })
+  const failedNode = kind((await projectUI(failed, { sessionKey: 'roles' })).nodes, 'tool')[0]
+  expect(failedNode).toMatchObject({ status: 'failed', delegatedRole })
+  expect(failedNode?.delegatedTask).toEqual({
+    childKey: 'child',
+    task: 'Read the evidence',
+    status: 'failed',
+  })
+  // A spawn refused before a child existed names no child, with or without structured data: no card.
+  for (const structured of [undefined, { role: delegatedRole }, { childKey: '', role: delegatedRole }]) {
+    const refused = structuredClone(events)
+    const data = refused[1]!.data as { isError: boolean; structured?: unknown }
+    data.isError = true
+    if (structured) data.structured = structured
+    else delete data.structured
+    const node = kind((await projectUI(refused, { sessionKey: 'roles' })).nodes, 'tool')[0]
+    expect(node?.delegatedRole).toBeUndefined()
+    expect(node?.delegatedTask).toBeUndefined()
+  }
 })
 
 describe('approval card facts', () => {

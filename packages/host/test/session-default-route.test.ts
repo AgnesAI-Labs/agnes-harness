@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { closeSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fakeModel, ScriptedProvider } from '@agnes/ai/testkit'
 import type { RouteDecl } from '@agnes/protocol'
+import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, expect, it } from 'vitest'
 import { createTestHost } from '../testkit/index.js'
 
@@ -79,6 +80,56 @@ it('leaves the payload-only route out of the models a child agent can choose, bu
     expect(choices).toEqual(['gw/chat-1'])
     // Side calls resolve their target against the whole catalog.
     expect(session.d.provider.models().map((model) => model.route)).toContain('jev')
+  } finally {
+    await host.close()
+  }
+})
+
+it('offers a child only the built-in routes that have credentials, and offers one again after its key is added', async () => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'agnes-default-route-'))
+  dirs.push(dataDir)
+  const secrets = join(dataDir, 'credentials')
+  createPrivateDirectorySync(secrets)
+  // No `provider`: this is the production assembly, which fits every built-in API-key route.
+  const { host } = await createTestHost({
+    dataDir,
+    profileInputs: {
+      user: {
+        name: 'local-dev',
+        provider: { package: '@agnes/ai', routes: [chatRoute] },
+        adapters: { secrets: { kind: 'file', path: secrets } },
+      },
+    },
+  })
+  try {
+    const session = await host.createSession({ cwd: dataDir, key: 'child-credentials' })
+    const offered = async () =>
+      [...new Set((await session.d.children.models?.())?.map((model) => model.route))].sort()
+    const start = (model: string) =>
+      session.d.children.create({ parent: session.key, cwd: dataDir, input: 'task', model })
+    const builtin = session.d.provider.models().find((model) => model.route === 'anthropic')
+    if (!builtin) throw new Error('fixture built-in route missing')
+    // The profile's own route stays; no built-in route has a key yet.
+    expect(await offered()).toEqual(['gw'])
+    // The list and the start agree: the unlisted model is refused before a child exists.
+    await expect(start(`anthropic/${builtin.id}`)).rejects.toMatchObject({
+      code: 'E_MODEL_UNKNOWN',
+      detail: { route: 'anthropic', reason: 'no-credential' },
+    })
+    expect(await session.d.children.list?.()).toEqual([])
+
+    // The key arrives after start-up. The product republishes the model profile when configuration
+    // changes; that rebuild reads the credentials again.
+    createPrivateDirectorySync(join(secrets, 'anthropic'))
+    const file = createPrivateFileSync(join(secrets, 'anthropic', 'default'))
+    try {
+      writeFileSync(file, 'synthetic-anthropic-key')
+    } finally {
+      closeSync(file)
+    }
+    await host.applyModelProfile(structuredClone(host.profile))
+    expect(await offered()).toEqual(['anthropic', 'gw'])
+    expect((await start(`anthropic/${builtin.id}`)).key).toBeDefined()
   } finally {
     await host.close()
   }

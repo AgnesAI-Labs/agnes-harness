@@ -84,6 +84,7 @@ export async function assembleProvider(
     provider,
     contractStore,
     preconfiguredRoutes,
+    uncredentialedRoutes,
     dispose: disposeProvider,
   } = routes
     ? await buildProvider(ctx.profile, routes, {
@@ -117,6 +118,7 @@ export async function assembleProvider(
     models.provider,
     () => pluginTree.root.modelAdapters.catalog(),
     () => ctx.profile,
+    () => uncredentialedRoutes,
   )
   const applyModelProfile = async (next: ResolvedProfile): Promise<void> => {
     next = applyProviderSelections(next)
@@ -166,6 +168,7 @@ export async function assembleProvider(
     models.publish({ provider: built.provider, contractForModel: nextContracts, dispose: built.dispose })
     provider = built.provider
     preconfiguredRoutes = built.preconfiguredRoutes
+    uncredentialedRoutes = built.uncredentialedRoutes
     routes = nextRoutes
     providerFingerprint = built.provider.registry?.fingerprint() ?? null
     ctx.profile = next

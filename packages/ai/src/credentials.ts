@@ -60,7 +60,9 @@ export function resolveCredentials(
   adapters: WireAdapter[],
   secrets: (ref: string) => string,
   options: CredentialResolutionOptions = {},
-): void {
+): string[] {
+  // The routes whose optional credential did not resolve: published, and answering AUTH if selected.
+  const unbound: string[] = []
   for (const adapter of adapters) {
     for (const decl of adapter.routes()) {
       if (!decl.credentialRef) continue
@@ -74,16 +76,23 @@ export function resolveCredentials(
       try {
         value = secrets(decl.credentialRef)
       } catch (cause) {
-        if (options.optionalRefs?.has(decl.credentialRef)) continue
+        if (options.optionalRefs?.has(decl.credentialRef)) {
+          unbound.push(decl.route)
+          continue
+        }
         throw failure(cause)
       }
       // Empty, whitespace-only and invisible-only are the same outcome: nothing that can
       // authenticate a request.
       if (!isUsableCredential(value)) {
-        if (options.optionalRefs?.has(decl.credentialRef)) continue
+        if (options.optionalRefs?.has(decl.credentialRef)) {
+          unbound.push(decl.route)
+          continue
+        }
         throw failure()
       }
       adapter.bindCredential(decl.route, value)
     }
   }
+  return unbound
 }
