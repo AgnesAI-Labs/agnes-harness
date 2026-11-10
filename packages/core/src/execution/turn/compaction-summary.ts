@@ -15,6 +15,7 @@ import { applyBeforeRequestPatches } from '../../request/transforms.js'
 import { resolvedModelRecord } from '../../step/model-tools.js'
 import type { SessionImpl } from '../../step/session.js'
 import { assembleRequestPrefix, estimateTokens, resolveModel, wireInputUpperBound } from './inference.js'
+import { surfaceProducers } from './message-producers.js'
 
 export type CompactionPlan = Exclude<HookReturnMap['before_compact'], null>
 export type BeforeCompactPayload = HookPayloadMap['before_compact']
@@ -254,6 +255,7 @@ export async function summaryRequest(
     surface: segment.nodes,
     disclosed: [],
     toolCalls: calls,
+    producers: await surfaceProducers(s, segment.nodes),
     model: {
       slot: 'compaction',
       ...target,

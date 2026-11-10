@@ -2,6 +2,23 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.8.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.8.0 and no existing contract changes. A loop that
+ignores them behaves as before.
+
+- A thinking block may carry `signature` (a non-empty string): the provider's marker for where that
+  reasoning goes back on a later request (for example `reasoning_content`). It can appear on stored
+  assistant content (`AssistantMessage['content']`, so in `LoopToolCallOptions.announce` and
+  `events.assistant`) and on the assistant messages of a request body (`RequestBody['messages']`).
+- A model stream's `done` event (`InferenceEvent`) may carry `thinkingSignature`, the signature of the
+  message's first signed thinking block.
+- Core records a signature only from openai-completions streams and sends it back only to the route
+  and model that produced it; a signature in a loop's own `messages` is not sent. A loop passes it
+  through as it is and never builds one.
+
 ## 5.7.0
 
 ### Added

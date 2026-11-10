@@ -51,6 +51,7 @@
   "getSubscriptionProvider",
   "guardSequence",
   "isChatModelId",
+  "knownModel",
   "loadConformanceFixtures",
   "loadContractStore",
   "loadDecodeFixtures",
