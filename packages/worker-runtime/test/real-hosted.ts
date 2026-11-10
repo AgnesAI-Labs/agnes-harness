@@ -21,6 +21,7 @@ export async function realHosted(
     wrapHost?: (host: Host) => Host
     idleCloseMs?: number
     clock?: () => number
+    onTurnEnd?: () => void
   } = {},
 ) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-hosted-real-'))
@@ -56,6 +57,7 @@ export async function realHosted(
     workspaceRoot: root,
     ...(o.idleCloseMs !== undefined ? { idleCloseMs: o.idleCloseMs } : {}),
     ...(o.clock ? { clock: o.clock } : {}),
+    ...(o.onTurnEnd ? { onTurnEnd: o.onTurnEnd } : {}),
   })
   const binding = (sessionKey: string) => ({
     version: 1,

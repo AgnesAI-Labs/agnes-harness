@@ -49,6 +49,8 @@ A tool plugin injects `tools`; Loop and adapter plugins inject `providers`. Use 
 
 Bind registrations and long-lived resources to the plugin fiber lifecycle. Bind per-call I/O to the supplied signal and release resources in `finally`. Update tool metadata for actual side effects, approvals and replay behavior. A plugin tool that does not state `replay` is `never` rerun after a crash; `replay: 'safe'` is accepted only from a read-only tool, and `idempotent` is the choice for a write that tolerates a rerun.
 
+Backend plugin code runs inside AGH's Node processes. They start with the Node flag `--max-semi-space-size=2`, so `process.execArgv` contains it. Do not pass `process.execArgv` to `new Worker()`: Node rejects the V8 flag there with `ERR_WORKER_INVALID_EXEC_ARGV`. Leave `execArgv` unset; the thread uses the process's settings. `child_process.fork()` passes `process.execArgv` to the child by default; give it an explicit `execArgv` if the child should start without the flag.
+
 ## Runtime adoption
 
 A Host must supply the corresponding registration service before a loop/adapter plugin can load. Installing a package differs from selecting its loop or adapter for a session. Existing sessions and restart requirements follow the Host's integration and generation support.

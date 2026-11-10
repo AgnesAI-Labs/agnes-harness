@@ -9,6 +9,7 @@ import * as host from '@agnes/host'
 import type { Client, CreateClientOptions } from '@agnes/sdk'
 import * as sdk from '@agnes/sdk'
 import { createPrivateFileSync } from '@agnes/system-node'
+import { NODE_MEMORY_FLAGS } from '@agnes/system-node/node-flags'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as sources from '../../package-manager/src/sources.js'
 import { ensureLocalBackend as ensureWebBackend } from '../launch/backend.js'
@@ -415,6 +416,23 @@ describe('ensureLocalBackend', () => {
     })
     expect(spawned.mock.calls[0]?.[0].argv).toContain('http://127.0.0.1:4177')
     expect(daemon.readDaemonWebCredential).not.toHaveBeenCalled()
+  })
+
+  it('starts the daemon with the Node memory flags ahead of its entry', async () => {
+    const spawned = vi.fn((_input: SpawnDaemonInput) => {
+      vi.mocked(daemon.readDaemonDiscovery).mockResolvedValue(descriptor())
+      return fakeChild()
+    })
+    await ensureLocalBackend({
+      resources: TEST_RESOURCES,
+      spawnDaemon: spawned,
+      createClientImpl: () => fakeClient(),
+    })
+    const argv = spawned.mock.calls[0]?.[0].argv ?? []
+    expect(argv.slice(0, NODE_MEMORY_FLAGS.length + 1)).toEqual([
+      ...NODE_MEMORY_FLAGS,
+      TEST_RESOURCES.daemonEntry,
+    ])
   })
 
   it

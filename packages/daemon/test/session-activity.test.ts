@@ -12,7 +12,7 @@ const decision = (id: string, sessionId: string, category?: 'permission', result
     consumption: null,
   })
 
-function setup(owners: Record<string, string> = { a: 'me', b: 'me', c: 'someone' }) {
+function setup(owners: Record<string, string> = { a: 'me', b: 'me', c: 'someone' }, onIdle?: () => void) {
   const notices: Array<{ sessionId?: string; detail: Record<string, unknown> }> = []
   const activity = createSessionActivity({
     ownership: {
@@ -23,6 +23,7 @@ function setup(owners: Record<string, string> = { a: 'me', b: 'me', c: 'someone'
         notices.push(o)) as never,
     },
     profile: 'local-dev',
+    ...(onIdle ? { onIdle } : {}),
   })
   return { activity, notices }
 }
@@ -77,4 +78,22 @@ it('rebuilds replayed history silently and lists only the running and waiting se
   ])
   activity.observe('a', event('turn/end', { reason: 'error' }))
   expect(activity.list('me').items).toEqual([{ sessionId: 'b', state: 'waiting', waiting: 'question' }])
+})
+
+it('reports every live session that goes idle, owned or not, but not replayed history', () => {
+  let idle = 0
+  const { activity } = setup(undefined, () => idle++)
+  activity.observe('a', event('turn/start'))
+  activity.observe('a', decision('d1', 'a', 'permission'))
+  activity.observe('a', event('turn/end', { reason: 'parked' }))
+  expect(idle).toBe(0)
+  activity.observe('a', decision('d1', 'a', 'permission', { answer: 'allow' }))
+  expect(idle).toBe(1)
+  activity.observe('z', event('turn/start'))
+  activity.observe('z', event('turn/end', { reason: 'completed' }))
+  expect(idle).toBe(2)
+  activity.observe('b', event('turn/start'), false)
+  activity.observe('b', event('turn/end', { reason: 'completed' }), false)
+  activity.observe('c', event('turn/end', { reason: 'completed' }))
+  expect(idle).toBe(2)
 })

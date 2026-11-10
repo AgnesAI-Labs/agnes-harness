@@ -23,7 +23,7 @@ import {
   resourceWorkerEnvironment,
   resourceWorkerObservation,
 } from '@agnes/resource-control-daemon'
-import { windowsProcessStartTimeSync } from '@agnes/system-node'
+import { windowsProcessStartTimeSync, withNodeMemoryFlags } from '@agnes/system-node'
 import { bestEffort } from './best-effort.js'
 import type { DaemonConfig } from './config.js'
 import type { RequestFrame } from './frames.js'
@@ -527,7 +527,7 @@ export class WorkerPool {
         if (supervisorStartId === null) throw new Error('Supervisor process identity unavailable')
         child = (this.o.spawn ?? nodeSpawn)(
           this.o.execPath ?? process.execPath,
-          [...(this.o.execArgv ?? []), this.o.workerEntry],
+          [...withNodeMemoryFlags(this.o.execArgv), this.o.workerEntry],
           {
             env: {
               ...process.env,
