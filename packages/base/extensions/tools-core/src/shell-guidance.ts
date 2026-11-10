@@ -28,6 +28,17 @@ export function shellGuidance(ctx: ToolContext, command: string, stopped = 0): s
   return notes
 }
 
+/**
+ * apt's own error line for a package name it does not know. On a machine whose package lists were
+ * never downloaded (a fresh container image ships without them) every name is unknown, so the note
+ * names the step that usually fixes it.
+ */
+export function packageListsNote(stdout: string, stderr: string): string | undefined {
+  return /^E: Unable to locate package /m.test(`${stdout}\n${stderr}`)
+    ? '[apt found no such package; a fresh container often has no package lists yet. Run `apt-get update`, then retry the install.]'
+    : undefined
+}
+
 export function timeoutGuidance(ctx: ToolContext, command: string, cwd: string, empty: boolean): string {
   const key = JSON.stringify([ctx.session.key, ctx.session.lane, cwd, command])
   const count = (timeouts.get(key) ?? 0) + 1

@@ -3,6 +3,10 @@ import { defineTool } from '@agnes/plugin-runtime'
 import { Type } from '@sinclair/typebox'
 import { guardedResult } from '../../tools-core/src/guards/output.js'
 
+// Only this tool is unavailable; the model may still reach a search page through web_fetch.
+const SEARCH_UNAVAILABLE =
+  "WEB_SEARCH_UNAVAILABLE: no search provider/key is configured on this host, so this tool cannot search. A search results page, or a site's own search or API URL, can still be fetched with web_fetch."
+
 export function createWebSearchTool(provider?: SearchProvider) {
   return defineTool({
     name: 'web_search',
@@ -25,12 +29,7 @@ export function createWebSearchTool(provider?: SearchProvider) {
     async execute(args, ctx) {
       if (!provider)
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'WEB_SEARCH_UNAVAILABLE: no search provider/key is configured on this host. Supply a URL for web_fetch or configure host search.',
-            },
-          ],
+          content: [{ type: 'text' as const, text: SEARCH_UNAVAILABLE }],
           isError: true,
           details: { code: 'WEB_SEARCH_UNAVAILABLE' },
         }
@@ -73,8 +72,7 @@ export function createWebSearchTool(provider?: SearchProvider) {
 }
 
 const SEARCH_FAILURES: Readonly<Record<string, string>> = {
-  SEARCH_NOT_CONFIGURED:
-    'WEB_SEARCH_UNAVAILABLE: no search provider/key is configured on this host. Supply a URL for web_fetch or configure host search.',
+  SEARCH_NOT_CONFIGURED: SEARCH_UNAVAILABLE,
   SEARCH_RATE_LIMITED: 'WEB_SEARCH_RATE_LIMITED: the search provider rate limit was reached. Retry later.',
   SEARCH_TIMEOUT: 'WEB_SEARCH_TIMEOUT: the search provider timed out.',
   SEARCH_AUTH_FAILED:

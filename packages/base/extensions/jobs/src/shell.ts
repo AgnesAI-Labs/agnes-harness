@@ -8,6 +8,7 @@ import {
   deadlineYield,
   FOREGROUND_WAIT_MAX_MS,
   jobToolsHint,
+  packageListsNote,
   shellGuidance,
   signalNote,
   timeoutGuidance,
@@ -92,6 +93,7 @@ export async function runShellJob(
       job.status === 'running'
         ? `\n[processes this command started in the background (with & or nohup) keep running as background job ${id}; ${hint}]`
         : ''
+    const packageLists = packageListsNote(job.stdout, job.stderr)
     return {
       structured: { jobId: id, status: job.status },
       ...(await guardedCommandResult(
@@ -100,7 +102,7 @@ export async function runShellJob(
           .map((note) => `${note}\n`)
           .join(
             '',
-          )}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}${ended}${kept}${code === 0 ? '' : '\nCommand failed; inspect job_output and current state, correct the command/arguments before retrying.'}\n[exit ${code}]${job.truncated ? ' [capture limit reached]' : ''}`,
+          )}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}${packageLists ? `\n${packageLists}` : ''}${ended}${kept}${code === 0 ? '' : '\nCommand failed; inspect job_output and current state, correct the command/arguments before retrying.'}\n[exit ${code}]${job.truncated ? ' [capture limit reached]' : ''}`,
       )),
       ...(code === 0 ? {} : { isError: true }),
       details: {
