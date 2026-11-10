@@ -1,5 +1,6 @@
 import { requireChildControl } from '@agnes/core-child-control/child/store'
 import { presetDefaults } from '@agnes/core-common/step/preset'
+import { CoreError } from '@agnes/core-common/types'
 import { buildToolContext } from '@agnes/core-effects/effects/tool-context'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
 import type { ModelRecord, Provider, SystemInput } from '@agnes/protocol'
@@ -597,7 +598,8 @@ describe('child completion notice', () => {
           (await parent.d.log.storage.scan(child.key, { type: 'turn/start', limit: 1 })).length === 1,
       ),
     ).toBe(true)
-    await child.cancel!()
+    // Cancelling and then collecting give the same answer.
+    expect(await collectContext(parent).cancel(child.key)).toMatchObject({ status: 'cancelled' })
     await running
     const cancelled = await collectContext(parent).collect(child.key)
     expect(cancelled).toMatchObject({ status: 'cancelled' })
@@ -622,6 +624,30 @@ describe('child completion notice', () => {
       stopReason: 'max_steps',
     })
     await capped.close()
+  })
+
+  it('keeps the reason of a child run that threw before its turn recorded an end', async () => {
+    const k = kernel()
+    const parent = await k.session('parent', sessionOpts)
+    const child = await parent.d.children.createWithKind!('spawn', {
+      parent: parent.key,
+      cwd: '/w',
+      input: 'work',
+      parentEffectId: 'threw',
+      resident: true,
+    })
+    // The child session's run rejects outright, so its ledger holds no turn/end to read back.
+    const session = k.get(child.key)
+    if (!session) throw new Error('fixture child session missing')
+    vi.spyOn(session, 'run').mockRejectedValue(new CoreError('E_ENVELOPE', `disk gone\n${'x'.repeat(600)}`))
+    await expect(child.run('work')).rejects.toThrow('disk gone')
+    expect(await parent.d.log.storage.scan(child.key, { type: 'turn/end', limit: 1 })).toEqual([])
+    const error = { code: 'E_ENVELOPE', message: expect.stringMatching(/^E_ENVELOPE: disk gone x+…$/) }
+    expect(notices(parent)).toMatchObject([{ data: { status: 'failed', error } }])
+    const collected = await collectContext(parent).collect(child.key)
+    expect(collected).toMatchObject({ status: 'failed', error })
+    expect(collected.error?.message.length).toBe(300)
+    await k.close()
   })
 
   it('does not notify for an awaited fork', async () => {

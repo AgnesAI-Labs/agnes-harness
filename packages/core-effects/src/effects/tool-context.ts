@@ -525,7 +525,13 @@ export function buildToolContext(
         if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
         return {
           childKey,
-          status: snap.state === 'done' ? 'completed' : snap.state === 'error' ? 'failed' : 'cancelled',
+          // A child that ended before the cancel keeps its own outcome.
+          status:
+            snap.state === 'done'
+              ? 'completed'
+              : snap.state === 'error' && !snap.cancelled
+                ? 'failed'
+                : 'cancelled',
           ...(snap.text !== undefined ? { text: snap.text } : {}),
         }
       },
