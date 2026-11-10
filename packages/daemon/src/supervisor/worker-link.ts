@@ -18,6 +18,7 @@ import type {
 } from './frames.js'
 import { parseWorkerHello } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
+import { managedSessionReplyError } from './managed-session-error.js'
 import { packageManageReplyError } from './package-manage-error.js'
 import { PermissionFence } from './permission-fence.js'
 import { PermissionRequestFailure } from './permission-requests.js'
@@ -390,7 +391,10 @@ export class WorkerLink {
                     }
                   : frame.method === 'skill-install'
                     ? skillInstallReplyError(error)
-                    : { code: 'E_REQUEST', message: String(error) },
+                    : ((frame.method === 'managed-session' ? managedSessionReplyError(error) : undefined) ?? {
+                        code: 'E_REQUEST',
+                        message: String(error),
+                      }),
           })
         },
       )

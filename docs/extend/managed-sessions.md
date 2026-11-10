@@ -85,6 +85,10 @@ An `approval` event keeps the seq the approval first appeared at, so a reader th
 - `retention: 'task'` keeps the session. `retention: 'ephemeral'` archives it once `result` reads an ended last turn, and keeps it out of task-experience mining: automatic refinement and the model's own proposals are refused. The owner's own refinement request still works.
 - Disabling the plugin refuses new starts and sends. Existing sessions stay with the owner, running turns finish, and pending approvals can still be answered in the Web. After re-enabling, call `list()` to reconcile.
 
+## Refusals
+
+A refused call rejects with a plain object that has the JSON-RPC `code` (for example `-32006` for `CAPABILITY_DENIED`), a `message` that repeats the error name, and `data`. `data.code` is the error name. `data.reason` carries the refusal, such as `WORKSPACE_NOT_AUTHORIZED`, `FULL_ACCESS_UNAVAILABLE`, `OUTWARD_CHECKPOINT_UNAVAILABLE`, `START_KEY_REUSED` or `PLUGIN_ROW_AMBIGUOUS`. A `FULL_ACCESS_UNAVAILABLE` refusal also carries `data.missing`, either `outward-checkpoint` or `os-boundary`. Read `error.data.reason` to pause the task and tell the owner what to grant. No other field of the daemon's error reaches the plugin: no message text, path or stack. A failure that is not a refusal rejects with `code: 'E_REQUEST'` and carries no reason.
+
 ## Trust boundary
 
 A managed service runs in-process in the shared session worker, together with every other in-process plugin, and reaches the backend over that worker's private channel. The backend serves a managed-session request only when it comes from the shared session worker on the profile lane that profile-scope services use. A request from another worker, or from a session's own work, is refused with `CAPABILITY_DENIED` and reason `MANAGED_SESSION_LANE`.

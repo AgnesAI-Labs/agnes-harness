@@ -85,6 +85,10 @@ if (sent.state === 'notSubmitted') console.log(sent.reason) // busy | archived |
 - `retention: 'task'` 长期保留会话。`retention: 'ephemeral'` 在 `result` 读到已结束的最后一个回合后归档会话，并且不进任务经验挖掘：自动提炼和模型自己的提议都拒绝。主人自己发起的提炼仍然可用。
 - 停用插件后，不能再开新会话或发消息。已有会话仍归主人，进行中的回合照常走完，待决审批仍可在 Web 回答。重新启用后调用 `list()` 核对。
 
+## 拒绝
+
+被拒绝的调用以一个普通对象 reject，含 JSON-RPC `code`（例如 `CAPABILITY_DENIED` 为 `-32006`）、与错误名相同的 `message` 和 `data`。`data.code` 是错误名。`data.reason` 给出拒绝原因，例如 `WORKSPACE_NOT_AUTHORIZED`、`FULL_ACCESS_UNAVAILABLE`、`OUTWARD_CHECKPOINT_UNAVAILABLE`、`START_KEY_REUSED` 或 `PLUGIN_ROW_AMBIGUOUS`。`FULL_ACCESS_UNAVAILABLE` 还带 `data.missing`，取值 `outward-checkpoint` 或 `os-boundary`。读取 `error.data.reason`，即可暂停任务并告诉所有者该授权什么。守护进程错误的其他字段不会到达插件：没有消息文本、路径和堆栈。不属于拒绝的失败以 `code: 'E_REQUEST'` reject，不带原因。
+
 ## 信任边界
 
 托管服务和其他进程内插件一起运行在共享会话 worker 里，经这个 worker 的私有通道访问后端。后端只受理来自共享会话 worker、走 profile 范围服务所用 profile 通道的托管会话请求。来自其他 worker 或会话自身工作的请求以 `CAPABILITY_DENIED` 拒绝，原因是 `MANAGED_SESSION_LANE`。
