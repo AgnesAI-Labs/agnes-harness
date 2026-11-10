@@ -21,7 +21,11 @@ type CompatibleEntry = Readonly<{
 type KnownLimits = Readonly<{ contextWindow: number; maxTokens: number; thinkingReplay: 'native' }>
 type KnownModels = (id: string) => KnownLimits | undefined
 type Listing =
-  | Readonly<{ ids: readonly string[]; contextWindows?: Readonly<Record<string, number>> }>
+  | Readonly<{
+      ids: readonly string[]
+      contextWindows?: Readonly<Record<string, number>>
+      maxTokens?: Readonly<Record<string, number>>
+    }>
   | Readonly<{ failure: NonNullable<ConfigTestResult['catalogueError']> }>
 
 /**
@@ -138,12 +142,15 @@ async function testCompatibleAccount(
   const listing = await deps.list(entry.api, args.baseUrl, args.apiKey ?? saved)
   if ('failure' in listing) return { models: [], verified: false, catalogueError: listing.failure }
   const contexts = new Map(Object.entries(listing.contextWindows ?? {}))
+  const outputs = new Map(Object.entries(listing.maxTokens ?? {}))
   return {
     models: listing.ids.filter(deps.chatModelAllowed).map((id) => {
       const contextWindow = contexts.get(id)
+      const maxTokens = outputs.get(id)
       return {
         ...(structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id, deps.knownModel)),
         ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(maxTokens === undefined ? {} : { maxTokens }),
       }
     }),
     verified: true,

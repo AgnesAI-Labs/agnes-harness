@@ -61,6 +61,8 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   // packages/core/src/execution/turn/inference.ts: the unattended-run live note, delivered at the
   // tail after the turn-limits note.
   { id: 'core:unattended-run', order: 116, owner: 'core' },
+  // The jobs extension's live note naming background jobs that ended since the model was told.
+  { id: 'jobs:completed', order: 117, owner: 'base' },
   { id: 'memory:index', order: 131, owner: 'core' },
   { id: 'agents-md', order: 120, owner: 'base' },
   { id: 'coding-doctrine', order: 130, owner: 'code' },

@@ -1,6 +1,6 @@
 # Session jobs
 
-One session/lane registry owns shell commands, persistent Bash/Zsh/PowerShell sessions, PTYs and child-agent views. Use `job_list`, `job_output` and `job_kill` for every kind. Completion notices appear in subsequent model context and in the Web jobs panel. Child-agent status/output is refreshed from the public parent-bound child port.
+One session/lane registry owns shell commands, persistent Bash/Zsh/PowerShell sessions, PTYs and child-agent views. Use `job_list`, `job_output` and `job_kill` for every kind. When a job ends, the model's next request carries a completion notice, once per job and not for a job whose end a tool result already showed; the Web jobs panel lists every completion. Child-agent status/output is refreshed from the public parent-bound child port.
 
 `shell` is stateless by default. Set `persistent:true` and optionally `shell:"bash"|"zsh"|"pwsh"`; the result includes `sessionId` and command `jobId`. Subsequent calls reuse that shell or explicitly select its `sessionId`. Cwd, environment and interpreter variables persist. One command runs at a time; another command refuses while busy. A foreground timeout returns the same command job. Killing that job closes its persistent interpreter. Commands that read interactive stdin belong in a PTY.
 

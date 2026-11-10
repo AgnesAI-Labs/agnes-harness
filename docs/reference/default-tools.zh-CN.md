@@ -14,9 +14,9 @@
 | `web_search` | `{"queries":["主题"]}`；一至四条非空查询。宿主提供搜索标题、链接和摘要。没有配置搜索提供方或密钥时返回 `WEB_SEARCH_UNAVAILABLE`，可改用已知 URL 调用 `web_fetch`。 |
 | `ask_user_question` | `{"questions":[{"id":"route","question":"请选择路线","options":["A","B"]}]}`。省略 options 使用自由文本；`multiple:true` 允许多选，`allowFreeText:true` 允许补充答案。一至四个问题，id 必须唯一。`timeoutMs` 默认为 0（立即继续），1–60000 可选择等待至持久化截止时间。同批其他工具仍可执行；晚答作为新输入送达。 |
 | `present` | `{"files":[{"path":"report.pdf","name":"Report.pdf","description":"供审阅"}]}`。注册已存在、可读取的普通文件，将内容复制为会话产物。最多十六个文件，每个文件和总量都不超过 32 MiB。surface 列出名称、说明及产物身份；工具结果保留需授权读取的 artifact 引用。 |
-| `shell` | `{"command":"npm run build","background":true}` 启动会话任务。`timeoutMs` 设置前台等待时间；超时或等满 2 分钟（取较早者）后，同一个进程作为后台任务继续运行，结果会给出任务 ID。`timeoutToBackground:false` 则在 `timeoutMs` 时终止进程，不受 2 分钟上限约束。结果只提及该次请求中完整提供的任务工具。在有时间上限的回合（`agh -p --timeout`）中，前台等待还会在回合截止前结束，预留 15 秒与上限 5% 中的较大者；此时结果会说明回合时间即将用完以及还剩多少。后台任务不受此限制。 |
+| `shell` | `{"command":"npm run build","background":true}` 启动会话任务。`timeoutMs` 设置前台等待时间；超时或等满 5 分钟（取较早者）后，同一个进程作为后台任务继续运行，结果会给出任务 ID。未指定 `timeoutMs` 时等待预设默认值（随包预设为 2 分钟）。`timeoutToBackground:false` 则在 `timeoutMs` 时终止进程，不受 5 分钟上限约束。结果只提及该次请求中完整提供的任务工具。在有时间上限的回合（`agh -p --timeout`）中，前台等待还会在回合截止前结束，预留 15 秒与上限 5% 中的较大者；此时结果会说明回合时间即将用完以及还剩多少。后台任务不受此限制。 |
 | `job_list` | `{}` 列出当前会话与分支的运行中和已完成任务。 |
-| `job_output` | `{"jobId":"返回的任务ID","waitMs":1000}` 读取输出和状态，可选等待最多 60 秒，并受工具期限限制；在有时间上限的回合中，等待也像前台 `shell` 一样在回合截止前结束。长输出存为可读取产物。 |
+| `job_output` | `{"jobId":"返回的任务ID","waitMs":1000}` 读取输出和状态，可选等待最多 5 分钟，任务一结束即返回；等待受工具期限限制（随包 base 预设给 `job_output` 310 秒），在有时间上限的回合中，等待也像前台 `shell` 一样在回合截止前结束。运行中的任务状态会写明已运行时长（`[running for 4m20s; exit pending]`），因此反复查询无新输出的任务不会被当作循环。长输出存为可读取产物。 |
 | `job_kill` | `{"jobId":"返回的任务ID"}` 终止当前会话拥有的任务及进程组。 |
 | `lsp_diagnostics` | `{"paths":["src/a.ts"],"severity":"error"}` 向语言服务器查询最多 20 个文件的错误（TypeScript/JavaScript、Python、Go；Rust 仅限受信任的工作区）；`severity` 为 `error`、`warning` 或 `all`。按需加载。只读：服务器以不执行工作区代码的静态分析模式启动。`write` 和 `edit` 也会把被修改文件的错误附在结果后。详见[代码诊断](../guide/lsp.zh-CN.md)。 |
 | `schedule_create` | 创建定时任务。`after_seconds`、`at`、`every_seconds`、`daily`、`weekly`、`cron` 只能提供其中一项，并用 `target` 选择在哪里运行：`new_session` 每次运行都在当前会话的工作区开一个新会话（适合重复的工作）；`current_session` 把提示发到当前会话，空闲时开始一轮，运行中则并入（适合一次性提醒）。结果里的 `runsIn` 说明在哪里运行。 |
@@ -68,7 +68,7 @@ const searchProvider: SearchProvider = {
 
 持久 shell：为 `shell` 设置 `persistent:true`，可选择 `shell:"bash"|"zsh"|"pwsh"`。返回命令的 `jobId` 与解释器的 `sessionId`，后续调用保留 cwd、环境变量和解释器变量。可传 `sessionId` 选择现有解释器；忙碌时拒绝另一条命令，终止命令会关闭解释器。交互式 stdin 请使用 PTY。
 
-PTY 工具：`pty_open/read/send/signal/resize/list/close` 分别负责打开、读取、发送原始文本、发信号、调整尺寸、列出和关闭。所有操作按返回的 `jobId` 定位。统一 `job_list/output/kill` 也支持 PTY、持久解释器和子代理（`child:<id>`），完成通知出现在后续模型上下文及 Web 作业面板。任务跨轮次保留，Host 重启不恢复。
+PTY 工具：`pty_open/read/send/signal/resize/list/close` 分别负责打开、读取、发送原始文本、发信号、调整尺寸、列出和关闭。所有操作按返回的 `jobId` 定位。统一 `job_list/output/kill` 也支持 PTY、持久解释器和子代理（`child:<id>`），任务结束后，模型的下一次请求会带一条 `Jobs completed: ID: STATUS (exit CODE)` 实时上下文提示，每个任务只提示一次；工具结果已显示结束的任务（前台命令、对已结束任务的 `job_output` 读取、`job_kill`）不再提示。Web 作业面板列出全部完成记录。任务跨轮次保留，Host 重启不恢复。
 
 本地 PTY 支持构建原生助手后的 macOS/Linux；Windows 支持管道执行，PTY 需提供方实现。Shell 必须已安装。远端和其他沙箱提供方必须实现公共 process 入口，缺失时明确拒绝，不回退本地执行。捕获上限 4 MiB，每会话/分支最多保留 128 个作业。
 
