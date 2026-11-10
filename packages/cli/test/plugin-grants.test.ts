@@ -38,7 +38,7 @@ describe('plugins grants', () => {
       }),
     })
     expect(revoke.calls).toEqual([
-      ['admin.managedWorkspaces.revoke', { packageId: pkg, workspace: '/work/repo' }],
+      ['admin.managedWorkspaces.revoke', { packageId: pkg, workspace: resolve('/work/repo') }],
     ])
     expect(revoke.out).toBe(`already not granted\t${pkg}\t/work/repo\n`)
   })
