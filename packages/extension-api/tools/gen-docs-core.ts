@@ -129,6 +129,7 @@ export function generateAll(): Record<string, string> {
     'requiresUser',
     'paths',
     'commandArg',
+    'outward',
   ]
   const descriptionsMeta = Object.fromEntries(
     documentedMetaKeys.map((key) => [key, tools.$defs.ToolMeta?.properties?.[key]?.description ?? '']),

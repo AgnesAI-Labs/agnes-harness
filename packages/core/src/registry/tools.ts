@@ -286,6 +286,7 @@ function snapshotToolMeta(meta: ToolMeta): ToolMeta {
     ...(meta.requiresImageInput === undefined ? {} : { requiresImageInput: meta.requiresImageInput }),
     ...(meta.requiresUser === true ? { requiresUser: true } : {}),
     ...(meta.commandArg === undefined ? {} : { commandArg: meta.commandArg }),
+    ...(meta.outward === true ? { outward: true } : {}),
     ...(meta.paths
       ? {
           paths: Object.freeze(

@@ -1,5 +1,10 @@
 export { readCommandRules } from '@agnes/core-common/command-table/rules'
-export { hardBlockedCall, sessionCommandFloor, withCommandFloor } from './floor.js'
+export {
+  hardBlockedCall,
+  outwardCheckpointEnforced,
+  sessionCommandFloor,
+  withCommandFloor,
+} from './floor.js'
 export {
   argvHash,
   matchPolicy,
@@ -7,3 +12,4 @@ export {
   normalizeArgv,
   type PolicyRule,
 } from './normalize.js'
+export { outwardCall } from './outward.js'

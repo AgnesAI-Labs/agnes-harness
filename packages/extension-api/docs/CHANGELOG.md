@@ -2,6 +2,27 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.9.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.9.0 and no existing contract changes for a tool that
+does not declare them.
+
+- `ToolMeta.outward`: the tool sends content to someone other than the owner or changes remote state
+  (push, pull request, post, publish). Every call stops for a person, once, in every session and
+  permission mode; full access, automatic review, command-table rules, session or lasting grants,
+  `Approval` replacements and hooks cannot approve it. Only an actor whose role is `owner` or `user`
+  answers it. It requires `isOpenWorld: true` and `requiresApproval: 'always'`. This is a guarantee.
+- `ApprovalConstraints.checkpoint: 'outward'` and `isOutwardCheckpoint(approval)`: the constraints Core
+  puts on an outward call. Full access does not answer such a question, and an answer other than
+  approve or reject is recorded as a rejection.
+
+Shell commands are not outward by declaration. A Host can open a session with outward command rules,
+which hold known outward shell commands at the same checkpoint. They are best effort, off by default
+and have known gaps (variables, command substitution, functions, pipes into a shell, scripts); see the
+security guide. They are not part of this API.
+
 ## 5.8.0
 
 ### Added

@@ -29,12 +29,23 @@ export interface ToolPolicyInput {
   instructions?: readonly string[]
 }
 
-/** Backend constraints; advisory reviewers and grants cannot relax them. */
+/**
+ * Backend constraints; advisory reviewers and grants cannot relax them. `checkpoint: 'outward'`
+ * marks the outward checkpoint: full access does not answer it either, and an answer other than
+ * approve or reject is recorded as a rejection. Core sets it for outward calls; it only tightens.
+ */
 export type ApprovalConstraints = Readonly<{
   reviewerRequirement: 'human'
   grantConstraints: 'once'
   subjectRevision: string
+  checkpoint?: 'outward'
 }>
+
+/** True for the constraints of an outward checkpoint, wherever a request or decision carries them. */
+export const isOutwardCheckpoint = (approval: unknown): boolean =>
+  (approval as ApprovalConstraints | null | undefined)?.checkpoint === 'outward' &&
+  (approval as ApprovalConstraints).reviewerRequirement === 'human'
+
 export type ToolPolicyDecision = {
   effect: 'allow' | 'ask' | 'deny'
   reason: string
