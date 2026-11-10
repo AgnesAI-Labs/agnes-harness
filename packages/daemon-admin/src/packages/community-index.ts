@@ -1,5 +1,8 @@
-/** Listing permits discovery only; it does not identify a plugin as official or authorize installation. */
+import { type PackageCatalogPage, validatePackageAdminData } from '@agnes/protocol'
+
+/** Listing permits discovery only; it does not identify a publisher as official or authorize installation. */
 export const COMMUNITY_INDEX_URL = 'https://agnesai-labs.github.io/agh-plugin-market/index.json'
+type Item = NonNullable<PackageCatalogPage['community']>['items'][number]
 
 function githubRepository(value: unknown): string {
   if (typeof value !== 'string') throw new Error('invalid repository URL')
@@ -10,35 +13,84 @@ function githubRepository(value: unknown): string {
   return `${match[1]}/${name}`.toLowerCase()
 }
 
-/** Bounded format-1 discovery projection. Every entry must identify one unambiguous GitHub repository. */
-export function listedCommunityRepositories(value: unknown): ReadonlySet<string> {
+function localized(value: unknown): Item['summary'] {
+  if (value === undefined) return undefined
+  if (typeof value === 'string') return value
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid text')
+  if (Object.values(value).some((text) => typeof text !== 'string')) throw new Error('invalid text')
+  return value as Record<string, string>
+}
+
+/** Project the complete format-1 index, without topic searches or entry-count truncation. */
+export function indexedCommunityPlugins(value: unknown): Item[] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid index')
   const index = value as Record<string, unknown>
-  if (index.format !== 1 || !Array.isArray(index.plugins) || index.plugins.length > 1000)
-    throw new Error('invalid index')
-  const repositories = new Set<string>()
-  for (const entry of index.plugins) {
+  if (index.format !== 1 || !Array.isArray(index.plugins)) throw new Error('invalid index')
+  const names = new Set<string>()
+  const items = index.plugins.map((entry): Item => {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) throw new Error('invalid entry')
     const row = entry as Record<string, unknown>
     const repository = row.repository as Record<string, unknown> | undefined
-    if (typeof row.name !== 'string' || !row.name || row.name.length > 214)
+    if (typeof row.name !== 'string' || !row.name || row.name.length > 214 || names.has(row.name))
       throw new Error('invalid package name')
-    const name = githubRepository(repository?.url)
-    if (!Array.isArray(row.versions) || !row.versions.length || row.versions.length > 1000)
-      throw new Error('invalid versions')
-    for (const version of row.versions) {
+    names.add(row.name)
+    const fullName = githubRepository(repository?.url)
+    if (!Array.isArray(row.versions) || !row.versions.length) throw new Error('invalid versions')
+    const versions = new Set<string>()
+    const sources = row.versions.map((version) => {
       if (!version || typeof version !== 'object' || Array.isArray(version))
         throw new Error('invalid version')
-      const source = (version as Record<string, unknown>).source as Record<string, unknown> | undefined
+      const record = version as Record<string, unknown>
+      const source = record.source as Record<string, unknown> | undefined
       if (
+        typeof record.version !== 'string' ||
+        !record.version ||
+        record.version.length > 128 ||
+        versions.has(record.version) ||
         source?.type !== 'git' ||
-        githubRepository(source.url) !== name ||
+        githubRepository(source.url) !== fullName ||
         typeof source.commit !== 'string' ||
         !/^[a-f0-9]{40}$/i.test(source.commit)
       )
         throw new Error('invalid source')
+      versions.add(record.version)
+      return {
+        version: record.version,
+        source: {
+          type: 'git' as const,
+          ref: `git:https://github.com/${fullName}.git#${source.commit.toLowerCase()}`,
+        },
+      }
+    })
+    const summary = localized(row.description)
+    const title = localized(row.title)
+    if (row.author !== undefined && typeof row.author !== 'string') throw new Error('invalid author')
+    return {
+      id: row.name,
+      name: row.name,
+      fullName,
+      description:
+        typeof summary === 'string' ? summary : (summary?.en ?? Object.values(summary ?? {})[0] ?? ''),
+      ...(summary === undefined ? {} : { summary }),
+      ...(title === undefined ? {} : { title }),
+      author: (row.author as string | undefined) ?? fullName.split('/')[0]!,
+      versions: sources,
     }
-    repositories.add(name)
-  }
-  return repositories
+  })
+  if (
+    !validatePackageAdminData('PackageCatalogPage', {
+      items: [],
+      nextCursor: null,
+      community: {
+        state: 'ready',
+        lastSuccessAt: null,
+        nextAttemptAt: null,
+        error: null,
+        totalReported: items.length,
+        items,
+      },
+    }).ok
+  )
+    throw new Error('invalid index projection')
+  return items
 }

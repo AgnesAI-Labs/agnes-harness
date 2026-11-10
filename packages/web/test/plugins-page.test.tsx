@@ -994,26 +994,29 @@ it.each([false, true])(
   },
 )
 
-it('merges community cards into one gallery and opens complete details without remote requests', async () => {
-  const topics = ['agh-plugin', ...Array.from({ length: 19 }, (_, i) => `topic-${i}`)]
+it('merges indexed plugins into one gallery and reviews pinned versions without remote requests', async () => {
   const community: NonNullable<PackageCatalogPage['community']> = {
     state: 'ready',
     error: null,
-    totalReported: 30,
+    totalReported: 13,
     lastSuccessAt: new Date().toISOString(),
     nextAttemptAt: null,
     items: Array.from({ length: 13 }, (_, id) => ({
-      id: id + 1,
+      id: `author/repo-${id}`,
+      name: `author/repo-${id}`,
       fullName: `author/repo-${id}`,
       description: '<script>not markup</script>',
-      topics,
-      ecosystem: id === 0 ? 'dsh' : 'agh',
-      stars: 100 - id,
-      forks: 2,
-      issues: 3,
-      language: 'TypeScript',
-      license: 'MIT',
-      pushedAt: null,
+      author: 'Example Author',
+      versions: [
+        {
+          version: '1.0.0',
+          source: { type: 'git', ref: `git:https://github.com/author/repo-${id}.git#${'a'.repeat(40)}` },
+        },
+        {
+          version: '2.0.0',
+          source: { type: 'git', ref: `git:https://github.com/author/repo-${id}.git#${'b'.repeat(40)}` },
+        },
+      ],
     })),
   }
   const fetcher = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('No external fetch expected'))
@@ -1077,7 +1080,10 @@ it('merges community cards into one gallery and opens complete details without r
     await act(async () => views[0]?.click())
     const details = () => document.querySelector('[data-testid="community-details"]')
     await vi.waitFor(() => expect(details()).not.toBeNull())
-    expect(details()?.querySelectorAll('.community-market-topics a')).toHaveLength(20)
+    expect(details()?.querySelectorAll('.community-market-topics a')).toHaveLength(0)
+    expect(host.textContent).toContain('Example Author')
+    expect(host.textContent).toContain('1.0.0')
+    expect(host.textContent).not.toContain('Stars')
     expect(details()?.textContent).toContain('<script>not markup</script>')
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('community.reviewRequired')
     await act(async () =>
@@ -1086,12 +1092,20 @@ it('merges community cards into one gallery and opens complete details without r
     await vi.waitFor(() => expect(details()).toBeNull())
     await vi.waitFor(() => expect(document.activeElement).toBe(views[0]))
     await act(async () => views[1]?.click())
+    const picker = details()!.querySelector('[data-testid="community-version-picker"]')!
+    await act(async () => {
+      picker.querySelector('input')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+    const option = [...details()!.querySelectorAll<HTMLElement>('.ant-select-item-option')].find(
+      (entry) => entry.textContent === '2.0.0',
+    )!
+    await act(async () => option.click())
     const check = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
       (button) => button.textContent === 'community.check',
     )
     await act(async () => check?.click())
     expect(inspect).toHaveBeenCalledWith(
-      { type: 'git', ref: 'git:https://github.com/author/repo-1.git' },
+      { type: 'git', ref: `git:https://github.com/author/repo-1.git#${'b'.repeat(40)}` },
       'install',
       check,
     )

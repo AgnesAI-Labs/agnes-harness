@@ -10,7 +10,7 @@ Connect an existing MCP tool service to AGH's task flow. This guide covers addin
 
 ## External plugin compatibility
 
-AGH native plugins remain the primary ecosystem. Community imports reuse generic Skills and static MCP declarations; they do not emulate DSH or another harness runtime. AGH starts only the reviewed command or connects to the declared address. Provider-declared package launchers such as `npx` may download their own packages when started, subject to the existing MCP trust and sandbox settings.
+AGH native plugins remain the primary ecosystem. Community imports reuse generic Skills and static MCP declarations; they do not emulate another harness runtime. AGH starts only the reviewed command or connects to the declared address. Provider-declared package launchers such as `npx` may download their own packages when started, subject to the existing MCP trust and sandbox settings.
 
 AGH does not infer npm packages from repository metadata, install dependencies, build Git source or repair native artifacts. If the declared local script is absent, enable review explains the missing entry. Obtain the provider’s runnable distribution and configure its command in **Connections (MCP)**. Deeply customized plugins may remain unsupported. A launcher’s internal prerequisites can only be confirmed by actually connecting; a failed connection is reported per item and does not block other reviewed Skills. Enabling a Skill does not make an unavailable MCP dependency work.
 
@@ -28,7 +28,7 @@ Runtime checks use the new service's execution environment, not a previous insta
 
 Use **Uninstall plugin** in that detail to remove the package's unchanged resources. Uninstall requires current install and remove permissions; it retains edited resources and reports conflicts, and tolerates resources already removed individually. Managed source files are removed only after a complete uninstall. This record does not add native AGH runtime compatibility or automatic external package updates.
 
-In **Plugins → Market**, open a community repository and choose **Check and install**. The background check recognizes static `mcpServers` declarations in `.mcp.json`, `mcp.json`, `.codex-plugin/mcp.json`, or `.claude-plugin/plugin.json`. It supports stdio, HTTP and SSE; conflicting declarations, unknown settings, shell commands and unsafe paths are refused. A repository topic is only a discovery label. This entry does not emulate another host's plugins.
+In **Plugins → Market**, open a community repository and choose **Check and install**. The background check recognizes static `mcpServers` declarations in `.mcp.json`, `mcp.json`, `.codex-plugin/mcp.json`, or `.claude-plugin/plugin.json`. It supports stdio, HTTP and SSE; conflicting declarations, unknown settings, shell commands and unsafe paths are refused. Index listing permits discovery only. This entry does not emulate another host's plugins.
 
 Review every command or URL and its working directory. Bind authentication placeholders to existing `secret://provider/name` references; literal credential and environment values are refused. Optional Skills under `skills/`, `.agents/skills/` and `.claude/skills/` are listed separately. Choose the ones to install; existing Skills and connections are never overwritten. Imported Skills remain disabled. The source limit is 10,000 entries, 128 MiB and 32 directory levels; each Skill retains its own complete-bundle limits.
 
