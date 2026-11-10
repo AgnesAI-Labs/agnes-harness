@@ -207,6 +207,13 @@ export type KernelOptions = {
 export type { RuntimePromptPreload } from './runtime/current.js'
 export type SessionOptions = {
   roleDelegation?: RoleDelegation
+  /**
+   * Hold calls whose shell text trips an outward command rule for a person, and refuse terminals and
+   * persistent shells. Best effort, not a boundary. Set by the Host as it opens the session, on every
+   * open: it is not persisted. Children and forks of an open parent that has it inherit it, and an
+   * open session cannot turn it off.
+   */
+  outwardCommandRules?: true
   systemPrompt?: {
     config: () => Promise<import('@agnes/protocol').SystemPromptConfig>
     resolve(selection?: { id: string; version: string }): import('@agnes/extension-api').SystemPromptProvider
@@ -438,6 +445,9 @@ export class Kernel {
   private readonly creating = new Set<Promise<SessionImpl>>()
   private closing?: Promise<void>
 
+  private readonly commandRules = (o: SessionOptions) =>
+    o.outwardCommandRules === true || (o.parent && this.get(o.parent.key))?.d.outwardCommandRules === true
+
   session(key: SessionKey, so: SessionOptions): Promise<SessionImpl> {
     if (isProfileDecisionJournal(key))
       return Promise.reject(new CoreError('E_ENVELOPE', 'Reserved decision journal scope'))
@@ -508,6 +518,12 @@ export class Kernel {
       // once and a second caller's overrides would simply not be fitted.
       if (so.seams && Object.keys(so.seams).length > 0)
         throw new CoreError('E_LANE_BUSY', `session ${key} is already open; seams cannot be refitted`)
+      // Asking for command rules must not hand back a session running without them; an open session
+      // that has them keeps them for a caller that does not ask.
+      if (this.commandRules(so) && !existing.d.outwardCommandRules)
+        throw new CoreError('E_LANE_BUSY', `session ${key} is already open without outward command rules`, {
+          field: 'outwardCommandRules',
+        })
       if (so.parent) await existing.inheritAutomaticPermissions(this.sessions.get(so.parent.key))
       return existing
     }
@@ -695,6 +711,7 @@ export class Kernel {
           : {}),
         ...(memory ? { memory } : {}),
         ...(so.roleDelegation ? { roleDelegation: so.roleDelegation } : {}),
+        ...(this.commandRules(so) ? { outwardCommandRules: true as const } : {}),
         ...(so.delegation ? { delegation: so.delegation } : {}),
         ...(this.o.childRoles ? { childRoles: this.o.childRoles } : {}),
         log,

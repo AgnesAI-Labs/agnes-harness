@@ -82,6 +82,7 @@ export function createRoleChildren(deps: {
       const child = await container.host.createSession({
         key,
         ...inheritedWorkspace(key, options),
+        ...(options.outwardCommandRules ? { outwardCommandRules: true as const } : {}),
         writerRunId: options.writerRunId,
         ...(options.lane ? { lane: options.lane } : {}),
       })
@@ -256,6 +257,7 @@ export function createRoleChildren(deps: {
               tools: filtered,
             },
             ...(options.delegation ? { delegation: options.delegation } : {}),
+            ...(options.outwardCommandRules ? { outwardCommandRules: true as const } : {}),
             writerRunId: options.writerRunId,
             ...(options.lane ? { lane: options.lane } : {}),
           })

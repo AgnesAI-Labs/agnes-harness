@@ -1,7 +1,17 @@
 import type { ToolPolicyRegistry } from '@agnes/core-effects/effects/tool-providers'
 import { rolePolicyCeiling } from '../child/role-authority.js'
-import type { sessionCommandFloor } from '../command-table/floor.js'
+import { carriesFloor, sessionCommandFloor } from '../command-table/floor.js'
 import type { SessionImpl } from './session.js'
+
+/** One session's floor, reading what the current turn's tools declared and the session's switches. */
+export function sessionFloor(session: Pick<SessionImpl, 'turn' | 'd'>) {
+  return sessionCommandFloor(
+    (tool) => session.turn?.snapshot.byName.get(tool)?.meta.commandArg,
+    (input, signal) => session.d.commandPathScope?.(input, signal) ?? Promise.resolve(undefined),
+    (tool) => session.turn?.snapshot.byName.get(tool)?.meta,
+    () => session.d.outwardCommandRules === true,
+  )
+}
 
 /** Resolve the live session policy under its command table and captured role ceilings. */
 export function effectiveToolPolicy(
@@ -17,8 +27,11 @@ export function effectiveToolPolicy(
     captured?.commandRules(session.preset.approval.commandTable) ?? session.preset.approval.commandTable,
   )
   if (!captured) return own
-  return captured.toolPolicy(
+  return carriesFloor(
+    captured.toolPolicy(
+      own,
+      rolePolicyCeiling(captured, (policy, rules) => floor(policies.resolve(policy), rules)),
+    ),
     own,
-    rolePolicyCeiling(captured, (policy, rules) => floor(policies.resolve(policy), rules)),
   )
 }

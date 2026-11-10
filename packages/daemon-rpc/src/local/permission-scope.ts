@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
+import { isOutwardCheckpoint } from '@agnes/extension-api'
 import {
   automaticPermissionDecision,
   type PermissionContext,
@@ -128,7 +129,12 @@ export async function acquirePermissionLease(
 }
 export async function automaticRequestDecision(req: ApprovalRequest) {
   const current = scope.getStore()
-  if (!current || req.sessionKey !== current.context.sessionKey || !current.context.sessionId)
+  if (
+    !current ||
+    req.sessionKey !== current.context.sessionKey ||
+    !current.context.sessionId ||
+    isOutwardCheckpoint(req.approval)
+  )
     return undefined
   // The private Prompter entry owns kind; unknown-outcome and mode choices are questions.
   const purpose =

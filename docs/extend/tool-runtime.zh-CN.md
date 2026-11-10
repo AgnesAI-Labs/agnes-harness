@@ -18,7 +18,7 @@ tools:
 
 预设在 `providers` 表里配置 `tool-runtime: { provider: default }` 和 `tool-policy: { provider: default }`，并用 `tools.max_parallel: 4` 设置并发。省略字段保持默认行为；并发上限为 1–64。默认运行时并行执行相邻的并发安全工具，独占工具等待前面的调用完成，返回结果保持输入顺序。取消或失败会停止启动新调用并等待已经启动的调用结束。
 
-Core 继续负责主体授权、审批决策请求、沙箱、效果记录和恢复；单次执行端口不允许修改已授权的参数或重复派发。策略的硬拒绝仍生效；完全访问权限会自动允许权限裁决，不交付人工审批。默认策略由现有审批扩展注册，命令规则和人工审批沿用审批 seam。实例保留到会话关闭，避免预设切换销毁正在执行的批次。
+Core 继续负责主体授权、审批决策请求、沙箱、效果记录和恢复；单次执行端口不允许修改已授权的参数或重复派发。策略的硬拒绝仍生效；完全访问权限会自动允许权限裁决，不交付人工审批（对外检查点除外）。默认策略由现有审批扩展注册，命令规则和人工审批沿用审批 seam。实例保留到会话关闭，避免预设切换销毁正在执行的批次。
 
 Core 在 hook、授权和副作用之前拒绝无效工具参数，并返回指出字段与允许值的简短提示。同一工具连续两次参数错误后，本轮停用，包括嵌套调用和自定义 Loop 请求。达到上限之前，参数验证通过会重置该工具的计数。可用 `meta.invalidArgumentLimit` 指定 1 至 5 的整数，覆盖默认值 2。不同工具分别计数，压缩或重开会话不会清除本轮计数，新一轮则重新开始。恢复设置不绕过验证，也不授予权限。
 
@@ -57,6 +57,8 @@ Core 在 hook、授权和副作用之前拒绝无效工具参数，并返回指�
 设置 `meta.discoveryGroup` 为一行标签（最多 120 个字符），同属一组的延迟工具在列表中合为一行并显示数量，例如 `"Earlier sessions (search, read and trace past sessions)"`。`tool_search` 也会匹配这个标签。不设置时每个延迟工具单独一行。
 
 导出证据或生成声称会话历史完整性的报告工具，应声明 `meta.attestsHistory: true`。Core 在调度（含嵌套调用）前等待完整后台哈希校验；普通工具和 artifact 字节存储仍可在校验期间使用。该标记纳入快照和定义指纹，不授予授权，也不验证外部业务数据。
+
+把内容发给主人以外的人、或改动远端状态的工具（推送分支、开 PR、发评论、发布包）声明 `meta.outward: true`，并同时声明 `isOpenWorld: true` 与 `requiresApproval: 'always'`。Core 让它的每次调用都经过[对外检查点](../guide/security.zh-CN.md#outward-checkpoint)：审批只给“允许一次”和“拒绝”，完全访问、自动审查、命令表规则、授权和 hook 都不能代批；其他回答记为拒绝，无人回答时不执行。`ctx.approval` 带上批准该次调用的人。只有人能回答：角色为 `owner` 或 `user` 的执行者。这一点对所有会话成立。未声明该标志的工具行为不变。另外，Host 以 `outwardCommandRules` 打开的会话会让命令命中内置对外规则（`git push`、`gh pr create`、`npm publish` 等，见安全指南）的 shell 调用停在同一检查点，并拒绝终端和持久 shell。这些规则是尽力拦截、默认关闭，有[已知缺口](../guide/security.zh-CN.md#outward-command-rules)；`run_code` 的源码不按它们读取。`@agnes/core/command-table` 的 `outwardCheckpointEnforced(policy)` 在 `policy` 是某会话套了地板的策略、且该会话开启了命令规则时为真。
 
 可选的 `meta.isPresentational: true` 表示效果只向用户公布展示状态，没有外部副作用。它不能与 `isDestructive` 或 `isOpenWorld` 同时为真。默认工具策略不会仅因 turn 被污染而升级一个非只读的 presentational 工具。`requiresApproval: always` 和破坏性审批档仍然询问。省略该标志时，工具仍受污染写入的审批约束。[工具元数据参考](../../packages/extension-api/docs/tools-meta.md) 与其他元数据键一起列出该标志。
 

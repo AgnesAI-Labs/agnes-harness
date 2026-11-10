@@ -1,7 +1,7 @@
 import { CoreError, type EventInput } from '@agnes/core-common/types'
 import { isPending, normalizeApproval } from '@agnes/core-effects/effects/approval-answer'
 import type { ApprovalAnswer, ApprovalRequest, Pending } from '@agnes/core-effects/effects/seams'
-import type { DecisionSnapshot } from '@agnes/extension-api'
+import { type DecisionSnapshot, isOutwardCheckpoint } from '@agnes/extension-api'
 import { delegatedApprovalRequest } from '../child/approval.js'
 import { childLifecycle } from '../child/lifecycle.js'
 import type { DecisionSource } from './decisions.js'
@@ -15,11 +15,13 @@ export async function askApprovalAnswer(
 ): Promise<ApprovalAnswer | Pending> {
   signal = AbortSignal.any([signal, s.ac.signal])
   const offered = structuredClone(request)
-  const raw = s.d.segments?.Approval
-    ? await runCoreReplacement(s, 'Approval', s.operationContext(), { request, signal }, () =>
-        s.d.runtime.approvalAsk(request, signal),
-      )
-    : await s.d.runtime.approvalAsk(request, signal)
+  // A replacement could hand back any actor it likes; an outward checkpoint goes to the surface.
+  const raw =
+    s.d.segments?.Approval && !isOutwardCheckpoint(request.approval)
+      ? await runCoreReplacement(s, 'Approval', s.operationContext(), { request, signal }, () =>
+          s.d.runtime.approvalAsk(request, signal),
+        )
+      : await s.d.runtime.approvalAsk(request, signal)
   // A replacement that answers outside the set is refused like a seam that does.
   if (signal.aborted) return { verdict: 'cancelled', reason: 'stopped' }
   return normalizeApproval(raw, offered) ?? { verdict: 'unavailable', reason: 'invalid-answer' }

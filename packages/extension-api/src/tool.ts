@@ -113,6 +113,13 @@ export interface ToolMeta {
    */
   commandArg?: string
   /**
+   * The tool sends content to someone other than the owner or changes remote state: it pushes,
+   * opens a pull request, posts, publishes. Every call stops for a person, once, in every session and
+   * permission mode; full access, automatic review, command-table rules, grants and hooks cannot
+   * approve it. Requires `isOpenWorld: true` and `requiresApproval: 'always'`. Default false.
+   */
+  outward?: boolean
+  /**
    * The effect only publishes display state to the user and has no external side effect.
    * Optional, like `paths`: omitting it means the tool is not presentational. It cannot be
    * combined with `isDestructive` or `isOpenWorld`.
@@ -562,6 +569,10 @@ export function checkToolMeta(meta: unknown): CheckResult {
       problems.push(`${key}: expected boolean | undefined`)
   if (m.commandArg !== undefined && (typeof m.commandArg !== 'string' || !COMMAND_ARG.test(m.commandArg)))
     problems.push('commandArg: expected a top-level argument name | undefined')
+  if (m.outward !== undefined && typeof m.outward !== 'boolean')
+    problems.push('outward: expected boolean | undefined')
+  if (m.outward === true && (m.isOpenWorld !== true || m.requiresApproval !== 'always'))
+    problems.push("outward: requires isOpenWorld true and requiresApproval 'always'")
   if (
     m.invalidArgumentLimit !== undefined &&
     (!Number.isInteger(m.invalidArgumentLimit) ||

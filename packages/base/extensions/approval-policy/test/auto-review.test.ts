@@ -1,3 +1,4 @@
+import { withCommandFloor } from '@agnes/core/command-table'
 import { defaultToolPolicy, type ToolPolicyInput, type ToolPolicyPorts } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { createAutoReviewPolicy } from '../src/auto-review.js'
@@ -235,5 +236,68 @@ describe('official auto-review policy', () => {
         )
       ).effect,
     ).toBe('ask')
+  })
+})
+
+describe('auto-review inside the command floor at the outward checkpoint', () => {
+  const argOf = (tool: string) => (tool === 'shell' ? 'command' : undefined)
+  // A session with outward command rules on.
+  const floored = withCommandFloor(policy, [], argOf, undefined, undefined, () => true)
+  const push = { ...input, call: { ...input.call, args: { command: 'git push origin main' } } }
+  const verdict = (decision: string, risk: string) => ports(JSON.stringify({ decision, risk, reason: 'r' }))
+
+  it('control: the same reviewer allow lets an ordinary command run in auto-review mode', async () => {
+    const test = { ...input, call: { ...input.call, args: { command: 'npm test' } } }
+    expect(
+      (
+        await floored.decide(
+          { ...test, approvalMode: 'auto-review', fullAccess: true },
+          new AbortController().signal,
+          verdict('allow', 'low'),
+        )
+      ).effect,
+    ).toBe('allow')
+  })
+
+  it('control: without command rules the reviewer allow lets the push run, as before', async () => {
+    const plain = withCommandFloor(policy, [], argOf)
+    expect(
+      (
+        await plain.decide(
+          { ...push, approvalMode: 'auto-review', fullAccess: true },
+          new AbortController().signal,
+          verdict('allow', 'low'),
+        )
+      ).effect,
+    ).toBe('allow')
+  })
+
+  it.each(['manual', 'auto-review'] as const)(
+    'a reviewer allow still asks a person, in %s mode',
+    async (mode) => {
+      const first = await floored.decide(
+        { ...push, approvalMode: mode, fullAccess: true },
+        new AbortController().signal,
+        verdict('allow', 'low'),
+      )
+      expect(first).toMatchObject({
+        effect: 'ask',
+        approval: { reviewerRequirement: 'human', grantConstraints: 'once', checkpoint: 'outward' },
+      })
+      expect(first.review).toBeUndefined()
+      // Core rechecks a human-only decision without reviewer ports; the subject must not move.
+      const recheck = await floored.decide(
+        { ...push, approvalMode: mode, fullAccess: true },
+        new AbortController().signal,
+      )
+      expect(recheck.effect).toBe('ask')
+      expect(recheck.approval?.subjectRevision).toBe(first.approval?.subjectRevision)
+    },
+  )
+
+  it('a reviewer deny refuses the outward call without asking', async () => {
+    expect((await floored.decide(push, new AbortController().signal, verdict('deny', 'medium'))).effect).toBe(
+      'deny',
+    )
   })
 })
