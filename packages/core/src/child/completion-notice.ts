@@ -6,7 +6,7 @@ import type { SystemInput } from '@agnes/protocol'
 import { bestEffort } from '../best-effort.js'
 import type { SessionImpl } from '../step/session.js'
 import { childResultCollected, childResultSequence } from './collected-result.js'
-import { type ChildFailure, childFailure, failureSuffix } from './failure.js'
+import { type ChildEnd, childEnd, childFailureSuffix, clipText as clip } from './failure.js'
 import { retiredCompletionIdentity } from './idle-retirement-fact.js'
 import { recordedChildRole } from './roles.js'
 
@@ -16,6 +16,8 @@ export const CHILD_COMPLETED = 'child-completed'
 const MAX_RESULT_CHARS = 4000
 const MAX_SUMMARY_RESULT_CHARS = 1200
 const MAX_LABEL_CHARS = 120
+/** `SystemInput.summary` in the session schema. */
+const MAX_SUMMARY_CHARS = 2048
 
 type ChildOutcome = 'completed' | 'failed' | 'cancelled'
 
@@ -25,15 +27,11 @@ export function childCompletionId(childKey: string, outcome: ChildOutcome, endSe
   return id.length <= 128 ? id : `${CHILD_COMPLETED}:${sha256Hex(id)}`
 }
 
-function clip(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`
-}
-
 /** The child's last assistant text and why its last turn ended, read from durable rows. */
 async function childOutcome(
   parent: SessionImpl,
   record: ChildTaskRecord,
-): Promise<{ text: string; endReason?: string; endSeq: number; error?: ChildFailure }> {
+): Promise<{ text: string; endReason?: string; endSeq: number; end: ChildEnd }> {
   const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
   const [message, end] = await Promise.all([
     parent.d.log.storage.scan(record.childKey, {
@@ -45,7 +43,6 @@ async function childOutcome(
     parent.d.log.storage.scan(record.childKey, { type: 'turn/end', fromSeq, order: 'desc', limit: 1 }),
   ])
   const endReason = (end[0]?.data as { reason?: string } | undefined)?.reason
-  const error = childFailure(end[0]?.data)
   const content = (message[0]?.data as { content?: Array<{ type?: string; text?: string }> } | undefined)
     ?.content
   return {
@@ -55,7 +52,7 @@ async function childOutcome(
       .map((block) => block.text)
       .join(''),
     ...(endReason ? { endReason } : {}),
-    ...(error ? { error } : {}),
+    end: childEnd(end[0]?.data),
   }
 }
 
@@ -72,6 +69,8 @@ export type ChildCompletionOptions = {
   credits?: number
   /** The child went idle after a turn and still accepts messages; it has not ended. */
   continuable?: boolean
+  /** What the factory kept of the failed last turn; without it the child's ledger is read. */
+  end?: ChildEnd | undefined
 }
 
 /**
@@ -86,12 +85,12 @@ export async function childCompletionInput(
   outcome: ChildOutcome,
   options: ChildCompletionOptions = {},
 ): Promise<{ system: SystemInput; commandId: string; resultSeq: number }> {
-  const { text, endReason, endSeq, error: turnError } = await childOutcome(parent, record)
+  const { text, endReason, endSeq, end } = await childOutcome(parent, record)
   const status =
     outcome === 'failed' && (endReason === 'budget' || endReason === 'max_steps')
       ? ('budget_stopped' as const)
       : outcome
-  const error = status === 'failed' ? turnError : undefined
+  const error = status === 'failed' ? (options.end ?? end).error : undefined
   const role = await recordedChildRole(parent, record.childKey)
   const label = clip(
     role
@@ -101,14 +100,22 @@ export async function childCompletionInput(
   )
   const result = text.trim()
   const truncated = result.length > MAX_RESULT_CHARS
-  const shown = clip(result, MAX_SUMMARY_RESULT_CHARS)
+  const handled = role ? `Handled by ${clip(role.title.en, MAX_LABEL_CHARS)} / 由 ${label} 处理. ` : ''
   const lead = options.continuable
     ? `Background child ${record.childKey} (${label}) finished its turn and is idle; it still accepts messages.`
-    : `Background child ${record.childKey} (${label}) ${status.replace('_', ' ')}${failureSuffix(error)}.`
-  const tail =
-    result.length > MAX_SUMMARY_RESULT_CHARS
-      ? ' Call subagent_collect with its childKey for the full output.'
-      : ''
+    : `Background child ${record.childKey} (${label}) ${status.replace('_', ' ')}${childFailureSuffix(error ? { error } : {})}.`
+  // The result gives way first: who ended and why must fit the summary limit whole.
+  const more = ' Call subagent_collect with its childKey for the full output.'
+  const head = `${handled}${lead} Result:\n`
+  const room = Math.min(MAX_SUMMARY_RESULT_CHARS, MAX_SUMMARY_CHARS - head.length - more.length)
+  const summary = clip(
+    !result
+      ? `${handled}${lead}`
+      : room < 1
+        ? `${handled}${lead}${more}`
+        : `${head}${clip(result, room)}${result.length > room ? more : ''}`,
+    MAX_SUMMARY_CHARS,
+  )
   const system: SystemInput = {
     source: CHILD_COMPLETION_SOURCE,
     type: CHILD_COMPLETED,
@@ -121,7 +128,7 @@ export async function childCompletionInput(
       ...(result ? { result: clip(result, MAX_RESULT_CHARS), truncated } : {}),
       ...(options.credits === undefined ? {} : { credits: options.credits }),
     },
-    summary: `${role ? `Handled by ${clip(role.title.en, MAX_LABEL_CHARS)} / 由 ${label} 处理. ` : ''}${result ? `${lead} Result:\n${shown}${tail}` : lead}`,
+    summary,
     presentation: { kind: 'child-completed', status, label },
   }
   // A terminal notice is keyed by the durable outcome alone: the child's last turn/end may still land

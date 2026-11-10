@@ -22,10 +22,11 @@ import { recordChildResultCollected } from './collected-result.js'
 import { deliverChildCompletion } from './completion-notice.js'
 import { childControlMetrics } from './control-metrics.js'
 import { cancelOpenAttempt, generationDepthOf, reportFailedCreation, rootTaskIdOf } from './creation.js'
+import { type ChildEnd, childEnd, thrownChildEnd } from './failure.js'
 import { applyHumanChildControl } from './human-control.js'
 import { bindIdleChild, noteChildIdle, withChildAdmission } from './idle-retirement.js'
 import { bindChildLifecycle, childLifecycle } from './lifecycle.js'
-import { childModels, resolveChildModel, unresolvedChildModel } from './model-scope.js'
+import { childModels, requireChildModel, resolveChildModel } from './model-scope.js'
 import { openDelegatedSession } from './open-session.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
 import { recoverRoleChildren, resumeRoleChild } from './resume-role.js'
@@ -58,6 +59,8 @@ export class KernelChildren implements ChildrenFactory {
     return this.childSessions.get(key) ?? this.kernel.get(key)
   }
   private readonly handles = new Map<string, ChildHandle>()
+  /** Why each failed child's last turn ended, kept after its handle is dropped. */
+  private readonly ends = new Map<string, ChildEnd>()
   private readonly runningTasks = new Map<string, Promise<unknown>>()
   private readonly residentTasks = new Map<string, Promise<unknown>>()
   private readonly cleanups = new Map<string, Promise<void>>()
@@ -160,9 +163,8 @@ export class KernelChildren implements ChildrenFactory {
       throw new CoreError('E_CHILD_LIMIT', 'child session key exceeds protocol limit')
     const boundarySeq =
       opts.forkAt ?? (kind === 'fork' ? parent.op()?.meta.triggerSeq : undefined) ?? parent.lastSeq
-    const modelTarget = opts.model === undefined ? undefined : this.resolveModel(parent, opts.model)
-    if (opts.model !== undefined && modelTarget === undefined)
-      throw unresolvedChildModel(parent.d.provider, parent.preset, opts.model)
+    const modelTarget =
+      opts.model === undefined ? undefined : requireChildModel(parent.d.provider, parent.preset, opts.model)
 
     const rootTaskId = rootTaskIdOf(parent)
     const treeCap = capToMicrocredits(parent.preset.treeBudgetCredits ?? DEFAULT_TREE_BUDGET_CREDITS)
@@ -600,7 +602,7 @@ export class KernelChildren implements ChildrenFactory {
     if (record.parentKey !== parent.key && record.runtimeOwnerSessionKey !== parent.key) return null
     const handle = this.handles.get(childKey)
     if (handle) return handle.status()
-    return snapshotFromLedger(parent, record)
+    return snapshotFromLedger(parent, record, this.ends.get(childKey))
   }
 
   private defer(
@@ -757,9 +759,10 @@ export class KernelChildren implements ChildrenFactory {
           }),
         ])
         .catch(bestEffort(parent.d.logger, 'child-cost-write')) // Only after the terminal state is durable; a missed delivery is repaired by the parent's recovery scan.
-      await deliverChildCompletion(parent, record, outcome, { credits }).catch(
-        bestEffort(parent.d.logger, 'child-completion-delivery'),
-      )
+      await deliverChildCompletion(parent, record, outcome, {
+        credits,
+        end: this.ends.get(record.childKey),
+      }).catch(bestEffort(parent.d.logger, 'child-completion-delivery'))
     }
     const handle: ChildHandle = {
       key: record.childKey,
@@ -867,6 +870,7 @@ export class KernelChildren implements ChildrenFactory {
           }
           if (result.reason !== 'completed') {
             state = result.reason === 'aborted' || result.reason === 'interrupted' ? 'cancelled' : 'error'
+            this.ends.set(record.childKey, childEnd(result))
             throw new CoreError('E_RELATION', `child turn ended ${result.reason}`)
           }
           state = 'done'
@@ -885,6 +889,8 @@ export class KernelChildren implements ChildrenFactory {
             return { text, lastSeq: child.lastSeq }
           }
           if (state === 'running') state = child.ac.signal.aborted ? 'cancelled' : 'error'
+          if (state === 'error' && !this.ends.has(record.childKey))
+            this.ends.set(record.childKey, thrownChildEnd(error))
           throw error
         } finally {
           this.stopReady.get(record.childKey)?.()
@@ -902,6 +908,7 @@ export class KernelChildren implements ChildrenFactory {
         snapshotFromLive(parent, record, {
           state,
           lastSeq: child.lastSeq,
+          end: this.ends.get(record.childKey),
           idle: opts.resident === true && state === 'ready' && this.continued.has(record.childKey),
         }),
       close: async () => {
@@ -1039,7 +1046,8 @@ export class KernelChildren implements ChildrenFactory {
       ...(input.budget === undefined ? {} : { budget: input.budget }),
       ...(input.toolFilter ? { toolFilter: input.toolFilter } : {}),
     }
-    const model = input.model === undefined ? undefined : this.resolveModel(parent, input.model)
+    const model =
+      input.model === undefined ? undefined : resolveChildModel(parent.d.provider, parent.preset, input.model)
     if (input.model !== undefined && !model)
       throw new CoreError('E_UNSUPPORTED', 'Child model is unavailable')
     const needsInitialTurn = record.creationPhase !== 'committed'
@@ -1230,10 +1238,6 @@ export class KernelChildren implements ChildrenFactory {
 
   completion(childKey: string): Promise<ChildAgentResult> {
     return this.completionOf(childKey)
-  }
-
-  private resolveModel(parent: SessionImpl, selector: string): { route: string; model: string } | undefined {
-    return resolveChildModel(parent.d.provider, parent.preset, selector)
   }
 }
 

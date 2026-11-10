@@ -387,6 +387,21 @@ describe('subagent_spawn', () => {
             throw refusal.error
           },
         })
+        ctx.tools.availability = (name) => ({
+          status: name === 'list_subagent_models' ? 'offered' : 'unavailable',
+          message: 'Request tool selection.',
+        })
+        // The hint names a tool only when the parent can call it.
+        const unlisted = context({
+          spawn: async () => {
+            throw refusal.error
+          },
+        })
+        const bare = await subagentSpawnTool(deps()).execute({ task: 't', model: 'claude-x' }, unlisted.ctx)
+        expect(bare.isError).toBe(true)
+        expect(bare.content).toEqual([
+          { type: 'text', text: refusal.text.slice(0, refusal.text.indexOf(' Call ')) },
+        ])
         const result =
           kind === 'fork'
             ? await subagentForkToolWithDeps(d).execute({ question: 'q', model: 'claude-x' }, ctx)
@@ -434,6 +449,27 @@ describe('subagent_spawn', () => {
     expect(plain.isError).toBe(true)
     expect(plain.content).toEqual([{ type: 'text', text: 'Delegated task failed.\nNo findings returned.' }])
     expect(plain.details).not.toHaveProperty('error')
+
+    // A cap names itself; a cancelled child is not an error and reads cancelled.
+    const capped = context({
+      spawn: async () => ({ childKey: 'c-capped' }),
+      collect: async (childKey) => ({ childKey, status: 'failed', stopReason: 'max_steps' }),
+    })
+    const stopped = await subagentSpawnTool(deps()).execute({ task: 't', wait: true }, capped.ctx)
+    expect(stopped.isError).toBe(true)
+    expect(stopped.content).toEqual([
+      { type: 'text', text: 'Delegated task failed: stopped at its step limit.\nNo findings returned.' },
+    ])
+    expect(stopped.details).toMatchObject({ stopReason: 'max_steps' })
+    const cancelled = context({
+      spawn: async () => ({ childKey: 'c-cancelled' }),
+      collect: async (childKey) => ({ childKey, status: 'cancelled' }),
+    })
+    const halted = await subagentSpawnTool(deps()).execute({ task: 't', wait: true }, cancelled.ctx)
+    expect(halted.isError).toBeUndefined()
+    expect(halted.content).toEqual([
+      { type: 'text', text: 'Delegated task cancelled.\nNo findings returned.' },
+    ])
 
     // A completed child is not an error.
     const done = await subagentSpawnTool(deps()).execute({ task: 't', wait: true }, context().ctx)
@@ -627,6 +663,28 @@ describe('subagent_collect on a failed child', () => {
     const plain = await subagentCollectTool(deps()).execute({ childKey: 'c3' }, bare.ctx)
     expect(plain.isError).toBe(true)
     expect(plain.content).toEqual([{ type: 'text', text: 'child c3: failed' }])
+
+    const capped = context({
+      collect: async (childKey) => ({ childKey, status: 'failed', stopReason: 'budget', text: 'so far' }),
+    })
+    const stopped = await subagentCollectTool(deps()).execute({ childKey: 'c4' }, capped.ctx)
+    expect(stopped.isError).toBe(true)
+    expect(stopped.content).toEqual([
+      { type: 'text', text: 'child c4: failed: stopped at its budget.\nso far' },
+    ])
+    expect(stopped.details).toEqual({ childKey: 'c4', status: 'failed', stopReason: 'budget' })
+
+    // A cancelled child is not an error, and its result says cancelled ahead of anything it wrote.
+    for (const text of [undefined, 'half done']) {
+      const cancelled = context({
+        collect: async (childKey) => ({ childKey, status: 'cancelled', ...(text ? { text } : {}) }),
+      })
+      const result5 = await subagentCollectTool(deps()).execute({ childKey: 'c5' }, cancelled.ctx)
+      expect(result5.isError).toBeUndefined()
+      expect(result5.content).toEqual([
+        { type: 'text', text: text ? `child c5: cancelled\n${text}` : 'child c5: cancelled' },
+      ])
+    }
   })
 })
 

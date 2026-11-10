@@ -210,6 +210,7 @@ export {
 export { DEFAULT_LOOP } from '@agnes/extension-api'
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+export { childFailureSuffix } from './child/failure.js'
 export {
   type IdleChildRetirementOptions,
   type IdleChildRetirementResult,

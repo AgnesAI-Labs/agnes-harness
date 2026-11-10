@@ -1,44 +1,54 @@
 import type { ChildTaskRecord } from '@agnes/core-child-control/child/types'
+import { clipUtf16 } from '@agnes/core-ledger/project/clip'
+import type { ChildStatus } from '@agnes/extension-api'
 import type { SessionImpl } from '../step/session.js'
 
 const MAX_CODE_CHARS = 64
 const MAX_MESSAGE_CHARS = 300
 
-/** Why a failed child's turn ended in error. `message` is clipped, single-line adapter text. */
-export type ChildFailure = { code: string; message: string }
-
 /**
- * One line, no control or invisible characters, at most `max` UTF-16 units. The cut drops a
- * surrogate pair whole: a lone surrogate in the parent's context can fail its next model request.
+ * Why a failed child's last turn ended: the error it recorded, or the cap it stopped at. Empty when
+ * neither applies. `error.message` is clipped, single-line adapter text.
  */
-function plain(text: string, max: number): string {
-  const line = text.replace(/[\p{C}\s]+/gu, ' ').trim()
-  if (line.length <= max) return line
-  const last = line.charCodeAt(max - 2)
-  return `${line.slice(0, last >= 0xd800 && last <= 0xdbff ? max - 2 : max - 1)}…`
+export type ChildEnd = Pick<ChildStatus, 'error' | 'stopReason'>
+
+/** At most `max` UTF-16 units, ending in `…` when cut. The cut never splits a surrogate pair. */
+export function clipText(text: string, max: number): string {
+  return text.length <= max ? text : `${clipUtf16(text, max - 1)}…`
 }
 
+/** One line with no control or invisible characters. */
+const oneLine = (text: string): string => text.replace(/[\p{C}\s]+/gu, ' ').trim()
+
 /**
- * The error a `turn/end` row recorded, or nothing when the turn did not end in error. The text was
- * written by a provider adapter, so it reaches the parent as bounded data: it is never trusted and
- * never placed where an instruction would be read.
+ * What a turn's end says about a failure: a `turn/end` row's data or the outcome a run returned. The
+ * error text was written by a provider adapter, so it reaches the parent as bounded data: it is
+ * never trusted and never placed where an instruction would be read.
  */
-export function childFailure(turnEnd: unknown): ChildFailure | undefined {
-  const data = turnEnd as { reason?: unknown; error?: { code?: unknown; message?: unknown } } | undefined
-  if (data?.reason !== 'error' || typeof data.error?.code !== 'string') return undefined
-  const code = plain(data.error.code, MAX_CODE_CHARS)
-  if (!code) return undefined
-  return {
-    code,
-    message: typeof data.error.message === 'string' ? plain(data.error.message, MAX_MESSAGE_CHARS) : '',
-  }
+export function childEnd(turnEnd: unknown): ChildEnd {
+  const end = turnEnd as { reason?: unknown; error?: { code?: unknown; message?: unknown } } | undefined
+  if (end?.reason === 'budget' || end?.reason === 'max_steps') return { stopReason: end.reason }
+  if (end?.reason !== 'error' || typeof end.error?.code !== 'string') return {}
+  const code = clipText(oneLine(end.error.code), MAX_CODE_CHARS)
+  if (!code) return {}
+  const message = typeof end.error.message === 'string' ? end.error.message : ''
+  return { error: { code, message: clipText(oneLine(message), MAX_MESSAGE_CHARS) } }
 }
 
-/** The failure of the child's last turn, read from its durable rows. */
-export async function lastChildFailure(
-  parent: SessionImpl,
-  record: ChildTaskRecord,
-): Promise<ChildFailure | undefined> {
+/** The end of a run that threw before its turn recorded one. */
+export function thrownChildEnd(error: unknown): ChildEnd {
+  const code = (error as { code?: unknown } | undefined)?.code
+  return childEnd({
+    reason: 'error',
+    error: {
+      code: typeof code === 'string' ? code : 'E_INTERNAL',
+      message: error instanceof Error ? error.message : String(error),
+    },
+  })
+}
+
+/** The end of the child's last turn, read from its durable rows. */
+export async function lastChildEnd(parent: SessionImpl, record: ChildTaskRecord): Promise<ChildEnd> {
   const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
   const end = await parent.d.log.storage.scan(record.childKey, {
     type: 'turn/end',
@@ -46,11 +56,16 @@ export async function lastChildFailure(
     order: 'desc',
     limit: 1,
   })
-  return childFailure(end[0]?.data)
+  return childEnd(end[0]?.data)
 }
 
-/** `: CODE (message)` for a sentence that names the failure, or nothing. */
-export function failureSuffix(failure: ChildFailure | undefined): string {
-  if (!failure) return ''
-  return `: ${failure.code}${failure.message ? ` (${failure.message})` : ''}`
+/**
+ * What follows `failed` in a sentence about a child: `: CODE (message)`, `: stopped at its budget`,
+ * `: stopped at its step limit`, or nothing. The one wording for the notice and the child tools.
+ */
+export function childFailureSuffix(end: ChildEnd): string {
+  if (end.error) return `: ${end.error.code}${end.error.message ? ` (${end.error.message})` : ''}`
+  if (end.stopReason === 'budget') return ': stopped at its budget'
+  if (end.stopReason === 'max_steps') return ': stopped at its step limit'
+  return ''
 }

@@ -5,7 +5,7 @@ import { payloadOnlyRoutes } from '@agnes/host-infrastructure/admin-session-sele
 
 /**
  * A child agent holds a conversation, so it cannot run on a route a payload-only adapter serves, and
- * it cannot run on a built-in route that was fitted without a credential: its first request would
+ * it cannot run on a route that was fitted without a credential: its first request would
  * answer AUTH. Only its choice is limited: the provider still publishes the model, so a side call
  * can target it and a client can still configure the route. Every input is read per call, because a
  * model-profile update swaps the profile, the routes under it and the credentials that resolved.

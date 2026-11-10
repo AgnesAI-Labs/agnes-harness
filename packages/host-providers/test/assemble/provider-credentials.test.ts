@@ -16,7 +16,7 @@ afterEach(async () => {
 const log = { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} }
 const oauthRef = 'secret://openai-codex/account-test-r1'
 
-it('names the built-in routes left without a usable credential, and no other route', async () => {
+it('names every route left without a usable credential, and none that works without a bound key', async () => {
   const home = join(await mkdtemp(join(tmpdir(), 'agnes-provider-credentials-')), 'home')
   roots.push(join(home, '..'))
   // An OAuth login that resolved: the route authenticates per request, not through a bound key.
@@ -32,6 +32,7 @@ it('names the built-in routes left without a usable credential, and no other rou
   const baseUrl = 'http://127.0.0.1:1/v1'
   const keyed = fakeModel({ id: 'keyed-1', route: 'account-keyed', api: 'openai-completions', baseUrl })
   const keyless = fakeModel({ id: 'local-1', route: 'local', api: 'openai-completions', baseUrl })
+  const reused = fakeModel({ id: 'reused-1', route: 'my-gateway', api: 'openai-completions', baseUrl })
   const profile = {
     dataDir: join(home, 'data'),
     provider: {
@@ -46,6 +47,14 @@ it('names the built-in routes left without a usable credential, and no other rou
           models: [keyed],
         },
         { route: keyless.route, api: keyless.api, baseUrl, keyless: true, models: [keyless] },
+        {
+          // A profile route that reuses a built-in reference is optional too, and is left unbound.
+          route: reused.route,
+          api: reused.api,
+          baseUrl,
+          credentialRef: 'secret://anthropic/default',
+          models: [reused],
+        },
         {
           route: 'account-work',
           api: codex.api,
@@ -85,8 +94,7 @@ it('names the built-in routes left without a usable credential, and no other rou
     expect(built.uncredentialedRoutes).toContain('openai')
     for (const route of ['deepseek', 'account-keyed', 'local', 'account-work'])
       expect(built.uncredentialedRoutes).not.toContain(route)
-    // Every route named is a built-in one that this assembly fitted.
-    for (const route of built.uncredentialedRoutes) expect(built.preconfiguredRoutes).toContain(route)
+    expect(built.uncredentialedRoutes).toContain('my-gateway')
   } finally {
     await built.dispose()
   }

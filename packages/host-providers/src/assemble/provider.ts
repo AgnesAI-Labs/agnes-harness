@@ -125,10 +125,10 @@ export async function buildProvider(
   /** Built-in API-key routes actually fitted during this assembly. */
   preconfiguredRoutes: readonly string[]
   /**
-   * The built-in API-key routes fitted here without a usable credential. They stay published so a
-   * client can configure them, and answer AUTH if selected. Profile routes are never named: one
-   * without a credential stops assembly, a keyless one needs none, and an OAuth one authenticates
-   * per request.
+   * The routes fitted here whose credential reference did not resolve: built-in API-key routes, and
+   * a profile route that reuses one of their references. They stay published so a client can
+   * configure them, and answer AUTH if selected. A route that works without a bound key is never
+   * named: a keyless one declares no reference, and an OAuth one authenticates per request.
    */
   uncredentialedRoutes: readonly string[]
   dispose(): Promise<void>
@@ -338,9 +338,7 @@ export async function buildProvider(
       contractStore: built.contractStore,
       dispose,
       preconfiguredRoutes,
-      uncredentialedRoutes: Object.freeze(
-        provider.unboundRoutes.filter((route) => preconfiguredRoutes.includes(route)),
-      ),
+      uncredentialedRoutes: Object.freeze(provider.unboundRoutes.filter((route) => !oauthNames.has(route))),
     }
   } catch (error) {
     await dispose()

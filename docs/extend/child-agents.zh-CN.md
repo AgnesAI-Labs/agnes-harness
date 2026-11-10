@@ -127,7 +127,7 @@ Web 通过现有语言目录翻译角色、子会话标签、内置操作标题�
 - `subagent_send_message` 送出后续消息，在消息被接受时返回。
 - `subagent_interrupt` 停止当前回合，子代理保持打开。
 
-`subagent_collect` 在可继续回合停住后报告 `idle`。`list_subagent_models` 列出父会话允许选择的模型，不包含没有凭据的内置提供商路由；在这类模型上启动子代理，或使用不存在的模型名，会在创建子代理之前被拒绝，工具结果写明模型和原因。保存带密钥的模型配置后，该路由重新出现在列表中。子代理因回合出错而以 `failed` 结束时，带 `wait: true` 的 `subagent_spawn` 和 `subagent_collect` 返回错误结果，在子代理已写出的文本之前给出错误码和截断后的消息（`details.error`）。fork/spawn 接受 `toolFilter: { allow?, deny? }`，按工具名精确匹配，deny 优先；披露、执行、后续注册和后代都受限制。官方工具默认拒绝四个 `schedule_*` 管理工具。
+`subagent_collect` 在可继续回合停住后报告 `idle`。`list_subagent_models` 列出父会话允许选择的模型，不包含没有凭据的内置提供商路由；在这类模型上启动子代理，或使用不存在的模型名，会在创建子代理之前被拒绝，工具结果写明模型和原因。保存带密钥的模型配置后，该路由重新出现在列表中。子代理因回合出错而以 `failed` 结束时，带 `wait: true` 的 `subagent_spawn` 和 `subagent_collect` 返回错误结果，在子代理已写出的文本之前给出错误码和截断后的消息（`details.error`）。因预算或步数上限停止的子代理也返回错误结果，并写明是哪个上限（`details.stopReason`）。被取消的子代理收取到的状态是 `cancelled`，不是错误结果。fork/spawn 接受 `toolFilter: { allow?, deny? }`，按工具名精确匹配，deny 优先；披露、执行、后续注册和后代都受限制。官方工具默认拒绝四个 `schedule_*` 管理工具。
 
 ## 完成通知
 

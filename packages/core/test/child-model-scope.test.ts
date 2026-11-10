@@ -28,6 +28,8 @@ const record = (route: string, id: string, api = 'openai-completions'): ModelRec
 const chat = record('gw', 'chat-1')
 const payloadOnly = record('jev', 'jev-1', 'typesafe-systemone')
 const mixed = record('mixed', 'mixed-1')
+const twinA = record('twin-a', 'twin-1')
+const twinB = record('twin-b', 'twin-1')
 const logger = { debug() {}, info() {}, warn() {}, error() {} }
 
 async function parentSession(preset = presetDefaults()) {
@@ -129,6 +131,25 @@ describe('models a child agent can choose', () => {
         code: 'E_MODEL_UNKNOWN',
         detail: { model: 'nowhere-1' },
       })
+    } finally {
+      await kernel.close()
+    }
+  })
+
+  it('gives the no-credentials reason for a bare id that two excluded routes publish', async () => {
+    const { kernel, parent, provider } = await parentSession()
+    try {
+      provider.models = () => [chat, twinA, twinB]
+      setChildModelScope(provider, (model) => (model.route.startsWith('twin') ? 'no-credential' : true))
+      const refusal = await start(parent, 'twin-1').catch((error: unknown) => error)
+      expect(refusal).toMatchObject({
+        code: 'E_MODEL_UNKNOWN',
+        detail: { model: 'twin-1', route: 'twin-a', reason: 'no-credential' },
+      })
+      expect((refusal as Error).message).toContain('route twin-a has no credentials')
+      // One of the two with credentials is the only choice, so the bare id resolves to it.
+      setChildModelScope(provider, (model) => (model.route === 'twin-a' ? 'no-credential' : true))
+      expect((await start(parent, 'twin-1')).key).toBeDefined()
     } finally {
       await kernel.close()
     }

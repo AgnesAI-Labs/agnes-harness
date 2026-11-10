@@ -37,7 +37,7 @@ const logger = {
 }
 const sessionOpts = { actor, resolvedProfileHash: 'h1', cwd: '/w', writerRunId: 'r1' }
 
-function kernel(storage = new MemoryStorage(), provider?: Provider) {
+function kernel(storage = new MemoryStorage(), provider?: Provider, maxSteps: number | null = null) {
   return Kernel.create({
     loops: defaultLoops(),
     storage,
@@ -48,7 +48,13 @@ function kernel(storage = new MemoryStorage(), provider?: Provider) {
         models: () => [catalogue()],
       }),
     contract: { contract_id: null, parser_version: '1' },
-    preset: { ...presetDefaults(), treeBudgetCredits: 100, generationLimit: 1, maxFanOut: 4 },
+    preset: {
+      ...presetDefaults(),
+      budget: { ...presetDefaults().budget, maxSteps },
+      treeBudgetCredits: 100,
+      generationLimit: 1,
+      maxFanOut: 4,
+    },
     fsOps: testFsOps(),
     netFetch: async () => new Response(''),
     logger,
@@ -515,6 +521,107 @@ describe('child completion notice', () => {
     expect(notices(parent)[0]?.data).not.toHaveProperty('error')
     expect(await collectContext(parent).collect(child.key)).not.toHaveProperty('error')
     await k.close()
+  })
+
+  const loneSurrogate = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
+  it('delivers a failed child notice within the summary limit and keeps the reason', async () => {
+    // A long child key, a long earlier result and a long reason together pass 2048 characters.
+    let turns = 0
+    const provider: Provider = {
+      models: () => [catalogue()],
+      async *infer(req) {
+        if (turns++ === 0) {
+          for (const event of textTurn('r'.repeat(3000)))
+            yield event.type === 'sent' ? sentFor(req, event) : event
+        } else
+          yield { type: 'error', reason: 'error', code: 'AUTH', message: 'm'.repeat(2000), retryable: false }
+      },
+    }
+    const k = kernel(new MemoryStorage(), provider)
+    const parent = await k.session('p'.repeat(400), sessionOpts)
+    const child = await parent.d.children.createWithKind!('spawn', {
+      parent: parent.key,
+      cwd: '/w',
+      input: 'i'.repeat(300),
+      parentEffectId: 'long-failed',
+      resident: true,
+    })
+    await child.run('i'.repeat(300))
+    await child.run('more').catch(() => undefined)
+    const failed = notices(parent).find((notice) => (notice.data as { status?: string }).status === 'failed')
+    expect(failed?.summary.length).toBeLessThanOrEqual(2048)
+    expect(failed?.summary).toContain(`failed: AUTH (${'m'.repeat(299)}…).`)
+    expect(failed?.summary).toContain('Call subagent_collect')
+    await k.close()
+  })
+
+  it('never leaves half a surrogate pair in a notice', async () => {
+    // An emoji sits across each cut: the label at 120, the summary result at 1200, the data result at 4000.
+    const face = '\u{1F600}'
+    const text = `${'b'.repeat(1198)}${face}${'c'.repeat(2799)}${face}tail`
+    expect([text.charCodeAt(1198), text.charCodeAt(3999)]).toEqual([0xd83d, 0xd83d])
+    const provider = Object.assign(fakeProvider([textTurn(text)]), { models: () => [catalogue()] })
+    const k = kernel(new MemoryStorage(), provider)
+    const parent = await k.session('parent', sessionOpts)
+    const input = `${'a'.repeat(118)}${face} and more`
+    const child = await parent.d.children.create({
+      parent: parent.key,
+      cwd: '/w',
+      input,
+      resident: true,
+      parentEffectId: 'background',
+    })
+    await child.run(input)
+    const [notice] = notices(parent)
+    expect(notice?.data).toMatchObject({ status: 'completed', truncated: true })
+    expect(JSON.stringify(notice)).not.toMatch(loneSurrogate)
+    await k.close()
+  })
+
+  it('reports a cancelled child as cancelled and names a step-cap stop', async () => {
+    const hanging = hangingProvider()
+    const k = kernel(new MemoryStorage(), { models: () => [catalogue()], infer: hanging.infer })
+    const parent = await k.session('parent', sessionOpts)
+    const child = await parent.d.children.createWithKind!('spawn', {
+      parent: parent.key,
+      cwd: '/w',
+      input: 'work',
+      parentEffectId: 'to-cancel',
+      resident: true,
+    })
+    const running = child.run('work').catch(() => undefined)
+    expect(
+      await until(
+        async () =>
+          (await parent.d.log.storage.scan(child.key, { type: 'turn/start', limit: 1 })).length === 1,
+      ),
+    ).toBe(true)
+    await child.cancel!()
+    await running
+    const cancelled = await collectContext(parent).collect(child.key)
+    expect(cancelled).toMatchObject({ status: 'cancelled' })
+    expect(cancelled).not.toHaveProperty('error')
+    expect(cancelled).not.toHaveProperty('stopReason')
+    await k.close()
+
+    const capped = kernel(new MemoryStorage(), undefined, 0)
+    const owner = await capped.session('parent', sessionOpts)
+    const stopped = await owner.d.children.createWithKind!('spawn', {
+      parent: owner.key,
+      cwd: '/w',
+      input: 'work',
+      parentEffectId: 'capped',
+      resident: true,
+    })
+    await stopped.run('work').catch(() => undefined)
+    expect(notices(owner)).toMatchObject([{ data: { status: 'budget_stopped' } }])
+    // The live handle is gone; the status comes from what the factory kept, then from the ledger.
+    expect(await collectContext(owner).collect(stopped.key)).toMatchObject({
+      status: 'failed',
+      stopReason: 'max_steps',
+    })
+    await capped.close()
   })
 
   it('does not notify for an awaited fork', async () => {

@@ -31,49 +31,71 @@ export function childModels(provider: Provider): ModelRecord[] {
   return scope ? models.filter((model) => scope(model) === true) : models
 }
 
+type Target = { route: string; model: string }
+
+/** What excluding a model for this reason means, as the refusal says it of the route. */
+const EXCLUSION_TEXT: Record<ChildModelExclusion, string> = { 'no-credential': 'has no credentials' }
+
 /**
- * The route and model a child agent's `model` argument names: a slot of the parent's preset, a model
- * id, or `route/id`. A model the Host excluded resolves to nothing, however it was named.
+ * One resolution of a child agent's `model` argument: a slot of the parent's preset, a model id, or
+ * `route/id`. It is resolved among the models a child may choose. When that finds nothing, the
+ * models the Host excluded with a reason are searched for what the argument names, so the refusal
+ * can say why.
  */
+function resolve(
+  provider: Provider,
+  preset: PresetView,
+  selector: string,
+): { target: Target } | { excluded: Target & { reason: ChildModelExclusion } } | undefined {
+  const scope = scopes.get(provider)
+  const verdict = (target: Target) => scope?.({ route: target.route, id: target.model }) ?? true
+  let all: ModelRecord[]
+  try {
+    all = provider.models()
+  } catch {
+    return undefined
+  }
+  const found = pick(scope ? all.filter((model) => scope(model) === true) : all, preset, selector)
+  const allowed = found && verdict(found)
+  if (found && allowed === true) return { target: found }
+  if (found && typeof allowed === 'string') return { excluded: { ...found, reason: allowed } }
+  if (!scope) return undefined
+  // A slot or a unique name among everything published, then an id several excluded routes share.
+  const named = pick(all, preset, selector)
+  const shared = all.filter((model) => model.id === selector).map((m) => ({ route: m.route, model: m.id }))
+  for (const target of [...(named ? [named] : []), ...shared]) {
+    const reason = verdict(target)
+    if (typeof reason === 'string') return { excluded: { ...target, reason } }
+  }
+  return undefined
+}
+
+/** The route and model the argument names. A model the Host excluded resolves to nothing. */
 export function resolveChildModel(
   provider: Provider,
   preset: PresetView,
   selector: string,
-): { route: string; model: string } | undefined {
-  let models: ModelRecord[]
-  try {
-    models = childModels(provider)
-  } catch {
-    return undefined
-  }
-  const found = pick(models, preset, selector)
-  return found && (scopes.get(provider)?.({ route: found.route, id: found.model }) ?? true) === true
-    ? found
-    : undefined
+): Target | undefined {
+  const resolved = resolve(provider, preset, selector)
+  return resolved && 'target' in resolved ? resolved.target : undefined
 }
 
 /**
- * The refusal for a `model` argument that `resolveChildModel` did not resolve. When the Host gave a
- * reason for excluding the model the argument names among everything the provider publishes, the
- * refusal repeats it; a name nothing publishes, or one excluded without a reason, is only unknown.
+ * The route and model the argument names, or the refusal: `E_MODEL_UNKNOWN`, which repeats the
+ * Host's reason when the argument names a model it excluded with one.
  */
-export function unresolvedChildModel(provider: Provider, preset: PresetView, selector: string): CoreError {
-  const scope = scopes.get(provider)
-  let found: { route: string; model: string } | undefined
-  try {
-    found = scope && pick(provider.models(), preset, selector)
-  } catch {
-    found = undefined
-  }
-  const reason = found && scope?.({ route: found.route, id: found.model })
-  if (!found || typeof reason !== 'string')
-    return new CoreError('E_MODEL_UNKNOWN', `default child factory cannot resolve model ${selector}`, {
+export function requireChildModel(provider: Provider, preset: PresetView, selector: string): Target {
+  const resolved = resolve(provider, preset, selector)
+  if (resolved && 'target' in resolved) return resolved.target
+  if (!resolved)
+    throw new CoreError('E_MODEL_UNKNOWN', `default child factory cannot resolve model ${selector}`, {
       model: selector,
     })
-  return new CoreError(
+  const { route, reason } = resolved.excluded
+  throw new CoreError(
     'E_MODEL_UNKNOWN',
-    `model ${selector} is not available to child agents: route ${found.route} has no credentials`,
-    { model: selector, route: found.route, reason },
+    `model ${selector} is not available to child agents: route ${route} ${EXCLUSION_TEXT[reason]}`,
+    { model: selector, route, reason },
   )
 }
 

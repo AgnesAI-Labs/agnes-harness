@@ -32,11 +32,23 @@ export type ChildStatus = {
   text?: string
   /** Why a failed child's last turn ended in error; the message is clipped adapter text. */
   error?: NonNullable<ChildResult['error']>
+  /** The cap a failed child's last turn stopped at. */
+  stopReason?: NonNullable<ChildResult['stopReason']>
+  /** `state` is `error` because the child was cancelled, not because it failed. */
+  cancelled?: true
   idle?: boolean
   /** Backend-only identity of the completed result returned by this snapshot. */
   completionId?: string
   completionSeq?: Seq
   receipt?: ChildResult['receipt']
+}
+/** Why a failed child ended, as a collected result carries it; nothing for any other outcome. */
+function failureOf(status: ChildStatus): Pick<ChildResult, 'error' | 'stopReason'> {
+  if (status.state !== 'error' || status.cancelled) return {}
+  return {
+    ...(status.error ? { error: status.error } : {}),
+    ...(status.stopReason ? { stopReason: status.stopReason } : {}),
+  }
 }
 export type ChildHandle = {
   key: string
@@ -460,10 +472,12 @@ export function buildToolContext(
                 : status.state === 'done'
                   ? 'completed'
                   : status.state === 'error'
-                    ? 'failed'
+                    ? status.cancelled
+                      ? 'cancelled'
+                      : 'failed'
                     : 'running') as 'running' | 'idle' | 'completed' | 'failed' | 'cancelled',
               ...(status.text !== undefined ? { text: status.text } : {}),
-              ...(status.state === 'error' && !status.idle && status.error ? { error: status.error } : {}),
+              ...(status.idle ? {} : failureOf(status)),
               ...(status.receipt === undefined ? {} : { receipt: status.receipt }),
             }
           }
@@ -473,13 +487,15 @@ export function buildToolContext(
             await d.children.collected?.(childKey, snap.completionId, snap.completionSeq ?? 0)
           return {
             childKey,
-            status: (snap.state === 'done' ? 'completed' : snap.state === 'error' ? 'failed' : 'running') as
-              | 'running'
-              | 'completed'
-              | 'failed'
-              | 'cancelled',
+            status: (snap.state === 'done'
+              ? 'completed'
+              : snap.state === 'error'
+                ? snap.cancelled
+                  ? 'cancelled'
+                  : 'failed'
+                : 'running') as 'running' | 'completed' | 'failed' | 'cancelled',
             ...(snap.text !== undefined ? { text: snap.text } : {}),
-            ...(snap.state === 'error' && snap.error ? { error: snap.error } : {}),
+            ...failureOf(snap),
             ...(snap.receipt === undefined ? {} : { receipt: snap.receipt }),
           }
         }

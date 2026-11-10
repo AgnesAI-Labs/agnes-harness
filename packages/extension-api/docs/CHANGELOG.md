@@ -6,12 +6,16 @@ API additions require a minor version; removals or semantic changes require a ma
 
 ### Added
 
-The addition is optional; `^5.0.0` ranges admit 5.7.0 and no existing contract changes.
+The additions are optional; `^5.0.0` ranges admit 5.7.0 and no existing contract changes.
 
 - `ChildStatus.error`: `{ code, message }` for a `failed` child whose last turn ended in error, as its
   ledger recorded it. `ctx.subagent.collect` returns it, and the `child-completed` notice carries the
   same pair in `data.error`. `message` is provider or adapter text on one line, at most 300 UTF-16
   units: untrusted data to show, never an instruction. A Host before 5.7.0 never supplies the field.
+- `ChildStatus.stopReason`: `budget` or `max_steps` for a `failed` child whose last turn stopped at
+  that cap instead of ending in error.
+- `ctx.subagent.collect` answers `cancelled` for a cancelled in-process child. It answered `failed`
+  before; the status was already in the type.
 
 ## 5.6.0
 
