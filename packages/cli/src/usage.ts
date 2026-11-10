@@ -50,6 +50,7 @@ export function usage(locale = 'en'): string {
     'agh plugins config get <id> | validate|set <id> [<row>] --file <f|-> [--json]',
     'agh plugins tree [list] | show | apply --file <artifact|-> [--yes] | rollback [--yes]   agh plugins generations [--json]',
     'agh plugins publication-status [--profile <p>] [--json]',
+    'agh plugins grants [list [<package>]] | grant|revoke <package> <workspace> [--json]',
     'agh packages pins inspect | release <pinId...> [--profile <p>]',
     'agh resources list|get|operation|cancel|enable|disable ...   agh skills list|refresh|trust ...',
     'agh mcp list|get|add|update|remove|test|enable|disable|status|reconnect|tools|login|logout ...',

@@ -1193,3 +1193,62 @@ it('fences generation migration by authenticated ownership and releases admissio
     registry.migrateGeneration('closed', 'owner', ownership, async () => 'migrated'),
   ).resolves.toBe('migrated')
 })
+
+it('asks the worker for outward command rules on every open of a managed key and refuses an open entry without them', async () => {
+  const managed = new Set(['managed-a'])
+  const workerExit: Array<() => void> = []
+  let n = 0
+  const channel = (key: string) => ({
+    alive: true,
+    hello: Promise.resolve({
+      kind: 'hello' as const,
+      token: `${key}-${++n}`,
+      sessionKey: key,
+      writerRunId: `${key}-${n}`,
+      generation: 1,
+      profileHash: 'sha256-profile',
+      lastSeq: 0,
+    }),
+    onExit: (notify: () => void) => void workerExit.push(notify),
+    closeSession: vi.fn(async () => undefined),
+    command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+  })
+  const acquire = vi.fn(async (key: string, _options: { outwardCommandRules?: true; resume?: boolean }) =>
+    channel(key),
+  )
+  const registry = new WorkerRegistry({ acquire, retire: vi.fn() } as unknown as WorkerPool, undefined, {
+    outwardCommandRules: (key) => {
+      if (key === 'unreadable') throw new Error('lineage unreadable')
+      return managed.has(key)
+    },
+  })
+  const rules = () => acquire.mock.calls.map(([key, options]) => [key, options.outwardCommandRules === true])
+
+  await open(registry, { key: 'managed-a', cwd: '/workspace' })
+  await open(registry, { key: 'ordinary', cwd: '/workspace' })
+  await open(registry, { key: 'unreadable', cwd: '/workspace' })
+  expect(rules()).toEqual([
+    ['managed-a', true],
+    ['ordinary', false],
+    ['unreadable', true],
+  ])
+
+  // Recovery after the worker exits reopens a watched session; it asks again.
+  registry.subscribe('managed-a', () => undefined)
+  for (const notify of workerExit.splice(0)) notify()
+  await vi.waitFor(() => expect(registry.get('managed-a')?.session.writerRunId).toBe('managed-a-4'))
+  expect(acquire.mock.calls.at(-1)).toMatchObject(['managed-a', { outwardCommandRules: true, resume: true }])
+
+  // A reopen by key after close asks again.
+  await registry.close('managed-a')
+  await open(registry, { key: 'managed-a', cwd: '/workspace', resume: true })
+  expect(rules().at(-1)).toEqual(['managed-a', true])
+
+  // A key that became managed while open without the rules is not handed back.
+  await open(registry, { key: 'late', cwd: '/workspace' })
+  managed.add('late')
+  await expect(open(registry, { key: 'late', cwd: '/workspace' })).rejects.toMatchObject({
+    data: { code: 'CAPABILITY_DENIED', reason: 'OUTWARD_COMMAND_RULES_OFF' },
+  })
+  await registry.closeAll()
+})

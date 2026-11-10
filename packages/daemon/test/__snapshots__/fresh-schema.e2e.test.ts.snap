@@ -549,6 +549,30 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "index",
       },
       {
+        "name": "sqlite_autoindex_managed_session_grants_1",
+        "sql": null,
+        "tbl_name": "managed_session_grants",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_managed_session_sends_1",
+        "sql": null,
+        "tbl_name": "managed_session_sends",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_managed_sessions_1",
+        "sql": null,
+        "tbl_name": "managed_sessions",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_managed_sessions_2",
+        "sql": null,
+        "tbl_name": "managed_sessions",
+        "type": "index",
+      },
+      {
         "name": "sqlite_autoindex_plugin_config_audit_1",
         "sql": null,
         "tbl_name": "plugin_config_audit",
@@ -748,6 +772,35 @@ exports[`fresh data directory schema > creates every database at its final schem
         "name": "managed_chat_authority",
         "sql": "CREATE TABLE managed_chat_authority (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)",
         "tbl_name": "managed_chat_authority",
+        "type": "table",
+      },
+      {
+        "name": "managed_session_grants",
+        "sql": "CREATE TABLE managed_session_grants (
+      owner TEXT NOT NULL, workspace TEXT NOT NULL, PRIMARY KEY (owner, workspace)
+    )",
+        "tbl_name": "managed_session_grants",
+        "type": "table",
+      },
+      {
+        "name": "managed_session_sends",
+        "sql": "CREATE TABLE managed_session_sends (
+      owner TEXT NOT NULL, session_id TEXT NOT NULL, idempotency_key TEXT NOT NULL, state TEXT NOT NULL,
+      PRIMARY KEY (owner, session_id, idempotency_key)
+    )",
+        "tbl_name": "managed_session_sends",
+        "type": "table",
+      },
+      {
+        "name": "managed_sessions",
+        "sql": "CREATE TABLE managed_sessions (
+      session_id TEXT PRIMARY KEY, owner TEXT NOT NULL, start_key TEXT NOT NULL, bundle TEXT NOT NULL,
+      workspace TEXT NOT NULL, retention TEXT NOT NULL, permission TEXT NOT NULL,
+      model TEXT, memory_writes INTEGER NOT NULL DEFAULT 1,
+      skill_installs INTEGER NOT NULL DEFAULT 1, started INTEGER NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0, UNIQUE (owner, start_key)
+    )",
+        "tbl_name": "managed_sessions",
         "type": "table",
       },
       {

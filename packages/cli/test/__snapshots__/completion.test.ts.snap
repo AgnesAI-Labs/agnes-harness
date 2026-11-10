@@ -49,7 +49,7 @@ _agh() {
       home) COMPREPLY=($(compgen -W "info" -- "$cur")) ;;
       mcp) COMPREPLY=($(compgen -W "list get status tools add update trust enable disable test reconnect remove login logout" -- "$cur")) ;;
       package) COMPREPLY=($(compgen -W "inspect add trust enable disable rollback remove status list catalog operation cancel source-policy" -- "$cur")) ;;
-      plugins) COMPREPLY=($(compgen -W "add pack trust enable reload candidates provenance publication-status config tree generations" -- "$cur")) ;;
+      plugins) COMPREPLY=($(compgen -W "add pack trust enable reload candidates provenance publication-status config tree generations grants" -- "$cur")) ;;
       profile) COMPREPLY=($(compgen -W "list inspect trust" -- "$cur")) ;;
       resources) COMPREPLY=($(compgen -W "list get operation cancel enable disable" -- "$cur")) ;;
       schedules) COMPREPLY=($(compgen -W "list show pause resume run archive add edit" -- "$cur")) ;;
@@ -81,7 +81,7 @@ complete -c agh -n '__fish_seen_subcommand_from doctor' -a 'platform network pro
 complete -c agh -n '__fish_seen_subcommand_from home' -a 'info'
 complete -c agh -n '__fish_seen_subcommand_from mcp' -a 'list get status tools add update trust enable disable test reconnect remove login logout'
 complete -c agh -n '__fish_seen_subcommand_from package' -a 'inspect add trust enable disable rollback remove status list catalog operation cancel source-policy'
-complete -c agh -n '__fish_seen_subcommand_from plugins' -a 'add pack trust enable reload candidates provenance publication-status config tree generations'
+complete -c agh -n '__fish_seen_subcommand_from plugins' -a 'add pack trust enable reload candidates provenance publication-status config tree generations grants'
 complete -c agh -n '__fish_seen_subcommand_from profile' -a 'list inspect trust'
 complete -c agh -n '__fish_seen_subcommand_from resources' -a 'list get operation cancel enable disable'
 complete -c agh -n '__fish_seen_subcommand_from schedules' -a 'list show pause resume run archive add edit'
@@ -204,7 +204,7 @@ _agh() {
       home) compadd -- info ;;
       mcp) compadd -- list get status tools add update trust enable disable test reconnect remove login logout ;;
       package) compadd -- inspect add trust enable disable rollback remove status list catalog operation cancel source-policy ;;
-      plugins) compadd -- add pack trust enable reload candidates provenance publication-status config tree generations ;;
+      plugins) compadd -- add pack trust enable reload candidates provenance publication-status config tree generations grants ;;
       profile) compadd -- list inspect trust ;;
       resources) compadd -- list get operation cancel enable disable ;;
       schedules) compadd -- list show pause resume run archive add edit ;;

@@ -101,6 +101,10 @@
           },
           "maxItems": 64,
           "uniqueItems": true
+        },
+        "sessions": {
+          "type": "boolean",
+          "description": "Plugin-managed sessions: a profile-scoped in-process service may open and drive sessions for the owner, only in workspaces the owner authorized for this plugin. Trust shows the atom managedSessions:<scope>:<id>; the capability hash covers it."
         }
       }
     },

@@ -81,6 +81,8 @@ export async function open(
     workspaceRefs?: RefinementWorkspaceRefs
     /** The switch, read on every call so a test may move it; on and automatic by default. */
     sw?: { enabled: boolean; mode: 'manual' | 'auto'; revision: string }
+    /** Attributes on the actor of every input `say` sends, the opening one included. */
+    attrs?: Record<string, string>
   } = {},
 ) {
   /** The task the reader reports; `unreadable` makes the read fail. */
@@ -166,7 +168,10 @@ export async function open(
   const s = opened.session
   const facade = refinementFacade(s)
   const say = async (text: string) => {
-    await s.enqueue('next-turn', { content: [{ type: 'text', text }], actor })
+    await s.enqueue('next-turn', {
+      content: [{ type: 'text', text }],
+      actor: o.attrs ? { ...actor, attrs: { ...actor.attrs, ...o.attrs } } : actor,
+    })
     return s.run({ until: 'turn-end', signal: new AbortController().signal })
   }
   /** Plans and applies one request (manual unless told) for the work so far, and returns how the run ended. */

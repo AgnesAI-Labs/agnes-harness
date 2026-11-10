@@ -15,6 +15,7 @@ import { decodeArtifactMediaResponse } from './artifact-media-response.js'
 import { bestEffort } from './best-effort.js'
 import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
+import { profileSessionProducer } from './profile-session-producer.js'
 import { profileWakeProducer } from './profile-wake-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { scanWorkspaceSkillRequest } from './skill-scan.js'
@@ -191,6 +192,7 @@ export async function runWorker(
     )
   }
   const boundWakes = profileWakeProducer(sharedChannel)
+  const managedSessions = profileSessionProducer(sharedChannel)
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('Skill install session mismatch')
@@ -397,6 +399,7 @@ export async function runWorker(
           decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
           boundWakes,
+          managedSessions,
           scheduling,
           skillInstall,
           refinementSave,
@@ -438,6 +441,7 @@ export async function runWorker(
             log: deps.log ?? sessionLog,
             prompter,
             boundWakes,
+            managedSessions,
             scheduling,
             skillInstall,
             refinementSave,

@@ -4,11 +4,12 @@ import { requireChildControl } from '@agnes/core-child-control/child/store'
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { CoreError } from '@agnes/core-common/types'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
-import type { ToolDef } from '@agnes/extension-api'
+import type { MemorySession, ToolDef, ToolMeta } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
 import { KernelChildren } from '../src/child/factory.js'
+import { toolMemoryPort } from '../src/execution/turn/memory-approval.js'
 import { Kernel } from '../src/kernel.js'
 import { mintFrom } from '../src/request/mint.js'
 import { toProviderRequest } from '../src/request/to-provider.js'
@@ -646,6 +647,41 @@ describe('a child of an unattended turn', () => {
     const [trigger] = await storage.scan(child.key, { type: 'user/message', limit: 1 })
     expect(trigger?.actor?.attrs?.interaction).toBe(unattended ? 'unattended' : undefined)
     expect(JSON.stringify(provider.requests[0]?.messages).includes('This run is unattended')).toBe(unattended)
+    await k.close()
+  })
+})
+
+describe('a descendant of a session opened with memory writes off', () => {
+  it.each([
+    ['memory writes off', true],
+    ['the default opening input', false],
+  ])('gets a memory port only when the root opening input allowed one (%s)', async (_label, off) => {
+    const storage = new MemoryStorage()
+    const k = kernel({ storage, memoryFor: () => ({}) as MemorySession })
+    const parent = await k.session('parent', sessionOpts)
+    await parent.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'delegate' }],
+      actor: off ? { ...actor, attrs: { memoryWrites: 'off', experience: 'excluded' } } : actor,
+    })
+    await parent.acceptInput()
+    const child = await parent.d.children.create({ parent: parent.key, cwd: '/w', input: 'work' })
+    const childSession = k.sessions.get(child.key)
+    if (!childSession) throw new Error('child session not open')
+    const grandchild = await childSession.d.children.create({ parent: child.key, cwd: '/w', input: 'more' })
+    const fork = await parent.d.children.createWithKind?.('fork', {
+      parent: parent.key,
+      cwd: '/w',
+      forkAt: parent.lastSeq,
+      input: 'branch',
+    })
+    if (!fork) throw new Error('fork unavailable')
+    const tool: { name: string; meta: ToolMeta } = shellTool()
+    for (const key of [parent.key, child.key, grandchild.key, fork.key]) {
+      const session = k.sessions.get(key)
+      if (!session) throw new Error(`session ${key} not open`)
+      const port = await toolMemoryPort(session, tool, 0, new AbortController().signal)
+      expect({ key, port: port !== undefined }).toEqual({ key, port: !off })
+    }
     await k.close()
   })
 })

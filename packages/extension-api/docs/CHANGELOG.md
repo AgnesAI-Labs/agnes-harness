@@ -2,6 +2,27 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.10.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.10.0 and no existing contract changes for a plugin
+that does not use them.
+
+- `init.sessions` (`ManagedSessions`): a profile-scoped managed service that declares `sessions: true`
+  opens and drives sessions the owner owns. It offers `start`, `send`, `list`, `status`, `events`,
+  `result`, `usage`, `toolResult`, `interrupt` and `archive`, and sees only the sessions it manages.
+  `events` reports how each approval ended as an `approvalOutcome` event (`allowed`, `rejected` or
+  `expired`, via `person`, `full-access` or `automatic`). `toolResult` returns a `state` (`pending` or
+  `done`) and, for `shell`, the exit code as a number.
+- `memoryWrites: false` and `skillInstalls: false` on `start` refuse durable memory writes and skill,
+  plugin and MCP installs for the session and its descendants, whatever the permission mode.
+- A session opens only in a workspace the owner granted to the plugin with `agh plugins grants`; the
+  plugin cannot grant one. Every session runs with the outward checkpoint, and `permission: 'full-access'`
+  is refused unless the outward checkpoint and a full OS boundary both hold.
+
+See [Plugin-managed sessions](../../../docs/extend/managed-sessions.md).
+
 ## 5.9.0
 
 ### Added

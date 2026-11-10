@@ -7,7 +7,6 @@ import {
   type WorkspaceBindingEnvelope,
 } from '@agnes/daemon-foundation/storage/workspaces'
 import type { ResolvedProfile } from '@agnes/host'
-import type { LoopSelection } from '@agnes/protocol'
 import {
   type DaemonNotice,
   type EventEnvelope,
@@ -33,7 +32,7 @@ import type {
 } from './publication/composite-runtime-delivery.js'
 import { workerStderrEvidence } from './runtime-log.js'
 import { WorkerBootFailures } from './worker-boot-failures.js'
-import { WorkerLink, type WorkerSessionChannel } from './worker-link.js'
+import { type SessionOpenParams, WorkerLink, type WorkerSessionChannel } from './worker-link.js'
 import { waitForWorkerExit } from './worker-process-exit.js'
 
 /**
@@ -51,18 +50,10 @@ export type WorkerProfile = Readonly<{ profile: ResolvedProfile; profileFile: st
 type SessionWorkerAcquireOptions = Readonly<{
   historySignal?: AbortSignal
   onHistoryProgress?: (progress: { verifiedSeq: number; lastSeq: number }) => void
-  resume?: boolean
   cwd?: string
   binding?: WorkspaceBindingEnvelope
-  preset?: string
-  permission?: string
-  agent?: string
-  agentDigest?: string
-  bundles?: readonly string[]
-  systemPromptAppend?: string
-  loop?: LoopSelection
-  parent?: { key: string; boundarySeq: number }
-}>
+}> &
+  Omit<SessionOpenParams, 'binding'>
 
 type ResourceControlWorkerAcquireOptions = ResourceWorkerAcquireOptions &
   SessionWorkerAcquireOptions &
@@ -152,7 +143,8 @@ export class WorkerPool {
       ) => void
       /** Safe live resource observations are fenced by the resource adapter's active worker key. */
       onResourceStatus?: (input: { sessionKey: string; serverId: string; status: McpStatus }) => void
-      onRequest: (sessionKey: string, f: RequestFrame, signal: AbortSignal) => Promise<unknown>
+      /** `shared`: the frame came over the claimed, live shared session worker link. */
+      onRequest: (key: string, f: RequestFrame, signal: AbortSignal, shared: boolean) => Promise<unknown>
       onLog?: (input: {
         sessionKey: string
         level: 'debug' | 'info' | 'warn' | 'error'
@@ -183,17 +175,17 @@ export class WorkerPool {
     let workerKey = ''
     let generation = 0
     let claimed = false
+    const sharedLink = () => claimed && link.alive && workerKey === '@shared'
     const link = new WorkerLink(socket, {
       onEvent: (k, e) => this.o.onEvent(k, e),
       onPreview: (k, update) => {
         if (this.hosts(link, k)) this.o.onPreview?.(k, update)
       },
-      onDecisionsChanged: (detail) => {
-        if (claimed && link.alive && workerKey === '@shared') this.o.onDecisionsChanged?.(detail)
-      },
+      onDecisionsChanged: (detail) => sharedLink() && this.o.onDecisionsChanged?.(detail),
       onResourceStatus: (serverId, status) =>
         this.o.onResourceStatus?.({ sessionKey: workerKey, serverId, status }),
-      onRequest: (f, signal) => this.o.onRequest(f.sessionKey, f, signal),
+      // A worker can send before its hello is claimed (a service starting with the Host); wait for it.
+      onRequest: (f, signal) => admitted.then(() => this.o.onRequest(f.sessionKey, f, signal, sharedLink())),
       onLog: (sessionKey, level, message, correlation) =>
         this.o.onLog?.({ sessionKey, level, message, ...correlation }),
       onActivity: (sessionKey) => this.touch(sessionKey),
@@ -207,7 +199,7 @@ export class WorkerPool {
         this.o.runtimeDelivery?.handleWorkerFrame(generation, frame)
       },
     })
-    void link.hello.then(async (h) => {
+    const admitted = link.hello.then(async (h) => {
       generation = workerGeneration(h.workerGeneration)
       workerKey = h.workerKey
       const claim = this.pendingByToken.get(h.token)
@@ -258,7 +250,11 @@ export class WorkerPool {
     const slot = this.slots.get('@shared')
     if (!slot) throw new Error('shared worker slot disappeared')
     const existing = slot.channels.get(sessionKey)
-    if (existing?.alive) return existing
+    if (existing?.alive) {
+      if (opts.outwardCommandRules && !existing.outwardCommandRules)
+        throw rpcError('CAPABILITY_DENIED', { reason: 'OUTWARD_COMMAND_RULES_OFF', sessionId: sessionKey })
+      return existing
+    }
     const channel: WorkerSessionChannel = link.session(
       sessionKey,
       {
@@ -272,6 +268,7 @@ export class WorkerPool {
         ...(opts.loop ? { loop: opts.loop } : {}),
         ...(opts.resume ? { resume: true } : {}),
         ...(opts.parent ? { parent: opts.parent } : {}),
+        ...(opts.outwardCommandRules ? { outwardCommandRules: true as const } : {}),
       },
       () => {
         if (slot.channels.get(sessionKey) !== channel) return

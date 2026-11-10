@@ -73,6 +73,7 @@ export const SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
     'config',
     'tree',
     'generations',
+    'grants',
   ],
   profile: ['list', 'inspect', 'trust'],
   resources: ['list', 'get', 'operation', 'cancel', 'enable', 'disable'],

@@ -31,6 +31,8 @@ import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
 import { describeGenerationSessions } from './generation-sessions.js'
 import { readRunningGenerationStatus } from './generation-status-read.js'
+import { quietGrantPruner } from './managed-workspace-grants.js'
+import { managedSessionPackages } from './profile-services.js'
 import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
   type CompositeRuntimeDelivery,
@@ -272,6 +274,7 @@ async function openRuntimeActivation(
     surfaceInventory,
     pinCoordinator,
     surfaceController,
+    managedSessionRecords,
   } = state
   let latestInventory = surfaceInventory
   // Older desired artifacts predate daemon-owned web rows. Repair this narrow slice before
@@ -344,6 +347,19 @@ async function openRuntimeActivation(
         ...(pinCoordinator ? { collectPins: pinCoordinator.collect } : {}),
         ...(pinCoordinator ? { revokePackage: pinCoordinator.revokePackage } : {}),
         ...(pinCoordinator ? { releaseRetiring: pinCoordinator.releaseRetiring } : {}),
+        ...(managedSessionRecords
+          ? {
+              pruneGrants: quietGrantPruner(
+                managedSessionRecords,
+                () =>
+                  managedSessionPackages({
+                    manager: packageRuntime.manager,
+                    directory: packageProfileDirectory,
+                  }),
+                (message) => o.audit?.({ kind: 'worker.log', sessionKey: '@shared', level: 'warn', message }),
+              ),
+            }
+          : {}),
         generationStatus: async () => {
           const status = await readRunningGenerationStatus(pool, o.config.limits.workerStartupMs)
           const running = (key: string) => registry.get(key)?.session.running === true

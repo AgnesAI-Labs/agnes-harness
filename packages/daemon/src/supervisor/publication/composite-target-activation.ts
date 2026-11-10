@@ -28,6 +28,8 @@ import { publishProbedRuntimeTarget } from './runtime-target-publisher.js'
 
 export type CompositeTargetActivationOptions = Readonly<{
   store: CompositeTargetStore
+  /** Drops state keyed by plugin rows no installed package declares; runs after every reconcile, and must not throw. */
+  pruneGrants?(): Promise<void>
   workerGeneration?: () => number | undefined
   /** Read-only observation of an admitted shared-worker startup, never starts a worker. */
   workerStarting?: () => boolean
@@ -256,7 +258,7 @@ const unavailable: PackageAdminError = Object.freeze({
 export function createCompositeTargetActivation(
   options: CompositeTargetActivationOptions,
 ): PackageActivationAdapter {
-  return Object.freeze({
+  const adapter: PackageActivationAdapter = {
     ...(options.generationStatus ? { generations: options.generationStatus } : {}),
     ...(options.publicationStatus ? { publicationStatus: options.publicationStatus } : {}),
     ...(options.migrateSession ? { migrateSession: options.migrateSession } : {}),
@@ -379,6 +381,17 @@ export function createCompositeTargetActivation(
       if (packageStopped(options.store, options.workerGeneration?.(), input.packageId))
         await options.collectPins?.()
       return observation(options, input.packageId)
+    },
+  }
+  // Install, update, rollback and removal each end here, after the lockfile and the files changed.
+  return Object.freeze({
+    ...adapter,
+    async reconcile(input) {
+      try {
+        return await adapter.reconcile(input)
+      } finally {
+        await options.pruneGrants?.()
+      }
     },
   })
 }

@@ -22,13 +22,20 @@ export async function realHosted(
     idleCloseMs?: number
     clock?: () => number
     onTurnEnd?: () => void
+    /** Model turns in order; the default answers every turn with one short text. */
+    script?: InferenceEvent[][]
+    packageDirs?: Record<string, string>
+    seams?: Parameters<typeof createTestHost>[0]['seams']
+    packages?: Parameters<typeof createTestHost>[0]['packages']
   } = {},
 ) {
   const dataDir = mkdtempSync(join(tmpdir(), 'agnes-hosted-real-'))
   const root = realpathSync.native(dataDir)
   let gate: Promise<void> = Promise.resolve()
   const inner = new ScriptedProvider({
-    scripts: [[{ type: 'text_delta', delta: 'ok' } as InferenceEvent, { type: 'done', reason: 'stop' }]],
+    scripts: o.script ?? [
+      [{ type: 'text_delta', delta: 'ok' } as InferenceEvent, { type: 'done', reason: 'stop' }],
+    ],
   })
   const provider = {
     models: () => inner.models(),
@@ -45,6 +52,9 @@ export async function realHosted(
     provider,
     disableSessionTitle: true,
     ...(o.limits ? { limits: o.limits } : {}),
+    ...(o.packageDirs ? { packageDirs: o.packageDirs } : {}),
+    ...(o.seams ? { seams: o.seams } : {}),
+    ...(o.packages ? { packages: o.packages } : {}),
   })
   const host = o.wrapHost ? o.wrapHost(built.host) : built.host
   const sent: Frame[] = []

@@ -137,6 +137,18 @@ it('reviews transport declarations as authority and binds descriptor changes to 
       mergePluginCapabilities([{ ...declarations, streams: [{ ...stream, maxFrameBytes: 8192 }] }]) ?? {},
   })
   expect(old).not.toBe(changed)
+  const sessions = { ...declarations, managedServices: [{ ...service, sessions: true }] }
+  expect(parsePluginCapabilities(sessions)).toEqual(sessions)
+  expect(capabilityAtoms(sessions)).toEqual([
+    'managedServices:profile:sample',
+    'managedSessions:profile:sample',
+    'store',
+    'streams:profile:sample.frames:media',
+    'wake',
+  ])
+  expect(
+    capabilityHash({ dependencies: {}, declaredCapabilities: mergePluginCapabilities([sessions]) ?? {} }),
+  ).not.toBe(old)
   expect(() =>
     parsePluginCapabilities({ streams: [{ ...stream, lane: 'control', directions: ['inbound'] }] }),
   ).toThrow('schema')
