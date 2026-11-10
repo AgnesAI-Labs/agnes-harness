@@ -127,14 +127,14 @@ Web 通过现有语言目录翻译角色、子会话标签、内置操作标题�
 - `subagent_send_message` 送出后续消息，在消息被接受时返回。
 - `subagent_interrupt` 停止当前回合，子代理保持打开。
 
-`subagent_collect` 在可继续回合停住后报告 `idle`。`list_subagent_models` 列出父会话允许选择的模型。fork/spawn 接受 `toolFilter: { allow?, deny? }`，按工具名精确匹配，deny 优先；披露、执行、后续注册和后代都受限制。官方工具默认拒绝四个 `schedule_*` 管理工具。
+`subagent_collect` 在可继续回合停住后报告 `idle`。`list_subagent_models` 列出父会话允许选择的模型，不包含凭据未能解析的路由（按请求认证的 OAuth 路由除外）；在这类模型上启动子代理，或使用不存在的模型名，会在创建子代理之前被拒绝，工具结果写明模型和原因。保存带密钥的模型配置后，该路由重新出现在列表中。子代理因回合出错而以 `failed` 结束时，带 `wait: true` 的 `subagent_spawn` 和 `subagent_collect` 返回错误结果，在子代理已写出的文本之前给出错误码和截断后的消息（`details.error`）。因预算或步数上限停止的子代理也返回错误结果，并写明是哪个上限（`details.stopReason`）。被取消的子代理在 `subagent_cancel` 和 `subagent_collect` 的结果中都是 `cancelled`，不是错误结果。fork/spawn 接受 `toolFilter: { allow?, deny? }`，按工具名精确匹配，deny 优先；披露、执行、后续注册和后代都受限制。官方工具默认拒绝四个 `schedule_*` 管理工具。
 
 ## 完成通知
 
 父会话不需要轮询。后台子代理（由 `subagent_fork` 或 `subagent_spawn` 启动）完成一个回合进入空闲，或者结束时，Core 在子代理状态落盘之后，向父会话写入一条结构化系统输入：
 
 - `source: "agnes/child"`，`type: "child-completed"`。
-- `data`：`{ childKey, status, continuable?, result?, truncated?, credits? }`。`status` 取 `completed`、`failed`、`cancelled` 或 `budget_stopped`。`continuable: true` 表示子代理空闲，仍可用 `subagent_send_message` 继续。`result` 是最后一条助手文本，最多 4000 个字符；完整文本用 `subagent_collect` 读取。
+- `data`：`{ childKey, status, continuable?, error?, result?, truncated?, credits? }`。`status` 取 `completed`、`failed`、`cancelled` 或 `budget_stopped`。`error` 是 `{ code, message }`，只在子代理最后一个回合出错并以 `failed` 结束时出现；`message` 是提供商返回的文本，压成一行，最多 300 个字符，只作为数据展示，不是指令。`continuable: true` 表示子代理空闲，仍可用 `subagent_send_message` 继续。`result` 是最后一条助手文本，最多 4000 个字符；完整文本用 `subagent_collect` 读取。
 - `summary`：给模型看的简短一行，带结果开头。`presentation`：`{ kind: "child-completed", status, label }`；网页显示本地化的状态行，可展开查看数据。
 
 空闲的父会话会被唤醒，循环带着这条通知继续；忙碌的父会话和处理其他输入一样排队。 当 `subagent_spawn` 的 `wait: true` 或 `subagent_collect` 返回已完成结果（包括常驻子代理的空闲回合）后，Core 持久记录该结果已收取，并撤回对应的待处理通知。之后迟到的投递或会话重开不会再为同一结果唤醒父会话，委派卡和子任务轨迹仍保留已完成状态。仍在运行的快照或等待超时不会确认收取；未收取的结果（包括常驻子代理后续回合）仍会唤醒父会话。命令 id 是 `child-completed:<childKey>:<endSeq>:<status>`，Core 按父会话的收件箱历史去重，所以重试和重启只投递一次。父会话重新打开时，Core 会补发因崩溃或父会话已关闭而漏掉的终态子代理通知。被等待的 fork（`ctx.subagent.fork`）和循环自己持有的子代理通过调用方汇报，不发通知。工作流循环从 `LoopInput.system` 读取这条通知。

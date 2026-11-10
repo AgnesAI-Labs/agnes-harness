@@ -4,6 +4,7 @@ import type { SessionImpl } from '../step/session.js'
 import { childResultSequence } from './collected-result.js'
 import { childCompletionId } from './completion-notice.js'
 import { childExecutionReceipt } from './execution-receipt.js'
+import { type ChildEnd, lastChildEnd } from './failure.js'
 import { retiredCompletionIdentity } from './idle-retirement-fact.js'
 
 export function snapshotFromRecord(record: ChildTaskRecord): ChildStatus {
@@ -12,6 +13,7 @@ export function snapshotFromRecord(record: ChildTaskRecord): ChildStatus {
     state:
       record.state === 'failed' || record.state === 'cancelled' ? 'error' : terminal ? 'done' : 'running',
     lastSeq: 0,
+    ...(record.state === 'cancelled' ? { cancelled: true as const } : {}),
     ...(terminal
       ? {
           completionId: childCompletionId(
@@ -23,7 +25,12 @@ export function snapshotFromRecord(record: ChildTaskRecord): ChildStatus {
   }
 }
 
-export async function snapshotFromLedger(parent: SessionImpl, record: ChildTaskRecord): Promise<ChildStatus> {
+/** `end` is what the factory kept of the child's last turn; without it the ledger is read. */
+export async function snapshotFromLedger(
+  parent: SessionImpl,
+  record: ChildTaskRecord,
+  end?: ChildEnd,
+): Promise<ChildStatus> {
   const base = snapshotFromRecord(record)
   try {
     const fromSeq = (record.boundarySeq + 1) as typeof record.boundarySeq
@@ -49,6 +56,7 @@ export async function snapshotFromLedger(parent: SessionImpl, record: ChildTaskR
         : ((await retiredCompletionIdentity(parent, record, completionSeq)) ?? base.completionId)
     return {
       ...base,
+      ...(record.state === 'failed' ? (end ?? (await lastChildEnd(parent, record))) : {}),
       ...(completionId && completionSeq !== undefined ? { completionId, completionSeq } : {}),
       lastSeq: tail[0]?.seq ?? base.lastSeq,
       ...(text ? { text } : {}),
@@ -67,6 +75,8 @@ export async function snapshotFromLive(
     state: 'ready' | 'running' | 'done' | 'error' | 'cancelled'
     lastSeq: number
     idle: boolean
+    /** What the run kept of a failed last turn. */
+    end?: ChildEnd | undefined
   },
 ): Promise<ChildStatus> {
   const { state, lastSeq, idle } = snapshot
@@ -87,6 +97,7 @@ export async function snapshotFromLive(
   return {
     state: state === 'error' || state === 'cancelled' ? 'error' : state === 'done' ? 'done' : 'running',
     lastSeq,
+    ...(state === 'error' ? snapshot.end : state === 'cancelled' ? { cancelled: true as const } : {}),
     ...(idle ? { idle: true } : {}),
     ...(text ? { text } : {}),
     ...(terminal || idle

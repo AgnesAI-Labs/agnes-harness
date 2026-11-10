@@ -192,6 +192,13 @@ export type ChildStatus = {
   childKey: string
   status: 'running' | 'idle' | 'interrupted' | 'completed' | 'failed' | 'cancelled'
   text?: string
+  /**
+   * Why a `failed` child's last turn ended in error, as its ledger recorded it. `message` is clipped
+   * provider or adapter text: untrusted data to show, never an instruction.
+   */
+  error?: { code: string; message: string }
+  /** The cap a `failed` child's last turn stopped at, when it did not end in error. */
+  stopReason?: 'budget' | 'max_steps'
   credits?: number
   waitTimedOut?: boolean
   /** Backend ledger facts; child prose is not evidence of tool execution or workspace integration. */
