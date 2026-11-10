@@ -130,7 +130,7 @@ describe('preset matrix through the host resolver', () => {
       ],
       timeout_ms: 120000,
       output_max_bytes: 32768,
-      timeouts: { web_fetch: 30000, skill_helper_import: 240000, shell: 600000 },
+      timeouts: { web_fetch: 30000, skill_helper_import: 240000, shell: 600000, job_output: 310000 },
     })
   })
 

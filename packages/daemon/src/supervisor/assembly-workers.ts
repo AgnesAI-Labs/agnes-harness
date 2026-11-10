@@ -17,6 +17,7 @@ import {
   installResourceServiceAdapters,
   writePackageSkillInventory,
 } from '@agnes/resource-control-daemon'
+import { trimNativeHeap } from '@agnes/system-node'
 import { type AssemblyLifetime, assemblyPort, assemblyTasks } from './assembly-lifetime.js'
 import type { AssemblyBase } from './assembly-options.js'
 import type { StoresState } from './assembly-stores.js'
@@ -94,6 +95,8 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     ownership: sessionOwnership,
     notices,
     profile: o.profile.name,
+    // The daemon's idle point: hand the memory the finished turn freed back to the OS.
+    onIdle: () => void trimNativeHeap(),
   })
   const workerRequests = assemblyPort<NonNullable<ConstructorParameters<typeof WorkerPool>[0]['onRequest']>>()
   lifetime.own({ dispose: () => workerRequests.close() })

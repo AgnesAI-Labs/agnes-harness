@@ -46,7 +46,7 @@ describe('tools-core manifest', () => {
         if (enabled) {
           expect(tools.get('edit')?.description).toContain('a later edit sees earlier replacements')
           expect(tools.get('shell')?.description).toContain('after 10000ms')
-          expect(tools.get('shell')?.description).not.toContain('after 2 minutes')
+          expect(tools.get('shell')?.description).not.toContain('after 5 minutes')
         } else for (const tool of TOOLS_CORE) expect(tools.get(tool.name)?.description).toBe(tool.description)
       } finally {
         if (typeof dispose === 'function') await dispose()

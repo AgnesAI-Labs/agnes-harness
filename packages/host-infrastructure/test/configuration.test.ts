@@ -31,11 +31,14 @@ afterEach(async () => {
 async function fixture(
   model: string | (string | Record<string, unknown>)[],
   status = 200,
+  /** What `?detail=true` lists, for a gateway that publishes more there; otherwise that address is refused. */
+  detail?: (string | Record<string, unknown>)[],
 ): Promise<{ baseUrl: string; requests: IncomingMessage[] }> {
   const requests: IncomingMessage[] = []
   const server = createServer((request, response) => {
     requests.push(request)
-    if (request.url !== '/v1/models') {
+    const rows = request.url === '/v1/models?detail=true' && detail !== undefined ? detail : model
+    if (request.url !== '/v1/models' && rows === model) {
       response.writeHead(404)
       response.end()
       return
@@ -44,7 +47,7 @@ async function fixture(
     response.end(
       JSON.stringify({
         object: 'list',
-        data: [model].flat().map((row) => (typeof row === 'string' ? { id: row } : row)),
+        data: [rows].flat().map((row) => (typeof row === 'string' ? { id: row } : row)),
       }),
     )
   })
@@ -242,7 +245,7 @@ it('tests Kimi Coding Plan through its OpenAI-compatible catalogue and fails clo
       verified: true,
     },
   )
-  expect(requests[0]?.url).toBe('https://api.kimi.com/coding/v1/models')
+  expect(requests[0]?.url).toBe('https://api.kimi.com/coding/v1/models?detail=true')
   expect(requests[0]?.headers.get('authorization')).toBe('Bearer kimi-test-value')
   expect(requests[0]?.headers.get('x-api-key')).toBeNull()
   expect(requests[0]?.headers.get('anthropic-version')).toBeNull()
@@ -319,6 +322,48 @@ it('uses endpoint context limits over saved fallbacks and preserves them in runt
   const reopened = createConfigurationService({ home: root, profile: 'local-dev' })
   expect((await reopened.get()).accounts?.[0]?.models[0]?.contextWindow).toBe(1048576)
   expect((await reopened.profileInput()).provider?.routes?.[0]?.models?.[0]?.contextWindow).toBe(1048576)
+})
+
+it('probed output limit overrides the saved value, like the context window', async () => {
+  const server = await fixture([
+    { id: 'probed', max_input_tokens: 1000000, max_output_tokens: 256000 },
+    { id: 'silent' },
+  ])
+  const service = createConfigurationService({ home: await home(), profile: 'local-dev' })
+  const account = { providerId: 'openai-compatible', baseUrl: server.baseUrl, accountId: 'relay' }
+  await service.save({
+    ...account,
+    model: 'probed',
+    models: [
+      { id: 'probed', name: 'probed', maxTokens: 4096 },
+      { id: 'silent', name: 'silent', maxTokens: 4096 },
+    ],
+  })
+  const result = await service.test(account)
+  expect(result.models.map(({ id, contextWindow, maxTokens }) => [id, contextWindow, maxTokens])).toEqual([
+    ['probed', 1000000, 256000],
+    ['silent', 128000, 4096],
+  ])
+  // With nothing saved or typed, a model the endpoint is silent about keeps the fallback.
+  const fresh = await service.test({ providerId: 'openai-compatible', baseUrl: server.baseUrl })
+  expect(fresh.models.map(({ id, maxTokens }) => [id, maxTokens])).toEqual([
+    ['probed', 256000],
+    ['silent', 8192],
+  ])
+})
+
+it('reads limits that a gateway publishes only on the detail listing', async () => {
+  const server = await fixture(['gated', 'plain'], 200, [
+    { id: 'gated', max_input_tokens: 1000000, max_output_tokens: 256000 },
+    { id: 'plain' },
+  ])
+  const service = createConfigurationService({ home: await home(), profile: 'local-dev' })
+  const result = await service.test({ providerId: 'openai-compatible', baseUrl: server.baseUrl })
+  expect(result.models.map(({ id, contextWindow, maxTokens }) => [id, contextWindow, maxTokens])).toEqual([
+    ['gated', 1000000, 256000],
+    ['plain', 128000, 8192],
+  ])
+  expect(server.requests.map((request) => request.url)).toEqual(['/v1/models?detail=true'])
 })
 
 it('allows correcting a saved budget after the endpoint context limit shrinks', async () => {

@@ -32,6 +32,8 @@ export type ProcessJobContext = Pick<ToolContext, 'session' | 'cwd' | 'signal' |
 export type JobOwner = Pick<ToolContext, 'session'>
 interface Job {
   view: ShellJobView
+  /** When the registry took the job on; a read of a running job says how long it has run. */
+  startedAt: number
   /** Last output, input or read; an idle persistent shell or terminal is closed from it. */
   activeAt: number
   capturedBytes: number
@@ -71,6 +73,8 @@ export class ShellJobs {
   private readonly shells = new Map<string, PersistentShell>()
   private readonly calls = new Map<string, string>()
   private readonly notifications = new Map<string, ShellJobView[]>()
+  /** Per owner, the ended jobs the model has been told about, by a tool result or a notice. */
+  private readonly told = new Map<string, Set<string>>()
   private readonly closing = new Set<string>()
   private readonly starting = new Map<string, Set<Promise<SandboxProcess>>>()
   private disposed = false
@@ -101,6 +105,7 @@ export class ShellJobs {
     const job: Job = {
       view,
       stop,
+      startedAt: Date.now(),
       activeAt: Date.now(),
       capturedBytes: 0,
       position: outputPosition(),
@@ -462,6 +467,32 @@ export class ShellJobs {
   completions(ctx: JobOwner): ShellJobView[] {
     return [...(this.notifications.get(owner(ctx)) ?? [])]
   }
+  /**
+   * A tool result has shown the model how this job ended (a foreground command's exit, a read of a
+   * finished job, a kill), so no completion notice is due for it. A job still running is not marked.
+   */
+  acknowledge(ctx: JobOwner, id: string): void {
+    const job = this.sessions.get(owner(ctx))?.get(id)
+    if (job && job.view.code !== null) this.markTold(owner(ctx), [id])
+  }
+  /** The completions the model has not been told about yet, each returned once. */
+  announceCompletions(ctx: JobOwner): ShellJobView[] {
+    const told = this.told.get(owner(ctx))
+    const fresh = this.completions(ctx).filter((job) => !told?.has(job.id))
+    if (fresh.length)
+      this.markTold(
+        owner(ctx),
+        fresh.map((job) => job.id),
+      )
+    return fresh
+  }
+  /** Only a queued job can be announced, so what is kept is never more than the queue. */
+  private markTold(key: string, ids: string[]): void {
+    const queued = new Set((this.notifications.get(key) ?? []).map((job) => job.id))
+    const told = [...(this.told.get(key) ?? []), ...ids].filter((id) => queued.has(id))
+    if (told.length) this.told.set(key, new Set(told))
+    else this.told.delete(key)
+  }
   async syncChildren(
     ctx: JobOwner & Pick<ToolContext, 'cwd'> & { subagent?: ToolContext['subagent'] },
     port?: SessionChildJobs,
@@ -506,6 +537,7 @@ export class ShellJobs {
     job.activeAt = Date.now()
     return {
       ...copy(job),
+      startedAt: job.startedAt,
       ...this.cursors.read(owner(ctx), id, job.position, job.view.stdout, job.view.stderr, cursor),
     }
   }
@@ -621,6 +653,7 @@ export class ShellJobs {
         )
       this.sessions.delete(ownerKey)
       this.notifications.delete(ownerKey)
+      this.told.delete(ownerKey)
       this.starting.delete(ownerKey)
       for (const call of this.calls.keys()) if (call.startsWith(`${ownerKey}\0`)) this.calls.delete(call)
       this.closing.delete(ownerKey)

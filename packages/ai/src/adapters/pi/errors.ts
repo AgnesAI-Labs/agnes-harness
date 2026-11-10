@@ -5,8 +5,9 @@ export type Classified = { code: AiErrorCode; message: string; retryable: boolea
 
 /**
  * Failure text to a code and a verdict on asking again, in order. The order is the meaning: an
- * authentication failure that also mentions a 500 is an authentication failure, and reading it the
- * other way would retry a request that can never succeed.
+ * authentication failure whose text also mentions a 500 is an authentication failure, and reading it
+ * the other way would retry a request that can never succeed. That 500 is a number quoted in the
+ * text; a 5xx response status is read before this table (see `classifyPiError`).
  */
 const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
   // `no api key` is the wire library refusing to send an unauthenticated request at all, which is a
@@ -25,6 +26,15 @@ const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
 /**
  * What kind of failure this was, and whether asking again could help.
  *
+ * Order: an abort, then a context overflow, then the HTTP status, then the text table, then the
+ * fallback. The status goes ahead of the text because the text only describes a symptom: a gateway
+ * that answers 520 with an HTML page makes the wire library report a JSON parse error, which the
+ * table would read as a permanent FORMAT failure. A 5xx is the far end failing, so it is a
+ * retryable TRANSPORT whatever the body said. Any other status (4xx, or a 200 whose stream broke
+ * part way) and no status at all leave the decision to the text, so a 401 is still AUTH and a 400
+ * with an unparseable body is still FORMAT. `status` is the response status the wire layer recorded,
+ * never a number guessed out of the text.
+ *
  * The fallback is deliberately not retryable. A failure nobody recognised is as likely to be a
  * permanent misconfiguration as a blip, and retrying one of those spends the whole budget on a
  * request that cannot succeed; a blip that is reported once instead of three times costs a turn.
@@ -33,11 +43,13 @@ const TABLE: Array<[RegExp, AiErrorCode, boolean]> = [
  * what separates an overflow a provider spelled out - which the patterns catch on their own - from
  * one it never mentioned, where the only signal is that the input filled the declared window.
  */
-export function classifyPiError(msg: AssistantMessage, contextWindow?: number): Classified {
+export function classifyPiError(msg: AssistantMessage, contextWindow?: number, status?: number): Classified {
   if (msg.stopReason === 'aborted') return { code: 'ABORTED', message: 'aborted', retryable: false }
   const text = msg.errorMessage ?? ''
   if (isContextOverflow(msg, contextWindow))
     return { code: 'OVERFLOW', message: redact(text), retryable: false }
+  if (status !== undefined && status >= 500)
+    return { code: 'TRANSPORT', message: redact(text), retryable: true }
   for (const [re, code, retryable] of TABLE) {
     if (re.test(text)) {
       const c: Classified = { code, message: redact(text), retryable }

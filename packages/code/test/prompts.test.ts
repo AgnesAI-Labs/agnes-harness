@@ -24,6 +24,7 @@ describe('prompt section order table', () => {
       ['environment', 110],
       ['workflow:receipts', 113],
       ['tools-available', 115],
+      ['jobs:completed', 117],
       ['agents-md', 120],
       ['coding-doctrine', 130],
       ['code-doctrine', 140],
@@ -51,6 +52,7 @@ describe('prompt section order table', () => {
     const byOwner = (owner: string) => PROMPT_SECTIONS.filter((s) => s.owner === owner).map((s) => s.id)
     expect(byOwner('base')).toEqual([
       'workflow:receipts',
+      'jobs:completed',
       'agents-md',
       'skills',
       'plan-mode',

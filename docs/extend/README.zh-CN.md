@@ -49,6 +49,8 @@ MCP 包不会自动启动、安装或信任外部服务器。修改定义、启�
 
 注册项和长期资源应绑定插件 fiber 生命周期。每次调用的 I/O 使用取消信号，并在 `finally` 释放资源。工具 metadata 应准确描述副作用、审批与重放行为。插件工具不写 `replay` 时按 `never` 处理，崩溃后不会重跑；`replay: 'safe'` 只接受只读工具，可以容忍重跑的写操作应声明 `idempotent`。
 
+后端插件代码运行在 AGH 的 Node 进程内。这些进程以 Node 参数 `--max-semi-space-size=2` 启动，所以 `process.execArgv` 中含有它。不要把 `process.execArgv` 传给 `new Worker()`：Node 会以 `ERR_WORKER_INVALID_EXEC_ARGV` 拒绝其中的 V8 参数。不设置 `execArgv` 即可，线程沿用进程的设置。`child_process.fork()` 默认把 `process.execArgv` 传给子进程；若子进程不应带这个参数，请显式指定 `execArgv`。
+
 ## 运行时采用
 
 Host 必须提供对应注册服务，循环或适配器插件才能加载。安装包与为会话选择循环或适配器是不同操作；已有会话及重启要求遵循 Host 集成与代际支持。

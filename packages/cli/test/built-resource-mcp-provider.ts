@@ -31,7 +31,7 @@ export function latestMcpCase(messages: ProviderMessage[]) {
 export async function mcpChatProvider() {
   const observations: Array<{ marker: string; tools: string[]; result: string }> = []
   const server = createServer(async (req, res) => {
-    if (req.url === '/v1/models') {
+    if (new URL(req.url ?? '/', 'http://fixture').pathname === '/v1/models') {
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: [{ id: 'deepseek-flash' }] }))
       return

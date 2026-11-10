@@ -110,6 +110,8 @@ export class HostedSessions {
       /** A session idle this long is hibernated; 0 or absent never hibernates. */
       idleCloseMs?: number
       clock?: () => number
+      /** Called after a tailed session's `turn/end` row has been forwarded. */
+      onTurnEnd?: () => void
     },
   ) {
     this.clock = options.clock ?? (() => Date.now())
@@ -256,6 +258,7 @@ export class HostedSessions {
             seq: event.seq,
             event,
           } satisfies EventFrame)
+        if (events.some((event) => event.type === 'turn/end')) this.options.onTurnEnd?.()
       },
       onError: (error) => {
         this.options.send({

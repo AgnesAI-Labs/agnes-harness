@@ -696,6 +696,55 @@ describe('deriveRequest', () => {
     ])
   })
 
+  it("keeps the signature of this harness's own thinking and drops an imported one", () => {
+    seq = 0
+    const content = [
+      { type: 'thinking', text: 'mine', signature: 'reasoning_content' },
+      { type: 'text', text: 'said' },
+    ]
+    const own = computeSurface([ev('assistant/message', { content, stopReason: 'end_turn' })], {})
+    const producers = new Map([[1, { route: 'default', model: 'm1' }]])
+    expect(
+      deriveRequest({ ...base(), surface: own, producers, ...NO_RC }).request.messages[0]?.content,
+    ).toEqual([
+      { type: 'thinking', text: 'mine', signature: 'reasoning_content' },
+      { type: 'text', text: 'said' },
+    ])
+    seq = 0
+    const imported = computeSurface([
+      ev(
+        'assistant/message',
+        { content, stopReason: 'end_turn' },
+        { trust: 'untrusted', origin: 'import:codex' },
+      ),
+    ])
+    const [thinking] =
+      deriveRequest({ ...base(), surface: imported, producers }).request.messages[0]?.content ?? []
+    expect(thinking).toMatchObject({ type: 'thinking' })
+    expect('signature' in (thinking ?? {})).toBe(false)
+  })
+
+  // The history is labelled with the request's own model on the way out, so the wire library's
+  // same-model check cannot tell one model's reasoning from another's: Core keeps a signature only
+  // for the route and model that minted it.
+  it.each([
+    ['another model on the same route', { route: 'default', model: 'm0' }],
+    ['the same model id on another route', { route: 'other', model: 'm1' }],
+    ['no recorded producer', undefined],
+  ])('drops the signature of thinking produced by %s, and keeps the text', (_name, producer) => {
+    seq = 0
+    const content = [
+      { type: 'thinking', text: 'mine', signature: 'reasoning_details' },
+      { type: 'text', text: 'said' },
+    ]
+    const surface = computeSurface([ev('assistant/message', { content, stopReason: 'end_turn' })], {})
+    const producers = new Map(producer ? [[1, producer]] : [])
+    expect(deriveRequest({ ...base(), surface, producers, ...NO_RC }).request.messages[0]?.content).toEqual([
+      { type: 'thinking', text: 'mine' },
+      { type: 'text', text: 'said' },
+    ])
+  })
+
   it.each(['text', 'thinking'] as const)(
     'keeps imported assistant %s inside an untrusted envelope',
     (type) => {
@@ -1620,7 +1669,7 @@ describe('every string in the body, enumerated rather than remembered', () => {
         ev('assistant/message', {
           content: [
             { type: 'text', text: `a${HOSTILE2}` },
-            { type: 'thinking', text: `k${HOSTILE2}` },
+            { type: 'thinking', text: `k${HOSTILE2}`, signature: `g${HOSTILE2}` },
           ],
           stopReason: 'end_turn',
         }),
@@ -1669,6 +1718,8 @@ describe('every string in the body, enumerated rather than remembered', () => {
         } as unknown as ToolDef,
       ],
       model: { slot: `sl${HOSTILE2}`, route: `ro${HOSTILE2}`, model: `mo${HOSTILE2}` },
+      // The receipt recorded the model as it was sent, scrubbed; so the signature is kept and walked.
+      producers: new Map([[2, { route: `ro${CLEAN2}`, model: `mo${CLEAN2}` }]]),
       // Poisoned even though no body field is minted from it today — it reaches the header only.
       // A fixture of `'1'` is a scrub fixed point, which is exactly how a future body field fed
       // from it would pass the walk without being scrubbed.
@@ -1710,6 +1761,11 @@ describe('every string in the body, enumerated rather than remembered', () => {
     expect(canonicalJson(out.request.tools[0]?.parameters)).toContain(`z${CLEAN2}`)
     const tr = out.request.messages[0]?.content[0]
     expect(tr && 'toolUseId' in tr && tr.toolUseId).toBe(`t${CLEAN2}`)
+    expect(out.request.messages[1]?.content[1]).toEqual({
+      type: 'thinking',
+      text: `k${CLEAN2}`,
+      signature: `g${CLEAN2}`,
+    })
     expect(out.request.model).toEqual({ slot: `sl${CLEAN2}`, route: `ro${CLEAN2}`, model: `mo${CLEAN2}` })
     expect(out.request.contractId).toBe(`ci${CLEAN2}`)
     expect(out.request.sections.map((x) => x.id)).toContain(`i${CLEAN2}`)

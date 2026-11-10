@@ -13,6 +13,7 @@ import {
   getApiKeyProvider,
   getSubscriptionProvider,
   isChatModelId,
+  knownModel,
   SUBSCRIPTION_PROVIDER_REGISTRY,
   type SubscriptionProviderEntry,
   subscriptionAuth,
@@ -659,7 +660,7 @@ export function createConfigurationService(
   SessionDefaultsConfigurationService &
   ChildEnginesConfigurationService &
   Required<Pick<ConfigurationService, 'application' | 'saveApplication' | 'modelSlots' | 'saveModelSlots'>> {
-  const chatModels = compatible.chatModelPolicy(isChatModelId)
+  const chatModels = compatible.chatModelPolicy(isChatModelId, knownModel)
   const home = resolve(options.home)
   if (!PROFILE.test(options.profile)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const profile = options.profile

@@ -14,7 +14,7 @@
 
 官方模型适配器、MCP HTTP/SSE、URL/npm/git 包下载和 OTLP HTTP 导出遵循 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY`，小写名称优先。未配置 HTTPS 代理时使用 HTTP 代理；`NO_PROXY` 匹配的主机直连。显式为空的小写值覆盖大写值。修改进程环境后重启 daemon。`agnes doctor network` 仅报告有效代理的主机/端口及是否配置绕过规则，不显示用户名、密码或查询参数。工作区 `web_fetch` 保留独立的公网访问策略。
 
-在 **设置 → 模型 → 账户详情** 中继续用 Base URL 覆盖账户端点。由共享 schema 表单渲染的网络字段配置可选 `networkTimeouts.requestMs`、`connectMs`、`streamIdleMs`，均为 1–3600000 的整数毫秒。配置保存、OAuth 提交输入及 `provider.routes[]` 也支持这些字段。留空使用默认值：请求 300000、连接 10000、流空闲 60000 毫秒；现有更严格的模型/回合期限仍然生效。`{}` 重置已保存覆盖。变更作用于新装配会话，不会重定向在途请求。流空闲限制首个输出到达之后的模型输出间隔；等待首个输出由首字期限约束（Bedrock 的 SDK 将流空闲作为全程的套接字超时）。Agnes 网关在工具调用完整生成后才下发，因此 Agnes 路由上这两段等待都改由请求期限约束。取消会清理定时器并中止在途操作。Codex 使用 SSE 传输，以应用相同的代理和超时设置。社区自定义适配器自行负责其传输行为。
+在 **设置 → 模型 → 账户详情** 中继续用 Base URL 覆盖账户端点。由共享 schema 表单渲染的网络字段配置可选 `networkTimeouts.requestMs`、`connectMs`、`streamIdleMs`，均为 1–3600000 的整数毫秒。配置保存、OAuth 提交输入及 `provider.routes[]` 也支持这些字段。留空使用默认值：请求 300000、连接 10000、流空闲 60000 毫秒；现有更严格的模型/回合期限仍然生效。`{}` 重置已保存覆盖。变更作用于新装配会话，不会重定向在途请求。请求期限是首段输出前的等待上限；回合自身的模型请求在这段等待上最长 600000 毫秒，请求期限设得超过 600000 毫秒也不会延长它。以事件流（`text/event-stream`）返回的响应在输出开始后不再受请求期限约束，持续输出的长回答不会被截断；不是事件流的响应直到结束都受请求期限约束。流空闲限制首个输出到达之后的模型输出间隔；等待首个输出同时受首字期限约束（Bedrock 的 SDK 将流空闲作为全程的套接字超时）。Agnes 网关在工具调用完整生成后才下发，因此 Agnes 路由上不设首字期限，首个输出只由请求期限约束（同样不超过上述 600000 毫秒），输出之间允许的空闲不低于 600000 毫秒，请求期限更大时取请求期限。取消会清理定时器并中止在途操作。Codex 使用 SSE 传输，以应用相同的代理和超时设置。社区自定义适配器自行负责其传输行为。
 
 ## 位置与层级
 
@@ -86,7 +86,7 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 `job_output` 始终返回 `structured.cursor` 和 `structured.gap`。对同一 `jobId` 传入 `cursor` 后仅返回新增 stdout/stderr，仍返回状态；不传则返回当前捕获的输出。游标经认证并绑定会话、lane、job 和 registry 实例；跨所有者、篡改或重启前的游标会被拒绝，可不传游标重新读取。UTF-8 字符保持完整。缓冲区丢弃未读数据时明确提示输出缺口并返回 `gap: true`；捕获上限标记仍反映整个 job 的捕获情况。
 
-预设的 `tools.timeout_ms`（整数，至少 1000，默认 120000）约束普通工具调用，`tools.timeouts` 按工具名覆盖；随包 base 预设允许 `shell` 最长 600000 毫秒。Shell 的 `timeoutMs` 在已准入期限内选择前台等待时长，省略 `timeoutToBackground` 或设为 true 时，前台等待最长 2 分钟，超时后转为后台作业；设为 false 时使用已准入的超时，不受这个固定上限限制；`background: true` 立即后台运行，`timeoutToBackground: false` 则请求终止。通过 `job_output` 核对返回的作业身份与实际状态；工具返回不证明后台进程已结束。取消与会话关闭会终止所属进程。已有会话保留解析后的预设，见[默认工具](default-tools.zh-CN.md)。
+预设的 `tools.timeout_ms`（整数，至少 1000，默认 120000）约束普通工具调用，`tools.timeouts` 按工具名覆盖；随包 base 预设允许 `shell` 最长 600000 毫秒、`job_output` 最长 310000 毫秒，使一次 `job_output` 等待可用满 5 分钟。Shell 的 `timeoutMs` 在已准入期限内选择前台等待时长，省略 `timeoutToBackground` 或设为 true 时，前台等待最长 5 分钟，超时后转为后台作业；设为 false 时使用已准入的超时，不受这个固定上限限制；`background: true` 立即后台运行，`timeoutToBackground: false` 则请求终止。通过 `job_output` 核对返回的作业身份与实际状态；工具返回不证明后台进程已结束。取消与会话关闭会终止所属进程。已有会话保留解析后的预设，见[默认工具](default-tools.zh-CN.md)。
 
 使用 Agnes 中国官方网关时，若请求未覆盖额度，adapter 会明确将内置模型的目录额度 65536 作为 `max_tokens` 发送。[3.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-30-flash)、[2.5 Pro](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro)和 [Pro Alpha](https://agnes-ai.com/zh-Hans/docs/agnes-25-pro-alpha) 的官方规格为 65536；[Pro Beta](https://agnes-ai.com/en/docs/agnes-25-pro-beta) 按 Pro 同系额度配置为 65536，尚未单独验证网关容量；[2.5 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-25-flash) 和 [2.0 Flash](https://agnes-ai.com/zh-Hans/docs/agnes-20-flash) 的官方说明使用约数 65.5K，此处按 65536 配置。已废弃模型保留注册以兼容现有配置，其可用性取决于网关。请求中明确设置的额度仍优先。仅修改目录元数据不会设置底层 OpenAI 兼容流请求的额度。大文件仍应通过多次小型 write/edit 调用分段构建；默认额度不能保证任意大的单次调用都能完成。
 
@@ -94,7 +94,7 @@ API 客户端可通过 `_agnes/v1/session.setModel` 传入可选的 `thinking`�
 
 原计划完成门仍由 `completion_gate.enabled` 与 `completion_gate.min_items` 控制；普通验证、修复、取消与副作用协调保持。
 
-两个独立的预设字段默认关闭：`tools.logical_changes: true` 将代码指导改为按跨编辑、跨文件的逻辑变更整体验证，允许一次回复发起独立读取、搜索与检查，并为 `edit` 启用对应的顺序批量编辑说明；省略或设为 `false` 保持原提示词和编辑工具描述。`tools.shell_observation_ms: 10000` 将可继续运行的前台 shell 观察窗口设为 10 秒（整数，1000–30000）；省略时保留 120 秒上限。10 秒让普通命令有机会完成并尽早交付长命令的反馈，30 秒上限约束单次观察而不改变工具执行预算。显式更短的 `timeoutMs` 与 turn 期限仍优先；`timeoutToBackground: false` 保留终止约定，没有 jobs 后端的执行器保留原超时行为。运行中结果始终通过现有有界首尾输出守卫带回已捕获的 stdout/stderr，必要时含截断标记与 artifact；这只提前交付 `job_output` 已能读取的内容，不改变所有权、寿命或服务存活规则。
+两个独立的预设字段默认关闭：`tools.logical_changes: true` 将代码指导改为按跨编辑、跨文件的逻辑变更整体验证，允许一次回复发起独立读取、搜索与检查，并为 `edit` 启用对应的顺序批量编辑说明；省略或设为 `false` 保持原提示词和编辑工具描述。`tools.shell_observation_ms: 10000` 将可继续运行的前台 shell 观察窗口设为 10 秒（整数，1000–30000）；省略时保留 300 秒上限。10 秒让普通命令有机会完成并尽早交付长命令的反馈，30 秒上限约束单次观察而不改变工具执行预算。显式更短的 `timeoutMs` 与 turn 期限仍优先；`timeoutToBackground: false` 保留终止约定，没有 jobs 后端的执行器保留原超时行为。运行中结果始终通过现有有界首尾输出守卫带回已捕获的 stdout/stderr，必要时含截断标记与 artifact；这只提前交付 `job_output` 已能读取的内容，不改变所有权、寿命或服务存活规则。
 
 字段写在导出的预设中，包括 [bundle 提供的预设](../extend/bundles-and-profiles.zh-CN.md)，不放在 profile 顶层。无界面运行时，在 profile 的 `bundles` 选择该 bundle，设 `presets: { default: trial, allowed: [trial] }`，再运行 `AGNES_PROFILE=trial agh --preset trial -p '你的请求'`。`trial` 定义使用 `extends: standard`，每次只开启要测的字段；修改后新建会话。没有控制这些开关的环境变量。
 
