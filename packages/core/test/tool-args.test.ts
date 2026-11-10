@@ -269,7 +269,9 @@ describe('tool argument boundary', () => {
     expect(JSON.stringify(out.provider.requests[2]?.messages)).toContain(
       'Continue with other available tools and answer in text/markdown',
     )
-    expect(JSON.stringify(out.provider.requests[2]?.system)).toContain('do not route around the limit')
+    expect(JSON.stringify(out.provider.requests[2]?.system)).toContain(
+      'If it is disabled for this turn, stop calling it and reach the goal another way with the tools that remain.',
+    )
     const nodes = (await out.session.projectUI()).nodes.filter((n) => n.kind === 'tool')
     expect(nodes.slice(0, 2).map((n) => n.argumentRecovery)).toEqual([
       { disabled: false, presentational: false },

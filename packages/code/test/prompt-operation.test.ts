@@ -331,12 +331,32 @@ describe('the command isolation fact', () => {
     )
   })
 
-  it('leaves other platforms exactly as they were', () => {
-    for (const toolPolicy of ['default', 'read-only', 'full-access'])
-      for (const enforcement of [full, none, unconfined]) {
-        const { env } = facts(host('darwin'), { enforcement, toolPolicy })
-        expect(env).not.toHaveProperty('commandIsolation')
-        expect(env.enforcement).toBe('full')
+  const POSIX_FULL =
+    'Full access: the harness does not confine commands; installing software needs no approval.'
+
+  it('says off Windows that a full-access session without a boundary runs commands unconfined', () => {
+    // What such a session reports: no backend at all, or the unconfined file-only fallback.
+    for (const os of ['linux', 'darwin'])
+      for (const enforcement of [none, unconfined]) {
+        const { env, system } = facts(host(os), { enforcement, toolPolicy: 'full-access' })
+        expect(env.commandIsolation).toBe(POSIX_FULL)
+        expect(Object.keys(env).at(-1)).toBe('commandIsolation')
+        expect(system).not.toContain('Full access:')
       }
+  })
+
+  it('says nothing off Windows for any other permission, or where a boundary confines the commands', () => {
+    for (const os of ['linux', 'darwin']) {
+      for (const toolPolicy of ['default', 'read-only', undefined])
+        for (const enforcement of [full, none, unconfined]) {
+          const { env } = facts(host(os), { enforcement, ...(toolPolicy ? { toolPolicy } : {}) })
+          expect(env).not.toHaveProperty('commandIsolation')
+          expect(env.enforcement).toBe('full')
+        }
+      // Full access with a full boundary (a memory provider keeps the sandbox on) is not unconfined.
+      expect(facts(host(os), { enforcement: full, toolPolicy: 'full-access' }).env).not.toHaveProperty(
+        'commandIsolation',
+      )
+    }
   })
 })

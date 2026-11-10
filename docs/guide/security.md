@@ -202,7 +202,7 @@ For effects owned by the App Server, automatic permission leases also check a su
 
 `ask_user` questions, explicitly chosen plan/read-only modes, ordinary file-tool refusals for private `secrets/`, `auth/` and `profiles/`, and read-before-edit/stale-read checks remain in force. Selecting full access itself can require one initial grant confirmation. Factual reconciliation of an unknown external outcome is not a permission grant and cannot assert that an effect happened automatically.
 
-To allow files outside the workspace, select `full-access` explicitly, for example `agh --permission full-access`. On macOS/Linux without a usable L1 backend, commands run unconfined and an installed memory provider stays enabled; the next turn shows a notice when a memory file was changed outside the provider. Windows uses the explicitly declared unimplemented exception; memory API rules remain in effect. A profile can make it the default for new sessions:
+To allow files outside the workspace, select `full-access` explicitly, for example `agh --permission full-access`. On macOS/Linux without a usable L1 backend, commands run unconfined and an installed memory provider stays enabled; the next turn shows a notice when a memory file was changed outside the provider. The model is told this in its runtime context: the harness does not confine commands, and installing software needs no approval. When a check of its own work needs an interpreter, compiler or library that is missing, it then installs it and runs the check, and reports the work as unverified only if the install failed. Windows uses the explicitly declared unimplemented exception; memory API rules remain in effect. A profile can make it the default for new sessions:
 
 ```yaml
 permissions:

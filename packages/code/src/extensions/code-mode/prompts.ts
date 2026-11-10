@@ -1,11 +1,11 @@
 import type { OpContext, Operation, PromptSection } from '@agnes/core'
 import { loadPrompt, renderPersona, sectionOrder } from '../../prompts/sections.js'
 import {
+  commandIsolationFact,
   type EnvironmentFacts,
   type RuntimeSnapshotFacts,
   renderEnvironment,
   renderTools,
-  windowsCommandIsolation,
 } from './environment.js'
 import { createSdkRenderer } from './sdk/memo.js'
 import { renderTypeScript } from './sdk/render-typescript.js'
@@ -63,7 +63,7 @@ export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeS
   const extras = ctx.session.d.extraDirectories
   // The session's own sandbox answer, read now: one Host serves sessions under different boundaries.
   const policy = ctx.preset.approval.policy
-  const commandIsolation = windowsCommandIsolation({
+  const commandIsolation = commandIsolationFact({
     enforcement: ctx.session.d.runtime.enforcement(),
     access:
       policy === 'read-only' ? 'read-only' : policy === 'full-access' ? 'full-access' : 'workspace-write',

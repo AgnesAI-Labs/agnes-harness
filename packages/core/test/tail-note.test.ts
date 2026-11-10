@@ -91,25 +91,25 @@ async function lastStamp(t: Harness) {
  * and distinguish intentional prompt revisions from tail-note changes.
  */
 const VISIBLE_HISTORY = {
-  derived_hash: '96791eeeda746391a7bcc8c19bf214dd2faccaa12b84d8b1895798e2b416705d',
-  prompt_prefix_hash: '1a3bb8bbd72eee85547c19fd4ac3e15432cfd4a60213848e3ac47fa12a1ae206',
+  derived_hash: 'be9e908fd53aa7ea2a1840b338843039998ba0a9b99d4e2e5762552da0151ff3',
+  prompt_prefix_hash: 'cd67896b73bbe779e692d91397b7886d66fc0e9b9e859d58c6cb7754b2ba13ac',
   tool_schema_hash: '429a05563ea25f28b6a0e7cc07e8224321d1050acd09c8a51670f90fdaf15f83',
-  wire: 'f707f02af7f83ef9708b4aaa6f44112d3890b53737b957b39e5a376a311745e7',
+  wire: 'f6813dffa776455623f1aa86e0bde9cb7f54b167c9d11753d4e68b4db72350d9',
 }
 const UNCHANGED = {
   defaultLoop: VISIBLE_HISTORY,
   noOptions: VISIBLE_HISTORY,
   systemAndSampling: {
-    derived_hash: 'd03501e250ccff7eeff69fcd4b52d76f279a487b0780d37afece21741b18f59e',
-    prompt_prefix_hash: 'e47a807eca7b55548be4979c95145948682fa057e0164778b8fa1af269b4c1a7',
+    derived_hash: '779f8b00558048019a0fb47ca9e0154dbbe357186e9227eb49b4a142ef20e845',
+    prompt_prefix_hash: '66caec5f452965223caf7cb1da99106d0b2b2ba35fa22d1edea09fea8def4435',
     tool_schema_hash: '429a05563ea25f28b6a0e7cc07e8224321d1050acd09c8a51670f90fdaf15f83',
-    wire: 'dc178d6b6fe1df96574c69ca57d19a218e35ada8f6115dfcc3f730b3d0ad032e',
+    wire: 'c6b7e323604c35876274a0969a39de980da8153c0aa1832277182efe04909b62',
   },
   customMessages: {
-    derived_hash: '6a881d34abbc14404ae965dc333d1303da7e81ad87d6fc25512757df50578084',
-    prompt_prefix_hash: '1a3bb8bbd72eee85547c19fd4ac3e15432cfd4a60213848e3ac47fa12a1ae206',
+    derived_hash: '6e05b6cbcac060560e0ba059d20473cfb64d30d24da6925a023e2ade4f46551a',
+    prompt_prefix_hash: 'cd67896b73bbe779e692d91397b7886d66fc0e9b9e859d58c6cb7754b2ba13ac',
     tool_schema_hash: '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945',
-    wire: 'e53acd39d8cfac0abaac6c7f396519fafbaf9fefad7706f14baaee7c77f47a09',
+    wire: 'd08b1253331acb61f629d4ff18b8a1c23d9612b6b624f46f14a351e0e8cbbbb8',
   },
 }
 const PINNED_OPTIONS: Record<Exclude<keyof typeof UNCHANGED, 'defaultLoop'>, LoopRequestOptions> = {
