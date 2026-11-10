@@ -155,7 +155,8 @@ export function managedSessionPorts(deps: {
                 actor: input.actor,
                 origin: 'system',
                 trust: 'untrusted',
-                kind: 'prompt',
+                // The follow-up runner only starts a turn for a backend-minted follow_up or steer item.
+                kind: 'follow_up',
                 commandId: input.commandId,
                 ifEmpty: true,
               },

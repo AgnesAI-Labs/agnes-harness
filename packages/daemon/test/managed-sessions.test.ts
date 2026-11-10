@@ -8,6 +8,8 @@ import { denyPackageAdminAuthority, localPackageAdminAuthority } from '@agnes/da
 import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { MemorySessionWorkspaces } from '@agnes/daemon-foundation/storage/lister'
 import type { TableHandle } from '@agnes/daemon-foundation/storage/table'
+import { CommandQueue } from '@agnes/daemon-rpc/local/command-queue'
+import { createFollowUpRunner } from '@agnes/daemon-rpc/local/follow-up-runner'
 import { pluginRowSource } from '@agnes/host'
 import {
   type Actor,
@@ -17,8 +19,9 @@ import {
   type SessionViewResult,
 } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
+import { openTestHost, say } from '../../daemon-rpc/test/host.js'
 import { createWorkerRequests } from '../src/supervisor/assembly-worker-requests.js'
-import { managedWorkspaceRoot } from '../src/supervisor/managed-session-ports.js'
+import { managedSessionPorts, managedWorkspaceRoot } from '../src/supervisor/managed-session-ports.js'
 import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
 import {
   createManagedSessions,
@@ -1417,5 +1420,52 @@ describe('package installs in a session that turned installs off', () => {
   it('shows full access would auto-allow plugin and MCP installs without the flag', () => {
     for (const purpose of ['skills.install', 'plugin.publish', 'mcp.connect'])
       expect(automaticPermissionDecision(context, purpose)).toMatchObject({ verdict: 'allowed-once' })
+  })
+})
+
+describe('submitting to a real session', () => {
+  it('runs the turn for the input it queued, without a user prompt', async () => {
+    const h = await openTestHost({ script: [say('managed answer')] })
+    const commandQueue = new CommandQueue()
+    try {
+      const core = await h.host.createSession({ cwd: h.dataDir })
+      const entry = { key: 'managed-real', ac: new AbortController(), inflight: null, session: core }
+      const continueTurn = createFollowUpRunner(
+        { commandQueue, activationBarrier: h.host.activationBarrier },
+        async () => undefined,
+      )
+      const managed = managedSessionPorts({
+        socketPath: '',
+        serverIdentity: { pid: 0, processStartId: '' },
+        records: new ManagedSessionRecords(table()),
+        authorize: async () => undefined,
+        forkParent: () => undefined,
+        workspaces: {} as never,
+        models: async () => [],
+        registry: { get: () => entry as never, open: async () => entry as never },
+        commandQueue,
+        continueTurn: (queued) => continueTurn(queued as never),
+        opensWithCommandRules: true,
+        osBoundary: async () => false,
+      })
+      expect(
+        await managed.ports.sessions.submit('managed-real', {
+          text: 'Fix the failing test.',
+          actor: core.d.actor,
+          commandId: 'start:task-1',
+        }),
+      ).toBe('started')
+      await vi.waitFor(async () => {
+        const replies = await core.scan({ type: 'assistant/message', limit: 10 })
+        expect(replies.map((row) => JSON.stringify(row.data))).toEqual([
+          expect.stringContaining('managed answer'),
+        ])
+      })
+      expect((await core.controls.state()).pending).toEqual([])
+      await managed.close()
+    } finally {
+      await commandQueue.close()
+      await h.close()
+    }
   })
 })
