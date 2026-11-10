@@ -332,18 +332,51 @@ it('relays only a same-origin typed browser service request and strips page-supp
     ).toBe(400)
     mocks.request.mockResolvedValueOnce({ providers: [] } as never)
     expect((await sendChannel(channelCall)).status).toBe(403)
-    for (const forged of [{ actor: 'owner' }, { profile: 'foreign' }, { workspace: 'D:/foreign' }, { agent: 'default' }]) {
-      expect((await sendChannel({ method: 'channels.context', params: { extension: channelCall.params.extension, sessionId: 'session-a', ...forged } })).status).toBe(400)
-      expect((await sendChannel({ method: 'channels.remove', params: {
-        extension: channelCall.params.extension, instanceId: 'one', operationId: 'remove',
-        configurationRevision: 'revision', expectedVersion: 0, ...forged,
-      } })).status).toBe(400)
+    for (const forged of [
+      { actor: 'owner' },
+      { profile: 'foreign' },
+      { workspace: 'D:/foreign' },
+      { agent: 'default' },
+    ]) {
+      expect(
+        (
+          await sendChannel({
+            method: 'channels.context',
+            params: { extension: channelCall.params.extension, sessionId: 'session-a', ...forged },
+          })
+        ).status,
+      ).toBe(400)
+      expect(
+        (
+          await sendChannel({
+            method: 'channels.remove',
+            params: {
+              extension: channelCall.params.extension,
+              instanceId: 'one',
+              operationId: 'remove',
+              configurationRevision: 'revision',
+              expectedVersion: 0,
+              ...forged,
+            },
+          })
+        ).status,
+      ).toBe(400)
     }
     for (const expectedVersion of [undefined, -1, 0.5, '0']) {
-      expect((await sendChannel({ method: 'channels.remove', params: {
-        extension: channelCall.params.extension, instanceId: 'one', operationId: 'remove',
-        configurationRevision: 'revision', expectedVersion,
-      } })).status).toBe(400)
+      expect(
+        (
+          await sendChannel({
+            method: 'channels.remove',
+            params: {
+              extension: channelCall.params.extension,
+              instanceId: 'one',
+              operationId: 'remove',
+              configurationRevision: 'revision',
+              expectedVersion,
+            },
+          })
+        ).status,
+      ).toBe(400)
     }
     const profile = await fetch(`${origin}/api/client-modules/profile`, {
       method: 'POST',

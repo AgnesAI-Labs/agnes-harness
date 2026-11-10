@@ -381,7 +381,13 @@ it.each(['credentials', 'adapter', 'backend'] as const)(
     Object.assign(f.init, {
       config: { instances: [{ ...f.instance, credentialRefs: { token: 'secret://generic/token' } }] },
     })
-    f.provider = { ...f.provider, manifest: { ...f.provider.manifest, credentials: { ...f.provider.manifest.credentials, required: ['token'], optional: [] } } }
+    f.provider = {
+      ...f.provider,
+      manifest: {
+        ...f.provider.manifest,
+        credentials: { ...f.provider.manifest.credentials, required: ['token'], optional: [] },
+      },
+    }
     f.provider.create = () => new FakeChannel({ manifest: f.provider.manifest })
     const fail = () => {
       throw Error('private-token-and-platform-response')

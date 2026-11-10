@@ -292,17 +292,15 @@ it('discovers installed channels and configures inside a dialog using immutable 
 })
 
 it('shows this session’s channel states and opens the exact existing connection for editing', async () => {
-  const credentials = vi
-    .spyOn(CredentialsApi.prototype, 'list')
-    .mockResolvedValue([
-      {
-        id: 'secret://generic/token',
-        label: 'Saved token',
-        kind: 'api-key',
-        createdAt: '2026-11-06T00:00:00Z',
-        references: [],
-      },
-    ])
+  const credentials = vi.spyOn(CredentialsApi.prototype, 'list').mockResolvedValue([
+    {
+      id: 'secret://generic/token',
+      label: 'Saved token',
+      kind: 'api-key',
+      createdAt: '2026-11-06T00:00:00Z',
+      references: [],
+    },
+  ])
   const host = document.body.appendChild(document.createElement('div')),
     root = createRoot(host)
   let bound = true,
@@ -895,95 +893,106 @@ it('cancels a late check response when its installation window has already close
   host.remove()
 })
 
-it('reviews MCP connections and commits only explicitly selected Skills and connection tests', async () => {
-  const prepared = {
-    state: 'prepared',
-    kind: 'mcp',
-    proposalId: 'mcp-import-fixture',
-    digest: 'a'.repeat(64),
-    mcp: {
-      servers: [
-        {
-          serverId: 'sample',
-          transport: 'stdio',
-          sandboxProfile: 'strict',
-          command: 'node',
-          args: ['server.mjs'],
-          state: 'planned',
-          selected: false,
-        },
-      ],
-      skills: [{ path: '.agents/skills/companion', name: 'companion', state: 'prepared', fileCount: 2 }],
-      requiredCredentials: [],
-      configurationFiles: ['.mcp.json'],
-      issues: [],
-    },
-  }
-  const skillImport = vi
-    .fn()
-    .mockResolvedValueOnce(prepared)
-    .mockResolvedValueOnce({ ...prepared, state: 'cancelled' })
-    .mockResolvedValueOnce({
-      ...prepared,
+it.each([false, true])(
+  'reviews MCP connections and gates rollback on remove permission (remove=%s)',
+  async (canRemove) => {
+    const prepared = {
+      state: 'prepared',
+      kind: 'mcp',
+      proposalId: 'mcp-import-fixture',
+      digest: 'a'.repeat(64),
       mcp: {
-        ...prepared.mcp,
-        servers: prepared.mcp.servers.map((server) => ({ ...server, selected: true })),
+        servers: [
+          {
+            serverId: 'sample',
+            transport: 'stdio',
+            sandboxProfile: 'strict',
+            command: 'node',
+            args: ['server.mjs'],
+            state: 'planned',
+            selected: false,
+          },
+        ],
+        skills: [{ path: '.agents/skills/companion', name: 'companion', state: 'prepared', fileCount: 2 }],
+        requiredCredentials: [],
+        configurationFiles: ['.mcp.json'],
+        issues: [],
       },
-    })
-    .mockResolvedValueOnce({ ...prepared, state: 'installed' })
-  const view = { api: { skillImport }, canEffect: () => true } as unknown as PluginView
-  const host = document.body.appendChild(document.createElement('div')),
-    root = createRoot(host)
-  try {
-    flushSync(() =>
-      root.render(
-        createElement(SkillInstallDialog, {
-          view,
-          initialSource: 'git:https://github.com/example/mcp.git',
-          t: (key) => key,
-          onClose: vi.fn(),
-        }),
-      ),
-    )
-    await act(async () => undefined)
-    expect(host.textContent).toContain('mcp.import.connections')
-    const choices = host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')
-    expect(choices).toHaveLength(2)
-    expect(choices[0]?.checked).toBe(false)
-    expect(choices[1]?.checked).toBe(true)
-    await act(async () => {
-      choices[0]?.click()
-    })
-    const apply = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
-      (button) => button.textContent === 'mcp.import.configure',
-    )
-    await act(async () => apply?.click())
-    expect(skillImport).toHaveBeenLastCalledWith(
-      expect.objectContaining({ action: 'check', mcpServers: ['sample'] }),
-    )
-    const reviewedChoices = host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')
-    expect(reviewedChoices).toHaveLength(3)
-    expect(reviewedChoices[0]?.checked).toBe(true)
-    expect(reviewedChoices[1]?.checked).toBe(true)
-    await act(async () => reviewedChoices[2]?.click())
-    const confirm = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
-      (button) => button.textContent === 'skill.import.confirm',
-    )
-    await act(async () => confirm?.click())
-    expect(skillImport).toHaveBeenLastCalledWith({
-      action: 'commit',
-      proposalId: prepared.proposalId,
-      expectedDigest: prepared.digest,
-      skillDirectories: ['.agents/skills/companion'],
-      mcpServers: ['sample'],
-      testConnection: true,
-    })
-    expect(host.textContent).toContain('mcp.import.state.installed')
-  } finally {
-    flushSync(() => root.unmount())
-    host.remove()
-  }
-})
+    }
+    const skillImport = vi
+      .fn()
+      .mockResolvedValueOnce(prepared)
+      .mockResolvedValueOnce({ ...prepared, state: 'cancelled' })
+      .mockResolvedValueOnce({
+        ...prepared,
+        mcp: {
+          ...prepared.mcp,
+          servers: prepared.mcp.servers.map((server) => ({ ...server, selected: true })),
+        },
+      })
+      .mockResolvedValueOnce({ ...prepared, state: 'installed' })
+    const view = {
+      api: { skillImport },
+      canEffect: (permission: string) => permission !== 'packages.remove' || canRemove,
+    } as unknown as PluginView
+    const host = document.body.appendChild(document.createElement('div')),
+      root = createRoot(host)
+    try {
+      flushSync(() =>
+        root.render(
+          createElement(SkillInstallDialog, {
+            view,
+            initialSource: 'git:https://github.com/example/mcp.git',
+            t: (key) => key,
+            onClose: vi.fn(),
+          }),
+        ),
+      )
+      await act(async () => undefined)
+      expect(host.textContent).toContain('mcp.import.connections')
+      const choices = host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')
+      expect(choices).toHaveLength(2)
+      expect(choices[0]?.checked).toBe(false)
+      expect(choices[1]?.checked).toBe(true)
+      await act(async () => {
+        choices[0]?.click()
+      })
+      const apply = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'mcp.import.configure',
+      )
+      await act(async () => apply?.click())
+      expect(skillImport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ action: 'check', mcpServers: ['sample'] }),
+      )
+      const reviewedChoices = host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')
+      expect(reviewedChoices).toHaveLength(3)
+      expect(reviewedChoices[0]?.checked).toBe(true)
+      expect(reviewedChoices[1]?.checked).toBe(true)
+      await act(async () => reviewedChoices[2]?.click())
+      const confirm = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'skill.import.confirm',
+      )
+      await act(async () => confirm?.click())
+      expect(skillImport).toHaveBeenLastCalledWith({
+        action: 'commit',
+        proposalId: prepared.proposalId,
+        expectedDigest: prepared.digest,
+        skillDirectories: ['.agents/skills/companion'],
+        mcpServers: ['sample'],
+        testConnection: true,
+      })
+      expect(host.textContent).toContain('mcp.import.state.installed')
+      const rollback = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'mcp.import.rollback',
+      )
+      if (!rollback) throw new Error('Missing rollback action')
+      expect(rollback.disabled).toBe(!canRemove)
+    } finally {
+      flushSync(() => root.unmount())
+      host.remove()
+    }
+  },
+)
 
 it('merges community cards into one gallery and opens complete details without remote requests', async () => {
   const topics = ['agh-plugin', ...Array.from({ length: 19 }, (_, i) => `topic-${i}`)]
@@ -1526,7 +1535,11 @@ it.each([false, true])(
       hasTarget = true
       await act(async () => button('Refresh bindings and targets').click())
       expect(host.textContent).not.toContain('channel failed to start')
-      await act(async () => host.querySelector('[role="combobox"]')?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+      await act(async () =>
+        host
+          .querySelector('[role="combobox"]')
+          ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+      )
       expect(document.body.textContent).toContain('Verified peer')
       expect(
         call.mock.calls.every(

@@ -620,9 +620,10 @@ it.each([false, true])(
     await expect(s.list({ permissions: [] })).rejects.toMatchObject({
       code: rpcError('CAPABILITY_DENIED').code,
     })
-    await expect(
-      s.request({ action: 'uninstall', proposalId: id, expectedDigest: digest }),
-    ).rejects.toMatchObject({ code: rpcError('CAPABILITY_DENIED').code })
+    for (const action of ['uninstall', 'rollback'] as const)
+      await expect(s.request({ action, proposalId: id, expectedDigest: digest })).rejects.toMatchObject({
+        code: rpcError('CAPABILITY_DENIED').code,
+      })
     const conflict = await s.request({ action: 'prepare', source })
     expect(conflict.mcp?.issues).toContain('MCP_SERVER_CONFLICT')
     if (changed) s.servers.get('sample')!.revision = 'b'.repeat(64)
@@ -636,8 +637,12 @@ it.each([false, true])(
     }
     await s.restart()
     expect((await s.list())[0]?.resources[0]?.state).toBe(changed ? 'changed' : 'missing')
+    for (const action of ['uninstall', 'rollback'] as const)
+      await expect(s.request({ action, proposalId: id, expectedDigest: digest })).rejects.toMatchObject({
+        code: rpcError('CAPABILITY_DENIED').code,
+      })
     await s.request(
-      { action: 'uninstall', proposalId: id, expectedDigest: digest },
+      { action: changed ? 'uninstall' : 'rollback', proposalId: id, expectedDigest: digest },
       { permissions: ['packages.read', 'packages.install', 'packages.remove'] },
     )
     await expect
@@ -1244,3 +1249,40 @@ it('probes python3 before python and reports missing only when both fail', async
   expect(await probed({ python3: '3.12.1', python: '2.7.18' })).toMatchObject([{ actual: '3.12.1' }])
   expect(await probed({})).toEqual([{ name: 'python', state: 'missing', evidence: 'probed' }])
 })
+
+it.each(['rollback', 'activation-check'] as const)(
+  'keeps an admitted commit exclusive against concurrent %s',
+  async (action) => {
+    const s = fixture(['sample'])
+    writeFileSync(
+      join(s.source, '.mcp.json'),
+      JSON.stringify({ mcpServers: { sample: { url: 'https://example.com/mcp' } } }),
+    )
+    const prepared = await s.request({
+      action: 'prepare',
+      source: { type: 'path', ref: `path:${s.source.replaceAll('\\', '/')}` },
+    })
+    if (!prepared.proposalId || !prepared.digest) throw new Error('Missing prepared identity')
+    const identity = { proposalId: prepared.proposalId, expectedDigest: prepared.digest }
+    const granted = {
+      permissions: [
+        'packages.read',
+        'packages.install',
+        'packages.remove',
+        'packages.activate',
+      ] as PackageAdminAuthority['permissions'],
+    }
+    await Promise.all([
+      s.request({ action: 'commit', ...identity }),
+      s.request({ action, ...identity, ...(action === 'activation-check' ? { enable: true } : {}) }, granted),
+    ])
+    await expect
+      .poll(async () => (await s.request({ action: 'status', proposalId: identity.proposalId })).state)
+      .toBe('installed')
+    const result = await s.request({ action: 'status', proposalId: identity.proposalId })
+    expect(result.phase).toBe('complete')
+    expect(result.activation).toBeUndefined()
+    expect(s.servers.get('sample')).toMatchObject({ desired: 'disabled', trust: 'untrusted' })
+    expect(existsSync(join(s.root, 'operations/mcp/sources', identity.proposalId))).toBe(true)
+  },
+)

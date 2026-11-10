@@ -164,10 +164,10 @@ export function createRunner(dependencies: RunnerDeps): Runner {
   const inbound = new Inbound({
     adapter: dependencies.adapter,
     claim: dependencies.client.claim,
-    joinParticipant: async (sessionKey, credential) => {
+    joinParticipant: async (sessionId, credential) => {
       if (!participantSupported || dependencies.client.call === undefined) return
       await dependencies.client.call('_agnes/v1/participant.join', {
-        sessionId: sessionKey,
+        sessionId,
         credential,
       })
     },

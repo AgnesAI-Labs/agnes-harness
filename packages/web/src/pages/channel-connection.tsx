@@ -107,13 +107,17 @@ export function ConnectionCard({
             )}
             {row.unavailable && <span>{zh ? '部分绑定不可访问' : 'Some bindings unavailable'}</span>}
             {row.statusUnavailable && <span>{zh ? '状态暂不可用' : 'Status unavailable'}</span>}
-            {row.recovery && <span>{zh ? '启动失败，可删除实例' : 'Startup failed; instance can be deleted'}</span>}
+            {row.recovery && (
+              <span>{zh ? '启动失败，可删除实例' : 'Startup failed; instance can be deleted'}</span>
+            )}
           </div>
         </div>
         <ChannelStatus state={channelConnectionState(row.connection)} zh={zh} />
         <Button
           size="small"
-          disabled={busy || removing || !!pending.current || row.unavailable || !group.provider.bindingAvailable}
+          disabled={
+            busy || removing || !!pending.current || row.unavailable || !group.provider.bindingAvailable
+          }
           onClick={() =>
             openChannelDialog({ extension: group.provider.extension, instanceId: row.id, sessionId })
           }
@@ -172,15 +176,30 @@ export function ConnectionCard({
             <Button
               size="small"
               appearance="ghost"
-              disabled={busy || removing || !!pending.current || row.unavailable || !group.provider.bindingAvailable}
+              disabled={
+                busy || removing || !!pending.current || row.unavailable || !group.provider.bindingAvailable
+              }
               onClick={() =>
                 openChannelDialog({ extension: group.provider.extension, instanceId: row.id, rebind: true })
               }
             >
               {zh ? '换绑会话' : 'Move to session'}
             </Button>
-            <RemoveConnection data={data} group={group} row={row} zh={zh} onPending={setRemoving}
-              disabled={busy || !!pending.current || row.unavailable || row.statusUnavailable === true || !!group.error || !group.configurationRevision} />
+            <RemoveConnection
+              data={data}
+              group={group}
+              row={row}
+              zh={zh}
+              onPending={setRemoving}
+              disabled={
+                busy ||
+                !!pending.current ||
+                row.unavailable ||
+                row.statusUnavailable === true ||
+                !!group.error ||
+                !group.configurationRevision
+              }
+            />
           </div>
           {row.unavailable && (
             <p className="channel-muted">
@@ -189,9 +208,13 @@ export function ConnectionCard({
                 : 'This connection contains an inaccessible binding and cannot be edited.'}
             </p>
           )}
-          {row.statusUnavailable && <p className="channel-muted">{zh
-            ? '暂时无法核对实例状态；这不表示存在不可访问的绑定。请刷新或恢复渠道服务后重试。'
-            : 'Instance status cannot be checked. This does not imply inaccessible bindings. Refresh or recover the channel service.'}</p>}
+          {row.statusUnavailable && (
+            <p className="channel-muted">
+              {zh
+                ? '暂时无法核对实例状态；这不表示存在不可访问的绑定。请刷新或恢复渠道服务后重试。'
+                : 'Instance status cannot be checked. This does not imply inaccessible bindings. Refresh or recover the channel service.'}
+            </p>
+          )}
         </div>
       </Disclosure>
       {message && (

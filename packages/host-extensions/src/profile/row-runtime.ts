@@ -38,7 +38,13 @@ export function installProfileRuntime(
     ): { integrity?: string; declaredCapabilities?: PluginCapabilities } | undefined
   },
 ) {
-  const recoveries = new WeakMap<object, (config: import('@agnes/protocol').JsonValue, store: import('@agnes/extension-api').OwnedStore) => import('@agnes/protocol').JsonValue>()
+  const recoveries = new WeakMap<
+    object,
+    (
+      config: import('@agnes/protocol').JsonValue,
+      store: import('@agnes/extension-api').OwnedStore,
+    ) => import('@agnes/protocol').JsonValue
+  >()
   const resolve = (context: Context) => {
     let fiber: Fiber = context.fiber
     while (!origins.lookup(fiber) && fiber !== fiber.parent.fiber) fiber = fiber.parent.fiber
@@ -119,8 +125,15 @@ export function installProfileRuntime(
           return value.status()
         },
       }
-      if (deps.channelRuntime.snapshot) recoveries.set(definition, (config, store) =>
-        deps.channelRuntime!.snapshot!(registered, config as unknown as import('@agnes/extension-api').ChannelConfiguration, store, row.owner))
+      if (deps.channelRuntime.snapshot)
+        recoveries.set(definition, (config, store) =>
+          deps.channelRuntime!.snapshot!(
+            registered,
+            config as unknown as import('@agnes/extension-api').ChannelConfiguration,
+            store,
+            row.owner,
+          ),
+        )
       const handle = (this.ctx.get('profileRuntime') as PluginProfileRuntimePort).register(definition)
       const capabilities = channelServiceCapabilities()
       const bindingAvailable = capabilities.every((cap) =>
@@ -198,8 +211,13 @@ export function installProfileRuntime(
         () => deps.managed.settle(),
         definition.configSchema,
         definition.checkSchema,
-        recoveries.has(definition) ? () => recoveries.get(definition)!(handle.configuration(),
-          ownedStore(deps.namespace(row.owner, `managed:${definition.id}`), row.assert, false)) : undefined,
+        recoveries.has(definition)
+          ? () =>
+              recoveries.get(definition)!(
+                handle.configuration(),
+                ownedStore(deps.namespace(row.owner, `managed:${definition.id}`), row.assert, false),
+              )
+          : undefined,
       )
       return handle
     },

@@ -169,6 +169,7 @@ function useSkillInstall({
     else void run('check')
   }
   return {
+    canRemove: result?.kind === 'mcp' && view.canEffect('packages.remove'),
     mcpSandboxProfile,
     setMcpSandboxProfile,
     mcpConfigurationChanged:
@@ -352,6 +353,7 @@ function SkillInstallActions({
   retry,
   rollbackRequested,
   setRollbackRequested,
+  canRemove,
   mcpConfigurationChanged,
   selectedServers,
   selectedSkills,
@@ -384,7 +386,7 @@ function SkillInstallActions({
       )}
       {result?.kind === 'mcp' && ['installed', 'failed', 'interrupted'].includes(result.state) && (
         <Button
-          disabled={busy}
+          disabled={busy || !canRemove}
           onClick={() => {
             if (rollbackRequested) void run('rollback')
             else setRollbackRequested(true)

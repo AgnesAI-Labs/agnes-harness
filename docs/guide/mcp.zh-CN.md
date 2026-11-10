@@ -34,7 +34,7 @@ MCP 连接默认不勾选。请选择需要安装的连接，再应用选择以�
 
 部分失败时，窗口会展示已经添加的内容。“撤销本次新增内容”只移除本次新增且修订未变的资源，已修改资源会保留。写入中断且归属不确定时，需要到资源管理页核对，不会自动删除。重启不会重放中断的导入或启动服务；本地命令引用的受管来源文件会保留，成功撤销后才移除本次来源。
 
-Node SDK 使用 `client.packages.skillImport`：`check` 立即返回后台任务，`status` 查询进度；`commit` 绑定 `expectedDigest`、可选的 `skillDirectories` 和 `testConnection`。`credentialBindings` 与 `mcpSandboxProfile` 属于生成冻结计划时的检查参数；显式 `rollback` 同样需要摘要。CLI 继续使用同步 `prepare`，大型仓库建议使用后台检查。MCP 导入创建当前 profile 的连接及用户级配套技能。
+Node SDK 使用 `client.packages.skillImport`：`check` 立即返回后台任务，`status` 查询进度；`commit` 绑定 `expectedDigest`、可选的 `skillDirectories` 和 `testConnection`。`credentialBindings` 与 `mcpSandboxProfile` 属于生成冻结计划时的检查参数；显式 `rollback` 同样需要摘要以及当前的安装和删除权限，部分失败或重启后也不例外。同一导入的操作准入串行处理；运行中的操作须结束或取消后，其他操作才能修改它。CLI 继续使用同步 `prepare`，大型仓库建议使用后台检查。MCP 导入创建当前 profile 的连接及用户级配套技能。
 
 已有 MCP 工具服务时，可以把它接入 AGH 的任务流程。本页带你添加服务、审核工具范围、建立连接，并在配置变化后检查实际状态。
 

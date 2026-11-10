@@ -40,6 +40,7 @@ export function createMcpImports(options: {
     receipts = join(directory, 'receipts')
   const installer = createSkillInstaller(join(directory, 'skill-receipts'), options.discovery)
   const plans = new Map<string, McpPlan>()
+  const requests = new Map<string, Promise<unknown>>()
   const controller = new AbortController()
   const rootFor = (id: string) => join(directory, 'sources', id)
   const save = async (plan: McpPlan) => {
@@ -297,143 +298,159 @@ export function createMcpImports(options: {
       const id = params.proposalId
       if (!id?.startsWith('mcp-import-')) return undefined
       if (!/^mcp-import-[a-f0-9-]{36}$/.test(id)) throw rpcError('INVALID_PARAMS')
-      const plan = await load(id, owner),
-        port = resourcePort(options.resources, options.profile, granted)
-      if (params.action === 'status') {
-        if (plan.running && plan.result.state !== 'running') await plan.running
-        return structuredClone(plan.result)
-      }
-      if (['activation-check', 'enable', 'disable', 'runtime-prepare'].includes(params.action))
-        return requestMcpLifecycle(plan, params, {
-          port,
-          granted,
-          signal: controller.signal,
-          save: () => save(plan),
-          environment: (definitions, signal) =>
-            (options.mcpEnvironment ?? mcpEnvironment)(plan.root, definitions, options.home, signal),
-        })
-      if (params.action === 'cancel') {
-        if (plan.running) {
-          plan.controller?.abort()
-          await plan.running
-          return structuredClone(plan.result)
-        }
-        if (plan.result.state === 'prepared') {
-          for (const entry of plan.skills.values())
-            await skillPort(granted).request(
-              { ...entry.invocation, input: { action: 'cancel', proposalId: entry.proposalId } },
-              controller.signal,
-            )
-          plan.result = { ...plan.result, state: 'cancelled' }
-          await save(plan)
-          await rm(plan.root, { recursive: true, force: true })
-        }
-        return structuredClone(plan.result)
-      }
-      if (!['commit', 'rollback', 'uninstall'].includes(params.action)) throw rpcError('INVALID_PARAMS')
-      if (plan.running) return structuredClone(plan.result)
-      if (plan.uncertain) {
-        plan.result = { ...plan.result, state: 'interrupted', message: 'MCP_RECOVERY_REVIEW_REQUIRED' }
-        await save(plan)
-        return structuredClone(plan.result)
-      }
-      if (params.expectedDigest !== plan.result.digest)
-        throw rpcError('SEMANTIC_REJECTED', { reason: 'SKILL_SOURCE_CHANGED' })
-      if (!granted.permissions.includes('packages.install')) throw rpcError('CAPABILITY_DENIED')
-      if (params.action === 'uninstall' && !granted.permissions.includes('packages.remove'))
-        throw rpcError('CAPABILITY_DENIED')
-      if (params.action === 'commit') {
-        const chosen = params.mcpServers ?? []
-        const checked = plan.result.mcp!.servers.filter((row) => row.selected).map((row) => row.serverId)
-        if (chosen.some((id) => !plan.result.mcp!.servers.some((row) => row.serverId === id)))
-          return mcpImportError('MCP_SELECTION_INVALID')
-        if (jcs([...chosen].sort()) !== jcs(checked.sort())) return mcpImportError('MCP_SELECTION_CHANGED')
-        if (!chosen.length && !params.skillDirectories?.length)
-          return mcpImportError('MCP_SELECTION_REQUIRED')
-        if (params.testConnection && !chosen.length) return mcpImportError('MCP_SELECTION_REQUIRED')
-
-        if (
-          params.testConnection &&
-          plan.definitions.some(
-            (definition) => chosen.includes(definition.serverId) && definition.secretBinding.kind !== 'none',
-          ) &&
-          !granted.permissions.includes('credentials.read')
-        )
-          throw rpcError('CAPABILITY_DENIED')
-        if (plan.result.state !== 'prepared' || Date.now() > plan.expires)
-          return mcpImportError('MCP_IMPORT_INTERRUPTED')
-        if (plan.result.mcp!.requiredCredentials.length || plan.result.mcp!.issues.length)
-          return mcpImportError('MCP_CONFIGURATION_REQUIRED')
-        if ((params.skillDirectories ?? []).some((path) => !plan.skills.has(path)))
-          return mcpImportError('MCP_SKILL_UNAVAILABLE')
-        if (
-          params.testConnection &&
-          (!granted.permissions.includes('packages.trust') ||
-            !granted.permissions.includes('packages.activate'))
-        )
-          throw rpcError('CAPABILITY_DENIED')
-        if (
-          params.testConnection &&
-          plan.result.environment?.some((item) => item.state === 'missing' || item.state === 'unsupported')
-        )
-          return mcpImportError('MCP_ENVIRONMENT_BLOCKED')
-      }
-      const cancellation = new AbortController(),
-        signal = AbortSignal.any([controller.signal, cancellation.signal])
-      plan.controller = cancellation
-      if (params.action === 'commit' && plan.metadata && !plan.metadata.installedAt)
-        plan.metadata.installedAt = new Date().toISOString()
-      delete plan.result.message
-      plan.result = {
-        ...plan.result,
-        state: 'running',
-        phase: params.action === 'commit' ? 'registering' : 'rolling-back',
-      }
-      await save(plan)
-      plan.running = (async () => {
-        try {
-          if (params.action === 'commit') {
-            if ((await hashDirectoryAsync(plan.root, { signal })) !== plan.integrity)
-              return mcpImportError('SKILL_SOURCE_CHANGED')
-            await commitMcpPlan(plan, params, port, skillPort(granted), () => save(plan), signal)
-            plan.result = { ...plan.result, state: 'installed', phase: 'complete' }
-          } else {
-            await rollbackMcpPlan(plan, port, () => save(plan), signal)
-            for (const [path, entry] of plan.skills)
-              if (plan.result.mcp?.skills.find((skill) => skill.path === path)?.state === 'prepared')
+      // Serialize admission and cold receipt loading; background work is owned by plan.running.
+      const task = (requests.get(id) ?? Promise.resolve())
+        .catch(() => {})
+        .then(async () => {
+          const plan = await load(id, owner),
+            port = resourcePort(options.resources, options.profile, granted)
+          controller.signal.throwIfAborted()
+          if (params.action === 'status') {
+            if (plan.running && plan.result.state !== 'running') await plan.running
+            return structuredClone(plan.result)
+          }
+          if (['activation-check', 'enable', 'disable', 'runtime-prepare'].includes(params.action))
+            return requestMcpLifecycle(plan, params, {
+              port,
+              granted,
+              signal: controller.signal,
+              save: () => save(plan),
+              environment: (definitions, signal) =>
+                (options.mcpEnvironment ?? mcpEnvironment)(plan.root, definitions, options.home, signal),
+            })
+          if (params.action === 'cancel') {
+            if (plan.running) {
+              plan.controller?.abort()
+              await plan.running
+              return structuredClone(plan.result)
+            }
+            if (plan.result.state === 'prepared') {
+              for (const entry of plan.skills.values())
                 await skillPort(granted).request(
                   { ...entry.invocation, input: { action: 'cancel', proposalId: entry.proposalId } },
-                  signal,
+                  controller.signal,
                 )
-            plan.result = { ...plan.result, state: 'cancelled', phase: 'rolled-back' }
-            await rm(plan.root, { recursive: true, force: true })
-            await rm(runtimeBase(plan), { recursive: true, force: true })
+              plan.result = { ...plan.result, state: 'cancelled' }
+              await save(plan)
+              await rm(plan.root, { recursive: true, force: true })
+            }
+            return structuredClone(plan.result)
           }
-        } catch (error) {
-          const code = (error as { code?: string }).code
+          if (!['commit', 'rollback', 'uninstall'].includes(params.action)) throw rpcError('INVALID_PARAMS')
+          if (plan.running) return structuredClone(plan.result)
+          if (plan.uncertain) {
+            plan.result = { ...plan.result, state: 'interrupted', message: 'MCP_RECOVERY_REVIEW_REQUIRED' }
+            await save(plan)
+            return structuredClone(plan.result)
+          }
+          if (params.expectedDigest !== plan.result.digest)
+            throw rpcError('SEMANTIC_REJECTED', { reason: 'SKILL_SOURCE_CHANGED' })
+          if (!granted.permissions.includes('packages.install')) throw rpcError('CAPABILITY_DENIED')
+          if (params.action !== 'commit' && !granted.permissions.includes('packages.remove'))
+            throw rpcError('CAPABILITY_DENIED')
+          if (params.action === 'commit') {
+            const chosen = params.mcpServers ?? []
+            const checked = plan.result.mcp!.servers.filter((row) => row.selected).map((row) => row.serverId)
+            if (chosen.some((id) => !plan.result.mcp!.servers.some((row) => row.serverId === id)))
+              return mcpImportError('MCP_SELECTION_INVALID')
+            if (jcs([...chosen].sort()) !== jcs(checked.sort()))
+              return mcpImportError('MCP_SELECTION_CHANGED')
+            if (!chosen.length && !params.skillDirectories?.length)
+              return mcpImportError('MCP_SELECTION_REQUIRED')
+            if (params.testConnection && !chosen.length) return mcpImportError('MCP_SELECTION_REQUIRED')
+
+            if (
+              params.testConnection &&
+              plan.definitions.some(
+                (definition) =>
+                  chosen.includes(definition.serverId) && definition.secretBinding.kind !== 'none',
+              ) &&
+              !granted.permissions.includes('credentials.read')
+            )
+              throw rpcError('CAPABILITY_DENIED')
+            if (plan.result.state !== 'prepared' || Date.now() > plan.expires)
+              return mcpImportError('MCP_IMPORT_INTERRUPTED')
+            if (plan.result.mcp!.requiredCredentials.length || plan.result.mcp!.issues.length)
+              return mcpImportError('MCP_CONFIGURATION_REQUIRED')
+            if ((params.skillDirectories ?? []).some((path) => !plan.skills.has(path)))
+              return mcpImportError('MCP_SKILL_UNAVAILABLE')
+            if (
+              params.testConnection &&
+              (!granted.permissions.includes('packages.trust') ||
+                !granted.permissions.includes('packages.activate'))
+            )
+              throw rpcError('CAPABILITY_DENIED')
+            if (
+              params.testConnection &&
+              plan.result.environment?.some(
+                (item) => item.state === 'missing' || item.state === 'unsupported',
+              )
+            )
+              return mcpImportError('MCP_ENVIRONMENT_BLOCKED')
+          }
+          const cancellation = new AbortController(),
+            signal = AbortSignal.any([controller.signal, cancellation.signal])
+          plan.controller = cancellation
+          if (params.action === 'commit' && plan.metadata && !plan.metadata.installedAt)
+            plan.metadata.installedAt = new Date().toISOString()
+          delete plan.result.message
           plan.result = {
             ...plan.result,
-            state: signal.aborted ? 'interrupted' : 'failed',
-            message:
-              typeof code === 'string' && /^(?:MCP_|SKILL_)[A-Z_]+$/.test(code)
-                ? code
-                : 'MCP_OPERATION_FAILED',
+            state: 'running',
+            phase: params.action === 'commit' ? 'registering' : 'rolling-back',
           }
-        } finally {
-          try {
-            await save(plan)
-          } finally {
-            delete plan.running
-            delete plan.controller
-          }
-        }
-      })()
-      void plan.running.catch(() => undefined)
-      return structuredClone(plan.result)
+          plan.running = (async () => {
+            try {
+              await save(plan)
+              if (params.action === 'commit') {
+                if ((await hashDirectoryAsync(plan.root, { signal })) !== plan.integrity)
+                  return mcpImportError('SKILL_SOURCE_CHANGED')
+                await commitMcpPlan(plan, params, port, skillPort(granted), () => save(plan), signal)
+                plan.result = { ...plan.result, state: 'installed', phase: 'complete' }
+              } else {
+                await rollbackMcpPlan(plan, port, () => save(plan), signal)
+                for (const [path, entry] of plan.skills)
+                  if (plan.result.mcp?.skills.find((skill) => skill.path === path)?.state === 'prepared')
+                    await skillPort(granted).request(
+                      { ...entry.invocation, input: { action: 'cancel', proposalId: entry.proposalId } },
+                      signal,
+                    )
+                plan.result = { ...plan.result, state: 'cancelled', phase: 'rolled-back' }
+                await rm(plan.root, { recursive: true, force: true })
+                await rm(runtimeBase(plan), { recursive: true, force: true })
+              }
+            } catch (error) {
+              const code = (error as { code?: string }).code
+              plan.result = {
+                ...plan.result,
+                state: signal.aborted ? 'interrupted' : 'failed',
+                message:
+                  typeof code === 'string' && /^(?:MCP_|SKILL_)[A-Z_]+$/.test(code)
+                    ? code
+                    : 'MCP_OPERATION_FAILED',
+              }
+            } finally {
+              try {
+                await save(plan)
+              } finally {
+                delete plan.running
+                delete plan.controller
+              }
+            }
+          })()
+          void plan.running.catch(() => undefined)
+          return structuredClone(plan.result)
+        })
+      requests.set(id, task)
+      try {
+        return await task
+      } finally {
+        if (requests.get(id) === task) requests.delete(id)
+      }
     },
     cleanup() {
       for (const [id, plan] of plans)
-        if (!plan.running && plan.expires < Date.now()) {
+        if (!plan.running && !requests.has(id) && plan.expires < Date.now()) {
           plans.delete(id)
           if (plan.result.state === 'prepared')
             void rm(plan.root, { recursive: true, force: true }).catch(() => undefined)
@@ -441,6 +458,7 @@ export function createMcpImports(options: {
     },
     async close() {
       controller.abort()
+      await Promise.allSettled([...requests.values()])
       await Promise.allSettled([...plans.values()].flatMap((plan) => (plan.running ? [plan.running] : [])))
       for (const plan of plans.values())
         if (plan.result.state === 'prepared') {

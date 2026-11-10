@@ -40,20 +40,20 @@ export function channelRelay(input: {
           ? []
           : body.method === 'channels.remove'
             ? ['extension', 'instanceId', 'operationId', 'configurationRevision', 'expectedVersion']
-          : body.method === 'channels.context'
-            ? ['extension', 'sessionId', 'instanceId']
-            : [
-                'extension',
-                'sessionId',
-                'instanceId',
-                'replaceId',
-                'credentialRefs',
-                'config',
-                'allowFrom',
-                'requireMention',
-                'operationId',
-                'configurationRevision',
-              ]
+            : body.method === 'channels.context'
+              ? ['extension', 'sessionId', 'instanceId']
+              : [
+                  'extension',
+                  'sessionId',
+                  'instanceId',
+                  'replaceId',
+                  'credentialRefs',
+                  'config',
+                  'allowFrom',
+                  'requireMention',
+                  'operationId',
+                  'configurationRevision',
+                ]
       const text = (key: string) =>
         typeof record?.[key] === 'string' &&
         (record[key] as string).length > 0 &&
@@ -66,8 +66,11 @@ export function channelRelay(input: {
         (body.method !== 'channels.overview' && !text('extension')) ||
         (['channels.context', 'channels.configure'].includes(body.method) && !text('sessionId')) ||
         (body.method === 'channels.remove' &&
-          (!text('instanceId') || !text('operationId') || !text('configurationRevision') ||
-            !Number.isSafeInteger(record.expectedVersion) || Number(record.expectedVersion) < 0)) ||
+          (!text('instanceId') ||
+            !text('operationId') ||
+            !text('configurationRevision') ||
+            !Number.isSafeInteger(record.expectedVersion) ||
+            Number(record.expectedVersion) < 0)) ||
         (body.method === 'channels.configure' &&
           (!text('instanceId') ||
             !text('operationId') ||

@@ -546,10 +546,14 @@ export function localPackageAdmin(
     }),
     async handleClientService(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
       if (
-        await channelRelay({ client, origin, profile: backend.scope.profile, initialize, body: jsonBody, reply: serviceReply })(
-          request,
-          response,
-        )
+        await channelRelay({
+          client,
+          origin,
+          profile: backend.scope.profile,
+          initialize,
+          body: jsonBody,
+          reply: serviceReply,
+        })(request, response)
       )
         return true
       if (

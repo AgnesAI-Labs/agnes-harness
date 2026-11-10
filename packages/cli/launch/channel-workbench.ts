@@ -183,7 +183,9 @@ export function channelWorkbench(client: Client, profile: string) {
     // Reconcile the original native operation even if the instance is already gone.
     try {
       const receipt = await client.extensions.readOperation({
-        extension, service: 'channel.configure', operationId,
+        extension,
+        service: 'channel.configure',
+        operationId,
       })
       if (receipt.state !== 'approval-required') return { receipt, instanceId }
     } catch (error) {
@@ -196,11 +198,21 @@ export function channelWorkbench(client: Client, profile: string) {
     const check = await scoped<{ output: { instances: Health[] } }>(extension, 'check')
     const health = check.output.instances.find((instance) => instance.id === instanceId)
     const owned = new Set((await sessions()).map((session) => session.sessionId))
-    if (!health || health.version !== params.expectedVersion ||
-      !Array.isArray(health.bindings) || health.bindings.some((binding) => !owned.has(binding.sessionId))) refuse()
-    const receipt = await scoped<ProfileServiceReceipt>(extension, 'configure', {
-      instances: configuration.output.instances.filter((instance) => instance.id !== instanceId),
-    }, operationId)
+    if (
+      !health ||
+      health.version !== params.expectedVersion ||
+      !Array.isArray(health.bindings) ||
+      health.bindings.some((binding) => !owned.has(binding.sessionId))
+    )
+      refuse()
+    const receipt = await scoped<ProfileServiceReceipt>(
+      extension,
+      'configure',
+      {
+        instances: configuration.output.instances.filter((instance) => instance.id !== instanceId),
+      },
+      operationId,
+    )
     return { receipt, instanceId }
   }
   return { overview, context, configure, remove }

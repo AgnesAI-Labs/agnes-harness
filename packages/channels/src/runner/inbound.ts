@@ -33,7 +33,7 @@ type CachePort = Pick<SessionCache, 'get' | 'busy' | 'current' | 'markParticipan
 export type InboundDeps = {
   adapter: ChannelAdapter
   claim: { once(kind: string, value: string, expiresAtMs?: number): Promise<boolean> }
-  joinParticipant?: (sessionKey: string, credential: ChannelCredential) => Promise<void>
+  joinParticipant?: (sessionId: string, credential: ChannelCredential) => Promise<void>
   cache: CachePort
   config: {
     allowFrom: string[]
@@ -200,7 +200,7 @@ export class Inbound {
       this.dependencies.cache.markParticipant(intent.sessionKey, credential.userId)
     ) {
       try {
-        await this.dependencies.joinParticipant(intent.sessionKey, credential)
+        await this.dependencies.joinParticipant(session.id, credential)
       } catch {
         // A failed daemon call must remain retryable on the next event. Keeping the optimistic
         // marker would permanently skip identity binding while continuing to submit messages.
