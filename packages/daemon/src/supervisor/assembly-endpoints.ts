@@ -224,7 +224,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
         denyFork()
       }
       try {
-        const parentBinding = await workspaceCatalog.restoreBinding(sessionId)
+        const parentBinding = await workspaceCatalog.restoreDerivedBinding(sessionId, ownedChildKey)
         const childBinding = await workspaceCatalog.authorizeAndBind(
           ownedChildKey,
           parentBinding.canonicalRoot,

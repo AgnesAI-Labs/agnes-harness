@@ -15,15 +15,18 @@ import {
   skillsOfferedCheck,
   workflowCheck,
 } from './smoke-check.js'
-import { defaultTasksDir, loadSuite } from './suite.js'
+import type { EvalTask } from './types.js'
 
 // The ledgers are trimmed rows of the first evaluation's runs (see fixtures/real). The checks read a run
 // folder the way the runner leaves it; here the folders are assembled from those rows, with nothing a
 // real run would add, so these tests show that each check can say both PASS and FAIL.
 const real = (name: string): string =>
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'real', name), 'utf8')
-const tasks = loadSuite(defaultTasksDir)
-const byId = (id: string) => tasks.find((t) => t.id === id) as (typeof tasks)[number]
+// The tasks the first evaluation's runs ran, kept as data (fixtures/tasks): they are no longer in the suite.
+const byId = (id: string): EvalTask =>
+  JSON.parse(
+    readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'fixtures', 'tasks', `${id}.json`), 'utf8'),
+  ) as EvalTask
 const cross = byId('cross-01-build-subdir')
 const wf = byId('wf-01-release-channel')
 

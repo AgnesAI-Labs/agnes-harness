@@ -170,6 +170,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/ui.refresh',
         '_agnes/v1/autoReview.get',
         '_agnes/v1/autoReview.save',
+        '_agnes/v1/channels.catalog',
         '_agnes/v1/systemPrompt.get',
         '_agnes/v1/systemPrompt.save',
         '_agnes/v1/session.factChain',
@@ -191,7 +192,10 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/admin.observability',
         '_agnes/v1/admin.history.search',
         '_agnes/v1/admin.plan',
-        '_agnes/v1/admin.mcp.oauth.save',
+        '_agnes/v1/admin.mcp.oauth.get',
+        '_agnes/v1/admin.mcp.oauth.complete',
+        '_agnes/v1/admin.mcp.oauth.refresh',
+        '_agnes/v1/admin.mcp.oauth.logout',
 
         '_agnes/v1/apis.list',
         '_agnes/v1/approval.decide',
@@ -246,6 +250,7 @@ describe('methods (I1 set)', () => {
         '_agnes/v1/mcp.servers.enable',
         '_agnes/v1/mcp.servers.get',
         '_agnes/v1/mcp.servers.list',
+        '_agnes/v1/mcp.servers.oauth.signOut',
         '_agnes/v1/mcp.servers.oauth.status',
         '_agnes/v1/mcp.servers.oauth.status.set',
         '_agnes/v1/mcp.servers.reconnect',
@@ -391,7 +396,7 @@ describe('methods (I1 set)', () => {
         'session/update',
       ].sort(),
     )
-    expect(Object.keys(METHODS)).toHaveLength(237)
+    expect(Object.keys(METHODS)).toHaveLength(242)
     expect(METHODS['_agnes/v1/session.integrity']).toMatchObject({ kind: 'request', direction: 'c2s' })
     expect(METHODS['_agnes/v1/session.loading']).toMatchObject({ kind: 'notification', direction: 's2c' })
     expect(METHODS['_agnes/v1/session.loadingCancel']).toMatchObject({

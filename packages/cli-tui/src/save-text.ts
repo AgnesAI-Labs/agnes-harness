@@ -32,8 +32,7 @@ const REASON: Record<string, string> = {
     'saving is not available right now (the workspace records or the approval list could not be reached)',
   conflict: 'a person edited the paragraph or the file changed meanwhile; nothing was overwritten',
   'approval-expired': 'the approval request was not answered within 7 days',
-  'user-memory-budget':
-    'user memory has no room for it (about 512 bytes, your own text first); nothing was changed or trimmed',
+  'user-memory-budget': 'the user memory file is full; nothing was changed or trimmed',
   'model-cannot-write-user': 'an earlier version did not let the model write user memory',
   'workflow-run-unavailable':
     'the workflow run it names is not in this session, so no skill was made from it',

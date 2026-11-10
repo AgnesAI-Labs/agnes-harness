@@ -1,6 +1,6 @@
 import { appendFileSync, createReadStream, mkdirSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { PARSER_VERSION } from '@agnes/ai'
 import { fakeModel, stampFor } from '@agnes/ai/testkit'
 import type { ToolContext } from '@agnes/extension-api'
@@ -195,6 +195,45 @@ void runWorker(
         writeFileSync(join(profile.dataDir, 'fixture-worker-pid'), String(process.pid))
       const { host } = await createTestHost({
         dataDir: profile.dataDir,
+        ...(env.AGNES_FAKE_WORKER_REFERENCES === '1'
+          ? {
+              packages: {
+                '@agnes/base': {
+                  plugins: await (async () => {
+                    const { defaultLoopPlugin, referenceResolversPlugin } = await import('@agnes/base')
+                    const { normalizePluginExport } = await import('@agnes/plugin-runtime/host')
+                    return [
+                      {
+                        declaration: {
+                          export: 'defaultLoopPlugin',
+                          id: 'loop:agnes.default',
+                          apiRange: '^5.0.0',
+                          default: true,
+                          inject: ['loops'],
+                          provide: [],
+                          runtime: 'in-process',
+                        },
+                        entry: normalizePluginExport(defaultLoopPlugin),
+                      },
+                      {
+                        declaration: {
+                          export: 'referenceResolversPlugin',
+                          id: 'reference-resolvers:default',
+                          apiRange: '^5.0.0',
+                          default: true,
+                          inject: ['providers'],
+                          provide: [],
+                          runtime: 'in-process',
+                        },
+                        entry: normalizePluginExport(referenceResolversPlugin),
+                      },
+                    ]
+                  })(),
+                },
+              },
+            }
+          : {}),
+
         mcpManage: capabilities.mcpManage,
         ...(await permissionFixture(profile.dataDir)),
         ...(env.AGNES_FAKE_WORKER_QUEUE === '1'
@@ -236,7 +275,10 @@ void runWorker(
                   const textOf = (message: (typeof request.messages)[number]) =>
                     message.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
                   const askIndex = request.messages.findLastIndex(
-                    (message) => message.role === 'user' && /^read \//.test(textOf(message)),
+                    (message) =>
+                      message.role === 'user' &&
+                      textOf(message).startsWith('read ') &&
+                      isAbsolute(textOf(message).slice('read '.length)),
                   )
                   const ask = request.messages[askIndex]
                   const result = request.messages.slice(askIndex + 1).find((m) => m.role === 'tool_result')

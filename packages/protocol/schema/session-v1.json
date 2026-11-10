@@ -653,7 +653,19 @@
           "required": ["level", "scope"],
           "properties": {
             "level": { "enum": ["full", "partial", "none"] },
-            "scope": { "type": "array", "items": { "enum": ["file", "network", "process"] } }
+            "scope": { "type": "array", "items": { "enum": ["file", "network", "process"] } },
+            "boundary": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["contract", "fileWrite", "fileRead", "network", "processTree"],
+              "properties": {
+                "contract": { "const": "windows-write-restricted-v1" },
+                "fileWrite": { "const": "acl-partial" },
+                "fileRead": { "const": "unrestricted" },
+                "network": { "const": "unrestricted" },
+                "processTree": { "const": "job-object" }
+              }
+            }
           }
         },
         "authz": {

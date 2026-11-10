@@ -15,12 +15,6 @@ const categories: readonly Category[] = [
   'long',
 ]
 
-/**
- * The fewest tasks a full suite needs of each category. A category added later is written a few tasks at
- * a time, so it has no floor of its own; the categories of the first suite keep theirs.
- */
-const NEW_CATEGORIES: ReadonlySet<Category> = new Set(['long'])
-
 /** The fixture a session's workspace is copied from when it names none. */
 export const DEFAULT_FIXTURE = 'fixture'
 const FIXTURE_NAME = /^fixture(-[a-z0-9]+)?$/
@@ -46,16 +40,19 @@ export const taskFixtures = (task: EvalTask): string[] => [...new Set(task.sessi
  */
 export const workspaceName = (fixture: string): string => `work${fixture.slice(DEFAULT_FIXTURE.length)}`
 
-const DEFAULT_MIN_TASKS = 20
-const MIN_PER_CATEGORY = 5
+/**
+ * The bundled suite is the long tasks alone. The other categories are still read, for task folders that
+ * use the runner's two-session, cross-workspace and workflow features (the tests write such folders), but
+ * no category has a floor of tasks any more.
+ */
+const DEFAULT_MIN_TASKS = 1
 const MIN_PROMPTS_PER_SESSION = 3
+/** A long task's session may be short: a few milestones, one prompt each, before the context is reset. */
+const MIN_PROMPTS_PER_LONG_SESSION = 1
+const MAX_LONG_SESSIONS = 10
 
 export type LoadSuiteOptions = {
-  /**
-   * Minimum number of tasks in the suite. The default of 20 also requires at least 5 tasks per
-   * category. Passing a value below 20 is a temporary relaxation while the suite is still being
-   * written: it lowers the total floor to that value and drops the per-category floor to 0.
-   */
+  /** Minimum number of tasks in the suite; 1 by default. */
   minTasks?: number
 }
 
@@ -149,21 +146,21 @@ const parseTask = (raw: unknown, dirName: string): EvalTask => {
         }
       },
     )
-    if (prompts.length < MIN_PROMPTS_PER_SESSION) {
-      throw new Error(
-        `${sessionWhere}: needs at least ${MIN_PROMPTS_PER_SESSION} prompts, got ${prompts.length}`,
-      )
+    const minPrompts = category === 'long' ? MIN_PROMPTS_PER_LONG_SESSION : MIN_PROMPTS_PER_SESSION
+    if (prompts.length < minPrompts) {
+      throw new Error(`${sessionWhere}: needs at least ${minPrompts} prompts, got ${prompts.length}`)
     }
     return fixture === undefined ? { prompts } : { prompts, fixture }
   })
 
   const expectedSessions =
     category === 'cross-session' || category === 'cross-workspace' || category === 'workflow' ? 2 : 1
-  // A long task is one session of many stages, or two (the second picking the work up again).
-  if (category === 'long' ? sessions.length > 2 : sessions.length !== expectedSessions) {
+  // A long task is one session of many stages, or several in the same workspace, each a new conversation
+  // that picks the work up where the last one left it.
+  if (category === 'long' ? sessions.length > MAX_LONG_SESSIONS : sessions.length !== expectedSessions) {
     throw new Error(
       category === 'long'
-        ? `${where}: long tasks need one or two sessions, got ${sessions.length}`
+        ? `${where}: long tasks have at most ${MAX_LONG_SESSIONS} sessions, got ${sessions.length}`
         : `${where}: ${category} tasks need exactly ${expectedSessions} session${expectedSessions === 1 ? '' : 's'}, got ${sessions.length}`,
     )
   }
@@ -217,7 +214,6 @@ const parseTask = (raw: unknown, dirName: string): EvalTask => {
  */
 export const loadSuite = (dir: string, opts: LoadSuiteOptions = {}): EvalTask[] => {
   const minTasks = opts.minTasks ?? DEFAULT_MIN_TASKS
-  const minPerCategory = minTasks < DEFAULT_MIN_TASKS ? 0 : MIN_PER_CATEGORY
 
   const dirNames = readdirSync(dir)
     .filter((name) => statSync(join(dir, name)).isDirectory())
@@ -240,12 +236,5 @@ export const loadSuite = (dir: string, opts: LoadSuiteOptions = {}): EvalTask[] 
   }
 
   if (tasks.length < minTasks) throw new Error(`suite needs at least ${minTasks} tasks, got ${tasks.length}`)
-  for (const category of categories) {
-    if (NEW_CATEGORIES.has(category)) continue
-    const count = tasks.filter((task) => task.category === category).length
-    if (count < minPerCategory) {
-      throw new Error(`suite needs at least ${minPerCategory} ${category} tasks, got ${count}`)
-    }
-  }
   return tasks
 }

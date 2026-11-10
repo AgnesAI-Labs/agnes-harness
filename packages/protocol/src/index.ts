@@ -439,6 +439,8 @@ export type {
   ClientModuleRosterRow,
   ClientModuleServiceCallParams,
   ContributionBinding,
+  ExternalPackageDescriptor,
+  McpImportPreview,
   PackageActivationRequest,
   PackageActivationTrust,
   PackageAdminContext,

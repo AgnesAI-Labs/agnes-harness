@@ -48,6 +48,9 @@ export function createRefinementSkillsAdmin(options: {
             reviewAfter: skill.reviewAfter,
             initiator: skill.source.initiator ?? 'auto',
             ...(skill.source.fromWorkflow === true ? { workflow: true as const } : {}),
+            ...(skill.state === 'review-disabled' && skill.disabledFor === 'capacity'
+              ? { disabledFor: 'capacity' as const }
+              : {}),
             previous: skill.archive.filter((revision) => revision !== skill.revision).slice(-PREVIOUS_LISTED),
           }))
     let kept: RefinementSkillsResult['drafts'] = []

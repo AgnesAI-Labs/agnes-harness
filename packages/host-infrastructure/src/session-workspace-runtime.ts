@@ -87,6 +87,11 @@ export type SessionWorkspaceRuntimeFactoryInput = Readonly<{
     }>,
   ): BoundSandboxReadiness
   fitSandbox?(runtime: Omit<SessionWorkspaceRuntime, 'hooks' | 'services' | 'seam'>): Promise<SandboxSeam>
+  /**
+   * Releases the session's sandbox execution resources (an execution lease and the provider instance
+   * that runs under it). Runs only with the runtime's own release, after hooks and services.
+   */
+  closeSandbox?(): Promise<void> | void
   openHooks?(runtime: Omit<SessionWorkspaceRuntime, 'hooks' | 'services'>): Promise<unknown>
   closeHooks?(hooks: unknown): Promise<void> | void
   openServices?(runtime: Omit<SessionWorkspaceRuntime, 'services'>): Promise<unknown>
@@ -156,6 +161,7 @@ export async function createSessionWorkspaceRuntime(
       sandboxBackend,
       ...(input.invocation ? { invocation: input.invocation } : {}),
     })
+    if (input.closeSandbox) closers.push(() => input.closeSandbox?.())
     const seam = input.fitSandbox ? await input.fitSandbox(base) : undefined
     const withSeam = Object.freeze({ ...base, ...(seam === undefined ? {} : { seam }) })
     const hooks = input.openHooks ? await input.openHooks(withSeam) : undefined
@@ -384,6 +390,8 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
               enforcement: {
                 level: enforcement.level,
                 scope: [...enforcement.scope],
+                // The partial Windows contract is only told apart from a degraded partial by this.
+                ...(enforcement.boundary ? { boundary: { ...enforcement.boundary } } : {}),
               },
             }
           : {}),
@@ -450,6 +458,16 @@ export class SessionWorkspaceRuntimeTable implements ChildWorkspaceRuntimePort {
     const authorizeWrite = writeAuthority.authorizeWrite
     return Object.freeze({
       root: runtime.root,
+      documentReadScope: () =>
+        Object.freeze({
+          root: runtime.root,
+          ...(runtime.binding.legacyChatReadGrant
+            ? {
+                legacyManagedRoot: runtime.binding.legacyChatReadGrant.root,
+                legacyDirectoryIdentity: runtime.binding.legacyChatReadGrant.directoryIdentity,
+              }
+            : {}),
+        }),
       fs: {
         ...(authorizeWrite
           ? {

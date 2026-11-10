@@ -2,6 +2,7 @@ import type { BusyInput } from './busy-input.js'
 import type { SlashResult } from './commands.js'
 import type { Component } from './component.js'
 import type { Editor } from './editor.js'
+import type { McpLoginPanel } from './views/mcp-login.js'
 import type { ModelPicker } from './views/model-picker.js'
 import type { ProviderSetup } from './views/provider-setup.js'
 import type { SessionPicker } from './views/session-picker.js'
@@ -14,6 +15,7 @@ export interface CommandResultHost {
   modelPicker: ModelPicker
   sessionPicker: SessionPicker
   providerSetup: ProviderSetup
+  mcpLogin: McpLoginPanel
   editor: Editor
   busyInput: BusyInput
   /** Anchors a connection-local view beside the projected nodes of the current session. */
@@ -48,5 +50,9 @@ export function applyCommandResult(host: CommandResultHost, text: string, r: Sla
   if (r.providerSetup) {
     statusBar.setNotice(undefined)
     host.providerSetup.show(r.providerSetup)
+  }
+  if (r.mcpLogin) {
+    statusBar.setNotice(undefined)
+    host.mcpLogin.show(r.mcpLogin)
   }
 }

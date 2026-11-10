@@ -1,3 +1,0 @@
-payroll runs are billed per employee
-no billing data is stored in the suite
-invoices come from the finance system

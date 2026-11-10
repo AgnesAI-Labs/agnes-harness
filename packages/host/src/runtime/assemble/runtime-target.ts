@@ -233,6 +233,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
                 pkgs.modules,
                 proc.adapters.platform.os,
               ),
+              ...(proc.windowsAcl ? { windowsAcl: proc.windowsAcl } : {}),
             }),
           )
           // Providers a package exports as `sandboxProvider` are registered under that package; the

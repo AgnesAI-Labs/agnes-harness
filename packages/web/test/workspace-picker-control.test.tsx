@@ -4,7 +4,7 @@ import { mountRegion } from '@agnes/web-ui'
 import { flushSync } from 'react-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { composerWorkspaceView } from '../src/app/composer-controller.js'
-import { draftWorkspace } from '../src/app/workspace-controller.js'
+import { createWorkspaceController, draftWorkspace } from '../src/app/workspace-controller.js'
 import { WorkspacePickerControl } from '../src/workspace-picker-control.js'
 import { enT, zhT } from './helpers/locale.js'
 
@@ -125,4 +125,45 @@ describe('composer workspace picker', () => {
     expect(trigger().dataset.chats).toBe('true')
     expect(host.querySelector('.composer-workspace-clear')).toBeNull()
   })
+})
+
+it('starts a new chat from legacy on current, and never falls back to legacy', () => {
+  const legacy = row('legacy', { kind: 'chats', managedRole: 'legacy' })
+  const current = row('current', { kind: 'chats', managedRole: 'current' })
+  expect(draftWorkspace([legacy, current, project], legacy)).toBe(current)
+  expect(draftWorkspace([legacy], legacy)).toBeUndefined()
+  expect(draftWorkspace([legacy, { ...current, available: false }], legacy)).toBeUndefined()
+  expect(draftWorkspace([legacy, project], undefined)).toBe(project)
+  const view = composerWorkspaceView({
+    selected: project,
+    rows: [legacy, project],
+    current: false,
+    drafting: true,
+    disabled: false,
+    t: zhT,
+  })
+  expect(view.clearable).toBe(false)
+  expect(view.choices).toEqual([project])
+})
+
+it('shows a clear folder failure and project choice on first install with no workspace rows', async () => {
+  const host = document.createElement('div')
+  document.body.append(host)
+  const context = {
+    workspaceRows: [],
+    selectedWorkspace: undefined,
+    connected: true,
+    sessionPending: false,
+    clientModules: {},
+    composerRuntime: { focus() {} },
+    t: zhT,
+  } as unknown as Parameters<typeof createWorkspaceController>[0]
+  const controller = createWorkspaceController(context, host)
+  cleanups.push(() => controller.dialog.dispose())
+  controller.resolveDraft()
+  controller.renderControls()
+  controller.open()
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain('临时会话目录不可用，请选择项目工作区继续。'),
+  )
 })

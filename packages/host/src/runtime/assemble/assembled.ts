@@ -113,6 +113,8 @@ export type Assembled = {
     preset?: PresetDoc,
     invocation?: import('@agnes/core').WorkspaceInvocationPort,
     ceiling?: import('@agnes/core').FsPolicy,
+    /** The preset's recipe chain and permission overlay, the provenance its Windows setting is read from. */
+    origin?: import('./workspace-session-record.js').PresetOrigin,
   ): Promise<SessionWorkspaceRuntime>
   /**
    * Cleanly unload and reload an extension row declaring live resources with a fresh resource snapshot, without

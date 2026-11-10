@@ -34,6 +34,11 @@ export class ResourceRegistry {
     return this.entries.add(meta.source, entry.id, registration)
   }
 
+  /** Called after every change to the live resource set; returns the unsubscribe function. */
+  onChange(listener: () => void): () => void {
+    return this.entries.onChange(listener)
+  }
+
   prepareOwnerReplacement(owner: string, candidate: ResourceRegistry) {
     return this.entries.prepare(owner, candidate.entries)
   }

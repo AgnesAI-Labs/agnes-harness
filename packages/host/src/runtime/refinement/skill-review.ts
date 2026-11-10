@@ -7,12 +7,22 @@ import {
   type Revocation,
 } from '@agnes/host-infrastructure/refinement-registry'
 
-/** What the review needs from the installer: switching a skill off, never removing it. */
+/**
+ * What the review and the cap need from the installer: switching a skill off, never removing it.
+ * `capacity` says the cap did it.
+ */
 export type SkillReviewInstaller = {
-  disable(name: string, expected: { revision: string; reviewAfter?: number }): Promise<void>
+  disable(
+    name: string,
+    expected: { revision: string; reviewAfter?: number },
+    reason?: 'capacity',
+  ): Promise<void>
 }
 
 const LIVE: readonly RegistrySkill['state'][] = ['active', 'review-disabled']
+
+/** How many skills refinement installed may be in force (`active`) in one workspace. */
+export const RSI_SKILL_CAP = 20
 
 /**
  * The 30-day review of skills refinement installed in one workspace. It runs when a session opens and
@@ -24,7 +34,8 @@ const LIVE: readonly RegistrySkill['state'][] = ['active', 'review-disabled']
  * date is still the one read here, so a skill a person edited, or one a confirmation renewed meanwhile,
  * is left as it is. Skills the registry does not hold (a person's own) are never looked at. A registry
  * that cannot be read is a reason to do nothing. Switching a skill off is the system's own step: it is
- * not a revocation, and re-enabling the skill renews it.
+ * not a revocation, and re-enabling the skill renews it. The cap on skills in force (`enforceSkillCap`)
+ * follows, so a workspace that had more before the cap existed comes down to it when a session opens.
  */
 export async function reviewSkills(
   registry: RefinementRegistry,
@@ -45,6 +56,53 @@ export async function reviewSkills(
     } catch {
       // Changed by a person, renewed meanwhile, or resource control is unavailable: left as it is, and
       // the next review looks again.
+    }
+  }
+  await enforceSkillCap(registry, installer, now)
+}
+
+/**
+ * The cap on skills refinement installed in one workspace: at most `RSI_SKILL_CAP` of them `active`.
+ * A skill a person switched back on (`enabledBy: 'person'`) is theirs to keep and is not counted, so
+ * the workspace may then hold more. Over the cap, the skills with the earliest review date (the ones
+ * confirmed longest ago) are switched off through the installer with reason `capacity`: the folder stays,
+ * the record says `review-disabled` with `disabledFor: 'capacity'`, and the registry keeps a receipt.
+ * Only a person switches one back on; a confirmation or an update does not. A skill the installer will
+ * not switch off (a person changed it, or it was renewed meanwhile) is passed over for the next one.
+ * Skills the registry does not hold (a person's own, a plugin's) are never counted. A registry that
+ * cannot be read is a reason to do nothing. The order is by review date alone, whatever `now` is.
+ */
+export async function enforceSkillCap(
+  registry: RefinementRegistry,
+  installer: SkillReviewInstaller,
+  _now: number,
+): Promise<void> {
+  let counted: RegistrySkill[]
+  try {
+    if (registry.unreadable()) return
+    counted = registry
+      .read()
+      .skills.filter((skill) => skill.state === 'active' && skill.enabledBy !== 'person')
+  } catch {
+    return
+  }
+  let over = counted.length - RSI_SKILL_CAP
+  if (over <= 0) return
+  const oldest = [...counted].sort(
+    (a, b) => a.reviewAfter - b.reviewAfter || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0),
+  )
+  for (const skill of oldest) {
+    if (over <= 0) return
+    try {
+      await installer.disable(
+        skill.name,
+        { revision: skill.revision, reviewAfter: skill.reviewAfter },
+        'capacity',
+      )
+      over--
+    } catch {
+      // Changed by a person, renewed meanwhile, or resource control is unavailable: the next one goes
+      // instead, and the next check looks at this one again.
     }
   }
 }
@@ -122,9 +180,10 @@ export function recordSkillRevocation(registry: RefinementRegistry, input: UserS
 }
 
 /**
- * The user switched a saved skill back on: it is renewed (`active`, a new review period from `now`).
- * Only a skill refinement installed and nobody changed since (`revision` is the one in place). True when
- * it was renewed.
+ * The user switched a saved skill back on: it is renewed (`active`, a new review period from `now`) and
+ * marked as switched on by a person (`enabledBy: 'person'`), which the cap on skills in force respects;
+ * a capacity mark is cleared. Only a skill refinement installed and nobody changed since (`revision` is
+ * the one in place). True when it was renewed.
  */
 export function renewSkillForUser(
   registry: RefinementRegistry,
@@ -138,6 +197,8 @@ export function renewSkillForUser(
     if (!skill || skill.revision !== revision) return false
     skill.state = 'active'
     skill.reviewAfter = now + REVIEW_AFTER_MS
+    skill.enabledBy = 'person'
+    delete skill.disabledFor
     return true
   })
 }

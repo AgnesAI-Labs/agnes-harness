@@ -550,6 +550,8 @@ it.each([
   { filesystem: undefined },
   { delegatedFullAccess: false },
   { delegatedFullAccess: 'yes' },
+  { windowsWriteRestricted: false },
+  { windowsWriteRestricted: 'yes' },
 ])('i01: incomplete persisted authority refuses reopen: %j', async (patch) => {
   const storage = new MemoryStorage()
   const first = make(storage)
@@ -793,6 +795,22 @@ it('delegated full access: the captured flag survives reopen', async () => {
   const second = make(storage)
   try {
     expect((await second.session('child', options)).d.roleDelegation?.delegatedFullAccess).toBe(true)
+  } finally {
+    await second.close()
+  }
+})
+
+it('the Windows write restriction a role inherited survives reopen', async () => {
+  const storage = new MemoryStorage()
+  const first = make(storage)
+  await first.session('child', {
+    ...options,
+    roleDelegation: { ...captured(), windowsWriteRestricted: true },
+  })
+  await first.close()
+  const second = make(storage)
+  try {
+    expect((await second.session('child', options)).d.roleDelegation?.windowsWriteRestricted).toBe(true)
   } finally {
     await second.close()
   }

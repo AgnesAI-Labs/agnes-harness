@@ -17,6 +17,7 @@
     "./adapters/fs-io-remote": "./src/adapters/fs-io-remote.ts",
     "./adapters/fs-io": "./src/adapters/fs-io.ts",
     "./adapters/fs": "./src/adapters/fs.ts",
+    "./adapters/mcp-oauth-store": "./src/adapters/mcp-oauth-store.ts",
     "./adapters/net": "./src/adapters/net.ts",
     "./adapters/platform-win32": "./src/adapters/platform-win32.ts",
     "./adapters/platform": "./src/adapters/platform.ts",
@@ -54,7 +55,14 @@
     "./voice-settings": "./src/voice-settings.ts",
     "./request-traces": "./src/request-traces.ts",
     "./sandbox-read-paths": "./src/sandbox-read-paths.ts",
-    "./sandbox-workspace-ancestor": "./src/sandbox-workspace-ancestor.ts"
+    "./sandbox-workspace-ancestor": "./src/sandbox-workspace-ancestor.ts",
+    "./documents-directory": "./src/documents-directory.ts",
+    "./windows-acl/policy": "./src/windows-acl/policy.ts",
+    "./windows-acl/journal": "./src/windows-acl/journal.ts",
+    "./windows-acl/leases": "./src/windows-acl/leases.ts",
+    "./windows-acl/authority": "./src/windows-acl/authority.ts",
+    "./windows-acl/execution": "./src/windows-acl/execution.ts",
+    "./windows-acl/host-platform": "./src/windows-acl/host-platform.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

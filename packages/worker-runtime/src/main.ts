@@ -30,11 +30,11 @@ import {
   assertHostPublication,
   composeProductionRequestMedia,
   composeSecrets,
-  createCredentialStore,
   createExtensionActivationBarrier,
   createHost,
   createJitiPackageLoader,
   createLoader,
+  createMcpOAuthStore,
   createSecretsEnv,
   createSecretsFile,
   DEFAULT_COMPUTER_USE,
@@ -89,6 +89,7 @@ import {
   sessionScopedKey,
 } from './hosted-sessions.js'
 import { createMcpRowRuntime } from './mcp-row-runtime.js'
+import { signOutMcpRow } from './mcp-sign-out.js'
 import { frameFailure, installWorkerProcessGuards, sessionFailure } from './process-guards.js'
 import {
   createRuntimeTargetSlot,
@@ -261,14 +262,10 @@ export async function runWorker(
         environment,
       )
     },
-    // Mirrors createSecrets above, for secretBinding.kind === 'oauth' (spec §1.6/§3.2/§3.5). Same
-    // root `createConfigurationService` uses for its own `createCredentialStore` call
-    // (packages/host-infrastructure/src/configuration.ts:565) -- both this worker process and the daemon-owned
-    // config service read/write the same `~/.agh`-shaped credential store, by design (the
-    // callback route that writes the initial token exchange runs in yet a third process --
-    // `agnes serve`'s launcher -- see oauth-http-handler.ts's module header; all three agree on the
-    // same on-disk root, not a shared in-memory handle).
-    createOAuthCredentialStore: () => createCredentialStore({ root: agnesHome(env) }),
+    // Mirrors createSecrets above, for secretBinding.kind === 'oauth'. The same root the daemon
+    // writes each sign-in under: every process shares those files and their per-server lock, and
+    // each OAuth request reads the record there, so a refresh or sign-out elsewhere is seen at once.
+    createMcpOAuthStore: () => createMcpOAuthStore({ root: agnesHome(env) }),
     // The shared session worker supplies MCP as Host rows, one per server, each owning its own
     // connection; its resource generation connects nothing itself. The
     // resource-control service workers keep the manager path.
@@ -724,6 +721,11 @@ export async function runWorker(
             if (!status) throw new Error(`MCP server ${p.serverId} is not part of the current snapshot`)
             return status
           }
+          if (command.method === 'resourceMcpSignOut')
+            return signOutMcpRow(
+              { host: requireHost(), resources: resourceSlot, workerResourcesInput },
+              p.serverId,
+            )
           if (command.method === 'resourceMcpTools') {
             if (typeof p.serverId !== 'string' || typeof p.expectedRevision !== 'string')
               throw new TypeError('invalid MCP tools request')

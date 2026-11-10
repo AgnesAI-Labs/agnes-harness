@@ -22,13 +22,14 @@ const HAND = '# Preferences\n\n- Answer in short sentences.\n'
 const SOURCE: MemorySource = { sessionKey: 'refinement:workspace', turn: 0, maintenance: 'run-1' }
 
 /** A Host-side view whose answers the test sets; revision moves with every change. */
-function view(initial: Record<string, MemoryParagraphValidity> = {}) {
+function view(initial: Record<string, MemoryParagraphValidity> = {}, delivers = false) {
   const answers = new Map(Object.entries(initial))
   let revision = 1
   return {
     view: {
       revision: () => `v${revision}`,
       validity: (id: string) => answers.get(id) ?? 'unknown',
+      ...(delivers ? { delivers: true } : {}),
     } satisfies MemoryValidityView,
     set(id: string, value: MemoryParagraphValidity) {
       answers.set(id, value)
@@ -134,16 +135,17 @@ describe('user memory: saved sections in what the agent reads', () => {
     expect(rendered.text).toMatch(/\[\d+ task-experience paragraphs omitted: expired or unverifiable\]\n$/)
   })
 
-  it('RSI sections never displace hand-written user memory within the 512-token budget', async () => {
+  it('RSI sections never displace hand-written user memory within a 512-byte limit', async () => {
     const { view: v } = view({ [A]: 'valid' })
     const hand = `${'- A hand-written preference that matters.\n'.repeat(8)}`
     const f = await fixture({ userValidity: v })
+    await f.session.configure({ userTokenBudget: 512 })
     // The saved section comes first in the file and is long: the hand-written text still comes first.
     await writeFile(f.userFile, `${block(A, `Saved: ${'x'.repeat(400)}`)}\n${hand}`)
     const layer = await f.userLayer(1)
     expect(Buffer.byteLength(layer)).toBeLessThanOrEqual(512)
     expect(layer.startsWith(hand.trimEnd())).toBe(true)
-    expect(layer).toContain('Memory omitted')
+    expect(layer).toContain('memory truncated at the size limit')
   })
 
   it('renewal in the registry changes delivery without touching the file', async () => {
@@ -155,6 +157,20 @@ describe('user memory: saved sections in what the agent reads', () => {
     answers.set(A, 'valid')
     expect(await f.userLayer(2)).toContain('Lesson A.')
     expect(await readFile(f.userFile, 'utf8')).toBe(stored)
+  })
+
+  it('delivered sections are left out of the user layer without a count line', async () => {
+    const { view: v } = view({ [A]: 'delivered', [B]: 'valid' })
+    const f = await fixture({ userValidity: v })
+    await writeFile(f.userFile, `${HAND}\n${block(A, 'Lesson A.')}\n${block(B, 'Lesson B.')}`)
+    const layer = await f.userLayer(1)
+    expect(layer).toContain('Lesson B.')
+    expect(layer).not.toContain('Lesson A.')
+    expect(layer).not.toContain('task-experience paragraphs omitted')
+    expect(userLayerBytes(`${HAND}\n${block(A, 'Lesson A.')}`, v)).toEqual({
+      handWritten: Buffer.byteLength(HAND.trimEnd()),
+      rsiInForce: 0,
+    })
   })
 
   it('counts hand-written bytes and the sections in force the way they are shown', () => {
@@ -245,6 +261,7 @@ describe('user memory: the managed section write', () => {
     const answers = view({ [A]: 'valid', [B]: 'expired' })
     const f = await fixture({ userValidity: answers.view })
     const hand = `${'h'.repeat(300)}\n`
+    await f.session.configure({ userTokenBudget: 512 })
     // An expired section takes no room in what is shown; the one in force does.
     const stored = `${hand}\n${block(A, 'a'.repeat(100))}\n${block(B, 'b'.repeat(400))}`
     await writeFile(f.userFile, stored)
@@ -264,15 +281,32 @@ describe('user memory: the managed section write', () => {
     await expect(f.port().propose({ op: 'put', id: C, text: 'c'.repeat(10) })).rejects.toMatchObject({
       code: 'MEMORY_USER_BUDGET',
     })
-    // A larger one never raises the limit above 512: every workspace reads the same file.
+    // A larger one never raises the limit above the 2 KiB default: every workspace reads the same file.
     await f.session.configure({ userTokenBudget: 4096 })
     await expect(
-      f.port().propose({ op: 'put', id: 'rd000000004', text: 'd'.repeat(10) }),
+      f.port().propose({ op: 'put', id: 'rd000000004', text: 'd'.repeat(1600) }),
     ).rejects.toMatchObject({ code: 'MEMORY_USER_BUDGET' })
     // Taking a section out always fits.
     const out = f.port()
     await out.commit(await out.propose({ op: 'remove', id: C }))
     expect(await readFile(f.userFile, 'utf8')).toBe(stored)
+  })
+
+  it('a section save is not refused for the injection limit when the Host delivers sections itself', async () => {
+    const answers = view({ [A]: 'delivered' }, true)
+    const f = await fixture({ userValidity: answers.view })
+    const hand = `${'h'.repeat(300)}\n`
+    const stored = `${hand}\n${block(A, 'a'.repeat(400))}`
+    await writeFile(f.userFile, stored)
+    // 300 hand-written bytes plus 400 + 100 bytes of sections: well past 512, still written.
+    const port = f.port()
+    await port.commit(await port.propose({ op: 'put', id: C, text: 'c'.repeat(100) }))
+    expect(await readFile(f.userFile, 'utf8')).toContain('c'.repeat(100))
+    answers.set(C, 'delivered')
+    const layer = await f.userLayer(1)
+    expect(layer).toContain(hand.trimEnd())
+    expect(layer).not.toContain('a'.repeat(400))
+    expect(layer).not.toContain('task-experience paragraphs omitted')
   })
 
   it('over the index cap it refuses for lack of room, never trimming', async () => {

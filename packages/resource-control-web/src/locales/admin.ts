@@ -91,6 +91,8 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
       'Environment variable {index} needs a valid uppercase name; reserved names such as PATH and HOME are not allowed.',
     'validation.env-ref': 'Environment variable {index} must use the form TOKEN=secret://namespace/name.',
     'validation.secret-ref': 'Use a credential reference in the form secret://namespace/name.',
+    'validation.oauth-secret-client': 'A client secret needs the client ID it belongs to.',
+    'validation.oauth-port': 'Use a whole number from {min} to {max} for the callback port.',
     'validation.tools-limit': 'Allow at most {count} tools.',
     'validation.tool-name':
       'Tool name {index} is invalid. It must start with a letter and contain only letters, numbers, underscores, dots, or hyphens.',
@@ -187,6 +189,8 @@ export const resourceAdminLocaleCatalog: LocaleCatalog = {
     'validation.env-name': '第 {index} 项环境变量名不合法：需大写字母开头（不能是 PATH/HOME 等保留名）。',
     'validation.env-ref': '第 {index} 项需形如 TOKEN=secret://namespace/name。',
     'validation.secret-ref': '凭据引用 需形如 secret://namespace/name。',
+    'validation.oauth-secret-client': '填了客户端密钥，也要填它所属的客户端 ID。',
+    'validation.oauth-port': '回调端口填 {min} 到 {max} 之间的整数。',
     'validation.tools-limit': '允许工具最多 {count} 个。',
     'validation.tool-name': '第 {index} 个工具名不合法：需以字母开头，只能含字母、数字、下划线、点、连字符。',
     'validation.tool-duplicate': '允许工具中有重复项：「{name}」。',

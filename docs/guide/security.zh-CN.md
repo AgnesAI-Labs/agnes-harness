@@ -8,6 +8,8 @@
 
 AGH 可以执行工具、写文件和连接外部系统。模型文本、网页、MCP 结果、Skill 与插件配置都不是用户授权本身。先选择工作目录和可接受的能力，再批准具体操作。
 
+受管临时会话目录不增加文件或命令权限。旧临时会话只有通过已验证的会话绑定（含可信分叉和兼容定时执行）才能访问原目录文档；文件与引用仍检查当前会话权限，拒绝路径穿越和链接，安装私有状态继续受保护。新旧目录文件不互通，二进制文件仍只展示元信息。
+
 ## 三类不同的信任
 
 | 边界 | 含义 | 不代表什么 |
@@ -56,9 +58,9 @@ Web「工作区内修改」将文件访问限制在所选工作区内，执行�
 
 ## 平台与进程
 
-在 `workspace-write`、`read-only` 权限下，随附的预设请求 L1，使用 `required: false` 和 `on_unavailable: allow-if-unimplemented`。可信本机后端声明系统隔离是否已实现。macOS/Linux 已实现，必须实际通过 Seatbelt/bubblewrap 探测；缺少程序、namespace 禁用或策略拒绝仍以 `E_SANDBOX_WORKSPACE` 拒绝初始化，不能当作“未实现”。Windows 本机后端声明尚未实现，所以允许原生命令，不探测 POSIX 后端。未知能力、远程目标不能借此自动放行。`required: true` 始终要求真正隔离。
+在 `workspace-write`、`read-only` 权限下，随附的预设请求 L1，使用 `required: false` 和 `on_unavailable: allow-if-unimplemented`。可信本机后端声明系统隔离是否已实现。macOS/Linux 已实现，必须实际通过 Seatbelt/bubblewrap 探测；缺少程序、namespace 禁用或策略拒绝仍以 `E_SANDBOX_WORKSPACE` 拒绝初始化，不能当作“未实现”。Windows 本机后端声明 L1 尚未实现，也不探测 POSIX 后端；使用随附预设时，这些权限改用部分的 Windows ACL 写限制运行命令，无法建立时会话拒绝执行命令。未选择写限制的自定义配方沿用自己的 `on_unavailable` 策略：`allow-if-unimplemented` 时命令直接运行。未知能力、远程目标不能借此自动放行。`required: true` 始终要求真正隔离。
 
-Windows 保留工具审批、只读限制、文件工具的工作区与保护路径检查，以及用户明确设置的审批模式。获准命令使用当前系统账户执行，应用检查不能隔离任意 shell 的文件或网络操作。设置页、会话运行信息和输入框分别显示权限与实际隔离状态。
+Windows 保留工具审批、只读限制、文件工具的工作区与保护路径检查，以及用户明确设置的审批模式。写限制只限制命令能写入的位置；文件读取和网络仍不受限，应用检查依然不能隔离任意 shell 的读取或网络操作。完全访问以当前系统账户直接运行命令。见 [Windows 写限制](sandbox-providers.zh-CN.md#windows-写限制)。设置页、会话运行信息和输入框分别显示权限与实际隔离状态。
 
 <a id="permissions-and-presets"></a>
 
@@ -68,8 +70,8 @@ Windows 保留工具审批、只读限制、文件工具的工作区与保护路
 
 | 权限 | 文件范围 | 普通审批 | 持久能力 | OS 隔离 |
 | --- | --- | --- | --- | --- |
-| **只读**（`read-only`） | 查看允许范围的文件和公开网页 | 修改与命令执行会被拒绝 | Agent 不写入；管理信任独立 | macOS/Linux 需通过 L1 探测；Windows 此平台命令未隔离 |
-| **可修改工作区**（`workspace-write`，默认） | 文件工具可改工作区和明确授权的额外目录；官方记忆经受控提供方访问 | 命令需审批；范围内文件修改预批准，仍服从明确拒绝 | 记忆 off 拒绝，ask 精确 diff 确认，auto 保留归属、大小和 CAS 校验；其他工作区及用户记忆对 Agent 只读 | 命令隔离取决于平台：macOS/Linux 实测 L1；Windows 此平台命令未隔离 |
+| **只读**（`read-only`） | 查看允许范围的文件和公开网页 | 修改与命令执行会被拒绝 | Agent 不写入；管理信任独立 | macOS/Linux 需通过 L1 探测；Windows 命令不能写入（部分写限制，读取与网络不受限） |
+| **可修改工作区**（`workspace-write`，默认） | 文件工具可改工作区和明确授权的额外目录；官方记忆经受控提供方访问 | 命令需审批；范围内文件修改预批准，仍服从明确拒绝 | 记忆 off 拒绝，ask 精确 diff 确认，auto 保留归属、大小和 CAS 校验；其他工作区及用户记忆对 Agent 只读 | 命令隔离取决于平台：macOS/Linux 实测 L1；Windows 只向工作区和私有临时目录授予命令写权限（部分隔离：硬链接和其他 Low 完整性程序是例外；读取与网络不受限） |
 | **完全访问**（`full-access`） | 工作区内外普通文件；保护目录仍拒绝 | 权限裁决自动允许 | 候选发布与询问模式记忆保留精确授权及硬拒绝，见[例外](#full-access-exceptions) | 配置 L0；macOS/Linux 注册记忆提供方时，有 L1 就用它拒绝记忆树，否则命令不经隔离执行；Windows 无 OS 隔离 |
 
 | 预设 | 设定内容 |
@@ -140,7 +142,6 @@ shell 命令需要审批时，审批卡可以多给一个选择：本会话内�
 
 由 App Server 持有的效果，其自动权限租约还会在最终提交时同步检查 supervisor 持有的 epoch 撤权屏障。full-access 和 preset 切换会先等待撤权确认，再记录切换；会话关闭在报告成功前等待确认，包含继承的子会话授权。请求返回后，后台任务仍受该屏障约束。延迟到达的 worker 快照或取消通知不能恢复已撤销的租约。运行中会话的工作区隔离策略保持固定；更改策略需要关闭旧会话并新建会话。仅有异步快照验证器不能签发自动效果租约。
 
-
 候选作者测试在 macOS/Linux 保留 Host OS 沙箱，只运行独立候选副本；POSIX 沙箱缺失时仍拒绝执行。Windows 仍无隔离。完全访问下所有平台自动允许精确哈希的测试决定；`workspace-write` 权限 仍展示包名、哈希、执行方式、风险和范围，要求一次确认。哈希变化后拒绝旧授权。决定保存在 `candidate-test-audit.jsonl`；测试本身不发布。完全访问下提交通过测试的候选，会自动完成现有安装、信任、启用和运行时激活事务。
 
 受监管电子签名属于业务行为，独立于工具权限。示范应用通过公开决策端口以 `business.confirm` 请求质量记录、GMP 放行、MRB 处置、技术状态更改、规则启用与归零关闭签名，绑定审阅参数、修订与签名含义。完全访问包含这些业务确认：宿主代表选择该权限的会话真人提交声明的精确 `presentation.responseValue`，明确记录 **完全访问下自动确认**，不得冒充人工点击或模型／系统签名。Core 授权日志（`decision/state`）、业务回执、审计与放行证书／关闭记录均保留该身份、模式及原决策绑定。只有明确的单次 `allowed-once`／`rejected` 合同及声明的签名值可自动确认（优先 en，其余语言键按码点排序）；缺失、歧义或不符合响应 schema 的合同保留人工请求并记录原因。其他权限仍须真人回答。单次消费和私有写入凭证在事务提交前保留原 sessionId、epoch、取消及有效期校验，提交前收窄权限会阻止写入。嵌套业务写入会把全部准入凭证保留到最外层事务，真实提交前逐一复核，包括已成功返回的内层调用凭证。拒绝、取消、过期及旧修订仍不能签署。
@@ -157,7 +158,7 @@ permissions:
 
 若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`，这样的配方固定自己的权限设置；没有已安装 provider 要求私有文件隔离，或可信 Windows 本机后端声明未实现时，才可执行未隔离命令。L0 不允许搭配新条件值。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
 
-经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅本机 macOS Seatbelt 提供此能力。在其他宿主或后端（Windows、Linux、远程传输、外部沙箱 provider）上，会话仍可打开，只是没有该能力：命令网络保持完全关闭，不提供 `AGH_LOOPBACK_FD` 与 `AGH_LOOPBACK_URL`，也不授予或放宽其他任何权限。尝试提供服务的命令会监听失败，智能体应如实说明此系统无法提供本机服务。命令批准后，Host 独占绑定到数值地址 `127.0.0.1` 的 TCP listener，将连接转发至通过继承的文件描述符交给命令的私有 Unix listener。应用获得 `AGH_LOOPBACK_FD` 与真实的 `AGH_LOOPBACK_URL`。Node 应使用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 并在监听后打印该 URL；无 socket activation 的部署仍走原有端口分支。不支持继承 listener 的程序不能使用此能力。应使用普通前台或后台 shell 命令；持久 shell 会话和 PTY 的进程寿命超出单条已批准命令，因此明确拒绝。沙箱拒绝一切新建 IP 监听（含回环和通配地址）、UDP 和主动连接。Seatbelt 的 `localhost` 过滤也覆盖本机其他地址，不能用它证明仅回环绑定，因此由 Host 预先提供已经绑定的 socket。该描述符是私有传输，公开地址必须使用 `AGH_LOOPBACK_URL`，不要从 `server.address()` 推导。已批准的命令结束、取消、超时或沙箱实例释放时，Host 关闭公开 listener 和所有转发连接。即使后代进程复制该描述符并脱离进程组或转为 daemon，也无法保留公开服务能力。Unix 主动连接与新建 Unix bind 仍被拒绝。所有受限 macOS 命令 profile 都保护保留的 `/private/tmp/agh-loopback-*` 传输命名空间及其祖先，阻止路径替换；没有回环服务授权的命令和允许网络访问的 profile 也适用。普通已授权临时文件写入保持可用。Host 固定传输目录及 socket 的 device/inode；路径缺失或被替换时拒绝转发，并在连接建立后、转发任何字节前再次核验。
+经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅本机 macOS Seatbelt 提供此能力。Windows 上选择写限制的策略会被拒绝，因为写限制不限制命令网络。在其他宿主或后端（未选择写限制的 Windows、Linux、远程传输、外部沙箱 provider）上，会话仍可打开，只是没有该能力：命令网络保持完全关闭，不提供 `AGH_LOOPBACK_FD` 与 `AGH_LOOPBACK_URL`，也不授予或放宽其他任何权限。尝试提供服务的命令会监听失败，智能体应如实说明此系统无法提供本机服务。命令批准后，Host 独占绑定到数值地址 `127.0.0.1` 的 TCP listener，将连接转发至通过继承的文件描述符交给命令的私有 Unix listener。应用获得 `AGH_LOOPBACK_FD` 与真实的 `AGH_LOOPBACK_URL`。Node 应使用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 并在监听后打印该 URL；无 socket activation 的部署仍走原有端口分支。不支持继承 listener 的程序不能使用此能力。应使用普通前台或后台 shell 命令；持久 shell 会话和 PTY 的进程寿命超出单条已批准命令，因此明确拒绝。沙箱拒绝一切新建 IP 监听（含回环和通配地址）、UDP 和主动连接。Seatbelt 的 `localhost` 过滤也覆盖本机其他地址，不能用它证明仅回环绑定，因此由 Host 预先提供已经绑定的 socket。该描述符是私有传输，公开地址必须使用 `AGH_LOOPBACK_URL`，不要从 `server.address()` 推导。已批准的命令结束、取消、超时或沙箱实例释放时，Host 关闭公开 listener 和所有转发连接。即使后代进程复制该描述符并脱离进程组或转为 daemon，也无法保留公开服务能力。Unix 主动连接与新建 Unix bind 仍被拒绝。所有受限 macOS 命令 profile 都保护保留的 `/private/tmp/agh-loopback-*` 传输命名空间及其祖先，阻止路径替换；没有回环服务授权的命令和允许网络访问的 profile 也适用。普通已授权临时文件写入保持可用。Host 固定传输目录及 socket 的 device/inode；路径缺失或被替换时拒绝转发，并在连接建立后、转发任何字节前再次核验。
 
 此声明不能与 `network_allow`、完全访问或无沙箱降级组合。Linux、Windows、远端和外部 provider 明确拒绝；macOS native helper 缺失或过旧也会拒绝。preset 的命令策略仍应要求每条 shell 命令人审；批准仅授权在此边界内运行命令，不开放出站网络。沙箱外浏览器可打开真实监听地址，沙箱内 `curl` 无法主动连接自己的服务。Host 在调用期间保留撤权入口，启动失败也会回收入口。job 取消和工作区释放会先撤销服务能力，再等待进程清理。
 

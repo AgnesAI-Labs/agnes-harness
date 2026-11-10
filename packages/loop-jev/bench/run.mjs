@@ -1,6 +1,6 @@
 // Runs a bench suite on the default loop and the Jev loop in one headless host and writes the
 // per-turn records and the report. See bench/README.md for how to prepare a home and run it.
-import { spawn, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
   cpSync,
@@ -36,6 +36,7 @@ import {
   turnWindow,
   verdict,
 } from './lib.mjs'
+import { runProbe } from './probes.mjs'
 import {
   benchBundle,
   DEFAULT_PROFILE,
@@ -51,7 +52,6 @@ import {
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CLI = join(HERE, '..', '..', 'cli')
-const PROBE_TIMEOUT_MS = 60_000
 const DRAIN_MS = 1_000
 /** After a cancelled turn the prompt still has this long to settle before the cell is given up. */
 const CANCEL_GRACE_MS = 30_000
@@ -305,28 +305,6 @@ function collect(session) {
 
 const mainLane = (e) => !e.lane || e.lane === 'main'
 const clip = (text) => (text.length > CLIP ? `${text.slice(0, CLIP)}…` : text)
-
-function runProbe(command, cwd, env) {
-  return new Promise((resolveProbe) => {
-    const child = spawn(command, { cwd, shell: '/bin/bash', env })
-    let output = ''
-    child.stdout.on('data', (b) => {
-      output += b
-    })
-    child.stderr.on('data', (b) => {
-      output += b
-    })
-    const timer = setTimeout(() => child.kill('SIGKILL'), PROBE_TIMEOUT_MS)
-    child.on('error', (error) => {
-      clearTimeout(timer)
-      resolveProbe({ exit: null, output: `${output}${error.message}` })
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      resolveProbe({ exit: code, output })
-    })
-  })
-}
 
 export function writeTurnFiles(workspace, files) {
   for (const file of files ?? []) {

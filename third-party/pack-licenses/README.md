@@ -12,5 +12,9 @@ these are **not substitutes for complete license attribution**. The release owne
 resolve or explicitly approve those notices before public distribution. Do not invent
 copyright holders or treat an SPDX string as a legal review.
 
+`@earendil-works/pi-schema` carries code ported from TypeBox and ships that license as
+`LICENSES/typebox-LICENSE`, which the notice collector does not read. Its supplement joins the
+pi repository LICENSE with that TypeBox license so the attribution survives bundling.
+
 For upstream license snapshots, review the source against the locked version before
 public distribution. This directory adds no dependency and does not alter upstream code.

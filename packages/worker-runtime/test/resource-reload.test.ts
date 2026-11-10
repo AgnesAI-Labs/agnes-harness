@@ -14,6 +14,7 @@ import {
   prepareIdleResources,
 } from '../src/commands.js'
 import type { McpRowRuntime } from '../src/mcp-row-runtime.js'
+import { signOutMcpRow } from '../src/mcp-sign-out.js'
 
 type CommandFrame = Parameters<typeof handleCommand>[1]
 
@@ -105,6 +106,7 @@ function snapshotDoc(servers: ReadonlyArray<{ serverId: string; url: string; too
 function recordingRows(options: { events?: string[]; gate?: Promise<void>; reject?: boolean | 'once' } = {}) {
   const applied: string[][] = []
   const reconnected: string[] = []
+  const signedOut: string[] = []
   const statuses = new Map<string, McpStatus>()
   const runtime: McpRowRuntime = {
     async apply(entries) {
@@ -120,11 +122,16 @@ function recordingRows(options: { events?: string[]; gate?: Promise<void>; rejec
       for (const entry of entries.filter((entry) => entry.desired === 'enabled' && entry.trust === 'trusted'))
         statuses.set(entry.definition.serverId, {
           serverId: entry.definition.serverId,
-          connectionState: 'ready',
           observedRevision: entry.revision,
           catalogRevision: null,
           toolCount: 0,
           observedAt: new Date(0).toISOString(),
+          ...(signedOut.includes(entry.definition.serverId)
+            ? {
+                connectionState: 'unavailable' as const,
+                lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT', message: 'needs sign-in' },
+              }
+            : { connectionState: 'ready' as const }),
         })
       return { rowIds: ids.map((id) => `ext:agnes/mcp-${id}`), skipped: [], statuses: new Map(statuses) }
     },
@@ -132,8 +139,9 @@ function recordingRows(options: { events?: string[]; gate?: Promise<void>; rejec
     waitForStatus: async (serverId) => statuses.get(serverId),
     tools: () => undefined,
     reconnect: (serverId) => reconnected.push(serverId),
+    signOut: (serverId) => signedOut.push(serverId),
   }
-  return { runtime, applied, reconnected, statuses }
+  return { runtime, applied, reconnected, signedOut, statuses }
 }
 
 describe('worker-side resource.stale/run reload (next-turn reload, not mid-turn hot-swap)', () => {
@@ -880,6 +888,30 @@ async function fixtureContext(serverId = 'a'): Promise<{
     rows,
   }
 }
+
+describe('signOutMcpRow (worker side of resourceMcpSignOut)', () => {
+  it('marks the server signed out, then reloads it right away and returns the status it was left with', async () => {
+    const { context, rows } = await fixtureContext('a')
+
+    const status = await signOutMcpRow(context(), 'a')
+
+    expect(rows.signedOut).toEqual(['a'])
+    expect(rows.reconnected).toEqual([])
+    expect(rows.applied).toEqual([['a']])
+    expect(status).toMatchObject({
+      serverId: 'a',
+      connectionState: 'unavailable',
+      lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT' },
+    })
+  })
+
+  it('refuses a request that names no server, and a server outside the snapshot', async () => {
+    const { context, rows } = await fixtureContext('a')
+    await expect(signOutMcpRow(context(), undefined)).rejects.toThrow(TypeError)
+    await expect(signOutMcpRow(context(), 'missing')).rejects.toThrow('missing')
+    expect(rows.signedOut).toEqual(['missing'])
+  })
+})
 
 describe('applyMcpRowChange (worker side of resourceMcpApply/resourceMcpReconnect)', () => {
   it('forces an immediate reload regardless of staleness, and returns the named server’s post-reload status', async () => {

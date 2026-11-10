@@ -59,6 +59,8 @@ Open the printed URL, then:
 The probes call `python`. The runner points it at `--python`, else `BENCH_PYTHON`, else `python3`,
 else `python` on `PATH`. The FastAPI suite needs `fastapi`, `httpx` and `pytest` importable by that
 interpreter; the runner checks this before it starts and stops with a message if they are missing.
+The probes use Bash syntax. Windows needs Git for Windows: the runner uses its Bash rather than
+the Windows `bash.exe` WSL launcher. The selected Python executable may have a Windows path.
 
 ```sh
 python3 -m venv ~/bench-venv && ~/bench-venv/bin/pip install fastapi httpx pytest

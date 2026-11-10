@@ -8,18 +8,17 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { AGH_DIR } from '../../packages/protocol/src/constants.js'
+import { type BlockedExcluded, blockedExcluded, blockedMarkdown } from './blocked.js'
 import { type CaptureResult, captureMetric } from './capture.js'
+import { type InfraExcluded, infraExcluded, infraMarkdown } from './infra.js'
+import { longMarkdown, longSections } from './long-report.js'
 import {
-  cappedMarkdown,
-  cappedReport,
-  forgettingMarkdown,
-  forgettingReport,
-  frozenMarkdown,
-  frozenReport,
-  milestonesMarkdown,
-  milestonesReport,
-} from './long-report.js'
-import { runMetrics, sessionCost, toRunRecord, type UsageSummary, workflowReuseMetric } from './metrics.js'
+  laterSessionsCost,
+  runMetrics,
+  toRunRecord,
+  type UsageSummary,
+  workflowReuseMetric,
+} from './metrics.js'
 import { type Diff, pairedTaskBootstrap } from './stats.js'
 import { fixtureOf, workspaceName } from './suite.js'
 import { firstSessionTrapReport, trapMarkdown } from './trap-report.js'
@@ -92,10 +91,14 @@ const DIRECTIONS = {
   costOverhead:
     '(on minus off) divided by off, per task then averaged. Positive means refinement costs more; 0.25 is 25 percent more.',
   secondSession:
-    "What the second session of a two-session task costs (model requests, tokens, dollars; every lane of its ledger, the review calls included), per arm: off, on, and oracle (off plus the task's own lesson written to memory before that session). Differences are off minus the other arm, so positive means the other arm is cheaper. Capture rate = sum of (off minus on) over sum of (off minus oracle), over the tasks whose off-minus-oracle 95% interval lies above 0; the others are counted as no headroom. Single-session and workflow tasks do not enter.",
+    "What the sessions after the first cost together (the second session of a two-session task; sessions 2 to N of a long task of N sessions) in model requests, tokens and dollars (every lane of their ledgers, the review calls included), per arm: off, on, and oracle (off plus the task's own lesson written to memory before the second session). Differences are off minus the other arm, so positive means the other arm is cheaper. Capture rate = sum of (off minus on) over sum of (off minus oracle), over the tasks whose off-minus-oracle 95% interval lies above 0; the others are counted as no headroom. Single-session and workflow tasks do not enter.",
 } as const
 
-const CRITERION_1_RULE = 'repeat-error difference (off minus on) is above 0 and its 95% interval excludes 0'
+const CRITERION_1_RULE =
+  'capture rate of requests after the first session (off minus on over off minus oracle) is above 0 and its 95% interval excludes 0'
+/** The rule before the capture rate, still computed and shown next to it, for comparison only. */
+const PREVIOUS_CRITERION_1_RULE =
+  'repeat-error difference (off minus on) is above 0 and its 95% interval excludes 0'
 
 const overheadDiff = (
   records: RunRecord[],
@@ -208,10 +211,10 @@ const pickMeasure = (measure: Measure, c: SessionCost): number =>
 const LEFT_OUT_REASONS = ['never-reached', 'timeout', 'exit-error', 'checks-failed'] as const
 type LeftOut = (typeof LEFT_OUT_REASONS)[number]
 const LEFT_OUT_TEXT: Record<LeftOut, string> = {
-  'never-reached': 'the run never reached its second session',
+  'never-reached': 'the run never reached a session after the first',
   timeout: 'the run timed out',
   'exit-error': 'a session ended without completing',
-  'checks-failed': 'a check of the second session failed',
+  'checks-failed': 'a check of a session after the first failed, or one was not reached',
 }
 
 /**
@@ -219,11 +222,11 @@ const LEFT_OUT_TEXT: Record<LeftOut, string> = {
  * that stopped early looks cheap, one that timed out looks dear.
  */
 const secondSessionStatus = (record: RunRecord): LeftOut | undefined => {
-  if (!sessionCost(record, 1)) return 'never-reached'
+  if (!laterSessionsCost(record)) return 'never-reached'
   if (record.exit === 'timeout') return 'timeout'
   if (record.exit !== 'ok') return 'exit-error'
-  const second = record.windows.filter((w) => w.session === 1)
-  if (second.length === 0 || second.some((w) => !w.ran || w.checksPassed !== true)) return 'checks-failed'
+  const later = record.windows.filter((w) => w.session >= 1)
+  if (later.length === 0 || later.some((w) => !w.ran || w.checksPassed !== true)) return 'checks-failed'
   return undefined
 }
 
@@ -235,8 +238,8 @@ const secondSessionStatus = (record: RunRecord): LeftOut | undefined => {
  */
 const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
   const eligible = records.filter((r) => r.category !== 'workflow' && r.sessionCosts !== undefined)
-  const withSecond = eligible.filter((r) => sessionCost(r, 1) !== undefined || r.exit !== 'ok')
-  if (!eligible.some((r) => sessionCost(r, 1) !== undefined)) return undefined
+  const withSecond = eligible.filter((r) => laterSessionsCost(r) !== undefined || r.exit !== 'ok')
+  if (!eligible.some((r) => laterSessionsCost(r) !== undefined)) return undefined
   const counted = withSecond.filter((r) => secondSessionStatus(r) === undefined)
   const arms: Arm[] = ['off', 'on', 'oracle']
   const leftOut = Object.fromEntries(
@@ -255,7 +258,7 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
       !r.infraFailed &&
       r.category !== 'workflow' &&
       (r.setting === 'off' || r.setting === 'oracle') &&
-      sessionCost(r, 1) !== undefined &&
+      laterSessionsCost(r) !== undefined &&
       secondSessionStatus(r) === undefined,
   )
   const separate = options.headroomRecords !== undefined
@@ -268,11 +271,11 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
         const values = (arm: Arm) =>
           list
             .filter((r) => r.setting === arm)
-            .map((r) => pickMeasure(name, sessionCost(r, 1) as SessionCost))
+            .map((r) => pickMeasure(name, laterSessionsCost(r) as SessionCost))
         const pilot = (arm: Arm) =>
           headroomRuns
             .filter((r) => r.taskId === taskId && r.setting === arm)
-            .map((r) => pickMeasure(name, sessionCost(r, 1) as SessionCost))
+            .map((r) => pickMeasure(name, laterSessionsCost(r) as SessionCost))
         return {
           taskId,
           off: values('off'),
@@ -290,7 +293,7 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
   const perRun = (pick: (c: SessionCost) => number): number | null =>
     onRuns.length === 0
       ? null
-      : onRuns.reduce((sum, r) => sum + pick(sessionCost(r, 1) as SessionCost), 0) / onRuns.length
+      : onRuns.reduce((sum, r) => sum + pick(laterSessionsCost(r) as SessionCost), 0) / onRuns.length
   return {
     direction: DIRECTIONS.secondSession,
     tasks: taskIds.length,
@@ -298,7 +301,7 @@ const secondSessionReport = (records: RunRecord[], options: ReportOptions) => {
       arms.map((arm) => [arm, counted.filter((r) => r.setting === arm).length]),
     ) as Record<Arm, number>,
     leftOut,
-    lowerBoundRuns: counted.filter((r) => sessionCost(r, 1)?.lowerBound).length,
+    lowerBoundRuns: counted.filter((r) => laterSessionsCost(r)?.lowerBound).length,
     headroomRuns: separate ? headroomRuns.length : null,
     reviewOverhead: {
       runs: onRuns.length,
@@ -368,8 +371,11 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
   const second = secondSessionReport(records, options)
   const firstTrap = firstSessionTrapReport(records)
 
-  const lower = drop.ci95[0]
-  const criterion1 = drop.tasks > 0 && drop.estimate > 0 && lower > 0
+  const previous = drop.tasks > 0 && drop.estimate > 0 && drop.ci95[0] > 0
+  const rate = second?.measures.requests
+  const rateCi = rate?.captureCi95 ?? null
+  const evaluable = rate !== undefined && rate.captureRate !== null && rateCi !== null
+  const criterion1 = evaluable && (rate.captureRate as number) > 0 && (rateCi as [number, number])[0] > 0
 
   return {
     runs: { on: on.length, off: off.length },
@@ -415,8 +421,14 @@ const systemReport = (records: RunRecord[], options: ReportOptions) => {
     ...(second ? { secondSession: second } : {}),
     criterion1: {
       rule: CRITERION_1_RULE,
-      metric: 'repeatErrorDrop',
+      metric: 'secondSession.requests.captureRate',
       pass: criterion1,
+      evaluable,
+    },
+    previousCriterion1: {
+      rule: PREVIOUS_CRITERION_1_RULE,
+      metric: 'repeatErrorDrop',
+      pass: previous,
       evaluable: drop.tasks > 0,
     },
     settings: { on: settingSummary(on), off: settingSummary(off) },
@@ -476,7 +488,7 @@ const fmtCapture = (m: ReturnType<typeof secondSessionMeasure>, measure: Measure
 const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): string[] => {
   const list = (ids: string[]) => (ids.length === 0 ? 'none' : ids.join(', '))
   const lines = [
-    '### 4. Second-session cost and capture rate',
+    '### 4. Cost after the first session and capture rate',
     '',
     `Direction: ${s.direction}`,
     '',
@@ -545,29 +557,22 @@ const secondSessionMarkdown = (s: NonNullable<SystemReport['secondSession']>): s
   return lines
 }
 
-const infraMarkdown = (x: NonNullable<InfraExcluded>): string[] => [
-  `Runs the upstream ended, not the task (quota, credentials, rate limit, server error), left out of every metric below: on ${x.on}, off ${x.off}, oracle ${x.oracle}.${
-    Object.keys(x.reasons).length === 0
-      ? ''
-      : ` Reasons: ${Object.entries(x.reasons)
-          .map(([reason, n]) => `${reason} x${n}`)
-          .join(', ')}.`
-  } They are redone when the run is started again.`,
-  '',
-]
-
-const systemMarkdown = (name: string, r: SystemReport, infra?: InfraExcluded): string[] => {
-  const verdict = !r.criterion1.evaluable
-    ? 'NOT EVALUABLE (no paired tasks)'
-    : r.criterion1.pass
-      ? 'PASS'
-      : 'FAIL'
+const systemMarkdown = (
+  name: string,
+  r: SystemReport,
+  infra?: InfraExcluded,
+  blocked?: BlockedExcluded,
+): string[] => {
+  const verdictOf = (c: SystemReport['criterion1'], none: string) =>
+    !c.evaluable ? `NOT EVALUABLE (${none})` : c.pass ? 'PASS' : 'FAIL'
+  const verdict = verdictOf(r.criterion1, 'no capture rate with an interval')
   const lines = [
     `## ${name}`,
     '',
     `${r.tasks} tasks; runs: ${r.runs.on} on, ${r.runs.off} off.`,
     '',
     ...(infra ? infraMarkdown(infra) : []),
+    ...(blocked ? blockedMarkdown(blocked) : []),
     ...trapMarkdown(r.firstSessionTrap),
     '### 1. Repeat-error drop',
     '',
@@ -618,6 +623,8 @@ const systemMarkdown = (name: string, r: SystemReport, infra?: InfraExcluded): s
     '',
     `Verdict: ${verdict}`,
     '',
+    `Old rule, for comparison only: ${r.previousCriterion1.rule}. Verdict under it: ${verdictOf(r.previousCriterion1, 'no paired tasks')}.`,
+    '',
     '### Run structure',
     '',
     '| | on | off |',
@@ -653,52 +660,6 @@ const systemMarkdown = (name: string, r: SystemReport, infra?: InfraExcluded): s
 export const TRIGGERS_HEADER =
   "Some on runs were driven by refinement's own triggers only (`--on-protocol triggers`): they sent no manual review and none of the end-of-session saves, neither the workflow task's save to the workspace nor the cross-workspace task's save to user memory. What reached their second session came from automatic saves alone, so their workflow reuse and cross-workspace results are not comparable with runs that sent those saves."
 
-/** The sections for long tasks, capped runs, the frozen arm and rule forgetting; each only when it has data. */
-const longSections = (records: RunRecord[], options: ReportOptions) => {
-  const milestones = milestonesReport(records)
-  const capped = cappedReport(records)
-  const frozen = frozenReport(records, options)
-  const forgetting = forgettingReport(records)
-  const on = records.filter((r) => r.setting === 'on')
-  const triggers = on.filter((r) => r.onProtocol === 'triggers').length
-  return {
-    ...(triggers > 0 ? { onProtocol: { reviews: on.length - triggers, triggers } } : {}),
-    ...(capped ? { capped } : {}),
-    ...(milestones ? { milestones } : {}),
-    ...(frozen ? { frozen } : {}),
-    ...(forgetting ? { ruleForgetting: forgetting } : {}),
-  }
-}
-
-const longMarkdown = (r: ReturnType<typeof longSections>): string[] => [
-  ...(r.onProtocol
-    ? [
-        `On runs: ${r.onProtocol.reviews} with a manual review after every prompt, ${r.onProtocol.triggers} with refinement's own triggers only (no manual reviews; liveness checked once per session). Do not pool the two in one comparison.`,
-        '',
-      ]
-    : []),
-  ...(r.capped ? cappedMarkdown(r.capped) : []),
-  ...(r.milestones ? milestonesMarkdown(r.milestones) : []),
-  ...(r.frozen ? frozenMarkdown(r.frozen) : []),
-  ...(r.ruleForgetting ? forgettingMarkdown(r.ruleForgetting) : []),
-]
-
-/** The runs of a system that the upstream ended, per arm, with the reasons; none when there are none. */
-type InfraExcluded = { on: number; off: number; oracle: number; reasons: Record<string, number> } | undefined
-const infraExcluded = (records: RunRecord[]): InfraExcluded => {
-  const failed = records.filter((r) => r.infraFailed)
-  if (failed.length === 0) return undefined
-  const reasons: Record<string, number> = {}
-  for (const r of failed)
-    reasons[r.infraFailed?.reason ?? '?'] = (reasons[r.infraFailed?.reason ?? '?'] ?? 0) + 1
-  return {
-    on: bySetting(failed, 'on').length,
-    off: bySetting(failed, 'off').length,
-    oracle: bySetting(failed, 'oracle').length,
-    reasons,
-  }
-}
-
 const money = (value: number): string => String(value)
 
 /** The report header lines for the run configuration: model, route, upstream (without credentials) and prices. */
@@ -725,10 +686,12 @@ export const buildReport = (
 ): { json: object; markdown: string } => {
   const systems: Record<string, SystemReport & ReturnType<typeof longSections>> = {}
   const excluded: Record<string, NonNullable<InfraExcluded>> = {}
+  const blockedRuns: Record<string, NonNullable<BlockedExcluded>> = {}
   for (const [system, all] of groupBy(records, (r) => r.system)) {
     // A run the upstream ended says nothing about the system under test: no metric sees it. A capped run
     // is a result, but not one a mean can hold: it is listed apart and enters only the milestone curves.
-    const counted = all.filter((r) => !r.infraFailed)
+    // A run the host's verifier blocked was stopped by the harness, not its task: no metric sees it either.
+    const counted = all.filter((r) => !r.infraFailed && !r.blocked)
     systems[system] = {
       ...systemReport(
         counted.filter((r) => !r.capped),
@@ -738,6 +701,8 @@ export const buildReport = (
     }
     const infra = infraExcluded(all)
     if (infra) excluded[system] = infra
+    const blocked = blockedExcluded(all)
+    if (blocked) blockedRuns[system] = blocked
   }
   const run = options.run && {
     ...options.run,
@@ -754,7 +719,9 @@ export const buildReport = (
     ...(run ? { run } : {}),
     directions: DIRECTIONS,
     criterion1Rule: CRITERION_1_RULE,
+    previousCriterion1Rule: PREVIOUS_CRITERION_1_RULE,
     ...(Object.keys(excluded).length === 0 ? {} : { infraExcluded: excluded }),
+    ...(Object.keys(blockedRuns).length === 0 ? {} : { blockedExcluded: blockedRuns }),
     systems,
   }
   const markdown = [
@@ -767,7 +734,7 @@ export const buildReport = (
     "A trap hit is a command run that failed with the task's signature (on stderr, or in the output of a run that exited non-zero). Reading the tool's source or docs never counts.",
     '',
     ...Object.entries(systems).flatMap(([name, report]) => [
-      ...systemMarkdown(name, report, excluded[name]),
+      ...systemMarkdown(name, report, excluded[name], blockedRuns[name]),
       ...longMarkdown(report),
     ]),
   ].join('\n')

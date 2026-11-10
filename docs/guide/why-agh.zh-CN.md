@@ -10,11 +10,10 @@
 
 ## 比较设计取舍
 
-下表比较源码中的架构选择，不做性能排名。dsh 与 pi 的链接固定了阅读版本；本次对比没有运行竞品或付费模型基准，项目仍会演进。
+下表比较源码中的架构选择，不做性能排名。pi 的链接固定了阅读版本；本次对比没有运行竞品或付费模型基准，项目仍会演进。
 
 | 路径 | 适合的起点 | AGH 的选择与成本 |
 | --- | --- | --- |
-| [dsh](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/boot/hmr/src/index.ts) | Cordis 模块/配置重载支持开发迭代，[系统提示组合器](https://github.com/deepseek-ai/deepseek-harness/blob/5badb15009ae1756c3afe0ae0cef1faafc290ccc/packages/core/system-prompt/src/index.ts)组织分节与角色覆盖。 | AGH 把持久的会话代码快照设为明确合同，与模块重载分开。新旧版本并存，需要保留存储与生命周期协调，动态资源仍刷新；这不宣称 dsh 无法实现其他版本设计。 |
 | [pi 编码 Agent](https://github.com/earendil-works/pi/blob/ce950d78f424dcaf9f5d6a03ce80ab141130eb1d/packages/coding-agent/src/core/session-manager.ts) | JSONL 会话管理器提供分支与对话历史，可作为编码客户端基础。 | AGH 加入共享认证 App Server、可安装业务组合、候选审阅与界面证据，也增加控制面和包管理复杂度；不需要这些界面时，可以选择更小的客户端。 |
 | [LangGraph 持久化](https://docs.langchain.com/oss/python/langgraph/persistence) | Thread、checkpoint 与 pending writes 支持有状态的图应用。 | AGH 在插件 Agent Loop 与账本效果之上提供业务 Agent 产品界面；图库把更多应用策略与 UI 组合留给集成者。Checkpoint 或 AGH 账本都不与任意外部系统组成原子事务。 |
 

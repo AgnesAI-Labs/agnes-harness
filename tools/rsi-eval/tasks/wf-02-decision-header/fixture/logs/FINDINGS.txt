@@ -1,3 +1,0 @@
-mailer sent each order email twice at 09:12
-no errors from the queue consumer
-cart page logs show 3 s render time

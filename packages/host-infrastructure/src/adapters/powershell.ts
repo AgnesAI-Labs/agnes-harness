@@ -62,16 +62,22 @@ export function createConfiguredPowerShellResolver(probe: Probe = probePowerShel
 }
 
 const execute = promisify(execFile)
-const probeScript = [
-  "$ErrorActionPreference = 'Stop'",
-  '$codePage = [Console]::OutputEncoding.CodePage',
-  '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)',
-  "$mode = 'Legacy'",
-  'if (Test-Path variable:PSNativeCommandArgumentPassing) { $mode = [string]$PSNativeCommandArgumentPassing }',
-  '@{ path = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName;',
-  'version = $PSVersionTable.PSVersion.ToString(); edition = $PSVersionTable.PSEdition;',
-  'nativeArguments = $mode; codePage = $codePage } | ConvertTo-Json -Compress',
-].join('\n')
+// Metadata needs no cmdlets: their first use can import unrelated PowerShell modules.
+const probeScript = String.raw`
+$ErrorActionPreference = 'Stop'
+$codePage = [Console]::OutputEncoding.CodePage
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+function quote([string]$value) {
+  '"' + [regex]::Replace($value, '[\x00-\x1f"\\\ud800-\udfff]', [Text.RegularExpressions.MatchEvaluator]{
+    param($match)
+    '\u{0:x4}' -f [int][char]$match.Value[0]
+  }) + '"'
+}
+$path = [System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+$mode = [string]$ExecutionContext.SessionState.PSVariable.GetValue('PSNativeCommandArgumentPassing', 'Legacy')
+$json = '{{"path":{0},"version":{1},"edition":{2},"nativeArguments":{3},"codePage":{4}}}' -f (quote $path), (quote ($PSVersionTable.PSVersion.ToString())), (quote $PSVersionTable.PSEdition), (quote $mode), $codePage
+[Console]::Out.WriteLine($json)
+`.trim()
 
 const absolutePath = (path: string): boolean =>
   win32.isAbsolute(path) && win32.parse(path).root.length > 1 && !path.includes('\0')
@@ -111,8 +117,47 @@ function checked(value: unknown): PowerShellDescriptor {
 
 export async function probePowerShell(path: string): Promise<PowerShellDescriptor> {
   if (!usablePath(path)) throw new PowerShellUnavailable([{ path, reason: 'invalid-path' }])
+  const tracing = process.env.AGNES_POWERSHELL_PROBE_TRACE === '1'
+  let phase = 'execute'
+  let started = tracing ? performance.now() : 0
+  let output: { stdout?: unknown; stderr?: unknown } = {}
+  const bytes = (value: unknown) =>
+    typeof value === 'string' ? Buffer.byteLength(value) : Buffer.isBuffer(value) ? value.length : 0
+  const record = (outcome: 'success' | 'failure', error?: unknown) => {
+    if (!tracing) return
+    const failure = (error ?? {}) as Record<string, unknown>
+    const code = failure.code
+    const signals = ['SIGTERM', 'SIGKILL', 'SIGINT', 'SIGABRT', 'SIGBREAK']
+    const codes = ['ENOENT', 'EACCES', 'EPERM', 'ETIMEDOUT', 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER']
+    process.stderr.write(
+      `${JSON.stringify({
+        powerShellProbeTrace: true,
+        phase,
+        outcome,
+        durationMs: performance.now() - started,
+        code:
+          outcome === 'success'
+            ? 0
+            : (typeof code === 'number' && Number.isSafeInteger(code)) ||
+                (typeof code === 'string' && codes.includes(code))
+              ? code
+              : null,
+        errno: Number.isSafeInteger(failure.errno) ? failure.errno : null,
+        signal:
+          typeof failure.signal === 'string' && signals.includes(failure.signal) ? failure.signal : null,
+        killed: failure.killed === true,
+        stdoutBytes: bytes(failure.stdout ?? output.stdout),
+        stderrBytes: bytes(failure.stderr ?? output.stderr),
+      })}\n`,
+    )
+  }
+  const next = (name: string) => {
+    record('success')
+    phase = name
+    started = tracing ? performance.now() : 0
+  }
   try {
-    const { stdout } = await execute(
+    const { stdout, stderr } = await execute(
       path,
       [
         '-NoLogo',
@@ -125,8 +170,15 @@ export async function probePowerShell(path: string): Promise<PowerShellDescripto
       ],
       { encoding: 'utf8', timeout: 10_000, maxBuffer: 16_384, windowsHide: true },
     )
-    return checked(JSON.parse(stdout.replace(/^\uFEFF/, '').trim()))
-  } catch {
+    output = { stdout, stderr }
+    next('decode')
+    const value = JSON.parse(stdout.replace(/^\uFEFF/, '').trim())
+    next('validate')
+    const descriptor = checked(value)
+    record('success')
+    return descriptor
+  } catch (error) {
+    record('failure', error)
     throw new PowerShellUnavailable([{ path, reason: 'probe-failed' }])
   }
 }

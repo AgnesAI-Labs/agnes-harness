@@ -1,19 +1,14 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { createServer, type Server as HttpServer } from 'node:http'
 import { createRequire } from 'node:module'
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { afterEach, describe, expect, it } from 'vitest'
-import { resolvedConfig } from '../src/mcp.js'
 import {
-  createMcpOAuthCredentialResolver,
-  type McpOAuthCredentialStore,
-} from '../src/mcp-oauth-credentials.js'
-import {
-  createOAuthHttpHandler,
-  credentialRefFor,
-  type OAuthCredentialStoreWriter,
-} from '../src/oauth-http-handler.js'
+  completeMcpOAuthLogin,
+  type McpOAuthCompleteParams,
+  summarizeMcpOAuth,
+} from '../src/mcp-oauth-login.js'
+import { createOAuthHttpHandler } from '../src/oauth-http-handler.js'
+import { createMemoryOAuthStore } from './helpers/memory-oauth-store.js'
 
 // Loaded via createRequire (untyped) rather than a static import: the SDK's server-side
 // StreamableHTTPServerTransport options are not exactOptionalPropertyTypes-clean (the
@@ -21,10 +16,7 @@ import {
 // typecheck under a static import) - same established workaround
 // packages/base/test/mcp/register.test.ts and
 // packages/worker-runtime/test/{oauth,http}-bootstrap.test.ts already use for this exact SDK
-// surface. The client-side pieces below (`Client`/`StreamableHTTPClientTransport`) stay statically
-// imported - packages/base/src/mcp/connect.ts (production code) already proves
-// those typecheck cleanly when optional fields are passed via conditional spread instead of an
-// explicit `undefined`.
+// surface.
 const sdkRequire = createRequire(import.meta.url)
 const { Server } = sdkRequire('@modelcontextprotocol/sdk/server/index.js')
 const { StreamableHTTPServerTransport } = sdkRequire('@modelcontextprotocol/sdk/server/streamableHttp.js')
@@ -54,18 +46,12 @@ const { ListToolsRequestSchema } = sdkRequire('@modelcontextprotocol/sdk/types.j
  *   proving the code got redirected to the right places but never that the S256 challenge/verifier
  *   pairing genuinely round-trips through a server that actually enforces it (design §1.3's hard
  *   PKCE requirement).
- * - The credential store is one real, shared, Map-backed object (not a per-task-isolated fake)
- *   satisfying BOTH `OAuthCredentialStoreWriter` (`oauth-http-handler.ts`'s callback write path) and
- *   `McpOAuthCredentialStore` (`mcp-oauth-credentials.ts`'s worker-side read path) - the exact
- *   structural interface both modules already deliberately depend on instead of importing
- *   `@agnes/host`'s concrete `CredentialStore` type (see both files' own doc comments on that
- *   decoupling). Using the SAME instance for both proves the write path and the read path genuinely
- *   agree on the ref format (`credentialRefFor`) and the stored shape - something no earlier task's
- *   test could prove, because each one only ever exercised its own half against its own store.
- * - The final connection is a real `@modelcontextprotocol/sdk` `Client` over a real
- *   `StreamableHTTPClientTransport`, constructed the same way `packages/base/src/mcp/connect.ts`'s
- *   `createHttpTransport` builds one in production
- *   (`new StreamableHTTPClientTransport(url, { requestInit: { headers } })`).
+ * - The sign-in completion is the real one the daemon runs (`completeMcpOAuthLogin`: code
+ *   exchange plus the credential v2 write), against an in-memory store with the host store's
+ *   contract; the handler reaches it only through its injected `login` owner, as in production.
+ * - The step from the written credential to a session that lists and calls a tool lives with the
+ *   session worker's MCP rows (worker-runtime `mcp-oauth-session.e2e.test.ts`), which can reach the
+ *   real credential store and the session-row opener.
  *
  * Not covered here:
  * - A real browser driving the `/authorize` consent screen.
@@ -258,29 +244,6 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
     }
   }
 
-  /** A real, shared, Map-backed credential store satisfying both the write-side interface
-   * `oauth-http-handler.ts`'s callback route uses and the read-side interface
-   * `mcp-oauth-credentials.ts`'s worker resolver uses - see this file's header comment for why using
-   * one instance for both (rather than one fake per module, like every earlier task's own test) is
-   * the actual point of this fixture. */
-  function sharedCredentialStore(): OAuthCredentialStoreWriter &
-    McpOAuthCredentialStore & {
-      snapshot(ref: string): Promise<Awaited<ReturnType<McpOAuthCredentialStore['read']>>>
-    } {
-    const store = new Map<string, Record<string, unknown>>()
-    return {
-      async read(ref) {
-        return store.has(ref) ? (store.get(ref) as never) : null
-      },
-      async putOAuth(ref, value) {
-        store.set(ref, { kind: 'oauth', version: 1, ...value })
-      },
-      async snapshot(ref) {
-        return store.has(ref) ? (store.get(ref) as never) : null
-      },
-    }
-  }
-
   /** Real "browser" simulation: fetch the real `/authorize` URL `startAuthorization` minted, follow
    * the real 302 it sends back (this is the step no earlier task's test in this plan ever drove for
    * real - see oauth-http-handler.test.ts's own `completeStart` helper, which reads the state off the
@@ -299,15 +262,16 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
   const STATIC_CLIENT_ID = 'agnes-e2e-test-client'
   const SERVER_ID = 'fixture-oauth-srv'
 
-  it('a full authorization_code flow produces a working MCP connection', async () => {
+  it('a full authorization_code flow through the handler and the daemon-side completion writes the credential v2 record', async () => {
     // 1. Real fixture MCP server that is also its own OAuth authorization server.
     const remote = await startFixtureRemoteMcpServer()
-    remote.setTokenIssuance({
+    const issuance = {
       accessToken: 'e2e-access-token-1',
       refreshToken: 'e2e-refresh-token-1',
       expiresIn: 3600,
       scope: 'mcp:read mcp:write',
-    })
+    }
+    remote.setTokenIssuance(issuance)
 
     // 2. The "daemon launcher" callback surface: a real node:http server hosting
     // createOAuthHttpHandler, bound first so baseUrl is the handler's genuine, dialable origin (not
@@ -316,13 +280,24 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
     const baseUrl = await listen(oauthServer)
     cleanup.push(() => closeHttpServer(oauthServer))
 
-    // 3. Create an oauth-bound MCP server definition (Task 1's schema): a server whose secretBinding
+    // 3. Create an oauth-bound MCP server definition: a server whose secretBinding
     // is `{kind: 'oauth', staticClientId}`, matching what `oauth-admin.ts`'s production
-    // `resolveServer` would build from a real `mcp.servers.get` descriptor.
-    const store = sharedCredentialStore()
+    // `resolveServer` would build from a real `mcp.servers.get` descriptor. The daemon side of the
+    // sign-in is the real completion against an in-memory credential store.
+    const store = createMemoryOAuthStore()
     const handler = createOAuthHttpHandler({
       secret: SECRET,
-      credentialStore: store,
+      login: {
+        get: async (serverId) => summarizeMcpOAuth(await store.read(serverId)),
+        complete: (params: McpOAuthCompleteParams) =>
+          completeMcpOAuthLogin({
+            ...params,
+            serverUrl: remote.origin,
+            staticClient: { clientId: STATIC_CLIENT_ID },
+            store,
+            fetchImpl: fetch,
+          }),
+      },
       baseUrl,
       resolveServer: async (serverId) =>
         serverId === SERVER_ID ? { serverUrl: remote.origin, staticClientId: STATIC_CLIENT_ID } : undefined,
@@ -334,92 +309,34 @@ describe('oauth end-to-end: authorization_code flow produces a working, bearer-a
     })
 
     // 4. Begin authorization via the JSON capability directly - NOT `mcp.servers.oauth.start` (see
-    // this file's header comment: that RPC method does not exist, by Task 5's confirmed design).
+    // this file's header comment: that RPC method does not exist, by design).
     const startResult = await handler.startAuthorization(SERVER_ID)
     if (!('authorizeUrl' in startResult))
       throw new Error(`expected {authorizeUrl}, got ${JSON.stringify(startResult)}`)
 
     // 5. Simulate the user consenting in a browser: real /authorize -> real 302 -> real /callback.
     const callbackResponse = await simulateUserConsent(startResult.authorizeUrl)
-    expect(callbackResponse.status).toBe(302)
+    expect(callbackResponse.status).toBe(200)
     expect(remote.authorizeCount()).toBe(1)
 
-    // 6. Assert a real OAuthCredential actually landed in the credential store, under the exact ref
-    // format both the write side (this handler) and the read side (step 7's resolver) share.
-    const stored = await store.snapshot(credentialRefFor(SERVER_ID))
-    expect(stored).toMatchObject({
+    // 6. Assert a real credential v2 record landed in the store, with what a later refresh needs.
+    expect(await store.read(SERVER_ID)).toMatchObject({
+      version: 2,
       kind: 'oauth',
-      provider: 'mcp-oauth',
-      accessToken: 'e2e-access-token-1',
-      refreshToken: 'e2e-refresh-token-1',
-      scope: ['mcp:read', 'mcp:write'],
-    })
-
-    // 7. Assert resolvedConfig() (Task 6) can use that stored credential to build a live connection
-    // config - through the real worker-side resolver (mcp-oauth-credentials.ts), not a stub.
-    const oauthCredentials = createMcpOAuthCredentialResolver({ credentialStore: store })
-    const failIfCalled = async (): Promise<string> => {
-      throw new Error('oauth-bound MCP must not use the string SecretRef resolver')
-    }
-    const config = await resolvedConfig(
-      {
-        definition: {
-          serverId: SERVER_ID,
-          displayName: 'Fixture OAuth Server',
-          transport: { kind: 'http', url: remote.mcpUrl },
-          secretBinding: { kind: 'oauth', staticClientId: STATIC_CLIENT_ID },
-          toolPolicy: { allow: [] },
-        },
-        revision: 'a'.repeat(64),
-        desired: 'enabled',
-        trust: 'trusted',
+      epoch: 0,
+      rev: 1,
+      client: {
+        clientId: STATIC_CLIENT_ID,
+        redirectUri: new URL(`/oauth/${SERVER_ID}/callback`, baseUrl).href,
       },
-      failIfCalled,
-      new AbortController().signal,
-      {},
-      { stdioPolicy: { allowedExecutables: [] }, httpPolicy: { localDaemon: true, allowLoopbackHttp: true } },
-      { oauthCredentials },
-    )
-    expect(config.headers?.authorization).toBe('Bearer e2e-access-token-1')
-    expect(config.url).toBe(remote.mcpUrl)
-    // Narrows `config.url`/`config.headers` from McpServerConfig's stdio-compatible optional types
-    // (the 'http'/'sse' branch of resolvedConfig() always sets both, but the type is shared with the
-    // stdio branch, which sets neither) - the two assertions just above already proved both are
-    // actually present for this config at runtime.
-    if (typeof config.url !== 'string') throw new Error('expected an http/sse McpServerConfig')
-    const configUrl = config.url
-    const configHeaders = config.headers
-
-    // 8. Assert resolvedConfig()'s output genuinely connects: a real MCP SDK Client, over a real
-    // StreamableHTTPClientTransport, constructed exactly the way
-    // packages/base/src/mcp/connect.ts's createHttpTransport builds one in
-    // production (`new StreamableHTTPClientTransport(url, { requestInit: { headers } })`) - proving
-    // the bearer token minted by a real OAuth round trip actually arrives at the resource server.
-    const client = new Client({ name: 'oauth-e2e-test-client', version: '1' })
-    const clientTransport = new StreamableHTTPClientTransport(new URL(configUrl), {
-      // Conditional spread (not `{ headers: configHeaders }` directly), matching connect.ts's own
-      // `exactOptionalPropertyTypes`-safe idiom: RequestInit's `headers` property type has no
-      // explicit `| undefined`, so passing a possibly-`undefined` value there (even though it is
-      // provably defined here) does not typecheck.
-      requestInit: configHeaders === undefined ? {} : { headers: configHeaders },
+      server: { endpoint: remote.origin.href, tokenEndpoint: new URL('/token', remote.origin).href },
+      tokens: {
+        accessToken: issuance.accessToken,
+        refreshToken: issuance.refreshToken,
+        scope: ['mcp:read', 'mcp:write'],
+      },
+      requiredScope: [],
     })
-    // Same cast packages/base/src/mcp/connect.ts's production code already needs
-    // at its own `client.connect(transport)` call site: the SDK's own `Transport` interface and
-    // `StreamableHTTPClientTransport`'s `sessionId` getter (`string | undefined` vs. `string`)
-    // disagree under `exactOptionalPropertyTypes` - an SDK-internal type quirk, not something a
-    // caller's own option shape can route around.
-    await client.connect(clientTransport as Parameters<typeof client.connect>[0])
-    try {
-      const tools = await client.listTools()
-      expect(tools.tools).toEqual([])
-    } finally {
-      await client.close()
-    }
-
-    expect(remote.mcpHeaders.length).toBeGreaterThanOrEqual(1)
-    expect(remote.mcpHeaders.every((headers) => headers.authorization === 'Bearer e2e-access-token-1')).toBe(
-      true,
-    )
   })
 
   it('rejects the token exchange when the PKCE code_verifier does not match the code_challenge (fixture actually enforces PKCE, not just records it)', async () => {

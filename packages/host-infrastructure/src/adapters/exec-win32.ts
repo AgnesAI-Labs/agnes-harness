@@ -1,4 +1,5 @@
 import { mergeWindowsEnvironment, startWindowsJobProcess } from '@agnes/system-node/process-spawn'
+import { type WindowsLaunch, windowsLaunch } from '../windows-acl/launch.js'
 import type { ExecAdapter, ExecResult } from './exec.js'
 import { createExecOutput } from './exec-output.js'
 import type { PowerShellDescriptor } from './powershell.js'
@@ -14,11 +15,22 @@ export function createWindowsExec(options: {
   const live = new Set<{ cancel(): void; done: Promise<ExecResult> }>()
   return {
     run(argv, opts) {
+      // A Host-issued permit is redeemed first, so every refusal below also settles it.
+      let launch: WindowsLaunch | undefined
+      try {
+        launch = opts.windowsAcl ? windowsLaunch(opts.windowsAcl) : undefined
+      } catch (error) {
+        return Promise.reject(error)
+      }
+      const refuse = (error: Error) => {
+        launch?.abandoned()
+        return Promise.reject(error)
+      }
       if (opts.bridge)
-        return Promise.reject(new Error('SANDBOX_UNAVAILABLE: Windows programmatic transport is unavailable'))
-      if (!argv[0]) return Promise.reject(new Error('exec: empty argv'))
+        return refuse(new Error('SANDBOX_UNAVAILABLE: Windows programmatic transport is unavailable'))
+      if (!argv[0]) return refuse(new Error('exec: empty argv'))
       if (opts.signal?.aborted)
-        return Promise.reject(
+        return refuse(
           opts.signal.reason instanceof Error ? opts.signal.reason : new Error('exec: aborted before start'),
         )
       const controller = new AbortController()
@@ -44,10 +56,13 @@ export function createWindowsExec(options: {
           prepared = preparePowerShellFile(options.powerShell, argv)
           const child = await startWindowsJobProcess(prepared.argv, {
             cwd: opts.cwd,
-            env: mergeWindowsEnvironment(options.baseEnv, opts.env),
+            // The request cannot move TEMP/TMP out of the lease's private temp.
+            env: mergeWindowsEnvironment(options.baseEnv, opts.env, launch?.env),
             nodeExecutable: options.nodeExecutable,
             signal: controller.signal,
+            ...(launch ? { confinement: launch.confinement } : {}),
           })
+          launch?.started(child.completion)
           child.stdout.on('data', output.stdout)
           child.stderr.on('data', output.stderr)
           child.stdin.end(opts.stdin)
@@ -71,6 +86,8 @@ export function createWindowsExec(options: {
             return { code: -1, ...output.result(), timedOut, signal: 'SIGKILL' }
           throw cause
         } finally {
+          // Never a fallback: a restricted launch that did not start leaves no process behind.
+          launch?.abandoned()
           clearTimeout(timer)
           opts.signal?.removeEventListener('abort', onAbort)
           prepared?.dispose()

@@ -10,6 +10,8 @@ Find where settings live, which layer applies them, and which fields are managed
 
 Configuration files and model credentials are separate. Prefer CLI `config` or Web settings for providers. Do not write keys into YAML or manually edit a configuration-service revision.
 
+Units on this page and in settings: "bytes" are UTF-8 bytes; "characters" are UTF-16 code units; "tokens" are the `estimateTokens` estimate or the usage the model reports.
+
 <a id="位置与层级"></a>
 
 ## Locations and layers

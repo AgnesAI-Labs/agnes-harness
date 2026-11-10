@@ -7,6 +7,7 @@ import { payloadOnlyRoutes } from '@agnes/host-infrastructure/admin-session-sele
 import { materializeRoutes, pinPresetRoutes } from '@agnes/host-providers/assemble/routes'
 import { minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
 import type { Assembled } from '../assemble/assemble.js'
+import { sandboxConfigTarget } from '../assemble/workspace-windows-acl.js'
 import type { HostSession } from '../lifecycle/host.js'
 import { checkPresetHardRequirements } from './session.js'
 
@@ -50,9 +51,10 @@ export function assertSandboxUnchanged(
     ...a.sessionPresetLimits(),
     ...(current.permission ? { permission: current.permission } : {}),
   })
+  const configTarget = sandboxConfigTarget(a.adapters)
   if (
-    sandboxStaticConfigHash(normalizeSandboxStaticConfig(before.doc)) !==
-    sandboxStaticConfigHash(normalizeSandboxStaticConfig(next.doc))
+    sandboxStaticConfigHash(normalizeSandboxStaticConfig(before.doc, configTarget)) !==
+    sandboxStaticConfigHash(normalizeSandboxStaticConfig(next.doc, configTarget))
   )
     throw new HostError(
       'E_PRESET_UNSUPPORTED',

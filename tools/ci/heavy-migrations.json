@@ -9,7 +9,7 @@
     "reason": "Real pending HTTP socket, request deadline and cleanup.",
     "observedMaxMs": 3006
   },
-  "packages/base/extensions/subagent/test/worktree-real.e2e.test.ts": {
+  "packages/host-infrastructure/test/git-worktrees.e2e.test.ts": {
     "previous": "packages/base/extensions/subagent/test/worktree-real.test.ts",
     "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
     "observedMaxMs": 2063
@@ -229,7 +229,7 @@
     "reason": "Real worker/CLI/process integration and lifecycle cleanup.",
     "observedMaxMs": 2040
   },
-  "packages/web-admin/test/admin-page.slow.test.ts": {
+  "packages/web/test/plugin-admin-page.slow.test.ts": {
     "previous": "packages/web-admin/test/admin-page.test.ts",
     "reason": "Real operation/publication polling and full settings DOM assembly.",
     "observedMaxMs": 4106
@@ -259,7 +259,7 @@
     "reason": "真实进程/OS/build",
     "evidence": "Static audit; not executed in this development window."
   },
-  "packages/channels/test/local-pipe-real.e2e.test.ts": {
+  "packages/daemon/test/channel-pipe-real.e2e.test.ts": {
     "previous": "packages/channels/test/local-pipe-real.test.ts",
     "reason": "真实进程/OS/build",
     "evidence": "Static audit; not executed in this development window."

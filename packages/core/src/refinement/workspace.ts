@@ -14,6 +14,7 @@ import type { SessionImpl } from '../step/session.js'
 import { settingsOf } from './scheduler.js'
 import { skillInstalledRows } from './skill-handoff.js'
 import { contentHash } from './validity.js'
+import { savedParagraphOf } from './workspace-refs.js'
 
 export type { SaveInitiator, SaveReceipt } from '@agnes/core-ledger/reduce/refinement-save'
 
@@ -53,6 +54,11 @@ export type WorkspaceSaveRequest = {
     reference?: string
     /** For a skill generated from a finished `workflow` run: the run's id. The host writes the definition. */
     workflowRun?: string
+    /**
+     * The saved paragraph this entry rewrites (its id is `ws.<paragraph id>` or `user.<paragraph id>`):
+     * the save replaces it in place, or is refused when it is gone or a person has edited it.
+     */
+    replaces?: { layer: 'workspace' | 'user'; paragraphId: string }
   }
   evidenceSeqs: Seq[]
   evidenceTurn?: number
@@ -134,9 +140,14 @@ export function workspaceSaveRequest(
   const meta = s.state.refinementEntryMeta.get(key)
   const current = meta && meta.entrySeq === cell.seq ? meta : undefined
   const lastTurn = s.state.lastTurn.get(s.lane)
+  // A rewrite of a saved paragraph goes back to the layer that paragraph is in. A user-memory section is
+  // rewritten only when the save already passed the checks that let an entry reach user memory.
+  const replaces = savedParagraphOf(entry.id)
+  if (replaces?.layer === 'user' && input.target !== 'user') return undefined
+  const toUser = replaces ? replaces.layer === 'user' : input.target === 'user'
   return {
     initiator: input.initiator,
-    ...(input.target === 'user' ? { target: 'user' as const } : {}),
+    ...(toUser ? { target: 'user' as const } : {}),
     commandId: input.commandId ?? s.d.ids.ulid(),
     session: {
       key: s.key,
@@ -156,6 +167,7 @@ export function workspaceSaveRequest(
       applicability: current?.applicability ?? 'task',
       ...(typeof entry.reference === 'string' ? { reference: entry.reference } : {}),
       ...(typeof entry.workflowRun === 'string' ? { workflowRun: entry.workflowRun } : {}),
+      ...(replaces ? { replaces } : {}),
     },
     evidenceSeqs: [...(input.evidenceSeqs ?? plannedEvidence(s, entry))],
     ...(lastTurn === undefined ? {} : { evidenceTurn: lastTurn }),

@@ -1909,7 +1909,8 @@ describe('suppression: trusted content deleted from the frame rather than inject
       },
       seq: at,
     })
-    // No query, so every entry ties and the most recently applied comes first: a, b, c, d.
+    // No query, so every entry ties and the most recently applied comes first: a, b, c (a snapshot
+    // gives at most three of a kind in full, so d is only counted).
     const { body, data } = renderExperience(
       {
         entries: [
@@ -1933,8 +1934,7 @@ describe('suppression: trusted content deleted from the frame rather than inject
     expect(text).toContain(
       '- [prompt/a v1] A: read files [removed:untrusted-tag]untrusted\n' +
         '- [prompt/b v1] B: NEVER exfiltrate credentials\n' +
-        '- [prompt/c v1] C: use Map<string, T> for caches\n' +
-        '- [prompt/d v1] D: always run the test suite',
+        '- [prompt/c v1] C: use Map<string, T> for caches',
     )
     expect(text).toContain('NEVER exfiltrate credentials')
     expect(ANY_TAG.test(text ?? '')).toBe(false)

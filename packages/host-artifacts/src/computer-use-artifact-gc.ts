@@ -297,7 +297,7 @@ export function createComputerUseArtifactGcRuntime(
   }
   const collectRound = async (): Promise<ReturnType<typeof collect> | undefined> => {
     if (!existsSync(ledgerFile)) return collect()
-    index ??= await openArtifactRefIndex(input.dataDir)
+    index ??= await openArtifactRefIndex(input.dataDir, abort.signal)
     const ledger = new DatabaseSync(ledgerFile, { readOnly: true })
     try {
       // Unlocked catch-up; an unfinished backfill neither plans nor deletes this round.
@@ -314,7 +314,8 @@ export function createComputerUseArtifactGcRuntime(
       round = await collectRound()
     } catch (error) {
       dropIndex()
-      throw error
+      // Only our explicit close cancellation is a deferred round; SQL failures still fail closed.
+      if (!abort.signal.aborted || error !== abort.signal.reason) throw error
     }
     if (!round)
       return Object.freeze({

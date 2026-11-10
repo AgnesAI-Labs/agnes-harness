@@ -139,6 +139,64 @@ describe('resource CLI argument boundary', () => {
     })
     expect(output).toBe('No resources found.')
   })
+  describe('MCP sign-in marks', () => {
+    const server = (serverId: string, extra: Record<string, unknown>) => ({
+      kind: 'mcp' as const,
+      resourceId: `mcp/${serverId}`,
+      serverId,
+      revision: 'a'.repeat(64),
+      trust: 'trusted',
+      desired: 'enabled',
+      actual: 'unavailable',
+      transportKind: 'http',
+      definition: {},
+      ...extra,
+    })
+    const listed = async (items: unknown[]) => {
+      let output = ''
+      const client = {
+        clientId: async () => 'client',
+        mcp: { servers: { list: async () => ({ items }) } },
+      }
+      await runResourceCommand('mcp', ['list'], client as never, {
+        write: (text) => {
+          output += text
+        },
+      })
+      return output.split('\n')
+    }
+    it('list marks an oauth server that needs sign-in', async () => {
+      const lines = await listed([
+        server('fresh', { secretBindingKind: 'oauth', authorizationStatus: 'pending' }),
+        server('expired', { secretBindingKind: 'oauth', authorizationStatus: 'needs-reconnect' }),
+        server('signed-in', {
+          secretBindingKind: 'oauth',
+          authorizationStatus: 'authorized',
+          actual: 'ready',
+        }),
+      ])
+      expect(lines[0]).toMatch(
+        /^fresh .* needs sign-in \(agh mcp login fresh, \/mcp login fresh in the TUI, or the web MCP page\)$/,
+      )
+      expect(lines[1]).toMatch(/^expired .* needs sign-in \(agh mcp login expired, /)
+      expect(lines[2]).toMatch(/^signed-in /)
+      expect(lines[2]).not.toContain('needs sign-in')
+    })
+    it('list marks a server without credentials that answered with an auth requirement', async () => {
+      const lines = await listed([
+        server('open', {
+          secretBindingKind: 'none',
+          lastSafeError: { code: 'MCP_AUTH_REQUIRED', message: 'MCP server requires sign-in' },
+        }),
+        server('broken', {
+          secretBindingKind: 'none',
+          lastSafeError: { code: 'MCP_CONNECT_FAILED', message: 'could not connect' },
+        }),
+      ])
+      expect(lines[0]).toMatch(/^open .* needs sign-in \(agh mcp login open, /)
+      expect(lines[1]).not.toContain('needs sign-in')
+    })
+  })
   it('rejects raw secret flags before it can make a Daemon call', async () => {
     await expect(
       runResourceCommand(
@@ -344,6 +402,217 @@ describe('resource CLI argument boundary', () => {
       ).toBe(true)
     },
   )
+})
+
+describe('MCP credential flags', () => {
+  async function added(args: string[]): Promise<unknown> {
+    let definition: unknown
+    const client = {
+      clientId: async () => 'client',
+      mcp: {
+        servers: {
+          create: async (params: unknown) => {
+            definition = (params as { definition: unknown }).definition
+            return { operationId: 'op-add', state: 'received' as const }
+          },
+        },
+      },
+      resources: {
+        operation: {
+          get: async () => ({
+            operationId: 'op-add',
+            kind: 'mcp.reconcile',
+            state: 'succeeded' as const,
+            profile: 'local-dev',
+            target: 'mcp/example',
+            revision: 'a'.repeat(64),
+            createdAt: '2026-09-18T00:00:00.000Z',
+            updatedAt: '2026-09-18T00:00:01.000Z',
+            progress: 100,
+          }),
+        },
+      },
+    }
+    await runResourceCommand('mcp', ['add', 'example', '--name', 'Example', ...args], client as never, {
+      write: () => undefined,
+      confirm: async () => true,
+    })
+    return definition
+  }
+  const usage = (args: string[]) =>
+    runResourceCommand('mcp', ['add', 'example', '--name', 'Example', ...args], {} as never, {
+      write: () => undefined,
+    })
+
+  it('mcp add --bearer-ref and --header-ref build their bindings', async () => {
+    expect(
+      await added(['--http', 'https://example.com/mcp', '--bearer-ref', 'secret://mcp/token']),
+    ).toMatchObject({
+      secretBinding: { kind: 'http-bearer', credentialRef: 'secret://mcp/token' },
+    })
+    expect(
+      await added(['--sse', 'https://example.com/sse', '--header-ref', 'x-api-key=secret://mcp/key']),
+    ).toMatchObject({
+      secretBinding: { kind: 'http-header', headerName: 'x-api-key', credentialRef: 'secret://mcp/key' },
+    })
+    await expect(usage(['--http', 'https://example.com/mcp', '--bearer-ref', 'raw-token'])).rejects.toThrow(
+      'secret://',
+    )
+    await expect(
+      usage(['--http', 'https://example.com/mcp', '--header-ref', 'authorization=secret://mcp/key']),
+    ).rejects.toThrow('--header-ref must be')
+    await expect(
+      usage([
+        '--http',
+        'https://example.com/mcp',
+        '--bearer-ref',
+        'secret://mcp/token',
+        '--header-ref',
+        'x-api-key=secret://mcp/key',
+      ]),
+    ).rejects.toThrow('HTTP/SSE accepts one of')
+    await expect(usage(['--stdio', 'example', '--bearer-ref', 'secret://mcp/token'])).rejects.toThrow(
+      'stdio only accepts',
+    )
+  })
+
+  it('mcp add --oauth --oauth-client-id c --oauth-client-secret-ref secret://x/y builds the oauth binding', async () => {
+    expect(
+      await added([
+        '--http',
+        'https://example.com/mcp',
+        '--oauth',
+        '--oauth-client-id',
+        'c',
+        '--oauth-client-secret-ref',
+        'secret://x/y',
+      ]),
+    ).toMatchObject({
+      secretBinding: { kind: 'oauth', staticClientId: 'c', clientSecretRef: 'secret://x/y' },
+    })
+    expect(await added(['--http', 'https://example.com/mcp', '--oauth'])).toMatchObject({
+      secretBinding: { kind: 'oauth' },
+    })
+    expect(await added(['--http', 'https://example.com/mcp', '--oauth-client-id', 'c'])).toMatchObject({
+      secretBinding: { kind: 'oauth', staticClientId: 'c' },
+    })
+  })
+
+  it('--oauth-client-secret-ref without --oauth-client-id is a usage error', async () => {
+    await expect(
+      usage(['--http', 'https://example.com/mcp', '--oauth', '--oauth-client-secret-ref', 'secret://x/y']),
+    ).rejects.toThrow('--oauth-client-secret-ref needs --oauth-client-id')
+    await expect(
+      usage([
+        '--http',
+        'https://example.com/mcp',
+        '--oauth-client-id',
+        'c',
+        '--oauth-client-secret-ref',
+        'raw',
+      ]),
+    ).rejects.toThrow('secret://')
+  })
+
+  it('--oauth-callback-port fixes the sign-in callback port, on add and on update', async () => {
+    expect(
+      await added([
+        '--http',
+        'https://example.com/mcp',
+        '--oauth-client-id',
+        'c',
+        '--oauth-callback-port',
+        '8765',
+      ]),
+    ).toMatchObject({ secretBinding: { kind: 'oauth', staticClientId: 'c', callbackPort: 8765 } })
+    expect(
+      await added(['--sse', 'https://example.com/sse', '--oauth', '--oauth-callback-port', '1024']),
+    ).toMatchObject({ secretBinding: { kind: 'oauth', callbackPort: 1024 } })
+
+    let updated: unknown
+    const client = {
+      clientId: async () => 'client',
+      mcp: {
+        servers: {
+          update: async (params: unknown) => {
+            updated = (params as { definition: unknown }).definition
+            return { operationId: 'op-update', state: 'received' as const }
+          },
+        },
+      },
+      resources: {
+        operation: {
+          get: async () => ({
+            operationId: 'op-update',
+            kind: 'mcp.reconcile',
+            state: 'succeeded' as const,
+            profile: 'local-dev',
+            target: 'mcp/example',
+            revision: 'a'.repeat(64),
+            createdAt: '2026-09-18T00:00:00.000Z',
+            updatedAt: '2026-09-18T00:00:01.000Z',
+            progress: 100,
+          }),
+        },
+      },
+    }
+    await runResourceCommand(
+      'mcp',
+      [
+        'update',
+        'example',
+        '--expected-revision',
+        'a'.repeat(64),
+        '--name',
+        'Example',
+        '--http',
+        'https://example.com/mcp',
+        '--oauth',
+        '--oauth-callback-port',
+        '65535',
+      ],
+      client as never,
+      { write: () => undefined, confirm: async () => true },
+    )
+    expect(updated).toMatchObject({ secretBinding: { kind: 'oauth', callbackPort: 65535 } })
+  })
+
+  it('--oauth-callback-port needs OAuth and a port from 1024 to 65535', async () => {
+    const http = ['--http', 'https://example.com/mcp']
+    await expect(usage([...http, '--oauth-callback-port', '8765'])).rejects.toThrow(
+      '--oauth-callback-port needs --oauth',
+    )
+    await expect(
+      usage([...http, '--bearer-ref', 'secret://mcp/token', '--oauth-callback-port', '8765']),
+    ).rejects.toThrow('--oauth-callback-port needs --oauth')
+    await expect(usage(['--stdio', 'example', '--oauth-callback-port', '8765'])).rejects.toThrow(
+      'OAuth flags need an HTTP or SSE server',
+    )
+    for (const port of ['80', '1023', '65536', '8765.5', '08765', '87a5'])
+      await expect(usage([...http, '--oauth', '--oauth-callback-port', port])).rejects.toThrow(
+        '--oauth-callback-port must be a whole number from 1024 to 65535',
+      )
+  })
+
+  it('--oauth with --bearer-ref is a usage error', async () => {
+    await expect(
+      usage(['--http', 'https://example.com/mcp', '--oauth', '--bearer-ref', 'secret://mcp/token']),
+    ).rejects.toThrow('OAuth flags cannot be combined with --bearer-ref or --header-ref')
+    await expect(
+      usage([
+        '--http',
+        'https://example.com/mcp',
+        '--oauth-client-id',
+        'c',
+        '--header-ref',
+        'x-api-key=secret://m/k',
+      ]),
+    ).rejects.toThrow('OAuth flags cannot be combined with --bearer-ref or --header-ref')
+    await expect(usage(['--stdio', 'example', '--oauth'])).rejects.toThrow(
+      'OAuth flags need an HTTP or SSE server',
+    )
+    await expect(usage(['--http', 'https://example.com/mcp', '--oauth', 'yes'])).rejects.toThrow()
+  })
 })
 
 describe('resource terminal output ownership', () => {

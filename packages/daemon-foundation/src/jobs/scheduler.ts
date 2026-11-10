@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import type { ExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
 import type { Actor, ContentBlock } from '@agnes/protocol'
 import type { NoticeSink } from '../local/notice.js'
@@ -41,12 +42,21 @@ type SchedulerOptions = {
   activationBarrier: ExtensionActivationBarrier
   random?: () => number
   log?: (message: string) => void
-  onDispatched?(job: JobRow, info: { at: number; seq?: number; reason?: string; sessionKey: string }): void
+  onDispatched?(
+    job: JobRow,
+    info: { at: number; seq?: number; reason?: string; sessionKey: string; runId?: string },
+  ): void
   keepWaiting?(job: JobRow): boolean
   unattendedApproval?(job: JobRow): 'notify' | 'refuse'
   onSettled?(
     job: JobRow,
-    info: { at: number; nextRunAt: number | null; status: 'completed' | 'waiting'; reason?: string },
+    info: {
+      at: number
+      nextRunAt: number | null
+      status: 'completed' | 'waiting'
+      reason?: string
+      runId?: string
+    },
   ): void
   /**
    * Resolves the session a job runs in before it is opened. A job whose row names a placeholder (a
@@ -58,6 +68,7 @@ type SchedulerOptions = {
     job: JobRow,
     signal: AbortSignal,
     dispatching: () => void,
+    beginRun: (sessionKey: string) => { runId: string; sessionKey: string },
   ): Promise<{ sessionKey: string } | undefined>
   /**
    * False when a failed attempt must not be retried, e.g. one that may already have opened a session.
@@ -65,7 +76,7 @@ type SchedulerOptions = {
    */
   retryable?(job: JobRow): boolean
   /** A final failure; `sessionKey` is the session the attempt used, when it got that far. */
-  onFailed?(job: JobRow, info: { at: number; error: string; sessionKey?: string }): void
+  onFailed?(job: JobRow, info: { at: number; error: string; sessionKey?: string; runId?: string }): void
   /** True when a repeating job should continue to its next occurrence after a final failure. */
   recurAfterFailure?(job: JobRow): boolean
 }
@@ -260,7 +271,25 @@ export class Scheduler {
       if (!this.options.boundWake) return { reason: 'refused' }
       return this.options.boundWake(job, signal)
     }
-    const prepared = await this.options.prepare?.(job, signal, () => this.markDispatched(job))
+    const prepared = await this.options.prepare?.(
+      job,
+      signal,
+      () => this.markDispatched(job),
+      (sessionKey) => {
+        signal.throwIfAborted()
+        const current = this.options.repo.get(job.idempotencyKey)
+        const previous = current ? dispatchMarkOf(current) : undefined
+        if (previous?.sessionKey && previous.sessionKey !== sessionKey)
+          throw new Error('scheduled run identity conflict')
+        const runId = previous?.runId ?? `run_${randomBytes(16).toString('hex')}`
+        this.options.repo.markDispatched(job.idempotencyKey, this.options.owner, {
+          at: this.options.clock(),
+          runId,
+          sessionKey,
+        })
+        return { runId, sessionKey }
+      },
+    )
     const sessionKey = prepared?.sessionKey ?? job.sessionKey
     try {
       return await this.runIn(job, sessionKey, signal)
@@ -366,8 +395,17 @@ export class Scheduler {
     })
   }
 
-  private dispatched(job: JobRow, info: { seq?: number; reason?: string; sessionKey: string }): void {
-    this.options.onDispatched?.(job, { at: this.options.clock(), ...info })
+  private dispatched(
+    job: JobRow,
+    info: { seq?: number; reason?: string; sessionKey: string; runId?: string },
+  ): void {
+    this.options.onDispatched?.(job, { at: this.options.clock(), ...info, ...this.runIdentity(job) })
+  }
+
+  private runIdentity(job: JobRow): { runId?: string } {
+    const current = this.options.repo.get(job.idempotencyKey)
+    const mark = current ? dispatchMarkOf(current) : undefined
+    return { ...(mark?.runId ? { runId: mark.runId } : {}) }
   }
 
   private settleSuccess(job: JobRow, result: { seq?: number; reason?: string }): void {
@@ -378,21 +416,26 @@ export class Scheduler {
           ...(this.options.random ? { random: this.options.random } : {}),
         })
     const status = next === null ? 'completed' : 'waiting'
-    this.options.repo.settle(
-      job.idempotencyKey,
-      next === null ? { status, result } : { status, result, delayUntil: next },
-    )
     this.options.onSettled?.(job, {
       at: this.options.clock(),
       nextRunAt: next,
       status,
       ...(result.reason ? { reason: result.reason } : {}),
+      ...this.runIdentity(job),
     })
+    this.options.repo.settle(
+      job.idempotencyKey,
+      next === null ? { status, result } : { status, result, delayUntil: next },
+    )
   }
 
   private settleFailure(job: JobRow, error: string, sessionKey?: string): void {
     const attempts = job.attempts + 1
-    if (attempts >= job.maxAttempts || this.options.retryable?.(job) === false) {
+    if (
+      attempts >= job.maxAttempts ||
+      this.runIdentity(job).runId ||
+      this.options.retryable?.(job) === false
+    ) {
       this.settleFinalFailure(job, error, attempts, sessionKey)
       return
     }
@@ -407,7 +450,15 @@ export class Scheduler {
 
   private settleFinalFailure(job: JobRow, error: string, attempts: number, sessionKey?: string): void {
     const at = this.options.clock()
-    this.options.onFailed?.(job, { at, error, ...(sessionKey ? { sessionKey } : {}) })
+    const current = this.options.repo.get(job.idempotencyKey)
+    const mark = current ? dispatchMarkOf(current) : undefined
+    sessionKey ??= mark?.runId ? mark.sessionKey : undefined
+    this.options.onFailed?.(job, {
+      at,
+      error,
+      ...this.runIdentity(job),
+      ...(sessionKey ? { sessionKey } : {}),
+    })
     const next =
       this.options.recurAfterFailure?.(job) === true
         ? nextAfterCompletion(job.schedule, at, {
@@ -415,18 +466,19 @@ export class Scheduler {
           })
         : null
     if (next === null) {
+      if (this.options.onFailed)
+        this.options.onSettled?.(job, { at, nextRunAt: null, status: 'completed', ...this.runIdentity(job) })
       this.options.repo.settle(job.idempotencyKey, { status: 'failed', error, attempts })
-      if (this.options.onFailed) this.options.onSettled?.(job, { at, nextRunAt: null, status: 'completed' })
       return
     }
     // A failed occurrence does not end a repeating task: the next one starts with fresh attempts.
+    this.options.onSettled?.(job, { at, nextRunAt: next, status: 'waiting', ...this.runIdentity(job) })
     this.options.repo.settle(job.idempotencyKey, {
       status: 'waiting',
       error,
       attempts: 0,
       delayUntil: next,
     })
-    this.options.onSettled?.(job, { at, nextRunAt: next, status: 'waiting' })
   }
 
   doctor(): { stalledForever: string[]; waitingDepth: Array<{ sessionKey: string; depth: number }> } {

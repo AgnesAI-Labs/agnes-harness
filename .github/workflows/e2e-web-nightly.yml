@@ -1,12 +1,26 @@
-name: Web E2E nightly
-# The full narrow-screen matrix (every locale/theme at 375, 390 and 768 pixels) on macOS and Linux.
-# Pull requests run only its en/light phone and tablet pass; see tools/e2e-web/README.md (Gate).
+name: Nightly E2E dispatcher
+run-name: ${{ github.event_name == 'schedule' && 'Nightly E2E dispatch → develop' || format('Web E2E manual · {0}', github.ref_name) }}
+# GitHub schedules start on the default branch; the tests themselves run on develop.
 on:
   schedule:
-    - cron: '17 3 * * *'
+    - cron: '0 18 * * *'
   workflow_dispatch:
 permissions: { contents: read }
 jobs:
-  narrow:
+  dispatch-develop:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: { actions: write }
+    steps:
+      - name: Run the full CI and browser suite on develop
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh workflow run ci.yml --repo "$GH_REPO" --ref develop --field browsers=true
+          echo "Dispatched full CI + Web E2E to develop. Check its result at https://github.com/$GH_REPO/actions/workflows/ci.yml?query=branch%3Adevelop+event%3Aworkflow_dispatch" >> "$GITHUB_STEP_SUMMARY"
+  browsers:
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/e2e-web.yml
-    with: { suite: narrow-nightly }
+    with: { suite: nightly }

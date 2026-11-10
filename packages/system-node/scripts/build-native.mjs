@@ -8,9 +8,18 @@ import { linuxBuild } from '../../../tools/native/linux-build.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
+// The Windows test build compiles in failure injection for restricted launches. It must go to its
+// own directory: the package loader and the process broker refuse it, and it is never shipped.
+const testFaults = args.at(-1) === '--test-faults'
+if (testFaults) args.pop()
 if (args.length && (args.length !== 2 || args[0] !== '--output-dir' || !isAbsolute(args[1])))
   throw new Error('Expected --output-dir with an absolute directory')
 const output = args[1] ?? join(root, 'dist', 'native')
+if (
+  testFaults &&
+  (process.platform !== 'win32' || !args.length || resolve(output) === resolve(root, 'dist', 'native')) // guards-allow-platform: the test build exists for Windows only.
+)
+  throw new Error('--test-faults builds the Windows test artifact into its own --output-dir')
 mkdirSync(output, { recursive: true })
 
 if (process.platform === 'darwin') {
@@ -102,6 +111,27 @@ if (!existsSync(join(include, 'node_api.h')) || !existsSync(library))
 const parentEnv = { ...process.env }
 delete parentEnv.CL
 
+function runMsvcPhase(phase, ...args) {
+  if (process.env.AGNES_NATIVE_BUILD_TRACE !== '1') return execFileSync(...args)
+  const started = performance.now()
+  const record = (event, result = {}) =>
+    process.stderr.write(
+      `${JSON.stringify({ nativeBuildTrace: true, phase, event, hasVCToolsInstallDir: !!process.env.VCToolsInstallDir, ...result })}\n`,
+    )
+  record('begin')
+  let exitCode = 0
+  let signal = null
+  try {
+    return execFileSync(...args)
+  } catch (error) {
+    exitCode = typeof error.status === 'number' ? error.status : null
+    signal = typeof error.signal === 'string' ? error.signal : null
+    throw error
+  } finally {
+    record('end', { durationMs: performance.now() - started, exitCode, signal })
+  }
+}
+
 let environment = parentEnv
 if (!process.env.VCToolsInstallDir) {
   const vswhere = join(
@@ -113,7 +143,8 @@ if (!process.env.VCToolsInstallDir) {
   // vswhere 输出的是 ANSI 码页字节（VS 装在含中文等非 ASCII 路径时 Node 按 UTF-8 解码会得到乱码）。
   // 借 PowerShell 按系统 ANSI 码页解码，再以 UTF-8 回传给 Node。
   const quoted = vswhere.replaceAll("'", "''")
-  const install = execFileSync(
+  const install = runMsvcPhase(
+    'msvc-discovery',
     'powershell.exe',
     [
       '-NoProfile',
@@ -143,7 +174,8 @@ if (!process.env.VCToolsInstallDir) {
     ].join('\n'),
     'utf8',
   )
-  execFileSync(
+  runMsvcPhase(
+    'msvc-environment',
     'powershell.exe',
     ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', bridge, setup, envDump],
     { encoding: 'utf8', windowsHide: true },
@@ -166,7 +198,8 @@ const cl = (environment.PATH ?? '')
   .split(';')
   .map((dir) => join(dir.trim(), 'cl.exe'))
   .find((candidate) => existsSync(candidate))
-execFileSync(
+runMsvcPhase(
+  'msvc-compile-link',
   cl ?? 'cl.exe',
   [
     '/nologo',
@@ -177,6 +210,7 @@ execFileSync(
     '/O2',
     '/std:c++17',
     '/DNAPI_VERSION=8',
+    ...(testFaults ? ['/DAGNES_TEST_FAULTS'] : []),
     `/I${include}`,
     join(root, 'native', 'windows.cc'),
     join(root, 'native', 'node-delay-load.cc'),

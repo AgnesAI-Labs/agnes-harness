@@ -525,7 +525,7 @@ export function createLocalEndpoint(
           denyFork()
         }
         try {
-          const parentBinding = await workspaces.restoreBinding(sessionId)
+          const parentBinding = await workspaces.restoreDerivedBinding(sessionId, ownedChildKey)
           const childBinding = await workspaces.authorizeAndBind(
             ownedChildKey,
             parentBinding.canonicalRoot,

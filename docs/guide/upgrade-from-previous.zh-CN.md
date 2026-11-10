@@ -98,7 +98,7 @@ Remove-Item Env:AGNES_HOME, Env:AGH_HOME, Env:AGNES_PROFILE -ErrorAction Silentl
 
 ## 安装并重新开始
 
-按[安装指南](install.zh-CN.md)使用固定工具链构建新 revision，再按[快速开始](quickstart.zh-CN.md)运行 `node agnes.mjs serve`，打开打印的地址。源码预览不承诺已有公开 npm 安装器。Windows 仍没有完成端到端验收，也没有已验证的 L1 命令沙箱，见[平台限制](../reference/limitations.zh-CN.md)。
+按[安装指南](install.zh-CN.md)使用固定工具链构建新 revision，再按[快速开始](quickstart.zh-CN.md)运行 `node agnes.mjs serve`，打开打印的地址。源码预览不承诺已有公开 npm 安装器。Windows 仍没有完成端到端验收，也没有 L1 命令沙箱，只有部分的写限制，见[平台限制](../reference/limitations.zh-CN.md)。
 
 重新添加模型账户与凭据、选择默认模型、安装并审查插件，重建需要的设置、工作区登记和自动化任务。可以用[本地 Demo](demo.zh-CN.md)先检查新环境，无需付费模型。新历史中不会出现旧会话。
 

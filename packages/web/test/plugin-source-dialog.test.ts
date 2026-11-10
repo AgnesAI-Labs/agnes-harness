@@ -50,7 +50,7 @@ function backend(inspect: (body: Record<string, unknown>) => Response): Fetcher 
   })
 }
 
-async function mount(fetcher: Fetcher, before?: () => void): Promise<void> {
+async function mount(fetcher: Fetcher, before?: () => void) {
   await renderPluginHost()
   before?.()
   history.replaceState(null, '', '/admin/plugins#source-dialog-token')
@@ -64,6 +64,7 @@ async function mount(fetcher: Fetcher, before?: () => void): Promise<void> {
   await vi.waitFor(() =>
     expect((document.querySelector('#plugin-list') as HTMLElement).textContent).not.toContain('正在'),
   )
+  return mounted
 }
 
 const sourceDialog = () => document.getElementById('source-dialog') as HTMLDialogElement
@@ -159,6 +160,44 @@ it.each([
   expect(sent.source).toEqual({ type, ref: expected })
   await vi.waitFor(() => expect(sourceDialog().open).toBe(false))
 })
+
+it.each(['ready', 'revoked', 'offline', 'disposed'] as const)(
+  'checks a source against the inventory refresh that overlaps submission: %s',
+  async (outcome) => {
+    const base = backend(() => Response.json({ operationId: 'inspect-1', profile: 'local-dev' }))
+    let finish!: (response: Response) => void
+    let refreshing = false
+    const fetcher = vi.fn<typeof fetch>((input, init) =>
+      refreshing && String(input).endsWith('/overview')
+        ? new Promise<Response>((resolve) => {
+            finish = resolve
+          })
+        : base(input, init),
+    )
+    const mounted = await mount(fetcher)
+    await openSourceDialog()
+    refreshing = true
+    const refresh = mounted.reload()
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    submit('file', '/path/to/my-plugin.tgz')
+    if (outcome === 'disposed') mounted.dispose()
+    const response = await base('/overview')
+    const snapshot = await response.json()
+    if (outcome === 'revoked') snapshot.context.permissions = []
+    finish(outcome === 'offline' ? new Response('{}', { status: 503 }) : Response.json(snapshot))
+    await refresh
+    if (outcome !== 'ready') {
+      if (outcome !== 'disposed') await vi.waitFor(() => expect(sourceError().textContent).not.toBe(''))
+      expect(inspectCalls(fetcher)).toHaveLength(0)
+      expect(sourceDialog().open).toBe(true)
+      return
+    }
+    await vi.waitFor(() => expect(inspectCalls(fetcher)).toHaveLength(1))
+    const sent = JSON.parse(String(inspectCalls(fetcher)[0]?.[1]?.body)) as { source: unknown }
+    expect(sent.source).toEqual({ type: 'file', ref: 'file:/path/to/my-plugin.tgz' })
+    await vi.waitFor(() => expect(sourceDialog().open).toBe(false))
+  },
+)
 
 it('keeps the dialog open and shows the backend refusal inside it', async () => {
   const fetcher = backend(() =>

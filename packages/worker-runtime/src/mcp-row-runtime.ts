@@ -6,7 +6,7 @@ import {
   type McpToolCatalogPage,
   validateResourceControlData,
 } from '@agnes/protocol'
-import { mcpConnectionFailure } from '@agnes/resource-control-runtime'
+import { McpOAuthNeedsReconnectError, mcpConnectionFailure } from '@agnes/resource-control-runtime'
 import { withMcpCatalogReadScope } from './mcp-catalog-scope.js'
 import {
   type McpServerRowsResult,
@@ -33,8 +33,14 @@ const observedAt = (): string => new Date().toISOString()
  * is running, and a timestamp. `revision` is this row's own mount identity input, not a live read -
  * a row survives unchanged across `apply()` calls exactly because its revision did not change, so
  * whichever revision is current when the event fires is the one this status is about.
+ * `bindingKind` is a remote server's secret binding, which decides what a 401 or 403 means.
  */
-function toMcpStatus(serverId: string, revision: string, event: ConnectionStatusEvent): McpStatus {
+function toMcpStatus(
+  serverId: string,
+  revision: string,
+  event: ConnectionStatusEvent,
+  bindingKind?: string,
+): McpStatus {
   if (event.state === 'ready')
     return {
       serverId,
@@ -48,13 +54,16 @@ function toMcpStatus(serverId: string, revision: string, event: ConnectionStatus
         : {}),
     }
   if (event.state === 'unavailable') {
-    const failure = mcpConnectionFailure(event.error)
+    const failure = mcpConnectionFailure(event.error, bindingKind)
+    // A server that needs sign-in says so even after the retries ran out: only a sign-in helps.
     const code =
-      event.reason === 'exhausted'
-        ? 'MCP_RECONNECT_EXHAUSTED'
-        : event.reason === 'lost'
-          ? 'MCP_CONNECTION_LOST'
-          : failure.code
+      failure.code === 'MCP_OAUTH_NEEDS_RECONNECT' && event.reason !== 'lost'
+        ? failure.code
+        : event.reason === 'exhausted'
+          ? 'MCP_RECONNECT_EXHAUSTED'
+          : event.reason === 'lost'
+            ? 'MCP_CONNECTION_LOST'
+            : failure.code
     return {
       serverId,
       connectionState: 'unavailable',
@@ -98,16 +107,23 @@ function statusForSkip(serverId: string, reason: string): McpStatus {
       connectionState: 'unavailable',
       lastSafeError: { code: 'MCP_UNTRUSTED_REVISION', message: reason },
     }
-  if (reason.startsWith('oauth secretBinding'))
-    return {
-      ...base,
-      connectionState: 'unavailable',
-      lastSafeError: { code: 'MCP_OAUTH_UNSUPPORTED', message: 'sessions do not connect OAuth servers' },
-    }
   return {
     ...base,
     connectionState: 'unavailable',
     lastSafeError: { code: 'MCP_DEFINITION_INVALID', message: reason },
+  }
+}
+
+/** A signed-out server's status: no connection, and only a new sign-in brings it back. */
+function statusForSignOut(serverId: string): McpStatus {
+  return {
+    serverId,
+    connectionState: 'unavailable',
+    observedRevision: null,
+    catalogRevision: null,
+    toolCount: 0,
+    observedAt: observedAt(),
+    lastSafeError: mcpConnectionFailure(new McpOAuthNeedsReconnectError(serverId)),
   }
 }
 
@@ -142,6 +158,12 @@ export type McpRowRuntime = Readonly<{
    *  past its first attempt, and gives up for good after `maxAttempts`). A no-op until the next
    *  apply(); has no effect on a server apply() has never seen. */
   reconnect(serverId: string): void
+  /** After a sign-out: drops this server's row on the *next* `apply()` and mounts none for it, so no
+   *  connection holds on to the old sign-in, until `reconnect()` (a new sign-in) or a new revision.
+   *  Its status meanwhile reads as needing sign-in. That status is not passed to `onStatus`: the
+   *  daemon records it from the sign-out's own reply, as a sign-out. A no-op for a server apply()
+   *  has never seen. */
+  signOut(serverId: string): void
   /** Servers of the last applied snapshot whose first connection is still in progress: their tools
    *  are not registered yet, so a turn starting now runs without them. */
   connecting?(): readonly Readonly<{ serverId: string; displayName: string }>[]
@@ -193,12 +215,16 @@ export function createMcpRowRuntime(
   // revision for this server has not changed. Never reported as this server's `observedRevision` -
   // `revisions` above keeps the real one for that.
   const epochs = new Map<string, number>()
+  // Set by signOut(): the revision a server was signed out at. While its entry still has that
+  // revision, apply() leaves it unmounted; reconnect() or a new revision ends it.
+  const signedOut = new Map<string, string>()
   // Every present server's last-known status, kept across apply() calls: an unchanged row fires no
   // fresh event, so its status here is exactly the one still-accurate answer for it.
   const statuses = new Map<string, McpStatus>()
   const catalogs = new Map<string, Catalog>()
   const statusChanged = new Set<() => void>()
   const displayNames = new Map<string, string>()
+  const bindingKinds = new Map<string, string>()
   const cap = deps.firstAttemptTimeoutMs ?? FIRST_ATTEMPT_TIMEOUT_MS
   const attempts = new Map<Promise<unknown>, number>()
   return Object.freeze({
@@ -212,20 +238,36 @@ export function createMcpRowRuntime(
             statuses.delete(serverId)
             catalogs.delete(serverId)
             epochs.delete(serverId)
+            signedOut.delete(serverId)
             for (const notify of statusChanged) notify()
           }
         displayNames.clear()
+        bindingKinds.clear()
         for (const entry of entries) {
           revisions.set(entry.definition.serverId, entry.revision)
           displayNames.set(entry.definition.serverId, entry.definition.displayName)
+          if (entry.definition.transport.kind !== 'stdio')
+            bindingKinds.set(entry.definition.serverId, entry.definition.secretBinding.kind)
         }
+        for (const [serverId, revision] of signedOut)
+          if (revisions.get(serverId) !== revision) signedOut.delete(serverId)
+        // A signed-out server that would otherwise run gets no row; a disabled or untrusted one is
+        // skipped for that reason, as before.
+        const dropped = entries.filter(
+          (entry) =>
+            signedOut.has(entry.definition.serverId) &&
+            entry.desired === 'enabled' &&
+            entry.trust === 'trusted',
+        )
         // A row's extension starts while Host applies it, so by the time Host's apply resolves this
         // holds exactly the rows Host (re)mounted in this call -- never an unchanged row.
         const started: Promise<unknown>[] = []
-        const mounting = entries.map((entry) => {
-          const epoch = epochs.get(entry.definition.serverId)
-          return epoch === undefined ? entry : { ...entry, revision: `${entry.revision}#${epoch}` }
-        })
+        const mounting = entries
+          .filter((entry) => !dropped.includes(entry))
+          .map((entry) => {
+            const epoch = epochs.get(entry.definition.serverId)
+            return epoch === undefined ? entry : { ...entry, revision: `${entry.revision}#${epoch}` }
+          })
         const { rows, skipped } = mcpServerRowsFromDefinitions(mounting, deps.opener, {
           onFirstAttempt: (_serverId, ready) => {
             started.push(ready)
@@ -235,8 +277,9 @@ export function createMcpRowRuntime(
           },
           onStatus: (serverId, event) => {
             const revision = revisions.get(serverId)
-            if (revision === undefined) return
-            const status = toMcpStatus(serverId, revision, event)
+            // A signed-out server's row is going or gone; what it reports no longer describes it.
+            if (revision === undefined || signedOut.has(serverId)) return
+            const status = toMcpStatus(serverId, revision, event, bindingKinds.get(serverId))
             statuses.set(serverId, status)
             if (event.state === 'ready')
               catalogs.set(serverId, { revision, catalogRevision: event.catalogRevision, tools: event.tools })
@@ -265,6 +308,11 @@ export function createMcpRowRuntime(
           statuses.set(serverId, status)
           catalogs.delete(serverId)
           deps.onStatus?.(serverId, status)
+          for (const notify of statusChanged) notify()
+        }
+        for (const entry of dropped) {
+          statuses.set(entry.definition.serverId, statusForSignOut(entry.definition.serverId))
+          catalogs.delete(entry.definition.serverId)
           for (const notify of statusChanged) notify()
         }
         const settled = new Map<string, McpStatus>()
@@ -327,6 +375,11 @@ export function createMcpRowRuntime(
     },
     reconnect(serverId) {
       epochs.set(serverId, (epochs.get(serverId) ?? 0) + 1)
+      signedOut.delete(serverId)
+    },
+    signOut(serverId) {
+      const revision = revisions.get(serverId)
+      if (revision !== undefined) signedOut.set(serverId, revision)
     },
     connecting() {
       return [...displayNames]

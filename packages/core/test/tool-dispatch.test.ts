@@ -363,6 +363,88 @@ describe('tool result budget', () => {
     expect(text).toContain('[output truncated')
   })
 
+  const storeOf = (fail?: Error) => {
+    const puts: { bytes: Uint8Array; mime?: string }[] = []
+    const artifacts = {
+      put: async (bytes: Uint8Array, meta?: { mime?: string }) => {
+        if (fail) throw fail
+        puts.push({ bytes, ...(meta?.mime ? { mime: meta.mime } : {}) })
+        return { sha256: 'a'.repeat(64), size: bytes.length, mime: meta?.mime ?? 'application/octet-stream' }
+      },
+    }
+    return { puts, artifacts }
+  }
+  const textOf = (observation: Awaited<ReturnType<typeof dispatchTool>>) =>
+    observation.phase === 'responded'
+      ? observation.result.content.map((b) => (b.type === 'text' ? b.text : '')).join('')
+      : ''
+
+  it('keeps the whole content of a cut result in an artifact and names it in the marker', async () => {
+    const { puts, artifacts } = storeOf()
+    const content = [
+      { type: 'text', text: 'x'.repeat(2000) },
+      { type: 'text', text: 'y'.repeat(2000) },
+    ]
+    const observation = await dispatchTool({
+      name: 'plugin_tool',
+      args: {},
+      context: { outputMaxBytes: 1024, artifacts } as never,
+      attempt: 1,
+      executionDomain: 'workspace',
+      invoke: async () => ({ content }) as never,
+    })
+    expect(puts).toHaveLength(1)
+    expect(puts[0]?.mime).toBe('application/json')
+    expect(JSON.parse(new TextDecoder().decode(puts[0]?.bytes))).toEqual(content)
+    const text = textOf(observation)
+    expect(text).toContain('[output truncated')
+    expect(text).toContain(`full set stored at artifact://${'a'.repeat(64)}?size=${puts[0]?.bytes.length}`)
+    expect(text).toContain('call read with that full path')
+  })
+
+  it('still cuts when the store fails, and says it could not keep the whole content', async () => {
+    const { artifacts } = storeOf(new Error('disk full'))
+    const observation = await dispatchTool({
+      name: 'plugin_tool',
+      args: {},
+      context: { outputMaxBytes: 1024, artifacts } as never,
+      attempt: 1,
+      executionDomain: 'workspace',
+      invoke: async () => ({ content: [{ type: 'text', text: 'x'.repeat(10_000) }] }) as never,
+    })
+    const text = textOf(observation)
+    expect(text).toContain('full set could not be stored: disk full')
+    expect(text.length).toBeLessThan(1024 + 400)
+  })
+
+  it('stores nothing for a result within the budget', async () => {
+    const { puts, artifacts } = storeOf()
+    await dispatchTool({
+      name: 'plugin_tool',
+      args: {},
+      context: { outputMaxBytes: 1024, artifacts } as never,
+      attempt: 1,
+      executionDomain: 'workspace',
+      invoke: async () => ({ content: [{ type: 'text', text: 'short' }] }) as never,
+    })
+    expect(puts).toHaveLength(0)
+  })
+
+  it('keeps the whole content of a cut Host tool result too', async () => {
+    const { puts, artifacts } = storeOf()
+    const observation = await dispatchTool({
+      name: 'computer',
+      args: {},
+      context: { outputMaxBytes: 1024, artifacts } as never,
+      attempt: 1,
+      executionDomain: 'host-computer-use',
+      hostPort: { dispatch: async (input) => ({ phase: 'responded', result: await input.invoke() }) },
+      invoke: async () => ({ content: [{ type: 'text', text: 'z'.repeat(5000) }] }) as never,
+    })
+    expect(puts).toHaveLength(1)
+    expect(textOf(observation)).toContain('full set stored at artifact://')
+  })
+
   it('caps block count and replaces over-deep or over-large structured data with a marker', async () => {
     let deep: unknown = 'leaf'
     for (let i = 0; i < 100; i++) deep = { next: deep }

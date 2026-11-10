@@ -5,6 +5,13 @@ AGH is `agh/run-agh.ts` (its header comment lists the options and the cost warni
 builds the report from a run folder; `recompute.ts` recomputes the numbers of finished runs offline
 and never calls a model.
 
+The bundled suite (`tasks/`) is the four long tasks (see "The long tasks" below). The 30 short tasks of the
+first evaluation (one to two sessions of three prompts each, in six categories) were removed: their rules
+were learnt in the first session and leaked from the workspace, so they could not show what a saved lesson
+saves. The runner still reads task folders of those categories (two sessions, a second workspace,
+workflow tasks), which its tests use; the definitions of the three old tasks whose recorded runs the tests
+read are kept as data in `fixtures/tasks/`.
+
 ## Known limits of the first evaluation
 
 These were found by reading the ledgers of the first full AGH run (180 runs, 30 tasks, one model); no
@@ -62,25 +69,26 @@ failed call, so in any unattended session (`agh -p`, `agh run`, a scheduled run,
 workflow that ran to the end is reported to the model as an unknown outcome. `deliverables` guards the same call by checking
 that `ui_render` exists; `workflow` and `workflow_status` do not.
 
-### Saved skills are not offered to the agent in the eval host (still open)
+### Saved skills were not offered to the agent in the eval host
 
-Saving a skill now works (it lands in the workspace's skills folder, above), but the embedded host never
-scans skills on disk, so a saved skill is never offered to the agent: not to a later session, and not to
+Saving a skill worked (it landed in the workspace's skills folder, above), but the embedded host never
+scanned skills on disk, so a saved skill was never offered to the agent: not to a later session, and not to
 the session that saved it. Evidence from a smoke run's own captured requests (`home/data/model-requests`):
 the workflow task's `on` run installed `release-request-workflow` at the end of its first session, and all
 161 requests it made after that offered only the bundled `remembering` skill in their `<available_skills>`.
-A product fix is being made separately.
+Results recorded before the fix that depend on a saved skill (the `on` arm's, every workflow result, the
+skill part of the frozen arm) are invalid.
 
-Until skills are offered in the embedded host, these results are invalid and must not be reported as
-findings:
+Now: a host the CLI embeds offers the skills it finds on disk, scanned when a session first reads skills
+(so a new session sees every saved skill), and `Booted.refreshSkills()` asks for a scan before the next
+skill read of any session. The runner wraps the skill transport so that every save the handler accepts
+(`ok: true`) is followed by that refresh (`refreshAfterSave` in `agh/skill-save.ts`): the session that
+saved a skill is offered it from its next request. `agh/skill-save.test.ts` saves a skill through the
+transport and reads the host's skill view the way a turn does, with and without the refresh.
 
-- the `on` arm's results that depend on a saved skill, in any category, and every result of the workflow
-  tasks (workflow reuse runs through the skill the first session saves);
-- the skill part of the frozen arm (its memory part stands).
-
-`smoke-check.ts` therefore does not accept a skill folder on disk as a saved skill: it also requires the
+`smoke-check.ts` still does not accept a skill folder on disk as a saved skill: it also requires the
 skill in the catalogue of a later request of the `on` run, and a frozen run's seeded skills in its first
-request's catalogue. Those two checks are expected to FAIL until the fix lands, and say so.
+request's catalogue.
 
 ## The oracle arm and the capture rate
 
@@ -90,15 +98,17 @@ request's catalogue. Those two checks are expected to FAIL until the fix lands, 
 - `oracle` is `off` (refinement off) plus one paragraph, the task's own `trap.note`, written to the
   second session's workspace memory after the first session ends and before the second one opens. It goes
   through the memory provider's own edit of `MEMORY.md`, the one the memory page makes, so the agent
-  reads it like any hand-written memory. The first session is the off run's. Only tasks of two sessions
-  that are not workflow tasks have this arm; the runner skips the others for it.
+  reads it like any hand-written memory. The first session is the off run's. Only tasks of two or more
+  sessions (or with `oracle.afterPrompt`) that are not workflow tasks have this arm; the runner skips the
+  others for it.
 - `sessionCost(run, session)` (`metrics.ts`) is what a session cost, summed from the rows of its own
   ledger (every lane, so the review calls of the `on` arm count): model requests, tokens, dollars. A
   parent ledger holds only a `subagent/cost` marker for each child session, without an amount, so a
   session with children, or a request without a price, is reported as a lower bound.
-- The report gets a section "Second-session cost and capture rate" (`secondSession` in `report.json`).
-  It covers the second session of two-session tasks only: single-session tasks have none, workflow
-  tasks have no oracle arm. It gives the three arms' costs side by side, `off - on` and `off - oracle`
+- The report gets a section "Cost after the first session and capture rate" (`secondSession` in `report.json`).
+  It covers the sessions after the first (`laterSessionsCost`: the second session of a two-session task,
+  sessions 2 to N together of a long task of N): single-session tasks have none, workflow tasks have no
+  oracle arm. It gives the three arms' costs side by side, `off - on` and `off - oracle`
   with 95% intervals over tasks, and the capture rate
   `sum(off - on) / sum(off - oracle)` (`capture.ts`).
 - The capture rate is computed over the tasks where the hand-written lesson saves something: the
@@ -106,6 +116,13 @@ request's catalogue. Those two checks are expected to FAIL until the fix lands, 
   (the interval includes 0, or the lesson costs more) are listed as no headroom and counted; tasks with
   fewer than two off or oracle runs cannot be judged and are listed too. The exclusion looks at
   `off - oracle` only, never at `on`. With no task left there is no rate, which is not a pass.
+- Pass criterion (1) is this rate for model requests (every lane): above 0 with a 95% interval that
+  excludes 0. The earlier rule, a repeat-error drop above 0 with an interval excluding 0, is still
+  computed and printed next to it as the old rule, for comparison only (`previousCriterion1`).
+- "Saved lessons in context at the start of a later session" (`lessonsInContext`) counts the later
+  sessions of `on` runs whose first task-experience snapshot (the `x/core/refinement-prefix-change` row
+  with reason `experience-snapshot`) carried at least one entry saved to workspace or user memory, with
+  the trap hits per later session of each arm next to it.
 - The refinement runs of the `on` arm review after every prompt, as the Prime runs do, which is more often
   than real use, so the `on` column costs more than real use would. Compare against Prime on the same terms.
 
@@ -114,9 +131,10 @@ call. A run folder made before this section existed shows the off and on columns
 
 ## Smoke run of the evaluation changes
 
-`scripts/smoke-v2.sh` runs the minimum real runs into a new folder, one repetition each: one two-session
-task (default `cross-01-build-subdir`) with `--arms off,on,oracle` and then `frozen` from that `on` run,
-and one workflow task (default `wf-01-release-channel`) with `--arms on`, after a preflight call. It then prints the checklist of
+`scripts/smoke-v2.sh` runs the minimum real runs into a new folder, one repetition each: one long task
+(default `long-01-release-train`) with `--arms off,on,oracle,frozen`, the frozen run copying that `on` run,
+and, when `SMOKE_WORKFLOW_TASK` names one, a workflow task with `--arms on` (the suite holds none now), after
+a preflight call. It then prints the checklist of
 `smoke-check.ts` as PASS, FAIL or WARN lines and exits non-zero if any check failed. It spends model calls.
 
 ```
@@ -132,10 +150,9 @@ The checklist:
 - no skill save is refused `unavailable`, and a skill the review proposed is in the workspace's skills
   folder (WARN when the model proposed no skill: run again);
 - a skill an `on` run installed is offered in the skill catalogue of a later request of that run, and the
-  frozen run is offered its seeded skills from its first request (both expected to FAIL for now, see the
-  known limits; WARN when there is nothing to judge by);
+  frozen run is offered its seeded skills from its first request (WARN when there is nothing to judge by);
 - the off and oracle runs wrote no skill;
-- the workflow run of the first session is counted as finished;
+- with a workflow task, its first session's workflow run is counted as finished;
 - the oracle run's workspace memory holds the lesson, the off run's does not, and it was written
   between the two sessions;
 - the oracle run's first session matches the off run's: the same prompts, system prompt, tool schema and
@@ -182,16 +199,26 @@ The report also prints, at its head, the model, route, upstream (without credent
 and flags the prices as assumed when the run config says `"pricesAssumed": true`. It prints the share of
 runs whose first session hit the trap, per arm and per task, and names the tasks where no run did.
 
+## Runs the host's verifier blocked are not task failures
+
+The host checks every turn; when the check fails (for example `tool_call_as_text`, a tool call the model
+wrote as text, so it never ran) it asks the model to repair the turn, and when that does not take it ends
+the turn `blocked`. The harness stopped that run, not its task. The runner records it as `blocked` in the
+outcome (session, prompt and the verifier's reasons, from the ledger's `x/core/verifier-recovery` row;
+`blocked.ts`), the report leaves it out of every metric and lists such runs per arm with their reasons, and
+the next start of the same command redoes it once, noted in `blocked-runs.jsonl`, under a new proxy id as
+an infrastructure redo is. A run blocked again is left as blocked.
+
 ## What the capture rate does and does not say
 
 The report prints the capture rate as `rate = numerator / denominator over N of M tasks; 95% CI a to b`,
 never as a bare number, and the means of the three arms over the tasks of the rate next to the means over
 every task.
 
-- **Which runs count.** Only second sessions that completed and passed their checks enter the means and the
-  rate. A second session that stopped early looks cheap and one that timed out looks dear, so neither says
-  what completing the task costs. The report counts the ones left out per arm and reason (the run never
-  reached its second session, it timed out, a session did not complete, a check failed).
+- **Which runs count.** Only runs whose sessions after the first all completed and passed their checks enter
+  the means and the rate. A run that stopped early looks cheap and one that timed out looks dear, so neither
+  says what completing the task costs. The report counts the ones left out per arm and reason (the run never
+  reached its second session, it timed out, a session did not complete, a check failed or was not reached).
 - **Headroom on other runs.** Whether the hand-written lesson saves anything for a task is decided, when you
   give `report.ts --headroom-dir <pilot folder>`, on the pilot's `off` and `oracle` runs, and the rate sums
   the full run's own `off`, `on` and `oracle` runs. Deciding on the same `off` runs that the numerator then
@@ -208,8 +235,11 @@ every task.
 
 ## Long tasks, milestones and the request cap
 
-A task of the category `long` is one session of many stages, one prompt each (or two sessions). The
-category has no floor of five tasks; the categories of the first suite keep theirs.
+A task of the category `long` is a run of many stages, one prompt each, in one session or in up to ten
+sessions over the same workspace. Each session is a new conversation that picks the work up where the last
+one left it, so what the agent learnt in an earlier session is not in its context any more; only what was
+saved (memory, skills) or left in the files carries over. A session of a long task may hold a single
+prompt. No category has a floor of tasks.
 
 - **Milestones.** A prompt with `"milestone": "<name>"` has its checks run right after it, in the live
   workspace, before any review. The run stops at the first milestone whose checks fail (`stopped` in the
@@ -217,8 +247,8 @@ category has no floor of five tasks; the categories of the first suite keep thei
   The self-check judges a milestone the same way: before and after its own solution, with every earlier
   solution applied, and not in the final state.
 - **What was spent by each prompt.** The runner records when each prompt's turn ended (`prompts` in the
-  outcome). The report reads from the session's ledger what had been spent by then: main-lane tool calls,
-  requests, tokens and dollars (all lanes, and without the refinement lane).
+  outcome). The report reads from the ledgers what the run had spent by then, over every session so far:
+  main-lane tool calls, requests, tokens and dollars (all lanes, and without the refinement lane).
 - **Report.** Per task, one row per run with what it had spent at each milestone it passed, the row stopping
   where the run stopped (a failed milestone, the cap, a timeout); per arm and milestone, how many runs reached
   it and the medians of those that did; and one point per run of milestones reached against what the whole run
@@ -230,6 +260,20 @@ category has no floor of five tasks; the categories of the first suite keep thei
   turn and records `capped` with the session and prompt. Capped runs are listed apart in the report and left
   out of every mean; they appear in the milestone curves, which stop at the cap. The cap counts every request
   of the run, the review calls included. The session timeout still applies; size it to the cap.
+
+### The long tasks
+
+`tasks/long-01-release-train` to `tasks/long-04-test-harness` are four such tasks of ten milestones each, five
+sessions of two milestones over one workspace, in four domains (a release tool, a vendor data import, a config deployer, a test harness). Each tool enforces
+one rule that no prompt states, that its error does not spell out and that nothing in the workspace shows:
+the tool's source (`tool/<name>.py`, outside the fixture) is packed into `fixture/bin/<name>` by
+`long-tools.ts`, so reading the launcher shows neither its checks nor its messages. The launcher is a shell
+script that runs the source with the macOS command line tools' own Python when there is one: inside the
+eval sandbox the `/usr/bin/python3` shim prints cache warnings to stderr around every message, and agents
+then hide stderr, and the tool's errors with it. Each task repeats one
+multi-step procedure at every milestone. `tasks/LONG.md` (for reviewers; never copied into a workspace)
+gives each task's rule and why it cannot be read off the workspace; `long-tasks.test.ts` holds the tasks to
+that.
 
 ## Context window
 
@@ -265,10 +309,14 @@ this option is for AGH only.
 
 ## The oracle on long tasks
 
-`"oracle": { "afterPrompt": <n> }` in a task writes the lesson after prompt `n` (zero-based) of the first
-session, before the next one, instead of before a second session. For a long task that keeps the oracle's
-gap to `off` from including the first discovery of the rule, which refinement can never avoid. Two-session
-tasks without it keep the old behaviour.
+A long task of several sessions gets the lesson as a two-session task does: written to the workspace memory
+after the first session ends, before the second opens. So the oracle's gap to `off` leaves out the first
+discovery of the rule, which refinement can never avoid, and covers every later session, each of which
+starts without the rule in its context. The cost after the first session (the report's section 4) is then
+what sessions 2 to N cost together; a run that stopped before its last session is left out of it.
+
+`"oracle": { "afterPrompt": <n> }` in a task instead writes the lesson after prompt `n` (zero-based) of the
+first session, before the next one; that is for a long task of one session.
 
 ## The frozen arm
 
@@ -277,14 +325,24 @@ before the first session the run starts with exactly what the `on` run of the sa
 that folder saved: its saved workspace memory paragraphs, its saved user memory sections and its installed
 workspace skills (`agh/frozen.ts`). Not the notes the agent wrote into memory itself (an `off` run writes
 those too) and not the work it left in the files. The runner refuses a missing source, one that is not an
-`on` run, and one the upstream ended; it checks every source before the first run starts.
+`on` run, one the upstream ended, and one the host's verifier blocked (it saved only part of a run); it
+checks every source before the first run starts.
+
+The on runs and the frozen runs can be made in one invocation: `--reps 5 --arms on,off,oracle,frozen
+--frozen-from <the same folder as --out>`. Then frozen always runs right after the on run of the same task
+and repetition (`orderArms` moves it behind `on` whatever order `--arms` names), its source is checked at
+that point instead of before the first run, and a frozen run whose on run cannot be a source (blocked,
+ended by the upstream) is skipped with a message while the others go on; start the same command again to
+redo the on run and then its frozen run. With `--frozen-from` another folder, the sources must all be there
+before the start, as before.
 
 - The paragraphs are written as hand-written memory text, without their markers: a saved paragraph is shown
   to the agent only while the host's registry vouches for it, and the fresh run's registry knows nothing of
-  another run's saves.
+  another run's saves. So the frozen arm reaches the model through the memory note, while an `on` run's
+  saved lessons reach it through the task-experience snapshot: the same text by a different path, under
+  the memory note's byte limit rather than the snapshot's entry and token limits.
 - The skills are copied into the workspace's skills folder before the host starts, where the `on` run left
-  them. The embedded host does not offer skills it finds on disk (see the known limits), so until that is
-  fixed the skill part of the frozen arm is invalid and the arm is a test of the saved memory only.
+  them, and the host offers them from the first request.
 - The runner records which throwaway workspace each fixture used (`workspaces` in the outcome), so a later
   frozen run can find each workspace's memory. A source recorded before that is accepted only for a task of
   one workspace.
@@ -306,7 +364,7 @@ pool the two.
 ## Rule forgetting
 
 For every run, the report says whether the trap rule was broken again after the first hit: later in the same
-session (and of those, after a compaction), or in the second session, from the ledgers and with the same trap
+session (and of those, after a compaction), or in a later session, from the ledgers and with the same trap
 rule as the other metrics. If `off` never breaks the rule again there is nothing for a saved lesson to save.
 On the first evaluation's 13-run sample: of 4 `off` runs that hit the trap, 1 broke the rule again later in
 the same session and 1 of the 2 with a second session broke it there.

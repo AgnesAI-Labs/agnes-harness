@@ -1,4 +1,9 @@
-import { type ModelSettings, minimumContextBudget, type ThinkingLevel } from '@agnes/protocol'
+import {
+  type ConfigAccount,
+  type ModelSettings,
+  minimumContextBudget,
+  type ThinkingLevel,
+} from '@agnes/protocol'
 import {
   contextBudgetPresets,
   modelThinkingOptions,
@@ -8,6 +13,27 @@ import {
 import type { ModelPickerOption, ModelPickerSettings } from './types.js'
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string
+
+/** Display metadata is account-scoped; the runtime catalogue still owns IDs and capabilities. */
+export function namedModels(
+  models: readonly ModelPickerOption[],
+  accounts: readonly Pick<ConfigAccount, 'route' | 'label' | 'models'>[],
+): ModelPickerOption[] {
+  const names = new Map(
+    accounts.map((account) => [
+      account.route,
+      {
+        label: account.label,
+        models: new Map(account.models.map((model) => [model.id, model.name])),
+      },
+    ]),
+  )
+  return models.map((model) => {
+    const account = names.get(model.route)
+    const name = account?.models.get(model.id)
+    return { ...model, ...(account ? { label: account.label } : {}), ...(name ? { name } : {}) }
+  })
+}
 
 export function sameOption(
   left: ModelPickerOption | undefined,
@@ -32,7 +58,10 @@ export function groupModels(
   const groups = new Map<string, ModelGroup>()
   for (const option of options) {
     const label = option.label ?? fallbackLabel
-    if (needle && ![option.id, option.route, label].some((text) => text.toLowerCase().includes(needle)))
+    if (
+      needle &&
+      ![option.name ?? '', option.id, option.route, label].some((text) => text.toLowerCase().includes(needle))
+    )
       continue
     const key = JSON.stringify([option.route, label])
     const group = groups.get(key) ?? { key, label, entries: [] }

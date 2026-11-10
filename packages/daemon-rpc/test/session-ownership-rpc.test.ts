@@ -514,3 +514,83 @@ describe('authenticated session ownership RPC guard', () => {
     }
   })
 })
+
+it.each(['pending', 'missing', 'foreign', 'host-refusal'] as const)(
+  'does not activate scheduled-owner recovery for %s',
+  async (mode) => {
+    const { MemorySessionPrincipalOwnership } = await import(
+      '@agnes/daemon-foundation/storage/session-ownership'
+    )
+    const { ManagedChatAuthority } = await import('@agnes/daemon-foundation/storage/managed-chat-authority')
+    const { MemoryWorkspaceBindings, MemoryWorkspaceStore, WorkspaceCatalog, workspaceIdFor } = await import(
+      '@agnes/daemon-foundation/storage/workspaces'
+    )
+    const { MemorySessionWorkspaces } = await import('@agnes/daemon-foundation/storage/lister')
+    const { resolveWorkspaceDirectory } = await import('@agnes/host')
+    const h = await openTestHost()
+    const root = realpathSync(h.dataDir)
+    const ownership = new MemorySessionPrincipalOwnership()
+    const bindings = new MemoryWorkspaceBindings()
+    const authority = new ManagedChatAuthority(undefined, bindings, root)
+    await authority.initialize({ bindings: [], schedules: [{ scheduleId: 'task', targetRoot: root }] })
+    const workspaces = new WorkspaceCatalog(
+      new MemoryWorkspaceStore(),
+      new MemorySessionWorkspaces(),
+      resolveWorkspaceDirectory,
+      Date.now,
+      bindings,
+      { legacy: root },
+      undefined,
+      authority,
+    )
+    await workspaces.add(root)
+    const key = `scheduled-${mode}`
+    ownership.bindNew(key, 'intended')
+    if (mode !== 'missing')
+      authority.reserveScheduledBinding({
+        runId: 'run',
+        jobKey: 'job',
+        taskId: 'task',
+        revision: 1,
+        sessionKey: key,
+        root,
+      })
+    bindings.putIfAbsent({
+      sessionKey: key,
+      workspaceId: workspaceIdFor(root),
+      revision: 1,
+      canonicalRoot: root,
+    })
+    if (mode === 'foreign' || mode === 'host-refusal') authority.commitScheduledBinding(key)
+    const endpoint = h.endpoint({
+      workspaces,
+      sessionOwnership: ownership,
+      identity: {
+        principalId: mode === 'foreign' ? 'other' : 'intended',
+        authKind: 'local',
+        credentialKind: 'local',
+      },
+    })
+    const denied =
+      mode === 'host-refusal'
+        ? vi.spyOn(h.host, 'createSession').mockRejectedValue(new Error('Host policy refused'))
+        : undefined
+    try {
+      await endpoint.handle(initialize)
+      const response = await endpoint.handle({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'session/load',
+        params: { sessionId: key, cwd: root, mcpServers: [] },
+      })
+      expect(response).toHaveProperty('error')
+      expect(ownership.resolve(key)).toBeUndefined()
+      expect(ownership.ownsNewReservation(key, 'intended')).toBe(true)
+      if (denied) expect(denied).toHaveBeenCalled()
+    } finally {
+      denied?.mockRestore()
+      await endpoint.close()
+      await h.close()
+    }
+  },
+)

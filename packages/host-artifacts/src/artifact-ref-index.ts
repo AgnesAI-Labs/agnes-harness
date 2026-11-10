@@ -73,9 +73,11 @@ export async function withIndexTransaction<T>(
   index: DatabaseSync,
   operation: () => T,
   waitMs = MUTATION_LOCK_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<T> {
-  await beginImmediateWithBackoff(index, waitMs, 'Computer Use artifact reference index is busy')
+  await beginImmediateWithBackoff(index, waitMs, 'Computer Use artifact reference index is busy', signal)
   try {
+    signal?.throwIfAborted()
     const result = operation()
     index.exec('COMMIT')
     return result
@@ -93,7 +95,8 @@ export async function withIndexTransaction<T>(
  * Opens the Host-private reference index: a disposable cache derived from the ledger. A failed
  * integrity check fails the round closed; it is never rebuilt in place or replaced by path.
  */
-export async function openArtifactRefIndex(dataDir: string): Promise<DatabaseSync> {
+export async function openArtifactRefIndex(dataDir: string, signal?: AbortSignal): Promise<DatabaseSync> {
+  signal?.throwIfAborted()
   const index = openPrivateArtifactDatabase(
     dataDir,
     ARTIFACT_REF_INDEX_FILE,
@@ -110,24 +113,29 @@ export async function openArtifactRefIndex(dataDir: string): Promise<DatabaseSyn
       throw new Error(
         `Computer Use artifact reference index failed its integrity check; it is a disposable cache, delete ${ARTIFACT_REF_INDEX_FILE} and the next collection rebuilds it`,
       )
-    await withIndexTransaction(index, () => {
-      const hasMeta = index
-        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'")
-        .get()
-      const meta = hasMeta ? (index.prepare('SELECT key, value FROM meta').all() as MetaRow[]) : []
-      const value = (key: string) => meta.find((row) => row.key === key)?.value
-      if (
-        value('schema_version') === SCHEMA_VERSION &&
-        value('extractor_version') === ARTIFACT_REF_EXTRACTOR_VERSION
-      )
-        return
-      for (const table of ['artifact_ref', 'session_cursor', 'meta'])
-        index.exec(`DROP TABLE IF EXISTS ${table}`)
-      for (const statement of SCHEMA) index.exec(statement)
-      index
-        .prepare("INSERT INTO meta VALUES ('schema_version', ?), ('extractor_version', ?)")
-        .run(SCHEMA_VERSION, ARTIFACT_REF_EXTRACTOR_VERSION)
-    })
+    await withIndexTransaction(
+      index,
+      () => {
+        const hasMeta = index
+          .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta'")
+          .get()
+        const meta = hasMeta ? (index.prepare('SELECT key, value FROM meta').all() as MetaRow[]) : []
+        const value = (key: string) => meta.find((row) => row.key === key)?.value
+        if (
+          value('schema_version') === SCHEMA_VERSION &&
+          value('extractor_version') === ARTIFACT_REF_EXTRACTOR_VERSION
+        )
+          return
+        for (const table of ['artifact_ref', 'session_cursor', 'meta'])
+          index.exec(`DROP TABLE IF EXISTS ${table}`)
+        for (const statement of SCHEMA) index.exec(statement)
+        index
+          .prepare("INSERT INTO meta VALUES ('schema_version', ?), ('extractor_version', ?)")
+          .run(SCHEMA_VERSION, ARTIFACT_REF_EXTRACTOR_VERSION)
+      },
+      undefined,
+      signal,
+    )
     return index
   } catch (error) {
     index.close()
@@ -351,8 +359,12 @@ function advanceChunk(
  * Drops index state for sessions that no longer exist in the ledger, then returns the live
  * sessions that still need a chunk: no cursor yet, a broken anchor, or rows after the cursor.
  */
-async function sessionsNeedingWork(ledger: DatabaseSync, index: DatabaseSync): Promise<string[]> {
-  const cursors = await withIndexTransaction(index, () => readCursors(index))
+async function sessionsNeedingWork(
+  ledger: DatabaseSync,
+  index: DatabaseSync,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const cursors = await withIndexTransaction(index, () => readCursors(index), undefined, signal)
   let states: Map<string, SessionState>
   ledger.exec('BEGIN')
   try {
@@ -362,10 +374,15 @@ async function sessionsNeedingWork(ledger: DatabaseSync, index: DatabaseSync): P
   }
   const gone = [...cursors.keys()].filter((key) => !states.has(key))
   if (gone.length > 0)
-    await withIndexTransaction(index, () => {
-      const exists = cached(ledger, 'SELECT 1 FROM events WHERE session_key = ? LIMIT 1')
-      for (const key of gone) if (!exists.get(key)) resetSession(index, key)
-    })
+    await withIndexTransaction(
+      index,
+      () => {
+        const exists = cached(ledger, 'SELECT 1 FROM events WHERE session_key = ? LIMIT 1')
+        for (const key of gone) if (!exists.get(key)) resetSession(index, key)
+      },
+      undefined,
+      signal,
+    )
   return [...states].flatMap(([key, state]) =>
     !state.cursor || !state.anchorHolds || state.lastSeq !== state.cursor.last_seq ? [key] : [],
   )
@@ -378,17 +395,25 @@ async function sessionsNeedingWork(ledger: DatabaseSync, index: DatabaseSync): P
 export async function catchUpArtifactRefIndex(
   input: Readonly<{ ledger: DatabaseSync; index: DatabaseSync; signal: AbortSignal }>,
 ): Promise<'complete' | 'aborted'> {
-  for (const sessionKey of await sessionsNeedingWork(input.ledger, input.index))
-    for (;;) {
-      if (input.signal.aborted) return 'aborted'
-      const chunk = await withIndexTransaction(input.index, () =>
-        advanceChunk(input.ledger, input.index, sessionKey, REF_INDEX_CHUNK),
-      )
-      if (chunk.error !== undefined) throw chunk.error
-      await yieldToLoop()
-      if (chunk.status === 'caught-up') break
-    }
-  return input.signal.aborted ? 'aborted' : 'complete'
+  try {
+    for (const sessionKey of await sessionsNeedingWork(input.ledger, input.index, input.signal))
+      for (;;) {
+        if (input.signal.aborted) return 'aborted'
+        const chunk = await withIndexTransaction(
+          input.index,
+          () => advanceChunk(input.ledger, input.index, sessionKey, REF_INDEX_CHUNK),
+          undefined,
+          input.signal,
+        )
+        if (chunk.error !== undefined) throw chunk.error
+        await yieldToLoop()
+        if (chunk.status === 'caught-up') break
+      }
+    return input.signal.aborted ? 'aborted' : 'complete'
+  } catch (error) {
+    if (input.signal.aborted && error === input.signal.reason) return 'aborted'
+    throw error
+  }
 }
 
 /** Catch-up under the screenshot mutation lock: bounded and without yielding; false when over budget. */

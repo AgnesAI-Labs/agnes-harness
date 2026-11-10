@@ -731,6 +731,73 @@ describe('background installer for saved skills', () => {
     expect(s.registry().skills[0]).toMatchObject({ state: 'active' })
   })
 
+  it('each capacity disable leaves a registry receipt and marks the skill switched off for capacity', async () => {
+    const s = setup()
+    const first = await s.installer.install(instructions('tidy-notes'), s.ctx())
+    if (!('revision' in first)) throw new Error('not installed')
+    const before = s.registry().receipts.length
+    await s.installer.disable('tidy-notes', { revision: first.revision }, 'capacity')
+    expect(s.fake.entries.get(first.resourceId)).toMatchObject({ desired: 'disabled', removed: false })
+    expect(existsSync(join(s.skillDir('tidy-notes'), 'SKILL.md'))).toBe(true)
+    const record = s.registry().skills[0]
+    expect(record).toMatchObject({ state: 'review-disabled', disabledFor: 'capacity' })
+    const receipts = s.registry().receipts.slice(before)
+    expect(receipts).toEqual([
+      expect.objectContaining({
+        initiator: 'auto',
+        source: record?.source,
+        outcome: 'refused',
+        steps: [{ step: 'capacity', verdict: 'fail' }],
+        target: { kind: 'skill', name: 'tidy-notes', resourceId: first.resourceId, revision: first.revision },
+      }),
+    ])
+    // Already off: nothing more is written.
+    await s.installer.disable('tidy-notes', { revision: first.revision }, 'capacity')
+    expect(s.registry().receipts.slice(before)).toHaveLength(1)
+    // The review's own disable leaves no capacity mark and no receipt.
+    await s.installer.install(instructions('other-notes'), s.ctx('r2'))
+    const other = s.registry().skills.find((skill) => skill.name === 'other-notes')
+    const count = s.registry().receipts.length
+    await s.installer.disable('other-notes', { revision: other?.revision as string })
+    expect(s.registry().skills.find((skill) => skill.name === 'other-notes')).not.toHaveProperty(
+      'disabledFor',
+    )
+    expect(s.registry().receipts).toHaveLength(count)
+  })
+
+  it('an RSI update of a capacity-disabled skill keeps it disabled; enabling it clears the mark', async () => {
+    const s = setup()
+    const first = await s.installer.install(instructions('tidy-notes', 'One.'), s.ctx())
+    if (!('revision' in first)) throw new Error('not installed')
+    await s.installer.disable('tidy-notes', { revision: first.revision }, 'capacity')
+    const second = await s.installer.update('tidy-notes', instructions('tidy-notes', 'Two.'), {
+      revision: first.revision,
+    })
+    if (!('revision' in second)) throw new Error('not updated')
+    expect(s.registry().skills[0]).toMatchObject({
+      revision: second.revision,
+      state: 'review-disabled',
+      disabledFor: 'capacity',
+    })
+    expect(s.fake.entries.get(first.resourceId)).toMatchObject({ desired: 'disabled' })
+    await s.installer.rollback('tidy-notes', first.revision, { enable: true })
+    expect(s.registry().skills[0]).toMatchObject({ state: 'active' })
+    expect(s.registry().skills[0]).not.toHaveProperty('disabledFor')
+  })
+
+  it('an update keeps the mark of a skill a person switched back on', async () => {
+    const s = setup()
+    const first = await s.installer.install(instructions('tidy-notes', 'One.'), s.ctx())
+    if (!('revision' in first)) throw new Error('not installed')
+    const registry = new RefinementRegistry(s.dataDir, s.workspace, Date.now)
+    registry.update((draft) => {
+      const found = draft.skills[0]
+      if (found) found.enabledBy = 'person'
+    }, registry.read().revision)
+    await s.installer.update('tidy-notes', instructions('tidy-notes', 'Two.'), { revision: first.revision })
+    expect(s.registry().skills[0]).toMatchObject({ state: 'active', enabledBy: 'person' })
+  })
+
   it('a journal entry with a name that is not a skill name is never acted on', async () => {
     const s = setup()
     const journal = refinementSkillArchive(s.dataDir, s.workspace).journal

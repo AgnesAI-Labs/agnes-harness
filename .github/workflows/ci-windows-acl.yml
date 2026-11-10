@@ -1,0 +1,76 @@
+name: Windows ACL
+on:
+  workflow_call:
+    inputs:
+      native: { type: string, required: true }
+      types: { type: string, required: true }
+      local: { type: string, required: true }
+permissions: { contents: read }
+env: { AGNES_NATIVE_BUILDER: glibc228 }
+jobs:
+  acl:
+    name: Windows ACL execution (windows-latest)
+    runs-on: windows-latest
+    # Matches the heavy tier. The files run one at a time.
+    timeout-minutes: 60
+    steps:
+      - name: preserve repository line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with: { node-version-file: .node-version, cache: pnpm }
+      # Like the per-user Temp it replaces, the folder grants only this user, SYSTEM and
+      # Administrators, so the private homes and stores tests create under it pass validation.
+      # RUNNER_TEMP itself inherits the D: drive's broad grants.
+      - name: keep temporary files on the Windows work disk
+        shell: pwsh
+        run: |
+          $temp = Join-Path $env:RUNNER_TEMP 'private-temp'
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+          $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+          icacls $temp /inheritance:r /grant:r "*${user}:(OI)(CI)F" '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F'
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot make the temporary folder private' }
+          "TEMP=$temp" >> $env:GITHUB_ENV
+          "TMP=$temp" >> $env:GITHUB_ENV
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run doctor:toolchain
+      # Fresh-runtime tests still compile their own addon; shared binaries do not replace headers.
+      - name: Prepare Windows native headers for source-build tests
+        shell: pwsh
+        run: ./.github/scripts/prepare-windows-native.ps1 -CacheRoot "$env:RUNNER_TEMP/agnes-node-headers"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ inputs.native }}
+          path: .agnes-tmp/prepared-native
+      - name: Restore and load native helpers
+        run: |
+          node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-native
+          node --input-type=module -e "import setup from './tools/native-test-setup.mjs'; setup()"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ inputs.types }}
+          path: .agnes-tmp/prepared-types
+      - run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-types
+      # The detached-process file starts packages/cli/dist/local.
+      - name: Download prepared local package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ inputs.local }}
+          path: .agnes-tmp/prepared-local
+      - name: Restore prepared local package
+        run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/prepared-local
+      # Pull requests run the heavy tier on Linux only, where these real-Windows files skip. On every
+      # other event the Windows heavy shards run them and this job is skipped
+      # (tools/ci/routing.test.ts holds each file to one Windows run).
+      - name: Windows ACL execution heavy files
+        run: >-
+          pnpm exec vitest run --project heavy --maxWorkers=1
+          packages/system-node/test/windows-acl.e2e.test.ts
+          packages/system-node/test/process-restricted.e2e.test.ts
+          packages/host-infrastructure/test/windows-acl-recovery.e2e.test.ts
+          packages/host/test/windows-acl-execution.e2e.test.ts
+          packages/daemon/test/windows-acl-detached.e2e.test.ts
+      # Installation and builds must not rewrite committed source or the lockfile.
+      - name: verify working tree is clean
+        run: git diff --exit-code

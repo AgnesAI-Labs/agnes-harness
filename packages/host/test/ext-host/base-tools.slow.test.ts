@@ -229,7 +229,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       await host.close()
     }
   })
-  it('exposes the refinement switch only to the exact refine extension id, read-only', async () => {
+  it('connects the refinement tools only for the exact refine extension id', async () => {
     let refine: unknown
     let sibling: unknown
     const { host } = await createTestHost({
@@ -240,11 +240,11 @@ describe('a host assembled from a profile naming @agnes/base', () => {
           ecosystem: {
             ...baseEcosystem,
             'agnes/refine': (context) => {
-              refine = context.refinementSettings
+              refine = context.refinementRuns
               return baseEcosystem['agnes/refine'](context)
             },
             'agnes/privacy': (context) => {
-              sibling = context.refinementSettings
+              sibling = context.refinementRuns
               return baseEcosystem['agnes/privacy'](context)
             },
           },
@@ -253,10 +253,9 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     })
     try {
       expect(sibling).toBeUndefined()
-      expect(Object.keys(refine as object)).toEqual(['current'])
-      expect((refine as { current(): unknown }).current()).toMatchObject({
-        settings: { enabled: false, mode: 'manual' },
-      })
+      expect(refine).toBeTypeOf('function')
+      // Connected, the tools are registered whatever the switch says; Core decides which sessions see them.
+      expect(host.kernel.registrations('agnes/refine')).toHaveLength(3)
     } finally {
       await host.close()
     }
@@ -402,10 +401,13 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         source: 'agnes/compaction',
         trust: 'builtin',
       })
-      // agnes/refine registers its tools only when the profile's refinement switch is on, and it is
-      // off by default (test/refinement/switch.slow.test.ts covers the on side).
+      // agnes/refine registers its tools whatever the switch says; Core offers them only to sessions
+      // opened while it is on, and it is off by default (test/refinement/switch.slow.test.ts).
       for (const name of ['harness_propose', 'harness_refine', 'harness_inspect'])
-        expect(host.kernel.tools.resolve(name), name).toBeUndefined()
+        expect(host.kernel.tools.resolve(name)?.source, name).toEqual({
+          source: 'agnes/refine',
+          trust: 'builtin',
+        })
       expect(host.kernel.tools.resolve('subagent_spawn')?.source).toEqual({
         source: 'agnes/subagent',
         trust: 'builtin',
@@ -497,7 +499,7 @@ describe('a host assembled from a profile naming @agnes/base', () => {
         'pty_signal',
       ])
       expect(namesFrom('agnes/compaction')).toEqual(['compact'])
-      expect(namesFrom('agnes/refine')).toEqual([])
+      expect(namesFrom('agnes/refine')).toEqual(['harness_inspect', 'harness_propose', 'harness_refine'])
       expect(namesFrom('agnes/subagent')).toEqual([
         'list_subagent_models',
         'subagent_cancel',
@@ -1295,11 +1297,12 @@ describe('a host assembled from a profile naming @agnes/base', () => {
     })
     // The skills extension is loaded but inert until a daemon worker supplies a private runtime
     // snapshot, and this host does not load code-mode. Count: tools-core 5, tools-search 3,
-    // tools-web 2, interaction 1, deliverables 1, jobs 10, compaction 1, refine 0 (off), subagent 8,
+    // tools-web 2, interaction 1, deliverables 1, jobs 10, compaction 1, refine 3 (registered; offered
+    // only to sessions that run task experience), subagent 8,
     // mcp-search 2, computer-use 1, plugin-creator 6, exit_plan_mode, and the three stable MCP
     // resource tools, workflow and workflow_status, session-query 5, two goal tools, and the four
     // schedule reminders, plus the LSP diagnostics tool.
-    expect(host.kernel.tools.size).toBe(63)
+    expect(host.kernel.tools.size).toBe(66)
     for (const name of [
       'lsp_diagnostics',
       'subagent_list',

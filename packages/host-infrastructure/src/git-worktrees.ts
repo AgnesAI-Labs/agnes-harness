@@ -1,18 +1,10 @@
 import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import type { WorktreeCreateResult, WorktreeEntry, WorktreeFinishResult } from '@agnes/git-worktree-contract'
 import { commandPath } from '@agnes/system-node'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import type { WorkspaceInvocationResolver } from './workspace-invocation-resolver.js'
 
 /** Internal lease. Plugins never supply sessionKey. */
@@ -37,7 +29,7 @@ export function createGitWorktreeService(options: {
   remote: boolean
 }): GitWorktreeService {
   // Remote deployments must not inspect a coincidentally matching local directory.
-  const workspace = options.remote ? options.workspaceRoot : realpathSync(options.workspaceRoot)
+  const workspace = options.remote ? options.workspaceRoot : nativeRealpathSync(options.workspaceRoot)
   const registry = join(options.dataDir, 'git-worktrees')
   const hooks = join(registry, 'empty-hooks')
   const key = (path: string) => createHash('sha256').update(path).digest('hex')
@@ -123,7 +115,7 @@ export function createGitWorktreeService(options: {
     })
   }
   const registered = async (entry: Owned, op: GitWorktreeOperation): Promise<boolean> => {
-    if (realpathSync(entry.root) !== entry.root) return false
+    if (nativeRealpathSync(entry.root) !== entry.root) return false
     const result = await git(['worktree', 'list', '--porcelain', '-z'], entry.root, op)
     if (result.code !== 0) throw new Error('worktree inspection failed')
     return result.stdout.split('\0\0').some((row) => {
@@ -145,7 +137,7 @@ export function createGitWorktreeService(options: {
       return serial(async () => {
         if (options.remote) return { skipped: 'remote-sandbox' }
         try {
-          const canonical = realpathSync(cwd)
+          const canonical = nativeRealpathSync(cwd)
           if (resolve(cwd) !== cwd || !inside(workspace, canonical)) return { skipped: 'git-error' }
           const top = await git(['rev-parse', '--show-toplevel'], canonical, op)
           if (top.code !== 0) return { skipped: 'not-git' }
@@ -158,7 +150,7 @@ export function createGitWorktreeService(options: {
             resolve(root) !== root ||
             /[\0\r\n]/.test(root) ||
             !inside(root, canonical) ||
-            realpathSync(root) !== root
+            nativeRealpathSync(root) !== root
           )
             return { skipped: 'git-error' }
           const id = randomUUID().replaceAll('-', '').slice(0, 8)
@@ -174,7 +166,7 @@ export function createGitWorktreeService(options: {
           const ignored = await git(['check-ignore', '--quiet', '--', `.worktrees/agnes-${id}`], root, op)
           if (ignored.code !== 0) return { skipped: 'git-error' }
           mkdirSync(join(root, '.worktrees'), { recursive: true })
-          if (realpathSync(join(root, '.worktrees')) !== join(root, '.worktrees'))
+          if (nativeRealpathSync(join(root, '.worktrees')) !== join(root, '.worktrees'))
             return { skipped: 'git-error' }
           const entry: Owned = { root, path, branch, stage: 'attached', creating: true }
           save(entry, true) // Crash during add retains ownership for inspection/recovery.
@@ -213,15 +205,15 @@ export function createGitWorktreeService(options: {
         if (!entry) return { action: 'kept-inspection-failed' }
         try {
           if (
-            realpathSync(entry.root) !== entry.root ||
-            realpathSync(join(entry.root, '.worktrees')) !== join(entry.root, '.worktrees')
+            nativeRealpathSync(entry.root) !== entry.root ||
+            nativeRealpathSync(join(entry.root, '.worktrees')) !== join(entry.root, '.worktrees')
           )
             return { action: 'kept-inspection-failed' }
           if (entry.stage === 'attached') {
             const attached = await registered(entry, op)
             if (!attached && !entry.removing) return { action: 'kept-inspection-failed' }
             if (attached) {
-              if (realpathSync(path) !== path) return { action: 'kept-inspection-failed' }
+              if (nativeRealpathSync(path) !== path) return { action: 'kept-inspection-failed' }
               const status = await git(['status', '--porcelain=v1', '--untracked-files=all'], path, op)
               if (status.code !== 0) return { action: 'kept-inspection-failed' }
               if (status.stdout.length > 0) return { action: 'kept-dirty' }

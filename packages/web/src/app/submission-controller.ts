@@ -147,7 +147,12 @@ export function createSubmissionController(
   async function prepareComposerSession(): Promise<Session> {
     if (context.current) return context.current
     if (referenceSessionPending) return referenceSessionPending
-    if (!context.draftingNew || !context.selectedWorkspace?.available || context.sessionPending)
+    if (
+      !context.draftingNew ||
+      !context.selectedWorkspace?.available ||
+      context.selectedWorkspace.managedRole === 'legacy' ||
+      context.sessionPending
+    )
       throw new Error(context.t('app.session.createFailed'))
     const epoch = context.sessionBinding.capture()
     context.sessionPending = true
@@ -261,7 +266,10 @@ export function createSubmissionController(
       context.permissionChangePending ||
       context.permissionRefreshPending ||
       (session && context.sessionYoloEnabled === undefined) ||
-      (!session && (!context.draftingNew || !context.selectedWorkspace?.available)) ||
+      (!session &&
+        (!context.draftingNew ||
+          !context.selectedWorkspace?.available ||
+          context.selectedWorkspace.managedRole === 'legacy')) ||
       (!session && !context.draftSessionRequest()) ||
       !canSubmitComposer({
         connected: context.connected,
@@ -527,6 +535,7 @@ export function createSubmissionController(
       if (
         !context.draftingNew ||
         !context.selectedWorkspace?.available ||
+        context.selectedWorkspace.managedRole === 'legacy' ||
         !context.draftLoopAvailable() ||
         context.loopCatalogPending
       )

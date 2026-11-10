@@ -51,9 +51,10 @@
 // Oracle (opt-in with `--arms off,on,oracle`; `--settings` is the same option, older name, on and off only):
 // refinement off as in "off", and before the SECOND session starts, one paragraph taken from the task's
 // `trap.note` is written to that session's workspace memory, through the same edit the memory page makes.
-// The first session is the same as the off run's. It is the most a saved lesson could give the second
-// session, so it is the ceiling the "on" run is measured against (see capture.ts). Only for tasks of two
-// sessions that are not workflow tasks; the other tasks are skipped for this arm.
+// The first session is the same as the off run's. It is the most a saved lesson could give the sessions
+// after the first, so it is the ceiling the "on" run is measured against (see capture.ts). Only for tasks of
+// two or more sessions (a long task may have several in one workspace, each a new conversation) or with an
+// `oracle.afterPrompt`, and not for workflow tasks; the other tasks are skipped for this arm.
 //
 // Frozen (`--arms frozen --frozen-from <folder of on runs>`): refinement off, and before the first session
 // the workspace (and user memory) holds exactly what the on run of the same task and repetition saved:
@@ -94,6 +95,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, parse, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { parseArgs } from 'node:util'
+import { blockedRun, MAX_BLOCKED_REDOS } from '../blocked.js'
 import { createInfraStreak, INFRA_STOP_AFTER, infraFromLedger, infraFromStatuses } from '../infra.js'
 import { readConfig, runId } from '../prime/run-prime.js'
 import { DEFAULT_FIXTURE, fixtureOf, taskFixtures, workspaceName } from '../suite.js'
@@ -242,13 +244,21 @@ export type AghRunOptions = {
 /** The most model requests a run may make when its task names no cap (`EvalTask.maxRequests`). */
 export const DEFAULT_MAX_REQUESTS = 400
 
-/** The outcome of a run that is finished for good: one the infrastructure ended is not, it is redone. */
+/**
+ * The outcome of a run that is finished for good. One the infrastructure ended is not, it is redone; nor is
+ * one the host's verifier blocked while it has a redo left (`MAX_BLOCKED_REDOS`).
+ */
 export const finishedOutcome = (outDir: string, id: string): RunOutcome | undefined => {
   const file = join(outDir, id, 'outcome.json')
   if (!existsSync(file)) return undefined
   const outcome = JSON.parse(readFileSync(file, 'utf8')) as RunOutcome
-  return outcome.infraFailed ? undefined : outcome
+  if (outcome.infraFailed) return undefined
+  if (outcome.blocked && notedAttempts(outDir, BLOCKED_FILE, id) < MAX_BLOCKED_REDOS) return undefined
+  return outcome
 }
+
+/** Where a run the host's verifier blocked is noted before it is redone, in the output folder. */
+export const BLOCKED_FILE = 'blocked-runs.jsonl'
 
 /** The exit code of a shard that stopped because the infrastructure kept ending its runs. */
 export const INFRA_STOP_EXIT = 3
@@ -257,8 +267,12 @@ export const INFRA_STOP_EXIT = 3
 export const INFRA_FAILURES_FILE = 'infra-failures.jsonl'
 
 /** How many times a run was ended by the infrastructure and started again, from the note file. */
-const earlierAttempts = (outDir: string, runId: string): number => {
-  const file = join(outDir, INFRA_FAILURES_FILE)
+const earlierAttempts = (outDir: string, runId: string): number =>
+  notedAttempts(outDir, INFRA_FAILURES_FILE, runId) + notedAttempts(outDir, BLOCKED_FILE, runId)
+
+/** How many notes of one kind (infrastructure, blocked) a run has in the output folder. */
+const notedAttempts = (outDir: string, name: string, runId: string): number => {
+  const file = join(outDir, name)
   if (!existsSync(file)) return 0
   return readFileSync(file, 'utf8')
     .split('\n')
@@ -296,6 +310,16 @@ export type AghArgs = {
 }
 
 const ARMS: readonly Arm[] = ['on', 'off', 'oracle', 'frozen']
+
+/**
+ * The arms in the order they run for each task and repetition: as given, except that `frozen` comes after
+ * `on`, so a frozen run whose on run this invocation makes (`--frozen-from` the same folder as `--out`)
+ * finds it finished.
+ */
+export const orderArms = (arms: Arm[]): Arm[] =>
+  arms.includes('frozen') && arms.includes('on') && arms.indexOf('frozen') < arms.indexOf('on')
+    ? [...arms.filter((arm) => arm !== 'frozen'), 'frozen']
+    : arms
 const PROTOCOLS: readonly OnProtocol[] = ['reviews', 'triggers']
 
 export const USAGE =
@@ -342,13 +366,24 @@ export function parseAghArgs(argv: string[]): AghArgs {
     out: values.out,
     ...(values.tasks ? { tasks: values.tasks.split(',').map((s) => s.trim()) } : {}),
     reps,
-    settings: settings as Arm[],
+    settings: orderArms(settings as Arm[]),
     tasksDir: values['tasks-dir'] as string,
     ...(values['frozen-from'] ? { frozenFrom: values['frozen-from'] } : {}),
     onProtocol: onProtocol as OnProtocol,
     maxRequests,
   }
 }
+
+/**
+ * Whether the frozen arm copies on runs that this same invocation makes: `--frozen-from` is the `--out`
+ * folder and the on arm is among the arms. Then `--reps 5 --arms on,off,oracle,frozen --frozen-from <out>`
+ * runs in one go: each frozen rN runs right after the on rN of its task (`orderArms`), and its source is
+ * checked then instead of before the first run.
+ */
+export const frozenSourcesMadeHere = (args: Pick<AghArgs, 'out' | 'frozenFrom' | 'settings'>): boolean =>
+  args.frozenFrom !== undefined &&
+  resolve(args.frozenFrom) === resolve(args.out) &&
+  args.settings.includes('on')
 
 /** The key from the variable the run config names; a clear error, without any value, when it is missing. */
 export function requireKey(cfg: RunConfig, env: Record<string, string | undefined>): string {
@@ -424,10 +459,11 @@ export const refinementSwitch = (setting: Arm): RefinementSwitch | undefined =>
 
 /**
  * The arm is for tasks that are not workflow tasks (no skill to hand-write) and have a point to write the
- * lesson at: before a second session, or after a named prompt of the first (`EvalTask.oracle`).
+ * lesson at: before the second session of a task of two or more, or after a named prompt of the first
+ * (`EvalTask.oracle`).
  */
 export const oracleApplies = (task: EvalTask): boolean =>
-  task.category !== 'workflow' && (task.sessions.length === 2 || task.oracle !== undefined)
+  task.category !== 'workflow' && (task.sessions.length >= 2 || task.oracle !== undefined)
 
 /** Where the oracle writes the lesson: after a prompt of the first session, or before the second session. */
 export const oracleSeedPoint = (task: EvalTask): { afterPrompt: number } | { beforeSession: 1 } =>
@@ -492,12 +528,20 @@ export async function runOne(
   const outcomeFile = join(runDir, 'outcome.json')
   if (existsSync(outcomeFile)) {
     const finished = JSON.parse(readFileSync(outcomeFile, 'utf8')) as RunOutcome
-    if (!finished.infraFailed) return finished
-    // The upstream ended that run, not the task: note it, then do the run again from the start.
-    appendFileSync(
-      join(outDir, INFRA_FAILURES_FILE),
-      `${JSON.stringify({ runId: id, ts: new Date().toISOString(), ...finished.infraFailed })}\n`,
-    )
+    if (finished.infraFailed) {
+      // The upstream ended that run, not the task: note it, then do the run again from the start.
+      appendFileSync(
+        join(outDir, INFRA_FAILURES_FILE),
+        `${JSON.stringify({ runId: id, ts: new Date().toISOString(), ...finished.infraFailed })}\n`,
+      )
+    } else if (finished.blocked && notedAttempts(outDir, BLOCKED_FILE, id) < MAX_BLOCKED_REDOS) {
+      // The host's verifier stopped a turn, not the task: note it and do the run once more. A run blocked
+      // again is left as blocked.
+      appendFileSync(
+        join(outDir, BLOCKED_FILE),
+        `${JSON.stringify({ runId: id, ts: new Date().toISOString(), ...finished.blocked })}\n`,
+      )
+    } else return finished
   }
   const attempt = earlierAttempts(outDir, id)
   const proxyId = proxyRunId(id, attempt)
@@ -684,6 +728,12 @@ export async function runOne(
       if (!infraFailed && unclean && opts.statuses)
         infraFailed = infraFromStatuses(opts.statuses(proxyId), sessions.length - 1)
     }
+    // A turn the host's verifier ended blocked: the harness stopped it, not the task (unless the upstream or
+    // the cap did first).
+    const blocked =
+      infraFailed || capped
+        ? undefined
+        : blockedRun(prompts, (session) => host.ledger(keys[session] as string))
     const outcome: RunOutcome = {
       runId: id,
       system: 'agh',
@@ -691,6 +741,7 @@ export async function runOne(
       checks,
       ...(saveRefused === undefined ? {} : { saveRefused }),
       ...(infraFailed ? { infraFailed } : {}),
+      ...(blocked ? { blocked } : {}),
       ...(capped ? { capped } : {}),
       ...(stopped ? { stopped } : {}),
       prompts,
@@ -867,9 +918,12 @@ async function main(argv: string[]): Promise<void> {
     tasks = tasks.filter((t) => wanted.includes(t.id))
   }
 
-  // The frozen arm's sources are checked before anything is paid for.
+  // The frozen arm's sources are checked before anything is paid for, except the on runs this invocation
+  // makes itself (the same folder, the on arm among the arms): those are checked when their frozen run comes.
+  const out = resolve(args.out)
   const frozenFrom = args.frozenFrom ? resolve(args.frozenFrom) : undefined
-  if (frozenFrom) {
+  const sourcesMadeHere = frozenSourcesMadeHere(args)
+  if (frozenFrom && !sourcesMadeHere) {
     const memory = await loadFrozenMemoryModule()
     const problems: string[] = []
     for (let rep = 1; rep <= args.reps; rep++)
@@ -883,7 +937,6 @@ async function main(argv: string[]): Promise<void> {
     if (problems.length > 0) throw new Error(`the frozen arm cannot start:\n${problems.join('\n')}`)
   }
 
-  const out = resolve(args.out)
   mkdirSync(out, { recursive: true })
   const proxy = await startUsageProxy({
     upstream: cfg.upstream,
@@ -905,6 +958,16 @@ async function main(argv: string[]): Promise<void> {
           }
           const id = runId(task.id, setting, rep)
           const fresh = finishedOutcome(out, id) === undefined
+          if (setting === 'frozen' && sourcesMadeHere && fresh) {
+            // Its on run ran just before it in this loop (`orderArms`); one that cannot be a source leaves
+            // this frozen run out, the others go on.
+            try {
+              readFrozenSource(out, task, rep, await loadFrozenMemoryModule())
+            } catch (error) {
+              console.error(`skipped ${id}: ${error instanceof Error ? error.message : String(error)}`)
+              continue
+            }
+          }
           const outcome = await runOne(task, setting, rep, cfg, out, {
             launch: launchHost,
             fixtureDir: join(tasksDir, task.id, 'fixture'),
@@ -918,11 +981,13 @@ async function main(argv: string[]): Promise<void> {
           const passed = outcome.checks.filter((c) => c.passed).length
           const infra = outcome.infraFailed
             ? ` INFRA-FAILED (${outcome.infraFailed.reason}; not a task failure, left out of the results, redone on the next start)`
-            : outcome.capped
-              ? ` CAPPED (${outcome.capped.maxRequests} requests, session ${outcome.capped.session + 1} prompt ${outcome.capped.prompt + 1}; listed apart in the report)`
-              : outcome.stopped
-                ? ` STOPPED at a failed milestone (session ${outcome.stopped.session + 1} prompt ${outcome.stopped.prompt + 1})`
-                : ''
+            : outcome.blocked
+              ? ` BLOCKED by the host's verifier (${outcome.blocked.reasons.join(', ')}; not a task failure, left out of the results, redone once on the next start)`
+              : outcome.capped
+                ? ` CAPPED (${outcome.capped.maxRequests} requests, session ${outcome.capped.session + 1} prompt ${outcome.capped.prompt + 1}; listed apart in the report)`
+                : outcome.stopped
+                  ? ` STOPPED at a failed milestone (session ${outcome.stopped.session + 1} prompt ${outcome.stopped.prompt + 1})`
+                  : ''
           console.error(
             `${fresh ? 'ran' : 'skipped'} ${id} exit=[${exits}] checks=${passed}/${outcome.checks.length}${infra} (${relative(process.cwd(), join(out, id))})`,
           )

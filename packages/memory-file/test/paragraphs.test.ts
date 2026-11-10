@@ -176,6 +176,31 @@ describe('file memory managed paragraphs', () => {
     expect(text(await f.files(2).read(f.index))).toBe(`${OMITTED(2)}\n`)
   })
 
+  it('a delivered paragraph is left out of the snapshot silently and shown on read', async () => {
+    const f = await fixture({ validity: view({ [A]: 'valid', [B]: 'delivered' }).view })
+    await f.session.configure({ mode: 'auto' })
+    const stored = `Human note\n\n${block(A, 'Run pnpm lint before commit.')}\n${block(B, 'Saved lesson.')}tail\n`
+    await writeFile(f.index, stored)
+    const snapshot = await f.session.snapshot(1)
+    expect(snapshot?.content).toContain(`Human note\n\n${block(A, 'Run pnpm lint before commit.')}\ntail\n`)
+    expect(snapshot?.content).not.toContain('Saved lesson.')
+    expect(snapshot?.content).not.toContain('task-experience paragraphs omitted')
+    expect(text(await f.files(1).read(f.index))).toBe(stored)
+  })
+
+  it('whole-file writes and replaceExact check a delivered paragraph against the read view', async () => {
+    const f = await fixture({ validity: view({ [B]: 'delivered' }).view })
+    await f.session.configure({ mode: 'auto' })
+    const stored = `Top\n${block(B, 'Saved lesson.')}Bottom\n`
+    await writeFile(f.index, stored)
+    const files = f.files(1)
+    await files.replaceExact?.(f.index, 'Bottom', 'Bottom line')
+    expect(await f.raw()).toBe(`Top\n${block(B, 'Saved lesson.')}Bottom line\n`)
+    const seen = text(await f.files(2).read(f.index))
+    await f.files(2).write(f.index, `${seen}more\n`)
+    expect(await f.raw()).toBe(`Top\n${block(B, 'Saved lesson.')}Bottom line\nmore\n`)
+  })
+
   it('the omitted set changes memoryRevision', async () => {
     const tracked = view({ [A]: 'valid' })
     const f = await fixture({ validity: tracked.view })
@@ -627,5 +652,28 @@ describe('file memory paragraph port', () => {
     expect(() => f.paragraphs({ sessionKey: 'one', turn: 4, maintenance: 'r'.repeat(129) })).toThrowError(
       expect.objectContaining({ code: 'MEMORY_INVALID_METADATA' }),
     )
+  })
+})
+
+describe('the truncation notice and delivered paragraphs', () => {
+  it('names a line of the file as read that holds text left out of the note, wherever the cut falls', async () => {
+    const f = await fixture({ validity: view({ [A]: 'delivered' }).view })
+    await f.session.configure({ mode: 'auto' })
+    const early = Array.from({ length: 6 }, (_, i) => `- early ${i}`)
+    const later = Array.from({ length: 30 }, (_, i) => `- later ${i} ${'x'.repeat(60)}`)
+    await writeFile(f.index, `${early.join('\n')}\n${block(A, 'Saved lesson.')}${later.join('\n')}\n`)
+    const read = text(await f.files(1).read(f.index)).split('\n')
+    let checked = 0
+    for (let limit = 128; limit <= 700; limit++) {
+      await f.session.configure({ tokenBudget: limit })
+      const content = (await f.session.snapshot(limit))?.content ?? ''
+      const line = /from line (\d+) of /u.exec(content)?.[1]
+      if (!line) continue
+      checked++
+      const named = read[Number(line) - 1] ?? ''
+      expect(named, `limit ${limit}`).toMatch(/^- (early|later) \d+( x+)?$/u)
+      expect(content, `limit ${limit}`).not.toContain(`${named}\n`)
+    }
+    expect(checked).toBeGreaterThan(100)
   })
 })

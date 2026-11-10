@@ -18,6 +18,8 @@ import { loopIdentity, updateLoopPicker } from '../loop-picker.js'
 import { defaultPermissionLevel, defaultRecipe, permissionModeOf } from '../session-permission.js'
 import { webView } from '../view.js'
 import { renderWorkbench, unmountWorkbenchSoon } from '../workbench/dock.js'
+import { currentChats } from '../workspace-picker.js'
+import { isolationNoteKey } from './isolation-note.js'
 
 /** Ends the progress of the session being opened, while one is. */
 let endSessionRead: (() => void) | undefined
@@ -51,8 +53,7 @@ export function composerWorkspaceView(input: {
     label: selected?.name ?? t(fallback),
     title: selected?.path ?? t(input.current ? 'composer.workspace.currentTitle' : fallback),
     choices,
-    clearable:
-      input.drafting && !!selected && input.rows.some((row) => row.kind === 'chats' && row.available),
+    clearable: input.drafting && !!selected && !!currentChats(input.rows),
   }
 }
 
@@ -209,15 +210,29 @@ export function createComposerController(
       context.t,
     )
     context.notice.disableRecovery(context.recoveryDisabled())
-    const canStartDraft = context.draftingNew && context.selectedWorkspace?.available === true
+    const canStartDraft =
+      context.draftingNew &&
+      context.selectedWorkspace?.available === true &&
+      context.selectedWorkspace.managedRole !== 'legacy'
     const permissionUnknown =
       context.current !== undefined &&
       (context.permissionRefreshPending || context.sessionYoloEnabled === undefined)
     // When the session's model is gone, the first model the configured accounts offer is the way on.
     const fallbackModel = context.runtimeModels[0]
+    const isolationNote = isolationNoteKey({
+      connected: context.connected,
+      os: context.runtimeCatalog?.security?.platform.os,
+      draftingNew: context.draftingNew,
+      currentId: context.current?.id,
+      isolation: context.sessionIsolation,
+    })
     const selectedRecord = context.runtimeModels.find(
       (m) => m.route === context.knownSessionModel?.route && m.id === context.knownSessionModel?.id,
     )
+    const displayedModel = context.knownSessionModel && {
+      ...context.knownSessionModel,
+      ...(selectedRecord?.name ? { name: selectedRecord.name } : {}),
+    }
     const imageUnsupported =
       images.some((block) => block.type === 'image') && !userImagePolicy(selectedRecord).supported
     const queueAction = context.submissions.queueAction
@@ -347,7 +362,7 @@ export function createComposerController(
       loading: context.sessionPending,
       model: {
         auxiliaryAvailable: !!context.current,
-        accessibleName: modelSelectAccessibleName(context.knownSessionModel, context.t),
+        accessibleName: modelSelectAccessibleName(displayedModel, context.t),
         disabled:
           !available ||
           (!context.current && !context.draftingNew) ||
@@ -357,7 +372,7 @@ export function createComposerController(
           !context.runtimeModels.length,
         // A running reply is the one temporary lock worth explaining on the trigger.
         ...(available && busy ? { disabledReason: context.t('settings.modelPicker.busy') } : {}),
-        label: modelSelectLabel(context.knownSessionModel, context.t),
+        label: modelSelectLabel(displayedModel, context.t),
         options: context.runtimeModels,
         pending: context.modelChangePending,
         ...(context.knownSessionModel ? { selected: context.knownSessionModel } : {}),
@@ -375,19 +390,7 @@ export function createComposerController(
           }
         : {}),
       permission: {
-        ...(context.connected &&
-        (context.runtimeCatalog?.security?.platform.os === 'win32' ||
-          (!context.draftingNew &&
-            context.sessionIsolation?.sessionId === context.current?.id &&
-            context.sessionIsolation?.disabled))
-          ? {
-              isolationNote: context.t(
-                context.runtimeCatalog?.security?.platform.os === 'win32'
-                  ? 'session.runtime.platformNoCommandIsolation'
-                  : 'session.runtime.noOsIsolation',
-              ),
-            }
-          : {}),
+        ...(isolationNote ? { isolationNote: context.t(isolationNote) } : {}),
         disabled:
           !available ||
           (!context.current && !context.draftingNew) ||

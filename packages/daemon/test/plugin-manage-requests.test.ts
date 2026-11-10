@@ -686,24 +686,73 @@ it.each(['workspace-write', 'standard'])(
     expect(s.testRunner).not.toHaveBeenCalled()
   },
 )
-it('automatically allows unisolated Windows candidate tests under full-access and records the exact hash', async () => {
-  vi.mocked(authoringSandbox).mockResolvedValue({ isolated: false } as never)
-  const s = await setup('allow')
-  const p = await s.request({ action: 'prepare', files })
-  const tested = await s.request({ action: 'test', proposalId: p.candidateId })
-  expect(tested.tests).toMatchObject({ state: 'passed', hash: p.candidateHash })
-  expect(s.ask).not.toHaveBeenCalled()
-  expect(s.automaticEvidence).toContainEqual(
-    expect.objectContaining({
-      reason: 'full-access',
-      verdict: 'allowed-once',
+it.each(['allow', 'ask'] as const)(
+  'binds unisolated Windows candidate tests to exact-hash %s authorization without publishing',
+  async (policy) => {
+    vi.mocked(authoringSandbox).mockResolvedValue({ isolated: false } as never)
+    const s = await setup(policy)
+    const p = await s.request({ action: 'prepare', files })
+    const test = (expectedHash = p.candidateHash) =>
+      s.request({ action: 'candidate.test', candidateId: p.candidateId, expectedHash })
+    await expect(test(`sha256-${'0'.repeat(64)}`)).rejects.toMatchObject({
+      data: { code: 'PLUGIN_CANDIDATE_STALE' },
+    })
+    expect(s.ask).not.toHaveBeenCalled()
+    expect(s.testRunner).not.toHaveBeenCalled()
+    if (policy === 'ask') {
+      s.ask.mockResolvedValueOnce({ outcome: { outcome: 'selected', optionId: 'reject_once' } })
+      await expect(test()).rejects.toMatchObject({ data: { code: 'PLUGIN_TEST_REJECTED' } })
+      expect(s.ask).toHaveBeenCalledOnce()
+      expect(s.ask.mock.calls[0]?.[1]).toMatchObject({
+        toolCall: {
+          title: expect.stringContaining('code can access files and network with local user privileges'),
+          rawInput: {
+            packageId: p.packageId,
+            candidateHash: p.candidateHash,
+            execution: 'unisolated',
+            runs: 'Node author tests',
+            scope: 'local-user',
+            network: 'unrestricted',
+          },
+        },
+      })
+      expect((await s.request({ action: 'status', proposalId: p.candidateId })).tests).toBeNull()
+      expect(s.testRunner).not.toHaveBeenCalled()
+      s.ask.mockClear()
+    }
+    const tested = await test()
+    expect(tested.tests).toMatchObject({ state: 'passed', hash: p.candidateHash })
+    expect(s.testRunner).toHaveBeenCalledOnce()
+    if (policy === 'allow') {
+      expect(s.ask).not.toHaveBeenCalled()
+      expect(s.automaticEvidence).toContainEqual(
+        expect.objectContaining({
+          reason: 'full-access',
+          verdict: 'allowed-once',
+          bindingHash: p.candidateHash,
+          answeredBy: expect.objectContaining({ role: 'system' }),
+        }),
+      )
+    } else expect(s.ask).toHaveBeenCalledOnce()
+    const audit = readFileSync(join(s.root, 'candidate-test-audit.jsonl'), 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    expect(audit.at(-1).detail).toMatchObject({
       bindingHash: p.candidateHash,
-      answeredBy: expect.objectContaining({ role: 'system' }),
-    }),
-  )
-  const audit = JSON.parse(readFileSync(join(s.root, 'candidate-test-audit.jsonl'), 'utf8').trim())
-  expect(audit.detail).toMatchObject({ reason: 'full-access', isolation: 'unisolated' })
-})
+      isolation: 'unisolated',
+      verdict: 'allowed-once',
+      ...(policy === 'allow' ? { reason: 'full-access' } : {}),
+    })
+    const record = JSON.parse(
+      readFileSync(join(s.profileDir, '.authoring-candidates', p.candidateId, 'record.json'), 'utf8'),
+    )
+    writeFileSync(join(record.tree, 'index.mjs'), `${source}// changed after test`)
+    await expect(test()).rejects.toMatchObject({ data: { code: 'PLUGIN_CANDIDATE_STALE' } })
+    expect(s.testRunner).toHaveBeenCalledOnce()
+    expect((await s.manager.inventory(s.profileDir)).packages).toHaveLength(0)
+  },
+)
 it.each(['allow', 'ask'] as const)(
   'submits a tested candidate with %s policy and retains publication authority',
   async (policy) => {

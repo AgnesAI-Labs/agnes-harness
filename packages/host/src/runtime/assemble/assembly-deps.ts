@@ -99,6 +99,8 @@ export type AssembleDeps = HostPaths &
     sessionGeneration?: (sessionKey: string) => string | undefined
     /** Host-private durable generation binding, also reached by Core-created children. */
     onGenerationSessionBinding?: (sessionKey: string) => void
+    /** Host-private notice that a session's capability inputs changed outside its registries (discovered resources). */
+    onCapabilityInputChanged?: (sessionKey: string) => void
     onGenerationBasePackages?: (packageIds: readonly string[]) => void
     developmentPluginDirectories?: ReadonlyMap<string, string>
     restoreGenerationExtension?: (

@@ -43,6 +43,16 @@ export const securityCatalog: LocaleCatalog = {
     'enforcement.unprobed': 'Not checked yet',
     unmeasured: 'Not measured',
     noOsIsolation: 'Application permissions apply · OS sandbox off',
+    'windowsBoundary.workspace-write':
+      'Windows: the workspace and this session’s temporary folder use a partial ACL write restriction, not strict path isolation; reads and network are not isolated. File tools still check protected files; arbitrary scripts do not get the same protection.',
+    'windowsBoundaryDetail.workspace-write':
+      'Windows: the workspace and this session’s temporary folder use a partial ACL write restriction, not strict path isolation; reads and network are not isolated. File tools still check protected files; arbitrary scripts do not get the same protection. A hard link in the workspace that points to a file outside it (such as the pnpm store) lets that file be written too; the session’s extra folders get no ACL write access, so commands writing there are denied.',
+    'windowsBoundary.read-only':
+      'Windows: no write access to the workspace or the temporary folder; reads and network are not isolated, and tools still follow the read-only rules.',
+    'windowsBoundary.full-access': 'Windows: full access, commands not isolated',
+    windowsAclLevel: 'L1 · Windows ACL partial write restriction',
+    windowsAclSideEffects:
+      'The first command of a session that may edit the workspace adds a Low integrity label and an Everyone delete-child deny entry to the workspace folder. They stay until you repair them explicitly with agh doctor windows-acl --cwd <workspace> --repair; until then other Low integrity programs of the same Windows user may also write there.',
     policyDigest: 'Bound policy digest',
     securityHelp:
       'Permissions are enforced by the backend. Availability below comes from the running profile. A sandbox provider declaration does not confirm workspace enforcement; execution probes the chosen workspace and fails closed when required enforcement is unavailable.',
@@ -95,6 +105,16 @@ export const securityCatalog: LocaleCatalog = {
     'enforcement.unprobed': '未检测',
     unmeasured: '未实测',
     noOsIsolation: '按所选应用权限执行 · 系统沙箱未启用',
+    'windowsBoundary.workspace-write':
+      'Windows：工作区和本次临时目录使用 ACL 部分写限制，非严格路径隔离；读取与网络未隔离。受保护文件仍由文件工具检查，任意脚本不具备同等保护。',
+    'windowsBoundaryDetail.workspace-write':
+      'Windows：工作区和本次临时目录使用 ACL 部分写限制，非严格路径隔离；读取与网络未隔离。受保护文件仍由文件工具检查，任意脚本不具备同等保护。工作区内的硬链接若指向工作区外的文件（如 pnpm 存储），那些文件也可经此写入；会话的额外目录没有 ACL 写权限，命令写入那里会被拒绝访问。',
+    'windowsBoundary.read-only':
+      'Windows：不授予工作区或临时目录写能力；读取与网络未隔离，工具仍按只读规则使用。',
+    'windowsBoundary.full-access': 'Windows：完全访问，命令未隔离',
+    windowsAclLevel: 'L1 · Windows ACL 部分写限制',
+    windowsAclSideEffects:
+      '可修改工作区的会话第一次运行命令时，会在工作区目录上添加 Low 完整性标签和 Everyone 的删除子项拒绝项。它们会一直保留，直到你运行 agh doctor windows-acl --cwd <工作区> --repair 明确修复；在此之前，同一 Windows 用户下其他 Low 完整性程序也可能写入该目录。',
     policyDigest: '绑定策略摘要',
     securityHelp:
       '权限由后台执行。下方可用性来自当前运行配置档。沙箱插件实现的能力声明不代表工作区已隔离；执行时会探测所选工作区，所需隔离不可用时拒绝执行。',

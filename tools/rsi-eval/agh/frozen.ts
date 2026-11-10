@@ -74,6 +74,11 @@ export function readFrozenSource(
     throw new Error(
       `the frozen arm's source ${id} was ended by the upstream (${outcome.infraFailed.reason}); redo it first`,
     )
+  // A blocked run stopped part-way: what it saved is a partial lesson, not what the on arm learns.
+  if (outcome.blocked)
+    throw new Error(
+      `the frozen arm's source ${id} was blocked by the host's verifier (${outcome.blocked.reasons.join(', ')}, session ${outcome.blocked.session + 1}); it saved only part of a run`,
+    )
   const home = join(dir, 'home')
   const fixtures = taskFixtures(task)
   const memoryDirs = existsSync(join(home, 'memory', 'workspaces'))

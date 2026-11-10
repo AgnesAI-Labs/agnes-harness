@@ -395,6 +395,18 @@ export { createExec, type ExecAdapter, type ExecResult } from '@agnes/host-infra
 export { resolveFileSecretsDirectory } from '@agnes/host-infrastructure/adapters/file-secrets-dir'
 export { createFs, type HostFs } from '@agnes/host-infrastructure/adapters/fs'
 export {
+  type CreateMcpOAuthStoreOptions,
+  createMcpOAuthStore,
+  type McpOAuthClient,
+  type McpOAuthNext,
+  type McpOAuthRead,
+  type McpOAuthRecord,
+  type McpOAuthServer,
+  type McpOAuthStore,
+  type McpOAuthTokens,
+  type McpOAuthUpdateOptions,
+} from '@agnes/host-infrastructure/adapters/mcp-oauth-store'
+export {
   CAPABILITY_IDS,
   type CapabilityId,
   type CapabilityLevel,
@@ -447,6 +459,7 @@ export {
   type SessionDefaultsConfigurationService,
 } from '@agnes/host-infrastructure/configuration'
 export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-infrastructure/doctor'
+export { resolveDocumentsDirectory } from '@agnes/host-infrastructure/documents-directory'
 export { REVIEW_AFTER_MS, RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
 export {
   type RefinementSettingsPort,
@@ -556,6 +569,12 @@ export {
 } from './runtime/lifecycle/host-facade.js'
 export { closeHost, Rollback } from './runtime/lifecycle/lifecycle.js'
 export { sessionPermissionCatalog } from './runtime/lifecycle/permission-catalog.js'
+export {
+  openWindowsAclMaintenance,
+  type WindowsAclMaintenance,
+  type WindowsAclRepairRequest,
+  type WindowsAclReport,
+} from './runtime/lifecycle/windows-acl-maintenance.js'
 export { manageMemory } from './runtime/memory/admin.js'
 export * from './runtime/profile/bundle-selection.js'
 export {
@@ -570,6 +589,8 @@ export {
 export * from './runtime/profile/session-capabilities.js'
 export { createSkillDraftStore } from './runtime/refinement/skill-drafts.js'
 export {
+  enforceSkillCap,
+  RSI_SKILL_CAP,
   recordSkillRevocation,
   renewSkillForUser,
   reviewSkills,

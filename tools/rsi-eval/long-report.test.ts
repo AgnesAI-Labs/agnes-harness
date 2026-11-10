@@ -4,7 +4,6 @@ import { describe, expect, it } from 'vitest'
 import { reachedMilestones, ruleForgetting, runStatus } from './long-report.js'
 import { progressOf, sessionCostOfLedger, toRunRecord } from './metrics.js'
 import { buildReport, TRIGGERS_HEADER } from './report.js'
-import { defaultTasksDir, loadSuite } from './suite.js'
 import type { EvalTask, PromptProgress, RunOutcome, RunRecord, SessionCost } from './types.js'
 
 // Ledgers are trimmed rows of the first evaluation's runs (fixtures/real): cross-01's off run, first
@@ -12,8 +11,9 @@ import type { EvalTask, PromptProgress, RunOutcome, RunRecord, SessionCost } fro
 // their results: the trap was hit twice in the first session and not in the second).
 const real = (name: string): string =>
   readFileSync(join(import.meta.dirname, 'fixtures', 'real', name), 'utf8')
-const suite = loadSuite(defaultTasksDir)
-const byId = (id: string) => suite.find((t) => t.id === id) as EvalTask
+// The tasks those runs ran, kept as data (fixtures/tasks): the short tasks are no longer in the suite.
+const byId = (id: string): EvalTask =>
+  JSON.parse(readFileSync(join(import.meta.dirname, 'fixtures', 'tasks', `${id}.json`), 'utf8')) as EvalTask
 
 describe('what a session had spent at the end of each prompt', () => {
   const text = real('progress.cross-01.off-s1.jsonl')
@@ -71,6 +71,29 @@ describe('what a session had spent at the end of each prompt', () => {
     ])
   })
 
+  it('counts a later session on top of every earlier one, so the curve runs over the whole run', () => {
+    // Both sessions of cross-03's off run: the second session's prompt ends after its last row.
+    const s1 = real('trap.cross-03.off-s1.jsonl')
+    const s2 = real('trap.cross-03.off-s2.jsonl')
+    const t = byId('cross-03-latin1-menus')
+    const end = '2100-01-01T00:00:00.000Z'
+    const at = (session: number, texts: string[]) =>
+      progressOf(
+        t,
+        { ...outcome(false), prompts: [{ session, prompt: 0, endedAt: end, reason: 'completed' }] },
+        texts,
+      )[0]
+    const alone1 = at(0, [s1])
+    const alone2 = at(0, [s2])
+    const both = at(1, [s1, s2])
+    expect(alone1?.toolCalls).toBeGreaterThan(0)
+    expect(alone2?.toolCalls).toBeGreaterThan(0)
+    expect(both?.toolCalls).toBe((alone1?.toolCalls ?? 0) + (alone2?.toolCalls ?? 0))
+    expect(both?.requests).toBe((alone1?.requests ?? 0) + (alone2?.requests ?? 0))
+    // A prompt of the first session counts nothing of the second.
+    expect(at(0, [s1, s2])).toEqual(alone1)
+  })
+
   it('carries the milestone and whether its checks passed', () => {
     const staged: EvalTask = {
       ...task,
@@ -122,7 +145,7 @@ describe('rule forgetting', () => {
       firstHitSession: 0,
       againSameSession: 1,
       againAfterCompaction: 0,
-      againInSession2: 0,
+      againInLaterSession: 0,
     })
   })
 
@@ -157,8 +180,8 @@ describe('rule forgetting', () => {
         firstHit: 1,
         againSameSession: 1,
         againAfterCompaction: 0,
-        withSecondSession: 1,
-        againInSession2: 0,
+        withLaterSession: 1,
+        againInLaterSession: 0,
       },
     })
   })
@@ -356,5 +379,73 @@ describe("the report header of runs left to refinement's own triggers", () => {
     expect(header([record('on', 1, { onProtocol: 'reviews' }), record('off', 1)])).not.toContain(
       TRIGGERS_HEADER,
     )
+  })
+})
+
+describe('saved lessons in context at the start of a later session', () => {
+  const task = byId('cross-03-latin1-menus')
+  const snapshot = (seq: number, included: string[], saved: number) =>
+    JSON.stringify({
+      seq,
+      ts: '2026-11-05T01:00:00.000Z',
+      type: 'x/core/refinement-prefix-change',
+      lane: 'main',
+      origin: 'system',
+      data: { reason: 'experience-snapshot', entries: included.length, tokens: 90, saved, included },
+    })
+  const onRun = (rep: number, second: string[]): RunRecord =>
+    toRunRecord(
+      task,
+      {
+        runId: `cross-03-latin1-menus.on.r${rep}`,
+        system: 'agh',
+        sessions: [
+          { exitCode: 0, timedOut: false, stdoutFile: 'a', sessionFiles: ['s1.jsonl'] },
+          { exitCode: 0, timedOut: false, stdoutFile: 'b', sessionFiles: ['s2.jsonl'] },
+        ],
+        checks: [],
+      },
+      new Map(),
+      {
+        system: 'agh',
+        readFile: (path) =>
+          path === 's1.jsonl'
+            ? real('trap.cross-03.off-s1.jsonl')
+            : [...second, real('trap.cross-03.off-s2.jsonl')].join('\n'),
+      },
+    )
+
+  it('reads from the first snapshot row of each session how many saved entries it carried', () => {
+    const r = onRun(1, [
+      // `included` names each entry as its snapshot line does: kind, a slash, then the id.
+      snapshot(5, ['memory/ws.r0000000001', 'prompt/local-rule', 'prompt/user.r0000000002'], 2),
+      snapshot(90, [], 2),
+    ])
+    expect(r.experienceAtStart).toEqual([
+      { session: 0, snapshot: false, saved: 0, savedIncluded: 0 },
+      { session: 1, snapshot: true, saved: 2, savedIncluded: 2 },
+    ])
+  })
+
+  it('counts the later sessions of on runs that began with a saved lesson in context, and the trap hits per session', () => {
+    const records = [
+      onRun(1, [snapshot(5, ['memory/ws.r0000000001'], 1)]),
+      onRun(2, [snapshot(5, ['memory/local'], 1)]),
+      onRun(3, []),
+    ]
+    const { markdown, json } = buildReport(records, { resamples: 50 })
+    const lessons = (json as { systems: { agh: { lessonsInContext: Record<string, unknown> } } }).systems.agh
+      .lessonsInContext
+    expect(lessons).toMatchObject({
+      laterSessions: 3,
+      withSnapshot: 2,
+      withSaved: 2,
+      savedInContext: 1,
+    })
+    expect(markdown).toContain('### Saved lessons in context at the start of a later session')
+    expect(markdown).toContain('1 of 3 later sessions of on runs')
+    expect(markdown).toContain('| cross-03-latin1-menus.on.r1 | session 2 | yes | 1 | 0 |')
+    expect(markdown).toContain('| cross-03-latin1-menus.on.r2 | session 2 | no | 1 | 0 |')
+    expect(markdown).toContain('| cross-03-latin1-menus.on.r3 | session 2 | no snapshot | 0 | 0 |')
   })
 })

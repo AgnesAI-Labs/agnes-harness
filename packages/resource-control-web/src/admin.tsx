@@ -37,6 +37,7 @@ import {
 import { $, type ResourceNotice, renderNotice } from './admin-dom.js'
 import { resourceAdminError as errorOf, ResourceAdminApi, ResourceAdminApiError } from './api.js'
 import { RESOURCE_ADMIN_LOCALE_NAMESPACE, resourceAdminLocaleCatalog } from './locales/admin.js'
+import { authorizeFromDetail } from './mcp-authorize.js'
 import { writeMcpDefinition } from './mcp-definition-fields.js'
 import {
   createMcpForm,
@@ -219,7 +220,7 @@ class ResourceAdminPage {
     if (tabChanged || workspaceChanged) this.#clearScope()
     this.#tab = scope.tab
     this.#workspaceId = nextWorkspace
-    this.#selected = undefined
+    if (tabChanged || workspaceChanged) this.#selected = undefined
     if (tabChanged || workspaceChanged) await this.#ensureLoaded()
     else if (options.refresh) await this.reload()
   }
@@ -624,6 +625,7 @@ class ResourceAdminPage {
             onEdit={() => openMcpDialog(selected)}
             onClose={() => this.closeDetail()}
             onToolDisclosure={(mode) => void saveToolDisclosure(this, selected, mode)}
+            onAuthorize={() => void authorizeFromDetail(selected.serverId, this.#detailT, confirmEffect)}
           />
         </UiLocaleProvider>,
       )

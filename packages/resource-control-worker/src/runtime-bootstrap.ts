@@ -11,16 +11,15 @@ import {
   validateResourceControlData,
 } from '@agnes/protocol'
 import {
-  createMcpOAuthCredentialResolver,
   createMcpResourceManager,
   createSkillCandidateRegistry,
   createWorkerResourceRuntime,
   type McpManagedInput,
-  type McpOAuthCredentialStore,
+  type McpOAuthStore,
   type ResourceActivationBarrier,
   validateManagedHttpUrl,
 } from '@agnes/resource-control-runtime'
-import { mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
+import { mcpConnectionBudget, mcpSandboxProfile, sandboxMcpConfig } from './mcp-sandbox.js'
 import { syncManagedMcpExecutableAllowlist } from './mcp-server-opener.js'
 import { deploymentMcpPolicy, scanSkills } from './skill-bootstrap.js'
 import { removeFilesystemSkill } from './skill-remove.js'
@@ -69,14 +68,11 @@ export type WorkerResourceBootstrapInput = Readonly<{
   createBarrier(): ResourceActivationBarrier
   createSecrets(profile: ResourceProfile): ResolvedSecrets
   /**
-   * Mirrors `createSecrets` above, for `secretBinding.kind === 'oauth'` (spec §1.6/§3.2).
-   * Optional and lazily invoked for the same reason `createSecrets`'s result is lazily memoized
-   * below: a resource generation with no oauth-bound MCP servers must not require one configured.
-   * Omitted (or a generation with no oauth-bound server), oauth-bound servers simply have no
-   * `oauthCredentials` resolver reaching `createMcpResourceManager` and fail closed via
-   * `resolvedConfig()`'s own `McpOAuthNeedsReconnectError`, not a crash here.
+   * Mirrors `createSecrets` above, for `secretBinding.kind === 'oauth'`: the store holding each OAuth
+   * server's sign-in. Optional and built on first use, like `createSecrets`'s result: a generation
+   * with no OAuth server must not require it. Omitted, OAuth servers need sign-in (they fail closed).
    */
-  createOAuthCredentialStore?(profile: ResourceProfile): McpOAuthCredentialStore
+  createMcpOAuthStore?(profile: ResourceProfile): McpOAuthStore
   /**
    * The already-resolved Agnes home, for the one Agnes-owned Skill root among the five scanSkills
    * scans. This package cannot resolve it itself (see scanSkills's own comment on why), so a caller
@@ -153,7 +149,9 @@ export async function bootstrapWorkerResources(
   // otherwise safe stdio catalog from booting. Instantiate the resolver only at the sole point a
   // validated SecretRef is consumed; bindings that need one still fail closed there.
   let secrets: ResolvedSecrets | undefined
-  let oauthCredentials: ReturnType<typeof createMcpOAuthCredentialResolver> | undefined
+  let oauthStore: McpOAuthStore | undefined
+  const createMcpOAuthStore = input.createMcpOAuthStore
+  const oauth = createMcpOAuthStore && (() => (oauthStore ??= createMcpOAuthStore(input.profile)))
   let reportMcpStatus: ((status: McpStatus) => void) | undefined
   const mcpPolicy = deploymentMcpPolicy(input.env)
   // A Windows test worker is a separate process: rebuild the enabled server's native grant from
@@ -181,25 +179,14 @@ export async function bootstrapWorkerResources(
       secrets ??= input.createSecrets(input.profile)
       return secrets.resolve(ref)
     },
-    // Same lazy-construction discipline as `credentials` above: a generation with no oauth-bound
-    // MCP server must not require `createOAuthCredentialStore` to be configured at all, and the
-    // credential store itself (real implementation: file I/O under the Agnes home) is only built
-    // the first time an oauth-bound server is actually resolved.
-    ...(input.createOAuthCredentialStore
+    // Same lazy construction as `credentials` above: the store is built the first time an OAuth
+    // server reads or writes its sign-in.
+    ...(oauth
       ? {
-          oauthCredentials: (
-            serverId: string,
-            signal: AbortSignal,
-            serverUrl: URL,
-            staticClientId: string | undefined,
-          ) => {
-            const buildStore = input.createOAuthCredentialStore
-            if (!buildStore) throw new Error('unreachable: createOAuthCredentialStore checked above')
-            oauthCredentials ??= createMcpOAuthCredentialResolver({
-              credentialStore: buildStore(input.profile),
-            })
-            return oauthCredentials(serverId, signal, serverUrl, staticClientId)
-          },
+          oauthStore: {
+            read: (serverId) => oauth().read(serverId),
+            update: (serverId, change, options) => oauth().update(serverId, change, options),
+          } satisfies McpOAuthStore,
         }
       : {}),
     // Deployment-owned policy stays separate from resource definitions and durable state.
@@ -214,34 +201,39 @@ export async function bootstrapWorkerResources(
         }),
     },
     httpPolicy: { allowLoopbackHttp: mcpPolicy.allowLoopbackHttp, localDaemon: mcpPolicy.localDaemon },
-    connect: async (config, options) =>
-      connectMcp(
-        await sandboxMcpConfig(
-          config,
-          {
-            dataDir: input.profile.dataDir,
-            ...(input.agnesHomeDir ? { home: input.agnesHomeDir } : {}),
-            ...(input.profile.adapters?.secrets.path
-              ? { secretsDir: input.profile.adapters.secrets.path }
-              : {}),
-            ...(input.cwd ? { workspace: input.cwd } : {}),
-            ...(input.env.PATH ? { path: input.env.PATH } : {}),
-          },
-          options.signal,
-        ),
-        undefined,
+    connect: async (config, options) => {
+      const budget =
+        config.transport === 'stdio' && config.sandboxProfile !== 'off-with-warning'
+          ? mcpConnectionBudget(options.timeoutMs)
+          : undefined
+      const confined = await sandboxMcpConfig(
+        config,
         {
-          signal: options.signal,
-          connectTimeoutMs: options.timeoutMs,
-          // An HTTP redirect target gets the same HTTPS/loopback policy check the configured URL
-          // already passed, so a compromised server cannot bounce the connection past it (SSRF).
-          validateRedirectUrl: (url) =>
-            validateManagedHttpUrl(url, {
-              allowLoopbackHttp: mcpPolicy.allowLoopbackHttp,
-              localDaemon: mcpPolicy.localDaemon,
-            }),
+          dataDir: input.profile.dataDir,
+          ...(input.agnesHomeDir ? { home: input.agnesHomeDir } : {}),
+          ...(input.profile.adapters?.secrets.path
+            ? { secretsDir: input.profile.adapters.secrets.path }
+            : {}),
+          ...(input.cwd ? { workspace: input.cwd } : {}),
+          ...(input.env.PATH ? { path: input.env.PATH } : {}),
         },
-      ),
+        options.signal,
+        budget,
+      )
+      if (budget) options.signal.throwIfAborted()
+      return connectMcp(confined, undefined, {
+        signal: options.signal,
+        connectTimeoutMs: budget?.remaining() ?? options.timeoutMs,
+        ...(options.authorize ? { authorize: options.authorize } : {}),
+        // An HTTP redirect target gets the same HTTPS/loopback policy check the configured URL
+        // already passed, so a compromised server cannot bounce the connection past it (SSRF).
+        validateRedirectUrl: (url) =>
+          validateManagedHttpUrl(url, {
+            allowLoopbackHttp: mcpPolicy.allowLoopbackHttp,
+            localDaemon: mcpPolicy.localDaemon,
+          }),
+      })
+    },
     inspectCatalog: inspectRemoteCatalog,
     // Deliberately still a no-op, not the cross-worker notifier this docstring's function name might
     // suggest (@agnes/resource-control-runtime's `notifyLiveSessionWorkers`). This function

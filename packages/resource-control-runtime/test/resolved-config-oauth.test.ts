@@ -1,175 +1,163 @@
-import { describe, expect, it } from 'vitest'
-import { type McpOAuthCredential, McpOAuthNeedsReconnectError, resolvedConfig } from '../src/mcp.js'
+import { describe, expect, it, vi } from 'vitest'
+import { createMcpResourceManager, type McpConnectOptions, resolvedConfig } from '../src/mcp.js'
+import { signOutMcpOAuth } from '../src/mcp-oauth-logout.js'
+import type { McpOAuthRecord } from '../src/mcp-oauth-store.js'
+import { createMemoryOAuthStore } from './helpers/memory-oauth-store.js'
 
-/**
- * Unit coverage for `resolvedConfig()`'s `secretBinding.kind === 'oauth'` branch
- * . This exercises
- * only the worker-side lazy-refresh decision logic through a fake `oauthCredentials` resolver -- the
- * real resolver's discovery/refreshAuthorization/credential-store wiring is covered separately by
- * mcp-oauth-credentials.test.ts (fixture authorization server, real SDK calls, real guarded fetch).
- */
-
+const URL_TEXT = 'https://mcp.example.com/mcp'
 const policies = { stdioPolicy: { allowedExecutables: [] } }
-const resolver = async (): Promise<string> => {
-  throw new Error('oauth-bound server must not use the string SecretRef resolver')
-}
-const baseEnv = {}
+const barrier = { quiesce: async <T>(_id: string, publish: (permit: unknown) => Promise<T>) => publish({}) }
 
-function managedInput(staticClientId?: string) {
+function definition(binding: Record<string, string> = {}) {
   return {
-    definition: {
-      serverId: 'remote-server',
-      displayName: 'Remote',
-      transport: { kind: 'http' as const, url: 'https://mcp.example.com/mcp' },
-      secretBinding: { kind: 'oauth' as const, ...(staticClientId ? { staticClientId } : {}) },
-    },
-    revision: 'a'.repeat(64),
-    desired: 'enabled' as const,
-    trust: 'trusted' as const,
+    serverId: 'remote-server',
+    displayName: 'Remote',
+    transport: { kind: 'http' as const, url: URL_TEXT },
+    secretBinding: { kind: 'oauth' as const, ...binding },
   }
 }
 
-function credential(overrides: Partial<McpOAuthCredential>): McpOAuthCredential {
-  return {
-    provider: 'mcp-oauth',
-    accessToken: 'tok',
-    refreshToken: 'refresh',
-    expiresAt: Date.now() + 60_000,
-    scope: [],
-    grantId: 'remote-server',
-    ...overrides,
-  }
+const managed = (binding?: Record<string, string>) => ({
+  definition: definition(binding),
+  revision: 'a'.repeat(64),
+  desired: 'enabled' as const,
+  trust: 'trusted' as const,
+})
+
+const record: McpOAuthRecord = {
+  version: 2,
+  kind: 'oauth',
+  epoch: 0,
+  rev: 1,
+  client: { clientId: 'client-1', redirectUri: 'http://localhost:1/callback' },
+  server: {
+    endpoint: URL_TEXT,
+    authorizationServer: 'https://auth.example.com/',
+    tokenEndpoint: 'https://auth.example.com/token',
+    resource: URL_TEXT,
+  },
+  tokens: { accessToken: 'tok-1', refreshToken: 'refresh-1', expiresAt: Date.now() + 3_600_000, scope: [] },
+  requiredScope: [],
 }
 
-describe('resolvedConfig() oauth secretBinding', () => {
-  it('resolves a valid, non-expired oauth token directly without calling refresh', async () => {
-    const fresh = credential({ accessToken: 'tok-1', expiresAt: Date.now() + 60_000 })
-    const oauthCredentials = async () => ({
-      credential: fresh,
-      refresh: async (): Promise<McpOAuthCredential> => {
-        throw new Error('should not be called')
+function manager(options: {
+  oauthStore?: ReturnType<typeof createMemoryOAuthStore>
+  credentials?: () => Promise<string>
+}) {
+  let closes = 0
+  const connect = vi.fn(async (_config: unknown, connectOptions: McpConnectOptions) => {
+    // Like the real transport: the first request asks the authorizer, and a refusal ends the connect.
+    const headers = await connectOptions.authorize?.headers()
+    if (!headers) throw new Error('no authorizer')
+    return {
+      id: 'remote-server',
+      listTools: async () => [],
+      callTool: async () => ({ content: [] }),
+      close: async () => {
+        closes++
       },
-    })
-    const config = await resolvedConfig(
-      managedInput(),
-      resolver,
-      new AbortController().signal,
-      baseEnv,
-      policies,
-      { oauthCredentials },
-    )
-    expect(config.headers?.authorization).toBe('Bearer tok-1')
-  })
-
-  it('refreshes an expired token before connecting', async () => {
-    const expired = credential({ accessToken: 'old', expiresAt: Date.now() - 1_000 })
-    const refreshed = credential({ accessToken: 'new', expiresAt: Date.now() + 60_000 })
-    const oauthCredentials = async () => ({ credential: expired, refresh: async () => refreshed })
-    const config = await resolvedConfig(
-      managedInput(),
-      resolver,
-      new AbortController().signal,
-      baseEnv,
-      policies,
-      { oauthCredentials },
-    )
-    expect(config.headers?.authorization).toBe('Bearer new')
-  })
-
-  it('refreshes a token inside the leeway window even though it has not strictly expired yet', async () => {
-    // 10s left, leeway is 30s (see OAUTH_REFRESH_LEEWAY_MS in mcp.ts) -- must refresh now, not wait
-    // for the connection attempt itself to race the expiry.
-    const almostExpired = credential({ accessToken: 'old', expiresAt: Date.now() + 10_000 })
-    const refreshed = credential({ accessToken: 'new', expiresAt: Date.now() + 3_600_000 })
-    const oauthCredentials = async () => ({ credential: almostExpired, refresh: async () => refreshed })
-    const config = await resolvedConfig(
-      managedInput(),
-      resolver,
-      new AbortController().signal,
-      baseEnv,
-      policies,
-      { oauthCredentials },
-    )
-    expect(config.headers?.authorization).toBe('Bearer new')
-  })
-
-  it('retries with the freshly-read value when refresh fails but another worker already refreshed it (M4)', async () => {
-    const stale = credential({ accessToken: 'stale', expiresAt: Date.now() - 1_000 })
-    const alreadyRefreshedByAnotherWorker = credential({
-      accessToken: 'newer',
-      expiresAt: Date.now() + 60_000,
-    })
-    let readCount = 0
-    const oauthCredentials = async () => ({
-      credential: readCount++ === 0 ? stale : alreadyRefreshedByAnotherWorker,
-      refresh: async (): Promise<McpOAuthCredential> => {
-        throw new Error('refresh_token invalid, rotated by another worker')
-      },
-    })
-    const config = await resolvedConfig(
-      managedInput(),
-      resolver,
-      new AbortController().signal,
-      baseEnv,
-      policies,
-      { oauthCredentials },
-    )
-    expect(config.headers?.authorization).toBe('Bearer newer')
-    expect(readCount).toBe(2)
-  })
-
-  it('throws McpOAuthNeedsReconnectError when refresh fails and the re-read value is unchanged', async () => {
-    const stale = credential({ accessToken: 'stale', expiresAt: Date.now() - 1_000 })
-    const oauthCredentials = async () => ({
-      credential: stale,
-      refresh: async (): Promise<McpOAuthCredential> => {
-        throw new Error('refresh_token revoked')
-      },
-    })
-    await expect(
-      resolvedConfig(managedInput(), resolver, new AbortController().signal, baseEnv, policies, {
-        oauthCredentials,
-      }),
-    ).rejects.toBeInstanceOf(McpOAuthNeedsReconnectError)
-  })
-
-  it('throws McpOAuthNeedsReconnectError when no oauthCredentials resolver is configured', async () => {
-    await expect(
-      resolvedConfig(managedInput(), resolver, new AbortController().signal, baseEnv, policies, {}),
-    ).rejects.toBeInstanceOf(McpOAuthNeedsReconnectError)
-  })
-
-  it('throws McpOAuthNeedsReconnectError when the resolver has no stored credential yet', async () => {
-    const oauthCredentials = async () => undefined
-    await expect(
-      resolvedConfig(managedInput(), resolver, new AbortController().signal, baseEnv, policies, {
-        oauthCredentials,
-      }),
-    ).rejects.toBeInstanceOf(McpOAuthNeedsReconnectError)
-  })
-
-  it('passes the definition serverUrl and staticClientId through to the resolver', async () => {
-    let seen: [string, URL, string | undefined] | undefined
-    const fresh = credential({ accessToken: 'tok-1' })
-    const oauthCredentials = async (
-      serverId: string,
-      _signal: AbortSignal,
-      serverUrl: URL,
-      clientId?: string,
-    ) => {
-      seen = [serverId, serverUrl, clientId]
-      return { credential: fresh, refresh: async () => fresh }
     }
-    await resolvedConfig(
-      managedInput('static-client'),
-      resolver,
-      new AbortController().signal,
-      baseEnv,
-      policies,
-      { oauthCredentials },
-    )
-    expect(seen?.[0]).toBe('remote-server')
-    expect(seen?.[1]?.toString()).toBe('https://mcp.example.com/mcp')
-    expect(seen?.[2]).toBe('static-client')
+  })
+  const credentials = vi.fn(options.credentials ?? (async () => 'unused'))
+  const created = createMcpResourceManager({
+    barrier,
+    profile: 'local-dev',
+    credentials,
+    ...(options.oauthStore ? { oauthStore: options.oauthStore } : {}),
+    stdioPolicy: { allowedExecutables: [] },
+    connect,
+    inspectCatalog: async () => ({ tools: [], skipped: [] }),
+    apply: async () => undefined,
+  })
+  return { created, connect, credentials, closes: () => closes }
+}
+
+const reconcile = (created: ReturnType<typeof createMcpResourceManager>, binding?: Record<string, string>) =>
+  created.reconcile({
+    profile: 'local-dev',
+    serverId: 'remote-server',
+    definition: definition(binding),
+    enabled: true,
+    signal: new AbortController().signal,
+  })
+
+describe('OAuth servers through resolvedConfig and the resource manager', () => {
+  it('the config of an OAuth server carries no token and resolves no secret', async () => {
+    const resolver = vi.fn(async () => 'unused')
+    const config = await resolvedConfig(managed(), resolver, new AbortController().signal, {}, policies)
+    expect(config).toMatchObject({ id: 'remote-server', transport: 'http', url: URL_TEXT })
+    expect(config.headers).toBeUndefined()
+    expect(resolver).not.toHaveBeenCalled()
+  })
+
+  it('connects an OAuth server with an authorizer that sends the stored token', async () => {
+    const oauthStore = createMemoryOAuthStore({ 'remote-server': record })
+    const { created, connect } = manager({ oauthStore })
+    created.stage(managed())
+    const result = await reconcile(created)
+    expect(result.status).toMatchObject({ connectionState: 'ready' })
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(connect.mock.calls[0]?.[0]).not.toHaveProperty('headers')
+    expect(await connect.mock.calls[0]?.[1].authorize?.headers()).toEqual({ authorization: 'Bearer tok-1' })
+    await created.close()
+  })
+
+  it('an OAuth server without a store needs sign-in and is never connected', async () => {
+    const { created, connect } = manager({})
+    created.stage(managed())
+    const result = await reconcile(created)
+    expect(result.status).toMatchObject({
+      connectionState: 'unavailable',
+      lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT', message: 'MCP server needs sign-in' },
+    })
+    expect(connect).not.toHaveBeenCalled()
+  })
+
+  it('an OAuth server with no stored sign-in needs sign-in', async () => {
+    const { created } = manager({ oauthStore: createMemoryOAuthStore() })
+    created.stage(managed())
+    const result = await reconcile(created)
+    expect(result.status).toMatchObject({
+      connectionState: 'unavailable',
+      lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT' },
+    })
+  })
+
+  it("a static client's secret is resolved from its reference for the connection", async () => {
+    const oauthStore = createMemoryOAuthStore({ 'remote-server': record })
+    const { created, credentials } = manager({ oauthStore, credentials: async () => 'static-secret' })
+    const binding = { staticClientId: 'client-1', clientSecretRef: 'secret://mcp/remote-client' }
+    created.stage(managed(binding))
+    const result = await reconcile(created, binding)
+    expect(result.status).toMatchObject({ connectionState: 'ready' })
+    expect(credentials).toHaveBeenCalledWith('secret://mcp/remote-client', expect.any(AbortSignal))
+    await created.close()
+  })
+
+  it('signOut closes the connection, starts no new one and reports that sign-in is needed', async () => {
+    const oauthStore = createMemoryOAuthStore({ 'remote-server': record })
+    const { created, connect, closes } = manager({ oauthStore })
+    created.stage(managed())
+    expect((await reconcile(created)).status).toMatchObject({ connectionState: 'ready' })
+    await signOutMcpOAuth({ serverId: 'remote-server', store: oauthStore })
+
+    const result = await created.signOut({
+      profile: 'local-dev',
+      serverId: 'remote-server',
+      definition: definition(),
+      signal: new AbortController().signal,
+    })
+
+    expect(result).toEqual({
+      status: expect.objectContaining({
+        connectionState: 'unavailable',
+        lastSafeError: expect.objectContaining({ code: 'MCP_OAUTH_NEEDS_RECONNECT' }),
+      }),
+    })
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(closes()).toBe(1)
+    expect(created.snapshot().list()).toEqual([])
+    expect(created.tools('remote-server')).toBeUndefined()
+    expect(created.status('remote-server')).toMatchObject({ connectionState: 'unavailable' })
   })
 })

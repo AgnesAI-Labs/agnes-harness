@@ -24,7 +24,7 @@ type Text = (key: string, vars?: Readonly<Record<string, string | number>>) => s
 export function ResourcesTab({
   tab,
   t,
-  workspaceId,
+  workspaceId: sessionWorkspaceId,
   canSave,
   packageName,
   packageRevision,
@@ -37,6 +37,8 @@ export function ResourcesTab({
   packageName(id: string): string | undefined
   packageRevision?: unknown
 }) {
+  // MCP resources belong to the profile; only Skills follow the session workspace.
+  const workspaceId = tab === 'skills' ? sessionWorkspaceId : undefined
   const names = useRef(packageName)
   names.current = packageName
   // A skill that is on can be run in a new session from its row's menu (this replaces Run skill in settings).

@@ -13,6 +13,8 @@ import type { RuntimeState } from './assembly-runtime.js'
 import type { SessionsState } from './assembly-session-services.js'
 import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
+import { mcpOAuthServerLookup } from './mcp-oauth-server.js'
+import { newSessionActorResolver } from './new-session-actor.js'
 import { webhookSessions, webhookTriggerActor } from './webhook-sessions.js'
 
 export function openClientServices(
@@ -33,6 +35,7 @@ export function openClientServices(
     registry,
     supervisorRegistry,
     services,
+    resourceControl,
   } = state
   const resolveActor: NonNullable<AgnesContext['resolveActor']> =
     o.ports?.resolveActor ??
@@ -44,21 +47,7 @@ export function openClientServices(
         })
       return registry.require(sessionId).session.resolveActor(credential, surface)
     })
-  const resolveNewSessionActor: Host['resolveActor'] =
-    o.profile.seams?.principals?.provider === 'local'
-      ? async (_credential, surface) => ({
-          id: 'local',
-          org: 'local',
-          role: 'owner',
-          deptPath: [],
-          attrs: { surface },
-        })
-      : async () => {
-          throw rpcError('CAPABILITY_DENIED', {
-            method: 'session/new',
-            reason: 'new session actor authority unavailable',
-          })
-        }
+  const resolveNewSessionActor = newSessionActorResolver(o.profile)
   const continueTrigger = createFollowUpRunner(
     { commandQueue, activationBarrier, onPromptEnd: (id) => registry.retireAtTurnBoundary(id) },
     async () => undefined,
@@ -91,6 +80,7 @@ export function openClientServices(
     resolveProfile: o.reloadProfile ?? (async () => o.profile),
     ...(o.inspectProfile ? { inspectProfile: o.inspectProfile } : {}),
     workspaces: () => workspaceCatalog.list(),
+    mcpServer: mcpOAuthServerLookup(resourceControl.service),
     plan: createPlanCommands({
       activationBarrier,
       journal,

@@ -1,7 +1,6 @@
-import type { LoopContext, LoopFactory } from '@agnes/extension-api'
+import { estimateTokens, type LoopContext, type LoopFactory } from '@agnes/extension-api'
 import { driveLoop } from '@agnes/plugin-runtime/testkit'
 import { describe, expect, it } from 'vitest'
-import { estimateTokens } from '../src/compile.js'
 import { createJevLoopFactory } from '../src/index.js'
 import { boundContent } from '../src/scope.js'
 import type { JsonObject } from '../src/types.js'
@@ -280,14 +279,14 @@ describe('Jev loop driver', () => {
       tools: toolPort({ read: () => ok('x'.repeat(200_000)) }),
     })
     const state = jevState(r.jev, 1)
-    expect(estimateTokens(state)).toBeLessThan(24_000)
+    expect(estimateTokens(JSON.stringify(state))).toBeLessThan(24_000)
     const [note] = state.current_turn_notes as JsonObject[]
     expect(note?.text).toEqual(expect.stringMatching(/^\[file: big\.txt\]/))
     expect(String(note?.text).length).toBeLessThanOrEqual(600)
     expect(Buffer.byteLength(JSON.stringify(r.checkpoint?.state))).toBeLessThanOrEqual(32_768)
   })
-  it('asks Jev with a shrunk goal for a 30,000-character Chinese goal', async () => {
-    const r = await run([{ pick: PICK_RESPOND }], { goal: '请'.repeat(30_000), replies: [textReply('好的')] })
+  it('asks Jev with a shrunk goal for a 50,000-character Chinese goal', async () => {
+    const r = await run([{ pick: PICK_RESPOND }], { goal: '请'.repeat(50_000), replies: [textReply('好的')] })
     expect(r.steps.filter((s) => s.route === 'decision_failed')).toEqual([])
     const goal = jevState(r.jev, 0).goal as string
     expect(goal.length).toBeLessThanOrEqual(4003)

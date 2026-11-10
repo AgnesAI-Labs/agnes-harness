@@ -268,6 +268,13 @@ describe('standard.yaml', () => {
       sandbox: { level: 'L0', on_unavailable: 'allow' },
       subagent: { isolation: 'worktree' },
     })
+    // Only the two overlays that can run commands under the Windows write restriction opt in to it;
+    // full access has nothing to restrict, so it states nothing.
+    expect(loadPreset('permission-workspace-write').sandbox).toMatchObject({
+      windows_mode: 'write-restricted',
+    })
+    expect(loadPreset('permission-read-only').sandbox).toMatchObject({ windows_mode: 'write-restricted' })
+    expect(loadPreset('permission-full-access').sandbox).not.toHaveProperty('windows_mode')
     // An overlay never carries what belongs to the recipe: required isolation and approval delivery.
     for (const name of ['permission-read-only', 'permission-workspace-write', 'permission-full-access'])
       expect(JSON.stringify(loadPreset(name))).not.toMatch(/required|on_unavailable":"park|"park"/)

@@ -6,11 +6,13 @@ import {
 } from '@agnes/core'
 import type { ChildRole } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
+import { assertWorkspaceBinding, inheritWorkspaceBinding } from '@agnes/host-common/workspace-authority'
 import type { ConfigurationService } from '@agnes/host-infrastructure/configuration'
 import type { CompositionBinding } from '@agnes/host-providers/profile/composition-state'
 import { applicationConsentSnapshot } from '@agnes/package-manager'
 import { parseAgentRef } from '@agnes/protocol'
 import type { Host, HostSession } from '../lifecycle/host.js'
+import { roleSandboxConstraint } from '../sessions/role-policy.js'
 import type { CreateSessionOptions } from '../sessions/session.js'
 import type { createAgentResolver, sessionAdmission } from './agent-plan.js'
 import type { CompositionContainer } from './composition-selection.js'
@@ -22,25 +24,15 @@ import { intersectRoleTools, recordRoleToolIntersection } from './role-tool-inte
  * (key aside), exactly as a fork inherits it. Without a parent identity the child falls back to its cwd.
  */
 function inheritedWorkspace(
-  host: Host,
   key: string,
   options: Pick<SessionOptions, 'cwd' | 'workspaceIdentity'>,
 ): Pick<CreateSessionOptions, 'cwd' | 'binding'> {
   const identity = options.workspaceIdentity
   if (!identity) return { cwd: options.cwd }
+  assertWorkspaceBinding(identity)
   return {
     cwd: identity.canonicalRoot,
-    binding: host.acceptWorkspaceBinding(
-      {
-        version: 1,
-        sessionKey: key,
-        workspaceId: identity.workspaceId,
-        revision: identity.authorityRevision,
-        canonicalRoot: identity.canonicalRoot,
-        ...(identity.extraRoots?.length ? { extraRoots: identity.extraRoots } : {}),
-      },
-      key,
-    ),
+    binding: inheritWorkspaceBinding(identity, key),
   }
 }
 
@@ -54,6 +46,8 @@ export function createRoleChildren(deps: {
   read(key: string): CompositionBinding | undefined
   pin(binding: CompositionBinding): CompositionBinding
   open(binding: CompositionBinding): Promise<{ host: Host }>
+  /** The child is open and bound to its runtime; its Host announced it before binding its registries. */
+  opened(key: string): void
 }): ChildRolePort {
   const catalogue = async (): Promise<readonly ChildRole[]> => {
     const selection = (await deps.configuration.application?.())?.selection
@@ -87,7 +81,7 @@ export function createRoleChildren(deps: {
       const container = await deps.open(binding)
       const child = await container.host.createSession({
         key,
-        ...inheritedWorkspace(container.host, key, options),
+        ...inheritedWorkspace(key, options),
         writerRunId: options.writerRunId,
         ...(options.lane ? { lane: options.lane } : {}),
       })
@@ -102,6 +96,7 @@ export function createRoleChildren(deps: {
       }
       const owned = [...deps.containers.values()].find((entry) => entry.host === container.host)
       if (owned) deps.sessionOwners.set(key, owned)
+      deps.opened(key)
       return child
     },
     async resolve(parent, input) {
@@ -138,17 +133,11 @@ export function createRoleChildren(deps: {
         throw new HostError('E_PRESET_UNSUPPORTED', 'Parent workspace policy snapshot is unavailable')
       const filesystem = structuredClone(sandbox.policy)
       if (sandbox.network === 'allow') filesystem.networkAllow = ['*']
-      const enforcement = parent.d.runtime.enforcement()
-      // A file fence is not an OS boundary. Preserve confinement unless Host already admitted
-      // this local file-only session through the existing explicit unconfined fallback.
-      const unconfined =
-        sandbox.local &&
-        sandbox.allowsUnconfined === true &&
-        enforcement.level === 'partial' &&
-        enforcement.scope.length === 1 &&
-        enforcement.scope[0] === 'file'
-      const enforced =
-        parentAuthority?.sandboxRequired === true || (enforcement.level !== 'none' && !unconfined)
+      const constraint = roleSandboxConstraint({
+        sandbox,
+        enforcement: parent.d.runtime.enforcement(),
+        parentSandboxRequired: parentAuthority?.sandboxRequired === true,
+      })
       const [trigger] =
         triggerSeq === undefined
           ? []
@@ -221,7 +210,7 @@ export function createRoleChildren(deps: {
         humanApprovals,
         ...(delegatedFullAccess ? { delegatedFullAccess: true as const } : {}),
         filesystem,
-        sandboxRequired: enforced,
+        ...constraint,
         parentPolicy:
           parentPreset.approval.policy === 'full-access'
             ? 'default'
@@ -259,7 +248,7 @@ export function createRoleChildren(deps: {
           const container = await deps.open(binding)
           const child = await container.host.createSession({
             key,
-            ...inheritedWorkspace(container.host, key, options),
+            ...inheritedWorkspace(key, options),
             preset: tree.preset,
             strict: true,
             roleDelegation: {
@@ -281,6 +270,7 @@ export function createRoleChildren(deps: {
           }
           const owned = [...deps.containers.values()].find((entry) => entry.host === container.host)
           if (owned) deps.sessionOwners.set(key, owned)
+          deps.opened(key)
           return child
         },
       }

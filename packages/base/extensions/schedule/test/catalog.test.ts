@@ -761,3 +761,75 @@ it('finds the open run through the pending-run index without scanning completed 
   }>
   expect(plan.map((row) => row.detail).join('\n')).toContain('USING INDEX schedule_runs_open_job')
 })
+
+it('uses durable run identity idempotently through dispatch and repeated failure recovery', () => {
+  const { catalog, jobs } = memory()
+  const task = catalog.create(daily())
+  const key = [...jobs.rows.keys()][0]!
+  expect(catalog.targetOf(key)).toMatchObject({ id: task.id, revision: 1, jobKey: key })
+  const identity = { at: NOW, sessionKey: 'fresh', runId: 'run_0123456789abcdef0123456789abcdef' }
+  catalog.recordDispatch(key, { ...identity, reason: 'prompt' })
+  catalog.recordFailure(key, { ...identity, reason: 'interrupted' })
+  catalog.recordFailure(key, { ...identity, reason: 'interrupted' })
+  const runs = catalog.history({ id: task.id }).runs
+  expect(runs).toHaveLength(1)
+  expect(runs[0]).toMatchObject({ id: identity.runId, sessionKey: 'fresh', outcome: 'failed' })
+})
+
+it('enforces legacy target creation policy in the shared catalog and revokes qualification on target change', () => {
+  const db = new DatabaseSync(':memory:')
+  const jobs = memoryScheduleJobs()
+  const revoked: string[] = []
+  const catalog = openScheduleCatalog(sqlOf(db), jobs, () => NOW, {
+    allow: (id, target) => target.kind !== 'new-session' || target.cwd !== '/legacy' || id === 'eligible',
+    revoke: (id) => revoked.push(id),
+  })
+  expect(() => catalog.create({ ...daily(), target: { kind: 'new-session', cwd: '/legacy' } })).toThrow()
+  const existing = catalog.create(daily())
+  expect(
+    catalog.update({ ...daily(), id: existing.id, target: { kind: 'new-session', cwd: '/legacy' } }),
+  ).toMatchObject({ updated: false, code: 'workspace_missing' })
+  expect(
+    catalog.update({ ...daily(), id: existing.id, target: { kind: 'new-session', cwd: '/other' } }),
+  ).toMatchObject({ id: existing.id })
+  expect(revoked).toContain(existing.id)
+})
+
+it('preserves an already settled durable receipt when recovering before the job mark cleared', () => {
+  const { catalog, jobs } = memory()
+  const task = catalog.create(daily())
+  const key = [...jobs.rows.keys()][0]!
+  const identity = { at: NOW, sessionKey: 'fresh', runId: 'run_0123456789abcdef0123456789abcdef' }
+  catalog.recordDispatch(key, { ...identity, reason: 'prompt' })
+  catalog.noteSettlement(key, { at: NOW, nextRunAt: NOW + 1000, reason: 'completed' })
+  catalog.recordFailure(key, { ...identity, reason: 'interrupted' })
+  expect(catalog.history({ id: task.id }).runs).toHaveLength(1)
+  expect(catalog.history({ id: task.id }).runs[0]).toMatchObject({ id: identity.runId, outcome: 'ran' })
+})
+
+it('keeps legacy eligibility when only creation options change in the same target root', () => {
+  const db = new DatabaseSync(':memory:')
+  const jobs = memoryScheduleJobs()
+  const revoked: string[] = []
+  const catalog = openScheduleCatalog(sqlOf(db), jobs, () => NOW, {
+    allow: () => true,
+    revoke: (id) => revoked.push(id),
+  })
+  const task = catalog.create({ ...daily(), target: { kind: 'new-session', cwd: '/legacy', preset: 'a' } })
+  const target = {
+    kind: 'new-session',
+    cwd: '/legacy',
+    preset: 'b',
+    bundles: ['report#bundle'],
+    loop: { id: 'report', version: '1.0.0' },
+    unattendedApproval: 'refuse',
+  }
+  expect(catalog.update({ ...daily(), id: task.id, target })).toMatchObject({
+    id: task.id,
+    target,
+    revision: 2,
+  })
+  expect(revoked).toEqual([])
+  catalog.update({ ...daily(), id: task.id, target: { kind: 'new-session', cwd: '/other' } })
+  expect(revoked).toEqual([task.id])
+})

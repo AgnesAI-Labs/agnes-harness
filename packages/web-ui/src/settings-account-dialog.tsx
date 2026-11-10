@@ -56,6 +56,10 @@ function AccountKeyField({ t }: { t: Translate }) {
   )
 }
 
+/** Read late, because this dialog's fields are driven by the controller outside React. */
+export const accountSaveDisabledReason = () =>
+  document.getElementById('config-save')?.getAttribute('data-disabled-reason') ?? ''
+
 export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
   const bodyRef = useRef<HTMLElement>()
   const [body, setBody] = useState<HTMLElement>()
@@ -118,6 +122,33 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                 </div>
                 <fieldset className="config-section account-connection">
                   <legend>{t('accounts.connectionLegend')}</legend>
+                  {/* The address comes first: a compatible account has to say where it talks to. */}
+                  <div className="account-field form-field-wide account-endpoint">
+                    <div className="account-field-head">
+                      <Field
+                        className="form-field"
+                        label={t('accounts.baseUrlLabel')}
+                        htmlFor="config-base-url"
+                      />
+                      <Button
+                        id="config-base-url-reset"
+                        appearance="link"
+                        size="small"
+                        htmlType="button"
+                        hidden
+                      >
+                        {t('accounts.resetBaseUrl')}
+                      </Button>
+                    </div>
+                    <SettingsInput
+                      id="config-base-url"
+                      className="account-mono"
+                      autoComplete="url"
+                      aria-describedby="config-base-url-hint"
+                    />
+                    <p id="config-base-url-hint" className="field-hint" />
+                    <p id="config-base-url-error" className="account-field-error" />
+                  </div>
                   {/* The select holds the choice; the controller shows it as two segments. */}
                   <div id="config-auth-method-field" className="account-auth-method">
                     <span hidden>
@@ -223,32 +254,6 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                       <p id="config-account-name-error" className="account-field-error" />
                     </div>
                     <div className="account-field">
-                      <div className="account-field-head">
-                        <Field
-                          className="form-field"
-                          label={t('accounts.baseUrlLabel')}
-                          htmlFor="config-base-url"
-                        />
-                        <Button
-                          id="config-base-url-reset"
-                          appearance="link"
-                          size="small"
-                          htmlType="button"
-                          hidden
-                        >
-                          {t('accounts.resetBaseUrl')}
-                        </Button>
-                      </div>
-                      <SettingsInput
-                        id="config-base-url"
-                        className="account-mono"
-                        autoComplete="url"
-                        aria-describedby="config-base-url-hint"
-                      />
-                      <p id="config-base-url-hint" className="field-hint" />
-                      <p id="config-base-url-error" className="account-field-error" />
-                    </div>
-                    <div className="account-field">
                       <div id="config-account-network" />
                       <p id="config-account-network-error" className="account-field-error" />
                     </div>
@@ -274,7 +279,15 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                 <Button id="config-account-cancel" htmlType="button">
                   {t('accounts.cancel')}
                 </Button>
-                <Button id="config-save" appearance="primary" htmlType="submit" form="config-form" disabled>
+                <Button
+                  id="config-save"
+                  appearance="primary"
+                  htmlType="submit"
+                  form="config-form"
+                  disabled
+                  // The controller owns why saving is unavailable and publishes it on the button.
+                  disabledReason={accountSaveDisabledReason}
+                >
                   {t('accounts.save')}
                 </Button>
               </div>

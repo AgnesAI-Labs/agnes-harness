@@ -391,7 +391,12 @@ export async function sessionWorkspaceChanges(
   const port = session.d.workspaceInvocation
   if (!port) throw rpcError('CAPABILITY_DENIED')
   const invoke = (view: Parameters<Parameters<typeof port.run>[0]>[0]) =>
-    readWorkspaceChanges(session, view.root, view.fs(), input)
+    readWorkspaceChanges(
+      session,
+      view.root,
+      { stat: view.fs().stat, readScope: view.documentReadScope() },
+      input,
+    )
   return session.d.workspacePublication
     ? session.d.workspacePublication.workspace(() => ({ port, handler: invoke }))
     : port.run(invoke)

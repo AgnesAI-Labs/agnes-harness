@@ -380,6 +380,26 @@
     font-size: var(--font-size-xs);
     letter-spacing: 0;
   }
+  /* 账户弹窗里分组标题要和字段标签、说明文字拉开层级：13px 与 12px 肉眼分不出，
+   标题用正文尺寸加粗，字段标签与说明保持小字。 */
+  :is(#account-dialog, .account-page-host) .config-section legend {
+    margin-bottom: var(--s8);
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: 600;
+  }
+  /* 模型区是这个账户提供哪些模型的一级分组，和分组标题同一层级。 */
+  :is(#account-dialog, .account-page-host) .account-compatible-models .account-group-heading {
+    color: var(--agnes-text-primary);
+    font-size: var(--font-size-body);
+    font-weight: 600;
+  }
+  /* 模型与连接结果自成一块，与上方的地址、密钥分出界线。 */
+  :is(#account-dialog, .account-page-host) #config-compatible-models:not([hidden]) {
+    margin-top: var(--s4);
+    padding-top: var(--s16);
+    border-top: 1px solid var(--agnes-line-primary);
+  }
   :is(#config-form, #account-dialog) .form-field {
     gap: 0.375rem;
     color: var(--agnes-text-secondary);

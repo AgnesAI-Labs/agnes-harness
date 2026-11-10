@@ -264,12 +264,14 @@ it('operates the React settings pane and account dialog without losing native fo
     })
     dialog.querySelector<HTMLButtonElement>('#config-save')?.click()
     await vi.waitFor(() => expect(baseUrl.getAttribute('aria-invalid')).toBe('true'))
-    // An address the backend refuses is told under the address, in the advanced options it opens.
+    // An address error stays visible in the connection section without opening unrelated advanced fields.
     expect(dialog.querySelector('#config-base-url-error')?.textContent).toBe(
       zhT('settings.config.invalidBaseUrl'),
     )
     expect(baseUrl.getAttribute('aria-describedby')).toContain('config-base-url-error')
-    expect(dialog.querySelector('#config-account-advanced')?.getAttribute('data-open')).toBe('true')
+    expect(baseUrl.closest('.account-connection')).not.toBeNull()
+    expect(baseUrl.closest('#config-account-advanced')).toBeNull()
+    expect(dialog.querySelector('#config-account-advanced')?.getAttribute('data-open')).toBe('false')
     expect(dialog.querySelector('#config-error')?.textContent).toBe('')
     dialog.querySelector<HTMLButtonElement>('#config-save')?.click()
     await vi.waitFor(() =>

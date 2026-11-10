@@ -12,6 +12,7 @@ import {
   type SessionImpl,
   toProviderRequest,
 } from '@agnes/core'
+import { estimateTokens } from '@agnes/extension-api'
 import type { SessionTasks } from '@agnes/host-extensions/assemble/packages'
 import type { InferenceEvent } from '@agnes/protocol'
 import { bestEffort } from '../../best-effort.js'
@@ -153,6 +154,8 @@ export function createSessionTasks(
           sessionKey: `aux:${randomUUID()}`,
           derivedHash: derived.header.derived_hash,
         })
+        // A budget hold, not an estimate: one token per UTF-8 byte of the wire is never short of the real
+        // input, so a settled cost cannot overrun the reservation.
         const tokens = new TextEncoder().encode(JSON.stringify(wire)).byteLength + maxTokens
         const projected = await abortable(
           s.d.runtime.billingProjected({ tokensEstimate: tokens, model: modelId }),
@@ -223,7 +226,7 @@ export function createSessionTasks(
             route,
             tokens: usage?.tokens ?? {
               input: tokens,
-              output: Math.ceil(text.length / 4),
+              output: estimateTokens(text),
               cacheRead: 0,
               cacheWrite: 0,
             },

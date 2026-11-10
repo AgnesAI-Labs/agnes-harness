@@ -40,7 +40,7 @@ import { visibleRefresh } from '../../../visible-refresh.js'
 import { AdminApiError, PluginAdminApi } from '../api.js'
 import type { PluginKind } from '../control-panel.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from '../locales/admin.js'
-import { SOURCE_FORMATS, SourceFormState, sourceFromForm, sourceProblem } from '../source-form.js'
+import { SOURCE_FORMATS, SourceFormState } from '../source-form.js'
 import {
   ADMIN_FEATURES,
   type AdminContext,
@@ -774,18 +774,20 @@ export class PluginAdminPage {
   /** Confirm the reviewed check. The page stays, busy, until the operation it starts has settled. */
   async confirmReview(enableAfter = false): Promise<void> {
     const flow = this.#flow
-    if (!flow.review || flow.review.busy) return
-    flow.review = { busy: true, enableAfter }
+    const review = flow.beginReview(enableAfter)
+    if (!review) return
+    const preview = this.#state.preview
     this.render()
     try {
+      // Inventory reads temporarily revoke effects; decide on the finished authority without
+      // carrying this confirmation into a cancelled, replaced or disposed review.
+      await this.#refresh.idle()
+      if (this.#lifetime.signal.aborted || flow.review !== review || this.#state.preview !== preview) return
       const operationId = await this.#submitPreview(enableAfter)
       // Refused before it was sent (permission, connection): say why on this page.
-      if (flow.review)
-        flow.review = operationId
-          ? { ...flow.review, operationId }
-          : { busy: false, error: this.#state.error, enableAfter }
+      flow.settleReview(review, operationId, this.#state.error)
     } catch (error) {
-      if (flow.review) flow.review = { busy: false, error: safeMessage(error), enableAfter }
+      flow.settleReview(review, undefined, safeMessage(error))
     }
     this.render()
   }
@@ -936,17 +938,13 @@ export class PluginAdminPage {
     this.#source.trigger?.focus({ preventScroll: true })
   }
 
-  submitSource(): void {
+  async submitSource(): Promise<void> {
     if (this.#source.busy) return
-    const ref = this.#source.ref.trim()
-    const problem = sourceProblem(this.#source.type, ref, this.#t)
-    const source = problem ? undefined : sourceFromForm(this.#source.type, ref)
+    const source = this.#source.resolve(this.#t)
     if (!source) {
-      this.#source.problem = { type: this.#source.type, ref }
       this.render()
       return
     }
-    this.#source.problem = undefined
     const mode = this.#source.mode
     const packageId = this.#source.packageId
     const trigger = this.#source.trigger ?? this.#installTrigger()
@@ -955,23 +953,24 @@ export class PluginAdminPage {
     this.#source.checkSource = source
     // Stay on this dialog until the backend has accepted the check: a refusal has to be readable
     // where the user is looking, not in a panel that this dialog has just been closed over.
-    void this.inspect(source, mode, trigger, packageId)
-      .then((result) => {
-        if (this.#lifetime.signal.aborted) return
-        if (result.ok && this.#surface) {
-          // On the full page the form stays, busy, until the check is done: then its review page
-          // takes its place, or its failure shows here.
-          this.#flow.sourceCheck = result.operationId
-          return
-        }
-        this.#source.busy = false
-        if (result.ok) this.closeSourceDialog()
-        else this.#source.error = result.error
-      })
-      .catch(() => {
-        this.#source.busy = false
-      })
-      .then(() => this.render())
+    try {
+      // Decide from the finished inventory; a refresh temporarily revokes effects.
+      await this.#refresh.idle()
+      if (this.#lifetime.signal.aborted) return
+      const result = await this.inspect(source, mode, trigger, packageId)
+      if (this.#lifetime.signal.aborted) return
+      if (result.ok && this.#surface) {
+        this.#flow.sourceCheck = result.operationId
+        return
+      }
+      this.#source.busy = false
+      if (result.ok) this.closeSourceDialog()
+      else this.#source.error = result.error
+    } catch {
+      this.#source.busy = false
+    } finally {
+      this.render()
+    }
   }
 
   async operationUpdated(operation: PackageOperation): Promise<void> {

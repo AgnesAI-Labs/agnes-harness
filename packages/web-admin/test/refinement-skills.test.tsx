@@ -1,5 +1,6 @@
 /** @vitest-environment happy-dom */
 import type { RefinementSkillsParams, RefinementSkillsResult } from '@agnes/protocol'
+import type { AdminMemoryParams, AdminMemoryResult } from '@agnes/protocol/gen/app-server'
 import { createDocumentLocaleSource, UiLocaleProvider } from '@agnes/web-ui'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
@@ -53,16 +54,36 @@ function listed(): RefinementSkillsResult {
   }
 }
 
+const paragraph = (id: string) => ({ id, text: `Lesson ${id}`, validity: 'valid' as const })
+/** The saved list of `admin.memory`: three in the workspace, two in user memory, unless told otherwise. */
+const savedLists =
+  (counts: { workspace: number; user: number } = { workspace: 3, user: 2 }, mode = 'auto') =>
+  async (input: AdminMemoryParams): Promise<AdminMemoryResult> => {
+    if (!input.saved) return { inspection: { settings: { mode } } } as unknown as AdminMemoryResult
+    const count = input.saved?.layer === 'user' ? counts.user : counts.workspace
+    return {
+      saved: {
+        // One past its review date in each list: not counted as saved experience.
+        paragraphs: [
+          ...Array.from({ length: count }, (_, i) => paragraph(`r${String(i).padStart(10, '0')}`)),
+          { id: 'rzzzzzzzzzz', text: 'An expired lesson', validity: 'expired' as const },
+        ],
+      },
+    } as unknown as AdminMemoryResult
+  }
+
 function fakeApi(result: RefinementSkillsResult = listed()) {
   const skills = vi.fn(async (_input: RefinementSkillsParams) => structuredClone(result))
+  const memory = vi.fn(savedLists())
   const api: SavedSkillsApi = {
     workspaces: vi.fn(async () => [
       { path: '/gone', available: false },
       { path: '/work/repo', available: true },
     ]),
     skills,
+    memory,
   }
-  return { api, skills }
+  return { api, skills, memory }
 }
 
 async function mount(api: SavedSkillsApi) {
@@ -99,6 +120,42 @@ it('lists the saved skills of the first available workspace, with their state an
   // Only a skill with an earlier version can be rolled back.
   const rollbacks = all(host, 'refinement-saved-skill-rollback') as HTMLButtonElement[]
   expect(rollbacks.map((button) => button.disabled)).toEqual([false, true])
+})
+
+it('says when a skill was turned off because the workspace reached its limit', async () => {
+  const base = listed()
+  const [first, second] = base.skills as [
+    RefinementSkillsResult['skills'][number],
+    RefinementSkillsResult['skills'][number],
+  ]
+  const { api } = fakeApi({ ...base, skills: [first, { ...second, disabledFor: 'capacity' }] })
+  const host = await mount(api)
+  const rows = all(host, 'refinement-saved-skill')
+  expect(rows[1]?.textContent).toContain('Turned off: workspace limit of 20')
+  expect(rows[1]?.textContent).not.toMatch(/Awaiting review/)
+  expect(rows[0]?.textContent).not.toContain('limit')
+})
+
+it('shows how much task experience is saved for the chosen workspace, and in user memory', async () => {
+  const { api, memory } = fakeApi()
+  const host = await mount(api)
+  expect(memory).toHaveBeenCalledWith({ cwd: '/work/repo', saved: { action: 'list' } })
+  expect(memory).toHaveBeenCalledWith({ cwd: '/work/repo', saved: { action: 'list', layer: 'user' } })
+  const counts = all(host, 'refinement-saved-counts')
+  expect(counts).toHaveLength(1)
+  expect(counts[0]?.textContent).toContain('Saved experience: 5 (workspace 3, user 2)')
+})
+
+it('shows no count when the saved lists cannot be read', async () => {
+  const { api } = fakeApi()
+  const host = await mount({
+    ...api,
+    memory: async () => {
+      throw new Error('memory unavailable')
+    },
+  })
+  expect(all(host, 'refinement-saved-counts')).toHaveLength(0)
+  expect(all(host, 'refinement-saved-skill')).toHaveLength(2)
 })
 
 it('marks a saved skill made from a finished workflow run, and no other', async () => {
@@ -145,6 +202,7 @@ it('shows the drafts kept for a person as plain text, never as markup', async ()
 it('says so when the request fails, and shows nothing when nothing is saved', async () => {
   const failing: SavedSkillsApi = {
     workspaces: async () => [{ path: '/w', available: true }],
+    memory: savedLists(),
     skills: async () => {
       throw Object.assign(new Error('x'), {
         data: { code: 'SEMANTIC_REJECTED', reason: 'SKILL_CHANGED_SINCE' },
@@ -159,7 +217,30 @@ it('says so when the request fails, and shows nothing when nothing is saved', as
 
 it('shows the section in Chinese', async () => {
   document.documentElement.lang = 'zh-CN'
-  const host = await mount(fakeApi().api)
+  const base = listed()
+  const [first, second] = base.skills as [
+    RefinementSkillsResult['skills'][number],
+    RefinementSkillsResult['skills'][number],
+  ]
+  const host = await mount(
+    fakeApi({ ...base, skills: [first, second, { ...second, name: 'over', disabledFor: 'capacity' }] }).api,
+  )
   expect(host.textContent).toContain('待复核')
   expect(host.textContent).toContain('回滚到上一版')
+  expect(host.textContent).toContain('因数量上限停用')
+  expect(host.textContent).toContain('已存经验 5 条（工作区 3，用户 2）')
+})
+
+it('says so when the chosen workspace keeps no memory, so lessons stay in their session', async () => {
+  const off = fakeApi()
+  off.api.memory = vi.fn(savedLists(undefined, 'off'))
+  const host = await mount(off.api)
+  expect(off.api.memory).toHaveBeenCalledWith({ cwd: '/work/repo' })
+  const warning = all(host, 'refinement-memory-off')
+  expect(warning).toHaveLength(1)
+  expect(warning[0]?.textContent).toContain('Workspace memory is off')
+  expect(warning[0]?.textContent).toContain('Settings → General → Personalization → Memory')
+  const on = fakeApi()
+  const other = await mount(on.api)
+  expect(all(other, 'refinement-memory-off')).toHaveLength(0)
 })

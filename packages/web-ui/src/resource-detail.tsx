@@ -254,6 +254,7 @@ export function McpDetailContent({
   onEdit,
   onClose,
   onToolDisclosure,
+  onAuthorize,
 }: {
   server: McpServerDescriptor
   disabled: boolean
@@ -268,6 +269,8 @@ export function McpDetailContent({
   onClose(): void
   /** Saves how this server's tools reach the model. Absent hides the control. */
   onToolDisclosure?(mode: McpToolDisclosure): void
+  /** Starts the browser sign-in of an OAuth server. Absent hides the button. */
+  onAuthorize?(): void
 }): JSX.Element {
   const { t } = useUiText(RESOURCE_DETAIL_LOCALE_NAMESPACE, resourceDetailLocaleCatalog)
   const disclosure = server.definition.toolDisclosure ?? 'auto'
@@ -289,17 +292,18 @@ export function McpDetailContent({
               className="resource-facts"
               items={[[t('mcp.oauth.label'), t(`mcp.oauth.${server.authorizationStatus ?? 'pending'}`)]]}
             />
-            {/* Signing in is a top-level visit to the provider; this page stays open behind it. */}
-            <Button
-              size="small"
-              appearance={server.authorizationStatus === 'authorized' ? 'secondary' : 'primary'}
-              data-testid="mcp-oauth-authorize"
-              href={`/oauth/${encodeURIComponent(server.serverId)}/start`}
-              target="_blank"
-              rel="noopener"
-            >
-              {t(server.authorizationStatus === 'authorized' ? 'mcp.oauth.again' : 'mcp.oauth.authorize')}
-            </Button>
+            {/* Signing in leaves this page for the provider; the caller checks the callback address first. */}
+            {onAuthorize && (
+              <Button
+                size="small"
+                appearance={server.authorizationStatus === 'authorized' ? 'secondary' : 'primary'}
+                data-testid="mcp-oauth-authorize"
+                htmlType="button"
+                onClick={onAuthorize}
+              >
+                {t(server.authorizationStatus === 'authorized' ? 'mcp.oauth.again' : 'mcp.oauth.authorize')}
+              </Button>
+            )}
           </div>
         )}
         {server.lastSafeError && (

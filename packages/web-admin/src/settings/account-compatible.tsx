@@ -42,12 +42,11 @@ export function compatibleModelsPanel(host: HTMLElement | undefined, changed: ()
       host,
       <div className="account-field account-compatible-models">
         <div className="account-field-head">
-          <Field className="form-field" label={tr('accounts.compatible.models')} />
+          <Field className="form-field account-group-heading" label={tr('accounts.compatible.models')} />
           <Button appearance="link" size="small" htmlType="button" disabled={disabled} onClick={fetch}>
             {tr('accounts.compatible.fetch')}
           </Button>
         </div>
-        <p className="field-hint">{tr('accounts.compatible.choose')}</p>
         {error && (
           <p className="field-hint" data-tone="warn" role="status">
             {`${catalogueErrorText(error)} ${tr('accounts.compatible.manualStill')}`}
@@ -94,7 +93,15 @@ export function compatibleModelsPanel(host: HTMLElement | undefined, changed: ()
       for (const model of result.models) known.set(model.id, model)
       listed = result.models.map((model) => model.id)
       error = result.catalogueError
+      // A draft with nothing chosen starts with the endpoint's first model: saving needs one
+      // declared model, and listing alone should leave the account ready. The rest stay one click away.
+      const first = listed[0]
+      if (first && chosen.length === 0) chosen = [first]
       render()
+    },
+    /** Whether the endpoint has listed models in this draft, so the form can name the next step. */
+    hasListed(): boolean {
+      return listed.length > 0
     },
     /** The declared models: chosen ids, carrying what the listing or the saved account knew. */
     models(settings?: ReadonlyMap<string, ModelSettings>): ConfigModel[] {

@@ -79,6 +79,9 @@ describe('web presentation controls', () => {
     ).toBe('Enter 发送，Shift+Enter 换行')
     expect(modelSelectLabel(undefined, zhT)).toBe('选择模型')
     expect(modelSelectLabel({ route: 'openai', id: 'gpt-5.6' }, zhT)).toBe('gpt-5.6')
+    const named = { route: 'deepseek', id: 'deepseek-flash', name: 'DeepSeek V4.1 Flash' }
+    expect(modelSelectLabel(named, zhT)).toBe('DeepSeek V4.1 Flash')
+    expect(modelSelectAccessibleName(named, zhT)).toBe('当前会话模型：DeepSeek V4.1 Flash')
     expect(modelSelectAccessibleName({ route: 'account-acct-private', id: 'gpt-5.6' }, zhT)).toBe(
       '当前会话模型：gpt-5.6',
     )

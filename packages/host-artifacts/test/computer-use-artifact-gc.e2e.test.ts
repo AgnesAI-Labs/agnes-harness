@@ -15,6 +15,7 @@ import { ARTIFACT_RECLAIMED_FAILURE, createLocalArtifactReadStore } from '../src
 import {
   ARTIFACT_REF_INDEX_FILE,
   catchUpArtifactRefIndexWithinBudget,
+  openArtifactRefIndex,
   verifyRootsUnderLedgerLock,
 } from '../src/artifact-ref-index.js'
 import { planRetentionProtection } from '../src/artifact-retention-protection.js'
@@ -422,9 +423,25 @@ describe.skipIf(!privateArtifactDeleteAvailable())('Computer Use artifact GC pro
     })
     const round = runtime.trigger()
     await untilIndexing(fixture.dataDir)
+    const databaseCloseMs: number[] = []
+    const closeDatabase = DatabaseSync.prototype.close
+    const closingDatabase = vi.spyOn(DatabaseSync.prototype, 'close').mockImplementation(function (
+      this: DatabaseSync,
+    ) {
+      const started = performance.now()
+      try {
+        return closeDatabase.call(this)
+      } finally {
+        databaseCloseMs.push(performance.now() - started)
+      }
+    })
     const started = performance.now()
-    await runtime.close()
-    expect(performance.now() - started).toBeLessThan(500)
+    try {
+      await runtime.close()
+    } finally {
+      closingDatabase.mockRestore()
+    }
+    expect(performance.now() - started, JSON.stringify({ databaseCloseMs })).toBeLessThan(500)
     await expect(round).resolves.toMatchObject({ deleted: 0 })
     expect(existsSync(fixture.artifact)).toBe(true)
     expect(indexedRows(fixture.dataDir)).toBeLessThan(total)
@@ -449,6 +466,114 @@ describe.skipIf(!privateArtifactDeleteAvailable())('Computer Use artifact GC pro
       index.close()
     }
   }, 60_000)
+
+  it('aborts an index-open lock wait at close without waiting for the other writer', async () => {
+    const fixture = await screenshotFixture()
+    createEmptyLedger(fixture.dataDir)
+    const prepared = await openArtifactRefIndex(fixture.dataDir)
+    prepared.close()
+    const holder = new DatabaseSync(join(fixture.dataDir, 'artifacts', ARTIFACT_REF_INDEX_FILE))
+    holder.exec('BEGIN IMMEDIATE')
+    const exec = DatabaseSync.prototype.exec
+    let contended!: () => void
+    const contention = new Promise<void>((resolve) => {
+      contended = resolve
+    })
+    const spy = vi.spyOn(DatabaseSync.prototype, 'exec').mockImplementation(function (
+      this: DatabaseSync,
+      sql,
+    ) {
+      try {
+        return exec.call(this, sql)
+      } catch (error) {
+        if (
+          this !== holder &&
+          sql === 'BEGIN IMMEDIATE' &&
+          [5, 6].includes((error as { errcode: number }).errcode)
+        )
+          contended()
+        throw error
+      }
+    })
+    const runtime = createComputerUseArtifactGcRuntime({
+      dataDir: fixture.dataDir,
+      retention,
+      clock: () => 120_000,
+    })
+    const round = runtime.trigger()
+    let closing: Promise<void> | undefined
+    try {
+      await contention
+      closing = runtime.close()
+      expect(await Promise.race([closing.then(() => 'closed'), delay(450).then(() => 'blocked')])).toBe(
+        'closed',
+      )
+      await expect(round).resolves.toMatchObject({ deleted: 0 })
+      expect(holder.isTransaction).toBe(true)
+      expect(existsSync(fixture.artifact)).toBe(true)
+    } finally {
+      spy.mockRestore()
+      if (holder.isTransaction) exec.call(holder, 'ROLLBACK')
+      holder.close()
+      await closing
+      await runtime.close()
+    }
+  })
+
+  it('aborts an index-lock wait at close without waiting for the other writer', async () => {
+    const fixture = await screenshotFixture()
+    const ledger = ledgerRows(fixture.dataDir)
+    ledger.bulk(1, 50_000)
+    ledger.database.close()
+    const runtime = createComputerUseArtifactGcRuntime({
+      dataDir: fixture.dataDir,
+      retention,
+      clock: () => 120_000,
+    })
+    const round = runtime.trigger()
+    let holder: DatabaseSync | undefined
+    const exec = DatabaseSync.prototype.exec
+    let contended!: () => void
+    const contention = new Promise<void>((resolve) => {
+      contended = resolve
+    })
+    const spy = vi.spyOn(DatabaseSync.prototype, 'exec').mockImplementation(function (
+      this: DatabaseSync,
+      sql,
+    ) {
+      try {
+        return exec.call(this, sql)
+      } catch (error) {
+        if (
+          this !== holder &&
+          sql === 'BEGIN IMMEDIATE' &&
+          [5, 6].includes((error as { errcode: number }).errcode)
+        )
+          contended()
+        throw error
+      }
+    })
+    let closing: Promise<void> | undefined
+    try {
+      await untilIndexing(fixture.dataDir)
+      holder = new DatabaseSync(join(fixture.dataDir, 'artifacts', ARTIFACT_REF_INDEX_FILE))
+      exec.call(holder, 'BEGIN IMMEDIATE')
+      await contention
+      closing = runtime.close()
+      expect(await Promise.race([closing.then(() => 'closed'), delay(450).then(() => 'blocked')])).toBe(
+        'closed',
+      )
+      await expect(round).resolves.toMatchObject({ deleted: 0 })
+      expect(holder.isTransaction).toBe(true)
+      expect(existsSync(fixture.artifact)).toBe(true)
+    } finally {
+      spy.mockRestore()
+      if (holder?.isTransaction) exec.call(holder, 'ROLLBACK')
+      holder?.close()
+      await closing
+      await runtime.close()
+    }
+  })
 
   it('lets screenshot publication in this and another process proceed during a backfill', async () => {
     const fixture = await screenshotFixture()

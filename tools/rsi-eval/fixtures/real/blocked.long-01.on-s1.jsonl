@@ -1,0 +1,7 @@
+{"seq":1902,"ts":"2026-11-04T07:48:25.382Z","type":"verifier/signal","lane":"main","origin":"system","data":{"scope":"turn","tier":0,"verdict":"fail","reasons":["tool_call_as_text"]}}
+{"seq":1904,"ts":"2026-11-04T07:48:25.382Z","type":"x/core/verifier-recovery","lane":"main","origin":"system","data":{"verdict":{"verdict":"fail","reasons":["tool_call_as_text"]},"proposed":"repair","handling":"repair"}}
+{"seq":1924,"ts":"2026-11-04T07:48:29.873Z","type":"verifier/signal","lane":"main","origin":"system","data":{"scope":"tool","tier":0,"verdict":"pass","reasons":[],"toolUseId":"t92-aab74581f16d861b6c90e368a3259f84"}}
+{"seq":1925,"ts":"2026-11-04T07:48:29.875Z","type":"verifier/signal","lane":"main","origin":"system","data":{"scope":"step","tier":0,"verdict":"pass","reasons":[]}}
+{"seq":1939,"ts":"2026-11-04T07:48:34.519Z","type":"verifier/signal","lane":"main","origin":"system","data":{"scope":"turn","tier":0,"verdict":"fail","reasons":["tool_call_as_text"]}}
+{"seq":1941,"ts":"2026-11-04T07:48:34.519Z","type":"x/core/verifier-recovery","lane":"main","origin":"system","data":{"verdict":{"verdict":"fail","reasons":["tool_call_as_text"]},"proposed":"repair","handling":"blocked"}}
+{"seq":1943,"ts":"2026-11-04T07:48:34.519Z","type":"turn/end","lane":"main","origin":"system","data":{"reason":"blocked","lastAssistantSeq":1935}}

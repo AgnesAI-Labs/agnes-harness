@@ -441,6 +441,61 @@ describe('createMcpRowRuntime against a real Host', () => {
     await vi.waitFor(() => expect(connects.filter((id) => id === 'alpha')).toHaveLength(3))
   })
 
+  it('signOut() drops a server on the next apply() and starts nothing for it until reconnect()', async () => {
+    const host = await testHost()
+    const { opener, connects, closes } = countingOpener()
+    const reported: string[] = []
+    const runtime = createMcpRowRuntime({
+      host,
+      opener,
+      onStatus: (serverId, status) => reported.push(`${serverId}:${status.connectionState}`),
+    })
+    await runtime.apply([entry('alpha'), entry('beta')])
+    await vi.waitFor(() => expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeDefined())
+    reported.length = 0
+
+    runtime.signOut('alpha')
+    const result = await runtime.apply([entry('alpha'), entry('beta')])
+
+    await vi.waitFor(() => expect(closes).toEqual(['alpha']))
+    expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeUndefined()
+    expect(tool(host, `${BETA_PREFIX}ping`)).toBeDefined()
+    const signedOut = {
+      connectionState: 'unavailable',
+      catalogRevision: null,
+      lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT' },
+    }
+    expect(result.statuses.get('alpha')).toMatchObject(signedOut)
+    expect(runtime.tools('alpha', 'r1')).toBeUndefined()
+    // The daemon records this status from the sign-out reply itself, as a sign-out, not as a
+    // sign-in that stopped working.
+    expect(reported.filter((line) => line.startsWith('alpha:'))).toEqual([])
+
+    // Later applies keep it down; a new sign-in reconnects it.
+    await runtime.apply([entry('alpha'), entry('beta')])
+    expect(runtime.status('alpha')).toMatchObject(signedOut)
+    runtime.reconnect('alpha')
+    const back = await runtime.apply([entry('alpha'), entry('beta')])
+    expect(back.statuses.get('alpha')).toMatchObject({ connectionState: 'ready' })
+    expect(connects.filter((id) => id === 'alpha')).toHaveLength(2)
+    expect(connects.filter((id) => id === 'beta')).toHaveLength(1)
+  })
+
+  it('a signed-out server comes back when its definition changes', async () => {
+    const host = await testHost()
+    const { opener, connects } = countingOpener()
+    const runtime = createMcpRowRuntime({ host, opener })
+    await runtime.apply([entry('alpha', 'r1')])
+    runtime.signOut('alpha')
+    await runtime.apply([entry('alpha', 'r1')])
+    expect(tool(host, `${ALPHA_PREFIX}ping`)).toBeUndefined()
+
+    const edited = await runtime.apply([entry('alpha', 'r2')])
+
+    expect(edited.statuses.get('alpha')).toMatchObject({ connectionState: 'ready', observedRevision: 'r2' })
+    expect(connects).toEqual(['alpha', 'alpha'])
+  })
+
   it('an identical snapshot re-applied touches nothing', async () => {
     const host = await testHost()
     const { opener, connects, closes } = countingOpener()
@@ -851,28 +906,58 @@ describe('createMcpRowRuntime row shape and failure handling', () => {
     expect(runtime.status('never-seen')).toBeUndefined()
   })
 
-  it('an OAuth-bound definition is reported unavailable with MCP_OAUTH_UNSUPPORTED, never a row', async () => {
-    const host = await testHost()
-    const { opener } = countingOpener()
-    const runtime = createMcpRowRuntime({ host, opener })
-    const oauthEntry: McpServerSnapshotEntry = {
-      ...entry('needs-oauth'),
-      definition: {
-        serverId: 'needs-oauth',
-        displayName: 'needs-oauth',
-        transport: { kind: 'http', url: 'https://mcp.example.test/api' },
-        secretBinding: { kind: 'oauth', staticClientId: 'static-client-id' },
-      } as McpServerDefinitionInput,
-    }
+  it.each([
+    ['an empty credential store', true],
+    ['no credential store at all', false],
+  ])(
+    'oauth server without a credential is unavailable with MCP_OAUTH_NEEDS_RECONNECT (%s)',
+    async (_label, withStore) => {
+      const host = await testHost()
+      const reads: string[] = []
+      const runtime = createMcpRowRuntime({
+        host,
+        opener: createWorkerMcpServerOpener({
+          env: {},
+          profile: { name: 'local-dev', dataDir: hostDir } as never,
+          createSecrets: () => {
+            throw new Error('an OAuth server without a static client must not resolve secrets')
+          },
+          ...(withStore
+            ? {
+                createMcpOAuthStore: () => ({
+                  read: async (serverId: string) => {
+                    reads.push(serverId)
+                    return null
+                  },
+                  update: async () => {
+                    throw new Error('nothing to write')
+                  },
+                }),
+              }
+            : {}),
+        }),
+      })
+      cleanup.push(() => runtime.apply([]))
+      const oauthEntry: McpServerSnapshotEntry = {
+        ...entry('needs-oauth'),
+        definition: {
+          serverId: 'needs-oauth',
+          displayName: 'needs-oauth',
+          transport: { kind: 'http', url: 'https://mcp.example.test/api' },
+          secretBinding: { kind: 'oauth' },
+        } as McpServerSnapshotEntry['definition'],
+      }
 
-    const result = await runtime.apply([oauthEntry])
+      const result = await runtime.apply([oauthEntry])
 
-    expect(result.rowIds).toHaveLength(0)
-    expect(result.statuses.get('needs-oauth')).toMatchObject({
-      connectionState: 'unavailable',
-      lastSafeError: { code: 'MCP_OAUTH_UNSUPPORTED' },
-    })
-  })
+      expect(result.rowIds).toHaveLength(1)
+      expect(result.statuses.get('needs-oauth')).toMatchObject({
+        connectionState: 'unavailable',
+        lastSafeError: { code: 'MCP_OAUTH_NEEDS_RECONNECT', message: 'MCP server needs sign-in' },
+      })
+      expect(reads.length).toBe(withStore ? 1 : 0)
+    },
+  )
 
   it('a server dropped from a later snapshot leaves no trace in status() or a stale apply() map', async () => {
     const host = await testHost()
@@ -1000,8 +1085,8 @@ describe('createMcpRowRuntime against real MCP servers (real-machine collision v
       expect(denied.statuses.get('managed')).toMatchObject({
         connectionState: 'unavailable',
         lastSafeError: {
-          code: 'MCP_CONNECT_FAILED',
-          message: expect.stringContaining('E_MCP_SANDBOX_UNAVAILABLE'),
+          code: 'E_MCP_SANDBOX_UNAVAILABLE',
+          message: 'No usable stdio sandbox is available. Configure a working sandbox before retrying.',
         },
       })
       const name = `${mcpStablePrefix('managed')}read`

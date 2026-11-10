@@ -1,10 +1,11 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ProcessOutput, SandboxProcess } from '@agnes/extension-api'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
+import { normalizeWorkspacePath } from '../../tools-core/src/paths.js'
 
 const FAKE = fileURLToPath(new URL('./fixtures/fake-lsp.mjs', import.meta.url))
 
@@ -34,9 +35,14 @@ export function sandboxHarness(table: Record<string, string[]>) {
     const confined = listed.includes('--needs-writable-cache')
     const flags = listed.filter((flag) => flag !== '--needs-writable-cache')
     const cache = request.env?.GOPLSCACHE
+    const workspacePrefix = request.cwd ? `${resolve(request.cwd)}${sep}` : undefined
     if (
       confined &&
-      !(cache?.startsWith(`${request.cwd}/`) && request.env?.GOCACHE?.startsWith(`${request.cwd}/`))
+      !(
+        workspacePrefix &&
+        cache?.startsWith(workspacePrefix) &&
+        request.env?.GOCACHE?.startsWith(workspacePrefix)
+      )
     )
       flags.push('--exit-on-start')
     const child = spawn(process.execPath, [FAKE, ...flags], { stdio: ['pipe', 'pipe', 'ignore'] })
@@ -110,9 +116,14 @@ export function lspContext(
   files: Record<string, string> = {},
   sessionKey = `lsp-session-${sessions++}`,
 ) {
+  const cwd = '/work/proj'
+  const seeds = { 'package.json': '{}', 'pyproject.toml': '', 'go.mod': '', 'Cargo.toml': '', ...files }
   const ctx = fakeToolContext({
+    cwd,
     sessionKey,
-    files: { 'package.json': '{}', 'pyproject.toml': '', 'go.mod': '', 'Cargo.toml': '', ...files },
+    files: Object.fromEntries(
+      Object.entries(seeds).map(([path, text]) => [normalizeWorkspacePath(path, cwd).abs, text]),
+    ),
   })
   if (harness) ctx.sandbox.openProcess = harness.open as never
   // The fake file port has no exclusive create; this one refuses an existing file as the real one does.

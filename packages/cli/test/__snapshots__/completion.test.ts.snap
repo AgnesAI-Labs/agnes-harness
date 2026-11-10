@@ -47,7 +47,7 @@ _agh() {
       daemon) COMPREPLY=($(compgen -W "start stop status" -- "$cur")) ;;
       doctor) COMPREPLY=($(compgen -W "platform network provider storage credentials profile extensions daemon binary code-runtime computer-use subagents" -- "$cur")) ;;
       home) COMPREPLY=($(compgen -W "info" -- "$cur")) ;;
-      mcp) COMPREPLY=($(compgen -W "list get status tools add update trust enable disable test reconnect remove" -- "$cur")) ;;
+      mcp) COMPREPLY=($(compgen -W "list get status tools add update trust enable disable test reconnect remove login logout" -- "$cur")) ;;
       package) COMPREPLY=($(compgen -W "inspect add trust enable disable rollback remove status list catalog operation cancel source-policy" -- "$cur")) ;;
       plugins) COMPREPLY=($(compgen -W "add pack trust enable reload candidates provenance publication-status config tree generations" -- "$cur")) ;;
       profile) COMPREPLY=($(compgen -W "list inspect trust" -- "$cur")) ;;
@@ -79,7 +79,7 @@ complete -c agh -n '__fish_seen_subcommand_from credentials' -a 'list rename del
 complete -c agh -n '__fish_seen_subcommand_from daemon' -a 'start stop status'
 complete -c agh -n '__fish_seen_subcommand_from doctor' -a 'platform network provider storage credentials profile extensions daemon binary code-runtime computer-use subagents'
 complete -c agh -n '__fish_seen_subcommand_from home' -a 'info'
-complete -c agh -n '__fish_seen_subcommand_from mcp' -a 'list get status tools add update trust enable disable test reconnect remove'
+complete -c agh -n '__fish_seen_subcommand_from mcp' -a 'list get status tools add update trust enable disable test reconnect remove login logout'
 complete -c agh -n '__fish_seen_subcommand_from package' -a 'inspect add trust enable disable rollback remove status list catalog operation cancel source-policy'
 complete -c agh -n '__fish_seen_subcommand_from plugins' -a 'add pack trust enable reload candidates provenance publication-status config tree generations'
 complete -c agh -n '__fish_seen_subcommand_from profile' -a 'list inspect trust'
@@ -202,7 +202,7 @@ _agh() {
       daemon) compadd -- start stop status ;;
       doctor) compadd -- platform network provider storage credentials profile extensions daemon binary code-runtime computer-use subagents ;;
       home) compadd -- info ;;
-      mcp) compadd -- list get status tools add update trust enable disable test reconnect remove ;;
+      mcp) compadd -- list get status tools add update trust enable disable test reconnect remove login logout ;;
       package) compadd -- inspect add trust enable disable rollback remove status list catalog operation cancel source-policy ;;
       plugins) compadd -- add pack trust enable reload candidates provenance publication-status config tree generations ;;
       profile) compadd -- list inspect trust ;;

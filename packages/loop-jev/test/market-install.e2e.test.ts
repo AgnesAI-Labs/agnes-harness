@@ -1,14 +1,17 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { type FakeSystemOne, startFakeSystemOne } from '@agnes/ai/testkit'
-import { initializeHome } from '@agnes/host'
-import type { PackageOperationReceipt } from '@agnes/protocol'
-import { createClient, memoryJournal } from '@agnes/sdk'
+import { createCredentialStore, createSecretsFile, initializeHome } from '@agnes/host'
+import { type PackageOperationReceipt, publicErrorContract } from '@agnes/protocol'
+import { createClient, memoryJournal, unixTransport } from '@agnes/sdk'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { workerStderrEvidence } from '../../daemon/src/supervisor/runtime-log.js'
 import { answersFor, PICK_LS, PICK_RESPOND } from './helpers/fake-jev.js'
+import { marketEndpoint } from './helpers/market-endpoint.js'
+import { rpcDiagnostics } from './helpers/rpc-diagnostics.js'
 
 // The user's path end to end, against the real daemon: find the Jev loop in the Market catalogue,
 // install it from the payload the release ships, trust and enable it, see it in the loop picker's
@@ -61,9 +64,11 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
   let fake: FakeSystemOne
   let daemon: ChildProcess
   let exited: Promise<number | null>
+  let closeObserved = false
   let sdk: Sdk
-  let socketPath: string | undefined
+  let socketDirectory: string | undefined
   let stderr = ''
+  const stderrEvidence = workerStderrEvidence()
 
   beforeAll(async () => {
     root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-jev-market-')))
@@ -74,8 +79,10 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
     })
     initializeHome(root, PROFILE)
     const secrets = join(root, 'credentials')
-    mkdirSync(join(secrets, 'jev'), { recursive: true, mode: 0o700 })
-    writeFileSync(join(secrets, 'jev', 'key'), JEV_KEY, { mode: 0o600 })
+    // The managed writer establishes Windows private DACLs; POSIX modes alone do not.
+    await createCredentialStore({ root }).putApiKey('secret://jev/key', JEV_KEY)
+    renameSync(join(root, 'secrets'), secrets)
+    expect(createSecretsFile({ dir: secrets }).resolve('secret://jev/key') === JEV_KEY).toBe(true)
     const model = (over: Record<string, unknown>) => ({
       name: over.id,
       reasoning: false,
@@ -154,21 +161,34 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     exited = new Promise<number | null>((resolve) => daemon.once('exit', resolve))
+    daemon.once('close', () => {
+      closeObserved = true
+    })
     const ready = new Promise<void>((resolve, reject) => {
       daemon.once('error', reject)
       daemon.stderr?.on('data', (data) => {
-        stderr += String(data)
+        stderr = (stderr + String(data)).slice(-64 * 1024)
+        stderrEvidence.push(Buffer.from(data))
         if (stderr.includes('agnesd listening on ')) resolve()
       })
-      daemon.once('exit', (code) => reject(new Error(`source daemon exited ${code}: ${stderr}`)))
+      daemon.once('exit', (code) => reject(new Error(`source daemon exited ${code}`)))
     })
     await bounded(ready, 'source daemon boot')
     const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
-    socketPath = owner.socketPath
+    const endpoint = marketEndpoint(owner)
+    socketDirectory = endpoint.socketDirectory
     sdk = createClient({
       journal: memoryJournal(),
       timeouts: { request: 120_000 },
-      transport: { kind: 'unix', path: owner.socketPath },
+      transport: endpoint.transport,
+      transportFactories: {
+        unix: (option) => {
+          if (option.kind !== 'unix') throw new Error('Expected source daemon transport')
+          return rpcDiagnostics(unixTransport(option), (failure) =>
+            console.error('MARKET_RPC_FAILURE', JSON.stringify(failure)),
+          )
+        },
+      },
     })
     await sdk.initialize()
   }, 180_000)
@@ -181,13 +201,64 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
       await exited
       clearTimeout(timer)
     }
+    console.error(
+      'MARKET_DAEMON_EVIDENCE',
+      JSON.stringify({
+        stderr: stderrEvidence.snapshot(),
+        exitCode: daemon?.exitCode,
+        signal: daemon?.signalCode,
+        closeObserved,
+      }),
+    )
+    for (const suffix of ['', '.1']) {
+      const audit = workerStderrEvidence()
+      try {
+        const text = readFileSync(join(root, 'data', 'audit', `runtime.jsonl${suffix}`)).subarray(-64 * 1024)
+        audit.push(text)
+        const kinds =
+          text
+            .toString()
+            .match(/"kind":"worker\.(?:start_failed|exited|stderr)"/g)
+            ?.slice(-8) ?? []
+        const codes = [...text.toString().matchAll(/"code":"([A-Z_]+)"/g)]
+          .map((match) => match[1])
+          .filter((code) => publicErrorContract(code))
+          .slice(-8)
+        console.error(
+          'MARKET_RUNTIME_EVIDENCE',
+          JSON.stringify({ suffix, ...audit.snapshot(), kinds, codes }),
+        )
+      } catch {
+        console.error('MARKET_RUNTIME_EVIDENCE', JSON.stringify({ suffix, state: 'unavailable' }))
+      }
+    }
     await fake?.close()
-    if (socketPath) rmSync(dirname(socketPath), { recursive: true, force: true })
+    if (socketDirectory) rmSync(socketDirectory, { recursive: true, force: true })
     rmSync(root, { recursive: true, force: true })
   }, 40_000)
 
   it('offers the loop in the Market, installs and uninstalls it, then installs it again, lists the loop and runs a turn on it', async () => {
-    const loops = async () => (await sdk.sessionSelection.loops()).map((l) => `${l.id}@${l.version}`)
+    let ordinal = 0
+    const selection = async (label: string) => {
+      const call = { ordinal: ++ordinal, label }
+      const started = performance.now()
+      console.error('MARKET_LOOPS_CALL', JSON.stringify({ ...call, phase: 'begin' }))
+      try {
+        const result = await sdk.sessionSelection.loops()
+        console.error(
+          'MARKET_LOOPS_CALL',
+          JSON.stringify({ ...call, phase: 'done', elapsedMs: Math.round(performance.now() - started) }),
+        )
+        return result
+      } catch (error) {
+        console.error(
+          'MARKET_LOOPS_CALL',
+          JSON.stringify({ ...call, phase: 'failed', elapsedMs: Math.round(performance.now() - started) }),
+        )
+        throw error
+      }
+    }
+    const loops = async (label: string) => (await selection(label)).map((l) => `${l.id}@${l.version}`)
 
     // The Market lists it, tagged as a run mode, before anything is installed; the picker does not.
     const page = await sdk.packages.catalog.list({ profile: PROFILE, query: 'jev', limit: 50 })
@@ -202,7 +273,7 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
       provides: ['loop'],
       metadata: { locales: { 'zh-CN': { displayName: expect.any(String) } } },
     })
-    expect(await loops()).not.toContain('agnes.jev@0.1.0')
+    expect(await loops('pre-install')).not.toContain('agnes.jev@0.1.0')
 
     // Install, trust and enable: the calls the Market's install button makes.
     const common = { profile: PROFILE, clientId: await sdk.clientId() }
@@ -254,19 +325,19 @@ describe('the Jev loop installed from the Market into a real daemon', () => {
     // Uninstall works: disable, then remove. The loop leaves the picker and the Market offers it again.
     // This runs before any session uses the loop, because the daemon refuses to disable the provider
     // of a loop a live session is bound to.
-    expect(await loops()).toContain('agnes.jev@0.1.0')
+    expect(await loops('first-installed')).toContain('agnes.jev@0.1.0')
     await operation(sdk, await sdk.packages.disable({ ...common, commandId: 'disable', id: PACKAGE }))
-    expect(await loops()).not.toContain('agnes.jev@0.1.0')
+    expect(await loops('disabled')).not.toContain('agnes.jev@0.1.0')
     await operation(sdk, await sdk.packages.remove({ ...common, commandId: 'remove', id: PACKAGE }))
     expect((await sdk.packages.list({ profile: PROFILE })).packages.map((p) => p.id)).not.toContain(PACKAGE)
-    expect(await loops()).not.toContain('agnes.jev@0.1.0')
+    expect(await loops('removed')).not.toContain('agnes.jev@0.1.0')
     const again = await sdk.packages.catalog.list({ profile: PROFILE, query: 'jev', limit: 50 })
     expect(again.items.map((item) => item.id)).toContain(PACKAGE)
     await installFromMarket('second')
 
     // The loop picker's data now has it, and names the package it comes from.
-    expect(await loops()).toContain('agnes.jev@0.1.0')
-    expect(await sdk.sessionSelection.loops()).toContainEqual(
+    expect(await loops('second-installed')).toContain('agnes.jev@0.1.0')
+    expect(await selection('direct-final')).toContainEqual(
       expect.objectContaining({ ...LOOP, sourcePackage: PACKAGE }),
     )
 

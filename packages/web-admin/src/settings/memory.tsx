@@ -287,8 +287,9 @@ export function MemoryPanel({ canSave, visit = 1 }: { canSave: boolean; visit?: 
               </span>
             </SettingsItem>
             <SettingsItem label={t('budgetLabel')}>
-              <span className="agnes-settings-value">
-                {t('budgetValue', { tokens: numbers.format(inspection.settings.tokenBudget) })}
+              {/* Stored as UTF-8 bytes; the field keeps its old name for compatibility. */}
+              <span className="agnes-settings-value" data-testid="memory-inject-limit">
+                {t('budgetValue', { kb: (inspection.settings.tokenBudget / 1024).toFixed(1) })}
               </span>
             </SettingsItem>
             <SettingsItem label={t('location')}>

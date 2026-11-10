@@ -21,6 +21,7 @@ import {
   type SaveRefusal,
   type SaveSource,
 } from '@agnes/core-ledger/reduce/refinement-save'
+import { createPlatform } from './adapters/platform.js'
 
 export type { SaveInitiator, SaveKind, SaveReceipt, SaveRefusal, SaveSource }
 /** How many separate confirmations an automatic save needs (shared with Core, which offers the saves). */
@@ -65,6 +66,13 @@ export type RegistrySkill = {
   reviewAfter: number
   state: 'active' | 'review-disabled' | 'uninstalled' | 'rolled-back'
   archive: string[]
+  /**
+   * Why a `review-disabled` skill is off when it was not the 30-day review: `capacity`, the workspace
+   * already had as many saved skills in force as it may. Only a person switches it back on.
+   */
+  disabledFor?: 'capacity'
+  /** A person switched it back on: the cap on saved skills in force never switches it off. */
+  enabledBy?: 'person'
 }
 export type Revocation = {
   sessionKey: string
@@ -179,6 +187,10 @@ const cleanSkill = (value: unknown): RegistrySkill | undefined => {
   const state = oneOf(raw.state, ['active', 'review-disabled', 'uninstalled', 'rolled-back'] as const)
   const archive = list(raw.archive, text)
   if (!every(name, resourceId, revision, source, reviewAfter, state, archive)) return undefined
+  // Optional marks: a value this build does not know (a later one) is dropped, never a reason to
+  // distrust the file, as earlier builds ignore both fields.
+  const disabledFor = oneOf(raw.disabledFor, ['capacity'] as const)
+  const enabledBy = oneOf(raw.enabledBy, ['person'] as const)
   return {
     name: name as string,
     resourceId: resourceId as string,
@@ -187,6 +199,8 @@ const cleanSkill = (value: unknown): RegistrySkill | undefined => {
     reviewAfter: reviewAfter as number,
     state: state as RegistrySkill['state'],
     archive: archive as string[],
+    ...(disabledFor === undefined ? {} : { disabledFor }),
+    ...(enabledBy === undefined ? {} : { enabledBy }),
   }
 }
 
@@ -293,7 +307,8 @@ const exists = (error: unknown): boolean => (error as { code?: string } | null)?
  * Writes may come from several processes. Each `update` holds an exclusive lock file
  * (`<file>.lock`, created with `wx`) around read, compare and rename, takes over a lock older than
  * `lockStaleMs`, and gives up with `REGISTRY_LOCK_TIMEOUT` after `lockWaitMs`. The file is replaced in one
- * rename, so a reader never sees half a write.
+ * rename, so a reader never sees half a write. Windows pending-delete creation refusals share the same
+ * wait budget; a persistent permission refusal is rethrown as the original filesystem error.
  *
  * The file is `<dataDir>/refinement/workspaces/<sha256(workspaceRoot)>.json`; `workspaceRoot` is the same
  * string the memory provider is opened with. A caller that knows only that hash (the workspace id resource
@@ -507,20 +522,29 @@ export class RefinementRegistry {
     const token = randomUUID()
     const deadline = Date.now() + this.lockWaitMs
     for (;;) {
+      let handle: number
       try {
-        const handle = openSync(lock, 'wx', 0o600)
-        try {
-          writeFileSync(handle, token)
-        } finally {
-          closeSync(handle)
-        }
-        break
+        handle = openSync(lock, 'wx', 0o600)
       } catch (error) {
-        if (!exists(error)) throw error
-        if (this.takeOverIfAbandoned(lock)) continue
-        if (Date.now() >= deadline) throw failure('REGISTRY_LOCK_TIMEOUT')
+        if (exists(error)) {
+          if (this.takeOverIfAbandoned(lock)) continue
+          if (Date.now() >= deadline) throw failure('REGISTRY_LOCK_TIMEOUT')
+        } else {
+          // Windows may refuse creation while the previous lock is pending deletion. This alone
+          // never permits takeover, and a lasting permission refusal must retain its filesystem code.
+          const windows = createPlatform().os === 'win32'
+          const pendingDelete = windows && (error as NodeJS.ErrnoException)?.code === 'EPERM'
+          if (!pendingDelete || Date.now() >= deadline) throw error
+        }
         sleep(LOCK_POLL_MS)
+        continue
       }
+      try {
+        writeFileSync(handle, token)
+      } finally {
+        closeSync(handle)
+      }
+      break
     }
     try {
       return section()

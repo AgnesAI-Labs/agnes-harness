@@ -1,3 +1,0 @@
-the reconciliation job caches the db password for the whole run
-the token refresh job reads the key on start
-no job is running at the moment

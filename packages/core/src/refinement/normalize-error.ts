@@ -15,8 +15,11 @@ export function normalizeToolError(result: { code?: string; content?: unknown[] 
 }
 
 const STDERR_LABEL = /^\[stderr\]$/i
-/** What the shell writes after a failing command's stderr: the retry advice and the `[exit N]` line. */
-const SHELL_CLOSING = /^(?:\[exit -?\d+\]|command failed; inspect the output)/i
+/**
+ * What the shell writes after a failing command's stderr: the retry advice (the shell's or the jobs
+ * shell's) and the `[exit N]` line.
+ */
+const SHELL_CLOSING = /^(?:\[exit -?\d+\]|command failed; inspect (?:the output|job_output))/i
 
 /**
  * The key for a command that exited non-zero: the error it wrote to stderr, not whatever stdout

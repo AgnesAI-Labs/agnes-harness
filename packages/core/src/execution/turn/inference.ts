@@ -55,7 +55,7 @@ import {
   SKILL_LOADED_PREFIX,
   TURN_TIME_PREFIX,
 } from '../../request/derive.js'
-import { experienceChanged, messageText, withExperienceDiag } from '../../request/experience.js'
+import { experienceChanged, messageText, withExperienceRows } from '../../request/experience.js'
 import { experienceCommitCheck } from '../../request/experience-dispatch.js'
 import { experienceForRequest } from '../../request/experience-room.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
@@ -163,8 +163,12 @@ function auxiliaryAxSomText(events: readonly Event[], media: LedgerPreparedReque
   return text
 }
 
-/** Upper bound on the wire body that will be sent, or null when a field has no supported bound. */
-export function boundWireInputTokens(wire: WireBody): number | null {
+/**
+ * Conservative upper bound on the input tokens of the wire body that will be sent: one per serialized
+ * UTF-16 unit, so a reservation made from it is never short. Not an estimate (that is
+ * `estimateTokens`). Null when a field has no supported bound.
+ */
+export function wireInputUpperBound(wire: WireBody): number | null {
   for (const message of wire.messages) {
     for (const block of message.content) {
       if (block.type !== 'text' && block.type !== 'thinking') return null
@@ -723,7 +727,7 @@ export async function prepareInferenceRequest(
     ...(turnTime ? { requestNotes: [{ prefix: TURN_TIME_PREFIX, text: turnTime }] } : {}),
     ...(tailNote ? { tailNote } : {}),
   })
-  out = withExperienceDiag(s, out)
+  out = withExperienceRows(s, out)
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)
   if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
     const { request, derivedHash } = remintRequestWithMaxTokens(
@@ -814,7 +818,7 @@ export async function admitInferenceRequest(
     }
   }
   if (await treeBudgetApplies(s)) {
-    const inputTokens = imageInputTokens ?? boundWireInputTokens(wire)
+    const inputTokens = imageInputTokens ?? wireInputUpperBound(wire)
     if (inputTokens === null) {
       await s.endTurn('budget')
       return { phase: 'terminal', reason: 'budget' }

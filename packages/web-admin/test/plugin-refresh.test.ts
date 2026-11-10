@@ -526,3 +526,148 @@ it('shows a completed disable on the plugin row before the inventory is read aga
   ])
     expect(withOperationDesired(installed, other)).toBe(installed)
 })
+
+it.each(['ready', 'revoked', 'read-only', 'offline', 'cancelled', 'disposed', 'replaced'] as const)(
+  'decides a reviewed install after the pending inventory read: %s',
+  async (outcome) => {
+    const context = {
+      profile: `review-refresh-${outcome}`,
+      clientId: 'web',
+      permissions: ['packages.read', 'packages.install', 'packages.trust', 'packages.activate'],
+      features: Object.values(ADMIN_FEATURES),
+      readOnly: false,
+    }
+    const source = { type: 'file' as const, ref: 'file:./reviewed-plugin' }
+    const preview = {
+      id: '@fixture/reviewed',
+      version: '1.0.0',
+      source,
+      integrity: `sha256-${'a'.repeat(64)}`,
+      capabilityHash: 'c'.repeat(64),
+      contributions: [],
+      warnings: [],
+      blockers: [],
+    } as unknown as PackagePreview
+    const replacement = { ...preview, integrity: `sha256-${'b'.repeat(64)}`, capabilityHash: 'd'.repeat(64) }
+    const snapshot = { context, inventory: { packages: [] } }
+    const overview = vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue(snapshot as never)
+    vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+    vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
+    vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
+    vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
+    vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
+    const inspect = vi.spyOn(PluginAdminApi.prototype, 'inspect').mockResolvedValue({
+      operationId: 'inspect-reviewed',
+      profile: context.profile,
+    })
+    const startedAt = '2026-11-05T00:00:00.000Z'
+    const inspection: PackageOperation = {
+      operationId: 'inspect-reviewed',
+      profile: context.profile,
+      operation: 'inspect',
+      state: 'completed',
+      progress: 100,
+      startedAt,
+      updatedAt: startedAt,
+      preview,
+    }
+    vi.spyOn(PluginAdminApi.prototype, 'operation').mockImplementation(
+      async (operationId): Promise<PackageOperation> =>
+        operationId === inspection.operationId
+          ? inspection
+          : {
+              operationId,
+              profile: context.profile,
+              operation: operationId === 'inspect-replacement' ? 'inspect' : 'install',
+              state: operationId === 'inspect-replacement' ? 'inspecting' : 'installing',
+              progress: 0,
+              startedAt,
+              updatedAt: startedAt,
+            },
+    )
+    const install = vi.spyOn(PluginAdminApi.prototype, 'install').mockResolvedValue({
+      operationId: 'install-reviewed',
+      profile: context.profile,
+    })
+    for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+      const dialog = document.createElement('dialog')
+      dialog.id = id
+      document.body.append(dialog)
+    }
+    const page = new PluginAdminPage({
+      surface: { host: document.body.appendChild(document.createElement('div')), render: () => null },
+    })
+    let finish: (() => void) | undefined
+    let refresh: Promise<void> | undefined
+    let confirmed: Promise<void> | undefined
+    let replaced: Promise<void> | undefined
+    try {
+      await page.start()
+      await page.inspect(source, 'install', document.createElement('button'))
+      await vi.waitFor(() => expect(page.reviewState()?.preview).toBe(preview))
+      if (outcome === 'replaced') {
+        inspect.mockResolvedValueOnce({ operationId: 'inspect-replacement', profile: context.profile })
+        await page.inspect(source, 'install', document.createElement('button'))
+      }
+      overview.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () => {
+              if (outcome === 'offline') reject(new Error('offline'))
+              else
+                resolve({
+                  ...snapshot,
+                  context: {
+                    ...context,
+                    ...(outcome === 'revoked' ? { permissions: [] } : {}),
+                    readOnly: outcome === 'read-only',
+                  },
+                } as never)
+            }
+          }),
+      )
+      refresh = page.refresh()
+      await vi.waitFor(() => expect(finish).toBeDefined())
+      if (outcome === 'replaced')
+        replaced = page.operationUpdated({
+          ...inspection,
+          operationId: 'inspect-replacement',
+          preview: replacement,
+        })
+      confirmed = page.confirmReview(true)
+      await Promise.resolve()
+      expect(install).not.toHaveBeenCalled()
+      // A completed newer inspection owns a fresh review; the old confirmation must leave it idle.
+      expect(page.reviewState()?.busy).toBe(outcome !== 'replaced')
+      if (outcome === 'cancelled') page.cancelReview()
+      if (outcome === 'disposed') page.dispose()
+      finish?.()
+      await refresh
+      await replaced
+      await confirmed
+      if (outcome === 'ready') {
+        expect(install).toHaveBeenCalledExactlyOnceWith(source, preview.integrity)
+      } else {
+        expect(install).not.toHaveBeenCalled()
+        if (outcome === 'replaced') expect(page.reviewState()?.preview).toBe(replacement)
+        if (outcome === 'cancelled') expect(page.reviewState()).toBeUndefined()
+        if (['revoked', 'read-only', 'offline'].includes(outcome)) {
+          expect(page.reviewState()?.busy).toBe(false)
+          expect(page.reviewState()?.error?.code).toBe(
+            outcome === 'revoked'
+              ? 'ADMIN_FORBIDDEN'
+              : outcome === 'read-only'
+                ? 'RECOVERY_READ_ONLY'
+                : 'ADMIN_UNAVAILABLE',
+          )
+        }
+      }
+    } finally {
+      finish?.()
+      await refresh
+      await replaced
+      await confirmed
+      page.dispose()
+    }
+  },
+)

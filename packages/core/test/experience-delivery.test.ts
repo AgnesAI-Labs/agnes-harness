@@ -26,7 +26,7 @@ import {
   experienceNotes,
   isControlNote,
   renderExperience,
-  withExperienceDiag,
+  withExperienceRows,
 } from '../src/request/experience.js'
 import { REFINEMENT_GUIDANCE, SNAPSHOT_FORMAT_LINE } from '../src/request/experience-guidance.js'
 import { experienceForRequest } from '../src/request/experience-room.js'
@@ -278,10 +278,39 @@ describe('refinement experience delivery', () => {
     }
     expect(`${out.body}${out.data}`).not.toContain('s-deploy')
     expect(`${out.body}${out.data}`).not.toContain('s-docs')
-    expect(out.body).toContain('2 more skill entries are saved; use harness_inspect to list them.')
+    expect(out.body).toContain(
+      '2 more skill entries are not shown here (including any saved from earlier sessions); use harness_inspect to list them.',
+    )
     expect(`${out.body}${out.data}`).not.toContain('SECRET-TAIL')
     for (const line of out.data.split('\n').filter((l) => l.startsWith('- [skill/')))
       expect(line.length).toBeLessThanOrEqual(260)
+    expect(out.omitted).toBe(0)
+  })
+
+  it('a snapshot gives at most three prompt and three memory entries in full and counts the rest', () => {
+    const facts = ['build', 'deploy', 'release', 'schema', 'cache'].map((word) =>
+      entry('memory', `m-${word}`, word, `Facts about the ${word} step.`),
+    )
+    const rules = ['tone', 'review', 'tests', 'commits'].map((word) =>
+      entry('prompt', `p-${word}`, word, `Rule about ${word}.`),
+    )
+    const out = renderExperience(
+      { entries: effective([...facts, ...rules]) },
+      { recentText: 'build deploy release; tone review tests', budgets: EXPERIENCE_BUDGETS },
+    )
+    for (const ref of ['[memory/m-build v1]', '[memory/m-deploy v1]', '[memory/m-release v1]'])
+      expect(out.data).toContain(ref)
+    for (const ref of ['[prompt/p-tone v1]', '[prompt/p-review v1]', '[prompt/p-tests v1]'])
+      expect(out.data).toContain(ref)
+    for (const id of ['m-schema', 'm-cache', 'p-commits']) expect(out.data).not.toContain(id)
+    expect(out.body).toContain(
+      '2 more memory entries are not shown here (including any saved from earlier sessions); use harness_inspect to list them.',
+    )
+    expect(out.body).toContain(
+      '1 more prompt entry is not shown here (including any saved from earlier sessions); use harness_inspect to list them.',
+    )
+    // Within the cap an entry is still given in full, not as a line of metadata.
+    expect(out.data).toContain('Facts about the build step.')
     expect(out.omitted).toBe(0)
   })
 
@@ -387,12 +416,12 @@ describe('refinement experience delivery', () => {
         data: { kind: 'runtime_context', content: [{ type: 'text', text }] },
       }) as never
     const snapshot = note(`${EXPERIENCE_PREFIX}${REFINEMENT_GUIDANCE}`)
-    const out = withExperienceDiag(session, { notes: [snapshot] }).notes
+    const out = withExperienceRows(session, { notes: [snapshot] }).notes
     expect(out).toHaveLength(2)
     expect(out[1]).toMatchObject({ type: 'x/core/refinement-prefix-change', ignorable: true })
-    expect(withExperienceDiag(session, { notes: [] }).notes).toEqual([])
+    expect(withExperienceRows(session, { notes: [] }).notes).toEqual([])
     const update = note(`${EXPERIENCE_PREFIX}Task experience update, format 1.`)
-    expect(withExperienceDiag(session, { notes: [update] }).notes).toEqual([update])
+    expect(withExperienceRows(session, { notes: [update] }).notes).toEqual([update])
   })
 
   it('a malformed register cell is left out and counted, and the request still goes out', async () => {
@@ -936,22 +965,26 @@ describe('control notices', () => {
     const provider = fakeProvider([textTurn('ok')])
     const { session, log } = await openSession({ provider, refinementEnabled: () => true })
     const ids = Array.from({ length: 30 }, (_, i) => `e${i}`)
+    await turn(session, 'first')
+    // Applied after the snapshot, all thirty reach the model in an update (a snapshot gives at most
+    // three of a kind in full), so all thirty were delivered and each withdrawal needs a notice.
     await apply(
       session,
       ids.map((id) => entry('memory', id, id, `Fact about ${id}.`)),
     )
-    await turn(session, 'first')
+    await turn(session, 'update')
     // Twenty-five withdrawals do not fit the 256-token control budget.
     await remove(session, ids.slice(0, 25))
     await turn(session, 'second')
-    const sent = experienceIn(provider.requests[1]).slice(1)
+    // Earlier notes stay in the history: the first snapshot, then the update.
+    const sent = experienceIn(provider.requests[2]).slice(2)
     expect(sent[0]).toBe(`${EXPERIENCE_PREFIX}${CONTROL_FORMAT_LINE}\n${EXPERIENCE_RESET_NOTICE}`)
     // The reset voids every earlier note, so the five still in force are given again after it.
     for (const id of ids.slice(25)) expect(sent[1]).toContain(`[memory/${id} v1]`)
     for (const id of ids.slice(0, 25)) expect(sent.join('\n')).not.toContain(`[memory/${id} v1]`)
     await turn(session, 'third')
     expect(controls(await committed(log))).toHaveLength(1)
-    expect(experienceIn(provider.requests[2])).toHaveLength(3)
+    expect(experienceIn(provider.requests[3])).toHaveLength(experienceIn(provider.requests[2]).length)
   })
 
   it('pending control notices survive a restart and are delivered once', async () => {

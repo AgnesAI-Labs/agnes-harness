@@ -3897,6 +3897,18 @@
                   "items": {
                     "enum": ["file", "network", "process"]
                   }
+                },
+                "boundary": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["contract", "fileWrite", "fileRead", "network", "processTree"],
+                  "properties": {
+                    "contract": { "const": "windows-write-restricted-v1" },
+                    "fileWrite": { "const": "acl-partial" },
+                    "fileRead": { "const": "unrestricted" },
+                    "network": { "const": "unrestricted" },
+                    "processTree": { "const": "job-object" }
+                  }
                 }
               }
             },
@@ -5776,7 +5788,7 @@
       }
     },
     "RefinementSavedSkill": {
-      "description": "A skill refinement installed in the workspace: `active` (on), `review-disabled` (switched off by the 30-day review: awaiting review; switching it on again renews it). `previous` are the earlier revisions it can be rolled back to, newest last. `initiator` is who asked for the save it holds now.",
+      "description": "A skill refinement installed in the workspace: `active` (on), `review-disabled` (switched off by the 30-day review, or by the cap on saved skills in force when `disabledFor` says `capacity`; switching it on again renews it). `previous` are the earlier revisions it can be rolled back to, newest last. `initiator` is who asked for the save it holds now.",
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "resourceId", "revision", "state", "reviewAfter", "initiator", "previous"],
@@ -5790,6 +5802,10 @@
         "workflow": {
           "description": "The skill was generated from a finished `workflow` run and carries its definition.",
           "const": true
+        },
+        "disabledFor": {
+          "description": "Why a `review-disabled` skill is off when it was not the 30-day review: `capacity`, the workspace already had 20 saved skills in force. Only a person switches it back on; a confirmation or an update does not.",
+          "const": "capacity"
         },
         "previous": {
           "type": "array",
@@ -5905,43 +5921,92 @@
       }
     },
     "WorkspaceEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["path", "name", "lastUsedAt", "sessionCount", "available"],
-      "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "name", "lastUsedAt", "sessionCount", "available"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "lastUsedAt": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            },
+            "sessionCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "kind": {
+              "enum": ["chats"]
+            },
+            "managedRole": {
+              "not": {}
+            }
+          }
         },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "lastUsedAt": {
-          "type": ["string", "null"],
-          "format": "date-time"
-        },
-        "sessionCount": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "available": {
-          "type": "boolean"
-        },
-        "workspaceId": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "kind": {
-          "enum": ["chats"]
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "name", "lastUsedAt", "sessionCount", "available", "kind"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "lastUsedAt": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            },
+            "sessionCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "kind": {
+              "enum": ["chats"]
+            },
+            "managedRole": {
+              "enum": ["current", "legacy"]
+            }
+          }
         }
-      }
+      ]
     },
     "WorkspaceListParams": {
       "type": "object",

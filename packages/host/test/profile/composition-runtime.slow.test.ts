@@ -1,15 +1,7 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { bindMcpResourceServer, type McpConnection, mcpPublicToolName, skillResourceIdAt } from '@agnes/base'
@@ -20,6 +12,7 @@ import { parsePackageBundles } from '@agnes/host-common/profile/composition'
 import type { ResolvedProfile, RouteDecl } from '@agnes/host-common/profile/types'
 import { createLoader } from '@agnes/host-extensions/ext-host/loader'
 import type { SkillRuntimeInput } from '@agnes/host-extensions/resources/skills'
+import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import {
   CompositionSessionStore,
   readLiveCompositionSessions,
@@ -34,8 +27,15 @@ import {
 } from '@agnes/package-manager'
 import { defineTool } from '@agnes/plugin-runtime'
 import { createPluginRow, normalizePluginExport } from '@agnes/plugin-runtime/host'
-import { RuntimeSecurityStatus, SessionCapabilitySet, validateAgainst } from '@agnes/protocol'
+import {
+  type ApplicationPreview,
+  jcs,
+  RuntimeSecurityStatus,
+  SessionCapabilitySet,
+  validateAgainst,
+} from '@agnes/protocol'
 import { createSkillCandidateRegistry, createSkillCordisService } from '@agnes/resource-control-runtime'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { Type } from '@sinclair/typebox'
 import { expect, it, vi } from 'vitest'
 import { assertHostPublication } from '../../src/runtime/lifecycle/host-facade.js'
@@ -51,7 +51,8 @@ import {
   capabilityToolCatalog,
   resolveSessionCapabilities,
 } from '../../src/runtime/profile/session-capabilities.js'
-import { createTestHost } from '../../testkit/index.js'
+import { describeCapabilitySession } from '../../src/runtime/profile/session-capability-view.js'
+import { createTestHost, type TestHostOptions } from '../../testkit/index.js'
 import {
   pluginHost,
   pluginRow,
@@ -63,6 +64,39 @@ import {
 vi.mock('@agnes/host-infrastructure/adapters/process-identity-default', () => ({
   defaultProcessIdentity: async () => ({ state: 'alive', startId: 'composition-test-worker' }),
 }))
+// Pass-through observers: which sessions the live status describes (failing for chosen keys), and a
+// writer that can fail once.
+const failingDescriptions = vi.hoisted(() => new Set<string>())
+vi.mock('../../src/runtime/profile/session-capability-view.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/runtime/profile/session-capability-view.js')>()
+  return {
+    ...actual,
+    describeCapabilitySession: vi.fn((...args: Parameters<typeof actual.describeCapabilitySession>) => {
+      if (failingDescriptions.has(args[1].key)) throw new Error('describe failed')
+      return actual.describeCapabilitySession(...args)
+    }),
+  }
+})
+const liveWrites = vi.hoisted(() => ({ failures: 0 }))
+vi.mock('@agnes/host-providers/profile/composition-state', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@agnes/host-providers/profile/composition-state')>()
+  return {
+    ...actual,
+    createLiveCompositionWriter: async (profileDir: string) => {
+      const writer = await actual.createLiveCompositionWriter(profileDir)
+      return {
+        ...writer,
+        writeFragments(fragments: readonly string[]) {
+          if (liveWrites.failures > 0) {
+            liveWrites.failures--
+            throw new Error('live status disk full')
+          }
+          writer.writeFragments(fragments)
+        },
+      }
+    },
+  }
+})
 
 // Integration cases assemble and reopen several real composition Hosts. Their per-case budgets
 // include Windows filesystem work; product startup, drain and recovery deadlines remain unchanged.
@@ -450,13 +484,13 @@ it('isolates preset compositions and keeps session bundle choices immutable', as
       expect.arrayContaining([
         expect.objectContaining({
           sessionId: reader.key,
-          path: realpathSync(root),
+          path: nativeRealpathSync(root),
           preset: 'reader',
           provider: 'local',
         }),
         expect.objectContaining({
           sessionId: writer.key,
-          path: realpathSync(root),
+          path: nativeRealpathSync(root),
           preset: 'writer',
           provider: 'local',
         }),
@@ -1307,4 +1341,646 @@ it('reclaims idle composition containers while preserving cold bindings', async 
     await host.close()
   }
   expect(disposed).toBe(created)
+}, 90_000)
+
+// Live status publishes on change. These cases read the status file right after each change, without
+// waiting, and count describe calls: a periodic publisher would be late, or keep describing when idle.
+const describedKeys = (from: number) =>
+  vi
+    .mocked(describeCapabilitySession)
+    .mock.calls.slice(from)
+    .map(([, session]) => session.key)
+const describedCount = () => vi.mocked(describeCapabilitySession).mock.calls.length
+const liveKeys = async (profileDir: string) =>
+  (await readLiveCompositionSessions(profileDir)).map((session) => session.sessionKey).sort()
+const liveSession = async (profileDir: string, key: string) =>
+  (await readLiveCompositionSessions(profileDir)).find((session) => session.sessionKey === key)
+const liveTools = async (profileDir: string, key: string) =>
+  (await liveSession(profileDir, key))?.toolGroups?.flatMap((group) => group.tools) ?? []
+const liveProbe = () =>
+  defineTool({
+    name: 'live_probe',
+    description: 'Registered after the session opened',
+    parameters: Type.Object({}),
+    meta: {
+      isReadOnly: true,
+      isDestructive: false,
+      isConcurrencySafe: true,
+      isOpenWorld: false,
+      replay: 'safe',
+      requiresApproval: 'never',
+      costHint: {},
+      deferLoading: false,
+    },
+    execute: async () => ({ content: [] }),
+  })
+
+function liveStatusFixture() {
+  const fixture = presetCompositionFixture()
+  // The reader selects the probe by name, so a later registration is visible to it.
+  fixture.options.presets.reader.composition.tools.push('live_probe')
+  return { ...fixture, profileDir: join(fixture.root, 'profiles', 'local-dev') }
+}
+
+it('stops recomputing capabilities when nothing changes', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  // Every timer is fake from before the Host exists, so neither an interval nor a re-armed timeout
+  // could describe the idle sessions without the advance below running it.
+  vi.useFakeTimers()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const after = describedCount()
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(describedCount()).toBe(after)
+    expect(await readLiveCompositionSessions(profileDir)).toHaveLength(2)
+    await writer.close()
+    await reader.close()
+  } finally {
+    await host.close()
+    vi.useRealTimers()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('recomputes only the session whose registry changed', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const before = await liveSession(profileDir, writer.key)
+    const from = describedCount()
+    reader.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
+    expect(await liveTools(profileDir, reader.key)).toContain('live_probe')
+    // The writer's cached fragment is published again as it was, without describing its session.
+    expect(await liveSession(profileDir, writer.key)).toEqual(before)
+    expect(describedKeys(from)).toEqual([reader.key])
+    await writer.close()
+    await reader.close()
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('re-subscribes after a runtime target publication', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const tools = reader.currentTools()
+    // A Skill publication hands open sessions new registry copies of the published revision.
+    expect(
+      await host.refreshSkillRow({
+        list: () => [],
+        read: () => ({ ok: false, code: 'NOT_FOUND' }),
+        readFile: () => ({ ok: false, code: 'NOT_FOUND' }),
+      }),
+    ).toMatchObject({ ok: true })
+    expect(reader.currentTools()).not.toBe(tools)
+    expect(await liveTools(profileDir, reader.key)).not.toContain('live_probe')
+    const from = describedCount()
+    reader.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
+    expect(await liveTools(profileDir, reader.key)).toContain('live_probe')
+    expect(describedKeys(from)).toEqual([reader.key])
+    await writer.close()
+    await reader.close()
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('publishes model and tool-filter changes at once', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const next = JSON.parse(JSON.stringify(host.profile)) as ResolvedProfile
+    const route = next.provider.routes?.find((entry: RouteDecl) => entry.route === 'gw')
+    const first = route?.models?.[0]
+    if (!route || !first) throw new Error('fixture route missing')
+    route.models = [...(route.models ?? []), { ...first, id: 'live-model', name: 'live-model' }]
+    expect(await host.applyModelProfile(next)).toMatchObject({ ok: true })
+    await reader.setModel({ slot: 'primary', route: route.route, model: 'live-model' })
+    expect((await liveSession(profileDir, reader.key))?.capabilities?.modelRoutes.value?.primary).toEqual({
+      route: route.route,
+      model: 'live-model',
+    })
+    await reader.setToolFilter({ deny: ['read'] })
+    const filtered = await liveSession(profileDir, reader.key)
+    expect(filtered?.capabilities?.tools.find((tool) => tool.id === 'read')?.enabled).toBe(false)
+    expect(filtered?.toolGroups?.flatMap((group) => group.tools)).not.toContain('read')
+    await reader.close()
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('re-describes a session when its resources are discovered again', async () => {
+  const { root, options } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const from = describedCount()
+    // Discovery normally runs once while the session opens; running it again writes new discovered resources.
+    await reader.hooks.sessionStart?.({ reason: 'resume', preset: reader.preset.name, cwd: root })
+    await Promise.resolve()
+    expect(describedKeys(from)).toEqual([reader.key])
+    await reader.close()
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+/** One application with an assistant agent that may delegate to a reader role in its own composition. */
+async function roleChildFixture(options: Partial<TestHostOptions> = {}) {
+  const vendor = '@fixture/live-role'
+  const ref = (name: string) => `${vendor}#${name}`
+  const digest = (value: unknown) => createHash('sha256').update(jcs(value)).digest('hex')
+  const raw = pluginSourceWith(
+    [{ exportName: 'plugin', rowId: 'ext:fixture/live-role', body: "ctx.tools.register(tool('live_read'))" }],
+    { vendor },
+  )
+  const manifestFile = join(raw.snapshot.directory, 'package.json')
+  const manifest = JSON.parse(readFileSync(manifestFile, 'utf8'))
+  const bundle = (tools: string[]) => ({
+    profile: { tools, toolPolicy: { allow: tools } },
+    presets: { role: { name: 'role', extends: 'standard', subagent: { max_depth: 2, max_fan_out: 2 } } },
+    launch: { title: { en: 'Reader' }, description: { en: 'Read the evidence' }, preset: 'role' },
+  })
+  manifest.agnes.bundles = {
+    assistant: bundle(['live_read', 'subagent_spawn']),
+    reader: bundle(['live_read']),
+  }
+  const declaration = {
+    id: 'live',
+    agents: ['assistant', 'reader'].map(ref),
+    delegableAgents: [ref('reader')],
+  }
+  manifest.agnes.application = declaration
+  writeFileSync(manifestFile, JSON.stringify(manifest))
+  // Role tool bindings hash TypeBox schemas, as a published package's tools have.
+  const entry = join(raw.snapshot.directory, 'index.js')
+  writeFileSync(
+    entry,
+    `import { Type } from ${JSON.stringify(import.meta.resolve('@sinclair/typebox'))}\n${readFileSync(
+      entry,
+      'utf8',
+    ).replace(
+      "parameters: { type: 'object', properties: {}, additionalProperties: false }",
+      'parameters: Type.Object({}, { additionalProperties: false })',
+    )}`,
+  )
+  const source = {
+    ...raw,
+    snapshot: { ...raw.snapshot, treeIntegrity: hashDirectory(raw.snapshot.directory, { exclude: [] }) },
+  }
+  const fixture = await pluginHost(source, {
+    disableSessionTitle: true,
+    treeBudgetCredits: 100,
+    provider: (profile) =>
+      new ScriptedProvider({
+        models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+        scripts: [
+          () => [
+            { type: 'text_delta', delta: 'done' },
+            { type: 'done', reason: 'stop' },
+          ],
+        ],
+      }),
+    ...options,
+  })
+  await fixture.host.applyRuntimeTarget(
+    targetOf([
+      ...fixture.host.extensionRows.current(),
+      pluginRow('ext:fixture/live-role', 'plugin', false, { vendor }),
+    ]),
+  )
+  const profileDir = join(fixture.dataDir, 'profiles', 'local-dev')
+  const body = {
+    packageId: vendor,
+    version: '2.3.4',
+    integrity: source.snapshot.integrity,
+    source: { type: 'file' as const, ref: `file:${raw.snapshot.directory.split(sep).join('/')}` },
+    signature: 'unverified' as const,
+    declaration,
+    declarationDigest: digest(declaration),
+    dependencies: [],
+    replacedRoles: [],
+    dependencyDiff: {},
+    assets: {},
+    scope: 'fixture',
+    recovery: 'fixture',
+    warning: 'fixture',
+  }
+  const preview: ApplicationPreview = { ...body, consentDigest: digest(body) }
+  await createConfigurationService({ home: fixture.dataDir, profile: 'local-dev', profileDir })
+    .saveApplication!({
+    revision: 0,
+    selection: {
+      packageId: vendor,
+      applicationId: declaration.id,
+      integrity: source.snapshot.integrity,
+      declarationDigest: preview.declarationDigest,
+      consentDigest: preview.consentDigest,
+      bindingDigest: digest({}),
+      consentSnapshot: preview,
+    },
+  })
+  return { ...fixture, ref, profileDir }
+}
+
+it('role child sessions appear and disappear without a timer', async () => {
+  // Intervals never run here, so a periodic publisher could not show the child.
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  const f = await roleChildFixture()
+  try {
+    const parent = await f.host.createSession({ key: 'parent', cwd: f.dataDir, agent: f.ref('assistant') })
+    expect(await liveKeys(f.profileDir)).toEqual([parent.key])
+    const child = await parent.d.children.createWithKind!('spawn', {
+      parent: parent.key,
+      cwd: f.dataDir,
+      input: 'Inspect',
+      resident: true,
+      role: f.ref('reader'),
+    })
+    expect(await liveKeys(f.profileDir)).toEqual([child.key, parent.key].sort())
+    await f.host.kernel.get(child.key)?.close()
+    expect(await liveKeys(f.profileDir)).toEqual([parent.key])
+    await parent.close()
+  } finally {
+    await f.host.close()
+    vi.useRealTimers()
+  }
+}, 90_000)
+
+it('follows a role child to the registries its Host binds after opening it', async () => {
+  const f = await roleChildFixture()
+  try {
+    const parent = await f.host.createSession({ key: 'parent', cwd: f.dataDir, agent: f.ref('assistant') })
+    const child = await parent.d.children.createWithKind!('spawn', {
+      parent: parent.key,
+      cwd: f.dataDir,
+      input: 'Inspect',
+      resident: true,
+      role: f.ref('reader'),
+    })
+    const session = f.host.kernel.get(child.key)
+    if (!session) throw new Error('role child is not open')
+    // The child was announced before its Host bound its runtime registries; this one is the bound one.
+    session.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
+    const expected = f.host.compositionSessions?.().find((entry) => entry.sessionKey === child.key)
+    expect(JSON.stringify(expected)).toContain('live_probe')
+    expect(await liveSession(f.profileDir, child.key)).toEqual(JSON.parse(JSON.stringify(expected)))
+    await session.close()
+    await parent.close()
+  } finally {
+    await f.host.close()
+  }
+}, 90_000)
+
+it('counts a role container idle from its child closing, not from the container opening', async () => {
+  const idleMs = 60_000
+  let created = 0
+  let disposed = 0
+  const f = await roleChildFixture({
+    limits: { 'worker.generation_idle_close_ms': idleMs },
+    provider: (profile) => {
+      created++
+      return new ScriptedProvider({
+        models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+        scripts: [],
+      })
+    },
+    onSeamClose: () => {
+      disposed++
+    },
+  })
+  // Wall time moves only by hand here, and each instant is collected explicitly.
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
+  try {
+    const parent = await f.host.createSession({ key: 'parent', cwd: f.dataDir, agent: f.ref('assistant') })
+    const before = created - disposed
+    const child = await parent.d.children.createWithKind!('spawn', {
+      parent: parent.key,
+      cwd: f.dataDir,
+      input: 'Inspect',
+      resident: true,
+      role: f.ref('reader'),
+    })
+    const opened = created - disposed
+    expect(opened).toBeGreaterThan(before)
+    // The child works for most of an idle period after its container opened, then closes.
+    vi.setSystemTime(Date.now() + idleMs - 1000)
+    await f.host.kernel.get(child.key)?.close()
+    const closedAt = Date.now()
+    vi.setSystemTime(closedAt + idleMs - 1)
+    await f.host.collectPluginGenerations!()
+    expect(created - disposed).toBe(opened)
+    vi.setSystemTime(closedAt + idleMs)
+    await f.host.collectPluginGenerations!()
+    expect(created - disposed).toBe(before)
+    await parent.close()
+  } finally {
+    await f.host.close()
+    vi.useRealTimers()
+  }
+}, 90_000)
+
+it('collects a container opened without a session', async () => {
+  let created = 0
+  let disposed = 0
+  let peak = 0
+  const f = await roleChildFixture({
+    limits: { 'worker.generation_idle_close_ms': 0 },
+    provider: (profile) => {
+      peak = Math.max(peak, ++created - disposed)
+      return new ScriptedProvider({
+        models: profile.provider.routes?.flatMap((route) => route.models ?? []) ?? [],
+        scripts: [],
+      })
+    },
+    onSeamClose: () => {
+      disposed++
+    },
+  })
+  try {
+    const baseline = created - disposed
+    peak = baseline
+    // Agent review opens the role's composition and never opens a session in it.
+    expect(await f.host.resolveAgent!(f.ref('reader'))).toBeDefined()
+    expect(peak).toBeGreaterThan(baseline)
+    await vi.waitFor(() => expect(created - disposed).toBe(baseline), { timeout: 5000 })
+  } finally {
+    await f.host.close()
+  }
+}, 90_000)
+
+it('hibernate, collect, reopen', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  const idleMs = 60_000
+  let created = 0
+  let disposed = 0
+  const { host } = await createTestHost({
+    ...options,
+    limits: { 'worker.generation_idle_close_ms': idleMs },
+    provider: (profile) => {
+      created++
+      return options.provider(profile)
+    },
+    onSeamClose: () => {
+      disposed++
+    },
+  })
+  // Wall time moves only by hand here, and each instant is collected explicitly.
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
+  try {
+    const baseline = created - disposed
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const opened = created - disposed
+    expect(opened).toBeGreaterThan(baseline)
+    vi.setSystemTime(Date.now() + 2 * idleMs)
+    // The worker hibernates an idle session by closing it; its container outlives it by the idle period.
+    await writer.close()
+    const closedAt = Date.now()
+    expect(await liveKeys(profileDir)).toEqual([])
+    vi.setSystemTime(closedAt + idleMs - 1)
+    await host.collectPluginGenerations!()
+    expect(created - disposed).toBe(opened)
+    // Waking inside the window reuses the container, which then stays while its session is open.
+    const woken = await host.createSession({ key: 'w', cwd: root })
+    expect(created - disposed).toBe(opened)
+    vi.setSystemTime(closedAt + idleMs)
+    await host.collectPluginGenerations!()
+    expect(created - disposed).toBe(opened)
+    await woken.close()
+    vi.setSystemTime(Date.now() + idleMs)
+    await host.collectPluginGenerations!()
+    expect(created - disposed).toBe(baseline)
+    const reopened = await host.createSession({ key: 'w', cwd: root })
+    expect(reopened.pluginGenerationId).toBe(writer.pluginGenerationId)
+    expect(await liveKeys(profileDir)).toEqual([reopened.key])
+    await reopened.close()
+  } finally {
+    await host.close()
+    vi.useRealTimers()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('starts the idle period of an emptied container even when another description fails', async () => {
+  const { root, options } = liveStatusFixture()
+  let created = 0
+  let disposed = 0
+  const { host } = await createTestHost({
+    ...options,
+    limits: { 'worker.generation_idle_close_ms': 0 },
+    provider: (profile) => {
+      created++
+      return options.provider(profile)
+    },
+    onSeamClose: () => {
+      disposed++
+    },
+  })
+  try {
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const before = created - disposed
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    expect(created - disposed).toBeGreaterThan(before)
+    // The reader stays dirty and fails first in every later flush, including the writer's close.
+    failingDescriptions.add(reader.key)
+    reader.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
+    await writer.close()
+    await vi.waitFor(() => expect(created - disposed).toBe(before), { timeout: 5000 })
+    failingDescriptions.clear()
+    await reader.close()
+  } finally {
+    failingDescriptions.clear()
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('publishes the other sessions while one description keeps failing', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const before = await liveSession(profileDir, reader.key)
+    expect(before).toBeDefined()
+    // The reader is marked first, so its failing description comes first in every later flush.
+    failingDescriptions.add(reader.key)
+    reader.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
+    await writer.setToolFilter({ deny: ['write'] })
+    expect(await liveTools(profileDir, writer.key)).not.toContain('write')
+    // The reader keeps its last published description.
+    expect(await liveSession(profileDir, reader.key)).toEqual(before)
+    await writer.close()
+    expect(await liveKeys(profileDir)).toEqual([reader.key])
+    // The failed session is described again with the next change.
+    failingDescriptions.clear()
+    await reader.setToolFilter({ deny: ['read'] })
+    expect(await liveTools(profileDir, reader.key)).toContain('live_probe')
+    await reader.close()
+  } finally {
+    failingDescriptions.clear()
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('keeps a session listed until its close completes, through a reverted retirement claim', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    // Idle-child retirement claims the session and reverts the claim when it loses its state CAS.
+    const release = reader.claimIdleRetirement()
+    if (!release) throw new Error('the idle session could not be claimed')
+    expect(reader.closingOrClosed).toBe(true)
+    // A flush inside that window must not drop the reader.
+    await writer.setToolFilter({ deny: ['write'] })
+    expect(await liveKeys(profileDir)).toEqual([reader.key, writer.key])
+    release()
+    // Its registries are still followed after the claim reverted.
+    reader.currentTools().add(liveProbe(), { source: 'fixture', trust: 'builtin' })
+    expect(await liveTools(profileDir, reader.key)).toContain('live_probe')
+    await reader.close()
+    expect(await liveKeys(profileDir)).toEqual([writer.key])
+    await writer.close()
+    expect(await liveKeys(profileDir)).toEqual([])
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('describes the session again after a preset switch fails', async () => {
+  const { root, options } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    // Core assigns the preset and rebinds registries before awaits that can reject, and then
+    // announces nothing.
+    const failing = vi.spyOn(reader, 'setPreset').mockRejectedValue(new Error('revocation failed'))
+    const from = describedCount()
+    await expect(host.setSessionPreset(reader.key, 'reader')).rejects.toThrow('revocation failed')
+    await Promise.resolve()
+    expect(describedKeys(from)).toEqual([reader.key])
+    failing.mockRestore()
+    await reader.close()
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('does not describe a session again when tool_describe loads a deferred tool', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'agnes-live-disclosure-'))
+  const unbind = bindMcpResourceServer(
+    'allowed',
+    {
+      id: 'allowed',
+      supportsResources: true,
+      listResources: async () => ({ resources: [{ name: 'allowed', uri: 'fixture://allowed' }] }),
+    } as McpConnection,
+    { id: 'allowed', transport: 'stdio', cmd: ['fixture'], defer: false },
+  )
+  const { host } = await createTestHost({
+    dataDir: root,
+    disableSessionTitle: true,
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../../base', import.meta.url)) },
+    profileInputs: { user: { name: 'local-dev', composition: { mcp: ['mcp/allowed'] } } },
+    script: [
+      [
+        {
+          type: 'toolcall_end' as const,
+          via: 'native' as const,
+          call: { toolUseId: '', name: 'tool_describe', args: { name: 'list_mcp_resources' }, ordinal: 0 },
+        },
+        { type: 'done' as const, reason: 'toolUse' as const },
+      ],
+      [{ type: 'text_delta', delta: 'done' }],
+    ],
+  })
+  try {
+    host.kernel.resources.register(
+      { id: 'mcp/allowed', kind: 'mcp', name: 'allowed', description: 'fixture' },
+      { source: 'agnes/fixture', trust: 'builtin' },
+    )
+    const session = await host.createSession({ key: 'disclosure', cwd: root })
+    const from = describedCount()
+    await session.enqueue('next-turn', {
+      actor: session.d.actor,
+      content: [{ type: 'text', text: 'load the resource tool' }],
+    })
+    await session.run({ until: 'turn-end', signal: new AbortController().signal })
+    // Loading is session-level: the tool is disclosed to this session's next model requests only.
+    expect(
+      (await session.scan({ type: 'x/core/tool-disclosed', toSeq: session.lastSeq })).map((row) => row.data),
+    ).toEqual([{ name: 'list_mcp_resources' }])
+    await Promise.resolve()
+    expect(describedKeys(from)).toEqual([])
+    await session.close()
+  } finally {
+    unbind()
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('describes every open session exactly once after one Skills publication', async () => {
+  const { root, options } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    const from = describedCount()
+    expect(
+      await host.refreshSkillRow({
+        list: () => [],
+        read: () => ({ ok: false, code: 'NOT_FOUND' }),
+        readFile: () => ({ ok: false, code: 'NOT_FOUND' }),
+      }),
+    ).toMatchObject({ ok: true })
+    await Promise.resolve()
+    expect(describedKeys(from).sort()).toEqual([reader.key, writer.key])
+    await writer.close()
+    await reader.close()
+  } finally {
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+}, 90_000)
+
+it('a failed write is retried on the next change', async () => {
+  const { root, options, profileDir } = liveStatusFixture()
+  const { host } = await createTestHost(options)
+  try {
+    const writer = await host.createSession({ key: 'w', preset: 'writer', cwd: root })
+    const reader = await host.createSession({ key: 'r', preset: 'reader', cwd: root })
+    liveWrites.failures = 1
+    // The publication fails; the session change itself succeeds and the file keeps the earlier state.
+    await reader.setToolFilter({ deny: ['read'] })
+    expect(liveWrites.failures).toBe(0)
+    expect(await liveTools(profileDir, reader.key)).toContain('read')
+    await writer.setToolFilter({ deny: ['write'] })
+    expect(await liveTools(profileDir, reader.key)).not.toContain('read')
+    expect(await liveTools(profileDir, writer.key)).not.toContain('write')
+    await writer.close()
+    await reader.close()
+  } finally {
+    liveWrites.failures = 0
+    await host.close()
+    rmSync(root, { recursive: true, force: true })
+  }
 }, 90_000)

@@ -11,7 +11,7 @@
 | 发布 | pre-alpha；项目自有代码采用 [Apache-2.0](../../LICENSE)，第三方例外见 [NOTICE](../../NOTICE)；没有公共 npm 发布、消费者安装器或自动更新承诺 |
 | 平台 | macOS 与 Linux 已有持续维护的原生、进程及 Chromium 检查；两个平台都没有像素门禁，截图只作为证据。Windows 完整端到端验收未验证；全新机器安装、签名与升级交付仍需独立发行检查 |
 | Windows Web 静态资源 | 主线已将 URL 路径规范化改为 posix 路径，修复 vendor 资源路由；相关测试在 macOS 通过不等于真实 Windows 浏览器通过 |
-| Windows 安全 | 没有已验证的 L1 命令沙箱，受限 token 与网络隔离仍不可用。私有凭据 ACL 不代表命令已隔离或达到 macOS/Linux 等价支持 |
+| Windows 安全 | 没有 L1 命令沙箱。只读和可修改工作区的命令使用部分的 Windows ACL 写限制（受限令牌、Low 完整性、NTFS ACL）：只限制文件写入，读取与网络不受限，并需要 NTFS 和原生模块。网络隔离仍不可用。私有凭据 ACL 不代表达到 macOS/Linux 等价支持 |
 | Web | 本机回环工作台，不是带远程登录/反向代理支持的公共服务；每个浏览器能力须单独验证 |
 | 普通插件 | 受信进程内代码；`ctx.hooks` 可注册全部 16 类 hook；Service/Projection/Slot/Resource 走各自的 facet，并按行校验 |
 | 联动 | 需 `agnes.plugins` 后端行 + 同 rowId 的 `agnes.clientDescriptors` + 服务定义/策略与当前会话 allow-list；不能把任意 Cordis service 自动远程化 |
@@ -19,7 +19,7 @@
 | 回滚 | 上一版本保留有界；不能当作完整历史版本仓库，撤信任/删除快照不自动复活 |
 | 插件删除 | 禁用/删除停止新代码绑定；已有会话保留快照，直到授权迁移或删除。进程/浏览器测试覆盖清理路径，具体部署插件及外部副作用仍需验证 |
 | 长时间连续运行 | 内置、托管与普通插件行的租约已改为随行生命周期释放，旧的默认 24 小时到期问题已修复；写者租约仍单独管理。长期运行稳定性和资源使用仍需按工作负载验证，见[验证说明](../maintainers/verification.zh-CN.md) |
-| MCP 会话调用 | 会话启动及轮次重载采用逐服务器行；当前路径跳过 OAuth 绑定，管理面测试成功不等于会话工具可用，见[MCP 运行方式](../guide/mcp.zh-CN.md#运行方式与版本) |
+| MCP 会话调用 | 会话启动及轮次重载采用逐服务器行；OAuth 服务需要先登录（`agh mcp login ID` 或网页 MCP 页），见[MCP 运行方式](../guide/mcp.zh-CN.md#运行方式与版本) |
 | Skills | 当前源码已实现永久删除与同名优先级覆盖。删除不可恢复/不可取消，失败可能部分删除并保留标记；package/runtime 不可单独删文件，runtime 不接受优先级覆盖 |
 | Hooks / 扩展迁移 | `ctx.hooks` 已开放 16 类事件；旧第三方 `agnes.extensions` 后端入口已收敛到 `agnes.plugins`。内置兼容路径不等于第三方可继续使用旧格式 |
 | 模型 | 提供方目录与合同决定能力；文档自动演示使用本地模型夹具，外部模型效果和工具选择能力需另行验证 |

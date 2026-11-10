@@ -1,3 +1,5 @@
+import { estimateTokens } from '@agnes/extension-api'
+
 /** Existing entries of one kind the planner sees at most, in full or as references. */
 export const ENTRIES_PER_KIND = 40
 /** Entries of one kind given in full, the only ones a plan may rewrite. */
@@ -70,19 +72,6 @@ export type PlannerPrompt = {
   omitted: PlannerOmitted
   /** The estimate of system plus message text. */
   inputTokens: number
-}
-
-const CJK_CHAR = /[　-〿぀-ヿ㐀-䶿一-鿿豈-﫿＀-￯가-힣]/
-
-/** Same character mix as Core's estimator, duplicated so this package does not import Core. */
-export function estimateTokens(text: string): number {
-  let cjk = 0
-  let other = 0
-  for (const ch of text) {
-    if (CJK_CHAR.test(ch)) cjk++
-    else other++
-  }
-  return Math.ceil(cjk / 1.7 + other / 4)
 }
 
 const KINDS: readonly EntryKind[] = ['prompt', 'memory', 'skill', 'subagent']
@@ -178,7 +167,12 @@ function render(
 ): string {
   const sections = [head]
   if (parts.full.length)
-    sections.push(['Entries you may rewrite (full text):', ...parts.full.map((p) => p.text)].join('\n'))
+    sections.push(
+      [
+        'Entries you may rewrite (full text; an id starting with ws. or user. is saved for later sessions: an upsert under that id rewrites the saved text, a delete is refused):',
+        ...parts.full.map((p) => p.text),
+      ].join('\n'),
+    )
   if (parts.reference.length)
     sections.push(
       ['Reference entries (summaries; confirm or leave alone):', ...parts.reference.map((p) => p.text)].join(
@@ -201,7 +195,7 @@ function render(
 
 /**
  * The planner's input: a fixed system prompt and one user message with the host's notes, the
- * saved entries (up to 5 per kind in full, the rest of the first 40 as 240-character references),
+ * saved entries (up to `FULL_ENTRIES_PER_KIND` per kind in full, the rest of the first 40 as 240-character references),
  * the entries saved to the workspace (references the plan may only confirm) and the frozen evidence.
  * Over the input target it leaves out, in order: reference entries (least relevant first), then
  * workspace references (last first); evidence, oldest first, but never the task's first request or the newest few

@@ -32,6 +32,13 @@ API additions require a minor version; removals or semantic changes require a ma
   the binding projection watermark. No history is exported. Reconnect requires an inbound target
   confirmation; incomplete transitions remain paused. Native approval decisions stay in AGH.
 
+The addition is optional; `^5.0.0` ranges admit 5.6.0 and no existing contract changes.
+
+- `estimateTokens(text)`: the one token estimate, about four Latin characters or 1.7 CJK-range
+  characters to a token, counted per code point. It is the estimator Core already used; every budget
+  counted in tokens (context window, compaction threshold, task experience snapshot) now uses it, so a
+  plugin that compares its own text against such a budget gets the same number.
+
 ## 5.5.0
 
 ### Added
@@ -41,6 +48,16 @@ API additions require a minor version; removals or semantic changes require a ma
   `channel-contract` entry expose the existing adapter contract without private runner imports.
 - Multi-instance channel configuration uses AGH secret references and explicit workspace/agent
   bindings. Existing generic runner imports and existing plugins retain their behavior.
+
+All additions are optional; `^5.0.0` ranges admit 5.5.0 and no existing contract changes for a Host that
+does not use them.
+
+- `MemoryParagraphValidity` gains `delivered`: a managed paragraph in force that the Host gives to the
+  model itself (in the task-experience snapshot). A provider leaves it out of its snapshot without an
+  omission line and shows it on read like `valid`. A provider that predates it treats it as `unknown`.
+- `MemoryValidityView.delivers`: true when the Host answers every paragraph in force `delivered`. A
+  section put into user memory then takes no room in what the agent is shown, so `propose` does not
+  refuse it for the user memory budget; the index caps still apply.
 
 ## 5.4.0
 

@@ -1,5 +1,5 @@
 import type { MemoryParagraphValidity, MemoryValidityView } from '@agnes/extension-api'
-import { fault } from './content.js'
+import { fault, omissionLine } from './content.js'
 
 /**
  * Managed paragraphs: text the Host saved into the workspace index, wrapped in one marker line before
@@ -142,9 +142,7 @@ export type ParagraphView = Readonly<{
   segments: readonly Segment[]
 }>
 
-export function omissionLine(count: number): string {
-  return `[${count} task-experience paragraphs omitted: expired or unverifiable]`
-}
+export { omissionLine }
 
 /** A view that throws or answers out of range counts as unverifiable. */
 export function validityOf(view: MemoryValidityView | undefined): (id: string) => MemoryParagraphValidity {
@@ -152,7 +150,7 @@ export function validityOf(view: MemoryValidityView | undefined): (id: string) =
     if (!view) return 'unknown'
     try {
       const answer = view.validity(id)
-      return answer === 'valid' || answer === 'expired' ? answer : 'unknown'
+      return answer === 'valid' || answer === 'expired' || answer === 'delivered' ? answer : 'unknown'
     } catch {
       return 'unknown'
     }
@@ -188,16 +186,30 @@ export function plainView(text: string): ParagraphView {
   }
 }
 
+/**
+ * What the agent is shown of a stored index. `read` (files the agent opens) shows a `delivered`
+ * paragraph like a `valid` one; `note` (the memory snapshot) leaves it out without an omission line,
+ * since the Host gives it to the model itself. Both count the same paragraphs as omitted.
+ */
 export function paragraphView(
   text: string,
   validity: (id: string) => MemoryParagraphValidity,
+  use: 'note' | 'read' = 'read',
 ): ParagraphView {
   const markers = markerLines(text)
   if (!markers.length) return plainView(text)
   const { paragraphs, anomalies } = parseParagraphs(text)
-  const left = [...anomalies, ...paragraphs.filter((paragraph) => validity(paragraph.id) !== 'valid')]
-  const regions = left
-    .map(({ start, end }) => ({ start, end }))
+  const shown = (id: string) => {
+    const answer = validity(id)
+    return answer === 'valid' || answer === 'delivered'
+  }
+  const left = [...anomalies, ...paragraphs.filter((paragraph) => !shown(paragraph.id))]
+  const silent =
+    use === 'note' ? paragraphs.filter((paragraph) => validity(paragraph.id) === 'delivered') : []
+  const regions = [
+    ...left.map(({ start, end }) => ({ start, end, silent: false })),
+    ...silent.map(({ start, end }) => ({ start, end, silent: true })),
+  ]
     .sort((a, b) => a.start - b.start || b.end - a.end)
     .filter((region, index, all) => index === 0 || region.start >= all[index - 1]!.end)
   const ids = new Set(left.flatMap((entry) => (entry.id ? [entry.id] : [])))
@@ -209,9 +221,14 @@ export function paragraphView(
     content += text.slice(from, to)
   }
   for (let i = 0; i < regions.length; ) {
-    let j = i
-    while (j + 1 < regions.length && regions[j + 1]!.start === regions[j]!.end) j++
     keep(cursor, regions[i]!.start)
+    if (regions[i]!.silent) {
+      cursor = regions[i]!.end
+      i++
+      continue
+    }
+    let j = i
+    while (j + 1 < regions.length && !regions[j + 1]!.silent && regions[j + 1]!.start === regions[j]!.end) j++
     const end = regions[j]!.end
     const note = omissionLine(j - i + 1) + (text[end - 1] === '\n' ? '\n' : '')
     segments.push({ view: content.length, length: note.length })
@@ -224,7 +241,7 @@ export function paragraphView(
     content,
     managed: true,
     omittedIds: [...ids].sort(),
-    hidden: regions.length > 0,
+    hidden: regions.some((region) => !region.silent),
     markers,
     segments,
   }

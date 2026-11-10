@@ -17,6 +17,14 @@ export class SourceFormState {
   placeholder = SOURCE_FORMATS.npm.example
   checkSource: PackageSource | undefined
 
+  resolve(t: LocaleTranslator): PackageSource | undefined {
+    const ref = this.ref.trim()
+    const problem = sourceProblem(this.type, ref, t)
+    const source = problem ? undefined : sourceFromForm(this.type, ref)
+    this.problem = source ? undefined : { type: this.type, ref }
+    return source
+  }
+
   compatibleSource(
     operation: PackageOperation,
     features: readonly string[] | undefined,

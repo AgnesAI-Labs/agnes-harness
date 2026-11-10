@@ -1,6 +1,7 @@
 import type { Conflict, ContextBreakdownDiag } from '@agnes/core-common/context-diagnostics'
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
+import { estimateTokens } from '@agnes/extension-api'
 import {
   type ArtifactJob,
   type AssistantMessage,
@@ -208,7 +209,7 @@ const emptyTotals = (): UsageView['totals'] => ({
 })
 const estimatedContentTokens = (event: Event): number => {
   const blocks = (event.data as { content?: Array<{ text?: string }> } | null)?.content ?? []
-  return blocks.reduce((total, block) => total + Math.ceil((block.text ?? '').length / 4), 0)
+  return blocks.reduce((total, block) => total + estimateTokens(block.text ?? ''), 0)
 }
 
 let markIncompleteImpl: (cell: UIProjectionCell) => void

@@ -61,6 +61,7 @@
     "defaultToolPolicy",
     "defineKind",
     "definePersistenceProvider",
+    "estimateTokens",
     "extEventType",
     "isExtensionError",
     "isJsonPayload",

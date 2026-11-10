@@ -24,6 +24,8 @@ export type ParsedSession = {
   /** AGH: the ledger seq of every trap hit inside a prompt window, and of every compaction. */
   hitSeqs?: number[]
   compactionSeqs?: number[]
+  /** AGH: the first task-experience snapshot row of the session. */
+  experience?: { saved: number; savedIncluded: number }
 }
 
 export type UsageSummary = {
@@ -215,6 +217,7 @@ export const parsePrimeSession = (jsonl: string, task: EvalTask, sessionIndex: n
 }
 
 const REFINEMENT_RUN = 'x/core/refinement-run'
+const EXPERIENCE_ROW = 'x/core/refinement-prefix-change'
 const TRIGGER_SOURCE: Record<string, Source> = {
   manual: 'user',
   model: 'self',
@@ -247,6 +250,7 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
   const refine = { auto: 0, user: 0, self: 0, appliedEdits: 0 }
   const hitSeqs: number[] = []
   const compactionSeqs: number[] = []
+  let experience: ParsedSession['experience']
 
   for (const line of jsonl.split('\n')) {
     if (line.trim() === '') continue
@@ -266,6 +270,17 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
       if (trigger && typeof trigger.kind === 'string') run.source = TRIGGER_SOURCE[trigger.kind] ?? 'user'
       if (data.state === 'planning' || data.state === 'proposed') run.planned = true
       runs.set(data.runId, run)
+      continue
+    }
+    if (row.type === EXPERIENCE_ROW && data.reason === 'experience-snapshot' && experience === undefined) {
+      // `included` names each entry as its snapshot line does, `kind/id`; a saved entry's id names the
+      // memory it came from: `ws.` or `user.`.
+      const included = Array.isArray(data.included) ? data.included : []
+      experience = {
+        saved: typeof data.saved === 'number' ? data.saved : 0,
+        savedIncluded: included.filter((ref) => typeof ref === 'string' && /^[a-z]+\/(ws|user)\./u.test(ref))
+          .length,
+      }
       continue
     }
     if (row.type === 'harness/refine') {
@@ -311,7 +326,15 @@ export const parseAghSession = (jsonl: string, task: EvalTask, sessionIndex: num
     }
   }
   for (const run of runs.values()) if (run.planned) refine[run.source ?? 'user']++
-  return { windows, refine, harnessLookups, compactions, hitSeqs, compactionSeqs }
+  return {
+    windows,
+    refine,
+    harnessLookups,
+    compactions,
+    hitSeqs,
+    compactionSeqs,
+    ...(experience ? { experience } : {}),
+  }
 }
 
 /**
@@ -384,8 +407,31 @@ export const sessionCost = (run: RunRecord, session: number): SessionCost | unde
   run.sessionCosts?.[session]
 
 /**
- * What each session had spent when each of its prompts ended (`outcome.prompts`, by the runner's clock):
- * the rows of its ledger up to that moment. Tool calls are the main lane's `tool/call` rows; requests,
+ * What the sessions after the first cost together: the part of a run a lesson carried over from the first
+ * session can change. For a task of two sessions it is the second session's cost. None when the run never
+ * reached a second session.
+ */
+export const laterSessionsCost = (run: RunRecord): SessionCost | undefined => {
+  const later = (run.sessionCosts ?? []).slice(1)
+  if (!later[0]) return undefined
+  const present = later.filter((c): c is SessionCost => c !== undefined)
+  const total = (pick: (c: SessionCost) => number) => present.reduce((sum, c) => sum + pick(c), 0)
+  return {
+    requests: total((c) => c.requests),
+    tokens: total((c) => c.tokens),
+    cost: total((c) => c.cost),
+    lowerBound: present.some((c) => c.lowerBound),
+    refinement: {
+      requests: total((c) => c.refinement.requests),
+      tokens: total((c) => c.refinement.tokens),
+      cost: total((c) => c.refinement.cost),
+    },
+  }
+}
+
+/**
+ * What the run had spent, over all its sessions so far, when each prompt ended (`outcome.prompts`, by the
+ * runner's clock): the rows of the earlier sessions' ledgers and of its own up to that moment. Tool calls are the main lane's `tool/call` rows; requests,
  * tokens and cost are counted as `sessionCostOfLedger` counts them, all lanes and without the refinement
  * lane. A milestone prompt carries the result of the checks run right after it.
  */
@@ -410,8 +456,13 @@ export const progressOf = (task: EvalTask, outcome: RunOutcome, texts: string[])
     let micros = 0
     let mainRequests = 0
     let mainMicros = 0
-    for (const { row, at } of parsed[ended.session] ?? []) {
-      if (at > until) continue
+    // The run so far: every row of the earlier sessions, and this session's up to the prompt's end.
+    const rows = parsed
+      .slice(0, ended.session + 1)
+      .flatMap((session, index) =>
+        index < ended.session ? session : session.filter(({ at }) => at <= until),
+      )
+    for (const { row } of rows) {
       const data = isObject(row.data) ? row.data : {}
       if (row.type === 'tool/call' && isMainLane(row.lane)) toolCalls++
       if (row.type !== 'cost/ledger') continue
@@ -478,6 +529,7 @@ export const toRunRecord = (
   let compactions = 0
   const texts: string[] = []
   const trapEvents: NonNullable<RunRecord['trapEvents']> = []
+  const experienceAtStart: NonNullable<RunRecord['experienceAtStart']> = []
   task.sessions.forEach((_, sessionIndex) => {
     const files = outcome.sessions[sessionIndex]?.sessionFiles ?? []
     const parse = (options.system ?? 'prime') === 'agh' ? parseAghSession : parsePrimeSession
@@ -491,6 +543,12 @@ export const toRunRecord = (
         session: sessionIndex,
         hits: parsed.hitSeqs ?? [],
         compactions: parsed.compactionSeqs ?? [],
+      })
+      experienceAtStart.push({
+        session: sessionIndex,
+        snapshot: parsed.experience !== undefined,
+        saved: parsed.experience?.saved ?? 0,
+        savedIncluded: parsed.experience?.savedIncluded ?? 0,
       })
     }
     for (const window of parsed.windows) {
@@ -544,11 +602,13 @@ export const toRunRecord = (
     ...(sessionCosts.length > 0 ? { sessionCosts } : {}),
     ...(startedAt ? { startedAt } : {}),
     ...(trapEvents.length > 0 ? { trapEvents } : {}),
+    ...(experienceAtStart.length > 0 ? { experienceAtStart } : {}),
     ...(progress ? { progress } : {}),
     ...(outcome.capped ? { capped: outcome.capped } : {}),
     ...(outcome.onProtocol ? { onProtocol: outcome.onProtocol } : {}),
     ...(outcome.frozenFrom ? { frozenFrom: outcome.frozenFrom } : {}),
     ...(outcome.infraFailed ? { infraFailed: outcome.infraFailed } : {}),
+    ...(outcome.blocked ? { blocked: outcome.blocked } : {}),
   }
 }
 

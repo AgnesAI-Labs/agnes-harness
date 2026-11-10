@@ -785,3 +785,75 @@ describe('Scheduler after an interrupted run', () => {
     expect(repo.get('existing')).toMatchObject({ status: 'completed', stalledCounter: 1 })
   })
 })
+
+it('allocates a leased run identity before prepare side effects and rotates it each occurrence', async () => {
+  let now = 100
+  const repo = new JobsRepo(sqliteTables().table('jobs'), () => now)
+  repo.insert(row('schedule:identity', { schedule: { kind: 'every', everyMs: 1000 } }))
+  const identities: { runId: string; sessionKey: string }[] = []
+  const finished: string[] = []
+  const { registry } = fakeRegistry()
+  const scheduler = new Scheduler({
+    repo,
+    registry,
+    clock: () => now,
+    owner: 'owner',
+    limits: { tickMs: 1000, lockMs: 60000, maxStalled: 5 },
+    notices: { emit: () => undefined } as never,
+    ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+    workspaces: workspaceAuthority(),
+    activationBarrier: createExtensionActivationBarrier(),
+    prepare: async (job, _signal, _dispatching, beginRun) => {
+      const identity = beginRun!(`session-${identities.length}`)
+      expect(beginRun!(identity.sessionKey)).toEqual(identity)
+      expect(() => beginRun!('different')).toThrow(/identity/)
+      expect(repo.get(job.idempotencyKey)?.result).toMatchObject({ dispatched: identity })
+      identities.push(identity)
+      return { sessionKey: identity.sessionKey }
+    },
+    onDispatched: (_job, info) => {
+      expect(info.runId).toBe(identities.at(-1)?.runId)
+    },
+    onSettled: (_job, info) => {
+      expect(repo.get('schedule:identity')?.result).toMatchObject({ dispatched: { runId: info.runId } })
+      finished.push(info.runId!)
+    },
+  })
+  await scheduler.tick()
+  now = repo.get('schedule:identity')!.delayUntil
+  await scheduler.tick()
+  expect(identities).toHaveLength(2)
+  expect(identities[0]!.runId).toMatch(/^run_[a-f0-9]{32}$/)
+  expect(identities[0]!.runId).not.toBe(identities[1]!.runId)
+  expect(finished).toEqual(identities.map((identity) => identity.runId))
+})
+
+it('never retries an identified creation when the task disappears before failure handling', async () => {
+  const repo = new JobsRepo(sqliteTables().table('jobs'), () => 100)
+  repo.insert(row('removed-task'))
+  const failure = vi.fn()
+  const { registry } = fakeRegistry()
+  const instance = new Scheduler({
+    repo,
+    registry,
+    clock: () => 100,
+    owner: 'owner',
+    limits: { tickMs: 1000, lockMs: 1000, maxStalled: 5 },
+    notices: { emit: () => undefined } as never,
+    workspaces: workspaceAuthority(),
+    ownership: { resolve: () => ({ active: true, principalId: 'owner' }) },
+    activationBarrier: createExtensionActivationBarrier(),
+    prepare: async (_job, _signal, _dispatching, beginRun) => {
+      beginRun('reserved')
+      throw new Error('task gone')
+    },
+    retryable: () => true,
+    onFailed: failure,
+  })
+  await instance.tick()
+  expect(repo.get('removed-task')).toMatchObject({ status: 'failed' })
+  expect(failure).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({ runId: expect.stringMatching(/^run_/) }),
+  )
+})

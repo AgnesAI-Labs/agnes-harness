@@ -263,6 +263,7 @@ export { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from './orchestrator/request-media-s
 export type { ApplyLimits } from './refine/apply.js'
 // Applying a refinement is the facade's job alone, between turns under the session lock.
 export { rollbackRefine } from './refine/apply.js'
+export { newSessionVisibleTools, sessionVisibleTools } from './refinement/capture.js'
 export {
   type DirectProposal,
   type InspectAnswer,
@@ -308,7 +309,7 @@ export {
   type WorkspaceSaveRequest,
   workspaceSaveRequest,
 } from './refinement/workspace.js'
-export type { RefinementWorkspaceRefs, WorkspaceReference } from './refinement/workspace-refs.js'
+export type { RefinementWorkspaceRefs, SavedEntry, WorkspaceReference } from './refinement/workspace-refs.js'
 export { HookRegistry, type HookSnapshot } from './registry/hooks.js'
 export { type RegisteredResource, ResourceRegistry } from './registry/resources.js'
 export { type RuntimeSlotFill, SlotRegistry } from './registry/slots.js'
