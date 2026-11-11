@@ -36,7 +36,10 @@ export type RuntimeSnapshotFacts = {
   cwd: string
   /** Sorted canonical extra directories the session may use; absent when it has none. */
   extraDirectories?: string[]
-  /** The session's actual command boundary on Windows; absent on every other platform. */
+  /**
+   * What the session's commands can actually reach, where that is worth stating: the Windows
+   * boundary, or full access with nothing confining the commands. Absent otherwise.
+   */
   commandIsolation?: string
 }
 
@@ -59,27 +62,29 @@ const WINDOWS_WRITE =
   '工作区内的硬链接若指向工作区外的文件（如 pnpm 存储），那些文件也可经此写入；会话的额外目录没有 ACL 写权限，命令写入那里会被拒绝访问。'
 const WINDOWS_READ = 'Windows：不授予工作区或临时目录写能力；读取与网络未隔离，工具仍按只读规则使用。'
 const WINDOWS_FULL = 'Windows：完全访问，命令未隔离'
+const UNCONFINED_FULL =
+  'Full access: the harness does not confine commands; installing software needs no approval.'
 
 /**
- * What a session's commands can actually reach on a Windows Host, from the enforcement its sandbox
- * reports. The partial contract is named only when that enforcement carries it. The full-access line
- * is for an explicit full-access session without that contract and without a full boundary: Windows
- * has no full local backend, so such a session's commands run unconfined, whether its posture reads
- * `none` or the unconfined `partial` file-only fallback. Other platforms keep the facts they had, so
- * nothing is said there.
+ * What a session's commands can actually reach, from the enforcement its sandbox reports. The
+ * full-access line is for an explicit full-access session with no boundary behind it: no partial
+ * contract and no full boundary, so its commands run unconfined, whether its posture reads `none`
+ * or the unconfined `partial` file-only fallback. Windows has no full local backend and says so in
+ * its own words; it also names its partial contract, only when the enforcement carries exactly
+ * that. Elsewhere a confined session keeps the facts it had, so nothing is said for it.
  */
-export function windowsCommandIsolation(input: {
+export function commandIsolationFact(input: {
   enforcement: Readonly<{ level: string; boundary?: unknown }>
   access: 'read-only' | 'workspace-write' | 'full-access'
   os: string
 }): string | undefined {
   const { enforcement, access } = input
-  if (input.os !== 'win32') return undefined
+  const unconfined =
+    access === 'full-access' && enforcement.boundary === undefined && enforcement.level !== 'full'
+  if (input.os !== 'win32') return unconfined ? UNCONFINED_FULL : undefined
   if (enforcement.level === 'partial' && isWindowsBoundary(enforcement.boundary))
     return access === 'read-only' ? WINDOWS_READ : access === 'workspace-write' ? WINDOWS_WRITE : undefined
-  if (access === 'full-access' && enforcement.boundary === undefined && enforcement.level !== 'full')
-    return WINDOWS_FULL
-  return undefined
+  return unconfined ? WINDOWS_FULL : undefined
 }
 
 /** Tool-use instructions are ordinary prompt text; the wire tools field supplies the names. */

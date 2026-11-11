@@ -8,6 +8,7 @@ import {
   DEADLINE_ADVICE,
   deadlineStop,
   deadlineWait,
+  packageListsNote,
   shellGuidance,
   timeoutGuidance,
 } from '../shell-guidance.js'
@@ -99,6 +100,8 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
       const parts: string[] = shellGuidance(ctx, args.command, r.stoppedProcesses)
       if (r.stdout) parts.push(r.stdout.replace(/\n$/, ''))
       if (r.stderr) parts.push(`[stderr]\n${r.stderr.replace(/\n$/, '')}`)
+      const packageLists = packageListsNote(r.stdout, r.stderr)
+      if (packageLists) parts.push(packageLists)
       // An executor that reports nothing (a third-party seam) still has the kernel's cut-off behind it,
       // so only then is a killed-looking result that took the whole limit read as the timeout it was.
       const timedOut = r.timedOut ?? (r.code < 0 && Date.now() - startedAt >= timeoutMs)

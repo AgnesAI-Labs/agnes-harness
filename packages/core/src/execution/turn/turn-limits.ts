@@ -133,7 +133,7 @@ export function limitNoteText(limits: TurnLimits, notice: LimitNotice, language?
   const all = describe(limits)
   if (notice.level === 0)
     return withNoteLanguage(
-      `${TITLE}\nThis turn has limits: ${all}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first. Finishing early is expected: once the requested result works and its check passes, end the turn with your reply. What is left of a limit is a ceiling, not a budget for extra confidence checks, broader test sweeps or refinements the request did not ask for.`,
+      `${TITLE}\nThis turn has limits: ${all}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first. Finishing early is expected: once the requested result works and its check passes, end the turn with your reply. A result that has never been run has not passed a check: run it once before ending. What is left of a limit is a ceiling, not a budget for extra confidence checks, broader test sweeps or refinements the request did not ask for.`,
       language,
     )
   const threshold = LIMIT_THRESHOLDS[notice.level - 1] as number

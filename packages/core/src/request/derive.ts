@@ -35,7 +35,7 @@ export const TOOL_RECOVERY_SECTION = {
   id: 'core:tool-recovery',
   order: -1,
   source: 'core',
-  text: 'When a tool rejects arguments, use its field-specific correction hint for a bounded retry. If it is disabled for this turn, continue without it; do not route around the limit through code or another tool. State material limitations honestly and never claim a failed operation succeeded.',
+  text: 'When a tool rejects arguments, use its field-specific correction hint for a bounded retry. If it is disabled for this turn, stop calling it and reach the goal another way with the tools that remain. State material limitations honestly and never claim a failed operation succeeded.',
 } as const
 
 export {

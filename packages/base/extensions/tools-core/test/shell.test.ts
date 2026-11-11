@@ -874,6 +874,51 @@ describe('shell ended by a signal', () => {
   })
 })
 
+describe('shell when apt has no package lists', () => {
+  const NOTE =
+    '[apt found no such package; a fresh container often has no package lists yet. Run `apt-get update`, then retry the install.]'
+  const viaJob = (stdout: string, stderr: string, code: number) => {
+    const jobs = new ShellJobs()
+    const view = { id: 'job-1', status: code === 0 ? 'completed' : 'failed', stdout, stderr, code }
+    vi.spyOn(jobs, 'start').mockResolvedValue({ ...view, status: 'running', code: null } as never)
+    vi.spyOn(jobs, 'wait').mockResolvedValue(view as never)
+    return createShellTool(jobs).execute({ command: 'apt-get install -y foo' }, fakeToolContext())
+  }
+  const viaExec = (stdout: string, stderr: string, code: number) =>
+    shellTool.execute(
+      { command: 'apt-get install -y foo' },
+      fakeToolContext({ exec: () => ({ code, stdout, stderr }) }),
+    )
+
+  it.each([
+    ['a session job', viaJob],
+    ['the foreground executor', viaExec],
+  ] as const)('through %s, says to refresh the package lists and retry', async (_path, run) => {
+    const failed = await run('Reading package lists...\n', 'E: Unable to locate package foo\n', 100)
+    expect(failed.isError).toBe(true)
+    const text = textOf(failed)
+    // After apt's own line, before the exit line the UI reads.
+    expect(text.indexOf(NOTE)).toBeGreaterThan(text.indexOf('E: Unable to locate package foo'))
+    expect(text).toMatch(/\[exit 100\]$/)
+    // The line is matched where apt prints it, whichever stream carried it.
+    expect(textOf(await run('E: Unable to locate package foo\n', '', 100))).toContain(NOTE)
+  })
+
+  it.each([
+    ['a session job', viaJob],
+    ['the foreground executor', viaExec],
+  ] as const)('through %s, adds nothing to other output', async (_path, run) => {
+    expect(textOf(await run('Setting up foo (1.0) ...\n', '', 0))).not.toContain('apt found')
+    expect(textOf(await run('', 'E: Could not get lock /var/lib/dpkg/lock\n', 100))).not.toContain(
+      'apt found',
+    )
+    // Quoted inside a line, the words are not apt's own error line.
+    expect(textOf(await run('grep: "E: Unable to locate package foo" not found\n', '', 1))).not.toContain(
+      'apt found',
+    )
+  })
+})
+
 describe('shell without a job registry', () => {
   it('fails clearly without pretending a generic artifact job executed the command', async () => {
     const ctx = fakeToolContext()

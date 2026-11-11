@@ -842,7 +842,7 @@ describe('deriveRequest', () => {
       const out = deriveRequest({ ...base(), surface, ...NO_RC })
       expect(out.request.messages.map((m) => m.role)).toEqual(['assistant', 'user', 'assistant'])
       // The recovery guidance deliberately revises the fixed prefix; this shape still adds no bridge.
-      expect(out.header.derived_hash).toBe('b69357ab60e5d0532ccd35c95a2d9cbf3c8120f74cb4f2af0c04f523316dec9e')
+      expect(out.header.derived_hash).toBe('b7d9a709718d3b9f5a2f9c25b69f52b22d79f32b976504e5b91fc4818efd22e0')
     })
   })
 

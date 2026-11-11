@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createWebSearchTool } from '../src/search.js'
 
+const UNAVAILABLE =
+  "WEB_SEARCH_UNAVAILABLE: no search provider/key is configured on this host, so this tool cannot search. A search results page, or a site's own search or API URL, can still be fetched with web_fetch."
+
 describe('web_search', () => {
   it('discloses a valid vendor-neutral tool and refuses clearly without a configured provider', async () => {
     const tool = createWebSearchTool()
@@ -15,6 +18,8 @@ describe('web_search', () => {
     const result = await tool.execute({ queries: ['a'] }, fakeToolContext())
     expect(result.isError).toBe(true)
     expect(result.details).toEqual({ code: 'WEB_SEARCH_UNAVAILABLE' })
+    // The refusal is about this tool only: it points at web_fetch as another way to search.
+    expect(result.content).toEqual([{ type: 'text', text: UNAVAILABLE }])
   })
   it('passes one to four queries and cancellation to the host provider and spills long results', async () => {
     const ctx = fakeToolContext({ outputMaxBytes: 4096 })
@@ -81,6 +86,7 @@ describe('web_search', () => {
       },
     }).execute({ queries: ['a'] }, fakeToolContext())
     expect(unavailable.details).toEqual({ code: 'WEB_SEARCH_UNAVAILABLE' })
+    expect(unavailable.content).toEqual([{ type: 'text', text: UNAVAILABLE }])
     expect(JSON.stringify(unavailable)).not.toContain('missing')
   })
 })
