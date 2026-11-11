@@ -48,16 +48,18 @@ const record = (row: Row): ManagedSessionRecord => ({
 })
 
 /**
- * The key of a workspace grant: the package and one of its plugin rows. Row ids are author-chosen, so a
- * row alone would let a later package that declares the same id inherit the grant. `#` separates the
- * parts because a package id never contains it, so `${packageId}#` prefixes only that package's keys.
- * Not NUL: the storage adapter refuses NUL in a bound TEXT parameter.
+ * The owner of a workspace grant, a managed session record and its send keys: the package and one of
+ * its plugin rows. Row ids are author-chosen, so a row alone would let a later package that declares
+ * the same id inherit the grants and reach the sessions. `#` separates the parts because a package id
+ * never contains it, so `${packageId}#` prefixes only that package's keys; a row is `plugin/<hex>`, so
+ * a record stored under a row alone matches no key. Not NUL: the storage adapter refuses NUL in a
+ * bound TEXT parameter.
  */
 export const grantKey = (packageId: string, owner: string) => `${packageId}#${owner}`
 
 /**
- * Which plugin row manages which session, the workspaces the owner authorized for each row, and the
- * send keys each row used. New tables only: no existing table changes shape.
+ * Which package and plugin row manages which session, the workspaces the owner authorized for each,
+ * and the send keys each used, all under a `grantKey`. New tables only: no existing table changes shape.
  */
 export class ManagedSessionRecords {
   /** Session keys being created as managed ones, before their record exists; process memory only. */

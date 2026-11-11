@@ -4,7 +4,7 @@ English | [简体中文](managed-sessions.zh-CN.md)
 
 [Author kit](README.md) · [Streams and managed services](transports.md) · [Bundles and profiles](bundles-and-profiles.md)
 
-A profile-scoped, in-process managed service can open and drive sessions for the owner who trusted and enabled its plugin. The session belongs to the owner. The Host records the plugin row as its manager. The owner sees it in the Web, answers its approvals there, and can stop it. The plugin sees and drives only the sessions it manages, never the owner's own sessions or another plugin's, within the [trust boundary](#trust-boundary) of in-process code.
+A profile-scoped, in-process managed service can open and drive sessions for the owner who trusted and enabled its plugin. The session belongs to the owner. The Host records the package and plugin row as its manager. The owner sees it in the Web, answers its approvals there, and can stop it. The plugin sees and drives only the sessions it manages, never the owner's own sessions or another plugin's, within the [trust boundary](#trust-boundary) of in-process code.
 
 ## Declare it
 
@@ -43,7 +43,7 @@ if (sent.state === 'notSubmitted') console.log(sent.reason) // busy | archived |
 ```
 
 - `start` takes a reviewed Bundle of the calling package (`<package>#<bundle>`). The Bundle's launch decides the preset, as an application launch does. The workspace must be one the owner [authorized](#authorize-a-workspace) for this plugin. A repeated `startKey` returns the session it opened (`created: false`), including after a crash during the start. Every start, a retry included, passes the workspace, model and permission checks again. A retry that asks for a different Bundle, workspace, retention, permission, model or switch is refused with `START_KEY_REUSED`.
-- A session belongs to the plugin row that opened it. On every call the backend rechecks the calling row against current inventory: the package must be enabled and trusted, its service must declare `sessions`, and the row must be one of that package's own plugin rows. [Trust boundary](#trust-boundary) explains what this does not cover.
+- A session belongs to the package and plugin row that opened it. Another package that declares the same row id cannot list, read, stop or archive it, even after the first package is removed. On every call the backend rechecks the calling row against current inventory: the package must be enabled and trusted, its service must declare `sessions`, and the row must be one of that package's own plugin rows. [Trust boundary](#trust-boundary) explains what this does not cover.
 - An optional `model` selects the primary model route. A route the deployment lacks refuses the start. There is no fallback to the default route.
 - Every managed session runs with the [outward checkpoint](../guide/security.md#outward-checkpoint) and its command rules. Each time the backend opens the session, its sub-agents, role children or forks, it turns the rules on, whatever opens them: the first start, a send after a restart, or a bound wake. A `git push`, a package publish or another outward command in its shell waits for a person, and so does a tool that declares itself outward. A terminal (`pty_open`, `pty_send`) and a persistent shell are refused, because the check cannot see their history. An opened session whose policy does not enforce the checkpoint is refused with `CAPABILITY_DENIED` and reason `OUTWARD_CHECKPOINT_UNAVAILABLE`; a start archives it. A session already open without the rules is refused with reason `OUTWARD_COMMAND_RULES_OFF` and is not reused.
 - `permission: 'full-access'`, or a Bundle preset that puts the session under full access, is granted only when both gates hold. Before the session exists, the backend checks that its opener turns the command rules on and that the platform's sandbox probe reports a full OS boundary. After it opens, it reads the session's live policy: the outward checkpoint must be enforced and the session's sandbox enforcement must be full. A missing gate refuses the start, or the send, with `FULL_ACCESS_UNAVAILABLE` and `missing: 'outward-checkpoint'` or `missing: 'os-boundary'`. An unprobed or partial boundary counts as missing, and so does a policy the backend cannot read. Full access never answers an outward checkpoint; a person does. Every start is refused while the deployment reviews approvals automatically.
@@ -56,7 +56,7 @@ if (sent.state === 'notSubmitted') console.log(sent.reason) // busy | archived |
 
 | Call | Returns |
 | --- | --- |
-| `list()` | The sessions this row manages, each with its status. |
+| `list()` | The sessions this package's row manages, each with its status. |
 | `status(id)` | `{ kind: notLoaded \| idle \| active \| systemError, flags }`. A turn waiting for an approval or an answer is `active` with `waitingOnApproval` or `waitingOnUserInput`. Computed from runtime facts on every read. |
 | `events(id, { afterSeq })` | Assistant text, tool calls, approvals and turn endings after a sequence number, and the `lastSeq` to pass next time. |
 | `result(id)` | How the last turn ended and its last assistant text. |

@@ -263,7 +263,7 @@ describe('starting a managed session', () => {
     // A crash before `markStarted`: the record exists but is not started.
     records.insert({
       sessionId: 'x',
-      owner: caller.owner,
+      owner: grantKey(caller.packageId, caller.owner),
       startKey: 'task-2',
       bundle: start.bundle,
       workspace: '/work/repo',
@@ -297,7 +297,7 @@ describe('starting a managed session', () => {
       state.gates = { outwardCheckpoint: true, osBoundary: true }
       records.insert({
         sessionId: 'x',
-        owner: caller.owner,
+        owner: grantKey(caller.packageId, caller.owner),
         startKey: 'task-1',
         bundle: start.bundle,
         workspace: '/work/repo',
@@ -320,7 +320,7 @@ describe('starting a managed session', () => {
     const { state, records, port } = world()
     records.insert({
       sessionId: 'x',
-      owner: caller.owner,
+      owner: grantKey(caller.packageId, caller.owner),
       startKey: 'task-1',
       bundle: start.bundle,
       workspace: '/work/repo',
@@ -349,7 +349,10 @@ describe('starting a managed session', () => {
   it('leaves a start whose opening input lost the inbox unstarted, so a retry queues it', async () => {
     const { state, records, port } = world()
     records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
-    const sessionKey = `managed-${createHash('sha256').update(`${caller.owner}\0${start.startKey}`).digest('hex').slice(0, 40)}`
+    const sessionKey = `managed-${createHash('sha256')
+      .update(`${grantKey(caller.packageId, caller.owner)}\0${start.startKey}`)
+      .digest('hex')
+      .slice(0, 40)}`
     state.busy.add(sessionKey)
     await expect(port(caller).start(start)).rejects.toMatchObject(refused('SESSION_BUSY'))
     expect(records.get(sessionKey)?.started).toBe(false)
@@ -374,7 +377,7 @@ describe('starting a managed session', () => {
     records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     await expect(port(caller).start({ ...start, ...change })).rejects.toMatchObject(refused(reason))
     expect(state.created).toEqual([])
-    expect(records.list(caller.owner)).toEqual([])
+    expect(records.list(grantKey(caller.packageId, caller.owner))).toEqual([])
   })
 
   it.each<
@@ -397,7 +400,10 @@ describe('starting a managed session', () => {
       records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
       state.gates = { outwardCheckpoint: true, osBoundary: true, ...gates }
       state.live = { osBoundary: live.osBoundary ?? true }
-      const sessionKey = `managed-${createHash('sha256').update(`${caller.owner}\0${start.startKey}`).digest('hex').slice(0, 40)}`
+      const sessionKey = `managed-${createHash('sha256')
+        .update(`${grantKey(caller.packageId, caller.owner)}\0${start.startKey}`)
+        .digest('hex')
+        .slice(0, 40)}`
       if (live.rulesOff) state.rulesOff.add(sessionKey)
       await expect(port(caller).start({ ...start, permission: 'full-access' })).rejects.toMatchObject({
         data: { code: 'CAPABILITY_DENIED', reason: 'FULL_ACCESS_UNAVAILABLE', missing },
@@ -422,7 +428,10 @@ describe('starting a managed session', () => {
   it('refuses and archives any managed session whose open policy has no outward checkpoint', async () => {
     const { state, records, port } = world()
     records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
-    const sessionKey = `managed-${createHash('sha256').update(`${caller.owner}\0${start.startKey}`).digest('hex').slice(0, 40)}`
+    const sessionKey = `managed-${createHash('sha256')
+      .update(`${grantKey(caller.packageId, caller.owner)}\0${start.startKey}`)
+      .digest('hex')
+      .slice(0, 40)}`
     state.rulesOff.add(sessionKey)
     await expect(port(caller).start(start)).rejects.toMatchObject(refused('OUTWARD_CHECKPOINT_UNAVAILABLE'))
     expect(state.archived).toEqual([sessionKey])
@@ -584,7 +593,8 @@ describe('driving a managed session', () => {
       'the session was reopened without outward command rules',
       'OUTWARD_CHECKPOINT_UNAVAILABLE',
       (w: ReturnType<typeof world>) => {
-        for (const record of w.records.list(caller.owner)) w.state.rulesOff.add(record.sessionId)
+        for (const record of w.records.list(grantKey(caller.packageId, caller.owner)))
+          w.state.rulesOff.add(record.sessionId)
       },
     ],
   ])(
@@ -600,7 +610,7 @@ describe('driving a managed session', () => {
         w.port(caller).send(sessionId, { text: 'more', idempotencyKey: 'k' }),
       ).rejects.toMatchObject(refused(reason))
       expect(w.state.queued.get(sessionId)?.map((item) => item.text)).toEqual(['Fix the failing test.'])
-      expect(w.records.sendState(caller.owner, sessionId, 'k')).toBeUndefined()
+      expect(w.records.sendState(grantKey(caller.packageId, caller.owner), sessionId, 'k')).toBeUndefined()
       expect((await w.port(caller).list()).map((item) => item.sessionId)).toEqual([sessionId])
       expect(await w.port(caller).status(sessionId)).toMatchObject({ kind: 'idle' })
       expect(await w.port(caller).events(sessionId)).toMatchObject({ events: [] })
@@ -664,8 +674,25 @@ describe('driving a managed session', () => {
     })
   })
 
-  it('hides every session another row manages', async () => {
-    const { port, sessionId } = await started()
+  it('hides every session another row manages, and one recorded under its row alone', async () => {
+    const { port, records, sessionId } = await started()
+    records.insert({
+      sessionId: 'row-only',
+      owner: caller.owner,
+      startKey: 'task-0',
+      bundle: start.bundle,
+      workspace: '/work/repo',
+      retention: 'task',
+      permission: 'default',
+      model: null,
+      memoryWrites: true,
+      skillInstalls: true,
+    })
+    records.markStarted('row-only')
+    expect((await port(caller).list()).map((s) => s.sessionId)).toEqual([sessionId])
+    await expect(port(caller).status('row-only')).rejects.toMatchObject(denied)
+    await expect(port(caller).archive('row-only')).rejects.toMatchObject(denied)
+    expect(await port(caller).start({ ...start, startKey: 'task-0' })).toMatchObject({ created: true })
     expect(await port(other).list()).toEqual([])
     for (const call of [
       () => port(other).send(sessionId, { text: 'x', idempotencyKey: 'k' }),
@@ -1384,18 +1411,35 @@ describe('the managed session owner', () => {
       ).rejects.toMatchObject(refused('WORKSPACE_NOT_AUTHORIZED'))
     })
 
-    it('gives the remaining package that shares a removed package row none of its grants, even when no prune ran', async () => {
+    it('gives the remaining package that shares a removed package row none of its grants or sessions, even when no prune ran', async () => {
       const clash = installed('@example/clash', 'companion:engine')
       const packages: unknown[] = [a, b, bare]
-      const { repo, ep, call, managed } = await setup(packages)
+      const { repo, ep, call, managed, owner } = await setup(packages)
       await call(ep, 'grant', { packageId: a.id, workspace: repo })
+      const { sessionId } = await managed.port(owner).start({ ...start, workspace: repo })
       packages.push(clash)
       packages.splice(packages.indexOf(a), 1)
-      await expect(
-        managed
-          .port(identity(clash, 'companion:engine'))
-          .start({ ...start, bundle: `${clash.id}#worker`, workspace: repo }),
-      ).rejects.toMatchObject(refused('WORKSPACE_NOT_AUTHORIZED'))
+      const heir = managed.port(identity(clash, 'companion:engine'))
+      const own = { ...start, bundle: `${clash.id}#worker`, workspace: repo }
+      await expect(heir.start(own)).rejects.toMatchObject(refused('WORKSPACE_NOT_AUTHORIZED'))
+      expect(await heir.list()).toEqual([])
+      for (const reach of [
+        () => heir.send(sessionId, { text: 'x', idempotencyKey: 'k' }),
+        () => heir.status(sessionId),
+        () => heir.events(sessionId),
+        () => heir.result(sessionId),
+        () => heir.usage(sessionId),
+        () => heir.toolResult(sessionId, 1),
+        () => heir.interrupt(sessionId),
+        () => heir.archive(sessionId),
+      ])
+        await expect(reach()).rejects.toMatchObject(denied)
+      expect(managed.state.cancelled).toEqual([])
+      expect(managed.state.archived).toEqual([])
+      await call(ep, 'grant', { packageId: clash.id, workspace: repo })
+      const opened = await heir.start(own)
+      expect(opened).toMatchObject({ created: true })
+      expect(opened.sessionId).not.toBe(sessionId)
     })
 
     it('revokes every grant of a package being removed and no other, so the same package id installed again starts with none', async () => {

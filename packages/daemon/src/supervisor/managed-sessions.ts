@@ -304,10 +304,21 @@ export function managedLineage(
   return lineageSome(ports, sessionId, (record, key) => record !== undefined || opening.has(key))
 }
 
+function ownedRecord(
+  records: Pick<ManagedSessionRecords, 'get'>,
+  owner: string,
+  sessionId: unknown,
+): ManagedSessionRecord {
+  const record = typeof sessionId === 'string' ? records.get(sessionId) : undefined
+  // Another package's session and an unknown id are indistinguishable to the caller.
+  if (!record || record.owner !== owner) throw rpcError('CAPABILITY_DENIED')
+  return record
+}
+
 /** The checks a start's input names; run again on every start, a resumed one included, and every send. */
 async function startGates(
   ports: ManagedSessionPorts,
-  caller: ManagedSessionCaller,
+  owner: string,
   input: Pick<ManagedSessionStartInput, 'workspace' | 'model' | 'permission' | 'bundle'>,
 ): Promise<string> {
   let root: string
@@ -316,8 +327,7 @@ async function startGates(
   } catch {
     throw refuse('WORKSPACE_NOT_AUTHORIZED')
   }
-  if (!ports.records.granted(grantKey(caller.packageId, caller.owner), root))
-    throw refuse('WORKSPACE_NOT_AUTHORIZED')
+  if (!ports.records.granted(owner, root)) throw refuse('WORKSPACE_NOT_AUTHORIZED')
   const model = input.model
   if (model && !(await ports.models()).some((m) => m.route === model.route && m.model === model.model))
     throw refuse('MODEL_ROUTE_MISSING')
@@ -378,12 +388,7 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       .catch(() => undefined)
     return next
   }
-  const own = (caller: ManagedSessionCaller, sessionId: unknown): ManagedSessionRecord => {
-    const record = typeof sessionId === 'string' ? ports.records.get(sessionId) : undefined
-    // Another row's session and an unknown id are indistinguishable to the caller.
-    if (!record || record.owner !== caller.owner) throw rpcError('CAPABILITY_DENIED')
-    return record
-  }
+  const own = (owner: string, sessionId: unknown) => ownedRecord(ports.records, owner, sessionId)
   const status = async (record: ManagedSessionRecord, activity?: readonly SessionActivity[]) => {
     const items = activity ?? (await ports.sessions.activity())
     const loaded = ports.sessions.loaded(record.sessionId)
@@ -413,7 +418,7 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
     ports.records.markArchived(record.sessionId)
   }
 
-  const start = async (caller: ManagedSessionCaller, input: ManagedSessionStartInput) => {
+  const start = async (caller: ManagedSessionCaller, owner: string, input: ManagedSessionStartInput) => {
     if (
       !text(input?.startKey, 256) ||
       !text(input.input, 65536) ||
@@ -437,10 +442,10 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       memoryWrites: input.memoryWrites !== false,
       skillInstalls: input.skillInstalls !== false,
     } as const
-    return serial(`start\0${caller.owner}\0${input.startKey}`, async () => {
+    return serial(`start\0${owner}\0${input.startKey}`, async () => {
       // Every start, resumed or not, passes the gates its input names before anything is applied.
-      const root = await startGates(ports, caller, input)
-      let record = ports.records.byStartKey(caller.owner, input.startKey)
+      const root = await startGates(ports, owner, input)
+      let record = ports.records.byStartKey(owner, input.startKey)
       if (record) {
         const same =
           record.workspace === root &&
@@ -452,14 +457,14 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       const created = record === undefined
       if (!record) {
         // Derived, so a crash between creating and recording reopens the same session.
-        const sessionKey = `managed-${digest(`${caller.owner}\0${input.startKey}`).slice(0, 40)}`
+        const sessionKey = `managed-${digest(`${owner}\0${input.startKey}`).slice(0, 40)}`
         // Marked before it is created, so its first open already asks for outward command rules.
         ports.records.opening.add(sessionKey)
         try {
           const sessionId = await ports.sessions.create({ sessionKey, cwd: root, agent: input.bundle })
           ports.records.insert({
             sessionId,
-            owner: caller.owner,
+            owner,
             startKey: input.startKey,
             workspace: root,
             ...wanted,
@@ -467,7 +472,7 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
         } finally {
           ports.records.opening.delete(sessionKey)
         }
-        record = ports.records.byStartKey(caller.owner, input.startKey) as ManagedSessionRecord
+        record = ports.records.byStartKey(owner, input.startKey) as ManagedSessionRecord
       }
       if (input.model) await ports.sessions.setModel(record.sessionId, input.model)
       if (input.permission === 'full-access') await ports.sessions.setFullAccess(record.sessionId)
@@ -491,16 +496,17 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
 
   const send = async (
     caller: ManagedSessionCaller,
+    owner: string,
     sessionId: string,
     input: { text: string; idempotencyKey: string },
   ) => {
-    const record = own(caller, sessionId)
+    const record = own(owner, sessionId)
     if (!text(input?.text, 65536) || !text(input.idempotencyKey, 256)) throw rpcError('INVALID_PARAMS')
     return serial(`session\0${record.sessionId}`, async () => {
       const current = ports.records.get(record.sessionId) as ManagedSessionRecord
       if (current.archived) return { state: 'notSubmitted', reason: 'archived' } as const
       const key = input.idempotencyKey
-      const recorded = ports.records.sendState(caller.owner, record.sessionId, key)
+      const recorded = ports.records.sendState(owner, record.sessionId, key)
       if (recorded === 'sent') return { state: 'notSubmitted', reason: 'duplicateKey' } as const
       // A pending key is a send interrupted after it was recorded: retry it, deduplicated below.
       if (recorded === undefined && (await status(current)).kind === 'active')
@@ -508,7 +514,7 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       // A new turn needs what the start needed: a revoked grant or a lost gate refuses it. A running
       // turn is left to finish; the plugin and the owner can still interrupt it.
       const [route, model] = current.model?.split('\0') ?? []
-      await startGates(ports, caller, {
+      await startGates(ports, owner, {
         workspace: current.workspace,
         bundle: current.bundle,
         permission: current.permission,
@@ -516,7 +522,7 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       })
       const missing = await runningGateMissing(current.sessionId)
       if (missing) throw missing
-      ports.records.setSend(caller.owner, record.sessionId, key, 'pending')
+      ports.records.setSend(owner, record.sessionId, key, 'pending')
       const actor = managedSessionActor(caller.owner, current)
       const outcome = await ports.sessions.submit(record.sessionId, {
         text: input.text,
@@ -524,10 +530,10 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
         commandId: `${actor.id}:send:${digest(key).slice(0, 32)}`,
       })
       if (outcome === 'busy') {
-        ports.records.setSend(caller.owner, record.sessionId, key, undefined)
+        ports.records.setSend(owner, record.sessionId, key, undefined)
         return { state: 'notSubmitted', reason: 'busy' } as const
       }
-      ports.records.setSend(caller.owner, record.sessionId, key, 'sent')
+      ports.records.setSend(owner, record.sessionId, key, 'sent')
       return { state: 'started' } as const
     })
   }
@@ -551,8 +557,13 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
 
   const skillInstallsOff = (sessionId: string) => lineageSkillInstallsOff(ports, sessionId)
 
-  /** The port one managed service row receives. Every call rechecks the row first. */
+  /**
+   * The port one managed service row receives. Every call rechecks the row first. Records and send
+   * keys are keyed by package and row, like grants: row ids are author-chosen, so a later package
+   * declaring the same id must not reach the sessions an earlier one opened.
+   */
   const port = (caller: ManagedSessionCaller): ManagedSessions => {
+    const owner = grantKey(caller.packageId, caller.owner)
     const guarded =
       <A extends unknown[], R>(work: (...args: A) => Promise<R>) =>
       async (...args: A): Promise<R> => {
@@ -560,13 +571,13 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
         return work(...args)
       }
     return {
-      start: guarded((input) => start(caller, input)),
-      send: guarded((sessionId, input) => send(caller, sessionId, input)),
+      start: guarded((input) => start(caller, owner, input)),
+      send: guarded((sessionId, input) => send(caller, owner, sessionId, input)),
       list: guarded(async (): Promise<ManagedSessionSummary[]> => {
         const activity = await ports.sessions.activity()
         return Promise.all(
           ports.records
-            .list(caller.owner)
+            .list(owner)
             .filter((record) => record.started)
             .map(async (record) => ({
               sessionId: record.sessionId,
@@ -579,17 +590,17 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
             })),
         )
       }),
-      status: guarded((sessionId) => status(own(caller, sessionId))),
+      status: guarded((sessionId) => status(own(owner, sessionId))),
       events: guarded((sessionId, options) =>
-        readEvents(ports, own(caller, sessionId).sessionId, options?.afterSeq),
+        readEvents(ports, own(owner, sessionId).sessionId, options?.afterSeq),
       ),
-      result: guarded((sessionId) => result(own(caller, sessionId))),
+      result: guarded((sessionId) => result(own(owner, sessionId))),
       usage: guarded(async (sessionId) =>
-        projectUsage((await ports.sessions.view(own(caller, sessionId).sessionId)).timeline),
+        projectUsage((await ports.sessions.view(own(owner, sessionId).sessionId)).timeline),
       ),
-      toolResult: guarded((sessionId, callSeq) => toolResult(own(caller, sessionId), callSeq)),
-      interrupt: guarded((sessionId) => ports.sessions.cancel(own(caller, sessionId).sessionId)),
-      archive: guarded((sessionId) => archive(own(caller, sessionId))),
+      toolResult: guarded((sessionId, callSeq) => toolResult(own(owner, sessionId), callSeq)),
+      interrupt: guarded((sessionId) => ports.sessions.cancel(own(owner, sessionId).sessionId)),
+      archive: guarded((sessionId) => archive(own(owner, sessionId))),
     }
   }
   return Object.assign(port, { skillInstallsOff })
