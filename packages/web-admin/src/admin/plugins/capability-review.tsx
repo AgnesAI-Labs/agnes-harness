@@ -22,6 +22,9 @@ export function capabilityRequests(value: PluginCapabilities | undefined, t: Tex
         ...(['model', 'childAgents', 'ui'] as const)
           .filter((key) => value[key])
           .map((key) => t('capability.' + key)),
+        ...(value.managedServices?.some((service) => service.sessions === true)
+          ? [t('capability.sessions')]
+          : []),
       ]
     : []
 }

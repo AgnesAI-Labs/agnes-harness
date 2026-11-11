@@ -858,6 +858,7 @@ export class UIProjectionCell {
           state: 'decided',
           ...approvalToolReference(tool),
           summary: clip(evidence.summary ?? '', 4096),
+          decidedSeq: seq,
           risk: 'always',
           options: [],
           decision: {
@@ -878,12 +879,8 @@ export class UIProjectionCell {
         const value = data as unknown as import('@agnes/protocol').DecisionSnapshot
         // Historical verifier gates are system failures, including before Core retires them.
         if (value.request.owner === 'core/gate' && value.request.sourcePackage === '@agnes/core') break
-        if (
-          !value.request.spec.options.every((option) =>
-            ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'].includes(option),
-          )
-        )
-          break
+        const known = ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected']
+        if (!value.request.spec.options.every((option) => known.includes(option))) break
         if (value.handle.sessionId === null) break
         const old = this.approvals.get(value.handle.id)
         const result = value.result
@@ -899,6 +896,7 @@ export class UIProjectionCell {
               : result
                 ? 'decided'
                 : 'pending',
+          ...(result || value.invalidation ? { decidedSeq: old?.decidedSeq ?? seq } : {}),
           summary: clip(value.request.spec.prompt, 4096),
           ...(value.request.spec.presentation ? { presentation: value.request.spec.presentation } : {}),
           ...approvalSubject(value.request.spec.subject),

@@ -138,7 +138,7 @@ The request offers only **Allow once** and **Reject**. Full access, auto-review,
 
 #### Outward command rules (best effort, opt-in)
 
-A session can also hold shell calls whose text matches a built-in outward rule at the same checkpoint. This is off by default: ordinary sessions, scheduled tasks and webhook sessions run shell commands exactly as they did before the checkpoint existed. The host turns it on (`outwardCommandRules`) each time it opens the session, since it is not saved with the session. Subagents and forks that run as AGH sessions inherit it from an open parent; subagents that run as an external agent process (Claude Code, Codex, ACP or SDK agents) run their own shells and are not covered. A plugin, the model or a tool call cannot turn it off for a session that has it. The rules ship in code beside the hard block, and a preset, a plugin or the model cannot remove or loosen them.
+A session can also hold shell calls whose text matches a built-in outward rule at the same checkpoint. This is off by default: ordinary sessions, scheduled tasks and webhook sessions run shell commands exactly as they did before the checkpoint existed. The host turns it on (`outwardCommandRules`) each time it opens the session, since it is not saved with the session. [Managed sessions](../extend/managed-sessions.md) that a plugin opens always have it, on every path that opens them, and full access for one requires it. Subagents and forks that run as AGH sessions inherit it from an open parent; subagents that run as an external agent process (Claude Code, Codex, ACP or SDK agents) run their own shells and are not covered. A plugin, the model or a tool call cannot turn it off for a session that has it. The rules ship in code beside the hard block, and a preset, a plugin or the model cannot remove or loosen them.
 
 Command rules are best effort, not a boundary. Matching text cannot see what a word expands to. The sandbox, and the credentials you give a session, decide what it can actually reach.
 
@@ -170,7 +170,7 @@ Known gaps. These inputs are not matched, by design:
 - a program in front of the command that the rules do not know as a wrapper (`caffeinate`, `ionice`, `strace` and the like): `caffeinate git push`
 - an unknown option whose value is a common subcommand: `npm --heading test publish`
 - a push named in a configuration file: `docker buildx bake`
-- subagents that run as an external agent process, and sessions reopened without `outwardCommandRules`
+- subagents that run as an external agent process, and sessions reopened without `outwardCommandRules` (the backend refuses to open a managed session that way)
 
 Commands that match no rule keep running unasked under full access.
 

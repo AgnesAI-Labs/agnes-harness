@@ -154,6 +154,8 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
         return false
       }
     },
+    undefined,
+    deps.managedSessions,
   )
   rollback.push('profile-managed', () => profileManaged.close())
   return {

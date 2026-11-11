@@ -20,6 +20,11 @@ export type RegistryOptions = Readonly<{
   workspaces?: Pick<SessionWorkspacePort, 'refresh'>
   /** Consumers of ledger rows; an open feeds each the history rows of the types it lists. */
   history?: readonly HistoryConsumer[]
+  /**
+   * Whether a session must run with outward command rules on (a plugin-managed session and its
+   * lineage). The switch is not persisted, so every open of such a key asks the worker for it.
+   */
+  outwardCommandRules?: (key: string) => boolean
 }>
 
 export type ArtifactAuthorityLifecycle = Readonly<{
@@ -60,6 +65,8 @@ export type RemoteEntry = {
   ac: AbortController
   recover: boolean
   reopen: RemoteOpen
+  /** The worker was asked to open this session with outward command rules on. */
+  outwardCommandRules: boolean
 }
 
 type PreviewSubscriber = { preview: (p: PreviewUpdate) => void; gap: (() => void) | undefined }
@@ -334,8 +341,10 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     const authorized: RemoteOpen = { ...o, binding: o.binding }
     const key = o.key ?? `agnes:local:default:daemon:dm:${Math.random().toString(36).slice(2)}`
     const epoch = this.sessionEpochs.get(key) ?? 0
+    const rules = this.commandRules(key)
     const existing = this.entries.get(key)
     if (existing) {
+      this.assertCommandRules(existing, rules)
       if (
         o.agent !== undefined &&
         (o.agent !== existing.reopen.agent || o.agentDigest !== existing.reopen.agentDigest)
@@ -350,6 +359,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     const pending = this.opening.get(key)
     if (pending?.epoch === epoch) {
       const entry = await pending.promise
+      this.assertCommandRules(entry, rules)
       if (
         o.agent !== undefined &&
         (o.agent !== entry.reopen.agent || o.agentDigest !== entry.reopen.agentDigest)
@@ -359,7 +369,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
       return entry
     }
-    const opening = this.openFresh(key, authorized, epoch)
+    const opening = this.openFresh(key, authorized, epoch, rules)
     const record = { epoch, promise: opening }
     this.opening.set(key, record)
     try {
@@ -434,7 +444,26 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     }
   }
 
-  private async openFresh(key: string, o: RemoteOpen, sessionEpoch: number): Promise<RemoteEntry> {
+  /** Fails closed: a predicate that throws (lineage it cannot read) asks for the rules. */
+  private commandRules(key: string): boolean {
+    try {
+      return this.options.outwardCommandRules?.(key) === true
+    } catch {
+      return true
+    }
+  }
+
+  private assertCommandRules(entry: RemoteEntry, rules: boolean): void {
+    if (rules && !entry.outwardCommandRules)
+      throw rpcError('CAPABILITY_DENIED', { reason: 'OUTWARD_COMMAND_RULES_OFF', sessionId: entry.key })
+  }
+
+  private async openFresh(
+    key: string,
+    o: RemoteOpen,
+    sessionEpoch: number,
+    rules: boolean,
+  ): Promise<RemoteEntry> {
     const isCurrent = (): boolean => !this.closingAll && (this.sessionEpochs.get(key) ?? 0) === sessionEpoch
     if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
     const existing = this.entries.get(key)
@@ -459,6 +488,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       ...(o.systemPromptAppend !== undefined ? { systemPromptAppend: o.systemPromptAppend } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.parent && o.forkAt !== undefined ? { parent: { key: o.parent, boundarySeq: o.forkAt } } : {}),
+      ...(rules ? { outwardCommandRules: true as const } : {}),
     })
     if (!isCurrent()) {
       await link.closeSession('session closed while opening').catch(() => undefined)
@@ -500,6 +530,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       ac: new AbortController(),
       recover: true,
       reopen: withoutOpeningObservers(o),
+      outwardCommandRules: rules,
     }
     this.entries.set(key, entry)
     link.onExit(() =>
@@ -539,7 +570,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         // and that failure would retire the replacement channel opened next.
         await link.closeSession('resource-snapshot-reload').catch(() => undefined)
         this.artifactReplayBuffers.delete(key)
-        return this.openFresh(key, o, sessionEpoch)
+        return this.openFresh(key, o, sessionEpoch, rules)
       }
       const replayBuffer = this.artifactReplayBuffers.get(key)
       if (!replayBuffer) throw new Error('session history replay is unavailable')

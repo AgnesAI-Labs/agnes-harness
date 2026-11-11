@@ -31,6 +31,7 @@ const saveDurableSeq = (): void => {
   if (durableFile) writeFileSync(durableFile, JSON.stringify(Object.fromEntries(durableSeq)))
 }
 let delayedExit = false
+const commandRules = new Set<string>()
 if (!socketPath || !token || !workerKey || !Number.isSafeInteger(generation) || generation < 1)
   throw new Error('fake-worker missing required AGNES_* env vars')
 
@@ -87,6 +88,9 @@ socket.once('connect', () => {
       }
       if (f.kind === 'session.open') {
         if (f.sessionKey.endsWith(':delayed-exit')) delayedExit = true
+        // What a real worker would build the session's floor with, answered by `outwardCheckpoint`.
+        if (f.params.outwardCommandRules === true) commandRules.add(f.sessionKey)
+        else commandRules.delete(f.sessionKey)
         socket.write(
           encodeFrame({
             kind: 'reply',
@@ -113,6 +117,17 @@ socket.once('connect', () => {
       // 'crash' - cast through `string` since this test's whole point is sending a method outside
       // that union (see the file header comment).
       if ((f.method as string) === 'crash') process.exit(1)
+      if (f.method === 'outwardCheckpoint' && 'sessionKey' in f) {
+        socket.write(
+          encodeFrame({
+            kind: 'reply',
+            requestId: f.requestId,
+            sessionKey: f.sessionKey,
+            result: { enforced: commandRules.has(f.sessionKey) },
+          }),
+        )
+        continue
+      }
       if ((f.method as string) === 'emit-test-event' && 'sessionKey' in f) {
         const seq = Number((f.params as { seq?: unknown }).seq)
         durableSeq.set(f.sessionKey, seq)

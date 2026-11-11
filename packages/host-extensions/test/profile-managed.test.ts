@@ -517,3 +517,81 @@ it.each([
     }
   },
 )
+
+it('hands a working sessions port only to a reviewed declaration that sets sessions', async () => {
+  const { store } = storage()
+  const callers: unknown[] = []
+  const sessions = {
+    list: async () => [],
+  } as unknown as import('@agnes/extension-api').ManagedSessions
+  const manager = new ProfileManagedResources(
+    'synthetic-sessions',
+    () => ({
+      async enqueue() {
+        throw new Error('unbound-target')
+      },
+      async read() {
+        throw new Error('unbound-target')
+      },
+    }),
+    undefined,
+    undefined,
+    (caller) => {
+      callers.push(caller)
+      return sessions
+    },
+  )
+  const descriptor: ManagedServiceDescriptor = {
+    id: 'driver',
+    scope: 'profile',
+    artifact: { kind: 'in-process' },
+    healthPath: '/health',
+    apiVersion: '1.0.0',
+    listeners: [],
+    startupTimeoutMs: 1000,
+    shutdownTimeoutMs: 1000,
+    requires: [],
+  }
+  const definition = (
+    id: string,
+  ): ProfileManagedDefinition<import('@agnes/extension-api').ManagedSessions> => ({
+    id,
+    configSchema: { type: 'object', properties: {}, additionalProperties: false },
+    defaultConfig: {},
+    async start(init) {
+      init.onShutdown(async () => ({ state: 'settled' }))
+      init.ready()
+      return init.sessions
+    },
+  })
+  const base = {
+    owner: 'plugin/row',
+    packageId: '@example/driver',
+    integrity: 'sha256-x',
+    revision: 'r1',
+    store,
+    assert() {},
+  }
+  const declared = manager.register({
+    ...base,
+    descriptor: { ...descriptor, sessions: true },
+    definition: definition('driver'),
+  })
+  const undeclared = manager.register({
+    ...base,
+    descriptor: { ...descriptor, id: 'plain' },
+    definition: definition('plain'),
+  })
+  try {
+    await manager.publish()
+    expect(await (await declared.get()).list()).toEqual([])
+    await expect((await undeclared.get()).list()).rejects.toMatchObject({
+      data: { code: 'CAPABILITY_DENIED' },
+    })
+    expect(callers).toEqual([
+      { owner: 'plugin/row', packageId: '@example/driver', integrity: 'sha256-x', service: 'driver' },
+    ])
+  } finally {
+    await manager.close()
+  }
+})

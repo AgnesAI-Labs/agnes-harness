@@ -3916,6 +3916,81 @@
         "version"
       ]
     },
+    "ManagedWorkspaceGrantsListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 214
+        }
+      }
+    },
+    "ManagedWorkspaceGrantParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 214
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": ["packageId", "workspace"]
+    },
+    "ManagedWorkspaceGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "maxLength": 214
+        },
+        "workspace": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": ["packageId", "workspace"]
+    },
+    "ManagedWorkspaceGrantsList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ManagedWorkspaceGrant"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["items"]
+    },
+    "ManagedWorkspaceGrantChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "maxLength": 214
+        },
+        "workspace": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "changed": {
+          "type": "boolean"
+        }
+      },
+      "required": ["packageId", "workspace", "changed"]
+    },
     "AdminFeedbackParams": {
       "type": "object",
       "additionalProperties": false,
@@ -4102,6 +4177,18 @@
     "_agnes/v1/admin.triggers": {
       "params": "WebhookRequest",
       "result": "WebhookResult"
+    },
+    "_agnes/v1/admin.managedWorkspaces.list": {
+      "params": "ManagedWorkspaceGrantsListParams",
+      "result": "ManagedWorkspaceGrantsList"
+    },
+    "_agnes/v1/admin.managedWorkspaces.grant": {
+      "params": "ManagedWorkspaceGrantParams",
+      "result": "ManagedWorkspaceGrantChange"
+    },
+    "_agnes/v1/admin.managedWorkspaces.revoke": {
+      "params": "ManagedWorkspaceGrantParams",
+      "result": "ManagedWorkspaceGrantChange"
     }
   },
   "x-public-error-copy": {

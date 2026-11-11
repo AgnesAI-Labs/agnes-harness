@@ -24,6 +24,8 @@ export async function runPluginDevelopmentCommand(
   if (p.command === 'app') return (await import('./app-admin.js')).appAdminCommand(p, client, write)
   if (p.command === 'plugins' && p.positional[0] === 'config')
     return (await import('./plugin-config.js')).pluginConfigCommand(p, client, write)
+  if (p.command === 'plugins' && p.positional[0] === 'grants')
+    return (await import('./plugin-grants.js')).pluginGrantsCommand(p, client, write)
   if (p.command === 'plugins' && ['tree', 'generations'].includes(p.positional[0] ?? ''))
     return (await import('./plugin-tree.js')).pluginTreeCommand(p, client, write)
   if (p.command === 'plugins' && p.positional[0] === 'candidates') {

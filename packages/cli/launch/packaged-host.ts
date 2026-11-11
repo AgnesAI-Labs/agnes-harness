@@ -329,6 +329,7 @@ export async function createPackagedHost(
     HostOptions,
     | 'scheduling'
     | 'boundWakes'
+    | 'managedSessions'
     | 'skillResources'
     | 'skillInstall'
     | 'runtimePluginSnapshots'

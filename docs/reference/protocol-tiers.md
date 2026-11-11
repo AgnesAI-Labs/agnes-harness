@@ -181,6 +181,9 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/admin.mcp.oauth.logout`
 - `_agnes/v1/admin.memory`
 - `_agnes/v1/admin.triggers`
+- `_agnes/v1/admin.managedWorkspaces.list`
+- `_agnes/v1/admin.managedWorkspaces.grant`
+- `_agnes/v1/admin.managedWorkspaces.revoke`
 - `_agnes/v1/sessions.migrate`
 
 ### Plugin trees, configuration and candidates

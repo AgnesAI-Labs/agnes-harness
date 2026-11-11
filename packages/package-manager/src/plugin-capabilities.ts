@@ -45,6 +45,9 @@ export function capabilityAtoms(value: PluginCapabilities | undefined): string[]
     ...(value.uiData ?? []).map((permission) => `uiData:${permission}`),
     ...(value.streams ?? []).map((stream) => `streams:${stream.scope}:${stream.name}:${stream.lane}`),
     ...(value.managedServices ?? []).map((service) => `managedServices:${service.scope}:${service.id}`),
+    ...(value.managedServices ?? [])
+      .filter((service) => service.sessions === true)
+      .map((service) => `managedSessions:${service.scope}:${service.id}`),
   ].sort()
 }
 

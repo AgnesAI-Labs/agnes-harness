@@ -26,6 +26,7 @@ import {
   managedProcessState,
   type ProcessQuery,
 } from './managed-owner.js'
+import { deniedManagedSessions, type ManagedSessionsFactory } from './managed-sessions.js'
 import { managedStore } from './managed-store.js'
 
 type Reason = 'disable' | 'upgrade' | 'exit'
@@ -67,6 +68,7 @@ export class ProfileManagedResources {
     private readonly wakes: (owner: string, integrity: string) => BoundWakes,
     private readonly current?: (owner: string, integrity: string, revision: string) => boolean | string,
     private readonly processIdentity?: ProcessQuery,
+    private readonly sessions?: ManagedSessionsFactory,
   ) {}
   register<T>(input: {
     owner: string
@@ -330,6 +332,15 @@ export class ProfileManagedResources {
                 throw rpcError('CAPABILITY_DENIED')
               },
             },
+        sessions:
+          input.descriptor.sessions === true && this.sessions
+            ? this.sessions({
+                owner: input.owner,
+                packageId: input.packageId,
+                integrity: input.integrity,
+                service: input.definition.id,
+              })
+            : deniedManagedSessions,
         assertCurrent: () => {
           lifetime.signal.throwIfAborted()
           input.assert()

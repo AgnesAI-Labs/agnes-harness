@@ -132,7 +132,7 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 
 #### 对外命令规则（尽力拦截，按会话开启）
 
-会话还可以让命令文字命中内置对外规则的 shell 调用也停在同一个检查点。这一项默认关闭：普通会话、计划任务和 Webhook 会话执行 shell 命令的方式与没有检查点之前完全一样。由 Host 在每次打开会话时开启（`outwardCommandRules`），它不随会话保存。以 AGH 会话运行的子代理和分叉从已打开的父会话继承；以外部智能体进程运行的子代理（Claude Code、Codex、ACP 或 SDK 智能体）用自己的 shell，不在覆盖范围内。已开启的会话不能被插件、模型或工具调用关掉。规则和硬封锁一样写在代码里，预设、插件和模型都不能删除或放宽。
+会话还可以让命令文字命中内置对外规则的 shell 调用也停在同一个检查点。这一项默认关闭：普通会话、计划任务和 Webhook 会话执行 shell 命令的方式与没有检查点之前完全一样。由 Host 在每次打开会话时开启（`outwardCommandRules`），它不随会话保存。插件打开的[托管会话](../extend/managed-sessions.zh-CN.md)不论从哪条路径打开都带着它，托管会话的完全访问也以它为前提。以 AGH 会话运行的子代理和分叉从已打开的父会话继承；以外部智能体进程运行的子代理（Claude Code、Codex、ACP 或 SDK 智能体）用自己的 shell，不在覆盖范围内。已开启的会话不能被插件、模型或工具调用关掉。规则和硬封锁一样写在代码里，预设、插件和模型都不能删除或放宽。
 
 命令规则是尽力拦截，不是边界。匹配文字看不到一个词展开后是什么。会话实际能触达什么，由沙箱和你交给会话的凭据决定。
 
@@ -164,7 +164,7 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 - 规则不认识为包装器的前置程序（`caffeinate`、`ionice`、`strace` 等）：`caffeinate git push`
 - 值恰好是常见子命令的未知选项：`npm --heading test publish`
 - 写在配置文件里的推送：`docker buildx bake`
-- 以外部智能体进程运行的子代理，以及重开时没有带 `outwardCommandRules` 的会话
+- 以外部智能体进程运行的子代理，以及重开时没有带 `outwardCommandRules` 的会话（后端拒绝以这种方式打开托管会话）
 
 未命中规则的命令在完全访问下照常不经询问执行。
 

@@ -21,6 +21,7 @@ import { trimNativeHeap } from '@agnes/system-node'
 import { type AssemblyLifetime, assemblyPort, assemblyTasks } from './assembly-lifetime.js'
 import type { AssemblyBase } from './assembly-options.js'
 import type { StoresState } from './assembly-stores.js'
+import { managedLineage } from './managed-sessions.js'
 import {
   CompositeRuntimeDelivery,
   deliverDesiredToWorkers,
@@ -39,6 +40,15 @@ interface WorkerFeedbackOwner {
   close: FeedbackOwner['close']
 }
 
+/** A managed session and its lineage open with outward command rules on, from every opener. */
+function managedCommandRules(
+  records: NonNullable<StoresState['managedSessionRecords']>,
+  ownership: StoresState['sessionOwnership'],
+) {
+  const ports = { records, forkParent: (sessionId: string) => ownership.lineage(sessionId)?.parent }
+  return (key: string) => managedLineage(ports, records.opening, key)
+}
+
 export async function openWorkers(state: AssemblyBase & StoresState, lifetime: AssemblyLifetime) {
   const {
     o,
@@ -49,6 +59,7 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
     tickets,
     workspaces,
     sessionOwnership,
+    managedSessionRecords,
     workspaceCatalog,
     resourceWorkerRoot,
     resourceWorkerWorkspaceId,
@@ -151,6 +162,9 @@ export async function openWorkers(state: AssemblyBase & StoresState, lifetime: A
   if (stopDesired) lifetime.own({ dispose: stopDesired })
   const registry: WorkerRegistry = new WorkerRegistry(pool, projectedArtifactRead?.projection, {
     workspaces,
+    ...(managedSessionRecords
+      ? { outwardCommandRules: managedCommandRules(managedSessionRecords, sessionOwnership) }
+      : {}),
     history: createWorkerHistory({
       pool,
       automationEvents,

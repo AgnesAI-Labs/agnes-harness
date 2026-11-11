@@ -7,6 +7,7 @@ import type {
   RefinementWorkspaceRef,
 } from '@agnes/core-ledger/reduce/state'
 import { entryKey } from '../refine/apply.js'
+import { memoryWritesOff } from '../step/opening-input.js'
 import type { SessionImpl } from '../step/session.js'
 import { evidenceItemsOf } from './evidence.js'
 import { redactClipped } from './redact.js'
@@ -396,6 +397,7 @@ export async function renewConfirmed(s: SessionImpl, runId: string): Promise<voi
   const run = s.state.refinementRuns.get(runId)
   const port = s.d.refinement?.workspaceRefs
   if (run?.state !== 'applied' || !run.plan || !port || !renewsWorkspace(run.plan)) return
+  if (await memoryWritesOff(s)) return
   const shownByRef = new Map((run.workspaceRefs ?? []).map((r) => [r.ref, r]))
   const done = new Set<string>()
   for (const c of run.plan.workspaceConfirmations ?? []) {

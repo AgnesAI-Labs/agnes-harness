@@ -49,7 +49,7 @@ import { dispatchable } from '../../step/tool-recovery.js'
 import { stepVerifyInput, toolVerifyInput } from '../../step/verify-input.js'
 import { deferredMarker } from './deferred-marker.js'
 import { resolveModel } from './inference.js'
-import { approveMemoryFile } from './memory-approval.js'
+import { toolMemoryPort } from './memory-approval.js'
 import { callFailureNotes, executedNotes, refusalNotes } from './nested-note.js'
 import { type NestedPark, parkOutcome } from './nested-parks.js'
 import { approvalContinuation } from './parked.js'
@@ -1154,6 +1154,7 @@ export async function approveAndExecute(
   if (parent.aborted) ac.abort()
   else parent.addEventListener('abort', onAbort, { once: true })
   try {
+    const memory = await toolMemoryPort(s, { name: call.name, meta: def.meta }, op.step, ac.signal)
     let attachmentRead = false
     const markAttachmentRead = () => {
       attachmentRead = true
@@ -1194,15 +1195,7 @@ export async function approveAndExecute(
           preset: s.preset,
           children: s.d.children,
           fsOps,
-          ...(s.d.memory && workspace
-            ? {
-                memory: {
-                  session: s.d.memory,
-                  approve: (proposal: import('@agnes/extension-api').MemoryProposal) =>
-                    approveMemoryFile(s, proposal, { name: call.name, meta: def.meta }, op.step, ac.signal),
-                },
-              }
-            : {}),
+          ...(memory && workspace ? { memory } : {}),
           ...(workspace ? { workspace } : {}),
           netFetch: s.d.netFetch,
           ...(s.d.publicFetch ? { publicFetch: s.d.publicFetch } : {}),
