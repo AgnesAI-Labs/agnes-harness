@@ -48,8 +48,18 @@ const record = (row: Row): ManagedSessionRecord => ({
 })
 
 /**
- * Which plugin row manages which session, the workspaces the owner authorized for each row, and the
- * send keys each row used. New tables only: no existing table changes shape.
+ * The owner of a workspace grant, a managed session record and its send keys: the package and one of
+ * its plugin rows. Row ids are author-chosen, so a row alone would let a later package that declares
+ * the same id inherit the grants and reach the sessions. `#` separates the parts because a package id
+ * never contains it, so `${packageId}#` prefixes only that package's keys; a row is `plugin/<hex>`, so
+ * a record stored under a row alone matches no key. Not NUL: the storage adapter refuses NUL in a
+ * bound TEXT parameter.
+ */
+export const grantKey = (packageId: string, owner: string) => `${packageId}#${owner}`
+
+/**
+ * Which package and plugin row manages which session, the workspaces the owner authorized for each,
+ * and the send keys each used, all under a `grantKey`. New tables only: no existing table changes shape.
  */
 export class ManagedSessionRecords {
   /** Session keys being created as managed ones, before their record exists; process memory only. */
@@ -167,16 +177,36 @@ export class ManagedSessionRecords {
     )
   }
 
-  /** Every plugin row that holds at least one grant. */
+  /** Every grant key that holds at least one grant. */
   grantOwners(): string[] {
     return this.table
       .all<{ owner: string }>('SELECT DISTINCT owner FROM managed_session_grants ORDER BY owner')
       .map((row) => row.owner)
   }
 
-  /** Every grant of a plugin row that no installed package declares any more. */
+  /** Every grant of one grant key. */
   revokeAll(owner: string): void {
     this.table.exec('DELETE FROM managed_session_grants WHERE owner = ?', [owner])
+  }
+
+  /**
+   * A removed package's grants and send keys go, and its records move to an owner no `grantKey` can
+   * produce: a package id never starts with `~`, and the session id keeps `(owner, start_key)` unique
+   * however often the id is installed and removed again. The records stay, because a record also
+   * marks its session and every descendant as managed. Compared with `substr`, not LIKE: a package
+   * id may contain `_`.
+   */
+  releasePackage(packageId: string): void {
+    const prefix = grantKey(packageId, '')
+    const match = 'substr(owner, 1, length(?)) = ?'
+    this.table.transaction(() => {
+      this.table.exec(`DELETE FROM managed_session_grants WHERE ${match}`, [prefix, prefix])
+      this.table.exec(`DELETE FROM managed_session_sends WHERE ${match}`, [prefix, prefix])
+      this.table.exec(`UPDATE managed_sessions SET owner = '~' || session_id WHERE ${match}`, [
+        prefix,
+        prefix,
+      ])
+    })
   }
 
   revoke(owner: string, workspace: string): void {

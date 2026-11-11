@@ -30,6 +30,11 @@ export type CompositeTargetActivationOptions = Readonly<{
   store: CompositeTargetStore
   /** Drops state keyed by plugin rows no installed package declares; runs after every reconcile, and must not throw. */
   pruneGrants?(): Promise<void>
+  /**
+   * Revokes the package's managed workspace grants and detaches its managed session records. Throws to
+   * refuse the removal: a package installed later under the same id must inherit neither.
+   */
+  releaseManagedSessions?(packageId: string): void
   workerGeneration?: () => number | undefined
   /** Read-only observation of an admitted shared-worker startup, never starts a worker. */
   workerStarting?: () => boolean
@@ -283,6 +288,13 @@ export function createCompositeTargetActivation(
       await options.releaseRetiring?.(packageId)
       await options.collectPins?.()
       await options.collectGenerations?.()
+      try {
+        options.releaseManagedSessions?.(packageId)
+      } catch (error) {
+        throw new Error('E_PACKAGE_STATE: managed session grants and records could not be released', {
+          cause: error,
+        })
+      }
     },
     async actual(_profile, packageId) {
       return observation(options, packageId, true)

@@ -346,6 +346,7 @@ async function openRuntimeActivation(
                   }),
                 (message) => o.audit?.({ kind: 'worker.log', sessionKey: '@shared', level: 'warn', message }),
               ),
+              releaseManagedSessions: (packageId: string) => managedSessionRecords.releasePackage(packageId),
             }
           : {}),
         generationStatus: async () => {

@@ -14,6 +14,7 @@ import {
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
+import { grantKey, ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
 import { createCompositeTargetActivation } from '../src/supervisor/publication/composite-target-activation.js'
 import { createRuntimePinCoordinator } from '../src/supervisor/publication/runtime-pin-coordinator.js'
 
@@ -370,15 +371,47 @@ describe('managed workspace grants after a package change', () => {
     },
   )
 
-  it('leaves grants to the removal reconcile: prepareRemoval runs while the package is still installed', async () => {
+  it('revokes the removed package grants and detaches its managed sessions before removal, and refuses the removal when that fails', async () => {
     const f = fixture()
     const pruned = vi.fn(async () => {})
+    const handle = sqliteTables().table('managed')
+    let locked = true
+    const records = new ManagedSessionRecords({
+      ...handle,
+      exec(sql, params) {
+        if (locked && sql.startsWith('UPDATE managed_sessions SET owner'))
+          throw new Error('database is locked')
+        handle.exec(sql, params)
+      },
+    })
+    const owner = grantKey(packageId, 'plugin/0123456789abcdef')
+    records.grant(owner, '/work/repo')
+    records.insert({
+      sessionId: 'managed-a',
+      owner,
+      startKey: 'task-1',
+      bundle: `${packageId}#worker`,
+      workspace: '/work/repo',
+      retention: 'task',
+      permission: 'default',
+      model: null,
+      memoryWrites: true,
+      skillInstalls: true,
+    })
     const activation = createCompositeTargetActivation({
       store: f.store,
       revokePackage: f.coordinator.revokePackage,
       pruneGrants: pruned,
+      releaseManagedSessions: (id) => records.releasePackage(id),
     })
+    await expect(activation.prepareRemoval?.('default', packageId)).rejects.toThrow('E_PACKAGE_STATE')
+    expect(records.grants(owner)).toEqual(['/work/repo'])
+    expect(records.list(owner)).toHaveLength(1)
+    locked = false
     await activation.prepareRemoval?.('default', packageId)
+    expect(records.grants(owner)).toEqual([])
+    expect(records.list(owner)).toEqual([])
+    expect(records.get('managed-a')).toMatchObject({ startKey: 'task-1', bundle: `${packageId}#worker` })
     expect(pruned).not.toHaveBeenCalled()
   })
 })

@@ -950,6 +950,35 @@ it('removes a package that failed to start once nothing runs it, and refuses whi
   expect(remove).toHaveBeenCalledTimes(1)
 })
 
+it('keeps the package installed when preparing its removal fails, such as when its grants cannot be revoked', async () => {
+  const preview = await manager.inspect(profileDir, source)
+  await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
+  const row = (await manager.inventory(profileDir)).packages[0]
+  if (!row) throw new Error('setup install is missing')
+  const remove = vi.fn(manager.remove.bind(manager))
+  const admin = service({
+    manager: { ...manager, remove } as PackageManager,
+    activation: {
+      actual: async () => ({ actual: 'not-running' }),
+      prepareRemoval: async () => {
+        throw new Error('E_PACKAGE_STATE: managed session grants and records could not be released')
+      },
+      reconcile: async () => ({ actual: 'not-running' }),
+    },
+  })
+  const receipt = (await admin.call(
+    '_agnes/v1/packages.remove',
+    { profile, clientId, commandId: 'remove-grants-stuck', id: row.id },
+    authority,
+  )) as { operationId: string }
+  expect(await operation(admin, profile, receipt.operationId)).toMatchObject({
+    state: 'failed',
+    error: { code: 'E_PACKAGE_STATE' },
+  })
+  expect(remove).not.toHaveBeenCalled()
+  expect((await manager.inventory(profileDir)).packages[0]?.id).toBe(row.id)
+})
+
 it('refuses to remove a failed package when the adapter cannot say whether it is stopped', async () => {
   const preview = await manager.inspect(profileDir, source)
   await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
