@@ -38,15 +38,24 @@ import {
 import { createSupervisorProfileServices } from '../src/supervisor/profile-services.js'
 import { openWorkspaceCatalog } from '../src/supervisor/workspace-catalog.js'
 
+// The production adapter refuses a NUL in any bound string before the statement runs.
+function bind(values: readonly unknown[] | undefined): SQLInputValue[] {
+  return (values ?? []).map((value, index) => {
+    if (typeof value === 'string' && value.includes('\u0000'))
+      throw new TypeError(`bind parameter ${index} contains NUL, unsafe for SQLite TEXT`)
+    return value as SQLInputValue
+  })
+}
+
 function table(): TableHandle {
   const db = new DatabaseSync(':memory:')
   return {
     exec(sql, values) {
-      if (values?.length) db.prepare(sql).run(...(values as SQLInputValue[]))
+      if (values?.length) db.prepare(sql).run(...bind(values))
       else db.exec(sql)
     },
-    get: (sql, values) => db.prepare(sql).get(...((values ?? []) as SQLInputValue[])) as never,
-    all: (sql, values) => db.prepare(sql).all(...((values ?? []) as SQLInputValue[])) as never,
+    get: (sql, values) => db.prepare(sql).get(...bind(values)) as never,
+    all: (sql, values) => db.prepare(sql).all(...bind(values)) as never,
     transaction(fn) {
       db.exec('BEGIN')
       try {
@@ -450,6 +459,10 @@ describe('starting a managed session', () => {
     const model = { route: 'local', model: 'model-a' }
     const { sessionId } = await port(caller).start({ ...start, model })
     expect(state.models_set).toEqual([[sessionId, model]])
+    expect(records.get(sessionId)?.model).toBeTypeOf('string')
+    await expect(port(caller).send(sessionId, { text: 'more', idempotencyKey: 'k' })).resolves.toEqual({
+      state: 'started',
+    })
   })
 
   it('marks an ephemeral session input as excluded from task experience', async () => {
