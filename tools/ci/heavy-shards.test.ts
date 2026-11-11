@@ -26,6 +26,7 @@ it('keeps all migrated heavy selections and follows their current owners', () =>
   )
   expect(migratedHeavyFiles(files)).toEqual(files)
   expect(files).toHaveLength(66)
+  expect(files).toContain('packages/daemon/test/channel-pipe-real.e2e.test.ts')
   expect(files).toContain('packages/host-infrastructure/test/git-worktrees.e2e.test.ts')
   expect(files).toContain('packages/web/test/plugin-admin-page.slow.test.ts')
 })

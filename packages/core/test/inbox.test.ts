@@ -191,7 +191,11 @@ describe('Inbox segment', () => {
 
   it('acceptInput claims one next-turn item into user/message + turn/start + the program counter in one tx', async () => {
     const { session, log } = await openSession({ provider: fakeProvider([]) })
-    await session.enqueue('next-turn', { content: [{ type: 'text', text: 'hi' }], actor })
+    await session.enqueue('next-turn', {
+      content: [{ type: 'text', text: 'hi' }],
+      actor,
+      commandId: 'channel:accepted-input',
+    })
     expect(await Promise.all([session.acceptInput(), session.acceptInput()])).toEqual([true, false])
     const rows = await log.scan({ fromSeq: 1, limit: 20 })
     expect(rows.map((e) => e.type)).toEqual(['session/start', 'inbox', 'inbox', 'user/message', 'turn/start'])
@@ -207,6 +211,7 @@ describe('Inbox segment', () => {
     // triggerSeq must name the user/message actually written, not the row before or after it.
     expect(rows[3]?.type).toBe('user/message')
     expect(rows[3]?.seq).toBe(4)
+    expect(rows[3]?.data).toMatchObject({ commandId: 'channel:accepted-input' })
     expect((session.latest('inbox') as { items: unknown[] }).items).toHaveLength(0)
     expect(session.turn).not.toBeNull()
     // A queued second prompt must not open a second turn on the same lane: with one already open

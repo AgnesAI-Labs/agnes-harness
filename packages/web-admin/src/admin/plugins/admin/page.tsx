@@ -40,7 +40,7 @@ import { visibleRefresh } from '../../../visible-refresh.js'
 import { AdminApiError, PluginAdminApi } from '../api.js'
 import type { PluginKind } from '../control-panel.js'
 import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from '../locales/admin.js'
-import { SOURCE_FORMATS, sourceFromForm, sourceProblem } from '../source-form.js'
+import { SOURCE_FORMATS, SourceFormState } from '../source-form.js'
 import {
   ADMIN_FEATURES,
   type AdminContext,
@@ -242,31 +242,31 @@ export class PluginAdminPage {
         return page.#schedules
       },
       get sourceBusy() {
-        return page.#sourceBusy
+        return page.#source.busy
       },
       get sourceDialog() {
         return page.#sourceDialog
       },
       get sourceError() {
-        return page.#sourceError
+        return page.#source.error
       },
       get sourcePlaceholder() {
-        return page.#sourcePlaceholder
+        return page.#source.placeholder
       },
       get sourceProblem() {
-        return page.#sourceProblem
+        return page.#source.problem
       },
       get sourceRefValue() {
-        return page.#sourceRefValue
+        return page.#source.ref
       },
       set sourceRefValue(value) {
-        page.#sourceRefValue = value
+        page.#source.ref = value
       },
       get sourceTypeValue() {
-        return page.#sourceTypeValue
+        return page.#source.type
       },
       set sourceTypeValue(value) {
-        page.#sourceTypeValue = value
+        page.#source.type = value
       },
       get state() {
         return page.#state
@@ -413,14 +413,7 @@ export class PluginAdminPage {
   #operationCompletions = new Map<string, (operation: PackageOperation) => Promise<void>>()
   #submittingPackages = new Set<string>()
   readonly #flow = new InstallFlow()
-  #sourceMode: PreviewMode = 'install'
-  #sourcePackageId: string | undefined
-  #sourceTrigger: HTMLElement | undefined
-  #sourceBusy = false
-  #sourceTypeValue = 'npm'
-  #sourceRefValue = ''
-  #sourceError: SourceInlineError | undefined
-  #sourceProblem: { type: string; ref: string } | undefined
+  readonly #source = new SourceFormState()
   #noticeState: {
     message: string
     key?: string
@@ -598,17 +591,15 @@ export class PluginAdminPage {
       this.#presentationRuntime = undefined
       this.#presentationComposition = undefined
       const surfaceLinks = surfaceFeed?.surfaces ?? []
-      this.#state = rememberInventory({
-        ...this.#state,
-        context,
-        installed: list.packages,
-        generations: list.generations,
-        surfaceLinks,
-        tree,
-        inventoryAuthoritative: true,
-        loading: false,
-        connection: 'connected',
-      })
+      this.#state = rememberInventory(
+        {
+          ...this.#state,
+          context,
+          surfaceLinks,
+          tree,
+        },
+        list,
+      )
       this.render()
       void presentation
         .then(({ runtimeCatalog, composition }) => {
@@ -905,25 +896,26 @@ export class PluginAdminPage {
     if (!this.effectApi('packages.install')) return
     if (item && this.packageBusy(item.id)) return
     this.#ownsDialogs(true)
-    this.#sourceMode = mode
-    this.#sourcePackageId = item?.id
-    this.#sourceTrigger = trigger ?? this.#installTrigger()
-    this.#sourceError = undefined
-    this.#sourceProblem = undefined
-    this.#sourceRefValue = ''
+    this.#source.mode = mode
+    this.#source.packageId = item?.id
+    this.#source.trigger = trigger ?? this.#installTrigger()
+    this.#source.error = undefined
+    this.#source.problem = undefined
+    this.#source.ref = ''
+    this.#source.checkSource = undefined
     this.syncSourceHint()
     setDialog(this.#sourceDialog, true, this.#sourceDialogFocusTarget())
     this.render()
   }
 
   sourceTitle(): string {
-    return this.#sourceMode === 'update' && this.#sourcePackageId
-      ? this.#t('source.title.update', { id: this.#sourcePackageId })
+    return this.#source.mode === 'update' && this.#source.packageId
+      ? this.#t('source.title.update', { id: this.#source.packageId })
       : this.#t('source.title.inspect')
   }
 
   sourceIntro(): string {
-    return this.#sourceMode === 'update' ? this.#t('source.intro.update') : this.#t('source.intro.install')
+    return this.#source.mode === 'update' ? this.#t('source.intro.update') : this.#t('source.intro.install')
   }
 
   /** After React renders, the component owns input; give initial focus to the form's first interactive element. */
@@ -933,53 +925,49 @@ export class PluginAdminPage {
 
   /** The field's example follows the selected source type, and a stale complaint about the old one goes. */
   syncSourceHint(): void {
-    const type = this.#sourceTypeValue
+    const type = this.#source.type
     const format = type in SOURCE_FORMATS ? SOURCE_FORMATS[type as PackageSource['type']] : undefined
-    this.#sourcePlaceholder = format?.example ?? this.#t('source.placeholder.npm')
-    this.#sourceError = undefined
-    this.#sourceProblem = undefined
+    this.#source.placeholder = format?.example ?? this.#t('source.placeholder.npm')
+    this.#source.error = undefined
+    this.#source.problem = undefined
   }
 
-  #sourcePlaceholder = 'npm:scope/package@1.2.3'
-
   closeSourceDialog(): void {
+    this.#source.checkSource = undefined
     setDialog(this.#sourceDialog, false)
-    this.#sourceTrigger?.focus({ preventScroll: true })
+    this.#source.trigger?.focus({ preventScroll: true })
   }
 
   async submitSource(): Promise<void> {
-    if (this.#sourceBusy) return
-    const ref = this.#sourceRefValue.trim()
-    const problem = sourceProblem(this.#sourceTypeValue, ref, this.#t)
-    const source = problem ? undefined : sourceFromForm(this.#sourceTypeValue, ref)
+    if (this.#source.busy) return
+    const source = this.#source.resolve(this.#t)
     if (!source) {
-      this.#sourceProblem = { type: this.#sourceTypeValue, ref }
       this.render()
       return
     }
-    this.#sourceProblem = undefined
-    const mode = this.#sourceMode
-    const packageId = this.#sourcePackageId
-    const trigger = this.#sourceTrigger ?? this.#installTrigger()
-    this.#sourceError = undefined
-    this.#sourceBusy = true
+    const mode = this.#source.mode
+    const packageId = this.#source.packageId
+    const trigger = this.#source.trigger ?? this.#installTrigger()
+    this.#source.error = undefined
+    this.#source.busy = true
+    this.#source.checkSource = source
     // Stay on this dialog until the backend has accepted the check: a refusal has to be readable
     // where the user is looking, not in a panel that this dialog has just been closed over.
     try {
-      // A refresh temporarily disables effects; inspect rechecks authority after it settles.
-      const result = await this.#refresh.idle().then(() => this.inspect(source, mode, trigger, packageId))
+      // Decide from the finished inventory; a refresh temporarily revokes effects.
+      await this.#refresh.idle()
+      if (this.#lifetime.signal.aborted) return
+      const result = await this.inspect(source, mode, trigger, packageId)
       if (this.#lifetime.signal.aborted) return
       if (result.ok && this.#surface) {
-        // On the full page the form stays, busy, until the check is done: then its review page
-        // takes its place, or its failure shows here.
         this.#flow.sourceCheck = result.operationId
         return
       }
-      this.#sourceBusy = false
+      this.#source.busy = false
       if (result.ok) this.closeSourceDialog()
-      else this.#sourceError = result.error
+      else this.#source.error = result.error
     } catch {
-      this.#sourceBusy = false
+      this.#source.busy = false
     } finally {
       this.render()
     }
@@ -1008,7 +996,7 @@ export class PluginAdminPage {
           this.#flow.review = { busy: false }
           if (this.#flow.sourceCheck === operation.operationId) {
             this.#flow.sourceCheck = undefined
-            this.#sourceBusy = false
+            this.#source.busy = false
             this.closeSourceDialog()
           }
           this.render()
@@ -1022,8 +1010,15 @@ export class PluginAdminPage {
       if (this.#flow.sourceCheck === operation.operationId) {
         // A check the add form started reports on the form, which is still open.
         this.#flow.sourceCheck = undefined
-        this.#sourceBusy = false
-        if (failed) this.#sourceError = operationFailure(operation)
+        this.#source.busy = false
+        const source = this.#source.compatibleSource(operation, this.#state.context?.features)
+        if (source && this.#surface?.importSource) {
+          this.#source.error = undefined
+          this.#surface.importSource(source)
+          this.render()
+          return
+        }
+        if (failed) this.#source.error = operationFailure(operation)
         this.render()
         if (failed) return
       }
@@ -1103,7 +1098,7 @@ export class PluginAdminPage {
 
   openPreview(preview: PackagePreview, mode: PreviewMode): void {
     if (manageExample(this, preview)) return
-    this.#confirmTrigger ??= this.#sourceTrigger ?? this.#listHost
+    this.#confirmTrigger ??= this.#source.trigger ?? this.#listHost
     const installed =
       mode === 'update' ? this.#state.installed.find((item) => item.id === preview.id) : undefined
     const combined = !!installed && canCombineUpdate(this, installed, preview)

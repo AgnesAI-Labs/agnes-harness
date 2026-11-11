@@ -1,4 +1,5 @@
 import type { HostOptions } from '@agnes/host'
+import { profileWakeProducer } from './profile-wake-producer.js'
 import type { SharedSessionChannel } from './shared-session-channel.js'
 
 type ManagedSessions = ReturnType<NonNullable<HostOptions['managedSessions']>>
@@ -28,4 +29,9 @@ export function profileSessionProducer(
       archive: call('archive'),
     } as ManagedSessions
   }
+}
+
+/** Shared profile coordination ports use the same authenticated channel and lifetime. */
+export function profileSessionPorts(channel: SharedSessionChannel) {
+  return { boundWakes: profileWakeProducer(channel), managedSessions: profileSessionProducer(channel) }
 }

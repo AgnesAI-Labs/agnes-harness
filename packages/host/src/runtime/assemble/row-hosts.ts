@@ -1,3 +1,4 @@
+import { dirname, join } from 'node:path'
 import { API_VERSION } from '@agnes/extension-api'
 import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owners'
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
@@ -6,6 +7,7 @@ import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-servic
 import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { readPluginCapabilities } from '@agnes/package-manager'
+import { channelState } from './channel-state.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
 import type { ProcessServices } from './process-services.js'
@@ -25,6 +27,8 @@ export function createRowHosts(
   const { deps, say } = ctx
   const { activeRuntimeSources } = pkgs
   const bootCatalogue = deps.runtimePluginCatalogue ?? activeRuntimeSources
+  const channels = channelState(proc.adapters.storage.metadata, ctx.profile.name)
+  channels.rememberSources(bootCatalogue)
   const pluginCatalogue = new RuntimePluginCatalogue(bootCatalogue)
   const extensionInfo = {
     agnesVersion: deps.agnesVersion ?? '0.0.0',
@@ -121,6 +125,20 @@ export function createRowHosts(
     return description && { ...description, ...(declaredCapabilities ? { declaredCapabilities } : {}) }
   }
   const rowServices = createRowServiceHost(describeServices, {
+    ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
+    channelStateDirectory: join(deps.dataDir, 'channels'),
+    channelScope: {
+      home: dirname(dirname(deps.profileDir)),
+      profile: ctx.profile.name,
+      dataDir: deps.dataDir,
+      workspace: deps.workspaceRoot,
+    },
+    resolveSecret: proc.secrets,
+    channelLog: deps.log,
+    channelDirectory: proc.channelDirectory,
+    channelRemember: channels.remember,
+    channelCurrent: (owner, integrity, revision) =>
+      proc.profileActivations.require(owner, integrity, undefined, revision),
     managed: proc.profileManaged,
     streams: proc.profileStreams,
     namespace: (owner, name) =>
@@ -137,7 +155,9 @@ export function createRowHosts(
     for (const source of await deps.runtimePluginSources()) {
       sources.set(`${source.snapshot.packageId}\0${source.snapshot.snapshotId}`, source)
     }
-    pluginCatalogue.replace([...sources.values()])
+    const refreshed = [...sources.values()]
+    channels.rememberSources(refreshed)
+    pluginCatalogue.replace(refreshed)
   }
   return {
     bootCatalogue,

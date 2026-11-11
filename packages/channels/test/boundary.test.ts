@@ -41,9 +41,9 @@ describe('channels boundary', () => {
     for (const file of sourceFiles()) {
       const text = readFileSync(file, 'utf8')
       const imports = text.matchAll(/(?:from\s+|import\s*\(\s*|import\s+)['"](@agnes\/[a-z-]+)/g)
-      const allowed = ['@agnes/sdk', '@agnes/protocol']
-      if (file === fileURLToPath(new URL('../src/runner/client.ts', import.meta.url)))
-        allowed.push('@agnes/daemon')
+      const allowed = ['@agnes/sdk', '@agnes/protocol', '@agnes/extension-api']
+      if (file === fileURLToPath(new URL('../src/bridge.ts', import.meta.url)))
+        allowed.push('@agnes/system-node')
       if (file === fileURLToPath(new URL('../src/runner/config.ts', import.meta.url)))
         allowed.push('@agnes/system-node')
       for (const match of imports) {

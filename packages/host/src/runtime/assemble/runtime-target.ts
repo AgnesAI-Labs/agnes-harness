@@ -1,10 +1,15 @@
 import type { CurrentSessionRuntime } from '@agnes/core'
 import { noopHooks } from '@agnes/core'
-import { memoryKind, type SystemPromptProvider, sandboxKind, systemPromptKind } from '@agnes/extension-api'
+import {
+  channelKind,
+  memoryKind,
+  type SystemPromptProvider,
+  sandboxKind,
+  systemPromptKind,
+} from '@agnes/extension-api'
 import { installProviderRegistry, installProviders } from '@agnes/host-common/assemble/provider-registry'
 import { HostError } from '@agnes/host-common/errors'
 import type { HostPluginTreeBase } from '@agnes/host-extensions/assemble/seams-cordis'
-import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
 import { persistenceProviderRegistry } from '@agnes/host-infrastructure/adapters/storage-provider'
 import { installHostPlatform } from '@agnes/host-providers/adapters/platform-provider'
@@ -38,7 +43,6 @@ import {
 } from '@agnes/host-providers/runtime-target-resource-bootstrap'
 import { developmentPluginRows } from '@agnes/package-manager'
 import type { RuntimeConvergenceReport, RuntimeTarget } from '@agnes/plugin-runtime/host'
-import { createTreeSnapshot } from '@agnes/plugin-runtime/host'
 import { compositionTools } from '../profile/composition-visibility.js'
 import { createExtensionServiceHost, type ExtensionServiceHost } from '../services/author-port.js'
 import { installHostServices } from '../services/install.js'
@@ -51,6 +55,7 @@ import { type AssemblyContext, Late } from './context.js'
 import type { PackageSet } from './packages.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
+import { publishProfileActivations } from './profile-publication.js'
 import type { RowHosts } from './row-hosts.js'
 import type { SeamSet } from './seam-set.js'
 import type { SkillState } from './skills.js'
@@ -146,30 +151,6 @@ function createSessionViews(
   return { generationViews, rawSessionRuntime, sessionRuntimeView }
 }
 
-function publishProfileActivations(
-  proc: ProcessServices,
-  catalogue: RowHosts['pluginCatalogue'],
-  target: RuntimeTarget,
-): void {
-  proc.profileActivations.publish(
-    target.tree.rows.flatMap((row) => {
-      if (row.disabled) return []
-      const identity = pluginSnapshotIdentity(row.plugin)
-      const description = identity && catalogue.describe(identity.packageId, identity.snapshotId)
-      return description
-        ? [
-            {
-              owner: pluginRowSource(row.id),
-              revision: createTreeSnapshot([row]).hash,
-              integrity: description.integrity,
-            },
-          ]
-        : []
-    }),
-  )
-  void proc.profileManaged.publish().catch(() => undefined)
-}
-
 /** The publisher of the one ordinary tree: how rows are loaded, trusted, mounted and verified. */
 function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared: Shared): Publisher {
   const { deps } = ctx
@@ -222,6 +203,7 @@ function createPublisher(ctx: AssemblyContext, input: RuntimeTargetInput, shared
           installLoops(root, origins, deferred)
           installReferenceResolvers(root)
           installSeamKinds(root, origins)
+          installProviderRegistry(root, channelKind)
           const promptRegistry: import('@agnes/host-common/assemble/provider-registry').ProviderRegistry<SystemPromptProvider> =
             installProviderRegistry(root, systemPromptKind, (owner, source, provider) =>
               promptRegistry.register(source, provider, owner),

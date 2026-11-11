@@ -70,6 +70,7 @@ export function inputMessageEvents(item: InboxItem, lane: string): EventInput[] 
     data: {
       content,
       kind: item.kind ?? 'prompt',
+      ...(item.commandId ? { commandId: item.commandId } : {}),
       ...(origin === 'system' && item.system ? { system: item.system } : {}),
       ...(item.titleLocale ? { titleLocale: item.titleLocale } : {}),
     },

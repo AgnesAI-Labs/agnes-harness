@@ -1553,7 +1553,11 @@ describe('runtime-context user/message projection', () => {
       ts: '2026-09-14T00:00:00.000Z',
       id: '01K000000000000000000005',
       type: 'user/message',
-      data: { content: [{ type: 'text', text: 'hello again' }], kind: 'prompt' },
+      data: {
+        content: [{ type: 'text', text: 'hello again' }],
+        kind: 'prompt',
+        commandId: 'channel:projected-input',
+      },
       actor: { id: 'operator', org: 'local', role: 'user', deptPath: [], attrs: {} },
       origin: 'principal',
       trust: 'trusted',
@@ -1570,6 +1574,7 @@ describe('runtime-context user/message projection', () => {
       content: [{ type: 'text', text: 'hello again' }],
       actorLabel: 'operator',
       origin: 'principal',
+      commandId: 'channel:projected-input',
     })
     expect(kind(nodes, 'context')).toHaveLength(0)
   })

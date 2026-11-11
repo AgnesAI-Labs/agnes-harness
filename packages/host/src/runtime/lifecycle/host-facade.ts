@@ -1,6 +1,13 @@
 import type { EntryRow, RuntimeConvergenceReport } from '@agnes/plugin-runtime/host'
+import type { Assembled } from '../assemble/assembled.js'
 import type { Host } from './host.js'
 import { HOST_MEMBER_SCOPES, type HostFacadeOverrides, memberScope } from './host-routing.js'
+
+/** Authenticated deployment management ports, never exposed as model tools. */
+export type HostManagement = Readonly<
+  Pick<Assembled, 'approvalGrants'> &
+    Partial<Pick<Assembled, 'profileServices' | 'channelCatalog' | 'clearChannelState'>>
+>
 
 const sources = new WeakMap<Host, () => Host>()
 const executionRows = new WeakMap<Host, () => readonly Readonly<EntryRow>[]>()

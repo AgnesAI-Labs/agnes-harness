@@ -37,9 +37,19 @@ it('starts a first visit empty, and a later one from the inventory it read, stil
     loading: false,
     connection: 'connected',
   } as AdminPageState
-  rememberInventory(read)
+  const externalPackages = [
+    {
+      id: 'mcp-import-00000000-0000-4000-8000-000000000000',
+      name: 'sample/mcp',
+      source: { type: 'git' as const, ref: 'git:https://github.com/sample/mcp.git#fixed' },
+      result: { kind: 'mcp' as const, state: 'installed' as const },
+      resources: [],
+    },
+  ]
+  rememberInventory(read, { packages: [...read.installed], externalPackages })
   const seeded = seededState(empty)
   expect(seeded.installed).toEqual(read.installed)
+  expect(seeded.externalPackages).toEqual(externalPackages)
   expect(seeded.context).toEqual(read.context)
   // Shown at once, but not authoritative until the new read lands.
   expect(seeded.connection).toBe('connected')

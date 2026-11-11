@@ -177,6 +177,21 @@
           "type": "string",
           "maxLength": 64
         },
+        "displayNames": {
+          "description": "Optional localized channel names. Use the current UI language, then displayName, then id. Does not change channel identity or routing.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "en": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "\\S" },
+            "zh-CN": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "\\S" }
+          }
+        },
+        "icon": {
+          "description": "Optional PNG/JPEG data URL, at most 32768 characters. Harness displays a default channel icon when omitted or undecodable; recommended square image up to 512 by 512 pixels.",
+          "type": "string",
+          "maxLength": 32768,
+          "pattern": "^data:image/(?:png|jpeg);base64,[A-Za-z0-9+/]+={0,2}$"
+        },
         "version": {
           "type": "string",
           "maxLength": 32

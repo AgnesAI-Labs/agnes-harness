@@ -176,6 +176,8 @@ export function createSkillInstaller(directory: string, discovery: SkillDiscover
       mkdirSync(dirname(p.target), { recursive: true })
       unlinked(p.target)
       if (existsSync(p.target)) {
+        if (p.invocation.input.action === 'prepare-bundle' && p.invocation.input.exclusive)
+          throw installError('SKILL_TARGET_CONFLICT')
         const root = discovery
           .roots({
             workspaceRoot: p.authority.workspaceRoot,

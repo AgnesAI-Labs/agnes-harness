@@ -69,6 +69,7 @@ export type CompositeTargetActivationOptions = Readonly<{
   migrateSession?: PackageActivationAdapter['migrateSession']
   revokePackage?(packageId: string): Promise<void>
   releaseRetiring?(packageId: string): Promise<void>
+  clearChannels?(packageId: string): Promise<void>
   deliver?(artifact: RuntimeTargetArtifact): Promise<void>
   /**
    * Make an operation wait for what became of its own target, and for an earlier one to be settled
@@ -304,6 +305,11 @@ export function createCompositeTargetActivation(
     async reconcile(input) {
       await input.admission?.verify()
       input.admission?.assertActive()
+      if (input.operation === 'remove') {
+        if (!packageStopped(options.store, options.workerGeneration?.(), input.packageId))
+          throw new Error('E_PACKAGE_STATE: package is still running')
+        await options.clearChannels?.(input.packageId)
+      }
       const probe = options.probe
       if (!probe) return { actual: 'failed', error: unavailable }
       const wait = options.settle && {

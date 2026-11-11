@@ -15,6 +15,7 @@ import type { AssembleDeps } from './assembly-deps.js'
 import { buildBootRows } from './boot-rows.js'
 import { createBundledExtensions } from './bundled-extensions.js'
 import { createCapabilities } from './capabilities.js'
+import { channelControls } from './channel-state.js'
 import { childAgentCatalog } from './child-agents.js'
 import { type AssemblyContext, createAssemblyContext, failAssembly } from './context.js'
 import { createEcosystemContexts } from './ecosystem-context.js'
@@ -248,6 +249,7 @@ function publish(
     activationBarrier: ctx.activationBarrier,
     approvalGrants: t.approvalGrantControl.management,
     profileServices,
+    ...channelControls(f.proc, ctx.profile.name),
     serviceBinding: (names) => e.host.services.binding(names),
     callService: servicesInvocation.call,
     inspectService: servicesInvocation.inspect,

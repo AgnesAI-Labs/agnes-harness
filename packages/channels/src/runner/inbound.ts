@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { AGNES_ERRORS } from '@agnes/protocol'
+import { AGNES_ERRORS, attachmentErrorCode } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk'
 import type {
   ChannelAdapter,
@@ -33,7 +33,7 @@ type CachePort = Pick<SessionCache, 'get' | 'busy' | 'current' | 'markParticipan
 export type InboundDeps = {
   adapter: ChannelAdapter
   claim: { once(kind: string, value: string, expiresAtMs?: number): Promise<boolean> }
-  joinParticipant?: (sessionKey: string, credential: ChannelCredential) => Promise<void>
+  joinParticipant?: (sessionId: string, credential: ChannelCredential) => Promise<void>
   cache: CachePort
   config: {
     allowFrom: string[]
@@ -58,6 +58,14 @@ export type InboundDeps = {
 }
 
 export class Inbound {
+  private readonly paused = new Set<string>()
+  async pause(key: string): Promise<void> {
+    this.paused.add(key)
+    await this.lanes.get(key)
+  }
+  resume(key: string): void {
+    this.paused.delete(key)
+  }
   private readonly lanes = new Map<string, Promise<void>>()
   // Keep refusals even after cache eviction: queued/new messages must never reopen that history.
   private readonly refused = new Set<string>()
@@ -69,7 +77,7 @@ export class Inbound {
       tenant: this.dependencies.config.tenant,
       agent: this.dependencies.config.agent,
     })
-    if (intent === null) return Promise.resolve()
+    if (intent === null || this.paused.has(intent.sessionKey)) return Promise.resolve()
     if (this.refused.has(intent.sessionKey) && !isNewSession(intent)) return Promise.resolve()
 
     const maxPendingLanes = Math.max(1, this.dependencies.maxPendingLanes ?? 1_024)
@@ -122,6 +130,7 @@ export class Inbound {
   }
 
   private async process(event: ChannelEvent, intent: InboundIntent): Promise<void> {
+    if (this.paused.has(intent.sessionKey)) return
     if (this.isStopped() || (this.refused.has(intent.sessionKey) && !isNewSession(intent))) return
     const attention =
       this.dependencies.adapter.attention?.(event) ??
@@ -191,7 +200,7 @@ export class Inbound {
       this.dependencies.cache.markParticipant(intent.sessionKey, credential.userId)
     ) {
       try {
-        await this.dependencies.joinParticipant(intent.sessionKey, credential)
+        await this.dependencies.joinParticipant(session.id, credential)
       } catch {
         // A failed daemon call must remain retryable on the next event. Keeping the optimistic
         // marker would permanently skip identity binding while continuing to submit messages.
@@ -224,8 +233,43 @@ export class Inbound {
   }
 
   private async dispatch(session: BoundSession, intent: InboundIntent): Promise<void> {
+    try {
+      await this.submit(session, intent)
+    } catch (error) {
+      const reason = attachmentErrorCode(error)
+      if (
+        !(error instanceof JsonRpcError) ||
+        !['ATTACHMENT_DATA', 'ATTACHMENT_PIXELS', 'ATTACHMENT_MIME'].includes(reason ?? '') ||
+        !intent.content.some((block) => block.type === 'image')
+      )
+        throw error
+      // A definitive image-admission refusal may degrade to ordinary files. Never retry uncertain
+      // submissions, quotas, authorization failures or storage outages under a new command id.
+      await this.submit(session, {
+        ...intent,
+        messageId: `${intent.messageId}:image-as-file`,
+        content: [
+          ...intent.content.map((block, index) =>
+            block.type === 'image'
+              ? {
+                  ...block,
+                  type: 'file' as const,
+                  name: `channel-image-${index + 1}.${block.mimeType === 'image/png' ? 'png' : 'jpg'}`,
+                }
+              : block,
+          ),
+          { type: 'text', text: '[渠道图片未能作为视觉输入接收，已按普通附件保存；尚未识别图片内容。]' },
+        ],
+      })
+    }
+  }
+
+  private async submit(session: BoundSession, intent: InboundIntent): Promise<void> {
+    if (this.paused.has(intent.sessionKey) || this.dependencies.cache.current(intent.sessionKey) !== session)
+      return
     if (this.refused.has(intent.sessionKey)) return
-    const options = { commandId: commandIdFor(intent.sessionKey, intent.messageId) }
+    // Correlation survives queuing and restart. This namespace prevents echo; it grants no authority.
+    const options = { commandId: `channel:${commandIdFor(intent.sessionKey, intent.messageId)}` }
     if (this.dependencies.cache.busy(intent.sessionKey)) {
       try {
         await session.steer(intent.content, options)

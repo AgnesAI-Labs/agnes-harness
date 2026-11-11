@@ -656,43 +656,49 @@ describe('createRunner', () => {
     await runner.stop()
   })
 
-  it('uses the SDK call surface for participant binding only when the daemon advertises it', async () => {
-    const client = createFakeClient({
-      apis: {
-        families: [
-          {
-            name: 'session',
-            methods: ['_agnes/v1/session.attach', '_agnes/v1/participant.join'],
-            guidance: '',
-          },
-        ],
-      },
-    })
-    const call = vi.fn(async () => ({ seq: 1 })) as unknown as Client['call']
-    const clientWithCall = Object.assign(client, { call })
-    const adapter = new FakeChannel()
-    const runner = createRunner({
-      adapter,
-      cfg: config,
-      secrets: {},
-      client: clientWithCall,
-      log: logger(),
-    })
-    await runner.start()
+  it.each([undefined, 'web-session'])(
+    'registers participants in the resolved session (%s)',
+    async (boundSession) => {
+      const client = createFakeClient({
+        apis: {
+          families: [
+            {
+              name: 'session',
+              methods: ['_agnes/v1/session.attach', '_agnes/v1/participant.join'],
+              guidance: '',
+            },
+          ],
+        },
+      })
+      const call = vi.fn(async () => ({ seq: 1 })) as unknown as Client['call']
+      const clientWithCall = Object.assign(client, { call })
+      const adapter = new FakeChannel()
+      const runner = createRunner({
+        adapter,
+        cfg: config,
+        secrets: {},
+        client: clientWithCall,
+        ...(boundSession
+          ? { bindings: { resolve: () => ({ sessionId: boundSession, afterSeq: 0 }), observe: () => {} } }
+          : {}),
+        log: logger(),
+      })
+      await runner.start()
 
-    adapter.emit(inboundMessage)
-    await vi.waitFor(() => expect(call).toHaveBeenCalled())
+      adapter.emit(inboundMessage)
+      await vi.waitFor(() => expect(call).toHaveBeenCalled())
 
-    expect(call).toHaveBeenCalledWith('_agnes/v1/participant.join', {
-      sessionId: 'agnes:tenant:agent:fake:group:chat-1',
-      credential: expect.objectContaining({
-        kind: 'channel',
-        userId: 'user-1',
-        raw: { staffId: 'staff-1' },
-      }),
-    })
-    await runner.stop()
-  })
+      expect(call).toHaveBeenCalledWith('_agnes/v1/participant.join', {
+        sessionId: boundSession ?? 'agnes:tenant:agent:fake:group:chat-1',
+        credential: expect.objectContaining({
+          kind: 'channel',
+          userId: 'user-1',
+          raw: { staffId: 'staff-1' },
+        }),
+      })
+      await runner.stop()
+    },
+  )
 
   it('wires session events through projectUI and gap recovery without duplicate sends', async () => {
     const client = createFakeClient()

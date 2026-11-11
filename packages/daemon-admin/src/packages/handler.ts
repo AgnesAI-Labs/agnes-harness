@@ -450,7 +450,7 @@ function projectCatalogDescriptor(value: unknown): PackageCatalogDescriptor {
 class Service implements PackageAdminService {
   get features(): readonly string[] {
     return [
-      ...(this.options.community ? ['packages.community-discovery.v1'] : []),
+      ...(this.options.community ? ['packages.community-discovery.v2'] : []),
       ...(this.options.skillImport ? ['packages.skill-import.v1'] : []),
     ]
   }
@@ -763,7 +763,7 @@ class Service implements PackageAdminService {
           return this.options.manager.sourcePolicy(
             await this.options.profileDirectory(data.profile as string),
           )
-        if (method === '_agnes/v1/packages.list') return await this.list(data as { profile: string })
+        if (method === '_agnes/v1/packages.list') return await this.list(data as { profile: string }, granted)
         if (method === '_agnes/v1/plugins.tree.get')
           return this.pluginTreeView(data as { profile: string }, true)
         if (method === '_agnes/v1/plugins.tree.list')
@@ -1036,6 +1036,7 @@ class Service implements PackageAdminService {
     cursor?: string
     limit?: number
     includeCommunity?: boolean
+    communityVersion?: 2
   }) {
     await this.options.profileDirectory(params.profile)
     const read = this.options.catalog ? await this.options.catalog.read({ offline: true }) : { entries: [] }
@@ -1045,11 +1046,11 @@ class Service implements PackageAdminService {
     const limit = params.limit ?? 50
     const items = visible.slice(Math.max(0, start), Math.max(0, start) + limit)
     const last = items.at(-1)
-    const community = params.includeCommunity ? this.options.community?.(params.profile) : undefined
+    const community = params.communityVersion === 2 ? this.options.community?.(params.profile) : undefined
     return {
       items,
       nextCursor: last && start + items.length < visible.length ? `${last.id}@${last.version}` : null,
-      ...(community ? { community } : {}),
+      ...(community ? { communityIndex: community } : {}),
     }
   }
 
@@ -1067,12 +1068,18 @@ class Service implements PackageAdminService {
     return item
   }
 
-  private async list(params: { profile: string }): Promise<PackageListResult> {
+  private async list(
+    params: { profile: string },
+    granted?: PackageAdminAuthority,
+  ): Promise<PackageListResult> {
     const directory = await this.options.profileDirectory(params.profile)
     const inventory = await this.options.manager.inventory(directory)
     const generations = await this.readGenerations(params.profile)
     return {
       packages: await this.projectInventory(params.profile, inventory, generations),
+      ...(granted && this.options.skillImport && granted.installer !== 'agent'
+        ? { externalPackages: await this.options.skillImport.list(params.profile, granted) }
+        : {}),
       ...(generations ? { generations } : {}),
     }
   }

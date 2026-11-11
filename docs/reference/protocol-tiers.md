@@ -279,6 +279,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 
 - `_agnes/v1/extension.ack`
 - `_agnes/v1/extension.call`
+- `_agnes/v1/channels.catalog`
 - `_agnes/v1/directory.upsert`
 - `_agnes/v1/apis.list`
 - `_agnes/v1/pluginRuntime.status`

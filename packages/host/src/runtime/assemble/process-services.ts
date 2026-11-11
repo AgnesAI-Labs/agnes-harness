@@ -26,6 +26,7 @@ import type { PackageSet } from './packages.js'
  * dispatch slot below is filled from that container's plugin tree; see the HOSTX report.
  */
 export type ProcessServices = Readonly<{
+  channelDirectory: Map<string, () => import('@agnes/protocol').JsonValue>
   profileManaged: ProfileManagedResources
   profileStreams: ProfileStreams
   profileWakes: ProfileWakeBindings
@@ -159,6 +160,7 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
   )
   rollback.push('profile-managed', () => profileManaged.close())
   return {
+    channelDirectory: new Map(),
     profileManaged,
     profileStreams: new ProfileStreams(ctx.profile.name, profileActivations),
     profileActivations,

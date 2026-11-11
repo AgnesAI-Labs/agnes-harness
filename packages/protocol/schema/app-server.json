@@ -3,6 +3,12 @@
   "$id": "https://agnes.ai/schema/app-server-v1",
   "title": "AGH App Server v1",
   "$defs": {
+    "ChannelCatalogResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providers"],
+      "properties": { "providers": { "type": "array", "items": { "$ref": "#/$defs/JsonValue" } } }
+    },
     "JsonValue": {
       "anyOf": [
         {
@@ -4122,6 +4128,7 @@
       "params": "AdminCompositionParams",
       "result": "AdminCompositionResult"
     },
+    "_agnes/v1/channels.catalog": { "params": "AdminEmpty", "result": "ChannelCatalogResult" },
     "_agnes/v1/admin.search.get": {
       "params": "AdminEmpty",
       "result": "AdminSearchResult"

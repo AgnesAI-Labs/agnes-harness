@@ -20,7 +20,7 @@ import {
   createSecretsFile,
   overlayChildEngineTarget,
 } from '@agnes/host'
-import { activeRuntimePinId, isRuntimePackageEligible, releaseChildEngineOwner } from '@agnes/package-manager'
+import { isRuntimePackageEligible, releaseChildEngineOwner } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { HARNESS_VERSION } from '@agnes/protocol'
 import type { DispatchState } from './assembly-client-dispatch.js'
@@ -43,7 +43,7 @@ import {
   createCompositeRuntimePins,
   createCompositeTargetActivation,
 } from './publication/composite-target-activation.js'
-import { createTargetReverter } from './publication/composite-target-revert.js'
+import { createTargetReverter, readLoadableSnapshots } from './publication/composite-target-revert.js'
 import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinator.js'
 import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
 import { createManagementSkillImports } from './skill-install-requests.js'
@@ -292,23 +292,7 @@ async function openRuntimeActivation(
   const targetReverter = runtimeStore
     ? createTargetReverter({
         store: runtimeStore,
-        loadableSnapshots: async () => {
-          const [inventory, pins] = await Promise.all([
-            packageRuntime.manager.inventory(packageProfileDirectory),
-            packageRuntime.manager.listRuntimePins(packageProfileDirectory),
-          ])
-          const eligible = new Set(inventory.packages.filter(isRuntimePackageEligible).map((pkg) => pkg.id))
-          return new Map(
-            pins
-              .filter(
-                (pin) =>
-                  pin.purpose === 'active' &&
-                  eligible.has(pin.snapshot.packageId) &&
-                  pin.pinId === activeRuntimePinId(pin.snapshot),
-              )
-              .map((pin) => [`${pin.snapshot.packageId}@${pin.snapshot.integrity}`, pin.snapshot.integrity]),
-          )
-        },
+        loadableSnapshots: () => readLoadableSnapshots(packageRuntime.manager, packageProfileDirectory),
         audit: (event) => o.audit?.(event),
       })
     : undefined
@@ -332,6 +316,10 @@ async function openRuntimeActivation(
   const compositeActivation = runtimeStore
     ? createCompositeTargetActivation({
         store: runtimeStore,
+        clearChannels: async (packageId) => {
+          const worker = await pool.acquireSharedWorker()
+          await worker.command('channels.clear', { packageId })
+        },
         ...(revertFailedDesired ? { revertFailedDesired } : {}),
         settle: {
           timeoutMs: o.config.limits.workerStartupMs + 45_000,

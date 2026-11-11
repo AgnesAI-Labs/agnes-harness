@@ -51,6 +51,28 @@ const profiles = new Map<
 >()
 /** Only the current profile publication may run resources. Staged/pinned trees only register factories. */
 export class ProfileManagedResources {
+  /** Resolve an already-running current resource from a session composition. Never publishes,
+   * starts or revives a factory from that composition; the live resource owns its epoch. */
+  async currentValue<T>(owner: string, id: string, integrity: string): Promise<T> {
+    const resource = profiles
+      .get(this.key)
+      ?.resources.find((row) => row.owner === owner && row.id === id && row.integrity === integrity)
+    const assert = () => {
+      if (
+        this.closed ||
+        !resource ||
+        profiles.get(this.key)?.resources.includes(resource) !== true ||
+        resource.lifetime.signal.aborted ||
+        resource.status.state !== 'ready' ||
+        (this.current && !this.current(resource.owner, resource.integrity, resource.revision))
+      )
+        throw rpcError('CAPABILITY_DENIED')
+    }
+    assert()
+    const value = await resource!.value
+    assert()
+    return value as T
+  }
   private readonly definitions: {
     owner: string
     packageId: string
@@ -368,7 +390,17 @@ export class ProfileManagedResources {
           : error?.message === 'shutdown-unconfirmed' ||
               (!started && input.store.get(`managed-shutdown:${r.id}`) === true)
             ? 'shutdown-unconfirmed'
-            : 'unavailable'
+            : [
+                  'channel-state-directory',
+                  'channel-binding-store',
+                  'channel-workspace',
+                  'channel-credentials',
+                  'channel-adapter',
+                  'channel-backend',
+                  'channel-platform',
+                ].includes(error?.code)
+              ? error.code
+              : 'unavailable'
       lifetime.abort('failed')
       if (started) {
         const result = await shut('exit')

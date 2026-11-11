@@ -9,7 +9,7 @@ export interface ManagedSessionRecord {
   workspace: string
   retention: ManagedSessionRetention
   permission: 'default' | 'full-access'
-  /** `route\0model`, or null for the deployment default. */
+  /** JSON `{route, model}`: SQLite TEXT cannot carry the NUL a joined key would need. Null is the deployment default. */
   model: string | null
   memoryWrites: boolean
   skillInstalls: boolean

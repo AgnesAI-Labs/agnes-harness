@@ -37,11 +37,30 @@ type SurfaceServiceCredential = Readonly<{
 const JOURNAL_GC_INTERVAL_MS = 60_000
 const nextJournalGcAt = new WeakMap<CommandJournal, number>()
 
-function requireSurface(cx: CallContext): {
+function requireSurface(
+  cx: CallContext,
+  params?: Pick<ExtensionCallParams, 'extension' | 'service'>,
+): {
   credential: SurfaceServiceCredential
   sourceId: string
 } {
   const { conn } = cx
+  if (
+    conn.authKind === 'local' &&
+    conn.credentialKind === 'local' &&
+    params &&
+    ['channel.session', 'channel.bind', 'channel.unbind'].includes(params.service)
+  ) {
+    return {
+      sourceId: 'client-web-channels',
+      credential: Object.freeze({
+        kind: 'surface-service',
+        source: 'client-web',
+        subjectCredential: { kind: 'local' },
+        grants: [{ extension: params.extension, name: params.service, range: '*' }],
+      }),
+    }
+  }
   if (conn.authKind !== 'surface' || !conn.surface || !conn.credential) throw rpcError('CAPABILITY_DENIED')
   return {
     sourceId: conn.surface.sourceId,
@@ -145,7 +164,7 @@ export function registerExtensions(ep: LocalEndpoint, cx: ExtensionMethodsContex
   })
   ep.register('_agnes/v1/extension.ack', async (params, call) => {
     const p = params as ExtensionAckParams
-    const surface = requireSurface(call)
+    const surface = requireSurface(call, p)
     // A receipt is acknowledged only by an explicit request sent after the caller received the
     // result. Transport close or a later request proves no such thing and must not permit GC.
     const receiptExists = await cx.journal.ack(identity(p, surface, call))
@@ -165,7 +184,7 @@ export function registerExtensions(ep: LocalEndpoint, cx: ExtensionMethodsContex
   })
   const callExtension = async (params: unknown, call: CallContext): Promise<ExtensionCallResult> => {
     const p = params as ExtensionCallParams
-    const surface = requireSurface(call)
+    const surface = requireSurface(call, p)
     let sessionKey: string
     try {
       sessionKey = await cx.resolveServiceSession(p.sessionId, call)

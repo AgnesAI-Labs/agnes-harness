@@ -145,7 +145,8 @@
     "@agnes/daemon-rpc",
     "@agnes/observability",
     "@agnes/sdk",
-    "@agnes/distribution"
+    "@agnes/distribution",
+    "@agnes/channels"
   ],
   "@agnes/cli": [
     "@agnes/core-common",
@@ -169,7 +170,7 @@
     "@agnes/error-sanitization",
     "@agnes/host-extensions"
   ],
-  "@agnes/channels": ["@agnes/protocol", "@agnes/sdk", "@agnes/system-node", "@agnes/daemon"],
+  "@agnes/channels": ["@agnes/protocol", "@agnes/sdk", "@agnes/system-node", "@agnes/extension-api"],
   "@agnes/bridges": ["@agnes/protocol", "@agnes/sdk"],
   "@agnes/web": [
     "@agnes/cordis",

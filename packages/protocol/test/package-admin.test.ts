@@ -116,7 +116,8 @@ describe('PM4 management contracts', () => {
     // Five presentation rows preserve valid metadata and reject invalid display/authority fields.
     // Three binding rows cover history-only session ownership and reject invalid availability/owner.
     // Twenty-three role selection rows cover attested bindings, closed roles and state boundaries.
-    expect(result.total).toBe(700)
+    // Six additional standalone Skill/environment/MCP fixtures supplement the import method rows.
+    expect(result.total).toBe(706)
     expect(result.skipped).toBe(0)
   })
   it('requires explicit classification, permission and command identity for every management method', () => {
@@ -323,4 +324,38 @@ describe('PM4 management contracts', () => {
     expect(compatibility.rows?.[0]?.contentDigest).toBe(contentDigest)
     expect(compatibility.rowAliases).toEqual({ 'web:acme/legacy': 'web:acme/ui' })
   })
+})
+
+it('keeps the large index response budget scoped to catalogs and rejects unnegotiated versions', () => {
+  const snapshot = {
+    state: 'ready',
+    lastSuccessAt: null,
+    nextAttemptAt: null,
+    error: null,
+    totalReported: 600,
+    items: Array.from({ length: 600 }, (_, i) => ({
+      id: 'plugin-' + i,
+      fullName: 'example/plugin',
+      description: 'x'.repeat(2000),
+      summary: 'x'.repeat(2000),
+    })),
+  }
+  const page = { items: [], nextCursor: null, communityIndex: snapshot }
+  expect(validatePackageAdminData('PackageCatalogPage', page).ok).toBe(true)
+  expect(validatePackageAdminCall('_agnes/v1/packages.catalog.list', 'result', page).ok).toBe(true)
+  expect(
+    validatePackageAdminCall('_agnes/v1/clientModules.callService', 'result', { output: snapshot }).ok,
+  ).toBe(false)
+  expect(
+    validatePackageAdminCall('_agnes/v1/packages.catalog.list', 'params', {
+      profile: 'local-dev',
+      communityVersion: 2,
+    }).ok,
+  ).toBe(true)
+  expect(
+    validatePackageAdminCall('_agnes/v1/packages.catalog.list', 'params', {
+      profile: 'local-dev',
+      communityVersion: 3,
+    }).ok,
+  ).toBe(false)
 })

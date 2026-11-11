@@ -20,6 +20,17 @@ const reasons = new Set([
   'SKILL_FILE_CONFLICT',
   'SKILL_PATH_DENIED',
   'SKILL_TARGET_CONFLICT',
+  'MCP_CONFIG_INVALID',
+  'MCP_CONFIG_UNSUPPORTED',
+  'MCP_CONFIG_AMBIGUOUS',
+  'MCP_PATH_INVALID',
+  'MCP_INLINE_CREDENTIAL_REFUSED',
+  'MCP_CREDENTIAL_INVALID',
+  'MCP_SKILL_LIMIT',
+  'MCP_SOURCE_LIMIT',
+  'MCP_SELECTION_INVALID',
+  'MCP_SELECTION_CHANGED',
+  'MCP_SELECTION_REQUIRED',
 ])
 /** A bounded, cancellable check job; installation and authorization remain with their existing owners. */
 export function createSkillImportChecks(
