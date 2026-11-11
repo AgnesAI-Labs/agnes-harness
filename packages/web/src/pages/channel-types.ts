@@ -33,6 +33,21 @@ export type ManagedInstance = Instance & {
   statusUnavailable?: boolean
   recovery?: boolean
   intendedSession?: SessionMeta
+  pairings?: ChannelPairing[]
+}
+export type ChannelPairing = {
+  id: string
+  label: string
+  target: { owner: string; service: string; packageId: string }
+  pairedAt: string
+  running: boolean
+}
+export type ChannelPairingTarget = {
+  owner: string
+  service: string
+  packageId: string
+  label: string
+  paired: boolean
 }
 export type ChannelGroup = {
   provider: Provider

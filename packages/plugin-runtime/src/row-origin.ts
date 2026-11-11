@@ -35,4 +35,14 @@ export class RowOriginRegistry implements RowOriginLookup {
       this.#origins.delete(fiber)
     }
   }
+
+  /** A live configuration reload keeps the fiber, so its origin must move to the new row identity. */
+  replace(fiber: Fiber, origin: Readonly<RowOrigin>): () => void {
+    const previous = this.#origins.get(fiber)
+    if (!previous) throw new Error('row origin is not bound')
+    this.#origins.set(fiber, origin)
+    return () => {
+      if (this.#origins.get(fiber) === origin) this.#origins.set(fiber, previous)
+    }
+  }
 }

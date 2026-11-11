@@ -42,3 +42,5 @@ Extension API 5.6 增加统一的“插件 → 渠道”配置页及输入框旁
 已激活的绑定每 5 秒通过权威会话投影补充核对，作为实时事件缺失时的恢复路径；每条路由最多保留一次待核对任务，解绑、退役和关闭时取消定时器。核对继续使用绑定基线和持久化出站回执，不重发已送达内容。
 
 渠道退役须先确认外部清理再替换实例。严格关闭失败或超时时，保留失败实例并阻止自动替换和关闭完成确认；先检查并核对外部连接，再重启其所属运行环境。参与者登记使用解析后的 AGH 会话身份，渠道路由绑定已有 Web 会话时也遵循同一规则。
+
+Extension API 5.12.0 新增渠道目标。声明 `channelTargets` 的托管服务收到 `init.channels`；由 Host 持有的 `ChannelTargets`（`host-extensions/profile/channel-targets.ts`）把配对和送达账本存放在 profile 元数据命名空间 `host:channel-targets`，每个渠道行通过按插件包和插件行区分的桥接口访问它。runner 在会话路由之前先把每个入站事件交给桥的目标路由器；配对码或已配对私聊在完成 runner 的去重认领后就此截停。生成配对码需要人工审批：`core/channel-pairing` 是 profile 决策日志里由 Host 持有的决策所有者，唯一的生成授权函数在 `createChannelPairingApprovals` 中。管理方法 `_agnes/v1/channels.pairing` 负责列出目标、生成和撤销。删除任一方插件包时，`clearChannelState` 释放其配对。

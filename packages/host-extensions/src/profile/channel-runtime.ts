@@ -7,6 +7,7 @@ import type {
   ProfileManagedInit,
 } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
+import type { ChannelTargetsBridge } from './channel-targets.js'
 
 /** Backend composition only; never a plugin-supplied factory or transport address. */
 export type ChannelRuntimeFactory = ((
@@ -21,6 +22,8 @@ export type ChannelRuntimeFactory = ((
     workspace: string
     resolveSecret(ref: string): string
     log: Logger
+    /** Host pairings of this channel row's chats to managed services. */
+    targets?: ChannelTargetsBridge
   },
 ) => Promise<ChannelRuntime>) & {
   /** Backend-only, read-only metadata recovery. Never starts or resumes a transport. */

@@ -25,6 +25,9 @@ export function capabilityRequests(value: PluginCapabilities | undefined, t: Tex
         ...(value.managedServices?.some((service) => service.sessions === true)
           ? [t('capability.sessions')]
           : []),
+        ...(value.managedServices?.some((service) => service.channelTargets === true)
+          ? [t('capability.channelTargets')]
+          : []),
       ]
     : []
 }

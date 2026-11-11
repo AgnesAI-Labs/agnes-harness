@@ -137,6 +137,7 @@ export function createRowHosts(
     channelLog: deps.log,
     channelDirectory: proc.channelDirectory,
     channelRemember: channels.remember,
+    channelTargets: proc.channelTargets,
     channelCurrent: (owner, integrity, revision) =>
       proc.profileActivations.require(owner, integrity, undefined, revision),
     managed: proc.profileManaged,

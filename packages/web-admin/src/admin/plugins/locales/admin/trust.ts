@@ -50,6 +50,8 @@ export const trustCatalog: LocaleCatalog = {
     'capability.childAgents': 'Child agents',
     'capability.ui': 'UI',
     'capability.sessions': 'Can open and run agent sessions for you',
+    'capability.channelTargets':
+      'Can receive the messages you send it in a chat channel direct message, and send you text reminders through that channel. Takes effect only after you pair it on the channel page.',
     'fact.provides': 'Declared capabilities',
     'fact.source': 'Source',
     'detail.state': 'Status',
@@ -120,6 +122,8 @@ export const trustCatalog: LocaleCatalog = {
     'capability.childAgents': '子代理',
     'capability.ui': '界面',
     'capability.sessions': '能替你开会话并运行',
+    'capability.channelTargets':
+      '可以接收你在聊天渠道私聊里发给它的消息，并通过该渠道给你发文字提醒。需要你在渠道页配对后才生效。',
     'fact.provides': '声明能力',
     'fact.source': '来源',
     'detail.state': '状态',

@@ -71,6 +71,7 @@ import {
   type HostConvergenceReport,
   type HostManagement,
   type HostPublicationReport,
+  hostManagement,
   registerHostExecutionRows,
 } from './host-facade.js'
 import { registerHostIdle } from './host-idle.js'
@@ -336,10 +337,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
   })
   const host: Host = {
     activationBarrier: a.activationBarrier,
-    approvalGrants: a.approvalGrants,
-    profileServices: a.profileServices,
-    channelCatalog: a.channelCatalog,
-    clearChannelState: a.clearChannelState,
+    ...hostManagement(a),
     resolveService: async (sessionId, names) => {
       if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
       const session = a.kernel.get(sessionId)

@@ -32,6 +32,7 @@ export type {
 export { createTreeSnapshot, pluginConfigDigest, ROW_STATES, verifyTreeSnapshot } from '../convergence.js'
 export type { DependencyEdge } from '../dependency-graph.js'
 export { detectDependencyCycle, missingDependencies, persistSecretRef } from '../dependency-graph.js'
+export { grantKey } from '../grant-key.js'
 export { E_LEASE_DENIED, FiberLease, FiberLeases, SPINE_LEASES } from '../lease.js'
 export type { LocalGateClosedOptions, LocalGateReadRelease } from '../local-gate.js'
 export { E_LOCAL_GATE_FATAL, LocalGate } from '../local-gate.js'

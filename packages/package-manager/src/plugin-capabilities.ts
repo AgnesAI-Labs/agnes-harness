@@ -48,6 +48,9 @@ export function capabilityAtoms(value: PluginCapabilities | undefined): string[]
     ...(value.managedServices ?? [])
       .filter((service) => service.sessions === true)
       .map((service) => `managedSessions:${service.scope}:${service.id}`),
+    ...(value.managedServices ?? [])
+      .filter((service) => service.channelTargets === true)
+      .map((service) => `channelTargets:${service.scope}:${service.id}`),
   ].sort()
 }
 

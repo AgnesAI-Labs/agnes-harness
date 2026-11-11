@@ -4,6 +4,7 @@ import {
   requireLocalAdminAuthority,
 } from '@agnes/daemon-admin/packages/index'
 import type { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
+import { grantKey } from '@agnes/plugin-runtime/host'
 import { type MethodName, rpcError } from '@agnes/protocol'
 import type {
   ManagedWorkspaceGrantChange,
@@ -11,7 +12,7 @@ import type {
   ManagedWorkspaceGrantsList,
   ManagedWorkspaceGrantsListParams,
 } from '@agnes/protocol/gen/app-server'
-import { grantKey, type ManagedSessionRecords } from './managed-session-records.js'
+import type { ManagedSessionRecords } from './managed-session-records.js'
 import type { ManagedSessionPackage } from './profile-services.js'
 
 export interface ManagedWorkspaceGrantPorts {

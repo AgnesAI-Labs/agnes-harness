@@ -11,6 +11,7 @@ import type { TableHandle } from '@agnes/daemon-foundation/storage/table'
 import { CommandQueue } from '@agnes/daemon-rpc/local/command-queue'
 import { createFollowUpRunner } from '@agnes/daemon-rpc/local/follow-up-runner'
 import { pluginRowSource } from '@agnes/host'
+import { grantKey } from '@agnes/plugin-runtime/host'
 import {
   type Actor,
   automaticPermissionDecision,
@@ -22,7 +23,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { openTestHost, say } from '../../daemon-rpc/test/host.js'
 import { createWorkerRequests } from '../src/supervisor/assembly-worker-requests.js'
 import { managedSessionPorts, managedWorkspaceRoot } from '../src/supervisor/managed-session-ports.js'
-import { grantKey, ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
+import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
 import {
   createManagedSessions,
   type ManagedSessionCaller,

@@ -56,7 +56,9 @@
     "./profile/managed-sessions": "./src/profile/managed-sessions.ts",
     "./profile/streams": "./src/profile/streams.ts",
     "./assemble/host-grants": "./src/assemble/host-grants.ts",
-    "./profile/channel-runtime": "./src/profile/channel-runtime.ts"
+    "./profile/channel-runtime": "./src/profile/channel-runtime.ts",
+    "./profile/channel-targets": "./src/profile/channel-targets.ts",
+    "./profile/channel-pairing": "./src/profile/channel-pairing.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

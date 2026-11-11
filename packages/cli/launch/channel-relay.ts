@@ -3,6 +3,8 @@ import { httpRpcError, validateMethod } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import { channelWorkbench } from './channel-workbench.js'
 
+const PAIRING_REFUSALS = ['TARGET_PAIRED', 'TARGET_UNAVAILABLE', 'CHANNEL_UNAVAILABLE', 'ID_CONFLICT']
+
 /** Fixed workbench controls. Browser SDK control-plane restrictions remain in force. */
 export function channelRelay(input: {
   client: Client
@@ -26,6 +28,24 @@ export function channelRelay(input: {
       return true
     }
     const body = await input.body(request)
+    if (body?.method === 'channels.pairing') {
+      const params = pairingParams(body)
+      if (!params) {
+        input.reply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })
+        return true
+      }
+      try {
+        await input.initialize()
+        input.reply(response, 200, await channelWorkbench(input.client, input.profile).pairing(params))
+      } catch (error) {
+        // Only the fixed refusal codes pass through; the daemon's message never does.
+        const code = String((error as { data?: { code?: unknown } }).data?.code)
+        input.reply(response, PAIRING_REFUSALS.includes(code) ? 409 : 503, {
+          error: PAIRING_REFUSALS.includes(code) ? httpRpcError(409, code) : httpRpcError(503, 'UNAVAILABLE'),
+        })
+      }
+      return true
+    }
     if (
       typeof body?.method === 'string' &&
       ['channels.overview', 'channels.context', 'channels.configure', 'channels.remove'].includes(body.method)
@@ -155,4 +175,14 @@ export function channelRelay(input: {
     }
     return true
   }
+}
+
+/** The pairing controls: list targets, mint a code (behind a person's approval) and revoke a pairing. */
+function pairingParams(body: Record<string, unknown>): Record<string, unknown> | undefined {
+  const { params } = body
+  if (Object.keys(body).some((key) => !['method', 'params'].includes(key))) return undefined
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return undefined
+  return validateMethod('_agnes/v1/channels.pairing', 'params', params).ok
+    ? (params as Record<string, unknown>)
+    : undefined
 }

@@ -217,6 +217,8 @@ Use supplied tenant/agent and sessionKeyFor. Do not hardcode tenancy or discover
 
 Vendor content can be an object or JSON string; rich text may contain arrays and media fields at different nesting levels. Parse with bounded lengths and verify against real callbacks rather than reporting a missing code because a string was read as an object.
 
+Direct messages can also be paired with a plugin's managed service ([Channel chats for plugin services](channel-targets.md)). The bridge identifies the chat by the session key your `toSession` returns, as a binding does, and replies through your `send`; report a direct message as `chat.type: 'dm'` with the sender's stable user id and the adapter needs nothing more.
+
 ## 9. Submit actual attachment content
 
 The adapter verifies the event, resolves media identifiers/download codes, validates the temporary URL and downloads bounded bytes. toSession then submits content. Harness does not automatically resolve platform download codes or fetch arbitrary Attachment.url values.

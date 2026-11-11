@@ -235,7 +235,7 @@ function publish(
       rowExtensions.replacedBy,
     )
   ctx.say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length, ...timing })
-  const { servicesInvocation, sessionConfiguration, profileServices } = createHostServices(ctx, {
+  const { servicesInvocation, sessionConfiguration, profileServices, pairing } = createHostServices(ctx, {
     proc: f.proc,
     kernel: c.kernelStage.kernel,
     host: e.host,
@@ -249,7 +249,7 @@ function publish(
     activationBarrier: ctx.activationBarrier,
     approvalGrants: t.approvalGrantControl.management,
     profileServices,
-    ...channelControls(f.proc, ctx.profile.name),
+    ...channelControls(f.proc, ctx.profile.name, pairing, ctx.deps.log),
     serviceBinding: (names) => e.host.services.binding(names),
     callService: servicesInvocation.call,
     inspectService: servicesInvocation.inspect,

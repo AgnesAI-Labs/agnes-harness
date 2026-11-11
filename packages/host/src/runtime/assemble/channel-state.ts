@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { PersistenceMetadataPort } from '@agnes/extension-api'
 import { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
+import type { createChannelPairingApprovals } from '@agnes/host-extensions/profile/channel-pairing'
 import { parseAgnesPluginEntries, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { grantKey } from '@agnes/plugin-runtime/host'
+import { type AppServerMethods, type JsonValue, rpcError } from '@agnes/protocol'
 import type { ProcessServices } from './process-services.js'
 
 /** Host-owned index: package removal must not erase credentials or unrelated plugin stores. */
@@ -44,13 +47,21 @@ export function channelState(metadata: PersistenceMetadataPort, profile: string)
   }
 }
 
-export function channelControls(proc: ProcessServices, profile: string) {
+type PairingParams = AppServerMethods['_agnes/v1/channels.pairing']['params']
+
+export function channelControls(
+  proc: ProcessServices,
+  profile: string,
+  pairing: Pick<ReturnType<typeof createChannelPairingApprovals>, 'mint'>,
+  log: import('@agnes/extension-api').Logger,
+) {
   return {
     channelCatalog: () => ({
-      providers: [...proc.channelDirectory.values()].flatMap((read) => {
+      providers: [...proc.channelDirectory].flatMap(([extension, read]) => {
         try {
           return [read()]
-        } catch {
+        } catch (error) {
+          log.warn('Channel provider omitted from the catalog', { extension, error: String(error) })
           return []
         }
       }),
@@ -59,6 +70,31 @@ export function channelControls(proc: ProcessServices, profile: string) {
       if (proc.profileManaged.statuses(packageId).some((row) => row.state !== 'stopped'))
         throw new Error('Channel package is not stopped')
       channelState(proc.adapters.storage.metadata, profile).clear(packageId)
+      proc.channelTargets.releasePackage(packageId)
+    },
+    channelPairing: async (params: PairingParams): Promise<JsonValue> => {
+      if (params.action === 'targets') return { targets: proc.channelTargets.targets() }
+      if (params.action === 'revoke') {
+        proc.channelTargets.revoke(params.pairingId)
+        return {}
+      }
+      // The channel row comes from the live catalogue, never from the request.
+      const provider = [...proc.channelDirectory.values()]
+        .flatMap((read) => {
+          try {
+            return [read() as { extension?: unknown; packageId?: unknown }]
+          } catch {
+            return []
+          }
+        })
+        .find((row) => row.extension === params.extension && typeof row.packageId === 'string')
+      if (!provider) throw rpcError('CAPABILITY_DENIED')
+      const instance = {
+        channel: grantKey(String(provider.packageId), params.extension),
+        instanceId: params.instanceId,
+      }
+      const target = { owner: params.target.owner, service: params.target.service }
+      return (await pairing.mint({ instance, target }, params.operationId)) as unknown as JsonValue
     },
   }
 }

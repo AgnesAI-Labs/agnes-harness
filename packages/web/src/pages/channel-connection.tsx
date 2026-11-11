@@ -2,6 +2,7 @@ import { Button, Disclosure, useDocumentLanguage } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { openChannelDialog } from './channel-dialog-state.js'
 import { channelsChanged } from './channel-model.js'
+import { ChannelPairings } from './channel-pairing.js'
 import { ChannelStatus, channelConnectionState } from './channel-presentation.js'
 import { RemoveConnection } from './channel-remove.js'
 import type { ChannelGroup, ManagedInstance } from './channel-types.js'
@@ -172,6 +173,13 @@ export function ConnectionCard({
               </Button>
             </div>
           ))}
+          <ChannelPairings
+            data={data}
+            group={group}
+            row={row}
+            zh={zh}
+            disabled={busy || removing || row.unavailable || row.statusUnavailable === true}
+          />
           <div className="channel-card-actions">
             <Button
               size="small"
