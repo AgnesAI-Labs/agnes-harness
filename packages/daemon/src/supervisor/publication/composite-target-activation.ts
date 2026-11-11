@@ -30,6 +30,8 @@ export type CompositeTargetActivationOptions = Readonly<{
   store: CompositeTargetStore
   /** Drops state keyed by plugin rows no installed package declares; runs after every reconcile, and must not throw. */
   pruneGrants?(): Promise<void>
+  /** Throws to refuse the removal: a package installed later under the same id must not inherit grants. */
+  revokeGrants?(packageId: string): void
   workerGeneration?: () => number | undefined
   /** Read-only observation of an admitted shared-worker startup, never starts a worker. */
   workerStarting?: () => boolean
@@ -282,6 +284,11 @@ export function createCompositeTargetActivation(
       await options.releaseRetiring?.(packageId)
       await options.collectPins?.()
       await options.collectGenerations?.()
+      try {
+        options.revokeGrants?.(packageId)
+      } catch (error) {
+        throw new Error('E_PACKAGE_STATE: managed workspace grants could not be revoked', { cause: error })
+      }
     },
     async actual(_profile, packageId) {
       return observation(options, packageId, true)

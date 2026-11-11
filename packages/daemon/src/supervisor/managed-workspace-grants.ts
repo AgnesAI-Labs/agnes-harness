@@ -11,7 +11,7 @@ import type {
   ManagedWorkspaceGrantsList,
   ManagedWorkspaceGrantsListParams,
 } from '@agnes/protocol/gen/app-server'
-import type { ManagedSessionRecords } from './managed-session-records.js'
+import { grantKey, type ManagedSessionRecords } from './managed-session-records.js'
 import type { ManagedSessionPackage } from './profile-services.js'
 
 export interface ManagedWorkspaceGrantPorts {
@@ -31,15 +31,29 @@ const refuse = (code: string) => rpcError('SEMANTIC_REJECTED', { code })
 /**
  * Grants exist only for plugin rows that an installed package declares now. Rows come from fresh
  * inventory, and a package whose manifest cannot be read declares none, so its grants go too: the
- * owner grants again. Run after every package change and before every grant admin call, so a row id
- * a later package declares never inherits a grant made for an earlier one.
+ * owner grants again. Run after every package change and before every grant admin call.
  */
 export async function pruneOrphanGrants(
   records: Pick<ManagedSessionRecords, 'grantOwners' | 'revokeAll'>,
   packages: () => Promise<readonly ManagedSessionPackage[]>,
 ): Promise<void> {
-  const live = new Set((await packages()).flatMap((pkg) => [...pkg.owners]))
-  for (const owner of records.grantOwners()) if (!live.has(owner)) records.revokeAll(owner)
+  const live = new Set(
+    (await packages()).flatMap((pkg) => [...pkg.owners].map((owner) => grantKey(pkg.packageId, owner))),
+  )
+  for (const key of records.grantOwners()) if (!live.has(key)) records.revokeAll(key)
+}
+
+/**
+ * Every grant of a package being removed, whatever rows its manifest declares or fails to. Throws
+ * when the store does, so the removal is refused: a package installed later under the same id must
+ * not inherit them.
+ */
+export function revokePackageGrants(
+  records: Pick<ManagedSessionRecords, 'grantOwners' | 'revokeAll'>,
+  packageId: string,
+): void {
+  const prefix = grantKey(packageId, '')
+  for (const key of records.grantOwners()) if (key.startsWith(prefix)) records.revokeAll(key)
 }
 
 /** `pruneOrphanGrants` for a caller with nobody to throw to: a failure is reported and the grants stay. */
@@ -57,8 +71,8 @@ export function quietGrantPruner(
 }
 
 /**
- * The owner's grants, named by package. Records are keyed by plugin row; rows never leave this
- * module, so nothing an owner reads or types carries a row hash.
+ * The owner's grants, named by package. Records are keyed by package and plugin row; rows never leave
+ * this module, so nothing an owner reads or types carries a row hash.
  */
 export function managedWorkspaceGrants(ports: ManagedWorkspaceGrantPorts) {
   const prune = () => pruneOrphanGrants(ports.records, ports.packages)
@@ -75,7 +89,11 @@ export function managedWorkspaceGrants(ports: ManagedWorkspaceGrantPorts) {
       const packages = packageId === undefined ? await ports.packages() : [await installed(packageId)]
       return {
         items: packages.flatMap((pkg) =>
-          [...new Set([...pkg.owners].flatMap((owner) => ports.records.grants(owner)))]
+          [
+            ...new Set(
+              [...pkg.owners].flatMap((owner) => ports.records.grants(grantKey(pkg.packageId, owner))),
+            ),
+          ]
             .sort()
             .map((workspace) => ({ packageId: pkg.packageId, workspace })),
         ),
@@ -96,8 +114,9 @@ export function managedWorkspaceGrants(ports: ManagedWorkspaceGrantPorts) {
       } catch {
         throw refuse('WORKSPACE_NOT_REGISTERED')
       }
-      const changed = [...pkg.owners].some((owner) => !ports.records.granted(owner, root))
-      for (const owner of pkg.owners) ports.records.grant(owner, root)
+      const keys = [...pkg.owners].map((owner) => grantKey(packageId, owner))
+      const changed = keys.some((key) => !ports.records.granted(key, root))
+      for (const key of keys) ports.records.grant(key, root)
       return { packageId, workspace: root, changed }
     },
     /** Works for a disabled package, and for a workspace that was removed or deleted since. */
@@ -110,8 +129,8 @@ export function managedWorkspaceGrants(ports: ManagedWorkspaceGrantPorts) {
       let revoked: string | undefined
       for (const path of spellings)
         for (const owner of pkg.owners)
-          if (ports.records.granted(owner, path)) {
-            ports.records.revoke(owner, path)
+          if (ports.records.granted(grantKey(packageId, owner), path)) {
+            ports.records.revoke(grantKey(packageId, owner), path)
             revoked ??= path
           }
       return { packageId, workspace: revoked ?? canonical ?? workspace, changed: revoked !== undefined }

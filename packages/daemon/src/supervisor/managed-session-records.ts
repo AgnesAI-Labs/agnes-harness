@@ -48,6 +48,14 @@ const record = (row: Row): ManagedSessionRecord => ({
 })
 
 /**
+ * The key of a workspace grant: the package and one of its plugin rows. Row ids are author-chosen, so a
+ * row alone would let a later package that declares the same id inherit the grant. `#` separates the
+ * parts because a package id never contains it, so `${packageId}#` prefixes only that package's keys.
+ * Not NUL: the storage adapter refuses NUL in a bound TEXT parameter.
+ */
+export const grantKey = (packageId: string, owner: string) => `${packageId}#${owner}`
+
+/**
  * Which plugin row manages which session, the workspaces the owner authorized for each row, and the
  * send keys each row used. New tables only: no existing table changes shape.
  */
@@ -167,14 +175,14 @@ export class ManagedSessionRecords {
     )
   }
 
-  /** Every plugin row that holds at least one grant. */
+  /** Every grant key that holds at least one grant. */
   grantOwners(): string[] {
     return this.table
       .all<{ owner: string }>('SELECT DISTINCT owner FROM managed_session_grants ORDER BY owner')
       .map((row) => row.owner)
   }
 
-  /** Every grant of a plugin row that no installed package declares any more. */
+  /** Every grant of one grant key. */
   revokeAll(owner: string): void {
     this.table.exec('DELETE FROM managed_session_grants WHERE owner = ?', [owner])
   }

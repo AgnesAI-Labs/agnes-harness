@@ -370,15 +370,28 @@ describe('managed workspace grants after a package change', () => {
     },
   )
 
-  it('leaves grants to the removal reconcile: prepareRemoval runs while the package is still installed', async () => {
+  it('revokes the removed package grants before removal, and refuses the removal when that fails', async () => {
     const f = fixture()
     const pruned = vi.fn(async () => {})
+    const revoked: string[] = []
     const activation = createCompositeTargetActivation({
       store: f.store,
       revokePackage: f.coordinator.revokePackage,
       pruneGrants: pruned,
+      revokeGrants: (id) => {
+        revoked.push(id)
+      },
     })
     await activation.prepareRemoval?.('default', packageId)
+    expect(revoked).toEqual([packageId])
+    const failing = createCompositeTargetActivation({
+      store: f.store,
+      revokePackage: f.coordinator.revokePackage,
+      revokeGrants: () => {
+        throw new Error('database is locked')
+      },
+    })
+    await expect(failing.prepareRemoval?.('default', packageId)).rejects.toThrow('E_PACKAGE_STATE')
     expect(pruned).not.toHaveBeenCalled()
   })
 })

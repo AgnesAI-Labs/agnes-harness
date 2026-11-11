@@ -12,7 +12,7 @@ import type {
 } from '@agnes/extension-api'
 import type { Actor, SessionActivity, SessionViewResult } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
-import type { ManagedSessionRecord, ManagedSessionRecords } from './managed-session-records.js'
+import { grantKey, type ManagedSessionRecord, type ManagedSessionRecords } from './managed-session-records.js'
 
 /** The Host-verified row a managed service runs for; rechecked by `authorize` on every call. */
 export interface ManagedSessionCaller {
@@ -316,7 +316,8 @@ async function startGates(
   } catch {
     throw refuse('WORKSPACE_NOT_AUTHORIZED')
   }
-  if (!ports.records.granted(caller.owner, root)) throw refuse('WORKSPACE_NOT_AUTHORIZED')
+  if (!ports.records.granted(grantKey(caller.packageId, caller.owner), root))
+    throw refuse('WORKSPACE_NOT_AUTHORIZED')
   const model = input.model
   if (model && !(await ports.models()).some((m) => m.route === model.route && m.model === model.model))
     throw refuse('MODEL_ROUTE_MISSING')

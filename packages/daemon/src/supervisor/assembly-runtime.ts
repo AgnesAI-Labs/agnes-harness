@@ -31,7 +31,7 @@ import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
 import { describeGenerationSessions } from './generation-sessions.js'
 import { readRunningGenerationStatus } from './generation-status-read.js'
-import { quietGrantPruner } from './managed-workspace-grants.js'
+import { quietGrantPruner, revokePackageGrants } from './managed-workspace-grants.js'
 import { managedSessionPackages } from './profile-services.js'
 import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
@@ -358,6 +358,7 @@ async function openRuntimeActivation(
                   }),
                 (message) => o.audit?.({ kind: 'worker.log', sessionKey: '@shared', level: 'warn', message }),
               ),
+              revokeGrants: (packageId: string) => revokePackageGrants(managedSessionRecords, packageId),
             }
           : {}),
         generationStatus: async () => {

@@ -22,7 +22,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { openTestHost, say } from '../../daemon-rpc/test/host.js'
 import { createWorkerRequests } from '../src/supervisor/assembly-worker-requests.js'
 import { managedSessionPorts, managedWorkspaceRoot } from '../src/supervisor/managed-session-ports.js'
-import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
+import { grantKey, ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
 import {
   createManagedSessions,
   type ManagedSessionCaller,
@@ -34,6 +34,7 @@ import {
 import {
   managedWorkspaceGrants,
   registerManagedWorkspaceGrants,
+  revokePackageGrants,
 } from '../src/supervisor/managed-workspace-grants.js'
 import { createSupervisorProfileServices } from '../src/supervisor/profile-services.js'
 import { openWorkspaceCatalog } from '../src/supervisor/workspace-catalog.js'
@@ -237,7 +238,7 @@ const refused = (reason: string) => ({ data: { code: 'CAPABILITY_DENIED', reason
 describe('starting a managed session', () => {
   it('opens one session per start key in an authorized workspace, with backend input identity', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const first = await port(caller).start(start)
     expect(first.created).toBe(true)
     expect(await port(caller).start({ ...start, input: 'again' })).toEqual({
@@ -257,7 +258,7 @@ describe('starting a managed session', () => {
 
   it('resumes a start that crashed after creating the session without queuing the input twice', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const sessionKey = (await port(caller).start(start)).sessionId
     // A crash before `markStarted`: the record exists but is not started.
     records.insert({
@@ -291,8 +292,8 @@ describe('starting a managed session', () => {
     'refuses a resume that asks for %s beyond what the crashed start recorded',
     async (_n, change, reason) => {
       const { state, records, port } = world()
-      records.grant(caller.owner, '/work/repo')
-      records.grant(caller.owner, '/work/other')
+      records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
+      records.grant(grantKey(caller.packageId, caller.owner), '/work/other')
       state.gates = { outwardCheckpoint: true, osBoundary: true }
       records.insert({
         sessionId: 'x',
@@ -335,7 +336,7 @@ describe('starting a managed session', () => {
 
   it('refuses and archives a session a Bundle preset put under full access without an OS boundary', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     state.presetFullAccess = true
     await expect(port(caller).start(start)).rejects.toMatchObject({
       data: { reason: 'FULL_ACCESS_UNAVAILABLE', missing: 'os-boundary' },
@@ -347,7 +348,7 @@ describe('starting a managed session', () => {
 
   it('leaves a start whose opening input lost the inbox unstarted, so a retry queues it', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const sessionKey = `managed-${createHash('sha256').update(`${caller.owner}\0${start.startKey}`).digest('hex').slice(0, 40)}`
     state.busy.add(sessionKey)
     await expect(port(caller).start(start)).rejects.toMatchObject(refused('SESSION_BUSY'))
@@ -370,7 +371,7 @@ describe('starting a managed session', () => {
     ],
   ])('refuses %s and opens nothing', async (_name, change, reason) => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     await expect(port(caller).start({ ...start, ...change })).rejects.toMatchObject(refused(reason))
     expect(state.created).toEqual([])
     expect(records.list(caller.owner)).toEqual([])
@@ -393,7 +394,7 @@ describe('starting a managed session', () => {
     'grants full access only when both gates hold: refused when %s',
     async (_label, gates, live, missing, created) => {
       const { state, records, port } = world()
-      records.grant(caller.owner, '/work/repo')
+      records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
       state.gates = { outwardCheckpoint: true, osBoundary: true, ...gates }
       state.live = { osBoundary: live.osBoundary ?? true }
       const sessionKey = `managed-${createHash('sha256').update(`${caller.owner}\0${start.startKey}`).digest('hex').slice(0, 40)}`
@@ -410,7 +411,7 @@ describe('starting a managed session', () => {
 
   it('grants full access when both gates hold before create and on the open session', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     state.gates = { outwardCheckpoint: true, osBoundary: true }
     state.live = { osBoundary: true }
     const { sessionId } = await port(caller).start({ ...start, permission: 'full-access' })
@@ -420,7 +421,7 @@ describe('starting a managed session', () => {
 
   it('refuses and archives any managed session whose open policy has no outward checkpoint', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const sessionKey = `managed-${createHash('sha256').update(`${caller.owner}\0${start.startKey}`).digest('hex').slice(0, 40)}`
     state.rulesOff.add(sessionKey)
     await expect(port(caller).start(start)).rejects.toMatchObject(refused('OUTWARD_CHECKPOINT_UNAVAILABLE'))
@@ -430,7 +431,7 @@ describe('starting a managed session', () => {
 
   it('creates a managed session under a key its opener already treats as managed', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const { sessionId } = await port(caller).start(start)
     expect(state.managedAtCreate).toEqual([true])
     expect(records.opening.size).toBe(0)
@@ -439,14 +440,14 @@ describe('starting a managed session', () => {
 
   it('refuses while the deployment reviews approvals automatically', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     state.autoReview = true
     await expect(port(caller).start(start)).rejects.toMatchObject(refused('AUTO_REVIEW'))
   })
 
   it('selects the named model route without falling back', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const model = { route: 'local', model: 'model-a' }
     const { sessionId } = await port(caller).start({ ...start, model })
     expect(state.models_set).toEqual([[sessionId, model]])
@@ -454,14 +455,14 @@ describe('starting a managed session', () => {
 
   it('marks an ephemeral session input as excluded from task experience', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const { sessionId } = await port(caller).start({ ...start, retention: 'ephemeral' })
     expect(state.queued.get(sessionId)?.[0]?.actor.attrs.experience).toBe('excluded')
   })
 
   it('turns memory writes and skill installs off for the session when asked', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const plain = await port(caller).start(start)
     const locked = await port(caller).start({
       ...start,
@@ -482,7 +483,7 @@ describe('starting a managed session', () => {
 
   it('keeps skill installs off in every session descended from a session that turned them off', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const plain = await port(caller).start(start)
     const locked = await port(caller).start({ ...start, startKey: 'task-3', skillInstalls: false })
     const child = `${locked.sessionId}/01K00000000000000000000000`
@@ -524,7 +525,7 @@ describe('starting a managed session', () => {
 
   it('refuses a disabled plugin and leaves its sessions with the owner', async () => {
     const { state, records, port } = world()
-    records.grant(caller.owner, '/work/repo')
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const { sessionId } = await port(caller).start(start)
     state.enabled.delete(caller.owner)
     await expect(port(caller).start({ ...start, startKey: 'task-9' })).rejects.toMatchObject(denied)
@@ -541,7 +542,7 @@ describe('starting a managed session', () => {
 describe('driving a managed session', () => {
   async function started() {
     const w = world()
-    w.records.grant(caller.owner, '/work/repo')
+    w.records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const { sessionId } = await w.port(caller).start(start)
     return { ...w, sessionId }
   }
@@ -550,7 +551,8 @@ describe('driving a managed session', () => {
     [
       'the workspace grant is revoked',
       'WORKSPACE_NOT_AUTHORIZED',
-      (w: ReturnType<typeof world>) => w.records.revoke(caller.owner, '/work/repo'),
+      (w: ReturnType<typeof world>) =>
+        w.records.revoke(grantKey(caller.packageId, caller.owner), '/work/repo'),
     ],
     [
       'the workspace is no longer registered',
@@ -589,7 +591,7 @@ describe('driving a managed session', () => {
     'refuses a send once %s, queues nothing, and still lets the plugin read and stop',
     async (_label, reason, change) => {
       const w = world()
-      w.records.grant(caller.owner, '/work/repo')
+      w.records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
       const { sessionId } = await w
         .port(caller)
         .start({ ...start, model: { route: 'local', model: 'model-a' } })
@@ -738,7 +740,7 @@ describe('driving a managed session', () => {
 
   it('archives an ephemeral session once its result is read', async () => {
     const w = world()
-    w.records.grant(caller.owner, '/work/repo')
+    w.records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
     const { sessionId } = await w.port(caller).start({ ...start, retention: 'ephemeral' })
     expect(await w.port(caller).result(sessionId)).toEqual({ turn: null, text: null })
     expect(w.state.archived).toEqual([])
@@ -1010,7 +1012,7 @@ describe('the managed session owner', () => {
     const own = identity(a, 'companion:engine')
     const victim = identity(b, 'other:engine')
     const forged = { ...own, owner: victim.owner }
-    records.grant(victim.owner, '/work/repo')
+    records.grant(grantKey(victim.packageId, victim.owner), '/work/repo')
     const victimSession = await port(victim).start({ ...start, bundle: '@example/other#worker' })
     const calls: [string, () => Promise<unknown>][] = [
       ['start', () => port(forged).start(start)],
@@ -1136,7 +1138,9 @@ describe('the managed session owner', () => {
         })) as { result?: Record<string, unknown>; error?: { data?: { code?: string } } }
       const managed = world(profile.managedSessionAuthority, { records, workspaceRoot })
       const all = () =>
-        [a, b, bare].flatMap((pkg) => records.grants(pluginRowSource(`${pkg.id.slice(9)}:engine`)))
+        [a, b, bare].flatMap((pkg) =>
+          records.grants(grantKey(pkg.id, pluginRowSource(`${pkg.id.slice(9)}:engine`))),
+        )
       return {
         repo,
         link,
@@ -1287,12 +1291,12 @@ describe('the managed session owner', () => {
       const packages: unknown[] = [a, b, bare]
       const { repo, ep, call, managed, owner, records } = await setup(packages)
       await call(ep, 'grant', { packageId: a.id, workspace: repo })
-      records.grant(pluginRowSource('other:engine'), repo)
+      records.grant(grantKey(b.id, pluginRowSource('other:engine')), repo)
       await managed.port(owner).start({ ...start, workspace: repo })
       packages.splice(packages.indexOf(a), 1)
       expect((await call(ep, 'list', {})).result).toEqual({ items: [{ packageId: b.id, workspace: repo }] })
-      expect(records.grants(owner.owner)).toEqual([])
-      expect(records.grants(pluginRowSource('other:engine'))).toEqual([repo])
+      expect(records.grants(grantKey(a.id, owner.owner))).toEqual([])
+      expect(records.grants(grantKey(b.id, pluginRowSource('other:engine')))).toEqual([repo])
       packages.push(a)
       await expect(managed.port(owner).start({ ...afterwards, workspace: repo })).rejects.toMatchObject(
         refused('WORKSPACE_NOT_AUTHORIZED'),
@@ -1304,7 +1308,7 @@ describe('the managed session owner', () => {
     it('drops the grant of a row an update renamed away, so a later update back to the old id inherits nothing', async () => {
       const renamed = installed('@example/renamed', 'old:engine')
       const { repo, ep, call, records, grants } = await setup([a, b, bare, renamed])
-      const old = pluginRowSource('old:engine')
+      const old = grantKey(renamed.id, pluginRowSource('old:engine'))
       await call(ep, 'grant', { packageId: renamed.id, workspace: repo })
       rowsOf(renamed, 'new:engine')
       await grants.prune()
@@ -1321,7 +1325,7 @@ describe('the managed session owner', () => {
       await call(ep, 'grant', { packageId: a.id, workspace: repo })
       await rm(join(broken.directory, 'package.json'))
       expect((await call(ep, 'list', {})).result).toEqual({ items: [{ packageId: a.id, workspace: repo }] })
-      expect(records.grantOwners()).toEqual([pluginRowSource('companion:engine')])
+      expect(records.grantOwners()).toEqual([grantKey(a.id, pluginRowSource('companion:engine'))])
     })
 
     it('prunes a seeded orphan at startup, and never lists or honors one', async () => {
@@ -1361,8 +1365,53 @@ describe('the managed session owner', () => {
           .port(identity(clash, 'companion:engine'))
           .start({ ...start, workspace: repo, startKey: 't3' }),
       ).rejects.toMatchObject(ambiguous)
-      expect(records.grants(owner.owner)).toEqual([repo])
+      expect(records.grants(grantKey(a.id, owner.owner))).toEqual([repo])
       expect(all()).toEqual([repo])
+    })
+
+    it('gives a later package that declares a row an update renamed away none of its grants, even when no prune ran', async () => {
+      const renamed = installed('@example/renamed', 'old:engine')
+      const heir = installed('@example/heir', 'old:engine')
+      const packages: unknown[] = [a, b, bare, renamed]
+      const { repo, ep, call, managed } = await setup(packages)
+      await call(ep, 'grant', { packageId: renamed.id, workspace: repo })
+      rowsOf(renamed, 'new:engine')
+      packages.push(heir)
+      await expect(
+        managed
+          .port(identity(heir, 'old:engine'))
+          .start({ ...start, bundle: `${heir.id}#worker`, workspace: repo }),
+      ).rejects.toMatchObject(refused('WORKSPACE_NOT_AUTHORIZED'))
+    })
+
+    it('gives the remaining package that shares a removed package row none of its grants, even when no prune ran', async () => {
+      const clash = installed('@example/clash', 'companion:engine')
+      const packages: unknown[] = [a, b, bare]
+      const { repo, ep, call, managed } = await setup(packages)
+      await call(ep, 'grant', { packageId: a.id, workspace: repo })
+      packages.push(clash)
+      packages.splice(packages.indexOf(a), 1)
+      await expect(
+        managed
+          .port(identity(clash, 'companion:engine'))
+          .start({ ...start, bundle: `${clash.id}#worker`, workspace: repo }),
+      ).rejects.toMatchObject(refused('WORKSPACE_NOT_AUTHORIZED'))
+    })
+
+    it('revokes every grant of a package being removed and no other, so the same package id installed again starts with none', async () => {
+      const { repo, gone, ep, call, managed, owner, records } = await setup()
+      await call(ep, 'grant', { packageId: a.id, workspace: repo })
+      await call(ep, 'grant', { packageId: a.id, workspace: gone })
+      await call(ep, 'grant', { packageId: b.id, workspace: repo })
+      revokePackageGrants(records, a.id)
+      await expect(managed.port(owner).start({ ...start, workspace: repo })).rejects.toMatchObject(
+        refused('WORKSPACE_NOT_AUTHORIZED'),
+      )
+      const other = identity(b, 'other:engine')
+      expect(
+        (await managed.port(other).start({ ...start, bundle: '@example/other#worker', workspace: repo }))
+          .created,
+      ).toBe(true)
     })
   })
 })
