@@ -2,6 +2,24 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.12.0
+
+### Added
+
+Child-control stores can settle children that a process which exited left active. Existing stores remain
+conformant; nothing changes for plugins.
+
+- Optional `ChildControlStore.listLostChildren` and `ChildControlStore.settleLostChild`, provided together.
+  The first lists a parent's committed children in `ready`, `running`, `waiting_approval`,
+  `recovery_pending` or `cancelling` whose own session holds no live writer lease; the second moves one
+  such child to `failed` (`cancelled` from `cancelling`) after re-checking the lease and the revision in
+  the same write. Core calls them when a parent run starts and tells the parent with error code
+  `E_CHILD_LOST`; without them Core leaves such records alone.
+- `createDelegatedChild` and `casState` admission may leave out of the fan-out count a child in
+  `running`, `waiting_approval`, `recovery_pending` or `cancelling` whose own session and
+  `runtimeOwnerSessionKey` session both hold no live writer lease. Counting every active child stays
+  conformant.
+
 ## 5.11.0
 
 ### Added
