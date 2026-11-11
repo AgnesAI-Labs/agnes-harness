@@ -1,6 +1,7 @@
 import { MemoryStorage } from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
 import type { ChannelTargetEvent, PersistenceMetadataNamespace } from '@agnes/extension-api'
+import type { CardBlock, TextBlock } from '@agnes/extension-api/channel-contract'
 import type { Actor } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { ServiceRegistry } from '../../src/ext-host/services.js'
@@ -30,18 +31,35 @@ function namespace(): PersistenceMetadataNamespace {
   }
 }
 
-function link(sent: { chatId: string; text: string; key: string }[], over: Partial<ChannelTargetLink> = {}) {
+type Sent = { chatId: string; block: TextBlock | CardBlock; key: string }
+
+const CHANNEL_CHARS = 1000
+
+/** What a channel without cards receives for a card: the title, body and a numbered button list. */
+function cardText(block: CardBlock) {
+  const lines = [block.title ? `【${block.title}】` : '', block.body]
+  for (const [index, action] of (block.actions ?? []).entries()) lines.push(`${index + 1}. ${action.label}`)
+  lines.push(`回复 ${block.actions?.map((_, index) => index + 1).join(' / ')} 选择`)
+  return lines.filter((line, index) => index > 0 || line).join('\n')
+}
+
+function link(sent: Sent[], over: Partial<ChannelTargetLink> = {}) {
   let next = 0
-  return {
+  const self: ChannelTargetLink = {
     provider: 'chat',
-    textChars: 20,
+    textChars: CHANNEL_CHARS,
+    card: true,
+    cardBytes: 400,
+    rendered: (block) =>
+      block.kind === 'text' ? block.markdown.length : (self.card ? block.body : cardText(block)).length,
     connected: () => true,
-    async send(chatId: string, text: string, key: string) {
-      sent.push({ chatId, text, key })
+    async send(chatId: string, block: TextBlock | CardBlock, key: string) {
+      sent.push({ chatId, block, key })
       return { messageId: `m-${++next}` }
     },
     ...over,
-  } satisfies ChannelTargetLink
+  }
+  return self
 }
 
 const chat = {
@@ -66,7 +84,7 @@ const service = (targets: ChannelTargets, target = DESK, abort = new AbortContro
 function paired() {
   const store = namespace()
   const targets = new ChannelTargets(store)
-  const sent: { chatId: string; text: string; key: string }[] = []
+  const sent: Sent[] = []
   const bridge = targets.bridge(CHANNEL)
   bridge.attach('desk-bot', link(sent))
   const desk = service(targets)
@@ -123,7 +141,7 @@ describe('channel targets', () => {
       chatId: 'dm-1',
       label: 'Owner',
       running: true,
-      textChars: 20,
+      textChars: 605,
     })
     const pairing = bridge.find('desk-bot', 'dm-1')!
     await expect(bridge.deliver(pairing, {} as ChannelTargetEvent)).rejects.toMatchObject({
@@ -148,14 +166,20 @@ describe('channel targets', () => {
 
   it('sends one message per key, records the ledger and reads it back after a restart', async () => {
     const { store, desk, sent, bridge } = paired()
-    await expect(desk.port.send(PAIR_ID, { deliveryKey: 'k1', text: 'x'.repeat(21) })).rejects.toMatchObject({
-      data: { code: 'TOO_LARGE' },
-    })
+    await expect(desk.port.send(PAIR_ID, { deliveryKey: 'k1', text: 'x'.repeat(606) })).rejects.toMatchObject(
+      {
+        data: { code: 'TOO_LARGE' },
+      },
+    )
     expect(await desk.port.delivery(PAIR_ID, 'k1')).toEqual({ state: 'unknown' })
     expect(await desk.port.send(PAIR_ID, { deliveryKey: 'k1', text: 'remind' })).toEqual({ messageId: 'm-1' })
     expect(await desk.port.send(PAIR_ID, { deliveryKey: 'k1', text: 'remind' })).toEqual({ messageId: 'm-1' })
     expect(sent, 'a repeated key never sends twice').toHaveLength(1)
-    expect(sent[0]).toMatchObject({ chatId: 'dm-1', key: expect.stringMatching(/^[a-f0-9]{64}$/) })
+    expect(sent[0]).toMatchObject({
+      chatId: 'dm-1',
+      block: { kind: 'text', markdown: 'remind' },
+      key: expect.stringMatching(/^[a-f0-9]{64}$/),
+    })
     expect(await desk.port.delivery(PAIR_ID, 'k1')).toEqual({ state: 'delivered', messageId: 'm-1' })
 
     let release: () => void = () => {}
@@ -188,6 +212,157 @@ describe('channel targets', () => {
       expect.objectContaining({ data: { code: 'TARGET_UNCONFIRMED' } }),
     )
     expect(await desk.port.delivery(PAIR_ID, 'k4')).toEqual({ state: 'unknown' })
+  })
+
+  it('composes a titled text or a card with actions, and refuses invalid actions and an oversize card', async () => {
+    const { desk, sent, bridge } = paired()
+    await desk.port.send(PAIR_ID, { deliveryKey: 't', text: 'body', title: 'Heads up' })
+    expect(sent.at(-1)?.block).toEqual({ kind: 'text', markdown: '**Heads up**\nbody' })
+    const actions = [
+      { id: 'pick:1', label: 'One', style: 'primary' as const },
+      { id: 'pick:new', label: 'New', style: 'default' as const },
+      { id: 'drop', label: 'Drop', style: 'danger' as const },
+    ]
+    await desk.port.send(PAIR_ID, { deliveryKey: 'c', text: 'which?', title: 'Pick', actions })
+    expect(sent.at(-1)?.block).toEqual({
+      kind: 'card',
+      title: 'Pick',
+      body: 'which?',
+      actions: [
+        { id: 'pick:1', label: 'One', style: 'primary' },
+        { id: 'pick:new', label: 'New' },
+        { id: 'drop', label: 'Drop', style: 'danger' },
+      ],
+    })
+    await desk.port.send(PAIR_ID, { deliveryKey: 'u', text: 'which?', actions: [{ id: 'a', label: 'A' }] })
+    expect(sent.at(-1)?.block, 'a card without a title').toEqual({
+      kind: 'card',
+      title: '',
+      body: 'which?',
+      actions: [{ id: 'a', label: 'A' }],
+    })
+
+    const count = sent.length
+    const invalid: unknown[] = [
+      [],
+      Array.from({ length: 7 }, (_, index) => ({ id: `a${index}`, label: 'A' })),
+      [{ id: 'has space', label: 'A' }],
+      [{ id: 'x'.repeat(65), label: 'A' }],
+      [
+        { id: 'same', label: 'A' },
+        { id: 'same', label: 'B' },
+      ],
+      [{ id: 'a', label: '' }],
+      [{ id: 'a', label: 'x'.repeat(41) }],
+      [{ id: 'a', label: 'two\nlines' }],
+      [{ id: 'a', label: 'A', style: 'loud' }],
+      'pick',
+    ]
+    for (const bad of invalid)
+      await expect(
+        desk.port.send(PAIR_ID, { deliveryKey: 'bad', text: 'x', actions: bad as never }),
+        JSON.stringify(bad),
+      ).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
+    for (const title of ['', 'x'.repeat(101), 'two\nlines', 7])
+      await expect(
+        desk.port.send(PAIR_ID, { deliveryKey: 'bad', text: 'x', title: title as never }),
+      ).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
+    const big = Array.from({ length: 6 }, (_, index) => ({
+      id: `${'i'.repeat(60)}${index}`,
+      label: 'L'.repeat(40),
+    }))
+    await expect(
+      desk.port.send(PAIR_ID, { deliveryKey: 'big', text: 'x', actions: big }),
+      'a composed card over cardBytes',
+    ).rejects.toMatchObject({ data: { code: 'TOO_LARGE' } })
+    expect(sent, 'nothing refused reaches the channel').toHaveLength(count)
+    expect(await desk.port.delivery(PAIR_ID, 'big')).toEqual({ state: 'unknown' })
+
+    bridge.attach('desk-bot', link(sent, { card: false }))
+    await desk.port.send(PAIR_ID, { deliveryKey: 'big', text: 'x', actions: big })
+    expect(sent.at(-1)?.block.kind, 'a text-only channel degrades the card instead').toBe('card')
+  })
+
+  it('keeps what the platform adds around a send inside the channel limit', async () => {
+    const { desk, sent, bridge } = paired()
+    const limit = (await desk.port.pairing())!.textChars
+    expect(limit, 'the reserve is the worst case of a title and six buttons').toBe(CHANNEL_CHARS - 395)
+    const receivedLength = (block: TextBlock | CardBlock) =>
+      block.kind === 'text' ? block.markdown.length : cardText(block).length
+
+    await desk.port.send(PAIR_ID, { deliveryKey: 'titled', text: 'x'.repeat(limit), title: 'T'.repeat(100) })
+    expect(receivedLength(sent.at(-1)!.block)).toBeLessThanOrEqual(CHANNEL_CHARS)
+
+    bridge.attach('desk-bot', link(sent, { card: false }))
+    const buttons = Array.from({ length: 6 }, (_, index) => ({ id: `b${index}`, label: 'L'.repeat(40) }))
+    await desk.port.send(PAIR_ID, {
+      deliveryKey: 'buttons',
+      text: 'x'.repeat(limit),
+      title: 'T'.repeat(100),
+      actions: buttons,
+    })
+    expect(receivedLength(sent.at(-1)!.block), 'a text-only channel also gets the button list').toBe(
+      CHANNEL_CHARS,
+    )
+
+    const count = sent.length
+    bridge.attach('desk-bot', link(sent, { textChars: 300 }))
+    expect((await desk.port.pairing())!.textChars, 'the reserve never drops the limit below one').toBe(1)
+    await expect(
+      desk.port.send(PAIR_ID, { deliveryKey: 'small', text: 'xx' }),
+      'text over the reported limit',
+    ).rejects.toMatchObject({ data: { code: 'TOO_LARGE' } })
+    bridge.attach('desk-bot', link(sent, { rendered: () => CHANNEL_CHARS + 1 }))
+    await expect(
+      desk.port.send(PAIR_ID, { deliveryKey: 'long', text: 'x', title: 'Heads up' }),
+      'rendered text over the channel limit',
+    ).rejects.toMatchObject({ data: { code: 'TOO_LARGE' } })
+    expect(sent, 'nothing refused reaches the channel').toHaveLength(count)
+    expect(await desk.port.delivery(PAIR_ID, 'long')).toEqual({ state: 'unknown' })
+  })
+
+  it('delivers a click only on a message this service sent, under the id its send returned', async () => {
+    const { desk, bridge, targets } = paired()
+    const events: ChannelTargetEvent[] = []
+    desk.port.onEvent(async (event) => void events.push(event))
+    bridge.attach('desk-bot', {
+      ...link([]),
+      send: async () => ({ messageId: 'om-1', cardBizId: 'card-1' }),
+    })
+    await desk.port.send(PAIR_ID, { deliveryKey: 'c', text: 'which?', actions: [{ id: 'a', label: 'A' }] })
+    const pairing = bridge.find('desk-bot', 'dm-1')!
+    const click = (messageId: string, eventId: string): ChannelTargetEvent => ({
+      kind: 'action',
+      origin: 'owner',
+      pairingId: PAIR_ID,
+      instanceId: 'desk-bot',
+      eventId,
+      at: '2026-11-12T00:00:00Z',
+      chat: { id: 'dm-1', type: 'dm' },
+      sender: { userId: 'owner' },
+      messageId,
+      actionId: 'a',
+    })
+    await bridge.deliver(pairing, click('card-1', 'by-card-id'))
+    await bridge.deliver(pairing, click('om-1', 'by-message-id'))
+    await bridge.deliver(pairing, click('om-other', 'not-ours'))
+    expect(events.map((event) => event.eventId)).toEqual(['by-card-id', 'by-message-id'])
+    expect(events[0]).toMatchObject({ kind: 'action', messageId: 'om-1', actionId: 'a' })
+
+    await desk.port.unpair(PAIR_ID)
+    const sibling = service(targets, { owner: DESK.owner, service: 'sibling' })
+    const siblingEvents: ChannelTargetEvent[] = []
+    sibling.port.onEvent(async (event) => void siblingEvents.push(event))
+    const { code } = targets.mint(
+      { channel: CHANNEL, instanceId: 'desk-bot' },
+      { owner: DESK.owner, service: 'sibling' },
+    )
+    bridge.confirm('desk-bot', code, chat)
+    await bridge.deliver(bridge.find('desk-bot', 'dm-1')!, click('om-1', 'earlier-service'))
+    expect(
+      siblingEvents,
+      'a sibling service paired later never gets clicks on the earlier service message',
+    ).toEqual([])
   })
 
   it('releases pairings and ledger rows when either package is removed, and retains only current instances', async () => {

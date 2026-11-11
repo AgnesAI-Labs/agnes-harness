@@ -74,7 +74,7 @@ const aborted = (signal: AbortSignal): PermissionOutcome => ({
   unanswered: signal.reason === 'stopped' || signal.reason === 'deadline' ? signal.reason : 'detached',
 })
 const APPROVAL_TEXT = /^(同意|拒绝)\s+(\S{6,128})$/
-const MAX_CALLBACK_CHARS = 512
+export const MAX_CALLBACK_CHARS = 512
 const MAX_ACTION_CHARS = 512
 const ACTION_TTL_MS = 5 * 60_000
 const MAX_RECENT_ACTIONS = 4_096

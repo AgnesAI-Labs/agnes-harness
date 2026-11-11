@@ -55,7 +55,7 @@ export function approvalAsText(block: ApprovalBlock): string {
 }
 
 function cardAsText(block: CardBlock): string {
-  const lines = [`【${block.title}】`, block.body]
+  const lines = block.title ? [`【${block.title}】`, block.body] : [block.body]
   for (const [key, value] of block.fields ?? []) lines.push(`${key}: ${value}`)
   if (block.actions?.length) {
     block.actions.forEach((action, index) => {

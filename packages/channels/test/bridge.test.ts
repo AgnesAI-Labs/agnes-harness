@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ChannelInstance, ChannelProvider, ProfileManagedInit } from '@agnes/extension-api'
 import { afterEach, expect, it, vi } from 'vitest'
+import type { CardBlock } from '../src/adapter.js'
 import { channelBindingSnapshot, startChannelBridge } from '../src/bridge.js'
+import { createTargetRouter } from '../src/targets.js'
 import { createFakeClient, FAKE_MANIFEST, FakeChannel } from '../testkit/index.js'
 
 const cleanups: (() => Promise<unknown>)[] = []
@@ -483,7 +485,7 @@ it('pairs a direct chat with a code and routes only the paired owner text to the
   expect(targets.pairings[0]).toMatchObject({ chatId: 'owner-chat', userId: 'owner', accountId: 'account' })
 
   adapter.emit(dm('ABCD-EFGH', { eventId: 'after-pairing' }))
-  adapter.emit(dm('hello desk', { eventId: 'owner-message' }))
+  adapter.emit(dm('hello desk', { eventId: 'owner-message', quotedMessageId: 'om-quoted' }))
   adapter.emit(dm('not the owner', { eventId: 'stranger', sender: { userId: 'stranger', raw: {} } }))
   await vi.waitFor(() =>
     expect(targets.delivered.map((e) => e.eventId)).toEqual(['after-pairing', 'owner-message']),
@@ -499,7 +501,11 @@ it('pairs a direct chat with a code and routes only the paired owner text to the
     chat: { id: 'owner-chat', type: 'dm' },
     sender: { userId: 'owner' },
     text: 'hello desk',
+    quotedMessageId: 'om-quoted',
   })
+  expect(targets.delivered[0], 'no quoted id when the channel reports none').not.toHaveProperty(
+    'quotedMessageId',
+  )
   expect(client.calls.some((call) => call.method === 'session.new' || call.method === 'followUp')).toBe(false)
 
   client.claimResults.set('channel-event:fake:account:replayed', false)
@@ -520,9 +526,22 @@ it('pairs a direct chat with a code and routes only the paired owner text to the
   expect(targets.delivered.map((e) => e.eventId)).not.toContain('replayed')
 
   const link = targets.links.get('first')!
-  expect(link).toMatchObject({ provider: 'fake', textChars: FAKE_MANIFEST.limits.textChars })
+  expect(link).toMatchObject({
+    provider: 'fake',
+    textChars: FAKE_MANIFEST.limits.textChars,
+    card: true,
+    cardBytes: FAKE_MANIFEST.limits.cardBytes,
+  })
   expect(link.connected()).toBe(true)
-  const sent = await link.send('owner-chat', 'reminder', 'key-1')
+  const card: CardBlock = {
+    kind: 'card',
+    title: 'Pick',
+    body: 'which?',
+    actions: [{ id: 'a', label: 'One' }],
+  }
+  expect(link.rendered(card), 'the fake channel renders cards, so only the body counts').toBe(6)
+  expect(link.rendered({ kind: 'text', markdown: '**T**\nbody' })).toBe(10)
+  const sent = await link.send('owner-chat', { kind: 'text', markdown: 'reminder' }, 'key-1')
   expect(sent.messageId).toBeTruthy()
   expect(adapter.sent.at(-1)).toMatchObject({ target: { chatId: 'owner-chat', deliveryKey: 'key-1' } })
   expect(runtime.status()).toMatchObject({
@@ -533,6 +552,81 @@ it('pairs a direct chat with a code and routes only the paired owner text to the
   await vi.waitFor(() =>
     expect(targets.pairings, 'another platform account drops the pairing').toHaveLength(0),
   )
+})
+
+const click = (value: string, over: Record<string, unknown> = {}) =>
+  ({
+    kind: 'cardAction',
+    eventId: `click-${Math.random()}`,
+    accountId: 'account',
+    at: '2026-11-12T00:00:00Z',
+    chat: { id: 'owner-chat', type: 'dm' },
+    sender: { userId: 'owner', raw: {} },
+    cardBizId: 'm-card',
+    value,
+    ...over,
+  }) as import('../src/adapter.js').ChannelEvent
+
+it('routes the paired owner card clicks to the service and never lets a paired-chat click reach a session', async () => {
+  const f = await fixture()
+  const targets = memoryTargets()
+  Object.assign(f.init, { config: { instances: [f.instance] } })
+  await startChannelBridge(f.provider, f.init, { ...f.options, targets: targets.port })
+  cleanups.push(f.stop)
+  const adapter = f.adapters[0]!
+  const client = f.clients[0]!
+  adapter.emit(dm('ABCD-EFGH'))
+  await vi.waitFor(() => expect(targets.pairings).toHaveLength(1))
+
+  const card = {
+    kind: 'card' as const,
+    title: 'Pick',
+    body: 'which?',
+    actions: [{ id: 'pick:1', label: 'One' }],
+  }
+  await targets.links.get('first')!.send('owner-chat', card, 'card-key')
+  expect(adapter.sent.at(-1)).toMatchObject({ target: { deliveryKey: 'card-key' }, msg: { blocks: [card] } })
+
+  adapter.emit(click('appr:#1:allow_once', { eventId: 'stranger', sender: { userId: 'stranger', raw: {} } }))
+  adapter.emit(click('pick:1', { eventId: 'too-long', cardBizId: 'm-card', value: 'x'.repeat(513) }))
+  adapter.emit(click('pick:1', { eventId: 'empty', value: '' }))
+  adapter.emit(click('pick:1', { eventId: 'unpaired-chat', chat: { id: 'other-chat', type: 'dm' } }))
+  adapter.emit(click('pick:1', { eventId: 'owner-click' }))
+  await vi.waitFor(() => expect(targets.delivered.map((event) => event.eventId)).toContain('owner-click'))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(targets.delivered.map((event) => event.eventId)).toEqual(['owner-click'])
+  expect(targets.delivered[0]).toEqual({
+    kind: 'action',
+    origin: 'owner',
+    pairingId: targets.pairings[0]!.id,
+    instanceId: 'first',
+    eventId: 'owner-click',
+    at: '2026-11-12T00:00:00Z',
+    chat: { id: 'owner-chat', type: 'dm' },
+    sender: { userId: 'owner' },
+    messageId: 'm-card',
+    actionId: 'pick:1',
+  })
+  expect(
+    client.calls.filter((call) => !['initialize', 'apis', 'claim.once'].includes(call.method)),
+    'a dropped click in the paired chat never reaches a session or an approval',
+  ).toEqual([])
+
+  const router = createTargetRouter({
+    targets: targets.port,
+    instanceId: 'first',
+    credentials: 'fingerprint',
+    cfg: {} as never,
+    adapter: () => adapter,
+    runner: () => undefined,
+    bindings: {} as never,
+    signal: new AbortController().signal,
+  })
+  expect(
+    router.intercept(click('appr:#1:allow_once', { sender: { userId: 'stranger', raw: {} } })),
+    'the router keeps a stranger click in a paired chat away from the session path',
+  ).toBe(true)
+  expect(router.intercept(click('pick:1', { chat: { id: 'other-chat', type: 'dm' } }))).toBe(false)
 })
 
 it('keeps a code-shaped text on the session path without a live code, and refuses pairing a bound chat', async () => {
