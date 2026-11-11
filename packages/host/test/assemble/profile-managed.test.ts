@@ -117,9 +117,10 @@ it('publishes and retires a channel factory through current-profile managed reso
     inject,
     configReload: 'live',
   })
+  let rowConfig: Record<string, unknown> = {}
   const target = (disabled: boolean) =>
     buildRuntimeTarget({
-      rows: [{ ...row, disabled }],
+      rows: [{ ...row, disabled, config: rowConfig as never }],
       resources: { mcp: [], skills: {} },
       resourceRevision: '0'.repeat(64),
       compositeRevision: '0'.repeat(64),
@@ -230,6 +231,13 @@ it('publishes and retires a channel factory through current-profile managed reso
     await expect(host.profileServices!.call(check, { kind: 'local' })).resolves.toMatchObject({
       output: { provider: manifest.id },
     })
+    // A live plugin config change reloads the mounted row in place; its channel must stay listed.
+    rowConfig = { revision: 2 }
+    await publish(false)
+    expect(host.channelCatalog?.()).toMatchObject({ providers: [{ extension: owner, packageId }] })
+    await expect(host.profileServices!.call(check, { kind: 'local' })).resolves.toMatchObject({
+      output: { provider: manifest.id },
+    })
     await publish(true)
     expect(host.channelCatalog?.()).toEqual({ providers: [] })
     await expect(host.profileServices!.call(check, { kind: 'local' })).rejects.toBeDefined()
@@ -237,17 +245,17 @@ it('publishes and retires a channel factory through current-profile managed reso
     await expect(host.profileServices!.call(check, { kind: 'local' })).resolves.toMatchObject({
       output: { provider: manifest.id },
     })
-    expect(starts).toBe(2)
-    expect(stops).toBe(1)
-    expect(configurations[1]).toMatchObject({ instances: [{ id: 'saved' }] })
+    expect(starts).toBe(3)
+    expect(stops).toBe(2)
+    expect(configurations[2]).toMatchObject({ instances: [{ id: 'saved' }] })
     expect(() => host.clearChannelState?.(packageId)).toThrow('not stopped')
     await publish(true)
     host.clearChannelState?.(packageId)
     host.clearChannelState?.(packageId)
     await publish(false)
-    expect(configurations[2]).toEqual({ instances: [] })
-    expect(channelStores[2]?.get('bindings:saved')).toBeUndefined()
-    expect(channelStores[2]?.get('other-state')).toEqual({ retained: true })
+    expect(configurations[3]).toEqual({ instances: [] })
+    expect(channelStores[3]?.get('bindings:saved')).toBeUndefined()
+    expect(channelStores[3]?.get('other-state')).toEqual({ retained: true })
     await publish(true)
     failStartup = true
     await publish(false)

@@ -249,7 +249,7 @@ function publish(
     activationBarrier: ctx.activationBarrier,
     approvalGrants: t.approvalGrantControl.management,
     profileServices,
-    ...channelControls(f.proc, ctx.profile.name, pairing),
+    ...channelControls(f.proc, ctx.profile.name, pairing, ctx.deps.log),
     serviceBinding: (names) => e.host.services.binding(names),
     callService: servicesInvocation.call,
     inspectService: servicesInvocation.inspect,
