@@ -136,6 +136,7 @@ describe('tool types', () => {
       | 'requiresApproval'
       | 'paths'
       | 'commandArg'
+      | 'outward'
       | 'isPresentational'
       | 'modelVisible'
       | 'requiresImageInput'

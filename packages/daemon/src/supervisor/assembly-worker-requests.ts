@@ -17,6 +17,14 @@ import { callWorkerScheduling } from './scheduling-service.js'
 import { createSkillInstallRequests } from './skill-install-requests.js'
 import type { WorkerPool } from './worker-pool.js'
 
+/** Every request kind that installs code or a server into the profile; `skillInstalls: false` refuses all. */
+const PACKAGE_INSTALL_REQUESTS: ReadonlySet<string> = new Set([
+  'skill-install',
+  'refinement-save',
+  'plugin-manage',
+  'mcp-manage',
+])
+
 export function createWorkerRequests(
   state: AssemblyBase & StoresState & WorkersState & RuntimeState & WorkerRequestServices,
   lifetime: AssemblyLifetime,
@@ -102,10 +110,15 @@ export function createWorkerRequests(
     sessionKey,
     f,
     workerSignal,
+    sharedWorker,
   ) => {
     if (f.method === 'scheduling')
       return callWorkerScheduling(schedules, workspaceCatalog, sessionKey, f.params, workerSignal)
     if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
+    if (f.method === 'managed-session')
+      return profilePorts.ownedSession({ sharedWorker, sessionKey }, f.params)
+    if (PACKAGE_INSTALL_REQUESTS.has(f.method) && profilePorts.managedSessions.skillInstallsOff?.(sessionKey))
+      throw rpcError('CAPABILITY_DENIED', { reason: 'MANAGED_SKILL_INSTALLS_OFF' })
     if (f.method === 'refinement-save') return refinementSkillRequests(sessionKey, f.params)
     if (['plugin-manage', 'mcp-manage', 'skill-install'].includes(f.method))
       return permissionRequest(

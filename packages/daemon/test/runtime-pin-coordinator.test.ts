@@ -336,6 +336,53 @@ describe('runtime active pin coordinator', () => {
   })
 })
 
+describe('managed workspace grants after a package change', () => {
+  const reconcile = (
+    activation: ReturnType<typeof createCompositeTargetActivation>,
+    operation: 'update' | 'remove',
+  ) =>
+    activation.reconcile({
+      profile: 'default',
+      packageId: packageId,
+      operationId: `${operation}:op`,
+      operation,
+      signal: new AbortController().signal,
+    })
+
+  it.each(['update', 'remove'] as const)(
+    'prunes after a %s reconcile, whether it succeeds or throws',
+    async (operation) => {
+      const f = fixture()
+      const pruned = vi.fn(async () => {})
+      const unprobed = createCompositeTargetActivation({ store: f.store, pruneGrants: pruned })
+      expect((await reconcile(unprobed, operation)).actual).toBe('failed')
+      expect(pruned).toHaveBeenCalledTimes(1)
+      const failing = createCompositeTargetActivation({
+        store: f.store,
+        probe: async () => {},
+        desiredFor: async () => {
+          throw new Error('derivation failed')
+        },
+        pruneGrants: pruned,
+      })
+      await expect(reconcile(failing, operation)).rejects.toThrow('derivation failed')
+      expect(pruned).toHaveBeenCalledTimes(2)
+    },
+  )
+
+  it('leaves grants to the removal reconcile: prepareRemoval runs while the package is still installed', async () => {
+    const f = fixture()
+    const pruned = vi.fn(async () => {})
+    const activation = createCompositeTargetActivation({
+      store: f.store,
+      revokePackage: f.coordinator.revokePackage,
+      pruneGrants: pruned,
+    })
+    await activation.prepareRemoval?.('default', packageId)
+    expect(pruned).not.toHaveBeenCalled()
+  })
+})
+
 describe('concurrent reconcile publication', () => {
   const alpha = 'acme/alpha'
   const quill = 'acme/quill'

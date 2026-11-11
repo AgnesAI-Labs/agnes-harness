@@ -272,6 +272,28 @@ describe('saving the result of a run to the workspace', () => {
     await t.session.close()
   })
 
+  it.each([
+    ['the user', 'manual', 'workspace'],
+    ['the user', 'manual', 'user'],
+    ['the model', 'model', 'workspace'],
+  ] as const)(
+    'a session opened with memory writes off applies %s run but saves nothing (%s, %s)',
+    async (_who, kind, saveTo) => {
+      const h = host()
+      const t = await open({
+        workspace: h.workspace,
+        attrs: { memoryWrites: 'off' },
+        answers: [() => output({ edits: [upsert('kept', { quote: QUOTE })], evidenceIds: ['e1'] })],
+      })
+      expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+      const outcome = await refinementFacade(t.session).request({ kind, seq: t.session.lastSeq, saveTo })
+      expect(await ended(t, (outcome as { runId: string }).runId)).toMatchObject({ state: 'applied' })
+      expect(h.asked).toEqual([])
+      expect(await saveRows(t)).toEqual([])
+      await t.session.close()
+    },
+  )
+
   it('/refine saveTo user offers each applied entry to user memory as the user, in either mode', async () => {
     for (const mode of ['manual', 'auto'] as const) {
       const h = host()
@@ -556,6 +578,40 @@ describe('saving the result of a run to the workspace', () => {
     expect(h.asked).toHaveLength(0)
     await t.session.close()
     await u.session.close()
+  })
+
+  it('a session opened by an input excluded from experience refuses every trigger but the owner', async () => {
+    const t = await open()
+    await t.session.enqueue('next-turn', {
+      content: [{ type: 'text', text: REQUEST }],
+      actor: {
+        id: 'plugin:p',
+        org: 'plugin',
+        role: 'trigger',
+        deptPath: [],
+        attrs: { experience: 'excluded' },
+      },
+      origin: 'system',
+    })
+    expect(await t.session.run({ until: 'turn-end', signal: new AbortController().signal })).toMatchObject({
+      reason: 'completed',
+    })
+    const before = t.session.lastSeq
+    const facade = refinementFacade(t.session)
+    expect(await facade.request({ kind: 'model', seq: before })).toEqual({ refused: 'unavailable' })
+    expect(await facade.request({ kind: 'repeated-failure', seq: before, focus: 'shell' })).toEqual({
+      refused: 'unavailable',
+    })
+    expect(
+      await facade.propose({
+        rationale: 'r',
+        evidenceSeqs: [1],
+        edits: [{ op: 'upsert', kind: 'memory', id: 'm', title: 'M', content: 'Fact.' }],
+      }),
+    ).toEqual({ refused: 'unavailable' })
+    expect(t.session.lastSeq).toBe(before)
+    expect(await facade.request({ kind: 'manual', seq: before })).toHaveProperty('runId')
+    await t.session.close()
   })
 
   it('child sessions and forks are refused', async () => {

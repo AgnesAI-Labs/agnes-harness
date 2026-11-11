@@ -15,6 +15,7 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeHome } from '@agnes/host'
 import { createPackageManager, emptyLock, packageDir, parseSource, writeLock } from '@agnes/package-manager'
+import { NODE_MEMORY_FLAGS } from '@agnes/system-node/node-flags'
 import { describe, expect, it } from 'vitest'
 import { windowsChildren, windowsIdentities } from './windows-processes.js'
 
@@ -22,6 +23,19 @@ const bin = process.env.AGNES_SEA_BIN
 const harness = process.env.AGNES_SEA_LOADER_HARNESS
 
 describe.skipIf(!bin || !harness)('SEA smoke', () => {
+  it('starts the CLI with the Node memory flags from the SEA configuration', () => {
+    const probe = fileURLToPath(new URL('./fixtures/exec-argv.cjs', import.meta.url))
+    const run = spawnSync(resolve(bin as string), ['--version'], {
+      encoding: 'utf8',
+      env: { ...process.env, NODE_OPTIONS: `--require ${JSON.stringify(probe)}` },
+      windowsHide: true,
+    })
+    expect(run.status, run.stderr).toBe(0)
+    const reported = run.stderr.split(/\r?\n/).find((line) => line.startsWith('exec-argv '))
+    expect(reported, run.stderr).toBeDefined()
+    expect(JSON.parse((reported as string).slice('exec-argv '.length))).toEqual(NODE_MEMORY_FLAGS)
+  })
+
   it('runs production commands and loads a TypeScript extension through the SEA loader', async () => {
     const temporary = mkdtempSync(join(tmpdir(), 'agnes-sea-'))
     const home = join(temporary, 'home')

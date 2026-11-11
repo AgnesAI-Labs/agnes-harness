@@ -2,14 +2,94 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
-## 5.8.0
+## 5.11.0
 
 ### Added
+
+Channel plugins join the managed profile runtime. Providers using these additions should require `^5.11.0`.
 
 - Optional `ChannelManifest.displayNames` with `en` and `zh-CN` names (1–64 characters).
   Channel lists, binding dialogs and composer status select the current UI language, falling back
   to `displayName`, then `id`. Names do not change routing or persisted identities. Existing providers
-  remain compatible; providers declaring this field should require `^5.8.0`.
+  remain compatible; providers declaring this field should require `^5.11.0`.
+
+- Optional `ChannelManifest.icon`: a PNG/JPEG data URL up to 32768 characters. Harness renders
+  validated artwork in channel lists and connection dialogs, with a default channel glyph when
+  absent or invalid. No external asset requests or new permissions. Existing channel providers
+  remain compatible; providers declaring this field should require `^5.11.0`.
+
+- Optional channel provider configuration schemas and session binding methods. The shared channel
+  page configures managed resources through native profile approval. `channelServiceCapabilities`
+  declares the backend-owned session query, bind and unbind services; packages must review these
+  new grants before binding is available. Existing adapters still load with configuration only.
+- Explicit bindings attach existing authorized sessions, persist routing metadata and start after
+  the binding projection watermark. No history is exported. Reconnect requires an inbound target
+  confirmation; incomplete transitions remain paused. Native approval decisions stay in AGH.
+
+- Optional `PluginProfileRuntimePort.registerChannel`: registers a platform provider and its
+  backend-owned profile channel resource. `channelKind`, `CHANNEL_CONFIG_SCHEMA` and the public
+  `channel-contract` entry expose the existing adapter contract without private runner imports.
+- Multi-instance channel configuration uses AGH secret references and explicit workspace/agent
+  bindings. Existing generic runner imports and existing plugins retain their behavior.
+
+## 5.10.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.10.0 and no existing contract changes for a plugin
+that does not use them.
+
+- `init.sessions` (`ManagedSessions`): a profile-scoped managed service that declares `sessions: true`
+  opens and drives sessions the owner owns. It offers `start`, `send`, `list`, `status`, `events`,
+  `result`, `usage`, `toolResult`, `interrupt` and `archive`, and sees only the sessions it manages.
+  `events` reports how each approval ended as an `approvalOutcome` event (`allowed`, `rejected` or
+  `expired`, via `person`, `full-access` or `automatic`). `toolResult` returns a `state` (`pending` or
+  `done`) and, for `shell`, the exit code as a number.
+- `memoryWrites: false` and `skillInstalls: false` on `start` refuse durable memory writes and skill,
+  plugin and MCP installs for the session and its descendants, whatever the permission mode.
+- A session opens only in a workspace the owner granted to the plugin with `agh plugins grants`; the
+  plugin cannot grant one. Every session runs with the outward checkpoint, and `permission: 'full-access'`
+  is refused unless the outward checkpoint and a full OS boundary both hold.
+
+See [Plugin-managed sessions](../../../docs/extend/managed-sessions.md).
+
+## 5.9.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.9.0 and no existing contract changes for a tool that
+does not declare them.
+
+- `ToolMeta.outward`: the tool sends content to someone other than the owner or changes remote state
+  (push, pull request, post, publish). Every call stops for a person, once, in every session and
+  permission mode; full access, automatic review, command-table rules, session or lasting grants,
+  `Approval` replacements and hooks cannot approve it. Only an actor whose role is `owner` or `user`
+  answers it. It requires `isOpenWorld: true` and `requiresApproval: 'always'`. This is a guarantee.
+- `ApprovalConstraints.checkpoint: 'outward'` and `isOutwardCheckpoint(approval)`: the constraints Core
+  puts on an outward call. Full access does not answer such a question, and an answer other than
+  approve or reject is recorded as a rejection.
+
+Shell commands are not outward by declaration. A Host can open a session with outward command rules,
+which hold known outward shell commands at the same checkpoint. They are best effort, off by default
+and have known gaps (variables, command substitution, functions, pipes into a shell, scripts); see the
+security guide. They are not part of this API.
+
+## 5.8.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.8.0 and no existing contract changes. A loop that
+ignores them behaves as before.
+
+- A thinking block may carry `signature` (a non-empty string): the provider's marker for where that
+  reasoning goes back on a later request (for example `reasoning_content`). It can appear on stored
+  assistant content (`AssistantMessage['content']`, so in `LoopToolCallOptions.announce` and
+  `events.assistant`) and on the assistant messages of a request body (`RequestBody['messages']`).
+- A model stream's `done` event (`InferenceEvent`) may carry `thinkingSignature`, the signature of the
+  message's first signed thinking block.
+- Core records a signature only from openai-completions streams and sends it back only to the route
+  and model that produced it; a signature in a loop's own `messages` is not sent. A loop passes it
+  through as it is and never builds one.
 
 ## 5.7.0
 
@@ -25,11 +105,6 @@ The additions are optional; `^5.0.0` ranges admit 5.7.0.
 - `ChildStatus.stopReason`: `budget` or `max_steps` for a `failed` child whose last turn stopped at
   that cap instead of ending in error.
 
-- Optional `ChannelManifest.icon`: a PNG/JPEG data URL up to 32768 characters. Harness renders
-  validated artwork in channel lists and connection dialogs, with a default channel glyph when
-  absent or invalid. No external asset requests or new permissions. Existing channel providers
-  remain compatible; providers declaring this field should require `^5.7.0`.
-
 ### Fixed
 
 - `ctx.subagent.collect` and `ctx.subagent.cancel` answer `cancelled` for a cancelled in-process
@@ -39,14 +114,6 @@ The additions are optional; `^5.0.0` ranges admit 5.7.0.
 ## 5.6.0
 
 ### Added
-
-- Optional channel provider configuration schemas and session binding methods. The shared channel
-  page configures managed resources through native profile approval. `channelServiceCapabilities`
-  declares the backend-owned session query, bind and unbind services; packages must review these
-  new grants before binding is available. Existing 5.5 adapters still load with configuration only.
-- Explicit bindings attach existing authorized sessions, persist routing metadata and start after
-  the binding projection watermark. No history is exported. Reconnect requires an inbound target
-  confirmation; incomplete transitions remain paused. Native approval decisions stay in AGH.
 
 The addition is optional; `^5.0.0` ranges admit 5.6.0 and no existing contract changes.
 
@@ -58,12 +125,6 @@ The addition is optional; `^5.0.0` ranges admit 5.6.0 and no existing contract c
 ## 5.5.0
 
 ### Added
-
-- Optional `PluginProfileRuntimePort.registerChannel`: registers a platform provider and its
-  backend-owned profile channel resource. `channelKind`, `CHANNEL_CONFIG_SCHEMA` and the public
-  `channel-contract` entry expose the existing adapter contract without private runner imports.
-- Multi-instance channel configuration uses AGH secret references and explicit workspace/agent
-  bindings. Existing generic runner imports and existing plugins retain their behavior.
 
 All additions are optional; `^5.0.0` ranges admit 5.5.0 and no existing contract changes for a Host that
 does not use them.

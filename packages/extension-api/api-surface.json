@@ -1,5 +1,5 @@
 {
-  "apiVersion": "5.8.0",
+  "apiVersion": "5.11.0",
   "runtimeExports": [
     "API_VERSION",
     "APPROVAL_DEFAULTS",
@@ -65,6 +65,7 @@
     "extEventType",
     "isExtensionError",
     "isJsonPayload",
+    "isOutwardCheckpoint",
     "isPersistenceTombstone",
     "isProviderError",
     "isWorkflowRunId",

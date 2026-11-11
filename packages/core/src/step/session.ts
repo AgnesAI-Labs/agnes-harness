@@ -121,7 +121,6 @@ import {
 import { roleAuthority, rolePermissionContext } from '../child/role-authority.js'
 import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
-import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 import { turnWaitEvent } from '../execution/turn-wait.js'
@@ -216,7 +215,7 @@ import {
 } from './step-cap.js'
 import { sessionToolCatalog } from './tool-catalog.js'
 import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } from './tool-filter.js'
-import { effectiveToolPolicy } from './tool-policy.js'
+import { effectiveToolPolicy, sessionFloor } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
@@ -427,7 +426,7 @@ export type TurnEndReason =
   | 'interrupted'
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: RunError }
 
-export type SessionDeps = {
+export type SessionDeps = Pick<import('../kernel.js').SessionOptions, 'outwardCommandRules'> & {
   roleDelegation?: RoleDelegation
   childRoles?: ChildRolePort
   commandPathScope?: import('../command-table/floor.js').CommandPathScope
@@ -1001,13 +1000,7 @@ export class SessionImpl {
     // Keep previous instances until close: an in-flight batch may still own one after a preset switch.
     return instance.runtime
   }
-  private readonly commandFloor = sessionCommandFloor(
-    (tool) => this.turn?.snapshot.byName.get(tool)?.meta.commandArg,
-    (input, signal) => this.d.commandPathScope?.(input, signal) ?? Promise.resolve(undefined),
-    // The floor normalizes the `path` argument, so only that declaration can name a reference
-    // outside the workspace (`ToolMeta.paths[].nonWorkspaceSchemes`).
-    (t) => this.turn?.snapshot.byName.get(t)?.meta.paths?.find((p) => p.arg === 'path')?.nonWorkspaceSchemes,
-  )
+  private readonly commandFloor = sessionFloor(this)
   /** The selected policy inside this session's effective command and captured role floors. */
   toolPolicy(selection?: string) {
     return effectiveToolPolicy(this, this.toolPolicies, this.commandFloor, selection)

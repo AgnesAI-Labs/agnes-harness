@@ -39,7 +39,11 @@ const decide = (
   over: Partial<ToolPolicyInput> = {},
   base = defaultToolPolicy,
   schemes = nonWorkspaceSchemesOf,
-) => withCommandFloor(base, rules, commandArgOf, undefined, schemes).decide(input(over), signal)
+) =>
+  withCommandFloor(base, rules, commandArgOf, undefined, (tool) => {
+    const nonWorkspaceSchemes = schemes(tool)
+    return nonWorkspaceSchemes ? { paths: [{ arg: 'path', access: 'read', nonWorkspaceSchemes }] } : undefined
+  }).decide(input(over), signal)
 
 describe('command floor', () => {
   it('lets an allow rule answer a call the selected policy would ask about', async () => {

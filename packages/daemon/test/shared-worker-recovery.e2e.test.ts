@@ -46,10 +46,11 @@ it('recovers every open session together after the shared worker crashes', async
     onRequest: async () => undefined,
     notices: { emit() {} },
   })
-  registry = new WorkerRegistry(pool)
-  const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
   const a = 'agnes:t:a:x:dm:recover-a'
   const b = 'agnes:t:a:x:dm:recover-b'
+  // A is a managed key: every open of it, the recovery reopen included, asks for command rules.
+  registry = new WorkerRegistry(pool, undefined, { outwardCommandRules: (key) => key === a })
+  const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
   try {
     const bindingA = await workspaceBinding(a, dir)
     const bindingB = await workspaceBinding(b, dir)
@@ -58,6 +59,12 @@ it('recovers every open session together after the shared worker crashes', async
       registry.open({ key: b, cwd: dir, binding: bindingB }),
     ])
     const firstWorkerGeneration = pool.businessWorker()?.generation
+    expect(await firstA.session.outwardCheckpoint()).toBe(true)
+    expect(await firstB.session.outwardCheckpoint()).toBe(false)
+    // An open channel without the rules is not handed to a caller that needs them.
+    await expect(
+      pool.acquire(b, { cwd: dir, binding: bindingB, outwardCommandRules: true }),
+    ).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED', reason: 'OUTWARD_COMMAND_RULES_OFF' } })
     const observedA: number[] = []
     const observedB: number[] = []
     const unsubscribeA = registry.subscribe(a, (event) => observedA.push(event.seq))
@@ -104,6 +111,8 @@ it('recovers every open session together after the shared worker crashes', async
     expect(recoveredB).not.toBe(firstB)
     expect(await recoveredA.session.status()).toMatchObject({ lastSeq: 3 })
     expect(await recoveredB.session.status()).toMatchObject({ lastSeq: 5 })
+    expect(await recoveredA.session.outwardCheckpoint()).toBe(true)
+    expect(await recoveredB.session.outwardCheckpoint()).toBe(false)
     expect(pool.links().filter(({ sessionKey }) => sessionKey === '@shared')).toHaveLength(1)
     const [recoveredChannelA, recoveredChannelB] = await Promise.all([
       pool.acquire(a, { cwd: dir, binding: bindingA, resume: true }),

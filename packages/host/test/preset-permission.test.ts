@@ -48,6 +48,10 @@ describe('permission overlays preserve real recipe documents', () => {
       const sandbox = got.sandbox as Record<string, unknown>
       expect(sandbox.windows_mode).toBe('write-restricted')
       delete sandbox.windows_mode
+      // job_output waits up to five minutes, so base gives it a limit that leaves room after the wait.
+      const timeouts = (got.tools as { timeouts: Record<string, number> }).timeouts
+      expect(timeouts.job_output).toBe(310_000)
+      delete timeouts.job_output
     }
     if (name !== 'minimal-rl') {
       // Compaction now follows primary; tool discovery is a prompt section and UI has a guide.

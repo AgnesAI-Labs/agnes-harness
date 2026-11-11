@@ -79,6 +79,14 @@ describe('repeat reminder', () => {
       ['job_output', { id: 'j1' }, 'running, 1 minutes left'],
     ])
     expect(minutes[2]).toBeUndefined()
+    // How long a polled job has run, written with its minutes (job_output does), stays progress
+    // even under a minute: only a bare short duration is timing noise.
+    const running = notes({}, [
+      ['job_output', { jobId: 'j1' }, 'make: building\n[running for 0m05s; exit pending]'],
+      ['job_output', { jobId: 'j1' }, 'make: building\n[running for 0m12s; exit pending]'],
+      ['job_output', { jobId: 'j1' }, 'make: building\n[running for 1h02m03s; exit pending]'],
+    ])
+    expect(running[2]).toBeUndefined()
   })
 
   it('does not count a countdown in seconds as a repeat', () => {

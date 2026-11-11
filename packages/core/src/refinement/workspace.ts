@@ -10,6 +10,7 @@ import { MAINTENANCE_LANE } from '@agnes/core-ledger/reduce/state'
 import { entryKey } from '../refine/apply.js'
 import { isChildSession } from '../step/child-session.js'
 import { sysEvent } from '../step/events.js'
+import { memoryWritesOff } from '../step/opening-input.js'
 import type { SessionImpl } from '../step/session.js'
 import { settingsOf } from './scheduler.js'
 import { skillInstalledRows } from './skill-handoff.js'
@@ -187,7 +188,7 @@ export async function saveToWorkspace(
   input: WorkspaceSaveInput,
 ): Promise<WorkspaceSaveOutcome> {
   const port = s.d.refinement?.workspace
-  if (!port) return { refused: 'unavailable' }
+  if (!port || (await memoryWritesOff(s))) return { refused: 'unavailable' }
   const request = workspaceSaveRequest(s, input)
   if (!request) return { refused: 'not-found' }
   let receipt: SaveReceipt

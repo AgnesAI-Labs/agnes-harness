@@ -6,6 +6,7 @@ export type WorkerHostSkillResources = Readonly<{
   scheduling?: NonNullable<HostOptions['scheduling']>
   decisionsChanged?: NonNullable<HostOptions['decisionsChanged']>
   boundWakes?: NonNullable<HostOptions['boundWakes']>
+  managedSessions?: NonNullable<HostOptions['managedSessions']>
   mcpManage?: NonNullable<HostOptions['mcpManage']>
   pluginManage?: NonNullable<HostOptions['pluginManage']>
   skillInstall?: NonNullable<HostOptions['skillInstall']>

@@ -6,7 +6,7 @@ English | [简体中文](README.zh-CN.md)
 
 Plugins are fully trusted code running with the user's rights. Capability declarations are reviewed at admission; they do not restrict arbitrary JavaScript or enforce a hook allowlist. `ctx.hooks.register` accepts the supported observe, transform and intercept hooks regardless of the declared `hooks` list. Use only code you intend to authorize.
 
-[Streams and managed services](transports.md) · [Tool runtime and policies](tool-runtime.md) · [Loop events](loop-events.md) · [Business workflows](workflow-loops.md)
+[Streams and managed services](transports.md) · [Plugin-managed sessions](managed-sessions.md) · [Tool runtime and policies](tool-runtime.md) · [Loop events](loop-events.md) · [Business workflows](workflow-loops.md)
 
 Choose the smallest starter that owns your behavior. All five [templates](../../templates/) are independent packages with build/test scripts and imports through public package exports. This SDK is a source preview; the quickstart includes local SDK links until public packages are distributed.
 
@@ -50,6 +50,8 @@ Import `defineTool` only from `@agnes/plugin-runtime`. It accepts input-only too
 A tool plugin injects `tools`; Loop and adapter plugins inject `providers`. Use `Context` from `@agnes/plugin-runtime` for these Cordis callbacks; it includes the provider service contract. `ProviderPluginContext` alone describes that service without the Cordis context. Type declarations do not install services.
 
 Bind registrations and long-lived resources to the plugin fiber lifecycle. Bind per-call I/O to the supplied signal and release resources in `finally`. Update tool metadata for actual side effects, approvals and replay behavior. A plugin tool that does not state `replay` is `never` rerun after a crash; `replay: 'safe'` is accepted only from a read-only tool, and `idempotent` is the choice for a write that tolerates a rerun.
+
+Backend plugin code runs inside AGH's Node processes. They start with the Node flag `--max-semi-space-size=2`, so `process.execArgv` contains it. Do not pass `process.execArgv` to `new Worker()`: Node rejects the V8 flag there with `ERR_WORKER_INVALID_EXEC_ARGV`. Leave `execArgv` unset; the thread uses the process's settings. `child_process.fork()` passes `process.execArgv` to the child by default; give it an explicit `execArgv` if the child should start without the flag.
 
 ## Runtime adoption
 

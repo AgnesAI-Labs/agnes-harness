@@ -4041,6 +4041,10 @@
             "requestSeq": {
               "type": "integer"
             },
+            "decidedSeq": {
+              "type": "integer",
+              "description": "The ledger seq of the event that made this approval decided or expired. Absent while pending. Unlike seq, which keeps the position the approval first appeared at, this moves forward when the approval ends."
+            },
             "decision": {
               "type": "object",
               "additionalProperties": false,

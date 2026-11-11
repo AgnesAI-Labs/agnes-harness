@@ -174,6 +174,9 @@
 - `_agnes/v1/admin.mcp.oauth.logout`
 - `_agnes/v1/admin.memory`
 - `_agnes/v1/admin.triggers`
+- `_agnes/v1/admin.managedWorkspaces.list`
+- `_agnes/v1/admin.managedWorkspaces.grant`
+- `_agnes/v1/admin.managedWorkspaces.revoke`
 - `_agnes/v1/sessions.migrate`
 
 ### 插件树、配置与候选

@@ -389,6 +389,27 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
 
   const timeline = await projectUI(events, { sessionKey: 'approval-chain', lane: 'main' })
   expect(kind(timeline.nodes, 'approval')[0]?.options).toEqual(['allow_once', 'allow_always', 'reject_once'])
+  // The node keeps the position it first appeared at; `decidedSeq` is where it ended, after the turn
+  // had already parked, and a node that has not ended carries none.
+  expect(kind(timeline.nodes, 'approval')[0]).toMatchObject({ seq: 4, state: 'decided', decidedSeq: 7 })
+  const parked = await projectUI(events.slice(0, 5), { sessionKey: 'approval-chain', lane: 'main' })
+  expect(kind(parked.nodes, 'approval')[0]).toMatchObject({ seq: 4, state: 'pending' })
+  expect(kind(parked.nodes, 'approval')[0]).not.toHaveProperty('decidedSeq')
+  const expiredRow = (rowSeq: number, revision: number) =>
+    ({
+      ...events[6]!,
+      seq: rowSeq,
+      data: {
+        ...pendingDecision('approval-1', { operationId: 'tool-1' }),
+        revision,
+        result: { reason: 'expired', at: '2026-09-13T00:10:00.000Z', code: 'deadline' },
+      },
+    }) as Event
+  const expired = await projectUI([...events.slice(0, 5), expiredRow(6, 2)], {
+    sessionKey: 'approval-chain',
+    lane: 'main',
+  })
+  expect(kind(expired.nodes, 'approval')[0]).toMatchObject({ seq: 4, state: 'expired', decidedSeq: 6 })
   expect(timeline.turns).toHaveLength(1)
   expect(timeline.turns?.[0]?.error).toBeUndefined()
   expect(timeline.turns[0]).toMatchObject({
@@ -408,6 +429,41 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
       reasoningComplete: true,
       billingComplete: true,
     },
+  })
+})
+
+it('marks a full-access allow as ended at its own position', async () => {
+  let seq = 0
+  const event = (type: string, data: Event['data']): Event => ({
+    seq: ++seq,
+    ts: new Date(Date.UTC(2026, 8, 13, 2, 0, seq)).toISOString(),
+    id: `01K0000000000000000002${String(seq).padStart(4, '0')}`,
+    type,
+    data,
+    actor,
+    origin: 'system',
+    trust: 'trusted',
+  })
+  const timeline = await projectUI(
+    [
+      event('user/message', { content: [{ type: 'text', text: 'go' }] }),
+      event('turn/start', { turn: 1, trigger: 'prompt' }),
+      event('tool/call', { toolUseId: 'tool-1', name: 'shell', args: {}, ordinal: 0 }),
+      event('x/core/permission-auto-allowed', {
+        requestId: 'r1',
+        toolUseId: 'tool-1',
+        summary: 'run it',
+        reason: 'full-access',
+        answeredBy: actor,
+      }),
+    ],
+    { sessionKey: 'auto-allow' },
+  )
+  expect(kind(timeline.nodes, 'approval')[0]).toMatchObject({
+    seq: 4,
+    state: 'decided',
+    decidedSeq: 4,
+    decision: { via: 'full-access' },
   })
 })
 

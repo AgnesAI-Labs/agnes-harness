@@ -50,3 +50,19 @@ it('reopens a role child with the trusted parent legacy grant derived for its ow
   ).rejects.toThrow('E_WORKSPACE_UNTRUSTED')
   expect(createSession).not.toHaveBeenCalled()
 })
+
+it('reopens a role child with the parent’s outward command rules', async () => {
+  const createSession = vi.fn(async () => ({ close: async () => {} }))
+  const port = createRoleChildren({
+    read: (key: string) => ({ sessionKey: key }),
+    open: async () => ({ host: { createSession, kernel: { sessions: new Map() } } }),
+    containers: new Map(),
+    sessionOwners: new Map(),
+    opened: () => undefined,
+  } as never)
+  await port.reopen?.('child', { cwd: '/w', writerRunId: 'r', outwardCommandRules: true } as never)
+  expect(createSession).toHaveBeenCalledWith(expect.objectContaining({ outwardCommandRules: true }))
+  createSession.mockClear()
+  await port.reopen?.('child', { cwd: '/w', writerRunId: 'r' } as never)
+  expect(createSession).toHaveBeenCalledWith(expect.not.objectContaining({ outwardCommandRules: true }))
+})

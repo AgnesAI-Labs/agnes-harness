@@ -422,6 +422,64 @@ describe('toContext', () => {
     expect(user.content).toEqual([{ type: 'text', text: 'a.txt file:///a.txt' }])
   })
 
+  it('replays a signed thinking block', () => {
+    const req = fakeRequest({
+      messages: [
+        {
+          role: 'assistant',
+          content: [{ type: 'thinking', text: 'why', signature: 'reasoning_content' }],
+        },
+      ],
+    })
+    const asst = toContext(req, { replaySignature: true }).context.messages[0] as AssistantMessage
+    expect(asst.content).toEqual([
+      { type: 'thinking', thinking: 'why', thinkingSignature: 'reasoning_content' },
+    ])
+  })
+
+  it('replays a mixed history: an unsigned old thinking block stays unsigned', () => {
+    const req = fakeRequest({
+      messages: [
+        { role: 'assistant', content: [{ type: 'thinking', text: 'old' }] },
+        { role: 'user', content: [{ type: 'text', text: 'next' }] },
+        {
+          role: 'assistant',
+          content: [{ type: 'thinking', text: 'new', signature: 'reasoning_content' }],
+        },
+      ],
+    })
+    const { context } = toContext(req, { replaySignature: true })
+    expect((context.messages[0] as AssistantMessage).content).toEqual([{ type: 'thinking', thinking: 'old' }])
+    expect((context.messages[0] as AssistantMessage).content[0]).not.toHaveProperty('thinkingSignature')
+    expect((context.messages[2] as AssistantMessage).content).toEqual([
+      { type: 'thinking', thinking: 'new', thinkingSignature: 'reasoning_content' },
+    ])
+  })
+
+  it('writes no signature unless asked to', () => {
+    const req = fakeRequest({
+      messages: [
+        {
+          role: 'assistant',
+          content: [{ type: 'thinking', text: 'why', signature: 'reasoning_content' }],
+        },
+      ],
+    })
+    const asst = toContext(req).context.messages[0] as AssistantMessage
+    expect(asst.content).toEqual([{ type: 'thinking', thinking: 'why' }])
+  })
+
+  it('labels replayed messages with the given provider, else the route', () => {
+    const req = fakeRequest({
+      route: 'gw',
+      messages: [{ role: 'assistant', content: [{ type: 'text', text: 'a' }] }],
+    })
+    expect((toContext(req).context.messages[0] as AssistantMessage).provider).toBe('gw')
+    expect((toContext(req, { provider: 'agnes-ai' }).context.messages[0] as AssistantMessage).provider).toBe(
+      'agnes-ai',
+    )
+  })
+
   it('marks an assistant turn that asked for tools as having stopped for tool use', () => {
     const withCalls = fakeRequest({
       messages: [
@@ -598,6 +656,70 @@ describe('PiAdapter', () => {
     })
     expect(events[5]).toEqual({ type: 'done', reason: 'toolUse' })
   })
+
+  it('done carries the first thinking block signature', async () => {
+    const signed = assistant({
+      content: [
+        { type: 'thinking', thinking: 'a', thinkingSignature: 'reasoning_content' },
+        { type: 'text', text: 'b' },
+      ],
+    })
+    const run = async (msg: ReturnType<typeof assistant>) => {
+      const { impl } = fakeStream([[{ type: 'done', reason: 'stop', message: msg }]])
+      const a = bound({ manualRoutes: [route], streamImpl: impl })
+      return (await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))).at(-1)
+    }
+    expect(await run(signed)).toEqual({
+      type: 'done',
+      reason: 'stop',
+      thinkingSignature: 'reasoning_content',
+    })
+    // The first block that has one, not a later one; an empty signature is no signature.
+    const later = assistant({
+      content: [
+        { type: 'thinking', thinking: 'a', thinkingSignature: '' },
+        { type: 'thinking', thinking: 'b', thinkingSignature: 'second' },
+      ],
+    })
+    expect(await run(later)).toEqual({ type: 'done', reason: 'stop', thinkingSignature: 'second' })
+    const bare = assistant({
+      content: [
+        { type: 'thinking', thinking: 'a' },
+        { type: 'text', text: 'b' },
+      ],
+    })
+    expect(await run(bare)).toEqual({ type: 'done', reason: 'stop' })
+    expect(await run(assistant())).toEqual({ type: 'done', reason: 'stop' })
+  })
+
+  // Only an openai-completions request ever writes a signature back, so only its stream records one:
+  // what the other wire protocols put there (a whole encrypted reasoning item, a redacted block's
+  // payload) would be stored and counted on every step and never sent.
+  it.each(['anthropic-messages', 'openai-responses'] as const)(
+    'done from a %s route carries no signature',
+    async (api) => {
+      const other = {
+        ...route,
+        api,
+        models: [fakeModel({ id: 'flash', route: 'gw', api, baseUrl: 'https://gw.invalid/v1' })],
+      }
+      const message = assistant({
+        api,
+        content: [
+          {
+            type: 'thinking',
+            thinking: 'a',
+            thinkingSignature: '{"type":"reasoning","encrypted_content":"x"}',
+          },
+          { type: 'text', text: 'b' },
+        ],
+      })
+      const { impl } = fakeStream([[{ type: 'done', reason: 'stop', message }]])
+      const a = bound({ manualRoutes: [other], streamImpl: impl })
+      const events = await collect(a.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), opts()))
+      expect(events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+    },
+  )
 
   it('maps each stop reason pi reports and carries reasoning tokens when it reports them', async () => {
     const reasons = ['stop', 'length', 'toolUse', 'deferred'] as const
@@ -1148,4 +1270,269 @@ it('checks tool images again after pi combines them into one provider message', 
       retryable: false,
     },
   ])
+})
+
+describe('replayed history as pi sees it', () => {
+  const history = [
+    { role: 'user' as const, content: [{ type: 'text' as const, text: 'q' }] },
+    {
+      role: 'assistant' as const,
+      content: [
+        { type: 'thinking' as const, text: 'why', signature: 'reasoning_content' },
+        { type: 'text' as const, text: 'a' },
+      ],
+    },
+    { role: 'user' as const, content: [{ type: 'text' as const, text: 'q2' }] },
+  ]
+  const done = [{ type: 'done' as const, reason: 'stop' as const, message: assistant() }]
+
+  it('providerId route: the replayed message carries the request model provider', async () => {
+    const wire = fakeStream([done])
+    const adapter = new PiAdapter({
+      manualRoutes: [route],
+      streamImpl: wire.impl,
+      providerId: 'agnes-ai',
+    })
+    adapter.bindCredential('gw', 'sk-1')
+    await collect(
+      adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash', messages: history }), opts()),
+    )
+    const seen = wire.seen[0]
+    const replayed = seen?.context.messages[1] as AssistantMessage
+    expect(replayed.provider).toBe('agnes-ai')
+    // The whole triple the wire library compares before it keeps replayed thinking. It always
+    // matches here, which is why Core, not this check, keeps one model's signature from another.
+    expect({ provider: replayed.provider, api: replayed.api, model: replayed.model }).toEqual({
+      provider: seen?.model.provider,
+      api: seen?.model.api,
+      model: seen?.model.id,
+    })
+    expect(replayed.content[0]).toEqual({
+      type: 'thinking',
+      thinking: 'why',
+      thinkingSignature: 'reasoning_content',
+    })
+  })
+
+  it('without providerId the replayed provider is the route, as the request model has it', async () => {
+    const wire = fakeStream([done])
+    const adapter = bound({ manualRoutes: [route], streamImpl: wire.impl })
+    await collect(
+      adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash', messages: history }), opts()),
+    )
+    const replayed = wire.seen[0]?.context.messages[1] as AssistantMessage
+    expect(replayed.provider).toBe('gw')
+    expect(replayed.provider).toBe(wire.seen[0]?.model.provider)
+  })
+
+  it.each(['anthropic-messages', 'pi-messages'] as const)(
+    '%s route unchanged: a signed history reaches pi exactly as an unsigned one did before',
+    async (api) => {
+      const other = {
+        route: 'gw',
+        api,
+        baseUrl: 'https://gw.invalid/v1',
+        credentialRef: 'secret://agnes/gateway',
+        models: [fakeModel({ id: 'flash', route: 'gw', api, baseUrl: 'https://gw.invalid/v1' })],
+      }
+      const wire = fakeStream([done])
+      const adapter = bound({ manualRoutes: [other], streamImpl: wire.impl })
+      await collect(
+        adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash', messages: history }), opts()),
+      )
+      expect(wire.seen[0]?.model.api).toBe(api)
+      expect(wire.seen[0]?.context.messages[1]).toEqual({
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'why' },
+          { type: 'text', text: 'a' },
+        ],
+        api: 'openai-completions',
+        provider: 'gw',
+        model: 'flash',
+        stopReason: 'stop',
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        timestamp: 0,
+      })
+    },
+  )
+})
+
+// A request is bounded until it starts answering, and after that only by silence: a long answer that
+// keeps arriving is healthy however long it takes, and one that stops is cut.
+describe('request deadlines', () => {
+  // What a main-turn request gets: it sets no timeoutMs, so the provider default applies.
+  const mainTurn = { firstToken: 120_000, total: 600_000 }
+  const agnes = { ...route, baseUrl: 'https://apihub.agnes-ai.com/v1' }
+  const text = (delta: string): AssistantMessageEvent => ({
+    type: 'text_delta',
+    contentIndex: 0,
+    delta,
+    partial,
+  })
+  const finished: AssistantMessageEvent = { type: 'done', reason: 'stop', message: assistant() }
+  type Step = readonly [waitMs: number, event: AssistantMessageEvent | Error]
+  /** One script per attempt. Each step follows its wait; a script that runs out goes silent. */
+  const timed =
+    (...attempts: Step[][]) =>
+    () => {
+      const steps = attempts.shift() ?? []
+      return (async function* () {
+        for (const [ms, step] of steps) {
+          await new Promise((resolve) => setTimeout(resolve, ms))
+          if (step instanceof Error) throw step
+          yield step
+        }
+        await new Promise<never>(() => {})
+      })()
+    }
+  const every = (gapMs: number, untilMs: number): Step[] =>
+    Array.from({ length: untilMs / gapMs }, (_, i) => [gapMs, text(`${i}`)] as const)
+  /** Runs one request on a fake clock: still open at `openAt`, if given, and over by `overBy`. */
+  async function play(adapter: PiAdapter, at: { openAt?: number; overBy: number }) {
+    vi.useFakeTimers()
+    try {
+      let over = false
+      const run = collect(
+        adapter.stream('gw', fakeRequest({ route: 'gw', model: 'flash' }), {
+          ...opts(),
+          timeoutMs: mainTurn,
+        }),
+      ).finally(() => {
+        over = true
+      })
+      if (at.openAt !== undefined) {
+        await vi.advanceTimersByTimeAsync(at.openAt)
+        expect(over, `still answering at ${at.openAt} ms`).toBe(false)
+      }
+      await vi.advanceTimersByTimeAsync(at.overBy - (at.openAt ?? 0))
+      expect(over, `over by ${at.overBy} ms`).toBe(true)
+      return await run
+    } finally {
+      vi.useRealTimers()
+    }
+  }
+  const idleTimeout = {
+    type: 'error',
+    reason: 'error',
+    code: 'TIMEOUT',
+    message: 'stream idle timeout',
+    retryable: true,
+  }
+
+  it.each([undefined, 3_600_000])(
+    'keeps a stream that is still producing past the old total (requestMs %s)',
+    async (requestMs) => {
+      const adapter = bound({
+        manualRoutes: [{ ...agnes, ...(requestMs === undefined ? {} : { networkTimeouts: { requestMs } }) }],
+        streamImpl: timed([...every(10_000, 700_000), [0, finished]]),
+      })
+      const events = await play(adapter, { openAt: 699_999, overBy: 700_001 })
+      expect(events.filter((event) => event.type === 'text_delta')).toHaveLength(70)
+      expect(events.at(-1)).toEqual({ type: 'done', reason: 'stop' })
+    },
+  )
+
+  it('buffered route: 600 s of silence after content is a stream-idle TIMEOUT', async () => {
+    const adapter = bound({
+      manualRoutes: [agnes],
+      streamImpl: timed([
+        [0, text('a')],
+        [590_000, text('b')],
+      ]),
+    })
+    const events = await play(adapter, { openAt: 1_189_999, overBy: 1_190_000 })
+    expect(events).toEqual([
+      { type: 'text_delta', delta: 'a' },
+      { type: 'text_delta', delta: 'b' },
+      idleTimeout,
+    ])
+  })
+
+  it('buffered route: a request deadline above 600 s is the longer silence it allows', async () => {
+    const adapter = bound({
+      manualRoutes: [{ ...agnes, networkTimeouts: { requestMs: 900_000 } }],
+      streamImpl: timed([
+        [0, text('a')],
+        [590_000, text('b')],
+      ]),
+    })
+    // Past the 600 s the route would otherwise allow, and cut at 900 s of silence.
+    const events = await play(adapter, { openAt: 1_489_999, overBy: 1_490_000 })
+    expect(events).toEqual([
+      { type: 'text_delta', delta: 'a' },
+      { type: 'text_delta', delta: 'b' },
+      idleTimeout,
+    ])
+  })
+
+  it('buffered route: the stream idle setting does not shorten its silence', async () => {
+    const adapter = bound({
+      manualRoutes: [{ ...agnes, networkTimeouts: { streamIdleMs: 30_000 } }],
+      streamImpl: timed([
+        [0, text('a')],
+        [590_000, text('b')],
+      ]),
+    })
+    const events = await play(adapter, { openAt: 1_189_999, overBy: 1_190_000 })
+    expect(events).toEqual([
+      { type: 'text_delta', delta: 'a' },
+      { type: 'text_delta', delta: 'b' },
+      idleTimeout,
+    ])
+  })
+
+  it('non-buffered route: 60 s of silence after content is TIMEOUT', async () => {
+    const adapter = bound({ manualRoutes: [route], streamImpl: timed(every(50_000, 400_000)) })
+    const events = await play(adapter, { openAt: 459_999, overBy: 460_000 })
+    expect(events.filter((event) => event.type === 'text_delta')).toHaveLength(8)
+    expect(events.at(-1)).toEqual(idleTimeout)
+  })
+
+  it('no content before firstContentMs is TIMEOUT', async () => {
+    const adapter = bound({
+      manualRoutes: [agnes],
+      streamImpl: timed([[0, { type: 'start', partial }]]),
+    })
+    expect(await play(adapter, { openAt: 299_999, overBy: 300_000 })).toEqual([
+      { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'total timeout', retryable: true },
+    ])
+  })
+
+  it('retries before any content share one first-content window', async () => {
+    const dropped = () =>
+      Object.assign(new Error('socket closed'), {
+        cause: Object.assign(new Error('socket closed'), { code: 'ECONNRESET' }),
+      })
+    const adapter = bound({
+      manualRoutes: [agnes],
+      maxRetries: 2,
+      streamImpl: timed(
+        [
+          [0, { type: 'start', partial }],
+          [100_000, dropped()],
+        ],
+        [
+          [0, { type: 'start', partial }],
+          [100_000, dropped()],
+        ],
+        // The third attempt starts about 201.5 s in and would answer at about 351.5 s, after the
+        // window armed when the call began has closed.
+        [
+          [150_000, text('a')],
+          [0, finished],
+        ],
+      ),
+    })
+    expect(await play(adapter, { openAt: 299_999, overBy: 300_000 })).toEqual([
+      { type: 'error', reason: 'error', code: 'TIMEOUT', message: 'total timeout', retryable: true },
+    ])
+  })
 })

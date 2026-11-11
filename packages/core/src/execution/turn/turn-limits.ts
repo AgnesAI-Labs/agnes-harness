@@ -29,8 +29,8 @@ const notices = new WeakMap<TurnMemory, LimitNotice>()
 const KIND_ORDER: readonly Kind[] = ['time', 'steps', 'credits']
 
 const ADVICE = [
-  'Prioritise the core requirement: if its result is not in place yet, put a working version in place and check it before refining anything.',
-  'Finish the core requirement now and verify it; skip optional extras and further exploration.',
+  'Prioritise the core requirement: if its result is not in place yet, put a working version in place and check it before refining anything. Once it works and its check passes, end the turn: what is left of a limit is not a budget for extra checks or refinements.',
+  'Finish the core requirement now and verify it; skip optional extras and further exploration. Once it passes, end the turn.',
   'Wrap up: leave the work in its best checked state and end with a short reply saying what is done, how it was checked and what remains.',
 ] as const
 
@@ -133,7 +133,7 @@ export function limitNoteText(limits: TurnLimits, notice: LimitNotice, language?
   const all = describe(limits)
   if (notice.level === 0)
     return withNoteLanguage(
-      `${TITLE}\nThis turn has limits: ${all}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first.`,
+      `${TITLE}\nThis turn has limits: ${all}. When one is reached the turn ends, and what is finished and checked by then is the result. Plan the work to fit, and do the core of the request first. Finishing early is expected: once the requested result works and its check passes, end the turn with your reply. What is left of a limit is a ceiling, not a budget for extra confidence checks, broader test sweeps or refinements the request did not ask for.`,
       language,
     )
   const threshold = LIMIT_THRESHOLDS[notice.level - 1] as number
@@ -192,7 +192,7 @@ export function turnTimeText(limit: TurnTimeLimit, now: number, language?: strin
   const used = Math.min(limit.timeLimitMs, Math.max(0, now - (limit.deadlineAt - limit.timeLimitMs)))
   const remaining = left < CLOCK_STEP_MS ? 'less than 10s' : `about ${formatDuration(step(left))}`
   return withNoteLanguage(
-    `${formatDuration(step(used))} of this turn's ${total} time limit used, ${remaining} left. Measured at this request, it replaces any earlier time figure: do not conclude that the time limit is reached unless this note says so.`,
+    `${formatDuration(step(used))} of this turn's ${total} time limit used, ${remaining} left. Measured at this request, it replaces any earlier time figure: do not conclude that the time limit is reached unless this note says so. The time left is a ceiling, not a budget: once the requested result works and its check passes, end the turn.`,
     language,
   )
 }

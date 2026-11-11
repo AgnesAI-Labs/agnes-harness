@@ -47,6 +47,8 @@ $cases = @(
     @('scoped daemon', $daemon, 'daemon', $true),
     @('scoped web', $web, 'web', $true),
     @('unquoted arguments', $daemon.Replace('"' + $repoDir + '"', $repoDir), 'daemon', $true),
+    @('daemon memory flag', $daemon.Replace('node.exe" "', 'node.exe" --max-semi-space-size=2 "'), 'daemon', $true),
+    @('other Node flag', $daemon.Replace('node.exe" "', 'node.exe" --inspect "'), 'daemon', $false),
     @('another profile', $daemon.Replace('local-dev --workspace', 'other --workspace'), 'daemon', $false),
     @('another data directory', $daemon.Replace($dataDir, $dataDir + '-other'), 'daemon', $false),
     @('another workspace', $daemon.Replace('--workspace "' + $repoDir + '"', '--workspace "D:\other"'), 'daemon', $false),

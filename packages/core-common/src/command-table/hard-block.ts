@@ -170,7 +170,7 @@ function unwrap(words: readonly string[]): readonly string[] {
 }
 
 /** Quote-aware lenient split: separators and quotes are honoured, anything else is left alone. */
-function looseSegments(text: string, honourQuotes: boolean): string[][] {
+export function looseSegments(text: string, honourQuotes: boolean): string[][] {
   const segments: string[][] = []
   let words: string[] = []
   let word = ''

@@ -108,6 +108,7 @@ Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`�
 | `agh plugins tree apply --file ARTIFACT.json\|- [--yes]` / `tree rollback [--yes]` | 应用一个插件树 artifact/回滚到上一个；不带 `--yes` 只打印将要做什么，不发请求 |
 | `agh plugins provenance ID [--json]` | 读取安装来源及信任证据 |
 | `agh plugins publication-status [--json]` | 查看每个容器的发布收敛结果 |
+| `agh plugins grants [list [PACKAGE]]` / `grants grant\|revoke PACKAGE WORKSPACE [--json]` | 列出/授权/撤销插件[托管会话](../extend/managed-sessions.zh-CN.md#授权工作区)可以使用的已登记工作区；只有主人能改，插件不能 |
 | `agh sessions migrate KEY [--json]` | 显式迁移已关闭且兼容的会话，拒绝打开中的会话 |
 | `agh app show [--json]` / `app preview 插件#应用` | 显示当前应用与候选/采纳前的同意预览 |
 | `agh app adopt 插件#应用 [--yes]` | 采纳应用；不带 `--yes` 只打印预览，不发请求 |

@@ -1,4 +1,5 @@
 import type { JsonValue } from '@agnes/protocol'
+import type { ManagedSessions } from './managed-sessions.js'
 import type { BoundWakes, OwnedStore } from './profile-services.js'
 import type { PluginStreamsPort, StreamContext } from './streams.js'
 
@@ -7,6 +8,8 @@ export interface ProfileManagedInit {
   readonly signal: AbortSignal
   readonly store: OwnedStore
   readonly wakes: BoundWakes
+  /** Refuses every call unless the reviewed declaration sets `sessions: true`. */
+  readonly sessions: ManagedSessions
   readonly config: JsonValue
   readonly listeners: Readonly<Record<string, { host: '127.0.0.1'; port: number }>>
   assertCurrent(): void
@@ -28,7 +31,7 @@ export interface ProfileManagedHandle<T> {
   get(): Promise<T>
 }
 export interface PluginProfileRuntimePort {
-  /** Register a platform with the backend-owned channel resource. Added in 5.5. */
+  /** Register a platform with the backend-owned channel resource. Added in 5.11. */
   registerChannel?(
     provider: import('./channel.js').ChannelProvider,
     config?: import('./channel.js').ChannelConfiguration,

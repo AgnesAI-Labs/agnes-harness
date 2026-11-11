@@ -8,6 +8,7 @@ import {
   HostError,
   type HostSession,
   manageMemory,
+  outwardCheckpointEnforced,
   type ResolvedProfile,
   refinementCommand,
   sessionPermissionCatalog,
@@ -433,7 +434,9 @@ export async function handleCommand(
     case 'deliverSystemInput':
       return deliverBoundSystemInput(session, o.host, p)
     case 'enqueue':
-      return session.enqueue(p.target as 'next-turn' | 'next-step', p.msg as never)
+      return session.enqueue(p.target as 'next-turn' | 'next-step', p.msg as never, {
+        dedupeByCommandId: p.dedupeByCommandId === true,
+      })
     case 'sendQueuedNow':
       return session.sendQueuedNow(String(p.itemId), p.actor as Actor, String(p.admissionId))
     case 'removeQueuedInput':
@@ -474,6 +477,9 @@ export async function handleCommand(
       return {}
     case 'integrityStatus':
       return session.integrityStatus()
+    // The policy this session's next call is decided by, read where that policy object lives.
+    case 'outwardCheckpoint':
+      return { enforced: outwardCheckpointEnforced(session.toolPolicy()) }
     case 'auditHistory':
       return auditSessionHistory(session)
     case 'requireVerifiedHistory':

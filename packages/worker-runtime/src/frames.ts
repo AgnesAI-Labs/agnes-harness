@@ -23,6 +23,7 @@ export type SessionMethod =
   | 'abort'
   | 'verifyHistory'
   | 'integrityStatus'
+  | 'outwardCheckpoint'
   | 'auditHistory'
   | 'requireVerifiedHistory'
   | 'scan'
@@ -237,6 +238,7 @@ export type RequestFrame = {
   method:
     | 'scheduling'
     | 'bound-wake'
+    | 'managed-session'
     | 'permission'
     | 'permission-abort'
     | 'permission-revoke'
@@ -272,6 +274,8 @@ export type SessionOpenFrame = {
     loop?: LoopSelection
     resume?: boolean
     parent?: { key: string; boundarySeq: number }
+    /** Open with outward command rules on; never part of session.new JSON (see core's SessionOptions). */
+    outwardCommandRules?: true
   }
 }
 export type SessionCommandFrame = {

@@ -53,6 +53,7 @@ import type { Conn, StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
 import { daemonDoctor } from './doctor.js'
 import { feedbackPorts } from './feedback-ports.js'
+import { registerManagedWorkspaceGrants } from './managed-workspace-grants.js'
 import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
 import { activateForkOwnership } from './registry-facade.js'
 import { registerSessionMethods } from './session-methods.js'
@@ -615,6 +616,13 @@ function registerAdminEndpoints(
       : (resourceControl.webAuthority ?? denyResourceAuthority),
   )
   registerProfileServices(ep, profilePorts.services, boundWakes, activationBarrier, requireSessionOwner(cx))
+  registerManagedWorkspaceGrants(
+    ep,
+    transport === 'unix'
+      ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
+      : denyPackageAdminAuthority,
+    state.workspaceGrants,
+  )
 }
 
 function registerExtensionEndpoints(

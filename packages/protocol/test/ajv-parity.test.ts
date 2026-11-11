@@ -7877,6 +7877,35 @@ const webhookRuleSample = {
 }
 const webhookConfigSample = { enabled: false, path: '/hooks/events', maxPayloadBytes: 262144 }
 const AppSamples: Record<string, Sample> = {
+  ManagedWorkspaceGrantsListParams: {
+    note: 'Owner workspace grants, optionally for one package.',
+    valid: { packageId: '@example/companion' },
+    invalid: [{ packageId: '' }, { owner: 'plugin/0123456789abcdef' }],
+  },
+  ManagedWorkspaceGrantParams: {
+    note: 'Owner workspace grant names a package and a workspace path.',
+    valid: { packageId: '@example/companion', workspace: '/work/repo' },
+    invalid: [
+      { packageId: '@example/companion' },
+      { packageId: '', workspace: '/work/repo' },
+      { packageId: 'p', workspace: '/w', owner: 'plugin/0123456789abcdef' },
+    ],
+  },
+  ManagedWorkspaceGrant: {
+    note: 'A grant by package name and canonical root.',
+    valid: { packageId: '@example/companion', workspace: '/work/repo' },
+    invalid: [{ owner: 'plugin/0123456789abcdef', workspace: '/work/repo' }],
+  },
+  ManagedWorkspaceGrantsList: {
+    note: 'Grants by package name, never by plugin row.',
+    valid: { items: [{ packageId: '@example/companion', workspace: '/work/repo' }] },
+    invalid: [{ items: [{ owner: 'plugin/0123456789abcdef', workspace: '/work/repo' }] }],
+  },
+  ManagedWorkspaceGrantChange: {
+    note: 'Grant change by package name and canonical root.',
+    valid: { packageId: '@example/companion', workspace: '/work/repo', changed: true },
+    invalid: [{ packageId: '@example/companion', workspace: '/work/repo' }],
+  },
   AdminCredentialDelete: {
     valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', force: true, confirm: true },
     invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', actor: 'forged' }],
@@ -9067,6 +9096,21 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'WebhookRequest',
     result: 'WebhookResult',
   },
+  '_agnes/v1/admin.managedWorkspaces.list': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'ManagedWorkspaceGrantsListParams',
+    result: 'ManagedWorkspaceGrantsList',
+  },
+  '_agnes/v1/admin.managedWorkspaces.grant': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'ManagedWorkspaceGrantParams',
+    result: 'ManagedWorkspaceGrantChange',
+  },
+  '_agnes/v1/admin.managedWorkspaces.revoke': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'ManagedWorkspaceGrantParams',
+    result: 'ManagedWorkspaceGrantChange',
+  },
   '_agnes/v1/session.fileUpload': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'FileUploadParams',
@@ -10176,6 +10220,9 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { action: 'list' },
     invalid: [{ action: 'unknown' }, { action: 'upsert', rule: { secretRef: 'plain-text-secret' } }],
   },
+  '_agnes/v1/admin.managedWorkspaces.list': AppSamples.ManagedWorkspaceGrantsListParams!,
+  '_agnes/v1/admin.managedWorkspaces.grant': AppSamples.ManagedWorkspaceGrantParams!,
+  '_agnes/v1/admin.managedWorkspaces.revoke': AppSamples.ManagedWorkspaceGrantParams!,
   '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadParams as Sample,
   '_agnes/v1/session.references.search': {
     note: 'Reference locators and bounded search results',
@@ -11136,6 +11183,9 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   },
   '_agnes/v1/admin.feedback': AppSamples.AdminFeedbackResult!,
   '_agnes/v1/admin.triggers': AppSamples.WebhookResult!,
+  '_agnes/v1/admin.managedWorkspaces.list': AppSamples.ManagedWorkspaceGrantsList!,
+  '_agnes/v1/admin.managedWorkspaces.grant': AppSamples.ManagedWorkspaceGrantChange!,
+  '_agnes/v1/admin.managedWorkspaces.revoke': AppSamples.ManagedWorkspaceGrantChange!,
   '_agnes/v1/plugins.config.get': PackageAdminSamples.PluginConfigSnapshot!,
   '_agnes/v1/plugins.config.validate': PackageAdminSamples.PluginConfigValidation!,
   '_agnes/v1/plugins.config.save': PackageAdminSamples.PluginConfigSaveResult!,

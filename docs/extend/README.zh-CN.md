@@ -6,7 +6,7 @@
 
 插件是完全受信任的代码，以用户权限运行。能力声明用于准入审核，不限制任意 JavaScript，也不强制 hook 白名单。`ctx.hooks.register` 接受受支持的 observe、transform、intercept hooks，不按声明的 `hooks` 列表限制注册。只授权你愿意执行的代码。
 
-[工具运行时与权限策略](tool-runtime.zh-CN.md) · [循环事件](loop-events.zh-CN.md) · [业务工作流](workflow-loops.zh-CN.md)
+[插件托管会话](managed-sessions.zh-CN.md) · [工具运行时与权限策略](tool-runtime.zh-CN.md) · [循环事件](loop-events.zh-CN.md) · [业务工作流](workflow-loops.zh-CN.md)
 
 选择负责目标行为的最小模板。五个[模板](../../templates/)都是独立包，提供构建与测试脚本，只通过公开包出口导入。SDK 目前仍为源码预览；入门指南提供正式包发布前的本地 SDK 连接方式。
 
@@ -50,6 +50,8 @@ MCP 包不会自动启动、安装或信任外部服务器。修改定义、启�
 工具插件注入 `tools`，循环和适配器插件注入 `providers`。这些 Cordis 回调使用 `@agnes/plugin-runtime` 的 `Context`，其中已包含 provider 服务合同。单独的 `ProviderPluginContext` 只描述该服务，不包含 Cordis context。类型声明不会安装服务。
 
 注册项和长期资源应绑定插件 fiber 生命周期。每次调用的 I/O 使用取消信号，并在 `finally` 释放资源。工具 metadata 应准确描述副作用、审批与重放行为。插件工具不写 `replay` 时按 `never` 处理，崩溃后不会重跑；`replay: 'safe'` 只接受只读工具，可以容忍重跑的写操作应声明 `idempotent`。
+
+后端插件代码运行在 AGH 的 Node 进程内。这些进程以 Node 参数 `--max-semi-space-size=2` 启动，所以 `process.execArgv` 中含有它。不要把 `process.execArgv` 传给 `new Worker()`：Node 会以 `ERR_WORKER_INVALID_EXEC_ARGV` 拒绝其中的 V8 参数。不设置 `execArgv` 即可，线程沿用进程的设置。`child_process.fork()` 默认把 `process.execArgv` 传给子进程；若子进程不应带这个参数，请显式指定 `execArgv`。
 
 ## 运行时采用
 

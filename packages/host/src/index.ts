@@ -12,6 +12,8 @@ export {
   ToolFilterError,
   toolFilterRejection,
 } from '@agnes/core'
+// Whether a session's policy holds outward commands for a person; the worker answers it for the daemon.
+export { outwardCheckpointEnforced } from '@agnes/core/command-table'
 export {
   ARTIFACT_RECLAIMED_FAILURE,
   createLocalArtifactReadStore,
@@ -333,6 +335,7 @@ export {
   type ToolAuthority,
   type ToolPort,
 } from '@agnes/host-extensions/ext-host/index'
+export { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 export {
   isServicePreDispatchFailure,
   type ServiceAuthority,

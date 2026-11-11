@@ -15,7 +15,7 @@ import { decodeArtifactMediaResponse } from './artifact-media-response.js'
 import { bestEffort } from './best-effort.js'
 import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
-import { profileWakeProducer } from './profile-wake-producer.js'
+import { profileSessionPorts } from './profile-session-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { scanWorkspaceSkillRequest } from './skill-scan.js'
 import { runtimeSkillView } from './skill-view.js'
@@ -59,6 +59,7 @@ import {
   type SkillDescriptor,
   validateResourceControlData,
 } from '@agnes/protocol'
+import { trimNativeHeap } from '@agnes/system-node'
 import {
   admitWorkerCommand,
   applyMcpRowChange,
@@ -190,7 +191,7 @@ export async function runWorker(
       signal,
     )
   }
-  const boundWakes = profileWakeProducer(sharedChannel)
+  const profilePorts = profileSessionPorts(sharedChannel)
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('Skill install session mismatch')
@@ -397,7 +398,7 @@ export async function runWorker(
           ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
           decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
-          boundWakes,
+          ...profilePorts,
           scheduling,
           skillInstall,
           refinementSave,
@@ -439,7 +440,7 @@ export async function runWorker(
             allowUnresolvedProvider: true,
             log: deps.log ?? sessionLog,
             prompter,
-            boundWakes,
+            ...profilePorts,
             scheduling,
             skillInstall,
             refinementSave,
@@ -549,6 +550,8 @@ export async function runWorker(
       resources: resourceSlot,
       // Read once: a process-static limit, like every other `worker.` key.
       idleCloseMs: sessionIdleCloseMs(requireHost().profile?.limits),
+      // A finished turn leaves its request and tool buffers freed; hand that memory back.
+      onTurnEnd: () => void trimNativeHeap(),
     })
   if (workerKind === 'session' && !bootSource) hostedSessions = openHostedSessions()
 

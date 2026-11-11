@@ -36,6 +36,7 @@ import {
 import type { AssemblyLifetime } from './assembly-lifetime.js'
 import type { AssemblyBase, StartSupervisorOptions } from './assembly-options.js'
 import { startJwksCache } from './jwks-cache.js'
+import { ManagedSessionRecords } from './managed-session-records.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { canonicalPath } from './scope.js'
 import { persistResolvedProfile } from './storage-adapters.js'
@@ -71,6 +72,10 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
   const sessionOwnership = jobTables
     ? new SessionPrincipalOwnershipIndex(jobTables.table('session_principal_ownership'))
     : new MemorySessionPrincipalOwnership()
+  // Read by the session opener from its first open, so it exists before any worker does.
+  const managedSessionRecords = jobTables
+    ? new ManagedSessionRecords(jobTables.table('managed_sessions'))
+    : undefined
   const workspaceCatalog = await openWorkspaceCatalog({
     dataDir: o.config.dataDir,
     ownerHome,
@@ -239,6 +244,7 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
     tickets,
     workspaces,
     sessionOwnership,
+    managedSessionRecords,
     workspaceCatalog,
     resourceControlDirectory,
     resourceWorkerRoot,

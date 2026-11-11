@@ -11,6 +11,7 @@ import {
 } from '../refine/apply.js'
 import { inspectableEntries } from '../request/experience.js'
 import { isChildSession } from '../step/child-session.js'
+import { OPENING_INPUT_ATTRS, openedWith } from '../step/opening-input.js'
 import type { SessionImpl } from '../step/session.js'
 import { resumeHandOffs } from './handoff.js'
 import {
@@ -173,6 +174,8 @@ async function request(s: SessionImpl, trigger: RefinementTrigger): Promise<Refi
   if (refused) return refused
   const settings = settingsOf(s) as RefinementSettingsView
   const automatic = trigger.kind !== 'manual'
+  if (automatic && (await openedWith(s, OPENING_INPUT_ATTRS.experienceExcluded)))
+    return { refused: 'unavailable' }
   // Everything but the user's own request is automatic and follows the limits; the machine's triggers and
   // the model saving to the workspace or user memory also follow the mode. The model asking for a review
   // chose to call it: it works in manual mode too, under its own looser limits.
@@ -306,6 +309,8 @@ async function propose(
 ): Promise<RefinementOutcome> {
   const refused = refusal(s)
   if (refused) return refused
+  // A proposal is the model's own, so it is refused where automatic requests are.
+  if (await openedWith(s, OPENING_INPUT_ATTRS.experienceExcluded)) return { refused: 'unavailable' }
   // The model saving to the workspace follows the mode, as its other automatic requests do.
   if (options.saveTo !== undefined && settingsOf(s)?.mode !== 'auto') return { refused: 'manual-mode' }
   const unsaved = saveRefusal(s, options.saveTo, true)

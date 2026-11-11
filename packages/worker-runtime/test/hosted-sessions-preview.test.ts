@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import type { Host } from '@agnes/host'
 import { createTestHost } from '@agnes/host/testkit'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HostedSessions } from '../src/hosted-sessions.js'
 import { SharedSessionChannel } from '../src/shared-session-channel.js'
 import { realHosted } from './real-hosted.js'
@@ -43,6 +43,20 @@ describe('HostedSessions forwards streamed text as preview frames', () => {
     })
     expect(previews[0]).not.toHaveProperty('seq')
     expect(typeof previews[0]?.effectId).toBe('string')
+  })
+
+  it('reports a forwarded turn end', async () => {
+    const onTurnEnd = vi.fn()
+    const t = await realHosted({ onTurnEnd })
+    cleanups.push(t.close)
+    await t.hosted.open(t.openFrame('turns'))
+    await t.hosted.tail('turns', 1)
+    await t.prompt('turns', 'hi')
+    await t.run('turns')
+    const turnEnd = (f: { kind: string }) =>
+      f.kind === 'event' && (f as { event?: { type?: string } }).event?.type === 'turn/end'
+    await vi.waitFor(() => expect(t.sent.some(turnEnd)).toBe(true))
+    expect(onTurnEnd).toHaveBeenCalledOnce()
   })
 
   it('sends nothing for a session nobody tails', async () => {

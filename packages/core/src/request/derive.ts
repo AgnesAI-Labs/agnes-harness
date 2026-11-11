@@ -134,6 +134,13 @@ export type DeriveInput = {
     args: unknown
     ordinal: number
   }>
+  /**
+   * The route and model that produced each assistant message, by the message's seq, as its request's
+   * receipt recorded them. A stored reasoning signature is sent back only to that same route and
+   * model: one minted by another model (before a model switch) means nothing to this one, and the
+   * provider may refuse it. A message with no entry goes without its signature; its text stays.
+   */
+  producers?: ReadonlyMap<Seq, { route: string; model: string }>
 }
 export type DeriveOutput = {
   request: LedgerRequest
@@ -360,7 +367,13 @@ function validatePreparedMedia(
   }
 }
 
-export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: EnvelopeCache): RequestMessage {
+/** `ownSignature`: the node's reasoning signature was minted by the model this request goes to. */
+export function toMessage(
+  node: SurfaceNode,
+  nonce: string,
+  envelopeCache: EnvelopeCache,
+  ownSignature = false,
+): RequestMessage {
   const d = node.event.data as Record<string, unknown>
   const untrusted = node.event.trust === 'untrusted'
   // A hit means this node was wrapped once already, by whichever turn's derivation first rendered
@@ -474,7 +487,17 @@ export function toMessage(node: SurfaceNode, nonce: string, envelopeCache: Envel
     const content: RequestMessage['content'] = []
     for (const b of blocksOf(d.content)) {
       if (b.type === 'text') content.push({ type: 'text', text: wrap(String(b.text)) })
-      else if (b.type === 'thinking') content.push({ type: 'thinking', text: wrap(String(b.text)) })
+      else if (b.type === 'thinking')
+        content.push({
+          type: 'thinking',
+          text: wrap(String(b.text)),
+          // Only this harness's own output, and only back to the model that minted it: an imported
+          // signature, or one from the model before a switch, means nothing to this one. Scrubbed
+          // like the text beside it.
+          ...(!untrusted && ownSignature && typeof b.signature === 'string' && b.signature !== ''
+            ? { signature: sanitize(b.signature) }
+            : {}),
+        })
     }
     msg = { role: 'assistant', seq: node.seq, content }
   }
@@ -732,11 +755,18 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
       source: sanitize(s.source),
     })),
   ]
+  // A receipt records the model as it was sent, scrubbed, so a producer is matched on those values.
+  const [route, id] = [sanitize(input.model.route), sanitize(input.model.model)]
+  const own = (seq: Seq) => {
+    const producer = input.producers?.get(seq)
+    return producer?.route === route && producer.model === id
+  }
   // A summary renders as an assistant message, and a replace may now end just before an assistant, so
   // a fixed user line keeps two assistant messages from meeting. Written by core, never from input.
   const messages = closeToolResultMessages(
     input.surface,
-    (node) => toMessage(node, input.envelopeNonceFor(node.seq) ?? input.nonce, input.envelopeCache),
+    (node) =>
+      toMessage(node, input.envelopeNonceFor(node.seq) ?? input.nonce, input.envelopeCache, own(node.seq)),
     input.toolCalls,
   )
   if (input.media !== undefined) validatePreparedMedia(messages, input.surface, input.media)
@@ -963,7 +993,8 @@ export function deriveRequest(input: DeriveInput): DeriveOutput {
   // neither scrubbed nor on this list.
   //
   // Scrubbed: `sections[].id`, `.text`, `.source`; every `messages[].content[]` string — `text`,
-  // `thinking`, the `tool_result` `text` *and* its `toolUseId`, an image's `data` and `mimeType`;
+  // `thinking`, a trusted thinking block's `signature`, the `tool_result` `text` *and* its
+  // `toolUseId`, an image's `data` and `mimeType`;
   // `tools[].name`, `.description` and every string in `.parameters` including property names;
   // `model.slot`, `.route`, `.model`; `contractId`. Untrusted message text is enveloped by
   // `wrapUntrusted`, which scrubs before it wraps.

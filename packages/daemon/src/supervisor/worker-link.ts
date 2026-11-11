@@ -18,10 +18,26 @@ import type {
 } from './frames.js'
 import { parseWorkerHello } from './frames.js'
 import { encodeFrame, JsonlDecoder } from './framing.js'
+import { managedSessionReplyError } from './managed-session-error.js'
 import { packageManageReplyError } from './package-manage-error.js'
 import { PermissionFence } from './permission-fence.js'
 import { PermissionRequestFailure } from './permission-requests.js'
 import { skillInstallReplyError } from './skill-install-error.js'
+
+/** What a session open asks the worker for: the params of its `session.open` frame. */
+export type SessionOpenParams = Readonly<{
+  binding: WorkspaceBindingFrame
+  preset?: string
+  permission?: string
+  agent?: string
+  agentDigest?: string
+  bundles?: readonly string[]
+  systemPromptAppend?: string
+  loop?: LoopSelection
+  resume?: boolean
+  parent?: { key: string; boundarySeq: number }
+  outwardCommandRules?: true
+}>
 
 export type WorkerCommandOptions = {
   historySignal?: AbortSignal
@@ -32,27 +48,19 @@ export type WorkerCommandOptions = {
 /** Session-scoped view of the shared process connection. */
 export class WorkerSessionChannel {
   readonly hello: Promise<SessionOpenResult>
+  /** Whether the worker was asked to open the session with outward command rules on. */
+  readonly outwardCommandRules: boolean
   private closed = false
 
   constructor(
     readonly sessionKey: string,
     private readonly worker: WorkerLink,
-    open: Readonly<{
-      binding: WorkspaceBindingFrame
-      preset?: string
-      permission?: string
-      agent?: string
-      agentDigest?: string
-      bundles?: readonly string[]
-      systemPromptAppend?: string
-      loop?: LoopSelection
-      resume?: boolean
-      parent?: { key: string; boundarySeq: number }
-    }>,
+    open: SessionOpenParams,
     private readonly onClosed?: () => void,
     onHistoryProgress?: WorkerCommandOptions['onHistoryProgress'],
     historySignal?: AbortSignal,
   ) {
+    this.outwardCommandRules = open.outwardCommandRules === true
     this.hello = worker.openSession(sessionKey, open, {
       ...(onHistoryProgress ? { onHistoryProgress } : {}),
       ...(historySignal ? { historySignal } : {}),
@@ -383,7 +391,10 @@ export class WorkerLink {
                     }
                   : frame.method === 'skill-install'
                     ? skillInstallReplyError(error)
-                    : { code: 'E_REQUEST', message: String(error) },
+                    : ((frame.method === 'managed-session' ? managedSessionReplyError(error) : undefined) ?? {
+                        code: 'E_REQUEST',
+                        message: String(error),
+                      }),
           })
         },
       )
@@ -444,18 +455,7 @@ export class WorkerLink {
 
   openSession(
     sessionKey: string,
-    params: Readonly<{
-      binding: WorkspaceBindingFrame
-      preset?: string
-      permission?: string
-      agent?: string
-      agentDigest?: string
-      bundles?: readonly string[]
-      systemPromptAppend?: string
-      loop?: LoopSelection
-      resume?: boolean
-      parent?: { key: string; boundarySeq: number }
-    }>,
+    params: SessionOpenParams,
     options: WorkerCommandOptions = {},
   ): Promise<SessionOpenResult> {
     if (!this.alive) return Promise.reject(new Error('worker link closed'))
@@ -536,18 +536,7 @@ export class WorkerLink {
 
   session(
     sessionKey: string,
-    open: Readonly<{
-      binding: WorkspaceBindingFrame
-      preset?: string
-      permission?: string
-      agent?: string
-      agentDigest?: string
-      bundles?: readonly string[]
-      systemPromptAppend?: string
-      loop?: LoopSelection
-      resume?: boolean
-      parent?: { key: string; boundarySeq: number }
-    }>,
+    open: SessionOpenParams,
     onClosed?: () => void,
     onHistoryProgress?: WorkerCommandOptions['onHistoryProgress'],
     historySignal?: AbortSignal,
