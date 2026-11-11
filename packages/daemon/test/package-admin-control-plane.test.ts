@@ -961,7 +961,7 @@ it('keeps the package installed when preparing its removal fails, such as when i
     activation: {
       actual: async () => ({ actual: 'not-running' }),
       prepareRemoval: async () => {
-        throw new Error('E_PACKAGE_STATE: managed workspace grants could not be revoked')
+        throw new Error('E_PACKAGE_STATE: managed session grants and records could not be released')
       },
       reconcile: async () => ({ actual: 'not-running' }),
     },

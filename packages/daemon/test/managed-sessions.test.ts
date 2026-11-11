@@ -34,7 +34,6 @@ import {
 import {
   managedWorkspaceGrants,
   registerManagedWorkspaceGrants,
-  revokePackageGrants,
 } from '../src/supervisor/managed-workspace-grants.js'
 import { createSupervisorProfileServices } from '../src/supervisor/profile-services.js'
 import { openWorkspaceCatalog } from '../src/supervisor/workspace-catalog.js'
@@ -1447,7 +1446,7 @@ describe('the managed session owner', () => {
       await call(ep, 'grant', { packageId: a.id, workspace: repo })
       await call(ep, 'grant', { packageId: a.id, workspace: gone })
       await call(ep, 'grant', { packageId: b.id, workspace: repo })
-      revokePackageGrants(records, a.id)
+      records.releasePackage(a.id)
       await expect(managed.port(owner).start({ ...start, workspace: repo })).rejects.toMatchObject(
         refused('WORKSPACE_NOT_AUTHORIZED'),
       )
@@ -1456,6 +1455,54 @@ describe('the managed session owner', () => {
         (await managed.port(other).start({ ...start, bundle: '@example/other#worker', workspace: repo }))
           .created,
       ).toBe(true)
+    })
+
+    it("gives the same package id installed again none of the removed package's sessions, which stay managed", async () => {
+      const packages: unknown[] = [a, b, bare]
+      const { repo, ep, call, managed, owner, records } = await setup(packages)
+      await call(ep, 'grant', { packageId: a.id, workspace: repo })
+      await call(ep, 'grant', { packageId: b.id, workspace: repo })
+      const own = { ...start, workspace: repo, skillInstalls: false }
+      const { sessionId } = await managed.port(owner).start(own)
+      await managed.port(owner).send(sessionId, { text: 'more', idempotencyKey: 'k1' })
+      expect(records.sendState(grantKey(a.id, owner.owner), sessionId, 'k1')).toBe('sent')
+      const other = managed.port(identity(b, 'other:engine'))
+      const kept = await other.start({ ...start, bundle: '@example/other#worker', workspace: repo })
+      const lineage = { records, forkParent: () => undefined }
+      const opened = [sessionId]
+      for (let removal = 0; removal < 2; removal++) {
+        records.releasePackage(a.id)
+        packages[0] = installed(a.id, 'companion:engine')
+        const heir = managed.port(owner)
+        await expect(heir.start(own)).rejects.toMatchObject(refused('WORKSPACE_NOT_AUTHORIZED'))
+        expect(await heir.list()).toEqual([])
+        for (const earlier of opened)
+          for (const reach of [
+            () => heir.send(earlier, { text: 'x', idempotencyKey: 'k1' }),
+            () => heir.status(earlier),
+            () => heir.events(earlier),
+            () => heir.result(earlier),
+            () => heir.usage(earlier),
+            () => heir.toolResult(earlier, 1),
+            () => heir.interrupt(earlier),
+            () => heir.archive(earlier),
+          ])
+            await expect(reach()).rejects.toMatchObject(denied)
+        expect(managed.state.cancelled).toEqual([])
+        expect(managed.state.archived).toEqual([])
+        expect(records.sendState(grantKey(a.id, owner.owner), sessionId, 'k1')).toBeUndefined()
+        for (const earlier of opened) {
+          expect(managedLineage(lineage, new Set(), earlier)).toBe(true)
+          expect(managed.port.skillInstallsOff(earlier)).toBe(true)
+        }
+        expect(await other.list()).toMatchObject([{ sessionId: kept.sessionId }])
+        await call(ep, 'grant', { packageId: a.id, workspace: repo })
+        const again = await heir.start(own)
+        expect(again.created).toBe(true)
+        expect(opened).not.toContain(again.sessionId)
+        expect(await heir.list()).toMatchObject([{ sessionId: again.sessionId }])
+        opened.push(again.sessionId)
+      }
     })
   })
 })

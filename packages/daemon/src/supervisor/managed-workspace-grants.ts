@@ -43,19 +43,6 @@ export async function pruneOrphanGrants(
   for (const key of records.grantOwners()) if (!live.has(key)) records.revokeAll(key)
 }
 
-/**
- * Every grant of a package being removed, whatever rows its manifest declares or fails to. Throws
- * when the store does, so the removal is refused: a package installed later under the same id must
- * not inherit them.
- */
-export function revokePackageGrants(
-  records: Pick<ManagedSessionRecords, 'grantOwners' | 'revokeAll'>,
-  packageId: string,
-): void {
-  const prefix = grantKey(packageId, '')
-  for (const key of records.grantOwners()) if (key.startsWith(prefix)) records.revokeAll(key)
-}
-
 /** `pruneOrphanGrants` for a caller with nobody to throw to: a failure is reported and the grants stay. */
 export function quietGrantPruner(
   records: Pick<ManagedSessionRecords, 'grantOwners' | 'revokeAll'>,

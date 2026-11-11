@@ -189,6 +189,26 @@ export class ManagedSessionRecords {
     this.table.exec('DELETE FROM managed_session_grants WHERE owner = ?', [owner])
   }
 
+  /**
+   * A removed package's grants and send keys go, and its records move to an owner no `grantKey` can
+   * produce: a package id never starts with `~`, and the session id keeps `(owner, start_key)` unique
+   * however often the id is installed and removed again. The records stay, because a record also
+   * marks its session and every descendant as managed. Compared with `substr`, not LIKE: a package
+   * id may contain `_`.
+   */
+  releasePackage(packageId: string): void {
+    const prefix = grantKey(packageId, '')
+    const match = 'substr(owner, 1, length(?)) = ?'
+    this.table.transaction(() => {
+      this.table.exec(`DELETE FROM managed_session_grants WHERE ${match}`, [prefix, prefix])
+      this.table.exec(`DELETE FROM managed_session_sends WHERE ${match}`, [prefix, prefix])
+      this.table.exec(`UPDATE managed_sessions SET owner = '~' || session_id WHERE ${match}`, [
+        prefix,
+        prefix,
+      ])
+    })
+  }
+
   revoke(owner: string, workspace: string): void {
     this.table.exec('DELETE FROM managed_session_grants WHERE owner = ? AND workspace = ?', [
       owner,

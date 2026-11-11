@@ -304,6 +304,18 @@ export function managedLineage(
   return lineageSome(ports, sessionId, (record, key) => record !== undefined || opening.has(key))
 }
 
+/**
+ * Derived, so a crash between creating and recording reopens the same session. A key that already
+ * has a record belongs to a package removed since, whose session stays with the owner: the next
+ * candidate is used, the same one on every retry.
+ */
+function derivedSessionKey(records: Pick<ManagedSessionRecords, 'get'>, owner: string, startKey: string) {
+  for (let n = 0; ; n++) {
+    const key = `managed-${digest(`${owner}\0${startKey}${n === 0 ? '' : `\0${n}`}`).slice(0, 40)}`
+    if (records.get(key) === undefined) return key
+  }
+}
+
 function ownedRecord(
   records: Pick<ManagedSessionRecords, 'get'>,
   owner: string,
@@ -456,8 +468,7 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       }
       const created = record === undefined
       if (!record) {
-        // Derived, so a crash between creating and recording reopens the same session.
-        const sessionKey = `managed-${digest(`${owner}\0${input.startKey}`).slice(0, 40)}`
+        const sessionKey = derivedSessionKey(ports.records, owner, input.startKey)
         // Marked before it is created, so its first open already asks for outward command rules.
         ports.records.opening.add(sessionKey)
         try {
