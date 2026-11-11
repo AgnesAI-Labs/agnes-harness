@@ -9,12 +9,13 @@ import {
   createPluginRow,
   decodeRuntimeTargetArtifact,
   encodeRuntimeTargetArtifact,
+  grantKey,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { sqliteTables } from '../../daemon-foundation/test/sqlite-tables.js'
 import { CompositeTargetStore } from '../src/storage/composite-target-store.js'
-import { grantKey, ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
+import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
 import { createCompositeTargetActivation } from '../src/supervisor/publication/composite-target-activation.js'
 import { createRuntimePinCoordinator } from '../src/supervisor/publication/runtime-pin-coordinator.js'
 

@@ -149,6 +149,12 @@ it('reviews transport declarations as authority and binds descriptor changes to 
   expect(
     capabilityHash({ dependencies: {}, declaredCapabilities: mergePluginCapabilities([sessions]) ?? {} }),
   ).not.toBe(old)
+  const targets = { ...declarations, managedServices: [{ ...service, channelTargets: true }] }
+  expect(parsePluginCapabilities(targets)).toEqual(targets)
+  expect(capabilityAtoms(targets)).toContain('channelTargets:profile:sample')
+  expect(
+    capabilityHash({ dependencies: {}, declaredCapabilities: mergePluginCapabilities([targets]) ?? {} }),
+  ).not.toBe(old)
   expect(() =>
     parsePluginCapabilities({ streams: [{ ...stream, lane: 'control', directions: ['inbound'] }] }),
   ).toThrow('schema')

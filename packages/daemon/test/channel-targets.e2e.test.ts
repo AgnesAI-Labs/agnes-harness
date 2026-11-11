@@ -1,0 +1,594 @@
+import { type ChildProcess, spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import {
+  CHANNEL_CONFIG_SCHEMA,
+  channelServiceCapabilities,
+  managedServiceCapabilities,
+} from '@agnes/extension-api'
+import { initializeHome } from '@agnes/host'
+import type { DecisionHandle, PackageOperationReceipt } from '@agnes/protocol'
+import { createClient, memoryJournal } from '@agnes/sdk'
+import { expect, it } from 'vitest'
+import { sourceTranspileCache } from './source-transpile-cache.js'
+
+const sourceDaemon = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
+const CHAT = '@acme/fake-chat'
+const DESK = '@acme/desk'
+const STEP_MS = 60_000
+const manifest = {
+  id: 'fake-chat',
+  displayName: 'Fake chat',
+  version: '0.1.0',
+  connection: { modes: ['stream'], default: 'stream' },
+  capabilities: {
+    edit: false,
+    card: false,
+    thread: false,
+    attachment: false,
+    reactions: false,
+    typing: false,
+    voice: false,
+  },
+  credentials: { required: [], optional: [], exposes: [] },
+  limits: { textChars: 500, cardBytes: 4096, editWindowMs: 0 },
+  events: { supported: ['message'] },
+  directory: { supported: false, unit: 'dept' },
+}
+const service = (id: string, extra: Record<string, unknown> = {}) => ({
+  id,
+  scope: 'profile',
+  artifact: { kind: 'in-process' },
+  healthPath: '/health',
+  listeners: [],
+  startupTimeoutMs: 30_000,
+  shutdownTimeoutMs: 5_000,
+  apiVersion: '1.0.0',
+  requires: [],
+  ...extra,
+})
+const empty = { type: 'object', properties: {}, additionalProperties: false } as const
+
+async function bounded<T>(promise: Promise<T>, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), STEP_MS)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function until<T>(read: () => Promise<T | undefined> | T | undefined, label: string): Promise<T> {
+  const deadline = Date.now() + STEP_MS
+  for (;;) {
+    const value = await read()
+    if (value !== undefined) return value
+    if (Date.now() > deadline) throw new Error(`${label} timed out`)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+}
+
+// An in-memory channel adapter: the test drops inbound events into `exchange` and reads what it sent.
+function chatSource(exchange: string, workspace: string) {
+  return `
+import { appendFileSync, readdirSync, readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+const exchange = ${JSON.stringify(exchange)}
+const manifest = ${JSON.stringify(manifest)}
+let sent = 0
+const adapter = () => {
+  let onEvent, timer
+  return {
+    manifest,
+    async connect(options) {
+      onEvent = options.onEvent
+      timer = setInterval(() => {
+        for (const file of readdirSync(exchange).filter((name) => name.startsWith('in-')).sort()) {
+          const event = JSON.parse(readFileSync(join(exchange, file), 'utf8'))
+          rmSync(join(exchange, file))
+          onEvent(event)
+        }
+      }, 50)
+    },
+    async disconnect() { clearInterval(timer) },
+    toSession() { return null },
+    resolveScope(event) { return { scope: event.chat.id, isDirectMessage: event.chat.type === 'dm' } },
+    render() { return null },
+    async send(target, message) {
+      const messageId = 'sent-' + ++sent + '-' + process.pid
+      appendFileSync(join(exchange, 'sent.jsonl'), JSON.stringify({ target, message, messageId }) + '\\n')
+      return { chatId: target.chatId, messageId }
+    },
+    async update() {},
+    renderApproval() { return { blocks: [] } },
+    onApprovalAction() { return null },
+    credentialOf(event) {
+      return { kind: 'channel', channel: manifest.id, accountId: event.accountId, userId: event.sender.userId, chatId: event.chat.id, chatType: event.chat.type }
+    },
+    capabilities() { return manifest.capabilities },
+  }
+}
+export const main = {
+  inject: ['profileRuntime', 'services', 'providers'],
+  apply(ctx) {
+    ctx.profileRuntime.registerChannel(
+      { id: manifest.id, version: '1.0.0', manifest, create: adapter },
+      { instances: [{ id: 'desk-bot', workspace: ${JSON.stringify(workspace)}, agent: 'default', credentialRefs: {}, allowFrom: [], requireMention: true }] },
+    )
+  },
+}
+`
+}
+
+// The target service answers the test through request and reply files, and records its events.
+function deskSource(exchange: string) {
+  return `
+import { appendFileSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+const exchange = ${JSON.stringify(exchange)}
+const pending = new Set()
+const reply = (id, body) => {
+  writeFileSync(join(exchange, id + '.tmp'), JSON.stringify(body))
+  renameSync(join(exchange, id + '.tmp'), join(exchange, 'res-' + id + '.json'))
+}
+async function answer(channels, file) {
+  const id = file.slice(4, -5)
+  try {
+    const { op, args } = JSON.parse(readFileSync(join(exchange, file), 'utf8'))
+    reply(id, { ok: true, value: (await channels[op](...args)) ?? null })
+  } catch (error) {
+    reply(id, { ok: false, error: { message: String(error?.message), data: error?.data } })
+  }
+}
+export const main = {
+  inject: ['profileRuntime'],
+  apply(ctx) {
+    ctx.profileRuntime.register({
+      id: 'desk',
+      configSchema: { type: 'object', properties: {}, additionalProperties: false },
+      defaultConfig: {},
+      async start(init) {
+        init.channels.onEvent(async (event) => appendFileSync(join(exchange, 'events.jsonl'), JSON.stringify(event) + '\\n'))
+        init.channels.onPairingChange(() => appendFileSync(join(exchange, 'changes.log'), 'x'))
+        const timer = setInterval(() => {
+          for (const file of readdirSync(exchange))
+            if (file.startsWith('req-') && !pending.has(file)) {
+              pending.add(file)
+              void answer(init.channels, file)
+            }
+        }, 50)
+        init.onShutdown(async () => {
+          clearInterval(timer)
+          return { state: 'settled' }
+        })
+        init.ready()
+        return {}
+      },
+    })
+  },
+}
+`
+}
+
+function writePlugins(root: string, workspace: string) {
+  const chat = join(root, 'chat-plugin'),
+    desk = join(root, 'desk-plugin')
+  for (const [directory, name, row, source] of [
+    [
+      chat,
+      CHAT,
+      {
+        id: 'ext:acme/fake-chat/main',
+        inject: ['profileRuntime', 'services', 'providers'],
+        capabilities: {
+          store: true,
+          network: ['*'],
+          services: [
+            ...managedServiceCapabilities('channel', CHANNEL_CONFIG_SCHEMA),
+            ...channelServiceCapabilities(),
+          ],
+          managedServices: [service('channel')],
+        },
+      },
+      chatSource(join(root, 'chat'), workspace),
+    ],
+    [
+      desk,
+      DESK,
+      {
+        id: 'ext:acme/desk/main',
+        inject: ['profileRuntime'],
+        capabilities: {
+          store: true,
+          managedServices: [service('desk', { channelTargets: true })],
+          services: managedServiceCapabilities('desk', empty),
+        },
+      },
+      deskSource(join(root, 'desk')),
+    ],
+  ] as const) {
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(
+      join(directory, 'package.json'),
+      JSON.stringify({
+        name,
+        version: '1.0.0',
+        license: 'MIT',
+        type: 'module',
+        exports: './index.mjs',
+        agnes: { plugins: [{ export: 'main', apiRange: '^5.12.0', runtime: 'in-process', ...row }] },
+      }),
+    )
+    writeFileSync(join(directory, 'index.mjs'), source)
+  }
+  return { chat, desk }
+}
+
+function writeProfile(root: string) {
+  writeFileSync(
+    join(root, 'profiles', 'local-dev', 'profile.yaml'),
+    JSON.stringify({ name: 'local-dev', cacheDir: sourceTranspileCache(), computerUse: { enabled: false } }),
+  )
+}
+
+function boot(root: string) {
+  const daemon = spawn(process.execPath, ['--import', 'tsx', sourceDaemon, root, root], {
+    env: { PATH: process.env.PATH, TMPDIR: tmpdir(), AGH_HOME: root },
+    stdio: ['ignore', 'ignore', 'pipe'],
+  })
+  const exited = new Promise<number | null>((resolve) => daemon.once('exit', resolve))
+  const log = { stderr: '' }
+  const ready = new Promise<void>((resolve, reject) => {
+    daemon.once('error', reject)
+    daemon.stderr?.on('data', (data) => {
+      log.stderr += String(data)
+      if (log.stderr.includes('agnesd listening on ')) resolve()
+    })
+    daemon.once('exit', (code) => reject(new Error(`source daemon exited ${code}: ${log.stderr}`)))
+  })
+  return { daemon, exited, ready, log }
+}
+
+async function stop(child: ChildProcess, exited: Promise<number | null>) {
+  if (child.exitCode !== null || child.signalCode !== null) return
+  child.kill('SIGTERM')
+  try {
+    expect(await bounded(exited, 'daemon shutdown')).toBe(0)
+  } catch (error) {
+    child.kill('SIGKILL')
+    await exited
+    throw error
+  }
+}
+
+function filesUnder(path: string): string[] {
+  return readdirSync(path).flatMap((name) => {
+    const full = join(path, name)
+    const stat = statSync(full, { throwIfNoEntry: false })
+    return stat?.isDirectory() ? filesUnder(full) : stat?.isFile() ? [full] : []
+  })
+}
+
+it.skipIf(process.platform === 'win32')(
+  'pairs a channel chat with a plugin service after approval, routes owner text, sends back and releases on removal',
+  async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agnes-channel-targets-')))
+    const workspace = join(root, 'workspace')
+    initializeHome(root, 'local-dev')
+    for (const dir of [workspace, join(root, 'chat'), join(root, 'desk')]) mkdirSync(dir)
+    writeProfile(root)
+    const plugins = writePlugins(root, workspace)
+    let running = boot(root)
+    let sdk: ReturnType<typeof createClient> | undefined
+    const sockets = new Set<string>()
+    const failures: unknown[] = []
+    let code = ''
+    try {
+      const connect = async () => {
+        await bounded(running.ready, 'source daemon boot')
+        const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
+        sockets.add(owner.socketPath)
+        const client = createClient({
+          journal: memoryJournal(),
+          auth: { kind: 'local' },
+          transport: { kind: 'unix', path: owner.socketPath },
+          timeouts: { request: STEP_MS },
+        })
+        await client.initialize()
+        sdk = client
+        return client
+      }
+      let client = await connect()
+      const operation = async (receipt: PackageOperationReceipt) => {
+        const result = await until(async () => {
+          const value = await client.packages.operation.get({
+            profile: receipt.profile,
+            operationId: receipt.operationId,
+          })
+          if (['failed', 'cancelled', 'rolled-back'].includes(value.state))
+            throw new Error(`package ${value.operation}: ${JSON.stringify(value.error)}`)
+          return value.state === 'completed' ? value : undefined
+        }, `package ${receipt.operationId}`)
+        return result
+      }
+      const command = async () => ({
+        profile: 'local-dev',
+        clientId: await client.clientId(),
+        commandId: randomUUID(),
+      })
+      const install = async (id: string, directory: string) => {
+        const source = { type: 'file' as const, ref: `file:${directory}` }
+        const preview = (await operation(await client.packages.inspect({ ...(await command()), source })))
+          .preview
+        if (!preview?.capabilityHash) throw new Error('plugin preview has no capability hash')
+        expect(preview.blockers, `${id} installs without blockers`).toEqual([])
+        await operation(
+          await client.packages.install({
+            ...(await command()),
+            source,
+            expectedIntegrity: preview.integrity,
+          }),
+        )
+        await operation(
+          await client.packages.trust({
+            ...(await command()),
+            id,
+            expectedIntegrity: preview.integrity,
+            capabilityHash: preview.capabilityHash,
+          }),
+        )
+        await operation(await client.packages.enable({ ...(await command()), id }))
+      }
+      await install(DESK, plugins.desk)
+      await install(CHAT, plugins.chat)
+
+      const pairing = (params: Record<string, unknown>) =>
+        client.request('_agnes/v1/channels.pairing', params as never) as Promise<{
+          receipt?: { state: string; code?: string; decision?: unknown }
+          code?: string
+          targets?: { owner: string; service: string; packageId: string; paired: boolean }[]
+        }>
+      const target = await until(
+        async () => (await pairing({ action: 'targets' })).targets?.find((row) => row.packageId === DESK),
+        'desk target',
+      )
+      const catalog = (await client.request('_agnes/v1/channels.catalog', {})) as {
+        providers: { extension: string; packageId: string }[]
+      }
+      const extension = catalog.providers.find((row) => row.packageId === CHAT)?.extension
+      if (!extension) throw new Error('fake chat provider is not in the channel catalogue')
+      const mint = (operationId: string, over: Record<string, unknown> = {}) =>
+        pairing({
+          action: 'mint',
+          extension,
+          instanceId: 'desk-bot',
+          target: { owner: target.owner, service: 'desk' },
+          operationId,
+          ...over,
+        })
+
+      const asked = await until(async () => {
+        try {
+          return await mint('mint-1')
+        } catch (error) {
+          if (JSON.stringify(error).includes('CHANNEL_UNAVAILABLE')) return undefined
+          throw error
+        }
+      }, 'channel instance connects')
+      expect(asked.receipt?.state, 'minting waits for a person first').toBe('approval-required')
+      expect(asked.code, 'no usable code before approval').toBeUndefined()
+      await expect(
+        mint('mint-1', { instanceId: 'other-bot' }),
+        'same operation, other parameters',
+      ).rejects.toMatchObject({
+        data: { code: 'ID_CONFLICT' },
+      })
+      const decide = async (option: string) => {
+        const { decisions } = (await client.request('_agnes/v1/profile.decisions.list', {})) as {
+          decisions: { handle: DecisionHandle; revision: number }[]
+        }
+        const [decision] = decisions
+        if (!decision) throw new Error('no pairing decision was listed')
+        await client.request('_agnes/v1/profile.decisions.answer', {
+          handle: decision.handle,
+          revision: decision.revision,
+          commandId: randomUUID(),
+          response: { option, value: null },
+        })
+      }
+      await decide('rejected')
+      expect((await mint('mint-1')).receipt, 'a rejected approval mints nothing').toMatchObject({
+        state: 'refused',
+      })
+      await mint('mint-2')
+      await decide('allowed-once')
+      const minted = await mint('mint-2')
+      expect(minted.receipt?.state).toBe('completed')
+      code = minted.code ?? ''
+      expect(code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/)
+      expect((await mint('mint-2')).code, 'the code is shown once').toBeUndefined()
+
+      const chatDir = join(root, 'chat'),
+        deskDir = join(root, 'desk')
+      let events = 0
+      const inject = (text: string, over: Record<string, unknown> = {}) => {
+        const id = `${Date.now()}-${++events}`
+        const file = join(chatDir, `tmp-${id}.json`)
+        writeFileSync(
+          file,
+          JSON.stringify({
+            kind: 'message',
+            eventId: `event-${id}`,
+            messageId: `message-${id}`,
+            accountId: 'app-1',
+            text,
+            attachments: [],
+            at: new Date().toISOString(),
+            chat: { id: 'owner-dm', type: 'dm' },
+            sender: { userId: 'owner-1', displayName: 'Owner', raw: {} },
+            mentions: { bot: false, replyToBot: false, quoteBot: false },
+            ...over,
+          }),
+        )
+        renameSync(file, join(chatDir, `in-${id}.json`))
+      }
+      const sent = () => {
+        try {
+          return readFileSync(join(chatDir, 'sent.jsonl'), 'utf8')
+            .trim()
+            .split('\n')
+            .map(
+              (line) =>
+                JSON.parse(line) as {
+                  target: { chatId: string }
+                  message: { blocks: { markdown: string }[] }
+                  messageId: string
+                },
+            )
+        } catch {
+          return []
+        }
+      }
+      const deskEvents = () => {
+        try {
+          return readFileSync(join(deskDir, 'events.jsonl'), 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line))
+        } catch {
+          return []
+        }
+      }
+      const asDesk = async (op: string, ...args: unknown[]) => {
+        const id = randomUUID()
+        writeFileSync(join(deskDir, `${id}.tmp`), JSON.stringify({ op, args }))
+        renameSync(join(deskDir, `${id}.tmp`), join(deskDir, `req-${id}.json`))
+        return until(() => {
+          try {
+            return JSON.parse(readFileSync(join(deskDir, `res-${id}.json`), 'utf8')) as {
+              ok: boolean
+              value?: { id?: string; messageId?: string; state?: string } | null
+              error?: { data?: { code?: string } }
+            }
+          } catch {
+            return undefined
+          }
+        }, `desk ${op}`)
+      }
+
+      inject(code.toLowerCase().replace('-', ' '))
+      await until(
+        () => (sent().some((row) => row.message.blocks[0]?.markdown.includes('已与')) ? true : undefined),
+        'pairing reply',
+      )
+      const paired = await asDesk('pairing')
+      expect(paired.value, 'the service sees its pairing').toMatchObject({
+        instanceId: 'desk-bot',
+        provider: 'fake-chat',
+        userId: 'owner-1',
+        chatId: 'owner-dm',
+        running: true,
+        textChars: 500,
+      })
+      const pairingId = paired.value?.id as string
+
+      inject('remind me at five', { sender: { userId: 'someone-else', raw: {} } })
+      inject('remind me at five')
+      const [event] = await until(() => (deskEvents().length ? deskEvents() : undefined), 'owner event')
+      expect(event, 'only the paired owner reaches the service').toMatchObject({
+        kind: 'message',
+        origin: 'owner',
+        pairingId,
+        instanceId: 'desk-bot',
+        chat: { id: 'owner-dm', type: 'dm' },
+        sender: { userId: 'owner-1' },
+        text: 'remind me at five',
+      })
+      expect(deskEvents()).toHaveLength(1)
+
+      const reply = await asDesk('send', pairingId, { deliveryKey: 'reminder-1', text: 'It is five.' })
+      expect(reply.ok, JSON.stringify(reply.error)).toBe(true)
+      const delivered = sent().find((row) => row.message.blocks[0]?.markdown === 'It is five.')
+      expect(delivered, 'the reply reaches the paired chat').toMatchObject({
+        target: { chatId: 'owner-dm' },
+        messageId: reply.value?.messageId,
+      })
+
+      await sdk?.close()
+      await stop(running.daemon, running.exited)
+      running = boot(root)
+      client = await connect()
+      const afterRestart = await until(async () => {
+        const value = await asDesk('pairing')
+        return value.ok ? value : undefined
+      }, 'desk after restart')
+      expect(afterRestart.value, 'the pairing survives a restart').toMatchObject({ id: pairingId })
+      expect((await asDesk('delivery', pairingId, 'reminder-1')).value).toEqual({
+        state: 'delivered',
+        messageId: reply.value?.messageId,
+      })
+
+      await operation(await client.packages.disable({ ...(await command()), id: DESK }))
+      await operation(await client.packages.remove({ ...(await command()), id: DESK }))
+      rmSync(join(deskDir, 'events.jsonl'), { force: true })
+      await install(DESK, plugins.desk)
+      const reinstalled = await until(async () => {
+        const value = await asDesk('pairing')
+        return value.ok ? value : undefined
+      }, 'reinstalled desk')
+      expect(reinstalled.value, 'removing the package released its pairing').toBeNull()
+    } catch (error) {
+      failures.push(
+        new Error(`${String(error)}\nSource daemon stderr:\n${running.log.stderr}`, { cause: error }),
+      )
+    } finally {
+      for (const close of [
+        () => sdk?.close(),
+        () => stop(running.daemon, running.exited),
+        () => {
+          if (code) {
+            const leaked = filesUnder(root).filter((file) => {
+              try {
+                return readFileSync(file).includes(code)
+              } catch {
+                return false
+              }
+            })
+            expect(leaked, 'the pairing code is never written to disk').toEqual([])
+          }
+        },
+        () => {
+          rmSync(root, { recursive: true, force: true })
+          for (const socket of sockets) rmSync(dirname(socket), { recursive: true, force: true })
+        },
+      ]) {
+        try {
+          await close()
+        } catch (error) {
+          failures.push(error)
+        }
+      }
+    }
+    if (failures.length === 1) throw failures[0]
+    if (failures.length > 1) throw new AggregateError(failures, 'channel targets e2e and cleanup failed')
+  },
+  240_000,
+)

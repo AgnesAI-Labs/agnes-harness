@@ -105,6 +105,10 @@
         "sessions": {
           "type": "boolean",
           "description": "Plugin-managed sessions: a profile-scoped in-process service may open and drive sessions for the owner, only in workspaces the owner authorized for this plugin. Trust shows the atom managedSessions:<scope>:<id>; the capability hash covers it."
+        },
+        "channelTargets": {
+          "type": "boolean",
+          "description": "Channel targets: a profile-scoped in-process service may receive the text messages its paired owner sends in one direct chat of a channel instance, and send text back to that chat. The owner pairs the chat on the channel page; trust shows the atom channelTargets:<scope>:<id>; the capability hash covers it."
         }
       }
     },

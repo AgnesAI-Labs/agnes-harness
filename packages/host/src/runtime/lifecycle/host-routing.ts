@@ -32,6 +32,7 @@ export const HOST_MEMBER_SCOPES = {
   profileServices: 'deployment',
   channelCatalog: 'deployment',
   clearChannelState: 'deployment',
+  channelPairing: 'deployment',
   resolveService: 'session',
   callService: 'session',
   inspectService: 'session',

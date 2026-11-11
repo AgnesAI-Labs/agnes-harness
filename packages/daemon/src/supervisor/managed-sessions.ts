@@ -10,9 +10,10 @@ import type {
   ManagedSessionToolResult,
   ManagedSessionUsage,
 } from '@agnes/extension-api'
+import { grantKey } from '@agnes/plugin-runtime/host'
 import type { Actor, SessionActivity, SessionViewResult } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
-import { grantKey, type ManagedSessionRecord, type ManagedSessionRecords } from './managed-session-records.js'
+import type { ManagedSessionRecord, ManagedSessionRecords } from './managed-session-records.js'
 
 /** The Host-verified row a managed service runs for; rechecked by `authorize` on every call. */
 export interface ManagedSessionCaller {

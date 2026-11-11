@@ -14,6 +14,7 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChannelDialogHost } from '../src/pages/channel-dialog.js'
 import { closeChannelDialog } from '../src/pages/channel-dialog-state.js'
+import { ChannelPairings } from '../src/pages/channel-pairing.js'
 import { RemoveConnection } from '../src/pages/channel-remove.js'
 import { SessionBindings } from '../src/pages/channel-session.js'
 import { SessionChannelControl } from '../src/pages/channel-session-control.js'
@@ -85,6 +86,60 @@ it('confirms instance deletion, requests native approval and retries the same un
       { instanceId: 'bot', expectedVersion: 7, configurationRevision: 'revision' },
     ])
     expect(onPending).toHaveBeenLastCalledWith(false)
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
+
+it('mints a pairing code after native approval, shows it once and unpairs', async () => {
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const requestProfileApproval = vi.fn()
+  const target = { owner: '@acme/desk#ext:acme/desk/main', service: 'desk', packageId: '@acme/desk' }
+  const call = vi.fn(async (_method: string, params: { action: string }) =>
+    params.action === 'targets'
+      ? { targets: [{ ...target, label: 'Desk', paired: false }] }
+      : params.action === 'revoke'
+        ? {}
+        : call.mock.calls.filter(([, p]) => p.action === 'mint').length === 1
+          ? { receipt: { state: 'approval-required', operationId: 'x' } }
+          : { receipt: { state: 'completed', operationId: 'x' }, code: 'ABCD-EFGH', expiresAt: 1 },
+  )
+  const data = { call, requestProfileApproval } as unknown as HomePageData
+  const group = { provider: { extension: 'plugin/example' } } as ChannelGroup
+  const row = {
+    id: 'bot',
+    pairings: [{ id: 'p'.repeat(32), label: 'Owner', target, pairedAt: '', running: true }],
+  } as unknown as ManagedInstance
+  const button = (text: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter((entry) => entry.textContent === text)
+      .at(-1)!
+  try {
+    await act(async () =>
+      root.render(createElement(ChannelPairings, { data, group, row, zh: false, disabled: false })),
+    )
+    await act(async () => button('Pair with a plugin service').click())
+    await act(async () => button('Create code').click())
+    expect(requestProfileApproval).toHaveBeenCalledWith({ state: 'approval-required', operationId: 'x' })
+    expect(document.body.textContent).not.toContain('ABCD-EFGH')
+    await act(async () => button('Continue').click())
+    expect(document.body.textContent).toContain('ABCD-EFGH')
+    const mints = call.mock.calls.filter(([, params]) => params.action === 'mint')
+    expect(mints[0]).toEqual(mints[1])
+    expect(mints[0]?.[1]).toEqual({
+      action: 'mint',
+      extension: 'plugin/example',
+      instanceId: 'bot',
+      target: { owner: target.owner, service: 'desk' },
+      operationId: expect.any(String),
+    })
+    await act(async () => button('Done').click())
+    await act(async () => button('Pair with a plugin service').click())
+    expect(document.body.textContent, 'the code is shown once').not.toContain('ABCD-EFGH')
+    await act(async () => button('Cancel').click())
+    await act(async () => button('Unpair').click())
+    expect(call).toHaveBeenLastCalledWith('channels.pairing', { action: 'revoke', pairingId: 'p'.repeat(32) })
   } finally {
     await act(async () => root.unmount())
   }

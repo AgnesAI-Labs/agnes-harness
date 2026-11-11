@@ -9,6 +9,50 @@
       "required": ["providers"],
       "properties": { "providers": { "type": "array", "items": { "$ref": "#/$defs/JsonValue" } } }
     },
+    "ChannelPairingParams": {
+      "description": "Channel pairing administration. Minting a pairing code requires a person's approval: the first call returns an approval-required receipt and the call repeated with the same operationId after approval returns the code once.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action"],
+          "properties": { "action": { "const": "targets" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "extension", "instanceId", "target", "operationId"],
+          "properties": {
+            "action": { "const": "mint" },
+            "extension": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "instanceId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,47}$" },
+            "target": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["owner", "service"],
+              "properties": {
+                "owner": { "type": "string", "minLength": 1, "maxLength": 512 },
+                "service": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" }
+              }
+            },
+            "operationId": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "pairingId"],
+          "properties": {
+            "action": { "const": "revoke" },
+            "pairingId": { "type": "string", "pattern": "^[a-f0-9]{32}$" }
+          }
+        }
+      ]
+    },
+    "ChannelPairingResult": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/JsonValue" }
+    },
     "JsonValue": {
       "anyOf": [
         {
@@ -4129,6 +4173,7 @@
       "result": "AdminCompositionResult"
     },
     "_agnes/v1/channels.catalog": { "params": "AdminEmpty", "result": "ChannelCatalogResult" },
+    "_agnes/v1/channels.pairing": { "params": "ChannelPairingParams", "result": "ChannelPairingResult" },
     "_agnes/v1/admin.search.get": {
       "params": "AdminEmpty",
       "result": "AdminSearchResult"

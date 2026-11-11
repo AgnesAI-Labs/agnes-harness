@@ -2,6 +2,19 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.12.0
+
+### Added
+
+- Optional `ManagedChannelTargets` port, `ProfileManagedInit.channels`, for a profile-scoped managed
+  service that declares `channelTargets: true` (trust atom `channelTargets:<scope>:<id>`). The owner
+  pairs one direct chat of an installed channel instance with the service on the Channels page;
+  minting the pairing code requires a person's approval. The service receives the paired owner's text
+  as `ChannelTargetEvent` and sends text back with `send`, made idempotent by a delivery key and read
+  back with `delivery` (`ChannelDelivery`). Without the flag every call is refused with
+  `CAPABILITY_DENIED`. Channel providers need no change. Services using the port should require
+  `^5.12.0`.
+
 ## 5.11.0
 
 ### Added

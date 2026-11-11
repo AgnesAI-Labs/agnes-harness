@@ -85,6 +85,13 @@ export function createEndpoints(state: EndpointInput, _lifetime: AssemblyLifetim
       const link = await pool.acquireSharedWorker()
       return link.command('channels.catalog', {})
     })
+    // Minting a pairing code also requires a person's approval, which the Host asks for.
+    ep.register('_agnes/v1/channels.pairing', async (params, call) => {
+      if (call.conn.authKind !== 'local' || call.conn.credentialKind !== 'local')
+        throw rpcError('CAPABILITY_DENIED')
+      const link = await pool.acquireSharedWorker()
+      return link.command('channels.pairing', params as Record<string, unknown>)
+    })
     const context = createEndpointContext(state, transport, ep)
     registerSessionEndpoints(state, transport, ep, context)
     registerEvidenceEndpoints(state, transport, ep, context)

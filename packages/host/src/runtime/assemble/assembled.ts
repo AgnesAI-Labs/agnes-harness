@@ -53,6 +53,9 @@ export type Assembled = {
   profileServices: import('@agnes/host-extensions/profile/runtime').ProfileServiceRuntime
   channelCatalog(): import('@agnes/protocol').JsonValue
   clearChannelState(packageId: string): void
+  channelPairing(
+    params: import('@agnes/protocol').AppServerMethods['_agnes/v1/channels.pairing']['params'],
+  ): Promise<import('@agnes/protocol').JsonValue>
   serviceBinding: (names: readonly string[]) => { extension: string; packageId: string } | undefined
   callService: ReturnType<typeof serviceInvoker>['call']
   inspectService: ReturnType<typeof serviceInvoker>['inspect']

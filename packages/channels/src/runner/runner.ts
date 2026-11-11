@@ -2,7 +2,13 @@ import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import type { DaemonNotice, UINode } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
-import { type ChannelAdapter, type ChannelEvent, sessionKeyFor } from '../adapter.js'
+import {
+  type ChannelAdapter,
+  type ChannelEvent,
+  type ChatTarget,
+  type MessageRef,
+  sessionKeyFor,
+} from '../adapter.js'
 import { ChannelError } from '../errors.js'
 import { Approval } from './approval.js'
 import { backoffDelays } from './backoff.js'
@@ -48,6 +54,8 @@ export type RunnerDeps = {
   bindings?: {
     resolve(key: string): { sessionId: string; afterSeq: number } | undefined
     observe(event: ChannelEvent): void
+    /** True when the event was routed elsewhere (a pairing code or a paired chat) and must stop here. */
+    intercept?(event: ChannelEvent): boolean
   }
   now?: () => number
 }
@@ -72,6 +80,9 @@ export type Runner = {
   unlink(key: string): Promise<void>
   baseline(sessionId: string): Promise<number>
   activate(key: string, target: { chatId: string; threadId?: string }): Promise<void>
+  sendDirect(chat: ChatTarget, text: string, deliveryKey: string): Promise<MessageRef>
+  /** At most once per event across processes, as for session-bound events; false when already claimed. */
+  claim(event: ChannelEvent): Promise<boolean>
 }
 
 export function createRunner(dependencies: RunnerDeps): Runner {
@@ -258,6 +269,16 @@ export function createRunner(dependencies: RunnerDeps): Runner {
     onEvent(handler) {
       subscribers.push(handler)
     },
+    sendDirect: (chat, text, deliveryKey) => outbound.sendDirect(chat, text, deliveryKey),
+    async claim(event) {
+      const key = `${dependencies.adapter.manifest.id}:${event.accountId}:${event.eventId}`
+      try {
+        return await dependencies.client.claim.once('channel-event', key)
+      } catch {
+        safeWarn('channel event claim unavailable; treating event as already processed')
+        return false
+      }
+    },
 
     start() {
       if (phase === 'running') return Promise.resolve()
@@ -294,6 +315,10 @@ export function createRunner(dependencies: RunnerDeps): Runner {
   const receive = (event: ChannelEvent): void => {
     if (!intake || abort.signal.aborted) return
     dependencies.bindings?.observe(event)
+    if (dependencies.bindings?.intercept?.(event)) {
+      lastEventAt = new Date().toISOString()
+      return
+    }
     if (dependencies.bindings) {
       const key =
         dependencies.adapter.toSession(event, {

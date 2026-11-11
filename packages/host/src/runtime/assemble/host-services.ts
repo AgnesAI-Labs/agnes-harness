@@ -2,6 +2,10 @@ import { dirname } from 'node:path'
 import type { Kernel, SeamImplementations } from '@agnes/core'
 import { serviceContext } from '@agnes/host-extensions/ext-host/service-context'
 import { serviceInvoker } from '@agnes/host-extensions/ext-host/service-invocation'
+import {
+  CHANNEL_PAIRING_OWNER,
+  createChannelPairingApprovals,
+} from '@agnes/host-extensions/profile/channel-pairing'
 import { createProfileServiceRuntime } from '@agnes/host-extensions/profile/runtime'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
 import type { AssemblyContext } from './context.js'
@@ -99,6 +103,12 @@ export function createHostServices(
       log: deps.log,
     }),
   })
+  // Pairing codes are asked of the local owner too, in the same profile decision journal.
+  const channelPairing = createChannelPairingApprovals({
+    targets: proc.channelTargets,
+    decisions: () => profileServices.hostDecisions(LOCAL_OWNER),
+    clock: ctx.clock,
+  })
   const profileServices = createProfileServiceRuntime({
     streams: proc.profileStreams,
     managed: proc.profileManaged,
@@ -108,7 +118,7 @@ export function createHostServices(
     ...(deps.decisionsChanged ? { decisionsChanged: deps.decisionsChanged } : {}),
     wakes: proc.profileWakes,
     profileId: ctx.profile.name,
-    hostOwners: input.refinement.decisionOwners,
+    hostOwners: new Map([...input.refinement.decisionOwners, [CHANNEL_PAIRING_OWNER, channelPairing.owner]]),
     registry: services,
     activations: proc.profileActivations,
     storage: adapters.storage,
@@ -130,5 +140,5 @@ export function createHostServices(
     profile: ctx.profile.name,
     profileDir: deps.profileDir,
   })
-  return { servicesInvocation, sessionConfiguration, profileServices }
+  return { servicesInvocation, sessionConfiguration, profileServices, pairing: channelPairing }
 }

@@ -18,11 +18,19 @@ type Provider = {
   [key: string]: unknown
 }
 type Binding = { sessionId: string; targetId: string; label: string; state: string }
+type Pairing = {
+  id: string
+  label: string
+  target: { owner: string; service: string; packageId: string }
+  pairedAt: string
+  running: boolean
+}
 type Health = {
   id: string
   version: number
   connection: { channel: string; daemon: string } | null
   bindings?: Binding[]
+  pairings?: Pairing[]
   recovery?: boolean
 }
 const revision = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -108,6 +116,7 @@ export function channelWorkbench(client: Client, profile: string) {
                     ...binding,
                     sessionTitle: ownedById.get(binding.sessionId)?.title || binding.sessionId,
                   })),
+                pairings: health?.pairings ?? [],
                 unavailable: bindings.some((binding) => !ownedById.has(binding.sessionId)),
                 statusUnavailable: !health,
                 recovery: health?.recovery === true,
@@ -215,5 +224,8 @@ export function channelWorkbench(client: Client, profile: string) {
     )
     return { receipt, instanceId }
   }
-  return { overview, context, configure, remove }
+  // Pairing decisions stay in the Host; this only forwards the fixed controls.
+  const pairing = async (params: Record<string, unknown>) =>
+    client.call<Record<string, unknown>>('_agnes/v1/channels.pairing', params)
+  return { overview, context, configure, remove, pairing }
 }

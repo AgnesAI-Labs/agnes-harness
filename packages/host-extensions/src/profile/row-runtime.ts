@@ -5,12 +5,13 @@ import type {
   ProfileManagedDefinition,
 } from '@agnes/extension-api'
 import { CHANNEL_CONFIG_SCHEMA, channelKind, channelServiceCapabilities } from '@agnes/extension-api'
-import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { grantKey, type RowOriginLookup } from '@agnes/plugin-runtime/host'
 import type { PluginCapabilities } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
 import { frozenJson } from '../ext-host/frozen-json.js'
 import { pluginRowSource } from '../ext-host/row-extension-host.js'
 import type { ChannelRuntimeFactory } from './channel-runtime.js'
+import type { ChannelTargets } from './channel-targets.js'
 import type { ProfileManagedResources } from './managed.js'
 import { registerManagedServices } from './managed-services.js'
 import { ownedStore } from './owned-store.js'
@@ -28,6 +29,7 @@ export function installProfileRuntime(
     channelDirectory?: Map<string, () => import('@agnes/protocol').JsonValue>
     channelCurrent?(owner: string, integrity: string, revision: string): unknown
     channelRemember?(packageId: string, owner: string): void
+    channelTargets?: ChannelTargets
     managed: ProfileManagedResources
     streams: ProfileStreams
     namespace(owner: string, name: string): import('@agnes/extension-api').PersistenceMetadataNamespace
@@ -120,6 +122,9 @@ export function installProfileRuntime(
               return deps.resolveSecret!(ref)
             },
             log: deps.channelLog!,
+            ...(deps.channelTargets
+              ? { targets: deps.channelTargets.bridge(grantKey(row.origin.packageId, row.owner)) }
+              : {}),
           }),
         async check(value) {
           return value.status()

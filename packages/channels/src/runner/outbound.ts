@@ -58,6 +58,8 @@ export class Outbound {
   private readonly lanes = new Map<string, Lane>()
   private readonly detachedPumps = new Set<Promise<void>>()
   private readonly accountBucket: TokenBucket
+  private readonly chatBuckets = new Map<string, TokenBucket>()
+  private readonly direct = new AbortController()
   private stopped = false
   onDegraded?: (sessionKey: string, capability: DegradedCap) => void
 
@@ -125,8 +127,28 @@ export class Outbound {
     return Promise.all(matches).then(() => undefined)
   }
 
+  /**
+   * One text message to a chat outside any session lane: a paired plugin service's send, or a reply to
+   * its owner. It shares the account rate with session lanes and keeps one message per second per chat.
+   */
+  async sendDirect(chat: ChatTarget, text: string, deliveryKey: string): Promise<MessageRef> {
+    if (this.stopped) throw new Error('channel outbound stopped')
+    let bucket = this.chatBuckets.get(chat.chatId)
+    if (bucket === undefined) {
+      if (this.chatBuckets.size >= 1024) this.chatBuckets.clear()
+      bucket = new TokenBucket({ tokensPerSecond: this.dependencies.rates?.sessionPerSec ?? 1, capacity: 1 })
+      this.chatBuckets.set(chat.chatId, bucket)
+    }
+    await this.takeTokens(bucket, this.direct.signal)
+    return this.dependencies.adapter.send(
+      { ...chat, deliveryKey },
+      { blocks: [{ kind: 'text', markdown: text }] },
+    )
+  }
+
   async stop(): Promise<void> {
     this.stopped = true
+    this.direct.abort()
     const pending = [
       ...this.detachedPumps,
       ...[...this.lanes.values()].flatMap((lane) => [lane.flushing, lane.pumping]),
@@ -411,10 +433,14 @@ export class Outbound {
     return messages
   }
 
-  private async take(lane: Lane): Promise<void> {
-    await lane.bucket.take(lane.stop.signal)
-    await this.accountBucket.take(lane.stop.signal)
-    lane.stop.signal.throwIfAborted()
+  private take(lane: Lane): Promise<void> {
+    return this.takeTokens(lane.bucket, lane.stop.signal)
+  }
+
+  private async takeTokens(bucket: TokenBucket, signal: AbortSignal): Promise<void> {
+    await bucket.take(signal)
+    await this.accountBucket.take(signal)
+    signal.throwIfAborted()
   }
 
   private persistProgress(

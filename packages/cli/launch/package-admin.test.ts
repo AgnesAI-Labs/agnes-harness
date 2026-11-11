@@ -378,6 +378,31 @@ it('relays only a same-origin typed browser service request and strips page-supp
         ).status,
       ).toBe(400)
     }
+    const revoke = { action: 'revoke', pairingId: 'a'.repeat(32) }
+    mocks.request.mockResolvedValueOnce({} as never)
+    expect((await sendChannel({ method: 'channels.pairing', params: revoke })).status).toBe(200)
+    expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/channels.pairing', revoke)
+    for (const params of [
+      { ...revoke, actor: 'owner' },
+      { action: 'revoke', pairingId: 'not-a-pairing' },
+      { action: 'mint', extension: channelCall.params.extension, instanceId: 'one', operationId: 'mint' },
+    ])
+      expect((await sendChannel({ method: 'channels.pairing', params })).status).toBe(400)
+    mocks.request.mockRejectedValueOnce(
+      Object.assign(new Error('internal detail'), { data: { code: 'TARGET_PAIRED' } }) as never,
+    )
+    const refused = await sendChannel({
+      method: 'channels.pairing',
+      params: {
+        action: 'mint',
+        extension: channelCall.params.extension,
+        instanceId: 'one',
+        target: { owner: '@acme/desk#ext:acme/desk/main', service: 'desk' },
+        operationId: 'mint',
+      },
+    })
+    expect(refused.status).toBe(409)
+    expect(JSON.stringify(await refused.json())).not.toContain('internal detail')
     const profile = await fetch(`${origin}/api/client-modules/profile`, {
       method: 'POST',
       headers: { Origin: origin, 'Content-Type': 'application/json' },

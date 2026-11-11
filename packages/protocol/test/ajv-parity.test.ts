@@ -8315,6 +8315,16 @@ const AppSamples: Record<string, Sample> = {
     invalid: [{}, { providers: 'invalid' }],
     note: 'Read-only active channel descriptors',
   },
+  ChannelPairingParams: {
+    valid: { action: 'revoke', pairingId: 'a'.repeat(32) },
+    invalid: [{ action: 'unknown' }, { action: 'revoke', pairingId: 'A'.repeat(32) }],
+    note: 'Channel pairing administration',
+  },
+  ChannelPairingResult: {
+    valid: { targets: [] },
+    invalid: [[], 'invalid'],
+    note: 'Channel pairing result',
+  },
   AdminBundlesSave: {
     valid: { revision: 0, bundles: [] },
     invalid: [null],
@@ -8972,6 +8982,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminEmpty',
     result: 'ChannelCatalogResult',
+  },
+  '_agnes/v1/channels.pairing': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'ChannelPairingParams',
+    result: 'ChannelPairingResult',
   },
   '_agnes/v1/packages.skillImport': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
@@ -10035,6 +10050,17 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{ unexpected: true }],
     note: 'Local channel metadata catalog',
   },
+  '_agnes/v1/channels.pairing': {
+    valid: {
+      action: 'mint',
+      extension: 'plugin/0a1b',
+      instanceId: 'desk',
+      target: { owner: '@acme/desk#plugin/0a1b', service: 'desk' },
+      operationId: 'op-1',
+    },
+    invalid: [{ action: 'mint' }, { action: 'revoke', pairingId: 'x' }, { action: 'targets', extra: true }],
+    note: 'Channel pairing administration',
+  },
   '_agnes/v1/packages.skillImport': {
     valid: {
       profile: 'local-dev',
@@ -11059,6 +11085,11 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
     valid: { providers: [] },
     invalid: [{}, { providers: 'invalid' }],
     note: 'Channel catalog result',
+  },
+  '_agnes/v1/channels.pairing': {
+    valid: { targets: [] },
+    invalid: [[], 'invalid'],
+    note: 'Channel pairing result',
   },
   '_agnes/v1/packages.skillImport': {
     valid: { state: 'selection_required', candidates: ['archify'] },

@@ -292,11 +292,11 @@ const managedService = {
   requires: [],
 }
 
-it('says on the review card that a plugin can open sessions, in plain words', async () => {
+it('says on the review card that a plugin can open sessions and reach a paired chat, in plain words', async () => {
   const kit = backend({
     declaredCapabilities: {
       ui: true,
-      managedServices: [{ ...managedService, sessions: true }],
+      managedServices: [{ ...managedService, sessions: true, channelTargets: true }],
     } as PackagePreview['declaredCapabilities'],
   })
   await mountMarket(kit.fetcher)
@@ -305,7 +305,9 @@ it('says on the review card that a plugin can open sessions, in plain words', as
   const gets = review()?.querySelector('[data-testid="install-review-gets"]')?.textContent
   expect(gets).toContain('界面')
   expect(gets).toContain('能替你开会话并运行')
+  expect(gets).toContain('通过该渠道给你发文字提醒')
   expect(gets).not.toContain('managedSessions')
+  expect(gets).not.toContain('channelTargets')
 }, 60_000)
 
 it('pushes the review page when the check is done, with the hashes under collapsed 技术详情', async () => {
