@@ -403,3 +403,202 @@ it.each(['credentials', 'adapter', 'backend'] as const)(
     await f.stop()
   },
 )
+
+/** An in-memory stand-in for the Host pairing port: one live code, recorded calls. */
+function memoryTargets() {
+  const pairings: { id: string; accountId: string; chatId: string; userId: string; instance: string }[] = []
+  const delivered: import('@agnes/extension-api').ChannelTargetEvent[] = []
+  const links = new Map<string, Parameters<import('../src/targets.js').ChannelTargetsPort['attach']>[1]>()
+  const state = { code: 'ABCD-EFGH' as string | undefined, fail: 0, retained: [] as unknown[] }
+  const port: import('../src/targets.js').ChannelTargetsPort = {
+    retain: (instances) => state.retained.push(instances),
+    attach: (instanceId, link) => {
+      links.set(instanceId, link)
+      return () => links.delete(instanceId)
+    },
+    expectsCode: (_instanceId, text) => !!state.code && /^[A-Z2-9]{8}$/i.test(text.replace(/[\s-]/g, '')),
+    confirm: (instance, text, chat) => {
+      if (text.replace(/[\s-]/g, '').toUpperCase() !== state.code?.replace('-', '')) return undefined
+      state.code = undefined
+      pairings.push({ ...chat, instance })
+      return { label: 'Desk' }
+    },
+    find: (instance, chatId) => pairings.find((p) => p.instance === instance && p.chatId === chatId),
+    deliver: async (_pairing, event) => {
+      if (state.fail-- > 0) throw new Error('service stopped')
+      delivered.push(event)
+    },
+    drop: (id) => {
+      pairings.splice(
+        pairings.findIndex((p) => p.id === id),
+        1,
+      )
+    },
+    paired: (instance, id) => pairings.some((p) => p.instance === instance && p.id === id),
+    pairings: (instance) => pairings.filter((p) => p.instance === instance).map((p) => ({ id: p.id })),
+  }
+  return { port, pairings, delivered, links, state }
+}
+
+const dm = (text: string, over: Record<string, unknown> = {}) =>
+  ({
+    kind: 'message',
+    eventId: `event-${Math.random()}`,
+    messageId: 'message-1',
+    accountId: 'account',
+    text,
+    attachments: [],
+    at: '2026-11-11T00:00:00Z',
+    chat: { id: 'owner-chat', type: 'dm' },
+    sender: { userId: 'owner', displayName: 'Owner', raw: {} },
+    mentions: { bot: false, replyToBot: false, quoteBot: false },
+    ...over,
+  }) as import('../src/adapter.js').ChannelEvent
+
+const texts = (adapter: FakeChannel) =>
+  adapter.sent
+    .flatMap((row) => row.msg.blocks)
+    .flatMap((block) => (block.kind === 'text' ? [block.markdown] : []))
+
+it('pairs a direct chat with a code and routes only the paired owner text to the service', async () => {
+  const f = await fixture()
+  const targets = memoryTargets()
+  Object.assign(f.init, { config: { instances: [f.instance] } })
+  const runtime = await startChannelBridge(f.provider, f.init, {
+    ...f.options,
+    targets: targets.port,
+    targetBackoff: { baseMs: 1, maxMs: 1 },
+  })
+  cleanups.push(f.stop)
+  const adapter = f.adapters[0]!
+  const client = f.clients[0]!
+  expect(targets.state.retained, 'startup prunes pairings against the current instances').toEqual([
+    [{ id: 'first', credentials: expect.stringMatching(/^[a-f0-9]{64}$/) }],
+  ])
+
+  adapter.emit(dm('ABCD-EFGX', { chat: { id: 'group-chat', type: 'group' } }))
+  adapter.emit(dm('abcd efgh'))
+  await vi.waitFor(() => expect(texts(adapter)).toContain('已与「Desk」配对，之后发给我的消息会交给它。'))
+  expect(targets.pairings).toHaveLength(1)
+  expect(targets.pairings[0]).toMatchObject({ chatId: 'owner-chat', userId: 'owner', accountId: 'account' })
+
+  adapter.emit(dm('ABCD-EFGH', { eventId: 'after-pairing' }))
+  adapter.emit(dm('hello desk', { eventId: 'owner-message' }))
+  adapter.emit(dm('not the owner', { eventId: 'stranger', sender: { userId: 'stranger', raw: {} } }))
+  await vi.waitFor(() =>
+    expect(targets.delivered.map((e) => e.eventId)).toEqual(['after-pairing', 'owner-message']),
+  )
+  expect(targets.delivered[1]).toEqual({
+    kind: 'message',
+    origin: 'owner',
+    pairingId: targets.pairings[0]!.id,
+    instanceId: 'first',
+    eventId: 'owner-message',
+    messageId: 'message-1',
+    at: '2026-11-11T00:00:00Z',
+    chat: { id: 'owner-chat', type: 'dm' },
+    sender: { userId: 'owner' },
+    text: 'hello desk',
+  })
+  expect(client.calls.some((call) => call.method === 'session.new' || call.method === 'followUp')).toBe(false)
+
+  client.claimResults.set('channel-event:fake:account:replayed', false)
+  adapter.emit(dm('replayed', { eventId: 'replayed' }))
+  targets.state.fail = 3
+  adapter.emit(dm('while stopped', { eventId: 'stopped-1' }))
+  await vi.waitFor(() =>
+    expect(texts(adapter)).toContain('接收这个聊天的插件服务现在没在运行，这条没有收到，请稍后再发。'),
+  )
+  targets.state.fail = 3
+  adapter.emit(dm('still stopped', { eventId: 'stopped-2' }))
+  await vi.waitFor(() => expect(targets.state.fail).toBeLessThan(1))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(
+    texts(adapter).filter((text) => text.includes('没在运行')),
+    'one notice per ten minutes',
+  ).toHaveLength(1)
+  expect(targets.delivered.map((e) => e.eventId)).not.toContain('replayed')
+
+  const link = targets.links.get('first')!
+  expect(link).toMatchObject({ provider: 'fake', textChars: FAKE_MANIFEST.limits.textChars })
+  expect(link.connected()).toBe(true)
+  const sent = await link.send('owner-chat', 'reminder', 'key-1')
+  expect(sent.messageId).toBeTruthy()
+  expect(adapter.sent.at(-1)).toMatchObject({ target: { chatId: 'owner-chat', deliveryKey: 'key-1' } })
+  expect(runtime.status()).toMatchObject({
+    instances: [{ id: 'first', pairings: [{ id: targets.pairings[0]!.id }] }],
+  })
+
+  adapter.emit(dm('new app', { eventId: 'other-account', accountId: 'other' }))
+  await vi.waitFor(() =>
+    expect(targets.pairings, 'another platform account drops the pairing').toHaveLength(0),
+  )
+})
+
+it('keeps a code-shaped text on the session path without a live code, and refuses pairing a bound chat', async () => {
+  const f = await fixture()
+  const targets = memoryTargets()
+  targets.state.code = undefined
+  Object.assign(f.init, { config: { instances: [{ ...f.instance, allowFrom: ['owner'] }] } })
+  const runtime = await startChannelBridge(f.provider, f.init, { ...f.options, targets: targets.port })
+  cleanups.push(f.stop)
+  const adapter = f.adapters[0]!
+  const client = f.clients[0]!
+  adapter.emit(dm('first contact'))
+  const session = { id: 'web-session', workspace: f.root }
+  const view = (await runtime.session!(session)) as {
+    instances: { id: string; version: number; targets: { id: string }[] }[]
+  }
+  const row = view.instances[0]!
+  client.setTimeline(session.id, {
+    sessionId: session.id,
+    upto: 1,
+    generation: 1,
+    opState: null,
+    turns: [],
+    nodes: [],
+  })
+  await runtime.binding!(
+    'bind',
+    { instanceId: row.id, targetId: row.targets[0]!.id, expectedVersion: row.version },
+    session,
+  )
+  adapter.emit(dm('ABCD-EFGH', { eventId: 'code-without-live-code' }))
+  await vi.waitFor(() => expect(client.calls.some((call) => call.method === 'followUp')).toBe(true))
+
+  targets.state.code = 'WXYZ-2345'
+  adapter.emit(dm('WXYZ-2345', { eventId: 'code-on-bound-chat' }))
+  await vi.waitFor(() =>
+    expect(texts(adapter)).toContain('这个聊天已绑定到一个 AGH 会话，请先在 AGH 里解绑。'),
+  )
+  expect(targets.pairings).toHaveLength(0)
+
+  adapter.emit(dm('WXYZ-2345', { eventId: 'not-allowed', sender: { userId: 'stranger', raw: {} } }))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(targets.state.code, 'allowFrom still filters a pairing attempt').toBe('WXYZ-2345')
+})
+
+it('refuses binding a session to a chat paired with a plugin service and marks it unavailable', async () => {
+  const f = await fixture()
+  const targets = memoryTargets()
+  Object.assign(f.init, { config: { instances: [f.instance] } })
+  const runtime = await startChannelBridge(f.provider, f.init, { ...f.options, targets: targets.port })
+  cleanups.push(f.stop)
+  const adapter = f.adapters[0]!
+  adapter.emit(dm('first contact', { eventId: 'contact' }))
+  adapter.emit(dm('ABCD-EFGH'))
+  await vi.waitFor(() => expect(targets.pairings).toHaveLength(1))
+  const session = { id: 'web-session', workspace: f.root }
+  const view = (await runtime.session!(session)) as {
+    instances: { id: string; version: number; targets: { id: string; unavailable: boolean }[] }[]
+  }
+  const row = view.instances[0]!
+  expect(row.targets[0]).toMatchObject({ id: targets.pairings[0]!.id, unavailable: true })
+  await expect(
+    runtime.binding!(
+      'bind',
+      { instanceId: row.id, targetId: row.targets[0]!.id, expectedVersion: row.version },
+      session,
+    ),
+  ).rejects.toThrow('paired with a plugin service')
+})

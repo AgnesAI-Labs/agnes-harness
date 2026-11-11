@@ -258,6 +258,22 @@ describe('Outbound', () => {
     expect(adapter.send).toHaveBeenCalledTimes(3)
   })
 
+  it('sends one direct text message per call and cancels a queued one on stop', async () => {
+    const { adapter, outbound } = await setup({ sessionPerSec: 1 })
+    const ref = await outbound.sendDirect({ chatId: 'owner-chat' }, 'reminder', 'direct-1')
+    expect(adapter.sent.at(-1)).toMatchObject({
+      target: { chatId: 'owner-chat', deliveryKey: 'direct-1' },
+      msg: { blocks: [{ kind: 'text', markdown: 'reminder' }] },
+      ref,
+    })
+    // One message per second per chat, as on a session lane: the second waits and stop cancels it.
+    const queued = outbound.sendDirect({ chatId: 'owner-chat' }, 'second', 'direct-2')
+    await outbound.stop()
+    await expect(queued).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(outbound.sendDirect({ chatId: 'owner-chat' }, 'late', 'direct-3')).rejects.toThrow('stopped')
+    expect(adapter.sent.map((row) => row.target.deliveryKey)).not.toContain('direct-2')
+  })
+
   it('cancels a notice retry backoff on stop', async () => {
     const { adapter, outbound } = await setup({
       stopSettleMs: 100,

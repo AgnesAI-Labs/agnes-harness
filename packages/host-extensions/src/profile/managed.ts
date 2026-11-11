@@ -9,9 +9,11 @@ import type {
   ProfileManagedInit,
   ServiceContext,
 } from '@agnes/extension-api'
+import { grantKey } from '@agnes/plugin-runtime/host'
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
+import { type ChannelTargets, deniedChannelTargets } from './channel-targets.js'
 import {
   confirmManagedShutdown,
   handoverManagedMarker,
@@ -91,6 +93,7 @@ export class ProfileManagedResources {
     private readonly current?: (owner: string, integrity: string, revision: string) => boolean | string,
     private readonly processIdentity?: ProcessQuery,
     private readonly sessions?: ManagedSessionsFactory,
+    private readonly targets?: ChannelTargets,
   ) {}
   register<T>(input: {
     owner: string
@@ -363,6 +366,19 @@ export class ProfileManagedResources {
                 service: input.definition.id,
               })
             : deniedManagedSessions,
+        channels:
+          input.descriptor.channelTargets === true && this.targets
+            ? this.targets.port({
+                owner: grantKey(input.packageId, input.owner),
+                service: input.definition.id,
+                packageId: input.packageId,
+                signal: lifetime.signal,
+                assertCurrent: () => {
+                  lifetime.signal.throwIfAborted()
+                  input.assert()
+                },
+              })
+            : deniedChannelTargets,
         assertCurrent: () => {
           lifetime.signal.throwIfAborted()
           input.assert()

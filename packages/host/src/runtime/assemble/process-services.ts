@@ -6,6 +6,7 @@ import {
   type HostLockedPackageMutationRuntime,
 } from '@agnes/host-computer-use/computer-use/locked-package-mutation-runtime'
 import { ProfileActivations } from '@agnes/host-extensions/profile/activation'
+import { ChannelTargets } from '@agnes/host-extensions/profile/channel-targets'
 import { ProfileManagedResources } from '@agnes/host-extensions/profile/managed'
 import { ProfileStreams } from '@agnes/host-extensions/profile/streams'
 import { ProfileWakeBindings } from '@agnes/host-extensions/profile/wakes'
@@ -27,6 +28,8 @@ import type { PackageSet } from './packages.js'
  */
 export type ProcessServices = Readonly<{
   channelDirectory: Map<string, () => import('@agnes/protocol').JsonValue>
+  /** Pairings of channel chats to managed services; one per profile in this process. */
+  channelTargets: ChannelTargets
   profileManaged: ProfileManagedResources
   profileStreams: ProfileStreams
   profileWakes: ProfileWakeBindings
@@ -137,6 +140,10 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
   const profileActivations = new ProfileActivations(
     adapters.storage.metadata.namespace('@agnes/host', `activation:${ctx.profile.name}`),
   )
+  const channelTargets = ChannelTargets.retain(`${dataDir}/profile:${ctx.profile.name}`, () =>
+    adapters.storage.metadata.namespace('host:channel-targets', `profile:${ctx.profile.name}`),
+  )
+  rollback.push('channel-targets', () => channelTargets.release())
   const profileManaged = new ProfileManagedResources(
     `${dataDir}/profile:${ctx.profile.name}`,
     deps.boundWakes ??
@@ -157,10 +164,12 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
     },
     undefined,
     deps.managedSessions,
+    channelTargets.targets,
   )
   rollback.push('profile-managed', () => profileManaged.close())
   return {
     channelDirectory: new Map(),
+    channelTargets: channelTargets.targets,
     profileManaged,
     profileStreams: new ProfileStreams(ctx.profile.name, profileActivations),
     profileActivations,

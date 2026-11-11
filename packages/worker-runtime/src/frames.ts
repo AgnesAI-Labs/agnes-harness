@@ -72,6 +72,7 @@ export type SessionMethod =
 export type WorkerMethod =
   | 'channels.catalog'
   | 'channels.clear'
+  | 'channels.pairing'
   | 'ping'
   | 'pluginGenerations.status'
   | 'pluginGenerations.publicationStatus'

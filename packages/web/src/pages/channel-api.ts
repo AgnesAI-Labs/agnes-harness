@@ -6,6 +6,15 @@ export async function callChannel<T>(method: string, params: unknown): Promise<T
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ method, params }),
   })
-  if (!response.ok) throw new Error('Channel operation was not confirmed')
+  if (!response.ok) {
+    const body = (await response.json().catch(() => undefined)) as
+      | { error?: { data?: { code?: unknown } } }
+      | undefined
+    const code = body?.error?.data?.code
+    throw Object.assign(
+      new Error('Channel operation was not confirmed'),
+      typeof code === 'string' ? { code } : {},
+    )
+  }
   return response.json() as Promise<T>
 }

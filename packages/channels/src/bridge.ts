@@ -17,6 +17,7 @@ import { decideAttention } from './runner/attention.js'
 import type { RunnerConfig } from './runner/config.js'
 import { createRunner, type Runner, type RunnerDeps, type RunnerLog } from './runner/runner.js'
 import { createRunnerSupervisor } from './runner/supervisor.js'
+import { type ChannelTargetsPort, createTargetRouter, credentialFingerprint } from './targets.js'
 
 export interface ChannelBridgeOptions {
   owner: string
@@ -24,6 +25,10 @@ export interface ChannelBridgeOptions {
   resolveSecret(ref: string): Promise<string> | string
   createClient(config: RunnerConfig, stateDirectory: string): RunnerDeps['client']
   log: Record<'info' | 'warn' | 'error', (message: string) => void>
+  /** Host pairings of this row's direct chats to plugin services; absent, no chat is routed to a service. */
+  targets?: ChannelTargetsPort
+  /** Test seam for the retries of a delivery to a paired service. */
+  targetBackoff?: { baseMs: number; maxMs: number }
 }
 
 /** Recovery projection for a stopped failed runtime. No credentials, fresh targets or transport. */
@@ -84,6 +89,8 @@ export async function startChannelBridge(
     bindings: ChannelBindings
     supervisor: ReturnType<typeof createRunnerSupervisor>
     active?: Runner
+    router?: ReturnType<typeof createTargetRouter>
+    detach?: (() => void) | undefined
   }[] = []
   let stopped = false
   let stopping: Promise<void> | undefined
@@ -99,6 +106,8 @@ export async function startChannelBridge(
       await Promise.all(
         running.map(async (row) => {
           try {
+            await row.router?.drain()
+            row.detach?.()
             await row.active?.stop({ drainMs: 2000 })
           } finally {
             await row.supervisor.stop({ drainMs: 0 })
@@ -138,6 +147,12 @@ export async function startChannelBridge(
         cursor = page.nextCursor
       } while (cursor)
     })
+    options.targets?.retain(
+      config.instances.map((instance) => ({
+        id: instance.id,
+        credentials: credentialFingerprint(instance.credentialRefs),
+      })),
+    )
     for (const instance of config.instances) {
       assertCurrent()
       stage = 'workspace'
@@ -163,8 +178,27 @@ export async function startChannelBridge(
         healthz: { enabled: false, port: 0 },
       }
       const fingerprint = createHash('sha256').update(JSON.stringify(instance)).digest('hex')
-      const bindings = new ChannelBindings(init.store, `bindings:${key}:${fingerprint}`, assertCurrent)
+      const targets = options.targets
+      const bindings = new ChannelBindings(
+        init.store,
+        `bindings:${key}:${fingerprint}`,
+        assertCurrent,
+        (id) => targets?.paired(instance.id, id) ?? false,
+      )
       const row: (typeof running)[number] = { id: instance.id, workspace, bindings, supervisor: undefined! }
+      let current: Awaited<ReturnType<ChannelProvider['create']>> | undefined
+      if (targets)
+        row.router = createTargetRouter({
+          targets,
+          instanceId: instance.id,
+          credentials: credentialFingerprint(instance.credentialRefs),
+          cfg,
+          adapter: () => current ?? refuse(),
+          runner: () => row.active,
+          bindings,
+          signal: init.signal,
+          ...(options.targetBackoff ? { backoff: options.targetBackoff } : {}),
+        })
       row.supervisor = createRunnerSupervisor(async () => {
         assertCurrent()
         if (stopped) throw new Error('Channel resource is stopping')
@@ -225,10 +259,14 @@ export async function startChannelBridge(
                 const intent = adapter.toSession(event, { tenant: cfg.tenant, agent: cfg.agent })
                 if (intent) bindings.observe(event, intent.sessionKey)
               },
+              intercept: (event) => row.router?.intercept(event) ?? false,
             },
             refsPath: join(state, 'refs.sqlite'),
           })
           row.active = runner
+          current = adapter
+          row.detach?.()
+          row.detach = row.router?.attach(runner, provider.manifest)
           bindings.runner = runner
           return { client, runner }
         } catch (error) {
@@ -271,6 +309,7 @@ export async function startChannelBridge(
             id: row.id,
             connection: row.active?.status() ?? null,
             ...row.bindings.summary(),
+            pairings: (options.targets?.pairings(row.id) ?? []) as import('@agnes/protocol').JsonValue[],
           })),
         }
       },
@@ -284,6 +323,10 @@ export async function startChannelBridge(
   } finally {
     if (stopped) init.signal.removeEventListener('abort', aborted)
   }
+}
+
+function refuse(): never {
+  throw new Error('Channel adapter is not running')
 }
 
 function privateDirectory(path: string): void {

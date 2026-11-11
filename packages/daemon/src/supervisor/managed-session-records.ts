@@ -1,5 +1,6 @@
 import type { TableHandle } from '@agnes/daemon-foundation/storage/table'
 import type { ManagedSessionRetention } from '@agnes/extension-api'
+import { grantKey } from '@agnes/plugin-runtime/host'
 
 export interface ManagedSessionRecord {
   sessionId: string
@@ -46,16 +47,6 @@ const record = (row: Row): ManagedSessionRecord => ({
   started: row.started === 1,
   archived: row.archived === 1,
 })
-
-/**
- * The owner of a workspace grant, a managed session record and its send keys: the package and one of
- * its plugin rows. Row ids are author-chosen, so a row alone would let a later package that declares
- * the same id inherit the grants and reach the sessions. `#` separates the parts because a package id
- * never contains it, so `${packageId}#` prefixes only that package's keys; a row is `plugin/<hex>`, so
- * a record stored under a row alone matches no key. Not NUL: the storage adapter refuses NUL in a
- * bound TEXT parameter.
- */
-export const grantKey = (packageId: string, owner: string) => `${packageId}#${owner}`
 
 /**
  * Which package and plugin row manages which session, the workspaces the owner authorized for each,
