@@ -779,6 +779,7 @@ function createVerifiedRowAdapter(
         return { status: 'removed', cause: new Error('installation is not active'), fatal: true }
       }
       let normalized: unknown
+      let restoreOrigin = () => {}
       try {
         normalized = deepFreeze(normalizePreparedConfig(state.mount.entry.prepared, cloneValue(row.config)))
         // A re-decoded row carries a fresh config object even when nothing changed. Restarting
@@ -787,12 +788,22 @@ function createVerifiedRowAdapter(
           state.rawConfig = row.config
           return { status: 'updated' }
         }
+        // The reloaded plugin registers against the row origin, and activation epochs are keyed by the
+        // new row hash, so the origin moves with the config. A no-op reconciliation keeps it.
+        const bound = gate.origins.lookup(state.fiber)
+        if (bound)
+          restoreOrigin = gate.origins.replace(state.fiber, {
+            ...bound,
+            rowRevision: canonicalRowRevision(snapshotBoundRow(row)),
+            configDigest: pluginConfigDigest(row.config),
+          })
         await state.fiber.update(normalized)
         await state.fiber.await()
         state.rawConfig = row.config
         state.normalizedConfig = normalized
         return { status: 'updated' }
       } catch (cause) {
+        restoreOrigin()
         try {
           await state.fiber.update(state.normalizedConfig, true)
           await state.fiber.await()

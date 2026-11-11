@@ -53,13 +53,15 @@ export function channelControls(
   proc: ProcessServices,
   profile: string,
   pairing: Pick<ReturnType<typeof createChannelPairingApprovals>, 'mint'>,
+  log: import('@agnes/extension-api').Logger,
 ) {
   return {
     channelCatalog: () => ({
-      providers: [...proc.channelDirectory.values()].flatMap((read) => {
+      providers: [...proc.channelDirectory].flatMap(([extension, read]) => {
         try {
           return [read()]
-        } catch {
+        } catch (error) {
+          log.warn('Channel provider omitted from the catalog', { extension, error: String(error) })
           return []
         }
       }),
