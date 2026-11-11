@@ -365,6 +365,10 @@ function lineageSome(
   return off(sessionId)
 }
 
+function storedModel(value: string | null): { route: string; model: string } | undefined {
+  return value ? (JSON.parse(value) as { route: string; model: string }) : undefined
+}
+
 export function createManagedSessions(ports: ManagedSessionPorts) {
   const chains = new Map<string, Promise<unknown>>()
   const serial = <T>(key: string, work: () => Promise<T>): Promise<T> => {
@@ -432,7 +436,7 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       bundle: input.bundle,
       retention: input.retention,
       permission: input.permission ?? 'default',
-      model: input.model ? `${input.model.route}\0${input.model.model}` : null,
+      model: input.model ? JSON.stringify({ route: input.model.route, model: input.model.model }) : null,
       memoryWrites: input.memoryWrites !== false,
       skillInstalls: input.skillInstalls !== false,
     } as const
@@ -506,12 +510,12 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
         return { state: 'notSubmitted', reason: 'busy' } as const
       // A new turn needs what the start needed: a revoked grant or a lost gate refuses it. A running
       // turn is left to finish; the plugin and the owner can still interrupt it.
-      const [route, model] = current.model?.split('\0') ?? []
+      const chosen = storedModel(current.model)
       await startGates(ports, caller, {
         workspace: current.workspace,
         bundle: current.bundle,
         permission: current.permission,
-        ...(route !== undefined && model !== undefined ? { model: { route, model } } : {}),
+        ...(chosen ? { model: { route: chosen.route, model: chosen.model } } : {}),
       })
       const missing = await runningGateMissing(current.sessionId)
       if (missing) throw missing
