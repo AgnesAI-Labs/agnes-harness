@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => {
 })
 
 vi.mock('@agnes/sdk', () => ({
+  unixTransport: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
   createClient: vi.fn(() => ({
     initialize: vi.fn(async () => ({})),

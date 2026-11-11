@@ -259,7 +259,7 @@
     "reason": "真实进程/OS/build",
     "evidence": "Static audit; not executed in this development window."
   },
-  "packages/channels/test/local-pipe-real.e2e.test.ts": {
+  "packages/daemon/test/channel-pipe-real.e2e.test.ts": {
     "previous": "packages/channels/test/local-pipe-real.test.ts",
     "reason": "真实进程/OS/build",
     "evidence": "Static audit; not executed in this development window."

@@ -236,6 +236,7 @@ function sameRow(left: Readonly<EntryRow>, right: Readonly<EntryRow>): boolean {
     left.mountRevision === right.mountRevision &&
     left.entryRevision === right.entryRevision &&
     left.extrasRevision === right.extrasRevision &&
+    left.configReload === right.configReload &&
     sameValue(left.liveResources, right.liveResources) &&
     left.liveResourceRevision === right.liveResourceRevision &&
     sameValue(left.config, right.config)
@@ -308,6 +309,7 @@ function snapshotRow(row: Readonly<EntryRow>, normalizedConfig: unknown): Readon
     mountRevision: row.mountRevision,
     entryRevision: row.entryRevision,
     extrasRevision: row.extrasRevision,
+    ...(row.configReload === undefined ? {} : { configReload: row.configReload }),
     ...(row.liveResources === undefined ? {} : { liveResources: Object.freeze([...row.liveResources]) }),
     ...(row.liveResourceRevision === undefined ? {} : { liveResourceRevision: row.liveResourceRevision }),
     ...(row.config === undefined ? {} : { config: normalizedConfig }),

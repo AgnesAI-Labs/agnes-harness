@@ -1,6 +1,6 @@
 import type { TSchema } from '@sinclair/typebox'
 import * as P from '../gen/ts/package-admin.js'
-import { checkAdminData as check, contract } from './admin-contract.js'
+import { adminPayloadBudget, checkAdminData as check, contract } from './admin-contract.js'
 import type { ValidationResult } from './validate.js'
 
 /** Browser client-module slots currently backed by a real Web host outlet. */
@@ -832,18 +832,12 @@ export function validatePackageAdminData(
   name: PackageAdminDataName,
   value: unknown,
 ): ValidationResult<unknown> {
-  return check(DATA_SCHEMAS[name], value)
+  return check(DATA_SCHEMAS[name], value, adminPayloadBudget(name))
 }
 export function validatePackageAdminCall(
   name: PackageAdminMethodName,
   side: 'params' | 'result',
   value: unknown,
 ): ValidationResult<unknown> {
-  // Only the immutable client-asset read needs the 32 MiB raw resource allowance
-  // (base64 plus the JSON envelope). Other administrative payloads remain at 1 MiB.
-  return check(
-    PACKAGE_ADMIN_METHODS[name][side],
-    value,
-    name === '_agnes/v1/clientModules.read' && side === 'result' ? 44739244 + 1024 : 1048576,
-  )
+  return check(PACKAGE_ADMIN_METHODS[name][side], value, adminPayloadBudget(name, side))
 }

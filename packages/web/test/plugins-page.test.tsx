@@ -1,6 +1,7 @@
 /** @vitest-environment happy-dom */
 
-import type { PackageCatalogDescriptor, PackageCatalogPage } from '@agnes/protocol'
+import type { PackageCatalogDescriptor, PackageCatalogPage, SkillImportResult } from '@agnes/protocol'
+import { CredentialsApi } from '@agnes/resource-control-web/credentials-api'
 import {
   ComputerUseCapability,
   type SettingsComputerUseView,
@@ -11,7 +12,16 @@ import { act, createElement } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ChannelDialogHost } from '../src/pages/channel-dialog.js'
+import { closeChannelDialog } from '../src/pages/channel-dialog-state.js'
+import { RemoveConnection } from '../src/pages/channel-remove.js'
+import { SessionBindings } from '../src/pages/channel-session.js'
+import { SessionChannelControl } from '../src/pages/channel-session-control.js'
+import type { ChannelGroup, ManagedInstance } from '../src/pages/channel-types.js'
+import { ChannelsPanel } from '../src/pages/channels.js'
+import type { HomePageData } from '../src/pages/host.js'
 import type { PluginView } from '../src/pages/plugins/admin-view.js'
+import { ExternalOperationResult } from '../src/pages/plugins/external-operation-result.js'
 import { MarketTab } from '../src/pages/plugins/market-tab.js'
 import { pluginsPageCatalog } from '../src/pages/plugins/page-locale.js'
 import { isBusinessAgent, orderInstalled, PluginsTab } from '../src/pages/plugins/plugins-tab.js'
@@ -29,6 +39,455 @@ import { SkillFolders } from '../src/pages/plugins/skill-folders.js'
 import { SkillInstallDialog } from '../src/pages/plugins/skill-import.js'
 
 afterEach(() => document.body.replaceChildren())
+
+it('confirms instance deletion, requests native approval and retries the same uncertain operation', async () => {
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const requestProfileApproval = vi.fn(),
+    onPending = vi.fn()
+  const call = vi
+    .fn()
+    .mockResolvedValueOnce({ receipt: { state: 'approval-required' } })
+    .mockRejectedValueOnce(new Error('lost response'))
+    .mockResolvedValueOnce({ receipt: { state: 'completed' } })
+  const data = { call, requestProfileApproval } as unknown as HomePageData
+  const group = {
+    provider: { extension: 'plugin/example' },
+    configurationRevision: 'revision',
+  } as ChannelGroup
+  const row = { id: 'bot', version: 7 } as ManagedInstance
+  const button = (text: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .filter((entry) => entry.textContent === text)
+      .at(-1)!
+  try {
+    await act(async () =>
+      root.render(
+        createElement(RemoveConnection, { data, group, row, zh: false, disabled: false, onPending }),
+      ),
+    )
+    await act(async () => host.querySelector<HTMLButtonElement>('button')!.click())
+    expect(call).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Existing sessions and saved credentials are kept')
+    await act(async () => button('Cancel').click())
+    expect(call).not.toHaveBeenCalled()
+    await act(async () => host.querySelector<HTMLButtonElement>('button')!.click())
+    await act(async () => button('Delete instance').click())
+    expect(requestProfileApproval).toHaveBeenCalledWith({ state: 'approval-required' })
+    await act(async () => button('Continue deletion').click())
+    expect(document.body.textContent).toContain('Deletion is unconfirmed')
+    await act(async () => button('Continue deletion').click())
+    expect(call).toHaveBeenCalledTimes(3)
+    expect(call.mock.calls[0]).toEqual(call.mock.calls[1])
+    expect(call.mock.calls[0]).toEqual(call.mock.calls[2])
+    expect(call.mock.calls[0]).toMatchObject([
+      'channels.remove',
+      { instanceId: 'bot', expectedVersion: 7, configurationRevision: 'revision' },
+    ])
+    expect(onPending).toHaveBeenLastCalledWith(false)
+  } finally {
+    await act(async () => root.unmount())
+  }
+})
+
+it.each([false, true])('shows connection names and reconciles unbind (recovery=%s)', async (recovery) => {
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const provider = {
+    extension: 'plugin/example',
+    manifest: { id: 'example', displayName: 'Example Chat' },
+    bindingAvailable: true,
+  }
+  let bound = true,
+    fail = true
+  const call = vi.fn(async (method: string) => {
+    if (method === 'channels.overview')
+      return {
+        sessions: [],
+        channels: [
+          {
+            provider,
+            configurationRevision: 'revision',
+            instances: [
+              {
+                id: 'bot',
+                workspace: 'D:/work',
+                agent: 'default',
+                version: 7,
+                connection: recovery ? null : { channel: 'connected', daemon: 'connected' },
+                recovery,
+                bindings: bound
+                  ? [
+                      {
+                        sessionId: 'current-session',
+                        sessionTitle: 'Design review',
+                        targetId: 'peer',
+                        label: 'Engineering team',
+                        state: 'active',
+                      },
+                    ]
+                  : [],
+                unavailable: false,
+              },
+            ],
+          },
+        ],
+      }
+    if (fail) {
+      fail = false
+      throw new Error('lost response')
+    }
+    bound = false
+    return { output: {} }
+  })
+  const data = {
+    call,
+    sessionId: () => 'current-session',
+    openSettings: vi.fn(),
+    startDraft: vi.fn(),
+  } as unknown as HomePageData
+  await act(async () => root.render(createElement(ChannelsPanel, { data })))
+  await vi.waitFor(() => expect(host.textContent).toContain('Design review'))
+  expect(host.textContent).toContain('Engineering team')
+  expect(host.querySelector('.channel-glyph svg')).not.toBeNull()
+  expect(host.querySelector('.channel-glyph img')).toBeNull()
+  expect(host.querySelector('a')?.getAttribute('href')).toBe('?session=current-session')
+  expect(host.querySelector('input[aria-label="Instance ID"]')).toBeNull()
+  const details = host.querySelector<HTMLButtonElement>('.channel-connection-details > button')!
+  expect(details.getAttribute('aria-expanded')).toBe('false')
+  await act(async () => details.click())
+  expect(details.getAttribute('aria-expanded')).toBe('true')
+  const remove = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+    (button) => button.textContent === 'Delete instance',
+  )!
+  expect(remove.disabled).toBe(false)
+  if (recovery) expect(host.textContent).toContain('Startup failed; instance can be deleted')
+  const unbind = [...host.querySelectorAll('button')].find((button) => button.textContent === 'Unbind')!
+  await act(async () => unbind.click())
+  expect(host.textContent).toContain('Unbind unconfirmed')
+  await act(async () => unbind.click())
+  await vi.waitFor(() => expect(host.textContent).not.toContain('Engineering team'))
+  const attempts = call.mock.calls.filter(([method]) => method === '_agnes/v1/extension.call') as unknown as [
+    string,
+    { commandId: string; sessionId: string; input: unknown },
+  ][]
+  expect(attempts).toHaveLength(2)
+  expect(attempts[0]![1]).toEqual(attempts[1]![1])
+  expect(attempts[0]![1]).toMatchObject({
+    sessionId: 'current-session',
+    input: { instanceId: 'bot', expectedVersion: 7 },
+  })
+  await act(async () => root.unmount())
+})
+
+it('discovers installed channels and configures inside a dialog using immutable session context and native approval', async () => {
+  const credentials = vi.spyOn(CredentialsApi.prototype, 'list').mockResolvedValue([])
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const provider = {
+    extension: 'plugin/future',
+    revision: 'v1',
+    bindingAvailable: true,
+    configSchema: { type: 'object', properties: {} },
+    manifest: { id: 'future', displayName: 'Future Chat', credentials: { required: [], optional: [] } },
+  }
+  const requestProfileApproval = vi.fn()
+  let approved = false
+  let failOverview = false
+  const call = vi.fn(async (method: string) => {
+    if (method === 'channels.overview' && failOverview) throw new Error('temporary catalog failure')
+    if (method === 'channels.overview')
+      return {
+        sessions: [{ sessionId: 'current', title: 'Release planning', cwd: 'D:/session' }],
+        channels: [{ provider, configurationRevision: 'revision', instances: [] }],
+      }
+    if (method === 'channels.context')
+      return {
+        sessionId: 'current',
+        title: 'Release planning',
+        workspace: 'D:/session',
+        agent: 'default',
+        agentTitle: { en: 'General assistant', 'zh-CN': '通用助手' },
+        instanceId: 's-123456abcdef-123456',
+      }
+    if (method === 'channels.configure')
+      return {
+        receipt: { state: approved ? 'completed' : 'approval-required' },
+        instanceId: 's-123456abcdef-123456',
+      }
+    return {
+      output: {
+        instances: [
+          {
+            id: 's-123456abcdef-123456',
+            version: 1,
+            connection: { channel: 'connected', daemon: 'connected' },
+            targets: [],
+            bindings: [{ targetId: 'peer', label: 'Verified chat', state: 'active' }],
+          },
+        ],
+      },
+    }
+  })
+  const data = {
+    call,
+    requestProfileApproval,
+    sessionId: () => 'current',
+    openSettings: vi.fn(),
+    startDraft: vi.fn(),
+  } as unknown as HomePageData
+  await act(async () => {
+    root.render(createElement(ChannelDialogHost, { data }))
+  })
+  // The composer lives in another lazy bundle: exercise the shell event, not a module-local store.
+  await act(async () =>
+    window.dispatchEvent(new CustomEvent('agnes-channel-dialog', { detail: { sessionId: 'current' } })),
+  )
+  await vi.waitFor(() => expect(host.textContent).toContain('Future Chat'))
+  await act(async () =>
+    [...host.querySelectorAll('button')]
+      .find((button) => button.textContent?.includes('Future Chat'))!
+      .click(),
+  )
+  await vi.waitFor(() => expect(host.textContent).toContain('Release planning'))
+  expect(host.textContent).toContain('D:/session')
+  expect(host.querySelector('input[aria-label="Instance ID"]')).toBeNull()
+  expect(host.querySelector('input[aria-label="Absolute workspace path"]')).toBeNull()
+  await act(async () =>
+    [...host.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Connect and continue')!
+      .click(),
+  )
+  expect(requestProfileApproval).toHaveBeenCalledWith({ state: 'approval-required' })
+  approved = true
+  await act(async () =>
+    [...host.querySelectorAll('button')]
+      .find((button) => button.textContent === 'Continue connecting')!
+      .click(),
+  )
+  await vi.waitFor(() => expect(host.textContent).toContain('Verified chat'))
+  failOverview = true
+  await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
+  await vi.waitFor(() => expect(host.textContent).toContain('Unable to load channels'))
+  expect(host.textContent).toContain('Verified chat')
+  failOverview = false
+  await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
+  const inputs = call.mock.calls.filter(([method]) => method === 'channels.configure') as unknown as [
+    string,
+    Record<string, unknown>,
+  ][]
+  expect(inputs[0]![1]).toEqual(inputs[1]![1])
+  expect(inputs[0]![1]).toMatchObject({
+    sessionId: 'current',
+    instanceId: 's-123456abcdef-123456',
+    configurationRevision: 'revision',
+  })
+  expect(inputs[0]![1]).not.toHaveProperty('workspace')
+  expect(inputs[0]![1]).not.toHaveProperty('agent')
+  await act(async () => {
+    closeChannelDialog()
+    root.unmount()
+  })
+  credentials.mockRestore()
+})
+
+it('shows this session’s channel states and opens the exact existing connection for editing', async () => {
+  const credentials = vi.spyOn(CredentialsApi.prototype, 'list').mockResolvedValue([
+    {
+      id: 'secret://generic/token',
+      label: 'Saved token',
+      kind: 'api-key',
+      createdAt: '2026-11-06T00:00:00Z',
+      references: [],
+    },
+  ])
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  let bound = true,
+    disconnected = false,
+    fail = false
+  let releaseOverview: (() => void) | undefined
+  let overviewWaiting = true
+  const call = vi.fn(async (method: string, input: unknown) => {
+    if (method === 'channels.context')
+      return {
+        sessionId: 'current',
+        title: 'Current session',
+        workspace: 'D:/work',
+        agent: 'default',
+        agentTitle: { en: 'General assistant', 'zh-CN': '通用助手' },
+        instanceId: (input as { instanceId: string }).instanceId,
+      }
+    if (method === 'channels.overview' && overviewWaiting)
+      await new Promise<void>((resolve) => {
+        releaseOverview = resolve
+      })
+    if (fail) throw new Error('temporary overview failure')
+    return {
+      sessions: [{ sessionId: 'current', title: 'Current session', cwd: 'D:/work' }],
+      channels: ['one', 'two'].map((name) => ({
+        provider: {
+          extension: 'plugin/' + name,
+          revision: 'one',
+          bindingAvailable: true,
+          manifest: {
+            id: name,
+            displayName: 'Future ' + name,
+            credentials: { required: ['token'], optional: [] },
+          },
+          configSchema: { type: 'object', properties: { label: { type: 'string', title: 'Bot label' } } },
+        },
+        configurationRevision: 'revision',
+        instances: [
+          {
+            id: 'bot-' + name,
+            workspace: 'D:/work',
+            agent: 'default',
+            credentialRefs: { token: 'secret://generic/token' },
+            allowFrom: [],
+            requireMention: true,
+            config: { label: 'Saved value' },
+            version: 1,
+            unavailable: false,
+            connection: { channel: disconnected ? 'closed' : 'connected', daemon: 'connected' },
+            bindings: bound
+              ? [
+                  {
+                    sessionId: 'current',
+                    sessionTitle: 'Current session',
+                    targetId: 'peer-' + name,
+                    label: 'Peer ' + name,
+                    state: 'active',
+                  },
+                ]
+              : [],
+          },
+          { id: 'unbound-' + name, intendedSession: { sessionId: 'current' }, bindings: [] },
+        ],
+      })),
+    }
+  })
+  const data = {
+    call,
+    sessionId: () => 'current',
+    openSettings: vi.fn(),
+    startDraft: vi.fn(),
+  } as unknown as HomePageData
+  const render = (sessionId: string | undefined) =>
+    createElement(
+      'div',
+      null,
+      createElement(SessionChannelControl, { sessionId, data }),
+      createElement(ChannelDialogHost, { data }),
+    )
+  await act(async () => root.render(render('current')))
+  expect(host.querySelector('[data-testid="composer-channel-binding"]')).toBeNull()
+  overviewWaiting = false
+  await act(async () => releaseOverview?.())
+  await vi.waitFor(() => expect(host.textContent).toContain('Future one · Connected'))
+  expect(host.textContent).toContain('Future two · Connected')
+  expect(host.querySelectorAll('[data-testid="composer-channel-binding"]')).toHaveLength(2)
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('[data-testid="composer-channel-binding"]')!.click(),
+  )
+  await vi.waitFor(() =>
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Bot label"]')?.value).toBe('Saved value'),
+  )
+  expect(host.textContent).toContain('Edit channel connection')
+  expect(host.textContent).toContain('Saved token')
+  expect(host.textContent).toContain('Save changes')
+  expect(host.querySelector('.channel-picker')).toBeNull()
+  expect(host.querySelector('.channel-steps')).toBeNull()
+  expect(call).toHaveBeenCalledWith('channels.context', {
+    extension: 'plugin/one',
+    sessionId: 'current',
+    instanceId: 'bot-one',
+  })
+  await act(async () => closeChannelDialog())
+  await act(async () => root.render(render('other')))
+  expect(host.querySelector('[data-testid="composer-channel-binding"]')?.textContent).toBe('Channels')
+  disconnected = true
+  await act(async () => {
+    root.render(render('current'))
+    window.dispatchEvent(new Event('agnes-channels-changed'))
+  })
+  await vi.waitFor(() => expect(host.textContent).toContain('Future one · Disconnected'))
+  fail = true
+  await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
+  await vi.waitFor(() => expect(host.textContent).toContain('Future one · Status unavailable'))
+  fail = false
+  bound = false
+  await act(async () => window.dispatchEvent(new Event('agnes-channels-changed')))
+  await vi.waitFor(() =>
+    expect(host.querySelector('[data-testid="composer-channel-binding"]')?.textContent).toBe('Channels'),
+  )
+  await act(async () => root.render(render(undefined)))
+  expect(host.querySelector('[data-testid="composer-channel-binding"]')).toBeNull()
+  fail = true
+  await act(async () => root.render(render('unavailable')))
+  expect(host.querySelector('[data-testid="composer-channel-binding"]')).toBeNull()
+  await act(async () => {
+    closeChannelDialog()
+    root.unmount()
+  })
+  credentials.mockRestore()
+})
+
+it.each(['failed', 'skipped'] as const)('shows persisted partial capability results (%s)', (status) => {
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const activation: NonNullable<SkillImportResult['activation']> = {
+    digest: 'a'.repeat(64),
+    enable: true,
+    expiresAt: '2099-01-01T00:00:00Z',
+    environment: [],
+    issues: [],
+    warnings: [],
+    resources: [
+      {
+        kind: 'mcp',
+        resourceId: 'mcp/rea',
+        name: 'rea',
+        revision: 'b'.repeat(64),
+        desired: 'disabled',
+        trust: 'untrusted',
+      },
+      {
+        kind: 'skill',
+        resourceId: 'skill/companion',
+        name: 'CLI companion',
+        revision: 'c'.repeat(64),
+        desired: 'disabled',
+        trust: 'untrusted',
+      },
+    ],
+    outcomes: [
+      { resourceId: 'mcp/rea', status, code: 'MCP_LOCAL_ENTRY_MISSING' },
+      { resourceId: 'skill/companion', status: 'succeeded' },
+    ],
+  }
+  const t = (key: string, vars: Readonly<Record<string, string | number>> = {}) =>
+    Object.entries(vars).reduce(
+      (value, [name, item]) => value.replaceAll(`{${name}}`, String(item)),
+      pluginsPageCatalog.en[key] ?? key,
+    )
+  try {
+    flushSync(() => root.render(createElement(ExternalOperationResult, { activation, t })))
+    expect(host.textContent).toContain('Partially completed')
+    expect(host.textContent).toContain('1/2')
+    expect(host.textContent).toContain('CLI companion')
+    expect(host.textContent).toContain(status === 'failed' ? 'Failed' : 'Skipped')
+    expect(host.textContent).toContain('The declared local MCP entry file is missing')
+    expect(host.textContent).not.toContain('All 2')
+    activation.outcomes![0] = { resourceId: 'mcp/rea', status: 'succeeded' }
+    flushSync(() => root.render(createElement(ExternalOperationResult, { activation, t })))
+    expect(host.textContent).toContain('All 2')
+    expect(host.textContent).not.toContain('MCP_LOCAL_ENTRY_MISSING')
+  } finally {
+    flushSync(() => root.unmount())
+    host.remove()
+  }
+})
 
 it('keeps skill folders read-only until the page permits configuration writes', async () => {
   const config = {
@@ -368,6 +827,45 @@ it.each([true, false])(
   },
 )
 
+it.each(['path', 'file', 'url'] as const)(
+  'preserves the manual %s source when selecting a Skill',
+  async (type) => {
+    const source = { type, ref: `${type}:fixture/skills` }
+    const skillImport = vi
+      .fn()
+      .mockResolvedValueOnce({ state: 'selection_required', candidates: ['first', 'second'] })
+      .mockResolvedValue({
+        state: 'prepared',
+        proposalId: 'skill-install-manual',
+        name: 'first',
+        digest: 'a'.repeat(64),
+      })
+    const host = document.body.appendChild(document.createElement('div')),
+      root = createRoot(host)
+    try {
+      flushSync(() =>
+        root.render(
+          createElement(SkillInstallDialog, {
+            view: { api: { skillImport } } as unknown as PluginView,
+            initialSource: source,
+            t: (key) => key,
+            onClose: vi.fn(),
+          }),
+        ),
+      )
+      await act(async () => undefined)
+      expect(skillImport).toHaveBeenLastCalledWith({ action: 'check', source, scope: 'user', enable: false })
+      await act(async () => host.querySelector<HTMLButtonElement>('.skill-candidate')?.click())
+      expect(skillImport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ action: 'check', source, subdirectory: 'first', enable: false }),
+      )
+    } finally {
+      flushSync(() => root.unmount())
+      host.remove()
+    }
+  },
+)
+
 it('cancels a late check response when its installation window has already closed', async () => {
   let finish: (value: { state: 'running'; proposalId: string; phase: string }) => void = () => undefined
   const check = new Promise<{ state: 'running'; proposalId: string; phase: string }>((resolve) => {
@@ -395,26 +893,130 @@ it('cancels a late check response when its installation window has already close
   host.remove()
 })
 
-it('merges community cards into one gallery and opens complete details without remote requests', async () => {
-  const topics = ['agh-plugin', ...Array.from({ length: 19 }, (_, i) => `topic-${i}`)]
-  const community: NonNullable<PackageCatalogPage['community']> = {
+it.each([false, true])(
+  'reviews MCP connections and gates rollback on remove permission (remove=%s)',
+  async (canRemove) => {
+    const prepared = {
+      state: 'prepared',
+      kind: 'mcp',
+      proposalId: 'mcp-import-fixture',
+      digest: 'a'.repeat(64),
+      mcp: {
+        servers: [
+          {
+            serverId: 'sample',
+            transport: 'stdio',
+            sandboxProfile: 'strict',
+            command: 'node',
+            args: ['server.mjs'],
+            state: 'planned',
+            selected: false,
+          },
+        ],
+        skills: [{ path: '.agents/skills/companion', name: 'companion', state: 'prepared', fileCount: 2 }],
+        requiredCredentials: [],
+        configurationFiles: ['.mcp.json'],
+        issues: [],
+      },
+    }
+    const skillImport = vi
+      .fn()
+      .mockResolvedValueOnce(prepared)
+      .mockResolvedValueOnce({ ...prepared, state: 'cancelled' })
+      .mockResolvedValueOnce({
+        ...prepared,
+        mcp: {
+          ...prepared.mcp,
+          servers: prepared.mcp.servers.map((server) => ({ ...server, selected: true })),
+        },
+      })
+      .mockResolvedValueOnce({ ...prepared, state: 'installed' })
+    const view = {
+      api: { skillImport },
+      canEffect: (permission: string) => permission !== 'packages.remove' || canRemove,
+    } as unknown as PluginView
+    const host = document.body.appendChild(document.createElement('div')),
+      root = createRoot(host)
+    try {
+      flushSync(() =>
+        root.render(
+          createElement(SkillInstallDialog, {
+            view,
+            initialSource: 'git:https://github.com/example/mcp.git',
+            t: (key) => key,
+            onClose: vi.fn(),
+          }),
+        ),
+      )
+      await act(async () => undefined)
+      expect(host.textContent).toContain('mcp.import.connections')
+      const choices = host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')
+      expect(choices).toHaveLength(2)
+      expect(choices[0]?.checked).toBe(false)
+      expect(choices[1]?.checked).toBe(true)
+      await act(async () => {
+        choices[0]?.click()
+      })
+      const apply = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'mcp.import.configure',
+      )
+      await act(async () => apply?.click())
+      expect(skillImport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ action: 'check', mcpServers: ['sample'] }),
+      )
+      const reviewedChoices = host.querySelectorAll<HTMLInputElement>('input[type=checkbox]')
+      expect(reviewedChoices).toHaveLength(3)
+      expect(reviewedChoices[0]?.checked).toBe(true)
+      expect(reviewedChoices[1]?.checked).toBe(true)
+      await act(async () => reviewedChoices[2]?.click())
+      const confirm = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'skill.import.confirm',
+      )
+      await act(async () => confirm?.click())
+      expect(skillImport).toHaveBeenLastCalledWith({
+        action: 'commit',
+        proposalId: prepared.proposalId,
+        expectedDigest: prepared.digest,
+        skillDirectories: ['.agents/skills/companion'],
+        mcpServers: ['sample'],
+        testConnection: true,
+      })
+      expect(host.textContent).toContain('mcp.import.state.installed')
+      const rollback = [...host.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'mcp.import.rollback',
+      )
+      if (!rollback) throw new Error('Missing rollback action')
+      expect(rollback.disabled).toBe(!canRemove)
+    } finally {
+      flushSync(() => root.unmount())
+      host.remove()
+    }
+  },
+)
+
+it('merges indexed plugins into one gallery and reviews pinned versions without remote requests', async () => {
+  const community: NonNullable<PackageCatalogPage['communityIndex']> = {
     state: 'ready',
     error: null,
-    totalReported: 30,
+    totalReported: 13,
     lastSuccessAt: new Date().toISOString(),
     nextAttemptAt: null,
     items: Array.from({ length: 13 }, (_, id) => ({
-      id: id + 1,
+      id: `author/repo-${id}`,
+      name: `author/repo-${id}`,
       fullName: `author/repo-${id}`,
       description: '<script>not markup</script>',
-      topics,
-      ecosystem: id === 0 ? 'dsh' : 'agh',
-      stars: 100 - id,
-      forks: 2,
-      issues: 3,
-      language: 'TypeScript',
-      license: 'MIT',
-      pushedAt: null,
+      author: 'Example Author',
+      versions: [
+        {
+          version: '1.0.0',
+          source: { type: 'git', ref: `git:https://github.com/author/repo-${id}.git#${'a'.repeat(40)}` },
+        },
+        {
+          version: '2.0.0',
+          source: { type: 'git', ref: `git:https://github.com/author/repo-${id}.git#${'b'.repeat(40)}` },
+        },
+      ],
     })),
   }
   const fetcher = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('No external fetch expected'))
@@ -478,7 +1080,10 @@ it('merges community cards into one gallery and opens complete details without r
     await act(async () => views[0]?.click())
     const details = () => document.querySelector('[data-testid="community-details"]')
     await vi.waitFor(() => expect(details()).not.toBeNull())
-    expect(details()?.querySelectorAll('.community-market-topics a')).toHaveLength(20)
+    expect(details()?.querySelectorAll('.community-market-topics a')).toHaveLength(0)
+    expect(host.textContent).toContain('Example Author')
+    expect(host.textContent).toContain('1.0.0')
+    expect(host.textContent).not.toContain('Stars')
     expect(details()?.textContent).toContain('<script>not markup</script>')
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('community.reviewRequired')
     await act(async () =>
@@ -487,12 +1092,20 @@ it('merges community cards into one gallery and opens complete details without r
     await vi.waitFor(() => expect(details()).toBeNull())
     await vi.waitFor(() => expect(document.activeElement).toBe(views[0]))
     await act(async () => views[1]?.click())
+    const picker = details()!.querySelector('[data-testid="community-version-picker"]')!
+    await act(async () => {
+      picker.querySelector('input')!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    })
+    const option = [...details()!.querySelectorAll<HTMLElement>('.ant-select-item-option')].find(
+      (entry) => entry.textContent === '2.0.0',
+    )!
+    await act(async () => option.click())
     const check = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
       (button) => button.textContent === 'community.check',
     )
     await act(async () => check?.click())
     expect(inspect).toHaveBeenCalledWith(
-      { type: 'git', ref: 'git:https://github.com/author/repo-1.git' },
+      { type: 'git', ref: `git:https://github.com/author/repo-1.git#${'b'.repeat(40)}` },
       'install',
       check,
     )
@@ -660,7 +1273,24 @@ it('keeps all plugins in a single list with the bundled helper enable toggle', (
   ]
   const toggle = vi.fn(async () => {})
   const view = {
-    state: { installed: rows, loading: false, inventoryAuthoritative: true, operations: new Map() },
+    state: {
+      installed: rows,
+      loading: false,
+      inventoryAuthoritative: true,
+      operations: new Map(),
+      externalPackages: [
+        {
+          id: 'mcp-import-00000000-0000-4000-8000-000000000000',
+          name: 'sample/mcp-kit',
+          source: { type: 'git', ref: 'git:https://github.com/sample/mcp-kit.git#fixed' },
+          result: { kind: 'mcp', state: 'installed' },
+          resources: [
+            { kind: 'mcp', resourceId: 'mcp/sample', name: 'sample', state: 'present' },
+            { kind: 'skill', resourceId: 'skill/user/companion', name: 'companion', state: 'present' },
+          ],
+        },
+      ],
+    },
     filteredInstalled: () => rows,
     locale: { getSnapshot: () => 'en' },
     query: '',
@@ -692,6 +1322,15 @@ it('keeps all plugins in a single list with the bundled helper enable toggle', (
       '@agnes-fde/support-triage',
     )
     expect(host.querySelector('[data-plugin-id="acme/example"]')).not.toBeNull()
+    expect(builtin.querySelector('[data-testid="external-plugin-row"]')?.textContent).toContain(
+      'sample/mcp-kit',
+    )
+    expect(
+      builtin
+        .querySelector('[data-testid="external-plugin-row"] button[role="switch"]')
+        ?.getAttribute('aria-checked'),
+    ).toBe('false')
+    expect(builtin.querySelector('[data-testid="external-plugin-row"] .plugin-row-actions')).not.toBeNull()
     const sourceFilter = host.querySelector<HTMLSelectElement>('select[aria-label="source.label"]')
     if (!sourceFilter) throw new Error('source filter missing')
     flushSync(() => {
@@ -718,6 +1357,12 @@ it('keeps all plugins in a single list with the bundled helper enable toggle', (
     expect(enable.disabled).toBe(false)
     enable.click()
     expect(toggle).toHaveBeenCalledWith(expect.objectContaining({ id: '@agnes/plugin-helper' }))
+    view.query = 'companion'
+    flushSync(() => root.render(createElement(PluginsTab, { view, t: (key) => key, summaries: {} })))
+    expect(host.querySelector('[data-testid="external-plugin-row"]')).not.toBeNull()
+    view.query = 'no-such-plugin'
+    flushSync(() => root.render(createElement(PluginsTab, { view, t: (key) => key, summaries: {} })))
+    expect(host.querySelector('[data-testid="external-plugin-row"]')).toBeNull()
   } finally {
     flushSync(() => root.unmount())
   }
@@ -848,3 +1493,75 @@ it('coalesces pending-review reads and rejects a response invalidated in flight'
     vi.restoreAllMocks()
   }
 })
+
+it.each([false, true])(
+  'keeps the chat selector on an empty or failed runtime and recovers after refresh (failed=%s)',
+  async (failed) => {
+    const host = document.body.appendChild(document.createElement('div')),
+      root = createRoot(host)
+    let unavailable = failed,
+      hasTarget = false
+    const configure = vi.fn()
+    const call = vi.fn(async (_method: string, params: any) => {
+      if (params.service === 'channel.status') return { output: { state: 'failed', code: 'unavailable' } }
+      if (unavailable) throw Error('runtime failed')
+      return {
+        output: {
+          instances: [
+            {
+              id: 'bot',
+              version: 4,
+              connection: { channel: 'connected', daemon: 'connected' },
+              bindings: [],
+              targets: hasTarget
+                ? [{ id: 'peer', label: 'Verified peer', confirmed: true, unavailable: false }]
+                : [],
+            },
+          ],
+        },
+      }
+    })
+    const data = { call } as unknown as HomePageData
+    try {
+      await act(async () =>
+        root.render(
+          createElement(SessionBindings, {
+            data,
+            provider: { extension: 'plugin/wechat' } as any,
+            sessionId: 'session',
+            instanceIds: ['bot'],
+            refreshKey: 'one',
+            zh: false,
+            onConfigure: configure,
+          }),
+        ),
+      )
+      await vi.waitFor(() => expect(host.querySelector('[role="combobox"]')).not.toBeNull())
+      const button = (name: string) =>
+        [...host.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === name)!
+      expect(button('Bind this session').disabled).toBe(true)
+      if (failed) {
+        expect(host.textContent).toContain('channel failed to start')
+        await act(async () => button('Connection settings').click())
+        expect(configure).toHaveBeenCalled()
+      } else expect(host.textContent).toContain('Send the bot a message')
+      unavailable = false
+      hasTarget = true
+      await act(async () => button('Refresh bindings and targets').click())
+      expect(host.textContent).not.toContain('channel failed to start')
+      await act(async () =>
+        host
+          .querySelector('[role="combobox"]')
+          ?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })),
+      )
+      expect(document.body.textContent).toContain('Verified peer')
+      expect(
+        call.mock.calls.every(
+          ([, params]) => !['channel.bind', 'channel.configure', 'channel.retry'].includes(params.service),
+        ),
+      ).toBe(true)
+    } finally {
+      await act(async () => root.unmount())
+    }
+  },
+)

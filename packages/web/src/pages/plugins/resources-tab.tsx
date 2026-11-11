@@ -27,6 +27,7 @@ export function ResourcesTab({
   workspaceId: sessionWorkspaceId,
   canSave,
   packageName,
+  packageRevision,
 }: {
   tab: 'skills' | 'mcp'
   t: Text
@@ -34,6 +35,7 @@ export function ResourcesTab({
   canSave: boolean
   /** The display name of an installed plugin, so a skill row can say where it comes from. */
   packageName(id: string): string | undefined
+  packageRevision?: unknown
 }) {
   // MCP resources belong to the profile; only Skills follow the session workspace.
   const workspaceId = tab === 'skills' ? sessionWorkspaceId : undefined
@@ -56,9 +58,13 @@ export function ResourcesTab({
   const refresh = useRef<HTMLButtonElement>(null)
   const create = useRef<HTMLButtonElement>(null)
   const mounted = useRef<ResourceAdminMount>()
-  const scope = useRef({ tab, workspaceId })
-  if (scope.current.tab !== tab || scope.current.workspaceId !== workspaceId)
-    scope.current = { tab, workspaceId }
+  const scope = useRef({ tab, workspaceId, packageRevision })
+  if (
+    scope.current.tab !== tab ||
+    scope.current.workspaceId !== workspaceId ||
+    scope.current.packageRevision !== packageRevision
+  )
+    scope.current = { tab, workspaceId, packageRevision }
   const [scanReport, setScanReport] = useState<SkillScanReport>()
   const [failed, setFailed] = useState(false)
   // The controller's first read has finished: a link to one resource can be followed from here.
@@ -103,6 +109,7 @@ export function ResourcesTab({
   useEffect(() => {
     let current = true
     const requestedScope = scope.current
+    if (requestedScope.packageRevision !== packageRevision) return
     // Resource sync renders its regions synchronously; begin after this React commit.
     queueMicrotask(() => {
       const controller = mounted.current
@@ -114,7 +121,7 @@ export function ResourcesTab({
     return () => {
       current = false
     }
-  }, [tab, workspaceId])
+  }, [tab, workspaceId, packageRevision])
   const kind = tab === 'skills' ? 'skill' : 'mcp'
   const detail = useHostedDialog({
     id: 'resource-detail',

@@ -43,6 +43,12 @@ export type RunnerDeps = {
   refGcIntervalMs?: number
   maxTrackedSessions?: number
   inboundSettleMs?: number
+  /** Managed resources must not confirm shutdown when external cleanup is uncertain. */
+  strictShutdown?: boolean
+  bindings?: {
+    resolve(key: string): { sessionId: string; afterSeq: number } | undefined
+    observe(event: ChannelEvent): void
+  }
   now?: () => number
 }
 
@@ -63,16 +69,26 @@ export type Runner = {
   readonly inbound: Inbound
   directorySupported: boolean
   onEvent(handler: (event: ChannelEvent) => void): void
+  unlink(key: string): Promise<void>
+  baseline(sessionId: string): Promise<number>
+  activate(key: string, target: { chatId: string; threadId?: string }): Promise<void>
 }
 
 export function createRunner(dependencies: RunnerDeps): Runner {
   const abort = new AbortController()
-  const sessionConfig = { cwd: dependencies.cfg.workspace, preset: 'channel' }
+  const sessionConfig = {
+    cwd: dependencies.cfg.workspace,
+    preset: 'channel',
+    ...(dependencies.cfg.launchAgent ? { agent: dependencies.cfg.launchAgent } : {}),
+  }
   const maxTrackedSessions = Math.max(1, dependencies.maxTrackedSessions ?? 1_024)
   let removeSession: ((key: string) => void) | undefined
   const cache = new SessionCache(dependencies.client, sessionConfig, {
     maxPendingKeys: maxTrackedSessions,
     onRemove: (key) => removeSession?.(key),
+    ...(dependencies.bindings
+      ? { resolve: (key: string) => dependencies.bindings?.resolve(key)?.sessionId }
+      : {}),
   })
   if (dependencies.refsPath !== undefined && dependencies.refsPath !== ':memory:') {
     mkdirSync(dirname(dependencies.refsPath), { recursive: true })
@@ -148,10 +164,10 @@ export function createRunner(dependencies: RunnerDeps): Runner {
   const inbound = new Inbound({
     adapter: dependencies.adapter,
     claim: dependencies.client.claim,
-    joinParticipant: async (sessionKey, credential) => {
+    joinParticipant: async (sessionId, credential) => {
       if (!participantSupported || dependencies.client.call === undefined) return
       await dependencies.client.call('_agnes/v1/participant.join', {
-        sessionId: sessionKey,
+        sessionId,
         credential,
       })
     },
@@ -185,8 +201,8 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       requesters.set(key, requesterUserId)
       targets.delete(key)
       targets.set(key, target)
-      outbound.attach(key, session, target)
-      watchApproval(key, session, target)
+      outbound.attach(key, session, target, dependencies.bindings?.resolve(key)?.afterSeq)
+      if (!dependencies.bindings) watchApproval(key, session, target)
       trimTracked()
     },
   })
@@ -217,6 +233,27 @@ export function createRunner(dependencies: RunnerDeps): Runner {
     cache,
     inbound,
     directorySupported: false,
+    async unlink(key) {
+      await inbound.pause(key)
+      await outbound.detachAndWait(key)
+      await cache.evict(key)
+    },
+    async baseline(sessionId) {
+      const session = await dependencies.client.session.attach(sessionId, { filter: { acpUpdates: false } })
+      try {
+        const timeline = await session.projectUI(undefined, { surface: 'channel' })
+        // The caller commits the returned floor before allowing inbound routing.
+        return timeline.upto
+      } finally {
+        await session.detach()
+      }
+    },
+    async activate(key, target) {
+      const { session } = await cache.get(key)
+      targets.set(key, target)
+      outbound.attach(key, session, target, dependencies.bindings?.resolve(key)?.afterSeq)
+      inbound.resume(key)
+    },
 
     onEvent(handler) {
       subscribers.push(handler)
@@ -256,6 +293,21 @@ export function createRunner(dependencies: RunnerDeps): Runner {
 
   const receive = (event: ChannelEvent): void => {
     if (!intake || abort.signal.aborted) return
+    dependencies.bindings?.observe(event)
+    if (dependencies.bindings) {
+      const key =
+        dependencies.adapter.toSession(event, {
+          tenant: dependencies.cfg.tenant,
+          agent: dependencies.cfg.agent,
+        })?.sessionKey ??
+        sessionKeyFor({
+          tenant: dependencies.cfg.tenant,
+          agent: dependencies.cfg.agent,
+          channel: dependencies.adapter.manifest.id,
+          chat: event.chat,
+        })
+      if (!dependencies.bindings.resolve(key)) return
+    }
     lastEventAt = new Date().toISOString()
     if (pendingInbound.size >= maxTrackedSessions) {
       safeWarn('channel inbound task capacity reached; dropping event', { eventId: event.eventId })
@@ -474,8 +526,13 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       const cacheStop = cache.stop()
       const resourcesStopped = await settlePromises([cacheStop, outboundStop], remaining(workDeadline))
       if (!resourcesStopped) safeWarn('channel runner resource drain timed out; forcing disconnect')
-      const disconnect = dependencies.adapter.disconnect().catch(() => undefined)
-      const clientClose = dependencies.client.close().catch(() => undefined)
+      let cleanupFailed = false
+      const disconnect = dependencies.adapter.disconnect().catch(() => {
+        cleanupFailed = true
+      })
+      const clientClose = dependencies.client.close().catch(() => {
+        cleanupFailed = true
+      })
       const transportsClosed = await settlePromises([disconnect, clientClose], remaining(deadline))
       if (!transportsClosed) safeWarn('channel transport close timed out')
       try {
@@ -485,6 +542,11 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       }
       daemonState = 'closed'
       phase = 'stopped'
+      if (
+        dependencies.strictShutdown &&
+        (cleanupFailed || !inboundDrained || !outboundDrained || !resourcesStopped || !transportsClosed)
+      )
+        throw new ChannelError('E_CONNECT_FAILED', 'channel shutdown could not be confirmed')
     })()
     return shutdownPromise
   }

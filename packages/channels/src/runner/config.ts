@@ -16,6 +16,8 @@ export type RunnerConfig = {
   localDaemon?: { home?: string; profile?: string; dataDir?: string }
   tenant: string
   agent: string
+  /** Explicit package#bundle launch, admitted by the daemon when creating each new session. */
+  launchAgent?: string
   credentialsFile: string
   allowFrom: string[]
   requireMention: boolean

@@ -15,8 +15,7 @@ import { decodeArtifactMediaResponse } from './artifact-media-response.js'
 import { bestEffort } from './best-effort.js'
 import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
-import { profileSessionProducer } from './profile-session-producer.js'
-import { profileWakeProducer } from './profile-wake-producer.js'
+import { profileSessionPorts } from './profile-session-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { scanWorkspaceSkillRequest } from './skill-scan.js'
 import { runtimeSkillView } from './skill-view.js'
@@ -109,6 +108,7 @@ export type WorkerHostLike = Host
 
 /** Host assembly uses the verified filesystem loader by default; tests may inject a loader. */
 export type WorkerHostDeps = {
+  channelRuntime?: HostOptions['channelRuntime']
   loader?: PackageLoader
   extensionLoader?: { import(file: string): Promise<Record<string, unknown>> }
   hostRoot?: string
@@ -191,8 +191,7 @@ export async function runWorker(
       signal,
     )
   }
-  const boundWakes = profileWakeProducer(sharedChannel)
-  const managedSessions = profileSessionProducer(sharedChannel)
+  const profilePorts = profileSessionPorts(sharedChannel)
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('Skill install session mismatch')
@@ -396,10 +395,10 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
+          ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
           decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
-          boundWakes,
-          managedSessions,
+          ...profilePorts,
           scheduling,
           skillInstall,
           refinementSave,
@@ -431,6 +430,7 @@ export async function runWorker(
                 }
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
+            ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
             decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
             restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
             dataDir: profile.dataDir,
@@ -440,8 +440,7 @@ export async function runWorker(
             allowUnresolvedProvider: true,
             log: deps.log ?? sessionLog,
             prompter,
-            boundWakes,
-            managedSessions,
+            ...profilePorts,
             scheduling,
             skillInstall,
             refinementSave,

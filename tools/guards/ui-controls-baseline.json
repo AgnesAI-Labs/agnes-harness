@@ -1,11 +1,4 @@
 {
-  "packages/channels/scripts/dingtalk-verify.ts": {
-    "color:color: 'blue": 1
-  },
-  "packages/channels/src/adapters/dingtalk/cards.ts": {
-    "color:color: 'blue": 3,
-    "color:color: 'red": 2
-  },
   "packages/cli-tui/src/palette.ts": {
     "color:#5aaeff": 1,
     "color:#ff9a4d": 1,

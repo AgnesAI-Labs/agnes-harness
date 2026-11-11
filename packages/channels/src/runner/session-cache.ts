@@ -39,10 +39,11 @@ export class SessionCache {
 
   constructor(
     private readonly client: SessionClient,
-    private readonly config: { cwd: string; preset: string },
+    private readonly config: { cwd: string; preset: string; agent?: string },
     private readonly options: {
       maxPendingKeys?: number
       onRemove?: (key: string, session: BoundSession) => void
+      resolve?: (key: string) => string | undefined
     } = {},
   ) {}
 
@@ -119,6 +120,7 @@ export class SessionCache {
   }
 
   async renew(key: string): Promise<BoundSession> {
+    if (this.options.resolve) throw new Error('Explicit channel bindings cannot create sessions')
     if (this.stopped) throw new Error('session cache is stopped')
     const token = this.claim(key)
     try {
@@ -126,6 +128,7 @@ export class SessionCache {
       const created = await this.client.session.new({
         cwd: this.config.cwd,
         preset: this.config.preset,
+        ...(this.config.agent ? { agent: this.config.agent } : {}),
         sessionKey: `${key}:thread:${randomUUID()}`,
       })
       const session = await this.client.session.attach(created.id, { filter: attachFilter() })
@@ -152,15 +155,19 @@ export class SessionCache {
     const filter = attachFilter()
     let session: BoundSession
     let created = false
+    const bound = this.options.resolve?.(key)
+    if (this.options.resolve && !bound) throw new Error('Channel target is not bound')
     try {
-      session = await this.client.session.attach(key, { filter })
+      session = await this.client.session.attach(bound ?? key, { filter })
     } catch (error) {
+      if (this.options.resolve) throw error
       if (!(error instanceof JsonRpcError) || error.code !== AGNES_ERRORS.SESSION_NOT_FOUND) {
         throw error
       }
       await this.client.session.new({
         cwd: this.config.cwd,
         preset: this.config.preset,
+        ...(this.config.agent ? { agent: this.config.agent } : {}),
         sessionKey: key,
       })
       session = await this.client.session.attach(key, { filter })

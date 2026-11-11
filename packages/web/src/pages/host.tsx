@@ -8,6 +8,7 @@ import {
 } from '@agnes/web-client'
 import {
   createDocumentLocaleSource,
+  createRegionHost,
   createRegionRenderer,
   preserveRouteParams,
   RegionErrorBoundary,
@@ -15,6 +16,7 @@ import {
   type UiLocaleSource,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { ChannelDialogHost } from './channel-dialog.js'
 import { useWorkLaunchQuiet, workLaunch } from './work-launch.js'
 
 /**
@@ -26,6 +28,8 @@ export type HomePageData = Readonly<{
   call<T = unknown>(method: string, params: unknown): Promise<T>
   /** The selected session, for panels scoped to it. */
   sessionId(): string | undefined
+  requestProfileApproval?(result: unknown): void
+  channelCall?<T = unknown>(method: string, params: unknown): Promise<T>
   /** Open the settings dialog at one of its sections. */
   openSettings(section: string): void
   /** The selected workspace's path when it is available; agent launches start there instead of the launcher's. */
@@ -115,6 +119,13 @@ export function mountHomePages(
   }
   const root = createRegionRenderer(container)
   const documentLocale = createDocumentLocaleSource({})
+  const dialogContainer = createRegionHost(document.body, 'div')
+  const dialogRoot = createRegionRenderer(dialogContainer)
+  dialogRoot.render(
+    <UiLocaleProvider source={documentLocale.source}>
+      <ChannelDialogHost data={options.data} />
+    </UiLocaleProvider>,
+  )
   const render = () =>
     root.render(
       <HomePageHost
@@ -128,6 +139,8 @@ export function mountHomePages(
   const stopLocale = options.locale.subscribe(render)
   return {
     dispose() {
+      dialogRoot.unmount()
+      dialogContainer.remove()
       stopLocale()
       documentLocale.dispose()
       root.unmount()

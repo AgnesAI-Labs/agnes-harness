@@ -4,6 +4,7 @@ import type { UiExtensionContext } from '@agnes/web-client'
 import { createComputerUsePaneController } from '@agnes/web-conversation/computer-use-pane'
 import { Button, Count, Icon, IconButton, Menu, Tabs, useUiText } from '@agnes/web-ui'
 import { useEffect, useMemo, useState } from 'react'
+import { ChannelsPanel } from './channels.js'
 import type { HomePageData } from './host.js'
 import { HomePageFrame } from './page-frame.js'
 import {
@@ -19,6 +20,7 @@ import { PluginsPushPages } from './plugins/push-pages.js'
 import { ResourcesTab } from './plugins/resources-tab.js'
 import { ReviewTab } from './plugins/review-tab.js'
 import { openPlugins, PLUGIN_TABS, type PluginTab, pluginsRoute } from './plugins/route.js'
+import { SkillInstallDialog } from './plugins/skill-import.js'
 import { useCapabilitySummaries } from './plugins/summaries.js'
 
 /** Drafts waiting for review, for the tab's number while another tab is showing. */
@@ -93,7 +95,7 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
   const { t } = useUiText(PLUGINS_PAGE_NAMESPACE, pluginsPageCatalog)
   const route = pluginsRoute(context.selection)
   const sources = useCandidateSources(data)
-  const { host, view } = usePluginAdmin({
+  const { host, view, sourceImport, closeSourceImport } = usePluginAdmin({
     ...data.plugins,
     candidateSessionTitle: sources.sessionTitle,
     candidateSessionTurnTime: sources.sessionTurnTime,
@@ -175,13 +177,21 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     </span>
   )
   const body = (tab: PluginTab) =>
-    tab !== route.tab ? null : tab === 'skills' || tab === 'mcp' ? (
+    tab !== route.tab ? null : tab === 'channels' ? (
+      <ChannelsPanel data={data} />
+    ) : tab === 'skills' || tab === 'mcp' ? (
       <ResourcesTab
         tab={tab}
         t={t}
         workspaceId={data.plugins?.workspaceId?.()}
         canSave={view?.canEffect('packages.activate') ?? false}
+        packageRevision={view?.state.externalPackages}
         packageName={(id) => {
+          if (id.startsWith('resource:')) {
+            return view?.state.externalPackages?.find((entry) =>
+              entry.resources.some((row) => `resource:${row.resourceId}` === id && row.state === 'present'),
+            )?.name
+          }
           const item = view?.state.installed.find((entry) => entry.id === id)
           return item
             ? resolvePluginMetadata(item.metadata, view?.locale.getSnapshot() ?? 'en')?.displayName
@@ -199,6 +209,9 @@ export function PluginsPage({ context }: { context: UiExtensionContext }) {
     <>
       {/* The controller draws nothing here; it needs a connected node to own while it lives. */}
       <div ref={host} hidden />
+      {view && sourceImport && (
+        <SkillInstallDialog view={view} initialSource={sourceImport} t={t} onClose={closeSourceImport} />
+      )}
       {
         <HomePageFrame
           id="plugins"

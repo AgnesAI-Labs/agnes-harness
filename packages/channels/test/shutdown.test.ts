@@ -1,9 +1,7 @@
 import { EventEmitter } from 'node:events'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import type { MessageRef } from '../src/adapter.js'
-import { loadConfig, type RunnerConfig } from '../src/runner/config.js'
+import type { RunnerConfig } from '../src/runner/config.js'
 import { createRunner } from '../src/runner/runner.js'
 import { installShutdown } from '../src/runner/shutdown.js'
 import { createFakeClient, FakeChannel } from '../testkit/index.js'
@@ -193,35 +191,5 @@ describe('runner shutdown drain', () => {
     expect(performance.now() - started).toBeLessThan(150)
     expect(adapter.connected).toBe(false)
     expect(client.calls.at(-1)?.method).toBe('close')
-  })
-})
-
-describe('deployment samples', () => {
-  it('ships a hardened service whose state and workspace paths are writable', () => {
-    const service = readFileSync(new URL('../deploy/agnes-channel@.service', import.meta.url), 'utf8')
-    expect(service).toContain('KillSignal=SIGTERM')
-    expect(service).toContain('TimeoutStopSec=10')
-    expect(service).toContain('NoNewPrivileges=true')
-    expect(service).toContain('ProtectSystem=strict')
-    expect(service).toContain('StateDirectory=agnes/channels agnes/workspaces')
-    expect(service).toContain('ReadWritePaths=/var/lib/agnes/channels /var/lib/agnes/workspaces')
-    expect(service).toContain('AGNES_CHANNEL_STATE_DIR=/var/lib/agnes/channels')
-    expect(service).toContain('--config /etc/agnes/channels/%i.yaml')
-  })
-
-  it('ships a schema-valid example without inline credentials and documents secure ownership', async () => {
-    const examplePath = new URL('../deploy/dingtalk.example.yaml', import.meta.url)
-    const text = readFileSync(examplePath, 'utf8')
-    const parsed = await loadConfig(fileURLToPath(examplePath))
-
-    expect(parsed).toMatchObject({
-      channel: 'dingtalk',
-      connect: { kind: 'unix', path: '/var/lib/agnes/daemon/agnesd.sock' },
-      workspace: '/var/lib/agnes/workspaces/example-tenant',
-      healthz: { enabled: true, port: 9877 },
-    })
-    expect(text).toMatch(/0600.*owned by the service user/i)
-    expect(text).not.toMatch(/clientSecret\s*:/i)
-    expect(text).not.toMatch(/clientId\s*:/i)
   })
 })

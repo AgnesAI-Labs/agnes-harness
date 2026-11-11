@@ -3,6 +3,7 @@ import { Type } from '@sinclair/typebox'
 import { describe, expect, it, vi } from 'vitest'
 import {
   createPluginRow,
+  createTreeSnapshot,
   createVerifiedRowHost,
   E_ROW_IMPORT,
   FiberLease,
@@ -214,7 +215,7 @@ describe('verified row contract', () => {
     const entry = normalizePluginExport(plugin)
     const mutableCandidate = { ...candidate }
     const config = { nested: { value: 'before' } }
-    const originalRow = row({ config })
+    const originalRow = row({ config, configReload: 'live' })
     const mutableRow = { ...originalRow, inject: [] as string[], isolate: {}, provides: [] as string[] }
     const descriptor = {
       snapshot: mutableCandidate,
@@ -234,7 +235,7 @@ describe('verified row contract', () => {
     const mount = await pending
     const installation = await host.adapter.mount(
       new Context(),
-      row({ config: { nested: { value: 'before' } } }),
+      row({ config: { nested: { value: 'before' } }, configReload: 'live' }),
       mount,
     )
     expect(plugin).toHaveBeenCalledWith(expect.anything(), { nested: { value: 'before' } })
@@ -242,6 +243,9 @@ describe('verified row contract', () => {
       packageId: '@example/tools',
       snapshotId: 'snapshot-1',
       rowId: 'ext:@example/tools/main',
+      rowRevision: createTreeSnapshot([
+        row({ config: { nested: { value: 'before' } }, configReload: 'live' }),
+      ]).hash,
     })
     await host.adapter.unmount(installation)
   })
@@ -594,23 +598,33 @@ describe('verified row contract', () => {
     await source.dispose()
   })
 
-  it('binds a mount to the complete row and burns it after a mismatched attempt', async () => {
-    const plugin = vi.fn()
-    const host = createVerifiedRowHost({ snapshots: snapshots() })
-    const verifiedRow = row({ config: { value: 1 } })
-    const mount = await host.thirdParty.verifyAndCreate({
-      snapshot: candidate,
-      row: verifiedRow,
-      entry: normalizePluginExport(plugin),
-    })
-    await expect(
-      host.adapter.mount(new Context(), row({ config: { value: 2 } }), mount),
-    ).rejects.toMatchObject({ code: 'E_VERIFIED_MOUNT' })
-    await expect(host.adapter.mount(new Context(), verifiedRow, mount)).rejects.toMatchObject({
-      code: 'E_VERIFIED_MOUNT',
-    })
-    expect(plugin).not.toHaveBeenCalled()
-  })
+  it.each(['config', 'configReload'] as const)(
+    'binds mounts to the complete row and burns mismatched attempts (%s)',
+    async (field) => {
+      const plugin = vi.fn()
+      const host = createVerifiedRowHost({ snapshots: snapshots() })
+      const verifiedRow = row({ config: { value: 1 }, configReload: 'live' })
+      const mount = await host.thirdParty.verifyAndCreate({
+        snapshot: candidate,
+        row: verifiedRow,
+        entry: normalizePluginExport(plugin),
+      })
+      await expect(
+        host.adapter.mount(
+          new Context(),
+          row({
+            config: { value: field === 'config' ? 2 : 1 },
+            configReload: field === 'configReload' ? 'next-session' : 'live',
+          }),
+          mount,
+        ),
+      ).rejects.toMatchObject({ code: 'E_VERIFIED_MOUNT' })
+      await expect(host.adapter.mount(new Context(), verifiedRow, mount)).rejects.toMatchObject({
+        code: 'E_VERIFIED_MOUNT',
+      })
+      expect(plugin).not.toHaveBeenCalled()
+    },
+  )
 
   it('validates a prebound lease and derives an exact child lease', async () => {
     const root = new Context()

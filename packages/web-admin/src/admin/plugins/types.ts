@@ -53,9 +53,10 @@ export type AdminPageState = {
   context?: AdminContext | undefined
   generations?: PluginGenerationStatus | undefined
   installed: readonly PackageInstalledDescriptor[]
+  externalPackages?: PackageListResult['externalPackages']
   surfaceLinks: readonly AdminSurfaceLink[]
   catalog: readonly PackageCatalogDescriptor[]
-  community?: PackageCatalogPage['community']
+  community?: PackageCatalogPage['communityIndex']
   communityReadFailed?: boolean
   nextCursor: string | null
   selectedId?: string | undefined

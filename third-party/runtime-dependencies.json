@@ -154,15 +154,6 @@
       "consumers": ["packages/base", "packages/protocol"]
     },
     {
-      "name": "dingtalk-stream",
-      "version": "2.1.6-beta.1",
-      "license": "MIT",
-      "source": "https://github.com/open-dingtalk/dingtalk-stream-sdk-nodejs",
-      "purpose": "Optional DingTalk streaming channel integration.",
-      "rationale": "Uses DingTalk's maintained stream SDK for its proprietary gateway protocol.",
-      "consumers": ["packages/channels"]
-    },
-    {
       "name": "get-east-asian-width",
       "version": "1.6.0",
       "license": "MIT",

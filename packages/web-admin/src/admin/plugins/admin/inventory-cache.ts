@@ -3,15 +3,28 @@ import type { PluginAdminApi } from '../api.js'
 import type { AdminContext, AdminPageState } from '../types.js'
 import { readBundledCatalog } from './model.js'
 
-type Inventory = Pick<AdminPageState, 'context' | 'installed' | 'generations' | 'surfaceLinks' | 'tree'>
+type Inventory = Pick<
+  AdminPageState,
+  'context' | 'installed' | 'externalPackages' | 'generations' | 'surfaceLinks' | 'tree'
+>
 
 /** The last inventory this page session read, so coming back shows it at once while it is read again. */
 let last: Inventory | undefined
 
 /** Keep what a successful read returned; the state is handed back unchanged. */
-export function rememberInventory(state: AdminPageState): AdminPageState {
-  const { context, installed, generations, surfaceLinks, tree } = state
-  last = { context, installed, generations, surfaceLinks, tree }
+export function rememberInventory(state: AdminPageState, list?: PackageListResult): AdminPageState {
+  if (list)
+    state = {
+      ...state,
+      installed: list.packages,
+      externalPackages: list.externalPackages,
+      generations: list.generations,
+      inventoryAuthoritative: true,
+      loading: false,
+      connection: 'connected',
+    }
+  const { context, installed, externalPackages, generations, surfaceLinks, tree } = state
+  last = { context, installed, externalPackages, generations, surfaceLinks, tree }
   return state
 }
 

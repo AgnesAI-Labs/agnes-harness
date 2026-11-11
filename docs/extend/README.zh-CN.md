@@ -26,6 +26,8 @@
 
 MCP 包不会自动启动、安装或信任外部服务器。修改定义、启动目标服务器，再按 [MCP 管理](../guide/mcp.zh-CN.md)操作。Skills 提供方法说明而非工具实现，参阅 [Skills](../guide/skills.zh-CN.md)。适配器模板只产生确定性的开发回复，真实推理前必须替换实现。
 
+[渠道桥接入开发手册](channel-bridge-integration.zh-CN.md)：独立 IM 插件的公开合同、配置、消息与附件、绑定和验收。
+
 ## Hook 失败
 
 会话 context adapter 将 `context` 贡献视为可选指导。贡献者超时、抛出异常或返回非法数据时，本次请求丢弃它的贡献，并通过 `x/core/hook-failed` 记录来源和失败类别。其他贡献者继续执行；下次刷新 context 时重试失败的注册项，同时丢弃该贡献者之前的旧指导。分发表仍拒绝非法变换，降级由会话 adapter 负责。受信任的内置 prompt adapter 明确给出的 block 仍保持阻断。

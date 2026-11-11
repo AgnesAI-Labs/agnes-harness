@@ -23,6 +23,7 @@ import { flushSync } from 'react-dom'
 import { loadHeadsUp } from '../heads-up.js'
 import { HeadsUpNote } from '../heads-up-view.js'
 import { ModelPickerControl } from '../model-picker.js'
+import { SessionChannelControl } from '../pages/channel-session-control.js'
 import { loadReplySuggestion } from '../reply-suggestion.js'
 import { VoiceComposerButtons } from '../voice/composer-buttons.js'
 import { ApplicationComposerContext, ApplicationWorkActions } from '../workbench/application-actions.js'
@@ -111,6 +112,7 @@ export function ComposerDshFrame({
                 {outlet('conversation.input.left')}
               </span>
             ),
+            sessionControls: <SessionChannelControl key={sessionId} sessionId={sessionId} />,
             model: outlet('conversation.input.model'),
             overlay: outlet('conversation.input.overlay'),
             permission: outlet('conversation.input.permission'),

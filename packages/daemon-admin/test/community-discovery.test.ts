@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { openCommunityDiscovery } from '../src/packages/community-discovery.js'
+import { COMMUNITY_INDEX_URL } from '../src/packages/community-index.js'
 
 const directories: string[] = []
 const owners: Awaited<ReturnType<typeof openCommunityDiscovery>>[] = []
@@ -11,78 +12,82 @@ afterEach(async () => {
   vi.useRealTimers()
   for (const directory of directories.splice(0)) await rm(directory, { recursive: true, force: true })
 })
-async function setup(fetcher: typeof fetch) {
+const entry = (url = 'https://github.com/example/plugin-1', name = '@example/plugin') => ({
+  name,
+  title: { en: 'Plugin', 'zh-cn': '插件' },
+  description: { en: '<script>not markup</script>', 'zh-cn': '简介' },
+  author: 'Example Author',
+  repository: { url },
+  versions: [{ version: '1.0.0', source: { type: 'git', url, commit: 'a'.repeat(40) } }],
+})
+const index = (plugins: unknown[] = [entry()]) => ({ format: 1, plugins })
+async function setup(fetcher: typeof fetch = async () => Response.json(index())) {
   const directory = await mkdtemp(join(tmpdir(), 'agh-community-'))
   directories.push(directory)
-  const owner = await openCommunityDiscovery({ directory, fetch: fetcher, random: () => 0 })
+  const network = vi.fn<typeof fetch>(async (url, init) => {
+    expect(String(url)).toBe(COMMUNITY_INDEX_URL)
+    expect(init?.redirect).toBe('error')
+    return fetcher(url, init)
+  })
+  const owner = await openCommunityDiscovery({ directory, fetch: network, random: () => 0 })
   owners.push(owner)
-  return { owner, directory }
+  return { owner, directory, network }
 }
-const repo = (id = 1) => ({
-  id,
-  full_name: `example/plugin-${id}`,
-  private: false,
-  description: '<script>not markup</script>',
-  topics: ['dsh-plugin', 'memory'],
-  stargazers_count: 20,
-  forks_count: 2,
-  open_issues_count: 1,
-  pushed_at: '2026-01-01T00:00:00Z',
-})
-const result = (items = [repo()], total_count = items.length) =>
-  Response.json({ items, total_count, incomplete_results: false })
 
-it('serves clones without networking and refreshes independently, persisting a deduplicated cache across restart', async () => {
+it('serves clones without networking and refreshes independently, persisting the index across restart', async () => {
   vi.useFakeTimers()
-  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => result())
-  const { owner, directory } = await setup(fetcher)
-  expect(owner.read().state).toBe('pending')
+  const { owner, directory, network } = await setup()
   owner.read()
-  owner.read()
-  expect(fetcher).not.toHaveBeenCalled()
+  expect(network).not.toHaveBeenCalled()
   owner.start()
   owner.start()
   await vi.advanceTimersByTimeAsync(10_000)
   await vi.waitFor(() => expect(owner.read().state).toBe('ready'))
   const snapshot = owner.read()
   expect(snapshot.items).toMatchObject([
-    { id: 1, fullName: 'example/plugin-1', topics: ['dsh-plugin', 'memory'] },
+    {
+      id: '@example/plugin',
+      name: '@example/plugin',
+      fullName: 'example/plugin-1',
+      author: 'Example Author',
+      summary: { en: '<script>not markup</script>', 'zh-cn': '简介' },
+      versions: [
+        {
+          version: '1.0.0',
+          source: { type: 'git', ref: `git:https://github.com/example/plugin-1.git#${'a'.repeat(40)}` },
+        },
+      ],
+    },
   ])
+  expect(snapshot.items[0]).not.toHaveProperty('stars')
   snapshot.items.length = 0
   expect(owner.read().items).toHaveLength(1)
-  expect(fetcher.mock.calls.every(([url]) => String(url).includes('is%3Apublic'))).toBe(true)
   const recorded = JSON.parse(await readFile(join(directory, 'community-discovery-cache.json'), 'utf8'))
-  expect(recorded.snapshot.items).toHaveLength(1)
+  expect(recorded.version).toBe(4)
   await owner.close()
-  const reloaded = await openCommunityDiscovery({ directory, fetch: fetcher, random: () => 0 })
+  const reloaded = await openCommunityDiscovery({ directory, fetch: network, random: () => 0 })
   owners.push(reloaded)
   expect(reloaded.read().lastSuccessAt).toBe(snapshot.lastSuccessAt)
   expect(reloaded.read().items).toHaveLength(1)
-  const before = fetcher.mock.calls.length
+  const before = network.mock.calls.length
   reloaded.start()
   await vi.advanceTimersByTimeAsync(1000)
-  expect(fetcher.mock.calls).toHaveLength(before)
+  expect(network.mock.calls).toHaveLength(before)
   await vi.advanceTimersByTimeAsync(6 * 3600_000)
-  await vi.waitFor(() => expect(reloaded.read().state).toBe('ready'))
-  expect(fetcher.mock.calls.length).toBeGreaterThan(before)
+  await vi.waitFor(() => expect(network.mock.calls.length).toBeGreaterThan(before))
 })
 
-it('retains the previous snapshot on a later page failure and respects server retry delay', async () => {
+it('retains the previous complete snapshot on failure and respects server retry delay', async () => {
   vi.useFakeTimers()
-  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => result())
-  const { owner } = await setup(fetcher)
+  let limited = false
+  const { owner, network } = await setup(async () =>
+    limited ? new Response('', { status: 429, headers: { 'retry-after': '3600' } }) : Response.json(index()),
+  )
   owner.start()
   await vi.advanceTimersByTimeAsync(10_000)
   await vi.waitFor(() => expect(owner.read().state).toBe('ready'))
   const original = owner.read()
-  fetcher.mockImplementation(async (url) =>
-    new URL(String(url)).searchParams.get('page') === '1'
-      ? result(
-          Array.from({ length: 100 }, (_, id) => repo(id + 10)),
-          200,
-        )
-      : new Response('', { status: 429, headers: { 'retry-after': '3600' } }),
-  )
+  limited = true
   await vi.advanceTimersByTimeAsync(6 * 3600_000)
   await vi.waitFor(() => expect(owner.read().state).toBe('failed'))
   expect(owner.read()).toMatchObject({
@@ -90,61 +95,98 @@ it('retains the previous snapshot on a later page failure and respects server re
     lastSuccessAt: original.lastSuccessAt,
     error: 'rate-limit',
   })
-  const before = fetcher.mock.calls.length
+  const before = network.mock.calls.length
   await vi.advanceTimersByTimeAsync(30 * 60_000)
-  expect(fetcher.mock.calls).toHaveLength(before)
+  expect(network.mock.calls).toHaveLength(before)
   await owner.close()
   await vi.advanceTimersByTimeAsync(24 * 3600_000)
-  expect(fetcher.mock.calls).toHaveLength(before)
+  expect(network.mock.calls).toHaveLength(before)
 })
 
 it.each([
   'disabled',
   'invalid',
+  'legacy-topic',
+  'legacy-disabled',
   'corrupt-cache',
+  'legacy-cache',
   'empty',
-  'invalid-response',
-  'incomplete',
-  'oversized',
-  'bad-json',
   'storage',
 ] as const)('handles %s without executing repository code', async (mode) => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-  const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => {
-    if (mode === 'invalid-response')
-      return Response.json({ items: [{ ...repo(), private: true }], total_count: 1 })
-    if (mode === 'incomplete')
-      return Response.json({ items: [repo()], total_count: 1, incomplete_results: true })
-    if (mode === 'oversized') return new Response('x'.repeat(2 * 1024 * 1024 + 1))
-    if (mode === 'bad-json') return new Response('not JSON')
-    return result([], 0)
-  })
-  const { owner: unused, directory } = await setup(fetcher)
+  vi.useFakeTimers()
+  const { owner: unused, directory } = await setup()
   await unused.close()
-  if (mode === 'disabled') await writeFile(join(directory, 'community-discovery.json'), '{"enabled":false}')
-  if (mode === 'invalid')
-    await writeFile(join(directory, 'community-discovery.json'), '{"topics":["secret-topic"]}')
+  const config =
+    mode === 'disabled'
+      ? { enabled: false }
+      : mode === 'invalid'
+        ? { topics: ['secret-topic'] }
+        : mode === 'legacy-topic' || mode === 'legacy-disabled'
+          ? { enabled: mode !== 'legacy-disabled', topics: ['agh-plugin', 'dsh-plugin'] }
+          : undefined
+  if (config) await writeFile(join(directory, 'community-discovery.json'), JSON.stringify(config))
   if (mode === 'corrupt-cache') await writeFile(join(directory, 'community-discovery-cache.json'), 'not JSON')
+  if (mode === 'legacy-cache')
+    await writeFile(
+      join(directory, 'community-discovery-cache.json'),
+      JSON.stringify({
+        version: 2,
+        fingerprint: 'agh-plugin',
+        snapshot: { ...unused.read(), items: [{ id: 1, fullName: 'unlisted/plugin', description: '' }] },
+      }),
+    )
   if (mode === 'storage') await mkdir(join(directory, 'community-discovery-cache.json'))
-  const owner = await openCommunityDiscovery({ directory, fetch: fetcher, random: () => 0 })
+  const network = vi.fn<typeof fetch>(async () => Response.json(index(mode === 'empty' ? [] : undefined)))
+  const owner = await openCommunityDiscovery({ directory, fetch: network, random: () => 0 })
   owners.push(owner)
+  expect(owner.read().items).toEqual([])
   owner.start()
   await vi.advanceTimersByTimeAsync(10_000)
-  if (mode === 'disabled' || mode === 'invalid') {
-    expect(fetcher).not.toHaveBeenCalled()
-    expect(owner.read().state).toBe('disabled')
+  if (['disabled', 'invalid', 'legacy-disabled'].includes(mode)) {
+    expect(network).not.toHaveBeenCalled()
+    expect(owner.read()).toMatchObject({
+      state: 'disabled',
+      error: mode === 'invalid' ? 'configuration' : null,
+    })
   } else {
-    const failed = ['invalid-response', 'incomplete', 'oversized', 'bad-json', 'storage'].includes(mode)
-    await vi.waitFor(() => expect(owner.read().state).toBe(failed ? 'failed' : 'ready'))
-    expect(owner.read().items).toEqual([])
-    if (failed) expect(owner.read().error).toBe(mode === 'storage' ? 'storage' : 'invalid-data')
+    await vi.waitFor(() => expect(owner.read().state).toBe(mode === 'storage' ? 'failed' : 'ready'))
+    if (mode === 'empty' || mode === 'storage') expect(owner.read().items).toEqual([])
+    else expect(owner.read().items).toHaveLength(1)
+    if (config)
+      expect(JSON.parse(await readFile(join(directory, 'community-discovery.json'), 'utf8'))).toEqual(config)
   }
 })
 
-it('cancels an in-flight response and never publishes after the owner closes', async () => {
+it.each(['network', 'rate-limit', 'oversized', 'bad-json'] as const)(
+  'fails closed without a cache when the index has a %s failure',
+  async (failure) => {
+    vi.useFakeTimers()
+    let limitedAt = 0
+    const { owner } = await setup(async () => {
+      if (failure === 'network') return new Response('', { status: 503 })
+      if (failure === 'rate-limit') {
+        limitedAt = Date.now()
+        return new Response('', { status: 429, headers: { 'retry-after': '3600' } })
+      }
+      return new Response(failure === 'oversized' ? 'x'.repeat(2 * 1024 * 1024 + 1) : 'not JSON')
+    })
+    owner.start()
+    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.waitFor(() => expect(owner.read().state).toBe('failed'))
+    expect(owner.read()).toMatchObject({
+      items: [],
+      lastSuccessAt: null,
+      error: ['oversized', 'bad-json'].includes(failure) ? 'invalid-data' : failure,
+    })
+    if (failure === 'rate-limit')
+      expect(Date.parse(owner.read().nextAttemptAt ?? '')).toBeGreaterThanOrEqual(limitedAt + 3600_000)
+  },
+)
+
+it('cancels an in-flight index response and never publishes after the owner closes', async () => {
   vi.useFakeTimers()
   let cancelled = false
-  const fetcher = vi.fn<typeof fetch>().mockImplementation(
+  const { owner, directory } = await setup(
     async (_url, init) =>
       new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener(
@@ -157,7 +199,6 @@ it('cancels an in-flight response and never publishes after the owner closes', a
         )
       }),
   )
-  const { owner, directory } = await setup(fetcher)
   owner.start()
   await vi.advanceTimersByTimeAsync(10_000)
   expect(owner.read().state).toBe('syncing')
@@ -167,6 +208,73 @@ it('cancels an in-flight response and never publishes after the owner closes', a
   await expect(readFile(join(directory, 'community-discovery-cache.json'))).rejects.toMatchObject({
     code: 'ENOENT',
   })
-  await vi.advanceTimersByTimeAsync(24 * 3600_000)
-  expect(owner.read().items).toEqual([])
+})
+
+it.each([
+  [1101, 0],
+  [300, 2000],
+  [600, 2000],
+])('retains all %i entries with %i-character summaries across refresh and restart', async (size, length) => {
+  vi.useFakeTimers()
+  let listed = Array.from({ length: size }, (_, i) => ({
+    ...entry(`https://github.com/example/plugin-${i}`, `@example/plugin-${i}`),
+    ...(length ? { description: 'x'.repeat(length) } : {}),
+  }))
+  const { owner, directory } = await setup(async () => Response.json(index(listed)))
+  owner.start()
+  await vi.advanceTimersByTimeAsync(10_000)
+  await vi.waitFor(() => expect(owner.read().state).toBe('ready'))
+  expect(owner.read().items).toHaveLength(size)
+  expect(owner.read().totalReported).toBe(size)
+  const restarted = await openCommunityDiscovery({ directory, random: () => 0 })
+  owners.push(restarted)
+  expect(restarted.read().items).toEqual(owner.read().items)
+  listed = [entry('https://github.com/Example/plugin-1.git/')]
+  await vi.advanceTimersByTimeAsync(6 * 3600_000)
+  await vi.waitFor(() => expect(owner.read().items).toHaveLength(1))
+  expect(owner.read().items[0]?.fullName).toBe('example/plugin-1')
+  listed = []
+  await vi.advanceTimersByTimeAsync(6 * 3600_000)
+  await vi.waitFor(() => expect(owner.read()).toMatchObject({ totalReported: 0, items: [] }))
+})
+
+it.each([
+  { format: 2, plugins: [entry()] },
+  { format: 1 },
+  index([entry('https://github.com.attacker.example/example/plugin-1')]),
+  index([entry('https://github.com/example/plugin-1?other=1')]),
+  index([entry('https://user:password@github.com/example/plugin-1')]),
+  index([entry(), entry()]),
+  index([{ ...entry(), versions: [] }]),
+  index([{ ...entry(), author: { name: 'unsupported' } }]),
+  index([{ ...entry(), description: { en: 42 } }]),
+  index([
+    {
+      ...entry(),
+      versions: [
+        {
+          version: '1.0.0',
+          source: { type: 'git', url: 'https://github.com/other/plugin', commit: 'a'.repeat(40) },
+        },
+      ],
+    },
+  ]),
+  index([
+    {
+      ...entry(),
+      versions: [
+        {
+          version: '1.0.0',
+          source: { type: 'git', url: 'https://github.com/example/plugin-1', commit: 'main' },
+        },
+      ],
+    },
+  ]),
+])('refuses malformed index data without publishing a partial list: %j', async (body) => {
+  vi.useFakeTimers()
+  const { owner } = await setup(async () => Response.json(body))
+  owner.start()
+  await vi.advanceTimersByTimeAsync(10_000)
+  await vi.waitFor(() => expect(owner.read().state).toBe('failed'))
+  expect(owner.read()).toMatchObject({ error: 'invalid-data', lastSuccessAt: null, items: [] })
 })

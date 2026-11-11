@@ -11,6 +11,10 @@ import type { RefinementHost } from './refinement.js'
 import { authorizeServiceProcess } from './service-process-policy.js'
 
 const LOCAL_OWNER = Object.freeze({ kind: 'local' })
+const channelRegistries = new Map<
+  string,
+  Set<import('@agnes/host-extensions/ext-host/services').ServiceRegistry>
+>()
 
 /** The extension service call surface and the session configuration service the Host exposes. */
 export function createHostServices(
@@ -29,6 +33,14 @@ export function createHostServices(
   const { adapters } = proc
   const { services } = host
   const { seams } = input
+  const key = `${ctx.dataDir}/profile:${ctx.profile.name}`
+  const registries = channelRegistries.get(key) ?? new Set()
+  channelRegistries.set(key, registries)
+  registries.add(services)
+  ctx.rollback.push('channel-services', () => {
+    registries.delete(services)
+    if (!registries.size) channelRegistries.delete(key)
+  })
   const servicesInvocation = serviceInvoker({
     authorize: async (entry, params, actor, workspace, signal) => {
       if (
@@ -55,7 +67,25 @@ export function createHostServices(
           workspace.root,
         )
     },
-    registry: services,
+    registry: {
+      resolve(owner, name) {
+        if (!['channel.session', 'channel.bind', 'channel.unbind'].includes(name))
+          return services.resolve(owner, name)
+        // Channel connections are profile singletons. Pinned sessions supply the workspace and
+        // authenticated caller, but must not resurrect a retired channel service registration.
+        for (const registry of registries) {
+          const entry = registry.resolve(owner, name)
+          if (!entry) continue
+          try {
+            proc.profileActivations.require(owner, entry.integrity, undefined, entry.activationRevision)
+            return entry
+          } catch {
+            /* Only the current publication can handle a channel binding. */
+          }
+        }
+        return undefined
+      },
+    },
     ...(deps.serviceAuthority ? { authority: deps.serviceAuthority } : {}),
     principals: seams.principals,
     audit: deps.audit,

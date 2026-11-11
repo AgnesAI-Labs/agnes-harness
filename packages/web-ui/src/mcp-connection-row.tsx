@@ -14,6 +14,7 @@ export type McpRowActions = { edit(): void; test(): void; remove(): void }
 export function McpConnectionRow({
   item,
   itemName,
+  sourceName,
   selected,
   disabled,
   onOpen,
@@ -22,6 +23,7 @@ export function McpConnectionRow({
 }: {
   item: McpServerDescriptor
   itemName: string
+  sourceName?: string | undefined
   selected: boolean
   disabled: boolean
   onOpen(): void
@@ -47,7 +49,7 @@ export function McpConnectionRow({
       icon={<Icon name={connection.kind === 'stdio' ? 'terminal' : 'globe'} size={20} />}
       title={itemName}
       onOpen={onOpen}
-      meta={`${t(item.source === 'managed' ? 'mine' : 'preset')} · ${t(connection.kind === 'stdio' ? 'local' : 'remote')} · ${address}`}
+      meta={`${sourceName ? t('from', { name: sourceName }) : t(item.source === 'managed' ? 'mine' : 'preset')} · ${t(connection.kind === 'stdio' ? 'local' : 'remote')} · ${address}`}
       description={item.lastSafeError ? resourceFailureLabel(item.lastSafeError.code, t) : undefined}
       status={item.lastSafeError ? <Tag tone="bad">{t('connectionFailed')}</Tag> : undefined}
       actions={

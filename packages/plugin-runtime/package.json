@@ -9,7 +9,8 @@
     "./bundled": "./src/bundled.ts",
     "./testkit": "./testkit/index.ts",
     "./provided-externals": "./src/provided-externals.ts",
-    "./deferred-contract": "./src/deferred-contract.ts"
+    "./deferred-contract": "./src/deferred-contract.ts",
+    "./channel-contract": "./src/channel-contract.ts"
   },
   "scripts": {
     "test": "vitest run",

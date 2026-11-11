@@ -31,18 +31,28 @@ export function createRunnerSupervisor(
   let recovery: Promise<void> | undefined
   let stopping = false
   let stopPromise: Promise<void> | undefined
+  let retirementFailure: Error | undefined
+  let retiring: Promise<void> | undefined
 
-  async function retire(drainMs = 5_000): Promise<void> {
+  function retire(drainMs = 5_000): Promise<void> {
+    if (retirementFailure) return Promise.reject(retirementFailure)
+    if (retiring) return retiring
     const old = active
-    active = undefined
-    if (!old) return
+    if (!old) return Promise.resolve()
     old.unsubscribe()
     stopIntake(old)
-    try {
-      await old.runner.stop({ drainMs })
-    } catch {
-      log.warn('channel runner teardown failed before replacement')
-    }
+    retiring = (async () => {
+      try {
+        await old.runner.stop({ drainMs })
+        if (active === old) active = undefined
+      } catch {
+        retirementFailure = new Error('channel shutdown could not be confirmed')
+        throw retirementFailure
+      }
+    })().finally(() => {
+      retiring = undefined
+    })
+    return retiring
   }
 
   function stopIntake(instance: NonNullable<typeof active>): void {
@@ -54,7 +64,8 @@ export function createRunnerSupervisor(
   async function startFresh(): Promise<void> {
     const instance = await create()
     if (stopping) {
-      await instance.runner.stop({ drainMs: 0 })
+      active = { ...instance, unsubscribe: () => {}, intakeStopped: false }
+      await retire(0)
       return
     }
     let closedDuringStart = false
@@ -89,17 +100,23 @@ export function createRunnerSupervisor(
           await startFresh()
           return
         } catch {
+          if (retirementFailure) throw retirementFailure
           if (!stopping) log.warn('channel daemon client rebuild failed; retrying')
           delay = Math.min(max, delay * 2)
         }
       }
-    })().finally(() => {
-      recovery = undefined
-    })
+    })()
+      .catch(() => {
+        log.warn('channel shutdown could not be confirmed; replacement blocked')
+      })
+      .finally(() => {
+        recovery = undefined
+      })
   }
 
   return {
     start() {
+      if (retirementFailure) return Promise.reject(retirementFailure)
       if (stopping) return Promise.reject(new Error('channel runner supervisor is stopped'))
       if (active && !starting) return Promise.resolve()
       starting ??= startFresh().finally(() => {

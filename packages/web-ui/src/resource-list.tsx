@@ -16,8 +16,8 @@ import { useUiText } from './ui-locale.js'
 
 let packageNames: ((id: string) => string | undefined) | undefined
 /**
- * The page that lists plugins tells the resource list how to name one, so a skill row can say
- * which plugin it comes from. The list is drawn by a controller in its own root, out of reach of
+ * The plugins page resolves package IDs and `resource:<resourceId>` membership to display names.
+ * Exact resource membership takes precedence over native package provenance. The controller is out of reach of
  * the page's props; without a resolver the row says only that the skill comes from a plugin.
  */
 export function setResourcePackageNames(resolve: ((id: string) => string | undefined) | undefined): void {
@@ -168,6 +168,7 @@ export function ResourceListContent({
                   key={item.resourceId}
                   item={item}
                   itemName={itemNameOf(item)}
+                  sourceName={packageNames?.(`resource:${item.resourceId}`)}
                   selected={item.resourceId === selectedId}
                   disabled={switchDisabled}
                   onOpen={() => onOpen(item)}
@@ -182,9 +183,10 @@ export function ResourceListContent({
                   switchDisabled={switchDisabled || (busy && item.resourceId === busyResourceId)}
                   itemName={itemNameOf(item)}
                   sourceName={
-                    item.kind === 'skill' && item.sourceIdentity.scope === 'package'
+                    packageNames?.(`resource:${item.resourceId}`) ??
+                    (item.kind === 'skill' && item.sourceIdentity.scope === 'package'
                       ? packageNames?.(item.sourceIdentity.sourceId)
-                      : undefined
+                      : undefined)
                   }
                   onOpen={onOpen}
                   onToggleDesired={onToggleDesired}
@@ -347,13 +349,13 @@ function ResourceRowContent({
         description={item.description}
         meta={
           <MetaText data-testid="resource-source">
-            {item.sourceIdentity.scope === 'package'
-              ? sourceName
-                ? t('row.from', { name: sourceName })
-                : t('row.from-plugin')
-              : item.sourceIdentity.scope === 'runtime'
-                ? t('row.plugin-managed')
-                : t(`row.mine.${item.sourceIdentity.scope}`)}
+            {sourceName
+              ? t('row.from', { name: sourceName })
+              : item.sourceIdentity.scope === 'package'
+                ? t('row.from-plugin')
+                : item.sourceIdentity.scope === 'runtime'
+                  ? t('row.plugin-managed')
+                  : t(`row.mine.${item.sourceIdentity.scope}`)}
           </MetaText>
         }
         status={

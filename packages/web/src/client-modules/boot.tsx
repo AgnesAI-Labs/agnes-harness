@@ -97,6 +97,7 @@ import type { VoiceController } from '../voice/controller.js'
 import { installVoice } from '../voice/install.js'
 import { type ClientReconciler, createReconciler, type RosterSource } from './reconcile.js'
 export interface ClientModulesRuntime {
+  requestProfileApproval(result: unknown): void
   ctx: Context
   registry: SlotRegistry
   session: SessionService
@@ -604,6 +605,7 @@ export async function startClientModules(options: {
     locale,
     commands,
     reconciler,
+    requestProfileApproval: (result: unknown) => attention.receive(result, () => true),
     builtinUnits,
     actualSlots(packageId) {
       return [...new Set(registry.entriesByOwner(packageId).map((entry) => entry.name))]

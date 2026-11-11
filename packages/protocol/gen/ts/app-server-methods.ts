@@ -10,6 +10,7 @@ export interface AppServerMethods {
   "_agnes/v1/admin.bundles.get": { params: Static<typeof import("./app-server.js").AdminEmpty>; result: Static<typeof import("./app-server.js").AdminBundlesResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.bundles.save": { params: Static<typeof import("./app-server.js").AdminBundlesSave>; result: Static<typeof import("./app-server.js").AdminBundlesResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.composition.get": { params: Static<typeof import("./app-server.js").AdminCompositionParams>; result: Static<typeof import("./app-server.js").AdminCompositionResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/channels.catalog": { params: Static<typeof import("./app-server.js").AdminEmpty>; result: Static<typeof import("./app-server.js").ChannelCatalogResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.search.get": { params: Static<typeof import("./app-server.js").AdminEmpty>; result: Static<typeof import("./app-server.js").AdminSearchResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.search.save": { params: Static<typeof import("./app-server.js").AdminSearchSave>; result: Static<typeof import("./app-server.js").AdminSearchResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/admin.search.test": { params: Static<typeof import("./app-server.js").AdminSearchTest>; result: Static<typeof import("./app-server.js").AdminSearchResult>; direction: "c2s"; kind: "request" }

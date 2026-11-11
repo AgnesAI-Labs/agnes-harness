@@ -10,7 +10,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { forgetInventory } from '../src/admin/plugins/admin/inventory-cache.js'
 import { OperationBackoff, withOperationDesired } from '../src/admin/plugins/admin/operation-refresh.js'
 import { PluginAdminPage } from '../src/admin/plugins/admin/page.js'
-import { PluginAdminApi } from '../src/admin/plugins/api.js'
+import { type AdminCatalogPage, PluginAdminApi } from '../src/admin/plugins/api.js'
 import { ADMIN_FEATURES } from '../src/admin/plugins/types.js'
 import { visibleRefresh } from '../src/visible-refresh.js'
 
@@ -29,7 +29,7 @@ it('keeps newer catalog community data when an older background read finishes la
     permissions: ['packages.read'] as const,
     readOnly: false,
   }
-  const community = (totalReported: number): NonNullable<PackageCatalogPage['community']> => ({
+  const community = (totalReported: number): NonNullable<PackageCatalogPage['communityIndex']> => ({
     state: 'ready',
     error: null,
     items: [],
@@ -56,7 +56,7 @@ it('keeps newer catalog community data when an older background read finishes la
   try {
     await page.start()
     await page.selectTab('discover')
-    let complete!: (result: PackageCatalogPage) => void
+    let complete!: (result: AdminCatalogPage) => void
     catalog.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -169,146 +169,75 @@ it.each(['new-content', 'same-content', 'blocked', 'trusted'] as const)(
   },
 )
 
-it.each(['ready', 'revoked', 'read-only', 'offline', 'cancelled', 'disposed', 'replaced'] as const)(
-  'decides a reviewed install after the pending inventory read: %s',
-  async (outcome) => {
+it.each([
+  ['git', 'not-plugin', true, true],
+  ['path', 'manifest-missing', true, true],
+  ['file', 'not-plugin', true, true],
+  ['url', 'not-plugin', true, true],
+  ['git', 'not-plugin', false, false],
+  ['git', 'manifest-invalid', true, false],
+  ['git', 'git-fetch', true, false],
+  ['git', 'source-not-found', true, false],
+  ['npm', 'not-plugin', true, false],
+  ['git', 'not-plugin', true, false, 'update'],
+] as const)(
+  'offers manual %s source to external import only for %s (feature=%s)',
+  async (type, reason, feature, offered, mode: 'install' | 'update' = 'install') => {
     const context = {
-      profile: `review-refresh-${outcome}`,
+      profile: 'source-fallback',
       clientId: 'web',
-      permissions: ['packages.read', 'packages.install', 'packages.trust', 'packages.activate'],
-      features: Object.values(ADMIN_FEATURES),
+      permissions: ['packages.read', 'packages.install'] as const,
+      features: feature ? ['packages.skill-import.v1'] : [],
       readOnly: false,
     }
-    const source = { type: 'file' as const, ref: 'file:./reviewed-plugin' }
-    const preview = {
-      id: '@fixture/reviewed',
-      version: '1.0.0',
-      source,
-      integrity: `sha256-${'a'.repeat(64)}`,
-      capabilityHash: 'c'.repeat(64),
-      contributions: [],
-      warnings: [],
-      blockers: [],
-    } as unknown as PackagePreview
-    const replacement = { ...preview, integrity: `sha256-${'b'.repeat(64)}`, capabilityHash: 'd'.repeat(64) }
-    const snapshot = { context, inventory: { packages: [] } }
-    const overview = vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue(snapshot as never)
+    vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue({ context, inventory: { packages: [] } })
     vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
     vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
     vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
     vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
     vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
-    const inspect = vi.spyOn(PluginAdminApi.prototype, 'inspect').mockResolvedValue({
-      operationId: 'inspect-reviewed',
+    vi.spyOn(PluginAdminApi.prototype, 'inspect').mockResolvedValue({
+      operationId: 'manual-check',
       profile: context.profile,
     })
-    const startedAt = '2026-11-05T00:00:00.000Z'
-    const inspection: PackageOperation = {
-      operationId: 'inspect-reviewed',
-      profile: context.profile,
+    vi.spyOn(PluginAdminApi.prototype, 'operation').mockResolvedValue({
+      operationId: 'manual-check',
       operation: 'inspect',
-      state: 'completed',
-      progress: 100,
-      startedAt,
-      updatedAt: startedAt,
-      preview,
-    }
-    vi.spyOn(PluginAdminApi.prototype, 'operation').mockImplementation(
-      async (operationId): Promise<PackageOperation> =>
-        operationId === inspection.operationId
-          ? inspection
-          : {
-              operationId,
-              profile: context.profile,
-              operation: operationId === 'inspect-replacement' ? 'inspect' : 'install',
-              state: operationId === 'inspect-replacement' ? 'inspecting' : 'installing',
-              progress: 0,
-              startedAt,
-              updatedAt: startedAt,
-            },
-    )
-    const install = vi.spyOn(PluginAdminApi.prototype, 'install').mockResolvedValue({
-      operationId: 'install-reviewed',
-      profile: context.profile,
-    })
+      state: 'failed',
+      error: { code: 'E_PACKAGE_SOURCE', safeMessage: 'Refused', sourceFailure: reason },
+    } as PackageOperation)
+    const install = vi.spyOn(PluginAdminApi.prototype, 'install')
     for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
       const dialog = document.createElement('dialog')
       dialog.id = id
       document.body.append(dialog)
     }
+    const importSource = vi.fn()
     const page = new PluginAdminPage({
-      surface: { host: document.body.appendChild(document.createElement('div')), render: () => null },
+      surface: {
+        host: document.body.appendChild(document.createElement('div')),
+        render: () => null,
+        importSource,
+      },
     })
-    let finish: (() => void) | undefined
-    let refresh: Promise<void> | undefined
-    let confirmed: Promise<void> | undefined
-    let replaced: Promise<void> | undefined
     try {
       await page.start()
-      await page.inspect(source, 'install', document.createElement('button'))
-      await vi.waitFor(() => expect(page.reviewState()?.preview).toBe(preview))
-      if (outcome === 'replaced') {
-        inspect.mockResolvedValueOnce({ operationId: 'inspect-replacement', profile: context.profile })
-        await page.inspect(source, 'install', document.createElement('button'))
-      }
-      overview.mockImplementationOnce(
-        () =>
-          new Promise((resolve, reject) => {
-            finish = () => {
-              if (outcome === 'offline') reject(new Error('offline'))
-              else
-                resolve({
-                  ...snapshot,
-                  context: {
-                    ...context,
-                    ...(outcome === 'revoked' ? { permissions: [] } : {}),
-                    readOnly: outcome === 'read-only',
-                  },
-                } as never)
-            }
-          }),
-      )
-      refresh = page.refresh()
-      await vi.waitFor(() => expect(finish).toBeDefined())
-      if (outcome === 'replaced')
-        replaced = page.operationUpdated({
-          ...inspection,
-          operationId: 'inspect-replacement',
-          preview: replacement,
-        })
-      confirmed = page.confirmReview(true)
-      await Promise.resolve()
-      expect(install).not.toHaveBeenCalled()
-      // A completed newer inspection owns a fresh review; the old confirmation must leave it idle.
-      expect(page.reviewState()?.busy).toBe(outcome !== 'replaced')
-      if (outcome === 'cancelled') page.cancelReview()
-      if (outcome === 'disposed') page.dispose()
-      finish?.()
-      await refresh
-      await replaced
-      await confirmed
-      if (outcome === 'ready') {
-        expect(install).toHaveBeenCalledExactlyOnceWith(source, preview.integrity)
+      page.openSourceDialog(mode)
+      const view = page.viewContext()
+      view.sourceTypeValue = type
+      view.sourceRefValue = type === 'npm' ? 'npm:fixture/skills' : `${type}:fixture/skills`
+      page.submitSource()
+      await vi.waitFor(() => expect(view.sourceBusy).toBe(false))
+      if (offered) {
+        expect(importSource).toHaveBeenCalledWith({ type, ref: `${type}:fixture/skills` })
+        expect(view.sourceError).toBeUndefined()
+        expect(view.sourceDialog.open).toBe(true)
       } else {
-        expect(install).not.toHaveBeenCalled()
-        if (outcome === 'replaced') expect(page.reviewState()?.preview).toBe(replacement)
-        if (outcome === 'cancelled') expect(page.reviewState()).toBeUndefined()
-        if (['revoked', 'read-only', 'offline'].includes(outcome)) {
-          expect(page.reviewState()?.busy).toBe(false)
-          expect(page.reviewState()?.error?.code).toBe(
-            outcome === 'revoked'
-              ? 'ADMIN_FORBIDDEN'
-              : outcome === 'read-only'
-                ? 'RECOVERY_READ_ONLY'
-                : 'ADMIN_UNAVAILABLE',
-          )
-        }
+        expect(importSource).not.toHaveBeenCalled()
+        expect(view.sourceError?.sourceFailure).toBe(reason)
       }
+      expect(install).not.toHaveBeenCalled()
     } finally {
-      finish?.()
-      await refresh
-      await replaced
-      await confirmed
       page.dispose()
     }
   },
@@ -597,3 +526,148 @@ it('shows a completed disable on the plugin row before the inventory is read aga
   ])
     expect(withOperationDesired(installed, other)).toBe(installed)
 })
+
+it.each(['ready', 'revoked', 'read-only', 'offline', 'cancelled', 'disposed', 'replaced'] as const)(
+  'decides a reviewed install after the pending inventory read: %s',
+  async (outcome) => {
+    const context = {
+      profile: `review-refresh-${outcome}`,
+      clientId: 'web',
+      permissions: ['packages.read', 'packages.install', 'packages.trust', 'packages.activate'],
+      features: Object.values(ADMIN_FEATURES),
+      readOnly: false,
+    }
+    const source = { type: 'file' as const, ref: 'file:./reviewed-plugin' }
+    const preview = {
+      id: '@fixture/reviewed',
+      version: '1.0.0',
+      source,
+      integrity: `sha256-${'a'.repeat(64)}`,
+      capabilityHash: 'c'.repeat(64),
+      contributions: [],
+      warnings: [],
+      blockers: [],
+    } as unknown as PackagePreview
+    const replacement = { ...preview, integrity: `sha256-${'b'.repeat(64)}`, capabilityHash: 'd'.repeat(64) }
+    const snapshot = { context, inventory: { packages: [] } }
+    const overview = vi.spyOn(PluginAdminApi, 'overview').mockResolvedValue(snapshot as never)
+    vi.spyOn(PluginAdminApi.prototype, 'treeList').mockResolvedValue({ nodes: [] } as never)
+    vi.spyOn(PluginAdminApi.prototype, 'surfaceLinks').mockResolvedValue({ surfaces: [] })
+    vi.spyOn(PluginAdminApi.prototype, 'runtime').mockRejectedValue(new Error('optional'))
+    vi.spyOn(PluginAdminApi.prototype, 'composition').mockRejectedValue(new Error('optional'))
+    vi.spyOn(PluginAdminApi.prototype, 'catalog').mockResolvedValue({ items: [], nextCursor: null })
+    const inspect = vi.spyOn(PluginAdminApi.prototype, 'inspect').mockResolvedValue({
+      operationId: 'inspect-reviewed',
+      profile: context.profile,
+    })
+    const startedAt = '2026-11-05T00:00:00.000Z'
+    const inspection: PackageOperation = {
+      operationId: 'inspect-reviewed',
+      profile: context.profile,
+      operation: 'inspect',
+      state: 'completed',
+      progress: 100,
+      startedAt,
+      updatedAt: startedAt,
+      preview,
+    }
+    vi.spyOn(PluginAdminApi.prototype, 'operation').mockImplementation(
+      async (operationId): Promise<PackageOperation> =>
+        operationId === inspection.operationId
+          ? inspection
+          : {
+              operationId,
+              profile: context.profile,
+              operation: operationId === 'inspect-replacement' ? 'inspect' : 'install',
+              state: operationId === 'inspect-replacement' ? 'inspecting' : 'installing',
+              progress: 0,
+              startedAt,
+              updatedAt: startedAt,
+            },
+    )
+    const install = vi.spyOn(PluginAdminApi.prototype, 'install').mockResolvedValue({
+      operationId: 'install-reviewed',
+      profile: context.profile,
+    })
+    for (const id of ['plugin-detail', 'source-dialog', 'plugin-confirm']) {
+      const dialog = document.createElement('dialog')
+      dialog.id = id
+      document.body.append(dialog)
+    }
+    const page = new PluginAdminPage({
+      surface: { host: document.body.appendChild(document.createElement('div')), render: () => null },
+    })
+    let finish: (() => void) | undefined
+    let refresh: Promise<void> | undefined
+    let confirmed: Promise<void> | undefined
+    let replaced: Promise<void> | undefined
+    try {
+      await page.start()
+      await page.inspect(source, 'install', document.createElement('button'))
+      await vi.waitFor(() => expect(page.reviewState()?.preview).toBe(preview))
+      if (outcome === 'replaced') {
+        inspect.mockResolvedValueOnce({ operationId: 'inspect-replacement', profile: context.profile })
+        await page.inspect(source, 'install', document.createElement('button'))
+      }
+      overview.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () => {
+              if (outcome === 'offline') reject(new Error('offline'))
+              else
+                resolve({
+                  ...snapshot,
+                  context: {
+                    ...context,
+                    ...(outcome === 'revoked' ? { permissions: [] } : {}),
+                    readOnly: outcome === 'read-only',
+                  },
+                } as never)
+            }
+          }),
+      )
+      refresh = page.refresh()
+      await vi.waitFor(() => expect(finish).toBeDefined())
+      if (outcome === 'replaced')
+        replaced = page.operationUpdated({
+          ...inspection,
+          operationId: 'inspect-replacement',
+          preview: replacement,
+        })
+      confirmed = page.confirmReview(true)
+      await Promise.resolve()
+      expect(install).not.toHaveBeenCalled()
+      // A completed newer inspection owns a fresh review; the old confirmation must leave it idle.
+      expect(page.reviewState()?.busy).toBe(outcome !== 'replaced')
+      if (outcome === 'cancelled') page.cancelReview()
+      if (outcome === 'disposed') page.dispose()
+      finish?.()
+      await refresh
+      await replaced
+      await confirmed
+      if (outcome === 'ready') {
+        expect(install).toHaveBeenCalledExactlyOnceWith(source, preview.integrity)
+      } else {
+        expect(install).not.toHaveBeenCalled()
+        if (outcome === 'replaced') expect(page.reviewState()?.preview).toBe(replacement)
+        if (outcome === 'cancelled') expect(page.reviewState()).toBeUndefined()
+        if (['revoked', 'read-only', 'offline'].includes(outcome)) {
+          expect(page.reviewState()?.busy).toBe(false)
+          expect(page.reviewState()?.error?.code).toBe(
+            outcome === 'revoked'
+              ? 'ADMIN_FORBIDDEN'
+              : outcome === 'read-only'
+                ? 'RECOVERY_READ_ONLY'
+                : 'ADMIN_UNAVAILABLE',
+          )
+        }
+      }
+    } finally {
+      finish?.()
+      await refresh
+      await replaced
+      await confirmed
+      page.dispose()
+    }
+  },
+)

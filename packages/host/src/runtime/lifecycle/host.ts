@@ -69,6 +69,7 @@ import { readStoredSessionView } from '../sessions/session-view.js'
 import { adminSecurityStatus } from './admin-security-status.js'
 import {
   type HostConvergenceReport,
+  type HostManagement,
   type HostPublicationReport,
   registerHostExecutionRows,
 } from './host-facade.js'
@@ -90,7 +91,7 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
   openWorkspaceRuntime?: Assembled['openWorkspaceRuntime']
 }
 
-export interface Host {
+export interface Host extends HostManagement {
   systemPromptPreview(
     config: import('@agnes/protocol').SystemPromptConfig,
   ): import('@agnes/protocol').SystemPromptSnapshot
@@ -157,9 +158,6 @@ export interface Host {
   runtimeSkillCandidates?(): readonly SkillCandidate[]
   /** Privileged coordination port. It is not reachable from ExtensionAPI or any wire request. */
   readonly activationBarrier: ExtensionActivationBarrier
-  /** Authenticated management port. It is not registered as a model tool or extension service. */
-  readonly approvalGrants: Assembled['approvalGrants']
-  readonly profileServices?: Assembled['profileServices']
   resolveService(
     sessionId: string,
     names: readonly string[],
@@ -340,6 +338,8 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     activationBarrier: a.activationBarrier,
     approvalGrants: a.approvalGrants,
     profileServices: a.profileServices,
+    channelCatalog: a.channelCatalog,
+    clearChannelState: a.clearChannelState,
     resolveService: async (sessionId, names) => {
       if (closed) throw new HostError('E_HOST_CLOSED', 'host is closed')
       const session = a.kernel.get(sessionId)

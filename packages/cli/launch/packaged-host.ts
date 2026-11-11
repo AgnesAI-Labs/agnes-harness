@@ -337,6 +337,7 @@ export async function createPackagedHost(
     | 'deferInitialGeneration'
     | 'managedExtensionPackageIds'
     | 'serviceAuthority'
+    | 'channelRuntime'
   >,
 ) {
   const { home, cwd, entryFile, ...resources } = options

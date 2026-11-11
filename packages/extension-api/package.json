@@ -1,6 +1,6 @@
 {
   "name": "@agnes/extension-api",
-  "version": "5.10.0",
+  "version": "5.11.0",
   "private": true,
   "type": "module",
   "exports": {
@@ -9,7 +9,8 @@
     "./mcp-naming": "./src/mcp-naming.ts",
     "./seams": "./src/seams.ts",
     "./testkit": "./testkit/index.ts",
-    "./testkit/persistence-contract": "./testkit/persistence-contract.ts"
+    "./testkit/persistence-contract": "./testkit/persistence-contract.ts",
+    "./channel-contract": "./src/channel-contract.ts"
   },
   "scripts": {
     "test": "vitest run",

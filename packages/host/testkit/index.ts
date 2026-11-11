@@ -146,6 +146,7 @@ export type TestHostOptions = {
   /** Opt out of the production publisher view in tests that deliberately exercise raw Kernel ports. */
   currentRuntime?: import('@agnes/core').KernelOptions['currentRuntime']
   serviceAuthority?: import('@agnes/host-extensions/ext-host/service-invocation').ServiceAuthority
+  channelRuntime?: HostOptions['channelRuntime']
   dataDir: string
   workspaceRoot?: string
   /** Builtin template loaded by the real resolver; omitted uses local-dev. */
@@ -430,6 +431,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     agnesVersion: '0.1.0',
     env: o.env ?? { ...process.env },
     ...(o.serviceAuthority ? { serviceAuthority: o.serviceAuthority } : {}),
+    ...(o.channelRuntime ? { channelRuntime: o.channelRuntime } : {}),
     ...(o.runtimePluginCatalogue ? { runtimePluginCatalogue: o.runtimePluginCatalogue } : {}),
     ...(o.runtimePluginSnapshots ? { runtimePluginSnapshots: o.runtimePluginSnapshots } : {}),
     ...(o.deferInitialGeneration ? { deferInitialGeneration: true } : {}),

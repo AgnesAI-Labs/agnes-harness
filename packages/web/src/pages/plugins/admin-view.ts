@@ -1,4 +1,4 @@
-import type { UITimeline } from '@agnes/protocol'
+import type { PackageSource, UITimeline } from '@agnes/protocol'
 import {
   mountPluginAdmin,
   type PluginAdminSources,
@@ -37,9 +37,12 @@ export function useCandidateSources(data: HomePageData) {
 export function usePluginAdmin(sources: PluginAdminSources): {
   host: RefObject<HTMLDivElement>
   view: PluginView | undefined
+  sourceImport: PackageSource | undefined
+  closeSourceImport(): void
 } {
   const host = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<PluginView>()
+  const [sourceImport, setSourceImport] = useState<PackageSource>()
   const latest = useRef(sources)
   latest.current = sources
   useEffect(() => {
@@ -54,6 +57,9 @@ export function usePluginAdmin(sources: PluginAdminSources): {
         ...latest.current,
         surface: {
           host: target,
+          importSource(source) {
+            if (alive) setSourceImport(source)
+          },
           render(next) {
             if (alive) setView(next)
             return null
@@ -67,7 +73,7 @@ export function usePluginAdmin(sources: PluginAdminSources): {
       queueMicrotask(() => mounted?.dispose())
     }
   }, [])
-  return { host, view }
+  return { host, view, sourceImport, closeSourceImport: () => setSourceImport(undefined) }
 }
 
 /**
