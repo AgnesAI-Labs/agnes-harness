@@ -87,6 +87,36 @@ const tool = {
   },
 }
 
+it('abandons a stopping-only signal and ignores a late continue', async () => {
+  const controller = new AbortController()
+  let entered!: () => void
+  const started = new Promise<void>((resolve) => {
+    entered = resolve
+  })
+  let finish!: (value: { action: 'continue'; note: string }) => void
+  const pending = new Promise<{ action: 'continue'; note: string }>((resolve) => {
+    finish = resolve
+  })
+  const f = setup({ turnStoppingScope: (run) => run(controller.signal) })
+  let hookSignal: AbortSignal | undefined
+  f.engine.on(
+    'turn_stopping',
+    (_p, ctx) => {
+      hookSignal = ctx.signal
+      entered()
+      return pending
+    },
+    meta,
+  )
+  const result = f.port.turnStopping({ turn: 1, step: 1, proposedReason: 'completed' })
+  await started
+  controller.abort()
+  const aborted = hookSignal?.aborted
+  finish({ action: 'continue', note: 'late work' })
+  expect(await result).toEqual({ action: 'stop' })
+  expect(aborted).toBe(true)
+})
+
 describe('SessionHookPort', () => {
   it('completes a turn after a context timeout and persists its diagnostic, then recovers on refresh', async () => {
     vi.useFakeTimers()

@@ -20,6 +20,7 @@ import { HostError } from '@agnes/host-common/errors'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { PublicationDispatch } from '@agnes/host-common/publication-dispatch'
 import { parse as parseYaml } from 'yaml'
+import { withStoppingInputSignal } from './stopping-input-scope.js'
 
 const TELEMETRY_CONSENTS: readonly TelemetryConsent[] = ['DISABLED', 'LOCAL', 'ANON', 'FULL']
 
@@ -113,6 +114,7 @@ export function createSessionHookPort(
       telemetryConsent,
     })
   const port = new SessionHookPort(engine, {
+    turnStoppingScope: (run) => withStoppingInputSignal(session, run),
     discovery: {
       registered,
       ...(selectResources ? { select: selectResources } : {}),
