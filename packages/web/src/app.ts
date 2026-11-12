@@ -36,6 +36,8 @@ import { SubmissionOwner } from './app/submission-owner.js'
 import { bindTerminalNavigation } from './app/terminal-navigation.js'
 import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
+import { installCloudConnectionSettings } from './backends/cloud-connection-settings.js'
+import { backendFrameStartup, installBackendFrameBridge } from './backends/frame-bridge.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
 import { frontendBackendIdentity } from './remote-frontend.js'
@@ -675,6 +677,7 @@ const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
 const { client, wsUrl, probe: backendProbe } = createBackendConnection(shellConfig.wsUrl)
+onPageHide(installBackendFrameBridge(client, (id) => sessionLabels.get(id)))
 onPageHide(
   bindJobsClient({
     client,
@@ -1000,6 +1003,7 @@ const statusCheck = mountStatusCheck({
 })
 const settingsRegion = clientModules.settings as NonNullable<typeof clientModules.settings>
 if (!settingsRegion) throw new Error('missing settings region')
+onPageHide(installCloudConnectionSettings(clientModules.locale))
 const openSettingsSection = (section: string) => {
   settingsRegion.open('model')
   run(async () => {
@@ -2310,7 +2314,7 @@ onPageHide(() => {
   void (previous.stop?.() ?? Promise.resolve()).finally(() => client.close())
 })
 
-run(async () => {
+const startup = backendFrameStartup(async () => {
   const startupSelection = sessionBinding.capture()
   setConnection('connecting')
   if (!wsUrl) throw new Error(t('app.ws.unavailable'))
@@ -2524,3 +2528,4 @@ run(async () => {
     settingsRegion.route(target)
   }
 })
+run(startup)

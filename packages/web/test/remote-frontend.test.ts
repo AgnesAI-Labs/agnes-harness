@@ -42,6 +42,20 @@ it('routes backend HTTP, plugin assets and sockets to B while keeping A code and
   )
   expect(backendResourceUrl('/app.js', remote, local)).toBe('/app.js')
   expect(backendResourceUrl('https://other.example/api/x', remote, local)).toBe('https://other.example/api/x')
+  const frame = document.createElement('iframe')
+  frame.setAttribute('data-agh-backend-frame', '1')
+  frame.setAttribute('data-backend-origin', remote)
+  vi.stubGlobal('window', { parent: {}, frameElement: frame })
+  try {
+    expect(selectedRemoteOrigin()).toBe(remote)
+    // A child URL may change during navigation; the parent-owned environment remains fixed.
+    expect(backendResourceUrl('/api/accounts')).toBe(`${remote}/api/accounts`)
+    frame.setAttribute('data-backend-origin', '')
+    expect(selectedRemoteOrigin()).toBeUndefined()
+    expect(backendResourceUrl('/api/accounts')).toBe('/api/accounts')
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })
 
 it('preserves POST bodies, methods and cancellation and omits A cookies on a direct cross-origin request', async () => {

@@ -4,9 +4,14 @@ import {
   REMOTE_FRONTEND_WS,
   remoteFrontendOrigin,
 } from '@agnes/protocol'
+import { backendFrame } from './backends/frame-context.js'
 
-export function selectedRemoteOrigin(search = globalThis.location?.search ?? ''): string | undefined {
-  const value = new URLSearchParams(search).get('remote')
+export function selectedRemoteOrigin(search?: string): string | undefined {
+  const frame = search === undefined ? backendFrame() : undefined
+  const value = frame
+    ? frame.getAttribute('data-backend-origin')
+    : new URLSearchParams(search ?? globalThis.location?.search ?? '').get('remote')
+  if (value === '') return undefined
   return value === null ? undefined : remoteFrontendOrigin(value)
 }
 

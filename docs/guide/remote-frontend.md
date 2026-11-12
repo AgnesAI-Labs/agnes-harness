@@ -27,8 +27,8 @@ Optional `tls: {"certFile":"...","keyFile":"..."}` names B-local files and enabl
 1. Build the modified standard Harness on A and B through the repository toolchain entry with `--filter @agnes/cli build:local`.
 2. On B run `agh plugins add /absolute/path/to/agh-cloud-plugin`, review and confirm, or use the Web plugin installer. Keep `agh serve` running for the same home/profile.
 3. After activation the launcher prints `public-owner frontend: ...`. Change host/port/TLS through standard plugin configuration. Allow the chosen port in B's firewall.
-4. Open A's own AGH page. Select **Local** in the sidebar, enter B's reachable origin such as `http://192.168.1.20:8443`, then **Connect remote**. Do not use the bind address `0.0.0.0` as a target.
-5. Create a session with B's registered workspace and model configuration. **Use local** returns to A. Opening B's published origin directly also serves B's own workbench.
+4. Open A's own AGH page. Go to **Settings → Advanced → Cloud connection**, enter B's reachable origin such as `http://192.168.1.20:8443`, then **Save and connect**. Address, reconnect and disconnect controls all live in this settings page; the outer workbench has no cloud connection buttons. Do not use the bind address `0.0.0.0` as a target.
+5. **Projects** shows expandable **Local sessions** and **Cloud sessions** groups together. Use the plus beside a group to create a conversation in that environment; cloud conversations use B's workspaces, models and tools. Select any session to switch. Opening B's published origin directly also serves B's own workbench.
 
 Browser private-network permissions, mixed-content and certificate rules still apply. An HTTPS frontend needs a compatible secure remote endpoint. Certificate validation is not bypassed.
 
@@ -36,7 +36,15 @@ Browser private-network permissions, mixed-content and certificate rules still a
 
 The `remote` page parameter selects B. Before loading controllers the browser checks `/_agnes/remote-frontend` for publication version, access mode, instance identity and fixed WebSocket path. A serves its own frontend code/vendor modules; backend HTTP, plugin assets and sockets use B. CSP adds only the explicitly selected origin and its WS(S) counterpart. A's cookies are not sent to B, and backend HTTP does not follow redirects to arbitrary targets.
 
-Switching reloads an independent workbench context and clears session/startup routes. Journals, drafts and model/permission memory are separated by backend origin and instance identity. This first version switches between complete local/remote lists; it does not merge them in one sidebar. Files, plugins, MCP and model credentials remain in their own environments.
+The unified A sidebar groups sessions by environment and identifies each by its backend/session pair. A remembers the cloud origin in this browser and reconnects after reload. **Load more** fetches additional history; sidebar search filters loaded titles and workspace paths, up to 5,000 sessions per group.
+
+The **Cloud sessions** group header uses a compact status dot for **Not configured**, **Connecting**, **Ready**, **Disconnected** or **Connection failed**, including while collapsed. Green means ready, red disconnected/failed, amber connecting and gray unconfigured; hover or assistive text names the state. Ready requires completed frontend startup and successful backend session/activity reads; a saved address alone is insufficient. Repair a failed cloud connection through local settings. The cloud group's plus opens the cloud settings page if unconfigured. The legacy `?connection=1` route opens that same settings page.
+
+A retains an independent frontend runtime context for each environment, both serving A's frontend code. The cloud context calls B directly. Switching or collapsing groups does not reload these contexts or cancel the other environment's tasks. Drafts and live conversations remain separate. The outer sidebar receives only session/activity projections and sends navigation commands to the selected context. Each backend still owns session facts, workspace access, execution and approvals.
+
+Journals, drafts and model/permission memory are separated by backend origin and instance identity. File references, directory selection, plugins, MCP and model credentials belong to their environment. Settings and plugin navigation target the current environment shown in the toolbar; settings fall back to local if cloud is unavailable, and cloud connection preferences always belong to A's browser. Saving a connection keeps settings open to observe its status; then create or select a cloud session in its group. Cloud failure does not interrupt local conversations; reconnect once service recovers. Explicit disconnection or changing the cloud origin releases the previous cloud page context. Reconnection restores B's records, but unsubmitted drafts are not guaranteed across an explicit disconnect. Tasks already started on B follow B's backend lifecycle.
+
+Update A's standard frontend for this feature. A B installation that already supports publication can keep cloud plugin 0.1.0. This version supports one local environment and one cloud connection.
 
 Third-party allocation, purchased Keys, model-market catalogs and usage metering are later plugin integrations. User-facing third-party model catalog queries belong to A's standard client/BFF. This publication prototype does not implement those services.
 

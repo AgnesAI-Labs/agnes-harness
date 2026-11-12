@@ -2,6 +2,7 @@ import { remoteFrontendOrigin } from '@agnes/protocol'
 import { Button, SettingsInput, SettingsPage, useDocumentLanguage } from '@agnes/web-ui'
 import { useState } from 'react'
 import { backendSelectorCatalog } from './backend-selector-locale.js'
+import { backendFrame, requestBackendEnvironment } from './backends/frame-context.js'
 import { selectedRemoteOrigin } from './remote-frontend.js'
 
 function useText() {
@@ -34,13 +35,25 @@ export function BackendSelector() {
     </Button>
   )
 }
-export function ConnectionPage({ message = '' }: { message?: string }) {
+export function ConnectionPage({
+  message = '',
+  remote,
+  onConnect,
+  onLocal,
+}: {
+  message?: string
+  remote?: string
+  onConnect?(origin: string): void
+  onLocal?(): void
+}) {
   const t = useText()
-  const [address, setAddress] = useState(selectedRemoteOrigin() ?? '')
+  const [address, setAddress] = useState(remote ?? selectedRemoteOrigin() ?? '')
   const [error, setError] = useState(message)
   const connect = () => {
     try {
-      location.assign(backendHref(address.trim()))
+      const origin = remoteFrontendOrigin(address.trim())
+      if (onConnect) onConnect(origin)
+      else if (!requestBackendEnvironment(origin)) location.assign(backendHref(origin))
     } catch {
       setError(t('invalid'))
     }
@@ -50,7 +63,16 @@ export function ConnectionPage({ message = '' }: { message?: string }) {
       <SettingsPage
         title={t('title')}
         description={t('help')}
-        actions={<Button onClick={() => location.assign(backendHref())}>{t('local')}</Button>}
+        actions={
+          <Button
+            onClick={() => {
+              if (onLocal) onLocal()
+              else if (!requestBackendEnvironment()) location.assign(backendHref())
+            }}
+          >
+            {t('local')}
+          </Button>
+        }
       >
         <p>{t('help')}</p>
         <label htmlFor="remote-frontend-origin">{t('label')}</label>
@@ -76,4 +98,13 @@ export function ConnectionPage({ message = '' }: { message?: string }) {
     </main>
   )
 }
-export const RemoteFrontendFailure = ConnectionPage
+export function RemoteFrontendFailure({ message }: { message: string }) {
+  const t = useText()
+  if (!backendFrame()) return <ConnectionPage message={message} />
+  return (
+    <SettingsPage title={t('failed')}>
+      <p role="alert">{message}</p>
+      <p>{t('retrySettings')}</p>
+    </SettingsPage>
+  )
+}

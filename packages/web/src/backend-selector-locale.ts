@@ -9,6 +9,8 @@ export const backendSelectorCatalog = {
     remote: 'Remote',
     current: 'Local',
     switch: 'Switch local or remote environment',
+    failed: 'Cloud connection failed',
+    retrySettings: 'Open Settings → Advanced → Cloud connection to check the address and reconnect.',
   },
   'zh-CN': {
     title: '运行环境',
@@ -20,5 +22,7 @@ export const backendSelectorCatalog = {
     remote: '远程',
     current: '本地',
     switch: '切换本地或远程环境',
+    failed: '云端连接失败',
+    retrySettings: '请前往“设置 → 高级 → 云端连接”检查地址并重新连接。',
   },
 }
