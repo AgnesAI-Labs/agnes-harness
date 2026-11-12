@@ -64,7 +64,7 @@ export interface PluginContextFacets {
   readonly self: ExtensionContext
 }
 
-export type PluginFacetName = keyof PluginContextFacets
+export type PluginFacetName = keyof PluginContextFacets | 'sideCall'
 export const PLUGIN_FACET_NAMES: readonly PluginFacetName[] = Object.freeze([
   'tools',
   'hooks',
@@ -76,4 +76,5 @@ export const PLUGIN_FACET_NAMES: readonly PluginFacetName[] = Object.freeze([
   'providers',
   'self',
   'profileRuntime',
+  'sideCall',
 ])

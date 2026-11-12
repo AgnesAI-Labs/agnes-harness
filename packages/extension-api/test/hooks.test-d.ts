@@ -21,6 +21,7 @@ describe('author hook contracts', () => {
       [HookPayloadMap['context'], HookContext]
     >()
     expectTypeOf<keyof HookContext>().toEqualTypeOf<
+      | 'sideCall'
       | 'session'
       | 'replayed'
       | 'signal'

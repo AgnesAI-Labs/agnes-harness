@@ -260,6 +260,7 @@ export function createBuiltinRowHost(options: BuiltinRowHostOptions) {
         manifest,
         ...(input.hostGrants ? { hostGrants: input.hostGrants() } : {}),
         sideCallDeclared,
+        pluginRowId: input.rowId,
         ...(options.sideModels ? { sideModels: options.sideModels } : {}),
         packageIdentity: spec.package,
         packageVersion: spec.packageVersion,

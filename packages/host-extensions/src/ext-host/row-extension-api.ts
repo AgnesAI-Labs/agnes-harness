@@ -120,12 +120,14 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
     source,
     trust: 'trusted',
     ...(input.rowId ? { pluginRowId: input.rowId } : {}),
+    ...(input.sideCallDeclared && input.hostGrants?.().sideCall ? { sideCall: true as const } : {}),
     ...(input.hookRank === undefined ? {} : { hookRank: input.hookRank }),
   })
   const toolMeta: RegMeta = Object.freeze({
     source,
     trust: 'trusted',
     ...(input.rowId ? { pluginRowId: input.rowId } : {}),
+    ...(input.sideCallDeclared && input.hostGrants?.().sideCall ? { sideCall: true as const } : {}),
     packageIdentity: input.packageIdentity,
     packageVersion: input.packageVersion,
     ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),

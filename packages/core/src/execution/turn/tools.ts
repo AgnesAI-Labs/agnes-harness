@@ -17,6 +17,7 @@ import type { Actor, ExecutionDomain, JsonValue, ResolvedToolCallPolicy } from '
 import { automaticPermissionDecision } from '@agnes/protocol'
 import { hardBlockedCall } from '../../command-table/floor.js'
 import { dispatchLoopEvent } from '../../loop/events.js'
+import { type ScopedSideCallPort, toolSideCallPort } from '../../loop/scoped-side-call.js'
 import { onToolSettled } from '../../refinement/triggers.js'
 import {
   hasAuthenticToolPolicyHash,
@@ -1150,6 +1151,7 @@ export async function approveAndExecute(
   const softTimeoutMs = timeoutMs - Math.min(2000, Math.floor(timeoutMs / 10))
   const ac = new AbortController()
   const nestedParks: NestedPark[] = []
+  let sideCall: ScopedSideCallPort | undefined
   const onAbort = () => ac.abort()
   if (parent.aborted) ac.abort()
   else parent.addEventListener('abort', onAbort, { once: true })
@@ -1249,16 +1251,20 @@ export async function approveAndExecute(
           ...toolCallLimits(s, t, softTimeoutMs),
         },
       )
-    const invoke = (ctx: ReturnType<typeof context>, attempt: ExecuteAttempt) =>
-      s.executeTool(
-        call.name,
-        call.args,
-        ctx,
-        { effectId: effect.effectId, startSeq },
-        () => def.execute(call.args as never, ctx),
-        { executionDomain: call.executionDomain, attempt },
-      )
     const invokeAttempt = (attempt: ExecuteAttempt): Promise<HostDispatchObservation> => {
+      const scoped = toolSideCallPort(s, def.source, `${call.toolUseId}:${attempt}`)
+      sideCall = scoped
+      const invoke = (base: ReturnType<typeof context>) => {
+        const ctx = scoped ? { ...base, sideCall: scoped } : base
+        return s.executeTool(
+          call.name,
+          call.args,
+          ctx,
+          { effectId: effect.effectId, startSeq },
+          () => def.execute(call.args as never, ctx),
+          { executionDomain: call.executionDomain, attempt },
+        )
+      }
       const workspaceInvocation = s.d.workspaceInvocation
       if (workspaceInvocation) {
         const handler = async (
@@ -1270,7 +1276,7 @@ export async function approveAndExecute(
             confine: (argv) => confined.confine(argv),
             checkpoint: view.checkpointContext(),
           })
-          return invoke(ctx, attempt)
+          return invoke(ctx)
         }
         return s.d.workspacePublication
           ? s.d.workspacePublication.workspace(() => ({ port: workspaceInvocation, handler }))
@@ -1280,7 +1286,7 @@ export async function approveAndExecute(
         return Promise.reject(
           new CoreError('E_WORKSPACE_CLOSED', 'workspace tool execution needs an invocation port'),
         )
-      return invoke(context(NO_WORKSPACE_FS), attempt)
+      return invoke(context(NO_WORKSPACE_FS))
     }
     // Every synthesized failure of this call goes through here, so each commits its `[nested result]` note.
     const settleFailed = (at: ExecuteAttempt, phase: 'not_sent' | 'may_have_sent', input: SyntheticFailure) =>
@@ -1322,6 +1328,7 @@ export async function approveAndExecute(
           observation = await withTimeout(dispatched, timeoutMs, call.name, ac.signal)
         } finally {
           waited()
+          await sideCall?.close()
         }
       } catch (error) {
         timedOut = error instanceof Error && error.message.startsWith('timeout:')
@@ -1636,6 +1643,7 @@ export async function approveAndExecute(
   } finally {
     parent.removeEventListener('abort', onAbort)
     ac.abort()
+    await sideCall?.close()
   }
 }
 

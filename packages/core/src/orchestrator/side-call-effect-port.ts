@@ -112,6 +112,7 @@ export type SideCallEffectBinding = Readonly<{
 
 /** What a side call records for audit beside its identity; it takes no part in identity checks. */
 export type SideCallEffectAudit = Readonly<{
+  caller?: string
   label: string
   adapter: Readonly<{ id: string; version: string | null }> | null
   api: string | null
@@ -164,10 +165,11 @@ function snapshotBinding(purpose: LedgerPurpose, value: unknown) {
 }
 
 function snapshotAudit(value: unknown): SideCallEffectAudit {
-  const record = exactOwn(value, AUDIT_KEYS)
+  const record = ownData(value, AUDIT_KEYS, ['caller'])
   const adapter = record?.adapter === null ? null : exactOwn(record?.adapter, ['id', 'version'])
   if (
     !record ||
+    (record.caller !== undefined && !bounded(record.caller, 256)) ||
     typeof record.label !== 'string' ||
     !LABEL.test(record.label) ||
     (adapter !== null &&
@@ -188,6 +190,7 @@ function snapshotAudit(value: unknown): SideCallEffectAudit {
   )
     SIDE_CALL.terminal.invalid('side-call effect audit is invalid')
   return Object.freeze({
+    ...(record.caller === undefined ? {} : { caller: record.caller as string }),
     label: record.label,
     adapter:
       adapter && Object.freeze({ id: adapter.id as string, version: adapter.version as string | null }),
@@ -697,7 +700,11 @@ export function createSideCallEffectPort(session: SessionImpl): SideCallEffectPo
         : await session.scan({ fromSeq: settledSeq - 1, toSeq: terminalSeq, limit: 3 })
     if (rows.length !== 3 || rows.some((row, offset) => row.seq !== (settledSeq as Seq) - 1 + offset))
       throw relation('side-call terminal transaction is not contiguous', effectId)
-    const terminal = checkSideCallSettlement(rows, known.binding, known.bindingHash)
+    const terminal = checkSideCallSettlement(
+      rows,
+      { ...known.binding, caller: known.audit.caller },
+      known.bindingHash,
+    )
     return sideCallResult(terminal, { invocationId, output: known.audit.output, replayed: true })
   }
 
@@ -737,7 +744,7 @@ export function createSideCallEffectPort(session: SessionImpl): SideCallEffectPo
         // throws; a model execution settling on revocation sends cost and settlement alone.
         const receipt = !session.loopScope.alive && sessionIdentity(session) !== session
         if (receipt && events.length === 2) {
-          checkSideCallCost(events[0] as EventInput, known.binding)
+          checkSideCallCost(events[0] as EventInput, { ...known.binding, caller: known.audit.caller })
           const settled = events[1] as EventInput
           const data = ownData(settled.data, ['effectId', 'outcome'], ['code', 'durationMs'])
           if (
@@ -751,7 +758,8 @@ export function createSideCallEffectPort(session: SessionImpl): SideCallEffectPo
             (data.durationMs !== undefined && !count(data.durationMs))
           )
             fail('side-call settlement does not belong to its call')
-        } else checkSideCallSettlement(events, known.binding, known.bindingHash)
+        } else
+          checkSideCallSettlement(events, { ...known.binding, caller: known.audit.caller }, known.bindingHash)
         const committed = await session.append(events)
         entry.settledSeq = committed.seqs[1]
         entry.terminalSeq = committed.seqs[2]

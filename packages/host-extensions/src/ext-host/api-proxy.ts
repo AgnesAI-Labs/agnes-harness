@@ -34,6 +34,7 @@ type Options = {
   executionBinding?: RegMeta['executionBinding']
   hostGrants?: HostCapabilityGrant
   sideCallDeclared?: boolean
+  pluginRowId?: string
   sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
   trust: ExtensionContext['trust']
   lease: Lease
@@ -58,6 +59,8 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
   const meta: RegMeta = Object.freeze({
     source: m.id,
     trust: input.trust,
+    ...(input.pluginRowId ? { pluginRowId: input.pluginRowId } : {}),
+    ...(input.sideCallDeclared && input.hostGrants?.sideCall ? { sideCall: true as const } : {}),
     ...(input.hostGrants?.contextBlocking ? { contextBlocking: true } : {}),
     ...(input.trust === 'builtin' && input.hostGrants?.hookRank !== undefined
       ? { hookRank: input.hostGrants.hookRank }
@@ -66,6 +69,8 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
   const toolMeta: RegMeta = Object.freeze({
     source: m.id,
     trust: input.trust,
+    ...(input.pluginRowId ? { pluginRowId: input.pluginRowId } : {}),
+    ...(input.sideCallDeclared && input.hostGrants?.sideCall ? { sideCall: true as const } : {}),
     packageIdentity: input.packageIdentity,
     packageVersion: input.packageVersion,
     ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),

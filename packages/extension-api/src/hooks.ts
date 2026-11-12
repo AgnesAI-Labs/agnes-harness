@@ -151,6 +151,8 @@ export interface HookReturnMap {
 }
 
 export interface HookContext {
+  /** Invocation-scoped side calls, present only with Host authorization. */
+  readonly sideCall?: import('./side-call.js').SideCallPort
   /** Only available at turn_stopping. Competing input wins; false means nothing was queued.
    * The owner-bound input starts a separate turn after this run finishes. */
   readonly input?: {

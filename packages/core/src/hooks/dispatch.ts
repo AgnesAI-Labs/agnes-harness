@@ -8,6 +8,8 @@ type HookFailure = 'timeout' | 'cancelled' | 'execution' | 'result'
 export type DispatchFailure = { event: HookEvent; source: string; message: string; failure: HookFailure }
 export type DispatchEntry<T> = {
   source: string
+  /** Close invocation-owned effects even when timeout stops awaiting the handler. */
+  close?: () => Promise<void> | undefined
   contextBlocking?: boolean
   timeoutMs?: number
   /** Invocation must not commit shared state; commit runs only after successful bounded completion. */
@@ -123,6 +125,7 @@ export class HookDispatch {
     } finally {
       signal.removeEventListener('abort', abort)
       controller.abort()
+      await entry.close?.()
     }
   }
 

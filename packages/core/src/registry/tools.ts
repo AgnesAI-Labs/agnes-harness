@@ -24,6 +24,8 @@ export type ToolSource = {
   source: string
   /** Canonical installed row identity supplied only by Host assembly, distinct from internal owner. */
   pluginRowId?: string
+  /** Invocation-scoped port authorized by Host; never copied from a tool definition. */
+  sideCall?: true
   trust: TrustTier
   /** Host-attested package identity and manifest version; never copied from classifier output. */
   packageIdentity?: string
@@ -124,9 +126,14 @@ export class ToolRegistry {
       throw new CoreError('E_REGISTRY_DUPLICATE', registeredDefinition.name)
     const entry: RegisteredTool = Object.freeze({
       ...registeredDefinition,
-      // Keep the long-standing public source shape stable. Package provenance is separate
+      // Scope authorization comes only from Host metadata. Package provenance remains separate
       // attestation data and must not leak into hook/resource registrations that share ToolSource.
-      source: Object.freeze({ source: registeredSource.source, trust: registeredSource.trust }),
+      source: Object.freeze({
+        source: registeredSource.source,
+        trust: registeredSource.trust,
+        ...(registeredSource.pluginRowId ? { pluginRowId: registeredSource.pluginRowId } : {}),
+        ...(registeredSource.sideCall === true ? { sideCall: true as const } : {}),
+      }),
       ...(registeredSource.packageIdentity === undefined
         ? {}
         : { packageIdentity: registeredSource.packageIdentity }),

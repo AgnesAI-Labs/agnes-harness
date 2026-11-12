@@ -895,3 +895,27 @@ describe('config updates', () => {
     await host.adapter.unmount(installation)
   })
 })
+
+it('mounts a declaration-only sideCall row without injecting a runtime service', async () => {
+  const root = new Context()
+  const host = createVerifiedRowHost({ root, snapshots: snapshots() })
+  let applied = false
+  const target = row({ inject: ['sideCall'] })
+  const entry = normalizePluginExport(
+    {
+      apply(ctx: Context) {
+        applied = true
+        expect(ctx.get('sideCall')).toBeUndefined()
+      },
+    },
+    { inject: ['sideCall'] },
+  )
+  expect(Object.keys(entry.inject)).toEqual(['sideCall'])
+  const mount = await host.thirdParty.verifyAndCreate({ snapshot: candidate, row: target, entry })
+  const installation = await host.adapter.mount(root, target, mount)
+  try {
+    expect(applied).toBe(true)
+  } finally {
+    await host.adapter.unmount(installation)
+  }
+})

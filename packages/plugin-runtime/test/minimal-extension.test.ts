@@ -125,3 +125,15 @@ describe('minimal author example', () => {
     expect(recorded.closed).toEqual(['resource', 'slot', 'hook', 'tool'])
   })
 })
+
+it('accepts sideCall as a declaration without an apply-time callable facet', async () => {
+  let applied = false
+  await extensionFactoryOf({
+    inject: ['sideCall'],
+    apply(ctx) {
+      applied = true
+      expect(ctx).not.toHaveProperty('sideCall')
+    },
+  })({} as import('@agnes/extension-api/host').ExtensionAPI)
+  expect(applied).toBe(true)
+})
