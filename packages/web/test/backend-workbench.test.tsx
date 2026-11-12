@@ -47,8 +47,14 @@ it('keeps identical session ids in separate collapsible local/cloud groups and r
       />,
     )
   })
-  const local = host.querySelector<HTMLButtonElement>('[data-testid="backend-session-local"]')
-  const cloud = host.querySelector<HTMLButtonElement>('[data-testid="backend-session-cloud"]')
+  expect(host.querySelector('[data-agnes-region-unit="sidebar"]')).not.toBeNull()
+  expect(host.querySelector('.brand-lockup .brand-wordmark-text')?.textContent).toBe('Agnes Harness')
+  expect(host.querySelector('#new')?.getAttribute('aria-keyshortcuts')).toContain('Control+Shift+O')
+  expect(host.querySelector('#new')?.classList.contains('agh-btn--primary')).toBe(false)
+  expect(host.querySelector('#session-search kbd')).not.toBeNull()
+  expect(host.querySelector('.sidebar-footer #settings')).not.toBeNull()
+  const local = host.querySelector<HTMLButtonElement>('[data-testid="backend-session-local"] [data-session]')
+  const cloud = host.querySelector<HTMLButtonElement>('[data-testid="backend-session-cloud"] [data-session]')
   expect(local?.getAttribute('aria-current')).toBe('page')
   expect(cloud?.getAttribute('aria-current')).toBeNull()
   await act(async () => cloud?.click())
@@ -56,11 +62,19 @@ it('keeps identical session ids in separate collapsible local/cloud groups and r
   const collapse = host.querySelector<HTMLButtonElement>('[data-testid="backend-group-local"]')
   await act(async () => collapse?.click())
   expect(collapse?.getAttribute('aria-expanded')).toBe('false')
-  expect(host.querySelector('[data-testid="backend-session-cloud"]')).toBe(cloud)
+  expect(host.querySelector('[data-testid="backend-session-cloud"] [data-session]')).toBe(cloud)
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[aria-label="New cloud conversation"]')?.click(),
   )
   expect(commands).toEqual([['cloud', { kind: 'new' }]])
+  await act(async () => host.querySelector<HTMLButtonElement>('#session-search')?.click())
+  expect(commands.at(-1)).toEqual(['local', { kind: 'search' }])
+  await act(async () =>
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'O', ctrlKey: true, shiftKey: true, bubbles: true }),
+    ),
+  )
+  expect(commands.at(-1)).toEqual(['local', { kind: 'new' }])
   const status = host.querySelector('[data-testid="cloud-connection-status"]')
   expect(status?.getAttribute('aria-label')).toBe('Ready')
   expect(status?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Ready')
@@ -168,6 +182,20 @@ it('restores configured cloud independently from the selected local route and ac
     backendCommand({ type: 'agh.backend.command/v1', kind: 'execute', code: 'anything' }),
   ).toBeUndefined()
   expect(backendCommand({ type: 'agh.backend.command/v1', kind: 'session', sessionId: '' })).toBeUndefined()
+  const action = {
+    type: 'agh.backend.command/v1',
+    kind: 'session-action',
+    sessionId: 'same-id',
+    title: 'Task',
+  }
+  expect(backendCommand({ ...action, action: 'delete' })).toBeUndefined()
+  expect(backendCommand({ ...action, action: 'unarchive' })).toBeUndefined()
+  expect(backendCommand({ ...action, action: 'rename' })).toEqual({
+    kind: 'session-action',
+    sessionId: 'same-id',
+    title: 'Task',
+    action: 'rename',
+  })
   expect(backendCommand({ type: 'agh.backend.command/v1', kind: 'session', sessionId: 'same-id' })).toEqual({
     kind: 'session',
     sessionId: 'same-id',

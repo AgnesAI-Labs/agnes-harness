@@ -2,10 +2,12 @@ import type { Client } from '@agnes/sdk/browser'
 import { homeNavigation } from '@agnes/web-client'
 import { broadcast, onBroadcast, onHistoryNavigation } from '../app/global-events.js'
 import { requestNewSession } from '../application.js'
+import { SESSION_SEARCH_EVENT } from '../regions/session-tools.js'
 import { backendFrame } from './frame-context.js'
 import {
   BACKEND_FRAME_MESSAGE,
   type BackendCommand,
+  type BackendSessionAction,
   type BackendSnapshot,
   backendCommand,
 } from './frame-contract.js'
@@ -24,6 +26,7 @@ export function backendFrameStartup(op: () => Promise<void>): () => Promise<void
 export function installBackendFrameBridge(
   client: Client,
   label?: (id: string) => string | undefined,
+  sessionAction?: (action: BackendSessionAction, id: string, title: string, trigger: HTMLElement) => void,
 ): () => void {
   if (!backendFrame()) return () => {}
   let disposed = false
@@ -56,6 +59,9 @@ export function installBackendFrameBridge(
               sessionId: row.sessionId,
               title: row.title || label?.(row.sessionId) || '',
               ...(row.cwd ? { cwd: row.cwd } : {}),
+              ...(row.createdAt ? { createdAt: row.createdAt } : {}),
+              ...(row.lastMessageAt ? { lastMessageAt: row.lastMessageAt } : {}),
+              ...(row.pinnedAt ? { pinnedAt: row.pinnedAt } : {}),
             })),
         )
         if (page.next === cursor && cursor !== undefined) throw new Error('session cursor did not advance')
@@ -63,6 +69,7 @@ export function installBackendFrameBridge(
       } while (cursor && rows.length < count)
       const activity = await client.session.activity()
       const selected = new URL(location.href).searchParams.get('session')
+      const home = homeNavigation.getSnapshot()
       publish({
         ready,
         connected: true,
@@ -70,6 +77,7 @@ export function installBackendFrameBridge(
         activity: activity.items,
         more: Boolean(cursor) && count < 5000,
         ...(selected ? { selected } : {}),
+        ...(home ? { page: home.id } : {}),
       })
     } catch (error) {
       publish({
@@ -84,6 +92,7 @@ export function installBackendFrameBridge(
   }
   const invoke = (command: BackendCommand) => {
     if (command.kind === 'session') {
+      homeNavigation.close()
       const url = new URL(location.href)
       url.searchParams.delete('new')
       url.searchParams.delete('view')
@@ -99,6 +108,17 @@ export function installBackendFrameBridge(
       history.replaceState({}, '', url)
       requestNewSession()
       window.dispatchEvent(new PopStateEvent('popstate'))
+    } else if (command.kind === 'search') {
+      document.dispatchEvent(new CustomEvent(SESSION_SEARCH_EVENT))
+    } else if (command.kind === 'workspace') {
+      document.getElementById('workspace-add')?.click()
+    } else if (command.kind === 'session-action') {
+      sessionAction?.(
+        command.action,
+        command.sessionId,
+        command.title,
+        document.getElementById('prompt') ?? document.body,
+      )
     } else if (command.kind === 'settings') {
       document.dispatchEvent(new CustomEvent('agnes:open-settings', { detail: { section: command.section } }))
     } else if (command.kind === 'home') homeNavigation.open(command.page)

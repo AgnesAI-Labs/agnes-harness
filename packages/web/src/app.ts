@@ -677,7 +677,13 @@ const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
 const { client, wsUrl, probe: backendProbe } = createBackendConnection(shellConfig.wsUrl)
-onPageHide(installBackendFrameBridge(client, (id) => sessionLabels.get(id)))
+onPageHide(
+  installBackendFrameBridge(
+    client,
+    (id) => sessionLabels.get(id),
+    (action, id, title, trigger) => void sessionActions.act(action, id, title, trigger),
+  ),
+)
 onPageHide(
   bindJobsClient({
     client,

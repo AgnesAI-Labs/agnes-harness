@@ -1,12 +1,63 @@
 /** @vitest-environment happy-dom */
+
+import type { Client } from '@agnes/sdk/browser'
 import { homeNavigation } from '@agnes/web-client'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
+import { installBackendFrameBridge } from '../src/backends/frame-bridge.js'
+import * as frameContext from '../src/backends/frame-context.js'
 import { bindHomeRouting } from '../src/pages/host.js'
 
 afterEach(() => {
   homeNavigation.close()
   history.replaceState(null, '', '/')
 })
+
+it.each([undefined, 'http://cloud.test:8443'])(
+  'returns from every sidebar page to a session through the backend bridge (remote=%s)',
+  (remote) => {
+    const url = new URL('/?session=current&workspaceId=w', location.origin)
+    if (remote) url.searchParams.set('remote', remote)
+    history.replaceState(null, '', url)
+    const frame = vi.spyOn(frameContext, 'backendFrame').mockReturnValue(document.createElement('iframe'))
+    const stopRouting = bindHomeRouting()
+    const client = {
+      on: () => () => {},
+      session: { list: async () => ({ items: [] }), activity: async () => ({ items: [] }) },
+    } as unknown as Client
+    const stopBridge = installBackendFrameBridge(client)
+    try {
+      window.dispatchEvent(new CustomEvent('agnes:backend-frame-ready'))
+      for (const page of ['plugins', 'agents', 'automation', 'mhs', 'fixture#overview']) {
+        const sessionId = page === 'agents' ? 'another' : 'current'
+        if (page.includes('#')) homeNavigation.openRef(page, { tab: 'details' })
+        else homeNavigation.open(page, { tab: 'details' })
+        expect(homeNavigation.getSnapshot()).toBeDefined()
+        window.dispatchEvent(
+          new MessageEvent('message', {
+            origin: location.origin,
+            source: window.parent,
+            data: {
+              type: 'agh.backend.command/v1',
+              commandId: crypto.randomUUID(),
+              kind: 'session',
+              sessionId,
+            },
+          }),
+        )
+        expect(homeNavigation.getSnapshot()).toBeUndefined()
+        const params = new URLSearchParams(location.search)
+        expect(params.get('session')).toBe(sessionId)
+        expect(params.get('workspaceId')).toBe('w')
+        expect(params.get('remote')).toBe(remote ?? null)
+        for (const key of ['page', 'pagePackage', 'tab']) expect(params.has(key)).toBe(false)
+      }
+    } finally {
+      stopBridge()
+      stopRouting()
+      frame.mockRestore()
+    }
+  },
+)
 
 it('restores pages and tabs on history traversal without adding entries and preserves session scope', () => {
   history.replaceState({ scope: 1 }, '', '/?page=plugins&tab=skills&session=s&workspaceId=w')

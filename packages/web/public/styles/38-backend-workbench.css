@@ -7,31 +7,12 @@
   body[data-agh-backend-frame="true"] .sidebar-toggle {
     display: none;
   }
-  .backend-workbench-sidebar {
-    gap: var(--s12);
-  }
-  .backend-workbench-sidebar .brand {
-    display: flex;
-    align-items: center;
-    gap: var(--s12);
-  }
-  .backend-workbench-sidebar .brand .agnes-mark {
-    width: var(--s24);
-    height: var(--s24);
-  }
-  .backend-projects {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-  }
-  .backend-projects h2 {
-    margin: var(--s12) 0;
-    font-size: var(--font-size-body);
-    color: var(--agnes-text-secondary);
-  }
   .backend-session-group {
     position: relative;
     margin-bottom: var(--s12);
+  }
+  .backend-session-group .session-conversations {
+    height: auto;
   }
   .backend-session-group > .agh-disclosure > .agh-disclosure-summary {
     width: 100%;
@@ -64,36 +45,6 @@
     padding: var(--s8);
     overflow-wrap: anywhere;
   }
-  .backend-session-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s4);
-  }
-  .backend-session-row {
-    width: 100%;
-    justify-content: flex-start;
-    gap: var(--s8);
-  }
-  .backend-session-row[aria-current="page"] {
-    background: var(--agnes-bg-hover);
-  }
-  .backend-session-title {
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: start;
-  }
-  .backend-session-activity {
-    color: var(--agnes-text-emphasis);
-  }
-  .backend-sidebar-footer {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s4);
-    border-top: 1px solid var(--agnes-line-primary);
-    padding-top: var(--s8);
-  }
   .backend-workbench-main {
     min-width: 0;
     min-height: 0;
@@ -110,6 +61,11 @@
   .backend-workbench-toolbar > span {
     flex: 1;
     overflow-wrap: anywhere;
+  }
+  @media (min-width: 901px) {
+    body:not(.sidebar-collapsed) .backend-workbench-toolbar {
+      display: none;
+    }
   }
   .backend-workbench-contexts {
     flex: 1;

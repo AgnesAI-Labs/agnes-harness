@@ -1,6 +1,14 @@
 import { remoteFrontendOrigin } from '@agnes/protocol'
-import { applyTheme, readThemePreference, resolveTheme, safeThemeStorage } from '@agnes/web-foundation/theme'
+import {
+  applyFontScale,
+  applyTheme,
+  readFontScale,
+  readThemePreference,
+  resolveTheme,
+  safeThemeStorage,
+} from '@agnes/web-foundation/theme'
 import { Button, Icon, mountApplication, useDocumentLanguage } from '@agnes/web-ui'
+import type { SidebarHandle } from '@agnes/web-units/shell'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CLOUD_SETTINGS_SECTION, cloudConnectionAction } from './cloud-settings-bridge.js'
 import {
@@ -39,7 +47,7 @@ function BackendWorkbench() {
   const [configure, setConfigure] = useState(initial.configure)
   const [states, setStates] = useState<Partial<Record<BackendId, BackendSnapshot>>>({})
   const [revisions, setRevisions] = useState({ local: 0, cloud: 0 })
-  const [navOpen, setNavOpen] = useState(false)
+  const sidebar = useRef<SidebarHandle>(null)
   const language = useDocumentLanguage()
   const catalog = workbenchCatalog[language === 'zh-CN' ? 'zh-CN' : 'en']
   const t = (key: keyof typeof catalog) => catalog[key]
@@ -63,7 +71,7 @@ function BackendWorkbench() {
         setActive(backend)
         latest.current.active = backend
         setConfigure(false)
-        setNavOpen(false)
+        sidebar.current?.close()
       }
       if (command.kind === 'session' || command.kind === 'new') {
         intent.current[backend] = command.kind === 'new' ? '' : command.sessionId
@@ -89,7 +97,7 @@ function BackendWorkbench() {
       setActive(backend)
       latest.current.active = backend
       setConfigure(false)
-      setNavOpen(false)
+      sidebar.current?.close()
       setAddress(backend, latest.current.states[backend]?.selected)
     },
     [send, setAddress],
@@ -215,18 +223,15 @@ function BackendWorkbench() {
     if (configure && states.local?.ready) send('local', { kind: 'settings', section: CLOUD_SETTINGS_SECTION })
   }, [configure, states.local?.ready, send])
   useEffect(() => {
-    document.body.classList.toggle('sidebar-open', navOpen)
-    return () => document.body.classList.remove('sidebar-open')
-  }, [navOpen])
-  useEffect(() => {
     if (cloud) safeThemeStorage().setItem(CLOUD_ORIGIN_KEY, cloud)
   }, [cloud])
   const activeTitle =
     active === 'local' ? t('localShort') : `${t('cloudShort')} · ${cloud ? new URL(cloud).host : ''}`
   return (
     <>
-      <Button className="sidebar-backdrop" aria-label={t('menu')} onClick={() => setNavOpen(false)} />
+      <Button id="sidebar-backdrop" className="sidebar-backdrop" aria-label={t('menu')} />
       <WorkbenchSidebar
+        ref={sidebar}
         active={active}
         {...(cloud ? { cloud } : {})}
         states={states}
@@ -235,17 +240,12 @@ function BackendWorkbench() {
         command={send}
         configure={() => {
           setConfigure(true)
-          setNavOpen(false)
+          sidebar.current?.close()
         }}
       />
       <main className="backend-workbench-main">
         <header className="backend-workbench-toolbar">
-          <Button
-            className="sidebar-toggle"
-            appearance="ghost"
-            aria-label={t('menu')}
-            onClick={() => setNavOpen((value) => !value)}
-          >
+          <Button id="sidebar-toggle" className="sidebar-toggle" appearance="ghost" aria-label={t('menu')}>
             <Icon name="menu" />
           </Button>
           <span role="status" aria-label={t('activeBackend')}>
@@ -290,6 +290,7 @@ export function mountBackendWorkbench(): void {
       document.documentElement,
       resolveTheme(readThemePreference(storage), matchMedia('(prefers-color-scheme: dark)').matches),
     )
+    applyFontScale(document.documentElement, readFontScale(storage))
   }
   sync()
   window.addEventListener('storage', sync)
