@@ -66,6 +66,51 @@ export async function startLoopProvider() {
       )
       return
     }
+    if (
+      (messages.includes('CHANNEL_APPROVAL_ALLOW') || messages.includes('CHANNEL_APPROVAL_DENY')) &&
+      !body.messages.some((message) => message.role === 'tool')
+    ) {
+      const allow = messages.includes('CHANNEL_APPROVAL_ALLOW')
+      const event = {
+        id: 'approval-fixture',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'loop-script',
+      }
+      const args = { command: `printf completed > approval-${allow ? 'allow' : 'deny'}.txt` }
+      response.write(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'approval-shell', type: 'function', function: { name: 'shell', arguments: JSON.stringify(args) } }] }, finish_reason: null }] })}\n\n`,
+      )
+      response.end(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
+      )
+      return
+    }
+    if (
+      messages.includes('CHANNEL_QUESTION_PROBE') &&
+      !body.messages.some((message) => message.role === 'tool')
+    ) {
+      const event = {
+        id: 'question-fixture',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'loop-script',
+      }
+      const args = {
+        questions: [
+          { id: 'single', question: 'Pick one', options: ['A', 'B'] },
+          { id: 'multi', question: 'Pick several', options: ['A', 'B'], multiple: true },
+          { id: 'text', question: 'Explain' },
+        ],
+      }
+      response.write(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'native-question', type: 'function', function: { name: 'ask_user_question', arguments: JSON.stringify(args) } }] }, finish_reason: null }] })}\n\n`,
+      )
+      response.end(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
+      )
+      return
+    }
     const content = messages.includes('<dag-planner-protocol>')
       ? '[]'
       : messages.includes('summarizing a chat')

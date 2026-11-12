@@ -31,7 +31,11 @@ function namespace(): PersistenceMetadataNamespace {
   }
 }
 
-type Sent = { chatId: string; block: TextBlock | CardBlock; key: string }
+type Sent = {
+  chatId: { chatId: string; accountId: string; chatType: 'dm' }
+  block: TextBlock | CardBlock
+  key: string
+}
 
 const CHANNEL_CHARS = 1000
 
@@ -53,7 +57,11 @@ function link(sent: Sent[], over: Partial<ChannelTargetLink> = {}) {
     rendered: (block) =>
       block.kind === 'text' ? block.markdown.length : (self.card ? block.body : cardText(block)).length,
     connected: () => true,
-    async send(chatId: string, block: TextBlock | CardBlock, key: string) {
+    async send(
+      chatId: { chatId: string; accountId: string; chatType: 'dm' },
+      block: TextBlock | CardBlock,
+      key: string,
+    ) {
       sent.push({ chatId, block, key })
       return { messageId: `m-${++next}` }
     },
@@ -176,7 +184,7 @@ describe('channel targets', () => {
     expect(await desk.port.send(PAIR_ID, { deliveryKey: 'k1', text: 'remind' })).toEqual({ messageId: 'm-1' })
     expect(sent, 'a repeated key never sends twice').toHaveLength(1)
     expect(sent[0]).toMatchObject({
-      chatId: 'dm-1',
+      chatId: { chatId: 'dm-1', accountId: 'app-1', chatType: 'dm' },
       block: { kind: 'text', markdown: 'remind' },
       key: expect.stringMatching(/^[a-f0-9]{64}$/),
     })
@@ -492,5 +500,135 @@ describe('pairing code approval', () => {
     await expect(f.approvals.mint(f.request, 'op-3')).rejects.toMatchObject({
       data: { code: 'TARGET_PAIRED' },
     })
+  })
+})
+
+it('admits only an owned watched session, revokes its route and scopes message edits to the live pairing', async () => {
+  const { targets, bridge, desk } = paired()
+  desk.abort.abort()
+  let owned = true
+  const abort = new AbortController()
+  const port = targets.port({
+    ...DESK,
+    packageId: '@sample/desk',
+    signal: abort.signal,
+    assertCurrent() {
+      abort.signal.throwIfAborted()
+    },
+    async assertSession(id) {
+      if (!owned || id !== 'child') throw new Error('foreign session')
+    },
+  })
+  const stopped: string[] = []
+  const edited: unknown[] = []
+  const routed: string[][] = []
+  const detach = bridge.attach(
+    'desk-bot',
+    link([], {
+      async watchSession(route) {
+        return () => {
+          stopped.push(route)
+        }
+      },
+      async interaction(_event, routes) {
+        routed.push([...routes])
+        return true
+      },
+      async update(ref, block) {
+        edited.push({ ...ref, block })
+      },
+    }),
+  )
+  await expect(port.watchSession(PAIR_ID, 'foreign')).rejects.toThrow('foreign')
+  await port.watchSession(PAIR_ID, 'child')
+  await port.watchSession(PAIR_ID, 'child')
+  const pairing = bridge.find('desk-bot', 'dm-1')
+  if (!pairing) throw new Error('pairing missing')
+  const event = {
+    kind: 'cardAction' as const,
+    eventId: 'e',
+    accountId: 'app-1',
+    cardBizId: 'card',
+    value: 'action',
+    chat: { id: 'dm-1', type: 'dm' as const },
+    sender: { userId: 'owner', raw: {} },
+    at: new Date().toISOString(),
+  }
+  await bridge.interact(pairing, { ...event, sender: { userId: 'stranger', raw: {} } })
+  expect(routed).toEqual([])
+  await bridge.interact(pairing, event)
+  expect(routed.at(0)).toHaveLength(1)
+  owned = false
+  await expect(bridge.interact(pairing, event)).rejects.toThrow('foreign')
+  owned = true
+  await expect(port.update(PAIR_ID, 'not-sent', { text: 'closed' })).rejects.toMatchObject({
+    data: { code: 'CAPABILITY_DENIED' },
+  })
+  const sent = await port.send(PAIR_ID, {
+    deliveryKey: 'q',
+    text: 'question',
+    actions: [{ id: 'yes', label: 'Yes' }],
+  })
+  await port.update(PAIR_ID, sent.messageId, { text: 'closed' })
+  expect(edited).toMatchObject([
+    { chatId: 'dm-1', messageId: sent.messageId, block: { kind: 'text', markdown: 'closed' } },
+  ])
+  detach()
+  expect(stopped).toHaveLength(1)
+  await port.unpair(PAIR_ID)
+  await expect(port.update(PAIR_ID, sent.messageId, { text: 'late' })).rejects.toMatchObject({
+    data: { code: 'NOT_PAIRED' },
+  })
+})
+
+it('restores watched children and message edit context without a new inbound event, then revokes both on unpair', async () => {
+  const { targets, bridge, desk, store } = paired()
+  desk.abort.abort()
+  const watched: string[] = []
+  const edited: unknown[] = []
+  const runtime = (owner: ChannelTargets) =>
+    owner.port({
+      ...DESK,
+      packageId: '@sample/desk',
+      signal: new AbortController().signal,
+      assertCurrent() {},
+      async assertSession(id) {
+        if (id !== 'child') throw new Error('foreign')
+      },
+    })
+  const transport = () =>
+    link([], {
+      async watchSession(route) {
+        watched.push(route)
+        return () => {}
+      },
+      async send() {
+        return { messageId: 'm-card', cardBizId: 'biz-card', accountId: 'app-1', chatType: 'dm' }
+      },
+      async update(ref, block) {
+        edited.push({ ref, block })
+      },
+    })
+  bridge.attach('desk-bot', transport())
+  const first = runtime(targets)
+  await first.watchSession(PAIR_ID, 'child')
+  await first.send(PAIR_ID, { deliveryKey: 'question', text: 'Pick', actions: [{ id: 'a', label: 'A' }] })
+  const restored = new ChannelTargets(store)
+  restored.bridge(CHANNEL).attach('desk-bot', transport())
+  const second = runtime(restored)
+  await vi.waitFor(() => expect(watched).toHaveLength(2))
+  expect(watched.at(0)).toBe(watched.at(1))
+  await second.update(PAIR_ID, 'm-card', { text: 'Closed' })
+  expect(edited).toMatchObject([
+    {
+      ref: { messageId: 'm-card', cardBizId: 'biz-card', chatId: 'dm-1', accountId: 'app-1', chatType: 'dm' },
+    },
+  ])
+  await second.unpair(PAIR_ID)
+  expect(store.entries().filter(({ key }) => key.startsWith('w:') || key.startsWith('d:'))).toEqual([])
+  const { code } = restored.mint({ channel: CHANNEL, instanceId: 'desk-bot' }, DESK)
+  restored.bridge(CHANNEL).confirm('desk-bot', code, chat)
+  await expect(second.update(PAIR_ID, 'm-card', { text: 'Late' })).rejects.toMatchObject({
+    data: { code: 'CAPABILITY_DENIED' },
   })
 })

@@ -16,6 +16,7 @@ import { backoffDelays } from './backoff.js'
 import type { RunnerConfig } from './config.js'
 import { type HealthzHandle, startHealthz } from './health.js'
 import { Inbound } from './inbound.js'
+import { handleInteraction, type InteractionAdmission } from './interactions.js'
 import { noticeText } from './notices.js'
 import { Outbound } from './outbound.js'
 import { RefStore } from './ref-store.js'
@@ -54,10 +55,12 @@ export type RunnerDeps = {
   strictShutdown?: boolean
   bindings?: {
     resolve(key: string): { sessionId: string; afterSeq: number } | undefined
+    restore?(): Promise<void>
     observe(event: ChannelEvent): void
     /** True when the event was routed elsewhere (a pairing code or a paired chat) and must stop here. */
     intercept?(event: ChannelEvent): boolean
   }
+  interactions?: InteractionAdmission
   now?: () => number
 }
 
@@ -80,7 +83,15 @@ export type Runner = {
   onEvent(handler: (event: ChannelEvent) => void): void
   unlink(key: string): Promise<void>
   baseline(sessionId: string): Promise<number>
-  activate(key: string, target: { chatId: string; threadId?: string }): Promise<void>
+  activate(key: string, target: ChatTarget): Promise<void>
+  watchManaged(
+    key: string,
+    sessionId: string,
+    target: ChatTarget,
+    assertCurrent: () => Promise<void>,
+  ): Promise<() => void>
+  handleInteraction(event: ChannelEvent, keys: readonly string[]): Promise<boolean>
+  updateDirect(ref: MessageRef, block: Block): Promise<void>
   sendDirect(chat: ChatTarget, block: Block, deliveryKey: string): Promise<MessageRef>
   /** At most once per event across processes, as for session-bound events; false when already claimed. */
   claim(event: ChannelEvent): Promise<boolean>
@@ -105,6 +116,8 @@ export function createRunner(dependencies: RunnerDeps): Runner {
   if (dependencies.refsPath !== undefined && dependencies.refsPath !== ':memory:') {
     mkdirSync(dirname(dependencies.refsPath), { recursive: true })
   }
+  const managed = new Map<string, BoundSession>()
+  const managedActivations = new Map<string, Promise<BoundSession>>()
   const refs = new RefStore(
     dependencies.refsPath ?? ':memory:',
     dependencies.now === undefined ? {} : { clock: dependencies.now },
@@ -114,6 +127,7 @@ export function createRunner(dependencies: RunnerDeps): Runner {
   refs.gc(now() - refMaxAgeMs)
   const outbound = new Outbound({
     adapter: dependencies.adapter,
+    nativeInteractions: !!dependencies.interactions,
     refs,
     cache,
     cfg: dependencies.cfg,
@@ -265,8 +279,68 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       targets.set(key, target)
       outbound.attach(key, session, target, dependencies.bindings?.resolve(key)?.afterSeq)
       inbound.resume(key)
+      await outbound.flush(key)
     },
 
+    async watchManaged(key, sessionId, target, assertCurrent) {
+      const pending = managedActivations.get(key)
+      if (pending) {
+        await pending
+        return () => {}
+      }
+      if (managed.has(key)) return () => {}
+      const activation = Promise.resolve().then(async () => {
+        const session = await dependencies.client.session.attach(sessionId, { filter: { acpUpdates: false } })
+        if (abort.signal.aborted) {
+          await session.detach()
+          throw new Error('channel stopped')
+        }
+        managed.set(key, session)
+        outbound.attach(key, session, target, undefined, true, assertCurrent)
+        try {
+          await outbound.flush(key)
+        } catch (error) {
+          if (managed.get(key) === session) {
+            managed.delete(key)
+            outbound.detach(key)
+            await session.detach().catch(() => {})
+          }
+          throw error
+        }
+        if (managed.get(key) !== session) throw new Error('channel stopped')
+        return session
+      })
+      managedActivations.set(key, activation)
+      let session: BoundSession
+      try {
+        session = await activation
+      } finally {
+        if (managedActivations.get(key) === activation) managedActivations.delete(key)
+      }
+      return () => {
+        if (managed.get(key) !== session) return
+        managed.delete(key)
+        outbound.detach(key)
+        void session.detach().catch(() => {})
+      }
+    },
+    async handleInteraction(event, keys) {
+      if (!dependencies.interactions) return false
+      await Promise.all(keys.map((key) => outbound.flush(key)))
+      return handleInteraction({
+        event,
+        adapter: dependencies.adapter,
+        refs,
+        admission: dependencies.interactions,
+        routes: keys.flatMap((key) => {
+          const session = managed.get(key) ?? cache.current(key)
+          return session ? [{ key, sessionId: session.id }] : []
+        }),
+        allowFrom: dependencies.cfg.allowFrom,
+        flush: (key) => outbound.flush(key),
+      })
+    },
+    updateDirect: (ref, block) => outbound.updateDirect(ref, block),
     onEvent(handler) {
       subscribers.push(handler)
     },
@@ -343,6 +417,18 @@ export function createRunner(dependencies: RunnerDeps): Runner {
     let task: Promise<void>
     task = Promise.resolve()
       .then(async () => {
+        const routeKey =
+          dependencies.adapter.toSession(event, {
+            tenant: dependencies.cfg.tenant,
+            agent: dependencies.cfg.agent,
+          })?.sessionKey ??
+          sessionKeyFor({
+            tenant: dependencies.cfg.tenant,
+            agent: dependencies.cfg.agent,
+            channel: dependencies.adapter.manifest.id,
+            chat: event.chat,
+          })
+        if (await runner.handleInteraction(event, [routeKey])) return
         if (await approval.handleAction(event)) return
         if (event.kind === 'cardAction') {
           const sessionKey = sessionKeyFor({
@@ -487,6 +573,7 @@ export function createRunner(dependencies: RunnerDeps): Runner {
           await dependencies.adapter.disconnect().catch(() => undefined)
           throw cancelled()
         }
+        await dependencies.bindings?.restore?.()
         channelState = 'connected'
         return
       } catch {
@@ -549,7 +636,11 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       }
       abort.abort()
       const outboundStop = outbound.stop()
-      const cacheStop = cache.stop()
+      const cacheStop = Promise.all([
+        cache.stop(),
+        ...[...managed.values()].map((session) => session.detach()),
+      ])
+      managed.clear()
       const resourcesStopped = await settlePromises([cacheStop, outboundStop], remaining(workDeadline))
       if (!resourcesStopped) safeWarn('channel runner resource drain timed out; forcing disconnect')
       let cleanupFailed = false

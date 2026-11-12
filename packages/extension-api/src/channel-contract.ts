@@ -7,6 +7,8 @@ import type {
   DirectoryEntry,
   ChannelCredential as ProtocolChannelCredential,
   UINode,
+  UiActionParams,
+  UiRevision,
 } from '@agnes/protocol'
 
 export type { ApprovalAction, ChannelCapabilities, ChannelManifest, DirectoryEntry } from '@agnes/protocol'
@@ -54,6 +56,8 @@ export type CardActionEvent = EventBase & {
   kind: 'cardAction'
   cardBizId: string
   value: string
+  /** Bounded values from the verified platform form callback. */
+  formValues?: Record<string, string | string[]>
 }
 
 export type GroupJoinEvent = EventBase & { kind: 'groupJoin' }
@@ -110,6 +114,47 @@ export type ApprovalBlock = {
   expiresAt?: string
 }
 
+type ChannelFormFieldBase = {
+  name: string
+  label: string
+  required: boolean
+  binding: 'input' | 'selection'
+  /** Form component id for nested input. Omitted only for a direct binding. */
+  inputKey?: string
+}
+export type ChannelFormField = ChannelFormFieldBase &
+  (
+    | { kind: 'text'; multiline?: boolean; maxLength?: number }
+    | {
+        kind: 'single'
+        allowFreeText?: boolean
+        options: readonly { value: string; label: string; description?: string }[]
+      }
+    | {
+        kind: 'multi'
+        allowFreeText?: boolean
+        options: readonly { value: string; label: string; description?: string }[]
+        minItems?: number
+        maxItems?: number
+      }
+  )
+export type ChannelSurfaceAction = Pick<
+  UiActionParams,
+  'sessionId' | 'surfaceId' | 'revision' | 'actionId' | 'input' | 'selection'
+>
+export type ChannelSurfaceBlock = {
+  kind: 'surface'
+  sessionId: string
+  surfaceId: string
+  revision: UiRevision
+  title: string
+  body?: string
+  fallbackUrl: string
+  form:
+    | { state: 'open'; actionId: string; submitLabel: string; fields: readonly ChannelFormField[] }
+    | { state: 'closed'; summary: string }
+}
+
 export type FileBlock = {
   kind: 'file'
   name: string
@@ -120,15 +165,29 @@ export type FileBlock = {
 
 export type LinkBlock = { kind: 'link'; title: string; url: string }
 
-export type Block = TextBlock | TableBlock | CardBlock | ApprovalBlock | FileBlock | LinkBlock
+export type Block =
+  | TextBlock
+  | TableBlock
+  | CardBlock
+  | ApprovalBlock
+  | ChannelSurfaceBlock
+  | FileBlock
+  | LinkBlock
 
 export type MessageRef = {
+  /** Verified send context retained for edits after transport restart. */
+  accountId?: string
+  chatType?: 'dm' | 'group'
   chatId: string
   messageId: string
   cardBizId?: string
 }
 
 export type ChatTarget = {
+  /** Verified platform account for durable interaction correlation. */
+  accountId?: string
+  /** Verified chat type for sends after a transport restart. */
+  chatType?: 'dm' | 'group'
   chatId: string
   threadId?: string
   /** Stable per-part delivery identity used by adapters that support remote idempotency keys. */
@@ -189,6 +248,7 @@ export interface ChannelAdapter {
   react?(reference: MessageRef, emoji: string): Promise<void>
   renderApproval(request: ApprovalView, decisionKey?: string): ChannelMessage
   onApprovalAction(payload: ChannelEvent): ApprovalAction | null
+  onSurfaceAction?(payload: ChannelEvent): ChannelSurfaceAction | null
   onSlotAction?(payload: ChannelEvent): SlotActionIntent | null
   credentialOf(event: ChannelEvent): ChannelCredential
   syncDirectory?(options: { since?: string; signal: AbortSignal }): AsyncIterable<DirectoryEntry>

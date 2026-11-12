@@ -33,5 +33,27 @@ export function profileSessionProducer(
 
 /** Shared profile coordination ports use the same authenticated channel and lifetime. */
 export function profileSessionPorts(channel: SharedSessionChannel) {
-  return { boundWakes: profileWakeProducer(channel), managedSessions: profileSessionProducer(channel) }
+  const channelInteractions: NonNullable<HostOptions['channelInteractions']> = (caller) => ({
+    surface: (params, credential) =>
+      channel.run('@profile', () =>
+        channel.request(
+          'channel-interaction',
+          { caller, kind: 'surface', params, credential },
+          AbortSignal.timeout(30_000),
+        ),
+      ) as ReturnType<ReturnType<NonNullable<HostOptions['channelInteractions']>>['surface']>,
+    approval: (params, credential) =>
+      channel.run('@profile', () =>
+        channel.request(
+          'channel-interaction',
+          { caller, kind: 'approval', params, credential },
+          AbortSignal.timeout(30_000),
+        ),
+      ) as ReturnType<ReturnType<NonNullable<HostOptions['channelInteractions']>>['approval']>,
+  })
+  return {
+    channelInteractions,
+    boundWakes: profileWakeProducer(channel),
+    managedSessions: profileSessionProducer(channel),
+  }
 }

@@ -21,6 +21,7 @@ export function installProfileRuntime(
   root: Context,
   origins: RowOriginLookup,
   deps: {
+    channelInteractions?: import('./channel-runtime.js').ChannelInteractionsFactory
     channelRuntime?: ChannelRuntimeFactory
     channelStateDirectory?: string
     channelScope?: { home: string; profile: string; dataDir: string; workspace: string }
@@ -122,6 +123,16 @@ export function installProfileRuntime(
               return deps.resolveSecret!(ref)
             },
             log: deps.channelLog!,
+            ...(deps.channelInteractions
+              ? {
+                  interactions: deps.channelInteractions({
+                    owner: row.owner,
+                    packageId: row.origin.packageId,
+                    integrity: row.integrity,
+                    provider: provider.id,
+                  }),
+                }
+              : {}),
             ...(deps.channelTargets
               ? { targets: deps.channelTargets.bridge(grantKey(row.origin.packageId, row.owner)) }
               : {}),

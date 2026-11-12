@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -19,10 +20,12 @@ import {
   channelServiceCapabilities,
   managedServiceCapabilities,
 } from '@agnes/extension-api'
+import type { Block, ChannelSurfaceBlock } from '@agnes/extension-api/channel-contract'
 import { initializeHome } from '@agnes/host'
 import type { DecisionHandle, PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
+import { startLoopProvider } from './fixtures/loop-provider.js'
 import { sourceTranspileCache } from './source-transpile-cache.js'
 
 const sourceDaemon = fileURLToPath(new URL('./fixtures/source-loop-daemon.ts', import.meta.url))
@@ -35,17 +38,21 @@ const manifest = {
   version: '0.1.0',
   connection: { modes: ['stream'], default: 'stream' },
   capabilities: {
-    edit: false,
-    card: false,
+    edit: true,
+    card: true,
     thread: false,
     attachment: false,
     reactions: false,
     typing: false,
     voice: false,
   },
-  credentials: { required: [], optional: [], exposes: [] },
+  credentials: {
+    required: [],
+    optional: [],
+    exposes: ['kind', 'channel', 'accountId', 'userId', 'chatId', 'chatType'],
+  },
   limits: { textChars: 500, cardBytes: 4096, editWindowMs: 0 },
-  events: { supported: ['message'] },
+  events: { supported: ['message', 'cardAction'] },
   directory: { supported: false, unit: 'dept' },
 }
 const service = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -115,11 +122,12 @@ const adapter = () => {
     async send(target, message) {
       const messageId = 'sent-' + ++sent + '-' + process.pid
       appendFileSync(join(exchange, 'sent.jsonl'), JSON.stringify({ target, message, messageId }) + '\\n')
-      return { chatId: target.chatId, messageId }
+      return { chatId: target.chatId, messageId, accountId: 'app-1', chatType: 'dm' }
     },
-    async update() {},
+    async update(ref, message) { appendFileSync(join(exchange, 'edits.jsonl'), JSON.stringify({ ref, message }) + '\\n') },
     renderApproval() { return { blocks: [] } },
-    onApprovalAction() { return null },
+    onApprovalAction(event) { return event.kind === 'cardAction' ? event.approval ?? null : null },
+    onSurfaceAction(event) { return event.kind === 'cardAction' ? event.surface ?? null : null },
     credentialOf(event) {
       return { kind: 'channel', channel: manifest.id, accountId: event.accountId, userId: event.sender.userId, chatId: event.chat.id, chatType: event.chat.type }
     },
@@ -149,11 +157,11 @@ const reply = (id, body) => {
   writeFileSync(join(exchange, id + '.tmp'), JSON.stringify(body))
   renameSync(join(exchange, id + '.tmp'), join(exchange, 'res-' + id + '.json'))
 }
-async function answer(channels, file) {
+async function answer(init, file) {
   const id = file.slice(4, -5)
   try {
     const { op, args } = JSON.parse(readFileSync(join(exchange, file), 'utf8'))
-    reply(id, { ok: true, value: (await channels[op](...args)) ?? null })
+    reply(id, { ok: true, value: (await (op.startsWith('sessions.') ? init.sessions[op.slice(9)](...args) : init.channels[op](...args))) ?? null })
   } catch (error) {
     reply(id, { ok: false, error: { message: String(error?.message), data: error?.data } })
   }
@@ -172,7 +180,7 @@ export const main = {
           for (const file of readdirSync(exchange))
             if (file.startsWith('req-') && !pending.has(file)) {
               pending.add(file)
-              void answer(init.channels, file)
+              void answer(init, file)
             }
         }, 50)
         init.onShutdown(async () => {
@@ -218,7 +226,7 @@ function writePlugins(root: string, workspace: string) {
         inject: ['profileRuntime'],
         capabilities: {
           store: true,
-          managedServices: [service('desk', { channelTargets: true })],
+          managedServices: [service('desk', { channelTargets: true, sessions: true })],
           services: managedServiceCapabilities('desk', empty),
         },
       },
@@ -234,7 +242,32 @@ function writePlugins(root: string, workspace: string) {
         license: 'MIT',
         type: 'module',
         exports: './index.mjs',
-        agnes: { plugins: [{ export: 'main', apiRange: '^5.12.0', runtime: 'in-process', ...row }] },
+        agnes: {
+          plugins: [{ export: 'main', apiRange: '^5.15.0', runtime: 'in-process', ...row }],
+          ...(name === DESK
+            ? {
+                provides: ['bundle'],
+                bundles: {
+                  worker: {
+                    presets: {
+                      'desk-worker': {
+                        name: 'desk-worker',
+                        extends: 'standard',
+                        surfaces: ['daemon', 'sdk'],
+                        approval: { on_unavailable: 'park' },
+                        ext_ui: { unattended: 'park' },
+                      },
+                    },
+                    launch: {
+                      title: { en: 'Desk worker' },
+                      description: { en: 'Channel interaction fixture.' },
+                      preset: 'desk-worker',
+                    },
+                  },
+                },
+              }
+            : {}),
+        },
       }),
     )
     writeFileSync(join(directory, 'index.mjs'), source)
@@ -242,10 +275,46 @@ function writePlugins(root: string, workspace: string) {
   return { chat, desk }
 }
 
-function writeProfile(root: string) {
+function writeProfile(root: string, baseUrl: string) {
+  const secretDir = join(root, 'secrets')
+  mkdirSync(join(secretDir, 'fixture'), { recursive: true, mode: 0o700 })
+  writeFileSync(join(secretDir, 'fixture', 'model'), 'synthetic-loop-fixture', { mode: 0o600 })
+  const model = {
+    id: 'loop-script',
+    name: 'Scripted loop fixture',
+    route: 'loop-fixture',
+    api: 'openai-completions',
+    baseUrl,
+    reasoning: false,
+    input: ['text'],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128000,
+    maxTokens: 8192,
+    toolCallFormats: ['native'],
+    thinkingReplay: 'drop',
+    contract_id: null,
+  }
   writeFileSync(
     join(root, 'profiles', 'local-dev', 'profile.yaml'),
-    JSON.stringify({ name: 'local-dev', cacheDir: sourceTranspileCache(), computerUse: { enabled: false } }),
+    JSON.stringify({
+      name: 'local-dev',
+      cacheDir: sourceTranspileCache(),
+      computerUse: { enabled: false },
+      adapters: { secrets: { kind: 'file', path: secretDir } },
+      provider: {
+        package: '@agnes/ai',
+        catalog: { include: [] },
+        routes: [
+          {
+            route: model.route,
+            api: 'openai-completions',
+            baseUrl,
+            credentialRef: 'secret://fixture/model',
+            models: [model],
+          },
+        ],
+      },
+    }),
   )
 }
 
@@ -294,7 +363,8 @@ it.skipIf(process.platform === 'win32')(
     const workspace = join(root, 'workspace')
     initializeHome(root, 'local-dev')
     for (const dir of [workspace, join(root, 'chat'), join(root, 'desk')]) mkdirSync(dir)
-    writeProfile(root)
+    const provider = await startLoopProvider()
+    writeProfile(root, provider.baseUrl)
     const plugins = writePlugins(root, workspace)
     let running = boot(root)
     let sdk: ReturnType<typeof createClient> | undefined
@@ -317,6 +387,7 @@ it.skipIf(process.platform === 'win32')(
         return client
       }
       let client = await connect()
+      await client.workspace.add(workspace)
       const operation = async (receipt: PackageOperationReceipt) => {
         const result = await until(async () => {
           const value = await client.packages.operation.get({
@@ -359,6 +430,7 @@ it.skipIf(process.platform === 'win32')(
       }
       await install(DESK, plugins.desk)
       await install(CHAT, plugins.chat)
+      const questionBundle = `${DESK}#worker`
 
       const pairing = (params: Record<string, unknown>) =>
         client.request('_agnes/v1/channels.pairing', params as never) as Promise<{
@@ -459,7 +531,7 @@ it.skipIf(process.platform === 'win32')(
               (line) =>
                 JSON.parse(line) as {
                   target: { chatId: string }
-                  message: { blocks: { markdown: string }[] }
+                  message: { blocks: Block[] }
                   messageId: string
                 },
             )
@@ -485,7 +557,7 @@ it.skipIf(process.platform === 'win32')(
           try {
             return JSON.parse(readFileSync(join(deskDir, `res-${id}.json`), 'utf8')) as {
               ok: boolean
-              value?: { id?: string; messageId?: string; state?: string } | null
+              value?: { id?: string; sessionId?: string; messageId?: string; state?: string } | null
               error?: { data?: { code?: string } }
             }
           } catch {
@@ -496,7 +568,12 @@ it.skipIf(process.platform === 'win32')(
 
       inject(code.toLowerCase().replace('-', ' '))
       await until(
-        () => (sent().some((row) => row.message.blocks[0]?.markdown.includes('已与')) ? true : undefined),
+        () =>
+          sent().some((row) =>
+            row.message.blocks.some((block) => block.kind === 'text' && block.markdown.includes('已与')),
+          )
+            ? true
+            : undefined,
         'pairing reply',
       )
       const paired = await asDesk('pairing')
@@ -526,11 +603,194 @@ it.skipIf(process.platform === 'win32')(
 
       const reply = await asDesk('send', pairingId, { deliveryKey: 'reminder-1', text: 'It is five.' })
       expect(reply.ok, JSON.stringify(reply.error)).toBe(true)
-      const delivered = sent().find((row) => row.message.blocks[0]?.markdown === 'It is five.')
+      const delivered = sent().find((row) =>
+        row.message.blocks.some((block) => block.kind === 'text' && block.markdown === 'It is five.'),
+      )
       expect(delivered, 'the reply reaches the paired chat').toMatchObject({
         target: { chatId: 'owner-dm' },
         messageId: reply.value?.messageId,
       })
+
+      await client.request('_agnes/v1/admin.managedWorkspaces.grant', { packageId: DESK, workspace })
+      const started = await asDesk('sessions.start', {
+        bundle: questionBundle,
+        workspace,
+        input: 'CHANNEL_QUESTION_PROBE',
+        startKey: 'native-question',
+        retention: 'task',
+      })
+      expect(started.ok, JSON.stringify(started.error)).toBe(true)
+      const sessionId = started.value?.sessionId
+      if (!sessionId) throw new Error('managed child not started')
+      expect((await asDesk('watchSession', pairingId, 'foreign-child')).ok).toBe(false)
+      expect((await asDesk('watchSession', pairingId, sessionId)).ok).toBe(true)
+      const native = await until(
+        () => sent().find((row) => row.message.blocks.some((block) => block.kind === 'surface')),
+        'native question card',
+      )
+      const block = native.message.blocks.find((row) => row.kind === 'surface') as ChannelSurfaceBlock
+      if (block.form.state !== 'open') throw new Error('native question not open')
+      expect(block.form.fields.map((field) => field.kind).sort()).toEqual(['multi', 'single', 'text'])
+      const questionWaiting = async (id: string) => {
+        const result = (await asDesk('sessions.status', id)) as unknown as {
+          ok: boolean
+          value?: { flags: string[] }
+        }
+        return result.ok && result.value?.flags.includes('waitingOnUserInput') ? true : undefined
+      }
+      const turnEnded = async (id: string) => {
+        const result = (await asDesk('sessions.events', id)) as unknown as {
+          ok: boolean
+          value?: { events: { kind: string; status?: string }[] }
+        }
+        return result.ok &&
+          result.value?.events.some((event) => event.kind === 'turn' && event.status === 'completed')
+          ? true
+          : undefined
+      }
+      await until(() => turnEnded(sessionId), 'default native question turn returns')
+      await until(() => questionWaiting(sessionId), 'default worker reports open native question')
+
+      const action = {
+        sessionId,
+        surfaceId: block.surfaceId,
+        revision: block.revision,
+        actionId: block.form.actionId,
+        input: { answers: { single: 'A', multi: ['A', 'B'], text: 'verified answer' } },
+        selection: {},
+      }
+      const clicked = { kind: 'cardAction', cardBizId: native.messageId, value: 'surface', surface: action }
+      inject('', { ...clicked, sender: { userId: 'stranger', raw: {} } })
+      inject('', { ...clicked, cardBizId: 'forwarded-message' })
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      const child = await client.session.attach(sessionId)
+      expect((await child.uiRead({ surfaceId: block.surfaceId })).surfaces.at(0)?.status).toBe('open')
+      inject('', clicked)
+      await until(
+        async () =>
+          (await child.uiRead({ surfaceId: block.surfaceId })).surfaces.at(0)?.status === 'closed'
+            ? true
+            : undefined,
+        'channel submits native answers',
+      )
+      const edits = () => {
+        try {
+          return readFileSync(join(chatDir, 'edits.jsonl'), 'utf8')
+            .trim()
+            .split('\n')
+            .map((line) => JSON.parse(line))
+        } catch {
+          return []
+        }
+      }
+      await until(
+        () =>
+          edits().some(
+            (row) =>
+              row.ref.messageId === native.messageId &&
+              row.message.blocks.some(
+                (b: ChannelSurfaceBlock) => b.kind === 'surface' && b.form.state === 'closed',
+              ),
+          )
+            ? true
+            : undefined,
+        'settled card edit',
+      )
+      inject('', clicked)
+      await child.detach()
+
+      const fullStart = await asDesk('sessions.start', {
+        bundle: questionBundle,
+        workspace,
+        input: 'CHANNEL_QUESTION_PROBE',
+        startKey: 'native-question-full',
+        retention: 'task',
+        permission: 'full-access',
+      })
+      expect(fullStart.ok, JSON.stringify(fullStart.error)).toBe(true)
+      const fullSessionId = fullStart.value?.sessionId
+      if (!fullSessionId) throw new Error('full access question child not started')
+      await until(() => turnEnded(fullSessionId), 'full access native question turn returns')
+      await until(() => questionWaiting(fullSessionId), 'full access worker reports open native question')
+      const fullChild = await client.session.attach(fullSessionId)
+      const fullRecord = (await fullChild.uiRead()).surfaces.find((record) => record.status === 'open')
+      if (!fullRecord) throw new Error('full access native question missing')
+      await fullChild.uiAction({
+        surfaceId: fullRecord.surface.id,
+        revision: fullRecord.surface.revision,
+        actionId: 'submit',
+        commandId: randomUUID(),
+        input: { answers: { single: 'A', multi: ['A'], text: 'answer' } },
+        selection: {},
+      })
+      await until(
+        async () =>
+          (await fullChild.uiRead({ surfaceId: fullRecord.surface.id })).surfaces[0]?.status === 'closed'
+            ? true
+            : undefined,
+        'full access native question closes',
+      )
+      await fullChild.detach()
+
+      for (const verdict of ['rejected', 'allowed-once'] as const) {
+        const marker = verdict === 'rejected' ? 'DENY' : 'ALLOW'
+        const childStart = await asDesk('sessions.start', {
+          bundle: `${DESK}#worker`,
+          workspace,
+          input: `CHANNEL_APPROVAL_${marker}`,
+          startKey: `approval-${marker}`,
+          retention: 'task',
+        })
+        expect(childStart.ok, JSON.stringify(childStart.error)).toBe(true)
+        const approvalSessionId = childStart.value?.sessionId
+        if (!approvalSessionId) throw new Error('approval child not started')
+        expect((await asDesk('watchSession', pairingId, approvalSessionId)).ok).toBe(true)
+        const card = await until(
+          () =>
+            sent().find((row) =>
+              row.message.blocks.some(
+                (item) =>
+                  item.kind === 'approval' &&
+                  item.decisionKey?.startsWith(`${encodeURIComponent(approvalSessionId)}/`),
+              ),
+            ),
+          `managed ${verdict} approval card`,
+        )
+        const approval = card.message.blocks.find((item) => item.kind === 'approval')
+        if (!approval?.decisionKey) throw new Error('approval card has no decision key')
+        inject('', {
+          kind: 'cardAction',
+          cardBizId: card.messageId,
+          value: 'approval',
+          approval: { decisionKey: approval.decisionKey, verdict },
+        })
+        await until(async () => {
+          const result = (await asDesk('sessions.events', approvalSessionId)) as unknown as {
+            ok: boolean
+            value?: { events: { kind: string; outcome?: string }[] }
+          }
+          const outcome = verdict === 'rejected' ? 'rejected' : 'allowed'
+          return result.ok &&
+            result.value?.events.some(
+              (event) => event.kind === 'approvalOutcome' && event.outcome === outcome,
+            )
+            ? true
+            : undefined
+        }, `managed ${verdict} outcome`)
+        await until(async () => {
+          const result = (await asDesk('sessions.result', approvalSessionId)) as unknown as {
+            ok: boolean
+            value?: { turn: { status: string } | null }
+          }
+          return result.ok && result.value?.turn?.status === 'completed' ? true : undefined
+        }, `managed ${verdict} continued turn`)
+        if (verdict === 'allowed-once')
+          await until(
+            () => (existsSync(join(workspace, 'approval-allow.txt')) ? true : undefined),
+            'approved shell runs',
+          )
+        else expect(existsSync(join(workspace, 'approval-deny.txt'))).toBe(false)
+      }
 
       await sdk?.close()
       await stop(running.daemon, running.exited)
@@ -545,6 +805,21 @@ it.skipIf(process.platform === 'win32')(
         state: 'delivered',
         messageId: reply.value?.messageId,
       })
+
+      await until(async () => {
+        const result = await asDesk('send', pairingId, {
+          deliveryKey: 'after-restart',
+          text: 'Restored without inbound.',
+        })
+        return result.ok ? true : undefined
+      }, 'paired send after restart')
+      expect(
+        sent().find((row) =>
+          row.message.blocks.some(
+            (item) => item.kind === 'text' && item.markdown === 'Restored without inbound.',
+          ),
+        )?.target,
+      ).toMatchObject({ chatId: 'owner-dm', accountId: 'app-1', chatType: 'dm' })
 
       await operation(await client.packages.disable({ ...(await command()), id: DESK }))
       await operation(await client.packages.remove({ ...(await command()), id: DESK }))
@@ -562,6 +837,7 @@ it.skipIf(process.platform === 'win32')(
     } finally {
       for (const close of [
         () => sdk?.close(),
+        () => provider.close(),
         () => stop(running.daemon, running.exited),
         () => {
           if (code) {

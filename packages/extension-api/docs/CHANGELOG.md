@@ -2,6 +2,27 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.15.0
+
+### Added
+
+- Channel adapters can render bounded native question forms through `ChannelSurfaceBlock` and decode
+  their submissions with `onSurfaceAction`. Fields preserve the native input binding and nested key.
+- `ManagedChannelTargets.watchSession` observes human interactions in the calling service's own child
+  sessions. The Host retains watches across restart and revokes them with the pairing or service.
+- `ManagedChannelTargets.update` replaces only messages delivered by the calling service to its current
+  pairing. Channel `MessageRef` and `ChatTarget` can retain verified `accountId` and `chatType` for
+  edits and sends after restart.
+- Native callbacks use verified platform identity and durable delivered-message bindings. Existing
+  backend action and decision owners retain validation, authorization, replay checks and settlement.
+
+### Fixed
+
+- Retained managed tasks report `waitingOnUserInput` for unanswered native questions after a
+  nonblocking turn completes. Status reads use durable facts without loading historical workers.
+- Failed managed watch activation releases its own session/lane so restart reconciliation can retry;
+  concurrent activations share SDK attachment without detaching the winning session.
+
 ## 5.14.0
 
 ### Added

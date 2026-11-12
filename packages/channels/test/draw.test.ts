@@ -272,3 +272,67 @@ it('renders numbered surface choices with an authenticated Web fallback and no p
   expect(message.blocks).toHaveLength(1)
   expect(message.blocks[0]?.kind).toBe('text')
 })
+
+it('projects all collector answer modes and closes the same surface without actions', async () => {
+  const { choiceSurface } = await import('../testkit/choice-surface.js')
+  const surface = choiceSurface('q')
+  const form = surface.components.at(0)
+  if (!form || form.kind !== 'form' || 'fallback' in form) throw new Error('form fixture missing')
+  form.schema = {
+    type: 'object',
+    required: ['single', 'multi', 'text'],
+    properties: {
+      single: { type: 'string', title: 'One', enum: ['A', 'B'] },
+      multi: {
+        type: 'array',
+        title: 'Many',
+        items: { type: 'string', enum: ['A', 'B'] },
+        minItems: 1,
+        maxItems: 2,
+      },
+      text: { type: 'string', title: 'Details', maxLength: 8192 },
+      custom: { type: 'array', title: 'Custom', items: { type: 'string' }, 'x-ui-choices': ['C'] },
+    },
+  }
+  const record = {
+    surface,
+    status: 'open' as const,
+    owner: 'agnes/intelligent-ui',
+    lane: 'main',
+    taskId: 't',
+    createdSeq: 1,
+    updatedSeq: 1,
+  }
+  const block = drawSurfaceMessage(record, 's', 'https://web.example', true).blocks.at(0)
+  expect(block).toMatchObject({
+    kind: 'surface',
+    sessionId: 's',
+    surfaceId: 'q',
+    form: {
+      state: 'open',
+      fields: [
+        {
+          kind: 'single',
+          name: 'single',
+          inputKey: 'answers',
+          required: true,
+          options: [{ value: 'A' }, { value: 'B' }],
+        },
+        { kind: 'multi', name: 'multi', minItems: 1, maxItems: 2 },
+        { kind: 'text', name: 'text', maxLength: 8192 },
+        { kind: 'multi', name: 'custom', allowFreeText: true, options: [{ value: 'C' }] },
+      ],
+    },
+  })
+  expect(
+    drawSurfaceMessage({ ...record, status: 'closed' }, 's', undefined, true).blocks.at(0),
+  ).toMatchObject({ kind: 'surface', form: { state: 'closed' } })
+  surface.components.push({
+    id: 'custom-widget',
+    kind: 'example/view@1',
+    dataKey: 'draft',
+    fallback: 'Use Web',
+    actionIds: [],
+  })
+  expect(drawSurfaceMessage(record, 's', undefined, true).blocks.at(0)?.kind).toBe('text')
+})

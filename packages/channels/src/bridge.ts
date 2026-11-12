@@ -26,6 +26,7 @@ export interface ChannelBridgeOptions {
   createClient(config: RunnerConfig, stateDirectory: string): RunnerDeps['client']
   log: Record<'info' | 'warn' | 'error', (message: string) => void>
   /** Host pairings of this row's direct chats to plugin services; absent, no chat is routed to a service. */
+  interactions?: RunnerDeps['interactions']
   targets?: ChannelTargetsPort
   /** Test seam for the retries of a delivery to a paired service. */
   targetBackoff?: { baseMs: number; maxMs: number }
@@ -252,8 +253,10 @@ export async function startChannelBridge(
             secrets,
             log,
             strictShutdown: true,
+            ...(options.interactions ? { interactions: options.interactions } : {}),
             bindings: {
               resolve: (key) => bindings.resolve(key),
+              restore: () => bindings.restore(),
               observe(event) {
                 if (event.kind !== 'message' || decideAttention(event, cfg, false) !== 'respond') return
                 const intent = adapter.toSession(event, { tenant: cfg.tenant, agent: cfg.agent })

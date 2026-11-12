@@ -115,6 +115,8 @@ export function createWorkerRequests(
     if (f.method === 'scheduling')
       return callWorkerScheduling(schedules, workspaceCatalog, sessionKey, f.params, workerSignal)
     if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)
+    if (f.method === 'channel-interaction')
+      return profilePorts.channelInteraction({ sharedWorker, sessionKey }, f.params)
     if (f.method === 'managed-session')
       return profilePorts.ownedSession({ sharedWorker, sessionKey }, f.params)
     if (PACKAGE_INSTALL_REQUESTS.has(f.method) && profilePorts.managedSessions.skillInstallsOff?.(sessionKey))

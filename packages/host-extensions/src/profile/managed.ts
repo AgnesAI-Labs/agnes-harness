@@ -373,6 +373,16 @@ export class ProfileManagedResources {
                 service: input.definition.id,
                 packageId: input.packageId,
                 signal: lifetime.signal,
+                assertSession: async (sessionId) => {
+                  if (input.descriptor.sessions !== true || !this.sessions)
+                    throw rpcError('CAPABILITY_DENIED')
+                  await this.sessions({
+                    owner: input.owner,
+                    packageId: input.packageId,
+                    integrity: input.integrity,
+                    service: input.definition.id,
+                  }).status(sessionId)
+                },
                 assertCurrent: () => {
                   lifetime.signal.throwIfAborted()
                   input.assert()

@@ -6,7 +6,7 @@ import { backoffDelays } from './backoff.js'
 import type { RunnerConfig } from './config.js'
 import { contentHash, drawSurfaceMessage, whatToDraw } from './draw.js'
 import { historyRefusalText } from './notices.js'
-import type { DeliveryRefRow, RefPart, RefStore } from './ref-store.js'
+import type { DeliveryRefRow, RefPart, RefStore, SendIntent } from './ref-store.js'
 import type { SessionCache } from './session-cache.js'
 import { chunkText, TokenBucket } from './throttle.js'
 
@@ -35,12 +35,15 @@ type OutboundDeps = {
   maxDetachedWork?: number
   /** Bound sessions reconcile missed live notifications without replaying delivered nodes. */
   reconcileMs?: number
+  nativeInteractions?: boolean
   onHistoryRefused?: (key: string, error: unknown) => Promise<boolean>
 }
 
 type Watermark = Pick<UITimeline, 'generation' | 'upto'>
 type Lane = {
   afterSeq: number | undefined
+  interactionsOnly: boolean
+  assertCurrent?: () => Promise<void>
   session: OutboundSession
   chat: ChatTarget
   timer?: ReturnType<typeof setTimeout>
@@ -68,10 +71,19 @@ export class Outbound {
     this.accountBucket = new TokenBucket({ tokensPerSecond: rate, capacity: Math.max(1, rate) })
   }
 
-  attach(sessionKey: string, session: OutboundSession, chat: ChatTarget, afterSeq?: number): void {
+  attach(
+    sessionKey: string,
+    session: OutboundSession,
+    chat: ChatTarget,
+    afterSeq?: number,
+    interactionsOnly = false,
+    assertCurrent?: () => Promise<void>,
+  ): void {
     if (this.stopped || this.lanes.has(sessionKey)) return
     const lane: Lane = {
       afterSeq,
+      interactionsOnly,
+      ...(assertCurrent ? { assertCurrent } : {}),
       session,
       chat,
       bucket: new TokenBucket({
@@ -84,18 +96,16 @@ export class Outbound {
     }
     this.lanes.set(sessionKey, lane)
     lane.pumping = this.pump(sessionKey, lane)
-    if (afterSeq !== undefined) {
-      lane.reconcileTimer = setInterval(() => {
-        if (!this.isCurrent(sessionKey, lane) || lane.reconciling) return
-        lane.reconciling = true
-        void this.flush(sessionKey)
-          .catch(() => this.safeError('channel bound session reconciliation failed', { sessionKey }))
-          .finally(() => {
-            lane.reconciling = false
-          })
-      }, this.dependencies.reconcileMs ?? 5000)
-      lane.reconcileTimer.unref()
-    }
+    lane.reconcileTimer = setInterval(() => {
+      if (!this.isCurrent(sessionKey, lane) || lane.reconciling) return
+      lane.reconciling = true
+      void this.flush(sessionKey)
+        .catch(() => this.safeError('channel bound session reconciliation failed', { sessionKey }))
+        .finally(() => {
+          lane.reconciling = false
+        })
+    }, this.dependencies.reconcileMs ?? 5000)
+    lane.reconcileTimer.unref()
   }
 
   detach(sessionKey: string, options: { retire?: boolean } = {}): void {
@@ -144,6 +154,11 @@ export class Outbound {
       { ...chat, deliveryKey },
       degrade({ blocks: [block] }, this.dependencies.caps).msg,
     )
+  }
+
+  async updateDirect(ref: MessageRef, block: Block): Promise<void> {
+    if (this.stopped) throw new Error('channel outbound stopped')
+    await this.dependencies.adapter.update(ref, degrade({ blocks: [block] }, this.dependencies.caps).msg)
   }
 
   async stop(): Promise<void> {
@@ -261,6 +276,11 @@ export class Outbound {
 
   private async render(sessionKey: string, lane: Lane): Promise<void> {
     if (!this.isCurrent(sessionKey, lane)) return
+    await lane.assertCurrent?.()
+    if (!this.isCurrent(sessionKey, lane)) return
+    for (const intent of this.dependencies.refs.intents(sessionKey, lane.session.id)) {
+      await this.recoverIntent(sessionKey, lane, intent)
+    }
     const timeline = await lane.session.projectUI(undefined, { surface: 'channel' })
     if (!this.isCurrent(sessionKey, lane) || stale(timeline, lane.watermark)) return
     lane.watermark = { generation: timeline.generation, upto: timeline.upto }
@@ -268,7 +288,8 @@ export class Outbound {
     const known = this.dependencies.refs.forSession(sessionKey, lane.session.id)
     const messages: Array<{ id: string; message: ChannelMessage }> = []
     for (const node of timeline.nodes) {
-      if (lane.afterSeq !== undefined && (node.seq ?? 0) <= lane.afterSeq) continue
+      if (lane.interactionsOnly && node.kind !== 'approval') continue
+      if (lane.afterSeq !== undefined && (node.seq ?? 0) <= lane.afterSeq && !known.has(node.id)) continue
       if (!this.isCurrent(sessionKey, lane)) return
       const message = whatToDraw(node, {
         costLine: this.dependencies.cfg.outbound.costLine,
@@ -288,12 +309,30 @@ export class Outbound {
           page.surfaces.push(...next.surfaces)
           cursor = next.nextCursor
         }
+        const openIds = new Set(page.surfaces.map((record) => record.surface.id))
+        for (const [id, delivery] of known) {
+          if (!id.startsWith('surface:')) continue
+          const surfaceId = id.slice('surface:'.length)
+          if (openIds.has(surfaceId)) continue
+          const subject = delivery.parts.find((part) => part.subject?.kind === 'surface')?.subject
+          if (subject?.kind === 'surface' && !subject.actionId && delivery.complete) continue
+          const closed = await lane.session.uiRead({ surfaceId })
+          page.surfaces.push(...closed.surfaces)
+        }
         for (const record of page.surfaces.filter(
-          (record) => lane.afterSeq === undefined || record.createdSeq > lane.afterSeq,
+          (record) =>
+            lane.afterSeq === undefined ||
+            record.createdSeq > lane.afterSeq ||
+            known.has(`surface:${record.surface.id}`),
         ))
           messages.push({
             id: `surface:${record.surface.id}`,
-            message: drawSurfaceMessage(record, lane.session.id, this.dependencies.cfg.outbound.webUrl),
+            message: drawSurfaceMessage(
+              record,
+              lane.session.id,
+              this.dependencies.cfg.outbound.webUrl,
+              this.dependencies.nativeInteractions === true && !!this.dependencies.adapter.onSurfaceAction,
+            ),
           })
       } catch (error) {
         const code = (error as { data?: { code?: string } } | undefined)?.data?.code
@@ -351,16 +390,43 @@ export class Outbound {
         await this.dependencies.adapter.update(existing.ref, piece)
         ref = existing.ref
       } else {
-        ref = await this.dependencies.adapter.send(
-          {
-            ...lane.chat,
-            deliveryKey: `${sessionKey}\0${lane.session.id}\0${nodeId}\0${index}\0${pieceHash}`,
-          },
+        const target = {
+          ...lane.chat,
+          deliveryKey: `${sessionKey}\0${lane.session.id}\0${nodeId}\0${index}\0${pieceHash}`,
+        }
+        this.dependencies.refs.putIntent(sessionKey, lane.session.id, {
+          nodeId,
+          hash,
+          index,
+          pieceHash,
           piece,
-        )
+          target,
+          parts: [...parts],
+          isUpdate,
+        })
+        ref = await this.dependencies.adapter.send(target, piece)
       }
-      parts[index] = { ref, contentHash: pieceHash }
+      const interactive = piece.blocks.find((block) => block.kind === 'surface' || block.kind === 'approval')
+      const subject =
+        interactive?.kind === 'surface'
+          ? {
+              kind: 'surface' as const,
+              surfaceId: interactive.surfaceId,
+              revision: interactive.revision,
+              ...(interactive.form.state === 'open' ? { actionId: interactive.form.actionId } : {}),
+            }
+          : interactive?.kind === 'approval' && interactive.decisionKey
+            ? { kind: 'approval' as const, decisionKey: interactive.decisionKey }
+            : undefined
+      parts[index] = {
+        ref,
+        contentHash: pieceHash,
+        ...(lane.chat.accountId ? { accountId: lane.chat.accountId } : {}),
+        ...(subject ? { subject } : {}),
+      }
       this.persistProgress(sessionKey, lane, nodeId, hash, parts, false, isUpdate)
+      if (this.isCurrent(sessionKey, lane))
+        this.dependencies.refs.clearIntent(sessionKey, lane.session.id, nodeId)
     }
 
     // There is no delete primitive. With edit support, neutralize obsolete tail chunks once,
@@ -381,6 +447,36 @@ export class Outbound {
     const first = parts[0]
     if (first === undefined) throw new Error('channel outbound message has no reference')
     return { ref: first.ref, contentHash: hash, parts, complete: true, isUpdate }
+  }
+
+  private async recoverIntent(sessionKey: string, lane: Lane, intent: SendIntent): Promise<void> {
+    if (!this.isCurrent(sessionKey, lane)) return
+    await lane.assertCurrent?.()
+    await this.take(lane)
+    const ref = await this.dependencies.adapter.send(intent.target, intent.piece)
+    const interactive = intent.piece.blocks.find(
+      (block) => block.kind === 'surface' || block.kind === 'approval',
+    )
+    const subject =
+      interactive?.kind === 'surface'
+        ? {
+            kind: 'surface' as const,
+            surfaceId: interactive.surfaceId,
+            revision: interactive.revision,
+            ...(interactive.form.state === 'open' ? { actionId: interactive.form.actionId } : {}),
+          }
+        : interactive?.kind === 'approval' && interactive.decisionKey
+          ? { kind: 'approval' as const, decisionKey: interactive.decisionKey }
+          : undefined
+    intent.parts[intent.index] = {
+      ref,
+      contentHash: intent.pieceHash,
+      ...(intent.target.accountId ? { accountId: intent.target.accountId } : {}),
+      ...(subject ? { subject } : {}),
+    }
+    this.persistProgress(sessionKey, lane, intent.nodeId, intent.hash, intent.parts, false, intent.isUpdate)
+    if (this.isCurrent(sessionKey, lane))
+      this.dependencies.refs.clearIntent(sessionKey, lane.session.id, intent.nodeId)
   }
 
   private split(message: ChannelMessage): ChannelMessage[] {
@@ -404,11 +500,12 @@ export class Outbound {
     let textChars = 0
     for (const block of message.blocks) {
       if (block.kind !== 'text') {
-        if (review && block.kind === 'approval') {
+        if (block.kind === 'approval' || block.kind === 'surface') {
           flush()
           textChars = 0
         }
         blocks.push(block)
+        if (block.kind === 'approval' || block.kind === 'surface') flush()
         continue
       }
       if (block.markdown.length === 0) {

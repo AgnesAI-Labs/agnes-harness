@@ -191,6 +191,7 @@ export class Inbound {
       session,
       {
         chatId: event.chat.id,
+        accountId: event.accountId,
         ...(event.chat.threadId === undefined ? {} : { threadId: event.chat.threadId }),
       },
       credential.userId,
@@ -221,6 +222,7 @@ export class Inbound {
         await this.dependencies.adapter.send(
           {
             chatId: event.chat.id,
+            accountId: event.accountId,
             ...(event.chat.threadId === undefined ? {} : { threadId: event.chat.threadId }),
           },
           { blocks: [{ kind: 'text', markdown: text }], ephemeral: true },
@@ -314,6 +316,8 @@ function isNewSession(intent: InboundIntent): boolean {
 function chatTarget(event: ChannelEvent): ChatTarget {
   return {
     chatId: event.chat.id,
+    accountId: event.accountId,
+    ...(event.chat.type !== 'thread' ? { chatType: event.chat.type } : {}),
     ...(event.chat.threadId === undefined ? {} : { threadId: event.chat.threadId }),
   }
 }

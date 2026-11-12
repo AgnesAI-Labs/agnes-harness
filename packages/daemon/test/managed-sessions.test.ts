@@ -96,6 +96,7 @@ const start = {
 function world(
   authorize?: ManagedSessionPorts['authorize'],
   real?: Pick<ManagedSessionPorts, 'records' | 'workspaceRoot'>,
+  withQuestionReader = true,
 ) {
   const records = real?.records ?? new ManagedSessionRecords(table())
   const state = {
@@ -126,6 +127,8 @@ function world(
     fullAccess: [] as string[],
     tools: new Map<number, ManagedToolDetail>(),
     busy: new Set<string>(),
+    openQuestions: new Set<string>(),
+    questionReadError: false,
     presetFullAccess: false,
     forks: new Map<string, string>(),
     /** The identity the owner's approvals carry; undefined when it cannot be read. */
@@ -181,6 +184,14 @@ function world(
       },
       loaded: (sessionId) => state.loaded.has(sessionId),
       activity: async () => state.activity,
+      ...(withQuestionReader
+        ? {
+            openQuestion: async (sessionId: string) => {
+              if (state.questionReadError) throw new Error('question read unavailable')
+              return state.openQuestions.has(sessionId)
+            },
+          }
+        : {}),
       async view(sessionId) {
         const turns = state.turns.get(sessionId) ?? []
         const nodes = state.nodes.get(sessionId) ?? []
@@ -676,6 +687,43 @@ describe('driving a managed session', () => {
     })
     state.activity = [{ sessionId, state: 'waiting', waiting: 'question' }]
     expect(await port(caller).status(sessionId)).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
+  })
+
+  it('reports an open non-blocking native question after the turn ends', async () => {
+    const { state, port, sessionId } = await started()
+    state.openQuestions.add(sessionId)
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
+    expect((await port(caller).list())[0]?.status).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
+    state.loaded.delete(sessionId)
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
+    state.loaded.add(sessionId)
+    state.activity = [{ sessionId, state: 'waiting', waiting: 'approval' }]
+    expect(await port(caller).status(sessionId)).toEqual({
+      kind: 'active',
+      flags: ['waitingOnApproval', 'waitingOnUserInput'],
+    })
+    state.activity = [{ sessionId, state: 'running' }]
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'active', flags: ['waitingOnUserInput'] })
+    state.activity = []
+    state.openQuestions.delete(sessionId)
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'idle', flags: [] })
+  })
+
+  it('does not report no open question when question facts cannot be read', async () => {
+    const { state, port, sessionId } = await started()
+    state.questionReadError = true
+    await expect(port(caller).status(sessionId)).rejects.toThrow('question read unavailable')
+    await expect(port(caller).list()).rejects.toThrow('question read unavailable')
+  })
+
+  it('preserves notLoaded status for historical tasks without a question reader', async () => {
+    const { state, records, port } = world(undefined, undefined, false)
+    records.grant(grantKey(caller.packageId, caller.owner), '/work/repo')
+    const { sessionId } = await port(caller).start(start)
+    state.activity = []
+    state.loaded.delete(sessionId)
+    expect(await port(caller).status(sessionId)).toEqual({ kind: 'notLoaded', flags: [] })
+    expect((await port(caller).list())[0]?.status).toEqual({ kind: 'notLoaded', flags: [] })
   })
 
   it('refuses an archived session', async () => {

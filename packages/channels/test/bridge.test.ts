@@ -238,7 +238,20 @@ it('owns two isolated instances, reuses inbound/outbound routing and stops them 
   const recovered = (await restarted.session!(session)) as {
     instances: { id: string; version: number; bindings: { state: string }[] }[]
   }
-  expect(recovered.instances.every((row) => row.bindings[0]?.state === 'waiting')).toBe(true)
+  expect(recovered.instances.every((row) => row.bindings[0]?.state === 'active')).toBe(true)
+  f.adapters[2]!.emit({
+    kind: 'message',
+    eventId: 'restart-message',
+    messageId: 'restart-message',
+    accountId: 'account',
+    text: '@bot continue',
+    attachments: [],
+    at: new Date().toISOString(),
+    chat: { id: 'same-chat', type: 'group' },
+    sender: { userId: 'user', raw: {} },
+    mentions: { bot: true, replyToBot: false, quoteBot: false },
+  })
+  await vi.waitFor(() => expect(f.clients[2]!.calls.some((call) => call.method === 'followUp')).toBe(true))
   await restarted.binding!(
     'unbind',
     { instanceId: 'first', expectedVersion: recovered.instances[0]!.version },
@@ -247,13 +260,13 @@ it('owns two isolated instances, reuses inbound/outbound routing and stops them 
   expect(await restarted.session!(session)).toMatchObject({
     instances: [
       { id: 'first', bindings: [] },
-      { id: 'second', bindings: [{ state: 'waiting' }] },
+      { id: 'second', bindings: [{ state: 'active' }] },
     ],
   })
   expect(restarted.status()).toMatchObject({
     instances: [
       { id: 'first', bindings: [] },
-      { id: 'second', bindings: [{ sessionId: session.id, state: 'waiting' }] },
+      { id: 'second', bindings: [{ sessionId: session.id, state: 'active' }] },
     ],
   })
   await f.stop()
@@ -541,7 +554,11 @@ it('pairs a direct chat with a code and routes only the paired owner text to the
   }
   expect(link.rendered(card), 'the fake channel renders cards, so only the body counts').toBe(6)
   expect(link.rendered({ kind: 'text', markdown: '**T**\nbody' })).toBe(10)
-  const sent = await link.send('owner-chat', { kind: 'text', markdown: 'reminder' }, 'key-1')
+  const sent = await link.send(
+    { chatId: 'owner-chat', accountId: 'account', chatType: 'dm' },
+    { kind: 'text', markdown: 'reminder' },
+    'key-1',
+  )
   expect(sent.messageId).toBeTruthy()
   expect(adapter.sent.at(-1)).toMatchObject({ target: { chatId: 'owner-chat', deliveryKey: 'key-1' } })
   expect(runtime.status()).toMatchObject({
@@ -584,7 +601,9 @@ it('routes the paired owner card clicks to the service and never lets a paired-c
     body: 'which?',
     actions: [{ id: 'pick:1', label: 'One' }],
   }
-  await targets.links.get('first')!.send('owner-chat', card, 'card-key')
+  await targets.links
+    .get('first')!
+    .send({ chatId: 'owner-chat', accountId: 'account', chatType: 'dm' }, card, 'card-key')
   expect(adapter.sent.at(-1)).toMatchObject({ target: { deliveryKey: 'card-key' }, msg: { blocks: [card] } })
 
   adapter.emit(click('appr:#1:allow_once', { eventId: 'stranger', sender: { userId: 'stranger', raw: {} } }))

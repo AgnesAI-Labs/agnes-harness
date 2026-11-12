@@ -63,6 +63,11 @@ if (sent.state === 'notSubmitted') console.log(sent.reason) // busy | archived |
 | `usage(id)` | 输入、输出 token 和花费。运行时给不出的值是 `null`，不是 `0`。 |
 | `toolResult(id, callSeq)` | 一次工具调用的结果文字、`isError`，`shell` 还给出数字形式的退出码。调用还没有结果时 `state` 为 `pending`，此时 `isError`、`text` 和 `exitCode` 没有意义；调用已结束但没有输出，则是 `done` 且 `text: ''`。 |
 
+长期保留的任务会话中，持久账本里尚未关闭的原生 `ask_user_question` 也会产生
+`waitingOnUserInput`，即使默认非阻塞的工具调用及其回合已经结束。读取状态不会加载历史
+worker；账本读取失败会拒绝调用，不会视为问题已回答。该标志仍存在时，不能仅凭回合完成
+就把任务标为完成。
+
 ### 审批怎么结束的
 
 `approval` 事件保持审批第一次出现时的序号，所以已经用 `afterSeq` 越过它的读取方永远看不到它的变化。审批结束时，`events` 还会在结束它的那个事件的序号上返回一个 `approvalOutcome` 事件：

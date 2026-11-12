@@ -166,7 +166,13 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
       },
       async uiRead(input) {
         record('uiRead', input)
-        return surfaces.get(id) ?? { sessionId: id, lastSeq: 0, surfaces: [], actions: [] }
+        const page = surfaces.get(id) ?? { sessionId: id, lastSeq: 0, surfaces: [], actions: [] }
+        return {
+          ...page,
+          surfaces: page.surfaces.filter((record) =>
+            input?.surfaceId ? record.surface.id === input.surfaceId : record.status === 'open',
+          ),
+        }
       },
       cursor() {
         return { fromSeq: 0, generation: 1 }

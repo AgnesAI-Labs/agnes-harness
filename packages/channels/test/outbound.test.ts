@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   type ChannelCapabilities,
   type EventEnvelope,
@@ -43,6 +46,8 @@ function timeline(nodes: UITimeline['nodes'], upto = 1, generation = 1): UITimel
 
 async function setup(
   options: {
+    refsPath?: string
+    nativeInteractions?: boolean
     caps?: Partial<ChannelCapabilities>
     textChars?: number
     debounceMs?: number
@@ -63,9 +68,10 @@ async function setup(
     manifest,
     ...(options.caps === undefined ? {} : { caps: options.caps }),
   })
+  if (options.nativeInteractions) Object.assign(adapter, { onSurfaceAction: () => null })
   const cache = new SessionCache(client, { cwd: '/workspace', preset: 'channel' })
   const { session } = await cache.get('k')
-  const refs = new RefStore(':memory:')
+  const refs = new RefStore(options.refsPath ?? ':memory:')
   const outbound = new Outbound({
     adapter,
     refs,
@@ -75,6 +81,7 @@ async function setup(
     limits: manifest.limits,
     log,
     debounceMs: options.debounceMs ?? 5,
+    ...(options.nativeInteractions ? { nativeInteractions: true } : {}),
     ...(options.reconcileMs === undefined ? {} : { reconcileMs: options.reconcileMs }),
     rates: {
       sessionPerSec: options.sessionPerSec ?? 10_000,
@@ -568,6 +575,82 @@ describe('Outbound', () => {
       for (const block of msg.blocks) {
         if (block.kind === 'text') expect(block.markdown).not.toMatch(/[\uD800-\uDFFF]/)
       }
+    }
+  })
+
+  it('replays the original send intent after restart before applying newer state', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'channel-intent-'))
+    const path = join(dir, 'refs.sqlite')
+    const { adapter, client, cache, session, outbound, refs } = await setup({
+      refsPath: path,
+      nativeInteractions: true,
+    })
+    const send = adapter.send.bind(adapter)
+    let first:
+      | {
+          target: Parameters<typeof adapter.send>[0]
+          message: Parameters<typeof adapter.send>[1]
+          ref: MessageRef
+        }
+      | undefined
+    adapter.send = vi.fn(async (target, message) => {
+      if (!first) {
+        const ref = await send(target, message)
+        first = { target, message, ref }
+        throw new Error('crash after remote send')
+      }
+      expect(target.deliveryKey).toBe(first.target.deliveryKey)
+      expect(message).toEqual(first.message)
+      return first.ref
+    })
+    const { choiceSurface } = await import('../testkit/choice-surface.js')
+    const record = {
+      surface: choiceSurface('q'),
+      status: 'open' as const,
+      owner: 'agnes/intelligent-ui',
+      lane: 'main',
+      taskId: 'task',
+      createdSeq: 1,
+      updatedSeq: 1,
+    }
+    client.setSurfaces(session.id, { sessionId: session.id, lastSeq: 1, actions: [], surfaces: [record] })
+    await expect(outbound.flush('k')).rejects.toThrow('crash after remote send')
+    await outbound.stop()
+    refs.close()
+    client.setSurfaces(session.id, {
+      sessionId: session.id,
+      lastSeq: 2,
+      actions: [],
+      surfaces: [{ ...record, status: 'closed', updatedSeq: 2 }],
+    })
+    const recoveredRefs = new RefStore(path)
+    const recovered = new Outbound({
+      adapter,
+      refs: recoveredRefs,
+      cache,
+      cfg: { outbound: { costLine: true } },
+      caps: adapter.capabilities(),
+      limits: FAKE_MANIFEST.limits,
+      log,
+      nativeInteractions: true,
+      rates: { sessionPerSec: 10_000 },
+    })
+    recovered.attach('k', session, { chatId: 'chat-1' })
+    try {
+      await recovered.flush('k')
+      expect(adapter.sent).toHaveLength(1)
+      expect(adapter.updates).toHaveLength(1)
+      expect(adapter.updates[0]?.ref).toEqual(first?.ref)
+      expect(adapter.updates[0]?.msg.blocks[0]).toMatchObject({ kind: 'surface', form: { state: 'closed' } })
+      expect(recoveredRefs.intents('k', session.id)).toHaveLength(0)
+      await recovered.flush('k')
+      client.setSurfaces(session.id, { sessionId: session.id, lastSeq: 3, actions: [], surfaces: [] })
+      await recovered.flush('k')
+      expect(adapter.updates).toHaveLength(1)
+    } finally {
+      await recovered.stop()
+      recoveredRefs.close()
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 

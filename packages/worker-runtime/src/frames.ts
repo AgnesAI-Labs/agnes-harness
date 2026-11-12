@@ -240,6 +240,7 @@ export type RequestFrame = {
     | 'scheduling'
     | 'bound-wake'
     | 'managed-session'
+    | 'channel-interaction'
     | 'permission'
     | 'permission-abort'
     | 'permission-revoke'
