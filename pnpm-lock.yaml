@@ -1230,6 +1230,15 @@ importers:
         specifier: workspace:*
         version: link:../protocol
 
+  packages/judgment:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
   packages/loop-default:
     dependencies:
       '@agnes/extension-api':

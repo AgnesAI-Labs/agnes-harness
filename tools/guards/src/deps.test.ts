@@ -122,6 +122,7 @@ const LAYER: Record<string, number> = {
   '@agnes/core-effects': 1.4,
   '@agnes/core': 2,
   '@agnes/loop-default': 2, // First-party loop plugin consumes the author API.
+  '@agnes/judgment': 2,
   '@agnes/loop-jev': 2, // First-party Jev loop plugin consumes the author API.
 
   '@agnes/ai': 3,
