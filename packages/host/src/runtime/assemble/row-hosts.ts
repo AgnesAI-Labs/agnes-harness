@@ -1,12 +1,14 @@
+import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { API_VERSION } from '@agnes/extension-api'
+import { API_VERSION, type SideModelEntry } from '@agnes/extension-api'
+import { pinOptionalBundledRowGrants } from '@agnes/host-extensions/assemble/host-grants'
 import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owners'
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
 import { createRowExtensionHost } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
 import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
-import { readPluginCapabilities } from '@agnes/package-manager'
+import { parseAgnesPluginEntries, readPluginCapabilities } from '@agnes/package-manager'
 import { channelState } from './channel-state.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
@@ -30,6 +32,10 @@ export function createRowHosts(
   const channels = channelState(proc.adapters.storage.metadata, ctx.profile.name)
   channels.rememberSources(bootCatalogue)
   const pluginCatalogue = new RuntimePluginCatalogue(bootCatalogue)
+  let sideModels: () => readonly SideModelEntry[] = () => []
+  const hostGrants = pinOptionalBundledRowGrants(ctx.profile.packages, (packageId, snapshotId) =>
+    pluginCatalogue.get(packageId, snapshotId),
+  )
   const extensionInfo = {
     agnesVersion: deps.agnesVersion ?? '0.0.0',
     apiVersion: API_VERSION,
@@ -42,6 +48,9 @@ export function createRowHosts(
   // first tree so that tree can hand rows the service; it stays dormant until the kernel is up.
   const requestSkillInstall = deps.skillInstall
   const rowExtensions = createRowExtensionHost({
+    hostGrants,
+    sideModels: () => sideModels(),
+    projectionNames: (origin) => rowServices.projectionNames(origin),
     store: ({ owner, integrity, revision, alive }) =>
       ownedStore(
         proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}`),
@@ -102,15 +111,24 @@ export function createRowHosts(
     audit: say,
     order: extensionOrder,
     owners: extensionOwners,
-    describePackage: (packageId, snapshotId, exportName) => {
+    describePackage: (packageId, snapshotId, exportName, rowId) => {
       const description = pluginCatalogue.describe(packageId, snapshotId)
       const source = pluginCatalogue.get(packageId, snapshotId)
       const declaredCapabilities = source
         ? readPluginCapabilities(source.snapshot.directory, exportName)
         : undefined
+      const row = source
+        ? parseAgnesPluginEntries(
+            packageId,
+            JSON.parse(readFileSync(join(source.snapshot.directory, 'package.json'), 'utf8')).agnes?.plugins,
+          ).find((entry) => entry.id === rowId && entry.export === exportName)
+        : undefined
       return (
         description && {
           ...description,
+          ...(row?.inject?.includes('sideCall') && row.runtime === 'in-process'
+            ? { sideCallDeclared: true }
+            : {}),
           ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
         }
       )
@@ -162,6 +180,9 @@ export function createRowHosts(
     pluginCatalogue.replace(refreshed)
   }
   return {
+    setSideModels(read: () => readonly SideModelEntry[]) {
+      sideModels = read
+    },
     bootCatalogue,
     pluginCatalogue,
     extensionInfo,

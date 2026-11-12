@@ -138,6 +138,9 @@ export class HookEngine {
       event,
       entries.map((registration) => ({
         source: registration.meta.source,
+        ...(registration.meta.hookTimeoutMs === undefined
+          ? {}
+          : { timeoutMs: registration.meta.hookTimeoutMs }),
         contextBlocking: registration.meta.trust === 'builtin' && registration.meta.contextBlocking === true,
         invoke: async ({ signal, replayed }) => {
           const lease = this.options.leaseFor ? this.options.leaseFor(registration.meta.source) : legacyLease

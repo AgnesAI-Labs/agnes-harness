@@ -22,6 +22,8 @@ export type ToolExecutionBinding = Readonly<{
 }>
 export type ToolSource = {
   source: string
+  /** Canonical installed row identity supplied only by Host assembly, distinct from internal owner. */
+  pluginRowId?: string
   trust: TrustTier
   /** Host-attested package identity and manifest version; never copied from classifier output. */
   packageIdentity?: string
@@ -37,6 +39,8 @@ export type ToolSource = {
    * registration order. Meaningless for tool registrations; only `HookRegistry` reads it.
    */
   hookRank?: number
+  /** Per-registration time limit validated and supplied only by Host assembly. */
+  hookTimeoutMs?: number
   /** Host-attested permission to convert context hook refusal into a blocked turn. */
   contextBlocking?: boolean
 }

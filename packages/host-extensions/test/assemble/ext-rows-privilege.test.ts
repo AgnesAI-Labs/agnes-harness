@@ -1,5 +1,5 @@
 import { mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ResolvedPackage } from '@agnes/host-common/profile/types'
 import { HOST_CAPABILITY_GRANTS } from '@agnes/package-manager'
@@ -22,7 +22,7 @@ const ids = [
   'agnes/mcp-search',
 ] as const
 function fixture(override: Partial<ResolvedPackage> = {}) {
-  const parent = join(homedir(), 'agh-real-eval')
+  const parent = join(tmpdir(), 'agh-real-eval')
   mkdirSync(parent, { recursive: true })
   const directory = mkdtempSync(join(parent, 'agh-host-grant-'))
   roots.push(directory)

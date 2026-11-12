@@ -25,7 +25,7 @@ const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
 function fakeKernel() {
   const tools = new Map<string, string>()
   const definitions = new Map<string, ToolDef>()
-  const hooks: { event: string; source: string; hookRank?: number }[] = []
+  const hooks: { event: string; source: string; hookRank?: number; hookTimeoutMs?: number }[] = []
   const events: { type: string; source: string }[] = []
   const leak = new Set<string>()
   const ports = {
@@ -40,11 +40,16 @@ function fakeKernel() {
       },
     },
     hooks: {
-      on(event: string, _handler: unknown, meta: { source: string; hookRank?: number }) {
+      on(
+        event: string,
+        _handler: unknown,
+        meta: { source: string; hookRank?: number; hookTimeoutMs?: number },
+      ) {
         const entry = {
           event,
           source: meta.source,
           ...(meta.hookRank === undefined ? {} : { hookRank: meta.hookRank }),
+          ...(meta.hookTimeoutMs === undefined ? {} : { hookTimeoutMs: meta.hookTimeoutMs }),
         }
         hooks.push(entry)
         return () => {
@@ -73,11 +78,15 @@ function setup(
   skillInstall?: SkillInstallBridge,
   mcpManage?: import('../../src/resources/mcp-manage-port.js').McpManageBridge,
   pluginManage?: import('../../src/resources/plugin-manage-port.js').PluginManageBridge,
+  hostGrants?: import('../../src/ext-host/row-extension-host.js').RowExtensionHostOptions['hostGrants'],
+  sideModels?: import('../../src/ext-host/row-extension-host.js').RowExtensionHostOptions['sideModels'],
 ) {
   const kernel = fakeKernel()
   const audit: { kind: string; detail: Record<string, unknown> }[] = []
   const order = createExtensionOrder()
   const host = createRowExtensionHost({
+    ...(hostGrants ? { hostGrants } : {}),
+    ...(sideModels ? { sideModels } : {}),
     ...(skillInstall ? { skillInstall } : {}),
     ...(mcpManage ? { mcpManage } : {}),
     ...(pluginManage ? { pluginManage } : {}),
@@ -85,7 +94,11 @@ function setup(
     log,
     order,
     audit: (kind, detail) => void audit.push({ kind, detail }),
-    describePackage: () => ({ version: '1.2.3', integrity: 'sha256-int' }),
+    describePackage: (_pkg, _snapshot, _export, rowId) => ({
+      version: '1.2.3',
+      integrity: 'sha256-int',
+      sideCallDeclared: rowId === 'ext:fixture/catalogue',
+    }),
   })
   const shutdowns: { source: string; toolsAtCall: string[] }[] = []
   const activation: RowExtensionActivation = {
@@ -133,6 +146,52 @@ function setup(
 }
 
 const tool = (name: string) => fixtureTool(name)
+
+it('keeps an installed self catalogue live across late provider binding after apply', async () => {
+  let read: () => readonly import('@agnes/extension-api').SideModelEntry[] = () => []
+  const t = setup(
+    {},
+    undefined,
+    undefined,
+    undefined,
+    () => ({ sideCall: true }),
+    () => read(),
+  )
+  let self: import('@agnes/extension-api').ExtensionContext | undefined
+  let early: unknown
+  const row = await t.mount('catalogue', 'ext:fixture/catalogue', async (ctx) => {
+    self = ctx.self
+    early = await self?.sideModels?.list()
+  })
+  expect(early).toEqual([])
+  t.host.activate(t.activation)
+  read = () => [{ route: 'jev', model: 'test-model', api: 'jev' }]
+  expect(await self?.sideModels?.list()).toEqual([{ route: 'jev', model: 'test-model', api: 'jev' }])
+  await row.dispose()
+})
+
+it('forwards granted timeout options through the installed row hook facet', async () => {
+  const t = setup({}, undefined, undefined, undefined, () => ({ hookTimeoutMs: 15000 }))
+  t.host.activate(t.activation)
+  const row = await t.mount('timeout', 'ext:fixture/timeout', (ctx) => {
+    ctx.hooks.register('turn_stopping', () => ({ action: 'stop' }), { timeoutMs: 15000 })
+  })
+  expect(t.kernel.hooks[0]?.hookTimeoutMs).toBe(15000)
+  await row.dispose()
+})
+it('refuses escaped tool callbacks when their origin disappears before cleanup', async () => {
+  const t = setup()
+  t.host.activate(t.activation)
+  const row = await t.mount('origin-check', 'ext:fixture/origin', (ctx) => {
+    ctx.tools.register(tool('origin_tool'))
+  })
+  const execute = t.kernel.definitions.get('origin_tool')!.execute
+  t.origins.delete('origin-check')
+  await expect(
+    execute({}, { signal: new AbortController().signal, session: { key: 's', depth: 0 } } as any),
+  ).rejects.toThrow(/row is closed/)
+  await row.dispose()
+})
 
 describe('plugin Skill install request port', () => {
   it('stamps row identity and expires an escaped callback after tool completion', async () => {

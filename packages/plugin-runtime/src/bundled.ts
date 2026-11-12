@@ -40,7 +40,7 @@ function facetsOver(api: ExtensionAPI): PluginContextFacets {
   // Each facet is built on first use, so a plugin that injects nothing never touches the backend.
   const facets: { [K in PluginFacetName]: () => PluginContextFacets[K] } = {
     tools: () => ({ register: (def) => api.registerTool(def) }),
-    hooks: () => ({ register: (event, handler) => api.registerHook(event, handler) }),
+    hooks: () => ({ register: (event, handler, options) => api.registerHook(event, handler, options) }),
     projections: () => ({ register: (def) => api.registerProjection(def) }),
     services: () => ({ register: (def) => api.registerService(def) }),
     slots: () => ({ register: (slot, fill) => api.registerSlot(slot, fill) }),
