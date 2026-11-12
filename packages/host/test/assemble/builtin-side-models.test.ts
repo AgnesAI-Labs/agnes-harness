@@ -49,7 +49,7 @@ it.each(['source', 'embedded'] as const)(
               export: 'default',
               apiRange: '^5.0.0',
               inject: ['self', 'sideCall'],
-                capabilities: {},
+              capabilities: {},
             },
           ],
         },
