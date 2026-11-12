@@ -239,3 +239,45 @@ it('closes a hook scope before reporting its return while the turn stays open', 
     gate.open()
   })
 })
+
+it.each(['unused', 'prepare', 'status', 'invoke'] as const)(
+  'keeps trusted tool refusal proof truthful after sideCall %s',
+  async (operation) => {
+    const { hostPortRequest } = await import('@agnes/core')
+    const { ToolRegistry } = await import('../../src/registry/tools.js')
+    const { readTool } = await import('../helpers/open-session.js')
+    const registry = new ToolRegistry()
+    registry.add(
+      readTool(async (_args, ctx) => {
+        const port = required(ctx.sideCall)
+        if (operation === 'prepare') await port.prepare(options())
+        if (operation === 'status') expect(await port.status('call-1')).toMatchObject({ status: 'absent' })
+        if (operation === 'invoke')
+          expect(await port.invoke(await port.prepare(options()), ctx.signal)).toMatchObject({ status: 'ok' })
+        return hostPortRequest(
+          ctx,
+          () => Promise.reject(new Error('synthetic host refusal')),
+          () => ({ code: 'INVALID_PARAMS', message: 'refused before changing anything' }),
+        )
+      }),
+      { source: 'plugin/owner', trust: 'trusted', sideCall: true, pluginRowId: 'ext:sample/tool' },
+    )
+    await withSession({ extra: { registry } }, async ({ ctx, rows }) => {
+      await ctx.tools.execute({ name: 'read', args: {} }, signal())
+      const events = await rows()
+      const result = data(events.find((row) => row.type === 'tool/result'))
+      expect(result).toMatchObject({ isError: true })
+      if (operation === 'invoke') {
+        expect(sideCosts(events)).toHaveLength(1)
+        expect(result).not.toHaveProperty('structured.effect', 'none')
+        expect(result).not.toHaveProperty('code', 'TOOL_REJECTED_BEFORE_EFFECT')
+      } else {
+        expect(sideCosts(events)).toHaveLength(0)
+        expect(result).toMatchObject({
+          code: 'TOOL_REJECTED_BEFORE_EFFECT',
+          structured: { effect: 'none', code: 'INVALID_PARAMS' },
+        })
+      }
+    })
+  },
+)
