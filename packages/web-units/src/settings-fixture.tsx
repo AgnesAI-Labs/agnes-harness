@@ -152,6 +152,7 @@ function SettingsFixture() {
                     <p id="config-thinking-error" className="account-field-error" />
                   </div>
                 </div>
+                <div id="config-model-inputs" className="form-field-wide" hidden />
                 <div className="account-field account-budget-field">
                   <label className="form-field" htmlFor="config-context-window">
                     <span>

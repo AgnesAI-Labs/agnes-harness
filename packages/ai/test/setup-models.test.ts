@@ -176,3 +176,21 @@ it('lists an OpenAI-compatible catalogue without a key and names why a listing f
     expect(await fetchProviderModels(options)).toEqual({ failure })
   }
 })
+
+it.each([
+  [{ input_modalities: ['text', 'image'] }, ['text', 'image']],
+  [{ architecture: { input_modalities: ['image', 'text'] } }, ['image', 'text']],
+  [{ input: ['text'] }, ['text']],
+  [{}, undefined],
+  [{ input_modalities: [] }, undefined],
+  [{ input_modalities: 'image' }, undefined],
+  [{ input_modalities: ['text', 'audio'] }, undefined],
+  [{ input_modalities: ['image', 'image'] }, undefined],
+])('reads only declared valid input types from %j', async (metadata, input) => {
+  const result = await fetchProviderModels({
+    api: 'openai-completions',
+    baseUrl: 'https://relay.invalid/v1',
+    request: async () => Response.json({ data: [{ id: 'custom', ...metadata }] }),
+  })
+  expect(result).toEqual({ ids: ['custom'], ...(input ? { inputs: { custom: input } } : {}) })
+})

@@ -90,7 +90,10 @@ export function compatibleModelsPanel(host: HTMLElement | undefined, changed: ()
     },
     /** What a listing returned: its ids to pick from, or why there were none. */
     listed(result: ConfigTestResult): void {
-      for (const model of result.models) known.set(model.id, model)
+      for (const model of result.models) {
+        const input = known.get(model.id)?.input
+        known.set(model.id, { ...model, ...(input === undefined ? {} : { input }) })
+      }
       listed = result.models.map((model) => model.id)
       error = result.catalogueError
       // A draft with nothing chosen starts with the endpoint's first model: saving needs one

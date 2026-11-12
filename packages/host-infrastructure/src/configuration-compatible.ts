@@ -25,6 +25,7 @@ type Listing =
       ids: readonly string[]
       contextWindows?: Readonly<Record<string, number>>
       maxTokens?: Readonly<Record<string, number>>
+      inputs?: Readonly<Record<string, readonly ModelRecord['input'][number][]>>
     }>
   | Readonly<{ failure: NonNullable<ConfigTestResult['catalogueError']> }>
 
@@ -71,8 +72,8 @@ function requireAddress(entry: CompatibleEntry, baseUrl: string): void {
 }
 
 /**
- * The models a save declares. Capability fields are not offered for these models, so a row that
- * carries one is refused; a missing capacity takes the default.
+ * Declared models may specify input types and limits. Reasoning and audio capabilities remain
+ * adapter-owned; missing limits take their defaults.
  */
 function compatibleModels(
   entry: CompatibleEntry,
@@ -128,6 +129,7 @@ async function testCompatibleAccount(
   deps: {
     chatModelAllowed: (id: string) => boolean
     knownModel: KnownModels
+    catalogInputs?: (api: string, baseUrl: string) => Promise<ReadonlyMap<string, ModelRecord['input']>>
     list: (api: string, baseUrl: string, credential: string | undefined) => Promise<Listing>
     readCredential: (ref: string) => Promise<{ kind: string; provider: string; value?: string } | null>
   },
@@ -143,14 +145,18 @@ async function testCompatibleAccount(
   if ('failure' in listing) return { models: [], verified: false, catalogueError: listing.failure }
   const contexts = new Map(Object.entries(listing.contextWindows ?? {}))
   const outputs = new Map(Object.entries(listing.maxTokens ?? {}))
+  const inputs = new Map(Object.entries(listing.inputs ?? {}))
+  const catalog = (await deps.catalogInputs?.(entry.api, args.baseUrl)) ?? new Map()
   return {
     models: listing.ids.filter(deps.chatModelAllowed).map((id) => {
       const contextWindow = contexts.get(id)
       const maxTokens = outputs.get(id)
+      const input = row?.models.find((m) => m.id === id)?.input ?? inputs.get(id) ?? catalog.get(id)
       return {
         ...(structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id, deps.knownModel)),
         ...(contextWindow === undefined ? {} : { contextWindow }),
         ...(maxTokens === undefined ? {} : { maxTokens }),
+        ...(input === undefined ? {} : { input: [...input] }),
       }
     }),
     verified: true,
@@ -158,7 +164,7 @@ async function testCompatibleAccount(
 }
 
 /**
- * A declared model as a chat record: text in, native tool calls. A model the known-model table
+ * A declared model as a chat record: declared input or text fallback, native tool calls. A model the known-model table
  * describes (DeepSeek V4) replays its reasoning signature and takes the table's limits unless the
  * person gave their own; any other model has the default capacity and drops reasoning. Reasoning
  * stays false for every record: a declared model has no thinking-level map, so with
@@ -220,6 +226,12 @@ function compatibleRoute(
   }
 }
 
+/** Missing declarations inherit catalogue facts without rewriting saved accounts. */
+function inputDefaults(model: ConfigModel, inputs: ReadonlyMap<string, ModelRecord['input']>): ConfigModel {
+  const input = model.input ?? inputs.get(model.id)
+  return { ...structuredClone(model), ...(input === undefined ? {} : { input: [...input] }) }
+}
+
 /** Bind the adapter-owned conversation policy at the existing configuration assembly boundary. */
 export function chatModelPolicy(chatModelAllowed: (id: string) => boolean, knownModel: KnownModels) {
   const requireModel = (id: string, payloadOnly = false): void => {
@@ -227,10 +239,14 @@ export function chatModelPolicy(chatModelAllowed: (id: string) => boolean, known
   }
   return {
     requireModel,
-    models: (models: readonly ConfigModel[], payloadOnly: boolean): ConfigModel[] =>
+    models: (
+      models: readonly ConfigModel[],
+      payloadOnly: boolean,
+      inputs: ReadonlyMap<string, ModelRecord['input']> = new Map(),
+    ): ConfigModel[] =>
       models
         .filter((model) => payloadOnly || chatModelAllowed(model.id))
-        .map((model) => structuredClone(model)),
+        .map((model) => inputDefaults(model, inputs)),
     requireSlots(slots: AuxiliaryModelSlots): void {
       for (const slot of Object.values(slots)) if (slot) requireModel(slot.model)
     },
@@ -248,7 +264,16 @@ export function chatModelPolicy(chatModelAllowed: (id: string) => boolean, known
       args: Parameters<typeof testCompatibleAccount>[0],
       deps: Omit<Parameters<typeof testCompatibleAccount>[1], 'chatModelAllowed' | 'knownModel'>,
     ) => testCompatibleAccount(args, { ...deps, chatModelAllowed, knownModel }),
-    compatibleRoute: (account: Parameters<typeof compatibleRoute>[0], api: string) =>
-      compatibleRoute(account, api, chatModelAllowed, knownModel),
+    compatibleRoute: (
+      account: Parameters<typeof compatibleRoute>[0],
+      api: string,
+      inputs: ReadonlyMap<string, ModelRecord['input']> = new Map(),
+    ) =>
+      compatibleRoute(
+        { ...account, models: account.models.map((model) => inputDefaults(model, inputs)) },
+        api,
+        chatModelAllowed,
+        knownModel,
+      ),
   }
 }

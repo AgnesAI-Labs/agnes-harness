@@ -1,4 +1,4 @@
-import type { ProbeReport, RouteDecl } from '@agnes/protocol'
+import type { ModelRecord, ProbeReport, RouteDecl } from '@agnes/protocol'
 import { deploymentFetch } from '@agnes/system-node/deployment-network'
 import { ApiKeyProviderError } from './api-key-providers.js'
 
@@ -18,6 +18,7 @@ export type ProviderModels =
       ids: readonly string[]
       contextWindows?: Readonly<Record<string, number>>
       maxTokens?: Readonly<Record<string, number>>
+      inputs?: Readonly<Record<string, readonly ModelRecord['input'][number][]>>
     }>
   | Readonly<{ failure: ProviderCatalogueFailure }>
 
@@ -31,6 +32,21 @@ function object(value: unknown): value is Record<string, unknown> {
 
 const positiveSafeInteger = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+
+/** A complete declaration only: an unknown or malformed modality is not capability evidence. */
+function modelInput(item: Record<string, unknown>): ModelRecord['input'] | undefined {
+  const value =
+    item.input_modalities ??
+    (object(item.architecture) ? item.architecture.input_modalities : undefined) ??
+    item.input
+  return Array.isArray(value) &&
+    value.length > 0 &&
+    value.length <= 2 &&
+    new Set(value).size === value.length &&
+    value.every((one) => one === 'text' || one === 'image')
+    ? ([...value] as ModelRecord['input'])
+    : undefined
+}
 
 /** The parsed body, or `invalid` (oversized, not UTF-8) / `not-json` (does not parse). */
 async function boundedJson(response: Response): Promise<{ value: unknown } | ProviderCatalogueFailure> {
@@ -150,6 +166,7 @@ export async function fetchProviderModels(options: {
     const ids: string[] = []
     const contexts: [string, number][] = []
     const outputs: [string, number][] = []
+    const inputs: [string, readonly ModelRecord['input'][number][]][] = []
     for (const item of data) {
       if (!object(item)) return failed('invalid')
       // Gemini lists resource names (models/{id}); OpenAI/Anthropic list plain ids.
@@ -165,6 +182,8 @@ export async function fetchProviderModels(options: {
       )
         return failed('invalid')
       ids.push(id)
+      const input = modelInput(item)
+      if (input) inputs.push([id, input])
       const contextWindow = [
         item.context_length,
         object(item.limit) ? item.limit.context : undefined,
@@ -179,6 +198,7 @@ export async function fetchProviderModels(options: {
       ids: Object.freeze(ids),
       ...(contexts.length ? { contextWindows: Object.freeze(Object.fromEntries(contexts)) } : {}),
       ...(outputs.length ? { maxTokens: Object.freeze(Object.fromEntries(outputs)) } : {}),
+      ...(inputs.length ? { inputs: Object.freeze(Object.fromEntries(inputs)) } : {}),
     }
   }
   if (options.api !== 'openai-completions') return read(url)
