@@ -8,12 +8,17 @@ import {
   parseComposerMemory,
   resolveNewSessionSelection,
 } from '@agnes/sdk/composer-selection'
+import { frontendBackendIdentity, selectedRemoteOrigin } from './remote-frontend.js'
 
 export const WEB_COMPOSER_MEMORY_KEY = 'agnes-web-composer-selection'
+const memoryKey = () => {
+  const remote = selectedRemoteOrigin()
+  return remote ? `${WEB_COMPOSER_MEMORY_KEY}:${frontendBackendIdentity()}` : WEB_COMPOSER_MEMORY_KEY
+}
 
 export function readWebComposerMemory(): ComposerMemory | undefined {
   try {
-    const raw = localStorage.getItem(WEB_COMPOSER_MEMORY_KEY)
+    const raw = localStorage.getItem(memoryKey())
     if (!raw) return undefined
     return parseComposerMemory(JSON.parse(raw) as unknown)
   } catch {
@@ -27,7 +32,7 @@ export function rememberWebComposer(update: ComposerMemory): void {
     ...(update.model ? { model: { route: update.model.route, id: update.model.id } } : {}),
   })
   try {
-    localStorage.setItem(WEB_COMPOSER_MEMORY_KEY, JSON.stringify(next))
+    localStorage.setItem(memoryKey(), JSON.stringify(next))
   } catch {
     // A private browser can refuse storage. The current page still keeps the selection in memory.
   }

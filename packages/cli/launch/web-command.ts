@@ -14,6 +14,7 @@ import { resolveDoctorProfile } from '../src/commands/doctor-profile.js'
 import { firstRunText, startupFailure } from '../src/commands/first-run-locales.js'
 import { ensureLocalBackend, type LocalBackend } from './backend.js'
 import { createDaemonLink, type DaemonLink } from './daemon-link.js'
+import { startFrontendPublication } from './frontend-publication.js'
 import { localOAuthAdmin } from './oauth-admin.js'
 import { localPackageAdmin } from './package-admin.js'
 import { localResourceAdmin } from './resource-admin.js'
@@ -161,6 +162,7 @@ export async function runWebCommand(
   const ensure = io.ensureBackend ?? ensureLocalBackend
   const makeServer = io.createServer ?? createWebServer
   const env = io.env ?? process.env
+  let publication: Awaited<ReturnType<typeof startFrontendPublication>> | undefined
   const home = parsed.home ?? agnesHome(env)
   try {
     if (!io.ensureBackend) initializeHome(home, parsed.profile ?? 'local-dev')
@@ -304,6 +306,13 @@ export async function runWebCommand(
       surfaceMountsReady: mounts.ready,
     })
     io.onWebServerReady?.(web)
+    if (!io.ensureBackend)
+      publication = await startFrontendPublication(
+        linked,
+        origin,
+        (status) => (io.write ?? ((text: string) => process.stdout.write(text)))(`${status}\n`),
+        () => daemonLink.backend().web?.url ?? '',
+      )
     const report = io.ensureBackend ? { status: 'ok' as const } : await adminHandler.doctor()
     ;(io.write ?? ((text: string) => process.stdout.write(text)))(
       `${web.url}/\n${firstRunText(env, 'home')}: ${backend.scope.home}\n${firstRunText(env, 'profile')}: ${backend.scope.profile}\n${firstRunText(env, 'doctor')}: ${firstRunText(env, report.status)} — agh doctor\n`,
@@ -314,6 +323,7 @@ export async function runWebCommand(
     if (message) throw Object.assign(new Error(message), { code: (error as { code: string }).code })
     throw error
   } finally {
+    await publication?.close().catch(() => undefined)
     // First, so a reconnect in flight is cancelled and cannot hold shutdown open.
     await link?.close().catch(() => undefined)
     await web?.close().catch(() => undefined)

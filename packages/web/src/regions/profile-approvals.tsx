@@ -1,4 +1,9 @@
-import { type DecisionSnapshot, type PackageListResult, resolvePluginMetadata } from '@agnes/protocol'
+import {
+  type DecisionSnapshot,
+  type PackageListResult,
+  resolvePluginMetadata,
+  withRemoteFrontend,
+} from '@agnes/protocol'
 import type { HostAgnesClient, LocaleService } from '@agnes/web-client'
 import { Button, Dialog, decisionPresentation, getOverlayContainer, Icon, Tooltip } from '@agnes/web-ui'
 import { Approval, type ApprovalHandle, type ApprovalView } from '@agnes/web-units/shell'
@@ -297,7 +302,12 @@ export function ProfileApprovals({
                   <ul data-testid="automation-approval-inbox">
                     {runs.map((run) => (
                       <li key={run.sessionId}>
-                        <a href={`/?session=${encodeURIComponent(run.sessionId)}`}>
+                        <a
+                          href={withRemoteFrontend(
+                            `/?session=${encodeURIComponent(run.sessionId)}`,
+                            location.href,
+                          )}
+                        >
                           <strong>
                             {heading} · {run.title || (zh ? '自动化运行' : 'Automation run')} ·{' '}
                             {run.waiting

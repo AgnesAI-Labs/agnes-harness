@@ -1,4 +1,4 @@
-import type { PluginGenerationStatus, RuntimeAdminSnapshot } from '@agnes/protocol'
+import { type PluginGenerationStatus, type RuntimeAdminSnapshot, withRemoteFrontend } from '@agnes/protocol'
 import {
   Badge,
   Banner,
@@ -588,7 +588,7 @@ export const sessionStartUrl = (
   if (loop) query.set('loop', `${loop.id}@${loop.version}`)
   if (prompt) query.set('prompt', prompt)
   for (const bundle of bundles) query.append('bundle', bundle)
-  return `/?${query}`
+  return withRemoteFrontend(`/?${query}`, globalThis.location?.href)
 }
 export function PresetsPanel({ snapshot, t }: { snapshot: RuntimeAdminSnapshot; t: Text }) {
   return (

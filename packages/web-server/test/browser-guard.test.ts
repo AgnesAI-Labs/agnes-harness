@@ -111,3 +111,21 @@ it('refuses cross-site writes to the BFF and accepts the page itself and non-bro
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('admits only the explicitly selected backend origin in a remote page CSP', async () => {
+  const { root, web } = await started()
+  try {
+    const local = await fetch(web.url)
+    expect(local.headers.get('content-security-policy')).not.toContain('computer-b')
+    const remote = await fetch(`${web.url}/?remote=${encodeURIComponent('https://computer-b:8443')}`)
+    expect(remote.status).toBe(200)
+    const csp = remote.headers.get('content-security-policy') ?? ''
+    expect(csp).toContain("connect-src 'self' https://computer-b:8443 wss://computer-b:8443")
+    expect(csp).toContain("script-src 'self' https://computer-b:8443")
+    expect(csp).not.toContain('connect-src *')
+    expect((await remote.text()).includes('__AGNES_WS_URL__')).toBe(false)
+  } finally {
+    await web.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+})

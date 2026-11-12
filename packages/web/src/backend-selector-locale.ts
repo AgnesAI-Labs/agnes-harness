@@ -1,0 +1,24 @@
+export const backendSelectorCatalog = {
+  en: {
+    title: 'Runtime environment',
+    local: 'Use local',
+    label: 'Remote service origin',
+    connect: 'Connect remote',
+    help: 'This frontend runs here. Sessions, files and tools run remotely. Remote plugin interfaces run in this page.',
+    invalid: 'Enter an HTTP or HTTPS service origin.',
+    remote: 'Remote',
+    current: 'Local',
+    switch: 'Switch local or remote environment',
+  },
+  'zh-CN': {
+    title: '运行环境',
+    local: '使用本地',
+    label: '远程服务地址',
+    connect: '连接远程',
+    help: '会话、文件和工具在远端电脑运行；远端发布的插件界面代码会在本机页面运行。',
+    invalid: '请输入完整的 HTTP 或 HTTPS 服务地址。',
+    remote: '远程',
+    current: '本地',
+    switch: '切换本地或远程环境',
+  },
+}

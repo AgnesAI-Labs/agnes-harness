@@ -1,3 +1,4 @@
+import { withRemoteFrontend } from '@agnes/protocol'
 import { Button, Disclosure, useDocumentLanguage } from '@agnes/web-ui'
 import { useEffect, useRef, useState } from 'react'
 import { openChannelDialog } from './channel-dialog-state.js'
@@ -74,7 +75,10 @@ export function ConnectionCard({
         <div className="channel-connection-identity">
           <div className="channel-connection-title">
             {first ? (
-              <a href={`?session=${encodeURIComponent(first.sessionId)}`} title={title}>
+              <a
+                href={withRemoteFrontend(`?session=${encodeURIComponent(first.sessionId)}`, location.href)}
+                title={title}
+              >
                 {title}
               </a>
             ) : (
@@ -151,7 +155,14 @@ export function ConnectionCard({
           {row.bindings.map((binding) => (
             <div className="channel-binding-detail" key={binding.targetId}>
               <div>
-                <a href={`?session=${encodeURIComponent(binding.sessionId)}`}>{binding.sessionTitle}</a>
+                <a
+                  href={withRemoteFrontend(
+                    `?session=${encodeURIComponent(binding.sessionId)}`,
+                    location.href,
+                  )}
+                >
+                  {binding.sessionTitle}
+                </a>
                 <span>
                   {binding.label} ·{' '}
                   {binding.state === 'active'

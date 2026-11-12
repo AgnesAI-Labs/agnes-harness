@@ -1,8 +1,11 @@
 /** @vitest-environment happy-dom */
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { rememberWebComposer, selectionFromMemory } from '../src/composer-memory.js'
 
-afterEach(() => localStorage.clear())
+afterEach(() => {
+  localStorage.clear()
+  vi.unstubAllGlobals()
+})
 
 const demo = { route: 'demo', id: 'demo-model' }
 const real = { route: 'account-1', id: 'real-model' }
@@ -25,3 +28,13 @@ it.each([
     expect(selectionFromMemory(models, null).model).toEqual(remembered)
   },
 )
+
+it('keeps local and remote model/permission memory separate', () => {
+  vi.stubGlobal('location', new URL('http://localhost:4177/'))
+  rememberWebComposer({ model: real, permission: 'view' })
+  vi.stubGlobal('location', new URL('http://localhost:4177/?remote=http%3A%2F%2Fcomputer-b%3A8443'))
+  rememberWebComposer({ model: other, permission: 'workspace' })
+  expect(selectionFromMemory(models, null).model).toEqual(other)
+  vi.stubGlobal('location', new URL('http://localhost:4177/'))
+  expect(selectionFromMemory(models, null)).toEqual({ model: real, permission: 'view' })
+})

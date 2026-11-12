@@ -13,6 +13,7 @@ import {
 } from '@agnes/web-ui'
 import { settingsRoute, sortSessionsByRecency, untitledSessionLabel } from '@agnes/web-units/shell'
 import { createAppearanceController } from './app/appearance-controller.js'
+import { createBackendConnection } from './app/backend-connection.js'
 import { type ApplySessionControls, createCommandController } from './app/command-controller.js'
 import { createComposerController } from './app/composer-controller.js'
 import { bindConnectionEvents } from './app/connection-events.js'
@@ -37,6 +38,7 @@ import { createTurnController } from './app/turn-controller.js'
 import { openApplicationHome, projectApplication, requestNewSession } from './application.js'
 import { readyRosterModules } from './client-modules/reconcile/roster.js'
 import { ComposerDrafts, switchComposerDraft } from './composer-drafts.js'
+import { frontendBackendIdentity } from './remote-frontend.js'
 import '@agnes/web-admin/settings/registry'
 import type {
   ConfigSnapshot,
@@ -48,9 +50,7 @@ import type {
   WorkspaceEntry,
 } from '@agnes/protocol'
 import {
-  createClient,
   JsonRpcError,
-  localStorageJournal,
   type PermissionOutcome,
   type PermissionRequest,
   type Session,
@@ -91,7 +91,7 @@ import { businessAgentSuggestions } from './pages/business-agents.js'
 import { callChannel } from './pages/channel-api.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages, watchActiveHomeEntry } from './pages/host.js'
-import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
+import { createReconnectController, type ReconnectPhase } from './reconnect.js'
 import { coalesceBurst, createRefreshCoordinator } from './refresh-coordinator.js'
 import { SESSION_SEARCH_EVENT } from './regions/session-tools.js'
 import { sessionViewCommands } from './regions/session-views.js'
@@ -668,19 +668,13 @@ const readOnlyController = createReadOnlyController(appSessionContext, {
   beginNewDraft: () => beginExplicitNewDraft(),
 })
 
-const composerDrafts = new ComposerDrafts(sessionStorage, location.origin)
+const composerDrafts = new ComposerDrafts(sessionStorage, frontendBackendIdentity())
 // Keep image submissions below the daemon's WebSocket frame cap, including their JSON-RPC envelope.
 const savedComposerDraft = { text: composerDrafts.read(), references: composerDrafts.readReferences() }
 const notice = appNotice
 const conversation = hosts.conversation
 const goalHost = hosts.goal
-const wsUrl = shellConfig.wsUrl
-const client = createClient({
-  sessionRestoreHistory: 'none',
-  transport: { kind: 'ws', url: wsUrl ?? '', protocols: ['agnes-v1'] },
-  auth: { kind: 'local' },
-  journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
-})
+const { client, wsUrl, probe: backendProbe } = createBackendConnection(shellConfig.wsUrl)
 onPageHide(
   bindJobsClient({
     client,
@@ -694,7 +688,7 @@ let intentionalClose = false
 // Recovery state lives beside the notice, not in it: later errors rewrite the notice, and the
 // retry control must survive them.
 const reconnect = createReconnectController({
-  probe: bootstrapProbe((input, init) => fetch(input, init), wsUrl ?? ''),
+  probe: backendProbe,
   reload: () => location.reload(),
   onPhase: renderReconnect,
 })

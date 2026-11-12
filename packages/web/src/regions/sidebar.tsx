@@ -19,6 +19,7 @@ import {
 import type { ReactNode } from 'react'
 import { useSyncExternalStore } from 'react'
 import { flushSync } from 'react-dom'
+import { BackendSelector } from '../backend-selector.js'
 import { SessionNavigation } from '../navigation.js'
 import { sidebarGrouping } from '../sidebar-grouping.js'
 import { ApplicationSwitch } from './application-switch.js'
@@ -99,7 +100,12 @@ export function SidebarDshFrame({
             fallback={<span className="brand-wordmark-text">{brand.name}</span>}
           />
         ),
-        panellist: outlet('sidebar.panellist'),
+        panellist: (
+          <>
+            <BackendSelector />
+            {outlet('sidebar.panellist')}
+          </>
+        ),
         footerAction: outlet('sidebar.footer.action'),
         settings: outlet('sidebar.settings'),
         workspaces: (

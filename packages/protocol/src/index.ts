@@ -781,6 +781,7 @@ export {
   validateReferenceSelections,
 } from './references.js'
 export * from './refinement.js'
+export * from './remote-frontend.js'
 export * from './resource-control.js'
 export * from './runtime-admin.js'
 export * from './runtime-target-artifact.js'

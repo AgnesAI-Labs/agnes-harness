@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import { createServer, type ServerResponse } from 'node:http'
 import { extname, isAbsolute, join } from 'node:path'
-import { FILE_UPLOAD_PATH } from '@agnes/protocol'
+import { FILE_UPLOAD_PATH, remoteFrontendOrigin } from '@agnes/protocol'
 import { DELIVERABLE_PREVIEW_PATH, deliverablePreviewFrame } from './deliverable-preview-frame.js'
 import { HISTORY_SEARCH_PATH, handleHistorySearch } from './history-route.js'
 import type { PluginRebuiltEvent, WebServer, WebServerOptions } from './server-types.js'
@@ -549,13 +549,25 @@ void poll();\n`,
       }
       // The main page admits workbench previews and the two MHS media origins. Other pages keep
       // the base policy; CDN access does not extend to scripts or API connections.
-      const documentCsp =
+      let documentCsp =
         file === 'index.html'
           ? `${contentSecurityPolicy.replace(
               "media-src 'self' blob:",
               "media-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com",
             )}; img-src 'self' blob: https://cos-agent-default.agnes-ai.cn https://cos-agent-default.agnes-ai.com; frame-src 'self' blob:`
           : contentSecurityPolicy
+      // This page's explicit backend selection grants only that exact HTTP(S)/WS(S) origin.
+      // Local listeners and all local Host/Origin checks above retain their existing behavior.
+      const remoteValue = file === 'index.html' ? requestUrl.searchParams.get('remote') : null
+      if (remoteValue !== null) {
+        const remote = remoteFrontendOrigin(remoteValue)
+        documentCsp = documentCsp
+          .replace("connect-src 'self'", `connect-src 'self' ${remote} ${remote.replace(/^http/u, 'ws')}`)
+          .replace("script-src 'self'", `script-src 'self' ${remote}`)
+          .replace("style-src 'self'", `style-src 'self' ${remote}`)
+          .replace("img-src 'self'", `img-src 'self' ${remote}`)
+          .replace("frame-src 'self'", `frame-src 'self' ${remote}`)
+      }
       const responseCsp = documentNonce
         ? documentCsp.replace("style-src 'self'", `style-src 'self' 'nonce-${documentNonce}'`)
         : documentCsp

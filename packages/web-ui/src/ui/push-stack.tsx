@@ -1,3 +1,4 @@
+import { withRemoteFrontend } from '@agnes/protocol'
 import type { HTMLAttributes, ReactNode, Ref } from 'react'
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -22,6 +23,7 @@ export type PushRoute = {
 
 /** Keep existing route level boundaries when unrelated URL metadata is changed. */
 export function preserveRouteParams(url: URL, params: readonly string[] = ['view', 'settings']): string {
+  url = new URL(withRemoteFrontend(url.href, location.href), location.href)
   const before = new URL(location.href)
   let search = url.search
   for (const param of params) {
