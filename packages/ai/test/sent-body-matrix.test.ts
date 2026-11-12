@@ -6,8 +6,8 @@ import { createProvider, NullContractStore, PiAdapter } from '../src/index.js'
 import { fakeModel, fakeRequest } from '../testkit/index.js'
 import { assertLoopbackOnly, installLoopbackOnly, restoreLoopbackOnly } from './loopback-only.js'
 
-// Documented models (known-models) on openai-completions; the last names its own token field.
-const documented = ['deepseek-v4.1-flash-1017', 'deepseek-v4-pro', 'deepseek-v4-flash']
+// Models in known-models on openai-completions; the last names its own token field.
+const tableModels = ['deepseek-v4.1-flash-1017', 'deepseek-v4-pro', 'deepseek-v4-flash']
 const apis = [
   'openai-completions',
   'openai-responses',
@@ -203,7 +203,7 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
           sent_hash: sha256Hex(body),
           derived_hash: request.derivedHash,
           transforms:
-            model === 'compat' || documented.includes(model) ? [{ event: 'compat', ext: 'pi' }] : [],
+            model === 'compat' || tableModels.includes(model) ? [{ event: 'compat', ext: 'pi' }] : [],
         },
       })
       expect(JSON.stringify(events[0])).not.toContain('fixture-secret')
@@ -242,7 +242,7 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
     }
     if (api === 'openai-completions') {
       // A gateway sent no cap applies its own (one cut DeepSeek V4.1 flash at 65,536 tokens), and may
-      // ignore max_completion_tokens; DeepSeek Harness sends the documented limit as max_tokens.
+      // ignore max_completion_tokens; DeepSeek Harness sends its output cap as max_tokens.
       expect(first.body).not.toHaveProperty('max_tokens')
       expect(first.body).not.toHaveProperty('max_completion_tokens')
       const limit = await execute('deepseek-v4.1-flash-1017')

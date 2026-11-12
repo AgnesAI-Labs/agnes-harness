@@ -8,9 +8,9 @@ const DEEPSEEK_API = /^https:\/\/api\.deepseek\.com(?:\/(?:v1|beta))?\/?$/
  *
  * DeepSeek omits max_tokens at an 8K non-thinking default, regardless of catalog capacity
  * (https://api-docs.deepseek.com/api/create-chat-completion/, verified 2026-10-12), so its own API
- * gets a bounded default. A documented model (known-models) behind any other OpenAI-compatible
- * endpoint gets its documented limit, as DeepSeek Harness sends its catalogue default on every
- * request: a gateway sent no cap applies its own, and one cut DeepSeek V4.1 flash at 65,536 tokens
+ * gets a bounded default. A model in known-models behind any other OpenAI-compatible endpoint
+ * gets the table's output limit, as DeepSeek Harness sends its default cap on every request: a
+ * gateway sent no cap applies its own, and one cut DeepSeek V4.1 flash at 65,536 tokens
  * mid-reasoning (2026-11-12). Never above the catalog capacity, which also prices child/compaction
  * holds. Any other model is sent without a cap.
  */
@@ -21,7 +21,7 @@ export function defaultOutputCap(api: string, baseUrl: string, record: ModelReco
 }
 
 /**
- * The record's compat flags as the wire library reads them. A documented model takes its cap as
+ * The record's compat flags as the wire library reads them. A known model takes its cap as
  * `max_tokens`, the field DeepSeek documents: pi chooses it only for DeepSeek's own host, and a
  * gateway in front of the model may ignore `max_completion_tokens` (one did, 2026-11-12). A field
  * the record names wins.
