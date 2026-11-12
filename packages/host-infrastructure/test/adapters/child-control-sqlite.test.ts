@@ -58,7 +58,7 @@ describe('sqlite child control', () => {
         writerRunId: `writer:${id}`,
       })
       try {
-        await store.open('parent', { writerRunId: 'parent-writer', ttlMs: 1000 })
+        await store.open('parent', { writerRunId: 'parent-writer', ttlMs: 600_000 })
         await store.ensureRootScope('root', 10000000n)
         await store.createDelegatedChild(input('idle'))
         let idle = (await store.lookupByKey('parent/idle'))!
@@ -114,7 +114,7 @@ describe('sqlite child control', () => {
   )
 
   it('persists a child identity and refuses a second overlapping reservation', async () => {
-    await s.open('parent', { writerRunId: 'r1', ttlMs: 1000 })
+    await s.open('parent', { writerRunId: 'r1', ttlMs: 600_000 })
     await s.ensureRootScope('root', 10_000_000n)
     const input = {
       childKey: 'parent/child',
@@ -525,5 +525,149 @@ describe('sqlite child control', () => {
         cancelledAt: 150,
       }),
     ).rejects.toMatchObject({ code: 'E_CAS' })
+  })
+
+  describe.each(['memory', 'sqlite'] as const)('%s: a child its process left behind', (backend) => {
+    const LEASE = 30_000
+    let now: number
+    let store: MemoryStorage | SqliteStorage
+    beforeEach(async () => {
+      now = 1_000_000
+      const clock = () => now
+      store =
+        backend === 'memory'
+          ? new MemoryStorage({ clock })
+          : createSqliteStorage({ file: join(dir, 'lost.db'), tablesDir: join(dir, 'lost-tables'), clock })
+      // The parent runs its children in-process; its lease stands for that process being alive.
+      await store.open('parent', { writerRunId: 'parent-writer', ttlMs: LEASE })
+      await store.ensureRootScope('root', 10000000n)
+    })
+    afterEach(async () => {
+      if (backend === 'sqlite') await (store as SqliteStorage).close()
+    })
+
+    const input = (id: string, maxFanOut: number): CreateDelegatedChildInput => ({
+      childKey: `parent/${id}`,
+      parentKey: 'parent',
+      boundarySeq: 0,
+      creationId: id,
+      kind: 'spawn',
+      rootTaskId: 'root',
+      runtimeOwnerSessionKey: 'parent',
+      generationDepth: 1,
+      generationLimit: 2,
+      maxFanOut,
+      inputHash: id,
+      inputText: 'bounded',
+      cwd: '/w',
+      actorId: 'u',
+      isolation: 'shared',
+      workspaceId: `ws:${id}`,
+      treeCapMicro: 10000000n,
+      childCapMicro: null,
+      writerRunId: `writer:${id}`,
+    })
+    const create = (id: string, maxFanOut: number) => store.createDelegatedChild(input(id, maxFanOut))
+    const settle = (key: string, revision: number) => {
+      if (!store.settleLostChild) throw new Error(`${backend} store cannot settle a lost child`)
+      return store.settleLostChild(key, revision)
+    }
+    /** Opens the child's session now, as a live instance would: its writer lease runs from now. */
+    const lease = (id: string) => store.open(`parent/${id}`, { writerRunId: `writer:${id}`, ttlMs: LEASE })
+    /** A committed child moved to `state`, with no session of its own open. */
+    const child = async (id: string, state: 'ready' | 'running' | 'idle' | 'cancelling') => {
+      const key = `parent/${id}`
+      expect(await create(id, 100)).toMatchObject({ status: 'created' })
+      const created = (await store.lookupByKey(key))!
+      expect(
+        await store.commitCreatingChild({
+          childKey: key,
+          creationId: created.creationId,
+          attemptId: created.attemptId,
+          expectedRevision: created.creationRevision,
+        }),
+      ).toBe(true)
+      const path = { ready: ['ready'], running: ['ready', 'running'], idle: ['ready', 'idle'] }
+      for (const next of state === 'cancelling' ? ['ready', 'running', 'cancelling'] : path[state]) {
+        const row = (await store.lookupByKey(key))!
+        expect(await store.casState(key, row.stateRevision, next as 'ready')).toBe(true)
+      }
+      return (await store.lookupByKey(key))!
+    }
+
+    it('counts a lease-backed child while its own session or the session running it holds a live lease', async () => {
+      await child('own', 'running')
+      await lease('own')
+      await child('orphan', 'running')
+      await child('waiting', 'ready')
+      // The parent that runs them holds a live lease: all three take a slot.
+      expect(await create('extra', 3)).toMatchObject({ status: 'refused', reason: 'fan_out' })
+      now += LEASE + 1
+      // Both leases lapsed: only the ready child is left, and the child admitted now.
+      expect(await create('extra', 2)).toMatchObject({ status: 'created' })
+      expect(await create('more', 2)).toMatchObject({ status: 'refused', reason: 'fan_out' })
+      // A live lease of the child's own session is enough by itself.
+      await lease('own')
+      expect(await create('more', 3)).toMatchObject({ status: 'refused', reason: 'fan_out' })
+      expect(await create('more', 4)).toMatchObject({ status: 'created' })
+    })
+
+    it('fences re-admission by the same rule, recovery_pending and cancelling included', async () => {
+      const pending = await child('pending', 'running')
+      expect(await store.casState(pending.childKey, pending.stateRevision, 'recovery_pending')).toBe(true)
+      await child('stopping', 'cancelling')
+      const first = await child('first', 'idle')
+      const second = await child('second', 'idle')
+      // The parent is live: the two left-behind records hold both slots.
+      await expect(
+        store.casState(first.childKey, first.stateRevision, 'running', { maxFanOut: 2 }),
+      ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+      now += LEASE + 1
+      await lease('first')
+      await lease('second')
+      // The parent is gone: the left-behind records hold nothing, so one re-admission fits.
+      expect(await store.casState(first.childKey, first.stateRevision, 'running', { maxFanOut: 1 })).toBe(
+        true,
+      )
+      await expect(
+        store.casState(second.childKey, second.stateRevision, 'running', { maxFanOut: 1 }),
+      ).rejects.toMatchObject({ code: 'E_CHILD_LIMIT' })
+    })
+
+    it('settles a lost child only when its own lease is gone, the revision matches and the state allows it', async () => {
+      await child('live', 'running')
+      await lease('live')
+      const rev = {
+        live: (await store.lookupByKey('parent/live'))!.stateRevision,
+        lost: (await child('lost', 'running')).stateRevision,
+        ready: (await child('ready', 'ready')).stateRevision,
+        stopping: (await child('stopping', 'cancelling')).stateRevision,
+        idle: (await child('idle', 'idle')).stateRevision,
+      }
+      expect(await create('creating', 100)).toMatchObject({ status: 'created' })
+      const creating = (await store.lookupByKey('parent/creating'))!.stateRevision
+      const lost = async () => (await store.listLostChildren?.('parent'))?.map((row) => row.childKey).sort()
+      // Committed, in a candidate state, own session without a live lease: not live, idle or creating.
+      expect(await lost()).toEqual(['parent/lost', 'parent/ready', 'parent/stopping'])
+
+      expect(await settle('parent/live', rev.live)).toBeNull()
+      expect(await settle('parent/lost', rev.lost - 1)).toBeNull()
+      expect(await settle('parent/idle', rev.idle)).toBeNull()
+      expect(await settle('parent/creating', creating)).toBeNull()
+      expect((await store.lookupByKey('parent/lost'))?.state).toBe('running')
+
+      expect(await settle('parent/lost', rev.lost)).toBe('failed')
+      expect(await store.lookupByKey('parent/lost')).toMatchObject({
+        state: 'failed',
+        stateRevision: rev.lost + 1,
+      })
+      expect(await settle('parent/lost', rev.lost + 1)).toBeNull()
+      expect(await settle('parent/ready', rev.ready)).toBe('failed')
+      expect(await settle('parent/stopping', rev.stopping)).toBe('cancelled')
+      expect(await lost()).toEqual([])
+
+      now += LEASE + 1
+      expect(await settle('parent/live', rev.live)).toBe('failed')
+    })
   })
 })

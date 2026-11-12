@@ -1464,7 +1464,7 @@ export class SessionImpl {
           (row) =>
             row.origin === 'system' &&
             row.trust === 'trusted' &&
-            (row.data as Inbox).items.some((item) => item.commandId === msg.commandId),
+            (row.data as Inbox | null)?.items.some((item) => item.commandId === msg.commandId),
         )
         if (original) return original.seq
       }

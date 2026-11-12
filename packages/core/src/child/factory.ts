@@ -26,10 +26,11 @@ import { type ChildEnd, childEnd, thrownChildEnd } from './failure.js'
 import { applyHumanChildControl } from './human-control.js'
 import { bindIdleChild, noteChildIdle, withChildAdmission } from './idle-retirement.js'
 import { bindChildLifecycle, childLifecycle } from './lifecycle.js'
+import { recoverChildren } from './lost-children.js'
 import { childModels, requireChildModel, resolveChildModel } from './model-scope.js'
 import { openDelegatedSession } from './open-session.js'
 import type { ResidentStart, ResidentTurn } from './provider.js'
-import { recoverRoleChildren, resumeRoleChild } from './resume-role.js'
+import { resumeRoleChild } from './resume-role.js'
 import type { ResolvedChildRole } from './roles.js'
 import { bindChildFactory, childBackend } from './sessions.js'
 import { snapshotFromLedger, snapshotFromLive, snapshotFromRecord } from './status.js'
@@ -546,12 +547,11 @@ export class KernelChildren implements ChildrenFactory {
   }
 
   async recover(): Promise<void> {
-    await recoverRoleChildren(
-      this.parent(),
-      this.kernel.o.childRoles,
-      (key) => this.handles.has(key),
-      (key) => this.resume(key),
-    )
+    await recoverChildren(this.parent(), this.kernel.o.childRoles, {
+      handle: (key) => this.handles.has(key),
+      opening: (key) => this.opening.has(key) || this.kernel.sessions.has(key),
+      resume: (key) => this.resume(key),
+    })
   }
 
   async cancel(childKey: string): Promise<void> {
