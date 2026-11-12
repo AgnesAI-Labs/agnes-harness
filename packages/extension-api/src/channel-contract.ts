@@ -46,6 +46,8 @@ export type MessageEvent = EventBase & {
   text: string
   attachments: Attachment[]
   mentions: { bot: boolean; replyToBot: boolean; quoteBot: boolean }
+  /** The platform id of the message this one replies to or quotes, when the channel reports it. */
+  quotedMessageId?: string
 }
 
 export type CardActionEvent = EventBase & {

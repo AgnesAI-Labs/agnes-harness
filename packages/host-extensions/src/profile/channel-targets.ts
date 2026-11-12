@@ -2,10 +2,13 @@ import { createHash, randomInt, randomUUID, timingSafeEqual } from 'node:crypto'
 import type {
   ChannelDelivery,
   ChannelPairing,
+  ChannelTargetAction,
   ChannelTargetEvent,
+  ChannelTargetSend,
   ManagedChannelTargets,
   PersistenceMetadataNamespace,
 } from '@agnes/extension-api'
+import type { CardBlock, TextBlock } from '@agnes/extension-api/channel-contract'
 import { grantKey } from '@agnes/plugin-runtime/host'
 import { rpcError } from '@agnes/protocol'
 
@@ -35,6 +38,11 @@ type DeliveryRow = {
   state: 'sending' | 'delivered' | 'unknown'
   incarnation: string
   messageId?: string
+  /** The id a click on this message reports, when the channel's differs from `messageId`. */
+  cardBizId?: string
+  /** Who sent it: a click counts only on a message the clicked chat's current service sent. */
+  pairingId?: string
+  service?: string
   at: string
 }
 type Code = { digest: Buffer; instance: ChannelInstanceRef; target: ChannelTarget; expiresAt: number }
@@ -49,9 +57,18 @@ type Service = {
 export interface ChannelTargetLink {
   provider: string
   textChars: number
+  /** Whether the adapter renders cards; the bridge degrades a card to numbered text when it does not. */
+  card: boolean
+  cardBytes: number
+  /** The text length the channel will receive for `block`: titles and, without cards, the button list included. */
+  rendered(block: TextBlock | CardBlock): number
   /** False while the instance reconnects or stops; a send then is refused before the ledger is written. */
   connected(): boolean
-  send(chatId: string, text: string, deliveryKey: string): Promise<{ messageId: string }>
+  send(
+    chatId: string,
+    block: TextBlock | CardBlock,
+    deliveryKey: string,
+  ): Promise<{ messageId: string; cardBizId?: string }>
 }
 
 /** The Host port one channel row's bridge receives; every call is scoped to that row. */
@@ -98,6 +115,39 @@ const instanceKey = (instance: ChannelInstanceRef) => `${instance.channel}\0${in
 const sameInstance = (a: ChannelInstanceRef, b: ChannelInstanceRef) =>
   a.channel === b.channel && a.instanceId === b.instanceId
 const refused = (code: 'NOT_PAIRED' | 'CHANNEL_UNAVAILABLE') => rpcError('SEMANTIC_REJECTED', { code })
+const MAX_TITLE = 100
+const MAX_ACTIONS = 6
+const MAX_LABEL = 40
+/**
+ * The most text the platform adds around a valid send's `text`: a text title line, or on a channel without
+ * cards `【title】`, one `N. label` line per action and the `回复 1 / 2 … 选择` line. Reserved inside the limit.
+ */
+export const SEND_OVERHEAD = Math.max(
+  MAX_TITLE + 5,
+  MAX_TITLE + 3 + MAX_ACTIONS * (MAX_LABEL + 4) + 1 + 3 + (MAX_ACTIONS * 4 - 3) + 3,
+)
+const sendable = (textChars: number) => Math.max(1, textChars - SEND_OVERHEAD)
+const ACTION_ID = /^[A-Za-z0-9:_-]{1,64}$/
+const STYLES = new Set(['primary', 'default', 'danger'])
+const oneLine = (value: unknown, max: number): value is string =>
+  typeof value === 'string' && value.length >= 1 && value.length <= max && !/[\r\n]/.test(value)
+
+/** The block one send becomes, or undefined when `title` or `actions` break the documented limits. */
+function compose(input: ChannelTargetSend): TextBlock | CardBlock | undefined {
+  const { text, title, actions } = input
+  if (title !== undefined && !oneLine(title, MAX_TITLE)) return undefined
+  if (actions === undefined)
+    return { kind: 'text', markdown: title === undefined ? text : `**${title}**\n${text}` }
+  if (!Array.isArray(actions) || actions.length < 1 || actions.length > MAX_ACTIONS) return undefined
+  const buttons: NonNullable<CardBlock['actions']> = []
+  for (const action of actions as unknown[]) {
+    const { id, label, style } = (action ?? {}) as Partial<ChannelTargetAction>
+    if (typeof id !== 'string' || !ACTION_ID.test(id) || buttons.some((b) => b.id === id)) return undefined
+    if (!oneLine(label, MAX_LABEL) || (style !== undefined && !STYLES.has(style))) return undefined
+    buttons.push({ id, label, ...(style === 'primary' || style === 'danger' ? { style } : {}) })
+  }
+  return { kind: 'card', title: title ?? '', body: text, actions: buttons }
+}
 
 /** Whether `text` is, as a whole, a pairing code: eight code letters, ignoring case, spaces and hyphens. */
 export function pairingCodeShaped(text: string): boolean {
@@ -227,9 +277,16 @@ export class ChannelTargets {
       find: (instanceId, chatId) =>
         this.all().find((p) => sameInstance(p.instance, ref(instanceId)) && p.chatId === chatId),
       deliver: async (pairing, event) => {
+        let delivered = event
+        if (event.kind === 'action') {
+          // Not a failure to retry or report: the click was on a message this service did not send.
+          const messageId = this.sentBy(pairing, event.messageId)
+          if (!messageId) return
+          delivered = { ...event, messageId }
+        }
         const service = this.services.get(targetKey(pairing.target))
         if (!service?.onEvent || !this.pairing(pairing.id)) throw refused('CHANNEL_UNAVAILABLE')
-        await service.onEvent(structuredClone(event))
+        await service.onEvent(structuredClone(delivered))
       },
       drop: (pairingId) => {
         const pairing = this.pairing(pairingId)
@@ -313,13 +370,13 @@ export class ChannelTargets {
       chatId: pairing.chatId,
       label: pairing.label,
       running: !!link,
-      textChars: link?.textChars ?? pairing.textChars,
+      textChars: sendable(link?.textChars ?? pairing.textChars),
     }
   }
 
   private async send(
     pairing: OwnerPairing,
-    input: { deliveryKey: string; text: string },
+    input: ChannelTargetSend,
     assertCurrent: () => void,
   ): Promise<{ messageId: string }> {
     const { deliveryKey, text } = input ?? ({} as typeof input)
@@ -330,6 +387,8 @@ export class ChannelTargets {
       typeof text !== 'string'
     )
       throw rpcError('INVALID_PARAMS')
+    const block = compose(input)
+    if (!block) throw rpcError('INVALID_PARAMS')
     const row = this.ledgerKey(pairing, deliveryKey)
     const stored = this.store.get(row) as DeliveryRow | undefined
     if (stored?.state === 'delivered' && stored.messageId) return { messageId: stored.messageId }
@@ -337,14 +396,21 @@ export class ChannelTargets {
       throw refused('CHANNEL_UNAVAILABLE')
     const link = this.link(pairing.instance)
     if (!link) throw refused('CHANNEL_UNAVAILABLE')
-    if (text.length === 0 || text.length > link.textChars)
+    if (text.length === 0 || text.length > sendable(link.textChars) || link.rendered(block) > link.textChars)
+      throw rpcError('INVALID_PARAMS', { code: 'TOO_LARGE' })
+    if (block.kind === 'card' && link.card && Buffer.byteLength(JSON.stringify(block)) > link.cardBytes)
       throw rpcError('INVALID_PARAMS', { code: 'TOO_LARGE' })
     this.write(row, 'sending')
     try {
       const adapterKey = sha256(`${pairing.target.owner}\0${pairing.id}\0${deliveryKey}`)
-      const { messageId } = await link.send(pairing.chatId, text, adapterKey)
+      const { messageId, cardBizId } = await link.send(pairing.chatId, block, adapterKey)
       if (typeof messageId !== 'string' || !messageId) throw new Error('channel send returned no message id')
-      this.write(row, 'delivered', messageId)
+      this.write(row, 'delivered', {
+        messageId,
+        ...(typeof cardBizId === 'string' && cardBizId && cardBizId !== messageId ? { cardBizId } : {}),
+        pairingId: pairing.id,
+        service: pairing.target.service,
+      })
       assertCurrent()
       return { messageId }
     } catch (error) {
@@ -470,14 +536,37 @@ export class ChannelTargets {
     return `d:${pairing.target.owner}:${sha256(`${pairing.id}\0${deliveryKey}`)}`
   }
 
-  private write(key: string, state: DeliveryRow['state'], messageId?: string): void {
+  private write(
+    key: string,
+    state: DeliveryRow['state'],
+    sent: Pick<DeliveryRow, 'messageId' | 'cardBizId' | 'pairingId' | 'service'> = {},
+  ): void {
     const row: DeliveryRow = {
       state,
       incarnation: this.incarnation,
       at: new Date(this.clock()).toISOString(),
-      ...(messageId ? { messageId } : {}),
+      ...sent,
     }
     this.store.set(key, row)
+  }
+
+  /** The send-returned id of the live ledger row `clicked` names, when this pairing's service sent it. */
+  private sentBy(pairing: OwnerPairing, clicked: string): string | undefined {
+    const prefix = `d:${pairing.target.owner}:`
+    const before = this.clock() - LEDGER_TTL_MS
+    for (const { key, value } of this.store.entries()) {
+      const row = value as DeliveryRow
+      if (
+        key.startsWith(prefix) &&
+        row.state === 'delivered' &&
+        row.pairingId === pairing.id &&
+        row.service === pairing.target.service &&
+        Date.parse(row.at) > before &&
+        (row.messageId === clicked || row.cardBizId === clicked)
+      )
+        return row.messageId
+    }
+    return undefined
   }
 
   private prune(): void {

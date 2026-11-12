@@ -506,7 +506,7 @@ it.skipIf(process.platform === 'win32')(
         userId: 'owner-1',
         chatId: 'owner-dm',
         running: true,
-        textChars: 500,
+        textChars: 105,
       })
       const pairingId = paired.value?.id as string
 
