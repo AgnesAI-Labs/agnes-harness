@@ -63,6 +63,11 @@ if (sent.state === 'notSubmitted') console.log(sent.reason) // busy | archived |
 | `usage(id)` | Input and output tokens and cost. A value the runtime cannot tell is `null`, never `0`. |
 | `toolResult(id, callSeq)` | One tool call's result text, `isError`, and for `shell` the exit code as a number. `state` is `pending` while the call has no result yet; then `isError`, `text` and `exitCode` say nothing. A call that finished with no output is `done` with `text: ''`. |
 
+For retained task sessions, `waitingOnUserInput` also includes an open native `ask_user_question`
+surface from the durable ledger, even after its nonblocking tool call and turn have completed.
+Status reads do not load historical workers. A failed ledger read rejects; it does not imply that
+the question was answered. Do not treat a completed turn as task completion while this flag remains.
+
 ### How an approval ended
 
 An `approval` event keeps the seq the approval first appeared at, so a reader that already passed it with `afterSeq` never sees it change. When an approval ends, `events` also returns an `approvalOutcome` event at the seq of the event that ended it:

@@ -391,3 +391,87 @@ describe('synchronous channel approval', () => {
     }
   })
 })
+
+it('admits a native action only against its delivered account, chat, message and current subject', async () => {
+  const { handleInteraction } = await import('../src/runner/interactions.js')
+  const { RefStore } = await import('../src/runner/ref-store.js')
+  const adapter = new FakeChannel()
+  const surface = {
+    sessionId: 'session',
+    surfaceId: 'question',
+    revision: 1,
+    actionId: 'submit',
+    input: { answers: { pick: 'A' } },
+    selection: {},
+  }
+  const native = Object.assign(adapter, { onSurfaceAction: () => surface })
+  const refs = new RefStore(':memory:')
+  const ref = { chatId: 'chat', messageId: 'm1', accountId: 'account', chatType: 'group' as const }
+  refs.putProgress(
+    'route',
+    'session',
+    'surface:question',
+    'open',
+    [
+      {
+        ref,
+        contentHash: 'open',
+        accountId: 'account',
+        subject: { kind: 'surface', surfaceId: 'question', revision: 1, actionId: 'submit' },
+      },
+    ],
+    true,
+    false,
+  )
+  const surfaceSubmit = vi.fn().mockResolvedValue({ status: 'received' })
+  const flush = vi.fn().mockResolvedValue(undefined)
+  const call = (event: CardActionEvent) =>
+    handleInteraction({
+      event,
+      adapter: native,
+      refs,
+      admission: { surface: surfaceSubmit, approval: vi.fn() },
+      routes: [{ key: 'route', sessionId: 'session' }],
+      allowFrom: ['approver'],
+      flush,
+    })
+  try {
+    const valid = approvalAction('native')
+    for (const invalid of [
+      { ...valid, accountId: 'foreign' },
+      { ...valid, chat: { id: 'forwarded-chat', type: 'group' as const } },
+      { ...valid, cardBizId: 'forwarded-message' },
+      { ...valid, sender: { userId: 'stranger', raw: {} } },
+    ])
+      await call(invalid)
+    expect(surfaceSubmit).not.toHaveBeenCalled()
+    await call(valid)
+    expect(surfaceSubmit).toHaveBeenCalledWith(
+      expect.objectContaining(surface),
+      expect.objectContaining({ kind: 'channel', userId: 'approver' }),
+    )
+    const command = surfaceSubmit.mock.calls.at(0)?.at(0)?.commandId
+    await call(valid)
+    expect(surfaceSubmit.mock.calls.at(-1)?.at(0)?.commandId).toBe(command)
+    refs.putProgress(
+      'route',
+      'session',
+      'surface:question',
+      'closed',
+      [
+        {
+          ref,
+          contentHash: 'closed',
+          accountId: 'account',
+          subject: { kind: 'surface', surfaceId: 'question', revision: 1 },
+        },
+      ],
+      true,
+      true,
+    )
+    await call(valid)
+    expect(surfaceSubmit).toHaveBeenCalledTimes(2)
+  } finally {
+    refs.close()
+  }
+})

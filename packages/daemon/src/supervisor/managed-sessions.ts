@@ -65,6 +65,7 @@ export interface ManagedSessionPorts {
     ): Promise<'started' | 'busy'>
     loaded(sessionId: string): boolean
     activity(): Promise<readonly SessionActivity[]>
+    openQuestion?(sessionId: string): Promise<boolean>
     view(sessionId: string): Promise<SessionViewResult>
     toolDetail(sessionId: string, callSeq: number): Promise<ManagedToolDetail>
     /**
@@ -393,6 +394,32 @@ function storedModel(value: string | null): { route: string; model: string } | u
   return value ? (JSON.parse(value) as { route: string; model: string }) : undefined
 }
 
+async function managedStatus(
+  ports: ManagedSessionPorts,
+  record: ManagedSessionRecord,
+  activity?: readonly SessionActivity[],
+): Promise<ManagedSessionStatus> {
+  const items = activity ?? (await ports.sessions.activity())
+  const loaded = ports.sessions.loaded(record.sessionId)
+  const current = items.find((item) => item.sessionId === record.sessionId)
+  const openQuestion =
+    !record.archived &&
+    record.retention === 'task' &&
+    (await ports.sessions.openQuestion?.(record.sessionId)) === true
+  if (openQuestion) {
+    const flags: ManagedSessionStatus['flags'] =
+      current?.state === 'waiting' && current.waiting !== 'question'
+        ? ['waitingOnApproval', 'waitingOnUserInput']
+        : ['waitingOnUserInput']
+    return { kind: 'active' as const, flags }
+  }
+  const lastTurn =
+    loaded && current === undefined
+      ? (await ports.sessions.view(record.sessionId)).timeline.turns.at(-1)
+      : undefined
+  return managedSessionStatus({ loaded, activity: current, lastTurn })
+}
+
 export function createManagedSessions(ports: ManagedSessionPorts) {
   const chains = new Map<string, Promise<unknown>>()
   const serial = <T>(key: string, work: () => Promise<T>): Promise<T> => {
@@ -406,16 +433,8 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
     return next
   }
   const own = (owner: string, sessionId: unknown) => ownedRecord(ports.records, owner, sessionId)
-  const status = async (record: ManagedSessionRecord, activity?: readonly SessionActivity[]) => {
-    const items = activity ?? (await ports.sessions.activity())
-    const loaded = ports.sessions.loaded(record.sessionId)
-    const current = items.find((item) => item.sessionId === record.sessionId)
-    const lastTurn =
-      loaded && current === undefined
-        ? (await ports.sessions.view(record.sessionId)).timeline.turns.at(-1)
-        : undefined
-    return managedSessionStatus({ loaded, activity: current, lastTurn })
-  }
+  const status = (record: ManagedSessionRecord, activity?: readonly SessionActivity[]) =>
+    managedStatus(ports, record, activity)
   /**
    * The refusal for a session that may not run a turn: every managed session needs the outward
    * checkpoint on its live policy, and effective full access also needs a full OS boundary.

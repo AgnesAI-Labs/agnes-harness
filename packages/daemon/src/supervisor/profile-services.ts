@@ -76,6 +76,64 @@ export async function managedSessionPackages(runtime: {
   )
 }
 
+/** Rechecks the registered channel row before forwarding an interaction to its session owner. */
+function createChannelInteractionAdmission(
+  input: {
+    runtime: { manager: PackageManager; profileDirectory: PackageProfileDirectory } | undefined
+    profile: string
+  },
+  profileAuthority: (identity: { packageId: string; integrity: string }) => Promise<void>,
+) {
+  const channelInteractions: {
+    submit?: (kind: 'surface' | 'approval', params: unknown, credential: unknown) => Promise<unknown>
+  } = {}
+  const channelInteraction = async (
+    lane: { sharedWorker: boolean; sessionKey: string },
+    inputValue: unknown,
+  ) => {
+    if (
+      !lane.sharedWorker ||
+      lane.sessionKey !== PROFILE_LANE ||
+      !input.runtime ||
+      !channelInteractions.submit
+    )
+      throw rpcError('CAPABILITY_DENIED')
+    const p = inputValue as {
+      caller?: { owner?: string; packageId?: string; integrity?: string; provider?: string }
+      kind?: string
+      params?: unknown
+      credential?: unknown
+    }
+    const caller = p?.caller
+    if (
+      !caller ||
+      typeof caller.packageId !== 'string' ||
+      typeof caller.integrity !== 'string' ||
+      typeof caller.owner !== 'string' ||
+      typeof caller.provider !== 'string' ||
+      (p.kind !== 'surface' && p.kind !== 'approval')
+    )
+      throw rpcError('CAPABILITY_DENIED')
+    await profileAuthority({ packageId: caller.packageId, integrity: caller.integrity })
+    const directory = await input.runtime.profileDirectory(input.profile)
+    const inventory = await input.runtime.manager.inventory(directory, { fresh: true })
+    const pkg = inventory.packages.find((row) => row.id === caller.packageId)
+    if (
+      !pkg?.directory ||
+      !(await packageRowOwners(pkg.id, pkg.directory)).has(caller.owner) ||
+      !pkg.entry.declaredCapabilities?.managedServices?.some(
+        (d) => d.id === 'channel' && d.scope === 'profile',
+      )
+    )
+      throw rpcError('CAPABILITY_DENIED')
+    const credential = p.credential as { kind?: string; channel?: string; userId?: string }
+    if (credential?.kind !== 'channel' || credential.channel !== caller.provider || !credential.userId)
+      throw rpcError('CAPABILITY_DENIED')
+    return channelInteractions.submit(p.kind, p.params, p.credential)
+  }
+  return { channelInteractions, channelInteraction }
+}
+
 /** Current inventory admission and durable original-session notification delivery. */
 export function createSupervisorProfileServices(input: {
   runtime: { manager: PackageManager; profileDirectory: PackageProfileDirectory } | undefined
@@ -120,6 +178,10 @@ export function createSupervisorProfileServices(input: {
     if (packages.some((row) => row.packageId !== pkg.id && row.owners.has(caller.owner)))
       throw rpcError('CAPABILITY_DENIED', { reason: 'PLUGIN_ROW_AMBIGUOUS' })
   }
+  const { channelInteractions, channelInteraction } = createChannelInteractionAdmission(
+    input,
+    profileAuthority,
+  )
   const managedSessions: {
     port?: (caller: ManagedSessionCaller) => ManagedSessions
     skillInstallsOff?: (sessionId: string) => boolean
@@ -239,6 +301,8 @@ export function createSupervisorProfileServices(input: {
     }
   }
   return {
+    channelInteractions,
+    channelInteraction,
     features: ['services.profile.v1', 'store.owned.v1', ...(boundWakes ? ['jobs.bound-wake.v1'] : [])],
     ownedWake,
     managedSessionAuthority,

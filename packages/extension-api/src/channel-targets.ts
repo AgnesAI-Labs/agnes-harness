@@ -99,6 +99,10 @@ export interface ManagedChannelTargets {
   onPairingChange(handler: () => void): void
   /** One platform message per call. The chat always comes from the pairing; repeating a key never sends twice. */
   send(pairingId: string, input: ChannelTargetSend): Promise<{ messageId: string }>
+  /** Observe native human questions and approvals of a session owned by this service. */
+  watchSession(pairingId: string, sessionId: string): Promise<void>
+  /** Replace a message this service delivered to the current pairing. No new destination is accepted. */
+  update(pairingId: string, messageId: string, input: Omit<ChannelTargetSend, 'deliveryKey'>): Promise<void>
   delivery(pairingId: string, deliveryKey: string): Promise<ChannelDelivery>
   unpair(pairingId: string): Promise<void>
 }

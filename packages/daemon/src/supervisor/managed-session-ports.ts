@@ -1,7 +1,14 @@
 import type { WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
 import { runQueued } from '@agnes/daemon-rpc/local/command-queue'
-import type { SessionActivityResult, SessionRuntimeDescriptor, SessionViewResult } from '@agnes/protocol'
+import type { ScanRead } from '@agnes/host'
+import type {
+  EventEnvelope,
+  SessionActivityResult,
+  SessionRuntimeDescriptor,
+  SessionViewResult,
+} from '@agnes/protocol'
 import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
+import { hasOpenNativeQuestion } from './managed-question-status.js'
 import type { ManagedSessionRecords } from './managed-session-records.js'
 import type { ManagedSessionCaller, ManagedSessionPorts, ManagedToolDetail } from './managed-sessions.js'
 
@@ -37,6 +44,7 @@ export function managedWorkspaceRoot(workspaces: Pick<WorkspaceCatalog, 'validat
  */
 export function managedSessionPorts(deps: {
   socketPath: string
+  sessionFactRead?: (sessionId: string) => ScanRead<EventEnvelope>
   serverIdentity: { pid: number; processStartId: string }
   records: ManagedSessionRecords
   authorize(caller: ManagedSessionCaller): Promise<void>
@@ -178,6 +186,9 @@ export function managedSessionPorts(deps: {
             (await client.call<SessionActivityResult>('_agnes/v1/session.activity', {})).items,
         ),
       view,
+      ...(deps.sessionFactRead
+        ? { openQuestion: (sessionId: string) => hasOpenNativeQuestion(deps.sessionFactRead!(sessionId)) }
+        : {}),
       async toolDetail(sessionId, callSeq) {
         const node = (await view(sessionId)).timeline.nodes.find(
           (candidate) => candidate.kind === 'tool' && candidate.seq === callSeq,

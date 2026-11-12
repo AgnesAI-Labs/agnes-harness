@@ -8,7 +8,7 @@ import type {
   ManagedChannelTargets,
   PersistenceMetadataNamespace,
 } from '@agnes/extension-api'
-import type { CardBlock, TextBlock } from '@agnes/extension-api/channel-contract'
+import type { CardActionEvent, CardBlock, MessageRef, TextBlock } from '@agnes/extension-api/channel-contract'
 import { grantKey } from '@agnes/plugin-runtime/host'
 import { rpcError } from '@agnes/protocol'
 
@@ -35,6 +35,8 @@ export type OwnerPairing = {
 }
 
 type DeliveryRow = {
+  accountId?: string
+  chatType?: 'dm' | 'group'
   state: 'sending' | 'delivered' | 'unknown'
   incarnation: string
   messageId?: string
@@ -49,12 +51,25 @@ type Code = { digest: Buffer; instance: ChannelInstanceRef; target: ChannelTarge
 type Service = {
   packageId: string
   label: string
+  resume?(): Promise<void>
+  watches?: Map<
+    string,
+    { pairingId: string; sessionId: string; route: string; assertSession(): Promise<void>; stop?: () => void }
+  >
   onEvent?: (event: ChannelTargetEvent) => Promise<void>
   onPairingChange?: () => void
 }
 
 /** What a connected channel instance lends the Host so a service can send through its runner. */
 export interface ChannelTargetLink {
+  watchSession?(
+    route: string,
+    sessionId: string,
+    chat: { chatId: string; accountId: string; chatType: 'dm' },
+    assertCurrent: () => Promise<void>,
+  ): Promise<() => void>
+  interaction?(event: CardActionEvent, routes: readonly string[]): Promise<boolean>
+  update?(ref: MessageRef, block: TextBlock | CardBlock): Promise<void>
   provider: string
   textChars: number
   /** Whether the adapter renders cards; the bridge degrades a card to numbered text when it does not. */
@@ -65,10 +80,10 @@ export interface ChannelTargetLink {
   /** False while the instance reconnects or stops; a send then is refused before the ledger is written. */
   connected(): boolean
   send(
-    chatId: string,
+    chat: { chatId: string; accountId: string; chatType: 'dm' },
     block: TextBlock | CardBlock,
     deliveryKey: string,
-  ): Promise<{ messageId: string; cardBizId?: string }>
+  ): Promise<Omit<MessageRef, 'chatId'>>
 }
 
 /** The Host port one channel row's bridge receives; every call is scoped to that row. */
@@ -91,6 +106,7 @@ export interface ChannelTargetsBridge {
     },
   ): { label: string } | undefined
   find(instanceId: string, chatId: string): OwnerPairing | undefined
+  interact(pairing: OwnerPairing, event: CardActionEvent): Promise<boolean>
   deliver(pairing: OwnerPairing, event: ChannelTargetEvent): Promise<void>
   drop(pairingId: string): void
   paired(instanceId: string, targetId: string): boolean
@@ -267,8 +283,18 @@ export class ChannelTargets {
       attach: (instanceId, link) => {
         const key = instanceKey(ref(instanceId))
         this.links.set(key, link)
+        for (const service of this.services.values()) void service.resume?.().catch(() => {})
         return () => {
-          if (this.links.get(key) === link) this.links.delete(key)
+          if (this.links.get(key) !== link) return
+          this.links.delete(key)
+          for (const service of this.services.values())
+            for (const [route, watch] of service.watches ?? []) {
+              const pairing = this.pairing(watch.pairingId)
+              if (pairing && sameInstance(pairing.instance, ref(instanceId))) {
+                watch.stop?.()
+                service.watches?.delete(route)
+              }
+            }
         }
       },
       expectsCode: (instanceId, text) =>
@@ -276,6 +302,26 @@ export class ChannelTargets {
       confirm: (instanceId, text, chat) => this.confirm(ref(instanceId), text, chat),
       find: (instanceId, chatId) =>
         this.all().find((p) => sameInstance(p.instance, ref(instanceId)) && p.chatId === chatId),
+      interact: async (pairing, event) => {
+        const current = this.pairing(pairing.id)
+        if (
+          !current ||
+          current.pairedAt !== pairing.pairedAt ||
+          !sameInstance(current.instance, ref(current.instance.instanceId)) ||
+          event.accountId !== current.accountId ||
+          event.chat.id !== current.chatId ||
+          event.sender.userId !== current.userId
+        )
+          return true
+        const service = this.services.get(targetKey(current.target))
+        const routes: string[] = []
+        for (const watch of service?.watches?.values() ?? []) {
+          if (watch.pairingId !== current.id) continue
+          await watch.assertSession()
+          routes.push(watch.route)
+        }
+        return (await this.link(current.instance)?.interaction?.(event, routes)) ?? false
+      },
       deliver: async (pairing, event) => {
         let delivered = event
         if (event.kind === 'action') {
@@ -318,11 +364,17 @@ export class ChannelTargets {
    * `signal` aborts; every call checks `assertCurrent` and refuses anything not paired to this caller.
    */
   port(
-    caller: ChannelTarget & { packageId: string; signal: AbortSignal; assertCurrent(): void },
+    caller: ChannelTarget & {
+      packageId: string
+      signal: AbortSignal
+      assertCurrent(): void
+      assertSession?(sessionId: string): Promise<void>
+    },
   ): ManagedChannelTargets {
     const target = { owner: caller.owner, service: caller.service }
     const key = targetKey(target)
-    const service: Service = { packageId: caller.packageId, label: caller.packageId }
+    const opening = new Map<string, Promise<void>>()
+    const service: Service = { packageId: caller.packageId, label: caller.packageId, watches: new Map() }
     if (!caller.signal.aborted) {
       this.services.set(key, service)
       caller.signal.addEventListener(
@@ -330,6 +382,7 @@ export class ChannelTargets {
         () => {
           if (this.services.get(key) === service) this.services.delete(key)
           this.codes.delete(key)
+          for (const watch of service.watches?.values() ?? []) watch.stop?.()
         },
         { once: true },
       )
@@ -340,7 +393,7 @@ export class ChannelTargets {
       if (!pairing || targetKey(pairing.target) !== key) throw refused('NOT_PAIRED')
       return pairing
     }
-    return {
+    const port: ManagedChannelTargets = {
       pairing: async () => {
         caller.assertCurrent()
         const pairing = this.byTarget(target)
@@ -355,9 +408,92 @@ export class ChannelTargets {
         service.onPairingChange = handler
       },
       send: async (pairingId, input) => this.send(own(pairingId), input, caller.assertCurrent),
+      watchSession: async (pairingId, sessionId) => {
+        const pairing = own(pairingId)
+        if (!caller.assertSession || typeof sessionId !== 'string' || !sessionId)
+          throw rpcError('CAPABILITY_DENIED')
+        await caller.assertSession(sessionId)
+        const current = own(pairingId)
+        if (current.pairedAt !== pairing.pairedAt) throw refused('NOT_PAIRED')
+        const link = this.link(current.instance)
+        if (!link?.watchSession) throw refused('CHANNEL_UNAVAILABLE')
+        const route = `managed:${pairing.id}:${pairing.pairedAt}:${sessionId}`
+        if (service.watches?.has(route)) return
+        const pending = opening.get(route)
+        if (pending) return pending
+        const assertSession = async () => {
+          const live = own(pairingId)
+          if (live.pairedAt !== pairing.pairedAt) throw refused('NOT_PAIRED')
+          await caller.assertSession!(sessionId)
+        }
+        this.store.set(`w:${route}`, { pairingId, pairedAt: pairing.pairedAt, sessionId })
+        const task = (async () => {
+          const stop = await link.watchSession!(
+            route,
+            sessionId,
+            { chatId: pairing.chatId, accountId: pairing.accountId, chatType: 'dm' },
+            assertSession,
+          )
+          try {
+            await assertSession()
+          } catch (error) {
+            stop()
+            throw error
+          }
+          service.watches?.set(route, { pairingId, sessionId, route, stop, assertSession })
+        })()
+        opening.set(route, task)
+        try {
+          await task
+        } finally {
+          opening.delete(route)
+        }
+      },
+      update: async (pairingId, messageId, input) => {
+        const pairing = own(pairingId)
+        const sent = this.sentReference(pairing, messageId)
+        if (!sent?.messageId) throw rpcError('CAPABILITY_DENIED')
+        const link = this.link(pairing.instance)
+        if (!link?.update) throw refused('CHANNEL_UNAVAILABLE')
+        const block = compose({ ...input, deliveryKey: 'update' })
+        if (
+          !block ||
+          typeof input.text !== 'string' ||
+          input.text.length > sendable(link.textChars) ||
+          link.rendered(block) > link.textChars
+        )
+          throw rpcError('INVALID_PARAMS')
+        await link.update(
+          {
+            chatId: pairing.chatId,
+            messageId: sent.messageId,
+            ...(sent.cardBizId ? { cardBizId: sent.cardBizId } : {}),
+            ...(sent.accountId ? { accountId: sent.accountId } : {}),
+            ...(sent.chatType ? { chatType: sent.chatType } : {}),
+          },
+          block,
+        )
+        own(pairingId)
+      },
       delivery: async (pairingId, deliveryKey) => this.delivery(own(pairingId), deliveryKey),
       unpair: async (pairingId) => this.remove([own(pairingId)]),
     }
+    service.resume = async () => {
+      for (const { key, value } of this.store.entries()) {
+        if (!key.startsWith('w:')) continue
+        const watch = value as { pairingId: string; pairedAt: string; sessionId: string }
+        const pairing = this.pairing(watch.pairingId)
+        if (
+          !pairing ||
+          pairing.pairedAt !== watch.pairedAt ||
+          targetKey(pairing.target) !== targetKey(target)
+        )
+          continue
+        await port.watchSession(pairing.id, watch.sessionId).catch(() => {})
+      }
+    }
+    void service.resume()
+    return port
   }
 
   private view(pairing: OwnerPairing): ChannelPairing {
@@ -403,10 +539,16 @@ export class ChannelTargets {
     this.write(row, 'sending')
     try {
       const adapterKey = sha256(`${pairing.target.owner}\0${pairing.id}\0${deliveryKey}`)
-      const { messageId, cardBizId } = await link.send(pairing.chatId, block, adapterKey)
+      const { messageId, cardBizId, accountId, chatType } = await link.send(
+        { chatId: pairing.chatId, accountId: pairing.accountId, chatType: 'dm' },
+        block,
+        adapterKey,
+      )
       if (typeof messageId !== 'string' || !messageId) throw new Error('channel send returned no message id')
       this.write(row, 'delivered', {
         messageId,
+        ...(accountId ? { accountId } : {}),
+        ...(chatType ? { chatType } : {}),
         ...(typeof cardBizId === 'string' && cardBizId && cardBizId !== messageId ? { cardBizId } : {}),
         pairingId: pairing.id,
         service: pairing.target.service,
@@ -504,9 +646,25 @@ export class ChannelTargets {
   private remove(pairings: readonly OwnerPairing[]): void {
     if (!pairings.length) return
     this.store.transaction(() => {
-      for (const pairing of pairings) this.store.delete(`p:${pairing.id}`)
+      for (const pairing of pairings) {
+        this.store.delete(`p:${pairing.id}`)
+        for (const { key, value } of this.store.entries())
+          if (
+            (key.startsWith('w:') || key.startsWith('d:')) &&
+            (value as { pairingId?: string }).pairingId === pairing.id
+          )
+            this.store.delete(key)
+      }
     })
-    for (const pairing of pairings) this.notify(pairing.target)
+    for (const pairing of pairings) {
+      const watches = this.services.get(targetKey(pairing.target))?.watches
+      for (const [key, watch] of watches ?? [])
+        if (watch.pairingId === pairing.id) {
+          watch.stop?.()
+          watches?.delete(key)
+        }
+      this.notify(pairing.target)
+    }
   }
 
   private notify(target: ChannelTarget): void {
@@ -539,7 +697,10 @@ export class ChannelTargets {
   private write(
     key: string,
     state: DeliveryRow['state'],
-    sent: Pick<DeliveryRow, 'messageId' | 'cardBizId' | 'pairingId' | 'service'> = {},
+    sent: Pick<
+      DeliveryRow,
+      'messageId' | 'cardBizId' | 'pairingId' | 'service' | 'accountId' | 'chatType'
+    > = {},
   ): void {
     const row: DeliveryRow = {
       state,
@@ -552,6 +713,10 @@ export class ChannelTargets {
 
   /** The send-returned id of the live ledger row `clicked` names, when this pairing's service sent it. */
   private sentBy(pairing: OwnerPairing, clicked: string): string | undefined {
+    return this.sentReference(pairing, clicked)?.messageId
+  }
+
+  private sentReference(pairing: OwnerPairing, clicked: string): DeliveryRow | undefined {
     const prefix = `d:${pairing.target.owner}:`
     const before = this.clock() - LEDGER_TTL_MS
     for (const { key, value } of this.store.entries()) {
@@ -564,7 +729,7 @@ export class ChannelTargets {
         Date.parse(row.at) > before &&
         (row.messageId === clicked || row.cardBizId === clicked)
       )
-        return row.messageId
+        return row
     }
     return undefined
   }
@@ -590,6 +755,12 @@ export const deniedChannelTargets: ManagedChannelTargets = {
     throw rpcError('CAPABILITY_DENIED')
   },
   send: async () => {
+    throw rpcError('CAPABILITY_DENIED')
+  },
+  watchSession: async () => {
+    throw rpcError('CAPABILITY_DENIED')
+  },
+  update: async () => {
     throw rpcError('CAPABILITY_DENIED')
   },
   delivery: async () => {

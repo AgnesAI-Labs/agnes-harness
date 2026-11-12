@@ -2,6 +2,7 @@ import type { HostOptions, ResolvedProfile } from '@agnes/host'
 
 /** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
 export type WorkerHostSkillResources = Readonly<{
+  channelInteractions?: NonNullable<HostOptions['channelInteractions']>
   channelRuntime?: NonNullable<HostOptions['channelRuntime']>
   scheduling?: NonNullable<HostOptions['scheduling']>
   decisionsChanged?: NonNullable<HostOptions['decisionsChanged']>

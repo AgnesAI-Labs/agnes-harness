@@ -3,7 +3,15 @@ import type { OwnedStore } from '@agnes/extension-api'
 import type { ChannelEvent } from './adapter.js'
 import type { Runner } from './runner/runner.js'
 
-type Target = { id: string; key: string; chatId: string; threadId?: string; label: string }
+type Target = {
+  accountId?: string
+  chatType?: 'dm' | 'group'
+  id: string
+  key: string
+  chatId: string
+  threadId?: string
+  label: string
+}
 type Binding = { sessionId: string; targetId: string; afterSeq: number; state: 'active' | 'pending' }
 type State = { version: number; targets: Target[]; bindings: Binding[] }
 
@@ -30,7 +38,13 @@ export class ChannelBindings {
     if (event.kind !== 'message') return
     this.assertCurrent()
     const id = chatTargetId(event.accountId, route)
-    if (this.state.targets.some((t) => t.id === id)) {
+    const existing = this.state.targets.find((t) => t.id === id)
+    if (existing) {
+      if (!existing.accountId || !existing.chatType) {
+        existing.accountId = event.accountId
+        if (event.chat.type !== 'thread') existing.chatType = event.chat.type
+        this.save()
+      }
       this.fresh.add(id)
       return
     }
@@ -39,6 +53,8 @@ export class ChannelBindings {
     this.state.targets.push({
       id,
       key: route,
+      accountId: event.accountId,
+      ...(event.chat.type !== 'thread' ? { chatType: event.chat.type } : {}),
       chatId: event.chat.id,
       ...(event.chat.threadId ? { threadId: event.chat.threadId } : {}),
       label:
@@ -48,6 +64,33 @@ export class ChannelBindings {
         ),
     })
     this.save()
+  }
+  async restore(): Promise<void> {
+    await this.serial(async () => {
+      this.assertCurrent()
+      for (const binding of this.state.bindings) {
+        if (binding.state !== 'active' || this.paired(binding.targetId)) continue
+        const target = this.state.targets.find((item) => item.id === binding.targetId)
+        if (
+          !target?.accountId ||
+          !target.chatType ||
+          chatTargetId(target.accountId, target.key) !== target.id
+        )
+          continue
+        this.fresh.add(target.id)
+        try {
+          await this.runner?.activate(target.key, {
+            accountId: target.accountId,
+            chatType: target.chatType,
+            chatId: target.chatId,
+            ...(target.threadId ? { threadId: target.threadId } : {}),
+          })
+        } catch (error) {
+          this.fresh.delete(target.id)
+          throw error
+        }
+      }
+    })
   }
   resolve(key: string): { sessionId: string; afterSeq: number } | undefined {
     this.assertCurrent()
@@ -133,6 +176,8 @@ export class ChannelBindings {
         try {
           await this.runner.activate(target.key, {
             chatId: target.chatId,
+            ...(target.accountId ? { accountId: target.accountId } : {}),
+            ...(target.chatType ? { chatType: target.chatType } : {}),
             ...(target.threadId ? { threadId: target.threadId } : {}),
           })
         } catch (error) {

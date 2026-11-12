@@ -1,11 +1,12 @@
 import { dirname } from 'node:path'
 import { createAppServerAdmin } from '@agnes/daemon-admin/app-server'
+import { commandBinding } from '@agnes/daemon-rpc/local/command-binding'
 import { runQueued } from '@agnes/daemon-rpc/local/command-queue'
 import { createFollowUpRunner } from '@agnes/daemon-rpc/local/follow-up-runner'
 import type { AgnesContext } from '@agnes/daemon-rpc/local/methods/agnes'
 import { createPlanCommands } from '@agnes/daemon-rpc/local/plan-commands'
 import type { Host } from '@agnes/host'
-import { rpcError } from '@agnes/protocol'
+import { type ApprovalDecideParams, rpcError, type UiActionParams, validateMethod } from '@agnes/protocol'
 import type { DispatchState } from './assembly-client-dispatch.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
 import type { AssemblyBase } from './assembly-options.js'
@@ -58,6 +59,63 @@ export function openClientServices(
     { commandQueue, activationBarrier, onPromptEnd: (id) => registry.retireAtTurnBoundary(id) },
     async () => undefined,
   )
+  profilePorts.channelInteractions.submit = async (kind, value, credential) => {
+    const method = kind === 'surface' ? '_agnes/v1/ui.action' : '_agnes/v1/approval.decide'
+    if (!validateMethod(method, 'params', value).ok) throw rpcError('INVALID_PARAMS')
+    const params = value as UiActionParams | ApprovalDecideParams
+    const binding = await workspaceCatalog.restoreBinding(params.sessionId)
+    const entry = await supervisorRegistry.open({
+      key: params.sessionId,
+      cwd: binding.canonicalRoot,
+      binding,
+    })
+    return runQueued(commandQueue, entry.key, entry.ac.signal, async (signal) => {
+      const actor = await resolveActor(credential, kind === 'surface' ? 'session' : 'approval', entry.key)
+      if (actor.role === 'agent' || actor.role === 'extension') throw rpcError('CAPABILITY_DENIED')
+      if (kind === 'surface') {
+        const action = params as UiActionParams
+        const identity = {
+          principalId: actor.id,
+          clientId: 'channel-interactions',
+          sessionId: entry.key,
+          commandId: `ui:${action.commandId}`,
+        }
+        const admitted = await journal.begin(
+          identity,
+          commandBinding('ui.action', entry.key, undefined, action),
+        )
+        if (admitted.state === 'conflict')
+          throw rpcError('SEMANTIC_REJECTED', { code: 'UI_COMMAND_CONFLICT' })
+        if (admitted.state === 'corrupt') throw rpcError('SEMANTIC_REJECTED', { code: 'UI_RECOVERY_GAP' })
+        try {
+          const receipt = await entry.submitUiAction?.(action, credential, signal)
+          if (!receipt) throw rpcError('CAPABILITY_DENIED')
+          if (admitted.state !== 'complete') await journal.complete(identity, { seq: receipt.seq })
+          continueTrigger(entry, undefined, receipt.status === 'received')
+          return receipt
+        } catch (error) {
+          if (admitted.state === 'new') await journal.abandon(identity)
+          throw error
+        }
+      }
+      const approval = params as ApprovalDecideParams
+      const session = registry.require(entry.key).session
+      const receipt = await session.decideApproval({
+        command: {
+          handle: { id: approval.id, sessionId: approval.sessionId },
+          revision: approval.revision,
+          commandId: approval.commandId,
+          response: approval.response,
+        },
+        context: { actor, category: 'human', credential, sourceVerified: false },
+      })
+      if (!receipt) throw rpcError('CAPABILITY_DENIED')
+      const target = (await session.listDecisions()).find((value) => value.handle.id === approval.id)
+      if (!entry.inflight && (!target || (!target.consumption && !target.invalidation)))
+        continueTrigger(entry, undefined, true)
+      return receipt
+    })
+  }
   const triggerSessions = webhookSessions(o.config.socketPath, lock.owner, async (input) => {
     const entry = supervisorRegistry.require(input.sessionKey)
     // Only this backend closure can mint trigger identity/provenance; no chat RPC accepts it.
@@ -82,6 +140,7 @@ export function openClientServices(
       }
     const managed = managedSessionPorts({
       socketPath: o.config.socketPath,
+      ...(o.sessionFactRead ? { sessionFactRead: o.sessionFactRead } : {}),
       serverIdentity: lock.owner,
       records: managedSessionRecords,
       authorize: profilePorts.managedSessionAuthority,

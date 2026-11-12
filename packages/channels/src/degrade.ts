@@ -80,6 +80,13 @@ export function degrade(
 ): { msg: ChannelMessage; degraded: DegradedCap[] } {
   const degraded = new Set<DegradedCap>()
   const blocks = message.blocks.map((block): Block => {
+    if (block.kind === 'surface' && !capabilities.card) {
+      degraded.add('card')
+      return {
+        kind: 'text',
+        markdown: `${block.title}\n${block.form.state === 'closed' ? block.form.summary : '请在认证 Web 中提交'}\n${block.fallbackUrl}`,
+      }
+    }
     if (
       (block.kind === 'card' || block.kind === 'table' || block.kind === 'approval') &&
       !capabilities.card

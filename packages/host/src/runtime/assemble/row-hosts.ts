@@ -125,6 +125,7 @@ export function createRowHosts(
     return description && { ...description, ...(declaredCapabilities ? { declaredCapabilities } : {}) }
   }
   const rowServices = createRowServiceHost(describeServices, {
+    ...(deps.channelInteractions ? { channelInteractions: deps.channelInteractions } : {}),
     ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
     channelStateDirectory: join(deps.dataDir, 'channels'),
     channelScope: {

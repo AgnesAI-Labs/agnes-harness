@@ -36,6 +36,7 @@ export type AssembleDeps = HostPaths &
     referenceLimits?: Partial<import('@agnes/extension-api').ReferenceLimits>
     homeDir?: string
     /** Daemon-owned channel bridge; absent embedders refuse channel activation. */
+    channelInteractions?: import('@agnes/host-extensions/profile/channel-runtime').ChannelInteractionsFactory
     channelRuntime?: import('@agnes/host-extensions/profile/channel-runtime').ChannelRuntimeFactory
     loader: PackageLoader
     packageDirs?: Map<string, string>

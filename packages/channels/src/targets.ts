@@ -25,6 +25,14 @@ export interface ChannelTargetsPort {
   attach(
     instanceId: string,
     link: {
+      watchSession?(
+        route: string,
+        sessionId: string,
+        chat: { chatId: string; accountId: string; chatType: 'dm' },
+        assertCurrent: () => Promise<void>,
+      ): Promise<() => void>
+      interaction?(event: CardActionEvent, routes: readonly string[]): Promise<boolean>
+      update?(ref: import('./adapter.js').MessageRef, block: TextBlock | CardBlock): Promise<void>
       provider: string
       textChars: number
       /** Whether the connected adapter renders cards; without them a card arrives as numbered text. */
@@ -33,10 +41,10 @@ export interface ChannelTargetsPort {
       rendered(block: TextBlock | CardBlock): number
       connected(): boolean
       send(
-        chatId: string,
+        chat: { chatId: string; accountId: string; chatType: 'dm' },
         block: TextBlock | CardBlock,
         deliveryKey: string,
-      ): Promise<{ messageId: string; cardBizId?: string }>
+      ): Promise<Omit<import('./adapter.js').MessageRef, 'chatId'>>
     },
   ): () => void
   expectsCode(instanceId: string, text: string): boolean
@@ -54,6 +62,7 @@ export interface ChannelTargetsPort {
     },
   ): { label: string } | undefined
   find(instanceId: string, chatId: string): Pairing | undefined
+  interact?(pairing: Pairing, event: CardActionEvent): Promise<boolean>
   deliver(pairing: Pairing, event: ChannelTargetEvent): Promise<void>
   drop(pairingId: string): void
   paired(instanceId: string, targetId: string): boolean
@@ -138,6 +147,7 @@ export function createTargetRouter(input: {
       return
     }
     if (event.sender.userId !== pairing.userId || event.chat.id !== pairing.chatId) return
+    if (event.kind === 'cardAction' && (await targets.interact?.(pairing, event))) return
     const payload = targetEvent(event, pairing.id, instanceId)
     if (!payload) return
     const delays = backoffDelays(input.backoff)
@@ -179,6 +189,10 @@ export function createTargetRouter(input: {
     },
     attach(runner: Runner, manifest: ChannelAdapter['manifest']) {
       return targets.attach(instanceId, {
+        watchSession: (route, sessionId, chat, assertCurrent) =>
+          runner.watchManaged(route, sessionId, chat, assertCurrent),
+        interaction: (event, routes) => runner.handleInteraction(event, routes),
+        update: (ref, block) => runner.updateDirect(ref, block),
         provider: manifest.id,
         textChars: manifest.limits.textChars,
         card: input.adapter().capabilities().card,
@@ -189,9 +203,9 @@ export function createTargetRouter(input: {
             0,
           ),
         connected: () => runner.status().channel === 'connected',
-        async send(chatId, block, deliveryKey) {
-          const ref = await runner.sendDirect({ chatId }, block, deliveryKey)
-          return { messageId: ref.messageId, ...(ref.cardBizId ? { cardBizId: ref.cardBizId } : {}) }
+        async send(chat, block, deliveryKey) {
+          const ref = await runner.sendDirect(chat, block, deliveryKey)
+          return ref
         },
       })
     },
