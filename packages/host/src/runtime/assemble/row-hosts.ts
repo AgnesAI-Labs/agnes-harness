@@ -180,6 +180,7 @@ export function createRowHosts(
     pluginCatalogue.replace(refreshed)
   }
   return {
+    sideModels: () => sideModels(),
     setSideModels(read: () => readonly SideModelEntry[]) {
       sideModels = read
     },

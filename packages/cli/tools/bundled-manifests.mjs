@@ -3,8 +3,9 @@ import { join } from 'node:path'
 
 /**
  * The runtime manifests of one package's bundled plugins, read from the nested `package.json` of
- * each directory its `agnes.extensions` lists. Mirrors `bundledExtensionManifest` in
- * `@agnes/extension-api`; a test pins the two together. The SEA build runs before any workspace
+ * each directory its `agnes.extensions` lists. Public fields mirror `bundledExtensionManifest`;
+ * hostPlugin preserves the release-owned injection/runtime declaration outside that protocol.
+ * The SEA build runs before any workspace
  * module can be imported, so it cannot call the original.
  */
 export function bundledManifests(packageDirectory) {
@@ -13,6 +14,12 @@ export function bundledManifests(packageDirectory) {
     const nested = JSON.parse(readFileSync(join(packageDirectory, relative, 'package.json'), 'utf8'))
     const [entry] = nested.agnes.plugins
     return {
+      hostPlugin: {
+        id: entry.id,
+        export: entry.export,
+        inject: entry.inject ?? [],
+        runtime: entry.runtime ?? 'in-process',
+      },
       id: entry.id.startsWith('ext:') ? entry.id.slice(4) : entry.id,
       version: nested.version,
       apiRange: entry.apiRange,
