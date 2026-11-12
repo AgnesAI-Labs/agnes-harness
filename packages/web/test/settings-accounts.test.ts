@@ -722,3 +722,37 @@ it('reports a close once per open dialog, however it was closed', async () => {
   dialog.dispatchEvent(new (window as Window).Event('cancel', { cancelable: true }) as unknown as Event)
   expect(h.onClose).toHaveBeenCalledTimes(2)
 })
+
+it('shows discovered image input, keeps an edited choice when relisting, and saves it per relay model', async () => {
+  const models = [
+    { id: 'a', name: 'A', input: ['text', 'image'] as ('text' | 'image')[] },
+    { id: 'b', name: 'B' },
+  ]
+  const h = await setup(
+    [{ ...account('relay'), providerId: 'openai-compatible', model: 'a', models }],
+    [{ ...OPENAI, id: 'openai-compatible' }],
+  )
+  await h.click('button[aria-label="编辑 relay"]')
+  const image = () =>
+    h.doc.querySelector('#config-model-inputs input[value="image"]') as unknown as HTMLInputElement | null
+  const text = () =>
+    h.doc.querySelector('#config-model-inputs input[value="text"]') as unknown as HTMLInputElement | null
+  await vi.waitFor(() => expect(image()?.checked).toBe(true))
+  image()!.click()
+  await vi.waitFor(() => expect(image()?.checked).toBe(false))
+  expect(text()?.disabled).toBe(true)
+  h.config.test.mockResolvedValueOnce({ verified: true, models })
+  const fetch = [...h.doc.querySelectorAll('#config-compatible-models button')].find(
+    (b) => b.textContent === zhT('accounts.compatible.fetch'),
+  )!
+  ;(fetch as unknown as HTMLButtonElement).click()
+  await vi.waitFor(() => expect(h.config.test).toHaveBeenCalled())
+  await settle()
+  expect(image()?.checked).toBe(false)
+  await h.click('#config-save')
+  await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
+  expect((h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>])[0]).toMatchObject({
+    models: [{ id: 'a', input: ['text'] }, { id: 'b' }],
+  })
+  h.controller.close()
+})

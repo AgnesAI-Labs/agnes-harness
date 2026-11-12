@@ -3,7 +3,8 @@ import { access, chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'n
 import { createServer, type IncomingMessage } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { getApiKeyProvider } from '@agnes/ai'
+import { getApiKeyProvider, PiAdapter } from '@agnes/ai'
+import { fakeRequest } from '@agnes/ai/testkit'
 import { mergeRoutes } from '@agnes/host-common/profile/resolve'
 import * as systemNode from '@agnes/system-node'
 import { createPrivateDirectorySync } from '@agnes/system-node'
@@ -1745,3 +1746,182 @@ it.each(['missing', 'unreadable'] as const)(
     expect(audit + JSON.stringify([status, degraded, restored])).not.toMatch(/test-(work|person|new|bad)-key/)
   },
 )
+
+it('discovers image input and keeps explicit choices through retesting, reopening and runtime projection', async () => {
+  const server = await fixture([{ id: 'vision', input_modalities: ['text', 'image'] }, { id: 'plain' }])
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const account = { providerId: 'openai-compatible', accountId: 'vision', baseUrl: server.baseUrl }
+  const found = await service.test(account)
+  expect(found.models[0]).toMatchObject({ input: ['text', 'image'] })
+  expect(found.models[1]).not.toHaveProperty('input')
+  await service.save({ ...account, model: 'vision', models: found.models })
+  let reopened = createConfigurationService({ home: root, profile: 'local-dev' })
+  const route = (await reopened.profileInput()).provider!.routes![0]!
+  expect(route.models?.[0]?.input).toEqual(['text', 'image'])
+  let received: unknown
+  const endpoint = createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    received = JSON.parse(Buffer.concat(chunks).toString())
+    response.writeHead(200, { 'content-type': 'text/event-stream' })
+    response.end(
+      'data: {"id":"local-image","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"seen"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+    )
+  })
+  servers.push(endpoint)
+  await new Promise<void>((resolve) => endpoint.listen(0, '127.0.0.1', resolve))
+  const address = endpoint.address() as { port: number }
+  const adapter = new PiAdapter({
+    manualRoutes: [{ ...route, baseUrl: `http://127.0.0.1:${address.port}/v1`, models: route.models! }],
+    maxRetries: 0,
+  })
+  adapter.bindCredential(route.route, 'synthetic-test-key')
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII='
+  const events = []
+  for await (const event of adapter.stream(
+    route.route,
+    fakeRequest({
+      route: route.route,
+      model: 'vision',
+      messages: [{ role: 'user', content: [{ type: 'image', mimeType: 'image/png', data: png }] }],
+    }),
+    {
+      signal: new AbortController().signal,
+      toolNames: [],
+      sessionKey: 'image-test',
+      timeoutMs: { firstToken: 5000, total: 10000 },
+    },
+  ))
+    events.push(event)
+  expect(
+    events.some((event) => event.type === 'error'),
+    JSON.stringify(events),
+  ).toBe(false)
+  expect(JSON.stringify(received)).toContain(`data:image/png;base64,${png}`)
+  expect(JSON.stringify(received)).toContain('image_url')
+  await reopened.save({
+    ...account,
+    model: 'vision',
+    models: [{ ...found.models[0]!, input: ['text'] }],
+  } as never)
+  reopened = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect((await reopened.test(account)).models[0]?.input).toEqual(['text'])
+  expect((await reopened.get()).accounts?.[0]?.models[0]?.input).toEqual(['text'])
+  expect((await reopened.profileInput()).provider?.routes?.[0]?.models?.[0]?.input).toEqual(['text'])
+  const before = (await reopened.get()).revision
+  for (const input of [[], ['audio'], ['text', 'text']])
+    await expect(
+      reopened.save({
+        ...account,
+        model: 'vision',
+        models: [{ id: 'vision', name: 'vision', input }],
+      } as never),
+    ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+  expect((await reopened.get()).revision).toBe(before)
+})
+
+it('inherits image input only from the catalog at the matching official endpoint and protocol', async () => {
+  const entry = getApiKeyProvider('moonshotai-cn')!
+  const model = (await entry.createAdapter()).models(entry.route).find((m) => m.id === 'kimi-k3')!
+  const service = createConfigurationService({
+    home: await home(),
+    profile: 'local-dev',
+    request: async () => Response.json({ data: [{ id: model.id }] }),
+  })
+  const found = await service.test({ providerId: 'openai-compatible', baseUrl: entry.baseUrl })
+  expect(found.models[0]?.input).toEqual(['text', 'image'])
+  const unrelated = await service.test({
+    providerId: 'openai-compatible',
+    baseUrl: 'https://gateway.invalid/v1',
+  })
+  expect(unrelated.models[0]).not.toHaveProperty('input')
+  const other = getApiKeyProvider('openai')!
+  const otherModel = (await other.createAdapter()).models(other.route).find((m) => m.input.includes('image'))!
+  const wrongProtocol = createConfigurationService({
+    home: await home(),
+    profile: 'local-dev',
+    request: async () => Response.json({ data: [{ id: otherModel.id }] }),
+  })
+  const refused = await wrongProtocol.test({ providerId: 'openai-compatible', baseUrl: other.baseUrl })
+  expect(refused.models[0]).not.toHaveProperty('input')
+})
+
+it('projects installed input types and permits only named per-model input overrides', async () => {
+  const entry = getApiKeyProvider('openai')!
+  const record = (await entry.createAdapter()).models(entry.route).find((m) => m.input.includes('image'))!
+  const server = await fixture(record.id)
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const account = { providerId: 'openai', baseUrl: server.baseUrl, apiKey: 'test-key', model: record.id }
+  expect((await service.test(account)).models.find((m) => m.id === record.id)?.input).toEqual(record.input)
+  await service.save({ ...account, models: [{ id: record.id, name: record.name, input: ['text'] }] } as never)
+  expect(
+    (await service.profileInput()).provider?.routes?.[0]?.models?.find((m) => m.id === record.id)?.input,
+  ).toEqual(['text'])
+})
+
+it('applies model input edits alongside a rename and rejects malformed rename writes without publishing', async () => {
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const account = {
+    providerId: 'openai-compatible',
+    accountId: 'renamed',
+    baseUrl: 'http://127.0.0.1:1/v1',
+    model: 'vision',
+  }
+  await service.save({ ...account, models: [{ id: 'vision', name: 'vision', input: ['text', 'image'] }] })
+  await service.save({
+    ...account,
+    label: 'Renamed',
+    models: [{ id: 'vision', name: 'vision', input: ['text'] }],
+  })
+  expect((await service.get()).accounts?.[0]?.models[0]?.input).toEqual(['text'])
+  const before = await service.get()
+  for (const input of [[], ['audio'], ['image', 'image']]) {
+    await expect(
+      service.save({
+        ...account,
+        label: 'Another name',
+        models: [{ id: 'vision', name: 'vision', input }],
+      } as never),
+    ).rejects.toMatchObject({ code: 'CONFIG_INVALID_INPUT' })
+    expect(await service.get()).toEqual(before)
+  }
+})
+
+it('accepts prototype-named model IDs without inferring inherited object properties as input', async () => {
+  const server = await fixture([
+    { id: 'vision', input_modalities: ['text', 'image'] },
+    'constructor',
+    'toString',
+    '__proto__',
+  ])
+  const service = createConfigurationService({ home: await home(), profile: 'local-dev' })
+  const result = await service.test({ providerId: 'openai-compatible', baseUrl: server.baseUrl })
+  expect(result.models.map((model) => [model.id, model.input])).toEqual([
+    ['vision', ['text', 'image']],
+    ['constructor', undefined],
+    ['toString', undefined],
+    ['__proto__', undefined],
+  ])
+})
+
+it('inherits official image defaults for an existing account without rewriting or relisting its saved models', async () => {
+  const root = await home()
+  const service = createConfigurationService({ home: root, profile: 'local-dev' })
+  const account = {
+    providerId: 'openai-compatible',
+    accountId: 'old-kimi',
+    baseUrl: 'https://api.moonshot.cn/v1',
+    model: 'kimi-k3',
+    apiKey: 'sk-test-value',
+  }
+  await service.save({ ...account, models: [{ id: 'kimi-k3', name: 'Kimi', contextWindow: 1048576 }] })
+  const file = join(root, 'profiles', 'local-dev', 'configuration.json')
+  const before = await readFile(file, 'utf8')
+  const reopened = createConfigurationService({ home: root, profile: 'local-dev' })
+  expect((await reopened.get()).accounts?.[0]?.models[0]?.input).toEqual(['text', 'image'])
+  expect((await reopened.profileInput()).provider?.routes?.[0]?.models?.[0]?.input).toEqual(['text', 'image'])
+  expect(await readFile(file, 'utf8')).toBe(before)
+})

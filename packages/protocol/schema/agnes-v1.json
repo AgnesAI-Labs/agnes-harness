@@ -7011,6 +7011,13 @@
       "additionalProperties": false,
       "required": ["id", "name"],
       "properties": {
+        "input": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["text", "image"] },
+          "description": "Explicit accepted input types; omission inherits the model catalogue or text fallback."
+        },
         "reasoning": { "type": "boolean" },
         "thinkingLevelMap": { "type": "object", "additionalProperties": { "type": "string" } },
         "contextWindow": { "type": "integer", "minimum": 1 },

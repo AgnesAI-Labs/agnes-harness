@@ -1,4 +1,5 @@
 import type { ConfigModel, ModelRecord, ModelSettings } from '@agnes/protocol'
+import { ConfigurationError } from './configuration-error.js'
 
 const levels = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 const object = (value: unknown): value is Record<string, unknown> =>
@@ -34,6 +35,7 @@ export function normalizeConfigModel(value: unknown): ConfigModel | undefined {
           'cost',
           'defaultSettings',
           'audioRole',
+          'input',
         ].includes(key),
     )
   )
@@ -55,6 +57,14 @@ export function normalizeConfigModel(value: unknown): ConfigModel | undefined {
   if ('thinkingEfforts' in value && value.thinkingEfforts !== false && !map(value.thinkingEfforts))
     return undefined
   if ('thinkingLevelMap' in value && !map(value.thinkingLevelMap)) return undefined
+  if (
+    'input' in value &&
+    (!Array.isArray(value.input) ||
+      value.input.length === 0 ||
+      new Set(value.input).size !== value.input.length ||
+      value.input.some((one) => one !== 'text' && one !== 'image'))
+  )
+    return undefined
   if ('reasoning' in value && typeof value.reasoning !== 'boolean') return undefined
   if (
     'contextWindow' in value &&
@@ -98,13 +108,14 @@ export function supportsModelSettings(
   )
 }
 
-/** Installed capabilities remain authoritative; saved deployment overrides and defaults survive re-testing. */
+/** Catalogue defaults and saved input declarations are projected together when re-testing. */
 export function configModel(record: ModelRecord, saved?: ConfigModel): ConfigModel {
   const effective = applyModelConfiguration(record, saved)
   return {
     id: effective.id,
     name: effective.name,
     reasoning: effective.reasoning,
+    input: [...effective.input],
     ...(effective.thinkingLevelMap ? { thinkingLevelMap: effective.thinkingLevelMap } : {}),
     contextWindow: effective.contextWindow,
     ...(saved?.thinkingEfforts === undefined ? {} : { thinkingEfforts: saved.thinkingEfforts }),
@@ -134,6 +145,43 @@ export function applyModelConfiguration(record: ModelRecord, saved?: ConfigModel
     effective = { ...record, reasoning: true, thinkingLevelMap: saved.thinkingEfforts }
   return {
     ...effective,
+    ...(saved?.input === undefined ? {} : { input: [...saved.input] }),
     ...(saved?.defaultSettings === undefined ? {} : { defaultSettings: saved.defaultSettings }),
   }
+}
+
+/** Catalogue accounts may customize input types, never introduce models or change other capabilities. */
+export function applyInputOverrides(models: ConfigModel[], value: unknown): ConfigModel[] {
+  if (value === undefined) return models
+  if (!Array.isArray(value) || value.length === 0 || value.length > 4096)
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  const declarations = value.map(normalizeConfigModel)
+  if (
+    declarations.some((m) => !m?.input || !models.some((base) => base.id === m.id)) ||
+    declarations.some((m) => m && Object.keys(m).some((k) => !['id', 'name', 'input'].includes(k))) ||
+    new Set(declarations.map((m) => m?.id)).size !== declarations.length
+  )
+    throw new ConfigurationError('CONFIG_INVALID_INPUT')
+  return models.map((m) => {
+    const input = declarations.find((d) => d?.id === m.id)?.input
+    return input ? { ...m, input: [...input] } : m
+  })
+}
+
+/** Only an exact endpoint and protocol match may supply an unknown account's catalogue defaults. */
+export async function catalogueInputs<T extends { api: string; baseUrl: string; capabilities?: unknown }>(
+  providers: readonly T[],
+  read: (provider: T) => Promise<{ records: ModelRecord[] }>,
+  api: string,
+  address: string,
+): Promise<ReadonlyMap<string, ModelRecord['input']>> {
+  const provider = providers.find(
+    (candidate) =>
+      !candidate.capabilities &&
+      candidate.api === api &&
+      candidate.baseUrl.replace(/\/$/, '') === address.replace(/\/$/, ''),
+  )
+  if (!provider) return new Map()
+  const { records } = await read(provider).catch(() => ({ records: [] as ModelRecord[] }))
+  return new Map(records.map((record) => [record.id, record.input]))
 }

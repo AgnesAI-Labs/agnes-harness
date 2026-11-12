@@ -202,6 +202,7 @@ export function SettingsAccountDialog({ t = fallbackT }: { t?: Translate }) {
                       <p id="config-thinking-error" className="account-field-error" />
                     </div>
                   </div>
+                  <div id="config-model-inputs" className="form-field-wide" hidden />
                   <div className="account-field account-budget-field">
                     <Field
                       className="form-field"
