@@ -15,7 +15,12 @@ export async function hasOpenNativeQuestion(read: ScanRead<EventEnvelope>): Prom
   const surfaces = new Map<string, UiSurfaceRecord>()
   for await (const page of scanPages(read, { type: types, lane: 'main', toSeq: head, order: 'asc' }, 8)) {
     for (const event of page) {
-      if (event.origin !== 'ext:agnes/intelligent-ui' || event.trust !== 'untrusted' || event.lane !== 'main' || !types.includes(event.type))
+      if (
+        event.origin !== 'ext:agnes/intelligent-ui' ||
+        event.trust !== 'untrusted' ||
+        event.lane !== 'main' ||
+        !types.includes(event.type)
+      )
         continue
       const name = event.type.slice(prefix.length)
       const record = (event.data as unknown as { record?: UiSurfaceRecord } | null)?.record

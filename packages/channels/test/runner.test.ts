@@ -70,14 +70,24 @@ describe('createRunner', () => {
 
   it('rolls back a failed managed watch so retry activates and its disposer detaches', async () => {
     const client = createFakeClient()
-    const runner = createRunner({ adapter: new FakeChannel(), cfg: config, secrets: {}, client, log: logger() })
+    const runner = createRunner({
+      adapter: new FakeChannel(),
+      cfg: config,
+      secrets: {},
+      client,
+      log: logger(),
+    })
     const key = 'managed-watch'
     const target = { chatId: 'chat-1' }
     const failure = new Error('initial flush failed')
     let enter!: () => void
     let reject!: (error: Error) => void
-    const entered = new Promise<void>((resolve) => { enter = resolve })
-    const gate = new Promise<void>((_resolve, fail) => { reject = fail })
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
+    const gate = new Promise<void>((_resolve, fail) => {
+      reject = fail
+    })
     const first = runner.watchManaged(key, 'session-1', target, async () => {
       enter()
       await gate
@@ -103,8 +113,12 @@ describe('createRunner', () => {
     const attach = client.session.attach.bind(client.session)
     let release!: () => void
     let enter!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
-    const entered = new Promise<void>((resolve) => { enter = resolve })
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve
+    })
     let detached = false
     let readActive!: () => Promise<unknown>
     client.session.attach = vi.fn(async (id, options) => {
@@ -124,7 +138,13 @@ describe('createRunner', () => {
       await gate
       return session
     })
-    const runner = createRunner({ adapter: new FakeChannel(), cfg: config, secrets: {}, client, log: logger() })
+    const runner = createRunner({
+      adapter: new FakeChannel(),
+      cfg: config,
+      secrets: {},
+      client,
+      log: logger(),
+    })
     const target = { chatId: 'chat-1' }
     const first = runner.watchManaged('managed-watch', 'session-1', target, async () => {})
     await entered

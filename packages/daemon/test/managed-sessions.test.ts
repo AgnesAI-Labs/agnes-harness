@@ -185,10 +185,12 @@ function world(
       loaded: (sessionId) => state.loaded.has(sessionId),
       activity: async () => state.activity,
       ...(withQuestionReader
-        ? { openQuestion: async (sessionId: string) => {
-            if (state.questionReadError) throw new Error('question read unavailable')
-            return state.openQuestions.has(sessionId)
-          } }
+        ? {
+            openQuestion: async (sessionId: string) => {
+              if (state.questionReadError) throw new Error('question read unavailable')
+              return state.openQuestions.has(sessionId)
+            },
+          }
         : {}),
       async view(sessionId) {
         const turns = state.turns.get(sessionId) ?? []

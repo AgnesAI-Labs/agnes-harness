@@ -12,50 +12,82 @@ function surface(id = 'question'): UiSurface {
     revision: 1,
     title: 'Pick',
     placement: { inline: true, workbench: false, preferred: 'inline' },
-    components: [{
-      id: 'answers',
-      kind: 'form',
-      dataKey: 'draft',
-      actionIds: ['submit'],
-      schema: { type: 'object', properties: {}, additionalProperties: false },
-    }],
+    components: [
+      {
+        id: 'answers',
+        kind: 'form',
+        dataKey: 'draft',
+        actionIds: ['submit'],
+        schema: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    ],
     data: { draft: {}, question: { kind: 'ask_user_question', deadline: 0 } },
-    actions: [{
-      id: 'submit', label: 'Submit', tool: 'ui_submit', argsTemplate: {},
-      paramsSchema: { type: 'object', properties: {}, additionalProperties: false },
-    }],
+    actions: [
+      {
+        id: 'submit',
+        label: 'Submit',
+        tool: 'ui_submit',
+        argsTemplate: {},
+        paramsSchema: { type: 'object', properties: {}, additionalProperties: false },
+      },
+    ],
   }
 }
 
 function record(id = 'question'): UiSurfaceRecord {
-  return { surface: surface(id), status: 'open', createdSeq: 0, updatedSeq: 0, owner: 'plugin/owner', lane: 'main', taskId: 'task' }
+  return {
+    surface: surface(id),
+    status: 'open',
+    createdSeq: 0,
+    updatedSeq: 0,
+    owner: 'plugin/owner',
+    lane: 'main',
+    taskId: 'task',
+  }
 }
 
-function event(seq: number, name: string, value: unknown, overrides: Partial<EventEnvelope> = {}): EventEnvelope {
+function event(
+  seq: number,
+  name: string,
+  value: unknown,
+  overrides: Partial<EventEnvelope> = {},
+): EventEnvelope {
   return {
-    v: 1, seq, ts: '2026-01-01T00:00:00.000Z', id: `event-${seq}`,
+    v: 1,
+    seq,
+    ts: '2026-01-01T00:00:00.000Z',
+    id: `event-${seq}`,
     actor: { id: 'owner', org: 'local', role: 'owner', deptPath: [], attrs: {} },
-    origin: 'ext:agnes/intelligent-ui', trust: 'untrusted', ignorable: true, lane: 'main',
-    type: `${prefix}${name}`, data: { record: value }, ...overrides,
+    origin: 'ext:agnes/intelligent-ui',
+    trust: 'untrusted',
+    ignorable: true,
+    lane: 'main',
+    type: `${prefix}${name}`,
+    data: { record: value },
+    ...overrides,
   } as unknown as EventEnvelope
 }
 function ledger(rows: EventEnvelope[]) {
   const calls: Parameters<ScanRead<EventEnvelope>>[0][] = []
   const read: ScanRead<EventEnvelope> = async (q) => {
     calls.push({ ...q })
-    const filtered = rows.filter((row) =>
-      (q.fromSeq === undefined || row.seq >= q.fromSeq) &&
-      (q.toSeq === undefined || row.seq <= q.toSeq) &&
-      (q.lane === undefined || row.lane === q.lane) &&
-      (q.type === undefined || (Array.isArray(q.type) ? q.type.includes(row.type) : q.type === row.type)),
-    ).sort((a, b) => q.order === 'desc' ? b.seq - a.seq : a.seq - b.seq)
+    const filtered = rows
+      .filter(
+        (row) =>
+          (q.fromSeq === undefined || row.seq >= q.fromSeq) &&
+          (q.toSeq === undefined || row.seq <= q.toSeq) &&
+          (q.lane === undefined || row.lane === q.lane) &&
+          (q.type === undefined || (Array.isArray(q.type) ? q.type.includes(row.type) : q.type === row.type)),
+      )
+      .sort((a, b) => (q.order === 'desc' ? b.seq - a.seq : a.seq - b.seq))
     return filtered.slice(0, q.limit)
   }
   return { read, calls }
 }
 
 const updated = (old: UiSurfaceRecord, changes: Partial<UiSurface> = {}): UiSurfaceRecord => ({
-  ...old, surface: { ...old.surface, revision: old.surface.revision + 1, ...changes },
+  ...old,
+  surface: { ...old.surface, revision: old.surface.revision + 1, ...changes },
 })
 const closed = (old: UiSurfaceRecord): UiSurfaceRecord => ({ ...old, status: 'closed' })
 
@@ -82,9 +114,16 @@ describe('durable native question projection', () => {
     const first = record('first')
     const second = record('second')
     const noQuestion = updated(first, { data: { draft: {} } })
-    const rows = [event(1, 'opened', first), event(2, 'opened', second), event(3, 'updated', noQuestion), event(4, 'closed', closed(second))]
+    const rows = [
+      event(1, 'opened', first),
+      event(2, 'opened', second),
+      event(3, 'updated', noQuestion),
+      event(4, 'closed', closed(second)),
+    ]
     expect(await hasOpenNativeQuestion(ledger(rows).read)).toBe(false)
-    const questionAgain = updated(noQuestion, { data: { question: { kind: 'ask_user_question', deadline: 0 } } })
+    const questionAgain = updated(noQuestion, {
+      data: { question: { kind: 'ask_user_question', deadline: 0 } },
+    })
     rows.push(event(5, 'updated', questionAgain))
     expect(await hasOpenNativeQuestion(ledger(rows).read)).toBe(true)
     rows.push(event(6, 'closed', closed(questionAgain)))
@@ -101,13 +140,31 @@ describe('durable native question projection', () => {
     ['duplicate open', [event(1, 'opened', record()), event(2, 'opened', record())]],
     ['orphan update', [event(1, 'updated', updated(record()))]],
     ['revision gap', [event(1, 'opened', record()), event(2, 'updated', updated(record(), { revision: 3 }))]],
-    ['changed owner', [event(1, 'opened', record()), event(2, 'updated', { ...updated(record()), owner: 'other' })]],
-    ['changed task', [event(1, 'opened', record()), event(2, 'updated', { ...updated(record()), taskId: 'other' })]],
-    ['changed lane', [event(1, 'opened', record()), event(2, 'updated', { ...updated(record()), lane: 'other' })]],
+    [
+      'changed owner',
+      [event(1, 'opened', record()), event(2, 'updated', { ...updated(record()), owner: 'other' })],
+    ],
+    [
+      'changed task',
+      [event(1, 'opened', record()), event(2, 'updated', { ...updated(record()), taskId: 'other' })],
+    ],
+    [
+      'changed lane',
+      [event(1, 'opened', record()), event(2, 'updated', { ...updated(record()), lane: 'other' })],
+    ],
     ['altered close content', [event(1, 'opened', record()), event(2, 'closed', closed(updated(record())))]],
-    ['update after close', [event(1, 'opened', record()), event(2, 'closed', closed(record())), event(3, 'updated', updated(record()))]],
+    [
+      'update after close',
+      [
+        event(1, 'opened', record()),
+        event(2, 'closed', closed(record())),
+        event(3, 'updated', updated(record())),
+      ],
+    ],
   ] satisfies [string, EventEnvelope[]][])('rejects corrupt surface chains: %s', async (_name, rows) => {
-    await expect(hasOpenNativeQuestion(ledger(rows).read)).rejects.toThrow('UI surface ledger chain is corrupt')
+    await expect(hasOpenNativeQuestion(ledger(rows).read)).rejects.toThrow(
+      'UI surface ledger chain is corrupt',
+    )
   })
 
   it('pins the head and reads bounded pages even when the ledger grows during the scan', async () => {
@@ -125,15 +182,34 @@ describe('durable native question projection', () => {
     expect(await hasOpenNativeQuestion(read)).toBe(true)
     expect(source.calls).toEqual([
       { order: 'desc', limit: 1 },
-      { type: ['opened', 'updated', 'closed'].map((name) => prefix + name), lane: 'main', toSeq: 9, order: 'asc', limit: 8 },
-      { type: ['opened', 'updated', 'closed'].map((name) => prefix + name), lane: 'main', toSeq: 9, fromSeq: 9, order: 'asc', limit: 8 },
+      {
+        type: ['opened', 'updated', 'closed'].map((name) => prefix + name),
+        lane: 'main',
+        toSeq: 9,
+        order: 'asc',
+        limit: 8,
+      },
+      {
+        type: ['opened', 'updated', 'closed'].map((name) => prefix + name),
+        lane: 'main',
+        toSeq: 9,
+        fromSeq: 9,
+        order: 'asc',
+        limit: 8,
+      },
     ])
   })
 
   it('propagates head and page read failures and a non-advancing page', async () => {
     const failure = new Error('storage unavailable')
-    await expect(hasOpenNativeQuestion(async () => { throw failure })).rejects.toBe(failure)
-    await expect(hasOpenNativeQuestion(async () => [{} as EventEnvelope])).rejects.toThrow('ledger head is corrupt')
+    await expect(
+      hasOpenNativeQuestion(async () => {
+        throw failure
+      }),
+    ).rejects.toBe(failure)
+    await expect(hasOpenNativeQuestion(async () => [{} as EventEnvelope])).rejects.toThrow(
+      'ledger head is corrupt',
+    )
     const pageFailure: ScanRead<EventEnvelope> = async (q) => {
       if (q.order === 'desc') return [event(10, 'opened', record())]
       throw failure
@@ -146,20 +222,34 @@ describe('durable native question projection', () => {
       return repeated
     }
     await expect(hasOpenNativeQuestion(lateFailure)).rejects.toBe(failure)
-    const stuck: ScanRead<EventEnvelope> = async (q) => q.order === 'desc' ? [event(10, 'opened', record())] : repeated
-    await expect(hasOpenNativeQuestion(stuck)).rejects.toThrow('scan page did not move past the previous page')
+    const stuck: ScanRead<EventEnvelope> = async (q) =>
+      q.order === 'desc' ? [event(10, 'opened', record())] : repeated
+    await expect(hasOpenNativeQuestion(stuck)).rejects.toThrow(
+      'scan page did not move past the previous page',
+    )
   })
 
   it('reads historical questions without opening workers, and omits the reader when unavailable', async () => {
-    const open = vi.fn(async () => { throw new Error('worker opened') })
-    const restoreBinding = vi.fn(async () => { throw new Error('binding opened') })
+    const open = vi.fn(async () => {
+      throw new Error('worker opened')
+    })
+    const restoreBinding = vi.fn(async () => {
+      throw new Error('binding opened')
+    })
     const read = vi.fn(() => ledger([event(1, 'opened', record())]).read)
     const deps = {
-      socketPath: '', serverIdentity: { pid: 0, processStartId: '' }, records: {} as never,
-      authorize: async () => undefined, forkParent: () => undefined,
-      workspaces: { restoreBinding } as never, models: async () => [],
-      registry: { get: () => undefined, open }, commandQueue: {} as never,
-      continueTurn: () => undefined, opensWithCommandRules: true, osBoundary: async () => false,
+      socketPath: '',
+      serverIdentity: { pid: 0, processStartId: '' },
+      records: {} as never,
+      authorize: async () => undefined,
+      forkParent: () => undefined,
+      workspaces: { restoreBinding } as never,
+      models: async () => [],
+      registry: { get: () => undefined, open },
+      commandQueue: {} as never,
+      continueTurn: () => undefined,
+      opensWithCommandRules: true,
+      osBoundary: async () => false,
     }
     const withReader = managedSessionPorts({ ...deps, sessionFactRead: read })
     expect(await withReader.ports.sessions.openQuestion?.('historical')).toBe(true)
