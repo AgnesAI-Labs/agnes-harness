@@ -3,6 +3,7 @@ import { dirname } from 'node:path'
 import type { DaemonNotice, UINode } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import {
+  type Block,
   type ChannelAdapter,
   type ChannelEvent,
   type ChatTarget,
@@ -80,7 +81,7 @@ export type Runner = {
   unlink(key: string): Promise<void>
   baseline(sessionId: string): Promise<number>
   activate(key: string, target: { chatId: string; threadId?: string }): Promise<void>
-  sendDirect(chat: ChatTarget, text: string, deliveryKey: string): Promise<MessageRef>
+  sendDirect(chat: ChatTarget, block: Block, deliveryKey: string): Promise<MessageRef>
   /** At most once per event across processes, as for session-bound events; false when already claimed. */
   claim(event: ChannelEvent): Promise<boolean>
 }
@@ -269,7 +270,7 @@ export function createRunner(dependencies: RunnerDeps): Runner {
     onEvent(handler) {
       subscribers.push(handler)
     },
-    sendDirect: (chat, text, deliveryKey) => outbound.sendDirect(chat, text, deliveryKey),
+    sendDirect: (chat, block, deliveryKey) => outbound.sendDirect(chat, block, deliveryKey),
     async claim(event) {
       const key = `${dependencies.adapter.manifest.id}:${event.accountId}:${event.eventId}`
       try {

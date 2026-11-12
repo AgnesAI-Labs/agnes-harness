@@ -1,6 +1,6 @@
 import type { ChannelCapabilities, ChannelManifest, UITimeline } from '@agnes/protocol'
 import type { Session } from '@agnes/sdk'
-import type { ChannelAdapter, ChannelMessage, ChatTarget, MessageRef } from '../adapter.js'
+import type { Block, ChannelAdapter, ChannelMessage, ChatTarget, MessageRef } from '../adapter.js'
 import { type DegradedCap, degrade } from '../degrade.js'
 import { backoffDelays } from './backoff.js'
 import type { RunnerConfig } from './config.js'
@@ -128,10 +128,10 @@ export class Outbound {
   }
 
   /**
-   * One text message to a chat outside any session lane: a paired plugin service's send, or a reply to
-   * its owner. It shares the account rate with session lanes and keeps one message per second per chat.
+   * One message to a chat outside any session lane: a paired plugin service's send, or a reply to its
+   * owner. It shares the account rate with session lanes and keeps one message per second per chat.
    */
-  async sendDirect(chat: ChatTarget, text: string, deliveryKey: string): Promise<MessageRef> {
+  async sendDirect(chat: ChatTarget, block: Block, deliveryKey: string): Promise<MessageRef> {
     if (this.stopped) throw new Error('channel outbound stopped')
     let bucket = this.chatBuckets.get(chat.chatId)
     if (bucket === undefined) {
@@ -142,7 +142,7 @@ export class Outbound {
     await this.takeTokens(bucket, this.direct.signal)
     return this.dependencies.adapter.send(
       { ...chat, deliveryKey },
-      { blocks: [{ kind: 'text', markdown: text }] },
+      degrade({ blocks: [block] }, this.dependencies.caps).msg,
     )
   }
 

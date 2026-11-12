@@ -2,6 +2,28 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.13.0
+
+### Added
+
+- Optional `MessageEvent.quotedMessageId`: the platform id of the message a channel message replies to
+  or quotes. Channel providers that report it should require `^5.13.0`.
+- Channel targets carry buttons. `ManagedChannelTargets.send` accepts optional `title` (1–100
+  characters, no line break) and `actions` (`ChannelTargetAction`: 1–6 buttons, `id` 1–64 of
+  `[A-Za-z0-9:_-]` and unique, `label` 1–40 characters without a line break, `style` `primary`,
+  `default` or `danger`). Without `actions` the send stays one text message with `title` as a bold
+  first line; with `actions` it is a card, sent as numbered text on a channel without cards, and
+  refused with `TOO_LARGE` when the composed card exceeds `cardBytes` on a channel with cards.
+  `ChannelPairing.textChars` is what a send's `text` may carry: the title line and, on a channel
+  without cards, the button list are reserved within the channel's limit, and a send whose
+  rendered text would still exceed that limit is refused with `TOO_LARGE`.
+- `ChannelTargetEvent` is now the union of `ChannelTargetMessageEvent` (`kind: 'message'`, with
+  optional `quotedMessageId`) and `ChannelTargetActionEvent` (`kind: 'action'`, `messageId` and
+  `actionId`). A click arrives only from the paired owner, in the paired chat, on a message this
+  service sent within the seven-day delivery ledger, so a service that never sends `actions` never
+  receives one; the Host keeps no button list. Services handling clicks should narrow on `kind` and
+  require `^5.13.0`.
+
 ## 5.12.0
 
 ### Added

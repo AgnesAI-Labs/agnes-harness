@@ -1,15 +1,13 @@
 /**
  * A channel instance can route one direct chat to a profile-scoped managed service. The owner pairs the
  * chat on the channel page with a one-time code, after a person approves minting it; from then on the
- * Host gives the service only the text that the paired owner sends in that chat, and the service can send
- * text only to that chat. Pairings, codes and the delivery ledger belong to the Host, never to the channel
- * plugin or the service. Only a managed service whose reviewed declaration sets `channelTargets: true`
- * receives a working port. Added in 5.12.
+ * Host gives the service only the text that the paired owner sends in that chat and the owner's clicks on
+ * the service's own buttons, and the service can send only to that chat. Pairings, codes and the delivery
+ * ledger belong to the Host, never to the channel plugin or the service. Only a managed service whose
+ * reviewed declaration sets `channelTargets: true` receives a working port. Added in 5.12.
  */
 
-/** A text message the paired owner sent in the paired direct chat. Attachments and empty text never arrive. */
-export interface ChannelTargetEvent {
-  readonly kind: 'message'
+interface ChannelTargetEventBase {
   /** The platform verified the sender as the paired owner. */
   readonly origin: 'owner'
   readonly pairingId: string
@@ -20,7 +18,46 @@ export interface ChannelTargetEvent {
   readonly at: string
   readonly chat: { readonly id: string; readonly type: 'dm' }
   readonly sender: { readonly userId: string }
+}
+
+/** A text message the paired owner sent in the paired direct chat. Attachments and empty text never arrive. */
+export interface ChannelTargetMessageEvent extends ChannelTargetEventBase {
+  readonly kind: 'message'
   readonly text: string
+  /** The platform id of the message this one replies to or quotes, when the channel reports it. Added in 5.13. */
+  readonly quotedMessageId?: string
+}
+
+/**
+ * The paired owner clicked a button on a message this service sent; `messageId` is the id its `send`
+ * returned. The Host keeps no button list: check `actionId` against what that message offered. Added in 5.13.
+ */
+export interface ChannelTargetActionEvent extends ChannelTargetEventBase {
+  readonly kind: 'action'
+  readonly actionId: string
+}
+
+export type ChannelTargetEvent = ChannelTargetMessageEvent | ChannelTargetActionEvent
+
+/**
+ * A button on a sent message: `id` is 1–64 of `[A-Za-z0-9:_-]` and unique within the message, `label` is
+ * 1–40 characters without a line break. Added in 5.13.
+ */
+export interface ChannelTargetAction {
+  readonly id: string
+  readonly label: string
+  readonly style?: 'primary' | 'default' | 'danger'
+}
+
+/**
+ * What one `send` carries. Without `actions` it is one text message, `title` (1–100 characters, no line
+ * break) as a bold first line. With 1–6 `actions` it is a card; a channel without cards gets numbered text.
+ */
+export interface ChannelTargetSend {
+  readonly deliveryKey: string
+  readonly text: string
+  readonly title?: string
+  readonly actions?: readonly ChannelTargetAction[]
 }
 
 /**
@@ -46,12 +83,12 @@ export interface ChannelPairing {
   readonly label: string
   /** Whether the channel instance is connected in this Host now. A send while false is refused. */
   readonly running: boolean
-  /** The longest text one send accepts. */
+  /** The most text one send's `text` may carry; the title line and, without cards, the button list are reserved. */
   readonly textChars: number
 }
 
 /**
- * Errors carry a fixed `data.code`: `NOT_PAIRED`, `TOO_LARGE` and `CAPABILITY_DENIED` are final, retrying
+ * Errors carry a fixed `data.code`: `NOT_PAIRED`, `TOO_LARGE`, `INVALID_PARAMS` and `CAPABILITY_DENIED` are final, retrying
  * does not help; `CHANNEL_UNAVAILABLE` and a platform failure may succeed later.
  */
 export interface ManagedChannelTargets {
@@ -61,7 +98,7 @@ export interface ManagedChannelTargets {
   /** Called after this service's pairing was made or removed. Only a hint: read `pairing()` again. */
   onPairingChange(handler: () => void): void
   /** One platform message per call. The chat always comes from the pairing; repeating a key never sends twice. */
-  send(pairingId: string, input: { deliveryKey: string; text: string }): Promise<{ messageId: string }>
+  send(pairingId: string, input: ChannelTargetSend): Promise<{ messageId: string }>
   delivery(pairingId: string, deliveryKey: string): Promise<ChannelDelivery>
   unpair(pairingId: string): Promise<void>
 }

@@ -258,19 +258,47 @@ describe('Outbound', () => {
     expect(adapter.send).toHaveBeenCalledTimes(3)
   })
 
-  it('sends one direct text message per call and cancels a queued one on stop', async () => {
+  it('sends one direct message per call, degrades a card on a text-only channel and cancels a queued one on stop', async () => {
+    const card = {
+      kind: 'card' as const,
+      title: 'Pick',
+      body: 'which?',
+      actions: [
+        { id: 'pick:1', label: 'One' },
+        { id: 'pick:2', label: 'Two' },
+      ],
+    }
+    const plain = await setup({ caps: { card: false }, sessionPerSec: 100 })
+    await plain.outbound.sendDirect({ chatId: 'owner-chat' }, card, 'card-1')
+    expect(plain.adapter.sent.at(-1)?.msg.blocks).toEqual([
+      { kind: 'text', markdown: '【Pick】\nwhich?\n1. One\n2. Two\n回复 1 / 2 选择' },
+    ])
+    await plain.outbound.stop()
+
     const { adapter, outbound } = await setup({ sessionPerSec: 1 })
-    const ref = await outbound.sendDirect({ chatId: 'owner-chat' }, 'reminder', 'direct-1')
+    await outbound.sendDirect({ chatId: 'card-chat' }, card, 'card-2')
+    expect(adapter.sent.at(-1)?.msg.blocks, 'a card-capable channel keeps the card').toEqual([card])
+    const ref = await outbound.sendDirect(
+      { chatId: 'owner-chat' },
+      { kind: 'text', markdown: 'reminder' },
+      'direct-1',
+    )
     expect(adapter.sent.at(-1)).toMatchObject({
       target: { chatId: 'owner-chat', deliveryKey: 'direct-1' },
       msg: { blocks: [{ kind: 'text', markdown: 'reminder' }] },
       ref,
     })
     // One message per second per chat, as on a session lane: the second waits and stop cancels it.
-    const queued = outbound.sendDirect({ chatId: 'owner-chat' }, 'second', 'direct-2')
+    const queued = outbound.sendDirect(
+      { chatId: 'owner-chat' },
+      { kind: 'text', markdown: 'second' },
+      'direct-2',
+    )
     await outbound.stop()
     await expect(queued).rejects.toMatchObject({ name: 'AbortError' })
-    await expect(outbound.sendDirect({ chatId: 'owner-chat' }, 'late', 'direct-3')).rejects.toThrow('stopped')
+    await expect(
+      outbound.sendDirect({ chatId: 'owner-chat' }, { kind: 'text', markdown: 'late' }, 'direct-3'),
+    ).rejects.toThrow('stopped')
     expect(adapter.sent.map((row) => row.target.deliveryKey)).not.toContain('direct-2')
   })
 
