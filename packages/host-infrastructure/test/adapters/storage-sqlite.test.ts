@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { defaultIds, openTracked, projectUI, SessionLogImpl } from '@agnes/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ev } from '../../../host/test/adapters/events.js'
+import { pendingDecision } from '../../../core-ledger/testkit/decision.js'
 import { createSqliteStorage, DDL, ownerFile, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 
 describe('storage-sqlite', () => {
@@ -172,6 +173,12 @@ describe('storage-sqlite', () => {
     }
     const log = await SessionLogImpl.open(opts)
     const original = 'x'.repeat(64 * 1024)
+    // The digest covers the whole subject, so a preview that truncates inside a register row is
+    // rejected rather than smaller.
+    const subject = { call: { name: 'shell', args: { command: { type: 'text', text: original } } } }
+    const decision = pendingDecision('big', { subject })
+    const call = { toolUseId: 'tool-1', name: 'shell', args: { command: 'a'.repeat(20 * 1024) }, ordinal: 0 }
+    const result = { isError: false, enforcement: { level: 'full', scope: [] }, authz: { decisionId: 'n/a' } } as const
     await log.append([
       ev('user/message', { content: [{ type: 'text', text: original }] }),
       ev(
@@ -179,14 +186,35 @@ describe('storage-sqlite', () => {
         { sections: [{ id: 's', source: 'synthetic', content: original }] },
         { ignorable: true },
       ),
+      ev('decision/state', decision, { register: 'decision/state', origin: 'system' }),
+      ev('tool/call', call),
+      ev('tool/result', { toolUseId: 'tool-1', content: [{ type: 'text', text: 'ok' }], ...result }),
     ])
     await log.close()
     const lean = await s.scanLean('lean', { limit: 1 })
     expect(JSON.stringify(lean).length).toBeLessThan(2048)
     const diagnostic = await s.scanLean('lean', { fromSeq: 2, limit: 1 })
     expect(diagnostic[0]?.type).toBe('x/agnes/preview-omitted')
-    await expect(projectUI([...lean, ...diagnostic], { sessionKey: 'lean' })).resolves.toMatchObject({
-      upto: 2,
+    const page = await s.scanLean('lean', { limit: 10 })
+    // Display payload is replaced; a row the fold reads for state is not.
+    expect(page[2]?.type).toBe('decision/state')
+    expect(page[2]?.data).toEqual(decision)
+    expect(page[3]?.data).toEqual(call)
+    await expect(projectUI(page, { sessionKey: 'lean' })).resolves.toMatchObject({ upto: 5 })
+    const withRegister = await SessionLogImpl.open({ ...opts, key: 'lean-register', writerRunId: 'register' })
+    await withRegister.append([
+      ev(
+        'tool/result',
+        { toolUseId: 'tool-2', content: [{ type: 'text', text: original }], ...result },
+        { register: 'inbox' },
+      ),
+    ])
+    await withRegister.close()
+    // The register decides, whichever type the row carries: content trimming never wins over state.
+    expect((await s.scanLean('lean-register', { limit: 1 }))[0]?.data).toEqual({
+      toolUseId: 'tool-2',
+      content: [{ type: 'text', text: original }],
+      ...result,
     })
     expect((await s.scan('lean', { limit: 1 }))[0]?.data).toEqual({
       content: [{ type: 'text', text: original }],

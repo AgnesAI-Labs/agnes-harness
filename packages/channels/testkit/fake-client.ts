@@ -64,6 +64,7 @@ export type FakeClient = Pick<Client, 'initialize' | 'apis' | 'on' | 'close'> & 
   session: {
     new: (options: SessionNewOptions) => Promise<FakeSession>
     attach(id: string, options?: SessionAttachOptions): Promise<FakeSession>
+    load(id: string, options?: Parameters<Client['session']['load']>[1]): Promise<FakeSession>
   }
   approval: Pick<Client['approval'], 'decide'>
 
@@ -214,6 +215,10 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
       async new(options) {
         record('session.new', options)
         return makeSession(options.sessionKey ?? `s${sessions.size + 1}`)
+      },
+      async load(id, options) {
+        record('session.load', id, options)
+        return makeSession(id)
       },
       async attach(id, options) {
         record('session.attach', id, options)
