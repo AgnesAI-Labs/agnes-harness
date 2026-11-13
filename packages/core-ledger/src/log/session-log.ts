@@ -645,7 +645,9 @@ export class SessionLogImpl {
   }
 
   // Renewal runs on a self-rescheduling one-shot timer at a third of the TTL, so two missed ticks
-  // still leave a margin before the lease lapses.
+  // still leave a margin before the lease lapses. It carries the same claim a write does: a machine
+  // that slept through the term wakes to a lapsed lease, which is taken back while no other writer
+  // has the session and nothing was written since, instead of failing the turn that is still running.
   private scheduleRenew(): void {
     const handle: unknown = this.timers().setTimeout(
       () => {
@@ -653,8 +655,9 @@ export class SessionLogImpl {
         if (this.timer !== handle) return
         this.timer = undefined
         if (this.closed || this.faultedValue) return
+        const claim = { ttlMs: this.o.ttlMs, expectedLastSeq: this.lastSeqValue }
         void this.o.storage
-          .renew(this.o.key, this.o.writerRunId)
+          .renew(this.o.key, this.o.writerRunId, claim)
           .then(() => {
             this.leaseRenewedAt = this.o.clock()
           })
