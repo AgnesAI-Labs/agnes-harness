@@ -35,6 +35,23 @@ export const CONFIG_SCHEMA = {
       type: 'object',
       additionalProperties: false,
       properties: {
+        ...Object.fromEntries(
+          ['find', 'batch'].map((name) => [
+            name,
+            {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                  default: false,
+                  description:
+                    'Opt in to redacted model judgment. Human effectiveness evaluation has not been performed.',
+                },
+              },
+            },
+          ]),
+        ),
         stop: {
           type: 'object',
           additionalProperties: false,
@@ -79,4 +96,12 @@ export function resolveJudgeChain(
       chain.push({ route: hit.route, model: hit.model, native: true })
   }
   return chain
+}
+
+export function resolveToolConfig(config: unknown): { find: boolean; batch: boolean } {
+  const uses = object(config) && object(config.uses) ? config.uses : {}
+  return {
+    find: object(uses.find) && uses.find.enabled === true,
+    batch: object(uses.batch) && uses.batch.enabled === true,
+  }
 }

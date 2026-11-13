@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -43,7 +43,7 @@ export type TurnCapture = {
 }
 
 /** A real daemon/SDK fixture. Only synthetic text and a loopback credential enter its home. */
-export async function judgmentDaemon() {
+export async function judgmentDaemon(options: { tools?: boolean } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-judgment-e2e-')))
   let daemon: ChildProcess | undefined
   let exited: Promise<number | null> | undefined
@@ -95,6 +95,10 @@ export async function judgmentDaemon() {
   const close = () => (closing ??= shutdown())
   try {
     initializeHome(root, PROFILE)
+    if (options.tools) {
+      mkdirSync(join(root, 'source'))
+      writeFileSync(join(root, 'source', 'example.ts'), 'export const semanticSample = true\n')
+    }
     await createCredentialStore({ root }).putApiKey('secret://jev/key', 'TEST-KEY-0123456789')
     const model = (over: Record<string, unknown>) => ({
       name: over.id,
@@ -117,6 +121,25 @@ export async function judgmentDaemon() {
       },
       { type: 'done', reason: 'stop' },
     ]
+    const toolReply = (name: string, args: unknown) => [
+      { type: 'toolcall_end', call: { toolUseId: '', name, args, ordinal: 0 } },
+      {
+        type: 'usage',
+        tokens: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      },
+      { type: 'done', reason: 'toolUse' },
+    ]
+    const replies = options.tools
+      ? [
+          toolReply('find_relevant', { query: 'semantic sample', path: 'source' }),
+          toolReply('judge_batch', {
+            items: [{ id: 'sample', state: { text: 'synthetic sample', password: 'fixture-pass' } }],
+            questions: { q: { type: 'noul', instructions: 'Is the sample synthetic?' } },
+          }),
+          reply(DONE_REPLY),
+        ]
+      : [reply(PROMISE_REPLY), reply(DONE_REPLY)]
     writeFileSync(
       join(root, 'profiles', PROFILE, 'profile.yaml'),
       JSON.stringify({
@@ -139,7 +162,7 @@ export async function judgmentDaemon() {
               route: 'main',
               api: 'scripted',
               baseUrl: 'https://scripted.invalid',
-              compat: { replies: [reply(PROMISE_REPLY), reply(DONE_REPLY)], repeatLast: true },
+              compat: { replies, repeatLast: true },
               models: [
                 model({
                   id: 'main-1',
@@ -264,6 +287,8 @@ export async function judgmentDaemon() {
           .events({
             types: [
               'user/message',
+              'tool/call',
+              'tool/result',
               'assistant/message',
               'cost/ledger',
               'effect/settled',

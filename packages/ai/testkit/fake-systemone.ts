@@ -214,7 +214,14 @@ export async function startFakeSystemOne(
     sockets.add(socket)
     socket.on('close', () => sockets.delete(socket))
   })
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  await new Promise<void>((resolve, reject) => {
+    const failed = (error: Error) => reject(error)
+    server.once('error', failed)
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', failed)
+      resolve()
+    })
+  })
   const port = (server.address() as AddressInfo).port
   return {
     /** The route's base URL; the adapter appends /systemone. */

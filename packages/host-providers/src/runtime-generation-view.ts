@@ -25,6 +25,8 @@ function copyRegistries(seed: GenerationRegistrySeed, owner?: string): Generatio
     tools.add(definition, {
       source: registered.source.source,
       trust: registered.source.trust,
+      ...(registered.source.pluginRowId ? { pluginRowId: registered.source.pluginRowId } : {}),
+      ...(registered.source.sideCall === true ? { sideCall: true as const } : {}),
       ...(registered.packageIdentity === undefined ? {} : { packageIdentity: registered.packageIdentity }),
       ...(registered.packageVersion === undefined ? {} : { packageVersion: registered.packageVersion }),
       executionDomain: registered.executionDomain,

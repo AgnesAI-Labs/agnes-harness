@@ -27,7 +27,14 @@ it('mirrors the source row with API 5.17 and exports the real plugin', async () 
     id: 'ext:agnes.judgment/main',
     apiRange: '^5.17.0',
     configReload: 'next-session',
-    inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'self'],
+    inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'self', 'tools'],
+  })
+  expect(row.capabilities.tools).toEqual({ prefix: '', names: ['find_relevant', 'judge_batch'] })
+  expect(row.capabilities.filesystem).toEqual({ read: ['**'] })
+  expect(row.capabilities.projections).toContainEqual({
+    name: 'tools.session',
+    inputEventTypes: ['session/start'],
+    maxStateBytes: 256,
   })
   expect(row.configSchema.properties.uses.properties.stop.properties.enabled.default).toBe(false)
   const loaded = await import(/* @vite-ignore */ new URL('index.mjs', payload).href)

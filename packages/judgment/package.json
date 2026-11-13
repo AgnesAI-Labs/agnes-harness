@@ -24,7 +24,8 @@
           "projections",
           "eventLog",
           "sideCall",
-          "self"
+          "self",
+          "tools"
         ],
         "configSchema": {
           "type": "object",
@@ -81,6 +82,28 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "find": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Opt in to redacted model judgment. Human effectiveness evaluation has not been performed."
+                    }
+                  }
+                },
+                "batch": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Opt in to redacted model judgment. Human effectiveness evaluation has not been performed."
+                    }
+                  }
+                },
                 "stop": {
                   "type": "object",
                   "additionalProperties": false,
@@ -103,13 +126,13 @@
         },
         "metadata": {
           "displayName": "Judgment",
-          "summary": "Optional detection of replies that promise to act but end early.",
-          "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in.",
+          "summary": "Optional unexpected-stop detection, semantic source finding and batch judgment.",
+          "description": "All uses are off by default. Stop detection sends redacted request/reply excerpts (2,000/8,000 characters). find_relevant locally scans workspace files and sends redacted query, candidate paths, summaries (256 original characters) and source windows (8 KiB each) from at most 20 fresh 1 MiB file prefixes. judge_batch sends up to 500 redacted JSON states plus redacted question text; unsafe question or choice identifiers are refused. Remote providers receive remaining content; redaction does not remove all confidential information. Native probabilities and text decisions differ. Human effectiveness evaluations have not been performed.",
           "locales": {
             "zh-CN": {
               "displayName": "判断",
-              "summary": "可选检测：回复说了要做，却提前结束。",
-              "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。"
+              "summary": "可选的意外收工检测、语义源码查找与批量判断。",
+              "description": "全部用途默认关闭。收工检测发送遮蔽后的请求/回复摘录（2,000/8,000 字符）。find_relevant 在工作区本地扫描后，发送遮蔽后的查询、候选路径、摘要（256 原始字符）和源码窗口（每段 8 KiB），最多来自 20 个文件各自新读的前 1 MiB。judge_batch 发送最多 500 条遮蔽后的 JSON 状态及题目文本；含凭据的题目或选项标识整批拒绝。远程服务会收到剩余内容，遮蔽不能移除所有机密。原生概率与文字决策不同；真实人工效果评测尚未执行。"
             }
           }
         },
@@ -129,21 +152,40 @@
                 "x/plugin/524280817e87343c/stop.continued"
               ],
               "maxStateBytes": 262144
+            },
+            {
+              "name": "tools.session",
+              "inputEventTypes": [
+                "session/start"
+              ],
+              "maxStateBytes": 256
             }
-          ]
+          ],
+          "tools": {
+            "prefix": "",
+            "names": [
+              "find_relevant",
+              "judge_batch"
+            ]
+          },
+          "filesystem": {
+            "read": [
+              "**"
+            ]
+          }
         },
         "default": false
       }
     ],
     "metadata": {
       "displayName": "Judgment",
-      "summary": "Optional detection of replies that promise to act but end early.",
-      "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in.",
+      "summary": "Optional unexpected-stop detection, semantic source finding and batch judgment.",
+      "description": "All uses are off by default. Stop detection sends redacted request/reply excerpts (2,000/8,000 characters). find_relevant locally scans workspace files and sends redacted query, candidate paths, summaries (256 original characters) and source windows (8 KiB each) from at most 20 fresh 1 MiB file prefixes. judge_batch sends up to 500 redacted JSON states plus redacted question text; unsafe question or choice identifiers are refused. Remote providers receive remaining content; redaction does not remove all confidential information. Native probabilities and text decisions differ. Human effectiveness evaluations have not been performed.",
       "locales": {
         "zh-CN": {
           "displayName": "判断",
-          "summary": "可选检测：回复说了要做，却提前结束。",
-          "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。"
+          "summary": "可选的意外收工检测、语义源码查找与批量判断。",
+          "description": "全部用途默认关闭。收工检测发送遮蔽后的请求/回复摘录（2,000/8,000 字符）。find_relevant 在工作区本地扫描后，发送遮蔽后的查询、候选路径、摘要（256 原始字符）和源码窗口（每段 8 KiB），最多来自 20 个文件各自新读的前 1 MiB。judge_batch 发送最多 500 条遮蔽后的 JSON 状态及题目文本；含凭据的题目或选项标识整批拒绝。远程服务会收到剩余内容，遮蔽不能移除所有机密。原生概率与文字决策不同；真实人工效果评测尚未执行。"
         }
       }
     }
