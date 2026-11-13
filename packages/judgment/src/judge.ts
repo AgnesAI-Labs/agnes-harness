@@ -147,6 +147,11 @@ export function createJudge(deps: {
                   if (target.native) deps.cache.set(req.state, target, full.questions[id]!, answer)
                 }
                 if (unit === 0) {
+                  if (
+                    opts.allowSplit === false &&
+                    Object.keys(full.questions).some((id) => !Object.hasOwn(answers, id))
+                  )
+                    return fail('invalid')
                   // A receipt may cover the original partial-cache subset only. Recover lost cache-only
                   // questions under stable per-question ids, without changing or resending that receipt.
                   for (const [id, question] of Object.entries(full.questions)) {

@@ -636,3 +636,38 @@ it('does not turn an unavailable identity lookup into a legacy fallback dispatch
   ).toMatchObject({ status: 'failed' })
   expect(p.invoke).not.toHaveBeenCalled()
 })
+it('refuses cold-cache residual expansion when splitting is disabled and preserves default recovery', async () => {
+  const extra = { type: 'noul' as const, instructions: 'second cache-only question?' }
+  const multi = {
+    state: req.state,
+    questions: { ...req.questions, extra, other: { ...req.questions.q, instructions: 'other?' } },
+  }
+  const { p } = recordedPort()
+  const warm = cache()
+  warm.set(req.state, target, req.questions.q, { type: 'noul', noul: 0.8 })
+  warm.set(req.state, target, extra, { type: 'noul', noul: 0.7 })
+  const strict = { ...options(), retry: 'none' as const, allowSplit: false }
+  expect(
+    await createJudge({ port: p, chain: [target], cache: warm, now: Date.now }).judge(
+      'judgment.rules',
+      multi,
+      strict,
+    ),
+  ).toMatchObject({ status: 'ok' })
+  expect(
+    await createJudge({ port: p, chain: [target], cache: cache(), now: Date.now }).judge(
+      'judgment.rules',
+      multi,
+      strict,
+    ),
+  ).toMatchObject({ status: 'failed', reason: 'invalid', accounting: { calls: [{ replayed: true }] } })
+  expect(p.invoke).toHaveBeenCalledTimes(1)
+  expect(
+    await createJudge({ port: p, chain: [target], cache: cache(), now: Date.now }).judge(
+      'judgment.rules',
+      multi,
+      { ...options(), retry: 'none' },
+    ),
+  ).toMatchObject({ status: 'ok' })
+  expect(p.invoke).toHaveBeenCalledTimes(3)
+})

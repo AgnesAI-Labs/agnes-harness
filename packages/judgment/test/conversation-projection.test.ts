@@ -443,3 +443,15 @@ it.each([false, true])(
     expect(state.queued[0]?.delivered).toBe(same)
   },
 )
+it('excludes delegation-only children from trusted native starts without requiring a system actor', () => {
+  const p = projection()
+  expect(p.apply(p.init(), event(1, 'session/start', { delegation: {} }, { origin: 'system' })).child).toBe(
+    true,
+  )
+  expect(p.apply(p.init(), event(1, 'session/start', { parent: null }, { origin: 'system' })).child).toBe(
+    true,
+  )
+  expect(
+    p.apply(p.init(), event(1, 'session/start', { delegation: {} }, { origin: 'principal' })).child,
+  ).toBe(false)
+})

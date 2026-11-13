@@ -58,3 +58,19 @@ Native answers may be reused from a local memory cache. It holds at most 2,000 e
 - During goal-driven work: after a human `/goal` command establishes goal suppression, checking stays paused until a genuine command from the same actor and source clears the goal with `/goal clear`. Pausing or completing a goal does not re-enable the check. The plugin is conservative, so an invalid goal command can also leave checking paused; `/goal` and `/goal show` alone do not establish suppression.
 
 The check can miss unfinished work or misread a promise. It is not a completion verifier and never grants permission to perform an action. To stop using it, turn off `uses.stop.enabled`, or disable or uninstall the plugin. This version provides unexpected-stop detection only.
+
+## Rule reminders and settings
+
+Rule reminders are a separate opt-in and require a native judgment primary. For example:
+
+```json
+{"uses":{"rules":{"enabled":true,"items":[{"id":"review","text":"Review a record before acting on it.","tools":["read"]}]}}}
+```
+
+Up to 32 rules are supported, each with at most 1,000 text characters and 16 exact tool names. After a matching tool result, one native request checks all unreminded matching rules. It sends the configured rule text, the first 2,000 characters of serialized tool arguments and the last 8,000 characters of text output. Credential masking uses the complete input before selecting those original windows. Tool details and structured output are preserved and are not included in the judgment input.
+
+A violation probability of at least 0.7 adds one untrusted text reminder while preserving every existing result field and content block. A durable hash-only marker prevents another reminder for that session, rule version and tool; changing one rule allows it to be checked again. Child sessions and unavailable session projections send no request. The whole check, including queueing, catalogue lookup and marker persistence, has a 1,500 ms deadline. It never retries, splits requests or uses fallback models. Refusal, errors, cancellation, saturation or a marker that cannot be confirmed leave the original result unchanged. Host budgets still apply.
+
+The installed package also contributes **Judgment** under Settings → Plugins. The page shows bounded current-instance cache and use counters, model availability and the active configuration fingerprint. It queries only the package's read-only status service. Granted hook deadlines remain **unknown** without host authorization evidence. Configuration changes take effect for new sessions through the existing plugin configuration editor. Disabling, withdrawing trust or uninstalling removes the page and its visible statistics.
+
+Usage details identify **Judgment** only for side calls with the exact judgment caller identity. A committed audit for the same effect supplies the use label; missing or unfamiliar labels show an unknown use. This changes neither recorded charges nor credit totals. Synthetic integration tests establish wiring and lifecycle behavior, not real-session judgment effectiveness.

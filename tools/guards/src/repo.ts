@@ -85,6 +85,7 @@ export function listSourceFiles(
 
 /** Handwritten presentation sources use the same fences as TS. Generated clients are byte-budgeted. */
 export const PRESENTATION_NAMES = [
+  'judgment',
   'browser',
   'conversation-ui',
   'navigation-ui',
@@ -94,8 +95,13 @@ export const PRESENTATION_NAMES = [
 ] as const
 export function presentationSourceFiles(root: string): string[] {
   return PRESENTATION_NAMES.flatMap((name) =>
-    listSourceFiles(join(root, 'packages/package-manager/bundled-plugins', name), {
-      extensions: [...SOURCE_EXTENSIONS, '.js', '.mjs'],
-    }),
+    listSourceFiles(
+      name === 'judgment'
+        ? join(root, 'packages/judgment-ui/src')
+        : join(root, 'packages/package-manager/bundled-plugins', name),
+      {
+        extensions: [...SOURCE_EXTENSIONS, '.js', '.mjs'],
+      },
+    ),
   ).filter((file) => !file.replaceAll('\\', '/').endsWith('/src/client.js'))
 }

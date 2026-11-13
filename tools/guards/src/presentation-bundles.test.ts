@@ -13,7 +13,8 @@ const budgets = JSON.parse(
 function violations(name: string, bytes: number, inputs: readonly string[]) {
   const budget = budgets[name]
   if (!budget) return [`Missing budget: ${name}`]
-  const owner = `packages/package-manager/bundled-plugins/${name}/`
+  const owner =
+    name === 'judgment' ? 'packages/judgment-ui/src/' : `packages/package-manager/bundled-plugins/${name}/`
   return [
     ...(bytes > budget.bytes ? [`${name}: ${bytes} bytes > ${budget.bytes}`] : []),
     ...(inputs.length > budget.inputs ? [`${name}: ${inputs.length} inputs > ${budget.inputs}`] : []),
@@ -40,7 +41,9 @@ it('fences handwritten presentation JS/MJS and TS, while generated JS has a byte
   expect(sources.filter((file) => file.endsWith('/src/client.js'))).toEqual([])
   for (const name of PRESENTATION_NAMES)
     expect(
-      sources.some((file) => file.includes(`/bundled-plugins/${name}/src/`)),
+      sources.some((file) =>
+        file.includes(name === 'judgment' ? '/judgment-ui/src/' : `/bundled-plugins/${name}/src/`),
+      ),
       name,
     ).toBe(true)
   for (const file of sources)

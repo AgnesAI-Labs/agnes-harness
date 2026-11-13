@@ -373,6 +373,43 @@ describe('channel targets', () => {
     ).toEqual([])
   })
 
+  it.each([0, 1])(
+    'keeps retained cleanup usable when generation %s releases and closes its storage handle',
+    (retired) => {
+      vi.useFakeTimers()
+      const store = namespace()
+      const closed = [false, false]
+      const handles = closed.map((_value, index) =>
+        ChannelTargets.retain(
+          'retained-channel-storage',
+          () =>
+            new Proxy(store, {
+              get(target, key) {
+                const method = Reflect.get(target, key)
+                return (...args: unknown[]) => {
+                  if (closed[index])
+                    throw Object.assign(new Error('Host persistence handle is closed'), { code: 'E_CLOSED' })
+                  return Reflect.apply(method, store, args)
+                }
+              },
+            }),
+        ),
+      )
+      try {
+        expect(handles[1]!.targets).toBe(handles[0]!.targets)
+        handles[retired]!.release()
+        closed[retired] = true
+        expect(() => handles[1 - retired]!.targets.releasePackage('@sample/desk')).not.toThrow()
+        handles[1 - retired]!.release()
+        closed[1 - retired] = true
+        expect(() => vi.advanceTimersByTime(3_600_000)).not.toThrow()
+      } finally {
+        for (const handle of handles) handle.release()
+        vi.useRealTimers()
+      }
+    },
+  )
+
   it('releases pairings and ledger rows when either package is removed, and retains only current instances', async () => {
     const first = paired()
     await first.desk.port.send(PAIR_ID, { deliveryKey: 'k1', text: 'x' })

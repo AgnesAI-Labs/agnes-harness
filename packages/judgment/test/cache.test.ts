@@ -59,3 +59,15 @@ it('canonicalizes state while retaining choice option order', () => {
   cache.set('s', target, q, { type: 'choice', choice: 'x', probabilities: { x: 1, y: 0 }, confidence: 1 })
   expect(cache.get('s', target, { ...q, criteria: { y: null, x: null } })).toBeNull()
 })
+it('returns a detached key-free current-instance cache snapshot', () => {
+  const cache = createAnswerCache(null, opts)
+  expect(cache.stats()).toEqual({ hit: 0, miss: 0, size: 0 })
+  cache.get('private', target, question)
+  cache.set('private', target, question, answer)
+  cache.get('private', target, question)
+  const snapshot = cache.stats()
+  expect(snapshot).toEqual({ hit: 1, miss: 1, size: 1 })
+  snapshot.hit = 100
+  cache.clear()
+  expect(cache.stats()).toEqual({ hit: 1, miss: 1, size: 0 })
+})

@@ -24,6 +24,7 @@
           "projections",
           "eventLog",
           "sideCall",
+          "services",
           "self"
         ],
         "configSchema": {
@@ -81,6 +82,51 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "rules": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Opt in to native rule reminders after configured exact tool results."
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "text",
+                          "tools"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          },
+                          "tools": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 16,
+                            "uniqueItems": true,
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
                 "stop": {
                   "type": "object",
                   "additionalProperties": false,
@@ -104,18 +150,19 @@
         "metadata": {
           "displayName": "Judgment",
           "summary": "Optional detection of replies that promise to act but end early.",
-          "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in.",
+          "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in. Rule reminders are separately disabled by default; when enabled, they send configured rule text, the first 2,000 characters of tool arguments and last 8,000 characters of text output after full-context credential masking. The profile settings page exposes only current-instance status and bounded counters.",
           "locales": {
             "zh-CN": {
               "displayName": "判断",
               "summary": "可选检测：回复说了要做，却提前结束。",
-              "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。"
+              "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。 规则提醒默认另行关闭；开启后发送配置规则正文、工具参数前 2,000 字符与文本结果后 8,000 字符，均先按完整上下文遮蔽凭据。设置页仅展示当前实例状态和有限计数。"
             }
           }
         },
         "capabilities": {
           "hooks": [
-            "turn_stopping"
+            "turn_stopping",
+            "tool_result"
           ],
           "events": true,
           "projections": [
@@ -129,6 +176,237 @@
                 "x/plugin/524280817e87343c/stop.continued"
               ],
               "maxStateBytes": 262144
+            },
+            {
+              "name": "rules.reminders",
+              "inputEventTypes": [
+                "session/start",
+                "x/plugin/524280817e87343c/rules.reminded"
+              ],
+              "maxStateBytes": 150000
+            }
+          ],
+          "ui": true,
+          "services": [
+            {
+              "name": "judgment.status",
+              "kind": "query",
+              "scope": "profile",
+              "timeoutMs": 1000,
+              "maxResultBytes": 4096,
+              "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "version",
+                  "configurationRevision",
+                  "state",
+                  "reason",
+                  "hookTimeout",
+                  "cache",
+                  "uses"
+                ],
+                "properties": {
+                  "version": {
+                    "const": 1
+                  },
+                  "configurationRevision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "state": {
+                    "enum": [
+                      "ready",
+                      "unconfigured",
+                      "unavailable"
+                    ]
+                  },
+                  "reason": {
+                    "enum": [
+                      "none",
+                      "model-not-configured",
+                      "model-unavailable",
+                      "ambiguous-model",
+                      "authorization-unavailable"
+                    ]
+                  },
+                  "hookTimeout": {
+                    "const": "unknown"
+                  },
+                  "cache": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "hit",
+                      "miss",
+                      "size"
+                    ],
+                    "properties": {
+                      "hit": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "miss": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2000
+                      }
+                    }
+                  },
+                  "uses": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "stop",
+                      "findRelevant",
+                      "judgeBatch",
+                      "rules"
+                    ],
+                    "properties": {
+                      "stop": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "enabled",
+                          "available",
+                          "reason",
+                          "requests"
+                        ],
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "enum": [
+                              "none",
+                              "disabled",
+                              "native-required",
+                              "model-unavailable",
+                              "authorization-unavailable"
+                            ]
+                          },
+                          "requests": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        }
+                      },
+                      "findRelevant": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "enabled",
+                          "available",
+                          "reason",
+                          "requests"
+                        ],
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "enum": [
+                              "none",
+                              "disabled",
+                              "native-required",
+                              "model-unavailable",
+                              "authorization-unavailable"
+                            ]
+                          },
+                          "requests": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        }
+                      },
+                      "judgeBatch": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "enabled",
+                          "available",
+                          "reason",
+                          "requests"
+                        ],
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "enum": [
+                              "none",
+                              "disabled",
+                              "native-required",
+                              "model-unavailable",
+                              "authorization-unavailable"
+                            ]
+                          },
+                          "requests": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        }
+                      },
+                      "rules": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "enabled",
+                          "available",
+                          "reason",
+                          "requests"
+                        ],
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "enum": [
+                              "none",
+                              "disabled",
+                              "native-required",
+                              "model-unavailable",
+                              "authorization-unavailable"
+                            ]
+                          },
+                          "requests": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
             }
           ]
         },
@@ -138,15 +416,21 @@
     "metadata": {
       "displayName": "Judgment",
       "summary": "Optional detection of replies that promise to act but end early.",
-      "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in.",
+      "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in. Rule reminders are separately disabled by default; when enabled, they send configured rule text, the first 2,000 characters of tool arguments and last 8,000 characters of text output after full-context credential masking. The profile settings page exposes only current-instance status and bounded counters.",
       "locales": {
         "zh-CN": {
           "displayName": "判断",
           "summary": "可选检测：回复说了要做，却提前结束。",
-          "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。"
+          "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。 规则提醒默认另行关闭；开启后发送配置规则正文、工具参数前 2,000 字符与文本结果后 8,000 字符，均先按完整上下文遮蔽凭据。设置页仅展示当前实例状态和有限计数。"
         }
       }
-    }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes.judgment/main",
+        "path": "./src/agnes.client.json"
+      }
+    ]
   },
   "devDependencies": {
     "@agnes/ai": "workspace:*",

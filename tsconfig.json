@@ -336,6 +336,9 @@
     },
     {
       "path": "packages/judgment/tsconfig.test.json"
+    },
+    {
+      "path": "packages/judgment-ui"
     }
   ]
 }
