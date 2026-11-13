@@ -47,6 +47,7 @@ describe('repo', () => {
       '@agnes/host-infrastructure',
       '@agnes/host-providers',
       '@agnes/intelligent-ui-contract',
+      '@agnes/judgment',
       '@agnes/loop-default',
       '@agnes/loop-jev',
       '@agnes/memory-file',

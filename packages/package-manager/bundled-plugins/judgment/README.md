@@ -12,4 +12,6 @@ Native answers use a process-local LRU cache of at most 2,000 entries for 30 day
 
 See the [English guide](https://github.com/AgnesAI-Labs/agnes-harness/blob/develop/docs/guide/judgment.md) or [中文指南](https://github.com/AgnesAI-Labs/agnes-harness/blob/develop/docs/guide/judgment.zh-CN.md) for setup, disclosure and limitations.
 
-The generated entry requires an in-process host compatible with Extension API 5.16. It is built from `packages/judgment`; it is not a separate implementation.
+The generated entry requires an in-process host compatible with Extension API 5.17. It is built from `packages/judgment`; it is not a separate implementation.
+
+The shared judgment runtime limits actual side calls to 16 per plugin instance. It checks recorded request identities before replay and uses a new attempt id for a retry. Results distinguish native probabilities from text answers and include observed usage, dispatch and replay information; missing billing stays unknown. The plugin adds no dollar cap or price-availability dispatch gate; host budgets continue to apply.

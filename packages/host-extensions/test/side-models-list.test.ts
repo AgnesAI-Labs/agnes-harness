@@ -29,3 +29,45 @@ it('reads the current provider catalogue only when requested', async () => {
   current = []
   expect(await f.api.ctx.sideModels!.list()).toEqual([])
 })
+
+it('subscribes with payload-free coalesced notices and stops on revoke or close', async () => {
+  const listeners = new Set<() => void>()
+  const grant: { sideCall?: true } = { sideCall: true }
+  const f = rowApiFixture(grant, {
+    sideCallDeclared: true,
+    sideModels: () => models,
+    subscribeSideModels: (listener) => {
+      listeners.add(listener)
+      return () => {
+        listeners.delete(listener)
+      }
+    },
+  })
+  const received: unknown[][] = []
+  const dispose = f.api.ctx.sideModels!.subscribe!((...args) => {
+    received.push(args)
+  })
+  for (const listener of listeners) {
+    listener()
+    listener()
+  }
+  await Promise.resolve()
+  expect(received).toEqual([[]])
+  dispose()
+  expect(listeners.size).toBe(0)
+  f.api.ctx.sideModels!.subscribe!(() => {
+    received.push(['stale'])
+  })
+  delete grant.sideCall
+  for (const listener of listeners) listener()
+  await Promise.resolve()
+  expect(received).toEqual([[]])
+  expect(listeners.size).toBe(0)
+  await expect(f.api.ctx.sideModels!.list()).rejects.toThrow(/grant/)
+  grant.sideCall = true
+  f.api.ctx.sideModels!.subscribe!(() => {
+    received.push(['closed'])
+  })
+  f.controller.abort()
+  expect(listeners.size).toBe(0)
+})

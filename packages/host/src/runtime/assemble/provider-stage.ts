@@ -177,6 +177,9 @@ export async function assembleProvider(
     routes = nextRoutes
     providerFingerprint = built.provider.registry?.fingerprint() ?? null
     ctx.profile = next
+    tree.rowHosts.setSideModels(() =>
+      models.provider.models().map(({ route, id, api }) => ({ route, model: id, api })),
+    )
   }
   const named = routes ? Object.entries(routes).map(([k, v]) => [k, `${v.route}/${v.model}`]) : []
   // The credit rate goes on the audit row, null included. An assembly that priced nothing is the

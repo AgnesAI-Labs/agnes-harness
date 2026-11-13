@@ -7,7 +7,11 @@ export type SideModelEntry = Readonly<{ route: string; model: string; api: strin
 /** What a plugin reads through `ctx.self`: its identity, trust tier, logger, abort signal and platform facts. */
 export interface ExtensionContext {
   /** Current configured models, only for release-granted side-call users. Never exposes credentials. */
-  readonly sideModels?: Readonly<{ list(): Promise<readonly SideModelEntry[]> }>
+  readonly sideModels?: Readonly<{
+    list(): Promise<readonly SideModelEntry[]>
+    /** Payload-free change notice. Subscribe before reading; unsubscribe on disposal. */
+    subscribe?(listener: () => void): () => void
+  }>
   readonly extId: string
   readonly version: string
   readonly trust: TrustTier

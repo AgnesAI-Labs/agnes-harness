@@ -35,6 +35,7 @@ export type RowExtensionHostOptions = Readonly<{
   hostGrants?: (origin: Readonly<RowOrigin>) => import('@agnes/package-manager').HostCapabilityGrant
   projectionNames?: (origin: Readonly<RowOrigin>) => readonly string[]
   sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
+  subscribeSideModels?: (listener: () => void) => () => void
   mcpManage?: import('../resources/mcp-manage-port.js').McpManageBridge
   pluginManage?: import('../resources/plugin-manage-port.js').PluginManageBridge
   store?: (input: {
@@ -350,6 +351,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
       ...(options.projectionNames ? { projectionNames: () => options.projectionNames!(origin) } : {}),
       ...(options.hostGrants ? { hostGrants: () => options.hostGrants!(origin) } : {}),
       ...(options.sideModels ? { sideModels: options.sideModels } : {}),
+      ...(options.subscribeSideModels ? { subscribeSideModels: options.subscribeSideModels } : {}),
       ...(info?.sideCallDeclared ? { sideCallDeclared: true } : {}),
       ...(openStore && sourceIntegrity
         ? {
