@@ -3,9 +3,9 @@ import type { JudgmentAccounting } from './accounting.js'
 import type { AnswerCache } from './cache.js'
 import type { JudgeTarget } from './config.js'
 import { deadlineScope } from './deadline.js'
-import { splitRequest } from './encode.js'
+import { planRequest } from './encode.js'
 import { runInvocation } from './invocation.js'
-import { type Answers, type JudgmentRequest, validateRequest } from './questions.js'
+import type { Answers, JudgmentRequest } from './questions.js'
 import { invocationId, missingQuestions } from './request-plan.js'
 import type { JudgmentScheduler } from './scheduler.js'
 
@@ -72,7 +72,6 @@ export function createJudge(deps: {
       })
       if (!deps.chain?.length) return fail('no-judge')
       if (
-        !validateRequest(req).ok ||
         !/^[a-z][a-z0-9._-]{0,63}$/.test(purpose) ||
         !/^[A-Za-z0-9][A-Za-z0-9._:@-]{0,99}$/.test(opts.idPrefix) ||
         ![opts.attemptMs, opts.totalMs].every((n) => Number.isFinite(n) && n > 0)
@@ -80,10 +79,23 @@ export function createJudge(deps: {
         return fail('invalid')
       const end = deps.now() + opts.totalMs
       let parts: JudgmentRequest[]
+      const planning = deadlineScope(opts.signal, opts.totalMs)
       try {
-        parts = splitRequest(req, { state: 24000, request: 48000 })
+        parts = await planRequest(
+          req,
+          { state: 24000, request: 48000 },
+          { signal: planning.signal, end, now: deps.now },
+        )
       } catch {
-        return fail('invalid')
+        return fail(
+          planning.signal.aborted || deps.now() >= end
+            ? opts.signal.aborted
+              ? 'error'
+              : 'timeout'
+            : 'invalid',
+        )
+      } finally {
+        planning.close()
       }
       if (opts.allowSplit === false && parts.length > 1) return fail('invalid')
       const remainingTotal = end - deps.now()

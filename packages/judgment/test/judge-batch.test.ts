@@ -6,8 +6,8 @@ import { createJudgmentScheduler } from '../src/scheduler.js'
 import { judgeBatch } from '../src/uses/judge-batch.js'
 import { batchInput } from '../src/uses/tool-input.js'
 
-const accepted = (value: unknown) => {
-  const input = batchInput(value)
+const accepted = async (value: unknown) => {
+  const input = await batchInput(value)
   if (!input) throw new Error('Input refused')
   return input
 }
@@ -33,7 +33,7 @@ it('keeps 500 independent ids, freezes ordered questions, and redacts arbitrary 
   const suppliedQuestions = structuredClone(questions)
   suppliedQuestions.q.instructions += ' password="q-pass"'
   suppliedQuestions.q.criteria.yes = 'yes token="option-pass"'
-  const input = accepted({
+  const input = await accepted({
     items: Array.from({ length: 500 }, (_, n) => ({
       id: String(n),
       state: {
@@ -78,7 +78,10 @@ it('keeps 500 independent ids, freezes ordered questions, and redacts arbitrary 
   expect(result.completed[0]).toMatchObject({ id: '0', needsReview: false, probabilityAvailable: true })
 })
 it('uses maximum native probability with an inclusive 0.7 threshold and reviews other/mixed and text', async () => {
-  const input = accepted({ items: [0, 1, 2, 3, 4].map((n) => ({ id: String(n), state: n })), questions })
+  const input = await accepted({
+    items: [0, 1, 2, 3, 4].map((n) => ({ id: String(n), state: n })),
+    questions,
+  })
   const outcomes = [ok(), ok('yes', 0.69), ok('other'), ok('mixed'), ok('yes', 1, false)]
   const judge: Judge = {
     judge: async (_, req) =>
@@ -94,7 +97,7 @@ it('uses maximum native probability with an inclusive 0.7 threshold and reviews 
   expect(JSON.stringify(result.completed[4])).not.toContain('confidence')
 })
 it('returns completed answers and preserves failed accounting when cancellation interrupts remaining items', async () => {
-  const input = accepted({
+  const input = await accepted({
     items: [
       { id: 'done', state: 0 },
       { id: 'pending', state: 1 },
@@ -133,10 +136,10 @@ it('returns completed answers and preserves failed accounting when cancellation 
   expect(result.partial).toBe(true)
   expect(result.accounting.calls).toHaveLength(1)
 })
-it('rejects indivisible oversized state and any malformed member before processing the batch', () => {
-  expect(batchInput({ items: [{ id: 'huge', state: '漢'.repeat(150000) }], questions })).toBeNull()
+it('rejects indivisible oversized state and any malformed member before processing the batch', async () => {
+  expect(await batchInput({ items: [{ id: 'huge', state: '漢'.repeat(150000) }], questions })).toBeNull()
   expect(
-    batchInput({
+    await batchInput({
       items: [
         { id: 'a', state: null },
         { id: 'b', state: undefined },
@@ -144,7 +147,24 @@ it('rejects indivisible oversized state and any malformed member before processi
       questions,
     }),
   ).toBeNull()
-  expect(batchInput({ items: [{ id: 'x'.repeat(129), state: null }], questions })).toBeNull()
+  expect(await batchInput({ items: [{ id: 'x'.repeat(129), state: null }], questions })).toBeNull()
+  const limit = 1048576,
+    encoder = new TextEncoder()
+  const rawId = '边"\\🙂'
+  const room = limit - encoder.encode(JSON.stringify({ id: rawId, state: { password: '' } })).length
+  const secret = '汉'.repeat(Math.floor(room / 3)) + 'x'.repeat(room % 3)
+  expect(encoder.encode(JSON.stringify({ id: rawId, state: { password: secret } }))).toHaveLength(limit)
+  expect(await batchInput({ items: [{ id: rawId, state: { password: secret } }], questions })).not.toBeNull()
+  expect(
+    await batchInput({ items: [{ id: rawId, state: { password: `${secret}x` } }], questions }),
+  ).toBeNull()
+  const rawQuestions = { q: { type: 'noul', instructions: 'password=""' } }
+  const qRoom = limit - encoder.encode(JSON.stringify(rawQuestions)).length
+  rawQuestions.q.instructions = `password="${'x'.repeat(qRoom)}"`
+  expect(encoder.encode(JSON.stringify(rawQuestions))).toHaveLength(limit)
+  expect(await batchInput({ items: [{ id: 'edge', state: null }], questions: rawQuestions })).not.toBeNull()
+  rawQuestions.q.instructions = `password="${'x'.repeat(qRoom + 1)}"`
+  expect(await batchInput({ items: [{ id: 'over', state: null }], questions: rawQuestions })).toBeNull()
 })
 
 it('shares the real sixteen-slot scheduler and preserves accounting from concurrent terminal retries', async () => {
@@ -205,10 +225,12 @@ it('shares the real sixteen-slot scheduler and preserves accounting from concurr
     cache: createAnswerCache(null, { ttlMs: 1000, maxEntries: 2000 }),
     now: Date.now,
   })
-  const input = batchInput({
+  const preparing = batchInput({
     items: Array.from({ length: 21 }, (_, n) => ({ id: String(n), state: n })),
     questions: { q: { type: 'noul', instructions: 'Synthetic?' } },
   })
+  await vi.runAllTimersAsync()
+  const input = await preparing
   if (!input) throw new Error('input refused')
   try {
     const pending = judgeBatch(judge, input, new AbortController().signal, 'concurrent', Date.now() + 60000)

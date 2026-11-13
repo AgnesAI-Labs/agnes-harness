@@ -112,8 +112,18 @@ it('rejects complete invalid batches before resolving any judgment port', async 
     { ...valid, items: [] },
     { ...valid, items: Array.from({ length: 501 }, (_, n) => ({ id: String(n), state: null })) },
     { ...valid, items: [valid.items[0], valid.items[0]] },
+    { ...valid, items: [{ id: 'raw', state: { password: 'x'.repeat(1048576) } }] },
+    { ...valid, questions: { q: { type: 'noul', instructions: `password="${'x'.repeat(1048576)}"` } } },
     { ...valid, questions: { q: { type: 'choice', instructions: '?', criteria: { yes: 'yes', no: 'no' } } } },
     { ...valid, questions: { q: { type: 'bad' } } },
+    { ...valid, questions: { q: { type: 'noul', instructions: '\u200B' } } },
+    {
+      ...valid,
+      items: [
+        { id: 'good', state: null },
+        { id: 'bad', state: undefined },
+      ],
+    },
     { ...valid, questions: { [`ghp_${'a'.repeat(36)}`]: { type: 'noul', instructions: 'Synthetic?' } } },
     {
       ...valid,
@@ -203,6 +213,83 @@ it('returns actual item answers in model-facing text alongside structured output
     expect(text).toContain('"id":"one"')
     expect(text).toContain('"noul":0.8')
   } finally {
+    f.dispose()
+  }
+})
+
+it('skips cancelled batch preparation and preserves ids without reading states', async () => {
+  const f = fixture(enabled)
+  f.ready(true)
+  let touched = 0
+  const items = Array.from({ length: 20 }, (_, n) => ({
+    id: String(n),
+    get state() {
+      touched++
+      return { text: 'synthetic' }
+    },
+  }))
+  const controller = new AbortController()
+  controller.abort()
+  try {
+    const result = await tool(f.definitions, 'judge_batch').execute(
+      { ...valid, items },
+      { ...f.ctx, signal: controller.signal },
+    )
+    expect(touched).toBe(0)
+    expect(result).toMatchObject({
+      structured: { completed: [], pending: items.map((item) => item.id), partial: true },
+    })
+    expect(f.runtime.judge).not.toHaveBeenCalled()
+  } finally {
+    f.dispose()
+  }
+})
+
+it('stops actual whole-batch preparation at the absolute deadline before obtaining a judge', async () => {
+  const f = fixture(enabled)
+  f.ready(true)
+  let elapsed = 0,
+    touched = 0
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => elapsed)
+  const items = Array.from({ length: 20 }, (_, n) => ({
+    id: String(n),
+    get state() {
+      touched++
+      elapsed = 60001
+      return { text: 'synthetic' }
+    },
+  }))
+  try {
+    const result = await tool(f.definitions, 'judge_batch').execute({ ...valid, items }, f.ctx)
+    expect(touched).toBeLessThan(items.length)
+    expect(result).toMatchObject({
+      structured: { completed: [], pending: items.map((item) => item.id), partial: true },
+    })
+    expect(f.runtime.judge).not.toHaveBeenCalled()
+  } finally {
+    clock.mockRestore()
+    f.dispose()
+  }
+})
+
+it('yields actual question preparation so cancellation runs before any batch dispatch', async () => {
+  const f = fixture(enabled)
+  f.ready(true)
+  const controller = new AbortController()
+  const questions = Object.fromEntries(
+    Array.from({ length: 200 }, (_, n) => [`q${n}`, { type: 'noul', instructions: 'Is this synthetic?' }]),
+  )
+  const cancel = setImmediate(() => controller.abort())
+  try {
+    const result = await tool(f.definitions, 'judge_batch').execute(
+      { ...valid, questions },
+      { ...f.ctx, signal: controller.signal },
+    )
+    expect(result).toMatchObject({ structured: { completed: [], pending: ['one'], partial: true } })
+    expect(f.runtime.judge).not.toHaveBeenCalled()
+    expect(f.judge.judge).not.toHaveBeenCalled()
+  } finally {
+    clearImmediate(cancel)
     f.dispose()
   }
 })

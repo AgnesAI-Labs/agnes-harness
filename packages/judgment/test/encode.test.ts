@@ -35,3 +35,69 @@ it('preserves state and option order at exact token boundaries', () => {
   expect(splitRequest(req, { state: size, request: size })).toEqual([req])
   expect(Object.keys((nativePayload(req) as any).questions.q.criteria)).toEqual(['zebra', 'apple'])
 })
+
+it('keeps cooperative planning identical at mixed CJK/emoji exact atomic and request boundaries', async () => {
+  const { planRequest } = await import('../src/encode.js')
+  const req = {
+    state: { text: '汉🙂' },
+    questions: {
+      first: { type: 'choice' as const, instructions: '选🙂', criteria: { zebra: '甲', apple: '乙' } },
+      second: { type: 'score' as const, instructions: '评', criteria: ['低', '高'] },
+    },
+  }
+  const atomic = Math.max(
+    ...Object.entries(req.questions).map(([id, q]) =>
+      estimateTokens(JSON.stringify({ state: req.state, questions: { [id]: q } })),
+    ),
+  )
+  const complete = estimateTokens(JSON.stringify({ state: req.state, questions: req.questions }))
+  const budgets = { state: atomic, request: complete - 1 }
+  const parts = await planRequest(req, budgets, {
+    signal: new AbortController().signal,
+    end: Date.now() + 60000,
+  })
+  expect(parts.map((part) => Object.keys(part.questions))).toEqual([['first'], ['second']])
+  expect(parts).toEqual(splitRequest(req, budgets))
+  const first = parts[0]?.questions.first
+  if (first?.type !== 'choice') throw new Error('Missing first choice')
+  expect(Object.keys(first.criteria)).toEqual(['zebra', 'apple'])
+  await expect(
+    planRequest(
+      req,
+      { state: atomic - 1, request: complete },
+      { signal: new AbortController().signal, end: Date.now() + 60000 },
+    ),
+  ).rejects.toThrow(/fit/)
+})
+
+it('yields per-question planning and stops before reading the remaining questions on cancellation', async () => {
+  const { planRequest } = await import('../src/encode.js')
+  let inspected = 0
+  const questions = Object.fromEntries(
+    Array.from({ length: 200 }, (_, n) => [
+      `q${n}`,
+      {
+        type: 'noul' as const,
+        get instructions() {
+          inspected++
+          return 'Synthetic?'
+        },
+      },
+    ]),
+  )
+  const controller = new AbortController()
+  const cancel = setImmediate(() => controller.abort())
+  try {
+    await expect(
+      planRequest(
+        { state: null, questions },
+        { state: 24000, request: 48000 },
+        { signal: controller.signal, end: Date.now() + 60000 },
+      ),
+    ).rejects.toThrow()
+    expect(inspected).toBeGreaterThan(0)
+    expect(inspected).toBeLessThan(200)
+  } finally {
+    clearImmediate(cancel)
+  }
+})

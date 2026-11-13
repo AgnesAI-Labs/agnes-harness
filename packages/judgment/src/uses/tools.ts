@@ -4,7 +4,7 @@ import { deadlineScope, within } from '../deadline.js'
 import type { JudgmentRuntime } from '../runtime.js'
 import { findRelevant } from './find-relevant.js'
 import { judgeBatch } from './judge-batch.js'
-import { batchInput, findInput } from './tool-input.js'
+import { BatchPreparationInterrupted, batchInput, findInput } from './tool-input.js'
 import { toolParameters } from './tool-parameters.js'
 import { createToolsProjection, sessionHash, TOOL_SESSION, type ToolSession } from './tools-projection.js'
 
@@ -27,9 +27,9 @@ export function registerJudgmentTools(
       kind === 'find' ? 20000 : 60000,
     )
     const end = Date.now() + (kind === 'find' ? 20000 : 60000)
-    let input: ReturnType<typeof findInput> | ReturnType<typeof batchInput> = null
+    let input: ReturnType<typeof findInput> | Awaited<ReturnType<typeof batchInput>> = null
     try {
-      input = kind === 'find' ? findInput(args) : batchInput(args)
+      input = kind === 'find' ? findInput(args) : await batchInput(args, { signal: scope.signal, end })
       if (!input) return failure('Invalid judgment tool input; no request sent.')
       if (!enabled(kind)) return failure('Judgment use is disabled.')
       if (!ctx.sideCall) return failure('Authorized judgment port unavailable.')
@@ -54,7 +54,7 @@ export function registerJudgmentTools(
           ? await findRelevant(judge, ctx, input as ReturnType<typeof findInput> & {}, scope.signal, end)
           : await judgeBatch(
               judge,
-              input as ReturnType<typeof batchInput> & {},
+              input as Awaited<ReturnType<typeof batchInput>> & {},
               scope.signal,
               ctx.session.toolUseId,
               end,
@@ -83,12 +83,18 @@ export function registerJudgmentTools(
           },
         ],
       }
-    } catch {
-      if (input && 'items' in input)
+    } catch (error) {
+      const pending =
+        error instanceof BatchPreparationInterrupted
+          ? error.pending
+          : input && 'items' in input
+            ? input.items.map((item) => item.id)
+            : null
+      if (pending)
         return {
           structured: {
             completed: [],
-            pending: input.items.map((item) => item.id),
+            pending,
             partial: true,
             accounting: { calls: [] },
             reasons: ['interrupted_before_judgment'],
@@ -128,7 +134,7 @@ export function registerJudgmentTools(
           description:
             kind === 'find'
               ? 'Find relevant source ranges using a bounded redacted semantic scan. Partial results are explicit; use grep when judgment fails.'
-              : 'Judge up to 500 independent JSON states. Choice questions require other and mixed keys. Sends redacted states and question text to the selected judgment model; unsafe question or choice identifiers are refused.',
+              : 'Judge up to 500 independent JSON states. Choice questions require other and mixed keys. Sends redacted states and question text to the selected judgment model; unsafe question or choice identifiers are refused. Each raw {id,state} item and shared questions JSON is at most 1 MiB UTF-8 before masking.',
           meta: {
             isReadOnly: true,
             isDestructive: false,

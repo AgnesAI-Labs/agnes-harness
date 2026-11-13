@@ -130,12 +130,12 @@
         "metadata": {
           "displayName": "Judgment",
           "summary": "Optional unexpected-stop detection, semantic source finding and batch judgment.",
-          "description": "All uses are off by default. Stop detection sends redacted request/reply excerpts (2,000/8,000 characters). find_relevant locally scans workspace files and sends redacted query, candidate paths, summaries (256 original characters) and source windows (8 KiB each) from at most 20 fresh 1 MiB file prefixes. judge_batch sends up to 500 redacted JSON states plus redacted question text; unsafe question or choice identifiers are refused. Remote providers receive remaining content; redaction does not remove all confidential information. Native probabilities and text decisions differ. Human effectiveness evaluations have not been performed.",
+          "description": "All uses are off by default. Stop detection sends redacted request/reply excerpts (2,000/8,000 characters). find_relevant locally scans workspace files and sends redacted query, candidate paths, summaries (256 original characters) and source windows (8 KiB each) from at most 20 fresh 1 MiB file prefixes. judge_batch sends up to 500 redacted JSON states plus redacted question text; unsafe question or choice identifiers are refused. Each declared raw item and complete shared questions object is limited to 1 MiB serialized UTF-8 JSON before masking; preparation yields to cancellation. Remote providers receive remaining content; redaction does not remove all confidential information. Native probabilities and text decisions differ. Human effectiveness evaluations have not been performed.",
           "locales": {
             "zh-CN": {
               "displayName": "判断",
               "summary": "可选的意外收工检测、语义源码查找与批量判断。",
-              "description": "全部用途默认关闭。收工检测发送遮蔽后的请求/回复摘录（2,000/8,000 字符）。find_relevant 在工作区本地扫描后，发送遮蔽后的查询、候选路径、摘要（256 原始字符）和源码窗口（每段 8 KiB），最多来自 20 个文件各自新读的前 1 MiB。judge_batch 发送最多 500 条遮蔽后的 JSON 状态及题目文本；含凭据的题目或选项标识整批拒绝。远程服务会收到剩余内容，遮蔽不能移除所有机密。原生概率与文字决策不同；真实人工效果评测尚未执行。"
+              "description": "全部用途默认关闭。收工检测发送遮蔽后的请求/回复摘录（2,000/8,000 字符）。find_relevant 在工作区本地扫描后，发送遮蔽后的查询、候选路径、摘要（256 原始字符）和源码窗口（每段 8 KiB），最多来自 20 个文件各自新读的前 1 MiB。judge_batch 发送最多 500 条遮蔽后的 JSON 状态及题目文本；含凭据的题目或选项标识整批拒绝。遮蔽前，原始条目及完整共享题目对象按序列化 UTF-8 JSON 各限 1 MiB，准备阶段可取消。远程服务会收到剩余内容，遮蔽不能移除所有机密。原生概率与文字决策不同；真实人工效果评测尚未执行。"
             }
           }
         },
@@ -182,12 +182,12 @@
     "metadata": {
       "displayName": "Judgment",
       "summary": "Optional unexpected-stop detection, semantic source finding and batch judgment.",
-      "description": "All uses are off by default. Stop detection sends redacted request/reply excerpts (2,000/8,000 characters). find_relevant locally scans workspace files and sends redacted query, candidate paths, summaries (256 original characters) and source windows (8 KiB each) from at most 20 fresh 1 MiB file prefixes. judge_batch sends up to 500 redacted JSON states plus redacted question text; unsafe question or choice identifiers are refused. Remote providers receive remaining content; redaction does not remove all confidential information. Native probabilities and text decisions differ. Human effectiveness evaluations have not been performed.",
+      "description": "All uses are off by default. Stop detection sends redacted request/reply excerpts (2,000/8,000 characters). find_relevant locally scans workspace files and sends redacted query, candidate paths, summaries (256 original characters) and source windows (8 KiB each) from at most 20 fresh 1 MiB file prefixes. judge_batch sends up to 500 redacted JSON states plus redacted question text; unsafe question or choice identifiers are refused. Each declared raw item and complete shared questions object is limited to 1 MiB serialized UTF-8 JSON before masking; preparation yields to cancellation. Remote providers receive remaining content; redaction does not remove all confidential information. Native probabilities and text decisions differ. Human effectiveness evaluations have not been performed.",
       "locales": {
         "zh-CN": {
           "displayName": "判断",
           "summary": "可选的意外收工检测、语义源码查找与批量判断。",
-          "description": "全部用途默认关闭。收工检测发送遮蔽后的请求/回复摘录（2,000/8,000 字符）。find_relevant 在工作区本地扫描后，发送遮蔽后的查询、候选路径、摘要（256 原始字符）和源码窗口（每段 8 KiB），最多来自 20 个文件各自新读的前 1 MiB。judge_batch 发送最多 500 条遮蔽后的 JSON 状态及题目文本；含凭据的题目或选项标识整批拒绝。远程服务会收到剩余内容，遮蔽不能移除所有机密。原生概率与文字决策不同；真实人工效果评测尚未执行。"
+          "description": "全部用途默认关闭。收工检测发送遮蔽后的请求/回复摘录（2,000/8,000 字符）。find_relevant 在工作区本地扫描后，发送遮蔽后的查询、候选路径、摘要（256 原始字符）和源码窗口（每段 8 KiB），最多来自 20 个文件各自新读的前 1 MiB。judge_batch 发送最多 500 条遮蔽后的 JSON 状态及题目文本；含凭据的题目或选项标识整批拒绝。遮蔽前，原始条目及完整共享题目对象按序列化 UTF-8 JSON 各限 1 MiB，准备阶段可取消。远程服务会收到剩余内容，遮蔽不能移除所有机密。原生概率与文字决策不同；真实人工效果评测尚未执行。"
         }
       }
     },

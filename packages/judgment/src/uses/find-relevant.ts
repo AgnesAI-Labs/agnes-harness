@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { redactSecrets, type ToolContext } from '@agnes/extension-api'
+import { within } from '../deadline.js'
 import type { Judge } from '../judge.js'
 import { type FindFs, findRoot, readFindCandidate, scanFindCandidates } from './find-scan.js'
 import { type FindStageStats, scoreFindEntries } from './find-stages.js'
@@ -37,6 +38,20 @@ function boundedFiles(ctx: ToolContext, parent: AbortSignal, end: number) {
   }
   return { fs, signal }
 }
+async function plainAncestors(
+  fs: FindFs,
+  workspace: string,
+  requested: string,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const parts = requested.slice(workspace.length).split('/').filter(Boolean)
+  let cursor = workspace
+  for (const name of parts) {
+    if ((await within(fs.stat(cursor), signal)).kind !== 'dir') return false
+    cursor = `${cursor.replace(/\/$/, '')}/${name}`
+  }
+  return true
+}
 export async function findRelevant(
   judge: Judge,
   ctx: ToolContext,
@@ -57,7 +72,8 @@ export async function findRelevant(
     if (
       !workspace ||
       !requested ||
-      (requested !== workspace && !requested.startsWith(`${workspace.replace(/\/$/, '')}/`))
+      (requested !== workspace && !requested.startsWith(`${workspace.replace(/\/$/, '')}/`)) ||
+      !(await plainAncestors(fs, workspace, requested, signal))
     )
       stats.reasons.add('unsafe_root')
     else {

@@ -200,3 +200,86 @@ it('redacts complete fresh source context before any summary or verify window le
   expect(seen.every((row) => !JSON.stringify(row.state).includes('query-pass'))).toBe(true)
   expect(seen.some((row) => row.purpose === 'judgment.find.verify')).toBe(true)
 })
+
+it.each(['symlink', 'file', 'other'] as const)(
+  'refuses an existing %s ancestor before subtree or direct-file reads',
+  async (kind) => {
+    for (const path of ['alias/subdir', 'alias/subdir/source.ts']) {
+      const f = fixture(1)
+      const stats: string[] = []
+      const ctx = {
+        ...f.ctx,
+        fs: {
+          ...f.ctx.fs,
+          stat: async (name: string) => {
+            stats.push(name)
+            return {
+              kind: name === '/repo/alias' ? kind : name.endsWith('.ts') ? 'file' : 'dir',
+              size: 16,
+              mtimeMs: 1,
+            }
+          },
+          list: async () => [{ name: 'source.ts', kind: 'file' }],
+        },
+      } as ToolContext
+      const seen: { purpose: string; size: number; state: unknown }[] = []
+      const result = await findRelevant(
+        scoring(seen),
+        ctx,
+        { query: 'semantic', path },
+        new AbortController().signal,
+        Date.now() + 20000,
+      )
+      expect(result).toMatchObject({ matches: [], partial: true })
+      expect(result.reasons).toContain('unsafe_root')
+      expect(stats).toContain('/repo/alias')
+      expect(f.reads.size).toBe(0)
+      expect(seen).toEqual([])
+    }
+  },
+)
+
+it('accepts ordinary requested ancestors and cancels their checks within the same scope', async () => {
+  const f = fixture(1),
+    checked: string[] = []
+  const ctx = {
+    ...f.ctx,
+    fs: {
+      ...f.ctx.fs,
+      stat: async (name: string) => {
+        checked.push(name)
+        return { kind: name.endsWith('.ts') ? 'file' : 'dir', size: 15, mtimeMs: 1 }
+      },
+    },
+  } as ToolContext
+  const seen: { purpose: string; size: number; state: unknown }[] = []
+  const result = await findRelevant(
+    scoring(seen),
+    ctx,
+    { query: 'semantic', path: 'src/deep/source.ts' },
+    new AbortController().signal,
+    Date.now() + 20000,
+  )
+  expect(checked.slice(0, 3)).toEqual(['/repo', '/repo/src', '/repo/src/deep'])
+  expect(result.matches[0]?.path).toBe('/repo/src/deep/source.ts')
+  const controller = new AbortController()
+  const reads = f.reads.size
+  const stopped = await findRelevant(
+    scoring(seen),
+    {
+      ...ctx,
+      fs: {
+        ...ctx.fs,
+        stat: async () => {
+          controller.abort()
+          return { kind: 'dir', size: 0, mtimeMs: 1 }
+        },
+      },
+    } as ToolContext,
+    { query: 'semantic', path: 'src/deep' },
+    controller.signal,
+    Date.now() + 20000,
+  )
+  expect(stopped.reasons).toContain('cancelled')
+  expect(f.reads.size).toBe(reads)
+})
