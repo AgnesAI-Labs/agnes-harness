@@ -19,7 +19,7 @@ export interface JudgmentRuntime {
   statusReason(): JudgmentStatusReason
   current(): readonly JudgeTarget[] | null
   subscribe(listener: () => void): () => void
-  judge(ctx: JudgmentContext): Promise<Judge | null>
+  judge(ctx: JudgmentContext, requirements?: { nativeOnly?: boolean }): Promise<Judge | null>
   dispose(): void
 }
 
@@ -125,11 +125,11 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
         listeners.delete(listener)
       }
     },
-    async judge(ctx) {
+    async judge(ctx, requirements) {
       const callSignal = AbortSignal.any([ctx.signal, signal])
       if (!ctx.sideCall || callSignal.aborted) return null
       const chain = await read(callSignal)
-      if (!chain || callSignal.aborted) return null
+      if (!chain || callSignal.aborted || (requirements?.nativeOnly && !chain[0]?.native)) return null
       const judge = createJudge({
         port: ctx.sideCall,
         chain,

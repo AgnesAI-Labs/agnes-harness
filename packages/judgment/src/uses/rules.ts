@@ -61,8 +61,11 @@ export function registerRuleChecks(
           pending.add(item.identity)
           reserved.push(item.identity)
         }
-        const judge = await within(runtime.judge({ ...ctx, signal: scope.signal }), scope.signal)
-        if (!judge || !runtime.current()?.[0]?.native || scope.signal.aborted) return {}
+        const judge = await within(
+          runtime.judge({ ...ctx, signal: scope.signal }, { nativeOnly: true }),
+          scope.signal,
+        )
+        if (!judge || scope.signal.aborted) return {}
         const req: JudgmentRequest = {
           state: {
             tool: payload.name,

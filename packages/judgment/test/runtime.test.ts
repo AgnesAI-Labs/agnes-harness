@@ -126,3 +126,73 @@ it('disposes captured lifetime ports after the row facade has retired', async ()
   expect(() => runtime.dispose()).not.toThrow()
   expect(runtime.current()).toBeNull()
 })
+
+it('requires the captured primary to be native without changing default text dispatch or retry policy', async () => {
+  let native = false
+  const plugin = {
+    self: {
+      signal: new AbortController().signal,
+      log: { warn() {} },
+      sideModels: {
+        async list() {
+          return [
+            { route: 'selected', model: 'j', api: native ? 'typesafe-systemone' : 'openai-completions' },
+            { route: 'fallback', model: 'j', api: 'typesafe-systemone' },
+          ]
+        },
+      },
+    },
+  } as unknown as PluginContextFacets
+  const runtime = createJudgmentRuntime(plugin, {
+    judge: { route: 'selected', model: 'j', fallback: { route: 'fallback', model: 'j' } },
+  })
+  const prepared: Array<{ output: string; target: { route: string } }> = []
+  const invoked: Array<{ output: string; target: { route: string } }> = []
+  const context = {
+    signal: new AbortController().signal,
+    session: { key: 's' } as any,
+    sideCall: {
+      status: async (invocationId: string) => ({ status: 'absent', invocationId }),
+      prepare: async (input: any) => {
+        prepared.push(input)
+        return input
+      },
+      invoke: async (input: any) => {
+        invoked.push(input)
+        return { status: 'failed', reason: 'adapter-error', retryable: true }
+      },
+    } as any,
+  }
+  const request = { state: 'synthetic', questions: { q: { type: 'noul' as const, instructions: 'yes?' } } }
+  const options = {
+    attemptMs: 1000,
+    totalMs: 1500,
+    signal: context.signal,
+    idPrefix: 'test',
+    retry: 'none' as const,
+  }
+  try {
+    expect(await runtime.judge(context, { nativeOnly: true })).toBeNull()
+    expect(prepared).toEqual([])
+    expect(invoked).toEqual([])
+    const text = await runtime.judge(context)
+    expect(text).not.toBeNull()
+    await text!.judge('judgment.batch', request, options)
+    expect(prepared.map((input) => input.output)).toEqual(['text'])
+    expect(invoked.map((input) => input.output)).toEqual(['text'])
+    native = true
+    const primary = await runtime.judge(context, { nativeOnly: true })
+    expect(primary).not.toBeNull()
+    await primary!.judge('judgment.rules', request, { ...options, idPrefix: 'native', allowSplit: false })
+    expect(prepared.map((input) => [input.output, input.target.route])).toEqual([
+      ['text', 'selected'],
+      ['json', 'selected'],
+    ])
+    expect(invoked.map((input) => [input.output, input.target.route])).toEqual([
+      ['text', 'selected'],
+      ['json', 'selected'],
+    ])
+  } finally {
+    runtime.dispose()
+  }
+})

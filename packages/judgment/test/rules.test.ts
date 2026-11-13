@@ -1,7 +1,7 @@
 import type { HookContext, HookHandler, PluginContextFacets } from '@agnes/extension-api'
 import { expect, it, vi } from 'vitest'
 import type { Judge } from '../src/judge.js'
-import type { JudgmentRuntime } from '../src/runtime.js'
+import { createJudgmentRuntime, type JudgmentRuntime } from '../src/runtime.js'
 import { registerRuleChecks } from '../src/uses/rules.js'
 import { createRulesProjection } from '../src/uses/rules-projection.js'
 
@@ -124,6 +124,57 @@ it('combines rules in one native call, persists each version first and preserves
   other.state = other.projection.apply(other.projection.init(), { ...other.rows[0], data: { key: 'other' } })
   expect((await other.run()).result?.content).toHaveLength(2)
 })
+it('keeps concurrent real-runtime rule checks native-only for their own catalogue snapshots', async () => {
+  const f = fixture([{ ...rule, tools: ['exec', 'write'] }])
+  f.dispose()
+  let reads = 0
+  Object.assign(f.plugin.self, {
+    log: { warn() {} },
+    sideModels: {
+      async list() {
+        reads++
+        return [
+          { route: 'selected', model: 'j', api: reads === 2 ? 'openai-completions' : 'typesafe-systemone' },
+        ]
+      },
+    },
+  })
+  const config = { ...f.config, judge: { route: 'selected', model: 'j' } }
+  const runtime = createJudgmentRuntime(f.plugin, config)
+  const prepared: Array<{ output: string }> = []
+  const invoked: Array<{ output: string }> = []
+  Object.assign(f.ctx, {
+    sideCall: {
+      status: async (invocationId: string) => ({ status: 'absent', invocationId }),
+      prepare: async (input: { output: string }) => {
+        prepared.push(input)
+        return input
+      },
+      invoke: async (input: { output: string }) => {
+        invoked.push(input)
+        return { status: 'refused', reason: 'budget' }
+      },
+    },
+  })
+  for (let i = 0; i < 10; i++) await Promise.resolve()
+  const dispose = registerRuleChecks(f.plugin, runtime, config)
+  try {
+    const handler = vi.mocked(f.plugin.hooks.register).mock.calls.at(-1)![1] as HookHandler<'tool_result'>
+    const results = await Promise.all([
+      handler(f.payload, f.ctx),
+      handler({ ...f.payload, name: 'write', toolUseId: 'other' }, f.ctx),
+    ])
+    expect(reads).toBe(3)
+    expect(runtime.current()).toEqual([{ route: 'selected', model: 'j', native: true }])
+    expect(prepared.map((input) => input.output)).toEqual(['json'])
+    expect(invoked.map((input) => input.output)).toEqual(['json'])
+    expect(results).toEqual([{}, {}])
+    expect(f.append).not.toHaveBeenCalled()
+  } finally {
+    dispose()
+    runtime.dispose()
+  }
+})
 it.each([
   'disabled',
   'similar-tool',
@@ -145,7 +196,7 @@ it.each([
   if (kind === 'identity') Object.assign(f.ctx, { session: { key: 'different' } })
   if (kind === 'projection')
     vi.mocked(f.ctx.projections.readOwn).mockResolvedValue({ status: 'unavailable' } as any)
-  if (kind === 'text-primary') f.runtime.current = () => [{ route: 'chat', model: 'c', native: false }]
+  if (kind === 'text-primary') vi.mocked(f.runtime.judge).mockResolvedValue(null)
   if (kind === 'low')
     vi.mocked(f.judge.judge).mockResolvedValue({
       status: 'ok',
