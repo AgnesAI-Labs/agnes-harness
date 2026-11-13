@@ -56,6 +56,33 @@ function goal(sources: string[], source: string, text: string): string[] {
   return sources.includes(source) ? sources : [...sources, source]
 }
 
+/** The registry requires unchanged reducer content to retain its original object identity. */
+function retainUnchanged(state: ConversationState, next: ConversationState): ConversationState {
+  const same =
+    state.child === next.child &&
+    state.continuedSeq === next.continuedSeq &&
+    state.request?.seq === next.request?.seq &&
+    state.request?.text === next.request?.text &&
+    state.reply?.seq === next.reply?.seq &&
+    state.reply?.text === next.reply?.text &&
+    state.reply?.hasTools === next.reply?.hasTools &&
+    state.goalSources.length === next.goalSources.length &&
+    state.goalSources.every((source, index) => source === next.goalSources[index]) &&
+    state.queued.length === next.queued.length &&
+    state.queued.every((item, index) => {
+      const other = next.queued[index]
+      return (
+        other !== undefined &&
+        item.id === other.id &&
+        item.token === other.token &&
+        item.commandId === other.commandId &&
+        item.present === other.present &&
+        item.delivered === other.delivered
+      )
+    })
+  return same ? state : next
+}
+
 export function createConversationProjection(owner: string): PluginProjectionDef<ConversationState> {
   const marker = `x/${owner}/stop.continued`
   return {
@@ -79,7 +106,8 @@ export function createConversationProjection(owner: string): PluginProjectionDef
     init: () => ({ child: false, request: null, reply: null, continuedSeq: 0, goalSources: [], queued: [] }),
     apply(state, event) {
       const data = event.data
-      if (event.type === 'session/start' && object(data)) return { ...state, child: object(data.parent) }
+      if (event.type === 'session/start' && object(data))
+        return retainUnchanged(state, { ...state, child: object(data.parent) })
       if (
         event.type === marker &&
         (event.origin === `ext:${owner}` || event.origin === 'system') &&
@@ -87,7 +115,10 @@ export function createConversationProjection(owner: string): PluginProjectionDef
         Number.isSafeInteger(data.requestSeq) &&
         Number(data.requestSeq) > 0
       )
-        return { ...state, continuedSeq: Math.max(state.continuedSeq, Number(data.requestSeq)) }
+        return retainUnchanged(state, {
+          ...state,
+          continuedSeq: Math.max(state.continuedSeq, Number(data.requestSeq)),
+        })
       if (event.type === 'inbox' && event.origin === 'system' && event.trust === 'trusted') {
         let goalSources = state.goalSources
         const queued = state.queued.map((item) => ({ ...item, present: false }))
@@ -118,7 +149,11 @@ export function createConversationProjection(owner: string): PluginProjectionDef
         }
         // A drain is recorded before delivery: retain undelivered receipts so an old command
         // cannot undo a later clear when it subsequently appears as user/message.
-        return { ...state, goalSources, queued: queued.filter((item) => item.present || !item.delivered) }
+        return retainUnchanged(state, {
+          ...state,
+          goalSources,
+          queued: queued.filter((item) => item.present || !item.delivered),
+        })
       }
       if (!object(data)) return state
       if (event.type === 'user/message') {
@@ -137,24 +172,24 @@ export function createConversationProjection(owner: string): PluginProjectionDef
             return { ...item, delivered: true }
           })
           .filter((item) => item.present || !item.delivered)
-        return {
+        return retainUnchanged(state, {
           ...state,
           queued,
           goalSources: consumed ? state.goalSources : goal(state.goalSources, source, text.trim()),
           ...(data.kind === undefined || data.kind === 'prompt'
             ? { request: { seq: event.seq, text: text.slice(0, 2000) }, reply: null }
             : {}),
-        }
+        })
       }
       if (event.type === 'assistant/message')
-        return {
+        return retainUnchanged(state, {
           ...state,
           reply: {
             seq: event.seq,
             text: textOf(data.content).slice(-8000),
             hasTools: data.stopReason === 'tool_use',
           },
-        }
+        })
       return state
     },
   }

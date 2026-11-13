@@ -323,3 +323,75 @@ it('does not replay an identified old create after clear and a drain, including 
   expect(s.queued).toEqual([])
   expect(JSON.parse(JSON.stringify(rows)).reduce(p.apply, p.init())).toEqual(s)
 })
+
+const queuedCommand = event(
+  1,
+  'inbox',
+  {
+    items: [
+      {
+        itemId: 'identity-item',
+        commandId: 'identity-command',
+        actor: human,
+        kind: 'prompt',
+        content: content('/goal create task'),
+      },
+    ],
+  },
+  { origin: 'system' },
+)
+const deliveredCommand = event(2, 'user/message', {
+  kind: 'prompt',
+  commandId: 'identity-command',
+  content: content('/goal create task'),
+})
+const emptyInbox = event(3, 'inbox', { items: [] }, { origin: 'system' })
+const childStart = event(1, 'session/start', { parent: { key: 'parent' } }, { origin: 'system' })
+const continued = (seq: number) =>
+  event(8, 'x/plugin/test/stop.continued', { requestSeq: seq }, { origin: 'ext:plugin/test' })
+const steer = (text: string) => event(9, 'user/message', { kind: 'steer', content: content(text) })
+const reply = event(2, 'assistant/message', { stopReason: 'end_turn', content: content('done') })
+const inertCases: [string, ProjectionEvent[], ProjectionEvent][] = [
+  ['root session start', [], event(1, 'session/start', {}, { origin: 'system' })],
+  ['repeated child start', [childStart], childStart],
+  ['empty inbox', [], emptyInbox],
+  ['empty inbox cleared', [], event(1, 'inbox', null, { origin: 'system' })],
+  ['repeated pending snapshot', [queuedCommand], queuedCommand],
+  ['repeated delivered snapshot', [queuedCommand, deliveredCommand], queuedCommand],
+  ['repeated drained snapshot', [queuedCommand, emptyInbox], emptyInbox],
+  ['old continuation marker', [continued(5)], continued(4)],
+  ['repeated continuation marker', [continued(5)], continued(5)],
+  ['ordinary steer', [], steer('please continue')],
+  ['bare goal steer', [], steer('/goal')],
+  ['goal show steer', [], steer('/goal show')],
+  ['clear absent goal steer', [], steer('/goal clear')],
+  ['repeated active goal steer', [queuedCommand], steer('/goal create task')],
+  ['repeated original prompt', [prompt(1, 'task')], prompt(1, 'task')],
+  ['repeated assistant reply', [prompt(1, 'task'), reply], reply],
+]
+it.each(inertCases)('preserves state identity for %s', (_name, before, inert) => {
+  const p = projection()
+  const state = before.reduce(p.apply, p.init())
+  const original = structuredClone(state)
+  expect(p.apply(state, inert)).toBe(state)
+  expect(state).toEqual(original)
+})
+it('still allocates a new state for changes without mutating the preceding state', () => {
+  const p = projection()
+  let state = p.init()
+  for (const row of [
+    childStart,
+    queuedCommand,
+    deliveredCommand,
+    emptyInbox,
+    reply,
+    continued(1),
+    steer('/goal clear'),
+  ]) {
+    const original = structuredClone(state)
+    const next = p.apply(state, row)
+    expect(next).not.toBe(state)
+    expect(state).toEqual(original)
+    state = next
+  }
+})
