@@ -1,4 +1,4 @@
-import type { PackagePreview, PackageSource } from '@agnes/protocol'
+import { type PackagePreview, type PackageSource, resolvePluginMetadata } from '@agnes/protocol'
 import {
   ADMIN_LOCALE_NAMESPACE,
   adminLocaleCatalog,
@@ -177,8 +177,9 @@ export function PluginInstallReview({
   onConfirm(enableAfter: boolean): void
   onReviewDependents?(): void
 }) {
-  const { t: adminText } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
+  const { t: adminText, locale } = useUiText(ADMIN_LOCALE_NAMESPACE, adminLocaleCatalog)
   const { preview, mode, current, combined, enables, enableAfter, busy, error } = review
+  const description = resolvePluginMetadata(preview.metadata, locale)?.description?.trim()
   const describe = mode === 'install' ? mode : combined ? 'update-combined' : 'update-compatible'
   const action = combined
     ? 'update-activate'
@@ -195,16 +196,22 @@ export function PluginInstallReview({
       meta={[kind, preview.version, tier]}
       lead={t(`preview.description.${describe}`)}
       before={
-        current ? <UpdateDiff preview={preview} fromVersion={current.version} current={current} /> : undefined
+        <>
+          {description && (
+            <section data-testid="install-review-data-use" aria-label={t('review.dataUse')}>
+              <h3>{t('review.dataUse')}</h3>
+              <p>{description}</p>
+            </section>
+          )}
+          {current && <UpdateDiff preview={preview} fromVersion={current.version} current={current} />}
+        </>
       }
       gets={
         <SettingsItem
           icon="key-round"
           label={t('review.capabilities')}
           description={
-            requests.length
-              ? requests.join(t('review.separator'))
-              : t(preview.declaredCapabilities === undefined ? 'review.undeclared' : 'capability.none')
+            requests.length ? requests.join(t('review.separator')) : t('review.noAdditionalScopes')
           }
         />
       }

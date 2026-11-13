@@ -81,6 +81,15 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
     sourcePath: 'package-manager/bundled-plugins/jev-loop',
     build: 'pnpm --filter @agnes/package-manager build:jev-payload',
   },
+  {
+    name: 'judgment',
+    id: '@agnes/judgment',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/judgment',
+    sourcePath: 'package-manager/bundled-plugins/judgment',
+    build: 'pnpm --filter @agnes/package-manager build:judgment-payload',
+  },
 ])
 
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */

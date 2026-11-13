@@ -64,7 +64,6 @@ it.each(['source', 'embedded'] as const)(
         packageDirs: { '@agnes/base': representation === 'source' ? source : packaged },
         packages: {
           '@agnes/base': {
-            sandboxWorkspaceProbe: undefined,
             ecosystem: {
               ...ecosystem,
               'agnes/tools-search': () => (api) => {

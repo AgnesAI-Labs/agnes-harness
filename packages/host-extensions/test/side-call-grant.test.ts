@@ -72,6 +72,6 @@ it.each(['preferred', 'required'] as const)('hides sideCall in isolated mode (%s
     expect(f.registrations).toHaveLength(1)
     expect(f.registrations[0]?.meta.sideCall).toBeUndefined()
   } finally {
-    await loaded.release()
+    await loaded.release('operator')
   }
 })

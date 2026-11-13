@@ -30,7 +30,7 @@ it.each([
   roots.push(root)
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
-  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop'])
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop', 'judgment'])
   // The release digest is the same formula boot would otherwise compute over the final payload.
   const payload = { root: output, path: `bundled-plugins/${helper.name}` }
   expect(bundledPluginDigest(payload)).toBe(hashDirectory(join(output, payload.path)))
@@ -174,4 +174,25 @@ it('packages a declared TypeScript entry and public Markdown without a family pr
   expect(await readFile(join(output, 'DEMO.md'), 'utf8')).toBe('DEMO.md')
   expect(await readFile(join(output, 'DOMAIN-NOTES.md'), 'utf8')).toBe('DOMAIN-NOTES.md')
   expect(await readdir(output)).not.toEqual(expect.arrayContaining(['src', 'unpublished.md']))
+})
+
+it('ships the optional judgment payload with its callable plugin and release digest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-judgment-delivery-'))
+  roots.push(root)
+  await copyBundledPlugins(root)
+  const payload = join(root, 'bundled-plugins', 'judgment')
+  expect((await readdir(payload)).sort()).toEqual([
+    'LICENSE',
+    'NOTICE',
+    'README.md',
+    'index.mjs',
+    'package.json',
+  ])
+  const manifest = JSON.parse(await readFile(join(payload, 'package.json'), 'utf8'))
+  expect(manifest.agnes.plugins[0]).toMatchObject({ export: 'judgmentPlugin', apiRange: '^5.16.0' })
+  expect(bundledPluginDigest({ root, path: 'bundled-plugins/judgment' })).toBe(hashDirectory(payload))
+  const bundle = await readFile(join(payload, 'index.mjs'), 'utf8')
+  expect(bundle).toMatch(/^export \{[^}]*\bjudgmentPlugin\b[^}]*\}/m)
+  expect(bundle).toContain('from "@agnes/extension-api"')
+  expect(bundle).not.toContain('from "@agnes/core"')
 })

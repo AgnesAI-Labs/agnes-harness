@@ -10,5 +10,142 @@
     "@agnes/extension-api": "workspace:*",
     "@agnes/protocol": "workspace:*"
   },
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "agnes": {
+    "plugins": [
+      {
+        "export": "judgmentPlugin",
+        "id": "ext:agnes.judgment/main",
+        "runtime": "in-process",
+        "configReload": "next-session",
+        "apiRange": "^5.16.0",
+        "inject": [
+          "hooks",
+          "projections",
+          "eventLog",
+          "sideCall",
+          "self"
+        ],
+        "configSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Configure a Jev key to make judgment available; unexpected-stop detection requires separate opt-in and is off by default.",
+          "x-locales": {
+            "zh-CN": {
+              "description": "填上 Jev 的 key 即可启用判断模型；意外收工检测默认关闭，需要另外手动开启。"
+            }
+          },
+          "properties": {
+            "judge": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "route": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "description": "Configured side-model route."
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "description": "Model id on the selected route."
+                },
+                "fallback": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "route": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "description": "Configured side-model route."
+                    },
+                    "model": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 256,
+                      "description": "Model id on the selected route."
+                    }
+                  },
+                  "required": [
+                    "route",
+                    "model"
+                  ],
+                  "description": "Optional native fallback; never a chat fallback."
+                }
+              }
+            },
+            "uses": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "stop": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Opt in to unexpected-stop detection. Real-session effectiveness has not been evaluated.",
+                      "x-locales": {
+                        "zh-CN": {
+                          "description": "手动开启意外收工检测。真实会话效果尚未评测。"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "metadata": {
+          "displayName": "Judgment",
+          "summary": "Optional detection of replies that promise to act but end early.",
+          "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "判断",
+              "summary": "可选检测：回复说了要做，却提前结束。",
+              "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。"
+            }
+          }
+        },
+        "capabilities": {
+          "hooks": [
+            "turn_stopping"
+          ],
+          "events": true,
+          "projections": [
+            {
+              "name": "stop.conversation",
+              "inputEventTypes": [
+                "session/start",
+                "user/message",
+                "assistant/message",
+                "inbox",
+                "x/plugin/524280817e87343c/stop.continued"
+              ],
+              "maxStateBytes": 262144
+            }
+          ]
+        },
+        "default": false
+      }
+    ],
+    "metadata": {
+      "displayName": "Judgment",
+      "summary": "Optional detection of replies that promise to act but end early.",
+      "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "判断",
+          "summary": "可选检测：回复说了要做，却提前结束。",
+          "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。"
+        }
+      }
+    }
+  }
 }

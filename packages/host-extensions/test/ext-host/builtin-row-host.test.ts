@@ -176,7 +176,7 @@ it('gives a granted declared builtin the same live catalogue before and after pr
     models = [{ route: 'jev', model: 'small', api: 'jev' }]
     expect(await self?.sideModels?.list()).toEqual([{ route: 'jev', model: 'small', api: 'jev' }])
   } finally {
-    await loaded.release()
+    await loaded.release('operator')
   }
 })
 it.each([
@@ -212,7 +212,7 @@ it.each([
     expect(loaded.loaded).toBe(true)
     expect(self?.sideModels).toBeUndefined()
   } finally {
-    await loaded.release()
+    await loaded.release('operator')
   }
 })
 

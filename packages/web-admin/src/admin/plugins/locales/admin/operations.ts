@@ -2,6 +2,8 @@ import type { LocaleCatalog } from '@agnes/web-ui'
 
 export const operationsCatalog: LocaleCatalog = {
   en: {
+    'review.dataUse': 'Package-declared purpose and data use',
+    'review.noAdditionalScopes': 'No additional permission scopes listed',
     'update.dependents.review': 'Review parent and dependent updates together',
     'update.dependents.title': 'Update the parent and its dependents',
     'update.dependents.description':
@@ -194,6 +196,8 @@ export const operationsCatalog: LocaleCatalog = {
     'source.validation.prefix': 'This source reference must start with “{prefix}”, for example {example}.',
   },
   'zh-CN': {
+    'review.dataUse': '包声明的用途与数据使用',
+    'review.noAdditionalScopes': '未列出额外权限范围',
     'update.dependents.review': '联合审核父插件和依赖插件更新',
     'update.dependents.title': '更新父插件及其依赖插件',
     'update.dependents.description':

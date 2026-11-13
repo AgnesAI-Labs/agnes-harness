@@ -32,6 +32,7 @@ import { consumeVendorCss } from '../../../tools/web-vendor-css.mjs'
 import { xSurface } from '../../../tools/web-x-surface.mjs'
 import { beginRuntimeDirectory } from '../../base/tools/runtime-directory.js'
 import { buildJevPayload } from '../../package-manager/tools/build-jev-payload.mjs'
+import { buildJudgmentPayload } from '../../package-manager/tools/build-judgment-payload.mjs'
 import { prepareBrowser } from './browser.js'
 import { bundledManifests } from './bundled-manifests.mjs'
 import { bundledPackageVersion, stampBundledPackageVersion } from './bundled-version.js'
@@ -73,6 +74,7 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
     await mkdir(destination, { recursive: true })
     // The Jev payload entry is generated from packages/loop-jev and is not committed.
     if (helper === 'jev-loop') await buildJevPayload(source)
+    if (helper === 'judgment') await buildJudgmentPayload(source)
     for (const name of [
       'package.json',
       'index.mjs',
