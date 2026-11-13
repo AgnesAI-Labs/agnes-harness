@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { DaemonNotice, UINode } from '@agnes/protocol'
-import type { Client } from '@agnes/sdk'
+import { AGNES_ERRORS, type DaemonNotice, type UINode } from '@agnes/protocol'
+import { type Client, JsonRpcError } from '@agnes/sdk'
 import {
   type Block,
   type ChannelAdapter,
@@ -32,7 +32,9 @@ type RunnerClient = {
   initialize: Client['initialize']
   apis: Client['apis']
   on: Client['on']
-  session: ConstructorParameters<typeof SessionCache>[0]['session']
+  session: ConstructorParameters<typeof SessionCache>[0]['session'] & {
+    load(id: string, options?: Parameters<Client['session']['load']>[1]): Promise<unknown>
+  }
   claim: Pick<Client['claim'], 'once'>
   approval: Pick<Client['approval'], 'decide'>
   call?: Client['call']
@@ -290,7 +292,16 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       }
       if (managed.has(key)) return () => {}
       const activation = Promise.resolve().then(async () => {
-        const session = await dependencies.client.session.attach(sessionId, { filter: { acpUpdates: false } })
+        let session: BoundSession
+        try {
+          session = await dependencies.client.session.attach(sessionId, { filter: { acpUpdates: false } })
+        } catch (error) {
+          if (!(error instanceof JsonRpcError) || error.code !== AGNES_ERRORS.SESSION_NOT_FOUND) throw error
+          // A task session may be closed after a daemon restart while its native question stays open
+          // in the ledger. The attach feed only serves loaded sessions, so open it once before retrying.
+          await dependencies.client.session.load(sessionId, { history: 'none' })
+          session = await dependencies.client.session.attach(sessionId, { filter: { acpUpdates: false } })
+        }
         if (abort.signal.aborted) {
           await session.detach()
           throw new Error('channel stopped')
