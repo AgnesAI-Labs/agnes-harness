@@ -6,6 +6,9 @@ export type FindCandidate = { path: string; lexicalScore: number }
 export type FindScan = {
   candidates: FindCandidate[]
   entriesVisited: number
+  /** Completed byte-read responses, including content later rejected as binary/changed. */
+  filesRead: number
+  bytesRead: number
   failures: number
   partial: boolean
   reasons: string[]
@@ -87,7 +90,15 @@ export async function scanFindCandidates(
   query: string,
   signal: AbortSignal,
 ): Promise<FindScan> {
-  const result: FindScan = { candidates: [], entriesVisited: 0, failures: 0, partial: false, reasons: [] }
+  const result: FindScan = {
+    candidates: [],
+    entriesVisited: 0,
+    filesRead: 0,
+    bytesRead: 0,
+    failures: 0,
+    partial: false,
+    reasons: [],
+  }
   const reason = (value: string) => {
     result.partial = true
     if (!result.reasons.includes(value)) result.reasons.push(value)
@@ -98,10 +109,28 @@ export async function scanFindCandidates(
     return result
   }
   const terms = findTerms(query)
-  const candidate = (path: string) => {
+  const candidate = async (path: string) => {
     if (!permittedFile(path)) return
+    // Local grep precedes top-128 selection. Retain scores only, never a map of raw sources.
+    const read = await readFindCandidate(fs, root, path, signal, (bytes) => {
+      result.filesRead++
+      result.bytesRead += bytes
+    })
+    signal.throwIfAborted()
+    if (read.status !== 'ok') {
+      if (read.status === 'failed') {
+        result.failures++
+        reason('unreadable_file')
+      }
+      return
+    }
+    if (read.truncated) reason('content_read_limit')
     const lower = path.toLowerCase()
-    result.candidates.push({ path, lexicalScore: terms.filter((term) => lower.includes(term)).length })
+    const content = read.text.toLowerCase()
+    result.candidates.push({
+      path,
+      lexicalScore: terms.filter((term) => lower.includes(term) || content.includes(term)).length,
+    })
     result.candidates.sort(order)
     if (result.candidates.length > CANDIDATE_LIMIT) {
       result.candidates.pop()
@@ -111,7 +140,7 @@ export async function scanFindCandidates(
   try {
     const stat = await operation(signal, () => fs.stat(root))
     if (stat.kind === 'file') {
-      candidate(root)
+      await candidate(root)
       return result
     }
     if (stat.kind !== 'dir') {
@@ -146,7 +175,7 @@ export async function scanFindCandidates(
             continue
           }
           if (entry.kind === 'dir') queue.push(path)
-          else if (entry.kind === 'file') candidate(path)
+          else if (entry.kind === 'file') await candidate(path)
         }
       } catch {
         if (signal.aborted) throw signal.reason
@@ -173,6 +202,7 @@ export async function readFindCandidate(
   requestedRoot: string,
   requestedPath: string,
   signal: AbortSignal,
+  onRead?: (bytes: number) => void,
 ): Promise<FindRead> {
   const root = findRoot(requestedRoot)
   const path = findRoot(requestedPath)
@@ -189,6 +219,7 @@ export async function readFindCandidate(
     const readRevision = fs.revision?.bind(fs)
     const revision = readRevision ? await operation(signal, () => readRevision(path)) : undefined
     const bytes = await operation(signal, () => fs.read(path, { offset: 0, limit: READ_LIMIT }))
+    onRead?.(bytes.length)
     if (bytes.length > READ_LIMIT) return { status: 'failed', reason: 'read_limit' }
     const after = await operation(signal, () => fs.stat(path))
     const nextRevision = readRevision ? await operation(signal, () => readRevision(path)) : undefined

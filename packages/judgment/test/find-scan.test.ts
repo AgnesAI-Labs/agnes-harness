@@ -59,12 +59,15 @@ it('filters credentials, links, unsafe names, builds and locks before selecting 
   expect(result.candidates.map((c) => c.path)).toEqual(['/repo/query.ts', '/repo/src/query.md', '/repo/z.ts'])
   expect(result.partial).toBe(false)
   expect(f.lists).toEqual(['/repo', '/repo/src'])
-  expect(f.reads).toEqual([])
+  expect(f.reads.map((read) => read.path)).toEqual(['/repo/query.ts', '/repo/z.ts', '/repo/src/query.md'])
 })
 
 it('bounds the candidate set and consumed entries and reports an incomplete scan', async () => {
   const entries = Array.from({ length: 10002 }, (_, i) => file(`file-${String(i).padStart(5, '0')}.ts`))
-  const f = filesystem({ '/repo': entries })
+  const f = filesystem({
+    '/repo': entries,
+    ...Object.fromEntries(entries.map((entry) => [`/repo/${entry.name}`, 'ordinary'])),
+  })
   const result = await scanFindCandidates(f.fs, '/repo', 'missing', active())
   expect(result.entriesVisited).toBe(10000)
   expect(result.candidates).toHaveLength(128)
@@ -133,6 +136,38 @@ it('honors cancellation before operations and while a filesystem promise is pend
   )
   waiting.abort()
   expect((await pending).reasons).toContain('cancelled')
+  let began: (() => void) | undefined
+  let finish: ((bytes: Uint8Array) => void) | undefined
+  const reading = new Promise<void>((resolve) => {
+    began = resolve
+  })
+  const bytes = new Promise<Uint8Array>((resolve) => {
+    finish = resolve
+  })
+  const cancellation = new AbortController()
+  const work = scanFindCandidates(
+    {
+      ...f.fs,
+      list: async () => [file('index.ts')],
+      stat: async (path) => ({ kind: path === '/repo' ? 'dir' : 'file', size: 1, mtimeMs: 1 }),
+      read: async () => {
+        began?.()
+        return bytes
+      },
+    },
+    '/repo',
+    'query',
+    cancellation.signal,
+  )
+  await reading
+  cancellation.abort()
+  const stopped = await work
+  expect(stopped).toMatchObject({ filesRead: 0, bytesRead: 0, partial: true })
+  expect(stopped.reasons).toContain('cancelled')
+  finish?.(new Uint8Array([65]))
+  await Promise.resolve()
+  expect(stopped.filesRead).toBe(0)
+  expect(stopped.bytesRead).toBe(0)
 })
 
 it('discards changed revisions, listed directories replaced by links, and per-directory failures', async () => {
@@ -183,4 +218,61 @@ it('never enqueues or returns discovered paths beyond the bounded path length', 
   expect(f.lists).toEqual([root])
   expect(result.partial).toBe(true)
   expect(result.reasons).toContain('path_limit')
+})
+
+it('finds a content match in a generic filename before truncating the top 128', async () => {
+  const names = Array.from({ length: 128 }, (_, i) => `a${String(i).padStart(3, '0')}.ts`)
+  const f = filesystem({
+    '/repo': [
+      ...names.map(file),
+      { name: 'z', kind: 'dir' },
+      file('.env'),
+      { name: 'link', kind: 'symlink' },
+    ],
+    ...Object.fromEntries(names.map((name) => [`/repo/${name}`, 'ordinary unrelated text'])),
+    '/repo/z': [file('index.ts')],
+    '/repo/z/index.ts': 'needle',
+    '/repo/.env': 'password=needle',
+    '/repo/link': 'symlink',
+  })
+  const result = await scanFindCandidates(f.fs, '/repo', 'needle', active())
+  expect(result.candidates).toHaveLength(128)
+  expect(result.candidates[0]?.path).toBe('/repo/z/index.ts')
+  expect(result.candidates[0]?.lexicalScore).toBeGreaterThan(0)
+  expect(result).toMatchObject({ filesRead: 129, bytesRead: 2950 })
+  expect(f.reads.map((r) => r.path)).not.toContain('/repo/.env')
+  expect(f.reads.map((r) => r.path)).not.toContain('/repo/link')
+  expect(f.reads.every((r) => r.limit === 1048576)).toBe(true)
+})
+
+it('reports bounded local content coverage and freshly reads the later semantic source', async () => {
+  const nodes: Record<string, Node> = {
+    '/repo': [file('index.ts')],
+    '/repo/index.ts': `${'x'.repeat(1048576)}needle`,
+  }
+  const f = filesystem(nodes)
+  const result = await scanFindCandidates(f.fs, '/repo', 'needle', active())
+  expect(result).toMatchObject({ filesRead: 1, bytesRead: 1048576, partial: true })
+  expect(result.reasons).toContain('content_read_limit')
+  nodes['/repo/index.ts'] = 'fresh needle'
+  expect(await readFindCandidate(f.fs, '/repo', '/repo/index.ts', active())).toEqual({
+    status: 'ok',
+    text: 'fresh needle',
+    truncated: false,
+  })
+  expect(f.reads).toEqual([
+    { path: '/repo/index.ts', limit: 1048576 },
+    { path: '/repo/index.ts', limit: 1048576 },
+  ])
+})
+
+it('excludes a binary file even when its filename and decoded prefix match the query', async () => {
+  const f = filesystem({
+    '/repo': [file('needle.ts')],
+    '/repo/needle.ts': new Uint8Array([110, 101, 101, 100, 108, 101, 0]),
+  })
+  const result = await scanFindCandidates(f.fs, '/repo', 'needle', active())
+  expect(result.candidates).toEqual([])
+  expect(result.filesRead).toBe(1)
+  expect(result.bytesRead).toBe(7)
 })
