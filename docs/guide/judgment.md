@@ -1,0 +1,60 @@
+# Detect replies that stop before acting
+
+English | [简体中文](judgment.zh-CN.md)
+
+[Documentation](../README.md) · [Plugins](packages.md) · [TypeSafe Jev](typesafe-jev.md) · [Local models](local-model.md)
+
+The optional **Judgment** plugin (`@agnes/judgment`) checks whether an assistant's final text promises to do something next but ends before doing it. For example, a reply that ends with “I'll inspect the failing test now” may receive one reminder to continue in the same turn.
+
+Unexpected-stop detection is **off by default**. Real-session effectiveness evaluation has not been completed. Installing the plugin and selecting a model do not turn this check on: you must enable it explicitly.
+
+## Install from the Marketplace
+
+1. Open **Plugins → Marketplace**, find **Judgment**, and select **Install**. The package ships with AGH but is not installed by default.
+2. Review the package source, its side model calling capability (`sideCall`), its access to conversation messages, and the excerpts it sends for judgment.
+3. Finish installation, enable the plugin, then open its settings.
+
+If the package is not installed, it performs no checks. If it is installed but detection is off or no usable judgment model is selected, it sends no judgment requests.
+
+## Configure a judgment model, then enable detection
+
+For Jev, open **Settings → Models & accounts → Advanced: side models and task models → Side models**. Add a Jev entry and save its key through the credential controls. Follow the [Jev setup guide](typesafe-jev.md) for route and model configuration.
+
+The plugin automatically selects the sole native Jev route only when one model entry remains. If that route has multiple models, select a model explicitly. With multiple routes, select the intended route and model in the plugin settings; the plugin never chooses by catalogue order. A native judgment model may have one explicitly configured native fallback. It never switches automatically to a chat model after failure.
+
+You can instead explicitly select a chat model as the primary judgment model. The plugin sends that model a text question and converts its answer to yes or no. These answers represent a binary decision, not a calibrated probability. To keep this judgment request on your machine, choose a model served entirely locally.
+
+After choosing the model, enable **unexpected-stop detection** (`uses.stop.enabled`). Model and plugin configuration changes apply to new sessions; start a new session to use them.
+
+## What happens at the end of a reply
+
+The plugin considers the latest user request and the final assistant reply when that reply contains text and no tool calls. A native yes-probability of at least 0.5, or a parsed yes from an explicitly selected chat model, prompts one continuation in the current turn. The conversation includes a runtime-context note explaining the reminder. The main model decides what to do next under the existing permissions, approvals, step limits and budget.
+
+The plugin can prompt continuation only once for the same user request. A session-history marker preserves that limit when the session is reopened after a restart. A cached judgment adds `（缓存）` to the reminder.
+
+A judgment attempt may wait up to 5 seconds. With a configured native fallback it can make one more attempt; the end-of-turn hook has a 15-second limit. A missing model, invalid result, exhausted judgment budget or remaining failure lets the turn finish normally. Budget refusal does not trigger a retry. Cancellation or a new user message abandons the pending check; a late answer cannot resume the old turn.
+
+## What is sent
+
+For this check the plugin sends the selected judgment model:
+
+| Content | Maximum excerpt |
+| --- | --- |
+| Latest user request | First 2,000 characters |
+| Final assistant reply | Last 8,000 characters |
+| Judgment question | The fixed unexpected-stop question and its criteria |
+
+Credential redaction runs on the excerpts before they are sent. A remote model receives the remaining text, so these excerpts may still contain personal or confidential information. The selected provider and any configured gateway handle the request. Using a local judgment model keeps this particular model request local; it does not change where your main conversation model runs.
+
+The plugin does not include the full conversation or a separate collection of files and tool results. Text already quoted in the selected excerpts is included within the limits above.
+
+Native answers may be reused from a local memory cache. It holds at most 2,000 entries, expires them after 30 days, and evicts the least recently used entries when full. Cache keys are hashes; values contain answers and timestamps, not the source excerpts. The cache disappears when its plugin instance is released or the process restarts. Chat-model judgments are not cached. The durable continuation marker is separate from this cache.
+
+## When the check does not run
+
+- In child-agent sessions or turns marked unattended by the host.
+- When the final reply contains a tool call, no eligible user request is available, or the same request has already received a continuation.
+- In plugin isolation modes where the judgment calling capability is unavailable.
+- During goal-driven work: after a human `/goal` command establishes goal suppression, checking stays paused until a genuine command from the same actor and source clears the goal with `/goal clear`. Pausing or completing a goal does not re-enable the check. The plugin is conservative, so an invalid goal command can also leave checking paused; `/goal` and `/goal show` alone do not establish suppression.
+
+The check can miss unfinished work or misread a promise. It is not a completion verifier and never grants permission to perform an action. To stop using it, turn off `uses.stop.enabled`, or disable or uninstall the plugin. This version provides unexpected-stop detection only.

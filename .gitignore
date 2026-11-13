@@ -63,3 +63,7 @@ packages/package-manager/bundled-plugins/browser/NOTICE
 
 # DevBoard live projects written into the session workspace during manual demos
 /devboard-projects/
+
+# Generated optional judgment payload
+packages/package-manager/bundled-plugins/judgment/index.mjs
+packages/package-manager/bundled-plugins/judgment/index.mjs.*.tmp

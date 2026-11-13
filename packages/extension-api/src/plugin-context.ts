@@ -16,9 +16,16 @@ import type { ToolRegistrationPort } from './tool.js'
 export type PluginProjectionDef<S extends JsonValue = JsonValue> = ProjectionDef<S> &
   Partial<Omit<ProjectionCapability, 'name'>>
 
+/** Requests a bounded override; only Host-granted fail-open events accept it. */
+export type HookRegisterOptions = Readonly<{ timeoutMs?: number }>
+
 export interface PluginHooksPort {
   /** Any of the 16 hook events. Observe-only events ignore the handler result. */
-  register<E extends HookEvent>(event: E, handler: NoInfer<HookHandler<E>>): Disposer
+  register<E extends HookEvent>(
+    event: E,
+    handler: NoInfer<HookHandler<E>>,
+    options?: HookRegisterOptions,
+  ): Disposer
 }
 export interface PluginProjectionsPort {
   register<S extends JsonValue>(def: PluginProjectionDef<S>): Disposer
@@ -57,7 +64,7 @@ export interface PluginContextFacets {
   readonly self: ExtensionContext
 }
 
-export type PluginFacetName = keyof PluginContextFacets
+export type PluginFacetName = keyof PluginContextFacets | 'sideCall'
 export const PLUGIN_FACET_NAMES: readonly PluginFacetName[] = Object.freeze([
   'tools',
   'hooks',
@@ -69,4 +76,5 @@ export const PLUGIN_FACET_NAMES: readonly PluginFacetName[] = Object.freeze([
   'providers',
   'self',
   'profileRuntime',
+  'sideCall',
 ])

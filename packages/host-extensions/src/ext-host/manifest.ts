@@ -9,7 +9,12 @@ import {
 } from '@agnes/extension-api'
 import { HostError } from '@agnes/host-common/errors'
 import { compat } from '@agnes/host-common/packages/compat'
-import { containedEntry, resolveEntry as resolvePackageEntry } from '@agnes/package-manager'
+import {
+  containedEntry,
+  parseAgnesPluginEntries,
+  resolveEntry as resolvePackageEntry,
+} from '@agnes/package-manager'
+import type { BuiltinPluginDeclaration } from '../contracts/package.js'
 
 /** The file a bundled extension declares itself in (its one `agnes.plugins` entry). Read before its entry runs. */
 export const MANIFEST_FILE = 'package.json'
@@ -177,4 +182,25 @@ export function readAuthorManifest(dir: string, apiVersion: string = API_VERSION
   if (!checked.ok) fail(file, 'invalid extension manifest', { reason: 'invalid-manifest' })
   checkApiRange(file, checked.value.apiRange, apiVersion)
   return checked.value
+}
+
+/** Host-only declaration data from a release-verified bundled package. Invalid data grants nothing. */
+export function readBuiltinPluginDeclaration(dir: string): BuiltinPluginDeclaration | undefined {
+  try {
+    const pkg = readJsonFile(join(dir, MANIFEST_FILE))
+    const agnes = pkg.agnes
+    if (typeof pkg.name !== 'string' || !isObject(agnes)) return undefined
+    const entries = parseAgnesPluginEntries(pkg.name, agnes.plugins, { bundled: true })
+    if (entries.length !== 1) return undefined
+    const entry = entries[0]
+    if (!entry) return undefined
+    return Object.freeze({
+      id: entry.id,
+      export: entry.export,
+      inject: Object.freeze([...(entry.inject ?? [])]),
+      runtime: entry.runtime,
+    })
+  } catch {
+    return undefined
+  }
 }

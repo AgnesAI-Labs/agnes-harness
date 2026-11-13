@@ -23,7 +23,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.37',
+    version: '0.2.39',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
@@ -80,6 +80,15 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
     // index.mjs is generated from packages/loop-jev and is not committed.
     sourcePath: 'package-manager/bundled-plugins/jev-loop',
     build: 'pnpm --filter @agnes/package-manager build:jev-payload',
+  },
+  {
+    name: 'judgment',
+    id: '@agnes/judgment',
+    version: '0.1.0',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/judgment',
+    sourcePath: 'package-manager/bundled-plugins/judgment',
+    build: 'pnpm --filter @agnes/package-manager build:judgment-payload',
   },
 ])
 

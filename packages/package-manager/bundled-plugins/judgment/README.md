@@ -1,0 +1,15 @@
+# Judgment
+
+An optional plugin for replies that promise to act but end early. Install it from the AGH Marketplace, enable the plugin, and select a judgment model. Unexpected-stop detection stays **off by default** until you explicitly enable `uses.stop.enabled`. Real-session effectiveness has not been evaluated.
+
+The plugin uses the host's `sideCall` capability and reads conversation messages through its own projection. It sends the latest request's first 2,000 characters and the final reply's last 8,000 characters after credential redaction, together with a fixed judgment question. Remote providers receive the remaining text.
+
+A sole native route with one model can be selected automatically. Multiple routes or models require an explicit selection. You may explicitly choose a chat primary; native failures never fall back to chat. At most one native fallback is allowed.
+
+It may prompt one continuation in the current turn per user request. A durable session marker preserves that limit across restarts. Child sessions, turns marked unattended, and goal-driven work are excluded. Failed or cancelled judgments let the turn finish normally.
+
+Native answers use a process-local LRU cache of at most 2,000 entries for 30 days. Hashed keys and answers contain no source excerpts; the cache disappears on plugin disposal or restart.
+
+See the [English guide](https://github.com/AgnesAI-Labs/agnes-harness/blob/develop/docs/guide/judgment.md) or [中文指南](https://github.com/AgnesAI-Labs/agnes-harness/blob/develop/docs/guide/judgment.zh-CN.md) for setup, disclosure and limitations.
+
+The generated entry requires an in-process host compatible with Extension API 5.16. It is built from `packages/judgment`; it is not a separate implementation.

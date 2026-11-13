@@ -330,6 +330,12 @@
     },
     {
       "path": "packages/distribution"
+    },
+    {
+      "path": "packages/judgment"
+    },
+    {
+      "path": "packages/judgment/tsconfig.test.json"
     }
   ]
 }

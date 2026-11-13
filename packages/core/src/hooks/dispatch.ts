@@ -8,7 +8,10 @@ type HookFailure = 'timeout' | 'cancelled' | 'execution' | 'result'
 export type DispatchFailure = { event: HookEvent; source: string; message: string; failure: HookFailure }
 export type DispatchEntry<T> = {
   source: string
+  /** Close invocation-owned effects even when timeout stops awaiting the handler. */
+  close?: () => Promise<void> | undefined
   contextBlocking?: boolean
+  timeoutMs?: number
   /** Invocation must not commit shared state; commit runs only after successful bounded completion. */
   invoke: (context: { signal: AbortSignal; replayed: boolean }) => T | Promise<T>
 }
@@ -95,14 +98,20 @@ export class HookDispatch {
       })
       return {
         ok: true,
-        value: await withTimeout(pending, HOOK_TABLE[event].timeoutMs, event, controller.signal, {
-          setTimeout: (fn, ms) =>
-            timers.setTimeout(() => {
-              boundaryFailure ??= 'timeout'
-              fn()
-            }, ms),
-          clearTimeout: (handle) => timers.clearTimeout(handle),
-        }),
+        value: await withTimeout(
+          pending,
+          entry.timeoutMs ?? HOOK_TABLE[event].timeoutMs,
+          event,
+          controller.signal,
+          {
+            setTimeout: (fn, ms) =>
+              timers.setTimeout(() => {
+                boundaryFailure ??= 'timeout'
+                fn()
+              }, ms),
+            clearTimeout: (handle) => timers.clearTimeout(handle),
+          },
+        ),
       }
     } catch (error) {
       const failure = boundaryFailure ?? 'execution'
@@ -116,6 +125,7 @@ export class HookDispatch {
     } finally {
       signal.removeEventListener('abort', abort)
       controller.abort()
+      await entry.close?.()
     }
   }
 

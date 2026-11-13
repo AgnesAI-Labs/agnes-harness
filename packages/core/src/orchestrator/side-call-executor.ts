@@ -291,6 +291,7 @@ async function dispatch(
   const adapter = prepared.adapter
   const seen: Observed = { text: '', done: false }
   const audited = {
+    ...(audit.caller === undefined ? {} : { caller: audit.caller }),
     route: binding.route,
     ...(adapter
       ? { adapter: { id: adapter.id, ...(adapter.version === null ? {} : { version: adapter.version }) } }
@@ -381,7 +382,11 @@ async function dispatch(
    */
   function recordable(batch: EventInput[]): void {
     const terminalRow = batch[batch.length - 1] as EventInput
-    checkSideCallSettlement(batch, binding, (terminalRow.data as { bindingHash: string }).bindingHash)
+    checkSideCallSettlement(
+      batch,
+      { ...binding, caller: audit.caller },
+      (terminalRow.data as { bindingHash: string }).bindingHash,
+    )
     for (const row of batch)
       if (!validateEvent({ lane: s.lane, v: 1, ...row, ts: PROBE_TS, id: PROBE_ID, seq: 1 }).ok)
         throw new CoreError('E_ENVELOPE', 'side-call settlement row does not match its schema')

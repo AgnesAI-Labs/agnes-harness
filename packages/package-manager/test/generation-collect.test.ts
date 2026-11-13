@@ -212,8 +212,17 @@ describe('reusing an identical generation for a publication', () => {
       trusted: true,
     }
     const changedSources = { ...previous, sources: [source] }
-    expect(matchesGenerationBuildInputs(changedSources, expected('a'))).toBe(true)
+    expect(matchesGenerationBuildInputs(changedSources, expected('a'))).toBe(false)
     expect(sameGenerationCodeAndSources(previous, changedSources)).toBe(false)
+    expect(matchesGenerationBuildInputs(changedSources, { ...expected('a'), sources: [source] })).toBe(true)
+    expect(
+      matchesGenerationBuildInputs(changedSources, {
+        ...expected('a'),
+        sources: [
+          { ...source, snapshot: { ...source.snapshot, source: { type: 'file', ref: 'file:./new' } } },
+        ],
+      }),
+    ).toBe(false)
     expect(
       sameGenerationCodeAndSources(changedSources, {
         ...changedSources,

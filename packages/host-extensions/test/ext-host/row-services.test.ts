@@ -191,9 +191,13 @@ describe('Cordis row service contribution', () => {
     })
     await row
     expect(projection?.init()).toEqual({ count: 0 })
+    expect(bridge.projectionNames(origin)).toEqual(['counter'])
+    expect(bridge.projectionNames({ ...origin })).toEqual([])
     origins.delete((rowContext as Context).fiber)
+    expect(bridge.projectionNames(origin)).toEqual([])
     expect(() => projection?.init()).toThrow(/closed/)
     await row.dispose()
     expect(projection).toBeUndefined()
+    expect(bridge.projectionNames(origin)).toEqual([])
   })
 })

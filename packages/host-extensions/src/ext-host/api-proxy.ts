@@ -13,6 +13,7 @@ import type { HostCapabilityGrant } from '@agnes/package-manager'
 import { inspectJsonData, type JsonValue, jcs, validateAgainst, validateSlotPayload } from '@agnes/protocol'
 import { ResourceEntry as ResourceSchema } from '@agnes/protocol/gen/hooks'
 import type { DisposerBag } from './disposers.js'
+import { hookTimeout } from './hook-options.js'
 import type { Lease } from './lease.js'
 import { mapResult } from './map-result.js'
 import { type BoundPluginManage, pluginManageForCall } from './plugin-manage-binding.js'
@@ -20,6 +21,7 @@ import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
 import { adaptProjection } from './projections.js'
 import { serviceAuthor } from './service-author.js'
+import { sideModelsPort } from './side-models.js'
 import { capabilityToolContext } from './tool-context-capabilities.js'
 import { invalidToolMessage } from './tool-def-message.js'
 
@@ -31,6 +33,9 @@ type Options = {
   packageVersion: string
   executionBinding?: RegMeta['executionBinding']
   hostGrants?: HostCapabilityGrant
+  sideCallDeclared?: boolean
+  pluginRowId?: string
+  sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
   trust: ExtensionContext['trust']
   lease: Lease
   ports: KernelPorts
@@ -54,6 +59,8 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
   const meta: RegMeta = Object.freeze({
     source: m.id,
     trust: input.trust,
+    ...(input.pluginRowId ? { pluginRowId: input.pluginRowId } : {}),
+    ...(input.sideCallDeclared && input.hostGrants?.sideCall ? { sideCall: true as const } : {}),
     ...(input.hostGrants?.contextBlocking ? { contextBlocking: true } : {}),
     ...(input.trust === 'builtin' && input.hostGrants?.hookRank !== undefined
       ? { hookRank: input.hostGrants.hookRank }
@@ -62,6 +69,8 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
   const toolMeta: RegMeta = Object.freeze({
     source: m.id,
     trust: input.trust,
+    ...(input.pluginRowId ? { pluginRowId: input.pluginRowId } : {}),
+    ...(input.sideCallDeclared && input.hostGrants?.sideCall ? { sideCall: true as const } : {}),
     packageIdentity: input.packageIdentity,
     packageVersion: input.packageVersion,
     ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),
@@ -93,7 +102,9 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
     alive,
     caps.projections?.map((p) => p.name) ?? [],
   )
+  const sideModels = sideModelsPort(() => input.hostGrants, input.sideCallDeclared, input.sideModels, alive)
   const ctx: ExtensionContext = Object.freeze({
+    ...(sideModels ? { sideModels } : {}),
     extId: m.id,
     version: m.version,
     trust: input.trust,
@@ -178,9 +189,10 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
       }
       return bag.add(ports.tools.add(wrapped, toolMeta))
     },
-    registerHook(event, handler) {
+    registerHook(event, handler, options) {
       registering()
       if (!caps.hooks?.includes(event) || typeof handler !== 'function') refuse('hook not declared')
+      const timeoutMs = hookTimeout(event, options, input.hostGrants, log)
       return bag.add(
         ports.hooks.on(
           event,
@@ -197,7 +209,7 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
               }),
             )
           },
-          meta,
+          timeoutMs === undefined ? meta : { ...meta, hookTimeoutMs: timeoutMs },
         ),
       )
     },

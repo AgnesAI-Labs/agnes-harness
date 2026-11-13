@@ -34,9 +34,9 @@ describe('ExtensionAPI backend surface', () => {
     expectTypeOf<ExtensionAPI>().not.toHaveProperty('registerProvider' as never)
     expectTypeOf<ExtensionAPI>().not.toHaveProperty('registerOperation' as never)
   })
-  it('ctx exposes only id / version / trust / lease / log / signal / info / platform', () => {
+  it('ctx exposes facts and an optional granted side-model catalogue', () => {
     expectTypeOf<keyof ExtensionContext>().toEqualTypeOf<
-      'extId' | 'version' | 'trust' | 'lease' | 'log' | 'signal' | 'info' | 'platform'
+      'extId' | 'version' | 'trust' | 'lease' | 'log' | 'signal' | 'info' | 'platform' | 'sideModels'
     >()
     expectTypeOf<ExtensionContext['trust']>().toEqualTypeOf<'builtin' | 'trusted'>()
     // Factory time is load time: facts only, no capability probe (spec P2).

@@ -313,6 +313,7 @@ const RULES: Readonly<Record<LedgerPurpose, TerminalRules>> = {
         'route',
         'adapter',
         'endpointHost',
+        'caller',
       ],
     },
     head: (value) => ownData(value, HEAD, SIDE_CALL_KEYS),
@@ -549,7 +550,13 @@ const ZERO_TOKENS: TokenCounts = Object.freeze({ input: 0, output: 0, cacheRead:
  */
 export function checkSideCallCost(
   cost: EventInput,
-  binding: Readonly<{ effectId: string; lane: string; route: string; model: string }>,
+  binding: Readonly<{
+    effectId: string
+    lane: string
+    route: string
+    model: string
+    caller?: string | undefined
+  }>,
 ): Snapshot {
   const fail: Invalid = RULES['side-call'].invalid
   const { required, optional } = RULES['side-call'].costKeys
@@ -561,6 +568,7 @@ export function checkSideCallCost(
     spent?.purpose !== 'side-call' ||
     spent.effectId !== binding.effectId ||
     spent.model !== binding.model ||
+    spent.caller !== binding.caller ||
     (spent.route !== undefined && spent.route !== binding.route) ||
     (spent.credits !== undefined && !amount(spent.credits))
   )
@@ -579,7 +587,13 @@ export function checkSideCallCost(
  */
 export function checkSideCallSettlement(
   rows: readonly EventInput[],
-  binding: Readonly<{ effectId: string; lane: string; route: string; model: string }>,
+  binding: Readonly<{
+    effectId: string
+    lane: string
+    route: string
+    model: string
+    caller?: string | undefined
+  }>,
   bindingHash: string,
 ): SideCallEffectTerminal {
   const fail: Invalid = RULES['side-call'].invalid

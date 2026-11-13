@@ -2,8 +2,12 @@ import type { LeaseView, Logger, PlatformFacts } from './common.js'
 
 export type TrustTier = 'builtin' | 'trusted'
 
+export type SideModelEntry = Readonly<{ route: string; model: string; api: string }>
+
 /** What a plugin reads through `ctx.self`: its identity, trust tier, logger, abort signal and platform facts. */
 export interface ExtensionContext {
+  /** Current configured models, only for release-granted side-call users. Never exposes credentials. */
+  readonly sideModels?: Readonly<{ list(): Promise<readonly SideModelEntry[]> }>
   readonly extId: string
   readonly version: string
   readonly trust: TrustTier

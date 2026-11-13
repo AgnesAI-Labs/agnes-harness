@@ -829,3 +829,46 @@ describe('media rows through the shared ledger-row layer', () => {
     await kernel.close()
   })
 })
+
+it('binds a plugin cost caller to its durable audit and preserves it through replay', async () => {
+  const { kernel, session } = await setup('caller-binding')
+  try {
+    const port = createSideCallEffectPort(session)
+    const identity = binding(session.key)
+    const caller = 'ext:sample/main'
+    await port.begin(identity, { ...audit, caller })
+    const rows = commitRows(session, port, identity, okTerminal)
+    await expect(port.write(rows)).rejects.toThrow('cost row does not belong')
+    const attributed = rows.map((row) =>
+      row.type === 'cost/ledger' ? { ...row, data: { ...(row.data as object), caller } } : row,
+    )
+    const forged = attributed.map((row) =>
+      row.type === 'cost/ledger'
+        ? { ...row, data: { ...(row.data as object), caller: 'ext:other/main' } }
+        : row,
+    )
+    await expect(port.write(forged)).rejects.toThrow('cost row does not belong')
+    await port.write(attributed)
+    expect(await createSideCallEffectPort(session).status('call-1')).toMatchObject({
+      status: 'finished',
+      result: { status: 'ok', replayed: true },
+    })
+  } finally {
+    await kernel.close()
+  }
+})
+
+it('preserves the caller when recovery reconstructs interrupted side-call spend', async () => {
+  const { kernel, session } = await setup('caller-recovery')
+  try {
+    const identity = binding(session.key)
+    await createSideCallEffectPort(session).begin(identity, { ...audit, caller: 'ext:sample/main' })
+    await session.resume({ mode: 'close' })
+    const costs = await session.scan({ type: 'cost/ledger', fromSeq: 1, limit: 100 })
+    expect(costs.map((row) => row.data)).toContainEqual(
+      expect.objectContaining({ purpose: 'side-call', caller: 'ext:sample/main', interrupted: true }),
+    )
+  } finally {
+    await kernel.close()
+  }
+})

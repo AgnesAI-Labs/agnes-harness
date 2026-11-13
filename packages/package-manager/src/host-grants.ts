@@ -17,6 +17,8 @@ export type HostCapabilityGrant = Readonly<{
   isolatedHooks?: true
   governanceHooks?: true
   hookRank?: number
+  sideCall?: true
+  hookTimeoutMs?: number
 }>
 
 export type HostGrantDeclaration = Readonly<{
@@ -47,5 +49,11 @@ export const HOST_CAPABILITY_GRANTS: readonly HostGrantDeclaration[] = freezeDat
       'agnes/workflow': { workflowRuns: true },
     },
     seams: { artifacts: { privateArtifactStore: true } },
+  },
+  {
+    packageId: '@agnes/judgment',
+    package: {},
+    extensions: { 'ext:agnes.judgment/main': { sideCall: true, hookTimeoutMs: 15000 } },
+    seams: {},
   },
 ])

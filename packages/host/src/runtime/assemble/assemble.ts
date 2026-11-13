@@ -129,7 +129,7 @@ type Tree = Awaited<ReturnType<typeof mountTree>>
 async function startCore(ctx: AssemblyContext, f: Foundation, t: Tree) {
   const { pkgs, proc, presets } = f
   ctx.done('provider')
-  const providerStage = await assembleProvider(ctx, proc, presets, t.runtimeTarget.pluginTree)
+  const providerStage = await assembleProvider(ctx, proc, presets, t)
   ctx.done('operations')
   const { operations, runtimes } = buildOperations(ctx, pkgs, proc, t.seamContexts)
   ctx.done('kernel')

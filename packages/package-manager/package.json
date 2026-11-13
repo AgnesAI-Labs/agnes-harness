@@ -12,7 +12,8 @@
   "scripts": {
     "test": "vitest run",
     "build:jev-payload": "node tools/build-jev-payload.mjs",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "build:judgment-payload": "node tools/build-judgment-payload.mjs"
   },
   "dependencies": {
     "@agnes/error-sanitization": "workspace:*",

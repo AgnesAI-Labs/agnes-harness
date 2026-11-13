@@ -40,6 +40,7 @@ export default defineConfig({
     globalSetup: [
       fileURLToPath(new URL('./tools/native-test-setup.mjs', import.meta.url)),
       ensureJevPayload,
+      fileURLToPath(new URL('./packages/package-manager/tools/ensure-judgment-payload.mjs', import.meta.url)),
       fileURLToPath(new URL('./tools/presentation-test-setup.mjs', import.meta.url)),
     ],
     reporters: ['default', zeroTestReporter],

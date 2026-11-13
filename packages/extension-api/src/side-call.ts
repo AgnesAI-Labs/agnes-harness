@@ -179,6 +179,8 @@ export type SideCallStatus =
  * Core may add statuses or reasons to `SideCallResult` in a later release, so a loop treats an
  * unknown one as an error instead of relying on an exhaustive `switch`.
  */
+export type SideCallPort = LoopSideCallPort
+
 export interface LoopSideCallPort {
   prepare(options: SideCallOptions): Promise<PreparedSideCall>
   invoke(prepared: PreparedSideCall, signal: AbortSignal): Promise<SideCallResult>

@@ -49,6 +49,11 @@ export function generateReference() {
     ...new Set([...regionContract.matchAll(/^ {4}(?:'([a-z-]+)'|([a-z-]+)):/gm)].map((m) => m[1] ?? m[2])),
   ].sort()
   const facets = declarations(iface('plugin-context', 'PluginContextFacets'))
+  const declaredFacets = [
+    ...read('packages/extension-api/src/plugin-context.ts')
+      .split('export const PLUGIN_FACET_NAMES')[1]
+      .matchAll(/^ {2}'([^']+)'/gm),
+  ].map((m) => m[1])
   const tool = iface('tool', 'ToolContext')
   const toolMeta = declarations(iface('tool', 'ToolMeta'))
   const policyTypes = ['ReplayPolicy', 'RiskClass'].map((name) => {
@@ -82,6 +87,7 @@ export function generateReference() {
     tokens,
     regions,
     facets,
+    declaredFacets,
     toolMembers,
     toolMeta,
     policyTypes,
@@ -100,6 +106,9 @@ Generated from this release's sources; examples are not allowlists. / 由本版�
 
 PluginContext: apply(ctx) registers declared inject facets. No fs/readText/writeText here. / apply(ctx) 用于登记声明的 facet，没有 fs/readText/writeText。
 ${code(facets.join('\n'))}
+Declared inject names / inject 声明名: ${declaredFacets.join(', ')}.
+sideCall is declaration-only: no PluginContext.sideCall during apply. Authorized in-process hooks/tools receive optional ctx.sideCall.prepare/invoke/status, bound to their invocation and turn. Core aborts and waits for that invocation's calls when it ends. Local ids are at most 112 characters and Host namespaces them per plugin row; cost caller is the manifest row id. preferred/required isolation exposes no port. / sideCall 只作声明；获授权的进程内钩子和工具在调用时获得作用域端口，调用结束先中止并结算，本地 id 最长 112 字符，宿主按插件行隔离 id 与成本归属，隔离模式不提供端口。
+Optional self.sideModels.list() returns only route/model/api and should be read at invocation time. redactSecrets(text) is a pure public sanitizer. HookRegisterOptions.timeoutMs is Host-granted only for turn_stopping/tool_result, capped at 15000 ms; failure policy is unchanged. / sideModels 只返回路由、模型与 API，应在调用时读取；redactSecrets 是公开纯遮蔽函数；钩子时限只向获授权的 turn_stopping/tool_result 开放，上限 15000 ms，失败策略不变。
 ToolContext members / 工具调用上下文字段: ${toolMembers.join(', ')}.
 ${code(`${execute}\n${fs}`)}
 Tool safety metadata / 工具安全元数据:

@@ -96,13 +96,20 @@ function fakeKernel() {
   return { ports, tools, toolDefs, stuck, hooks, slots, services, events }
 }
 
-function setup(options: { ceiling?: readonly string[]; clock?: () => number } = {}) {
+function setup(
+  options: {
+    ceiling?: readonly string[]
+    clock?: () => number
+    sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
+  } = {},
+) {
   const kernel = fakeKernel()
   const audit: { kind: string; detail: Record<string, unknown> }[] = []
   const shutdowns: { source: string; registrations: string[] }[] = []
   const owners = new ExtensionOwners()
   const order = createExtensionOrder()
   const host = createBuiltinRowHost({
+    ...(options.sideModels ? { sideModels: options.sideModels } : {}),
     owners,
     order,
     ports: kernel.ports,
@@ -145,6 +152,68 @@ const tool = (name: string) => ({
   async execute() {
     return { content: [{ type: 'text', text: name }] }
   },
+})
+
+it('gives a granted declared builtin the same live catalogue before and after provider binding', async () => {
+  let models: readonly import('@agnes/extension-api').SideModelEntry[] = []
+  const f = setup({ sideModels: () => models })
+  let self: ExtensionAPI['ctx'] | undefined
+  let early: unknown
+  const loaded = await f.host.load({
+    rowId: ROW,
+    spec,
+    embedded: manifest(),
+    declaration: { id: ROW, export: 'default', inject: ['self', 'sideCall'], runtime: 'in-process' },
+    hostGrants: () => ({ sideCall: true }),
+    factory: () => async (api) => {
+      self = api.ctx
+      early = await self.sideModels?.list()
+    },
+  })
+  try {
+    expect(loaded.loaded).toBe(true)
+    expect(early).toEqual([])
+    models = [{ route: 'jev', model: 'small', api: 'jev' }]
+    expect(await self?.sideModels?.list()).toEqual([{ route: 'jev', model: 'small', api: 'jev' }])
+  } finally {
+    await loaded.release('operator')
+  }
+})
+it.each([
+  'ungranted',
+  'undeclared',
+  'foreign-row',
+  'foreign-export',
+  'isolated',
+  'selected-isolation',
+] as const)('keeps builtin catalogue absent for %s', async (reason) => {
+  const f = setup({ sideModels: () => [{ route: 'jev', model: 'small', api: 'jev' }] })
+  let self: ExtensionAPI['ctx'] | undefined
+  const loaded = await f.host.load({
+    rowId: ROW,
+    spec,
+    embedded: manifest(),
+    declaration: {
+      id: reason === 'foreign-row' ? 'ext:other/row' : ROW,
+      export: reason === 'foreign-export' ? 'other' : 'default',
+      inject: reason === 'undeclared' ? ['self'] : ['self', 'sideCall'],
+      runtime: reason === 'isolated' ? 'isolated' : 'in-process',
+    },
+    hostGrants: () => (reason === 'ungranted' ? {} : { sideCall: true }),
+    factory: () => {
+      if (reason === 'selected-isolation')
+        f.host.setIsolation(ID, { mode: 'preferred', backend: 'seatbelt', fallback: false })
+      return (api) => {
+        self = api.ctx
+      }
+    },
+  })
+  try {
+    expect(loaded.loaded).toBe(true)
+    expect(self?.sideModels).toBeUndefined()
+  } finally {
+    await loaded.release('operator')
+  }
 })
 
 describe('a builtin extension supplied through the shared row host', () => {

@@ -3,7 +3,6 @@ import {
   ExtensionError,
   PLUGIN_FACET_NAMES,
   type PluginContextFacets,
-  type PluginFacetName,
 } from '@agnes/extension-api'
 import type { ExtensionAPI, ExtensionFactory } from '@agnes/extension-api/host'
 
@@ -38,9 +37,9 @@ function facetsOver(api: ExtensionAPI): PluginContextFacets {
     })
   }
   // Each facet is built on first use, so a plugin that injects nothing never touches the backend.
-  const facets: { [K in PluginFacetName]: () => PluginContextFacets[K] } = {
+  const facets: { [K in keyof PluginContextFacets]: () => PluginContextFacets[K] } = {
     tools: () => ({ register: (def) => api.registerTool(def) }),
-    hooks: () => ({ register: (event, handler) => api.registerHook(event, handler) }),
+    hooks: () => ({ register: (event, handler, options) => api.registerHook(event, handler, options) }),
     projections: () => ({ register: (def) => api.registerProjection(def) }),
     services: () => ({ register: (def) => api.registerService(def) }),
     slots: () => ({ register: (slot, fill) => api.registerSlot(slot, fill) }),
@@ -56,7 +55,7 @@ function facetsOver(api: ExtensionAPI): PluginContextFacets {
     self: () => api.ctx,
   }
   return new Proxy({} as PluginContextFacets, {
-    get: (_target, name) => facets[name as PluginFacetName]?.(),
+    get: (_target, name) => facets[name as keyof PluginContextFacets]?.(),
   })
 }
 
@@ -71,8 +70,11 @@ export function extensionFactoryOf(plugin: BundledPlugin): ExtensionFactory {
       })
     const all = facetsOver(api)
     const ctx: Record<string, unknown> = {}
-    for (const name of names)
-      Object.defineProperty(ctx, name, { enumerable: true, get: () => all[name as PluginFacetName] })
+    for (const name of names.filter((name) => name !== 'sideCall'))
+      Object.defineProperty(ctx, name, {
+        enumerable: true,
+        get: () => all[name as keyof PluginContextFacets],
+      })
     return (plugin.apply as (ctx: object) => ReturnType<ExtensionFactory>)(Object.freeze(ctx))
   }
 }

@@ -2,6 +2,15 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.16.0
+
+### Added
+
+- `HookRegisterOptions.timeoutMs` requests a Host-granted timeout for `turn_stopping` and `tool_result`, capped at 15,000 ms.
+- Optional `SideCallPort` on `HookContext` and `ToolContext` for authorized in-process plugins declaring `sideCall`. Prepared calls belong to one invocation and turn; invocation end aborts and waits for its calls. IDs are namespaced by the Host-known plugin row id and cost rows retain that `caller`.
+- Optional `ExtensionContext.sideModels.list()` returns only side-model route, model and API identifiers, with no endpoints or credentials.
+- Public `redactSecrets` sanitizes text before plugins send it to another model or persist it. This pure helper grants no execution or approval authority.
+
 ## 5.15.0
 
 ### Added

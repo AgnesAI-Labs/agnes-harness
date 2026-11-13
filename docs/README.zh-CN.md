@@ -66,6 +66,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [使用本地模型](guide/local-model.zh-CN.md) | 本地 OpenAI-compatible endpoint 和模型发现 |
 | [使用 TypeSafe Jev 做旁路模型调用](guide/typesafe-jev.zh-CN.md) | 配置内置的只接受 payload 的适配器，供循环插件在对话之外调用 |
 | [使用 Jev Agent Loop](guide/jev-loop.zh-CN.md) | 安装并配置由 TypeSafe Jev 选择每一步的可选循环 |
+| [判断插件](guide/judgment.zh-CN.md) | 手动开启意外收工检测，了解发送内容及限制 |
 | [和智能体说话](guide/voice.zh-CN.md) | 通过旁路模型里的语音账户，用话筒听写、进行语音对话并让回复被朗读出来 |
 | [安全与信任](guide/security.zh-CN.md) | 选择工作目录，理解授权和执行边界 |
 | [沙箱提供者](guide/sandbox-providers.zh-CN.md) | 在启动时选择进程沙箱，并阅读声明的能力 |

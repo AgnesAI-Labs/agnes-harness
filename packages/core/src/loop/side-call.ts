@@ -13,8 +13,8 @@ export { sideCallInFlight } from './side-call-receipts.js'
  * per invocation id: an id with a recorded result is answered from the ledger, and an id that is in
  * flight, here or in a context that was replaced, is refused.
  */
-export function createSideCallPort(s: SessionImpl): LoopSideCallPort {
-  const requests = sideCallRequests(s)
+export function createSideCallPort(s: SessionImpl, caller?: string): LoopSideCallPort {
+  const requests = sideCallRequests(s, caller)
   const effects = createSideCallEffectPort(s)
   return {
     async prepare(options) {
@@ -37,7 +37,7 @@ export function createSideCallPort(s: SessionImpl): LoopSideCallPort {
         if (!op) throw noTurn()
         if (!s.turn) await s.rehydrateTurn(op)
         // The end of the turn cuts a claimed call through the claim's signal and waits for it.
-        const claim = claimSideCall(s, call.binding.effectId, op.meta.turn)
+        const claim = claimSideCall(s, call.binding.effectId, op.meta.turn, caller)
         try {
           const prior = await effects.status(call.prepared.invocationId)
           if (prior.status === 'in-flight') throw inFlight()

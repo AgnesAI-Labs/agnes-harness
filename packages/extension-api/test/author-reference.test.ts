@@ -13,9 +13,9 @@ it('keeps the shipped author reference and bilingual docs matched to the public 
   const { outputs } = await import(new URL('tools/authoring/reference.mjs', root).href)
   for (const [path, expected] of Object.entries(outputs()))
     expect(readFileSync(new URL(path, root), 'utf8'), path).toBe(expected)
-  expect(authorContract.facets.map((s: string) => /readonly (\w+)/.exec(s)?.[1]).sort()).toEqual(
-    [...PLUGIN_FACET_NAMES].sort(),
-  )
+  expect([...authorContract.declaredFacets].sort()).toEqual([...PLUGIN_FACET_NAMES].sort())
+  expect(authorContract.facets.some((s: string) => /readonly sideCall/.test(s))).toBe(false)
+  expect(authorReference).toContain('sideCall is declaration-only')
   expect(authorContract.toolMembers).toContain('fs')
   expect(authorContract.toolMembers).toContain('store')
   expect(authorContract.execute).toBe('execute(args: Static<P>, ctx: ToolContext): Promise<ToolResult>')

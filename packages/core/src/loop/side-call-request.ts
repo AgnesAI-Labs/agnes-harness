@@ -192,7 +192,7 @@ async function projectedCreditsOf(
  * writes nothing and sends nothing. Only this context can send what it prepared, in the same turn,
  * and only while the route still resolves to the same catalog record and full route description.
  */
-export function sideCallRequests(s: SessionImpl) {
+export function sideCallRequests(s: SessionImpl, caller?: string) {
   const prepared = new WeakMap<object, SideCallRequest>()
   return {
     async prepare(options: SideCallOptions): Promise<PreparedSideCall> {
@@ -288,6 +288,7 @@ export function sideCallRequests(s: SessionImpl) {
             model: target.model,
           }),
           audit: Object.freeze({
+            ...(caller === undefined ? {} : { caller }),
             label,
             adapter: adapter && Object.freeze({ id: adapter.id, version: adapter.version }),
             api: adapter?.api ?? null,

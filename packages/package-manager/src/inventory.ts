@@ -41,6 +41,7 @@ export type InstalledPackage = Readonly<{
   contributions: readonly PackageContributionSummary[]
   blockers: readonly PackageBlocker[]
   verifiedRollbackTarget: Readonly<{
+    source: LockEntry['source']
     version: string
     integrity: string
     capabilityHash: string
@@ -292,6 +293,7 @@ function* verifiedRollbackTarget(
       detail: { id },
     })
   return freezeData({
+    source: structuredClone(snapshot.source),
     version: snapshot.version,
     integrity: snapshot.integrity,
     capabilityHash: verified.capabilityHash,

@@ -259,6 +259,11 @@ export type IsolatedEcosystemPreparation = {
 }
 export type IsolatedEcosystemFactory = (ctx: SeamInitContext) => Promise<IsolatedEcosystemPreparation>
 
+/** Release-owned descriptor kept outside the public ExtensionManifest protocol. */
+export type BuiltinPluginDeclaration = Readonly<
+  Pick<AgnesPluginManifestEntry, 'id' | 'export' | 'inject' | 'runtime'>
+>
+
 export type PackageModule = {
   /**
    * A sandbox provider this package supplies. The Host reads it before the tree exists, because a
@@ -289,7 +294,7 @@ export type PackageModule = {
   /** Session store published by this package. Host reads it when adapters open, not from `apply()`. */
   persistenceProvider?: PersistenceProvider
   /** Release-embedded manifests. Only a loader owned by the executable can populate these. */
-  embeddedExtensions?: readonly ExtensionManifest[]
+  embeddedExtensions?: readonly (ExtensionManifest & { readonly hostPlugin?: BuiltinPluginDeclaration })[]
   extensionEntry?: string
 }
 export interface PackageLoader {

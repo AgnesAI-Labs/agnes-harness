@@ -14,6 +14,8 @@ export const sessionIdentity = (session: object): object => owners.get(session) 
  * cannot accidentally pick up the replacement driver's token after an await.
  */
 export function sessionForLoop(session: SessionImpl): SessionImpl {
+  // Reusing a scoped session preserves its generation and avoids nesting late-receipt writers.
+  if (owners.has(session)) return session
   const scope = session.loopScope
   const effects = new Map<string, number>()
   const receipts = new Set(['effect/settled', 'tool/result', 'x/core/tool-response', 'assistant/message'])

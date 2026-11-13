@@ -43,6 +43,7 @@ export * from './profile-runtime.js'
 export * from './profile-services.js'
 export * from './projections.js'
 export * from './provider-kind.js'
+export { redactSecrets } from './redact.js'
 export type {
   ReferenceCandidate,
   ReferenceContext,

@@ -16,6 +16,8 @@ export type RuntimeSnapshotSelector =
 
 export type RuntimeSnapshot = Readonly<{
   snapshotId: string
+  /** Provenance copied only from this snapshot's verified entry; absent in legacy generations. */
+  source?: LockEntry['source']
   profile: string
   packageId: string
   version: string

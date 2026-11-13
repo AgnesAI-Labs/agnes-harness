@@ -384,5 +384,6 @@
     "@agnes/plugin-runtime",
     "@agnes/protocol",
     "@agnes/cordis"
-  ]
+  ],
+  "@agnes/judgment": ["@agnes/extension-api", "@agnes/protocol"]
 }

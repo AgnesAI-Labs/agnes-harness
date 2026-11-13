@@ -2247,6 +2247,7 @@
           }
         },
         "endpointHost": { "type": "string", "maxLength": 253 },
+        "caller": { "type": "string", "minLength": 1, "maxLength": 256 },
         "credits": {
           "type": "number",
           "minimum": 0

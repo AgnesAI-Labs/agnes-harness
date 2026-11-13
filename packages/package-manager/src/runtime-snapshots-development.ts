@@ -33,6 +33,7 @@ export async function readDevelopmentPlugin(
     generation: 1,
     trusted: true,
     snapshot: {
+      source: preview.source,
       directory,
       profile,
       snapshotId: integrity,

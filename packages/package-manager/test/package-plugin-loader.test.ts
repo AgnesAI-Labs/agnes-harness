@@ -411,6 +411,7 @@ describe('runtime plugin snapshots from installed inventory', () => {
       id: '@acme/example',
       entry: {
         version: '1.2.3',
+        source: { type: 'file', ref: 'file:./current' },
         integrity: `sha256-${'2'.repeat(64)}`,
         ...(treeIntegrity ? { treeIntegrity } : {}),
       } as InstalledPackage['entry'],
@@ -444,6 +445,7 @@ describe('runtime plugin snapshots from installed inventory', () => {
         treeIntegrity: `sha256-${'3'.repeat(64)}`,
         capabilityHash: 'capability',
         directory: '/store/@acme/example',
+        source: { type: 'file', ref: 'file:./current' },
         contributions: [],
       },
       generation: 1,
@@ -465,6 +467,7 @@ describe('runtime plugin snapshots from installed inventory', () => {
   })
   it('exports the kept previous version, trusted only while the current entry is', () => {
     const previous = {
+      source: { type: 'file' as const, ref: 'file:./previous' },
       version: '1.2.2',
       integrity: `sha256-${'4'.repeat(64)}`,
       capabilityHash: 'previous-capability',
@@ -481,6 +484,7 @@ describe('runtime plugin snapshots from installed inventory', () => {
       [`sha256-${'2'.repeat(64)}`, '1.2.3', '/store/@acme/example', true],
       [previous.integrity, '1.2.2', previous.directory, true],
     ])
+    expect(trusted[1]?.snapshot.source).toEqual(previous.source)
     const untrusted = runtimePluginSnapshotsFromInventory(
       inventory([installed({ trusted: false, verifiedRollbackTarget: previous })]),
     )

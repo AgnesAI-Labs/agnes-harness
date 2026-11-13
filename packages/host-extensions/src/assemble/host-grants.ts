@@ -13,6 +13,8 @@ import type { EntryRow } from '@agnes/plugin-runtime/host'
 import { EXT_ROW_MOUNT_REVISION } from './ext-rows.js'
 import type { PackageModule } from './packages.js'
 
+export { pinOptionalBundledRowGrants } from './optional-row-grants.js'
+
 const empty: HostCapabilityGrant = Object.freeze({})
 
 type PinObservation = { stat?: ReturnType<typeof lstatSync> | undefined; digest?: string | undefined }

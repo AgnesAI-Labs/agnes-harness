@@ -274,7 +274,9 @@ export function normalizePluginExport(
     throw new TypeError('plugin export inject differs from its agnes.plugins entry')
   const inject = deepFreeze(cloneValue(listed ?? own ?? {}))
   const provides = normalizeProvides(exported.provide)
-  const prepared = preparePluginInvocation(exported, inject)
+  // sideCall declares invocation authority; it is never a Cordis apply-time service.
+  const runtimeInject = Object.fromEntries(Object.entries(inject).filter(([name]) => name !== 'sideCall'))
+  const prepared = preparePluginInvocation(exported, runtimeInject)
   return Object.freeze({ prepared, inject, provides })
 }
 

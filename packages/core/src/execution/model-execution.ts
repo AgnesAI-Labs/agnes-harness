@@ -13,7 +13,7 @@ import { recordToolAvailability } from './turn/tool-availability.js'
 
 type Usage = Extract<InferenceEvent, { type: 'usage' }>
 type Failure = Extract<InferenceEvent, { type: 'error' }>
-type AuditFields = Pick<CostLedger, 'route' | 'adapter' | 'endpointHost'>
+type AuditFields = Pick<CostLedger, 'route' | 'adapter' | 'endpointHost' | 'caller'>
 
 /** Every optional control left out keeps the behaviour of a conversation request. */
 type ModelExecutionInput = {
@@ -45,8 +45,9 @@ type ModelExecutionInput = {
   retry?: false
   /** Sends to the provider directly, past any installed Inference replacement. */
   replaceable?: false
-  /** Route, adapter and endpoint fields copied onto the cost row; nothing else is copied. */
+  /** Caller, route, adapter and endpoint fields copied onto the cost row; nothing else is copied. */
   extraCostFields?: Readonly<{
+    caller?: string
     route?: string
     adapter?: { id: string; version?: string }
     endpointHost?: string
@@ -68,9 +69,10 @@ type ModelExecutionInput = {
 
 function auditFields(extra: ModelExecutionInput['extraCostFields']): AuditFields {
   if (!extra) return {}
-  const { route, adapter, endpointHost } = extra
+  const { route, adapter, endpointHost, caller } = extra
   return {
     ...(route !== undefined ? { route } : {}),
+    ...(caller !== undefined ? { caller } : {}),
     ...(adapter
       ? {
           adapter: { id: adapter.id, ...(adapter.version !== undefined ? { version: adapter.version } : {}) },

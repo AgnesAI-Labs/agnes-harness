@@ -4,6 +4,7 @@ import type { ExtensionContext, ExtensionManifest, LeaseView, Logger } from '@ag
 import type { ExtensionFactory } from '@agnes/extension-api/host'
 import { HostError } from '@agnes/host-common/errors'
 import { extensionFactoryOf, isBundledPlugin } from '@agnes/plugin-runtime/bundled'
+import type { BuiltinPluginDeclaration } from '../contracts/package.js'
 import { buildExtensionAPI } from './api-proxy.js'
 import { diagnostic, type LoadStage, loadError } from './diagnostics.js'
 import { DisposerBag, LateRegistrationBag } from './disposers.js'
@@ -21,6 +22,7 @@ import type { KernelPorts } from './ports.js'
 import { preflightEmbeddedExtension, preflightExtension } from './preflight.js'
 
 export type BuiltinRowHostOptions = Readonly<{
+  sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
   /** Shared with the plugin-row host: a row id is owned by one supplier at a time, whoever it is. */
   owners: ExtensionOwners
   pluginManage?: import('../resources/plugin-manage-port.js').PluginManageBridge
@@ -40,6 +42,8 @@ export type BuiltinRowHostOptions = Readonly<{
 }>
 
 export type BuiltinRowLoad = Readonly<{
+  /** Taken from the verified bundled source or executable-owned embedded descriptor. */
+  declaration?: BuiltinPluginDeclaration | undefined
   /** The `ext:` row that supplies the extension. */
   rowId: string
   hostGrants?: () => import('@agnes/package-manager').HostCapabilityGrant
@@ -233,6 +237,15 @@ export function createBuiltinRowHost(options: BuiltinRowHostOptions) {
       leases.set(spec.id, lease)
       let registering = true
       const leaseId = randomUUID()
+      const declaration = input.declaration
+      const sideCallDeclared =
+        input.rowId === `ext:${spec.id}` &&
+        declaration?.id === input.rowId &&
+        declaration.export === 'default' &&
+        declaration.runtime === 'in-process' &&
+        Array.isArray(declaration.inject) &&
+        declaration.inject.includes('sideCall') &&
+        (!r.isolation || (r.isolation.mode === 'off' && r.isolation.backend === 'in-process'))
       const api = buildExtensionAPI({
         ...(options.pluginManage && options.sessionGeneration
           ? {
@@ -246,6 +259,9 @@ export function createBuiltinRowHost(options: BuiltinRowHostOptions) {
           : {}),
         manifest,
         ...(input.hostGrants ? { hostGrants: input.hostGrants() } : {}),
+        sideCallDeclared,
+        pluginRowId: input.rowId,
+        ...(options.sideModels ? { sideModels: options.sideModels } : {}),
         packageIdentity: spec.package,
         packageVersion: spec.packageVersion,
         ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),

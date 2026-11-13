@@ -72,6 +72,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [Use a local model](guide/local-model.md) | Configure local OpenAI-compatible endpoints and discovery |
 | [Use TypeSafe Jev for side model calls](guide/typesafe-jev.md) | Configure the built-in payload-only adapter that loop plugins call outside the conversation |
 | [Use the Jev agent loop](guide/jev-loop.md) | Install and configure the optional loop that lets TypeSafe Jev choose each step |
+| [Judgment](guide/judgment.md) | Opt in to a check for replies that promise to act but end early; review what it sends |
 | [Talk to the agent](guide/voice.md) | Dictate with the microphone, hold a spoken conversation and have replies read aloud, through a voice account in the side models |
 | [Security and trust](guide/security.md) | Choose a working directory and understand authorization and execution boundaries |
 | [Sandbox providers](guide/sandbox-providers.md) | Select the process sandbox at startup and read declared capabilities |

@@ -4,13 +4,13 @@
 
 [插件架构](architecture-plugins.zh-CN.md) · [作者指南](../extend/README.zh-CN.md) · [版本规则](../maintainers/versioning.zh-CN.md)
 
-本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.15.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
+本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.16.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
 
 ## 稳定性与兼容政策
 
 **stable** 表示已建立、拟在 v0.1 中给予兼容保护的作者合同；**experimental** 表示仍演进的合同，使用时必须对齐源码、示例与 testkit 版本。两种标签都不代表生产就绪、平台支持、任意插件隔离或 npm 可用。候选政策在维护者接受产品冻结时生效；已有预览版本仍遵循[预览版本政策](../maintainers/versioning.zh-CN.md)。
 
-已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.15.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
+已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.16.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
 
 弃用说明必须在 API changelog 与双语指南中写明旧名称、替代方案、兼容窗口和迁移办法。此规则只保护公开发布后已接受的 stable 别名：至少保留至后续一个次版本发行，且只能在主版本中删除。尚未发布的预览构建不承诺永久保留现有别名；退役格式明确拒绝并提示使用新的空 home，不做转换或沿用旧字节的信任摘要。安全原因的例外须明确发行说明与恢复步骤。本文不为 `defineKind` 输入 `restartRequired`（改用 `scope`；重启要求由它推导）指定删除日期。本轮保留 generation 别名、ACP `session/load`、without/fresh 执行闸门、旧 home 布局检测与 Windows 安全回退。插件 checkpoint 和数据迁移需要各自的兼容决定；升级包或迁移 generation 不会自动迁移 schema。
 
@@ -251,3 +251,7 @@ JSONL 示例提供完整 Host 端口、合同测试与新进程恢复用例，�
 按目标修订执行[验证流程](../maintainers/verification.zh-CN.md)并记录实际结果。历史合同关闭运行不证明当前发行验收。公开 registry 可用性、仓外干净安装、真实模型质量与具体部署插件仍是独立[发行门槛](../maintainers/release.zh-CN.md)。本文不会创建标签或发布包。
 
 工具构造函数 `defineTool` 及 `readOnlyTool` / `writeTool` 元数据预设仅从 `@agnes/plugin-runtime` 导出。
+
+Extension API 5.16.0 新增可选的 `HookContext.sideCall` 和 `ToolContext.sideCall`（`SideCallPort`，与循环端口同为 prepare/invoke/status）。插件在 `inject` 声明 `sideCall`，但初始化时的 `PluginContext` 不增加该属性；仍须有宿主授权且在进程内运行。准备好的调用绑定本次调用与回合，跨范围使用以 `foreign` 拒绝；钩子或工具结束时，Core 中止并等待它自己的旁路调用收尾。调用 id 和 status 使用命名空间：`c` + 宿主已知插件行 id 的 SHA-256 前八位十六进制 + `:` + 本地 id。本地 id 最长 112 字符，超出以 `E_REQUEST` 拒绝；原有 id 与 label 格式仍适用。成本行新增可选 `caller`，值为清单插件行 id，与包身份和内部运行时 owner 分开。循环调用保留原有 id 与收工检查；回合最终结束时清理所有调用方。隔离模式 `preferred`、`required` 均不暴露旁路端口。
+
+可选的 `ExtensionContext.sideModels.list()` 仅向获授权的声明者返回 `{route, model, api}`，不含端点和凭据；提供方可能在 apply 后才完成装配，应在调用时重新读取。公开纯函数 `redactSecrets(text)` 用于遮蔽文本，不授予执行或审批权限。`HookRegisterOptions.timeoutMs` 只对获宿主授权的 `turn_stopping`、`tool_result` 生效，上限 15,000 ms；未授权的申请沿用事件默认值并记录诊断。钩子的失败策略不变。
