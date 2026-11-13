@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { PluginProjectionDef } from '@agnes/extension-api'
 import { object } from '../questions.js'
+import { redactedWindow } from './redacted-window.js'
 
 export const CONVERSATION = 'stop.conversation'
 type Receipt = { id: string; token: string; commandId?: string; present: boolean; delivered: boolean }
@@ -87,7 +88,7 @@ export function createConversationProjection(owner: string): PluginProjectionDef
   const marker = `x/${owner}/stop.continued`
   return {
     name: CONVERSATION,
-    stateVersion: 2,
+    stateVersion: 3,
     inputEventTypes: ['session/start', 'user/message', 'assistant/message', 'inbox', marker],
     maxStateBytes: 262144,
     stateSchema: {
@@ -177,7 +178,7 @@ export function createConversationProjection(owner: string): PluginProjectionDef
           queued,
           goalSources: consumed ? state.goalSources : goal(state.goalSources, source, text.trim()),
           ...(data.kind === undefined || data.kind === 'prompt'
-            ? { request: { seq: event.seq, text: text.slice(0, 2000) }, reply: null }
+            ? { request: { seq: event.seq, text: redactedWindow(text, 2000, 'first') }, reply: null }
             : {}),
         })
       }
@@ -186,7 +187,7 @@ export function createConversationProjection(owner: string): PluginProjectionDef
           ...state,
           reply: {
             seq: event.seq,
-            text: textOf(data.content).slice(-8000),
+            text: redactedWindow(textOf(data.content), 8000, 'last'),
             hasTools: data.stopReason === 'tool_use',
           },
         })

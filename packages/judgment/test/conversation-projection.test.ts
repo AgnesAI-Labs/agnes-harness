@@ -395,3 +395,51 @@ it('still allocates a new state for changes without mutating the preceding state
     state = next
   }
 })
+
+it('keeps the original excerpt windows when no masking is needed', () => {
+  const p = projection()
+  let state = p.apply(p.init(), prompt(1, `${'Q'.repeat(2000)} OUTSIDE_REQUEST_WINDOW`))
+  state = p.apply(
+    state,
+    event(2, 'assistant/message', {
+      content: content(`OUTSIDE_REPLY_WINDOW ${'R'.repeat(8000)}`),
+      stopReason: 'end_turn',
+    }),
+  )
+  expect(state.request?.text).toBe('Q'.repeat(2000))
+  expect(state.reply?.text).toBe('R'.repeat(8000))
+})
+
+it.each([false, true])(
+  'keeps raw goal receipt identity when masked text would coincide (same=%s)',
+  (same) => {
+    const p = projection()
+    const original = '/goal create password=first_value'
+    const incoming = same ? original : '/goal create password=other_value'
+    let state = p.apply(
+      p.init(),
+      event(
+        1,
+        'inbox',
+        {
+          items: [
+            { itemId: 'raw', commandId: 'raw', actor: human, kind: 'prompt', content: content(original) },
+          ],
+        },
+        { origin: 'system' },
+      ),
+    )
+    state = p.apply(state, prompt(2, '/goal clear'))
+    state = p.apply(
+      state,
+      event(3, 'user/message', {
+        kind: 'prompt',
+        commandId: 'raw',
+        content: content(incoming),
+      }),
+    )
+    expect(state.request?.text).not.toContain(same ? 'first_value' : 'other_value')
+    expect(state.goalSources).toHaveLength(same ? 0 : 1)
+    expect(state.queued[0]?.delivered).toBe(same)
+  },
+)

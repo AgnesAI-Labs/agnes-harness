@@ -1,9 +1,4 @@
-import {
-  type Disposer,
-  type HookContext,
-  type PluginContextFacets,
-  redactSecrets,
-} from '@agnes/extension-api'
+import type { Disposer, HookContext, PluginContextFacets } from '@agnes/extension-api'
 import type { StopConfig } from '../config.js'
 import { deadlineScope, within } from '../deadline.js'
 import type { Judge } from '../judge.js'
@@ -13,6 +8,7 @@ import {
   type ConversationState,
   createConversationProjection,
 } from './conversation-projection.js'
+import { redactedWindow } from './redacted-window.js'
 import questions from './stop-questions.json' with { type: 'json' }
 
 const STOP = { action: 'stop' as const }
@@ -56,8 +52,8 @@ export function registerStopDetection(
         if (!judge || scope.signal.aborted) return STOP
         const req: JudgmentRequest = {
           state: {
-            request: redactSecrets(state.request!.text.slice(0, 2000)),
-            reply: redactSecrets(state.reply!.text.slice(-8000)),
+            request: redactedWindow(state.request!.text, 2000, 'first'),
+            reply: redactedWindow(state.reply!.text, 8000, 'last'),
           },
           questions: questions as JudgmentRequest['questions'],
         }

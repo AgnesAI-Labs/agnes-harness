@@ -201,6 +201,88 @@ it('truncates request and reply and redacts credentials', async () => {
   expect(state.reply).toContain('[REDACTED]')
   expect(vi.mocked(f.judge.judge).mock.calls[0]![2]).toMatchObject({ attemptMs: 5000, idPrefix: 'stop:1:1' })
 })
+
+const boundarySecret = 'boundary_secret_123'
+const tailFiller = 'R'.repeat(8000 - boundarySecret.length - 1)
+const privacyCases = [
+  {
+    name: 'ordinary password label immediately before the reply window',
+    request: 'fix it',
+    reply: [`password=${boundarySecret} ${tailFiller}`],
+    forbidden: boundarySecret,
+  },
+  {
+    name: 'quoted password crossing the reply window',
+    request: 'fix it',
+    reply: [`password="${boundarySecret} ${tailFiller.slice(1)}"`],
+    forbidden: boundarySecret,
+  },
+  {
+    name: 'unterminated quoted password crossing the reply window',
+    request: 'fix it',
+    reply: [`password="${boundarySecret} ${tailFiller}`],
+    forbidden: boundarySecret,
+  },
+  {
+    name: 'credential label and value in different text blocks',
+    request: 'fix it',
+    reply: ['password=', `${boundarySecret} ${tailFiller}`],
+    forbidden: boundarySecret,
+  },
+  {
+    name: 'token recognition extending beyond the request window',
+    request: `${'Q'.repeat(1988)} sk-abcdefghijklmnop`,
+    reply: ['I will act now'],
+    forbidden: 'sk-abcdef',
+  },
+  {
+    name: 'short quoted value at the request boundary stays bounded after defensive masking',
+    request: `${'Q'.repeat(1988)} password="x"`,
+    reply: ['I will act now'],
+    forbidden: 'x',
+  },
+  {
+    name: 'reply redaction cannot pull an earlier sentinel into the original tail',
+    request: 'fix it',
+    reply: [`OUTSIDE_REPLY_WINDOW ${'R'.repeat(7800)} password=${'s'.repeat(300)}`],
+    forbidden: 'OUTSIDE_REPLY_WINDOW',
+  },
+  {
+    name: 'request redaction cannot pull a later sentinel into the original prefix',
+    request: `password=${'s'.repeat(2100)} OUTSIDE_REQUEST_WINDOW`,
+    reply: ['I will act now'],
+    forbidden: 'OUTSIDE_REQUEST_WINDOW',
+  },
+]
+it.each(privacyCases)('masks full credential context before clipping: $name', async (input) => {
+  const f = fixture()
+  const p = createConversationProjection('plugin/test')
+  const rows = [
+    row(1, 'user/message', { kind: 'prompt', content: [{ type: 'text', text: input.request }] }),
+    row(2, 'assistant/message', {
+      stopReason: 'end_turn',
+      content: input.reply.map((text) => ({ type: 'text', text })),
+    }),
+  ]
+  f.state = rows.reduce(p.apply, p.init())
+  const projected = f.state
+  expect(JSON.parse(JSON.stringify(rows)).reduce(p.apply, p.init())).toEqual(projected)
+  const repeated = rows[1]
+  if (!repeated) throw new Error('missing assistant message')
+  expect(p.apply(projected, repeated)).toBe(projected)
+  await f.run()
+  const call = vi.mocked(f.judge.judge).mock.calls[0]
+  if (!call) throw new Error('expected a judgment request from the real conversation projection')
+  const sent = call[1].state as { request: string; reply: string }
+  expect(sent.request.length).toBeLessThanOrEqual(2000)
+  expect(sent.reply.length).toBeLessThanOrEqual(8000)
+  expect(sent.request).not.toContain(input.forbidden)
+  expect(sent.reply).not.toContain(input.forbidden)
+  expect(projected.request?.text.length).toBeLessThanOrEqual(2000)
+  expect(projected.reply?.text.length).toBeLessThanOrEqual(8000)
+  expect(projected.request?.text).not.toContain(input.forbidden)
+  expect(projected.reply?.text).not.toContain(input.forbidden)
+})
 it('stops and sends nothing when idle', async () => {
   const f = fixture()
   f.deps.judge.mockResolvedValue(null as any)
