@@ -144,6 +144,11 @@ export function mountComposerRegion(
       return (
         <SlotOutlet
           name="conversation.input.model.catalog"
+          props={{
+            owner: { draft: !registry.sessionId },
+            value: props.state,
+            actions: { select: props.onSelect, setCatalog: props.onCatalogChange },
+          }}
           fallback={<ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />}
         />
       )

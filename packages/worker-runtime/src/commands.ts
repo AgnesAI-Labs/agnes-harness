@@ -30,6 +30,7 @@ import type { SessionCommandFrame, WorkerCommandFrame } from './frames.js'
 import { GRANT_COMMANDS, grantCommand } from './grant-commands.js'
 import type { McpRowRuntime } from './mcp-row-runtime.js'
 import { noticeConnectingMcp } from './mcp-turn-notice.js'
+import { selectSessionModel } from './model-selection.js'
 import { deliverBoundSystemInput, isProfileCommand, profileServiceCommand } from './profile-commands.js'
 import { commandReferences } from './references.js'
 import { sessionServiceCommand } from './service-commands.js'
@@ -551,11 +552,8 @@ export async function handleCommand(
         throw error
       }
     }
-    case 'setModel': {
-      const sel = p.sel as { slot: string; route: string; model: string }
-      o.host.validateModelSwitch(sel, session.key)
-      return { effectiveFromSeq: await session.setModel(sel) }
-    }
+    case 'setModel':
+      return selectSessionModel(o.host, session, p.sel as Parameters<typeof selectSessionModel>[2])
     case 'refine':
     case 'refineRollback':
     case 'refineSave':

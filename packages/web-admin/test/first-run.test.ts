@@ -33,6 +33,7 @@ async function setup(
   detach = () => {},
   chooseWorkspace: (path?: string, signal?: AbortSignal) => Promise<string | undefined> = async () =>
     'project',
+  modelCatalog?: Parameters<typeof createFirstRunController>[0]['modelCatalog'],
 ) {
   const host = document.createElement('div'),
     banner = document.createElement('div')
@@ -55,6 +56,7 @@ async function setup(
     selectDemo = vi.fn(async () => {})
   const controller = createFirstRunController({
     host,
+    ...(modelCatalog ? { modelCatalog } : {}),
     banner,
     client: {} as Client,
     storage: {
@@ -215,3 +217,27 @@ it('says the system folder window is open, keeps manual input and skip usable, a
   expect(second?.aborted).toBe(true)
   expect(h.start).toHaveBeenCalled()
 })
+
+it.each([false, true])(
+  'requires local account setup only when no provider catalog owns model selection: %s',
+  async (hasProvidedCatalog) => {
+    let active = false
+    const listeners = new Set<() => void>()
+    const h = await setup(undefined, undefined, undefined, {
+      active: () => active,
+      subscribe(listener) {
+        listeners.add(listener)
+        return () => {
+          listeners.delete(listener)
+        }
+      },
+    })
+    active = hasProvidedCatalog
+    for (const listener of listeners) listener()
+    expect(h.controller.active).toBe(!hasProvidedCatalog)
+    await expect(h.controller.initialize(snapshot, false)).resolves.toBe(!hasProvidedCatalog)
+    expect(h.controller.active).toBe(!hasProvidedCatalog)
+    expect(h.connect).not.toHaveBeenCalled()
+    expect(h.selectDemo).not.toHaveBeenCalled()
+  },
+)

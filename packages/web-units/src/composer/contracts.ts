@@ -51,6 +51,7 @@ export type ModelPickerProps = {
   state: ModelPickerState
   onError(error: unknown): void
   onSelect(option: ModelPickerOption): Promise<boolean>
+  onCatalogChange?(models: readonly ModelPickerOption[] | undefined): void
   /** Submission port for panel effort/budget changes; without it the panel renders only the model list. */
   onSettingsChange?(settings: ModelSettings): Promise<boolean>
   onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
@@ -223,6 +224,7 @@ export interface ComposerRegionOptions {
   onAuxiliaryRead?(): Promise<SessionAuxiliarySnapshot>
   onAuxiliarySelect?(slot: 'fast' | 'verifier', option: ModelPickerOption): Promise<boolean>
   onModelSelect(option: ModelPickerOption): Promise<boolean>
+  onModelCatalogChange?(models: readonly ModelPickerOption[] | undefined): void
   onModelSettingsChange?(settings: ModelSettings): Promise<boolean>
   onPermissionSelect(mode: PermissionMode): Promise<boolean>
   /** `steer` is true for the guidance shortcut (⌘/Ctrl+Enter): while the agent runs it joins at the next step. */

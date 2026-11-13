@@ -87,6 +87,7 @@ import {
   loopIdentity,
   type NewSessionCatalog,
 } from './loop-picker.js'
+import { contributedModelCatalog } from './model-picker/catalog-source.js'
 import { namedModels } from './model-picker/state.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { businessAgentSuggestions } from './pages/business-agents.js'
@@ -204,7 +205,7 @@ export interface AppSessionContext {
   runtimeCatalog: typeof runtimeCatalog
   runtimeModels: typeof runtimeModels
   draftSessionRequest: typeof draftSessionRequest
-  selectedModelAvailable: typeof selectedModelAvailable
+  selectedModelAvailable: () => boolean
   selectedWorkspace: typeof selectedWorkspace
   sessionControls: typeof sessionControls
   sessionPending: typeof sessionPending
@@ -530,9 +531,7 @@ const appSessionContext: AppSessionContext = {
   get draftSessionRequest() {
     return draftSessionRequest
   },
-  get selectedModelAvailable() {
-    return selectedModelAvailable
-  },
+  selectedModelAvailable: () => modelCatalogSource.available(runtimeModels, knownSessionModel),
   get selectedWorkspace() {
     return selectedWorkspace
   },
@@ -916,6 +915,7 @@ const clientModules = await startClientModules({
     onDraftChange: handleComposerDraftChange,
     onError: showError,
     onModelSelect: selectModel,
+    onModelCatalogChange: (models) => modelCatalogSource.set(models),
     onAuxiliaryRead: readAuxiliaryModels,
     onAuxiliarySelect: selectAuxiliaryModel,
     onModelSettingsChange: selectModelSettings,
@@ -1118,6 +1118,7 @@ let sessionPending = new URLSearchParams(location.search).get('new') === '1'
 let stopAfterSeq = 0
 let approvalBusy = false
 let runtimeModels: ModelPickerOption[] = []
+const modelCatalogSource = contributedModelCatalog(() => void refreshModels().catch(showError))
 let configuredAccounts: ConfigSnapshot['accounts'] = []
 let accountProvider: { route?: string; id?: string; model?: string } | null = null
 let knownSessionModel: KnownSessionModel | undefined
@@ -1363,6 +1364,7 @@ const stopSettingsRouting = onHistoryNavigation(restoreSettingsLocation)
 clientModules.locale.subscribe(() => settings.refreshLocale())
 const firstRun = createFirstRunController({
   host: hosts.firstRun,
+  modelCatalog: modelCatalogSource,
   banner: hosts.doctorNotice,
   client,
   storage: safeThemeStorage(),
@@ -1858,18 +1860,16 @@ function selectComposerDraft(id?: string, options: { preserve?: boolean; carry?:
 }
 let modelReadGeneration = 0
 let modelAppliedGeneration = 0
-function selectedModelAvailable(): boolean {
-  const selected = knownSessionModel
-  return (
-    !selected || runtimeModels.some((model) => model.route === selected.route && model.id === selected.id)
-  )
-}
 async function refreshModels(catalogReady?: Promise<void>): Promise<ModelPickerOption[]> {
   const generation = ++modelReadGeneration
   const apis = await client.apis()
   // Start the model read immediately; defaults and labels must settle before selection is applied.
   await catalogReady
-  const models = namedModels(apis.profile.models ?? [], configuredAccounts ?? [])
+  const models = modelCatalogSource.visible(
+    namedModels(apis.profile.models ?? [], configuredAccounts ?? []),
+    knownSessionModel,
+    !!sessionBinding.session,
+  )
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models

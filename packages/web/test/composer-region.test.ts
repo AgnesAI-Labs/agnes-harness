@@ -1,8 +1,9 @@
 /** @vitest-environment happy-dom */
 
 import { type UsageView, userImagePolicy } from '@agnes/protocol'
+import type { DshSlotProps } from '@agnes/web-client'
 import { setDisclosureOpen } from '@agnes/web-ui'
-import type { ComposerView } from '@agnes/web-units'
+import type { ComposerView, ModelPickerProps } from '@agnes/web-units'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSER_SLOT } from '../src/region-slots.js'
@@ -69,10 +70,15 @@ describe('rendered composer region', () => {
   it('renders the complete composer through its public handle and keeps native keyboard submit', async () => {
     const submitted: string[] = []
     const drafts: string[] = []
+    const selectModel = vi.fn(async () => true),
+      publishCatalog = vi.fn()
+    let catalogValue: unknown
     runtime = await mountRenderedIndex({
       composer: {
         onDraftChange: (value) => drafts.push(value),
         onSubmit: () => submitted.push('submit'),
+        onModelSelect: selectModel,
+        onModelCatalogChange: publishCatalog,
       },
     })
     const handle = runtime.composer
@@ -147,14 +153,36 @@ describe('rendered composer region', () => {
         owner: 'fixture',
         priority: -1,
       },
-      () =>
-        createElement('button', { type: 'button', 'data-testid': 'fixture-model-catalog' }, 'Cloud catalog'),
+      (props: DshSlotProps) => {
+        catalogValue = props.value
+        const actions = props.actions as {
+          select: ModelPickerProps['onSelect']
+          setCatalog: NonNullable<ModelPickerProps['onCatalogChange']>
+        }
+        return createElement(
+          'button',
+          {
+            type: 'button',
+            'data-testid': 'fixture-model-catalog',
+            onClick() {
+              const model = { id: 'cloud-only', route: 'cloud-primary' }
+              actions.setCatalog([model])
+              void actions.select(model)
+            },
+          },
+          'Cloud catalog',
+        )
+      },
     )
     handle?.render({ ...readyView, hasSession: false })
     await vi.waitFor(() => {
       expect(document.querySelector('[data-testid="fixture-model-catalog"]')).toBeTruthy()
       expect(document.querySelector('#model')).toBeNull()
     }, slotRender)
+    expect(catalogValue).toEqual(readyView.model)
+    document.querySelector<HTMLButtonElement>('[data-testid="fixture-model-catalog"]')?.click()
+    expect(selectModel).toHaveBeenCalledWith({ id: 'cloud-only', route: 'cloud-primary' })
+    expect(publishCatalog).toHaveBeenCalledWith([{ id: 'cloud-only', route: 'cloud-primary' }])
     runtime.session.setSession('catalog-session')
     handle?.render(readyView)
     await vi.waitFor(

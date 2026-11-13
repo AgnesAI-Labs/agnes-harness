@@ -3,9 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { CODEX_ID, CODEX_PROVIDER } from '@agnes/ai'
 import { fakeModel } from '@agnes/ai/testkit'
+import { Context } from '@agnes/cordis'
+import { type ModelAdapter, modelAdapterKind } from '@agnes/extension-api'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { codexCredentials } from '@agnes/host-infrastructure/adapters/codex-credentials'
 import { afterEach, expect, it } from 'vitest'
+import { installModelAdapters } from '../../src/assemble/model-adapters.js'
 import { buildProvider } from '../../src/assemble/provider.js'
 
 const roots: string[] = []
@@ -97,5 +100,110 @@ it('names every route left without a usable credential, and none that works with
     expect(built.uncredentialedRoutes).toContain('my-gateway')
   } finally {
     await built.dispose()
+  }
+})
+
+it('fits installed plugin routes without changing local routes, rejects collisions and permits explicit cloud inference', async () => {
+  const root = new Context()
+  const registry = installModelAdapters(root)
+  const local = fakeModel({ id: 'local-only', route: 'local', api: 'local-wire' })
+  const remote = fakeModel({ id: 'cloud-only', route: 'cloud-primary', api: 'cloud-wire' })
+  const adapter = (id: string, wireApi: string): ModelAdapter => ({
+    id,
+    wireApi,
+    version: '1.0.0',
+    capabilities: { imageInput: false, tools: true, streaming: true },
+    create: ({ routes }) => ({
+      id,
+      routes: () => [...routes],
+      models: (route) => routes.find((item) => item.route === route)?.models ?? [],
+      async *stream(_route, request) {
+        yield { type: 'text_delta', delta: request.model }
+        yield { type: 'done', reason: 'stop' }
+      },
+    }),
+  })
+  root.providers.registerHost(modelAdapterKind, 'local-package', adapter('local-wire', 'local-wire'))
+  let offered = [
+    {
+      route: 'cloud-primary',
+      api: 'cloud-adapter',
+      baseUrl: 'https://cloud.fixture/v1',
+      models: [remote],
+      keyless: true,
+    },
+  ]
+  const release = root.providers.registerHost(modelAdapterKind, 'cloud-package', {
+    ...adapter('cloud-adapter', 'cloud-wire'),
+    contributeRoutes: async () => offered,
+  })
+  const profile = {
+    dataDir: '/synthetic/data',
+    provider: {
+      package: '@agnes/ai',
+      adapters: ['local-wire'],
+      catalog: { include: [] },
+      routes: [
+        {
+          route: 'local',
+          api: 'local-wire',
+          baseUrl: 'https://local.fixture/v1',
+          keyless: true,
+          models: [local],
+        },
+      ],
+    },
+    limits: {},
+    adapters: { secrets: { kind: 'env' } },
+  } as unknown as ResolvedProfile
+  const before = structuredClone(profile)
+  const deps = {
+    secrets: () => {
+      throw Error('no credential store needed')
+    },
+    clock: Date.now,
+    log,
+    modelAdapters: registry,
+  }
+  const built = await buildProvider(profile, { primary: { route: 'local', model: 'local-only' } }, deps)
+  try {
+    expect(
+      built.provider
+        .models()
+        .map((model) => model.id)
+        .sort(),
+    ).toEqual(['cloud-only', 'local-only'])
+    expect(built.preconfiguredRoutes).toEqual(['cloud-primary'])
+    expect(profile).toEqual(before)
+    for (const model of [local, remote]) {
+      const events = []
+      for await (const event of built.provider.infer(
+        {
+          kind: 'inference',
+          sessionKey: 'fixture',
+          slot: 'primary',
+          route: model.route,
+          model: model.id,
+          contractId: null,
+          derivedHash: 'a'.repeat(64),
+          system: 'fixture',
+          tools: [],
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+        },
+        { signal: new AbortController().signal, toolNames: [] },
+      ))
+        events.push(event)
+      expect(events).toContainEqual({ type: 'text_delta', delta: model.id })
+    }
+    offered = [{ ...offered[0]!, route: 'invalid.route' }]
+    await expect(buildProvider(profile, undefined, deps)).rejects.toThrow('invalid contributed')
+    offered = [{ ...offered[0]!, route: 'local' }]
+    await expect(buildProvider(profile, undefined, deps)).rejects.toThrow('conflicts')
+    offered = [{ ...offered[0]!, api: 'local-wire' }]
+    await expect(buildProvider(profile, undefined, deps)).rejects.toThrow('invalid contributed')
+  } finally {
+    await built.dispose()
+    await release()
+    await root.fiber.dispose()
   }
 })

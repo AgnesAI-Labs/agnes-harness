@@ -2,6 +2,7 @@ import { closeSync, cpSync, mkdtempSync, readFileSync, realpathSync, rmSync, wri
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import * as adapterHelpers from '@agnes/ai/model-adapter'
 import { fakeModel } from '@agnes/ai/testkit'
 import { Context } from '@agnes/cordis'
 import { fakeSeams, testFsPolicy } from '@agnes/core/testkit'
@@ -19,6 +20,7 @@ import {
   modelAdapterCatalog,
 } from '@agnes/host-providers/assemble/model-adapters'
 import { hashDirectory, type RuntimePluginSnapshot } from '@agnes/package-manager'
+import { providedExternalModules } from '@agnes/plugin-runtime/provided-externals'
 import type { InferenceEvent, RequestBody } from '@agnes/protocol'
 import { createPrivateDirectorySync, createPrivateFileSync } from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -50,6 +52,9 @@ const definition = (over: Partial<ModelAdapter> = {}): ModelAdapter => ({
 it('registers factories with immutable metadata, rejects duplicates and releases them with the plugin', async () => {
   const root = new Context()
   new ModelAdapterRegistry(root)
+  expect(providedExternalModules['@agnes/ai/model-adapter']).toBe(adapterHelpers)
+  expect(Object.keys(adapterHelpers).sort()).toEqual(['PiAdapter', 'isChatModelId'])
+  expect(providedExternalModules['@agnes/ai']).toBeUndefined()
   const lifecycle: string[] = []
   let release: (() => Promise<void>) | undefined
   const plugin = root.plugin((ctx) => {
@@ -57,6 +62,10 @@ it('registers factories with immutable metadata, rejects duplicates and releases
       modelAdapterKind,
       '@agnes/host',
       definition({
+        contributeRoutes: async (signal) => {
+          signal.throwIfAborted()
+          return [{ route: 'owned', api: 'custom', baseUrl: 'https://fixture.invalid/v1', models: [] }]
+        },
         create: (config) => ({
           ...(definition().create(config) as ModelAdapterInstance),
           dispose() {
@@ -87,10 +96,17 @@ it('registers factories with immutable metadata, rejects duplicates and releases
   expect(() => root.providers.registerHost(modelAdapterKind, '@agnes/host', definition())).toThrow(
     'duplicate model adapter',
   )
+  expect(root.modelAdapters.hasContributedRoutes()).toBe(true)
+  const contributions = await root.modelAdapters.contributedRoutes()
+  expect(contributions).toMatchObject([{ adapter: 'custom', routes: [{ route: 'owned', api: 'custom' }] }])
+  contributions[0]!.routes[0]!.models.push(fakeModel({ id: 'mutated', route: 'owned' }))
+  expect((await root.modelAdapters.contributedRoutes())[0]!.routes[0]!.models).toEqual([])
   const instance = await root.modelAdapters.create('custom', { routes: [] })
   await plugin.dispose()
   expect(lifecycle).toEqual(['instance', 'registration'])
   expect(modelAdapterCatalog(root)).toEqual([])
+  expect(root.modelAdapters.hasContributedRoutes()).toBe(false)
+  expect(await root.modelAdapters.contributedRoutes()).toEqual([])
   expect(() =>
     instance.adapter.stream('custom', body(), {
       signal: new AbortController().signal,

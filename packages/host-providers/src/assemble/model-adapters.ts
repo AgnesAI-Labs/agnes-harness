@@ -1,4 +1,4 @@
-import { WireAdapter } from '@agnes/ai'
+import { bindModelAdapterExternal, WireAdapter } from '@agnes/ai'
 import { type Context, Service } from '@agnes/cordis'
 import type {
   ModelAdapter,
@@ -14,6 +14,7 @@ import {
   providerSource,
 } from '@agnes/host-common/assemble/provider-registry'
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
+import { registerProvidedExternal } from '@agnes/plugin-runtime/provided-externals'
 
 declare module '@agnes/cordis' {
   interface Context {
@@ -147,6 +148,7 @@ export class ModelAdapterRegistry extends Service {
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'modelAdapters')
+    bindModelAdapterExternal(registerProvidedExternal)
     this.registrations = installProviderRegistry(ctx, modelAdapterKind, (owner, source, provider) =>
       this.registerOwned(owner, provider, source),
     )
@@ -207,6 +209,37 @@ export class ModelAdapterRegistry extends Service {
         .map((r) => this.records.get(r.id)!.entry)
         .sort((a, b) => a.id.localeCompare(b.id)),
     )
+  }
+
+  hasContributedRoutes(): boolean {
+    return [...this.records.values()].some((record) => typeof record.adapter.contributeRoutes === 'function')
+  }
+
+  async contributedRoutes(): Promise<readonly { adapter: string; routes: ModelAdapterConfig['routes'] }[]> {
+    const groups = []
+    for (const record of this.records.values()) {
+      const contribute = record.adapter.contributeRoutes?.bind(record.adapter)
+      if (!contribute) continue
+      const routes = await record.lifetime.run((signal) => contribute(signal))
+      if (
+        !Array.isArray(routes) ||
+        routes.some(
+          (route) =>
+            !route ||
+            typeof route.route !== 'string' ||
+            !/^[a-z0-9][a-z0-9-]{0,63}$/.test(route.route) ||
+            route.api !== record.id ||
+            !Array.isArray(route.models),
+        )
+      )
+        throw new ProviderError('E_PROVIDER_INVALID', 'invalid contributed model routes', {
+          kind: 'model-adapter',
+          provider: record.id,
+          operation: 'catalog',
+        })
+      groups.push({ adapter: record.id, routes: structuredClone(routes) })
+    }
+    return groups
   }
 
   async create(

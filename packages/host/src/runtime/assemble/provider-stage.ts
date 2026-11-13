@@ -86,7 +86,7 @@ export async function assembleProvider(
     preconfiguredRoutes,
     uncredentialedRoutes,
     dispose: disposeProvider,
-  } = routes
+  } = routes || pluginTree.root.modelAdapters.hasContributedRoutes()
     ? await buildProvider(ctx.profile, routes, {
         secrets,
         clock,
@@ -140,17 +140,18 @@ export async function assembleProvider(
           ? createSecretsEnv()
           : undefined
     if (!nextSecrets) throw new HostError('E_SEAM_INIT', 'unsupported model credential store')
-    const built = nextRoutes
-      ? await buildProvider(next, nextRoutes, {
-          secrets: (ref) => nextSecrets.resolve(ref),
-          clock,
-          log: deps.log,
-          trace: requestTraces,
-          modelAdapters: pluginTree.root.modelAdapters,
-          creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
-          ...factory,
-        })
-      : unresolvedProviderAssembly()
+    const built =
+      nextRoutes || pluginTree.root.modelAdapters.hasContributedRoutes()
+        ? await buildProvider(next, nextRoutes, {
+            secrets: (ref) => nextSecrets.resolve(ref),
+            clock,
+            log: deps.log,
+            trace: requestTraces,
+            modelAdapters: pluginTree.root.modelAdapters,
+            creditsSnapshot: () => businessLimit(hotPolicy, 'cost.credits_per_usd'),
+            ...factory,
+          })
+        : unresolvedProviderAssembly()
     let nextContracts: typeof contractForModel
     try {
       if (built.provider.registry && nextRoutes) verifyRoutes(nextRoutes, built.provider.registry)

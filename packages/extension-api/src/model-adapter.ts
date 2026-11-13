@@ -91,6 +91,10 @@ export interface ModelAdapterDefinition {
   readonly id: string
   readonly version: string
   readonly capabilities: ModelAdapterCapabilities
+  /** Installed provider-owned routes, fitted in memory without changing deployment model accounts.
+   * Route.api must equal this registration id; names follow /^[a-z0-9][a-z0-9-]{0,63}$/.
+   * Assembly rejects collisions. The supplied signal follows registration cleanup. */
+  contributeRoutes?(signal: AbortSignal): Promise<ModelAdapterConfig['routes']>
   create(
     config: ModelAdapterConfig,
     signal?: AbortSignal,

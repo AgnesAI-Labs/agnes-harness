@@ -24,6 +24,7 @@ const builtins: Readonly<Record<string, object>> = Object.freeze({
 // These stay out of the static imports: the dependency guard allows this package only
 // cordis, cordis-loader and extension-api. A later binder registers the one process copy.
 const contractSpecifiers = new Set([
+  '@agnes/ai/model-adapter',
   '@agnes/protocol',
   '@agnes/observability/contract',
   '@agnes/intelligent-ui-contract',
@@ -76,6 +77,7 @@ export const providedExternalVersions: Readonly<Record<string, string>> = Object
   '@agnes/extension-api/seams': API_VERSION,
   '@agnes/cordis': '0.0.0',
   '@agnes/protocol': '0.0.0',
+  '@agnes/ai/model-adapter': '0.0.0',
   '@agnes/observability/contract': '0.0.0',
   '@agnes/intelligent-ui-contract': '0.0.0',
   '@agnes/git-worktree-contract': '0.0.0',

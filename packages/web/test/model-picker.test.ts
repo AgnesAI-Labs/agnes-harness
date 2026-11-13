@@ -6,6 +6,7 @@ import { setLocaleTranslator } from '@agnes/web-foundation/locale-bridge'
 import { createRegionRenderer, installFeedbackSink, type RegionRenderer } from '@agnes/web-ui'
 import { createElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { contributedModelCatalog } from '../src/model-picker/catalog-source.js'
 import { groupModels, namedModels } from '../src/model-picker/state.js'
 import {
   ModelPickerControl,
@@ -842,4 +843,23 @@ it('lets the popover hug its content and aligns model and session rows in fixed 
   expect(rule('  .model-picker-value')).toMatch(
     /text-align: start;[\s\S]*overflow: hidden;[\s\S]*text-overflow: ellipsis;[\s\S]*white-space: nowrap/,
   )
+})
+
+it('keeps contributed cloud catalogs in their own context and preserves only a running legacy selection', () => {
+  const cloud = contributedModelCatalog(),
+    local = contributedModelCatalog()
+  const native = [...models]
+  const remote = [{ route: 'cloud-primary', id: 'cloud-a' }]
+  cloud.set(remote)
+  remote[0]!.id = 'mutated-after-publication'
+  expect(cloud.visible(native, currentModel, false)).toEqual([{ route: 'cloud-primary', id: 'cloud-a' }])
+  expect(cloud.visible(native, currentModel, true)).toEqual([
+    { route: 'cloud-primary', id: 'cloud-a' },
+    currentModel,
+  ])
+  expect(local.visible(native, currentModel, false)).toBe(native)
+  cloud.set([])
+  expect(cloud.visible(native, undefined, false)).toEqual([])
+  cloud.set(undefined)
+  expect(cloud.visible(native, undefined, false)).toBe(native)
 })
