@@ -10,6 +10,13 @@ import {
 } from '@agnes/sdk/composer-selection'
 import { frontendBackendIdentity, selectedRemoteOrigin } from './remote-frontend.js'
 
+let localModels: readonly ComposerModelRef[] = []
+
+/** Native-page preferences only remember models from that backend's configured local catalog. */
+export function setLocalComposerModels(models: readonly ComposerModelRef[]): void {
+  localModels = models
+}
+
 export const WEB_COMPOSER_MEMORY_KEY = 'agnes-web-composer-selection'
 const memoryKey = () => {
   const remote = selectedRemoteOrigin()
@@ -27,6 +34,15 @@ export function readWebComposerMemory(): ComposerMemory | undefined {
 }
 
 export function rememberWebComposer(update: ComposerMemory): void {
+  if (
+    update.model &&
+    !selectedRemoteOrigin() &&
+    !localModels.some((model) => model.route === update.model?.route && model.id === update.model.id)
+  ) {
+    const { model: _externalModel, ...nativeUpdate } = update
+    update = nativeUpdate
+    if (!Object.keys(update).length) return
+  }
   const next = mergeComposerMemory(readWebComposerMemory(), {
     ...update,
     ...(update.model ? { model: { route: update.model.route, id: update.model.id } } : {}),

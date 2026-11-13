@@ -1,3 +1,4 @@
+import { setLocalComposerModels } from '../composer-memory.js'
 import type { ModelPickerOption } from './types.js'
 
 /** One immutable frontend/backend context. An active cloud catalog never changes another window. */
@@ -24,6 +25,7 @@ export function contributedModelCatalog(changed?: () => void) {
       selected: { route: string; id: string } | undefined,
       hasSession: boolean,
     ) {
+      setLocalComposerModels(base)
       if (contributed === undefined) return base
       const legacy =
         hasSession && selected

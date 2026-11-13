@@ -4,7 +4,7 @@ import { type UsageView, userImagePolicy } from '@agnes/protocol'
 import type { DshSlotProps } from '@agnes/web-client'
 import { setDisclosureOpen } from '@agnes/web-ui'
 import type { ComposerView, ModelPickerProps } from '@agnes/web-units'
-import { createElement } from 'react'
+import { createElement, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { COMPOSER_SLOT } from '../src/region-slots.js'
 import { fakeVoice } from './helpers/fake-voice.js'
@@ -73,6 +73,7 @@ describe('rendered composer region', () => {
     const selectModel = vi.fn(async () => true),
       publishCatalog = vi.fn()
     let catalogValue: unknown
+    let renderNative: (() => ReactNode) | undefined
     runtime = await mountRenderedIndex({
       composer: {
         onDraftChange: (value) => drafts.push(value),
@@ -158,7 +159,9 @@ describe('rendered composer region', () => {
         const actions = props.actions as {
           select: ModelPickerProps['onSelect']
           setCatalog: NonNullable<ModelPickerProps['onCatalogChange']>
+          renderDefault: () => ReactNode
         }
+        renderNative = actions.renderDefault
         return createElement(
           'button',
           {
@@ -183,6 +186,17 @@ describe('rendered composer region', () => {
     document.querySelector<HTMLButtonElement>('[data-testid="fixture-model-catalog"]')?.click()
     expect(selectModel).toHaveBeenCalledWith({ id: 'cloud-only', route: 'cloud-primary' })
     expect(publishCatalog).toHaveBeenCalledWith([{ id: 'cloud-only', route: 'cloud-primary' }])
+    const removeNative = runtime.registry.register(
+      {
+        name: 'conversation.input.model.catalog',
+        id: 'fixture-native-delegate',
+        owner: 'fixture',
+        priority: -2,
+      },
+      () => renderNative?.(),
+    )
+    await vi.waitFor(() => expect(document.querySelector('#model')).toBeTruthy(), slotRender)
+    removeNative()
     runtime.session.setSession('catalog-session')
     handle?.render(readyView)
     await vi.waitFor(

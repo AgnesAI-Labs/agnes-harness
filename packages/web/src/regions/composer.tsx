@@ -147,7 +147,11 @@ export function mountComposerRegion(
           props={{
             owner: { draft: !registry.sessionId },
             value: props.state,
-            actions: { select: props.onSelect, setCatalog: props.onCatalogChange },
+            actions: {
+              select: props.onSelect,
+              setCatalog: props.onCatalogChange,
+              renderDefault: () => <ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />,
+            },
           }}
           fallback={<ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />}
         />
