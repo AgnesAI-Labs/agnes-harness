@@ -8,6 +8,7 @@ import type {
 import { afterEach, expect, it, vi } from 'vitest'
 import { createAnswerCache } from '../src/cache.js'
 import { createJudge, createRouteCooldown } from '../src/judge.js'
+import { type JudgmentRequest, validateRequest } from '../src/questions.js'
 
 afterEach(() => vi.useRealTimers())
 const req = { state: 'work', questions: { q: { type: 'noul' as const, instructions: 'done?' } } }
@@ -46,6 +47,44 @@ function port(
     ),
   } satisfies SideCallPort
 }
+it('dispatches valid noul criteria undefined with the existing omitted native JSON and identity', async () => {
+  const p = port()
+  const request = {
+    state: 'work',
+    questions: { q: { type: 'noul' as const, instructions: 'done?', criteria: undefined } },
+  }
+  const input = request as unknown as JudgmentRequest
+  expect(validateRequest(input)).toEqual({ ok: true })
+  const result = await createJudge({ port: p, chain: [target], cache: cache(), now: Date.now }).judge(
+    'judgment.stop',
+    input,
+    options(),
+  )
+  expect(result).toMatchObject({ status: 'ok', answers: { q: { type: 'noul', noul: 0.9 } } })
+  const prepared = p.prepare.mock.calls.at(0)?.[0]
+  expect(JSON.stringify(prepared?.payload)).toBe(
+    '{"state":"work","questions":{"q":{"type":"noul","instructions":"done?"}}}',
+  )
+  expect(prepared?.invocationId).toBe('stop:1:2:c0:a0')
+  expect(Object.hasOwn(request.questions.q, 'criteria')).toBe(true)
+})
+it.each([
+  { ...req, state: { value: undefined } },
+  {
+    ...req,
+    questions: { q: { type: 'noul', instructions: 'done?', criteria: { true: undefined } } },
+  },
+])('refuses invalid state or nested undefined criteria before preparing', async (request) => {
+  const p = port()
+  const result = await createJudge({ port: p, chain: [target], cache: cache(), now: Date.now }).judge(
+    'judgment.stop',
+    request as unknown as JudgmentRequest,
+    options(),
+  )
+  expect(result).toMatchObject({ status: 'failed', reason: 'invalid', accounting: { calls: [] } })
+  expect(p.prepare).not.toHaveBeenCalled()
+  expect(p.invoke).not.toHaveBeenCalled()
+})
 it('returns no-judge when the chain is null', async () => {
   const p = port()
   expect(

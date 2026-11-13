@@ -32,7 +32,11 @@ export function preparation(signal: AbortSignal, end: number, now = () => Date.n
 }
 
 /** Bounded chunks preserve JSON's complete string context; redaction happens only after collection. */
-export function* jsonSnapshot(value: unknown, maxBytes: number): Generator<string, JsonValue> {
+export function* jsonSnapshot(
+  value: unknown,
+  maxBytes: number,
+  omitRootUndefinedKey?: 'criteria',
+): Generator<string, JsonValue> {
   let bytes = 0
   const encoder = new TextEncoder()
   const seen = new Set<object>()
@@ -91,6 +95,8 @@ export function* jsonSnapshot(value: unknown, maxBytes: number): Generator<strin
     let first = true
     for (const key in item) {
       if (!Object.hasOwn(item, key)) continue
+      if (depth === 0 && key === omitRootUndefinedKey && (item as Record<string, unknown>)[key] === undefined)
+        continue
       if (!first) yield* emit(',')
       first = false
       yield* string(key)
@@ -106,8 +112,9 @@ export function* jsonSnapshot(value: unknown, maxBytes: number): Generator<strin
 export function* serializedJson(
   value: unknown,
   maxBytes: number,
+  omitRootUndefinedKey?: 'criteria',
 ): Generator<void, { value: JsonValue; text: string }> {
-  const iterator = jsonSnapshot(value, maxBytes)
+  const iterator = jsonSnapshot(value, maxBytes, omitRootUndefinedKey)
   const text: string[] = []
   for (;;) {
     yield

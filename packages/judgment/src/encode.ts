@@ -31,7 +31,12 @@ function* partition(
     questionCount++
     const question = req.questions[id]
     if (!question) throw new TypeError('Invalid judgment request')
-    const snapshot = yield* serializedJson(question, 16 * atomic)
+    // Optional noul criteria retains JSON's omission semantics; state/nested values stay strict.
+    const snapshot = yield* serializedJson(
+      question,
+      16 * atomic,
+      question.type === 'noul' ? 'criteria' : undefined,
+    )
     const single = { state: null, questions: { [id]: snapshot.value } } as JudgmentRequest
     if (!validateRequest(single).ok) throw new TypeError('Invalid judgment request')
     yield

@@ -1,6 +1,47 @@
 import { estimateTokens } from '@agnes/extension-api'
 import { expect, it } from 'vitest'
-import { nativePayload, splitRequest } from '../src/encode.js'
+import { nativePayload, planRequest, splitRequest } from '../src/encode.js'
+import type { JudgmentRequest } from '../src/questions.js'
+
+it('omits optional undefined noul criteria at the same exact budget in both planners', async () => {
+  const supplied = {
+    state: { text: '汉🙂' },
+    questions: {
+      first: { type: 'noul' as const, instructions: 'Synthetic?', criteria: undefined },
+      second: { type: 'noul' as const, instructions: 'Next?' },
+    },
+  }
+  const req = supplied as unknown as JudgmentRequest
+  const expected =
+    '{"state":{"text":"汉🙂"},"questions":{"first":{"type":"noul","instructions":"Synthetic?"},"second":{"type":"noul","instructions":"Next?"}}}'
+  const size = estimateTokens(expected)
+  const budgets = { state: size, request: size }
+  const sync = splitRequest(req, budgets)
+  const cooperative = await planRequest(req, budgets, {
+    signal: new AbortController().signal,
+    end: Date.now() + 60000,
+  })
+  expect(sync).toEqual([req])
+  expect(cooperative).toEqual(sync)
+  expect(JSON.stringify(nativePayload(cooperative[0] as JudgmentRequest))).toBe(expected)
+  expect(Object.keys(cooperative[0]?.questions ?? {})).toEqual(['first', 'second'])
+  expect(Object.hasOwn(supplied.questions.first, 'criteria')).toBe(true)
+})
+
+it.each([
+  { state: { value: undefined }, questions: { q: { type: 'noul', instructions: 'Synthetic?' } } },
+  {
+    state: null,
+    questions: { q: { type: 'noul', instructions: 'Synthetic?', criteria: { true: undefined } } },
+  },
+])('keeps state and nested undefined criteria invalid in both planners', async (value) => {
+  const req = value as unknown as JudgmentRequest
+  const budgets = { state: 24000, request: 48000 }
+  expect(() => splitRequest(req, budgets)).toThrow()
+  await expect(
+    planRequest(req, budgets, { signal: new AbortController().signal, end: Date.now() + 60000 }),
+  ).rejects.toThrow()
+})
 
 it('rejects an unsplittable state plus single question over 24000 tokens', () => {
   const req = { state: 'x'.repeat(150000), questions: { q: { type: 'noul' as const, instructions: 'yes?' } } }
