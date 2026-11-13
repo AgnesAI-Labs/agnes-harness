@@ -54,11 +54,7 @@ export const WorkbenchSidebar = forwardRef<SidebarHandle, BackendGroupsProps>(
                 ? props.configure()
                 : props.command(props.active, { kind: 'new' }),
             addWorkspace: () => props.command(props.active, { kind: 'workspace' }),
-            openSettings: () =>
-              props.command(
-                props.active === 'cloud' && !props.states.cloud?.connected ? 'local' : props.active,
-                { kind: 'settings', section: 'model' },
-              ),
+            openSettings: () => props.command('local', { kind: 'settings', section: 'model' }),
           }}
           slots={{
             search: <SessionSearchButton t={nativeText} />,
@@ -70,8 +66,10 @@ export const WorkbenchSidebar = forwardRef<SidebarHandle, BackendGroupsProps>(
                       appearance="ghost"
                       className="home-entry"
                       aria-label={props.t(page)}
-                      aria-current={props.states[props.active]?.page === page ? 'page' : undefined}
-                      onClick={() => props.command(props.active, { kind: 'home', page })}
+                      aria-current={
+                        props.active === 'local' && props.states.local?.page === page ? 'page' : undefined
+                      }
+                      onClick={() => props.command('local', { kind: 'home', page })}
                     >
                       <Icon
                         name={

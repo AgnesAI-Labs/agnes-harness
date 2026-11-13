@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+
+import type { SettingsController } from '@agnes/web-admin/settings'
 import { mountApplication } from '@agnes/web-ui'
 import { act } from 'react'
 import { afterAll, afterEach, beforeAll, expect, it, vi } from 'vitest'
@@ -6,7 +8,14 @@ import { RemoteFrontendFailure } from '../src/backend-selector.js'
 import { CloudConnectionSettings } from '../src/backends/cloud-connection-settings.js'
 import { type CloudConnectionAction, cloudConnectionAction } from '../src/backends/cloud-settings-bridge.js'
 import * as frameContext from '../src/backends/frame-context.js'
-import { type BackendSnapshot, backendCommand, backendSnapshot } from '../src/backends/frame-contract.js'
+import {
+  type BackendSnapshot,
+  backendCommand,
+  backendSnapshot,
+  commandBackend,
+  localManagementCommand,
+} from '../src/backends/frame-contract.js'
+import { routeLocalSettings } from '../src/backends/local-management.js'
 import { workbenchCatalog } from '../src/backends/workbench-locale.js'
 import { WorkbenchSidebar } from '../src/backends/workbench-sidebar.js'
 import { initialWorkbench, workbenchAddress } from '../src/backends/workbench-state.js'
@@ -20,70 +29,89 @@ afterEach(async () => {
   dispose = undefined
 })
 
-it('keeps identical session ids in separate collapsible local/cloud groups and routes the selected owner', async () => {
-  const host = document.createElement('div')
-  document.body.append(host)
-  const selections: unknown[] = []
-  const commands: unknown[] = []
-  const snapshot: BackendSnapshot = {
-    ready: true,
-    connected: true,
-    more: false,
-    rows: [{ sessionId: 'same-id', title: 'Fixture task' }],
-    activity: [],
-    selected: 'same-id',
-  }
-  await act(async () => {
-    dispose = mountApplication(
-      host,
-      <WorkbenchSidebar
-        active="local"
-        cloud="http://cloud.test:8443"
-        states={{ local: snapshot, cloud: snapshot }}
-        t={(key) => workbenchCatalog.en[key]}
-        select={(...args) => selections.push(args)}
-        command={(...args) => commands.push(args)}
-        configure={() => {}}
-      />,
+it.each(['local', 'cloud'] as const)(
+  'keeps session ownership and local management routing while %s is selected',
+  async (active) => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    const selections: unknown[] = []
+    const commands: unknown[] = []
+    const snapshot: BackendSnapshot = {
+      ready: true,
+      connected: true,
+      more: false,
+      rows: [{ sessionId: 'same-id', title: 'Fixture task' }],
+      activity: [],
+      selected: 'same-id',
+    }
+    await act(async () => {
+      dispose = mountApplication(
+        host,
+        <WorkbenchSidebar
+          active={active}
+          cloud="http://cloud.test:8443"
+          states={{ local: snapshot, cloud: snapshot }}
+          t={(key) => workbenchCatalog.en[key]}
+          select={(...args) => selections.push(args)}
+          command={(...args) => commands.push(args)}
+          configure={() => {}}
+        />,
+      )
+    })
+    expect(host.querySelector('[data-agnes-region-unit="sidebar"]')).not.toBeNull()
+    expect(host.querySelector('.brand-lockup .brand-wordmark-text')?.textContent).toBe('Agnes Harness')
+    expect(host.querySelector('#new')?.getAttribute('aria-keyshortcuts')).toContain('Control+Shift+O')
+    expect(host.querySelector('#new')?.classList.contains('agh-btn--primary')).toBe(false)
+    expect(host.querySelector('#session-search kbd')).not.toBeNull()
+    expect(host.querySelector('.sidebar-footer #settings')).not.toBeNull()
+    const local = host.querySelector<HTMLButtonElement>(
+      '[data-testid="backend-session-local"] [data-session]',
     )
-  })
-  expect(host.querySelector('[data-agnes-region-unit="sidebar"]')).not.toBeNull()
-  expect(host.querySelector('.brand-lockup .brand-wordmark-text')?.textContent).toBe('Agnes Harness')
-  expect(host.querySelector('#new')?.getAttribute('aria-keyshortcuts')).toContain('Control+Shift+O')
-  expect(host.querySelector('#new')?.classList.contains('agh-btn--primary')).toBe(false)
-  expect(host.querySelector('#session-search kbd')).not.toBeNull()
-  expect(host.querySelector('.sidebar-footer #settings')).not.toBeNull()
-  const local = host.querySelector<HTMLButtonElement>('[data-testid="backend-session-local"] [data-session]')
-  const cloud = host.querySelector<HTMLButtonElement>('[data-testid="backend-session-cloud"] [data-session]')
-  expect(local?.getAttribute('aria-current')).toBe('page')
-  expect(cloud?.getAttribute('aria-current')).toBeNull()
-  await act(async () => cloud?.click())
-  expect(selections).toEqual([['cloud', 'same-id']])
-  const collapse = host.querySelector<HTMLButtonElement>('[data-testid="backend-group-local"]')
-  await act(async () => collapse?.click())
-  expect(collapse?.getAttribute('aria-expanded')).toBe('false')
-  expect(host.querySelector('[data-testid="backend-session-cloud"] [data-session]')).toBe(cloud)
-  await act(async () =>
-    host.querySelector<HTMLButtonElement>('[aria-label="New cloud conversation"]')?.click(),
-  )
-  expect(commands).toEqual([['cloud', { kind: 'new' }]])
-  await act(async () => host.querySelector<HTMLButtonElement>('#session-search')?.click())
-  expect(commands.at(-1)).toEqual(['local', { kind: 'search' }])
-  await act(async () =>
-    document.dispatchEvent(
-      new KeyboardEvent('keydown', { key: 'O', ctrlKey: true, shiftKey: true, bubbles: true }),
-    ),
-  )
-  expect(commands.at(-1)).toEqual(['local', { kind: 'new' }])
-  const status = host.querySelector('[data-testid="cloud-connection-status"]')
-  expect(status?.getAttribute('aria-label')).toBe('Ready')
-  expect(status?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Ready')
-  await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="backend-group-cloud"]')?.click())
-  expect(status?.closest('[hidden]')).toBeNull()
-  expect(
-    [...host.querySelectorAll('button')].some((button) => button.textContent === 'Cloud connection'),
-  ).toBe(false)
-})
+    const cloud = host.querySelector<HTMLButtonElement>(
+      '[data-testid="backend-session-cloud"] [data-session]',
+    )
+    expect(local?.getAttribute('aria-current')).toBe(active === 'local' ? 'page' : null)
+    expect(cloud?.getAttribute('aria-current')).toBe(active === 'cloud' ? 'page' : null)
+    await act(async () => cloud?.click())
+    expect(selections).toEqual([['cloud', 'same-id']])
+    const collapse = host.querySelector<HTMLButtonElement>('[data-testid="backend-group-local"]')
+    await act(async () => collapse?.click())
+    expect(collapse?.getAttribute('aria-expanded')).toBe('false')
+    expect(host.querySelector('[data-testid="backend-session-cloud"] [data-session]')).toBe(cloud)
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="New cloud conversation"]')?.click(),
+    )
+    expect(commands).toEqual([['cloud', { kind: 'new' }]])
+    await act(async () => host.querySelector<HTMLButtonElement>('#session-search')?.click())
+    expect(commands.at(-1)).toEqual([active, { kind: 'search' }])
+    await act(async () =>
+      document.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'O', ctrlKey: true, shiftKey: true, bubbles: true }),
+      ),
+    )
+    expect(commands.at(-1)).toEqual([active, { kind: 'new' }])
+    for (const page of ['plugins', 'agents', 'automation', 'mhs']) {
+      await act(async () =>
+        host
+          .querySelector<HTMLButtonElement>(`[aria-label="${workbenchCatalog.en[page as 'plugins']}"]`)
+          ?.click(),
+      )
+      expect(commands.at(-1)).toEqual(['local', { kind: 'home', page }])
+    }
+    await act(async () => host.querySelector<HTMLButtonElement>('#settings')?.click())
+    expect(commands.at(-1)).toEqual(['local', { kind: 'settings', section: 'model' }])
+    const status = host.querySelector('[data-testid="cloud-connection-status"]')
+    expect(status?.getAttribute('aria-label')).toBe('Ready')
+    expect(status?.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Ready')
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[data-testid="backend-group-cloud"]')?.click(),
+    )
+    expect(status?.closest('[hidden]')).toBeNull()
+    expect(
+      [...host.querySelectorAll('button')].some((button) => button.textContent === 'Cloud connection'),
+    ).toBe(false)
+  },
+)
 
 it.each([
   [undefined, undefined, 'Not configured'],
@@ -253,4 +281,55 @@ it('restores configured cloud independently from the selected local route and ac
       },
     }),
   ).toBeUndefined()
+})
+
+it('accepts only bounded management relays and keeps conversation/workspace commands on their backend', () => {
+  for (const command of [
+    { kind: 'home', page: 'plugins' },
+    { kind: 'settings', section: 'model' },
+  ] as const) {
+    expect(commandBackend('cloud', command)).toBe('local')
+    expect(
+      localManagementCommand({ type: 'agh.backend.frame/v1', kind: 'local-management', command }),
+    ).toEqual(command)
+  }
+  for (const command of [
+    { kind: 'new' },
+    { kind: 'search' },
+    { kind: 'workspace' },
+    { kind: 'session', sessionId: 'b' },
+  ] as const) {
+    expect(commandBackend('cloud', command)).toBe('cloud')
+    expect(
+      localManagementCommand({ type: 'agh.backend.frame/v1', kind: 'local-management', command }),
+    ).toBeUndefined()
+  }
+  expect(
+    localManagementCommand({
+      type: 'agh.backend.frame/v1',
+      kind: 'local-management',
+      command: { kind: 'settings', section: 'x'.repeat(129) },
+    }),
+  ).toBeUndefined()
+})
+
+it('redirects account/dialog links in cloud frames without calling B settings and keeps native pages local', async () => {
+  const redirect = vi.spyOn(frameContext, 'requestLocalManagement').mockReturnValue(true)
+  const open = vi.fn(async () => {}),
+    openAccount = vi.fn(async (_route?: string) => {})
+  const settings = routeLocalSettings({ open, openAccount } as unknown as SettingsController)
+  try {
+    await settings.open()
+    await settings.openAccount('b-account')
+    expect(open).not.toHaveBeenCalled()
+    expect(openAccount).not.toHaveBeenCalled()
+    expect(redirect).toHaveBeenCalledWith({ kind: 'settings', section: 'model' })
+    redirect.mockReturnValue(false)
+    await settings.open()
+    await settings.openAccount('local-account')
+    expect(open).toHaveBeenCalledOnce()
+    expect(openAccount).toHaveBeenCalledWith('local-account')
+  } finally {
+    redirect.mockRestore()
+  }
 })

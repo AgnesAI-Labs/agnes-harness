@@ -124,3 +124,22 @@ export function backendSnapshot(value: unknown): BackendSnapshot | undefined {
     return
   return s as BackendSnapshot
 }
+
+/** Management pages always belong to the machine hosting the workbench. */
+export function commandBackend(backend: BackendId, command: BackendCommand): BackendId {
+  return command.kind === 'home' || command.kind === 'settings' ? 'local' : backend
+}
+
+export function localManagementCommand(
+  value: unknown,
+): Extract<BackendCommand, { kind: 'home' | 'settings' }> | undefined {
+  if (
+    !record(value) ||
+    value.type !== BACKEND_FRAME_MESSAGE ||
+    value.kind !== 'local-management' ||
+    !record(value.command)
+  )
+    return
+  const command = backendCommand({ ...value.command, type: BACKEND_FRAME_COMMAND })
+  return command?.kind === 'home' || command?.kind === 'settings' ? command : undefined
+}

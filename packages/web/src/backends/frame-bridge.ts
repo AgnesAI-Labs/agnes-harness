@@ -3,7 +3,7 @@ import { homeNavigation } from '@agnes/web-client'
 import { broadcast, onBroadcast, onHistoryNavigation } from '../app/global-events.js'
 import { requestNewSession } from '../application.js'
 import { SESSION_SEARCH_EVENT } from '../regions/session-tools.js'
-import { backendFrame } from './frame-context.js'
+import { backendFrame, requestLocalManagement } from './frame-context.js'
 import {
   BACKEND_FRAME_MESSAGE,
   type BackendCommand,
@@ -147,6 +147,32 @@ export function installBackendFrameBridge(
       accept({ command, commandId: event.data.commandId })
   }
   window.addEventListener('message', receive)
+  const homeOff = homeNavigation.subscribe(() => {
+    const page = homeNavigation.getSnapshot()?.id
+    if (
+      page &&
+      ['plugins', 'agents', 'automation', 'mhs'].includes(page) &&
+      requestLocalManagement({
+        kind: 'home',
+        page: page as Extract<BackendCommand, { kind: 'home' }>['page'],
+      })
+    )
+      homeNavigation.close()
+  })
+  const localSettings = (event: Event) => {
+    const section = (event as CustomEvent<{ section?: unknown }>).detail?.section
+    if (
+      typeof section !== 'string' ||
+      !section ||
+      section.length > 128 ||
+      !requestLocalManagement({ kind: 'settings', section })
+    )
+      return
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
+  document.addEventListener('agnes:open-settings', localSettings, true)
+
   const readyOff = onBroadcast('agnes:backend-frame-ready', () => {
     ready = true
     const command = queued
@@ -174,6 +200,8 @@ export function installBackendFrameBridge(
     clearInterval(timer)
     queued = undefined
     window.removeEventListener('message', receive)
+    homeOff()
+    document.removeEventListener('agnes:open-settings', localSettings, true)
     readyOff()
     noticeOff()
     reconnectingOff()

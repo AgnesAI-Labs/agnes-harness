@@ -20,6 +20,8 @@ import {
   type BackendId,
   type BackendSnapshot,
   backendSnapshot,
+  commandBackend,
+  localManagementCommand,
 } from './frame-contract.js'
 import { workbenchCatalog } from './workbench-locale.js'
 import { WorkbenchSidebar } from './workbench-sidebar.js'
@@ -88,6 +90,7 @@ function BackendWorkbench() {
   }, [])
   const send = useCallback(
     (backend: BackendId, command: BackendCommand) => {
+      backend = commandBackend(backend, command)
       if (backend === 'cloud' && !latest.current.cloud) {
         setConfigure(true)
         return
@@ -202,6 +205,11 @@ function BackendWorkbench() {
         (backend === 'cloud' && frames.current.cloud?.dataset.backendOrigin !== latest.current.cloud)
       )
         return
+      const management = localManagementCommand(event.data)
+      if (management) {
+        send('local', management)
+        return
+      }
       const action = cloudConnectionAction(event.data)
       if (action) {
         if (action.action === 'connect') connect(action.origin, false, action.credentialRef)
