@@ -1,8 +1,145 @@
 // @vitest-environment happy-dom
 
-import { frontendPublication, remoteFrontendOrigin, withRemoteFrontend } from '@agnes/protocol'
+import {
+  CLOUD_AUTHORIZATION_PATH,
+  frontendPublication,
+  REMOTE_FRONTEND_INFO,
+  REMOTE_FRONTEND_KEY_VERSION,
+  REMOTE_FRONTEND_WS,
+  remoteFrontendOrigin,
+  remoteFrontendSessionPath,
+  withRemoteFrontend,
+} from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
-import { backendResourceUrl, remoteFrontendFetch, selectedRemoteOrigin } from '../src/remote-frontend.js'
+import { readCloudCredentialRef, saveCloudKey } from '../src/backends/cloud-key.js'
+import { forgetRemoteAccess } from '../src/remote-authorization.js'
+import {
+  backendResourceUrl,
+  readRemoteFrontendInfo,
+  remoteFrontendFetch,
+  selectedRemoteOrigin,
+} from '../src/remote-frontend.js'
+
+it('stores entered cloud Keys through A’s credential manager and persists only their references', async () => {
+  const origin = 'http://managed-cloud.test'
+  const id = 'secret://generic/11111111-1111-1111-1111-111111111111'
+  const metadata = {
+    id,
+    label: `Cloud · ${origin}`,
+    kind: 'api-key',
+    createdAt: new Date().toISOString(),
+    references: [],
+  }
+  const requests: { url: string; body: unknown }[] = []
+  vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+    requests.push({ url, body: JSON.parse(String(init.body)) })
+    return Response.json(metadata)
+  })
+  try {
+    await Promise.all([
+      saveCloudKey(origin, 'first-fixture-key'),
+      saveCloudKey(origin, 'replacement-fixture-key'),
+    ])
+    expect(readCloudCredentialRef(origin)).toBe(id)
+    expect(requests).toEqual([
+      {
+        url: '/admin/api/credentials/create',
+        body: { label: `Cloud · ${origin}`, value: 'first-fixture-key' },
+      },
+      { url: '/admin/api/credentials/set', body: { id, value: 'replacement-fixture-key' } },
+    ])
+    expect(localStorage.getItem(`agnes.cloud.credential.v1:${origin}`)).toBe(id)
+    expect(JSON.stringify(localStorage)).not.toContain('fixture-key')
+    expect(JSON.stringify(sessionStorage)).not.toContain('fixture-key')
+  } finally {
+    localStorage.removeItem(`agnes.cloud.credential.v1:${origin}`)
+    vi.unstubAllGlobals()
+  }
+})
+
+it('requires the saved Key, exchanges it once and routes backend resources through an authenticated capability', async () => {
+  const remote = 'http://key-cloud.test:8443'
+  const key = 'fixture-third-party-key'
+  const credentialRef = 'secret://generic/11111111-1111-1111-1111-111111111111'
+  const token = `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`
+  const prefix = remoteFrontendSessionPath(token)
+  const calls: { url: string; body: unknown }[] = []
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    calls.push({ url, body: init?.body })
+    return url.endsWith(CLOUD_AUTHORIZATION_PATH)
+      ? Response.json({ token, expiresAt: Date.now() + 3_600_000 })
+      : Response.json({
+          version: REMOTE_FRONTEND_KEY_VERSION,
+          access: 'key-owner',
+          wsPath: REMOTE_FRONTEND_WS,
+          instanceId: 'fixture-B',
+        })
+  }) as typeof fetch
+  try {
+    await expect(readRemoteFrontendInfo(remote, new AbortController().signal, fetcher)).rejects.toThrow('Key')
+    expect(calls).toEqual([])
+    localStorage.setItem(`agnes.cloud.credential.v1:${remote}`, credentialRef)
+    expect(await readRemoteFrontendInfo(remote, new AbortController().signal, fetcher)).toEqual({
+      instanceId: 'fixture-B',
+    })
+    expect(calls[0]).toEqual({
+      url: new URL(CLOUD_AUTHORIZATION_PATH, location.origin).href,
+      body: JSON.stringify({ origin: remote, credentialRef }),
+    })
+    expect(calls[1]?.url).toBe(`${remote}${prefix}${REMOTE_FRONTEND_INFO}`)
+    expect(backendResourceUrl('/api/accounts', remote, 'http://local.test')).toBe(
+      `${remote}${prefix}/api/accounts`,
+    )
+    expect(backendResourceUrl('/plugins/pkg/client.js', remote, 'http://local.test')).toBe(
+      `${remote}${prefix}/plugins/pkg/client.js`,
+    )
+    expect(backendResourceUrl(`${remote}/plugins/pkg/client.js`, remote, 'http://local.test')).toBe(
+      `${remote}${prefix}/plugins/pkg/client.js`,
+    )
+    expect(backendResourceUrl('/app.js', remote, 'http://local.test')).toBe('/app.js')
+    expect(backendResourceUrl(CLOUD_AUTHORIZATION_PATH, remote, 'http://local.test')).toBe(
+      CLOUD_AUTHORIZATION_PATH,
+    )
+    expect(calls.every((call) => !call.url.includes(key))).toBe(true)
+  } finally {
+    localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
+    forgetRemoteAccess(remote)
+  }
+})
+
+it('reports a rejected credential and refuses an old public publication instead of downgrading authentication', async () => {
+  const remote = 'http://rejected-cloud.test'
+  localStorage.setItem(
+    `agnes.cloud.credential.v1:${remote}`,
+    'secret://generic/11111111-1111-1111-1111-111111111111',
+  )
+  try {
+    await expect(
+      readRemoteFrontendInfo(remote, new AbortController().signal, async () =>
+        Response.json({ error: 'CONFIG_CREDENTIAL_REJECTED' }, { status: 400 }),
+      ),
+    ).rejects.toThrow('Key')
+    await expect(
+      readRemoteFrontendInfo(remote, new AbortController().signal, async (input) =>
+        String(input).endsWith(CLOUD_AUTHORIZATION_PATH)
+          ? Response.json({
+              token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`,
+              expiresAt: Date.now() + 60_000,
+            })
+          : Response.json({
+              version: 'agh-public-frontend/v1',
+              access: 'public-owner',
+              instanceId: 'old-B',
+              wsPath: REMOTE_FRONTEND_WS,
+            }),
+      ),
+    ).rejects.toThrow('incompatible')
+  } finally {
+    localStorage.removeItem(`agnes.cloud.credential.v1:${remote}`)
+    forgetRemoteAccess(remote)
+  }
+})
 
 it('selects an explicit backend origin and refuses credential-bearing or CSP-injecting addresses', () => {
   expect(selectedRemoteOrigin('')).toBeUndefined()
@@ -20,6 +157,10 @@ it('selects an explicit backend origin and refuses credential-bearing or CSP-inj
     frontendPublication({ enabled: true, access: 'public-owner', host: '0.0.0.0', port: -1 }),
   ).toThrow()
   expect(() => frontendPublication({ enabled: true, access: 'local', host: '0.0.0.0', port: 8443 })).toThrow()
+  const keyed = { enabled: true, access: 'key-owner', host: '0.0.0.0', port: 8443 }
+  for (const auth of [undefined, {}, { keySha256: 'bad' }])
+    expect(() => frontendPublication({ ...keyed, auth })).toThrow()
+  expect(frontendPublication({ ...keyed, auth: { keySha256: 'a'.repeat(64) } }).access).toBe('key-owner')
   const base = 'http://localhost:4177/?remote=http%3A%2F%2Fcomputer-b%3A8443'
   expect(new URL(withRemoteFrontend('/?session=remote-session', base), base).searchParams.get('remote')).toBe(
     'http://computer-b:8443',

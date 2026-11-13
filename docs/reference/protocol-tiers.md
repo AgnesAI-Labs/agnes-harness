@@ -158,6 +158,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 
 ### Credentials
 
+- `_agnes/v1/admin.cloud.authorize`
 - `_agnes/v1/admin.credentials.list`
 - `_agnes/v1/admin.credentials.create`
 - `_agnes/v1/admin.credentials.set`

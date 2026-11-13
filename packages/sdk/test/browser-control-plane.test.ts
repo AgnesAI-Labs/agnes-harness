@@ -9,6 +9,12 @@ it('rejects raw admin and Extension Service calls from the browser client before
   })
   await expect(client.credentials.list()).rejects.toMatchObject({ kind: 'unsupported' })
   await expect(
+    client.request('_agnes/v1/admin.cloud.authorize', {
+      origin: 'http://cloud.fixture:8443',
+      credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+    }),
+  ).rejects.toMatchObject({ kind: 'unsupported' })
+  await expect(
     client.credentials.create({ label: 'Work', value: 'synthetic-browser-canary' }),
   ).rejects.toMatchObject({ kind: 'unsupported' })
   await expect(

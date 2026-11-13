@@ -6,7 +6,7 @@ English | [简体中文](deployment.zh-CN.md)
 
 Run one App Server per canonical `AGH_HOME`; use the same home and profile for its clients. Local Web binds loopback and checks exact Origin/Host. The source quickstart is not a public reverse-proxy login deployment: adding a proxy does not create internet user authentication. Keep the local admin surface private. Remote SDK transports require their declared TLS/authentication setup and deployment acceptance.
 
-For explicit unauthenticated publication of the complete profile through an installed plugin, see [remote frontend publication](remote-frontend.md). This opt-in mode also publishes owner administration; the default local listener is unchanged.
+For deployment-Key authenticated publication of the complete profile through an installed cloud plugin, see [remote frontend publication](remote-frontend.md). This opt-in mode grants authenticated callers owner administration; the default local listener is unchanged.
 
 ## Outbound proxy configuration
 

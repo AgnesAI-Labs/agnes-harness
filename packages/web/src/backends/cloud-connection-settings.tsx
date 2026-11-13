@@ -32,11 +32,18 @@ export function CloudConnectionSettings({
   const catalog = workbenchCatalog[language === 'zh-CN' ? 'zh-CN' : 'en']
   const t = (key: keyof typeof catalog) => catalog[key]
   const [address, setAddress] = useState(state.origin ?? '')
+  const [key, setKey] = useState('')
   const [error, setError] = useState('')
   useEffect(() => setAddress(state.origin ?? ''), [state.origin])
   const connect = () => {
     try {
-      onAction({ action: 'connect', origin: remoteFrontendOrigin(address.trim()) })
+      const origin = remoteFrontendOrigin(address.trim())
+      if (!key && !(state.hasKey && state.origin === origin)) {
+        setError(t('keyRequired'))
+        return
+      }
+      onAction({ action: 'connect', origin, ...(key ? { key } : {}) })
+      setKey('')
       setError('')
     } catch {
       setError(t('invalidOrigin'))
@@ -47,6 +54,30 @@ export function CloudConnectionSettings({
       <SettingsGroup>
         <SettingsItem label={t('cloudStatus')} description={t('cloudHelp')}>
           <CloudConnectionIndicator status={state.status} t={t} />
+        </SettingsItem>
+        <SettingsItem
+          label={<label htmlFor="cloud-service-key">{t('cloudKey')}</label>}
+          description={t('keyHelp')}
+          stacked
+        >
+          <SettingsInput
+            id="cloud-service-key"
+            type="password"
+            autoComplete="off"
+            maxLength={4096}
+            value={key}
+            placeholder={state.hasKey ? t('keySaved') : t('keyRequired')}
+            onChange={(event) => {
+              setKey(event.target.value)
+              setError('')
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                connect()
+              }
+            }}
+          />
         </SettingsItem>
         <SettingsItem label={<label htmlFor="cloud-service-origin">{t('cloudOrigin')}</label>} stacked>
           <SettingsInput

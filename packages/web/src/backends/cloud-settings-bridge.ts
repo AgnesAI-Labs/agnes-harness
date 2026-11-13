@@ -5,7 +5,7 @@ import type { CloudConnectionState } from './workbench-state.js'
 
 export const CLOUD_SETTINGS_SECTION = 'cloud-connection'
 export type CloudConnectionAction =
-  | { action: 'connect'; origin: string }
+  | { action: 'connect'; origin: string; key?: string }
   | { action: 'disconnect' }
   | { action: 'reconnect' }
 
@@ -15,8 +15,13 @@ export function cloudConnectionAction(value: unknown): CloudConnectionAction | u
   if (message.type !== BACKEND_FRAME_MESSAGE || message.kind !== 'cloud-action') return
   if (message.action === 'disconnect' || message.action === 'reconnect') return { action: message.action }
   if (message.action === 'connect' && typeof message.origin === 'string') {
+    if (message.key !== undefined && (typeof message.key !== 'string' || message.key.length > 4096)) return
     try {
-      return { action: 'connect', origin: remoteFrontendOrigin(message.origin) }
+      return {
+        action: 'connect',
+        origin: remoteFrontendOrigin(message.origin),
+        ...(typeof message.key === 'string' && message.key ? { key: message.key } : {}),
+      }
     } catch {}
   }
 }
@@ -41,7 +46,8 @@ export function installCloudSettingsProjection(): () => void {
     if (
       !next ||
       !['unconfigured', 'connecting', 'ready', 'disconnected', 'error'].includes(next.status) ||
-      (next.error !== undefined && (typeof next.error !== 'string' || next.error.length > 4096))
+      (next.error !== undefined && (typeof next.error !== 'string' || next.error.length > 4096)) ||
+      (next.hasKey !== undefined && typeof next.hasKey !== 'boolean')
     )
       return
     try {
@@ -51,6 +57,7 @@ export function installCloudSettingsProjection(): () => void {
         status: next.status,
         ...(origin ? { origin } : {}),
         ...(next.error ? { error: next.error } : {}),
+        ...(typeof next.hasKey === 'boolean' ? { hasKey: next.hasKey } : {}),
       }
       for (const listener of listeners) listener()
     } catch {}

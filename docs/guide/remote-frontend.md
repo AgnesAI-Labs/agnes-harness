@@ -4,37 +4,44 @@ English | [简体中文](remote-frontend.zh-CN.md)
 
 [Deployment](deployment.md) · [Plugins](packages.md) · [Web workbench](web.md)
 
-A and B run the same complete standard Harness. A hosts the frontend and its browser connects directly to B's HTTP/WebSocket service. No SSH or A-side BFF relay is involved. B enables an installed cloud plugin; A needs no cloud plugin.
+A and B run the same complete standard Harness. A hosts the frontend and its browser connects directly to B's HTTP/WebSocket service. No SSH is involved; A’s local BFF handles only credential exchange, while session traffic goes directly to B. B enables an installed cloud plugin; A needs no cloud plugin.
 
-## Publication contract
+## Key and publication contract
 
-An installed, trusted, enabled plugin contributes the profile query `frontend.publish`, listed in its client descriptor. It takes `{}` and returns:
+Cloud plugin **0.2.0** reads `AGH_CLOUD_KEY` at activation. Missing, empty or whitespace-only values fail activation and do not publish a port. The third-party sandbox operator injects the Key into B's daemon/Worker process environment. Setting it only on a launcher that reuses an existing daemon is insufficient. The plugin snapshots the value; restart B's processes to rotate it.
+
+An installed, trusted, enabled plugin contributes the profile query `frontend.publish`, listed in its client descriptor. It takes `{}` and returns the structure below. `keySha256` must be the actual 64-character lowercase SHA-256 verifier; the original Key is never returned:
 
 ```json
-{"enabled":true,"access":"public-owner","host":"0.0.0.0","port":8443}
+{"enabled":true,"access":"key-owner","host":"0.0.0.0","port":8443,"auth":{"keySha256":"<64-character verifier>"}}
 ```
 
-`public-owner` explicitly delegates this profile's local workbench authority to everyone who can reach the port. There is no login, connection Token, Origin allowlist or reduced remote method set. Workspaces, tools, settings and package administration are public. Standard execution rules and tool approvals still apply. This is one profile, not multiple user identities or tenant isolation.
+A's **Settings → Advanced → Cloud connection** saves the entered Key through **A's existing credential manager** as a generic credential labelled `Cloud · <origin>`. Changing the Key updates that credential. Disconnecting preserves it. Browser storage contains only the origin and `secret://generic/...` reference, never the raw Key. Reopening the page in that browser reconnects using the stored reference. A different browser needs a new binding. This browser-owned binding is not yet counted in the backend credential configuration-reference list; deleting the credential prevents the next authorization. Credential administration never displays its value.
 
-`agh serve` reads the current ready installed roster and calls the declared profile service through its private connection. It owns the public listener and forwards only to its own fixed local Web/daemon endpoints. At this explicit publication boundary, request provenance is translated to local workbench authority. The default local listeners keep their Host/Origin checks. The daemon's authenticated remote WSS remains a separate transport with its existing identity requirements.
+1. The browser POSTs B's origin and credential reference to **A's local** `/_agnes/cloud-connection/authorize`. This exact-origin BFF invokes admin-tier `admin.cloud.authorize` over its private daemon connection, requiring credential-read/write and package-activation administration permissions.
+2. A's daemon reads its credential store and POSTs `{key}` to B's `/_agnes/remote-frontend/auth`. B requires an exact, case-sensitive match to its deployment Key. This version does not contact a third-party entitlement service.
+3. B issues an eight-hour temporary bearer capability. A's browser receives only that capability and connects directly to B; conversation traffic does not pass through A's BFF.
+4. All HTTP APIs, plugin resources and WebSocket upgrades use `/_agnes/remote-access/<capability>/...`. Relative module imports retain the prefix. B validates then strips it before forwarding to fixed local endpoints. Bare API/resource/socket requests fail authentication. Expiry closes sockets and reconnect renews authorization. The temporary capability is also sensitive: avoid logging full resource URLs. Responses set `no-store` and `no-referrer`.
 
-Only one publication owner is allowed. Missing, disabled, blocked, ambiguous or failed declarations provide no remote service; local development folders and old session pins cannot open the port. Every HTTP request and WebSocket upgrade checks the current declaration. A 500 ms reconciliation loop closes the listener and sockets on revocation/configuration change; failed Worker RPCs can add their bounded timeout to this delay. Closing the Web launcher stops publication. Existing tasks are not implicitly cancelled.
+`key-owner` grants this profile's full workbench authority, including workspaces, tools, settings and plugin administration. Standard execution policies and tool approvals remain. It does not provide per-user identities or tenant isolation. A matching caller can still disable/remove the cloud plugin; protection against that disconnection is not implemented. The server retains legacy `public-owner` compatibility for other declarations, but **A's updated cloud connection refuses an unauthenticated downgrade**. Plugin 0.2.0 always uses `key-owner`.
 
-Optional `tls: {"certFile":"...","keyFile":"..."}` names B-local files and enables HTTPS/WSS. Both paths are required; otherwise use HTTP/WS. HTTP APIs and WebSockets share one port. TLS encrypts traffic without adding user authentication.
+`agh serve` owns the listener, reads the current ready installed roster and calls the declaration through a private connection. Missing, disabled, blocked, conflicting or failed declarations provide no cloud service. Each HTTP request/upgrade checks the declaration. The 500 ms reconciliation loop closes listeners and connections after revocation/configuration changes, plus any bounded Worker RPC timeout. Closing the launcher also stops publication; existing tasks are not implicitly cancelled. Default local Host/Origin checks and the separate multi-user authenticated remote WSS transport remain intact.
+
+Optional `tls: {"certFile":"...","keyFile":"..."}` names B-local certificate/private-key files. Both enable HTTPS/WSS; otherwise the listener uses HTTP/WS. HTTP is for trusted test networks; deployments should use HTTPS/WSS or the sandbox platform's HTTPS gateway to protect Keys and capabilities in transit. APIs and WebSockets share one port.
 
 ## Two-computer setup
 
-1. Build the modified standard Harness on A and B through the repository toolchain entry with `--filter @agnes/cli build:local`.
-2. On B run `agh plugins add /absolute/path/to/agh-cloud-plugin`, review and confirm, or use the Web plugin installer. Keep `agh serve` running for the same home/profile.
-3. After activation the launcher prints `public-owner frontend: ...`. Change host/port/TLS through standard plugin configuration. Allow the chosen port in B's firewall.
-4. Open A's own AGH page. Go to **Settings → Advanced → Cloud connection**, enter B's reachable origin such as `http://192.168.1.20:8443`, then **Save and connect**. Address, reconnect and disconnect controls all live in this settings page; the outer workbench has no cloud connection buttons. Do not use the bind address `0.0.0.0` as a target.
-5. **Projects** shows expandable **Local sessions** and **Cloud sessions** groups together. Use the plus beside a group to create a conversation in that environment; cloud conversations use B's workspaces, models and tools. Select any session to switch. Opening B's published origin directly also serves B's own workbench.
+1. Update and build the matching standard Harness on both A and B through the repository toolchain entry with `--filter @agnes/cli build:local`, then restart their daemons to load the new code. Update B to cloud plugin 0.2.0.
+2. Inject `AGH_CLOUD_KEY` on B. If its daemon already exists, stop/restart it through B's deployment procedure under the new environment so daemon and Worker inherit the value. Install `agh plugins add /absolute/path/to/agh-cloud-plugin-0.2.0.tgz`, review and trust it; keep `agh serve` running for that home/profile.
+3. The launcher prints `key-owner frontend: ...`. Configure host/port/TLS using normal plugin settings and permit the port in B's firewall. Do not put the Key in plugin configuration.
+4. Open A's own page, **Settings → Advanced → Cloud connection**. Enter B's reachable origin, such as `http://192.168.1.20:8443`, and the matching Key, then **Save and connect**. Do not use bind address `0.0.0.0` as a target.
+5. **Projects** shows expandable **Local sessions** and **Cloud sessions**. Once ready, the cloud plus creates a B session using B's workspace, tools and current model execution. B's bare cloud URL no longer opens an anonymous workbench; connect from A with the Key.
 
-Browser private-network permissions, mixed-content and certificate rules still apply. An HTTPS frontend needs a compatible secure remote endpoint. Certificate validation is not bypassed.
+Browser private-network permissions, mixed-content and certificate rules still apply. HTTPS frontends need a compatible secure remote endpoint.
 
 ## Client routing and state
 
-The `remote` page parameter selects B. Before loading controllers the browser checks `/_agnes/remote-frontend` for publication version, access mode, instance identity and fixed WebSocket path. A serves its own frontend code/vendor modules; backend HTTP, plugin assets and sockets use B. CSP adds only the explicitly selected origin and its WS(S) counterpart. A's cookies are not sent to B, and backend HTTP does not follow redirects to arbitrary targets.
+The `remote` page parameter selects B. Before loading controllers after Key authorization the browser checks the protected `/_agnes/remote-frontend` for publication version, access mode, instance identity and fixed WebSocket path. A serves its own frontend code/vendor modules; backend HTTP, plugin assets and sockets use B. CSP adds only the explicitly selected origin and its WS(S) counterpart. A's cookies are not sent to B, and backend HTTP does not follow redirects to arbitrary targets.
 
 The unified A sidebar groups sessions by environment and identifies each by its backend/session pair. A remembers the cloud origin in this browser and reconnects after reload. **Load more** fetches additional history, up to 5,000 sessions per group. The sidebar reuses the standard brand, new-conversation, collapse, search and settings components. Search and its shortcut open the selected environment’s original session search panel. Rows retain the original timestamps, activity and action menus; rename, pin, archive and other actions run through that environment’s existing controllers.
 
@@ -44,8 +51,8 @@ A retains an independent frontend runtime context for each environment, both ser
 
 Journals, drafts and model/permission memory are separated by backend origin and instance identity. File references, directory selection, plugins, MCP and model credentials belong to their environment. Settings and plugin navigation target the current environment shown in the toolbar; settings fall back to local if cloud is unavailable, and cloud connection preferences always belong to A's browser. Saving a connection keeps settings open to observe its status; then create or select a cloud session in its group. Cloud failure does not interrupt local conversations; reconnect once service recovers. Explicit disconnection or changing the cloud origin releases the previous cloud page context. Reconnection restores B's records, but unsubmitted drafts are not guaranteed across an explicit disconnect. Tasks already started on B follow B's backend lifecycle.
 
-Update A's standard frontend for this feature. A B installation that already supports publication can keep cloud plugin 0.1.0. This version supports one local environment and one cloud connection.
+This version requires updated standard Harness on A and B and cloud plugin 0.2.0 on B. It supports one local environment and one cloud connection.
 
-Third-party allocation, purchased Keys, model-market catalogs and usage metering are later plugin integrations. User-facing third-party model catalog queries belong to A's standard client/BFF. This publication prototype does not implement those services.
+This iteration implements environment-Key loading, A's credential management and connection authentication only. Third-party allocation/purchase, model catalogs, inference and usage reporting are not implemented. The next stage lets B's cloud plugin use the same deployment Key to load third-party cloud models and run inference; A reads B's cloud catalog, independently of B's local model configuration.
 
 Remote frontend plugin code executes in A’s workbench under the existing trusted-plugin model. This prototype isolates backend execution and storage by environment; it does not sandbox that browser code away from A’s page. Connecting therefore selects both B’s backend and its trusted frontend contributions.

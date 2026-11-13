@@ -3,7 +3,12 @@ import type { BackendId, BackendSnapshot } from './frame-contract.js'
 
 export const CLOUD_ORIGIN_KEY = 'agnes.cloud.origin.v1'
 export type CloudConnectionStatus = 'unconfigured' | 'connecting' | 'ready' | 'disconnected' | 'error'
-export type CloudConnectionState = { status: CloudConnectionStatus; origin?: string; error?: string }
+export type CloudConnectionState = {
+  status: CloudConnectionStatus
+  origin?: string
+  error?: string
+  hasKey?: boolean
+}
 
 export function cloudConnectionState(origin?: string, snapshot?: BackendSnapshot): CloudConnectionState {
   if (!origin) return { status: 'unconfigured' }

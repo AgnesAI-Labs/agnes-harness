@@ -639,12 +639,33 @@ it('manages write-only generic credentials with MCP references, restart persiste
     return response
   }
   try {
+    const cloud = () =>
+      endpoint.handle({
+        jsonrpc: '2.0',
+        id: ++command,
+        method: '_agnes/v1/admin.cloud.authorize',
+        params: {
+          origin: 'http://cloud.fixture:8443',
+          credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+        },
+      })
+    expect(await cloud()).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
     expect(await call('create', { label: 'MCP', value: canary })).toHaveProperty(
       'error.data.code',
       'CAPABILITY_DENIED',
     )
     endpoint.conn.authKind = 'local'
     endpoint.conn.credentialKind = 'local'
+    for (const permissions of [
+      ['packages.read'],
+      ['packages.activate', 'credentials.read'],
+      ['packages.activate', 'credentials.write'],
+    ] as const) {
+      authority = localPackageAdminAuthority(permissions)
+      expect(await cloud()).toHaveProperty('error.data.code', 'CAPABILITY_DENIED')
+    }
+    authority = localPackageAdminAuthority()
+    expect(await cloud()).toHaveProperty('error.data.cause.code', 'CONFIG_CREDENTIAL_NOT_FOUND')
     for (const permissions of [[], ['packages.read', 'credentials.read'], ['packages.activate']] as const) {
       authority = localPackageAdminAuthority(permissions)
       expect(await call('create', { label: 'MCP', value: canary })).toHaveProperty(

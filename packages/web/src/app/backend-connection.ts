@@ -5,7 +5,7 @@ import { frontendBackendIdentity, readRemoteFrontendInfo, selectedRemoteOrigin }
 /** One page owns one immutable backend context; switching creates a fresh context before replay. */
 export function createBackendConnection(wsUrl: string | undefined) {
   const remote = selectedRemoteOrigin()
-  const namespace = `agnes-web-commands:${wsUrl ?? location.origin}${remote ? `:${frontendBackendIdentity()}` : ''}`
+  const namespace = `agnes-web-commands:${remote ? frontendBackendIdentity() : (wsUrl ?? location.origin)}`
   return {
     wsUrl,
     client: createClient({
@@ -17,9 +17,10 @@ export function createBackendConnection(wsUrl: string | undefined) {
       journal: localStorageJournal(sessionStorage, namespace),
     }),
     probe: remote
-      ? async (signal: AbortSignal, manual: boolean) => {
-          const info = await readRemoteFrontendInfo(remote, signal)
-          return manual || JSON.stringify([remote, info.instanceId]) === frontendBackendIdentity()
+      ? async (signal: AbortSignal) => {
+          await readRemoteFrontendInfo(remote, signal)
+          // A reload renews the authenticated transport and its backend-scoped journal.
+          return true
         }
       : bootstrapProbe((input, init) => fetch(input, init), wsUrl ?? ''),
   }

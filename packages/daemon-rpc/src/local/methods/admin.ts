@@ -59,6 +59,14 @@ export function registerAppServerAdmin(
       return service.credentials(action, input, ctx.conn.principalId)
     })
   }
+  endpoint.register('_agnes/v1/admin.cloud.authorize', async (input, ctx) => {
+    // Exchanging a secret at a selected destination needs administration, not metadata-only access.
+    requireLocalAdminAuthority(ctx, authority, true)
+    const permissions = authority(ctx)?.permissions ?? []
+    if (!permissions.includes('credentials.read') || !permissions.includes('credentials.write'))
+      throw rpcError('CAPABILITY_DENIED')
+    return service.authorizeCloud(input as import('@agnes/protocol/gen/app-server').AdminCloudAuthorize)
+  })
   register('_agnes/v1/admin.bundles.get', false, () => service.bundles())
   register('_agnes/v1/admin.bundles.save', true, (input) => service.saveBundles(input as AdminBundlesSave))
   register('_agnes/v1/admin.composition.get', false, (input) =>

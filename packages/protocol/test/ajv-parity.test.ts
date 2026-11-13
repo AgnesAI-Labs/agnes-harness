@@ -7924,6 +7924,26 @@ const AppSamples: Record<string, Sample> = {
     ],
     note: 'Closed write-only credential contract',
   },
+  AdminCloudAuthorize: {
+    valid: {
+      origin: 'http://cloud.fixture:8443',
+      credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+    },
+    invalid: [
+      {},
+      { origin: 'http://cloud.fixture:8443', key: 'raw-value' },
+      { origin: 'http://cloud.fixture', credentialRef: 'env:CLOUD_KEY' },
+    ],
+    note: 'Resolve only managed credential references',
+  },
+  AdminCloudAuthorization: {
+    valid: { token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`, expiresAt: 1000 },
+    invalid: [
+      { token: 'invalid', expiresAt: 1000 },
+      { token: `zzzzzzzz.${'A'.repeat(22)}.${'B'.repeat(43)}`, expiresAt: 1000, key: 'must-not-return' },
+    ],
+    note: 'Return a temporary capability, never the original credential',
+  },
   AdminCredentialCreate: {
     valid: { label: 'Work key', value: 'canary' },
     invalid: [{ label: 'Work key' }, { label: 'Work key', value: 'x\ncanary' }],
@@ -8978,6 +8998,11 @@ describe('McpServerDescriptor: authorizationStatus field', () => {
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/admin.cloud.authorize': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminCloudAuthorize',
+    result: 'AdminCloudAuthorization',
+  },
   '_agnes/v1/channels.catalog': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
     params: 'AdminEmpty',
@@ -10045,6 +10070,18 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/admin.cloud.authorize': {
+    valid: {
+      origin: 'http://cloud.fixture:8443',
+      credentialRef: 'secret://generic/11111111-1111-1111-1111-111111111111',
+    },
+    invalid: [
+      {},
+      { origin: 'http://cloud.fixture:8443', key: 'raw-value' },
+      { origin: 'http://cloud.fixture', credentialRef: 'env:CLOUD_KEY' },
+    ],
+    note: 'The daemon exchanges an A-owned credential reference; no raw Key crosses this interface',
+  },
   '_agnes/v1/channels.catalog': {
     valid: {},
     invalid: [{ unexpected: true }],
@@ -11081,6 +11118,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/admin.cloud.authorize': AppSamples.AdminCloudAuthorization!,
   '_agnes/v1/channels.catalog': {
     valid: { providers: [] },
     invalid: [{}, { providers: 'invalid' }],

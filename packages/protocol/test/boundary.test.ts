@@ -61,6 +61,18 @@ describe('protocol src boundary', () => {
     expect(Object.keys(mod).sort()).toEqual(
       [
         'AGNES_ERRORS',
+        'CLOUD_AUTHORIZATION_PATH',
+        'REMOTE_FRONTEND_AUTH',
+        'REMOTE_FRONTEND_INFO',
+        'REMOTE_FRONTEND_KEY_VERSION',
+        'REMOTE_FRONTEND_SERVICE',
+        'REMOTE_FRONTEND_SESSION_PREFIX',
+        'REMOTE_FRONTEND_VERSION',
+        'REMOTE_FRONTEND_WS',
+        'frontendPublication',
+        'remoteFrontendOrigin',
+        'remoteFrontendSessionPath',
+        'withRemoteFrontend',
         'SKILL_BUNDLE_LIMITS',
         'SKILL_BUNDLE_FRONTMATTER_KEYS',
         'SKILL_BUNDLE_MARKER',

@@ -10,10 +10,13 @@ import type { Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
 import {
   type FrontendPublication,
+  REMOTE_FRONTEND_AUTH,
   REMOTE_FRONTEND_INFO,
+  REMOTE_FRONTEND_KEY_VERSION,
   REMOTE_FRONTEND_VERSION,
   REMOTE_FRONTEND_WS,
 } from '@agnes/protocol'
+import { publicationAuthentication } from './published-auth.js'
 
 const HOP_HEADERS = new Set([
   'connection',
@@ -35,8 +38,9 @@ function headers(source: IncomingHttpHeaders): IncomingHttpHeaders {
 }
 
 /**
- * Explicit public-owner publication. The installed plugin delegates the same profile authority as
- * the local workbench to every network caller. This is not the authenticated multi-user WSS leg.
+ * Explicit profile-owner publication. Key mode verifies a deployment credential before delegating
+ * local workbench authority; legacy public mode delegates it to every network caller.
+ * This is not the authenticated multi-user WSS leg.
  * Targets are fixed by the launcher; callers cannot choose an upstream or inject proxy identity.
  */
 export async function createPublishedFrontend(input: {
@@ -47,7 +51,12 @@ export async function createPublishedFrontend(input: {
   current(): Promise<boolean>
 }): Promise<{ url: string; close(): Promise<void> }> {
   const { publication } = input
-  if (!publication.enabled || publication.access !== 'public-owner') throw new Error('publication disabled')
+  if (!publication.enabled || !['public-owner', 'key-owner'].includes(publication.access))
+    throw new Error('publication disabled')
+  const authentication =
+    publication.access === 'key-owner'
+      ? publicationAuthentication(publication.auth?.keySha256 ?? '')
+      : undefined
   const local = new URL(input.webOrigin)
   if (local.protocol !== 'http:' || local.hostname !== '127.0.0.1')
     throw new Error('publication needs a local workbench')
@@ -64,7 +73,8 @@ export async function createPublishedFrontend(input: {
   const forwarded = (source: IncomingHttpHeaders, upgrade = false): IncomingHttpHeaders => {
     const result = headers(source)
     for (const key of Object.keys(result)) {
-      if (/^(?:forwarded|x-forwarded-|x-agnes-|proxy-authorization)/iu.test(key)) delete result[key]
+      if (/^(?:forwarded|x-forwarded-|x-agnes-|proxy-authorization|authorization|cookie|referer)/iu.test(key))
+        delete result[key]
     }
     result.host = local.host
     result.origin = local.origin
@@ -82,6 +92,8 @@ export async function createPublishedFrontend(input: {
       'access-control-allow-headers': req.headers['access-control-request-headers'] ?? 'content-type',
       'access-control-expose-headers': 'content-disposition, content-type',
       'access-control-allow-private-network': 'true',
+      'referrer-policy': 'no-referrer',
+      'cache-control': 'no-store',
     }
     try {
       if (!(await allowed())) {
@@ -94,7 +106,26 @@ export async function createPublishedFrontend(input: {
         res.writeHead(204, cors).end()
         return
       }
-      const path = new URL(req.url ?? '/', local).pathname
+      if (authentication && new URL(req.url ?? '/', local).pathname === REMOTE_FRONTEND_AUTH) {
+        if (req.method !== 'POST') {
+          req.resume()
+          res.writeHead(405, cors).end()
+          return
+        }
+        const session = await authentication.exchange(req)
+        res
+          .writeHead(session ? 200 : 401, { ...cors, 'content-type': 'application/json' })
+          .end(JSON.stringify(session ?? { error: 'invalid_cloud_key' }))
+        return
+      }
+      const authorized = authentication?.resolve(req.url ?? '/')
+      if (authentication && !authorized) {
+        req.resume()
+        res.writeHead(401, cors).end()
+        return
+      }
+      const requestUrl = authorized?.url ?? req.url ?? '/'
+      const path = new URL(requestUrl, local).pathname
       if (path === '/' && !new URL(req.url ?? '/', local).searchParams.has('remote')) {
         const publicOrigin = new URL(`${publication.tls ? 'https' : 'http'}://${req.headers.host}`).origin
         const target = new URL(req.url ?? '/', publicOrigin)
@@ -110,8 +141,8 @@ export async function createPublishedFrontend(input: {
         }
         res.writeHead(200, { ...cors, 'content-type': 'application/json', 'cache-control': 'no-store' }).end(
           JSON.stringify({
-            version: REMOTE_FRONTEND_VERSION,
-            access: 'public-owner',
+            version: authentication ? REMOTE_FRONTEND_KEY_VERSION : REMOTE_FRONTEND_VERSION,
+            access: publication.access,
             wsPath: REMOTE_FRONTEND_WS,
             instanceId: input.instanceId,
           }),
@@ -123,7 +154,7 @@ export async function createPublishedFrontend(input: {
           hostname: local.hostname,
           port: local.port,
           method: req.method,
-          path: req.url?.startsWith('/') ? req.url : '/',
+          path: requestUrl.startsWith('/') ? requestUrl : '/',
           headers: forwarded(req.headers),
         },
         (reply) => {
@@ -131,6 +162,13 @@ export async function createPublishedFrontend(input: {
           // Do not send a browser back to B's loopback address after a local canonical redirect.
           if (typeof output.location === 'string' && output.location.startsWith(local.origin))
             output.location = output.location.slice(local.origin.length) || '/'
+          if (
+            authorized &&
+            typeof output.location === 'string' &&
+            output.location.startsWith('/') &&
+            !output.location.startsWith('//')
+          )
+            output.location = `${authorized.prefix}${output.location}`
           res.writeHead(reply.statusCode ?? 502, output)
           reply.pipe(res)
         },
@@ -165,7 +203,13 @@ export async function createPublishedFrontend(input: {
         socket.end('HTTP/1.1 503 Unavailable\r\nConnection: close\r\n\r\n')
         return
       }
-      const rpc = new URL(req.url ?? '/', local).pathname === REMOTE_FRONTEND_WS
+      const authorized = authentication?.resolve(req.url ?? '/')
+      if (authentication && !authorized) {
+        socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
+        return
+      }
+      const requestUrl = authorized?.url ?? req.url ?? '/'
+      const rpc = new URL(requestUrl, local).pathname === REMOTE_FRONTEND_WS
       const target = rpc ? new URL(input.wsUrl()) : local
       if (!['http:', 'ws:'].includes(target.protocol) || target.hostname !== '127.0.0.1')
         throw new Error('invalid local target')
@@ -174,7 +218,7 @@ export async function createPublishedFrontend(input: {
       const upstream = httpRequest({
         hostname: target.hostname,
         port: target.port,
-        path: rpc ? '/' : req.url,
+        path: rpc ? '/' : requestUrl,
         method: 'GET',
         headers: h,
       })
@@ -201,6 +245,11 @@ export async function createPublishedFrontend(input: {
         socket.once('close', () => peer.destroy())
         peer.once('close', () => socket.destroy())
         socket.pipe(peer).pipe(socket)
+        if (authorized) {
+          const timer = setTimeout(() => socket.destroy(), Math.max(0, authorized.expiresAt - Date.now()))
+          timer.unref()
+          socket.once('close', () => clearTimeout(timer))
+        }
       })
       upstream.on('response', (reply) => {
         reply.resume()

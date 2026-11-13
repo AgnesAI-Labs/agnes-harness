@@ -89,7 +89,7 @@ export async function watchFrontendPublication(input: {
           return
         }
         active = { lease, server }
-        report(`public-owner frontend: ${server.url}`)
+        report(`${lease.publication.access} frontend: ${server.url}`)
       } catch {
         report('publication failed to start; check listener and TLS configuration')
       }

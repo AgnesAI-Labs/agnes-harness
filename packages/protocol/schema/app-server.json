@@ -2150,6 +2150,28 @@
       },
       "required": ["items"]
     },
+    "AdminCloudAuthorize": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "origin": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "credentialRef": { "type": "string", "pattern": "^secret://generic/[a-f0-9-]{36}$", "maxLength": 64 }
+      },
+      "required": ["origin", "credentialRef"]
+    },
+    "AdminCloudAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "token": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-z0-9]+\\.[A-Za-z0-9_-]{22}\\.[A-Za-z0-9_-]{43}$"
+        },
+        "expiresAt": { "type": "number" }
+      },
+      "required": ["token", "expiresAt"]
+    },
     "AdminCredentialCreate": {
       "type": "object",
       "additionalProperties": false,
@@ -4136,6 +4158,10 @@
     }
   },
   "x-methods": {
+    "_agnes/v1/admin.cloud.authorize": {
+      "params": "AdminCloudAuthorize",
+      "result": "AdminCloudAuthorization"
+    },
     "_agnes/v1/admin.feedback": {
       "params": "AdminFeedbackParams",
       "result": "AdminFeedbackResult"

@@ -10,6 +10,7 @@ import {
 import { Button, Icon, mountApplication, useDocumentLanguage } from '@agnes/web-ui'
 import type { SidebarHandle } from '@agnes/web-units/shell'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { readCloudCredentialRef, saveCloudKey } from './cloud-key.js'
 import { CLOUD_SETTINGS_SECTION, cloudConnectionAction } from './cloud-settings-bridge.js'
 import {
   BACKEND_FRAME_COMMAND,
@@ -45,12 +46,14 @@ function BackendWorkbench() {
   const [cloud, setCloud] = useState(initial.remote)
   const [active, setActive] = useState<BackendId>(initial.active)
   const [configure, setConfigure] = useState(initial.configure)
+  const [configurationError, setConfigurationError] = useState('')
+  const connectionRevision = useRef(0)
   const [states, setStates] = useState<Partial<Record<BackendId, BackendSnapshot>>>({})
   const [revisions, setRevisions] = useState({ local: 0, cloud: 0 })
   const sidebar = useRef<SidebarHandle>(null)
   const language = useDocumentLanguage()
   const catalog = workbenchCatalog[language === 'zh-CN' ? 'zh-CN' : 'en']
-  const t = (key: keyof typeof catalog) => catalog[key]
+  const t = useCallback((key: keyof typeof catalog) => catalog[key], [catalog])
   const frames = useRef<Partial<Record<BackendId, HTMLIFrameElement>>>({})
   const pending = useRef<Partial<Record<BackendId, { command: BackendCommand; commandId: string }>>>({})
   const intent = useRef<Partial<Record<BackendId, string>>>({})
@@ -103,8 +106,23 @@ function BackendWorkbench() {
     [send, setAddress],
   )
   const connect = useCallback(
-    (value: string, activate = true) => {
+    async (value: string, activate = true, key?: string) => {
+      const revision = ++connectionRevision.current
+      setConfigurationError('')
       const next = remoteFrontendOrigin(value)
+      const changedKey = key !== undefined
+      try {
+        if (key !== undefined) await saveCloudKey(next, key)
+      } catch {
+        if (revision === connectionRevision.current) setConfigurationError(t('keySaveFailed'))
+        return
+      }
+      if (revision !== connectionRevision.current) return
+      if (!readCloudCredentialRef(next)) {
+        setConfigurationError(t('keyRequired'))
+        setConfigure(true)
+        return
+      }
       safeThemeStorage().setItem(CLOUD_ORIGIN_KEY, next)
       if (next !== latest.current.cloud) {
         setStates((current) => {
@@ -115,7 +133,7 @@ function BackendWorkbench() {
         delete intent.current.cloud
         setCloud(next)
         latest.current.cloud = next
-      } else if (!latest.current.states.cloud?.connected) {
+      } else if (changedKey || !latest.current.states.cloud?.connected) {
         setStates((current) => {
           const { cloud: _previous, ...rest } = current
           return rest
@@ -124,7 +142,7 @@ function BackendWorkbench() {
       }
       if (activate) select('cloud')
     },
-    [select],
+    [select, t],
   )
   const retry = useCallback((backend: BackendId) => {
     setStates((current) => {
@@ -135,6 +153,8 @@ function BackendWorkbench() {
     setRevisions((current) => ({ ...current, [backend]: current[backend] + 1 }))
   }, [])
   const disconnect = useCallback(() => {
+    connectionRevision.current++
+    setConfigurationError('')
     safeThemeStorage().removeItem(CLOUD_ORIGIN_KEY)
     setCloud(undefined)
     latest.current.cloud = undefined
@@ -159,7 +179,7 @@ function BackendWorkbench() {
         return
       const action = cloudConnectionAction(event.data)
       if (action) {
-        if (action.action === 'connect') connect(action.origin, false)
+        if (action.action === 'connect') connect(action.origin, false, action.key)
         else if (action.action === 'disconnect') disconnect()
         else if (latest.current.cloud) retry('cloud')
         return
@@ -212,13 +232,17 @@ function BackendWorkbench() {
     return () => window.removeEventListener('message', receive)
   }, [connect, disconnect, retry, select, setAddress])
   useEffect(() => {
-    const state = cloudConnectionState(cloud, states.cloud)
+    const state = {
+      ...cloudConnectionState(cloud, states.cloud),
+      hasKey: Boolean(cloud && readCloudCredentialRef(cloud)),
+      ...(configurationError ? { error: configurationError } : {}),
+    }
     for (const frame of Object.values(frames.current))
       frame.contentWindow?.postMessage(
         { type: BACKEND_FRAME_MESSAGE, kind: 'cloud-state', state },
         location.origin,
       )
-  }, [cloud, states])
+  }, [cloud, states, configurationError])
   useEffect(() => {
     if (configure && states.local?.ready) send('local', { kind: 'settings', section: CLOUD_SETTINGS_SECTION })
   }, [configure, states.local?.ready, send])

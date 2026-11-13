@@ -128,13 +128,15 @@ it('keeps cloud connection actions inside settings and rejects unsafe origins', 
     dispose = mountApplication(
       host,
       <CloudConnectionSettings
-        state={{ status: 'ready', origin: 'http://cloud.test:8443' }}
+        state={{ status: 'ready', origin: 'http://cloud.test:8443', hasKey: true }}
         onAction={(action) => actions.push(action)}
       />,
     )
   })
   const find = (text: string) =>
     [...host.querySelectorAll('button')].find((button) => button.textContent === text)
+  expect(host.querySelector<HTMLInputElement>('#cloud-service-key')?.type).toBe('password')
+  expect(host.querySelector<HTMLInputElement>('#cloud-service-key')?.value).toBe('')
   await act(async () => find('Save and connect')?.click())
   await act(async () => find('Reconnect')?.click())
   await act(async () => find('Disconnect cloud')?.click())

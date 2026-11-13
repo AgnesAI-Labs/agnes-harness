@@ -17,6 +17,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/pluginStreams.endpoint': 'admin',
   '_agnes/v1/admin.feedback': 'admin',
   '_agnes/v1/admin.credentials.list': 'admin',
+  '_agnes/v1/admin.cloud.authorize': 'admin',
   '_agnes/v1/admin.credentials.create': 'admin',
   '_agnes/v1/admin.credentials.set': 'admin',
   '_agnes/v1/admin.credentials.rename': 'admin',

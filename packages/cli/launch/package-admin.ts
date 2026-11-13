@@ -43,6 +43,7 @@ import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
 import { channelRelay } from './channel-relay.js'
 import { localClientExamples } from './client-examples.js'
+import { cloudAuthorizationRelay } from './cloud-authorization.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
 import { launchFailure } from './launch-failure.js'
@@ -138,6 +139,10 @@ export function localPackageAdmin(
       throw error
     }))
   const examples = localClientExamples(backend, client, initialize)
+  const handleCloudAuthorization = cloudAuthorizationRelay(origin, async (input) => {
+    await initialize()
+    return client.request('_agnes/v1/admin.cloud.authorize', input)
+  })
   // createAdminSurface validates each schema before dispatching this fixed typed mapping.
   const invoke = async (action: AdminSurfaceAction, params: unknown): Promise<unknown> => {
     await initialize()
@@ -464,6 +469,7 @@ export function localPackageAdmin(
     planCommand: (input: import('@agnes/protocol').AppServerParams<'_agnes/v1/admin.plan'>) =>
       client.request('_agnes/v1/admin.plan', input),
     handle: async (request: IncomingMessage, response: ServerResponse) =>
+      (await handleCloudAuthorization(request, response)) ||
       (await handleDoctor(request, response)) ||
       (await handleContext(request, response)) ||
       (await surface.handle(request, response)),
