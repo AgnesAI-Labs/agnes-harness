@@ -237,3 +237,84 @@ it('registers only turn_stopping and disposes registration', () => {
   f.dispose()
   expect(vi.mocked(f.plugin.hooks.register).mock.results[0]!.value).toHaveBeenCalled()
 })
+it.each(['reference clear', 'distinct command'] as const)(
+  'sends no judgment while genuine goal suppression survives %s',
+  async (kind) => {
+    const f = fixture()
+    const p = createConversationProjection('plugin/test')
+    const content = (text: string) => [{ type: 'text', text }]
+    let s = p.apply(
+      f.state,
+      row(
+        3,
+        'inbox',
+        {
+          items: [
+            {
+              itemId: 'old',
+              commandId: 'old-create',
+              actor,
+              kind: 'prompt',
+              content: content('/goal create task'),
+            },
+          ],
+        },
+        'system',
+      ),
+    )
+    if (kind === 'reference clear') {
+      s = p.apply(
+        s,
+        row(
+          4,
+          'inbox',
+          {
+            items: [
+              {
+                itemId: 'mixed',
+                commandId: 'mixed',
+                actor,
+                kind: 'prompt',
+                content: [
+                  ...content('/goal'),
+                  {
+                    type: 'text',
+                    text: 'clear',
+                    reference: {
+                      source: 'session',
+                      id: 'quoted',
+                      label: 'Quoted',
+                      hash: 'a'.repeat(64),
+                      truncated: false,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+          'system',
+        ),
+      )
+    } else {
+      s = p.apply(
+        s,
+        row(4, 'user/message', { kind: 'prompt', commandId: 'clear', content: content('/goal clear') }),
+      )
+      s = p.apply(
+        s,
+        row(5, 'user/message', {
+          kind: 'prompt',
+          commandId: 'new-create',
+          content: content('/goal create task'),
+        }),
+      )
+    }
+    f.state = p.apply(
+      s,
+      row(6, 'assistant/message', { stopReason: 'end_turn', content: content('I will act now') }),
+    )
+    expect(await f.run()).toEqual({ action: 'stop' })
+    expect(f.deps.judge).not.toHaveBeenCalled()
+    expect(f.append).not.toHaveBeenCalled()
+  },
+)

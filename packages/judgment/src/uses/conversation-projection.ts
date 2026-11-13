@@ -3,7 +3,7 @@ import type { PluginProjectionDef } from '@agnes/extension-api'
 import { object } from '../questions.js'
 
 export const CONVERSATION = 'stop.conversation'
-type Receipt = { id: string; token: string; present: boolean; delivered: boolean }
+type Receipt = { id: string; token: string; commandId?: string; present: boolean; delivered: boolean }
 export type ConversationState = {
   child: boolean
   request: { seq: number; text: string } | null
@@ -21,6 +21,12 @@ const textOf = (content: unknown) =>
         )
         .join('\n')
     : ''
+
+// Inbox reference excerpts become separate system/untrusted messages on delivery.
+const humanTextOf = (content: unknown) =>
+  textOf(
+    Array.isArray(content) ? content.filter((block) => object(block) && block.reference === undefined) : [],
+  )
 
 /** Principal provenance, rather than text or a command id, establishes human input. */
 function humanSource(actor: unknown, origin: unknown, trust: unknown, kind: unknown): string | null {
@@ -54,7 +60,7 @@ export function createConversationProjection(owner: string): PluginProjectionDef
   const marker = `x/${owner}/stop.continued`
   return {
     name: CONVERSATION,
-    stateVersion: 1,
+    stateVersion: 2,
     inputEventTypes: ['session/start', 'user/message', 'assistant/message', 'inbox', marker],
     maxStateBytes: 262144,
     stateSchema: {
@@ -94,7 +100,7 @@ export function createConversationProjection(owner: string): PluginProjectionDef
             item.trust ?? 'trusted',
             item.kind,
           )
-          const text = textOf(item.content).trim()
+          const text = humanTextOf(item.content).trim()
           if (!source || !/^\/goal(?:\s|$)/.test(text) || typeof item.itemId !== 'string') continue
           const seen = queued.find((receipt) => receipt.id === item.itemId)
           if (seen) {
@@ -102,7 +108,13 @@ export function createConversationProjection(owner: string): PluginProjectionDef
             continue
           }
           goalSources = goal(goalSources, source, text)
-          queued.push({ id: item.itemId, token: hash([source, text]), present: true, delivered: false })
+          queued.push({
+            id: item.itemId,
+            token: hash([source, text]),
+            present: true,
+            delivered: false,
+            ...(typeof item.commandId === 'string' && item.commandId ? { commandId: item.commandId } : {}),
+          })
         }
         // A drain is recorded before delivery: retain undelivered receipts so an old command
         // cannot undo a later clear when it subsequently appears as user/message.
@@ -112,12 +124,15 @@ export function createConversationProjection(owner: string): PluginProjectionDef
       if (event.type === 'user/message') {
         const source = humanSource(event.actor, event.origin, event.trust, data.kind ?? 'prompt')
         if (!source) return state
-        const text = textOf(data.content)
+        const text = humanTextOf(data.content)
         const token = hash([source, text.trim()])
+        const commandId = typeof data.commandId === 'string' && data.commandId ? data.commandId : undefined
         let consumed = false
         const queued = state.queued
           .map((item) => {
-            if (consumed || item.delivered || item.token !== token) return item
+            // Only legacy receipt + legacy delivery may match without a command identity.
+            if (consumed || item.delivered || item.token !== token || item.commandId !== commandId)
+              return item
             consumed = true
             return { ...item, delivered: true }
           })

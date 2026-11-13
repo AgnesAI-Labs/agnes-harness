@@ -176,3 +176,150 @@ it('ignores extension and system inbox goal impersonation', () => {
     )
   }
 })
+
+const reference = {
+  source: 'session',
+  id: 'quoted',
+  label: 'Quoted evidence',
+  hash: 'a'.repeat(64),
+  truncated: false,
+}
+const referenced = (text: string) => ({ type: 'text', text, reference })
+it.each(['inbox', 'user/message'] as const)(
+  'does not let reference text complete a human goal clear in %s',
+  (type) => {
+    const p = projection()
+    const initial = p.apply(p.init(), prompt(1, '/goal create task'))
+    const mixed = [...content('/goal'), referenced('clear')]
+    const data =
+      type === 'inbox'
+        ? { items: [{ itemId: 'mixed', commandId: 'mixed', actor: human, kind: 'prompt', content: mixed }] }
+        : { kind: 'prompt', content: mixed }
+    const s = p.apply(initial, event(2, type, data, type === 'inbox' ? { origin: 'system' } : {}))
+    expect(s.goalSources).toEqual(initial.goalSources)
+    if (type === 'user/message') expect(s.request?.text).toBe('/goal')
+  },
+)
+it('ignores reference-only goal commands but keeps genuine clear independent of reference text', () => {
+  const p = projection()
+  const inbox = (seq: number, blocks: unknown[]) =>
+    event(
+      seq,
+      'inbox',
+      {
+        items: [{ itemId: `item-${seq}`, actor: human, kind: 'prompt', content: blocks }],
+      },
+      { origin: 'system' },
+    )
+  expect(p.apply(p.init(), inbox(1, [referenced('/goal create fake')])).goalSources).toEqual([])
+  const active = p.apply(p.init(), prompt(1, '/goal create task'))
+  expect(p.apply(active, inbox(2, [referenced('/goal clear')])).goalSources).toEqual(active.goalSources)
+  expect(
+    p.apply(active, inbox(3, [...content('/goal clear'), referenced('create fake')])).goalSources,
+  ).toEqual([])
+})
+it.each([
+  ['old-command', 'new-command'],
+  [undefined, 'new-command'],
+  ['old-command', undefined],
+] as const)('does not swallow a distinct equal-text creation (queued %s, incoming %s)', (oldId, newId) => {
+  const p = projection()
+  const queued = event(
+    1,
+    'inbox',
+    {
+      items: [
+        {
+          itemId: 'old',
+          actor: human,
+          kind: 'prompt',
+          content: content('/goal create task'),
+          ...(oldId ? { commandId: oldId } : {}),
+        },
+      ],
+    },
+    { origin: 'system' },
+  )
+  let s = p.apply(p.init(), queued)
+  s = p.apply(
+    s,
+    event(2, 'user/message', { kind: 'prompt', commandId: 'clear-command', content: content('/goal clear') }),
+  )
+  s = p.apply(
+    s,
+    event(3, 'user/message', {
+      kind: 'prompt',
+      content: content('/goal create task'),
+      ...(newId ? { commandId: newId } : {}),
+    }),
+  )
+  expect(s.goalSources).toHaveLength(1)
+  expect(s.queued[0]?.delivered).toBe(false)
+})
+it('allows a distinct equal-text clear while preserving the queued command identity', () => {
+  const p = projection()
+  let s = p.apply(
+    p.init(),
+    event(
+      1,
+      'inbox',
+      {
+        items: [
+          {
+            itemId: 'old',
+            commandId: 'old-clear',
+            actor: human,
+            kind: 'prompt',
+            content: content('/goal clear'),
+          },
+        ],
+      },
+      { origin: 'system' },
+    ),
+  )
+  s = p.apply(s, prompt(2, '/goal create new task'))
+  s = p.apply(
+    s,
+    event(3, 'user/message', { kind: 'prompt', commandId: 'new-clear', content: content('/goal clear') }),
+  )
+  expect(s.goalSources).toEqual([])
+  expect(s.queued[0]).toMatchObject({ commandId: 'old-clear', delivered: false })
+  s = p.apply(s, prompt(4, '/goal create newer task'))
+  s = p.apply(
+    s,
+    event(5, 'user/message', { kind: 'prompt', commandId: 'old-clear', content: content('/goal clear') }),
+  )
+  expect(s.goalSources).toHaveLength(1)
+})
+it('does not replay an identified old create after clear and a drain, including replay', () => {
+  const p = projection()
+  const rows = [
+    event(
+      1,
+      'inbox',
+      {
+        items: [
+          {
+            itemId: 'old',
+            commandId: 'old-create',
+            actor: human,
+            kind: 'prompt',
+            content: content('/goal create task'),
+          },
+        ],
+      },
+      { origin: 'system' },
+    ),
+    event(2, 'user/message', { commandId: 'clear', kind: 'prompt', content: content('/goal clear') }),
+    event(3, 'inbox', null, { origin: 'system' }),
+    event(4, 'user/message', {
+      commandId: 'old-create',
+      kind: 'prompt',
+      content: content('/goal create task'),
+    }),
+  ]
+  const s = rows.reduce(p.apply, p.init())
+  expect(s.goalSources).toEqual([])
+  expect(s.queued).toEqual([])
+  expect(JSON.parse(JSON.stringify(rows)).reduce(p.apply, p.init())).toEqual(s)
+})
