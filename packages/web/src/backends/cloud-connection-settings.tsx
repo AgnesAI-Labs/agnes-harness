@@ -5,6 +5,7 @@ import {
   SettingsGroup,
   SettingsInput,
   SettingsItem,
+  SettingsSelect,
   SettingsToolbar,
   useDocumentLanguage,
 } from '@agnes/web-ui'
@@ -32,18 +33,18 @@ export function CloudConnectionSettings({
   const catalog = workbenchCatalog[language === 'zh-CN' ? 'zh-CN' : 'en']
   const t = (key: keyof typeof catalog) => catalog[key]
   const [address, setAddress] = useState(state.origin ?? '')
-  const [key, setKey] = useState('')
+  const [credentialRef, setCredentialRef] = useState(state.credentialRef ?? '')
   const [error, setError] = useState('')
   useEffect(() => setAddress(state.origin ?? ''), [state.origin])
+  useEffect(() => setCredentialRef(state.credentialRef ?? ''), [state.credentialRef])
   const connect = () => {
     try {
       const origin = remoteFrontendOrigin(address.trim())
-      if (!key && !(state.hasKey && state.origin === origin)) {
+      if (!state.credentialOptions?.some((item) => item.id === credentialRef)) {
         setError(t('keyRequired'))
         return
       }
-      onAction({ action: 'connect', origin, ...(key ? { key } : {}) })
-      setKey('')
+      onAction({ action: 'connect', origin, credentialRef })
       setError('')
     } catch {
       setError(t('invalidOrigin'))
@@ -56,28 +57,41 @@ export function CloudConnectionSettings({
           <CloudConnectionIndicator status={state.status} t={t} />
         </SettingsItem>
         <SettingsItem
-          label={<label htmlFor="cloud-service-key">{t('cloudKey')}</label>}
+          label={<label htmlFor="cloud-service-credential">{t('cloudKey')}</label>}
           description={t('keyHelp')}
           stacked
         >
-          <SettingsInput
-            id="cloud-service-key"
-            type="password"
-            autoComplete="off"
-            maxLength={4096}
-            value={key}
-            placeholder={state.hasKey ? t('keySaved') : t('keyRequired')}
+          <SettingsSelect
+            id="cloud-service-credential"
+            value={credentialRef}
+            disabled={!state.credentialOptions}
+            onFocus={() => onAction({ action: 'refresh-credentials' })}
             onChange={(event) => {
-              setKey(event.target.value)
+              setCredentialRef(event.target.value)
               setError('')
             }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                connect()
-              }
-            }}
-          />
+          >
+            <option value="">
+              {state.credentialOptions?.length ? t('keyRequired') : t('credentialsEmpty')}
+            </option>
+            {state.credentialOptions?.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+                {state.credentialOptions?.filter((other) => other.label === item.label).length !== 1
+                  ? ` · ${item.id.slice(-8)}`
+                  : ''}
+              </option>
+            ))}
+          </SettingsSelect>
+          <SettingsToolbar>
+            <Button appearance="ghost" onClick={() => onAction({ action: 'manage-credentials' })}>
+              {t('manageCredentials')}
+            </Button>
+            <Button appearance="ghost" onClick={() => onAction({ action: 'refresh-credentials' })}>
+              {t('refreshCredentials')}
+            </Button>
+          </SettingsToolbar>
+          {state.credentialError && <p role="alert">{t('credentialsUnavailable')}</p>}
         </SettingsItem>
         <SettingsItem label={<label htmlFor="cloud-service-origin">{t('cloudOrigin')}</label>} stacked>
           <SettingsInput
@@ -115,6 +129,7 @@ export function CloudConnectionSettings({
 
 function CloudConnectionSection() {
   const state = useSyncExternalStore(cloudSettingsState.subscribe, cloudSettingsState.read)
+  useEffect(() => requestCloudConnection({ action: 'refresh-credentials' }), [])
   return <CloudConnectionSettings state={state} onAction={requestCloudConnection} />
 }
 

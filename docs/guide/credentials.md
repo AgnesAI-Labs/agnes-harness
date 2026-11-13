@@ -34,7 +34,7 @@ The MCP add and edit dialog also offers **New credential** beside its saved-cred
 
 ## Public contract
 
-[Cloud connection](remote-frontend.md) Keys also use A's credential store, labelled `Cloud · <origin>`. A's daemon resolves the reference and verifies it with B without returning the original value to the browser. This exchange requires local administration with `packages.activate`, `credentials.read` and `credentials.write`; metadata-read authority alone is insufficient. The browser retains only the origin/reference binding, currently outside backend configuration-reference counting. Deletion prevents the next cloud authorization; an issued temporary capability remains valid until expiry or disconnection.
+[Cloud connection](remote-frontend.md) Keys also use A's credential store, selected from existing generic credentials through the cloud connection dropdown. A's daemon resolves the reference and verifies it with B without returning the original value to the browser. This exchange requires local administration with `packages.activate`, `credentials.read` and `credentials.write`; metadata-read authority alone is insufficient. The browser retains only the origin/reference binding, currently outside backend configuration-reference counting. Deletion prevents the next cloud authorization; an issued temporary capability remains valid until expiry or disconnection.
 
 | SDK method | App Server method suffix after `_agnes/v1/admin.credentials.` | Input | Result |
 | --- | --- | --- | --- |

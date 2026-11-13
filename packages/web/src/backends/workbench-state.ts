@@ -7,7 +7,9 @@ export type CloudConnectionState = {
   status: CloudConnectionStatus
   origin?: string
   error?: string
-  hasKey?: boolean
+  credentialRef?: string
+  credentialOptions?: { id: string; label: string }[]
+  credentialError?: boolean
 }
 
 export function cloudConnectionState(origin?: string, snapshot?: BackendSnapshot): CloudConnectionState {

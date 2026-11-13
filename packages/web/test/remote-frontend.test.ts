@@ -11,7 +11,7 @@ import {
   withRemoteFrontend,
 } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
-import { readCloudCredentialRef, saveCloudKey } from '../src/backends/cloud-key.js'
+import { bindCloudCredential, readCloudCredentialRef } from '../src/backends/cloud-key.js'
 import { forgetRemoteAccess } from '../src/remote-authorization.js'
 import {
   backendResourceUrl,
@@ -20,34 +20,18 @@ import {
   selectedRemoteOrigin,
 } from '../src/remote-frontend.js'
 
-it('stores entered cloud Keys through A’s credential manager and persists only their references', async () => {
+it('binds only A’s listed credential references without creating or replacing secret values', () => {
   const origin = 'http://managed-cloud.test'
   const id = 'secret://generic/11111111-1111-1111-1111-111111111111'
-  const metadata = {
-    id,
-    label: `Cloud · ${origin}`,
-    kind: 'api-key',
-    createdAt: new Date().toISOString(),
-    references: [],
-  }
-  const requests: { url: string; body: unknown }[] = []
-  vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-    requests.push({ url, body: JSON.parse(String(init.body)) })
-    return Response.json(metadata)
-  })
+  const requests = vi.fn()
+  vi.stubGlobal('fetch', requests)
   try {
-    await Promise.all([
-      saveCloudKey(origin, 'first-fixture-key'),
-      saveCloudKey(origin, 'replacement-fixture-key'),
-    ])
+    bindCloudCredential(origin, id, [{ id }])
     expect(readCloudCredentialRef(origin)).toBe(id)
-    expect(requests).toEqual([
-      {
-        url: '/admin/api/credentials/create',
-        body: { label: `Cloud · ${origin}`, value: 'first-fixture-key' },
-      },
-      { url: '/admin/api/credentials/set', body: { id, value: 'replacement-fixture-key' } },
-    ])
+    expect(() => bindCloudCredential(origin, id, [])).toThrow('unavailable')
+    expect(() => bindCloudCredential(origin, 'raw-fixture-key', [{ id }])).toThrow('unavailable')
+    expect(readCloudCredentialRef(origin)).toBe(id)
+    expect(requests).not.toHaveBeenCalled()
     expect(localStorage.getItem(`agnes.cloud.credential.v1:${origin}`)).toBe(id)
     expect(JSON.stringify(localStorage)).not.toContain('fixture-key')
     expect(JSON.stringify(sessionStorage)).not.toContain('fixture-key')

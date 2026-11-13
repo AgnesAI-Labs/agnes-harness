@@ -5,22 +5,33 @@ import type { CloudConnectionState } from './workbench-state.js'
 
 export const CLOUD_SETTINGS_SECTION = 'cloud-connection'
 export type CloudConnectionAction =
-  | { action: 'connect'; origin: string; key?: string }
+  | { action: 'connect'; origin: string; credentialRef: string }
   | { action: 'disconnect' }
   | { action: 'reconnect' }
+  | { action: 'refresh-credentials' }
+  | { action: 'manage-credentials' }
+
+const credentialReference = (value: unknown): value is string =>
+  typeof value === 'string' && /^secret:\/\/generic\/[a-f0-9-]{36}$/u.test(value)
 
 export function cloudConnectionAction(value: unknown): CloudConnectionAction | undefined {
   if (!value || typeof value !== 'object') return
   const message = value as Record<string, unknown>
   if (message.type !== BACKEND_FRAME_MESSAGE || message.kind !== 'cloud-action') return
-  if (message.action === 'disconnect' || message.action === 'reconnect') return { action: message.action }
+  if (
+    message.action === 'disconnect' ||
+    message.action === 'reconnect' ||
+    message.action === 'refresh-credentials' ||
+    message.action === 'manage-credentials'
+  )
+    return { action: message.action }
   if (message.action === 'connect' && typeof message.origin === 'string') {
-    if (message.key !== undefined && (typeof message.key !== 'string' || message.key.length > 4096)) return
+    if ('key' in message || !credentialReference(message.credentialRef)) return
     try {
       return {
         action: 'connect',
         origin: remoteFrontendOrigin(message.origin),
-        ...(typeof message.key === 'string' && message.key ? { key: message.key } : {}),
+        credentialRef: message.credentialRef,
       }
     } catch {}
   }
@@ -47,7 +58,18 @@ export function installCloudSettingsProjection(): () => void {
       !next ||
       !['unconfigured', 'connecting', 'ready', 'disconnected', 'error'].includes(next.status) ||
       (next.error !== undefined && (typeof next.error !== 'string' || next.error.length > 4096)) ||
-      (next.hasKey !== undefined && typeof next.hasKey !== 'boolean')
+      (next.credentialRef !== undefined && !credentialReference(next.credentialRef)) ||
+      (next.credentialError !== undefined && typeof next.credentialError !== 'boolean') ||
+      (next.credentialOptions !== undefined &&
+        (!Array.isArray(next.credentialOptions) ||
+          next.credentialOptions.length > 4096 ||
+          next.credentialOptions.some(
+            (item: { id?: unknown; label?: unknown } | null) =>
+              !item ||
+              !credentialReference(item.id) ||
+              typeof item.label !== 'string' ||
+              item.label.length > 128,
+          )))
     )
       return
     try {
@@ -57,7 +79,16 @@ export function installCloudSettingsProjection(): () => void {
         status: next.status,
         ...(origin ? { origin } : {}),
         ...(next.error ? { error: next.error } : {}),
-        ...(typeof next.hasKey === 'boolean' ? { hasKey: next.hasKey } : {}),
+        ...(next.credentialRef ? { credentialRef: next.credentialRef } : {}),
+        ...(next.credentialOptions
+          ? {
+              credentialOptions: next.credentialOptions.map((item: { id: string; label: string }) => ({
+                id: item.id,
+                label: item.label,
+              })),
+            }
+          : {}),
+        ...(typeof next.credentialError === 'boolean' ? { credentialError: next.credentialError } : {}),
       }
       for (const listener of listeners) listener()
     } catch {}

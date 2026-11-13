@@ -124,31 +124,56 @@ it('keeps cloud connection actions inside settings and rejects unsafe origins', 
   const host = document.createElement('div')
   document.body.append(host)
   const actions: CloudConnectionAction[] = []
+  const credentialRef = 'secret://generic/11111111-1111-1111-1111-111111111111'
   await act(async () => {
     dispose = mountApplication(
       host,
       <CloudConnectionSettings
-        state={{ status: 'ready', origin: 'http://cloud.test:8443', hasKey: true }}
+        state={{
+          status: 'ready',
+          origin: 'http://cloud.test:8443',
+          credentialRef,
+          credentialOptions: [{ id: credentialRef, label: 'Cloud account' }],
+        }}
         onAction={(action) => actions.push(action)}
       />,
     )
   })
   const find = (text: string) =>
     [...host.querySelectorAll('button')].find((button) => button.textContent === text)
-  expect(host.querySelector<HTMLInputElement>('#cloud-service-key')?.type).toBe('password')
-  expect(host.querySelector<HTMLInputElement>('#cloud-service-key')?.value).toBe('')
+  expect(host.querySelector('input[type="password"]')).toBeNull()
+  expect(host.querySelector<HTMLSelectElement>('#cloud-service-credential')?.value).toBe(credentialRef)
+  expect(host.querySelector('#cloud-service-credential')?.textContent).toContain('Cloud account')
+  const select = host.querySelector<HTMLSelectElement>('#cloud-service-credential')
+  if (!select) throw new Error('missing cloud credential selector')
+  await act(async () => {
+    select.value = ''
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await act(async () => find('Save and connect')?.click())
+  expect(actions).toEqual([])
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe('Select a local credential.')
+  await act(async () => {
+    select.value = credentialRef
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
   await act(async () => find('Save and connect')?.click())
   await act(async () => find('Reconnect')?.click())
   await act(async () => find('Disconnect cloud')?.click())
   expect(actions).toEqual([
-    { action: 'connect', origin: 'http://cloud.test:8443' },
+    { action: 'connect', origin: 'http://cloud.test:8443', credentialRef },
     { action: 'reconnect' },
     { action: 'disconnect' },
   ])
-  const envelope = { type: 'agh.backend.frame/v1', kind: 'cloud-action', action: 'connect' }
+  const envelope = { type: 'agh.backend.frame/v1', kind: 'cloud-action', action: 'connect', credentialRef }
   expect(cloudConnectionAction({ ...envelope, origin: 'https://user:secret@cloud.test' })).toBeUndefined()
   expect(cloudConnectionAction({ ...envelope, origin: 'https://cloud.test/path' })).toBeUndefined()
   expect(cloudConnectionAction({ ...envelope, origin: 'http://cloud.test:8443/' })).toEqual(actions[0])
+  expect(
+    cloudConnectionAction({ ...envelope, origin: 'http://cloud.test', key: 'raw-value' }),
+  ).toBeUndefined()
+  await act(async () => find('Manage local credentials')?.click())
+  expect(actions.at(-1)).toEqual({ action: 'manage-credentials' })
 })
 
 it('shows only recovery guidance when a cloud page cannot start, keeping address inputs in settings', async () => {
