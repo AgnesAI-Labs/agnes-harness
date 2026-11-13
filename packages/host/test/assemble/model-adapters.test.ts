@@ -50,9 +50,10 @@ const definition = (over: Partial<ModelAdapter> = {}): ModelAdapter => ({
 })
 
 it('registers factories with immutable metadata, rejects duplicates and releases them with the plugin', async () => {
+  // Package entries are imported before the first provider registry exists on a cold boot.
+  expect(providedExternalModules['@agnes/ai/model-adapter']).toBe(adapterHelpers)
   const root = new Context()
   new ModelAdapterRegistry(root)
-  expect(providedExternalModules['@agnes/ai/model-adapter']).toBe(adapterHelpers)
   expect(Object.keys(adapterHelpers).sort()).toEqual(['PiAdapter', 'isChatModelId'])
   expect(providedExternalModules['@agnes/ai']).toBeUndefined()
   const lifecycle: string[] = []

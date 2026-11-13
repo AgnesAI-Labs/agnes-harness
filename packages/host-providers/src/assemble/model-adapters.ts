@@ -16,6 +16,10 @@ import {
 import type { RowOriginLookup } from '@agnes/plugin-runtime/host'
 import { registerProvidedExternal } from '@agnes/plugin-runtime/provided-externals'
 
+// Cold-boot package entries load before root services construct their provider registry.
+// Bind the pure public namespace before any loader snapshots its virtual modules.
+bindModelAdapterExternal(registerProvidedExternal)
+
 declare module '@agnes/cordis' {
   interface Context {
     modelAdapters: ModelAdapterRegistry
@@ -148,7 +152,6 @@ export class ModelAdapterRegistry extends Service {
     private readonly origins?: RowOriginLookup,
   ) {
     super(ctx, 'modelAdapters')
-    bindModelAdapterExternal(registerProvidedExternal)
     this.registrations = installProviderRegistry(ctx, modelAdapterKind, (owner, source, provider) =>
       this.registerOwned(owner, provider, source),
     )
