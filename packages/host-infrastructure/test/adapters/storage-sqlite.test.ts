@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { defaultIds, openTracked, projectUI, SessionLogImpl } from '@agnes/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ev } from '../../../host/test/adapters/events.js'
 import { pendingDecision } from '../../../core-ledger/testkit/decision.js'
+import { ev } from '../../../host/test/adapters/events.js'
 import { createSqliteStorage, DDL, ownerFile, type SqliteStorage } from '../../src/adapters/storage-sqlite.js'
 
 describe('storage-sqlite', () => {
@@ -178,7 +178,11 @@ describe('storage-sqlite', () => {
     const subject = { call: { name: 'shell', args: { command: { type: 'text', text: original } } } }
     const decision = pendingDecision('big', { subject })
     const call = { toolUseId: 'tool-1', name: 'shell', args: { command: 'a'.repeat(20 * 1024) }, ordinal: 0 }
-    const result = { isError: false, enforcement: { level: 'full', scope: [] }, authz: { decisionId: 'n/a' } } as const
+    const result = {
+      isError: false,
+      enforcement: { level: 'full', scope: [] },
+      authz: { decisionId: 'n/a' },
+    } as const
     await log.append([
       ev('user/message', { content: [{ type: 'text', text: original }] }),
       ev(
