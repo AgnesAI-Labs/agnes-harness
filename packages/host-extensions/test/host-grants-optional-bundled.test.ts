@@ -7,6 +7,7 @@ import {
   HOST_CAPABILITY_GRANTS,
   type HostGrantDeclaration,
   hashDirectory,
+  parseSource,
   type RuntimePluginSnapshot,
 } from '@agnes/package-manager'
 import type { RowOrigin } from '@agnes/plugin-runtime/host'
@@ -41,6 +42,7 @@ const source: RuntimePluginSnapshot = {
   generation: 1,
   snapshot: {
     packageId: pkg.id,
+    source: parseSource(ref),
     snapshotId: digest,
     version: pkg.version,
     integrity: digest,
@@ -150,12 +152,12 @@ it('rejects isolated exports even with a release declaration and matching source
     }),
   ).toEqual({})
 })
-it('rejects replaced snapshot objects after binding the same identity', () => {
+it('revalidates refreshed wrappers without dropping the same verified identity', () => {
   let current = source
   const grant = authority.pinOptionalBundledRowGrants([pkg], () => current, declarations)
   expect(grant(origin)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
   current = { ...source, snapshot: { ...source.snapshot } }
-  expect(grant(origin)).toEqual({})
+  expect(grant(origin)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
 })
 
 it('admits the real optional judgment release only with its matching source digest and row', () => {
@@ -176,6 +178,7 @@ it('admits the real optional judgment release only with its matching source dige
     snapshot: {
       ...source.snapshot,
       packageId: pkg.id,
+      source: parseSource(pkg.source),
       version: pkg.version,
       snapshotId: digest,
       integrity: digest,
@@ -194,4 +197,47 @@ it('admits the real optional judgment release only with its matching source dige
   expect(grant(row)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
   expect(grant({ ...row, exportName: 'other' })).toEqual({})
   expect(grant({ ...row, snapshotId: 'changed' })).toEqual({})
+})
+
+it.each([
+  undefined,
+  { type: 'file', ref: 'file:./other' },
+  { type: 'npm', ref },
+  { type: 'file', ref, extra: true },
+])('rejects absent, mismatched or noncanonical snapshot provenance %j', (provenance) => {
+  const { source: _provenance, ...snapshot } = source.snapshot
+  const current = { ...source, snapshot }
+  if (provenance !== undefined) Object.assign(snapshot, { source: provenance })
+  expect(pin(pkg, current)(origin)).toEqual({})
+})
+it('does not replace an established identity when both current package and snapshot change', () => {
+  const currentPackage = { ...pkg }
+  let current = structuredClone(source)
+  const grant = authority.pinOptionalBundledRowGrants([currentPackage], () => current, declarations)
+  expect(grant(origin)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
+  currentPackage.version = '0.1.3'
+  current = { ...current, snapshot: { ...current.snapshot, version: '0.1.3', snapshotId: 'new-snapshot' } }
+  expect(grant({ ...origin, snapshotId: 'new-snapshot' })).toEqual({})
+})
+it('binds only after full proof and rechecks a refreshed directory and row', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agh-grant-refresh-'))
+  temporary.push(root)
+  let current = { ...source, snapshot: { ...source.snapshot, directory: join(root, 'missing') } }
+  const grant = authority.pinOptionalBundledRowGrants([pkg], () => current, declarations)
+  expect(grant(origin)).toEqual({})
+  current = { ...source, snapshot: { ...source.snapshot } }
+  expect(grant(origin)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
+  cpSync(directory, join(root, 'copy'), { recursive: true })
+  current = { ...source, snapshot: { ...source.snapshot, directory: join(root, 'copy') } }
+  expect(grant(origin)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
+  writeFileSync(join(root, 'copy', 'index.mjs'), 'changed')
+  current = { ...current, snapshot: { ...current.snapshot } }
+  expect(grant(origin)).toEqual({})
+})
+it('rejects a changed capability identity after a successful proof', () => {
+  let current = source
+  const grant = authority.pinOptionalBundledRowGrants([pkg], () => current, declarations)
+  expect(grant(origin)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
+  current = { ...source, snapshot: { ...source.snapshot, capabilityHash: 'other' } }
+  expect(grant(origin)).toEqual({})
 })

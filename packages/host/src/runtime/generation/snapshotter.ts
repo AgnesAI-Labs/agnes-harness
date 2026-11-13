@@ -56,6 +56,7 @@ export function createGenerationSnapshotter(deps: {
       artifactDigest: encodeRuntimeTargetArtifact(target).digest,
       compatibility,
       packages,
+      sources,
       resourcesDigest: generationResourcesDigest(resources),
       seams,
     }

@@ -11,10 +11,12 @@ import {
   hashDirectory,
   OPTIONAL_BUNDLED_PACKAGES,
   parseAgnesPluginEntries,
+  parseSource,
   type RuntimePluginSnapshot,
   verifiedDirectoryDigest,
 } from '@agnes/package-manager'
 import type { RowOrigin } from '@agnes/plugin-runtime/host'
+import { jcs, validatePackageAdminData } from '@agnes/protocol'
 
 const empty: HostCapabilityGrant = Object.freeze({})
 
@@ -27,11 +29,7 @@ export function pinOptionalBundledRowGrants(
   releaseSourceFor = bundledPluginSource,
 ) {
   const expected = new Map<string, string | undefined>()
-  const observed = new WeakMap<
-    object,
-    { digest: string; rows: ReturnType<typeof parseAgnesPluginEntries> } | undefined
-  >()
-  const bindings = new Map<string, Readonly<RuntimePluginSnapshot>>()
+  const bindings = new Map<string, string>()
   const releaseDigest = (ref: string): string | undefined => {
     if (expected.has(ref)) return expected.get(ref)
     let digest: string | undefined
@@ -59,6 +57,7 @@ export function pinOptionalBundledRowGrants(
     const declaration = declarations.find((d) => d.packageId === origin.packageId)
     if (
       !pkg?.enabled ||
+      pkg.trust !== 'trusted' ||
       !source?.trusted ||
       source.enabled === false ||
       !declaration ||
@@ -75,22 +74,39 @@ export function pinOptionalBundledRowGrants(
       snapshot.integrity !== pkg.integrity
     )
       return empty
-    const key = `${pkg.id}\0${origin.snapshotId}`
-    if (bindings.has(key) && bindings.get(key) !== source) return empty
-    if (!observed.has(source)) {
-      try {
-        observed.set(source, {
-          digest: verifiedDirectoryDigest(snapshot.directory, snapshot),
-          rows: parseAgnesPluginEntries(
-            pkg.id,
-            JSON.parse(readFileSync(join(snapshot.directory, 'package.json'), 'utf8')).agnes?.plugins,
-          ),
-        })
-      } catch {
-        observed.set(source, undefined)
+    let identity: string
+    let proof: { digest: string; rows: ReturnType<typeof parseAgnesPluginEntries> }
+    try {
+      const provenance = snapshot.source
+      if (
+        !provenance ||
+        !validatePackageAdminData('PackageSource', provenance).ok ||
+        provenance.ref !== pkg.source ||
+        jcs(parseSource(provenance.ref)) !== jcs(provenance)
+      )
+        return empty
+      identity = jcs({
+        packageId: snapshot.packageId,
+        profile: snapshot.profile,
+        snapshotId: snapshot.snapshotId,
+        version: snapshot.version,
+        integrity: snapshot.integrity,
+        treeIntegrity: snapshot.treeIntegrity,
+        capabilityHash: snapshot.capabilityHash,
+        source: provenance,
+      })
+      if (bindings.has(pkg.id) && bindings.get(pkg.id) !== identity) return empty
+      // Fresh catalogue wrappers are normal. Authority is content-bound; verify this directory and row.
+      proof = {
+        digest: verifiedDirectoryDigest(snapshot.directory, snapshot),
+        rows: parseAgnesPluginEntries(
+          pkg.id,
+          JSON.parse(readFileSync(join(snapshot.directory, 'package.json'), 'utf8')).agnes?.plugins,
+        ),
       }
+    } catch {
+      return empty
     }
-    const proof = observed.get(source)
     const expectedDigest = releaseDigest(optional.ref)
     if (
       !proof ||
@@ -101,7 +117,7 @@ export function pinOptionalBundledRowGrants(
       return empty
     const row = proof.rows.find((r) => r.id === origin.rowId && r.export === origin.exportName)
     if (!row || row.runtime !== 'in-process' || !declaration.extensions[row.id]) return empty
-    bindings.set(key, source)
+    bindings.set(pkg.id, identity)
     return Object.freeze({ ...declaration.package, ...declaration.extensions[row.id] })
   }
 }

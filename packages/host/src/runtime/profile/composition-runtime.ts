@@ -21,9 +21,14 @@ import {
   RuntimePluginCatalogue,
 } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
-import { RuntimeGenerationSnapshotStore, withPackageVerification } from '@agnes/package-manager'
+import {
+  RuntimeGenerationSnapshotStore,
+  sameGenerationSourceIdentity,
+  withPackageVerification,
+} from '@agnes/package-manager'
 import type { PluginRow, RuntimeTarget } from '@agnes/plugin-runtime/host'
 import { createRuntimeGenerationHost, type PluginGenerationStatus } from '../generation/host.js'
+import { generationPackages } from '../generation/packages.js'
 import { projectGenerationStatus } from '../generation/runtime-descriptor.js'
 import { translateSessionFailure } from '../generation/seam-pins.js'
 import { liveResourceRow, pluginWorkspaceLayers, targetRows } from '../generation/target-code.js'
@@ -225,30 +230,7 @@ export async function createCompositionHost(
         )
       const deployment = {
         ...binding.profile,
-        ...(sources
-          ? {
-              packages: [
-                // Unselected packages remain composition vocabulary, without executable authority.
-                // Match cold generation restoration: only selected sources may enable their code.
-                ...binding.profile.packages
-                  .filter(
-                    (pkg) =>
-                      pkg.trust === 'builtin' ||
-                      !sources.some((source) => source.snapshot.packageId === pkg.id),
-                  )
-                  .map((pkg) => (pkg.trust === 'builtin' ? pkg : { ...pkg, enabled: false })),
-                ...sources.map(({ snapshot }) => ({
-                  ...binding.profile.packages.find((pkg) => pkg.id === snapshot.packageId),
-                  id: snapshot.packageId,
-                  version: snapshot.version,
-                  integrity: snapshot.integrity,
-                  source: 'runtime-snapshot',
-                  trust: 'trusted' as const,
-                  enabled: true,
-                })),
-              ],
-            }
-          : {}),
+        ...(sources ? { packages: generationPackages(binding.profile, sources) } : {}),
         provider: modelProfile.provider,
         adapters: { ...binding.profile.adapters, secrets: modelProfile.adapters.secrets },
       }
@@ -698,7 +680,11 @@ export async function createCompositionHost(
           container.draining = draining(target.tree.rows, container.tree, container.host)
           // A composition the change does not reach (say a plugin its sessions never enabled) runs the
           // same rows and resources as before; rebuilding its generation would change nothing.
-          if (container.applied?.target === effective) {
+          const selected = new RuntimePluginCatalogue(sources).select(projected)
+          if (
+            container.applied?.target === effective &&
+            sameGenerationSourceIdentity(container.applied.sources, selected)
+          ) {
             // Row equality cannot attest the current grant for the code already running here.
             await assertGenerationTrust(
               container.applied.sources,
@@ -714,7 +700,7 @@ export async function createCompositionHost(
           if (report.ok)
             container.applied = {
               target: effective,
-              sources: structuredClone(new RuntimePluginCatalogue(sources).select(projected)),
+              sources: structuredClone(selected),
             }
           return report
         })

@@ -2,12 +2,15 @@ import { createHash } from 'node:crypto'
 import { basename } from 'node:path'
 import { SEAM_KINDS } from '@agnes/extension-api/seams'
 import { decodeRuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
+import { validatePackageAdminData } from '@agnes/protocol'
+import { canonical } from './integrity.js'
 import type {
   GenerationSeams,
   PinnedSeam,
   PluginGenerationSnapshot,
   SessionGenerationPin,
 } from './runtime-snapshots-generations.js'
+import { parseSource } from './sources.js'
 
 /**
  * Durable generation metadata is untrusted bytes until it has been decoded here: JSON.parse alone
@@ -184,6 +187,21 @@ export function decodeGenerationRecord(
       !text(snapshot.snapshotId)
     )
       throw corrupt(file, `sources[${index}] is not a trusted package snapshot`)
+    if (snapshot.source !== undefined) {
+      try {
+        const checked = validatePackageAdminData('PackageSource', snapshot.source)
+        const value = record(snapshot.source)
+        if (
+          !checked.ok ||
+          !value ||
+          typeof value.ref !== 'string' ||
+          canonical(parseSource(value.ref)) !== canonical(snapshot.source)
+        )
+          throw new Error('invalid source')
+      } catch {
+        throw corrupt(file, `sources[${index}] has invalid package provenance`)
+      }
+    }
   })
   const seams = version === 3 ? decodeGenerationSeams(generation.seams, file) : undefined
   try {
