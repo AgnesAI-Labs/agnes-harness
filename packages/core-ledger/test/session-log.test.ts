@@ -670,4 +670,34 @@ describe('SessionLogImpl renews its lease during turns and on writes', () => {
     expect(log.faulted).toBe(true)
     expect(faults).toHaveLength(1)
   })
+
+  // A machine that sleeps mid-turn stops every timer, so the first renewal after waking finds the lease
+  // lapsed. Nobody took the session meanwhile, so the timer takes it back exactly as the next write would.
+  it('takes its lease back when the renewal timer fires after a sleep and no one else holds the session', async () => {
+    const { log, clock, t } = await openAt()
+    await log.append([note()], op(1))
+    const faults: unknown[] = []
+    log.onFault((e) => faults.push(e))
+    clock.now += 10 * TTL
+    t.flush()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(log.faulted).toBe(false)
+    expect(faults).toEqual([])
+    expect(log.leaseRemainingMs()).toBe(TTL)
+    await expect(log.append([note()])).resolves.toMatchObject({ seqs: [2] })
+  })
+
+  it('still seals on the renewal timer when another writer took the session during the sleep', async () => {
+    const { log, clock, storage, t } = await openAt()
+    await log.append([note()], op(1))
+    const faults: unknown[] = []
+    log.onFault((e) => faults.push(e))
+    clock.now += 10 * TTL
+    await storage.open('k', { writerRunId: 'r2', ttlMs: TTL })
+    t.flush()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(log.faulted).toBe(true)
+    expect(faults).toHaveLength(1)
+    expect(log.fault).toEqual({ reason: 'renew', code: 'E_WRITER_LEASE' })
+  })
 })
