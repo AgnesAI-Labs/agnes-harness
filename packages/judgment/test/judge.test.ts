@@ -20,7 +20,7 @@ const options = () => ({
   signal: new AbortController().signal,
   idPrefix: 'stop:1:2',
 })
-const ok = (id = 'id'): SideCallResult => ({
+const ok = (id = 'id'): Extract<SideCallResult, { status: 'ok' }> => ({
   status: 'ok',
   invocationId: id,
   text: '',
@@ -344,4 +344,295 @@ it('replays a finished failure and uses a fresh attempt identity for the only re
     'stop:1:2:c0:a0',
     'stop:1:2:c0:a1',
   ])
+})
+
+function deferred<T>() {
+  let resolve = (_value: T): void => {
+    throw new Error('deferred not initialized')
+  }
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+function nativeResult(prepared: PreparedSideCall): SideCallResult {
+  const request = prepared as unknown as SideCallOptions
+  const payload = request.payload as { questions: Record<string, unknown> }
+  return {
+    ...ok(prepared.invocationId),
+    json: Object.fromEntries(Object.keys(payload.questions).map((id) => [id, { type: 'noul', noul: 0.9 }])),
+  }
+}
+function recordedPort() {
+  const ledger = new Map<string, Extract<SideCallStatus, { status: 'finished' }>>()
+  const p = port(async (prepared) => {
+    const result = nativeResult(prepared)
+    ledger.set(prepared.invocationId, {
+      status: 'finished',
+      invocationId: prepared.invocationId,
+      label: prepared.label,
+      requestHash: prepared.requestHash,
+      result,
+    })
+    return result
+  })
+  p.status.mockImplementation(async (id) => ledger.get(id) ?? { status: 'absent', invocationId: id })
+  return { p, ledger }
+}
+it('keeps full request chunk identities when an earlier successful chunk populated the cache', async () => {
+  const multi = {
+    state: 'same',
+    questions: Object.fromEntries(
+      Array.from({ length: 12 }, (_, i) => [
+        `q${i}`,
+        { type: 'noul' as const, instructions: 'x'.repeat(24000) + i },
+      ]),
+    ),
+  }
+  const { p, ledger } = recordedPort()
+  const c = cache()
+  const controller = new AbortController()
+  const record = p.invoke.getMockImplementation()
+  if (!record) throw new Error('fixture recording implementation missing')
+  p.invoke.mockImplementation(async (prepared, signal) => {
+    if (prepared.invocationId.endsWith('c1:a0')) {
+      controller.abort()
+      throw new Error('interrupted before sending second chunk')
+    }
+    return record(prepared, signal)
+  })
+  const judge = createJudge({ port: p, chain: [target], cache: c, now: Date.now })
+  expect(
+    await judge.judge('judgment.batch', multi, { ...options(), signal: controller.signal, retry: 'none' }),
+  ).toMatchObject({ status: 'failed' })
+  expect(ledger.size).toBe(1)
+  p.invoke.mockImplementation(record)
+  const result = await judge.judge('judgment.batch', multi, { ...options(), retry: 'none' })
+  expect(result).toMatchObject({
+    status: 'ok',
+    answers: Object.fromEntries(Object.keys(multi.questions).map((id) => [id, { type: 'noul', noul: 0.9 }])),
+  })
+  expect(p.invoke.mock.calls.filter(([prepared]) => prepared.invocationId.endsWith('c0:a0'))).toHaveLength(1)
+})
+it.each(['stop:1:2', 'a'.repeat(100)])(
+  'cold-cache replay preserves paid partial-cache requests and residuals for prefix %s',
+  async (idPrefix) => {
+    const multi = {
+      state: req.state,
+      questions: { ...req.questions, other: { ...req.questions.q, instructions: 'other?' } },
+    }
+    const { p } = recordedPort()
+    const warm = cache()
+    warm.set(req.state, target, req.questions.q, { type: 'noul', noul: 0.8 })
+    expect(
+      await createJudge({ port: p, chain: [target], cache: warm, now: Date.now }).judge(
+        'judgment.batch',
+        multi,
+        { ...options(), idPrefix, retry: 'none' },
+      ),
+    ).toMatchObject({ status: 'ok' })
+    const resumed = await createJudge({ port: p, chain: [target], cache: cache(), now: Date.now }).judge(
+      'judgment.batch',
+      multi,
+      { ...options(), idPrefix, retry: 'none' },
+    )
+    expect(resumed).toMatchObject({
+      status: 'ok',
+      accounting: { calls: [{ replayed: true }, { replayed: false }] },
+    })
+    expect(
+      p.invoke.mock.calls.map(([prepared]) =>
+        Object.keys(
+          ((prepared as unknown as SideCallOptions).payload as { questions: Record<string, unknown> })
+            .questions,
+        ),
+      ),
+    ).toEqual([['other'], ['q']])
+    const coldAgain = await createJudge({ port: p, chain: [target], cache: cache(), now: Date.now }).judge(
+      'judgment.batch',
+      multi,
+      { ...options(), idPrefix, retry: 'none' },
+    )
+    expect(coldAgain).toMatchObject({
+      status: 'ok',
+      accounting: { calls: [{ replayed: true }, { replayed: true }] },
+    })
+    expect(p.invoke).toHaveBeenCalledTimes(2)
+  },
+)
+it.each([false, true])(
+  'does not retry once while the timed-out invoke remains unsettled (fallback %s)',
+  async (withFallback) => {
+    vi.useFakeTimers()
+    const first = deferred<SideCallResult>()
+    const p = port(async () => first.promise)
+    const outcome = createJudge({
+      port: p,
+      chain: withFallback ? [target, fallback] : [target],
+      cache: cache(),
+      now: Date.now,
+    }).judge('judgment.batch', req, { ...options(), attemptMs: 100, totalMs: 250, retry: 'once' })
+    await vi.advanceTimersByTimeAsync(250)
+    expect(await outcome).toMatchObject({ status: 'failed', reason: 'timeout' })
+    expect(p.invoke).toHaveBeenCalledTimes(1)
+    first.resolve({ status: 'unknown', invocationId: 'stopped', reason: 'interrupted', replayed: false })
+  },
+)
+it('retains usage that settles after the first wait timed out but before legacy fallback returns', async () => {
+  vi.useFakeTimers()
+  const first = deferred<SideCallResult>()
+  const second = deferred<SideCallResult>()
+  const p = port(async (prepared) =>
+    prepared.target.route === target.route ? first.promise : second.promise,
+  )
+  const outcome = createJudge({ port: p, chain: [target, fallback], cache: cache(), now: Date.now }).judge(
+    'judgment.stop',
+    req,
+    { ...options(), attemptMs: 100, totalMs: 500 },
+  )
+  await vi.advanceTimersByTimeAsync(100)
+  expect(p.invoke).toHaveBeenCalledTimes(2)
+  const firstPrepared = p.invoke.mock.calls.at(0)?.[0]
+  if (!firstPrepared) throw new Error('first request missing')
+  first.resolve({
+    status: 'failed',
+    invocationId: firstPrepared.invocationId,
+    reason: 'deadline',
+    retryable: true,
+    dispatch: 'may-have-sent',
+    replayed: false,
+    latencyMs: 101,
+    usage: {
+      tokens: { input: 7, output: 2, cacheRead: 0, cacheWrite: 0 },
+      credits: 3,
+      creditSource: 'gateway',
+      billing: { usdMicros: 123, source: 'gateway', subscription: false },
+    },
+  })
+  await vi.advanceTimersByTimeAsync(0)
+  second.resolve(ok())
+  const result = await outcome
+  expect(result).toMatchObject({
+    status: 'ok',
+    accounting: {
+      calls: [{ usage: { credits: 3, billing: { usdMicros: 123 } } }, { usage: { credits: 0 } }],
+    },
+  })
+  const firstCall = result.accounting.calls.at(0)
+  expect(firstCall?.usage?.credits).toBe(3)
+})
+it.each(['throw', 'nonretryable', 'invalid-output'] as const)(
+  'preserves legacy native fallback after %s while once remains conservative',
+  async (kind) => {
+    const p = port(async (prepared) => {
+      if (prepared.target.route === fallback.route) return ok(prepared.invocationId)
+      if (kind === 'throw') throw new Error('ordinary adapter failure')
+      if (kind === 'invalid-output') return { ...ok(prepared.invocationId), json: {} }
+      return {
+        status: 'failed',
+        invocationId: prepared.invocationId,
+        reason: 'adapter-error',
+        retryable: false,
+        dispatch: 'may-have-sent',
+        latencyMs: 1,
+        replayed: false,
+      }
+    })
+    const result = await createJudge({
+      port: p,
+      chain: [target, fallback],
+      cache: cache(),
+      now: Date.now,
+    }).judge('judgment.stop', req, options())
+    expect(result).toMatchObject({ status: 'ok' })
+    expect(p.invoke).toHaveBeenCalledTimes(2)
+    const once = port(p.invoke.getMockImplementation())
+    expect(
+      await createJudge({ port: once, chain: [target, fallback], cache: cache(), now: Date.now }).judge(
+        'judgment.batch',
+        req,
+        { ...options(), retry: 'once' },
+      ),
+    ).toMatchObject({ status: 'failed' })
+    expect(once.invoke).toHaveBeenCalledTimes(1)
+  },
+)
+
+it('refuses an unreconciled cold-cache failed subset without resending it', async () => {
+  const multi = {
+    state: req.state,
+    questions: { ...req.questions, other: { ...req.questions.q, instructions: 'other?' } },
+  }
+  const { p, ledger } = recordedPort()
+  p.invoke.mockImplementation(async (prepared) => {
+    const result: SideCallResult = {
+      status: 'failed',
+      invocationId: prepared.invocationId,
+      reason: 'adapter-error',
+      retryable: true,
+      dispatch: 'may-have-sent',
+      replayed: false,
+      latencyMs: 1,
+    }
+    ledger.set(prepared.invocationId, {
+      status: 'finished',
+      invocationId: prepared.invocationId,
+      label: prepared.label,
+      requestHash: prepared.requestHash,
+      result,
+    })
+    return result
+  })
+  const warm = cache()
+  warm.set(req.state, target, req.questions.q, { type: 'noul', noul: 0.8 })
+  expect(
+    await createJudge({ port: p, chain: [target], cache: warm, now: Date.now }).judge(
+      'judgment.batch',
+      multi,
+      { ...options(), retry: 'none' },
+    ),
+  ).toMatchObject({ status: 'failed', reason: 'error' })
+  expect(
+    await createJudge({ port: p, chain: [target, fallback], cache: cache(), now: Date.now }).judge(
+      'judgment.batch',
+      multi,
+      { ...options(), retry: 'once' },
+    ),
+  ).toMatchObject({ status: 'failed', reason: 'invalid' })
+  expect(p.invoke).toHaveBeenCalledTimes(1)
+})
+it('returns a fixed accounting snapshot when an earlier call remains unknown at return', async () => {
+  vi.useFakeTimers()
+  const first = deferred<SideCallResult>()
+  const p = port(async (prepared) =>
+    prepared.target.route === target.route ? first.promise : ok(prepared.invocationId),
+  )
+  const pending = createJudge({ port: p, chain: [target, fallback], cache: cache(), now: Date.now }).judge(
+    'judgment.stop',
+    req,
+    { ...options(), attemptMs: 100, totalMs: 500 },
+  )
+  await vi.advanceTimersByTimeAsync(100)
+  const result = await pending
+  expect(result).toMatchObject({ status: 'ok' })
+  expect(result.accounting.calls.at(0)?.usage).toBeUndefined()
+  first.resolve(ok())
+  await vi.advanceTimersByTimeAsync(0)
+  expect(result.accounting.calls.at(0)?.usage).toBeUndefined()
+})
+
+it('does not turn an unavailable identity lookup into a legacy fallback dispatch', async () => {
+  const p = port()
+  p.status.mockImplementation(async (id) => {
+    if (id.endsWith('a0')) throw new Error('identity lookup unavailable')
+    return { status: 'absent', invocationId: id }
+  })
+  expect(
+    await createJudge({ port: p, chain: [target, fallback], cache: cache(), now: Date.now }).judge(
+      'judgment.stop',
+      req,
+      options(),
+    ),
+  ).toMatchObject({ status: 'failed' })
+  expect(p.invoke).not.toHaveBeenCalled()
 })
