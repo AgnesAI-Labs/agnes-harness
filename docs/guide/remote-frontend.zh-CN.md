@@ -8,7 +8,7 @@ A、B 使用同一套完整标准 Harness。A 托管自己的页面，浏览器�
 
 ## Key 与发布合同
 
-云端插件 0.4.0 启动时读取环境变量 `AGH_CLOUD_KEY`。缺失、空值或纯空白会导致插件启动失败，不发布云端端口。Key 由第三方启动 B 的沙箱时注入，必须进入 daemon／Worker 的进程环境；只给已运行的 `agh serve` 设置变量不会改变旧 daemon 的环境。插件保留启动时的值，更新 Key 后需要重启 B 的相关进程。
+云端插件 0.5.0 启动时读取环境变量 `AGH_CLOUD_KEY`。缺失、空值或纯空白会导致插件启动失败，不发布云端端口。Key 由第三方启动 B 的沙箱时注入，必须进入 daemon／Worker 的进程环境；只给已运行的 `agh serve` 设置变量不会改变旧 daemon 的环境。插件保留启动时的值，更新 Key 后需要重启 B 的相关进程。
 
 已安装、受信任、已启用的插件注册 profile 级查询服务 `frontend.publish`，并在客户端描述符中声明。服务接收 `{}`，返回如下结构；其中 `keySha256` 是部署 Key 的 SHA-256 校验值，实际必须为 64 位小写十六进制字符串，原始 Key 不进入服务返回值：
 
@@ -27,7 +27,7 @@ A 在“设置 → 高级 → 云端连接”填写地址，并从**本地凭证
 3. B 验证成功后签发有效期 8 小时的临时连接凭证。浏览器只收到该临时凭证，再直接连接 B 的 HTTP／WebSocket，不经 A 转发会话流量。
 4. HTTP、插件资源及 WebSocket 路径均位于 `/_agnes/remote-access/<临时凭证>/...`，相对模块资源继承该路径。B 校验有效性后剥离前缀，转发到固定本机服务。裸 API、文件／插件资源及 WebSocket 均拒绝未认证访问，不能只靠通过首次握手绕过后续校验。临时凭证也是 bearer 凭证，应避免记录完整资源 URL；服务使用 `no-store` 和 `no-referrer`。到期断开 socket，重新认证获得新凭证。
 
-`key-owner` 仍授予当前 profile 的完整工作台权限，包括工作区、工具、设置和插件管理；原有工具审批继续适用。它不建立多用户身份或租户隔离。拥有 Key 的调用者仍可停用／卸载云端插件，专门的防断链保护尚未实现。历史 `public-owner` 合同在标准服务端保留兼容，**新版 A 的云端连接不降级为免认证连接**；本插件 0.4.0 固定使用 `key-owner`，不能通过配置关闭校验。
+`key-owner` 仍授予当前 profile 的完整工作台权限，包括工作区、工具、设置和插件管理；原有工具审批继续适用。它不建立多用户身份或租户隔离。拥有 Key 的调用者仍可停用／卸载云端插件，专门的防断链保护尚未实现。历史 `public-owner` 合同在标准服务端保留兼容，**新版 A 的云端连接不降级为免认证连接**；本插件 0.5.0 固定使用 `key-owner`，不能通过配置关闭校验。
 
 `agh serve` 读取当前就绪的已安装 roster，通过私有连接调用声明服务，持有云端监听器，仅转发到固定的本机 Web／daemon 端点。默认本地监听仍执行原有 Host／Origin 检查；daemon 原有的多用户远程 WSS 保持独立。
 
@@ -37,8 +37,8 @@ A 在“设置 → 高级 → 云端连接”填写地址，并从**本地凭证
 
 ## 双机操作
 
-1. A、B 更新并构建配套标准 Harness，通过仓库工具链入口执行 `--filter @agnes/cli build:local`，并重启各自 daemon 以加载新代码；B 更新为云端插件 0.4.0。
-2. B 的部署环境注入 `AGH_CLOUD_KEY`。已有 daemon 必须按 B 部署流程停止并在新环境下重新启动，让 daemon／Worker 继承变量。通过 `agh plugins add /绝对路径/agh-cloud-plugin-0.4.0.tgz` 安装并确认信任，保持相同 home／profile 的 `agh serve` 运行。
+1. A、B 更新并构建配套标准 Harness，通过仓库工具链入口执行 `--filter @agnes/cli build:local`，并重启各自 daemon 以加载新代码；B 更新为云端插件 0.5.0。
+2. B 的部署环境注入 `AGH_CLOUD_KEY`。已有 daemon 必须按 B 部署流程停止并在新环境下重新启动，让 daemon／Worker 继承变量。通过 `agh plugins add /绝对路径/agh-cloud-plugin-0.5.0.tgz` 安装并确认信任，保持相同 home／profile 的 `agh serve` 运行。
 3. 激活后 launcher 输出 `key-owner frontend: ...`。通过标准插件设置修改 host、端口或 TLS 文件，并让 B 的防火墙允许选定端口。不要将 Key 写入插件设置文件。
 4. 打开 A 自己的页面，进入“设置 → 高级 → 云端连接”，输入例如 `http://192.168.1.20:8443`，从列表选择值与 B 的 Key 一致的本地凭证，点击“保存并连接”。使用 B 实际可达的地址，不使用监听地址 `0.0.0.0`。
 5. 侧栏“项目”下同时显示“本地会话”和“云端会话”，均可展开／收起，云端就绪后从云端组加号创建会话。云端工作区、工具和当前模型执行仍归 B。直接打开 B 的裸云端地址不会显示免认证工作台，请从 A 配置 Key 连接。
@@ -57,17 +57,18 @@ A 为本地与云端各保留一个前端运行上下文，均加载 A 的前端
 
 命令 journal、输入草稿和模型／权限记忆按后端来源与实例身份隔离。文件引用、目录选择、插件、MCP 和模型凭证归属各自环境。设置、插件等入口作用于顶部显示的当前环境；云端不可用时设置入口回退本地，云端连接配置始终属于 A 的浏览器。保存连接时可留在设置中观察状态，再从云端组新建或选择会话。云端断线不影响本地会话，恢复服务后可重新连接。主动断开云端或更改云端地址会释放旧云端页面上下文，重连后从 B 恢复记录；未提交草稿不保证跨主动断开保留。B 上已启动的任务遵循其后端生命周期。
 
-本版需要同时更新 A、B 的标准 Harness，以及 B 的云端插件 0.4.0。当前支持一个本地环境和一个云端连接。
+本版需要同时更新 A、B 的标准 Harness，以及 B 的云端插件 0.5.0。当前支持一个本地环境和一个云端连接。
 
-云端插件 0.4.0 启动时必须读取三个部署环境变量。列表与推理地址完全独立，不互相默认或回退：
+云端插件 0.5.0 启动时必须读取两个部署环境变量，模型列表和推理共用同一个 API Base URL 和授权 Key：
 
 ```sh
 export AGH_CLOUD_KEY='第三方平台授权 Key'
-export AGH_CLOUD_MODELS_BASE_URL='https://api-llmsg-dev.agnes-dev.com/v1/'
-export AGH_CLOUD_INFERENCE_BASE_URL='https://api.agnes-ai.cn/v1/'
+export AGH_CLOUD_API_BASE_URL='https://api-llmsg-dev.agnes-dev.com/v1/'
 ```
 
-B 的 `cloud.models.list` 在列表 Base URL 后拼接 `models`，使用 GET（[New API 合同](https://docs.newapi.pro/zh/docs/api/ai-model/models/list/listmodels)）；云端适配器在推理 Base URL 后拼接 `chat/completions`，使用兼容 OpenAI 的 POST／SSE（[Agnes 快速开始](https://www.agnes-ai.cn/zh-Hans/docs/quickstart)）。两者均使用 `Authorization: Bearer <AGH_CLOUD_KEY>`。Base URL 可带部署路径，自动规范末尾斜杠，必须是 HTTP(S)，不得包含账号密码、查询参数或 fragment。变量缺失或非法时拒绝启动。旧插件配置 `modelBaseUrl` 已移除，升级前将其迁移至 `AGH_CLOUD_MODELS_BASE_URL`。
+B 的 `cloud.models.list` 在统一地址后拼接 `models`，使用 GET；云端适配器在相同地址后拼接 `chat/completions`，使用兼容 OpenAI 的 POST／SSE。两者均使用 `Authorization: Bearer <AGH_CLOUD_KEY>`。上述配置对应 `https://api-llmsg-dev.agnes-dev.com/v1/models` 和 `https://api-llmsg-dev.agnes-dev.com/v1/chat/completions`。[New API 模型列表合同](https://docs.newapi.pro/zh/docs/api/ai-model/models/list/listmodels)和[聊天协议示例](https://www.agnes-ai.cn/zh-Hans/docs/quickstart)仅说明请求协议，实际目的地址由部署环境配置。
+
+Base URL 可带部署路径，自动规范末尾斜杠，必须是 HTTP(S)，不得包含账号密码、查询参数或 fragment；缺失或非法时拒绝启动。0.4 版的 `AGH_CLOUD_MODELS_BASE_URL` 和 `AGH_CLOUD_INFERENCE_BASE_URL` 不再读取，请移除它们，设置 `AGH_CLOUD_API_BASE_URL` 后重启 B 的 daemon／Workers。旧地址不作回退。现有 `AGH_CLOUD_KEY` 及 A 对应的凭证绑定继续使用。已有会话固定插件 generation，请新建云端会话验证升级，或在运行时设置中将符合条件的旧会话迁移到当前插件。
 
 只有 A 的云端 frame 通过 `conversation.input.model.catalog` 替换模型下拉，从 B 查询目录，支持搜索、刷新以及草稿／已有会话的模型选择。选择走标准会话接口，由 B 校验后保存。已有会话保留当前模型，直到用户手动切换；新云端草稿使用云端目录。B 在内存中装配插件专属路由 `agnes-cloud-primary`，不改写原有本地模型账号、凭证、路由或默认模型；A 的本地会话及 B 自身本地页面继续使用原生模型控件。此 profile 插槽通过 `value` 提供模型栏状态，通过 `actions.select`／`actions.setCatalog` 选择模型和发布当前前端上下文的目录；卸载或清理后恢复该上下文的原生目录。
 
