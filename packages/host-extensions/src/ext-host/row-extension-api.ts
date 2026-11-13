@@ -51,6 +51,7 @@ export type RowExtensionApiInput = {
   hostGrants?: () => import('@agnes/package-manager').HostCapabilityGrant
   sideCallDeclared?: boolean
   sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
+  subscribeSideModels?: (listener: () => void) => () => void
   store?: () => import('@agnes/extension-api').OwnedStore
   bindWake?: (
     session: import('@agnes/extension-api').ToolContext['session'],
@@ -154,6 +155,8 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
     input.sideCallDeclared,
     input.sideModels,
     alive,
+    input.subscribeSideModels,
+    signal,
   )
   const ctx: ExtensionContext = Object.freeze({
     ...(sideModels ? { sideModels } : {}),

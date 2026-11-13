@@ -33,6 +33,22 @@ export function createRowHosts(
   channels.rememberSources(bootCatalogue)
   const pluginCatalogue = new RuntimePluginCatalogue(bootCatalogue)
   let sideModels: () => readonly SideModelEntry[] = () => []
+  const modelListeners = new Set<() => void>()
+  const subscribeSideModels = (listener: () => void) => {
+    modelListeners.add(listener)
+    return () => {
+      modelListeners.delete(listener)
+    }
+  }
+  let pendingModels = false
+  const notifySideModels = () => {
+    if (pendingModels) return
+    pendingModels = true
+    queueMicrotask(() => {
+      pendingModels = false
+      for (const listener of modelListeners) listener()
+    })
+  }
   const hostGrants = pinOptionalBundledRowGrants(ctx.profile.packages, (packageId, snapshotId) =>
     pluginCatalogue.get(packageId, snapshotId),
   )
@@ -50,6 +66,7 @@ export function createRowHosts(
   const rowExtensions = createRowExtensionHost({
     hostGrants,
     sideModels: () => sideModels(),
+    subscribeSideModels,
     projectionNames: (origin) => rowServices.projectionNames(origin),
     store: ({ owner, integrity, revision, alive }) =>
       ownedStore(
@@ -181,8 +198,10 @@ export function createRowHosts(
   }
   return {
     sideModels: () => sideModels(),
+    subscribeSideModels,
     setSideModels(read: () => readonly SideModelEntry[]) {
       sideModels = read
+      notifySideModels()
     },
     bootCatalogue,
     pluginCatalogue,

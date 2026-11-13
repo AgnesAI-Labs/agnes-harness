@@ -16,7 +16,7 @@ import { buildJudgmentPayload } from '../tools/build-judgment-payload.mjs'
 import { ensureJudgmentPayload } from '../tools/ensure-judgment-payload.mjs'
 
 const payload = new URL('../bundled-plugins/judgment/', import.meta.url)
-it('mirrors the source row with API 5.16 and exports the real plugin', async () => {
+it('mirrors the source row with API 5.17 and exports the real plugin', async () => {
   const source = JSON.parse(readFileSync(new URL('../../judgment/package.json', import.meta.url), 'utf8'))
   const manifest = JSON.parse(readFileSync(new URL('package.json', payload), 'utf8'))
   const { default: disabled, ...row } = source.agnes.plugins[0]
@@ -25,7 +25,7 @@ it('mirrors the source row with API 5.16 and exports the real plugin', async () 
   expect(row).toMatchObject({
     export: 'judgmentPlugin',
     id: 'ext:agnes.judgment/main',
-    apiRange: '^5.16.0',
+    apiRange: '^5.17.0',
     configReload: 'next-session',
     inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'self'],
   })

@@ -36,6 +36,7 @@ type Options = {
   sideCallDeclared?: boolean
   pluginRowId?: string
   sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
+  subscribeSideModels?: (listener: () => void) => () => void
   trust: ExtensionContext['trust']
   lease: Lease
   ports: KernelPorts
@@ -102,7 +103,14 @@ export function buildExtensionAPI(input: Options): ExtensionAPI {
     alive,
     caps.projections?.map((p) => p.name) ?? [],
   )
-  const sideModels = sideModelsPort(() => input.hostGrants, input.sideCallDeclared, input.sideModels, alive)
+  const sideModels = sideModelsPort(
+    () => input.hostGrants,
+    input.sideCallDeclared,
+    input.sideModels,
+    alive,
+    input.subscribeSideModels,
+    signal,
+  )
   const ctx: ExtensionContext = Object.freeze({
     ...(sideModels ? { sideModels } : {}),
     extId: m.id,

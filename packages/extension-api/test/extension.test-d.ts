@@ -38,6 +38,9 @@ describe('ExtensionAPI backend surface', () => {
     expectTypeOf<keyof ExtensionContext>().toEqualTypeOf<
       'extId' | 'version' | 'trust' | 'lease' | 'log' | 'signal' | 'info' | 'platform' | 'sideModels'
     >()
+    expectTypeOf<NonNullable<ExtensionContext['sideModels']>['subscribe']>().toEqualTypeOf<
+      ((listener: () => void) => () => void) | undefined
+    >()
     expectTypeOf<ExtensionContext['trust']>().toEqualTypeOf<'builtin' | 'trusted'>()
     // Factory time is load time: facts only, no capability probe (spec P2).
     expectTypeOf<ExtensionContext['platform']>().toEqualTypeOf<PlatformFacts>()

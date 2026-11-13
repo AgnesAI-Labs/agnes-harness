@@ -28,6 +28,9 @@ function fixture(value = 0.9, cached = false) {
       answers: { unexpected_stop: { type: 'noul', noul: value } },
       cached,
       model: 'j',
+      backend: 'native',
+      probabilityAvailable: true,
+      accounting: { calls: [] },
     })),
   }
   const append = vi.fn(async (name: string, data: unknown) => {
@@ -307,6 +310,9 @@ it('stops when marker persistence fails or request changes while judging', async
       answers: { unexpected_stop: { type: 'noul', noul: 1 } },
       cached: false,
       model: 'j',
+      backend: 'native',
+      probabilityAvailable: true,
+      accounting: { calls: [] },
     }
   })
   expect(await changed.run()).toEqual({ action: 'stop' })
