@@ -147,5 +147,10 @@
         }
       }
     }
+  },
+  "devDependencies": {
+    "@agnes/ai": "workspace:*",
+    "@agnes/host": "workspace:*",
+    "@agnes/sdk": "workspace:*"
   }
 }

@@ -1238,6 +1238,16 @@ importers:
       '@agnes/protocol':
         specifier: workspace:*
         version: link:../protocol
+    devDependencies:
+      '@agnes/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
 
   packages/loop-default:
     dependencies:

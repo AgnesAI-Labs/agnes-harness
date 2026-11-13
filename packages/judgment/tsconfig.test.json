@@ -15,6 +15,15 @@
     },
     {
       "path": "../protocol"
+    },
+    {
+      "path": "../ai"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../sdk"
     }
   ]
 }
