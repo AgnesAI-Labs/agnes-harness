@@ -141,7 +141,12 @@ export function mountComposerRegion(
     ...COMPOSER_DEPENDENCIES,
     ModelPicker: function ComposerModelPicker(props) {
       useSyncExternalStore(locale.subscribe, locale.getSnapshot)
-      return <ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />
+      return (
+        <SlotOutlet
+          name="conversation.input.model.catalog"
+          fallback={<ModelPickerControl {...props} t={(key, vars) => locale.t(key, vars)} />}
+        />
+      )
     },
     loadHint: (scope, signal) => {
       // The same finished-turn edge that asks for a reply suggestion also asks for the heads-up.

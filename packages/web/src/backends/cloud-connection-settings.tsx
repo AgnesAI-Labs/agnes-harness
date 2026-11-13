@@ -56,11 +56,7 @@ export function CloudConnectionSettings({
         <SettingsItem label={t('cloudStatus')} description={t('cloudHelp')}>
           <CloudConnectionIndicator status={state.status} t={t} />
         </SettingsItem>
-        <SettingsItem
-          label={<label htmlFor="cloud-service-credential">{t('cloudKey')}</label>}
-          description={t('keyHelp')}
-          stacked
-        >
+        <SettingsItem label={<label htmlFor="cloud-service-credential">{t('cloudKey')}</label>} stacked>
           <SettingsSelect
             id="cloud-service-credential"
             value={credentialRef}
@@ -97,7 +93,6 @@ export function CloudConnectionSettings({
           <SettingsInput
             id="cloud-service-origin"
             value={address}
-            placeholder="http://192.168.1.20:8443"
             onChange={(event) => {
               setAddress(event.target.value)
               setError('')

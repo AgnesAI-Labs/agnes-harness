@@ -43,8 +43,6 @@ export const workbenchCatalog = {
     refreshCredentials: 'Refresh credentials',
     credentialsUnavailable:
       'The local credential is unavailable. Refresh the list or check A’s credential permissions.',
-    keyHelp:
-      'Choose a credential from A whose value matches AGH_CLOUD_KEY on B. Only its reference is saved here.',
     saveConnect: 'Save and connect',
     cloudHelp:
       'This connection is saved in this browser. Cloud conversations use the remote workspace and services.',
@@ -93,7 +91,6 @@ export const workbenchCatalog = {
     manageCredentials: '管理本地凭证',
     refreshCredentials: '刷新凭证列表',
     credentialsUnavailable: '本地凭证不可用，请刷新列表或检查 A 的凭证权限。',
-    keyHelp: '选择 A 凭证管理中与 B 的 AGH_CLOUD_KEY 一致的凭证，此处仅保存引用。',
     saveConnect: '保存并连接',
     cloudHelp: '连接配置保存在本机浏览器中，云端会话使用远端的工作区和服务。',
     invalidOrigin: '请输入完整的 HTTP 或 HTTPS 服务地址。',

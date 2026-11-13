@@ -139,6 +139,33 @@ describe('rendered composer region', () => {
     expect(newline.defaultPrevented).toBe(false)
     expect(submitted).toEqual(['submit'])
     expect(document.activeElement).toBe(prompt)
+    // A profile catalog can replace the model control before the first message and in a session.
+    const removeCatalog = runtime.registry.register(
+      {
+        name: 'conversation.input.model.catalog',
+        id: 'fixture-model-catalog',
+        owner: 'fixture',
+        priority: -1,
+      },
+      () =>
+        createElement('button', { type: 'button', 'data-testid': 'fixture-model-catalog' }, 'Cloud catalog'),
+    )
+    handle?.render({ ...readyView, hasSession: false })
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="fixture-model-catalog"]')).toBeTruthy()
+      expect(document.querySelector('#model')).toBeNull()
+    }, slotRender)
+    runtime.session.setSession('catalog-session')
+    handle?.render(readyView)
+    await vi.waitFor(
+      () => expect(document.querySelector('[data-testid="fixture-model-catalog"]')).toBeTruthy(),
+      slotRender,
+    )
+    removeCatalog()
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-testid="fixture-model-catalog"]')).toBeNull()
+      expect(document.querySelector('#model')).toBeTruthy()
+    }, slotRender)
   })
 
   it('clears session-scoped attachments and revokes their preview when the session changes', async () => {

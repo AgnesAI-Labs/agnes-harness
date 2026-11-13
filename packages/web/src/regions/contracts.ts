@@ -2,13 +2,7 @@ import { PermissionPickerControl } from '@agnes/web-admin/permission-picker'
 import type { SlotName, SlotRegistry } from '@agnes/web-client'
 import { isComposerSubmitShortcut } from '@agnes/web-conversation/presentation'
 import { ConversationUsage } from '@agnes/web-ui/conversation'
-import {
-  type ComposerDependencies,
-  type ConversationChildContainers,
-  type ConversationHandle,
-  downscaleImageFile,
-  type SettingsPane,
-} from '@agnes/web-units/shell'
+import { type ComposerDependencies, downscaleImageFile, type SettingsPane } from '@agnes/web-units/shell'
 import { ModelPickerControl } from '../model-picker.js'
 import { bindSidebar } from '../shell.js'
 
@@ -31,6 +25,7 @@ export const COMPOSER_DSH_CHILDREN = Object.freeze({
   'conversation.input.dock': { kind: 'list', scope: 'session' },
   'conversation.input.left': { kind: 'list', scope: 'session' },
   'conversation.input.model': { kind: 'single', scope: 'session' },
+  'conversation.input.model.catalog': { kind: 'single', scope: 'session-maybe' },
   'conversation.input.overlay': { kind: 'list', scope: 'session' },
   'conversation.input.permission': { kind: 'single', scope: 'session' },
   'conversation.input.plan': { kind: 'single', scope: 'session' },
