@@ -23,6 +23,7 @@ import { preflightEmbeddedExtension, preflightExtension } from './preflight.js'
 
 export type BuiltinRowHostOptions = Readonly<{
   sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
+  subscribeSideModels?: (listener: () => void) => () => void
   /** Shared with the plugin-row host: a row id is owned by one supplier at a time, whoever it is. */
   owners: ExtensionOwners
   pluginManage?: import('../resources/plugin-manage-port.js').PluginManageBridge
@@ -262,6 +263,7 @@ export function createBuiltinRowHost(options: BuiltinRowHostOptions) {
         sideCallDeclared,
         pluginRowId: input.rowId,
         ...(options.sideModels ? { sideModels: options.sideModels } : {}),
+        ...(options.subscribeSideModels ? { subscribeSideModels: options.subscribeSideModels } : {}),
         packageIdentity: spec.package,
         packageVersion: spec.packageVersion,
         ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),

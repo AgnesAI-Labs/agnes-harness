@@ -18,7 +18,7 @@
         "id": "ext:agnes.judgment/main",
         "runtime": "in-process",
         "configReload": "next-session",
-        "apiRange": "^5.16.0",
+        "apiRange": "^5.17.0",
         "inject": [
           "hooks",
           "projections",

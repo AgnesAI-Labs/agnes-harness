@@ -166,6 +166,7 @@ export function createExtensionHost(
   // than by `managed`, so a plugin row replacing one and the builtin coming back hand over cleanly.
   const builtinRows = createBuiltinRowHost({
     sideModels: rowHosts.sideModels,
+    subscribeSideModels: rowHosts.subscribeSideModels,
     ...(deps.pluginManage ? { pluginManage: deps.pluginManage } : {}),
     ...(deps.sessionGeneration ? { sessionGeneration: deps.sessionGeneration } : {}),
     owners: extensionOwners,
