@@ -112,19 +112,21 @@ The result is one of these states. Everything except `legacySend` and `absent` c
 
 | `state` | Meaning | What to do |
 | --- | --- | --- |
-| `queued` | The key is taken but the record was not completed (a crash between two steps). | Call `admitInput` again. |
-| `enqueued` | Admitted. The platform holds the text until the session is idle and the start checks pass. | Poll `inputResult`. It never changes the request, but it may submit the held input if it has become eligible; the platform also does so when the session goes idle and on a periodic sweep. |
+| `queued` | The key is taken but the record was not completed: a crash between two steps, or an `admitInput` that rejected because a start check could not be read (for example while the daemon restarts). The input does not run. | Call `admitInput` again with the same request. |
+| `enqueued` | Admitted. The platform holds the text until the session is idle and the start checks pass. While a check cannot be read, the input stays held as it is. | Poll `inputResult`. It never changes the request, but it may submit the held input if it has become eligible; the platform also does so when the session goes idle and on a periodic sweep. |
 | `consumed` | A turn took the text. Adds `turn` and `seq`. Final. | Done. |
 | `retained` | Kept and never delivered: the owner chose keep or discard in the Web, or the session was archived. Final. | Done. |
 | `needsOwner` | Delivery cannot be shown to be right: receipt unknown or not yours, pairing changed, grant revoked, or the start checks fail (at admission or at submit). With `ownerDiscarded`, the submitted input was removed from the session inbox outside the platform; its text is kept for the owner. | Notify the owner; do not retry. The owner decides in the Web. |
 | `waitingQuestion` | The session has an unanswered question. The platform holds the input and moves it on once the question closes. | Notify the owner and wait. |
 | `recoveryUnknown` | A `legacyOwnerMessage`, or a `recoveryContinuation` that failed its checks. | Notify the owner. The owner decides in the Web. |
 | `legacySend` | The key exists only in the old `send` ledger. `delivery` is `consumed`, `pending` or `unknown`. | `consumed` is final; otherwise resubmit as `legacyOwnerMessage`. |
-| `absent` | The platform knows no such key. `historyCoverage: 'complete'` only when the session was created after input records existed; otherwise `partial`. | Admit only on `complete`; on `partial` only notify. |
+| `absent` | The platform knows no such key. `historyCoverage` is `complete` for every session your service still manages: a managed session's input and send records are never pruned by time. `partial` is reserved and not returned today. | Admit on `complete`; should `partial` ever come back, only notify. |
 
 `reason` is one of `eligible`, `busy`, `questionOpen`, `legacySourceUnknown`, `recoveryUnverified`, `receiptUnknown`, `pairingChanged`, `grantRevoked`, `sessionArchived`, `ownerRetained`, `ownerDiscarded` (with `retained`, the owner discarded it; with `needsOwner`, it was removed outside the platform). Show it as text; values may be added. `reviewLocation` is `/?session=<sessionId>&ownerInput=<inputId>`, the Web page where the owner reads the text, its source and its history and decides. The page's decisions (deliver, keep, discard, and redeliver or discard for parked channel receipts) go through `_agnes/v1/managedInput.get` and `_agnes/v1/managedInput.decide`, which accept only the owner's own Web page. A local SDK client on the Unix socket is refused with `CAPABILITY_DENIED`, and so are plugin client modules, home pages and workbench panels calling through the APIs the Web hands them. Limit: plugin code runs in the same page, so code that patches the page's WebSocket, opens its own socket or works around the SDK objects is not stopped.
 
-Refusals reject as described under [Refusals](#refusals), with `data.reason`: `OWNER_INPUT_TARGET_MISMATCH` (`target` differs from the session's start key or binding), `OWNER_INPUT_KEY_REUSED` (same key, any difference in the request) and `SESSION_ARCHIVED` (thrown, never returned). `OWNER_INPUT_REQUIRED` is what `send` on a bound session returns. Malformed parameters are `INVALID_PARAMS`.
+The owner does not need a link to find what waits on them. Once anything does, the Web's home sidebar shows an **Owner inputs** entry with a count. Its page lists, across sessions and without any key, every input in `needsOwner` or `recoveryUnknown`, every held input whose start checks cannot be read, every `queued` admission not completed within a minute, and every parked channel receipt, which the owner can redeliver or discard there. It reads `_agnes/v1/managedInput.list`, under the same owner-page rule.
+
+Refusals reject as described under [Refusals](#refusals), with `data.reason`: `OWNER_INPUT_TARGET_MISMATCH` (`target` differs from the session's start key or binding), `OWNER_INPUT_KEY_REUSED` (same key, any difference in the request) and `SESSION_ARCHIVED` (thrown, never returned). `send` on a bound session rejects with `OWNER_INPUT_REQUIRED`. Malformed parameters are `INVALID_PARAMS`. When a start check cannot be read, `admitInput` rejects with an error that is not a refusal and leaves the key `queued`; call it again later with the same request.
 
 Trust: an admitted owner message still enters the session inbox as `origin: 'system'` with `trust: 'untrusted'`. Admission proves the text came from the paired owner's channel receipt; it does not make the text an owner-identity input and it grants no approval. There is no new declaration key: `sessions: true` already grants both methods. A plugin that needs them sets its `apiRange` to `^5.18.0`.
 
@@ -132,6 +134,7 @@ Trust: an admitted owner message still enters the session inbox as `origin: 'sys
 
 - `retention: 'task'` keeps the session. `retention: 'ephemeral'` archives it once `result` reads an ended last turn, and keeps it out of task-experience mining: automatic refinement and the model's own proposals are refused. The owner's own refinement request still works.
 - Disabling the plugin refuses new starts and sends. Existing sessions stay with the owner, running turns finish, and pending approvals can still be answered in the Web. After re-enabling, call `list()` to reconcile.
+- Uninstalling the plugin's package takes its submitted owner inputs back out of the session inboxes, then deletes its input records, held ones included, and its channel receipts, pending and parked. None of them runs, and none is left for the owner to decide.
 
 ## Refusals
 
