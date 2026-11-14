@@ -177,5 +177,12 @@ describe('BundledAppChannels.claimInstance', () => {
     expect(() =>
       bundledAppChannels(hub, { assertCurrent() {} }).subscribe('team', ['group-a'], () => {}),
     ).not.toThrow()
+    // Once two rows share the id, sends and reads cannot pick one, so neither can a new claim.
+    expect(() =>
+      bundledAppChannels(hub, { assertCurrent() {} }).claimInstance(
+        { pluginId: 'ext:other/chat/main', instanceId: 'bot' },
+        () => {},
+      ),
+    ).toThrow(unavailable)
   })
 })

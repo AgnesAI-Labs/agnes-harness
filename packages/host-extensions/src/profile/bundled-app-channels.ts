@@ -177,7 +177,8 @@ export class BundledAppChannelHub {
 
   /**
    * Claims every chat of the instance `instanceId` that the channel row of `pluginId` runs. Refused
-   * while any other consumer uses the instance: a claimant, a group subscriber, an owner pairing or a
+   * when another row runs the same instance id (sends and reads could not pick one), and while any
+   * other consumer uses the instance: a claimant, a group subscriber, an owner pairing or a
    * bound session.
    */
   claimInstance(
@@ -186,12 +187,9 @@ export class BundledAppChannelHub {
     instanceId: string,
     onEvent: (event: MessageEvent) => void,
   ): { release(): void } {
-    const rows = [...(this.links.get(instanceId) ?? [])].filter(
-      ([channel]) => this.plugins.get(channel) === pluginId,
-    )
-    const [only] = rows.length === 1 ? rows : []
-    if (!only) throw unavailable()
-    const [channel, link] = only
+    // As for `send` and the reads: one row must run the instance id, and it must be the named plugin's.
+    const { channel, link } = this.attached(instanceId)
+    if (this.plugins.get(channel) !== pluginId) throw unavailable()
     const prefix = claimKey(instanceId, '')
     const grouped = [...this.claims].some(
       ([key, subscription]) =>
