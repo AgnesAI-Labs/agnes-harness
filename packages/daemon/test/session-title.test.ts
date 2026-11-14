@@ -88,6 +88,7 @@ it('uses the same generator through the real local endpoint and worker command d
         ],
       }),
   })
+  const titleBindings = vi.spyOn(host, 'bindAutoTitleEligibility')
   const endpoint = createLocalEndpoint(host, { workspaces: await testWorkspaceCatalog(root) })
   const notifications: unknown[] = []
   const reading = (async () => {
@@ -105,6 +106,10 @@ it('uses the same generator through the real local endpoint and worker command d
       result: { sessionId: string }
     }
     const id = created.result.sessionId
+    const titlePolicy = titleBindings.mock.calls[0]?.[0]
+    if (!titlePolicy) throw new Error('embedded title preference authority was not bound')
+    await expect(titlePolicy(id)).resolves.toBe(true)
+    await expect(titlePolicy('unknown-session')).resolves.toBe(false)
     await expect(
       endpoint.handle(request(20, '_agnes/v1/session.attach', { sessionId: id, filter: { preview: true } })),
     ).resolves.toHaveProperty('result')
@@ -150,7 +155,21 @@ it('uses the same generator through the real local endpoint and worker command d
     await expect(
       endpoint.handle(request(22, '_agnes/v1/session.attach', { sessionId: id, filter: { preview: true } })),
     ).resolves.toHaveProperty('result')
+    await expect(
+      endpoint.handle(
+        request(23, '_agnes/v1/session.rename', { sessionId: id, title: 'Explicit owner name' }),
+      ),
+    ).resolves.toMatchObject({ result: { title: 'Explicit owner name' } })
+    await expect(titlePolicy(id)).resolves.toBe(false)
+    await expect(endpoint.handle(request(24, '_agnes/v1/session.list', {}))).resolves.toMatchObject({
+      result: {
+        items: [
+          expect.objectContaining({ sessionId: id, title: 'Explicit owner name', titleSource: 'user' }),
+        ],
+      },
+    })
     const session = await host.createSession({ key: 'worker-title', cwd: root })
+    await expect(titlePolicy(session.key)).resolves.toBe(true)
     const context = { host, aborts: new Map<string, AbortController>() }
     await handleCommand(
       session,

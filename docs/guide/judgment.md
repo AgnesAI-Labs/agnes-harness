@@ -36,6 +36,8 @@ A judgment attempt may wait up to 5 seconds. With a configured native fallback i
 
 ## Refresh an outdated automatic title
 
+New local-dev homes admit the `sessionWork` and `autoTitle` capability categories. Existing or restricted profiles keep their administrator-defined policy: add both names to the existing `policy.capabilityCeiling` list before inspecting an updated package, preserving its other entries. This allows package review; the exact source grant, installation, trust, enablement and title opt-in are still required.
+
 Title drift is a separate opt-in. Enable `uses.title.enabled` and set `uses.title.refreshAfterPrompts` to a positive integer in the plugin settings, then start a new session. The cadence defaults to **0 (off)**. It counts meaningful operator prompts after an automatic title exists; acknowledgements and other low-signal inputs are filtered. Counts are in memory and reset when the plugin session is released or the process restarts.
 
 After a normal completed reply, a background check asks whether the title still describes the task. Continuing, reviewing, testing, fixing or shipping the same work still fits. A valid fits value **below 0.5** requests a new title from AGH's existing title model; exactly 0.5 keeps the title. An explicitly selected chat judgment model uses its parsed yes/no values. Errors, missing models and a 15-second judgment timeout keep the previous title. Judgment and title generation each have their own recorded usage and remain subject to existing credits policies.

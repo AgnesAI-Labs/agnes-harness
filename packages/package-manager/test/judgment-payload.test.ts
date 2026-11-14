@@ -12,23 +12,26 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { validatePluginMetadata } from '@agnes/protocol'
 import { expect, it } from 'vitest'
 import { buildJudgmentPayload } from '../tools/build-judgment-payload.mjs'
 import { ensureJudgmentPayload } from '../tools/ensure-judgment-payload.mjs'
 
 const payload = new URL('../bundled-plugins/judgment/', import.meta.url)
-it('mirrors the source row with API 5.17 and exports the real plugin', async () => {
+it('mirrors the source row with API 5.20 and exports the real plugin', async () => {
   const source = JSON.parse(readFileSync(new URL('../../judgment/package.json', import.meta.url), 'utf8'))
   const manifest = JSON.parse(readFileSync(new URL('package.json', payload), 'utf8'))
   const { default: disabled, ...row } = source.agnes.plugins[0]
   expect(disabled).toBe(false)
+  expect(validatePluginMetadata(row.metadata).ok).toBe(true)
+  expect(validatePluginMetadata(manifest.agnes.metadata).ok).toBe(true)
   expect(manifest.agnes.plugins).toEqual([row])
   expect(row).toMatchObject({
     export: 'judgmentPlugin',
     id: 'ext:agnes.judgment/main',
-    apiRange: '^5.17.0',
+    apiRange: '^5.20.0',
     configReload: 'next-session',
-    inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'services', 'self', 'tools'],
+    inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'services', 'self', 'tools', 'sessionWork'],
   })
   expect(row.capabilities.tools).toEqual({ prefix: '', names: ['find_relevant', 'judge_batch'] })
   expect(row.capabilities.filesystem).toEqual({ read: ['**'] })
