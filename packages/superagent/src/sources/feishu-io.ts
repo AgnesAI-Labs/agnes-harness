@@ -25,6 +25,17 @@ export interface FeishuIo {
   readonly signal?: AbortSignal | undefined
 }
 
+/**
+ * The channel plugin and instance the `instance` setting names, written `<plugin id>/<instance id>` (a plugin id may
+ * contain `/`, an instance id never does). A bare instance id names no plugin; it is enough to subscribe groups.
+ */
+export function instanceRef(value: string): { pluginId: string; instanceId: string } {
+  const at = value.lastIndexOf('/')
+  return at < 0
+    ? { pluginId: '', instanceId: value }
+    : { pluginId: value.slice(0, at), instanceId: value.slice(at + 1) }
+}
+
 /** The `data.code` of a channel error (the error name when it has none), or undefined for other errors. */
 export function channelCode(error: unknown): string | undefined {
   if (!error || typeof error !== 'object') return undefined
@@ -123,7 +134,7 @@ export interface FeishuLink {
   log?(message: string): void
   /** The last health line logged per entry. */
   readonly logged: Map<string, string>
-  /** Whether the listed chats are subscribed now; history is recovered only then. */
+  /** Whether the instance is claimed or the listed chats are subscribed now; history is recovered only then. */
   listening: boolean
   /** Replies being sent, by `chat\0asked message`, with the root they answer and how many are in flight. */
   readonly sending: Map<string, { root: string; count: number }>

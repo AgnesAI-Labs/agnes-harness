@@ -41,14 +41,25 @@ const manifest = {
   directory: { supported: false, unit: 'dept' },
 }
 
-function source(exchange: string, instance: string, workspace: string, reads: boolean): string {
+function source(exchanges: Record<string, string>, workspace: string, reads: boolean): string {
+  const instances = Object.entries(exchanges).map(([id, exchange]) => ({
+    id,
+    workspace,
+    agent: 'default',
+    credentialRefs: {},
+    allowFrom: [],
+    requireMention: true,
+    config: { exchange },
+  }))
   return `
 import { appendFileSync, existsSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-const exchange = ${JSON.stringify(exchange)}
 const manifest = ${JSON.stringify(manifest)}
 const READS = ${reads ? '{ messages: true, threads: true, history: true, chats: true, members: true }' : 'undefined'}
 const PAGE = 2
+// Each instance has its own exchange directory, named in its config.
+const adapter = ({ config }) => {
+const exchange = config.exchange
 let sent = 0
 const history = () => (existsSync(join(exchange, 'history.json')) ? JSON.parse(readFileSync(join(exchange, 'history.json'), 'utf8')) : [])
 const record = (method, args) => appendFileSync(join(exchange, 'reads.jsonl'), JSON.stringify({ method, args }) + '\\n')
@@ -56,7 +67,6 @@ const page = (rows, cursor) => {
   const start = cursor === undefined ? 0 : Number(cursor)
   return { rows: rows.slice(start, start + PAGE), ...(start + PAGE < rows.length ? { cursor: String(start + PAGE) } : {}) }
 }
-const adapter = () => {
   let timer
   return {
     manifest,
@@ -76,7 +86,7 @@ const adapter = () => {
     async send(target, message) {
       const messageId = 'om_sent' + ++sent
       appendFileSync(join(exchange, 'sent.jsonl'), JSON.stringify({ target, message, messageId }) + '\\n')
-      return { chatId: target.chatId, messageId, chatType: 'group' }
+      return { chatId: target.chatId, messageId, chatType: target.chatType ?? 'group' }
     },
     async update() {},
     renderApproval() { return { blocks: [] } },
@@ -124,7 +134,7 @@ export const main = {
   apply(ctx) {
     ctx.profileRuntime.registerChannel(
       { id: manifest.id, version: '1.0.0', manifest, create: adapter },
-      { instances: [{ id: ${JSON.stringify(instance)}, workspace: ${JSON.stringify(workspace)}, agent: 'default', credentialRefs: {}, allowFrom: [], requireMention: true }] },
+      { instances: ${JSON.stringify(instances)} },
     )
   },
 }
@@ -132,15 +142,21 @@ export const main = {
 }
 
 /**
- * Writes the channel plugin into `directory` with its exchange directory: one channel instance `instance` whose
- * adapter declares every read (`reads`), or none, as the released Feishu plugin does. Returns how a test drives it.
+ * Writes the channel plugin into `directory` with an exchange directory per instance: the channel instance `instance`,
+ * and the further instances `others`, whose adapters declare every read (`reads`), or none, as the released Feishu
+ * plugin does. Returns how a test drives `instance`, and `of(id)` drives another.
  */
 export function writeChannelPlugin(
   directory: string,
-  options: { instance: string; workspace: string; reads: boolean },
+  options: { instance: string; workspace: string; reads: boolean; others?: string[] },
 ) {
-  const exchange = join(directory, 'exchange')
-  mkdirSync(exchange, { recursive: true })
+  const exchanges = Object.fromEntries(
+    [options.instance, ...(options.others ?? [])].map((id, index) => [
+      id,
+      join(directory, index === 0 ? 'exchange' : `exchange-${id}`),
+    ]),
+  )
+  for (const exchange of Object.values(exchanges)) mkdirSync(exchange, { recursive: true })
   writeFileSync(
     join(directory, 'package.json'),
     JSON.stringify({
@@ -183,10 +199,16 @@ export function writeChannelPlugin(
       },
     }),
   )
-  writeFileSync(
-    join(directory, 'index.mjs'),
-    source(exchange, options.instance, options.workspace, options.reads),
-  )
+  writeFileSync(join(directory, 'index.mjs'), source(exchanges, options.workspace, options.reads))
+  return {
+    directory,
+    ...driver(exchanges[options.instance] as string),
+    of: (id: string) => driver(exchanges[id] as string),
+  }
+}
+
+/** Drives one instance through its exchange directory. */
+function driver(exchange: string) {
   let inbound = 0
   const lines = <T>(file: string): T[] =>
     existsSync(join(exchange, file))
@@ -197,7 +219,6 @@ export function writeChannelPlugin(
       : []
   const history: MessageEvent[] = []
   return {
-    directory,
     /** Delivers an event through the adapter; a message is also kept in the history the reads answer from. */
     emit(event: ChannelEvent, keep = true) {
       if (keep && event.kind === 'message' && !history.some((item) => item.messageId === event.messageId)) {

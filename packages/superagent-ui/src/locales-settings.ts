@@ -628,6 +628,18 @@ export const SETTINGS_TEXT = {
     '需要设置：渠道实例 {channel} 拒绝了这些群（{reason}）；正在重试',
     HEALTH_TEXT.feishuChannelRefused,
   ],
+  'healthCode.feishuPluginUnset': [
+    '需要设置：要整个认领实例，请连同渠道插件写成 <插件 id>/<实例 id>',
+    HEALTH_TEXT.feishuPluginUnset,
+  ],
+  'healthCode.feishuInstanceShared': [
+    '需要设置：渠道实例 {channel} 已在为主人或其他功能服务；请用专用的机器人实例',
+    HEALTH_TEXT.feishuInstanceShared,
+  ],
+  'healthCode.feishuInstanceRefused': [
+    '需要设置：渠道实例 {channel} 拒绝了认领（{reason}）；正在重试',
+    HEALTH_TEXT.feishuInstanceRefused,
+  ],
   'healthCode.feishuNoHistory': ['渠道不能读取群历史，重启或断线后不补收消息', HEALTH_TEXT.feishuNoHistory],
   'healthCode.feishuNoMembers': [
     '渠道不能列出群成员，名单不同步，使用设置里的名单',

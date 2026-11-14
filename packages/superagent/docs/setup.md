@@ -92,8 +92,15 @@ steps, and the defaults. Ask for one confirmation.
 
 1. **Operator steps first.** One message with what only the operator can do, as the dedicated system user: create the
    agent GitHub account and add it to the repository with write access; accept the invitation as the agent account; and
-   turn on the branch protection above. For Feishu, set up the AGH Feishu channel with its bot and note the channel
-   instance id; Superagent shares that bot through the channel.
+   turn on the branch protection above. For Feishu, give Superagent a bot of its own:
+   1. Create a second Feishu app (bot) on the Feishu open platform, besides the one the team already uses with AGH.
+   2. Add it as another instance of the AGH Feishu channel, on the Channels page. Do not pair any direct chat of this
+      instance with a plugin service, and do not bind its chats to a session: Superagent claims the whole instance,
+      and an instance already in use is refused.
+   3. Note the channel plugin's id and the new instance's id; the Superagent setting is `<plugin id>/<instance id>`.
+
+   With only one bot, Superagent can instead share it and receive only the listed chats (claim **Only these chats**);
+   direct messages and other chats are then not received.
    The agent account is signed in in step 5. Wait until the operator says it is done.
 2. **A separate AGH home.** Pick a directory for it and use it for every `agh` command and for the daemon:
 
@@ -140,8 +147,10 @@ steps, and the defaults. Ask for one confirmation.
 7. **Save the settings.** Open the **Superagent** entry on the home page and save from the **Settings** tab, or, for a
    setup agent, through the services in [Settings services](#settings-services). The agent's own tools cannot change the
    account or execution-environment fields, only the panel and these services can. In this order:
-   1. **Sources:** the GitHub Source (repository and the agent's GitHub CLI), then the Feishu Source if used (the
-      Feishu channel instance id and the chats).
+   1. **Sources:** the GitHub Source (repository and the agent's GitHub CLI), then the Feishu Source if used: the
+      dedicated bot's instance as `<plugin id>/<instance id>`, claim **Whole instance**, the chats, and whether direct
+      messages and other chats are received. If the Source reports that the instance already serves the owner or
+      another feature, choose the dedicated instance instead; Superagent never takes over the owner's direct messages.
    2. **Policy:** the allowed lists, and for Feishu the chat ids, chosen from the chats the channel lists.
    3. **Execution:** the ticket directory root and the prepare command from question 7, for example
       `git clone "https://github.com/<owner>/<name>.git" repo`.

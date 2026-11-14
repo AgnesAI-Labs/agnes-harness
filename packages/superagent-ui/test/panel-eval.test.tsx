@@ -192,7 +192,8 @@ it('sets the Feishu admission table per receiving scope, offering only the cells
       feishu: {
         enabled: true,
         config: {
-          channel: 'feishu-bot',
+          instance: 'feishu-bot',
+          claim: 'groups',
           chats: [
             { chatId: 'oc_team', listen: 'all' },
             { chatId: 'oc_other', listen: 'mentions' },

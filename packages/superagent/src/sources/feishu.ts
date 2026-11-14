@@ -12,7 +12,7 @@ import {
   linkIo,
   feishuLink as newLink,
 } from './feishu-io.js'
-import { inFlight, refreshChatNames, rememberReply, runFeishu } from './feishu-loops.js'
+import { channelOf, inFlight, refreshChatNames, rememberReply, runFeishu } from './feishu-loops.js'
 import { feishuThreadContext } from './feishu-read.js'
 import { feishuTriggerId, SOURCE } from './feishu-trigger.js'
 import { type SourceContext, type SourceHost, sourceContext } from './host.js'
@@ -42,7 +42,9 @@ export {
 
 const FeishuConfigSchema = z
   .object({
-    channel: z.string().trim().max(200).default(''),
+    /** `<plugin id>/<instance id>`; a bare instance id is enough while `claim` is `groups`. */
+    instance: z.string().trim().max(300).default(''),
+    claim: z.enum(['instance', 'groups']).default('instance'),
     readPageSize: z.number().int().min(1).max(50).default(20),
     chats: z
       .array(
@@ -74,10 +76,9 @@ const unlinked = newLink(
     },
   }),
 )
-/** The Feishu kind whose replies, reads and member sync go through `link`. */
 /**
- * Notes of the admission rows the Source cannot serve yet: it claims only the listed group chats of the channel, so
- * direct messages and unlisted chats reach it only once it has a Feishu bot instance of its own.
+ * Notes of the admission rows the Source cannot serve while it claims only the listed group chats of a shared bot:
+ * direct messages and unlisted chats reach it only on a Feishu bot instance of its own (`claim: 'instance'`).
  */
 const DEDICATED = {
   directMessages: { zh: '需要专用机器人，暂不接收', en: 'Needs a dedicated bot; not received yet' },
@@ -100,18 +101,31 @@ const described: Omit<SourceKind<FeishuConfig>, 'channel' | 'threadContext' | 'p
   kind: SOURCE,
   title: { zh: '飞书', en: 'Feishu' },
   description: {
-    zh: '经 AGH 飞书渠道接收下列群中发给机器人的消息，补收群历史并轮询订阅的线程；私聊和其他群需要专用的机器人实例。',
-    en: 'Receives messages to the bot in these chats through the AGH Feishu channel, recovers chat history and polls subscribed Threads; direct messages and other chats need a dedicated bot instance.',
+    zh: '经 AGH 飞书渠道接收发给机器人的消息，补收群历史并轮询订阅的线程。认领专用机器人的整个实例时，接收它的群聊和私聊；只认领下列群时，私聊和其他群不接收。',
+    en: "Receives messages to the bot through the AGH Feishu channel, recovers chat history and polls subscribed Threads. Claiming a dedicated bot's whole instance, it receives that bot's group chats and direct messages; claiming only these chats, it receives no direct messages or other chats.",
   },
   schema: FeishuConfigSchema,
   fields: [
     {
-      key: 'channel',
+      key: 'instance',
       type: 'text',
       label: { zh: '飞书渠道实例', en: 'Feishu channel instance' },
       hint: {
-        zh: 'AGH 飞书渠道实例的 id；来源经它接收、回复和读取，和其他功能共用这个机器人。渠道没有运行时来源会一直重试订阅。',
-        en: 'The id of the AGH Feishu channel instance; the Source receives, replies and reads through it, sharing the bot with other features. While the channel is not running, the Source keeps retrying its subscription.',
+        zh: '渠道页上的一个飞书渠道实例，写成 <插件 id>/<实例 id>；来源经它接收、回复和读取。渠道没有运行时来源会一直重试。',
+        en: 'A Feishu channel instance from the Channels page, written <plugin id>/<instance id>; the Source receives, replies and reads through it. While the channel is not running, the Source keeps retrying.',
+      },
+    },
+    {
+      key: 'claim',
+      type: 'select',
+      label: { zh: '认领', en: 'Claim' },
+      options: [
+        { value: 'instance', label: { zh: '整个实例（专用机器人）', en: 'Whole instance (dedicated bot)' } },
+        { value: 'groups', label: { zh: '只认领下列群（共用机器人）', en: 'Only these chats (shared bot)' } },
+      ],
+      hint: {
+        zh: '推荐给 Superagent 建一个专用飞书应用，作为渠道的另一个实例：整个实例的群聊和私聊都交给 Superagent。实例已有主人的私聊配对或别的用途时认领不成，请换专用实例。“只认领下列群”时私聊和其他群不接收。',
+        en: "Recommended: a Feishu app of Superagent's own, added as another instance of the channel, whose group chats and direct messages all go to Superagent. An instance that already has the owner's paired direct messages or another use cannot be claimed; use a dedicated one. With only these chats, direct messages and other chats are not received.",
       },
     },
     {
@@ -151,11 +165,16 @@ const described: Omit<SourceKind<FeishuConfig>, 'channel' | 'threadContext' | 'p
         { value: 'mentions', label: { zh: '仅 @', en: '@ only' } },
       ],
       hint: {
-        zh: '机器人已加入、但没列在上面的群。“仅 @”接收那里 @ 机器人的消息；谁的消息能发起工作看策略里的准入。',
-        en: 'Chats the bot has joined that are not listed above. "@ only" receives messages there that mention the bot; whose messages may originate work is the Policy\'s admission.',
+        zh: '机器人已加入、但没列在上面的群，只在认领整个实例时生效。“仅 @”接收那里 @ 机器人的消息；谁的消息能发起工作看策略里的准入。',
+        en: 'Chats the bot has joined that are not listed above; applies only when the whole instance is claimed. "@ only" receives messages there that mention the bot; whose messages may originate work is the Policy\'s admission.',
       },
     },
-    { key: 'directMessages', type: 'switch', label: { zh: '接收私聊', en: 'Direct messages' } },
+    {
+      key: 'directMessages',
+      type: 'switch',
+      label: { zh: '接收私聊', en: 'Direct messages' },
+      hint: { zh: '只在认领整个实例时生效。', en: 'Applies only when the whole instance is claimed.' },
+    },
     {
       key: 'readPageSize',
       type: 'number',
@@ -271,6 +290,7 @@ const policyDescribed: Omit<NonNullable<SourceKind['policy']>, 'sync'> = {
   rows(stored) {
     const config = FeishuConfigSchema.parse(stored)
     const mentions = { zh: '仅 @', en: '@ only' }
+    const own = config.claim === 'instance'
     return [
       ...config.chats.map((chat) => ({
         id: chat.chatId,
@@ -285,7 +305,12 @@ const policyDescribed: Omit<NonNullable<SourceKind['policy']>, 'sync'> = {
       {
         id: 'other',
         label: { zh: '其他群', en: 'Other chats' },
-        note: config.otherChats === 'mentions' ? DEDICATED.otherChats : { zh: '不接收', en: 'Not received' },
+        note:
+          config.otherChats !== 'mentions'
+            ? { zh: '不接收', en: 'Not received' }
+            : own
+              ? mentions
+              : DEDICATED.otherChats,
         cells: {
           listedUnaddressed: false,
           unlistedAddressed: config.otherChats === 'mentions',
@@ -295,7 +320,11 @@ const policyDescribed: Omit<NonNullable<SourceKind['policy']>, 'sync'> = {
       {
         id: 'direct',
         label: { zh: '私聊', en: 'Direct messages' },
-        note: config.directMessages ? DEDICATED.directMessages : { zh: '不接收', en: 'Not received' },
+        note: !config.directMessages
+          ? { zh: '不接收', en: 'Not received' }
+          : own
+            ? { zh: '接收', en: 'Received' }
+            : DEDICATED.directMessages,
         cells: {
           listedUnaddressed: false,
           unlistedAddressed: config.directMessages,
@@ -307,7 +336,7 @@ const policyDescribed: Omit<NonNullable<SourceKind['policy']>, 'sync'> = {
 }
 export function feishuKindFor(link: FeishuLink): SourceKind<FeishuConfig> {
   const io = (signal?: AbortSignal): FeishuIo =>
-    linkIo(link, link.context?.config<FeishuConfig>(SOURCE)?.channel ?? '', signal)
+    linkIo(link, channelOf(link.context?.config<FeishuConfig>(SOURCE)), signal)
   const kind: SourceKind<FeishuConfig> = {
     ...described,
     refreshLabels: (host, signal) =>
@@ -338,7 +367,7 @@ export function feishuKindFor(link: FeishuLink): SourceKind<FeishuConfig> {
         async run(host, part, signal) {
           const chat = String(part.syncChat)
           const config = host.sources.instance<FeishuConfig>(SOURCE)?.config
-          const reader = linkIo(link, config?.channel ?? '', signal)
+          const reader = linkIo(link, channelOf(config), signal)
           let members: { userId: string; displayName?: string }[]
           try {
             members = await channelRead(reader, 'members', (channels, channel) =>
@@ -384,7 +413,7 @@ export function feishuIo(sources: SourceRegistry, signal?: AbortSignal): FeishuI
   const link = kind ? links.get(kind) : undefined
   const config = sources.instance<FeishuConfig>(SOURCE)
   if (!link || link === unlinked || !config?.enabled) throw new Error('The Feishu Source is off')
-  return linkIo(link, config.config.channel, signal)
+  return linkIo(link, channelOf(config.config), signal)
 }
 /** Returns the Feishu Source's settings, falling back to schema defaults while the Feishu plugin is disabled. */
 export const feishuSettings = (sources: SourceRegistry): FeishuConfig =>

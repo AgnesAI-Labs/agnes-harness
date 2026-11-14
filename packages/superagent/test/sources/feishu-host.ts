@@ -51,7 +51,8 @@ export function feishuHost(
         feishu: {
           enabled: true,
           config: {
-            channel: 'feishu',
+            instance: 'feishu',
+            claim: 'groups',
             chats: [
               { chatId: 'oc_team', listen: 'mentions' },
               { chatId: 'oc_observed', listen: 'all' },
