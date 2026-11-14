@@ -1,4 +1,4 @@
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
@@ -107,6 +107,35 @@ it("keeps the daemon's git and gh configuration variables out of the runtime's o
         expect(child, name).not.toHaveProperty(name)
     },
   )
+})
+
+it("reads neither the operator's XDG git configuration nor the system one", async () => {
+  const repo = join(directory, 'repo')
+  await run(['git', 'init', '-q', repo])
+  const xdg = join(directory, 'operator-xdg')
+  mkdirSync(join(xdg, 'git'), { recursive: true })
+  writeFileSync(
+    join(xdg, 'git', 'config'),
+    '[url "https://operator.example.invalid/"]\n\tinsteadOf = https://github.com/\n[http]\n\textraheader = AUTHORIZATION: basic operator\n',
+  )
+  await withParentEnv({ XDG_CONFIG_HOME: xdg }, async () => {
+    // The operator's XDG configuration is what a git started with this environment would read.
+    const operator = await runCommand(['git', 'config', '--list', '--show-origin'], {
+      cwd: repo,
+      signal: new AbortController().signal,
+      timeoutMs: 10_000,
+      env: { XDG_CONFIG_HOME: xdg },
+    })
+    expect(operator.stdout).toContain('operator.example.invalid')
+    const listed = await run(['git', 'config', '--list', '--show-origin'], { cwd: repo })
+    expect(listed.code).toBe(0)
+    expect(listed.stdout).not.toContain('operator')
+    expect(listed.stdout, 'no system configuration either').not.toMatch(
+      /^file:\/(etc|Library|usr)\S*gitconfig/m,
+    )
+    expect(childEnvironment()).toMatchObject({ GIT_CONFIG_NOSYSTEM: '1' })
+    expect(childEnvironment()).not.toHaveProperty('XDG_CONFIG_HOME')
+  })
 })
 
 it("runs the runtime's commands with the agent HOME and gh configuration once they are set, and without after", async () => {
