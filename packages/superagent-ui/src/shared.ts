@@ -188,6 +188,23 @@ export const SETUP_PROBLEMS = {
     'git does not read the github.com credential configuration Superagent writes; Superagent needs git 2.32 or later.',
   ],
   environmentFailed: ['deployment', 'Preparing the agent environment failed.'],
+  sessionTaken: [
+    'deployment',
+    'A session {session} exists that Superagent did not open; archive or remove it, then check the setup again.',
+  ],
+  agentHomeMismatch: [
+    'deployment',
+    'The daemon runs with HOME {actual}, not the agent home {home}; start this AGH with HOME set to the agent home.',
+  ],
+  agentGhNotShim: [
+    'deployment',
+    'Sessions run gh from {actual}, not the shim in {shims}; put {shims} first on the PATH this AGH starts with.',
+  ],
+  agentCredentialMixed: [
+    'deployment',
+    "git would ask other credential helpers than the agent's for github.com: {helpers}.",
+  ],
+  agentLoginMismatch: ['github', 'gh acts as @{account}, not the agent account @{login}.'],
   repositoryUnset: ['github', 'The GitHub Source names no repository.'],
   agentCliUnset: ['github', 'The agent GitHub CLI is not set.'],
   agentCliMissing: ['github', 'The agent GitHub CLI was not found.'],
