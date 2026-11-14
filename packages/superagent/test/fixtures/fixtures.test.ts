@@ -8,7 +8,7 @@ import type { ChannelAdapter, ChannelEvent, MessageEvent } from '@agnes/extensio
 import { afterEach, describe, expect, it } from 'vitest'
 import { startGitHttpRemote } from './git-http-remote.js'
 import { AGENT_CREDENTIAL, makeHomes, OPERATOR_CREDENTIAL } from './homes.js'
-import { isAlive, killTree } from './process-tree.js'
+import { isAlive, killTree, type ProcessIo } from './process-tree.js'
 import { createTestChannel } from './test-channel.js'
 
 const exec = promisify(execFile)
@@ -317,6 +317,54 @@ describe('process tree', () => {
       expect(isAlive(grandchild)).toBe(false)
     } finally {
       if (isAlive(grandchild)) process.kill(grandchild, 'SIGKILL')
+      if (parent.exitCode === null && parent.signalCode === null) parent.kill('SIGKILL')
+    }
+  })
+
+  // The io below records instead of signalling, so these never touch a process that is not the test's own child.
+  const recording = (tables: Map<number, { ppid: number; start: string }>[]) => {
+    const calls: string[] = []
+    const io: ProcessIo = {
+      table: () => {
+        calls.push('table')
+        return tables.shift() ?? new Map()
+      },
+      kill: (pid, signal) => {
+        calls.push(`kill ${pid} ${String(signal)}`)
+      },
+    }
+    return { io, calls }
+  }
+  const sleeper = () => spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' })
+
+  it('neither walks nor signals a child that has already exited (its pid may belong to someone else now)', async () => {
+    const child = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' })
+    await new Promise((resolve) => child.once('exit', resolve))
+    const { io, calls } = recording([new Map([[999_999, { ppid: child.pid as number, start: 'S' }]])])
+    await killTree(child, 'SIGKILL', 10, io)
+    expect(calls).toEqual([])
+  })
+
+  it('kills a descendant only while it is the same process that was recorded', async () => {
+    const GONE = 999_998
+    const REUSED = 999_999
+    const parent = sleeper()
+    const pid = parent.pid as number
+    try {
+      const recorded = new Map([
+        [GONE, { ppid: pid, start: 'Mon 1' }],
+        [REUSED, { ppid: pid, start: 'Mon 2' }],
+      ])
+      // After the parent exits: GONE is orphaned to init with its start time unchanged (still ours); REUSED is a
+      // different process now (another start time), so it must be left alone.
+      const after = new Map([
+        [GONE, { ppid: 1, start: 'Mon 1' }],
+        [REUSED, { ppid: 1, start: 'Tue 9' }],
+      ])
+      const { io, calls } = recording([recorded, after])
+      await killTree(parent, 'SIGKILL', 10, io)
+      expect(calls).toEqual(['table', 'table', `kill ${GONE} SIGKILL`])
+    } finally {
       if (parent.exitCode === null && parent.signalCode === null) parent.kill('SIGKILL')
     }
   })
