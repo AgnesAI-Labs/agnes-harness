@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  type Stats,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -150,5 +159,44 @@ describe('the Superagent prompt section', () => {
     expect(readFileSync(join(skills, 'dsh-superagent-mine', 'SKILL.md'), 'utf8')).toBe('owner')
     expect(aghHome({ AGH_HOME: '/srv/agh', HOME: '/srv/user' })).toBe('/srv/agh')
     expect(aghHome({ HOME: '/srv/user' })).toBe(join('/srv/user', AGH_DIR))
+  })
+
+  it('leaves the skill files untouched when a later start finds them as they were, and replaces a changed one whole', () => {
+    const { prompts, skills } = setup()
+    const dir = join(skills, 'dsh-superagent-github')
+    const skill = join(dir, 'SKILL.md')
+    const mark = join(dir, '.superagent-revision')
+    new SkillFiles(prompts, skills).write(prompts.current())
+    const text = readFileSync(skill, 'utf8')
+    const old = new Date('2020-01-01T00:00:00Z')
+    for (const path of [skill, mark]) utimesSync(path, old, old)
+    const first = { skill: statSync(skill), mark: statSync(mark) }
+    const unchanged = (path: string, before: Stats) => {
+      const now = statSync(path)
+      expect({ ino: now.ino, mtimeMs: now.mtimeMs }, path).toEqual({
+        ino: before.ino,
+        mtimeMs: before.mtimeMs,
+      })
+    }
+    // A new start, as after a re-enable: a new writer, the same revision and the same skills.
+    new SkillFiles(prompts, skills).write(prompts.current())
+    unchanged(skill, first.skill)
+    unchanged(mark, first.mark)
+    // A changed skill file is replaced by a rename (a new file, never a partial write), leaving no temporary file.
+    writeFileSync(skill, 'stale')
+    const stale = statSync(skill)
+    new SkillFiles(prompts, skills).write(prompts.current())
+    expect(readFileSync(skill, 'utf8')).toBe(text)
+    expect(statSync(skill).ino).not.toBe(stale.ino)
+    unchanged(mark, first.mark)
+    expect(readdirSync(dir).sort()).toEqual(['.superagent-revision', 'SKILL.md'])
+    // A new revision with the same skills rewrites only the mark.
+    const current = statSync(skill)
+    prompts.save({ ...defaultPrompts() }, prompts.current().revision, 'panel')
+    expect(prompts.current().revision).toBeGreaterThan(0)
+    new SkillFiles(prompts, skills).write(prompts.current())
+    unchanged(skill, current)
+    expect(readFileSync(mark, 'utf8')).toBe(`${prompts.current().revision}\n`)
+    expect(statSync(mark).ino).not.toBe(first.mark.ino)
   })
 })

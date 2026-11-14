@@ -59,6 +59,16 @@ it.skipIf(process.platform === 'win32')(
       })
       const client = () => daemon.client
       const calls = ownerCalls(client)
+      /** Superagent's GitHub skill as the platform lists it. */
+      const listedSkill = async () => {
+        const listed = (await client().call('_agnes/v1/resources.list', {
+          profile: PROFILE,
+          kind: 'skill',
+        })) as {
+          items: { name?: string; desired?: string; trust?: string; actual?: string }[]
+        }
+        return listed.items.find((item) => item.name === 'dsh-superagent-github')
+      }
       const database = join(stateDir, DATABASE_FILE)
       const diagnose = async (error: unknown): Promise<never> => {
         const lines = daemon
@@ -191,7 +201,9 @@ it.skipIf(process.platform === 'win32')(
       await worker.followUp(tool('w-back', 'shell', { command: 'echo back-again' }))
       expect((await answered('w-back')).toolResult ?? '').toContain('back-again')
       await until('the worker idle after the resume', async () => (await worker.projectUI()).opState === null)
-      // The skills Superagent wrote into the AGH home when it started are readable by its sessions.
+      // The skills Superagent wrote into the AGH home when it started are readable by its sessions, once the platform
+      // lists them ready (a read during a skills reload finds none).
+      await until('the skill listed ready', async () => (await listedSkill())?.actual === 'ready')
       await worker.followUp(tool('w-skill', 'skill_read', { name: 'dsh-superagent-github' }))
       const skillText = (await answered('w-skill')).toolResult ?? ''
       console.info(`skill_read dsh-superagent-github: ${skillText.slice(0, 160).replace(/\s+/g, ' ')}`)
@@ -230,13 +242,7 @@ it.skipIf(process.platform === 'win32')(
 
       // The skills Superagent wrote into the AGH home: what the platform makes of them.
       expect(existsSync(join(aghHome, 'skills', 'dsh-superagent-github', 'SKILL.md'))).toBe(true)
-      const listed = (await client().call('_agnes/v1/resources.list', {
-        profile: PROFILE,
-        kind: 'skill',
-      })) as {
-        items: { name?: string; desired?: string; trust?: string; actual?: string }[]
-      }
-      const skill = listed.items.find((item) => item.name === 'dsh-superagent-github')
+      const skill = await listedSkill()
       console.info(`dsh-superagent-github as the platform lists it: ${JSON.stringify(skill)}`)
       expect(skill).toMatchObject({ desired: 'enabled', trust: 'trusted', actual: 'ready' })
     } finally {

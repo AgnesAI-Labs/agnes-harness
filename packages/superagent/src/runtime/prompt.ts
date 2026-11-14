@@ -5,7 +5,7 @@
  * the next request and an unchanged one leaves the request prefix byte for byte as it was. The revision's skills are
  * written into the AGH home's skill directory, which AGH watches and reloads.
  */
-import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { AGH_DIR } from '@agnes/protocol'
@@ -113,11 +113,26 @@ export class SkillFiles {
       const dir = join(this.root, name)
       if (existsSync(dir) && !existsSync(join(dir, MARK))) continue
       mkdirSync(dir, { recursive: true })
-      const temporary = join(dir, `.SKILL.md.${process.pid}`)
-      writeFileSync(temporary, text)
-      renameSync(temporary, join(dir, 'SKILL.md'))
-      writeFileSync(join(dir, MARK), `${version.revision}\n`)
+      replaceChanged(dir, 'SKILL.md', text)
+      replaceChanged(dir, MARK, `${version.revision}\n`)
     }
     this.written = version.revision
   }
+}
+
+/**
+ * Replaces `dir/name` whole with `text` (a temporary file renamed over it), and only when its content differs: every
+ * write of a skill file makes AGH reload the skills, during which a skill reads as missing, so a start that finds its
+ * skills as they were leaves them untouched.
+ */
+function replaceChanged(dir: string, name: string, text: string): void {
+  const path = join(dir, name)
+  try {
+    if (readFileSync(path, 'utf8') === text) return
+  } catch {
+    // Missing or unreadable: written below.
+  }
+  const temporary = join(dir, `.${name}.${process.pid}`)
+  writeFileSync(temporary, text)
+  renameSync(temporary, path)
 }
