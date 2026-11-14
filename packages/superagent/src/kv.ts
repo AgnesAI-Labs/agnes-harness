@@ -115,6 +115,8 @@ export const KV = {
     health:
       record<Record<string, { state: string; detail: string; code?: string; at: string }>>('feishu-health'),
     history: family<string, [chat: string]>('feishu-history:'),
+    /** History windows a recovery skipped, kept from the skip until their report expires. */
+    gaps: record<{ chat: string; from: string; to: string; at: string }[]>('feishu-history-gaps'),
     topics: family<Record<string, string>, [chat: string]>('feishu-history-threads:'),
     seen: family<string[], [thread: string]>('thread-seen:'),
     initialized: family<boolean, [thread: string]>('thread-initialized:'),

@@ -19,7 +19,7 @@ import {
   pollThreads,
   takeIn,
 } from '../../src/sources/feishu.js'
-import { recoverRound } from '../../src/sources/feishu-loops.js'
+import { GAP_SHOWN_MS, recoverRound } from '../../src/sources/feishu-loops.js'
 import { feishuChannel } from '../../src/sources/feishu-trigger.js'
 import { fakeChannels, message, rpc } from './fake-channels.js'
 import { type FeishuHost, feishuHost, MEMBER } from './feishu-host.js'
@@ -360,10 +360,9 @@ describe('history recovery', () => {
       all.push(...reads)
       if (h.ctx.state.get(KV.feishu.history('oc_team')) === at(5000)) break
       // Until then the cursor stands at the end of the hours the round read (each read reaches a second into the next
-      // hour), and the Source says it is catching up.
+      // hour), and the Source says it is catching up; the skipped hour stays on the history health meanwhile.
       const read = new Date(Date.parse(all.at(-1)?.end ?? '') - 1000).toISOString()
       expect(h.ctx.state.get(KV.feishu.history('oc_team'))).toBe(read)
-      expect(h.health.history).toMatchObject({ state: 'ready' })
       expect(h.health.history?.detail).toContain(
         `Catching up on chat history:\noc_team: recovered up to ${read}`,
       )
@@ -376,11 +375,15 @@ describe('history recovery', () => {
     expect(h.trigger('om_late')).toBeDefined()
     expect(h.health.history).toMatchObject({ state: 'error' })
     expect(h.health.history?.detail).toContain(`oc_team: skipped ${at(3 * hour)} to ${at(2 * hour)}`)
-    // The next round reads only what came since.
+    // The next round reads only what came since; the skipped hour is still reported, for a day from its skip.
     reads = []
     vi.setSystemTime(now + 60_000)
     await recoverRound(h.ctx, h.link, h.ctx.config('feishu')!, new AbortController().signal)
     expect(reads).toEqual([{ start: at(5000), end: new Date(now + 60_000).toISOString() }])
+    expect(h.health.history).toMatchObject({ state: 'error' })
+    expect(h.health.history?.detail).toContain(`oc_team: skipped ${at(3 * hour)} to ${at(2 * hour)}`)
+    vi.setSystemTime(now + GAP_SHOWN_MS)
+    await recoverRound(h.ctx, h.link, h.ctx.config('feishu')!, new AbortController().signal)
     expect(h.health.history).toMatchObject({ state: 'ready', detail: 'Listed chats recovered' })
   })
   it('keeps a quiet topic in history recovery while a subscribed Thread that is polled follows it', async () => {
