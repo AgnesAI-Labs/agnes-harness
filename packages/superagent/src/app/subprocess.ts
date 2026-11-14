@@ -1,6 +1,7 @@
 // Adapted from dsh-superagent (MIT)
 /** Child-process runner for CLI invocations: no stdin, bounded output, a deadline, and no credential-shaped variables. */
 import { type ChildProcess, spawn } from 'node:child_process'
+import { GIT_LOCATION } from '../infra/worker-paths.js'
 
 export interface RunOptions {
   cwd?: string
@@ -24,9 +25,43 @@ const KILL_GRACE_MS = 2000
 const DRAIN_GRACE_MS = 500
 const CREDENTIAL_NAME = /KEY|PASSWORD|SECRET|TOKEN/i
 
-/** The environment a child receives: the process's own plus `extra`, without variables whose names look like credentials. */
+/**
+ * Variables of the daemon's own environment that would change which git configuration, repository, identity or `gh`
+ * login the runtime's commands use: environment git configuration (a `GIT_CONFIG_COUNT` without its key even makes every
+ * git fail), the repository a host started inside git names, the operator's commit identity, a `gh` configuration
+ * directory or host, an XDG configuration directory (git and gh read the operator's from it), and askpass helpers. The
+ * agent's identity comes from its HOME instead.
+ */
+const AMBIENT = new RegExp(
+  `^(GIT_CONFIG_(COUNT|PARAMETERS|GLOBAL|SYSTEM|NOSYSTEM|KEY_\\d+|VALUE_\\d+)|GIT_(AUTHOR|COMMITTER)_.*|${GIT_LOCATION.join('|')}|GH_CONFIG_DIR|GH_HOST|SSH_ASKPASS|XDG_CONFIG_HOME)$`,
+)
+/**
+ * When git has no credential, it fails rather than asking anyone; and it reads no system configuration, whose helpers and
+ * settings would apply to the agent's repositories.
+ */
+const NO_PROMPT = { GIT_ASKPASS: '', GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1' }
+let agent: Record<string, string> = {}
+
+/**
+ * Sets the agent's `HOME` and `GH_CONFIG_DIR` for every command the runtime runs from now on, or clears them with
+ * `undefined`. The runtime sets them once its environment check passed and clears them when it stops.
+ */
+export function setAgentVariables(variables: { HOME: string; GH_CONFIG_DIR: string } | undefined): void {
+  agent = variables ? { ...variables } : {}
+}
+
+/**
+ * The environment a child receives: the process's own without the `AMBIENT` variables, no prompts, the agent's variables
+ * once set, and `extra` last. Variables whose names look like credentials are dropped from the result either way.
+ */
 export function childEnvironment(extra: Record<string, string> = {}): Record<string, string> {
-  const merged: Record<string, string | undefined> = { ...process.env, ...extra }
+  const inherited = Object.entries(process.env).filter(([name]) => !AMBIENT.test(name))
+  const merged: Record<string, string | undefined> = {
+    ...Object.fromEntries(inherited),
+    ...NO_PROMPT,
+    ...agent,
+    ...extra,
+  }
   return Object.fromEntries(
     Object.entries(merged).filter(
       (entry): entry is [string, string] => entry[1] !== undefined && !CREDENTIAL_NAME.test(entry[0]),

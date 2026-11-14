@@ -4,6 +4,7 @@
  * not at all.
  */
 import type { SQLInputValue } from 'node:sqlite'
+import type { Ticket } from '../core/index.js'
 import type { Store } from './store.js'
 
 /** How long a conversation stays after its last activity or the end of its last ticket; the polling horizon of subscribed threads. */
@@ -172,4 +173,28 @@ export function archiveExpired(store: Store, now: number): { archived: number } 
     }
     return { archived }
   })
+}
+
+/**
+ * The ended tickets whose conversation retention has archived: each ended more than `ARCHIVE_AFTER_MS` before `now`, and no
+ * thread left in the working tables subscribes to it or is one it follows. A person's reply can no longer resume such a
+ * ticket, so its Session and directory are no longer needed; an ended ticket that is not retired keeps them.
+ */
+export function retiredTickets(store: Store, now: number): Ticket[] {
+  const cutoff = new Date(now - ARCHIVE_AFTER_MS).toISOString()
+  const subscribed = new Set<string>()
+  const threads = new Set<string>()
+  for (const thread of store.threads.list()) {
+    threads.add(thread.key)
+    for (const id of thread.subscriptions) subscribed.add(id)
+  }
+  return store.tickets
+    .list()
+    .filter(
+      (ticket) =>
+        !!ticket.ended &&
+        ticket.ended.at < cutoff &&
+        !subscribed.has(ticket.id) &&
+        !(ticket.follows ?? []).some((follow) => threads.has(follow.thread)),
+    )
 }

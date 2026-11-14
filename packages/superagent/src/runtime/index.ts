@@ -75,6 +75,11 @@ const denied = (what: string) =>
 const stopReason = (reason: 'disable' | 'upgrade' | 'exit') =>
   reason === 'disable' ? 'disable' : reason === 'upgrade' ? 'generation' : 'shutdown'
 
+const isLifecycle = (part: unknown): part is LifecyclePart =>
+  !!part &&
+  typeof (part as Partial<LifecyclePart>).start === 'function' &&
+  typeof (part as Partial<LifecyclePart>).stop === 'function'
+
 /** A running service: the app, the panel wiring and the registered parts. */
 function createService(
   app: SuperagentApp,
@@ -92,6 +97,8 @@ function createService(
     },
     register(slot, part) {
       if (parts.has(slot)) throw new Error(`The Superagent ${slot} part is already registered`)
+      if (slot === 'lifecycle' && !isLifecycle(part))
+        throw new TypeError('A lifecycle has start() and stop()')
       parts.set(slot, part)
     },
   }
