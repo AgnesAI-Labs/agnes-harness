@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { autoTitlePolicy } from '../src/auto-title-policy.js'
 import type { SessionReplyFrame } from '../src/frames.js'
 import { SharedSessionChannel } from '../src/shared-session-channel.js'
 
@@ -270,4 +271,54 @@ it('rejects new authority requests immediately after worker transport closure', 
   await expect(
     channel.run('closed', () => channel.request('permission-revoke', {}, new AbortController().signal)),
   ).rejects.toThrow('worker channel closed')
+})
+
+it('reads automatic-title eligibility in the bound session after foreground context has gone', async () => {
+  const sent: Array<{ sessionKey: string; requestId: string; method: string; params: unknown }> = []
+  const channel = new SharedSessionChannel((frame) => sent.push(frame as (typeof sent)[number]))
+  const policy = autoTitlePolicy(channel, (key) => key === 'title-owner').autoTitleEligible
+  if (!policy) throw new Error('automatic-title policy unavailable')
+  await expect(policy('missing')).resolves.toBe(false)
+  expect(sent).toHaveLength(0)
+  const pending = channel.run('different-foreground', () => policy('title-owner'))
+  expect(sent[0]).toMatchObject({ sessionKey: 'title-owner', method: 'auto-title-eligible', params: {} })
+  const requestId = sent[0]?.requestId ?? ''
+  expect(() => channel.settle({ kind: 'reply', requestId, sessionKey: 'other', result: true })).toThrow(
+    'session mismatch',
+  )
+  channel.settle({ kind: 'reply', requestId, sessionKey: 'title-owner', result: true })
+  await expect(pending).resolves.toBe(true)
+  channel.closeAll()
+  await expect(policy('title-owner')).resolves.toBe(false)
+})
+
+it.each([false, 'true', {}, null])('denies title updates for a non-true owner result %j', async (result) => {
+  const sent: Array<{ sessionKey: string; requestId: string }> = []
+  const channel = new SharedSessionChannel((frame) => sent.push(frame as (typeof sent)[number]))
+  const policy = autoTitlePolicy(channel, () => true).autoTitleEligible
+  if (!policy) throw new Error('automatic-title policy unavailable')
+  const pending = policy('title-owner')
+  channel.settle({ kind: 'reply', sessionKey: 'title-owner', requestId: sent[0]?.requestId ?? '', result })
+  await expect(pending).resolves.toBe(false)
+  channel.closeAll()
+})
+
+it('withdraws a pending title-policy read on real lifecycle cancellation', async () => {
+  const sent: Array<{ sessionKey: string; requestId: string }> = []
+  const channel = new SharedSessionChannel((frame) => sent.push(frame as (typeof sent)[number]))
+  const policy = autoTitlePolicy(channel, () => true).autoTitleEligible
+  if (!policy) throw new Error('automatic-title policy unavailable')
+  const controller = new AbortController()
+  const pending = policy('title-owner', controller.signal)
+  controller.abort()
+  await expect(pending).resolves.toBe(false)
+  expect(
+    channel.settle({
+      kind: 'reply',
+      sessionKey: 'title-owner',
+      requestId: sent[0]?.requestId ?? '',
+      result: true,
+    }),
+  ).toBe(false)
+  channel.closeAll()
 })

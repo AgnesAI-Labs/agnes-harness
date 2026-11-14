@@ -407,7 +407,7 @@ it.each(['throw', 'unknown', 'unavailable'] as const)(
     f.dispose()
   },
 )
-it('does not consume a suppressed no-grant or child-session batch', async () => {
+it('does not consume a batch suppressed by an unavailable title grant', async () => {
   const f = fixture()
   f.prompt()
   f.prompt()
