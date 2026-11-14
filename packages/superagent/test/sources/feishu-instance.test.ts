@@ -169,6 +169,35 @@ describe('a channel instance of its own', () => {
   })
 })
 
+describe('the note on direct messages and other chats', () => {
+  it('follows the settings when direct messages or other chats are switched while the Source listens', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] })
+    const h = open({ feishu: { directMessages: false, otherChats: 'none' } })
+    const stop = await started(h)
+    expect(h.health.others).toMatchObject({ state: 'ready', detail: 'Only the listed chats are received' })
+    const toggle = (config: Record<string, unknown>) => {
+      const settings = h.store.settings()
+      const feishu = settings.sources.feishu!
+      h.store.saveSettings({
+        ...settings,
+        sources: { ...settings.sources, feishu: { ...feishu, config: { ...feishu.config, ...config } } },
+      })
+    }
+    toggle({ directMessages: true })
+    await vi.advanceTimersByTimeAsync(5_100)
+    expect(h.health.others).toMatchObject({ state: 'ready', code: 'feishuDedicatedBot' })
+    toggle({ directMessages: false, otherChats: 'mentions' })
+    await vi.advanceTimersByTimeAsync(5_100)
+    expect(h.health.others).toMatchObject({ state: 'ready', code: 'feishuDedicatedBot' })
+    toggle({ otherChats: 'none' })
+    await vi.advanceTimersByTimeAsync(5_100)
+    expect(h.health.others).toMatchObject({ state: 'ready', detail: 'Only the listed chats are received' })
+    // The subscription itself stayed: no setting of these two renews it.
+    expect(h.fake.calls('subscribe')).toHaveLength(1)
+    await stop()
+  })
+})
+
 describe('choosing the instance', () => {
   const catalog = {
     providers: [

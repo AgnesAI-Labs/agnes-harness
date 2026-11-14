@@ -290,12 +290,18 @@ async function watch(ctx: SourceContext, link: FeishuLink, signal: AbortSignal, 
     })
     await reportFeatures(ctx, link).catch(() => {})
     reportOthers(ctx, link, config)
+    let others = othersOf(config)
     // A new subscription catches up on what the chats said meanwhile.
     wake.wake()
     while (!signal.aborted) {
       await pause(5000, signal)
       const now = enabled(ctx)
       if (!now || subscription(now) !== current) break
+      // Direct messages and other chats are switched without a new subscription; their note follows the settings.
+      if (othersOf(now) !== others) {
+        others = othersOf(now)
+        reportOthers(ctx, link, now)
+      }
     }
     link.listening = false
     unsubscribe()
@@ -312,6 +318,9 @@ function waiting(ctx: SourceContext, link: FeishuLink, why: Health): void {
   const pending = why.code === 'sourceOff' ? why : health('paused', 'feishuWaiting')
   for (const entry of ['history', 'members', 'reads', 'others']) report(ctx, link, entry, pending)
 }
+/** The settings the note on direct messages and other chats reads. */
+const othersOf = (config: FeishuConfig): string =>
+  JSON.stringify([config.claim, config.directMessages, config.otherChats])
 /**
  * Says how direct messages and other chats are received. On an instance of its own the Source receives them as its
  * settings say. Claiming only the listed groups, it notes, while either is on, that they need a Feishu bot instance of
