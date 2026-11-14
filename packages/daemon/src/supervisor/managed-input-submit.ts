@@ -124,9 +124,9 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     let verdict: Promise<'pass' | 'paused' | ManagedInputChange> | undefined
     return () =>
       (verdict ??= (async () => {
-        // Every row of a session belongs to the session's manager.
-        if (!(await enabled(record.owner))) return 'paused' as const
         if (archived(record)) return { state: 'retained', reason: 'sessionArchived' } as const
+        // Every row of a session belongs to the session's manager; a disabled package's gates may fail.
+        if (!(await enabled(record.owner))) return 'paused' as const
         if (!(await deps.gatesPass(record))) return { state: 'needsOwner', reason: 'grantRevoked' } as const
         return 'pass' as const
       })())
@@ -159,9 +159,17 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     if (settled.state !== 'enqueued') return false
     if (mode === 'idle') return true
     if (await (ports.sessions.queued?.(sessionId, commandId) ?? true)) {
+      const verdict = await checks()
+      // Queued, but no longer allowed to run (revoked, archived): taken back before a turn can.
+      if (verdict !== 'pass' && verdict !== 'paused') {
+        if ((await ports.sessions.withdraw(sessionId, commandId)) === 'taken')
+          return (await settle(settled)).state === 'enqueued'
+        move(settled, { ...verdict, submittedSeq: null })
+        return false
+      }
       if (
+        verdict === 'pass' &&
         mode === 'sweep' &&
-        (await checks()) === 'pass' &&
         !(await questionOpen(sessionId)) &&
         !(await busy(sessionId))
       )

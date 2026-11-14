@@ -243,16 +243,54 @@ describe('held owner inputs', () => {
     expect(await w.engine.result(w.ctx('s1'), { key: 'k1' })).toMatchObject({ state: 'consumed', turn: 1 })
   })
 
+  it('a confirmed input still queued is withdrawn when a check fails, on the next caller or sweep but not on idle', async () => {
+    const w = world()
+    for (const id of ['racer', 'archived', 'paused']) {
+      w.open(id)
+      await w.admit(id, 'k1')
+      expect(w.row(id, 'k1')?.submittedSeq).toBeGreaterThan(0)
+    }
+    // A revoke whose withdraw pass ran before this input landed: the grant is gone, the item is queued.
+    w.gates.pass = false
+    await w.engine.advance('racer')
+    expect(w.core.state.withdrawals).toEqual([])
+    expect(await w.engine.result(w.ctx('racer'), { key: 'k1' })).toMatchObject({
+      state: 'needsOwner',
+      reason: 'grantRevoked',
+    })
+    w.gates.pass = true
+    w.core.state.archived.add('archived')
+    w.enabled.clear()
+    await w.engine.sweep()
+    w.enabled.add(owner)
+    expect(w.row('archived', 'k1')).toMatchObject({
+      state: 'retained',
+      reason: 'sessionArchived',
+      submittedSeq: null,
+    })
+    // A disabled package is held, not withdrawn: it may run again once enabled.
+    expect(w.row('paused', 'k1')).toMatchObject({ state: 'enqueued' })
+    for (const id of ['racer', 'archived']) {
+      expect(w.core.state.inbox.get(id)).toEqual([])
+      expect(w.core.take(id)).toBeUndefined()
+      expect(w.core.ran(id, `text of ${id}-k1`)).toBe(0)
+    }
+    expect(w.core.state.inbox.get('paused')).toHaveLength(1)
+  })
+
   it('a sweep starts a confirmed input still queued only when the checks pass', async () => {
     const w = world()
     w.open('s1')
     await w.admit('s1', 'k1')
     const cid = w.row('s1', 'k1')?.itemCommandId
     const version = w.row('s1', 'k1')?.version
-    w.gates.pass = false
-    await w.engine.sweep()
+    for (const hold of [() => w.core.state.running.add('s1'), () => w.core.state.questions.add('s1')]) {
+      hold()
+      await w.engine.sweep()
+      w.core.state.running.clear()
+      w.core.state.questions.clear()
+    }
     expect(w.core.state.submits).toHaveLength(1)
-    w.gates.pass = true
     await w.engine.sweep()
     expect(w.core.state.submits.map((s) => [s.commandId, s.dedupe])).toEqual([
       [cid, false],
@@ -260,6 +298,7 @@ describe('held owner inputs', () => {
     ])
     expect(w.row('s1', 'k1')).toMatchObject({ state: 'enqueued', version })
     expect(w.core.state.inbox.get('s1')).toHaveLength(1)
+    expect(w.core.state.withdrawals).toEqual([])
   })
 
   it('consumed scan starts at submitted_seq and records turn and seq', async () => {

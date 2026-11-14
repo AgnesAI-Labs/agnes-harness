@@ -303,6 +303,39 @@ describe('managed sessions bound to a task', () => {
     expect(w.core.ran(released, 'text of c-r')).toBe(0)
   })
 
+  it('a grant pruned before the engine is set is withdrawn at the first sweep and never runs', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    // Boot recovery prunes the grant while the holder has no engine yet: nothing is withdrawn.
+    const otherPkg = { packageId: other.packageId, sessions: true, owners: new Set([other.owner]) }
+    await pruneOrphanGrants(w.records, async () => [otherPkg])
+    expect(w.core.state.inbox.get(sessionId)).toHaveLength(1)
+    await engine.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({
+      state: 'needsOwner',
+      reason: 'grantRevoked',
+    })
+    expect(w.core.state.inbox.get(sessionId)).toEqual([])
+    expect(w.core.take(sessionId)).toBeUndefined()
+    expect(w.core.ran(sessionId, 'text of r1')).toBe(0)
+  })
+
+  it('archive withdraws a confirmed queued input at once', async () => {
+    const w = world()
+    const { sessionId } = await w.port().start(start())
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    expect(w.core.state.inbox.get(sessionId)).toHaveLength(1)
+    await w.port().archive(sessionId)
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({
+      state: 'retained',
+      reason: 'sessionArchived',
+    })
+    expect(w.core.state.inbox.get(sessionId)).toEqual([])
+    expect(w.core.ran(sessionId, 'text of r1')).toBe(0)
+  })
+
   it('onIdle, startup and the slow sweep reach the engine', async () => {
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     try {

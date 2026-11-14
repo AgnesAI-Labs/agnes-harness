@@ -492,8 +492,8 @@ export function createManagedSessions(
   const archive = async (record: ManagedSessionRecord) => {
     await ports.sessions.archive(record.sessionId)
     ports.records.markArchived(record.sessionId)
-    // Held inputs of an archived session are kept, never delivered.
-    await engine?.advance(record.sessionId).catch(() => undefined)
+    // Held inputs of an archived session are kept, never delivered; a queued one is taken back now.
+    await engine?.advance(record.sessionId, 'result').catch(() => undefined)
   }
 
   const start = async (caller: ManagedSessionCaller, owner: string, input: ManagedSessionStartInput) => {

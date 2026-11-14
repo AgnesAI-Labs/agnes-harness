@@ -59,7 +59,8 @@ export interface OwnerInputEngine {
     resolution: HostInputResolution | undefined,
   ): Promise<ManagedInputResult>
   result(ctx: AdmitContext, input: unknown): Promise<ManagedInputResult>
-  advance(sessionId: string): Promise<void>
+  /** `result` also takes back a queued input whose checks now fail; an idle report never reads the inbox. */
+  advance(sessionId: string, mode?: 'idle' | 'result'): Promise<void>
   sweep(): Promise<void>
   withdraw(owner: string, workspace?: string): Promise<void>
   review(sessionId: string, key: string): ManagedInputReview | undefined
@@ -325,10 +326,10 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
   return {
     admit,
     result,
-    async advance(sessionId) {
+    async advance(sessionId, mode = 'idle') {
       // Every session reports idle; one without held or submitted inputs costs two indexed reads.
       if (inputs.held(sessionId).length === 0 && inputs.inFlight(sessionId).length === 0) return
-      await deps.serial(sessionLane(sessionId), () => progress.advanceNow(sessionId))
+      await deps.serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, mode))
     },
     async sweep() {
       for (const sessionId of inputs.sessionsWithWork())
