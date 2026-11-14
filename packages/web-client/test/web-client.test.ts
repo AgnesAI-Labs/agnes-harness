@@ -180,45 +180,6 @@ describe('clientModule fiber 绑定', () => {
     await fiber.dispose()
   })
 
-  it('a client module cannot call managedInput.get or managedInput.decide', async () => {
-    const sent: string[] = []
-    const conn = { request: vi.fn() }
-    class FakeClient {
-      sessions = { get: () => undefined }
-      conn = conn
-      async call(method: string) {
-        sent.push(method)
-        return { ok: true }
-      }
-      async notify(method: string) {
-        sent.push(method)
-      }
-    }
-    const { ctx } = await makeRegistry(new FakeClient() as never)
-    let agnes: ClientContext['agnes'] | undefined
-    const fiber = ctx.plugin(
-      clientModule({
-        apply(cctx: ClientContext) {
-          agnes = cctx.agnes
-        },
-      }),
-      { packageId: 'pkg-owner-only', revision: 'r1' },
-    )
-    await fiber
-    for (const method of ['_agnes/v1/managedInput.get', '_agnes/v1/managedInput.decide']) {
-      await expect(agnes?.call(method, { sessionId: 's1' })).rejects.toMatchObject({
-        data: { code: 'CAPABILITY_DENIED', method },
-      })
-      await expect(agnes?.notify(method, {})).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
-    }
-    // The raw connection is not reachable through the facade; other methods still go through.
-    expect((agnes as unknown as { conn?: unknown }).conn).toBeNull()
-    await expect(agnes?.call('_agnes/v1/session.list', {})).resolves.toEqual({ ok: true })
-    expect(sent).toEqual(['_agnes/v1/session.list'])
-    expect(conn.request).not.toHaveBeenCalled()
-    await fiber.dispose()
-  })
-
   it('only relays a module-declared service with the active host session', async () => {
     const handle = {
       id: 'session-a',
@@ -1512,4 +1473,43 @@ it('keeps SDK request state on the connection behind a frozen module facade acro
   } finally {
     await fiber.dispose()
   }
+})
+
+it('a client module cannot call managedInput.get or managedInput.decide', async () => {
+  const sent: string[] = []
+  const conn = { request: vi.fn() }
+  class FakeClient {
+    sessions = { get: () => undefined }
+    conn = conn
+    async call(method: string) {
+      sent.push(method)
+      return { ok: true }
+    }
+    async notify(method: string) {
+      sent.push(method)
+    }
+  }
+  const { ctx } = await makeRegistry(new FakeClient() as never)
+  let agnes: ClientContext['agnes'] | undefined
+  const fiber = ctx.plugin(
+    clientModule({
+      apply(cctx: ClientContext) {
+        agnes = cctx.agnes
+      },
+    }),
+    { packageId: 'pkg-owner-only', revision: 'r1' },
+  )
+  await fiber
+  for (const method of ['_agnes/v1/managedInput.get', '_agnes/v1/managedInput.decide']) {
+    await expect(agnes?.call(method, { sessionId: 's1' })).rejects.toMatchObject({
+      data: { code: 'CAPABILITY_DENIED', method },
+    })
+    await expect(agnes?.notify(method, {})).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+  }
+  // The raw connection is not reachable through the facade; other methods still go through.
+  expect((agnes as unknown as { conn?: unknown }).conn).toBeNull()
+  await expect(agnes?.call('_agnes/v1/session.list', {})).resolves.toEqual({ ok: true })
+  expect(sent).toEqual(['_agnes/v1/session.list'])
+  expect(conn.request).not.toHaveBeenCalled()
+  await fiber.dispose()
 })
