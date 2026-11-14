@@ -58,7 +58,7 @@ import { ResourceRegistry } from './registry/resources.js'
 import { SlotRegistry } from './registry/slots.js'
 import { ToolRegistry } from './registry/tools.js'
 import type { ContractRef } from './request/derive.js'
-import { APPEND_REFUSED, appendToOpen, appendToSystemPromptConfig } from './request/system-prompt.js'
+import { APPEND_REFUSED, appendToSystemPromptConfig } from './request/system-prompt.js'
 import type { CurrentRuntimeLookup, RuntimePromptPreloader } from './runtime/current.js'
 import { opensAsChild } from './step/child-session.js'
 import { CORE_OPS, type CoreOpName, replacementFor, validateReplacements } from './step/reentry.js'
@@ -630,9 +630,7 @@ export class Kernel {
       const persistedPrompt = tracker.state.session?.systemPrompt
       if (persistedPrompt && !promptPort)
         throw new CoreError('E_ENVELOPE', 'pinned system prompt provider is unavailable')
-      // A repeated open of the new session this append created keeps the prompt pinned then (see `appendToOpen`).
-      const append = appendToOpen(persistedPrompt?.config, so.systemPromptAppend)
-      if (append !== undefined && (!promptPort || tracker.state.session || so.parent))
+      if (so.systemPromptAppend !== undefined && (!promptPort || tracker.state.session || so.parent))
         throw new CoreError(
           'E_ENVELOPE',
           'system prompt append applies only to a new session',
@@ -644,9 +642,9 @@ export class Kernel {
           ? structuredClone(persistedPrompt?.config ?? {})
           : parentPrompt
             ? structuredClone(parentPrompt.config)
-            : append === undefined
+            : so.systemPromptAppend === undefined
               ? await promptPort.config()
-              : appendToSystemPromptConfig(await promptPort.config(), append)
+              : appendToSystemPromptConfig(await promptPort.config(), so.systemPromptAppend)
         const identity =
           persistedPrompt?.provider ??
           (parentPrompt

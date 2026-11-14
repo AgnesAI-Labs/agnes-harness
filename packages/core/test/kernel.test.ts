@@ -219,23 +219,6 @@ describe('Kernel (I1 assembly)', () => {
       'only to a new session',
     )
     await noPrompt.close()
-    // The open that created the session, repeated (retried after a reload, or recovered), keeps its pinned prompt.
-    const k5 = base({ storage, systemPrompt })
-    const repeated = await k5.session('appended', {
-      ...sessionOpts,
-      writerRunId: 'r5',
-      systemPromptAppend: 'Answer in French.',
-    })
-    expect((await repeated.systemPromptPreview()).config.personaSuffix).toBe(
-      'house rules\n\nAnswer in French.',
-    )
-    // A text that is only the tail of what the session pinned is a different append.
-    await k5.close()
-    const k4 = base({ storage, systemPrompt })
-    await expect(
-      k4.session('appended', { ...sessionOpts, writerRunId: 'r4', systemPromptAppend: 'French.' }),
-    ).rejects.toThrow('only to a new session')
-    await k4.close()
   })
 
   it.each(['new', 'resume'] as const)(
