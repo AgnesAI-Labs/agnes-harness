@@ -34,7 +34,8 @@ export function createIdleSignal(): IdleSignal {
   let isStarted = false
   return {
     notify(sessionId) {
-      for (const listener of idle) later(() => listener(sessionId))
+      // A listener removed before its tick, as at shutdown, is not called.
+      for (const listener of idle) later(() => idle.has(listener) && listener(sessionId))
     },
     onIdle(listener) {
       idle.add(listener)
@@ -56,12 +57,14 @@ export function createIdleSignal(): IdleSignal {
 /**
  * Held managed inputs move on when their session reports idle, once after startup, and on a slow
  * sweep for turns that report no idle (bound-wake deliveries, manual compaction). Sweeps never overlap.
+ * `stop` runs as shutdown starts, before workers drain and abort their turns: an idle report or a sweep
+ * from then on would read gates that are going away, so none reaches the engine, and the engine closes.
  */
 export function driveOwnerInputs(
   idle: Pick<IdleSignal, 'onIdle' | 'onStartup'>,
-  engine: { advance(sessionId: string): Promise<void>; sweep(): Promise<void> },
+  engine: { advance(sessionId: string): Promise<void>; sweep(): Promise<void>; close?(): void },
   intervalMs: number,
-): () => void {
+): { stop(): void; dispose(): void } {
   let sweeping: Promise<void> | undefined
   const sweep = () => {
     sweeping ??= engine.sweep().finally(() => {
@@ -73,9 +76,11 @@ export function driveOwnerInputs(
   const offStartup = idle.onStartup(sweep)
   const timer = setInterval(() => void sweep().catch(report), intervalMs)
   timer.unref?.()
-  return () => {
+  const stop = () => {
     offIdle()
     offStartup()
     clearInterval(timer)
+    engine.close?.()
   }
+  return { stop, dispose: stop }
 }

@@ -9,6 +9,7 @@ import type {
   SessionViewResult,
 } from '@agnes/protocol'
 import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
+import { ManagedPortsClosed } from './managed-gate-read.js'
 import { type ManagedInputEntry, managedInputPorts } from './managed-input-ports.js'
 import { hasOpenNativeQuestion } from './managed-question-status.js'
 import type { IdleSignal } from './managed-session-idle.js'
@@ -63,11 +64,13 @@ export function managedSessionPorts(deps: {
   /** The daemon's session preferences, where an owner's Web archive is recorded. */
   preferences: Pick<SessionPreferencesStore, 'get'>
   idle: Pick<IdleSignal, 'onIdle'>
+  /** The shared worker's agent resolution over the daemon's own link (`sharedWorkerReads`); else through the local SDK. */
+  resolveAgent?(bundle: string): Promise<void>
 }) {
   const clients = new Set<NodeClient>()
   let closing = false
   const withClient = async <T>(work: (client: NodeClient) => Promise<T>): Promise<T> => {
-    if (closing) throw new Error('managed session admission closed')
+    if (closing) throw new ManagedPortsClosed()
     const client = createClient({
       transport: {
         kind: 'unix',
@@ -108,7 +111,9 @@ export function managedSessionPorts(deps: {
     records: deps.records,
     forkParent: deps.forkParent,
     workspaceRoot: managedWorkspaceRoot(deps.workspaces),
-    resolveAgent: (bundle) => withClient(async (client) => void (await client.agents.resolve(bundle))),
+    resolveAgent:
+      deps.resolveAgent ??
+      ((bundle) => withClient(async (client) => void (await client.agents.resolve(bundle)))),
     models: deps.models,
     autoReview: () =>
       withClient(

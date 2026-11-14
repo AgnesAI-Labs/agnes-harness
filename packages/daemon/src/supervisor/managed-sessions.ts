@@ -13,6 +13,7 @@ import type {
 import { grantKey } from '@agnes/plugin-runtime/host'
 import type { Actor, SessionActivity, SessionViewResult } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
+import { gateRefused } from './managed-gate-read.js'
 import {
   createOwnerInputEngine,
   type HostInputResolution,
@@ -360,8 +361,9 @@ async function startGates(
   if (await ports.autoReview()) throw refuse('AUTO_REVIEW')
   try {
     await ports.resolveAgent(input.bundle)
-  } catch {
-    throw refuse('BUNDLE_UNAVAILABLE')
+  } catch (error) {
+    // A worker that cannot answer is no answer about the bundle; the caller tries again later.
+    throw gateRefused(error) ? refuse('BUNDLE_UNAVAILABLE') : error
   }
   return root
 }

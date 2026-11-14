@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import type { ManagedSessionStartInput } from '@agnes/extension-api'
 import { grantKey } from '@agnes/plugin-runtime/host'
+import { rpcError } from '@agnes/protocol'
+import { JsonRpcError, TransportClosed } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import type { HostInputResolution, OwnerInputEngine } from '../src/supervisor/managed-input-admission.js'
 import { createIdleSignal, driveOwnerInputs } from '../src/supervisor/managed-session-idle.js'
@@ -391,7 +393,7 @@ describe('managed sessions bound to a task', () => {
         advance: async (sessionId: string) => void calls.push(`advance ${sessionId}`),
         sweep: async () => void calls.push('sweep'),
       }
-      const stop = driveOwnerInputs(idle, engine, 60_000)
+      const drive = driveOwnerInputs(idle, engine, 60_000)
       const tick = () => new Promise((resolve) => setImmediate(resolve))
       idle.notify('s1')
       await tick()
@@ -401,7 +403,7 @@ describe('managed sessions bound to a task', () => {
       expect(calls).toEqual(['advance s1', 'sweep'])
       await vi.advanceTimersByTimeAsync(60_000)
       expect(calls).toEqual(['advance s1', 'sweep', 'sweep'])
-      stop()
+      drive.dispose()
       idle.notify('s2')
       await vi.advanceTimersByTimeAsync(60_000)
       await tick()
@@ -409,6 +411,55 @@ describe('managed sessions bound to a task', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('once shutdown starts, neither an idle report already scheduled nor a sweep reaches the engine', async () => {
+    const idle = createIdleSignal()
+    const calls: string[] = []
+    const engine = {
+      advance: async (sessionId: string) => void calls.push(`advance ${sessionId}`),
+      sweep: async () => void calls.push('sweep'),
+      close: () => void calls.push('close'),
+    }
+    const drive = driveOwnerInputs(idle, engine, 60_000)
+    const tick = () => new Promise((resolve) => setImmediate(resolve))
+    // The turn ends as shutdown begins: its idle report is scheduled, then the drive stops.
+    idle.notify('s1')
+    drive.stop()
+    idle.started()
+    await tick()
+    await tick()
+    expect(calls).toEqual(['close'])
+  })
+
+  it('a closed engine neither advances nor sweeps, and a sweep under way stops before the next session', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const a = await w.port().start(start())
+    const b = await w.port().start(start({ startKey: 'task-1:b', taskBinding: undefined }))
+    for (const [sessionId, key] of [
+      [a.sessionId, 'k1'],
+      [b.sessionId, 'k2'],
+    ] as const) {
+      w.core.state.running.add(sessionId)
+      await w
+        .port(caller, key)
+        .admitInput(sessionId, admission(key, key, sessionId === b.sessionId ? { startKey: 'task-1:b' } : {}))
+      w.core.state.running.delete(sessionId)
+    }
+    // Shutdown starts while the sweep works on the first session.
+    const activity = w.ports.sessions.activity
+    w.ports.sessions.activity = async () => {
+      engine.close()
+      return activity()
+    }
+    await engine.sweep()
+    expect(w.core.state.submits.map((entry) => entry.text)).toEqual(['text of k1'])
+    w.ports.sessions.activity = activity
+    await engine.advance(b.sessionId)
+    await engine.sweep()
+    expect(w.core.state.submits.map((entry) => entry.text)).toEqual(['text of k1'])
+    expect(w.inputs.get(owner, b.sessionId, 'k2')).toMatchObject({ state: 'enqueued', reason: 'busy' })
   })
 
   it('held inputs are not submitted while the plugin is disabled, and are submitted after it is enabled again', async () => {
@@ -496,6 +547,58 @@ describe('managed sessions bound to a task', () => {
       state: 'needsOwner',
       reason: 'grantRevoked',
     })
+  })
+
+  it('a shared worker that cannot answer the bundle check keeps a held input held; after a restart it runs once', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    w.core.state.running.add(sessionId)
+    expect(await w.port().admitInput(sessionId, admission('k1', 'r1'))).toMatchObject({ reason: 'busy' })
+    w.core.state.running.delete(sessionId)
+    const resolveAgent = w.ports.resolveAgent
+    // The daemon's link to the shared worker closed or timed out, the worker could not be started or
+    // failed without an answer, or a client transport closed: none says anything about the bundle.
+    for (const failure of [
+      new Error('worker link closed'),
+      new Error('worker command agents.resolve timed out'),
+      { code: 'E_WORKER', message: 'Worker operation failed.' },
+      new TransportClosed({ reason: 'eof' }),
+      new JsonRpcError(rpcError('INTERNAL_ERROR', { code: 'INTERNAL' })),
+    ]) {
+      w.ports.resolveAgent = async () => {
+        throw failure
+      }
+      await engine.advance(sessionId)
+      await engine.sweep()
+      expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued', reason: 'busy' })
+    }
+    expect(w.core.state.submits).toEqual([])
+    // A restart: a new engine over the same tables, with the shared worker answering again.
+    w.ports.resolveAgent = resolveAgent
+    const restarted = createManagedSessions(w.ports, { inputs: new ManagedSessionInputs(w.table) })
+    await restarted.engine?.sweep()
+    w.core.take(sessionId)
+    await restarted.engine?.sweep()
+    await restarted.engine?.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'consumed' })
+    expect(w.core.ran(sessionId, 'text of r1')).toBe(1)
+    // A bundle the worker refuses on purpose (unknown, or not installed, enabled and trusted) still
+    // gives the input to the owner.
+    w.core.state.running.add(sessionId)
+    for (const [key, refusal] of [
+      ['k2', { code: 'E_PRESET_UNSUPPORTED', message: 'agent: unknown agent' }],
+      ['k3', rpcError('SEMANTIC_REJECTED', { code: 'BUNDLE_UNAVAILABLE' })],
+    ] as const) {
+      w.ports.resolveAgent = async () => {
+        throw refusal
+      }
+      await w.port(caller, key).admitInput(sessionId, admission(key, key))
+      expect(w.inputs.get(owner, sessionId, key)).toMatchObject({
+        state: 'needsOwner',
+        reason: 'grantRevoked',
+      })
+    }
   })
 
   it('archiving a session retains its held inputs', async () => {

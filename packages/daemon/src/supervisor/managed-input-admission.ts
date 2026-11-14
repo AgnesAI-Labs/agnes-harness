@@ -62,6 +62,8 @@ export interface OwnerInputEngine {
   /** `result` also takes back a queued input whose checks now fail; an idle report never reads the inbox. */
   advance(sessionId: string, mode?: 'idle' | 'result'): Promise<void>
   sweep(): Promise<void>
+  /** Shutdown started: `advance` and `sweep` do nothing from now on, and a sweep under way stops at its next session. */
+  close(): void
   withdraw(owner: string, workspace?: string): Promise<void>
   review(sessionId: string, key: string): ManagedInputReview | undefined
   decide(
@@ -326,19 +328,25 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     })
   }
 
+  let closed = false
   return {
     admit,
     result,
     async advance(sessionId, mode = 'idle') {
+      if (closed) return
       // Every session reports idle; one without held or submitted inputs costs two indexed reads.
       if (inputs.held(sessionId).length === 0 && inputs.inFlight(sessionId).length === 0) return
       await deps.serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, mode))
     },
+    close() {
+      closed = true
+    },
     async sweep() {
       for (const sessionId of inputs.sessionsWithWork())
-        await deps
-          .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, 'sweep'))
-          .catch(() => undefined)
+        if (!closed)
+          await deps
+            .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, 'sweep'))
+            .catch(() => undefined)
     },
     async withdraw(owner, workspace) {
       let failure: unknown

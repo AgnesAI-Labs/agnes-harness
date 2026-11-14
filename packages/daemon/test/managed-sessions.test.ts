@@ -151,7 +151,8 @@ function world(
         return root
       }),
     async resolveAgent(bundle) {
-      if (bundle.endsWith('#missing')) throw new Error('not reviewed')
+      // The shared worker's reply for a bundle it does not resolve.
+      if (bundle.endsWith('#missing')) throw { code: 'E_PRESET_UNSUPPORTED', message: 'agent: unknown agent' }
     },
     models: async () => state.models,
     autoReview: async () => state.autoReview,
