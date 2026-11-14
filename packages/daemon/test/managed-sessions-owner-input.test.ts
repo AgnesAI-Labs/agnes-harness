@@ -254,7 +254,7 @@ describe('managed sessions bound to a task', () => {
     ])
   })
 
-  it('revokeAll, revoke and releasePackage withdraw owner inputs before the grants go', async () => {
+  it('revoke and revokeAll take the grant first and then withdraw owner inputs; releasePackage withdraws before the records go', async () => {
     const w = world()
     const engine = w.sessions.engine as OwnerInputEngine
     const queued = async (startKey: string) => {
@@ -284,7 +284,8 @@ describe('managed sessions bound to a task', () => {
       withdraw,
     })
     await grants.revoke(caller.packageId, '/work/repo')
-    expect(order).toEqual(['withdraw granted=true'])
+    // Revoked first: an admission racing the revoke fails its gates instead of submitting after the withdraw.
+    expect(order).toEqual(['withdraw granted=false'])
     expect(w.core.state.inbox.get(revoked)).toEqual([])
     expect(w.inputs.get(owner, revoked, 'k1')).toMatchObject({ state: 'needsOwner', reason: 'grantRevoked' })
 
@@ -292,7 +293,7 @@ describe('managed sessions bound to a task', () => {
     const pruned = await queued('b')
     order.length = 0
     await pruneOrphanGrants(w.records, async () => [otherPkg], withdraw)
-    expect(order).toEqual(['withdraw granted=true'])
+    expect(order).toEqual(['withdraw granted=false'])
     expect(w.records.granted(owner, '/work/repo')).toBe(false)
     expect(w.core.state.inbox.get(pruned)).toEqual([])
 

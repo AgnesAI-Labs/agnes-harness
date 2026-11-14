@@ -27,7 +27,11 @@ export interface ManagedWorkspaceGrantPorts {
   workspaceRoot(path: string): Promise<string>
   /** The canonical spelling of a path, or undefined when it no longer resolves. */
   canonical(path: string): Promise<string | undefined>
-  /** Takes the grant key's held and submitted owner inputs back; runs before its grant goes. */
+  /**
+   * Takes the grant key's held and submitted owner inputs back. Runs after its grant goes, so an
+   * admission racing the revoke fails its gates; one that passed them earlier is already recorded and
+   * taken back here. A failure leaves the rest to the sweep, which finds the grant gone.
+   */
   withdraw?(owner: string, workspace?: string): Promise<void>
 }
 
@@ -71,8 +75,8 @@ export async function pruneOrphanGrants(
   )
   for (const key of records.grantOwners())
     if (!live.has(key)) {
-      await withdraw?.(key)
       records.revokeAll(key)
+      await withdraw?.(key)
     }
 }
 
@@ -151,8 +155,8 @@ export function managedWorkspaceGrants(ports: ManagedWorkspaceGrantPorts) {
       for (const path of spellings)
         for (const owner of pkg.owners)
           if (ports.records.granted(grantKey(packageId, owner), path)) {
-            await ports.withdraw?.(grantKey(packageId, owner), path)
             ports.records.revoke(grantKey(packageId, owner), path)
+            await ports.withdraw?.(grantKey(packageId, owner), path)
             revoked ??= path
           }
       return { packageId, workspace: revoked ?? canonical ?? workspace, changed: revoked !== undefined }
