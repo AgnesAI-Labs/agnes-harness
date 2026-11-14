@@ -6,15 +6,23 @@ import type {
   ChatTarget,
   MessageRef,
 } from './adapter.js'
-import { degrade } from './degrade.js'
+import type { Runner } from './runner/runner.js'
 
 const READS = ['fetchMessages', 'listThread', 'listHistory', 'listChats', 'listMembers'] as const
+type Reads = Partial<Pick<ChannelAdapter, (typeof READS)[number]>>
 
-/** The running adapter of one instance as the Host sees it: sends and only the reads it implements. */
-export type ChannelSubscriptionLink = Partial<Pick<ChannelAdapter, (typeof READS)[number]>> & {
+/**
+ * One channel instance as the Host sees it, for as long as the instance runs, across reconnects.
+ * Sends share the session replies' chunking and throttling; `reads` holds only the reads the
+ * current adapter implements.
+ */
+export type ChannelSubscriptionLink = {
   connected(): boolean
   capabilities(): ChannelCapabilities
   send(target: ChatTarget, message: ChannelMessage): Promise<MessageRef>
+  reads(): Reads
+  /** Whether a session is bound, or being bound, to this chat. Such a chat cannot be claimed. */
+  bound(chatId: string): boolean
 }
 
 /**
@@ -32,25 +40,43 @@ export interface ChannelSubscriptionsPort {
 export const fromBot = (event: ChannelEvent) => event.sender.kind === 'bot'
 
 export function createSubscriptionRouter(port: ChannelSubscriptionsPort, instanceId: string) {
-  const claims = (event: ChannelEvent) => event.chat.type !== 'dm' && port.claimed(instanceId, event.chat.id)
+  const claimsChat = (chat: { chatId: string; chatType?: 'dm' | 'group' | 'thread' }) =>
+    chat.chatType !== 'dm' && port.claimed(instanceId, chat.chatId)
+  const claims = (event: ChannelEvent) => claimsChat({ chatId: event.chat.id, chatType: event.chat.type })
   return {
     claims,
+    claimsChat,
     intercept(event: ChannelEvent): boolean {
       if (!claims(event)) return false
       port.deliver(instanceId, event)
       return true
     },
-    attach(adapter: ChannelAdapter, connected: () => boolean): () => void {
-      const link: ChannelSubscriptionLink = {
-        connected,
-        capabilities: () => adapter.capabilities(),
-        send: (target, message) => adapter.send(target, degrade(message, adapter.capabilities()).msg),
+    attach(source: {
+      adapter(): ChannelAdapter | undefined
+      runner(): Runner | undefined
+      bound(chatId: string): boolean
+    }): () => void {
+      const running = () => {
+        const adapter = source.adapter()
+        const runner = source.runner()
+        if (!adapter || !runner) throw new Error('Channel adapter is not running')
+        return { adapter, runner }
       }
-      for (const name of READS) {
-        const read = adapter[name]
-        if (typeof read === 'function') Object.assign(link, { [name]: read.bind(adapter) })
-      }
-      return port.attach(instanceId, link)
+      return port.attach(instanceId, {
+        connected: () => source.runner()?.status().channel === 'connected',
+        capabilities: () => running().adapter.capabilities(),
+        send: (target, message) => running().runner.sendMessage(target, message, target.deliveryKey),
+        reads() {
+          const adapter = running().adapter
+          const reads: Reads = {}
+          for (const name of READS) {
+            const read = adapter[name]
+            if (typeof read === 'function') Object.assign(reads, { [name]: read.bind(adapter) })
+          }
+          return reads
+        },
+        bound: (chatId) => source.bound(chatId),
+      })
     },
   }
 }

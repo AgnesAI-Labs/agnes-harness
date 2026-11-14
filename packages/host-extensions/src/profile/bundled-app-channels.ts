@@ -18,11 +18,17 @@ const READ_CAPABILITY = {
 } as const
 type Read = keyof typeof READ_CAPABILITY
 
-/** The running adapter of one channel instance: its sends and only the reads it implements. */
-export type BundledAppChannelLink = Partial<Pick<ChannelAdapter, Read>> & {
+/**
+ * One running channel instance, attached for as long as its channel row runs. `send` takes the
+ * session replies' chunking and throttling; `reads` holds only the reads the current adapter has.
+ */
+export type BundledAppChannelLink = {
   connected(): boolean
   capabilities(): ChannelCapabilities
   send(target: ChatTarget, message: ChannelMessage): Promise<MessageRef>
+  reads(): Partial<Pick<ChannelAdapter, Read>>
+  /** Whether a session is bound, or being bound, to this chat. */
+  bound(chatId: string): boolean
 }
 
 /** The port one channel row's bridge uses: it attaches its adapters and asks which group is claimed. */
@@ -51,11 +57,18 @@ export interface BundledAppChannelsApi {
 /** The grant holder. A subscription and every call last only while `assertCurrent` passes. */
 export type BundledAppCaller = { assertCurrent(): void; signal?: AbortSignal }
 
-type Subscription = { caller: BundledAppCaller; onEvent: (event: ChannelEvent) => void }
+type Subscription = {
+  caller: BundledAppCaller
+  onEvent: (event: ChannelEvent) => void
+  /** Recently delivered `accountId`/`eventId` pairs, oldest first. */
+  seen: Set<string>
+}
 
 const PAGE_SIZE = 50
 const MAX_PAGES = 200
 const MAX_CHATS = 256
+/** Platform redeliveries of an event this recent are dropped for the live subscription. */
+const SEEN_EVENTS = 1024
 
 const unavailable = () => rpcError('SEMANTIC_REJECTED', { code: 'CHANNEL_UNAVAILABLE' })
 const invalid = () => rpcError('INVALID_PARAMS')
@@ -94,8 +107,16 @@ export class BundledAppChannelHub {
       claimed: (instanceId, chatId) => this.live(instanceId, chatId) !== undefined,
       deliver: (instanceId, event) => {
         const subscription = this.live(instanceId, event.chat.id)
+        if (!subscription) return
+        const id = `${event.accountId}\0${event.eventId}`
+        if (subscription.seen.has(id)) return
+        subscription.seen.add(id)
+        if (subscription.seen.size > SEEN_EVENTS) {
+          const [oldest] = subscription.seen
+          subscription.seen.delete(oldest as string)
+        }
         try {
-          subscription?.onEvent(structuredClone(event))
+          subscription.onEvent(structuredClone(event))
         } catch {
           // A subscriber failure must not break the channel or reach the platform.
         }
@@ -103,11 +124,17 @@ export class BundledAppChannelHub {
     }
   }
 
-  /** A running instance, by its id. Two channel rows with the same instance id name none. */
+  /** A connected instance, by its id. Two channel rows with the same instance id name none. */
   link(instanceId: string): BundledAppChannelLink {
+    const link = this.attached(instanceId)
+    if (!link.connected()) throw unavailable()
+    return link
+  }
+
+  private attached(instanceId: string): BundledAppChannelLink {
     const rows = this.links.get(instanceId)
     const link = rows?.size === 1 ? [...rows.values()][0] : undefined
-    if (!link?.connected()) throw unavailable()
+    if (!link) throw unavailable()
     return link
   }
 
@@ -118,9 +145,11 @@ export class BundledAppChannelHub {
     onEvent: (event: ChannelEvent) => void,
   ): () => void {
     const ids = [...new Set(chats)]
-    if (ids.some((id) => this.live(instanceId, id)))
+    const link = this.attached(instanceId)
+    // One consumer per group: another subscriber, or a session the owner bound to it, holds it.
+    if (ids.some((id) => this.live(instanceId, id) || link.bound(id)))
       throw rpcError('SEMANTIC_REJECTED', { code: 'CHANNEL_CHAT_CLAIMED' })
-    const subscription: Subscription = { caller, onEvent }
+    const subscription: Subscription = { caller, onEvent, seen: new Set() }
     for (const id of ids) this.claims.set(claimKey(instanceId, id), subscription)
     // A stale or aborted caller's claims lapse on their next lookup; unsubscribing ends them now.
     return () => {
@@ -154,12 +183,12 @@ export function bundledAppChannels(
     if (!text(channel)) throw invalid()
     return hub.link(channel)
   }
-  const reader = <K extends Read>(channel: string, name: K): NonNullable<BundledAppChannelLink[K]> => {
+  const reader = <K extends Read>(channel: string, name: K): NonNullable<ChannelAdapter[K]> => {
     const link = running(channel)
-    const read = link[name]
+    const read = link.reads()[name]
     if (link.capabilities().read?.[READ_CAPABILITY[name]] !== true || typeof read !== 'function')
       throw rpcError('CAPABILITY_DENIED')
-    return read.bind(link) as NonNullable<BundledAppChannelLink[K]>
+    return read as NonNullable<ChannelAdapter[K]>
   }
   /** Joins cursor pages; a cursor that does not advance or a read past the page bound is refused. */
   const collect = async <T>(

@@ -31,6 +31,8 @@ export class ChannelBindings {
     private readonly assertCurrent: () => void,
     /** A chat target paired with a plugin service cannot also be bound to a session. */
     private readonly paired: (targetId: string) => boolean = () => false,
+    /** Nor can a group chat claimed by a bundled app. */
+    private readonly claimed: (chat: { chatId: string; chatType?: 'dm' | 'group' }) => boolean = () => false,
   ) {
     this.state = (store.get(key) as unknown as State | undefined) ?? { version: 0, targets: [], bindings: [] }
   }
@@ -109,6 +111,7 @@ export class ChannelBindings {
         confirmed: this.fresh.has(t.id),
         unavailable:
           this.paired(t.id) ||
+          this.claimed(t) ||
           this.state.bindings.some((b) => b.targetId === t.id && b.sessionId !== sessionId),
       })),
       bindings: this.state.bindings
@@ -157,6 +160,8 @@ export class ChannelBindings {
         throw new Error('Channel target has not been confirmed or is already bound')
       if (action === 'bind' && this.paired(target.id))
         throw new Error('Channel target is paired with a plugin service; unpair it first')
+      if (action === 'bind' && this.claimed(target))
+        throw new Error('Channel target is subscribed by a bundled app; unsubscribe it first')
       if (action === 'bind' && old && old.targetId !== target.id)
         throw new Error('Unbind the current target first')
       const pending: Binding = old ?? { sessionId, targetId: target.id, afterSeq: 0, state: 'pending' }
@@ -192,6 +197,12 @@ export class ChannelBindings {
   /** Whether a session is bound, or being bound, to the chat target. */
   bound(targetId: string): boolean {
     return this.state.bindings.some((b) => b.targetId === targetId)
+  }
+  /** Whether a session is bound, or being bound, to any target in this chat. */
+  boundChat(chatId: string): boolean {
+    return this.state.bindings.some(
+      (b) => this.state.targets.find((t) => t.id === b.targetId)?.chatId === chatId,
+    )
   }
   /** Runs after every earlier binding change and pairing of this instance, one at a time. */
   serial<T>(work: () => Promise<T>): Promise<T> {

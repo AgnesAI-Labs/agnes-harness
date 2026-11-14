@@ -97,6 +97,8 @@ export async function startChannelBridge(
     detach?: (() => void) | undefined
     subscriptions?: ReturnType<typeof createSubscriptionRouter>
     unlink?: (() => void) | undefined
+    /** The current adapter behind the generation guard; replaced on each supervised restart. */
+    adapter?: Awaited<ReturnType<ChannelProvider['create']>>
   }[] = []
   let stopped = false
   let stopping: Promise<void> | undefined
@@ -186,15 +188,23 @@ export async function startChannelBridge(
       }
       const fingerprint = createHash('sha256').update(JSON.stringify(instance)).digest('hex')
       const targets = options.targets
+      const subscriptions = options.subscriptions
+        ? createSubscriptionRouter(options.subscriptions, instance.id)
+        : undefined
       const bindings = new ChannelBindings(
         init.store,
         `bindings:${key}:${fingerprint}`,
         assertCurrent,
         (id) => targets?.paired(instance.id, id) ?? false,
+        (chat) => subscriptions?.claimsChat(chat) ?? false,
       )
-      const row: (typeof running)[number] = { id: instance.id, workspace, bindings, supervisor: undefined! }
-      if (options.subscriptions)
-        row.subscriptions = createSubscriptionRouter(options.subscriptions, instance.id)
+      const row: (typeof running)[number] = {
+        id: instance.id,
+        workspace,
+        bindings,
+        supervisor: undefined!,
+        ...(subscriptions ? { subscriptions } : {}),
+      }
       let current: Awaited<ReturnType<ChannelProvider['create']>> | undefined
       if (targets)
         row.router = createTargetRouter({
@@ -281,8 +291,7 @@ export async function startChannelBridge(
           current = adapter
           row.detach?.()
           row.detach = row.router?.attach(runner, provider.manifest)
-          row.unlink?.()
-          row.unlink = row.subscriptions?.attach(guarded, () => runner.status().channel === 'connected')
+          row.adapter = guarded
           bindings.runner = runner
           return { client, runner }
         } catch (error) {
@@ -292,6 +301,11 @@ export async function startChannelBridge(
         }
       }, options.log)
       running.push(row)
+      row.unlink = row.subscriptions?.attach({
+        adapter: () => row.adapter,
+        runner: () => row.active,
+        bound: (chatId) => bindings.boundChat(chatId),
+      })
       await row.supervisor.start()
       assertCurrent()
     }

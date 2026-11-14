@@ -38,13 +38,8 @@ function link(capabilities: ReturnType<typeof caps> = caps()) {
   const members = Array.from({ length: 5 }, (_, index) => ({ userId: `u${index + 1}` }))
   const chats = [{ id: 'group-a', name: 'A' }, { id: 'group-b' }, { id: 'group-c' }]
   const sends: unknown[] = []
-  const value = {
-    connected: () => true,
-    capabilities: () => capabilities,
-    send: vi.fn(async (target: { chatId: string }, msg: unknown) => {
-      sends.push([target, msg])
-      return { chatId: target.chatId, messageId: `sent-${sends.length}` }
-    }),
+  const bound = new Set<string>()
+  const reads = {
     fetchMessages: vi.fn(async (_chat: string, ids: readonly string[]) =>
       events.filter((event) => ids.includes(event.messageId)),
     ),
@@ -64,8 +59,27 @@ function link(capabilities: ReturnType<typeof caps> = caps()) {
       const { page, cursor } = paged(members, 2)(opts.cursor)
       return { members: page, ...(cursor ? { cursor } : {}) }
     }),
+  }
+  const value = {
+    connected: () => true,
+    capabilities: () => capabilities,
+    send: vi.fn(async (target: { chatId: string }, msg: unknown) => {
+      sends.push([target, msg])
+      return { chatId: target.chatId, messageId: `sent-${sends.length}` }
+    }),
+    reads: () => reads,
+    bound: (chatId: string) => bound.has(chatId),
   } satisfies BundledAppChannelLink
-  return { value, sends }
+  return { value, reads, sends, bound }
+}
+
+/** A hub whose channel row runs the instance `team`. */
+function running() {
+  const hub = new BundledAppChannelHub()
+  const port = hub.bridge(CHANNEL_ROW)
+  const team = link(caps(ALL_READS))
+  port.attach('team', team.value)
+  return { hub, port, team }
 }
 
 const ALL_READS = { messages: true, threads: true, history: true, chats: true, members: true }
@@ -96,18 +110,10 @@ describe('BundledAppChannels reads', () => {
     const channels = bundledAppChannels(hub, { assertCurrent() {} })
     for (const read of reads(channels)) await expect(read).rejects.toMatchObject(denied)
     for (const method of ['fetchMessages', 'listThread', 'listHistory', 'listChats', 'listMembers'] as const)
-      expect(undeclared.value[method]).not.toHaveBeenCalled()
+      expect(undeclared.reads[method]).not.toHaveBeenCalled()
     detach()
     // Declared but not implemented is refused the same way.
-    const {
-      fetchMessages: _f,
-      listThread: _t,
-      listHistory: _h,
-      listChats: _c,
-      listMembers: _m,
-      ...bare
-    } = link(caps(ALL_READS)).value
-    hub.bridge(CHANNEL_ROW).attach('team', bare)
+    hub.bridge(CHANNEL_ROW).attach('team', { ...link(caps(ALL_READS)).value, reads: () => ({}) })
     for (const read of reads(channels)) await expect(read).rejects.toMatchObject(denied)
   })
 
@@ -126,12 +132,12 @@ describe('BundledAppChannels reads', () => {
       'm6',
       'm7',
     ])
-    expect(declared.value.listHistory).toHaveBeenCalledTimes(3)
-    expect(declared.value.listHistory).toHaveBeenLastCalledWith('group-a', { ...window, cursor: 'c6' })
+    expect(declared.reads.listHistory).toHaveBeenCalledTimes(3)
+    expect(declared.reads.listHistory).toHaveBeenLastCalledWith('group-a', { ...window, cursor: 'c6' })
     expect(
       ids(await channels.listThread('team', 'group-a', 'thread-1', { order: 'desc', limit: 5 })),
     ).toEqual(['m1', 'm2', 'm3', 'm4', 'm5'])
-    expect(declared.value.listThread).toHaveBeenLastCalledWith('group-a', 'thread-1', {
+    expect(declared.reads.listThread).toHaveBeenLastCalledWith('group-a', 'thread-1', {
       order: 'desc',
       pageSize: 5,
     })
@@ -153,11 +159,11 @@ describe('BundledAppChannels reads', () => {
   it('refuses a cursor that does not advance instead of looping', async () => {
     const hub = new BundledAppChannelHub()
     const stuck = link(caps(ALL_READS))
-    stuck.value.listChats.mockImplementation(async () => ({ chats: [{ id: 'group-a' }], cursor: 'same' }))
+    stuck.reads.listChats.mockImplementation(async () => ({ chats: [{ id: 'group-a' }], cursor: 'same' }))
     hub.bridge(CHANNEL_ROW).attach('team', stuck.value)
     const channels = bundledAppChannels(hub, { assertCurrent() {} })
     await expect(channels.listChats('team')).rejects.toMatchObject({ message: 'SEMANTIC_REJECTED' })
-    expect(stuck.value.listChats).toHaveBeenCalledTimes(2)
+    expect(stuck.reads.listChats).toHaveBeenCalledTimes(2)
   })
 
   it('names a channel by its instance id and refuses one that is not running', async () => {
@@ -179,8 +185,7 @@ describe('BundledAppChannels reads', () => {
 
 describe('BundledAppChannels subscriptions', () => {
   it('delivers a claimed group to its subscriber and refuses a second claim until the first ends', () => {
-    const hub = new BundledAppChannelHub()
-    const port = hub.bridge(CHANNEL_ROW)
+    const { hub, port } = running()
     const first = bundledAppChannels(hub, { assertCurrent() {} })
     const second = bundledAppChannels(hub, { assertCurrent() {} })
     const received: ChannelEvent[] = []
@@ -204,8 +209,7 @@ describe('BundledAppChannels subscriptions', () => {
   })
 
   it('keeps a failing subscriber from breaking the channel', () => {
-    const hub = new BundledAppChannelHub()
-    const port = hub.bridge(CHANNEL_ROW)
+    const { hub, port } = running()
     bundledAppChannels(hub, { assertCurrent() {} }).subscribe('team', ['group-a'], () => {
       throw new Error('subscriber failed')
     })
@@ -213,9 +217,7 @@ describe('BundledAppChannels subscriptions', () => {
   })
 
   it('ends a subscription with its generation and refuses the stale grant', async () => {
-    const hub = new BundledAppChannelHub()
-    const port = hub.bridge(CHANNEL_ROW)
-    hub.bridge(CHANNEL_ROW).attach('team', link(caps(ALL_READS)).value)
+    const { hub, port } = running()
     let current = true
     const stale = bundledAppChannels(hub, {
       assertCurrent() {
@@ -237,8 +239,7 @@ describe('BundledAppChannels subscriptions', () => {
   })
 
   it('releases the claims of a grant whose signal aborts', () => {
-    const hub = new BundledAppChannelHub()
-    const port = hub.bridge(CHANNEL_ROW)
+    const { hub, port } = running()
     const abort = new AbortController()
     bundledAppChannels(hub, { assertCurrent() {}, signal: abort.signal }).subscribe(
       'team',
@@ -248,5 +249,42 @@ describe('BundledAppChannels subscriptions', () => {
     expect(port.claimed('team', 'group-a')).toBe(true)
     abort.abort()
     expect(port.claimed('team', 'group-a')).toBe(false)
+  })
+
+  it('refuses a group a session is bound to, and a channel that is not running', () => {
+    const { hub, port, team } = running()
+    const channels = bundledAppChannels(hub, { assertCurrent() {} })
+    team.bound.add('group-b')
+    expect(() => channels.subscribe('team', ['group-a', 'group-b'], () => {})).toThrow(
+      expect.objectContaining({ message: 'SEMANTIC_REJECTED', data: { code: 'CHANNEL_CHAT_CLAIMED' } }),
+    )
+    expect(port.claimed('team', 'group-a')).toBe(false)
+    // The owner unbinds the session first; then the group can be claimed.
+    team.bound.delete('group-b')
+    expect(() => channels.subscribe('team', ['group-a', 'group-b'], () => {})).not.toThrow()
+    expect(() => channels.subscribe('other', ['group-a'], () => {})).toThrow(
+      expect.objectContaining({ data: { code: 'CHANNEL_UNAVAILABLE' } }),
+    )
+  })
+
+  it('drops a redelivered event within the live subscription', () => {
+    const { hub, port } = running()
+    const channels = bundledAppChannels(hub, { assertCurrent() {} })
+    const received: string[] = []
+    const stop = channels.subscribe('team', ['group-a'], (event) => received.push(event.eventId))
+    port.deliver('team', message('m1'))
+    port.deliver('team', message('m1'))
+    port.deliver('team', { ...message('m1'), accountId: 'other-account' })
+    expect(received).toEqual(['event-m1', 'event-m1'])
+    // The window is bounded: an event redelivered after 1024 newer ones arrives again.
+    for (let index = 0; index < 1024; index++) port.deliver('team', message(`n${index}`))
+    received.length = 0
+    port.deliver('team', message('m1'))
+    expect(received).toEqual(['event-m1'])
+    // A new subscription starts with no memory of the old one.
+    stop()
+    channels.subscribe('team', ['group-a'], (event) => received.push(event.eventId))
+    port.deliver('team', message('n1023'))
+    expect(received).toEqual(['event-m1', 'event-n1023'])
   })
 })
