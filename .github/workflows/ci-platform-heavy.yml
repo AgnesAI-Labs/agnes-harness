@@ -118,10 +118,11 @@ jobs:
         run: pnpm exec tsx tools/ci/prepare-source-transpile.ts
       # Run real-process files one at a time on each shard, leaving capacity for their children,
       # source transforms and durable I/O. Tests retain their own concurrent clients and processes.
-      # The Windows files run separately below are held out here.
+      # The Windows files run separately below are held out here. Superagent supports macOS and Linux
+      # only (its setup refuses Windows), so its tests are held out on Windows too.
       - name: test heavy tier
         env:
-          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts,packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts' || '' }}
+          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts,packages/cli/test/acp-concurrency.e2e.test.ts,packages/cli/test/dbh-m06-ephemeral-leak.e2e.test.ts,packages/daemon/test/service-worker.e2e.test.ts,packages/cli/test/built-resource-mcp.e2e.test.ts,packages/superagent/test/**' || '' }}
         run: node tools/ci/run-heavy-shard.mjs --shard=${{ matrix.shard }}/6 --maxWorkers=1 ${{ !inputs.browsers && '--without-browser' || '' }}
       - name: Save source transpile cache
         if: ${{ !cancelled() }}
