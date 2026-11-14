@@ -119,6 +119,7 @@ import {
   rewriteMovedSettingsLink,
 } from './settings-redirects.js'
 import { createSidebarPagination } from './sidebar-pagination.js'
+import { openStartupAnchors } from './startup-anchors.js'
 import { readTraceFactChain } from './trace-facts.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
@@ -2489,21 +2490,7 @@ run(async () => {
   const modelSelection = sessionBinding.capture()
   await awaitModels()
   if (!sessionBinding.isCurrent(modelSelection)) return
-  const factCandidate = startupRequest.get('factCandidate')
-  if (
-    selected &&
-    sessionBinding.session?.id === selected &&
-    factCandidate &&
-    /^candidate-[a-f0-9]{32}$/.test(factCandidate)
-  ) {
-    requestAnimationFrame(() =>
-      factChainLinks.open({
-        sessionId: selected,
-        laneId: 'main',
-        anchor: { kind: 'authoring', candidateId: factCandidate },
-      }),
-    )
-  }
+  openStartupAnchors(startupRequest, sessionBinding.session?.id === selected ? selected : undefined)
   const shown = await firstRun.initialize(
     snapshot,
     !empty || Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),

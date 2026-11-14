@@ -507,6 +507,11 @@ describe('protocol src boundary', () => {
                 // These generated schemas/types are exposed by the dedicated auto-review module.
                 'AutoReviewConfig',
                 'ToolReviewFact',
+                // Owner input review shapes are exposed by the dedicated managed-input module.
+                'ManagedInputGetParams',
+                'ManagedInputGetResult',
+                'ManagedInputDecideParams',
+                'ManagedInputDecideResult',
                 'WorkbenchEvidenceItem',
                 'automaticPermissionDecision',
                 'isPermissionPurpose',

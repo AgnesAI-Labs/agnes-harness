@@ -425,6 +425,10 @@ const AGNES_DEFS: Record<string, TSchema> = {
   FactChainEdge: AgnesGen.FactChainEdge,
   FactChainGap: AgnesGen.FactChainGap,
   FactChainResult: AgnesGen.FactChainResult,
+  ManagedInputGetParams: AgnesGen.ManagedInputGetParams,
+  ManagedInputGetResult: AgnesGen.ManagedInputGetResult,
+  ManagedInputDecideParams: AgnesGen.ManagedInputDecideParams,
+  ManagedInputDecideResult: AgnesGen.ManagedInputDecideResult,
 
   AuthoringFile: AgnesGen.AuthoringFile,
   AuthoringOrigin: AgnesGen.AuthoringOrigin,
@@ -2393,6 +2397,89 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       },
     ],
     note: 'bounded immutable read watermark',
+  },
+
+  ManagedInputGetParams: {
+    valid: { sessionId: 'owned', key: 'k1' },
+    invalid: [
+      { sessionId: 'owned', key: '' },
+      { sessionId: 'owned', key: 'k'.repeat(257) },
+      { sessionId: 'owned' },
+    ],
+    note: 'owner input review read: one session, one admission key',
+  },
+  ManagedInputGetResult: {
+    valid: {
+      input: {
+        key: 'k1',
+        kind: 'legacyOwnerMessage',
+        state: 'consumed',
+        reason: 'eligible',
+        version: 2,
+        text: null,
+        source: { kind: 'legacy' },
+        binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
+        turn: 3,
+        seq: 9,
+        history: [
+          { version: 1, state: 'queued', reason: 'eligible', at: '2026-11-14T00:00:00Z', by: 'platform' },
+        ],
+      },
+      parkedReceipts: [
+        { receiptId: 'r1', service: 'companion', kind: 'action', text: '', at: '', attempts: 5 },
+      ],
+    },
+    invalid: [
+      { input: null },
+      { input: {}, parkedReceipts: [] },
+      {
+        input: null,
+        parkedReceipts: [{ receiptId: 'r1', service: 's', kind: 'reply', text: '', at: '', attempts: 5 }],
+      },
+      {
+        input: {
+          key: 'k1',
+          kind: 'ownerMessage',
+          state: 'absent',
+          reason: 'eligible',
+          version: 1,
+          text: 'x',
+          source: null,
+          binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
+          history: [],
+        },
+        parkedReceipts: [],
+      },
+      {
+        input: {
+          key: 'k1',
+          kind: 'ownerMessage',
+          state: 'queued',
+          reason: 'eligible',
+          version: 1,
+          text: 'x',
+          source: null,
+          binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
+          history: [{ version: 1, state: 'queued', reason: 'eligible', at: '', by: 'plugin' }],
+        },
+        parkedReceipts: [],
+      },
+    ],
+    note: 'the owner-only review projection of one input, or null, beside the parked receipts',
+  },
+  ManagedInputDecideParams: {
+    valid: { sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'deliver', version: 2 } },
+    invalid: [
+      { sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'deliver' } },
+      { sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'redeliver', version: 2 } },
+      { sessionId: 'owned', target: { kind: 'receipt', receiptId: 'r1', decision: 'retain' } },
+    ],
+    note: 'owner decision on one input at a shown version, or on one parked receipt',
+  },
+  ManagedInputDecideResult: {
+    valid: { receipt: 'pending' },
+    invalid: [{ receipt: 'acked' }, { state: 'retained', version: 0 }],
+    note: 'the new input state and version, or the receipt outcome',
   },
 
   SystemPromptConfig: {
@@ -9162,6 +9249,16 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'PluginConfigSaveResult',
   },
 
+  '_agnes/v1/managedInput.get': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'ManagedInputGetParams',
+    result: 'ManagedInputGetResult',
+  },
+  '_agnes/v1/managedInput.decide': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'ManagedInputDecideParams',
+    result: 'ManagedInputDecideResult',
+  },
   '_agnes/v1/session.factChain': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'FactChainParams',
@@ -10293,6 +10390,16 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{}, { profile: 'default' }],
   },
 
+  '_agnes/v1/managedInput.get': {
+    valid: { sessionId: 'owned', key: 'k1' },
+    invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', key: 'k1', owner: 'plugin' }],
+    note: 'no caller-chosen owner: the session owner gate decides',
+  },
+  '_agnes/v1/managedInput.decide': {
+    valid: { sessionId: 'owned', target: { kind: 'receipt', receiptId: 'r1', decision: 'discard' } },
+    invalid: [{ sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'deliver', version: 0 } }],
+    note: 'a decision names the version it was shown',
+  },
   '_agnes/v1/session.factChain': {
     valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
     invalid: [
@@ -11325,6 +11432,8 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.controls': AGNES_SAMPLES.SessionControlStateResult as Sample,
   '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadResultSchema as Sample,
   '_agnes/v1/session.factChain': AGNES_SAMPLES.FactChainResult!,
+  '_agnes/v1/managedInput.get': AGNES_SAMPLES.ManagedInputGetResult!,
+  '_agnes/v1/managedInput.decide': AGNES_SAMPLES.ManagedInputDecideResult!,
   '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
   '_agnes/v1/plugins.candidates.reject': PackageAdminSamples.AuthoringCandidate as Sample,
   '_agnes/v1/plugins.candidates.approve': PackageAdminSamples.AuthoringCandidate as Sample,
