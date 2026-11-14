@@ -39,6 +39,7 @@ import type { BootVerification } from './boot-verification.js'
 import type { DaemonConfig } from './config.js'
 import type { embeddedPackageAdmin } from './embedded-package-admin.js'
 import type { JwksResolver, JwksTransport } from './jwks-cache.js'
+import type { IdleSignal } from './managed-session-idle.js'
 import type { acquireOwnerLock } from './owner-lock.js'
 import type { SessionViewRead } from './session-reads.js'
 
@@ -104,6 +105,8 @@ export type StartSupervisorOptions = {
   audit?: (rec: unknown) => void
   /** Test/composition injection; production creates one global supervisor gate. */
   activationBarrier?: ExtensionActivationBarrier
+  /** Test/composition injection; production creates the signal that reports idle managed sessions. */
+  idleSignal?: IdleSignal
   /** runAgnesd's boot read boundary; startup closes it before the client socket listens. */
   bootVerification?: BootVerification
   /** PackageAdmin is composed once and registered on every matching transport endpoint. */

@@ -13,6 +13,7 @@ import type {
 import { grantKey } from '@agnes/plugin-runtime/host'
 import type { Actor, SessionActivity, SessionViewResult } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
+import type { ManagedInputSessionPorts } from './managed-input-ports.js'
 import type { ManagedSessionRecord, ManagedSessionRecords } from './managed-session-records.js'
 
 /** The Host-verified row a managed service runs for; rechecked by `authorize` on every call. */
@@ -46,7 +47,7 @@ export interface ManagedSessionPorts {
    * probe reports a full OS boundary.
    */
   fullAccess(): Promise<{ outwardCheckpoint: boolean; osBoundary: boolean }>
-  sessions: {
+  sessions: ManagedInputSessionPorts & {
     create(input: { sessionKey: string; cwd: string; agent: string }): Promise<string>
     setModel(sessionId: string, model: { route: string; model: string }): Promise<void>
     setFullAccess(sessionId: string): Promise<void>

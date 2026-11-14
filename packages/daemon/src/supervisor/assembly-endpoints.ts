@@ -142,6 +142,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     resolveActor,
     resolveNewSessionActor,
     effectivePackageAdmin,
+    idle,
   } = state
   const feeds = new Map<string, Feed>()
   const attached = new Map<string, AttachedFeed>()
@@ -265,6 +266,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     onPromptEnd: (sessionId) => {
       inflightConn.delete(sessionId)
       registry.retireAtTurnBoundary(sessionId)
+      idle.notify(sessionId)
     },
   }
 
