@@ -14,6 +14,7 @@ import type { RuntimeState } from './assembly-runtime.js'
 import type { SessionsState } from './assembly-session-services.js'
 import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
+import { createIdleSignal } from './managed-session-idle.js'
 import { managedSessionPorts, managedWorkspaceRoot } from './managed-session-ports.js'
 import { createManagedSessions } from './managed-sessions.js'
 import { managedWorkspaceGrants } from './managed-workspace-grants.js'
@@ -43,6 +44,7 @@ export function openClientServices(
     profilePorts,
     sessionOwnership,
     managedSessionRecords,
+    preferences,
   } = state
   const resolveActor: NonNullable<AgnesContext['resolveActor']> =
     o.ports?.resolveActor ??
@@ -55,8 +57,16 @@ export function openClientServices(
       return registry.require(sessionId).session.resolveActor(credential, surface)
     })
   const resolveNewSessionActor = newSessionActorResolver(o.profile)
+  const idle = o.idleSignal ?? createIdleSignal()
   const continueTrigger = createFollowUpRunner(
-    { commandQueue, activationBarrier, onPromptEnd: (id) => registry.retireAtTurnBoundary(id) },
+    {
+      commandQueue,
+      activationBarrier,
+      onPromptEnd: (id) => {
+        registry.retireAtTurnBoundary(id)
+        idle.notify(id)
+      },
+    },
     async () => undefined,
   )
   profilePorts.channelInteractions.submit = async (kind, value, credential) => {
@@ -156,6 +166,8 @@ export function openClientServices(
       opensWithCommandRules: true,
       // The platform's L1 sandbox probe; unprobed (no workspace bound yet) or partial is no boundary.
       osBoundary: async () => (await catalog()).security?.platform?.l1?.level === 'full',
+      preferences,
+      idle,
     })
     const sessions = createManagedSessions(managed.ports)
     profilePorts.managedSessions.port = sessions
@@ -203,6 +215,7 @@ export function openClientServices(
   automationEvents.triggers = appServerAdmin.observeTriggerSession
 
   return {
+    idle,
     resolveActor,
     resolveNewSessionActor,
     continueTrigger,

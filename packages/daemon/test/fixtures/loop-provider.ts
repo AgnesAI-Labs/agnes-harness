@@ -6,6 +6,7 @@ export async function startLoopProvider() {
   let entered: (() => void) | undefined
   let disconnected: (() => void) | undefined
   const requests: string[] = []
+  let held: { entered: () => void; gate: Promise<void> } | undefined
   const attempts: {
     requestIndex: number
     enteredAt: number
@@ -27,6 +28,23 @@ export async function startLoopProvider() {
     }
     const messages = JSON.stringify(body.messages)
     requests.push(messages)
+    // Hold and fail read only what follows the last reply, so a later turn of the session is unaffected.
+    const newest = messages.includes('summarizing a chat')
+      ? ''
+      : JSON.stringify(
+          body.messages.slice(body.messages.findLastIndex((message) => message.role === 'assistant') + 1),
+        )
+    if (newest.includes('FAIL_THIS_TURN')) {
+      response.writeHead(500, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: { message: 'scripted server failure', type: 'server_error' } }))
+      return
+    }
+    if (held && newest.includes('HOLD_THIS_TURN')) {
+      const release = held
+      held = undefined
+      release.entered()
+      await release.gate
+    }
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
     response.flushHeaders()
     if (blocking && messages.includes('Cancel this blocked turn')) {
@@ -152,6 +170,16 @@ export async function startLoopProvider() {
     },
     unblock() {
       blocking = false
+    },
+    /** Holds the next request whose newest message says HOLD_THIS_TURN until `release`, then answers. */
+    hold() {
+      let entered!: () => void
+      let release!: () => void
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      held = { entered, gate: new Promise<void>((resolve) => (release = resolve)) }
+      return { entered: reached, release }
     },
     close: () =>
       new Promise<void>((resolve, reject) => {

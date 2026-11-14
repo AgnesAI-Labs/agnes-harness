@@ -183,6 +183,13 @@ function world(
         return 'started'
       },
       loaded: (sessionId) => state.loaded.has(sessionId),
+      // Held owner inputs are exercised against their own ports; these sessions never take one.
+      submitInput: async () => ({ state: 'busy' }),
+      findUserMessage: async () => undefined,
+      withdraw: async () => 'absent',
+      archived: (sessionId) => state.archived.includes(sessionId),
+      lastTurnEnd: async () => undefined,
+      onIdle: () => () => undefined,
       activity: async () => state.activity,
       ...(withQuestionReader
         ? {
@@ -1656,6 +1663,8 @@ describe('submitting to a real session', () => {
         continueTurn: (queued) => continueTurn(queued as never),
         opensWithCommandRules: true,
         osBoundary: async () => false,
+        preferences: { get: () => ({ archived: false }) },
+        idle: { onIdle: () => () => undefined },
       })
       expect(
         await managed.ports.sessions.submit('managed-real', {
