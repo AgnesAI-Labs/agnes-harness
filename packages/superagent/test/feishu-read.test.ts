@@ -163,7 +163,7 @@ describe('feishu-read', () => {
       'The Feishu channel does not support reading messages by id',
     )
     const link = feishuLink(fake.channels)
-    link.context = { config: () => ({ channel: 'feishu' }) } as never
+    link.context = { config: () => ({ instance: 'feishu', claim: 'groups' }) } as never
     const context = feishuKindFor(link).threadContext!
     await expect(
       context.read({} as never, trigger, 'thread', undefined, { readPageSize: 20 } as never),

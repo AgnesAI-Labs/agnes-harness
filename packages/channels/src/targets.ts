@@ -40,6 +40,8 @@ export interface ChannelTargetsPort {
       cardBytes: number
       rendered(block: TextBlock | CardBlock): number
       connected(): boolean
+      /** Whether a bundled app claimed the instance whole; no code is minted for it then. */
+      claimed?(): boolean
       send(
         chat: { chatId: string; accountId: string; chatType: 'dm' },
         block: TextBlock | CardBlock,
@@ -48,6 +50,8 @@ export interface ChannelTargetsPort {
     },
   ): () => void
   expectsCode(instanceId: string, text: string): boolean
+  /** Whether a pairing code for this instance is still live; such an instance cannot be claimed whole. */
+  pending?(instanceId: string): boolean
   confirm(
     instanceId: string,
     text: string,
@@ -79,6 +83,7 @@ export interface ChannelTargetsPort {
 }
 
 const NOTICE_INTERVAL_MS = 600_000
+const CLAIMED_REPLY = '这个机器人由随包应用（如 Superagent）整个使用，不能在这里配对。请换一个机器人配对。'
 const STALE_CARD = '这次点击没有收到：这张卡片是升级前发出的。请在最新的卡片上选择，或到 AGH 网页处理。'
 const ATTEMPTS = 3
 
@@ -102,6 +107,8 @@ export function createTargetRouter(input: {
   signal: AbortSignal
   now?: () => number
   backoff?: { baseMs: number; maxMs: number }
+  /** Whether a bundled app claimed this instance whole: then nothing here pairs a chat or writes a receipt. */
+  claimed?: () => boolean
 }) {
   const { targets, instanceId, cfg } = input
   const now = input.now ?? Date.now
@@ -121,9 +128,17 @@ export function createTargetRouter(input: {
         `pairing-reply:${event.eventId}`,
       )
   }
+  const claimed = () => input.claimed?.() ?? false
   const pair = async (event: MessageEvent) => {
+    if (claimed()) return
     const runner = input.runner()
     if (!runner || !(await runner.claim(event))) return
+    // A bundled app may have claimed the instance while the platform claim was awaited: from here to `confirm`
+    // nothing awaits, so a claim cannot slip in between.
+    if (claimed()) {
+      await reply(event, CLAIMED_REPLY)
+      return
+    }
     const route =
       input.adapter().toSession(event, { tenant: cfg.tenant, agent: cfg.agent })?.sessionKey ??
       sessionKeyFor({ tenant: cfg.tenant, agent: cfg.agent, channel: cfg.channel, chat: event.chat })
@@ -165,10 +180,13 @@ export function createTargetRouter(input: {
     )
   }
   const deliver = async (event: MessageEvent | CardActionEvent, pairing: Pairing) => {
+    if (claimed()) return
     const runner = input.runner()
     if (!runner) return
     // A receipt claims a paired message. A click keeps the platform claim: the session approval path may take it.
     if ((event.kind === 'cardAction' || !targets.receive) && !(await runner.claim(event))) return
+    // Claimed while the platform claim was awaited: no receipt, no delivery.
+    if (claimed()) return
     if (event.accountId !== pairing.accountId) {
       // The instance now runs another platform account: the old pairing no longer names this chat.
       targets.drop(pairing.id)
@@ -244,6 +262,7 @@ export function createTargetRouter(input: {
             0,
           ),
         connected: () => runner.status().channel === 'connected',
+        claimed,
         async send(chat, block, deliveryKey) {
           const ref = await runner.sendDirect(chat, block, deliveryKey)
           return ref

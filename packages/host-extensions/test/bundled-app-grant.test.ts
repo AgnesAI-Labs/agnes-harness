@@ -432,6 +432,7 @@ it('channels reach the channel host', async () => {
       },
       reads: () => ({ listChats: async () => ({ chats: [{ id: 'group-a', name: 'Team' }] }) }),
       bound: () => false,
+      occupied: () => false,
     })
     init.onShutdown(async () => {
       unlink()
@@ -446,9 +447,14 @@ it('channels reach the channel host', async () => {
   // The channel row starts beside the app, and nothing above waits for it.
   await vi.waitFor(() => expect(bridges).toHaveLength(1))
 
+  const bridge = bridges[0]!
+  // A whole instance is named by its channel plugin's row id.
+  const whole = grant.channels.claimInstance({ pluginId: CHAT.rowId, instanceId: 'team' }, () => {})
+  expect(bridge.claimedInstance('team')).toBe(true)
+  whole.release()
+  expect(bridge.claimedInstance('team')).toBe(false)
   const received: string[] = []
   grant.channels.subscribe('team', ['group-a'], (event) => received.push(event.eventId))
-  const bridge = bridges[0]!
   expect(bridge.claimed('team', 'group-a')).toBe(true)
   bridge.deliver('team', {
     kind: 'message',

@@ -22,6 +22,7 @@ function subscriptions() {
         if (links.get(instanceId) === link) links.delete(instanceId)
       }
     },
+    claimedInstance: () => false,
     claimed: (instanceId, chatId) => instanceId === 'first' && claims.has(chatId),
     deliver: (instanceId, event) => void delivered.push([instanceId, event]),
   }
@@ -69,6 +70,7 @@ it('gives a subscribed group only to its subscriber and leaves other groups and 
     nodes: [],
   })
   const groupB = view.instances[0]!.targets.find((target) => target.label === 'group-b')!
+  expect(sub.links.get('first')!.occupied()).toBe(false)
   await runtime.binding!(
     'bind',
     { instanceId: 'first', targetId: groupB.id, expectedVersion: view.instances[0]!.version },
@@ -83,6 +85,7 @@ it('gives a subscribed group only to its subscriber and leaves other groups and 
   const link = sub.links.get('first')!
   expect(link.bound('group-b')).toBe(true)
   expect(link.bound('group-a')).toBe(false)
+  expect(link.occupied(), 'a bound session keeps the instance from being claimed whole').toBe(true)
 
   // A lapsed claim (unsubscribed, or the subscriber's generation ended) returns the group to the
   // ordinary path: it is observed as a binding target again and no longer delivered.

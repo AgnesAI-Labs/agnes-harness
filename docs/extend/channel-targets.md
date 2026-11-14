@@ -22,7 +22,7 @@ Channel plugins need no change: any installed channel provider can carry a pairi
 2. Minting a pairing code requires a person's approval. The request waits beside the other approvals and is answered in the same place; then choose **Continue**. The code is shown once, as `XXXX-XXXX`, and is valid for one hour. Only a digest of it is kept, in memory.
 3. Send the code to the bot in a direct message from the chat to pair. The bot confirms in that chat. The sender becomes the owner of the pairing.
 
-A service has at most one pairing, and a chat is either bound to an AGH session or paired with a service, never both. A code-shaped message reaches the session path as usual when no code is waiting. Five wrong codes for one bot void its waiting codes. **Unpair** on the Channels page removes a pairing at once.
+A service has at most one pairing, and a chat is either bound to an AGH session or paired with a service, never both. An instance that a bundled app claimed whole (Superagent's dedicated bot, for example) pairs no chat and writes no receipt while the claim lasts, and an instance with a pairing cannot be claimed whole: give the bundled app its own bot instance. A code-shaped message reaches the session path as usual when no code is waiting. Five wrong codes for one bot void its waiting codes. **Unpair** on the Channels page removes a pairing at once.
 
 ## Use it
 

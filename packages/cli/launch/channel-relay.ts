@@ -3,7 +3,13 @@ import { httpRpcError, validateMethod } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import { channelWorkbench } from './channel-workbench.js'
 
-const PAIRING_REFUSALS = ['TARGET_PAIRED', 'TARGET_UNAVAILABLE', 'CHANNEL_UNAVAILABLE', 'ID_CONFLICT']
+const PAIRING_REFUSALS = [
+  'TARGET_PAIRED',
+  'TARGET_UNAVAILABLE',
+  'CHANNEL_UNAVAILABLE',
+  'CHANNEL_CLAIMED',
+  'ID_CONFLICT',
+]
 
 /** Fixed workbench controls. Browser SDK control-plane restrictions remain in force. */
 export function channelRelay(input: {

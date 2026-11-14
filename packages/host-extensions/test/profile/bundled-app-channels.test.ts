@@ -69,6 +69,7 @@ function link(capabilities: ReturnType<typeof caps> = caps()) {
     }),
     reads: () => reads,
     bound: (chatId: string) => bound.has(chatId),
+    occupied: () => false,
   } satisfies BundledAppChannelLink
   return { value, reads, sends, bound }
 }

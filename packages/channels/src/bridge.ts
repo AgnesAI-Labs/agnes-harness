@@ -216,6 +216,7 @@ export async function startChannelBridge(
           runner: () => row.active,
           bindings,
           signal: init.signal,
+          claimed: () => row.subscriptions?.claimedInstance() ?? false,
           ...(options.targetBackoff ? { backoff: options.targetBackoff } : {}),
         })
       row.supervisor = createRunnerSupervisor(async () => {
@@ -281,7 +282,7 @@ export async function startChannelBridge(
                 const intent = adapter.toSession(event, { tenant: cfg.tenant, agent: cfg.agent })
                 if (intent) bindings.observe(event, intent.sessionKey)
               },
-              // A claimed group goes to its subscriber before any pairing or session route.
+              // A claimed instance or group goes to its claimant before any pairing or session route.
               intercept: (event) =>
                 row.subscriptions?.intercept(event) || (row.router?.intercept(event) ?? false),
             },
@@ -305,6 +306,10 @@ export async function startChannelBridge(
         adapter: () => row.adapter,
         runner: () => row.active,
         bound: (chatId) => bindings.boundChat(chatId),
+        occupied: () =>
+          (options.targets?.pairings(instance.id).length ?? 0) > 0 ||
+          (options.targets?.pending?.(instance.id) ?? false) ||
+          bindings.boundAny(),
       })
       await row.supervisor.start()
       assertCurrent()

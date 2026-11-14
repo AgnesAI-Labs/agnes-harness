@@ -13,6 +13,11 @@ import type {
  * - `subscribe` claims group chats of one instance: their events go only to `onEvent` and never
  *   to session routing. Direct chats are never routed to a subscriber. A platform redelivery of
  *   a recent event is dropped while the subscription lives. Unsubscribe before changing the set.
+ * - `claimInstance` claims a whole instance, named by its channel plugin's id (the `rowId` the
+ *   channel catalog lists) and its instance id: its group and direct messages go only to `onEvent`,
+ *   never to session routing, direct-message pairing or pairing receipts. Card clicks there go to
+ *   nobody. `send` and the reads work as for any instance. `release()`, a stale grant or an aborted
+ *   caller returns the instance to ordinary routing.
  * - `send` is split and throttled as a session reply.
  *
  * Errors (JSON-RPC errors; `data.code` names the case):
@@ -22,12 +27,19 @@ import type {
  *   use it); retry once the channel row is running.
  * - `SEMANTIC_REJECTED` `CHANNEL_CHAT_CLAIMED`: a requested chat already has a consumer, another
  *   subscriber or a session the owner bound to it; nothing is claimed.
+ * - `SEMANTIC_REJECTED` `CHANNEL_CLAIMED`: `claimInstance` on an instance that already has a consumer
+ *   (another whole-instance claim, a group subscriber, a direct chat the owner paired or a session
+ *   bound to one of its chats), or `subscribe` on an instance claimed whole. Use a dedicated instance.
  * - `SEMANTIC_REJECTED` `CHANNEL_READ_INVALID`, `CHANNEL_CURSOR_STALLED`, `CHANNEL_READ_TOO_LARGE`:
  *   the adapter returned a malformed page, repeated a cursor, or exceeded the page bound.
  * - `INVALID_PARAMS`: malformed arguments.
  */
 export interface BundledAppChannels {
   subscribe(channel: string, chats: readonly string[], onEvent: (event: ChannelEvent) => void): () => void
+  claimInstance(
+    channel: { pluginId: string; instanceId: string },
+    onEvent: (event: MessageEvent) => void,
+  ): { release(): void }
   send(channel: string, target: ChatTarget, message: ChannelMessage): Promise<MessageRef>
   fetchMessages(channel: string, chatId: string, ids: readonly string[]): Promise<MessageEvent[]>
   listThread(

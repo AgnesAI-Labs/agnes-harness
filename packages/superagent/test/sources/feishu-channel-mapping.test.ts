@@ -258,7 +258,7 @@ describe('replies', () => {
     await expect(send()).rejects.toThrow('timed out')
   })
   it('refuses a reply while the Source names no channel instance', async () => {
-    const h = open({ feishu: { channel: '' } })
+    const h = open({ feishu: { instance: '' } })
     await expect(h.kind.channel!.send({ commands: h.ctx.commands }, reply('r1', 'om_1'))).rejects.toThrow(
       'no channel instance',
     )
@@ -554,7 +554,7 @@ describe('subscribed topics', () => {
 describe('the subscription', () => {
   it('registers its kind, and names on its health what setup still needs: a channel instance, chats, a running channel', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] })
-    const unset = open({ feishu: { channel: '' } })
+    const unset = open({ feishu: { instance: '' } })
     expect(unset.sources.kind('feishu')).toBe(unset.kind)
     const stop = new AbortController()
     let running = unset.run(stop.signal)
@@ -731,7 +731,9 @@ describe('direct messages and other chats', () => {
   it('notes in the admission table that direct messages and other chats are not received yet, rather than promising them', () => {
     const h = open()
     const rows = (config: Record<string, unknown>) =>
-      Object.fromEntries(h.kind.policy!.rows!(config).map((row) => [row.id, row.note]))
+      Object.fromEntries(
+        h.kind.policy!.rows!({ claim: 'groups', ...config }).map((row) => [row.id, row.note]),
+      )
     expect(rows({ directMessages: true, otherChats: 'mentions' })).toMatchObject({
       direct: { zh: '需要专用机器人，暂不接收', en: 'Needs a dedicated bot; not received yet' },
       other: { zh: '仅 @，需要专用机器人，暂不接收', en: '@ only; needs a dedicated bot; not received yet' },

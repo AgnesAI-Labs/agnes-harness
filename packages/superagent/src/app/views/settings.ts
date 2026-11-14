@@ -66,6 +66,7 @@ export function settingsView(
         fields: kind?.fields ?? [],
         facts: kind?.facts?.(setup.deployment) ?? {},
         labels: store.get(KV.sources.labels(instance.id)) ?? {},
+        choices: store.get(KV.sources.choices(instance.id)) ?? {},
         ...(problem ? { problem } : {}),
         ...policyOf(sources, instance.id, health),
       }

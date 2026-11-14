@@ -3,16 +3,25 @@
  * Feishu background loops over the AGH channel: the subscription to the listed chats (retried while the channel
  * refuses it), chat and topic history recovery, chat name refresh and subscribed topic polling.
  */
-import type { MessageEvent } from '@agnes/extension-api/channel-contract'
+import type { ChannelEvent, MessageEvent } from '@agnes/extension-api/channel-contract'
 import type { ReceiveResult, Thread, Trigger } from '../core/index.js'
 import { threadKey } from '../core/index.js'
 import { type Key, KV } from '../kv.js'
 import type { FeishuConfig } from './feishu.js'
 import { feishuChatLink } from './feishu-channel.js'
-import { channelCode, channelRead, errorText, type FeishuLink, linkIo, probeFeatures } from './feishu-io.js'
+import {
+  channelCode,
+  channelRead,
+  errorText,
+  type FeishuLink,
+  instanceRef,
+  linkIo,
+  probeFeatures,
+} from './feishu-io.js'
 import { type FeishuRef, readHistory, readTopic } from './feishu-read.js'
 import { feishuRef, feishuTriggerId, messageTrigger, SOURCE } from './feishu-trigger.js'
 import { type Health, health, type SourceContext } from './host.js'
+import type { Choice } from './kind.js'
 import { cursorAt, POLL_HORIZON_MS, pause, pollThreads as pollEach, polled } from './poll.js'
 
 /** Runs the Source's loops until `signal` aborts. */
@@ -25,8 +34,11 @@ export function runFeishu(ctx: SourceContext, link: FeishuLink, signal: AbortSig
   ])
 }
 const enabled = (ctx: SourceContext): FeishuConfig | undefined => ctx.config<FeishuConfig>(SOURCE)
+/** The channel instance id the Source's settings name. */
+export const channelOf = (config: FeishuConfig | undefined): string =>
+  instanceRef(config?.instance ?? '').instanceId
 const ioOf = (ctx: SourceContext, link: FeishuLink, signal?: AbortSignal) =>
-  linkIo(link, enabled(ctx)?.channel ?? '', signal)
+  linkIo(link, channelOf(enabled(ctx)), signal)
 
 /** Reports one health entry and logs it when its text changed. */
 export function report(ctx: SourceContext, link: FeishuLink, entry: string, value: Health): void {
@@ -175,19 +187,55 @@ async function receive(ctx: SourceContext, trigger: Trigger): Promise<ReceiveRes
 /** Wait before subscribing again after a refusal: one second, doubling up to a minute. */
 export const consumerRetry = (previous: number | undefined, ranMs: number): number =>
   previous === undefined || ranMs >= 60_000 ? 1000 : Math.min(previous * 2, 60_000)
-/** What the Source still needs before it can subscribe, as a health report, or undefined when it has all. */
+/** What the Source still needs before it can claim or subscribe, as a health report, or undefined when it has all. */
 function setupNeeded(config: FeishuConfig): Health | undefined {
-  if (!config.channel) return health('paused', 'feishuChannelUnset')
+  const { pluginId, instanceId } = instanceRef(config.instance)
+  if (!instanceId) return health('paused', 'feishuChannelUnset')
+  if (config.claim === 'instance') return pluginId ? undefined : health('paused', 'feishuPluginUnset')
   if (config.chats.length === 0) return health('paused', 'feishuChatsUnset')
   return undefined
 }
+/** What the Source listens to: a change claims again. Groups are listed only while they are what it claims. */
 const subscription = (config: FeishuConfig) =>
-  JSON.stringify([config.channel, config.chats.map((chat) => chat.chatId)])
+  JSON.stringify([config.instance, config.claim === 'groups' ? config.chats.map((chat) => chat.chatId) : []])
+/**
+ * Claims the whole instance (`claim: 'instance'`), or subscribes the listed groups of it; the returned function ends
+ * the claim or the subscription.
+ */
+function listen(link: FeishuLink, config: FeishuConfig, onEvent: (event: ChannelEvent) => void): () => void {
+  if (config.claim === 'groups')
+    return link.channels.subscribe(
+      channelOf(config),
+      config.chats.map((chat) => chat.chatId),
+      onEvent,
+    )
+  const claim = link.channels.claimInstance(instanceRef(config.instance), onEvent)
+  return () => claim.release()
+}
+/** How long an instance in use may be Superagent's own previous run, which releases it within seconds. */
+export const RELEASE_GRACE_MS = 10_000
+/**
+ * Why the instance refused the Source, as setup still required. An instance in use stays with its users; it is
+ * reported as the owner's or another feature's only once it stayed in use past `RELEASE_GRACE_MS`, so a previous run
+ * of Superagent that still holds it is not taken for one. `busy` tracks since when this listening was refused so.
+ */
+function refusal(config: FeishuConfig, error: unknown, busy: { key: string; since: number }): Health {
+  const channel = channelOf(config)
+  const reason = channelCode(error) ?? (error instanceof Error ? error.message : String(error))
+  if (config.claim === 'groups') return health('paused', 'feishuChannelRefused', { channel, reason })
+  if (reason !== 'CHANNEL_CLAIMED') return health('paused', 'feishuInstanceRefused', { channel, reason })
+  const key = subscription(config)
+  if (busy.key !== key) Object.assign(busy, { key, since: Date.now() })
+  return Date.now() - busy.since < RELEASE_GRACE_MS
+    ? health('paused', 'feishuInstanceReleasing', { channel })
+    : health('paused', 'feishuInstanceShared', { channel })
+}
 
 /**
- * Keeps the listed chats subscribed while the Source is on: a refused subscription (such as a channel instance that is
- * missing or not running yet) is reported as setup still required and retried with backoff; a subscription is renewed
- * when the channel or the chats change and ends within five seconds once the Source is off.
+ * Keeps the instance claimed, or the listed chats subscribed, while the Source is on: a refusal (such as a channel
+ * instance that is missing, not running yet or in use) is reported as setup still required and retried with backoff;
+ * the claim is renewed when the instance, the claim or the chats change and ends within five seconds once the Source
+ * is off.
  */
 async function watch(ctx: SourceContext, link: FeishuLink, signal: AbortSignal, wake: Wake): Promise<void> {
   await ctx.ready
@@ -196,6 +244,7 @@ async function watch(ctx: SourceContext, link: FeishuLink, signal: AbortSignal, 
     return
   }
   let retry: number | undefined
+  const busy = { key: '', since: 0 }
   while (!signal.aborted) {
     const config = enabled(ctx)
     if (!config) {
@@ -213,31 +262,30 @@ async function watch(ctx: SourceContext, link: FeishuLink, signal: AbortSignal, 
     let chain: Promise<unknown> = Promise.resolve()
     let unsubscribe: () => void
     try {
-      unsubscribe = link.channels.subscribe(
-        config.channel,
-        config.chats.map((chat) => chat.chatId),
-        (event) => {
-          chain = chain
-            .then(async () => {
-              if (event.kind === 'message' && enabled(ctx)) await takeIn(ctx, link, event)
-            })
-            .catch((error: unknown) =>
-              report(ctx, link, 'feishu', { state: 'error', detail: errorText(error) }),
-            )
-        },
-      )
+      unsubscribe = listen(link, config, (event) => {
+        chain = chain
+          .then(async () => {
+            if (event.kind === 'message' && enabled(ctx)) await takeIn(ctx, link, event)
+          })
+          .catch((error: unknown) =>
+            report(ctx, link, 'feishu', { state: 'error', detail: errorText(error) }),
+          )
+      })
     } catch (error) {
-      const reason = channelCode(error) ?? (error instanceof Error ? error.message : String(error))
-      waiting(ctx, link, health('paused', 'feishuChannelRefused', { channel: config.channel, reason }))
+      waiting(ctx, link, refusal(config, error, busy))
       retry = consumerRetry(retry, 0)
       await pause(retry, signal)
       continue
     }
     retry = undefined
+    busy.key = ''
     link.listening = true
     report(ctx, link, 'feishu', {
       state: 'ready',
-      detail: `Listening to ${config.chats.length} chats on ${config.channel}`,
+      detail:
+        config.claim === 'instance'
+          ? `Receiving every chat and direct message of ${channelOf(config)}`
+          : `Listening to ${config.chats.length} chats on ${channelOf(config)}`,
       at: new Date().toISOString(),
     })
     await reportFeatures(ctx, link).catch(() => {})
@@ -265,11 +313,17 @@ function waiting(ctx: SourceContext, link: FeishuLink, why: Health): void {
   for (const entry of ['history', 'members', 'reads', 'others']) report(ctx, link, entry, pending)
 }
 /**
- * Says, while direct messages or other chats are on, that they need a Feishu bot instance of Superagent's own: the
- * Source claims only the listed group chats, and the host routes no direct chat to it. The note is information, not a
- * fault: the defaults have direct messages on, and the listed chats work as they should.
+ * Says how direct messages and other chats are received. On an instance of its own the Source receives them as its
+ * settings say. Claiming only the listed groups, it notes, while either is on, that they need a Feishu bot instance of
+ * Superagent's own: the host routes no direct chat to a group subscriber. The note is information, not a fault.
  */
 export function reportOthers(ctx: SourceContext, link: FeishuLink, config: FeishuConfig): void {
+  if (config.claim === 'instance') {
+    const detail =
+      'Direct messages and other chats come from the instance of its own, as the settings receive them'
+    report(ctx, link, 'others', { state: 'ready', detail, at: new Date().toISOString() })
+    return
+  }
   const wanted = config.directMessages || config.otherChats === 'mentions'
   report(
     ctx,
@@ -313,13 +367,30 @@ export async function refreshChatNames(
   ctx.state.set(KV.sources.labels(SOURCE), names)
   return names
 }
-/** Rereads the chat list every minute independently of history recovery, so newly joined chats appear within a minute. */
+/** Rereads the channel instances the `instance` setting may name and stores them as its choices. */
+export async function refreshInstances(
+  ctx: SourceContext,
+  link: FeishuLink,
+): Promise<Record<string, Choice[]>> {
+  if (!link.instances) return {}
+  const choices = { instance: await link.instances() }
+  ctx.state.set(KV.sources.choices(SOURCE), choices)
+  return choices
+}
+/**
+ * Rereads the channel instances, and the chat list, every minute independently of history recovery, so new instances
+ * and newly joined chats appear within a minute. Instances are read even while the Source is unset or off, so it can
+ * be set.
+ */
 async function chatNamesLoop(ctx: SourceContext, link: FeishuLink, signal: AbortSignal): Promise<void> {
   await ctx.ready
   if (!ctx.configured()) return
   while (!signal.aborted) {
+    await refreshInstances(ctx, link).catch(() => {
+      /* A display aid as well: the stored choices stay until a later read succeeds. */
+    })
     const config = enabled(ctx)
-    if (config?.channel && !link.missing.has('chats')) {
+    if (channelOf(config) && !link.missing.has('chats')) {
       try {
         await refreshChatNames(ctx, link, signal)
       } catch {

@@ -142,9 +142,14 @@ export function installProfileRuntime(
             ...(deps.channelTargets
               ? { targets: deps.channelTargets.bridge(grantKey(row.origin.packageId, row.owner)) }
               : {}),
-            // Group claims by the bundled app, and the instance links behind its grant's channels.
+            // Instance and group claims by the bundled app, and the instance links behind its grant's channels.
             ...(deps.bundledApp?.channels
-              ? { subscriptions: deps.bundledApp.channels.bridge(grantKey(row.origin.packageId, row.owner)) }
+              ? {
+                  subscriptions: deps.bundledApp.channels.bridge(
+                    grantKey(row.origin.packageId, row.owner),
+                    row.origin.rowId,
+                  ),
+                }
               : {}),
           }),
         async check(value) {

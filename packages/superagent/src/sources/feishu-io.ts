@@ -4,6 +4,7 @@
  * Source records as a missing feature and degrades around instead of failing.
  */
 import type { BundledAppChannels } from '@agnes/extension-api'
+import type { Choice } from './kind.js'
 
 /** The optional channel reads, as `capabilities().read` names them. */
 export type FeishuFeature = 'messages' | 'threads' | 'history' | 'chats' | 'members'
@@ -23,6 +24,17 @@ export interface FeishuIo {
   /** Features the channel refused, so far in this run. */
   readonly missing: Set<FeishuFeature>
   readonly signal?: AbortSignal | undefined
+}
+
+/**
+ * The channel plugin and instance the `instance` setting names, written `<plugin id>/<instance id>` (a plugin id may
+ * contain `/`, an instance id never does). A bare instance id names no plugin; it is enough to subscribe groups.
+ */
+export function instanceRef(value: string): { pluginId: string; instanceId: string } {
+  const at = value.lastIndexOf('/')
+  return at < 0
+    ? { pluginId: '', instanceId: value }
+    : { pluginId: value.slice(0, at), instanceId: value.slice(at + 1) }
 }
 
 /** The `data.code` of a channel error (the error name when it has none), or undefined for other errors. */
@@ -123,10 +135,12 @@ export interface FeishuLink {
   log?(message: string): void
   /** The last health line logged per entry. */
   readonly logged: Map<string, string>
-  /** Whether the listed chats are subscribed now; history is recovered only then. */
+  /** Whether the instance is claimed or the listed chats are subscribed now; history is recovered only then. */
   listening: boolean
   /** Replies being sent, by `chat\0asked message`, with the root they answer and how many are in flight. */
   readonly sending: Map<string, { root: string; count: number }>
+  /** Lists the running channel instances the `instance` setting may name; absent, the setting is typed. */
+  instances?: () => Promise<Choice[]>
 }
 export const feishuLink = (channels: BundledAppChannels, log?: (message: string) => void): FeishuLink => ({
   channels,

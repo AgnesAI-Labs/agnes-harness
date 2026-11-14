@@ -3,7 +3,14 @@
  * translations are keyed by. The panel bundle carries no other package, so these are copies; a test keeps each
  * identical to its source, and the types come from the package's `panel-api`.
  */
-export type { AdmissionRowView, FieldSpec, Health, Localized, TicketStage } from '@agnes/superagent/panel-api'
+export type {
+  AdmissionRowView,
+  Choice,
+  FieldSpec,
+  Health,
+  Localized,
+  TicketStage,
+} from '@agnes/superagent/panel-api'
 
 export const TICKET_FILTERS = ['open', 'person', 'working', 'idle', 'ended'] as const
 export const THREAD_FILTERS = ['subscribed', 'evaluating', 'recent', 'all'] as const
@@ -31,6 +38,14 @@ export const HEALTH_TEXT = {
   feishuChatsUnset: 'Setup required: no chat is listed to receive',
   feishuChannelRefused:
     'Setup required: the channel instance {channel} refused the chats ({reason}); retrying',
+  feishuPluginUnset:
+    'Setup required: to claim the whole instance, name it with its channel plugin, as <plugin id>/<instance id>',
+  feishuInstanceShared:
+    'Setup required: the channel instance {channel} already serves the owner or another feature; use a dedicated bot instance',
+  feishuInstanceReleasing:
+    'Setup required: the channel instance {channel} is in use; waiting for a previous Superagent run to release it',
+  feishuInstanceRefused:
+    'Setup required: the channel instance {channel} refused the claim ({reason}); retrying',
   feishuNoHistory:
     'The channel cannot read chat history, so nothing is recovered after a restart or disconnect',
   feishuNoMembers:

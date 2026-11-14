@@ -47,7 +47,7 @@ function registered(history: MessageEvent[], readPageSize = 20) {
   link.context = configOnly({ readPageSize })
   const sources = new SourceRegistry(() =>
     SettingsSchema.parse({
-      sources: { feishu: { enabled: true, config: { channel: 'feishu', readPageSize } } },
+      sources: { feishu: { enabled: true, config: { instance: 'feishu', claim: 'groups', readPageSize } } },
     }),
   )
   sources.register(feishuKindFor(link))
