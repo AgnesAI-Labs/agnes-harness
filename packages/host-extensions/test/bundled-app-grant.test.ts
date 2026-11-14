@@ -611,3 +611,28 @@ it('leaves resources without the bundled-app grant to the publication', async ()
   await judgment.managed.retireDropped([])
   expect(await judgment.handle.get()).toBeDefined()
 })
+
+it('stops a package without the grant, and an upgraded bundled app, only when the publication retires them', async () => {
+  // A package without the grant whose row a target drops: the target's early stop leaves it running.
+  const seen: Record<string, unknown>[] = []
+  const judgment = await harness({ identity: JUDGMENT, definition: recordingShutdown(seen, () => []) })
+  await judgment.managed.retireDropped([{ id: 'ext:other/main' }])
+  expect(seen).toEqual([])
+  expect(judgment.managed.statuses(JUDGMENT.id).map((row) => row.state)).toEqual(['ready'])
+  await judgment.row.dispose()
+  await judgment.managed.publish('disable')
+  expect(seen.map((entry) => entry.reason)).toEqual(['disable'])
+
+  // A bundled app whose row the target keeps, as an upgrade does: it stops when the new generation's
+  // publication retires it, not before.
+  const upgraded: Record<string, unknown>[] = []
+  let leases: { closed: boolean; context: BundledAppClientContext }[] = []
+  const app = await harness({ definition: recordingShutdown(upgraded, () => leases) })
+  leases = app.leases
+  await app.managed.retireDropped([{ id: SUPERAGENT.row }])
+  expect(upgraded).toEqual([])
+  expect(app.leases[0]?.closed).toBe(false)
+  app.retire()
+  await app.managed.publish('upgrade')
+  expect(upgraded).toEqual([{ reason: 'upgrade', grant: true, connect: true, signal: false, closed: false }])
+})
