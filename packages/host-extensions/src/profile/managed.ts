@@ -246,14 +246,13 @@ export class ProfileManagedResources {
     let ended = false
     let stopping: Promise<void> | undefined
     let app: ReturnType<typeof openBundledApp> | undefined
-    // The bundled app's grant has its own fence. The lifetime aborts before `onShutdown` runs, and the
-    // shutdown needs the grant's client to stop what the app started: only while the shutdown handler
-    // runs does the grant pass without being current. The grant is closed for good when the app is
-    // closed, right after `onShutdown` returns or its deadline passes.
-    const appFence = new AbortController()
-    let shuttingDown = false
+    const appFence = bundledAppFence(lifetime.signal, () => {
+      input.assert()
+      if (this.current && !this.current(input.owner, input.integrity, input.revision))
+        throw rpcError('CAPABILITY_DENIED')
+    })
     const closeApp = async () => {
-      appFence.abort()
+      appFence.close()
       await app?.close()
     }
     let shutdownResult: Promise<{ state: 'settled' | 'unknown' } | undefined> | undefined
@@ -261,13 +260,7 @@ export class ProfileManagedResources {
       if (!shutdownResult) {
         const ownConfirmation = startupComplete ? r.shutdownConfirmation : undefined
         const work = Promise.resolve()
-          .then(() => {
-            shuttingDown = true
-            return shutdown?.(reason)
-          })
-          .finally(() => {
-            shuttingDown = false
-          })
+          .then(() => appFence.shutdown(() => shutdown?.(reason)))
           .then((result) => {
             if (result?.state === 'settled' && ownConfirmation) confirmManagedShutdown(ownConfirmation)
             return result
@@ -350,18 +343,7 @@ export class ProfileManagedResources {
         listeners[listener.name] = { host: listener.host, port: port === 'auto' ? await freePort() : port }
       }
       lifetime.signal.throwIfAborted()
-      if (input.bundledApp)
-        app = openBundledApp(input.bundledApp, {
-          signal: appFence.signal,
-          assertCurrent: () => {
-            // A resource that is stopping is no longer current, but its shutdown handler still runs on the grant.
-            if (shuttingDown && !appFence.signal.aborted) return
-            lifetime.signal.throwIfAborted()
-            input.assert()
-            if (this.current && !this.current(input.owner, input.integrity, input.revision))
-              throw rpcError('CAPABILITY_DENIED')
-          },
-        })
+      if (input.bundledApp) app = openBundledApp(input.bundledApp, appFence)
       const owner = await managedProcessOwner(process.pid, this.processIdentity)
       lifetime.signal.throwIfAborted()
       input.store.transaction(() => {
@@ -728,4 +710,34 @@ function managedRevision(
     instance: store.get(`managed-incarnation:${resource.id}`) ?? null,
     ...managedMarkerBinding(store, resource.id),
   })
+}
+
+/**
+ * A bundled app's grant has its own fence. The resource's lifetime aborts before `onShutdown` runs, and
+ * the shutdown needs the grant's client to stop what the app started: only while the shutdown handler
+ * runs does the grant pass without being current. `close` ends the grant for good, once the shutdown
+ * returned or its deadline passed.
+ */
+function bundledAppFence(lifetime: AbortSignal, assertCurrent: () => void) {
+  const fence = new AbortController()
+  let shuttingDown = false
+  return {
+    signal: fence.signal,
+    assertCurrent() {
+      if (shuttingDown && !fence.signal.aborted) return
+      lifetime.throwIfAborted()
+      assertCurrent()
+    },
+    async shutdown<T>(handler: () => T | Promise<T>): Promise<T> {
+      shuttingDown = true
+      try {
+        return await handler()
+      } finally {
+        shuttingDown = false
+      }
+    },
+    close() {
+      fence.abort()
+    },
+  }
 }
