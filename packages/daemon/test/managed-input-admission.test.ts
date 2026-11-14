@@ -95,6 +95,25 @@ describe('owner input admission', () => {
     expect(w.inputs.get(owner, 's1', 'k1')).toBeUndefined()
   })
 
+  it('a pre-upgrade session is bound only by its own manager naming its own start key', async () => {
+    const w = world()
+    w.open('s0', null)
+    const stranger = { ...w.ctx('s0'), owner: 'another#row' }
+    await expect(
+      w.engine.admit(
+        stranger,
+        { key: 'k1', target: w.target('s0'), input: ownerMessage('r1') },
+        receipt('r1'),
+      ),
+    ).rejects.toMatchObject(refused('OWNER_INPUT_TARGET_MISMATCH'))
+    await expect(
+      w.admit('k1', ownerMessage('r1'), receipt('r1'), 's0', w.target('s0', { startKey: 'start-s1' })),
+    ).rejects.toMatchObject(refused('OWNER_INPUT_TARGET_MISMATCH'))
+    expect(w.records.binding('s0')).toBeUndefined()
+    expect(await w.admit('k1', ownerMessage('r1'), receipt('r1'), 's0')).toMatchObject({ state: 'enqueued' })
+    expect(w.records.binding('s0')).toMatchObject({ taskId: 'task-1', taskGeneration: 1, inputDigest: null })
+  })
+
   it('archived session throws SESSION_ARCHIVED, an owner archive in the Web included', async () => {
     const w = world()
     w.records.markArchived('s1')

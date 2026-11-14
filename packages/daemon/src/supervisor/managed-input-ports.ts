@@ -13,7 +13,10 @@ export interface ManagedInputSessionPorts {
    * Queues a `follow_up` only into an empty inbox and starts its turn. `dedupe` asks core to return
    * the seq of an input already queued under `commandId` (and start it again) instead of queuing a
    * second one; it scans the whole inbox history, so it is only for a submission that may already
-   * have happened.
+   * have happened, and only a sweep (startup or the slow one) asks for it: an idle report also comes
+   * when a runner stops without a turn, and a resubmission there would loop. Dedupe also matches an
+   * id that was withdrawn or already consumed, so an input submitted again after a withdrawal takes a
+   * fresh `commandId` and `dedupe: false`.
    */
   submitInput(
     sessionId: string,
