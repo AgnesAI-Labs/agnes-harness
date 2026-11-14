@@ -58,7 +58,7 @@ import { ResourceRegistry } from './registry/resources.js'
 import { SlotRegistry } from './registry/slots.js'
 import { ToolRegistry } from './registry/tools.js'
 import type { ContractRef } from './request/derive.js'
-import { APPEND_REFUSED, appendToSystemPromptConfig } from './request/system-prompt.js'
+import { APPEND_REFUSED, appendPinned, appendToSystemPromptConfig } from './request/system-prompt.js'
 import type { CurrentRuntimeLookup, RuntimePromptPreloader } from './runtime/current.js'
 import { opensAsChild } from './step/child-session.js'
 import { CORE_OPS, type CoreOpName, replacementFor, validateReplacements } from './step/reentry.js'
@@ -630,7 +630,15 @@ export class Kernel {
       const persistedPrompt = tracker.state.session?.systemPrompt
       if (persistedPrompt && !promptPort)
         throw new CoreError('E_ENVELOPE', 'pinned system prompt provider is unavailable')
-      if (so.systemPromptAppend !== undefined && (!promptPort || tracker.state.session || so.parent))
+      // A repeated open of the new session this append created (the open retried after a reload, or recovered)
+      // keeps the prompt pinned then; a different append, or one for another session, is refused.
+      const append =
+        so.systemPromptAppend !== undefined &&
+        persistedPrompt &&
+        appendPinned(persistedPrompt.config, so.systemPromptAppend)
+          ? undefined
+          : so.systemPromptAppend
+      if (append !== undefined && (!promptPort || tracker.state.session || so.parent))
         throw new CoreError(
           'E_ENVELOPE',
           'system prompt append applies only to a new session',
@@ -642,9 +650,9 @@ export class Kernel {
           ? structuredClone(persistedPrompt?.config ?? {})
           : parentPrompt
             ? structuredClone(parentPrompt.config)
-            : so.systemPromptAppend === undefined
+            : append === undefined
               ? await promptPort.config()
-              : appendToSystemPromptConfig(await promptPort.config(), so.systemPromptAppend)
+              : appendToSystemPromptConfig(await promptPort.config(), append)
         const identity =
           persistedPrompt?.provider ??
           (parentPrompt

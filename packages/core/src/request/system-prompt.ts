@@ -62,3 +62,19 @@ export function appendToSystemPromptConfig(config: SystemPromptConfig, append: s
     )
   return merged
 }
+
+/**
+ * Whether `config`, a session's pinned prompt config, already carries `append`, as `appendToSystemPromptConfig`
+ * merged it when the session was created. An open that repeats the creation (a retried or recovered open of the
+ * same new session) brings the same append again; the session keeps what it pinned.
+ */
+export function appendPinned(config: SystemPromptConfig, append: string): boolean {
+  let text: string
+  try {
+    text = parseSystemPromptAppend(append)
+  } catch {
+    return false
+  }
+  const suffix = config.personaSuffix
+  return suffix === text || (suffix?.endsWith(`\n\n${text}`) ?? false)
+}
