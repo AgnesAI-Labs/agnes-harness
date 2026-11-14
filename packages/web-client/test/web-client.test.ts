@@ -1474,3 +1474,125 @@ it('keeps SDK request state on the connection behind a frozen module facade acro
     await fiber.dispose()
   }
 })
+
+it('a client module cannot call managedInput.get or managedInput.decide', async () => {
+  const sent: string[] = []
+  const conn = { request: vi.fn() }
+  class FakeClient {
+    sessions = { get: () => undefined }
+    conn = conn
+    async call(method: string) {
+      sent.push(method)
+      return { ok: true }
+    }
+    async notify(method: string) {
+      sent.push(method)
+    }
+  }
+  const { ctx } = await makeRegistry(new FakeClient() as never)
+  let agnes: ClientContext['agnes'] | undefined
+  const fiber = ctx.plugin(
+    clientModule({
+      apply(cctx: ClientContext) {
+        agnes = cctx.agnes
+      },
+    }),
+    { packageId: 'pkg-owner-only', revision: 'r1' },
+  )
+  await fiber
+  for (const method of ['_agnes/v1/managedInput.get', '_agnes/v1/managedInput.decide']) {
+    await expect(agnes?.call(method, { sessionId: 's1' })).rejects.toMatchObject({
+      data: { code: 'CAPABILITY_DENIED', method },
+    })
+    await expect(agnes?.notify(method, {})).rejects.toMatchObject({ data: { code: 'CAPABILITY_DENIED' } })
+  }
+  // The raw connection is not reachable through the facade; other methods still go through.
+  expect((agnes as unknown as { conn?: unknown }).conn).toBeNull()
+  await expect(agnes?.call('_agnes/v1/session.list', {})).resolves.toEqual({ ok: true })
+  expect(sent).toEqual(['_agnes/v1/session.list'])
+  expect(conn.request).not.toHaveBeenCalled()
+  await fiber.dispose()
+})
+
+/** The page's real browser client with the wire replaced: what reaches `sent` is what the daemon would see. */
+async function reservedPageClient() {
+  const { createClient } = await import('@agnes/sdk/browser')
+  // Imported here, not at the top, so the line numbers the secrets scan allowance pins stay put.
+  const { reserveOwnerOnly } = await import('../src/index.js')
+  const client = createClient({
+    transport: { kind: 'ws', url: 'ws://127.0.0.1:9/' },
+    auth: { kind: 'local' },
+  })
+  const sent: string[] = []
+  const wire = async (method: string) => {
+    sent.push(method)
+    return method === 'session/new' ? { sessionId: 's-new' } : { ok: true }
+  }
+  Object.defineProperty(client, 'call', { value: wire, configurable: true })
+  Object.defineProperty(client, 'notify', { value: wire, configurable: true })
+  const ownerCall = reserveOwnerOnly(client)
+  const { ctx } = await makeRegistry(client as never)
+  let agnes: ClientContext['agnes'] | undefined
+  const fiber = ctx.plugin(
+    clientModule({
+      apply(cctx: ClientContext) {
+        agnes = cctx.agnes
+      },
+    }),
+    { packageId: 'pkg-owner-only-reserved', revision: 'r1' },
+  )
+  await fiber
+  return { client, agnes: agnes as ClientContext['agnes'], sent, ownerCall, fiber, reserveOwnerOnly }
+}
+const decide = { sessionId: 's-new', target: { kind: 'input', key: 'k1', decision: 'deliver', version: 1 } }
+const refused = { data: { code: 'CAPABILITY_DENIED', method: '_agnes/v1/managedInput.decide' } }
+
+it('ctx.agnes.request cannot reach managedInput.decide', async () => {
+  const { agnes, sent, fiber } = await reservedPageClient()
+  // The SDK's request goes through `this.call`, so the check on the page client catches it.
+  await expect(agnes.request('_agnes/v1/managedInput.decide', decide as never)).rejects.toMatchObject(refused)
+  await expect(
+    agnes.request('_agnes/v1/managedInput.get', { sessionId: 's', key: 'k' }),
+  ).rejects.toMatchObject({
+    data: { code: 'CAPABILITY_DENIED' },
+  })
+  expect(sent).toEqual([])
+  await fiber.dispose()
+})
+
+it('a session listed by ctx.agnes.sessions cannot reach managedInput.decide through its client', async () => {
+  const { agnes, sent, fiber } = await reservedPageClient()
+  await agnes.createSession({ cwd: '/work' })
+  const listed = [...agnes.sessions.values()][0]
+  expect(listed?.id).toBe('s-new')
+  await expect(listed?.client.call('_agnes/v1/managedInput.decide', decide)).rejects.toMatchObject(refused)
+  await expect(listed?.client.notify('_agnes/v1/managedInput.decide', decide)).rejects.toMatchObject(refused)
+  expect(sent).toEqual(['session/new'])
+  await fiber.dispose()
+})
+
+it('a session from createSession or session.new cannot reach managedInput.decide', async () => {
+  const { agnes, sent, fiber } = await reservedPageClient()
+  for (const session of [
+    await agnes.createSession({ cwd: '/work' }),
+    await agnes.session.new({ cwd: '/work' }),
+  ]) {
+    await expect(session.client.call('_agnes/v1/managedInput.decide', decide)).rejects.toMatchObject(refused)
+    await expect(
+      session.client.request('_agnes/v1/managedInput.decide', decide as never),
+    ).rejects.toMatchObject(refused)
+  }
+  expect(sent).toEqual(['session/new', 'session/new'])
+  await fiber.dispose()
+})
+
+it('the owner caller still reaches managedInput, and the page client cannot be reserved twice', async () => {
+  const { client, sent, ownerCall, fiber, reserveOwnerOnly } = await reservedPageClient()
+  await expect(ownerCall('_agnes/v1/managedInput.decide', decide)).resolves.toEqual({ ok: true })
+  await expect(ownerCall('_agnes/v1/managedInput.get', { sessionId: 's', key: 'k' })).resolves.toEqual({
+    ok: true,
+  })
+  expect(sent).toEqual(['_agnes/v1/managedInput.decide', '_agnes/v1/managedInput.get'])
+  expect(() => reserveOwnerOnly(client)).toThrow(/already reserved/)
+  await fiber.dispose()
+})

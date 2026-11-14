@@ -9671,6 +9671,170 @@
         }
       }
     },
+    "ManagedInputGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "key"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "key": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "ManagedInputGetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "parkedReceipts"],
+      "properties": {
+        "input": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "key",
+                "kind",
+                "state",
+                "reason",
+                "version",
+                "text",
+                "source",
+                "binding",
+                "history"
+              ],
+              "properties": {
+                "key": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "kind": { "enum": ["ownerMessage", "recoveryContinuation", "legacyOwnerMessage"] },
+                "state": {
+                  "enum": [
+                    "queued",
+                    "enqueued",
+                    "consumed",
+                    "retained",
+                    "needsOwner",
+                    "waitingQuestion",
+                    "recoveryUnknown"
+                  ]
+                },
+                "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+                "version": { "type": "integer", "minimum": 1 },
+                "text": { "anyOf": [{ "type": "string", "maxLength": 65536 }, { "type": "null" }] },
+                "source": { "$ref": "#/$defs/JsonValue" },
+                "binding": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["taskId", "taskGeneration", "startKey"],
+                  "properties": {
+                    "taskId": { "type": "string", "maxLength": 1024 },
+                    "taskGeneration": { "type": "integer", "minimum": 0 },
+                    "startKey": { "type": "string", "maxLength": 1024 }
+                  }
+                },
+                "turn": { "type": "integer", "minimum": 0 },
+                "seq": { "type": "integer", "minimum": 0 },
+                "history": {
+                  "type": "array",
+                  "maxItems": 256,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["version", "state", "reason", "at", "by"],
+                    "properties": {
+                      "version": { "type": "integer", "minimum": 1 },
+                      "state": {
+                        "enum": [
+                          "queued",
+                          "enqueued",
+                          "consumed",
+                          "retained",
+                          "needsOwner",
+                          "waitingQuestion",
+                          "recoveryUnknown"
+                        ]
+                      },
+                      "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+                      "at": { "type": "string", "maxLength": 64 },
+                      "by": { "enum": ["platform", "owner"] }
+                    }
+                  }
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "parkedReceipts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["receiptId", "service", "kind", "text", "at", "attempts"],
+            "properties": {
+              "receiptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "service": { "type": "string", "maxLength": 256 },
+              "kind": { "enum": ["message", "action"] },
+              "text": { "type": "string", "maxLength": 65536 },
+              "at": { "type": "string", "maxLength": 64 },
+              "attempts": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "ManagedInputDecideParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "target"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "target": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "key", "decision", "version"],
+              "properties": {
+                "kind": { "const": "input" },
+                "key": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "decision": { "enum": ["deliver", "retain", "discard"] },
+                "version": { "type": "integer", "minimum": 1 }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "receiptId", "decision"],
+              "properties": {
+                "kind": { "const": "receipt" },
+                "receiptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "decision": { "enum": ["redeliver", "discard"] }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ManagedInputDecideResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "version"],
+          "properties": {
+            "state": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "version": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["receipt"],
+          "properties": {
+            "receipt": { "enum": ["pending", "discarded"] }
+          }
+        }
+      ]
+    },
     "SessionReferenceSearchParams": {
       "type": "object",
       "additionalProperties": false,

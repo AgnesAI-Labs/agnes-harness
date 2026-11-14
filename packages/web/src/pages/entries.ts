@@ -9,6 +9,10 @@ const AutomationPage = deferHomePage(async () => ({
 const PluginsPage = deferHomePage(async () => ({ default: (await import('./plugins-page.js')).PluginsPage }))
 const MhsPage = deferHomePage(async () => ({ default: (await import('./mhs-page.js')).MhsPage }))
 
+/** The entries this file registered; every other page is plugin code and gets the plugin view of `data`. */
+const builtinEntries = new WeakSet<object>()
+export const isBuiltinHomeEntry = (entry: object): boolean => builtinEntries.has(entry)
+
 /** Built-in IDs for callers that need labels; placement follows the shared registry. */
 export const BUILTIN_HOME_ENTRIES: readonly string[] = ['plugins', 'agents', 'automation', 'mhs']
 
@@ -86,6 +90,10 @@ export function registerBuiltinHomeEntries(): () => void {
     // Reviewing happens on a page, so leaving any page is when the count may have changed.
     homeNavigation.subscribe(pending.refresh),
   ]
+  for (const id of BUILTIN_HOME_ENTRIES) {
+    const entry = homeEntries.get(id)
+    if (entry) builtinEntries.add(entry)
+  }
   const onVisible = () => {
     if (document.visibilityState === 'visible') pending.refresh()
   }

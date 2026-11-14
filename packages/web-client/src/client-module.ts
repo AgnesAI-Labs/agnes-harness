@@ -14,6 +14,7 @@ import {
   isRuntimeSupportedDshSlot,
 } from './dsh-slot-catalog.js'
 import { scopedExamplePages } from './example-pages.js'
+import { withoutOwnerOnly } from './owner-only.js'
 import { scopedPresentationRoles } from './presentation-roles.js'
 import { scopedProfileStreams } from './profile-streams.js'
 import { type RegisterOptions, SlotRegistry } from './registry.js'
@@ -308,9 +309,14 @@ export function clientModule(mod: ClientModule): {
   }
 }
 
-/** A frozen module facade must keep SDK mutations on the actual connection, including reconnect. */
+/**
+ * A frozen module facade must keep SDK mutations on the actual connection, including reconnect. It
+ * refuses the owner-only methods on `call` and `notify` and hides the raw connection, which the
+ * prototype link would otherwise expose as `ctx.agnes.conn`.
+ */
 function bindClient(client: import('./services.js').HostAgnesClient): import('./services.js').AgnesClient {
   const facade = Object.create(client) as import('./services.js').AgnesClient
+  Object.defineProperty(facade, 'conn', { value: null })
   const bound = new Set<string>()
   for (
     let owner: object | null = client;
@@ -321,7 +327,10 @@ function bindClient(client: import('./services.js').HostAgnesClient): import('./
       if (name === 'constructor' || bound.has(name)) continue
       const value = Object.getOwnPropertyDescriptor(owner, name)?.value
       if (typeof value !== 'function') continue
-      Object.defineProperty(facade, name, { value: value.bind(client) })
+      const send = value.bind(client)
+      Object.defineProperty(facade, name, {
+        value: name === 'call' || name === 'notify' ? withoutOwnerOnly(send) : send,
+      })
       bound.add(name)
     }
   }

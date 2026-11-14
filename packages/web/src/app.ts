@@ -2,7 +2,7 @@ import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import type { StartedSession } from '@agnes/web-admin/agents'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
-import { factChainLinks } from '@agnes/web-client'
+import { factChainLinks, reserveOwnerOnly } from '@agnes/web-client'
 import {
   appServerErrorMessage,
   bindDialogSheets,
@@ -119,6 +119,7 @@ import {
   rewriteMovedSettingsLink,
 } from './settings-redirects.js'
 import { createSidebarPagination } from './sidebar-pagination.js'
+import { openStartupAnchors } from './startup-anchors.js'
 import { readTraceFactChain } from './trace-facts.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
@@ -681,6 +682,8 @@ const client = createClient({
   auth: { kind: 'local' },
   journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
 })
+// Before any plugin code can reach the client: owner-only methods go out only through ownerCall.
+const ownerCall = reserveOwnerOnly(client)
 onPageHide(
   bindJobsClient({
     client,
@@ -2489,21 +2492,8 @@ run(async () => {
   const modelSelection = sessionBinding.capture()
   await awaitModels()
   if (!sessionBinding.isCurrent(modelSelection)) return
-  const factCandidate = startupRequest.get('factCandidate')
-  if (
-    selected &&
-    sessionBinding.session?.id === selected &&
-    factCandidate &&
-    /^candidate-[a-f0-9]{32}$/.test(factCandidate)
-  ) {
-    requestAnimationFrame(() =>
-      factChainLinks.open({
-        sessionId: selected,
-        laneId: 'main',
-        anchor: { kind: 'authoring', candidateId: factCandidate },
-      }),
-    )
-  }
+  const anchored = sessionBinding.session?.id === selected ? selected : undefined
+  openStartupAnchors(startupRequest, anchored, ownerCall)
   const shown = await firstRun.initialize(
     snapshot,
     !empty || Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),
