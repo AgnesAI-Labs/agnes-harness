@@ -103,6 +103,7 @@ it('shuts down without a registered lifecycle', async () => {
 
 /** The Host's shutdown deadline for this service (the manifest's `shutdownTimeoutMs`). */
 const DEADLINE_MS = 5_000
+const SESSIONS = 36
 
 /** A real lifecycle on fakes, registered on a started service; the shutdown runs against a fake 5 s deadline. */
 async function deadlineCase(options: {
@@ -114,7 +115,8 @@ async function deadlineCase(options: {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
   const log: string[] = []
   const sessions = new Map<string, FakeSession>()
-  for (const id of [ORCHESTRATOR, workerKey('A'), workerKey('B'), workerKey('C')])
+  // The main session and a few dozen workers: the registry keeps every worker until retention retires it.
+  for (const id of [ORCHESTRATOR, ...Array.from({ length: SESSIONS - 1 }, (_, n) => workerKey(`T-${n}`))])
     sessions.set(id, { running: true, pending: [], jobs: 1 })
   const store = openStore(join(directory, 'lifecycle.sqlite'))
   const adapter = fakeSessions(log, sessions)
@@ -209,8 +211,9 @@ it('returns within the deadline from a start that ignores the abort, and that st
   expect(log).toEqual([])
 })
 
-it('stops the sessions in parallel: four whose cancel takes 1.5 s each all end before the deadline', async () => {
+it('stops the sessions in parallel: 36 whose cancel takes 1.5 s each all end before the 5 s deadline', async () => {
   const { atDeadline, sessions, finished } = await deadlineCase({ cancelMs: 1_500 })
   expect(finished).toBe(true)
+  expect(sessions.size).toBe(SESSIONS)
   for (const id of sessions.keys()) expect(atDeadline).toContain(`kill ${id}`)
 })
