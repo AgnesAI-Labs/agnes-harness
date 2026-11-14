@@ -1,8 +1,12 @@
 import { createHash } from 'node:crypto'
 import type { ManagedSessionStartInput } from '@agnes/extension-api'
 import { grantKey } from '@agnes/plugin-runtime/host'
+import { rpcError } from '@agnes/protocol'
+import { JsonRpcError, TransportClosed } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
+import { sharedWorkerReads } from '../src/supervisor/managed-gate-read.js'
 import type { HostInputResolution, OwnerInputEngine } from '../src/supervisor/managed-input-admission.js'
+import { ADMISSION_GRACE_MS, OWNER_INPUT_WARN_INTERVAL_MS } from '../src/supervisor/managed-input-notes.js'
 import { createIdleSignal, driveOwnerInputs } from '../src/supervisor/managed-session-idle.js'
 import { ManagedSessionInputs } from '../src/supervisor/managed-session-inputs.js'
 import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
@@ -50,10 +54,10 @@ const admission = (key: string, receiptId = key, target: Record<string, unknown>
   input: { kind: 'ownerMessage' as const, receiptId },
 })
 
-function world() {
+function world(report: { warn?(message: string): void; clock?(): number } = {}) {
   const table = memoryTable()
   const records = new ManagedSessionRecords(table)
-  const inputs = new ManagedSessionInputs(table)
+  const inputs = new ManagedSessionInputs(table, report.clock)
   const core = fakeCore()
   const authorized = new Set([caller.owner, other.owner])
   const enabled = new Set([owner, grantKey(other.packageId, other.owner)])
@@ -92,6 +96,8 @@ function world() {
   const sessions = createManagedSessions(ports, {
     inputs,
     enabled: async (rowOwner) => enabled.has(rowOwner),
+    warn: report.warn ?? (() => undefined),
+    ...(report.clock ? { clock: report.clock } : {}),
   })
   /** The Host resolves the receipt the admission names; `r1` unless told otherwise. */
   const port = (c: ManagedSessionCaller = caller, receiptId = 'r1') =>
@@ -252,7 +258,7 @@ describe('managed sessions bound to a task', () => {
     ])
   })
 
-  it('revokeAll, revoke and releasePackage withdraw owner inputs before the grants go', async () => {
+  it('revoke and revokeAll take the grant first and then withdraw owner inputs; releasePackage withdraws before the records go', async () => {
     const w = world()
     const engine = w.sessions.engine as OwnerInputEngine
     const queued = async (startKey: string) => {
@@ -282,7 +288,8 @@ describe('managed sessions bound to a task', () => {
       withdraw,
     })
     await grants.revoke(caller.packageId, '/work/repo')
-    expect(order).toEqual(['withdraw granted=true'])
+    // Revoked first: an admission racing the revoke fails its gates instead of submitting after the withdraw.
+    expect(order).toEqual(['withdraw granted=false'])
     expect(w.core.state.inbox.get(revoked)).toEqual([])
     expect(w.inputs.get(owner, revoked, 'k1')).toMatchObject({ state: 'needsOwner', reason: 'grantRevoked' })
 
@@ -290,7 +297,7 @@ describe('managed sessions bound to a task', () => {
     const pruned = await queued('b')
     order.length = 0
     await pruneOrphanGrants(w.records, async () => [otherPkg], withdraw)
-    expect(order).toEqual(['withdraw granted=true'])
+    expect(order).toEqual(['withdraw granted=false'])
     expect(w.records.granted(owner, '/work/repo')).toBe(false)
     expect(w.core.state.inbox.get(pruned)).toEqual([])
 
@@ -391,7 +398,7 @@ describe('managed sessions bound to a task', () => {
         advance: async (sessionId: string) => void calls.push(`advance ${sessionId}`),
         sweep: async () => void calls.push('sweep'),
       }
-      const stop = driveOwnerInputs(idle, engine, 60_000)
+      const drive = driveOwnerInputs(idle, engine, 60_000)
       const tick = () => new Promise((resolve) => setImmediate(resolve))
       idle.notify('s1')
       await tick()
@@ -401,7 +408,7 @@ describe('managed sessions bound to a task', () => {
       expect(calls).toEqual(['advance s1', 'sweep'])
       await vi.advanceTimersByTimeAsync(60_000)
       expect(calls).toEqual(['advance s1', 'sweep', 'sweep'])
-      stop()
+      drive.dispose()
       idle.notify('s2')
       await vi.advanceTimersByTimeAsync(60_000)
       await tick()
@@ -409,6 +416,55 @@ describe('managed sessions bound to a task', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('once shutdown starts, neither an idle report already scheduled nor a sweep reaches the engine', async () => {
+    const idle = createIdleSignal()
+    const calls: string[] = []
+    const engine = {
+      advance: async (sessionId: string) => void calls.push(`advance ${sessionId}`),
+      sweep: async () => void calls.push('sweep'),
+      close: () => void calls.push('close'),
+    }
+    const drive = driveOwnerInputs(idle, engine, 60_000)
+    const tick = () => new Promise((resolve) => setImmediate(resolve))
+    // The turn ends as shutdown begins: its idle report is scheduled, then the drive stops.
+    idle.notify('s1')
+    drive.stop()
+    idle.started()
+    await tick()
+    await tick()
+    expect(calls).toEqual(['close'])
+  })
+
+  it('a closed engine neither advances nor sweeps, and a sweep under way stops before the next session', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const a = await w.port().start(start())
+    const b = await w.port().start(start({ startKey: 'task-1:b', taskBinding: undefined }))
+    for (const [sessionId, key] of [
+      [a.sessionId, 'k1'],
+      [b.sessionId, 'k2'],
+    ] as const) {
+      w.core.state.running.add(sessionId)
+      await w
+        .port(caller, key)
+        .admitInput(sessionId, admission(key, key, sessionId === b.sessionId ? { startKey: 'task-1:b' } : {}))
+      w.core.state.running.delete(sessionId)
+    }
+    // Shutdown starts while the sweep works on the first session.
+    const activity = w.ports.sessions.activity
+    w.ports.sessions.activity = async () => {
+      engine.close()
+      return activity()
+    }
+    await engine.sweep()
+    expect(w.core.state.submits.map((entry) => entry.text)).toEqual(['text of k1'])
+    w.ports.sessions.activity = activity
+    await engine.advance(b.sessionId)
+    await engine.sweep()
+    expect(w.core.state.submits.map((entry) => entry.text)).toEqual(['text of k1'])
+    expect(w.inputs.get(owner, b.sessionId, 'k2')).toMatchObject({ state: 'enqueued', reason: 'busy' })
   })
 
   it('held inputs are not submitted while the plugin is disabled, and are submitted after it is enabled again', async () => {
@@ -496,6 +552,244 @@ describe('managed sessions bound to a task', () => {
       state: 'needsOwner',
       reason: 'grantRevoked',
     })
+  })
+
+  it('a shared worker that cannot answer the bundle check keeps a held input held; after a restart it runs once', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    w.core.state.running.add(sessionId)
+    expect(await w.port().admitInput(sessionId, admission('k1', 'r1'))).toMatchObject({ reason: 'busy' })
+    w.core.state.running.delete(sessionId)
+    const resolveAgent = w.ports.resolveAgent
+    // The daemon's link to the shared worker closed or timed out, the worker could not be started or
+    // failed without an answer, or a client transport closed: none says anything about the bundle.
+    for (const failure of [
+      new Error('worker link closed'),
+      new Error('worker command agents.resolve timed out'),
+      { code: 'E_WORKER', message: 'Worker operation failed.' },
+      new TransportClosed({ reason: 'eof' }),
+      new JsonRpcError(rpcError('INTERNAL_ERROR', { code: 'INTERNAL' })),
+    ]) {
+      w.ports.resolveAgent = async () => {
+        throw failure
+      }
+      await engine.advance(sessionId)
+      await engine.sweep()
+      expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued', reason: 'busy' })
+    }
+    expect(w.core.state.submits).toEqual([])
+    // A restart: a new engine over the same tables, with the shared worker answering again.
+    w.ports.resolveAgent = resolveAgent
+    const restarted = createManagedSessions(w.ports, { inputs: new ManagedSessionInputs(w.table) })
+    await restarted.engine?.sweep()
+    w.core.take(sessionId)
+    await restarted.engine?.sweep()
+    await restarted.engine?.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'consumed' })
+    expect(w.core.ran(sessionId, 'text of r1')).toBe(1)
+    // A bundle the worker refuses on purpose (unknown, or not installed, enabled and trusted) still
+    // gives the input to the owner.
+    w.core.state.running.add(sessionId)
+    for (const [key, refusal] of [
+      ['k2', { code: 'E_PRESET_UNSUPPORTED', message: 'agent: unknown agent' }],
+      ['k3', rpcError('SEMANTIC_REJECTED', { code: 'BUNDLE_UNAVAILABLE' })],
+    ] as const) {
+      w.ports.resolveAgent = async () => {
+        throw refusal
+      }
+      await w.port(caller, key).admitInput(sessionId, admission(key, key))
+      expect(w.inputs.get(owner, sessionId, key)).toMatchObject({
+        state: 'needsOwner',
+        reason: 'grantRevoked',
+      })
+    }
+  })
+
+  it('a queued input whose admission never completed is retained once its session is archived', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const policy = w.ports.sessions.policy
+    const unreadable = async () => {
+      throw new Error('transport closed')
+    }
+    const queued = async (startKey: string, key: string) => {
+      const { sessionId } = await w
+        .port()
+        .start(start({ startKey, taskBinding: { id: startKey, generation: 0 } }))
+      w.ports.sessions.policy = unreadable
+      await expect(
+        w.port(caller, key).admitInput(sessionId, admission(key, key, { taskId: startKey, startKey })),
+      ).rejects.toThrow('transport closed')
+      w.ports.sessions.policy = policy
+      expect(w.inputs.get(owner, sessionId, key)).toMatchObject({ state: 'queued' })
+      return sessionId
+    }
+    // Not archived: a sweep leaves it for the caller's retry.
+    const web = await queued('a', 'k1')
+    await engine.sweep()
+    expect(w.inputs.get(owner, web, 'k1')).toMatchObject({ state: 'queued' })
+    // Archived by the owner in the Web, then swept; or archived by the plugin.
+    w.core.state.archived.add(web)
+    await engine.sweep()
+    expect(w.inputs.get(owner, web, 'k1')).toMatchObject({ state: 'retained', reason: 'sessionArchived' })
+    const plugin = await queued('b', 'k2')
+    await w.port().archive(plugin)
+    expect(w.inputs.get(owner, plugin, 'k2')).toMatchObject({ state: 'retained', reason: 'sessionArchived' })
+    expect(w.core.state.submits).toEqual([])
+    expect(w.inputs.sessionsWithWork()).toEqual([])
+  })
+
+  it('work the engine swallows is reported once per interval for each session', async () => {
+    const warnings: string[] = []
+    let now = 1_000_000
+    const w = world({ warn: (message) => warnings.push(message), clock: () => now })
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    // The submit right after the admission fails; the caller still gets the recorded input.
+    w.core.state.failNextSubmit = true
+    expect(await w.port().admitInput(sessionId, admission('k1', 'r1'))).toMatchObject({ state: 'enqueued' })
+    expect(warnings).toEqual([`Owner input submit for session ${sessionId} failed: session could not open`])
+    // A sweep that keeps failing is reported once, then again once the interval has passed.
+    const activity = w.ports.sessions.activity
+    w.ports.sessions.activity = async () => {
+      throw new Error('activity unavailable')
+    }
+    await engine.sweep()
+    await engine.sweep()
+    now += OWNER_INPUT_WARN_INTERVAL_MS
+    await engine.sweep()
+    const sweep = `Owner input sweep for session ${sessionId} failed: activity unavailable`
+    expect(warnings.slice(1)).toEqual([sweep, sweep])
+    w.ports.sessions.activity = activity
+    // The archive still answers when taking a queued input back fails; the failure is reported.
+    const other = await w.port().start(start({ startKey: 'task-1:b', taskBinding: undefined }))
+    await w.port(caller, 'r2').admitInput(other.sessionId, admission('k2', 'r2', { startKey: 'task-1:b' }))
+    // inputResult still answers when the inbox cannot be read; the failure is reported.
+    const queued = w.ports.sessions.queued
+    w.ports.sessions.queued = async () => {
+      throw new Error('inbox unavailable')
+    }
+    expect(await w.port().inputResult(other.sessionId, { key: 'k2' })).toMatchObject({ state: 'enqueued' })
+    expect(warnings.at(-1)).toBe(
+      `Owner input inputResult for session ${other.sessionId} failed: inbox unavailable`,
+    )
+    if (queued) w.ports.sessions.queued = queued
+    w.ports.sessions.withdraw = async () => {
+      throw new Error('inbox unavailable')
+    }
+    await w.port().archive(other.sessionId)
+    expect(warnings.at(-1)).toBe(
+      `Owner input archive for session ${other.sessionId} failed: inbox unavailable`,
+    )
+  })
+
+  it('an input held because its gates cannot be read is reported with its key, once per interval', async () => {
+    const warnings: string[] = []
+    let now = 1_000_000
+    const w = world({ warn: (message) => warnings.push(message), clock: () => now })
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    w.core.state.running.add(sessionId)
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    w.core.state.running.delete(sessionId)
+    const policy = w.ports.sessions.policy
+    w.ports.sessions.policy = async () => {
+      throw new Error('transport closed')
+    }
+    for (let pass = 0; pass < 3; pass++) await engine.sweep()
+    await engine.advance(sessionId)
+    const held = `Owner input k1 of session ${sessionId} stays held: its gates could not be read (transport closed)`
+    expect(warnings).toEqual([held])
+    now += OWNER_INPUT_WARN_INTERVAL_MS
+    await engine.sweep()
+    expect(warnings).toEqual([held, held])
+    // An admission whose gates cannot be read rejects, and is reported too.
+    await expect(w.port(caller, 'r2').admitInput(sessionId, admission('k2', 'r2'))).rejects.toThrow()
+    expect(warnings.at(-1)).toBe(`Owner input admission for session ${sessionId} failed: transport closed`)
+    w.ports.sessions.policy = policy
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued', reason: 'busy' })
+  })
+
+  it("the owner's list has inputs waiting on the owner, admissions not completed, and inputs held on unreadable gates", async () => {
+    let now = 1_000_000
+    const w = world({ clock: () => now })
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    const listed = () =>
+      engine.attention(256).map((item) => [item.input.key, item.input.state, item.held ?? null])
+    // An unresolved receipt waits on the owner; nothing else needs the owner yet.
+    w.core.state.running.add(sessionId)
+    await w.port(caller, 'r9').admitInput(sessionId, admission('k1', 'r1'))
+    await w.port(caller, 'r2').admitInput(sessionId, admission('k2', 'r2'))
+    w.core.state.running.delete(sessionId)
+    expect(listed()).toEqual([['k1', 'needsOwner', null]])
+    // Gates that cannot be read: the held input is listed with why; a rejected admission once its
+    // caller has not come back for a while.
+    const policy = w.ports.sessions.policy
+    w.ports.sessions.policy = async () => {
+      throw new Error('transport closed')
+    }
+    await engine.sweep()
+    await expect(w.port(caller, 'r3').admitInput(sessionId, admission('k3', 'r3'))).rejects.toThrow()
+    expect(listed()).toEqual([
+      ['k2', 'enqueued', 'gatesUnreadable'],
+      ['k1', 'needsOwner', null],
+    ])
+    now += ADMISSION_GRACE_MS
+    expect(listed()).toEqual([
+      ['k2', 'enqueued', 'gatesUnreadable'],
+      ['k1', 'needsOwner', null],
+      ['k3', 'queued', 'admissionIncomplete'],
+    ])
+    // Readable again: the held input is no longer listed, and it runs.
+    w.ports.sessions.policy = policy
+    await engine.sweep()
+    expect(listed()).toEqual([
+      ['k1', 'needsOwner', null],
+      ['k3', 'queued', 'admissionIncomplete'],
+    ])
+    expect(w.core.state.submits.map((entry) => entry.text)).toEqual(['text of r2'])
+  })
+
+  it('a shared worker that cannot be acquired while a package activates keeps a held input held; it runs once afterwards', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    w.core.state.running.add(sessionId)
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    w.core.state.running.delete(sessionId)
+    // The pool refuses the worker as the daemon's real pool does during a package activation.
+    let activating = true
+    const reads = sharedWorkerReads({
+      async acquireSharedWorker() {
+        if (activating)
+          throw rpcError('OVERLOADED', {
+            retryAfterMs: 1000,
+            reason: 'activation-in-progress',
+            operationId: 'op-1',
+          })
+        return { command: async () => ({ ref: 'x' }) }
+      },
+    })
+    w.ports.resolveAgent = reads.resolveAgent
+    await engine.advance(sessionId)
+    await engine.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued', reason: 'busy' })
+    expect(w.core.state.submits).toEqual([])
+    // A start during the activation rejects with that error, not a final BUNDLE_UNAVAILABLE.
+    const refused = await w
+      .port()
+      .start(start({ startKey: 'task-2:0', taskBinding: { id: 'task-2', generation: 0 } }))
+      .catch((error: unknown) => error)
+    expect((refused as { data?: { code?: unknown } }).data?.code).not.toBe('CAPABILITY_DENIED')
+    // Activation done: the next pass submits it, and it runs once.
+    activating = false
+    await engine.sweep()
+    w.core.take(sessionId)
+    await engine.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'consumed' })
+    expect(w.core.ran(sessionId, 'text of r1')).toBe(1)
   })
 
   it('archiving a session retains its held inputs', async () => {

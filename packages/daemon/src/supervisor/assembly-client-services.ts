@@ -14,6 +14,7 @@ import type { RuntimeState } from './assembly-runtime.js'
 import type { SessionsState } from './assembly-session-services.js'
 import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
+import { sharedWorkerReads } from './managed-gate-read.js'
 import type { OwnerInputEngineDeps } from './managed-input-admission.js'
 import { createIdleSignal, driveOwnerInputs } from './managed-session-idle.js'
 import { managedSessionPorts, managedWorkspaceRoot } from './managed-session-ports.js'
@@ -163,11 +164,7 @@ export function openClientServices(
   })
   lifetime.own({ dispose: () => triggerSessions.close() })
   if (managedSessionRecords) {
-    const catalog = async () =>
-      (await (await pool.acquireSharedWorker()).command('session.catalog', {}, { timeoutMs: 31_000 })) as {
-        modelAdapters: readonly { models: readonly { id: string; route: string }[] }[]
-        security?: { platform?: { l1?: { level?: string } } }
-      }
+    const { catalog, resolveAgent } = sharedWorkerReads(pool)
     const managed = managedSessionPorts({
       socketPath: o.config.socketPath,
       ...(o.sessionFactRead ? { sessionFactRead: o.sessionFactRead } : {}),
@@ -188,6 +185,7 @@ export function openClientServices(
       osBoundary: async () => (await catalog()).security?.platform?.l1?.level === 'full',
       preferences,
       idle,
+      resolveAgent,
     })
     const sessions = createManagedSessions(
       managed.ports,
@@ -198,8 +196,8 @@ export function openClientServices(
     lifetime.own({ dispose: () => managed.close() })
     if (sessions.engine) {
       ownerInputHolder.engine = sessions.engine
-      // Owned after the session ports, so the sweeps stop before those ports close.
-      lifetime.own({ dispose: driveOwnerInputs(idle, sessions.engine, OWNER_INPUT_SWEEP_MS) })
+      // Owned after the session ports, so the sweeps stop before those ports close; they stop as shutdown starts.
+      lifetime.own(driveOwnerInputs(idle, sessions.engine, OWNER_INPUT_SWEEP_MS))
     }
   }
   const workspaceGrants = managedSessionRecords

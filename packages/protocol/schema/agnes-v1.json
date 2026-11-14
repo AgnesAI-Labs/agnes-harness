@@ -9781,6 +9781,67 @@
         }
       }
     },
+    "ManagedInputListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "ManagedInputListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputs", "parkedReceipts"],
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sessionId", "key", "kind", "state", "reason", "version", "at"],
+            "properties": {
+              "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "key": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "kind": { "enum": ["ownerMessage", "recoveryContinuation", "legacyOwnerMessage"] },
+              "state": {
+                "enum": [
+                  "queued",
+                  "enqueued",
+                  "consumed",
+                  "retained",
+                  "needsOwner",
+                  "waitingQuestion",
+                  "recoveryUnknown"
+                ]
+              },
+              "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "version": { "type": "integer", "minimum": 1 },
+              "at": { "type": "string", "maxLength": 64 },
+              "held": { "enum": ["gatesUnreadable", "admissionIncomplete"] }
+            }
+          }
+        },
+        "parkedReceipts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sessionId", "receiptId", "service", "kind", "text", "at", "attempts"],
+            "properties": {
+              "sessionId": {
+                "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+              },
+              "receiptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "service": { "type": "string", "maxLength": 256 },
+              "kind": { "enum": ["message", "action"] },
+              "text": { "type": "string", "maxLength": 65536 },
+              "at": { "type": "string", "maxLength": 64 },
+              "attempts": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
     "ManagedInputDecideParams": {
       "type": "object",
       "additionalProperties": false,

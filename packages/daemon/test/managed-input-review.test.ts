@@ -5,6 +5,7 @@ import type { ManagedInputResult } from '@agnes/extension-api'
 import { grantKey } from '@agnes/plugin-runtime/host'
 import { rpcError } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
+import type { OwnerInputAttention } from '../src/supervisor/managed-input-notes.js'
 import {
   type ManagedInputReviewEngine,
   type ReceiptCommand,
@@ -51,10 +52,11 @@ function row(over: Partial<ManagedInputRow> = {}): ManagedInputRow {
 }
 
 /** A stand-in for the owner input engine: one row, decisions move it the way the engine does. */
-function fakeEngine(initial = row(), refuse?: string) {
+function fakeEngine(initial = row(), refuse?: string, attention: OwnerInputAttention[] = []) {
   let current = initial
   const decisions: unknown[] = []
   const engine: ManagedInputReviewEngine = {
+    attention: (limit) => attention.slice(0, limit),
     review(sessionId, key) {
       if (sessionId !== current.sessionId || key !== current.key) return undefined
       return {
@@ -111,13 +113,14 @@ const ownerGate = requireSessionOwner({
 
 async function setup(
   options: {
+    attention?: OwnerInputAttention[]
     listener?: Listener
     clientId?: string
     engine?: ReturnType<typeof fakeEngine>
     register?: (ep: LocalEndpoint) => void
   } = {},
 ) {
-  const fake = options.engine ?? fakeEngine()
+  const fake = options.engine ?? fakeEngine(row(), undefined, options.attention)
   const receiptCalls: ReceiptCommand[] = []
   const ep = new LocalEndpoint({ clock: () => 0, principalId: 'local' })
   opened.push(ep)
@@ -152,8 +155,22 @@ async function setup(
       engine: fake.engine,
       requireOwner: ownerGate,
       receiptOwner: (sessionId) => (sessionId === 's1' ? SERVICE : undefined),
+      receiptSession: (owner) =>
+        owner === SERVICE ? 's1' : owner === 'foreign-owner' ? 'foreign' : undefined,
       async receipts(command) {
         receiptCalls.push(command)
+        if (command.op === 'parkedAll')
+          return {
+            receipts: ['ext:@example/gone/main', SERVICE, 'foreign-owner'].map((owner, index) => ({
+              owner,
+              receiptId: String(index).repeat(64),
+              service: 'companion',
+              kind: 'message',
+              text: `parked ${index}`,
+              at: '2026-11-14T00:00:00.000Z',
+              attempts: 5,
+            })),
+          }
         if (command.op === 'parked')
           return {
             receipts: [
@@ -284,6 +301,75 @@ it("the engine's refusal codes reach the caller in data.code", async () => {
   expect(fake.decisions).toEqual([])
 })
 
+it('list shows every parked receipt and every input needing the owner, with no key known, to the owner page only', async () => {
+  const attention: OwnerInputAttention[] = [
+    { input: row({ state: 'needsOwner', reason: 'receiptUnknown', key: 'k1' }) },
+    { input: row({ state: 'enqueued', reason: 'busy', key: 'k2', version: 2 }), held: 'gatesUnreadable' },
+    {
+      input: row({ state: 'queued', reason: 'eligible', key: 'k3', version: 1 }),
+      held: 'admissionIncomplete',
+    },
+    { input: row({ sessionId: 'foreign', key: 'k4' }) },
+  ]
+  const { call, receiptCalls } = await setup({ attention })
+  const reply = await call('_agnes/v1/managedInput.list', {})
+  expect(reply.error).toBeUndefined()
+  const at = new Date(3_000).toISOString()
+  expect(reply.result).toEqual({
+    inputs: [
+      {
+        sessionId: 's1',
+        key: 'k1',
+        kind: 'legacyOwnerMessage',
+        state: 'needsOwner',
+        reason: 'receiptUnknown',
+        version: 3,
+        at,
+      },
+      {
+        sessionId: 's1',
+        key: 'k2',
+        kind: 'legacyOwnerMessage',
+        state: 'enqueued',
+        reason: 'busy',
+        version: 2,
+        at,
+        held: 'gatesUnreadable',
+      },
+      {
+        sessionId: 's1',
+        key: 'k3',
+        kind: 'legacyOwnerMessage',
+        state: 'queued',
+        reason: 'eligible',
+        version: 1,
+        at,
+        held: 'admissionIncomplete',
+      },
+    ],
+    // A receipt whose service has no session is listed without one; one held through a session of
+    // someone else's is listed without that session.
+    parkedReceipts: [0, 1, 2].map((index) => ({
+      sessionId: index === 1 ? 's1' : null,
+      receiptId: String(index).repeat(64),
+      service: 'companion',
+      kind: 'message',
+      text: `parked ${index}`,
+      at: '2026-11-14T00:00:00.000Z',
+      attempts: 5,
+    })),
+  })
+  expect(receiptCalls).toEqual([{ op: 'parkedAll', limit: 256 }])
+  // The Unix socket is not the owner's page: refused before anything is read.
+  const unix = await setup({ listener: 'unix', attention })
+  const refused = await unix.call('_agnes/v1/managedInput.list', {})
+  expect(refused.error).toMatchObject({
+    message: 'CAPABILITY_DENIED',
+    data: { reason: 'owner web page required' },
+  })
+  expect(unix.receiptCalls).toEqual([])
+})
+
 it('a caller that does not own the session is refused CAPABILITY_DENIED', async () => {
   const { call, fake, receiptCalls } = await setup()
   const read = await call('_agnes/v1/managedInput.get', { sessionId: 'foreign', key: 'k1' })
@@ -367,6 +453,20 @@ it('the daemon wiring reaches a parked receipt only through a session of the ser
       commands.push(params)
       const key = `${String(params.owner)}\u0000${String(params.receiptId)}`
       if (params.op === 'parked') return { receipts: [] }
+      if (params.op === 'parkedAll')
+        return {
+          receipts: [...parked]
+            .filter(([, state]) => state === 'parked')
+            .map(([key]) => ({
+              owner: key.split('\u0000')[0],
+              receiptId: key.split('\u0000')[1],
+              service: 'companion',
+              kind: 'message',
+              text: 'parked',
+              at: '2026-11-14T00:00:00.000Z',
+              attempts: 5,
+            })),
+        }
       if (parked.get(key) !== 'parked') throw rpcError('SEMANTIC_REJECTED', { code: 'RECEIPT_NOT_PARKED' })
       parked.set(key, 'pending')
       return { receipt: 'pending' }
@@ -386,6 +486,10 @@ it('the daemon wiring reaches a parked receipt only through a session of the ser
       sessionId,
       target: { kind: 'receipt', receiptId, decision: 'redeliver' },
     })
+  // Without knowing any key, the owner's list names the receipt and a session of its own service.
+  const listed = await call('_agnes/v1/managedInput.list', {})
+  expect(listed.result).toMatchObject({ inputs: [], parkedReceipts: [{ sessionId: 'sa', receiptId }] })
+  commands.length = 0
   // Through a session of package B the receipt of package A's service is not reachable.
   const refused = await decide('sb')
   expect(refused.error).toMatchObject({ message: 'SEMANTIC_REJECTED', data: { code: 'RECEIPT_NOT_PARKED' } })

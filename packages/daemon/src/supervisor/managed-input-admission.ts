@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { commandBinding } from '@agnes/daemon-rpc/local/command-binding'
 import type { ManagedInputResult, ManagedInputTarget } from '@agnes/extension-api'
 import { type Actor, type JsonValue, rpcError } from '@agnes/protocol'
+import { type OwnerInputAttention, ownerInputAttention, ownerInputNotes } from './managed-input-notes.js'
 import { inputProgress, projectInput, sessionLane } from './managed-input-submit.js'
 import {
   MANAGED_INPUT_TEXT_LIMIT,
@@ -62,6 +63,12 @@ export interface OwnerInputEngine {
   /** `result` also takes back a queued input whose checks now fail; an idle report never reads the inbox. */
   advance(sessionId: string, mode?: 'idle' | 'result'): Promise<void>
   sweep(): Promise<void>
+  /** Shutdown started: `advance` and `sweep` do nothing from now on, and a sweep under way stops at its next session. */
+  close(): void
+  /** After an archive: held inputs are kept and a queued one is taken back; a failure is reported and left to the sweep. */
+  retainArchived(sessionId: string): Promise<void>
+  /** The owner's list across sessions (`ownerInputAttention`), at most `limit` entries. */
+  attention(limit: number): OwnerInputAttention[]
   withdraw(owner: string, workspace?: string): Promise<void>
   review(sessionId: string, key: string): ManagedInputReview | undefined
   decide(
@@ -88,6 +95,9 @@ export interface OwnerInputEngineDeps {
   enabled?(owner: string): Promise<boolean>
   /** Test fixtures only: throw to stand in for a crash between two writes. */
   faults?: { afterReserve?(): void; afterSubmit?(): void }
+  /** Where swallowed failures and inputs held by unreadable gates are reported; `console.warn` when absent. */
+  warn?(message: string): void
+  clock?(): number
 }
 
 type AdmissionInput =
@@ -186,7 +196,8 @@ function prepare(request: Admission, resolution: HostInputResolution | undefined
 
 export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEngine {
   const { ports, inputs } = deps
-  const progress = inputProgress(deps)
+  const notes = ownerInputNotes(deps.warn ?? ((message) => console.warn(message)), deps.clock ?? Date.now)
+  const progress = inputProgress(deps, notes)
 
   /**
    * A bound session must match. A session opened before bindings existed is bound here, once, by its
@@ -293,9 +304,13 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
         deps.faults?.afterReserve?.()
         row = inputs.get(ctx.owner, sessionId, request.key) as ManagedInputRow
       }
-      if (row.state === 'queued') await complete(row, record, request, prepared)
+      if (row.state === 'queued')
+        await complete(row, record, request, prepared).catch((error: unknown) => {
+          notes.failed('admission', sessionId)(error)
+          throw error
+        })
       // The input is recorded; a failed submit is retried by the sweep, so the caller still gets it.
-      await progress.advanceNow(sessionId, 'result').catch(() => undefined)
+      await progress.advanceNow(sessionId, 'result').catch(notes.failed('submit', sessionId))
       return projectInput(inputs.get(ctx.owner, sessionId, request.key) ?? row)
     })
   }
@@ -307,7 +322,7 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     return deps.serial(sessionLane(sessionId), async () => {
       const row = inputs.get(ctx.owner, sessionId, key)
       if (row) {
-        await progress.advanceNow(sessionId, 'result').catch(() => undefined)
+        await progress.advanceNow(sessionId, 'result').catch(notes.failed('inputResult', sessionId))
         return projectInput(inputs.get(ctx.owner, sessionId, key) ?? row)
       }
       // The sends ledger is never pruned by time: a key in neither table was never sent or admitted.
@@ -326,19 +341,29 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     })
   }
 
+  let closed = false
   return {
     admit,
     result,
     async advance(sessionId, mode = 'idle') {
+      if (closed) return
       // Every session reports idle; one without held or submitted inputs costs two indexed reads.
       if (inputs.held(sessionId).length === 0 && inputs.inFlight(sessionId).length === 0) return
       await deps.serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, mode))
     },
+    close() {
+      closed = true
+    },
+    attention: (limit) => ownerInputAttention(inputs, notes, (deps.clock ?? Date.now)(), limit),
+    async retainArchived(sessionId) {
+      await this.advance(sessionId, 'result').catch(notes.failed('archive', sessionId))
+    },
     async sweep() {
       for (const sessionId of inputs.sessionsWithWork())
-        await deps
-          .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, 'sweep'))
-          .catch(() => undefined)
+        if (!closed)
+          await deps
+            .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, 'sweep'))
+            .catch(notes.failed('sweep', sessionId))
     },
     async withdraw(owner, workspace) {
       let failure: unknown

@@ -1475,7 +1475,7 @@ it('keeps SDK request state on the connection behind a frozen module facade acro
   }
 })
 
-it('a client module cannot call managedInput.get or managedInput.decide', async () => {
+it('a client module cannot call managedInput.list, managedInput.get or managedInput.decide', async () => {
   const sent: string[] = []
   const conn = { request: vi.fn() }
   class FakeClient {
@@ -1500,7 +1500,11 @@ it('a client module cannot call managedInput.get or managedInput.decide', async 
     { packageId: 'pkg-owner-only', revision: 'r1' },
   )
   await fiber
-  for (const method of ['_agnes/v1/managedInput.get', '_agnes/v1/managedInput.decide']) {
+  for (const method of [
+    '_agnes/v1/managedInput.list',
+    '_agnes/v1/managedInput.get',
+    '_agnes/v1/managedInput.decide',
+  ]) {
     await expect(agnes?.call(method, { sessionId: 's1' })).rejects.toMatchObject({
       data: { code: 'CAPABILITY_DENIED', method },
     })

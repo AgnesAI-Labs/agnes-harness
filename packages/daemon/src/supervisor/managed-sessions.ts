@@ -13,6 +13,7 @@ import type {
 import { grantKey } from '@agnes/plugin-runtime/host'
 import type { Actor, SessionActivity, SessionViewResult } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
+import { gateRefused } from './managed-gate-read.js'
 import {
   createOwnerInputEngine,
   type HostInputResolution,
@@ -360,8 +361,9 @@ async function startGates(
   if (await ports.autoReview()) throw refuse('AUTO_REVIEW')
   try {
     await ports.resolveAgent(input.bundle)
-  } catch {
-    throw refuse('BUNDLE_UNAVAILABLE')
+  } catch (error) {
+    // A worker that cannot answer is no answer about the bundle; the caller tries again later.
+    throw gateRefused(error) ? refuse('BUNDLE_UNAVAILABLE') : error
   }
   return root
 }
@@ -471,7 +473,7 @@ const gatesPass = (ports: ManagedSessionPorts, record: ManagedSessionRecord) =>
 /** Without `inputs` the sessions have no owner-input engine, and `admitInput` / `inputResult` refuse. */
 export function createManagedSessions(
   ports: ManagedSessionPorts,
-  deps?: Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults'>,
+  deps?: Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults' | 'warn' | 'clock'>,
 ) {
   const chains = new Map<string, Promise<unknown>>()
   const serial = <T>(key: string, work: () => Promise<T>): Promise<T> => {
@@ -500,7 +502,7 @@ export function createManagedSessions(
     await ports.sessions.archive(record.sessionId)
     ports.records.markArchived(record.sessionId)
     // Held inputs of an archived session are kept, never delivered; a queued one is taken back now.
-    await engine?.advance(record.sessionId, 'result').catch(() => undefined)
+    await engine?.retainArchived(record.sessionId)
   }
 
   const start = async (caller: ManagedSessionCaller, owner: string, input: ManagedSessionStartInput) => {

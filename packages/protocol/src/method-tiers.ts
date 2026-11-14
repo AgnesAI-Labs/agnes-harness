@@ -131,6 +131,7 @@ export const METHOD_TIERS: Record<MethodName, MethodTier> = {
   '_agnes/v1/systemPrompt.save': 'admin',
   '_agnes/v1/trace.clear': 'admin',
   '_agnes/v1/session.factChain': 'admin',
+  '_agnes/v1/managedInput.list': 'admin',
   '_agnes/v1/managedInput.get': 'admin',
   '_agnes/v1/managedInput.decide': 'admin',
   '_agnes/v1/trace.request': 'admin',

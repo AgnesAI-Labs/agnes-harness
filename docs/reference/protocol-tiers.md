@@ -185,6 +185,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/admin.managedWorkspaces.grant`
 - `_agnes/v1/admin.managedWorkspaces.revoke`
 - `_agnes/v1/sessions.migrate`
+- `_agnes/v1/managedInput.list`
 - `_agnes/v1/managedInput.get`
 - `_agnes/v1/managedInput.decide`
 

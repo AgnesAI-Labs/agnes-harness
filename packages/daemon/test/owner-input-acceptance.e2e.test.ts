@@ -102,7 +102,7 @@ describe.skipIf(process.platform === 'win32')('owner input admission on a real d
   )
 
   it(
-    'killed after the core enqueue: after restart the input runs once through commandId dedupe',
+    'killed after the core enqueue: after restart the sweep takes the unconfirmed item back and resubmits it under a fresh id; it runs once',
     withLog(async () => {
       const task = 'after-submit'
       const text = 'OWNER_TEXT_AFTER_SUBMIT'

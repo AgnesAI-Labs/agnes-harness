@@ -508,6 +508,8 @@ describe('protocol src boundary', () => {
                 'AutoReviewConfig',
                 'ToolReviewFact',
                 // Owner input review shapes are exposed by the dedicated managed-input module.
+                'ManagedInputListParams',
+                'ManagedInputListResult',
                 'ManagedInputGetParams',
                 'ManagedInputGetResult',
                 'ManagedInputDecideParams',

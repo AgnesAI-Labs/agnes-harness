@@ -54,8 +54,10 @@ interface ManagedInputStateFields {
 }
 
 /**
- * - `queued`: the key is taken but the record was not completed; call `admitInput` again to finish it.
- * - `enqueued`: admitted and held by the platform until the session is idle and its gates pass.
+ * - `queued`: the key is taken but the record was not completed (a crash, or an `admitInput` that rejected because a
+ *   start gate could not be read); the input does not run. Call `admitInput` again with the same request.
+ * - `enqueued`: admitted and held by the platform until the session is idle and its gates pass; held as it is while
+ *   a gate cannot be read.
  * - `consumed`: a turn took the text; `turn` and `seq` identify it. Final.
  * - `retained`: kept and never delivered (the owner chose to keep or discard it, or the session was archived). Final.
  * - `needsOwner`: delivery cannot be shown to be right (receipt unknown or not this service's, pairing changed,
@@ -63,8 +65,9 @@ interface ManagedInputStateFields {
  * - `waitingQuestion`: the session has an unanswered question; the platform holds the input and moves it on.
  * - `recoveryUnknown`: a `legacyOwnerMessage`, or a `recoveryContinuation` that failed its checks; the owner decides.
  * - `legacySend`: the key only exists in the old `send` ledger; `delivery` says whether that message was found.
- * - `absent`: the platform knows no such key. `historyCoverage: 'complete'` only when the session was created after
- *   the input record existed; `partial` means an earlier input may have gone unrecorded.
+ * - `absent`: the platform knows no such key. `historyCoverage` is `complete` for every session the service still
+ *   manages, since a managed session's input and send records are never pruned by time; `partial` is reserved for an
+ *   input history the platform cannot vouch for and is not returned today.
  */
 export type ManagedInputResult =
   | ({

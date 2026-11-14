@@ -112,19 +112,21 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 
 | `state` | 含义 | 该怎么做 |
 | --- | --- | --- |
-| `queued` | key 已占下但记录未完成（崩溃在两步之间）。 | 再调一次 `admitInput`。 |
-| `enqueued` | 已准入。平台持有原文，等会话空闲且开会话检查通过。 | 轮询 `inputResult`。它从不改动请求本身，但持有的输入此时已可投时会顺带提交；会话空闲时和定期巡检时平台也会这样做。 |
+| `queued` | key 已占下但记录未完成：崩溃在两步之间，或 `admitInput` 因开会话检查读不到（例如 daemon 正在重启）而 reject。该输入不会执行。 | 用同一请求再调一次 `admitInput`。 |
+| `enqueued` | 已准入。平台持有原文，等会话空闲且开会话检查通过。检查读不到时，输入原样持有。 | 轮询 `inputResult`。它从不改动请求本身，但持有的输入此时已可投时会顺带提交；会话空闲时和定期巡检时平台也会这样做。 |
 | `consumed` | 某一轮已取走原文，附带 `turn` 和 `seq`。终态。 | 完成。 |
 | `retained` | 保留不投：主人在 Web 上选了保留或丢弃，或会话已归档。终态。 | 完成。 |
 | `needsOwner` | 无法证明可投：回执查不到或不属于你、配对已变、授权已撤，或开会话检查不通过（准入时与提交时都查）。原因为 `ownerDiscarded` 时，表示已提交的输入在平台之外被移出会话收件箱，原文为主人保留。 | 通知主人，不要重试；由主人在 Web 上处置。 |
 | `waitingQuestion` | 会话有未答的问题。平台持有输入，问题关闭后自动往下推进。 | 通知主人并等待。 |
 | `recoveryUnknown` | `legacyOwnerMessage`，或校验不过的 `recoveryContinuation`。 | 通知主人；由主人在 Web 上处置。 |
 | `legacySend` | key 只出现在旧 `send` 台账。`delivery` 为 `consumed`、`pending` 或 `unknown`。 | `consumed` 是终态；否则以 `legacyOwnerMessage` 重新提交。 |
-| `absent` | 平台不知道这个 key。仅当会话创建于输入记录启用之后，`historyCoverage` 才是 `complete`，否则为 `partial`。 | 仅 `complete` 时准入；`partial` 只发通知。 |
+| `absent` | 平台不知道这个 key。你的服务仍在托管的会话，`historyCoverage` 一律为 `complete`：受管会话的输入与发送记录不按时间清理。`partial` 为保留值，目前不会返回。 | `complete` 时准入；若日后返回 `partial`，只发通知。 |
 
 `reason` 取 `eligible`、`busy`、`questionOpen`、`legacySourceUnknown`、`recoveryUnverified`、`receiptUnknown`、`pairingChanged`、`grantRevoked`、`sessionArchived`、`ownerRetained`、`ownerDiscarded` 之一（`ownerDiscarded` 配 `retained` 表示主人已丢弃，配 `needsOwner` 表示在平台之外被移除）。只当文字显示，取值可增。`reviewLocation` 是 `/?session=<sessionId>&ownerInput=<inputId>`，主人在 Web 上的这个页面查看原文、来源和历史并作决定。页面上的决定（投递、保留、丢弃，以及对停放的渠道回执重投或丢弃）经 `_agnes/v1/managedInput.get` 与 `_agnes/v1/managedInput.decide`，二者只接受主人自己的 Web 页面。经 Unix 套接字连接的本地 SDK 客户端以 `CAPABILITY_DENIED` 拒绝；插件的客户端模块、主页页面和工作台面板经 Web 交给它们的接口调用时同样被拒绝。限制：插件代码与页面运行在同一页面中，改写页面 WebSocket、自开连接或绕过 SDK 对象的代码拦不住。
 
-拒绝按[拒绝](#拒绝)一节的方式 reject，`data.reason` 为：`OWNER_INPUT_TARGET_MISMATCH`（`target` 与会话的 startKey 或绑定不符）、`OWNER_INPUT_KEY_REUSED`（同 key、请求有任何不同）和 `SESSION_ARCHIVED`（抛出，不作为结果返回）。对已绑定会话调 `send` 得到的是 `OWNER_INPUT_REQUIRED`。参数不合法为 `INVALID_PARAMS`。
+主人不需要链接也能找到等其处理的内容。一旦有内容等待，Web 主页侧栏会出现带计数的 **主人输入** 入口。其页面跨会话、无需任何 key 地列出：处于 `needsOwner` 或 `recoveryUnknown` 的输入、开会话检查读不到而被持有的输入、一分钟内没有完成准入的 `queued` 记录，以及所有停放的渠道回执（可在页面上重投或丢弃）。它读取 `_agnes/v1/managedInput.list`，同样只接受主人自己的 Web 页面。
+
+拒绝按[拒绝](#拒绝)一节的方式 reject，`data.reason` 为：`OWNER_INPUT_TARGET_MISMATCH`（`target` 与会话的 startKey 或绑定不符）、`OWNER_INPUT_KEY_REUSED`（同 key、请求有任何不同）和 `SESSION_ARCHIVED`（抛出，不作为结果返回）。对已绑定会话调 `send` 会以 `OWNER_INPUT_REQUIRED` reject。参数不合法为 `INVALID_PARAMS`。开会话检查读不到时，`admitInput` 以非拒绝类错误 reject，key 留在 `queued`；稍后用同一请求再调一次。
 
 信任标注：已准入的主人原文仍以 `origin: 'system'`、`trust: 'untrusted'` 进入会话收件箱。准入证明的是原文来自已配对主人的渠道回执，并不把原文变成主人身份输入，也不授予任何审批。不新增声明键：`sessions: true` 已授予这两个方法。需要它们的插件把 `apiRange` 设为 `^5.18.0`。
 
@@ -132,6 +134,7 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 
 - `retention: 'task'` 长期保留会话。`retention: 'ephemeral'` 在 `result` 读到已结束的最后一个回合后归档会话，并且不进任务经验挖掘：自动提炼和模型自己的提议都拒绝。主人自己发起的提炼仍然可用。
 - 停用插件后，不能再开新会话或发消息。已有会话仍归主人，进行中的回合照常走完，待决审批仍可在 Web 回答。重新启用后调用 `list()` 核对。
+- 卸载插件的包时，平台先把其已提交的主人输入从会话收件箱撤回，再删除其输入记录（含持有中的）和渠道回执（待确认的与停放的）。这些都不会执行，也不会留给主人处置。
 
 ## 拒绝
 

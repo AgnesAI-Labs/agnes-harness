@@ -8,6 +8,8 @@ export const RECEIPT_ATTEMPTS = 5
 /** How long an acknowledged receipt that no admission took stays resolvable. */
 export const RECEIPT_ACK_TTL_MS = 30 * 86_400_000
 export const REDELIVERY_INTERVAL_MS = 300_000
+/** The most parked receipts one list across owners returns: the owner's list shows as many. */
+export const PARKED_LIST_LIMIT = 256
 /** One delivery tries the handler up to three times in process, waiting these between tries (10 s in all). */
 export const RECEIPT_RETRY_DELAYS_MS: readonly number[] = [2_000, 8_000]
 
@@ -72,6 +74,7 @@ export type ParkedReceipt = {
 
 export type ChannelReceiptsParams =
   | { op: 'parked'; owner: string }
+  | { op: 'parkedAll'; limit?: number }
   | { op: 'redeliver' | 'discard'; owner: string; receiptId: string }
 
 /** What the send ledger recorded for a clicked message. */
@@ -100,6 +103,8 @@ export class ChannelReceipts {
       handler(target: ChannelTarget): Handler | undefined
       /** Waits between in-process tries; `RECEIPT_RETRY_DELAYS_MS` unless a test shortens them. */
       retryDelaysMs?(): readonly number[] | undefined
+      /** Where a parking is reported; `console.warn` when absent. */
+      warn?(message: string): void
     },
   ) {}
 
@@ -209,6 +214,9 @@ export class ChannelReceipts {
         attempts: current.attempts + 1,
         state: current.attempts + 1 >= RECEIPT_ATTEMPTS ? 'parked' : current.state,
       }))
+      // Only a pending receipt is delivered, so a parked one has just parked.
+      if ((this.deps.store().get(rowKey(owner, id)) as ReceiptRow | undefined)?.state === 'parked')
+        this.parkedWarning(row, `its service failed ${RECEIPT_ATTEMPTS} deliveries`)
       throw error
     } finally {
       this.inflight.delete(id)
@@ -229,6 +237,7 @@ export class ChannelReceipts {
       const current = this.deps.pairing(row.pairingId)
       if (!current || current.pairedAt !== row.pairedAt || !sameTarget(current.target, row.target)) {
         this.change(row.target.owner, row.receiptId, () => ({ state: 'parked' }))
+        this.parkedWarning(row, 'its pairing changed')
         continue
       }
       await this.settle(row.target.owner, eventOf(row), handler).catch(() => undefined)
@@ -295,9 +304,37 @@ export class ChannelReceipts {
     }))
   }
 
+  /**
+   * Every owner's parked receipts, each with its owner: the owner's list across services. Oldest event
+   * first and at most `limit` (never more than `PARKED_LIST_LIMIT`), so a long backlog never crosses
+   * the worker link whole.
+   */
+  parkedAll(limit = PARKED_LIST_LIMIT): (ParkedReceipt & { owner: string })[] {
+    const parked = this.rows((row) => row.state === 'parked')
+    parked.sort((a, b) => a.at.localeCompare(b.at) || a.receiptId.localeCompare(b.receiptId))
+    return parked.slice(0, Math.max(0, Math.min(limit, PARKED_LIST_LIMIT))).map((row) => ({
+      owner: row.target.owner,
+      receiptId: row.receiptId,
+      service: row.target.service,
+      kind: row.kind,
+      text: row.text,
+      at: row.at,
+      attempts: row.attempts,
+    }))
+  }
+
   /** The owner's decisions on parked receipts; anything else is refused. */
-  command(params: unknown): { receipts: ParkedReceipt[] } | { receipt: 'pending' | 'discarded' } {
+  command(
+    params: unknown,
+  ):
+    | { receipts: ParkedReceipt[] }
+    | { receipts: (ParkedReceipt & { owner: string })[] }
+    | { receipt: 'pending' | 'discarded' } {
     const p = (params ?? {}) as Record<string, unknown>
+    if (p.op === 'parkedAll')
+      return {
+        receipts: this.parkedAll(Number.isSafeInteger(p.limit) ? (p.limit as number) : PARKED_LIST_LIMIT),
+      }
     if (typeof p.owner !== 'string' || !p.owner) throw rpcError('INVALID_PARAMS')
     if (p.op === 'parked') return { receipts: this.parked(p.owner) }
     if (
@@ -317,6 +354,15 @@ export class ChannelReceipts {
     store.set(key, { ...row, state: 'pending', attempts: 0, updatedAt: this.now() })
     void this.redeliver(row.target)
     return { receipt: 'pending' }
+  }
+
+  /** The operator's signal; the owner finds the receipt in the Web's owner input list. Never the text. */
+  private parkedWarning(row: ReceiptRow, why: string): void {
+    const warn = this.deps.warn ?? ((message: string) => console.warn(message))
+    warn(
+      `Channel receipt ${row.receiptId.slice(0, 12)} for ${row.target.service} parked: ${why}; ` +
+        'the owner can redeliver or discard it in the Web',
+    )
   }
 
   private change(owner: string, receiptId: string, next: (row: ReceiptRow) => Partial<ReceiptRow>): void {

@@ -3,6 +3,7 @@ import type { ChannelTargetEvent, PersistenceMetadataNamespace } from '@agnes/ex
 import type { CardBlock, TextBlock } from '@agnes/extension-api/channel-contract'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  PARKED_LIST_LIMIT,
   RECEIPT_ACK_TTL_MS,
   RECEIPT_ATTEMPTS,
   RECEIPT_RETRY_DELAYS_MS,
@@ -210,15 +211,24 @@ describe('channel receipts', () => {
     expect(seen, 'an acked receipt never reaches the service again').toHaveLength(1)
 
     fail = true
-    const poison = message(pairing.id, 'e2')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const poison = message(pairing.id, 'e2', 'secret words')
     const receiptId = await ingest(bridge, pairing, poison)
     expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'pending', attempts: 1 })
     for (let attempt = 2; attempt < RECEIPT_ATTEMPTS; attempt++) {
       await expect(bridge.deliver(pairing, { ...poison, receiptId })).rejects.toThrow('poison')
       expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'pending', attempts: attempt })
     }
+    expect(warn).not.toHaveBeenCalled()
     await expect(bridge.deliver(pairing, { ...poison, receiptId })).rejects.toThrow('poison')
     expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'parked', attempts: RECEIPT_ATTEMPTS })
+    // The operator is told once, by receipt and service, never with the text.
+    expect(warn.mock.calls).toEqual([
+      [
+        `Channel receipt ${receiptId.slice(0, 12)} for desk parked: its service failed ${RECEIPT_ATTEMPTS} deliveries; the owner can redeliver or discard it in the Web`,
+      ],
+    ])
+    warn.mockRestore()
     expect(bridge.receive(pairing, poison)).toEqual({ receiptId, state: 'parked' })
     await bridge.deliver(pairing, { ...poison, receiptId })
     expect(seen.filter((event) => event.eventId === 'e2')).toHaveLength(RECEIPT_ATTEMPTS * TRIES)
@@ -329,9 +339,16 @@ describe('channel receipts', () => {
     expect(again.id).toBe(pairing.id)
     expect(again.pairedAt).not.toBe(pairing.pairedAt)
     const handler = vi.fn(async () => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     desk.port.onEvent(handler)
     await vi.waitFor(() => expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'parked' }))
     expect(handler).not.toHaveBeenCalled()
+    expect(warn.mock.calls).toEqual([
+      [
+        `Channel receipt ${receiptId.slice(0, 12)} for desk parked: its pairing changed; the owner can redeliver or discard it in the Web`,
+      ],
+    ])
+    warn.mockRestore()
   })
 
   it('prune deletes admitted receipts at once, acked unadmitted ones after 30 days, never parked ones', async () => {
@@ -430,6 +447,43 @@ describe('channel receipts', () => {
     expect(targets.receipts.resolve(DESK, receiptId)).toEqual({ ...unknown, reason: 'pairingChanged' })
   })
 
+  it('the list across owners sends at most PARKED_LIST_LIMIT receipts, oldest first, and a smaller limit when asked', () => {
+    const { store, targets } = setup()
+    const parkedRow = (index: number): ReceiptRow => ({
+      receiptId: sha256(`r${index}`),
+      pairingId: PAIR_ID,
+      pairedAt: '2026-11-14T00:00:00.000Z',
+      target: index % 2 ? DESK : OTHER,
+      instance: { channel: CHANNEL, instanceId: 'desk-bot' },
+      eventId: `e${index}`,
+      messageId: `m${index}`,
+      sender: { userId: 'owner' },
+      chat: { id: 'dm-1', type: 'dm' },
+      at: new Date(
+        Date.parse('2026-11-14T00:00:00.000Z') + (PARKED_LIST_LIMIT + 5 - index) * 1000,
+      ).toISOString(),
+      kind: 'message',
+      text: `parked ${index}`,
+      digest: sha256(`d${index}`),
+      state: 'parked',
+      attempts: RECEIPT_ATTEMPTS,
+      updatedAt: '2026-11-14T00:00:00.000Z',
+    })
+    for (let index = 0; index < PARKED_LIST_LIMIT + 5; index++) {
+      const value = parkedRow(index)
+      store.set(`r:${value.target.owner}:${value.receiptId}`, value)
+    }
+    const all = targets.receipts.command({ op: 'parkedAll' }) as { receipts: { text: string; at: string }[] }
+    expect(all.receipts).toHaveLength(PARKED_LIST_LIMIT)
+    // Oldest event first: the highest indexes carry the earliest times.
+    expect(all.receipts[0]?.text).toBe(`parked ${PARKED_LIST_LIMIT + 4}`)
+    expect(all.receipts.map((r) => r.at)).toEqual([...all.receipts.map((r) => r.at)].sort())
+    const few = targets.receipts.command({ op: 'parkedAll', limit: 3 }) as { receipts: unknown[] }
+    expect(few.receipts).toHaveLength(3)
+    const capped = targets.receipts.command({ op: 'parkedAll', limit: 10_000 }) as { receipts: unknown[] }
+    expect(capped.receipts).toHaveLength(PARKED_LIST_LIMIT)
+  })
+
   it("parked lists one owner's receipts; redeliver resets attempts; discard deletes", async () => {
     const { store, targets, bridge, desk, pairing, start, pair } = setup()
     const other = start(OTHER)
@@ -464,6 +518,17 @@ describe('channel receipts', () => {
       at: '2026-11-14T00:00:00.000Z',
       attempts: RECEIPT_ATTEMPTS,
     })
+    // The owner's list across services names each receipt's owner.
+    const all = targets.receipts.command({ op: 'parkedAll' }) as {
+      receipts: { owner: string; text: string }[]
+    }
+    expect(all.receipts.map((r) => [r.owner, r.text]).sort()).toEqual(
+      [
+        [DESK.owner, 'first'],
+        [DESK.owner, 'second'],
+        [OTHER.owner, 'elsewhere'],
+      ].sort(),
+    )
 
     fail = false
     expect(targets.receipts.command({ op: 'redeliver', owner: DESK.owner, receiptId: first })).toEqual({

@@ -1,4 +1,6 @@
 import { type HomeEntryBadge, homeEntries, homeNavigation } from '@agnes/web-client'
+import { registerOwnerInputEntry } from '../owner-input-list.js'
+import type { OwnerInputCall } from '../owner-input-panel.js'
 import { homeAdmin } from './admin-api.js'
 import { deferHomePage } from './deferred.js'
 
@@ -50,10 +52,14 @@ function pendingReviewBadge(): HomeEntryBadge & { refresh(): void } {
   }
 }
 
-/** Register the built-in home entries the way a plugin registers its own. */
-export function registerBuiltinHomeEntries(): () => void {
+/**
+ * Register the built-in home entries the way a plugin registers its own. With the page's own owner-only
+ * caller, the owner input list joins them once something waits on the owner.
+ */
+export function registerBuiltinHomeEntries(ownerCall?: OwnerInputCall): () => void {
   const pending = pendingReviewBadge()
   const disposers = [
+    ...(ownerCall ? [registerOwnerInputEntry(ownerCall)] : []),
     homeEntries.register({
       id: 'agents',
       order: 20,
