@@ -46,7 +46,10 @@ const LIST_LIMIT = 256
  * Only the owner, at the owner's own Web page, reads or decides an owner input. The page is the
  * connection that came through the local Web listener with the local credential. A bundled app's
  * local SDK client holds the same credential but opens the Unix socket, so it is refused here, as is
- * every remote or Surface identity; plugins have no client connection at all.
+ * every remote or Surface identity. Plugin backends have no client connection. Plugin browser code
+ * shares the page's connection, so this check cannot see it: the Web refuses these methods on every
+ * host API it hands to plugin code (`isOwnerOnlyMethod` in `@agnes/web-client`). Code in the same page
+ * can still patch the page's WebSocket or open its own socket; same-page code is not isolated.
  */
 function requireOwnerPage(method: string, context: CallContext): void {
   const conn = context.conn
