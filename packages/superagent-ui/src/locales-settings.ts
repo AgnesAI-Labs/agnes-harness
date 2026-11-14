@@ -636,6 +636,10 @@ export const SETTINGS_TEXT = {
     '需要设置：渠道实例 {channel} 已在为主人或其他功能服务；请用专用的机器人实例',
     HEALTH_TEXT.feishuInstanceShared,
   ],
+  'healthCode.feishuInstanceReleasing': [
+    '需要设置：渠道实例 {channel} 正被占用；等待 Superagent 上一次运行释放它',
+    HEALTH_TEXT.feishuInstanceReleasing,
+  ],
   'healthCode.feishuInstanceRefused': [
     '需要设置：渠道实例 {channel} 拒绝了认领（{reason}）；正在重试',
     HEALTH_TEXT.feishuInstanceRefused,

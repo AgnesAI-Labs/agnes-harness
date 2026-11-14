@@ -211,13 +211,23 @@ function listen(link: FeishuLink, config: FeishuConfig, onEvent: (event: Channel
   const claim = link.channels.claimInstance(instanceRef(config.instance), onEvent)
   return () => claim.release()
 }
-/** Why the instance refused the Source, as setup still required. An instance in use stays with its users. */
-function refusal(config: FeishuConfig, error: unknown): Health {
+/** How long an instance in use may be Superagent's own previous run, which releases it within seconds. */
+export const RELEASE_GRACE_MS = 10_000
+/**
+ * Why the instance refused the Source, as setup still required. An instance in use stays with its users; it is
+ * reported as the owner's or another feature's only once it stayed in use past `RELEASE_GRACE_MS`, so a previous run
+ * of Superagent that still holds it is not taken for one. `busy` tracks since when this listening was refused so.
+ */
+function refusal(config: FeishuConfig, error: unknown, busy: { key: string; since: number }): Health {
   const channel = channelOf(config)
   const reason = channelCode(error) ?? (error instanceof Error ? error.message : String(error))
   if (config.claim === 'groups') return health('paused', 'feishuChannelRefused', { channel, reason })
-  if (reason === 'CHANNEL_CLAIMED') return health('paused', 'feishuInstanceShared', { channel })
-  return health('paused', 'feishuInstanceRefused', { channel, reason })
+  if (reason !== 'CHANNEL_CLAIMED') return health('paused', 'feishuInstanceRefused', { channel, reason })
+  const key = subscription(config)
+  if (busy.key !== key) Object.assign(busy, { key, since: Date.now() })
+  return Date.now() - busy.since < RELEASE_GRACE_MS
+    ? health('paused', 'feishuInstanceReleasing', { channel })
+    : health('paused', 'feishuInstanceShared', { channel })
 }
 
 /**
@@ -233,6 +243,7 @@ async function watch(ctx: SourceContext, link: FeishuLink, signal: AbortSignal, 
     return
   }
   let retry: number | undefined
+  const busy = { key: '', since: 0 }
   while (!signal.aborted) {
     const config = enabled(ctx)
     if (!config) {
@@ -260,12 +271,13 @@ async function watch(ctx: SourceContext, link: FeishuLink, signal: AbortSignal, 
           )
       })
     } catch (error) {
-      waiting(ctx, link, refusal(config, error))
+      waiting(ctx, link, refusal(config, error, busy))
       retry = consumerRetry(retry, 0)
       await pause(retry, signal)
       continue
     }
     retry = undefined
+    busy.key = ''
     link.listening = true
     report(ctx, link, 'feishu', {
       state: 'ready',

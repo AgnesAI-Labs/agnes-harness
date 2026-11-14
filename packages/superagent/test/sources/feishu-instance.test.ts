@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { key } from '../../src/core/index.js'
+import { RELEASE_GRACE_MS } from '../../src/sources/feishu-loops.js'
 import { fakeChannels, message, PLUGIN } from './fake-channels.js'
 import { type FeishuHost, feishuHost, MEMBER } from './feishu-host.js'
 
@@ -117,6 +118,13 @@ describe('a channel instance of its own', () => {
     fake.state.claimRefusal = 'CHANNEL_CLAIMED'
     const h = open({ fake, feishu: DEDICATED })
     const stop = await started(h)
+    // At first it may be Superagent's own previous run, which releases the instance within seconds.
+    expect(h.health.feishu).toMatchObject({
+      state: 'paused',
+      code: 'feishuInstanceReleasing',
+      values: { channel: 'feishu' },
+    })
+    await vi.advanceTimersByTimeAsync(RELEASE_GRACE_MS + 6_000)
     expect(h.health.feishu).toMatchObject({
       state: 'paused',
       code: 'feishuInstanceShared',
@@ -127,7 +135,7 @@ describe('a channel instance of its own', () => {
       expect(h.health[entry]).toMatchObject({ state: 'paused', code: 'feishuWaiting' })
     // Retried with backoff, never stealing the instance: it is claimed once the owner frees it.
     fake.state.claimRefusal = undefined
-    await vi.advanceTimersByTimeAsync(1_100)
+    await vi.advanceTimersByTimeAsync(16_100)
     expect(fake.claimed()).toBe(true)
     expect(h.health.feishu).toMatchObject({ state: 'ready' })
     await stop()
