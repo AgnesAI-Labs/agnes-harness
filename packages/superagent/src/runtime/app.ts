@@ -198,6 +198,7 @@ export function createRuntimeParts(input: {
   environment?(ticket: Ticket): Record<string, string>
   /** Writes what the worker is told about its ticket into its directory. */
   instructions?(ticket: Ticket, dir: string): Promise<void>
+  log?: Log
 }) {
   const { store } = input
   const client = input.grant.client as SessionClient
@@ -215,6 +216,7 @@ export function createRuntimeParts(input: {
     ...(input.instructions ? { instructions: input.instructions } : {}),
     applyModel: (role, session) => roleModels.apply(role, session),
     lifetime: input.lifetime,
+    ...(input.log ? { log: input.log } : {}),
   })
   roleModels.bind(sessions, registry)
   const delivery = new SessionDelivery({ sessions, store })

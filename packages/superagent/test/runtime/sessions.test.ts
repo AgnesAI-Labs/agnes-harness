@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -84,12 +84,22 @@ describe('worker sessions', () => {
     lifetime.abort()
     await expect(stopped).rejects.toThrow(/stopped/)
     expect(existsSync(join(dir, '.superagent-prepared'))).toBe(false)
-    // The next launch finds the half-prepared directory and prepares it again from the start.
-    const again = setup({ prepareCommand: () => 'mkdir repo && touch repo/done' })
+    // The next launch finds the half-prepared directory, moves it aside whole, and prepares the ticket again.
+    const warnings: string[] = []
+    const again = setup({
+      prepareCommand: () => 'mkdir repo && touch repo/done',
+      log: { warn: (message) => warnings.push(message) },
+    })
     await again.sessions.ensureWorker(ticket('t12'), dir)
     expect(existsSync(join(dir, 'repo', 'done'))).toBe(true)
     expect(existsSync(join(dir, 'repo', 'half'))).toBe(false)
     expect(existsSync(join(dir, '.superagent-prepared'))).toBe(true)
+    const aside = readdirSync(join(temp.dir, 'work')).filter((name) =>
+      name.startsWith('stopped.interrupted-'),
+    )
+    expect(aside).toHaveLength(1)
+    expect(existsSync(join(temp.dir, 'work', aside[0]!, 'repo', 'half'))).toBe(true)
+    expect(warnings).toEqual([expect.stringContaining(join(temp.dir, 'work', aside[0]!))])
     // A failed check of the prepared directory leaves it unprepared too.
     const checked = join(temp.dir, 'work', 'unchecked')
     const failing = setup({

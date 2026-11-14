@@ -150,6 +150,7 @@ export async function startService(
     store: opened,
     grant,
     lifetime: lifetime.signal,
+    log,
     environment: (ticket) =>
       Object.fromEntries(
         (built?.parts.ticketEnvironment(ticket) ?? []).map((item) => [item.key, item.value]),

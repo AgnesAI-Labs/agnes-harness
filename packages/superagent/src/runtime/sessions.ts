@@ -3,7 +3,7 @@
  * belongs to Superagent only when the store registered its id, never because of its key: an owner may create a session
  * with any key.
  */
-import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rename, rmdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Store } from '../app/store.js'
 import { runCommand } from '../app/subprocess.js'
@@ -185,6 +185,8 @@ export interface SessionsDeps {
   /** Selects the role's model on a session: once when it is created. */
   applyModel?(role: 'orchestrator' | 'worker', session: SessionHandle): Promise<void>
   readonly lifetime: AbortSignal
+  /** Where a moved-aside ticket directory is reported. */
+  readonly log?: { warn(message: string): void }
 }
 export interface SessionJob {
   id: string
@@ -210,7 +212,7 @@ export class Sessions implements SessionAdapter {
    * Prepares the ticket directory unless it is prepared, and opens the ticket's worker session in it. The directory is
    * created and the prepare command runs inside it, checking the repository out into `repo/`; it counts as prepared only
    * once the prepare command and the check succeeded and wrote the marker. A directory without the marker, which a
-   * stopped or failed prepare left, is prepared again from an empty directory. A failed prepare command throws
+   * stopped or failed prepare left, is moved aside, never deleted, and the ticket is prepared again in a new one. A failed prepare command throws
    * `PrepareFailed` and removes the directory only when it left it empty.
    */
   async ensureWorker(ticket: Ticket, dir: string): Promise<string> {
@@ -219,7 +221,7 @@ export class Sessions implements SessionAdapter {
     return this.ensure({ kind: 'worker', ticketId: ticket.id }, dir, ticket.title, ticket)
   }
   private async prepare(ticket: Ticket, dir: string): Promise<void> {
-    await rm(dir, { recursive: true, force: true })
+    await this.moveAside(dir)
     await mkdir(dir, { recursive: true })
     const command = this.deps.prepareCommand().trim()
     const signal = AbortSignal.any([this.deps.lifetime, AbortSignal.timeout(PREPARE_TIMEOUT_MS)])
@@ -243,6 +245,18 @@ export class Sessions implements SessionAdapter {
     const marker = join(dir, PREPARED_MARKER)
     await writeFile(`${marker}.tmp`, `${new Date().toISOString()}\n`)
     await rename(`${marker}.tmp`, marker)
+  }
+  /**
+   * Moves a directory a prepare left unmarked to `<dir>.interrupted-<time>`, keeping whatever it holds, such as a
+   * worktree with commits not pushed yet; nothing is deleted.
+   */
+  private async moveAside(dir: string): Promise<void> {
+    if (!(await exists(dir))) return
+    const aside = `${dir}.interrupted-${new Date().toISOString().replace(/[:.]/g, '-')}`
+    await rename(dir, aside)
+    this.deps.log?.warn(
+      `The ticket directory ${dir} was not marked prepared; it was moved to ${aside} and is prepared again`,
+    )
   }
   /**
    * Loads the role's session, or creates it with the role's bundle and preset. A registered session its owner deleted is
