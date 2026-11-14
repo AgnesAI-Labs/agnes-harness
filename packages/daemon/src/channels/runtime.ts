@@ -56,4 +56,9 @@ const runChannelRuntime: NonNullable<HostOptions['channelRuntime']> = (provider,
     },
   })
 
-export const daemonChannelRuntime = Object.assign(runChannelRuntime, { snapshot: channelBindingSnapshot })
+export const daemonChannelRuntime: NonNullable<HostOptions['channelRuntime']> = Object.assign(
+  runChannelRuntime,
+  {
+    snapshot: channelBindingSnapshot,
+  },
+)

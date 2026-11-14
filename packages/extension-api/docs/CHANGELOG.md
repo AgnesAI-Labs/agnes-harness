@@ -2,6 +2,11 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.18.0
+
+- Channel `Sender.kind` (`user` or `bot`) marks who sent a message; absent means a user, and session routing ignores bot senders.
+- `ChannelCapabilities.read` and five optional cursor-paged `ChannelAdapter` reads: `fetchMessages`, `listThread`, `listHistory`, `listChats` and `listMembers`. An adapter declares each read in `capabilities()` at run time; the manifest schema is unchanged. Adapters that implement none of them are unchanged.
+
 ## 5.17.0
 
 - Optional `ExtensionContext.sideModels.subscribe(listener)` emits payload-free catalogue change notices. Subscribe before `list()` to observe late provider readiness. The existing grant, declaration and lifetime checks still apply; unsubscribe on disposal. `list()` retains its route/model/api-only shape.

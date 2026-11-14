@@ -10,6 +10,7 @@ import {
   type MessageRef,
   sessionKeyFor,
 } from '../adapter.js'
+import { fromBot } from '../builtin-subscriptions.js'
 import { ChannelError } from '../errors.js'
 import { Approval } from './approval.js'
 import { backoffDelays } from './backoff.js'
@@ -405,6 +406,8 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       lastEventAt = new Date().toISOString()
       return
     }
+    // A bot sender may reach a subscriber or paired service above, but never a session.
+    if (fromBot(event)) return
     if (dependencies.bindings) {
       const key =
         dependencies.adapter.toSession(event, {
