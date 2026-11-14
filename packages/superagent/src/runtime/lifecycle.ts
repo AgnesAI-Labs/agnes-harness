@@ -111,9 +111,10 @@ export interface LifecycleDeps {
 const ARCHIVE_EVERY_MS = 24 * 3600_000
 /** Below the 5 s shutdown deadline the manifest declares, with room for the Host's own steps. */
 const STOP_BUDGET_MS = 4_000
-/** Passes over one Session in a stop, and the pause between them; about a second in all. */
-const QUIET_PASSES = 3
+/** The pause between passes over one Session in a stop. */
 const QUIET_PAUSE_MS = 150
+/** Kept back from a stop's budget for each Session's last kill sweep. */
+const FINAL_SWEEP_MS = 250
 /** How long a stop waits for an aborted start to notice before it goes on. */
 const START_ABORT_WAIT_MS = 500
 
@@ -181,42 +182,41 @@ export function sessionsOnly(sessionIds: ReadonlySet<string>): HookState {
 
 /**
  * Empties a Session's inbox, cancels its turn and kills its agent jobs, and checks again: a cancel hands steers back
- * to the inbox, where the daemon may start one as a new turn, and a turn winding down may still start a job. Up to
- * `QUIET_PASSES` passes, until no turn runs, no job runs and (unless `keepPending`) nothing waits. The cancel is sent
- * whatever the state says, since a turn parked on an approval reads as not running. False when the session still was
- * not quiet after the last pass.
+ * to the inbox, where the daemon may start one as a new turn, and a turn winding down may still start a job. Passes
+ * repeat, a pause apart, until no turn runs, no job runs, (unless `keepPending`) nothing waits and the cancel returned,
+ * or until `deadline`. Either way a last kill sweep follows, so a job the turn started while it wound down is killed
+ * too. The cancel is sent whatever the state says, since a turn parked on an approval reads as not running, and it is
+ * never awaited before the kill: killing the jobs, the turn's own command among them, is what lets a turn held up by
+ * that command wind down. False when the session was not confirmed quiet by the deadline.
  */
 async function quiet(
   sessions: SessionAdapter,
   control: SessionControl,
   sessionId: string,
   keepPending: boolean,
+  deadline: number,
 ): Promise<boolean> {
   /** A cancel in flight: it returns only once the turn wound down, which a running command can hold up. */
   let cancelling: Promise<void> | undefined
+  const returned = () => {
+    cancelling = undefined
+  }
+  const sweep = () => control.killAgentJobs(sessionId)
   for (let pass = 0; ; pass++) {
     const state = await sessions.state(sessionId)
     const settled = !state.running && state.jobs === 0 && (keepPending || state.pending.length === 0)
-    // A session that reads quiet is stopped, whether or not a cancel sent to it has returned yet.
-    if (pass > 0 && settled) return true
-    if (pass === QUIET_PASSES) return false
+    if (pass > 0 && settled && !cancelling && (await sweep()) === 0) return true
+    if (pass > 0 && Date.now() >= deadline) return (await sweep()) === 0 && settled
     if (!keepPending && state.pending.length)
       await sessions.dropPending(
         sessionId,
         state.pending.map((item) => item.itemId),
       )
-    // The cancel is not awaited before the kill: killing the jobs, the turn's own command among them,
-    // is what lets a turn held up by that command wind down.
-    cancelling ??= sessions.cancel(sessionId).then(
-      () => {
-        cancelling = undefined
-      },
-      () => {
-        cancelling = undefined
-      },
+    cancelling ??= sessions.cancel(sessionId).then(returned, returned)
+    await sweep()
+    await new Promise((resolve) =>
+      setTimeout(resolve, Math.max(0, Math.min(QUIET_PAUSE_MS, deadline - Date.now()))),
     )
-    await control.killAgentJobs(sessionId)
-    await Promise.race([cancelling, new Promise((resolve) => setTimeout(resolve, QUIET_PAUSE_MS))])
   }
 }
 
@@ -298,13 +298,14 @@ async function quietAll(
   warn: (text: string) => void,
 ): Promise<string[]> {
   const unstopped = new Set(ids)
+  const deadline = Date.now() + Math.max(0, budgetMs - FINAL_SWEEP_MS)
   await within(
     Promise.allSettled(
       ids.map((id) =>
-        quiet(sessions, control, id, reason === 'shutdown').then(
+        quiet(sessions, control, id, reason === 'shutdown', deadline).then(
           (done) => {
             if (done) unstopped.delete(id)
-            else warn(`Superagent session ${id} is still running after ${QUIET_PASSES} stops`)
+            else warn(`Superagent session ${id} is still running after the stop's ${budgetMs} ms`)
           },
           (error: unknown) => {
             warn(`Superagent could not stop session ${id}: ${message(error)}`)

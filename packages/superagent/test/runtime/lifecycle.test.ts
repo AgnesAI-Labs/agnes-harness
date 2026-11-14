@@ -381,8 +381,9 @@ describe('disable', () => {
       `drop ${workerKey('A')} s1`,
       `cancel ${workerKey('A')}`,
       `kill ${workerKey('A')}`,
-      // The last pass finds the session quiet.
+      // The last pass finds the session quiet, and a last sweep finds no job the turn started winding down.
       `state ${workerKey('A')}`,
+      `kill ${workerKey('A')}`,
       'app.drain',
     ])
     expect(sessions.get(workerKey('A'))).toMatchObject({ running: false, pending: [], jobs: 0 })
@@ -402,7 +403,7 @@ describe('disable', () => {
     vi.advanceTimersByTime(3 * DAY)
     expect(app.polls).toBe(1)
     expect(archive.mock.calls.length).toBe(runs)
-    expect(log).toHaveLength(11)
+    expect(log).toHaveLength(12)
   })
 
   it('drops the queued inputs of every session, which stay untaken in the store and are re-delivered after enable', async () => {
@@ -460,6 +461,7 @@ describe('disable', () => {
       `cancel ${ORCHESTRATOR}`,
       `kill ${ORCHESTRATOR}`,
       `state ${ORCHESTRATOR}`,
+      `kill ${ORCHESTRATOR}`,
       'app.drain',
     ])
     expect(sessions.get(ORCHESTRATOR)!.pending).toEqual([{ itemId: 'o1', commandId: 'superagent:m' }])
@@ -486,11 +488,12 @@ describe('disable', () => {
     await lifecycle.stop('disable')
     expect(sessions.get(workerKey('A'))).toMatchObject({ running: false, pending: [], jobs: 0 })
     expect(log.filter((line) => line === `cancel ${workerKey('A')}`)).toHaveLength(2)
-    expect(log.filter((line) => line === `kill ${workerKey('A')}`)).toHaveLength(2)
+    // Two passes, then the last sweep.
+    expect(log.filter((line) => line === `kill ${workerKey('A')}`)).toHaveLength(3)
     expect(log).toContain(`cancel ${workerKey('P')}`)
   })
 
-  it('gives up on a session that keeps running after three passes, and says so', async () => {
+  it('gives up on a session that keeps running when the budget ends, after a last sweep, and says so', async () => {
     sessions.set(workerKey('A'), {
       running: true,
       pending: [],
@@ -500,12 +503,17 @@ describe('disable', () => {
       },
     })
     const warnings: string[] = []
-    const { lifecycle } = setup({ log: { warn: (text) => warnings.push(text) } })
+    const { lifecycle } = setup({ log: { warn: (text) => warnings.push(text) }, stopBudgetMs: 800 })
     await lifecycle.start()
     await lifecycle.settled()
     log.length = 0
+    const began = Date.now()
     await lifecycle.stop('disable')
-    expect(log.filter((line) => line === `cancel ${workerKey('A')}`)).toHaveLength(3)
+    // Passes a pause apart for the whole budget, not a fixed count.
+    expect(Date.now() - began).toBeGreaterThanOrEqual(500)
+    expect(log.filter((line) => line === `cancel ${workerKey('A')}`).length).toBeGreaterThanOrEqual(3)
+    expect(log.filter((line) => line.startsWith('state ')).length).toBeLessThanOrEqual(6)
+    expect(log.slice(-2)).toEqual([`kill ${workerKey('A')}`, 'app.drain'])
     expect(warnings.join('\n')).toContain(`${workerKey('A')} is still running`)
     expect(store.get(KV.runtime.paused)?.stop, 'the pause names the session it could not stop').toMatchObject(
       {
@@ -571,6 +579,68 @@ describe('disable', () => {
     ])
     expect(sessions.get(workerKey('A'))).toMatchObject({ running: false, jobs: 0 })
     expect(store.get(KV.runtime.paused)?.stop).toMatchObject({ sessions: 1, unstopped: [] })
+  })
+
+  it('waits out a slow cancel within the budget and kills a job the turn started while it wound down', async () => {
+    // The turn runs a command. Killed, it stops at once and the session reads not running, but core's cancel
+    // returns only once the turn wound down, 600 ms later, and the wind-down starts one more job as it ends.
+    sessions.set(workerKey('A'), { running: true, pending: [], jobs: 1 })
+    const adapter = fakeSessions(log, sessions)
+    let windDown: () => void = () => {}
+    adapter.cancel = async (id) => {
+      log.push(`cancel ${id}`)
+      sessions.get(id)!.running = false
+      await new Promise<void>((resolve) => {
+        windDown = resolve
+      })
+    }
+    // The wind-down ends while a state read is in flight: the read answers from before it.
+    const { state } = adapter
+    const began = Date.now()
+    adapter.state = async (id) => {
+      const read = await state(id)
+      if (Date.now() - began >= 600 && sessions.get(id)!.jobs === 0) {
+        sessions.get(id)!.jobs = 1
+        windDown()
+      }
+      return read
+    }
+    const warnings: string[] = []
+    const { lifecycle } = setup({ sessions: adapter, log: { warn: (text) => warnings.push(text) } })
+    await lifecycle.start()
+    await lifecycle.settled()
+    log.length = 0
+    await lifecycle.stop('disable')
+    const ms = Date.now() - began
+    expect(sessions.get(workerKey('A'))).toMatchObject({ running: false, jobs: 0 })
+    expect(store.get(KV.runtime.paused)?.stop).toMatchObject({ sessions: 1, unstopped: [] })
+    expect(warnings).toEqual([])
+    expect(ms).toBeGreaterThanOrEqual(600)
+    expect(ms).toBeLessThan(4_000)
+  })
+
+  it('pauses between passes when the cancel returns at once, so a job that takes a moment to exit is waited for', async () => {
+    // A background job that exits 200 ms after its kill; the idle turn's cancel returns at once.
+    sessions.set(workerKey('A'), { running: false, pending: [], jobs: 1 })
+    const control = fakeControl(log, sessions)
+    const { lifecycle } = setup({
+      control: {
+        ...control,
+        killAgentJobs: async (id) => {
+          log.push(`kill ${id}`)
+          const session = sessions.get(id)!
+          const killed = session.jobs
+          if (killed) setTimeout(() => (session.jobs = 0), 200)
+          return killed
+        },
+      },
+    })
+    await lifecycle.start()
+    await lifecycle.settled()
+    log.length = 0
+    await lifecycle.stop('disable')
+    expect(store.get(KV.runtime.paused)?.stop).toMatchObject({ sessions: 1, unstopped: [] })
+    expect(log.filter((line) => line === `state ${workerKey('A')}`).length).toBeLessThanOrEqual(4)
   })
 
   it('keeps going when one session cannot be stopped', async () => {
