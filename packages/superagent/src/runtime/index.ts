@@ -8,6 +8,7 @@ import type { PluginContextFacets, ProfileManagedInit, ToolResult } from '@agnes
 import type { JsonValue } from '@agnes/protocol'
 import { openStore, type Store } from '../app/store.js'
 import { createHookStateCell, type HookStateCell } from './hook-state.js'
+import type { Lifecycle, StopReason } from './lifecycle.js'
 import { asSdkClient } from './sdk.js'
 
 export type { HookState, HookStateCell } from './hook-state.js'
@@ -38,8 +39,21 @@ const EMPTY_SCHEMA = { type: 'object', properties: {}, additionalProperties: fal
 const unavailable = (what: string) =>
   Object.assign(new Error(`${what} is not available in this Superagent build`), { code: 'CAPABILITY_DENIED' })
 
+/** How the Host's shutdown reasons stop the lifecycle; a disable reaches the service as an upgrade. */
+const STOP_REASONS: Readonly<Record<'disable' | 'upgrade' | 'exit', StopReason>> = {
+  disable: 'disable',
+  upgrade: 'generation',
+  exit: 'shutdown',
+}
+const isLifecycle = (part: unknown): part is Lifecycle =>
+  !!part &&
+  typeof (part as Partial<Lifecycle>).start === 'function' &&
+  typeof (part as Partial<Lifecycle>).stop === 'function'
+
 /** A running service: what it holds, and the registered parts. */
-function createService(store: Store): SuperagentService & { readonly store: Store } {
+function createService(
+  store: Store,
+): SuperagentService & { readonly store: Store; lifecycle(): Lifecycle | undefined } {
   const parts = new Map<SuperagentSlot, unknown>()
   return {
     store,
@@ -51,8 +65,14 @@ function createService(store: Store): SuperagentService & { readonly store: Stor
     },
     register(slot, part) {
       if (parts.has(slot)) throw new Error(`The Superagent ${slot} part is already registered`)
+      if (slot === 'lifecycle' && !isLifecycle(part))
+        throw new TypeError('A lifecycle has start() and stop()')
       parts.set(slot, part)
+      // The lifecycle begins once registered, which is after `start()` returned; its work runs in the background.
+      // A lifecycle reports its own failures through its status, so a rejection here has nothing left to tell.
+      if (slot === 'lifecycle') (part as Lifecycle).start().catch(() => {})
     },
+    lifecycle: () => parts.get('lifecycle') as Lifecycle | undefined,
   }
 }
 
@@ -63,7 +83,9 @@ function createService(store: Store): SuperagentService & { readonly store: Stor
  */
 async function start(init: ProfileManagedInit, hooks: HookStateCell): Promise<SuperagentService> {
   let store: Store | undefined
-  init.onShutdown(async () => {
+  let service: ReturnType<typeof createService> | undefined
+  init.onShutdown(async (reason) => {
+    await service?.lifecycle()?.stop(STOP_REASONS[reason])
     hooks.clear()
     store?.close()
     return { state: 'settled' }
@@ -81,7 +103,7 @@ async function start(init: ProfileManagedInit, hooks: HookStateCell): Promise<Su
   if (typeof grant.channels.subscribe !== 'function')
     throw new TypeError('The bundled-app grant has no channels')
   store = openStore(join(grant.stateDirectory, DATABASE_FILE))
-  const service = createService(store)
+  service = createService(store)
   init.ready()
   return service
 }

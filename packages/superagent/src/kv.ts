@@ -6,6 +6,13 @@
 import type { SettingsVersion } from './app/store.js'
 import type { SettingsSave } from './policy.js'
 
+/** What a stop of the runtime left paused, and why. */
+export interface Paused {
+  at: string
+  reason: 'disable' | 'generation' | 'shutdown'
+  assignments: { ticketId: string; assignmentId: string }[]
+}
+
 /** Prompt configuration as stored: the team's three sections, skill texts, and overrides of built-in parts by key. */
 export interface PromptConfig {
   communication: string
@@ -62,8 +69,11 @@ export const KV = {
     /** The built-in text of a prompt part an override was edited from, by its `base`, which shows what an upgrade changed. */
     builtIn: family<string, [base: string]>('prompt-built-in:'),
   },
-  /** Runtime: the main Session's ID. */
-  runtime: { masterId: record<string>('master-id') },
+  /**
+   * Runtime: the main Session's ID, and the Assignments a stop left paused (their Sessions' turns cancelled and pending
+   * Inputs dropped), which the next start reconciles.
+   */
+  runtime: { masterId: record<string>('master-id'), paused: record<Paused>('runtime-paused') },
   /** Sessions: prompt revisions each Session has worked under, ordered oldest first; the last entry (`.at(-1)`) is its active revision. */
   sessions: { prompts: family<number[], [session: string]>('session-prompts:') },
   /** Per-Source resolved display names mapping a named ID (such as a Feishu chat ID) to its display name. */
