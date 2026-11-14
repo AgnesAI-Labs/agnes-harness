@@ -317,8 +317,15 @@ export function OwnerInputPanel({
   )
 }
 
-/** Show the owner input panel in the session's workbench dock while that session is open. */
-export function registerOwnerInputPanel(anchor: { sessionId: string; key: string }): () => void {
+/**
+ * Show the owner input panel in the session's workbench dock while that session is open. `call` is the
+ * host page's own connection: panels see the session only through its plugin view, which refuses
+ * the owner-only methods.
+ */
+export function registerOwnerInputPanel(
+  anchor: { sessionId: string; key: string },
+  call: OwnerInputCall,
+): () => void {
   const sessionOf = (data: unknown) => (data as WorkbenchContext | undefined)?.session
   return workbenchPanels.register({
     id: OWNER_INPUT_PANEL,
@@ -330,13 +337,8 @@ export function registerOwnerInputPanel(anchor: { sessionId: string; key: string
     icon: 'message-square',
     when: (context) => sessionOf(context.data)?.id === anchor.sessionId,
     component: ({ context }) => {
-      const session = sessionOf(context.data)
-      return session?.id === anchor.sessionId ? (
-        <OwnerInputPanel
-          sessionId={anchor.sessionId}
-          inputKey={anchor.key}
-          call={(method, params) => session.client.call(method, params)}
-        />
+      return sessionOf(context.data)?.id === anchor.sessionId ? (
+        <OwnerInputPanel sessionId={anchor.sessionId} inputKey={anchor.key} call={call} />
       ) : null
     },
   })

@@ -1,4 +1,9 @@
-import { type UiExtensionContext, workbenchNavigation, workbenchPanels } from '@agnes/web-client'
+import {
+  pluginSession,
+  type UiExtensionContext,
+  workbenchNavigation,
+  workbenchPanels,
+} from '@agnes/web-client'
 import type { WorkbenchContext } from '@agnes/web-conversation/workbench'
 import {
   Button,
@@ -566,6 +571,14 @@ export function Dock({ context }: { context: UiExtensionContext }) {
   // The toggles live in the bar's action group (this region's host).
   return controlsView
 }
+/**
+ * Panels, plugin panels among them, see the session through its plugin view: the owner-only methods
+ * are refused on its client. The owner input panel takes its call from the host instead.
+ */
+function panelContext(context: UiExtensionContext): UiExtensionContext {
+  const data = context.data as WorkbenchContext | undefined
+  return data?.session ? { ...context, data: { ...data, session: pluginSession(data.session) } } : context
+}
 const workbenchRenderers = new WeakMap<HTMLElement, RegionRenderer>()
 const pendingUnmounts = new WeakMap<HTMLElement, ReturnType<typeof setTimeout>>()
 /** Controller refreshes may arrive in bursts; only this domain surface publishes once per frame. */
@@ -579,7 +592,9 @@ export function renderWorkbench(host: HTMLElement, context: UiExtensionContext):
     workbenchRenderers.set(host, renderer)
   }
   // A conversation change must not inherit another conversation's open panels or selection payload.
-  renderer.render(<Dock key={(context.data as WorkbenchContext)?.session?.id} context={context} />)
+  renderer.render(
+    <Dock key={(context.data as WorkbenchContext)?.session?.id} context={panelContext(context)} />,
+  )
   if (initial) renderer.flush()
 }
 

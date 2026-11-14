@@ -2490,7 +2490,8 @@ run(async () => {
   const modelSelection = sessionBinding.capture()
   await awaitModels()
   if (!sessionBinding.isCurrent(modelSelection)) return
-  openStartupAnchors(startupRequest, sessionBinding.session?.id === selected ? selected : undefined)
+  const anchored = sessionBinding.session?.id === selected ? selected : undefined
+  openStartupAnchors(startupRequest, anchored, (method, params) => client.call(method, params))
   const shown = await firstRun.initialize(
     snapshot,
     !empty || Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),
