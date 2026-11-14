@@ -44,8 +44,13 @@ export async function releaseManagedSessions(
   },
   packageId: string,
 ): Promise<void> {
-  if (deps.engine && deps.inputs)
-    for (const owner of deps.inputs.owners(grantKey(packageId, ''))) await deps.engine.withdraw(owner)
+  if (!deps.engine || !deps.inputs) {
+    // Before the engine exists (a removal recovered at boot): submitted inputs stay, and the first
+    // sweep finds their session detached, takes them back and deletes them.
+    deps.records.releasePackage(packageId, true)
+    return
+  }
+  for (const owner of deps.inputs.owners(grantKey(packageId, ''))) await deps.engine.withdraw(owner)
   deps.records.releasePackage(packageId)
 }
 

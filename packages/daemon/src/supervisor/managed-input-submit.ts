@@ -3,7 +3,7 @@ import type { ManagedInputResult } from '@agnes/extension-api'
 import { rpcError } from '@agnes/protocol'
 import type { OwnerInputEngineDeps } from './managed-input-admission.js'
 import type { ManagedInputChange, ManagedInputRow } from './managed-session-inputs.js'
-import type { ManagedSessionRecord } from './managed-session-records.js'
+import { detached, type ManagedSessionRecord } from './managed-session-records.js'
 
 const digest = (value: string) => createHash('sha256').update(value).digest('hex')
 
@@ -124,6 +124,8 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     let verdict: Promise<'pass' | 'paused' | ManagedInputChange> | undefined
     return () =>
       (verdict ??= (async () => {
+        // Detached by a package removal before the engine existed: what it kept is taken back, never run.
+        if (detached(record)) return { state: 'needsOwner', reason: 'grantRevoked' } as const
         if (archived(record)) return { state: 'retained', reason: 'sessionArchived' } as const
         // Every row of a session belongs to the session's manager; a disabled package's gates may fail.
         if (!(await enabled(record.owner))) return 'paused' as const
@@ -160,7 +162,7 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     if (mode === 'idle') return true
     if (await (ports.sessions.queued?.(sessionId, commandId) ?? true)) {
       const verdict = await checks()
-      // Queued, but no longer allowed to run (revoked, archived): taken back before a turn can.
+      // Queued, but no longer allowed to run (revoked, archived, released): taken back before a turn can.
       if (verdict !== 'pass' && verdict !== 'paused') {
         if ((await ports.sessions.withdraw(sessionId, commandId)) === 'taken')
           return (await settle(settled)).state === 'enqueued'
@@ -197,6 +199,10 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     const checks = sessionChecks(record)
     let waiting = 0
     for (const row of flying) if (await land(row, record, mode, checks)) waiting++
+    if (detached(record)) {
+      inputs.deleteSettled(sessionId)
+      return
+    }
     if (waiting > 0) return
     for (const row of inputs.held(sessionId)) {
       if (row.state === 'queued') continue // completed only by the caller's next admitInput

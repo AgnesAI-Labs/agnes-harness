@@ -322,6 +322,30 @@ describe('managed sessions bound to a task', () => {
     expect(w.core.ran(sessionId, 'text of r1')).toBe(0)
   })
 
+  it('a package released before the engine is set keeps its submitted inputs until the first sweep withdraws and deletes them', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    w.core.state.running.add(sessionId)
+    await w.port(caller, 'r2').admitInput(sessionId, admission('k2', 'r2'))
+    w.core.state.running.delete(sessionId)
+    await releaseManagedSessions({ records: w.records, inputs: w.inputs }, caller.packageId)
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued' })
+    expect(w.inputs.get(owner, sessionId, 'k2')).toBeUndefined()
+    expect(w.records.granted(owner, '/work/repo')).toBe(false)
+    // The owner still runs the detached session in the Web; its idle report neither takes back nor drops the row.
+    await engine.advance(sessionId)
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued' })
+    await engine.sweep()
+    expect(w.core.state.withdrawals.map((entry) => entry.sessionId)).toEqual([sessionId])
+    expect(w.core.state.inbox.get(sessionId)).toEqual([])
+    expect(w.inputs.get(owner, sessionId, 'k1')).toBeUndefined()
+    expect(w.inputs.sessionsWithWork()).toEqual([])
+    expect(w.core.take(sessionId)).toBeUndefined()
+    expect(w.core.ran(sessionId, 'text of r1')).toBe(0)
+  })
+
   it('archive withdraws a confirmed queued input at once', async () => {
     const w = world()
     const { sessionId } = await w.port().start(start())

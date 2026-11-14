@@ -339,6 +339,15 @@ export class ManagedSessionInputs {
       .map((value) => value.owner)
   }
 
+  /** Every row of a detached session but those still in flight, once a sweep has taken them back. */
+  deleteSettled(sessionId: string): void {
+    this.table.exec(
+      `DELETE FROM managed_session_inputs
+        WHERE session_id = ? AND NOT (state = 'enqueued' AND submitted_seq IS NOT NULL)`,
+      [sessionId],
+    )
+  }
+
   sessionsWithWork(): string[] {
     return this.table
       .all<{ session_id: string }>(
