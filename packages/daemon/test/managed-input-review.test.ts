@@ -2,6 +2,7 @@ import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { authGate } from '@agnes/daemon-rpc/local/auth'
 import { requireSessionOwner } from '@agnes/daemon-rpc/local/methods/agnes'
 import type { ManagedInputResult } from '@agnes/extension-api'
+import { rpcError } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import {
   type ManagedInputReviewEngine,
@@ -46,7 +47,7 @@ function row(over: Partial<ManagedInputRow> = {}): ManagedInputRow {
 }
 
 /** A stand-in for the owner input engine: one row, decisions move it the way the engine does. */
-function fakeEngine(initial = row()) {
+function fakeEngine(initial = row(), refuse?: string) {
   let current = initial
   const decisions: unknown[] = []
   const engine: ManagedInputReviewEngine = {
@@ -63,6 +64,7 @@ function fakeEngine(initial = row()) {
     },
     async decide(sessionId, key, decision, expectVersion) {
       decisions.push({ sessionId, key, decision, expectVersion })
+      if (refuse) throw rpcError('SEMANTIC_REJECTED', { code: refuse })
       const [state, reason] =
         decision === 'deliver'
           ? (['enqueued', 'eligible'] as const)
@@ -245,6 +247,28 @@ it('a stale version is refused with SEMANTIC_REJECTED VERSION_CHANGED', async ()
   expect(reply.error).toMatchObject({ message: 'SEMANTIC_REJECTED', data: { code: 'VERSION_CHANGED' } })
   expect(fake.decisions).toEqual([])
   expect(fake.current().version).toBe(3)
+})
+
+it("the engine's refusal codes reach the caller in data.code", async () => {
+  for (const code of [
+    'OWNER_INPUT_STALE',
+    'OWNER_INPUT_FINAL',
+    'OWNER_INPUT_UNKNOWN',
+    'OWNER_INPUT_NO_TEXT',
+    'OWNER_INPUT_SUBMITTED',
+  ]) {
+    const { call } = await setup({ engine: fakeEngine(row(), code) })
+    const reply = await call('_agnes/v1/managedInput.decide', decideInput('deliver', 3))
+    expect(reply.error).toMatchObject({ message: 'SEMANTIC_REJECTED', data: { code } })
+  }
+  // A key the engine does not know is refused before the engine is asked, with the engine's code.
+  const { call, fake } = await setup()
+  const missing = await call('_agnes/v1/managedInput.decide', {
+    sessionId: 's1',
+    target: { kind: 'input', key: 'other', decision: 'retain', version: 1 },
+  })
+  expect(missing.error).toMatchObject({ message: 'SEMANTIC_REJECTED', data: { code: 'OWNER_INPUT_UNKNOWN' } })
+  expect(fake.decisions).toEqual([])
 })
 
 it('a caller that does not own the session is refused CAPABILITY_DENIED', async () => {

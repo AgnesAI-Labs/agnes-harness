@@ -154,6 +154,40 @@ it('a version conflict re-reads and says the input changed', async () => {
   })
 })
 
+it('every refusal code reads as an owner-facing message, never as the code', async () => {
+  for (const [code, message] of [
+    ['OWNER_INPUT_STALE', 'This input changed after it was shown'],
+    ['OWNER_INPUT_FINAL', 'This input is already settled'],
+    ['OWNER_INPUT_UNKNOWN', 'This input no longer exists in this session'],
+    ['OWNER_INPUT_NO_TEXT', 'cannot be delivered. Keep or discard it instead'],
+    ['OWNER_INPUT_SUBMITTED', "already in the session's queue"],
+    ['CAPABILITY_DENIED', 'Only your own Web page can decide owner inputs'],
+    ['SOMETHING_NEW', 'The decision did not go through'],
+  ] as const) {
+    const call = vi.fn(async (method: string) => {
+      if (method === '_agnes/v1/managedInput.get') return read()
+      throw Object.assign(new Error('refused'), { code: -32011, data: { code } })
+    })
+    panel(call)
+    await vi.waitFor(() => expect(button('Deliver')?.disabled).toBe(false))
+    button('Deliver')?.click()
+    await vi.waitFor(() => expect(bodyText()).toContain(message))
+    expect(bodyText()).not.toContain(code)
+    unmountRegion(document.body)
+    document.body.replaceChildren()
+  }
+  // A receipt that is no longer parked says so, too.
+  const call = vi.fn(async (method: string) => {
+    if (method === '_agnes/v1/managedInput.get') return read()
+    throw Object.assign(new Error('refused'), { code: -32011, data: { code: 'RECEIPT_NOT_PARKED' } })
+  })
+  panel(call)
+  await vi.waitFor(() => expect(button('Redeliver')?.disabled).toBe(false))
+  button('Redeliver')?.click()
+  await vi.waitFor(() => expect(bodyText()).toContain('This channel message is no longer parked'))
+  expect(bodyText()).not.toContain('RECEIPT_NOT_PARKED')
+})
+
 it('parked receipts are listed with redeliver and discard', async () => {
   const call = vi.fn(async (method: string, params: unknown) => {
     if (method === '_agnes/v1/managedInput.get') return read()

@@ -117,9 +117,10 @@ export function registerManagedInputReview(ep: LocalEndpoint, deps: ManagedInput
     }
     // The decision applies to the version the owner was shown, never to one that changed since.
     const current = deps.engine.review(sessionId, target.key)?.input.version
-    if (current === undefined) throw rpcError('SEMANTIC_REJECTED', { code: 'INPUT_NOT_FOUND' })
+    if (current === undefined) throw rpcError('SEMANTIC_REJECTED', { code: 'OWNER_INPUT_UNKNOWN' })
     if (current !== target.version)
       throw rpcError('SEMANTIC_REJECTED', { code: 'VERSION_CHANGED', version: current })
+    // The engine's own refusals (OWNER_INPUT_STALE, _FINAL, _UNKNOWN, _NO_TEXT, _SUBMITTED) pass through as thrown.
     const result = await deps.engine.decide(sessionId, target.key, target.decision, target.version)
     if (!('version' in result)) throw rpcError('INTERNAL_ERROR', { code: 'INPUT_STATE_UNAVAILABLE' })
     return { state: result.state, version: result.version }

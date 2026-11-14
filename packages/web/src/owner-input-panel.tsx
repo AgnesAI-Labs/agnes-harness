@@ -44,6 +44,12 @@ const COPY = {
     readAgain: 'Read again',
     changed: 'This input changed after it was shown. Review the current version before deciding.',
     failed: 'The decision did not go through. Read the input again and retry.',
+    settled: 'This input is already settled; no further decision applies.',
+    gone: 'This input no longer exists in this session.',
+    cannotDeliver: 'The original text was not kept, so it cannot be delivered. Keep or discard it instead.',
+    submitted: "This input is already in the session's queue, so it cannot be delivered again.",
+    receiptGone: 'This channel message is no longer parked.',
+    denied: 'Only your own Web page can decide owner inputs, and only for your sessions.',
     by: { platform: 'platform', owner: 'you' },
     states: {
       queued: 'Being recorded',
@@ -79,6 +85,12 @@ const COPY = {
     readAgain: '重新读取',
     changed: '这条输入在显示后已经变化，请先查看最新版本再决定。',
     failed: '决定没有生效。请重新读取后再试。',
+    settled: '这条输入已经处理完，不能再作决定。',
+    gone: '这个会话里已经没有这条输入。',
+    cannotDeliver: '原文没有保留，无法投递。请改为保留或丢弃。',
+    submitted: '这条输入已在会话队列中，不能再次投递。',
+    receiptGone: '这条渠道消息已不在停放列表中。',
+    denied: '只有你自己的 Web 页面能对你的会话作决定。',
     by: { platform: '平台', owner: '你' },
     states: {
       queued: '正在记录',
@@ -93,6 +105,40 @@ const COPY = {
 }
 
 const FINAL = new Set(['consumed', 'retained'])
+/** What the owner is told for each refusal code; a code itself is never shown. */
+const REFUSALS: Readonly<Record<string, Notice>> = {
+  VERSION_CHANGED: 'changed',
+  OWNER_INPUT_STALE: 'changed',
+  OWNER_INPUT_FINAL: 'settled',
+  OWNER_INPUT_UNKNOWN: 'gone',
+  OWNER_INPUT_NO_TEXT: 'cannotDeliver',
+  OWNER_INPUT_SUBMITTED: 'submitted',
+  RECEIPT_NOT_PARKED: 'receiptGone',
+  CAPABILITY_DENIED: 'denied',
+}
+type Notice =
+  | 'changed'
+  | 'settled'
+  | 'gone'
+  | 'cannotDeliver'
+  | 'submitted'
+  | 'receiptGone'
+  | 'denied'
+  | 'failed'
+  | 'readFailed'
+/** Notices after which the panel has already read the current state, so there is nothing to retry. */
+const SETTLED_NOTICES = new Set<Notice>([
+  'changed',
+  'settled',
+  'gone',
+  'cannotDeliver',
+  'submitted',
+  'receiptGone',
+])
+const refusal = (error: unknown): Notice => {
+  const code = (error as { data?: { code?: unknown } } | null)?.data?.code
+  return (typeof code === 'string' && Object.hasOwn(REFUSALS, code) && REFUSALS[code]) || 'failed'
+}
 const tone = (state: string): SettingsTagTone =>
   state === 'consumed' ? 'ok' : state === 'retained' ? 'muted' : state === 'enqueued' ? 'brand' : 'warn'
 
@@ -123,7 +169,7 @@ export function OwnerInputPanel({
   const [view, setView] = useState<ManagedInputGetResult>()
   const [reading, setReading] = useState(true)
   const [pending, setPending] = useState(false)
-  const [notice, setNotice] = useState<'changed' | 'failed' | 'readFailed'>()
+  const [notice, setNotice] = useState<Notice>()
   const live = useRef(true)
   // The dock hands a fresh call function on every render; reading again on each would be wasted.
   const rpc = useRef(call)
@@ -160,8 +206,7 @@ export function OwnerInputPanel({
     try {
       await rpc.current('_agnes/v1/managedInput.decide', { sessionId, target })
     } catch (error) {
-      outcome =
-        (error as { data?: { code?: unknown } }).data?.code === 'VERSION_CHANGED' ? 'changed' : 'failed'
+      outcome = refusal(error)
     }
     if ((await load()) && live.current) setNotice(outcome)
     if (live.current) setPending(false)
@@ -183,9 +228,9 @@ export function OwnerInputPanel({
     <section className="owner-input-panel" aria-label={text.heading} data-owner-input={inputKey}>
       {reading && !view && <SettingsState tone="loading">{text.reading}</SettingsState>}
       {notice && (
-        <SettingsState tone={notice === 'changed' ? 'empty' : 'error'}>
+        <SettingsState tone={SETTLED_NOTICES.has(notice) ? 'empty' : 'error'}>
           {text[notice]}{' '}
-          {notice !== 'changed' && (
+          {!SETTLED_NOTICES.has(notice) && (
             <Button size="small" disabled={reading} onClick={() => void load()}>
               {text.readAgain}
             </Button>
