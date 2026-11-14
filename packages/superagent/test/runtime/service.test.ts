@@ -4,11 +4,11 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ProfileManagedInit } from '@agnes/extension-api'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { openStore } from '../../src/app/store.js'
 import { SessionDelivery } from '../../src/runtime/delivery.js'
 import { createHookStateHolder } from '../../src/runtime/hook-state.js'
-import { DATABASE_FILE, startService } from '../../src/runtime/index.js'
+import { closeGeneration, DATABASE_FILE, startService } from '../../src/runtime/index.js'
 import { SessionRegistry } from '../../src/runtime/sessions.js'
 import { fakeClient } from './fake-sdk.js'
 
@@ -77,5 +77,18 @@ describe('the service generations', () => {
     })
     expect(left.isSuperagentSession('01OWNER')).toBe(false)
     expect(call('01OWNER')).toBeUndefined()
+  })
+})
+
+describe("a generation's close", () => {
+  it('closes the store even when leaving the stopped hook state fails', () => {
+    const store = { close: vi.fn() }
+    const hooks = {
+      clear: () => {
+        throw new Error('the store could not be read')
+      },
+    }
+    expect(() => closeGeneration(hooks, store)).toThrow('the store could not be read')
+    expect(store.close).toHaveBeenCalledOnce()
   })
 })

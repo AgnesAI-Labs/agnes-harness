@@ -92,6 +92,21 @@ function createService(app: SuperagentApp, parts: Map<SuperagentSlot, unknown>):
 }
 
 /**
+ * Ends a generation: leaves the stopped hook state, which is read from the store and so comes first, then closes the
+ * store, also when leaving that state failed.
+ */
+export function closeGeneration(
+  hooks: Pick<HookStateCell, 'clear'> | undefined,
+  store: Pick<Store, 'close'> | undefined,
+): void {
+  try {
+    hooks?.clear()
+  } finally {
+    store?.close()
+  }
+}
+
+/**
  * Starts the service. It needs the release grant: a payload installed from any other source, or one whose bytes differ
  * from the shipped snapshot, gets no grant and does not start. The shutdown is registered first, so a refused start
  * still reports a confirmed shutdown rather than possibly leaked resources. The service takes the process's hook state
@@ -112,9 +127,7 @@ export async function startService(
     try {
       await stop?.(stopReason(reason))
     } finally {
-      // The refusal is read from the store, so it is left before the store closes.
-      hooks?.clear()
-      store?.close()
+      closeGeneration(hooks, store)
     }
     return { state: 'settled' }
   })
