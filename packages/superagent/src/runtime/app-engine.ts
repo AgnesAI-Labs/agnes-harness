@@ -39,6 +39,7 @@ export function buildEngine(deps: AppDeps, state: AppState, core: Core, restart:
       state: 'ready',
       detail: 'No worker is waiting out a passing model failure',
     }),
+    deliveries: board.claim('deliveries', { state: 'ready', detail: 'No delivery waits to be confirmed' }),
     stateDir: core.machine.stateDir,
     lifetime: core.lifetime,
     sessions,

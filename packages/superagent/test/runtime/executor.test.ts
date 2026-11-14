@@ -63,6 +63,7 @@ function setup(prepare = '') {
   }
   let closing = false
   let engine!: Engine
+  const deliveries = new HealthBoard().claim('deliveries')
   const executor = new SuperagentExecutor({
     get engine() {
       return engine
@@ -70,6 +71,7 @@ function setup(prepare = '') {
     store: temp.store,
     effects,
     health: new HealthBoard().claim('worker'),
+    deliveries,
     stateDir: temp.dir,
     lifetime: lifetime.signal,
     sessions,
@@ -114,6 +116,7 @@ function setup(prepare = '') {
     executor,
     effects,
     relays,
+    deliveries,
     accept,
     worker,
     watched,
@@ -316,6 +319,48 @@ describe('the executor', () => {
     expect(copies.map((item) => item.commandId)).toEqual([`${original.commandId}:r1`])
     expect(session.journal.size).toBe(0)
     await again.stop()
+  })
+
+  it('names the ticket on the health once its relaunch waited three times to confirm a delivery, and clears it after', async () => {
+    const first = setup()
+    const ticketId = first.accept()
+    await first.effects.idle('launch')
+    await first.watched(ticketId)
+    const session = first.worker(ticketId)!
+    session.queueSteers = true
+    session.running = true
+    session.emit({ type: 'turn/start', data: { turn: 1 } })
+    session.failNext = 'landed'
+    first.engine.receive({ ...message('2'), text: 'also check the logout page' })
+    await vi.waitFor(() => expect(ticketOf(ticketId).delivery).toBeDefined())
+    await first.stop()
+    session.running = false
+    session.checkFails = true
+    const held = setup()
+    held.fake.sessions.set(session.id, session)
+    await held.executor.resume()
+    /** Runs the waiting launch once more now, rather than after its retry delay. */
+    const relaunch = async () => {
+      temp.store.db.prepare("UPDATE effect SET due = 0 WHERE kind = 'launch'").run()
+      await held.effects.idle('launch')
+    }
+    await held.effects.idle('launch')
+    await relaunch()
+    expect(held.deliveries.get()).toMatchObject({ state: 'ready' })
+    await relaunch()
+    expect(held.deliveries.get()).toMatchObject({ state: 'error' })
+    expect(held.deliveries.get()?.detail).toMatch(
+      new RegExp(`^Ticket ${ticketId} waits to deliver \\S+, 3 times since`),
+    )
+    expect(held.deliveries.get()?.detail).toContain('UNCERTAIN')
+    session.checkFails = false
+    await relaunch()
+    expect(held.deliveries.get()).toMatchObject({
+      state: 'ready',
+      detail: 'No delivery waits to be confirmed',
+    })
+    expect(temp.store.db.prepare("SELECT 1 FROM effect WHERE kind = 'launch'").get()).toBeUndefined()
+    await held.stop()
   })
 
   it("opens a worker session its owner deleted again to deliver a person's message", async () => {

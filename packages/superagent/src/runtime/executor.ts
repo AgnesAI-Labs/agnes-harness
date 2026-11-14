@@ -38,6 +38,7 @@ import {
   turnError,
 } from './assignment.js'
 import { messageOfCommand, type Redelivery } from './delivery.js'
+import { DeliveryStalls } from './delivery-stalls.js'
 import {
   PrepareFailed,
   type SessionAdapter,
@@ -88,6 +89,8 @@ export interface ExecutorHost {
   readonly health: HealthEntry
   /** The `models` health entry, which reports workers waiting out a passing model failure. */
   readonly models?: HealthEntry
+  /** The `deliveries` health entry, which names tickets whose launch keeps waiting to confirm a delivery. */
+  readonly deliveries?: HealthEntry
   readonly stateDir: string
   readonly lifetime: AbortSignal
   readonly sessions: ExecutorSessions
@@ -168,7 +171,9 @@ export class SuperagentExecutor implements Executor {
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
   /** The workers that wait out a passing model failure, by session. */
   private readonly modelRetries = new Map<string, ModelRetry>()
+  private readonly stalls: DeliveryStalls
   constructor(private readonly host: ExecutorHost) {
+    this.stalls = new DeliveryStalls(host.deliveries)
     this.slots = new WorkerSlots(
       () =>
         host.store.tickets
@@ -441,10 +446,12 @@ export class SuperagentExecutor implements Executor {
     if (later)
       for (const message of putBack)
         await this.host.delivery.renew(sessionId, message).catch((error: unknown) => {
+          this.stalls.waited(ticket.id, message, String(error))
           throw new Later(
             `Whether ${sessionId} received a put-back message cannot be confirmed: ${String(error)}`,
           )
         })
+    this.stalls.settled(ticket.id)
     const waiting = (await this.host.sessions.state(sessionId)).pending
     const stale = waiting
       .filter((item) => putBack.has(messageOfCommand(item.commandId) ?? ''))

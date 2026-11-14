@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { settingsView } from '../../src/app/views/settings.js'
 import { key } from '../../src/core/index.js'
 import { listInstances, OWNER_BUSY } from '../../src/sources/feishu-instances.js'
-import { RELEASE_GRACE_MS } from '../../src/sources/feishu-loops.js'
+import { INSTANCES_TIMEOUT_MS, RELEASE_GRACE_MS } from '../../src/sources/feishu-loops.js'
 import { fakeChannels, message, PLUGIN, rpc } from './fake-channels.js'
 import { type FeishuHost, feishuHost, MEMBER } from './feishu-host.js'
 
@@ -133,6 +133,10 @@ describe('a channel instance of its own', () => {
       values: { channel: 'feishu' },
     })
     expect(h.health.feishu?.detail).toMatch(/^Setup required: .*use a dedicated bot instance/)
+    // An unused pairing code also holds the instance, until it expires; the message says so.
+    expect(h.health.feishu?.detail).toContain(
+      'or a pairing code for it is still unused (it expires within an hour)',
+    )
     for (const entry of ['history', 'members', 'reads', 'others'])
       expect(h.health[entry]).toMatchObject({ state: 'paused', code: 'feishuWaiting' })
     // Retried with backoff, never stealing the instance: it is claimed once the owner frees it.
@@ -145,6 +149,8 @@ describe('a channel instance of its own', () => {
     const bare = open({ feishu: { claim: 'instance', instance: 'feishu' } })
     const ended = await started(bare)
     expect(bare.health.feishu).toMatchObject({ state: 'paused', code: 'feishuPluginUnset' })
+    // It names the form the instance picker writes.
+    expect(bare.health.feishu?.detail).toContain('as <channel row id>/<instance id>')
     expect(bare.fake.calls('claimInstance')).toEqual([])
     await ended()
   })
@@ -165,6 +171,35 @@ describe('a channel instance of its own', () => {
     // As before: a direct message does not reach a Source that claims only groups.
     expect(h.fake.emit(message('om_dm', { chat: 'oc_dm', direct: true }))).toBe(false)
     expect(h.health.others).toMatchObject({ state: 'ready', code: 'feishuDedicatedBot' })
+    await stop()
+  })
+})
+
+describe('the note on direct messages and other chats', () => {
+  it('follows the settings when direct messages or other chats are switched while the Source listens', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] })
+    const h = open({ feishu: { directMessages: false, otherChats: 'none' } })
+    const stop = await started(h)
+    expect(h.health.others).toMatchObject({ state: 'ready', detail: 'Only the listed chats are received' })
+    const toggle = (config: Record<string, unknown>) => {
+      const settings = h.store.settings()
+      const feishu = settings.sources.feishu!
+      h.store.saveSettings({
+        ...settings,
+        sources: { ...settings.sources, feishu: { ...feishu, config: { ...feishu.config, ...config } } },
+      })
+    }
+    toggle({ directMessages: true })
+    await vi.advanceTimersByTimeAsync(5_100)
+    expect(h.health.others).toMatchObject({ state: 'ready', code: 'feishuDedicatedBot' })
+    toggle({ directMessages: false, otherChats: 'mentions' })
+    await vi.advanceTimersByTimeAsync(5_100)
+    expect(h.health.others).toMatchObject({ state: 'ready', code: 'feishuDedicatedBot' })
+    toggle({ otherChats: 'none' })
+    await vi.advanceTimersByTimeAsync(5_100)
+    expect(h.health.others).toMatchObject({ state: 'ready', detail: 'Only the listed chats are received' })
+    // The subscription itself stayed: no setting of these two renews it.
+    expect(h.fake.calls('subscribe')).toHaveLength(1)
     await stop()
   })
 })
@@ -230,5 +265,25 @@ describe('choosing the instance', () => {
       type: 'text',
       choices: { unavailableWhen: { key: 'claim', value: 'instance' } },
     })
+  })
+
+  it('gives up a read of the instances that does not answer within 10 s, keeps the choices and reads the chats', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] })
+    const h = open()
+    h.link.instances = async () => listInstances(call())
+    await h.kind.refreshChoices!(h.host)
+    // A channel row that is starting holds the read.
+    h.link.instances = () => new Promise(() => {})
+    const refreshed = h.kind.refreshChoices!(h.host)
+    const failed = expect(refreshed).rejects.toThrow('The channel instances were not read within 10 s')
+    await vi.advanceTimersByTimeAsync(INSTANCES_TIMEOUT_MS)
+    await failed
+    const view = () =>
+      settingsView(h.store, h.sources, {}, {}, '/state').sources.find((source) => source.id === 'feishu')!
+    expect(view().choices.instance).toHaveLength(2)
+    // The minute's loop goes on to the chat names rather than waiting for the instances.
+    const stop = await started(h, INSTANCES_TIMEOUT_MS + 100)
+    expect(h.fake.calls('listChats').length).toBeGreaterThan(0)
+    await stop()
   })
 })

@@ -290,12 +290,18 @@ async function watch(ctx: SourceContext, link: FeishuLink, signal: AbortSignal, 
     })
     await reportFeatures(ctx, link).catch(() => {})
     reportOthers(ctx, link, config)
+    let others = othersOf(config)
     // A new subscription catches up on what the chats said meanwhile.
     wake.wake()
     while (!signal.aborted) {
       await pause(5000, signal)
       const now = enabled(ctx)
       if (!now || subscription(now) !== current) break
+      // Direct messages and other chats are switched without a new subscription; their note follows the settings.
+      if (othersOf(now) !== others) {
+        others = othersOf(now)
+        reportOthers(ctx, link, now)
+      }
     }
     link.listening = false
     unsubscribe()
@@ -312,6 +318,9 @@ function waiting(ctx: SourceContext, link: FeishuLink, why: Health): void {
   const pending = why.code === 'sourceOff' ? why : health('paused', 'feishuWaiting')
   for (const entry of ['history', 'members', 'reads', 'others']) report(ctx, link, entry, pending)
 }
+/** The settings the note on direct messages and other chats reads. */
+const othersOf = (config: FeishuConfig): string =>
+  JSON.stringify([config.claim, config.directMessages, config.otherChats])
 /**
  * Says how direct messages and other chats are received. On an instance of its own the Source receives them as its
  * settings say. Claiming only the listed groups, it notes, while either is on, that they need a Feishu bot instance of
@@ -367,15 +376,31 @@ export async function refreshChatNames(
   ctx.state.set(KV.sources.labels(SOURCE), names)
   return names
 }
-/** Rereads the channel instances the `instance` setting may name and stores them as its choices. */
+/** How long reading the channel instances may take; a channel row that is starting can hold the read. */
+export const INSTANCES_TIMEOUT_MS = 10_000
+/**
+ * Rereads the channel instances the `instance` setting may name and stores them as its choices. A read that fails or
+ * takes longer than `INSTANCES_TIMEOUT_MS` throws, and the choices stored before stay.
+ */
 export async function refreshInstances(
   ctx: SourceContext,
   link: FeishuLink,
 ): Promise<Record<string, Choice[]>> {
   if (!link.instances) return {}
-  const choices = { instance: await link.instances() }
-  ctx.state.set(KV.sources.choices(SOURCE), choices)
-  return choices
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`The channel instances were not read within ${INSTANCES_TIMEOUT_MS / 1000} s`)),
+      INSTANCES_TIMEOUT_MS,
+    )
+  })
+  try {
+    const choices = { instance: await Promise.race([link.instances(), late]) }
+    ctx.state.set(KV.sources.choices(SOURCE), choices)
+    return choices
+  } finally {
+    clearTimeout(timer)
+  }
 }
 /**
  * Rereads the channel instances, and the chat list, every minute independently of history recovery, so new instances
@@ -432,7 +457,6 @@ export async function recoverRound(
   signal: AbortSignal,
 ): Promise<void> {
   const errors: string[] = []
-  const gaps: string[] = []
   const behind: string[] = []
   const history = !link.missing.has('history')
   for (const { chatId } of config.chats) {
@@ -451,10 +475,6 @@ export async function recoverRound(
       )
       if (recovery.behind) behind.push(`${chatId}: recovered up to ${recovery.behind}`)
       else if (!signal.aborted) ctx.state.set(cursorKey, cursorAt(started))
-      for (const window of recovery.skipped)
-        gaps.push(
-          `${chatId}: skipped ${window.from} to ${window.to}, more messages than the channel reads at once`,
-        )
     } catch (error) {
       if (!signal.aborted) errors.push(`${chatId}: ${errorText(error)}`)
     }
@@ -462,26 +482,49 @@ export async function recoverRound(
   if (!link.missing.has('threads')) await pollThreads(ctx, link, signal)
   if (signal.aborted) return
   if (!history) report(ctx, link, 'history', health('paused', 'feishuNoHistory'))
-  else
-    report(
-      ctx,
-      link,
-      'history',
-      errors.length
-        ? { state: 'error', detail: errors.join('\n') }
-        : gaps.length
-          ? { state: 'error', detail: `Listed chats recovered with gaps:\n${gaps.join('\n')}` }
-          : behind.length
-            ? {
-                state: 'ready',
-                detail: `Catching up on chat history:\n${behind.join('\n')}`,
-                at: new Date().toISOString(),
-              }
-            : { state: 'ready', detail: 'Listed chats recovered', at: new Date().toISOString() },
-    )
+  else report(ctx, link, 'history', historyHealth(errors, shownGaps(ctx), behind))
+}
+/** How long a skipped history window stays on the history health after the recovery skipped it. */
+export const GAP_SHOWN_MS = 24 * 3600_000
+/** At most this many skipped windows are kept, the newest. */
+const GAPS_KEPT = 50
+/**
+ * Keeps a window the recovery skipped at the moment it skips it, so neither a later failure of the same recovery nor a
+ * later round's report loses it.
+ */
+function keepGap(ctx: SourceContext, chat: string, window: { from: string; to: string }): void {
+  const kept = ctx.state.get(KV.feishu.gaps) ?? []
+  ctx.state.set(
+    KV.feishu.gaps,
+    [...kept, { chat, ...window, at: new Date().toISOString() }].slice(-GAPS_KEPT),
+  )
+}
+/** The skipped windows still shown, as lines; older ones are dropped from the store. */
+function shownGaps(ctx: SourceContext): string[] {
+  const kept = ctx.state.get(KV.feishu.gaps) ?? []
+  const shown = kept.filter((gap) => Date.now() - Date.parse(gap.at) < GAP_SHOWN_MS)
+  if (shown.length !== kept.length) ctx.state.set(KV.feishu.gaps, shown)
+  return shown.map(
+    (gap) => `${gap.chat}: skipped ${gap.from} to ${gap.to}, more messages than the channel reads at once`,
+  )
+}
+function historyHealth(errors: string[], gaps: string[], behind: string[]): Health {
+  const at = new Date().toISOString()
+  const gapText = gaps.length ? [`Listed chats recovered with gaps:\n${gaps.join('\n')}`] : []
+  const behindText = behind.length ? [`Catching up on chat history:\n${behind.join('\n')}`] : []
+  if (errors.length) return { state: 'error', detail: [...errors, ...gapText].join('\n') }
+  if (gaps.length) return { state: 'error', detail: [...gapText, ...behindText].join('\n') }
+  if (behind.length) return { state: 'ready', detail: behindText.join('\n'), at }
+  return { state: 'ready', detail: 'Listed chats recovered', at }
 }
 /** The longest stretch of chat history one read covers, so the host's page bound holds in a busy chat. */
 export const HISTORY_SLICE_MS = 3_600_000
+/**
+ * How far a read reaches into the next slice. The channel contract does not say whether `start` and `end` are inclusive;
+ * Superagent reads them as inclusive at second granularity, and overlaps adjacent slices by a second so a message at a
+ * slice edge is read even by a channel that excludes both ends or truncates to seconds. Trigger ids drop the copy.
+ */
+export const HISTORY_OVERLAP_MS = 1000
 /** How many slices one round reads per chat, so a long outage is caught up over rounds rather than in one burst. */
 export const HISTORY_SLICES_PER_ROUND = 24
 /** What a recovery left out: windows the channel refused as too large, and where it stopped when the gap was longer. */
@@ -526,10 +569,12 @@ export async function backfillChat(
     const to = Math.min(from + HISTORY_SLICE_MS, end)
     let events: MessageEvent[] = []
     try {
-      events = await readHistory(io, chatId, from, to)
+      events = await readHistory(io, chatId, from, Math.min(to + HISTORY_OVERLAP_MS, end))
     } catch (error) {
       if (channelCode(error) !== 'CHANNEL_READ_TOO_LARGE') throw error
-      recovery.skipped.push({ from: iso(from), to: iso(to) })
+      const window = { from: iso(from), to: iso(to) }
+      recovery.skipped.push(window)
+      keepGap(ctx, chatId, window)
     }
     for (const event of events) {
       signal.throwIfAborted()

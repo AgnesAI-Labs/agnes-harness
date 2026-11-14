@@ -629,11 +629,11 @@ export const SETTINGS_TEXT = {
     HEALTH_TEXT.feishuChannelRefused,
   ],
   'healthCode.feishuPluginUnset': [
-    '需要设置：要整个认领实例，请连同渠道插件写成 <插件 id>/<实例 id>',
+    '需要设置：要整个认领实例，请连同渠道行写成 <渠道行 id>/<实例 id>',
     HEALTH_TEXT.feishuPluginUnset,
   ],
   'healthCode.feishuInstanceShared': [
-    '需要设置：渠道实例 {channel} 已在为主人或其他功能服务；请用专用的机器人实例',
+    '需要设置：渠道实例 {channel} 已在为主人或其他功能服务，或它有一个尚未使用的配对码（一小时内过期）；请用专用的机器人实例',
     HEALTH_TEXT.feishuInstanceShared,
   ],
   'healthCode.feishuInstanceReleasing': [

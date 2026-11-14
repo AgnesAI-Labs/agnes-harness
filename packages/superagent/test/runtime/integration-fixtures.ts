@@ -9,6 +9,7 @@ import { openStore } from '../../src/app/store.js'
 import { type Candidate, Engine, type Policy } from '../../src/core/index.js'
 import { SettingsSchema } from '../../src/policy.js'
 import { ticketExecution } from '../../src/runtime/assignment.js'
+import { SERVICE_ID } from '../../src/runtime/index.js'
 
 export const PROFILE = 'local-dev'
 export const PACKAGE = '@agnes/superagent'
@@ -16,6 +17,14 @@ export const ROW = 'ext:agnes.superagent/main'
 /** The id the Host gives the plugin row's services. */
 export const EXTENSION = `plugin/${createHash('sha256').update(ROW).digest('hex').slice(0, 16)}`
 export const STEP_MS = 120_000
+/** The state directory the platform gives the service by default (see the bundled-app grant). */
+export const defaultStateDir = (aghHome: string) =>
+  join(
+    aghHome,
+    'data',
+    'bundled-apps',
+    createHash('sha256').update(`${PROFILE}\0${PACKAGE}\0${SERVICE_ID}`).digest('hex').slice(0, 32),
+  )
 export const AGENT_LOGIN = 'agent-bot'
 const FAKE_GH = fileURLToPath(new URL('../fixtures/fake-gh.mjs', import.meta.url))
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`

@@ -86,6 +86,23 @@ describe('fake gh', () => {
       ['issue list', false],
     ])
   })
+
+  it('matches a rule by a pattern over the joined arguments, and holds an answer back for its delay', async () => {
+    const root = scratch()
+    const script = {
+      rules: [
+        { pattern: '^api repos/o/r/notifications\\?.*since=', stdout: '[]\n', delayMs: 300 },
+        { pattern: 'issues/\\d+$', stdout: '{}\n' },
+      ],
+    }
+    const started = Date.now()
+    expect(
+      await gh(root, script, 'api', 'repos/o/r/notifications?all=true&since=2026', '--include'),
+    ).toMatchObject({ code: 0, stdout: '[]\n' })
+    expect(Date.now() - started).toBeGreaterThanOrEqual(300)
+    expect(await gh(root, script, 'api', 'repos/o/r/issues/12')).toMatchObject({ code: 0, stdout: '{}\n' })
+    expect(await gh(root, script, 'api', 'repos/o/r/issues/12/comments')).toMatchObject({ code: 1 })
+  })
 })
 
 describe('homes', () => {
