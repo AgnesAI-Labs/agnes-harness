@@ -26,6 +26,10 @@ header.
 | `src/app/migrations/` | Schema version, the migration registry and one `v<N>.ts` per schema step. |
 | `src/app/store-retention.ts` | `archiveExpired`: moves conversations that ended more than 14 days ago into archive tables. |
 | `src/app/subprocess.ts` | `runCommand`: child processes without stdin or credential-shaped environment variables. |
+| `src/sources/` | The Source contract (`kind.ts`, `host.ts`, `registry.ts`), the GitHub Source and the Feishu Source. The Feishu files still call `lark-cli`. |
+| `src/infra/commands.ts`, `src/infra/health.ts` | `Commands` (the `gh`, `lark-cli` and `git` calls of the Sources, on `runCommand`) and the health board. |
+| `src/app/` (other files) | Effect queue, outbox, notices, passes, assessment, settings, prompts, links and the read models in `views/`. |
+| `src/app/skill-files.ts` | Loads the packaged `prompts/`, `skills/` and `locale/` folders. |
 
 ## Differences from the prototype
 
@@ -33,4 +37,9 @@ header.
   its session-controller types are replaced by local types.
 - Databases written by the prototype (schema 10) are not imported. A database starts empty at the current schema, and
   the oldest schema this build opens is that same schema; the version mechanism stays for later schema steps.
+- The prototype's session, executor, runtime, tool and HTTP files are not ported; the parts of them that the Sources and
+  the app glue need are small interfaces (`SessionNotices`, `SettingsSetup`, `ImageSink`) or new files (`messages.ts`,
+  `acknowledgement.ts`).
+- `prompts/`, `skills/` and `locale/` are the prototype's files (their text is read verbatim, so they carry no per-file
+  header); `locale/` words the plugin for the host in the prototype's two languages.
 - Imports use `.js` suffixes, the code is formatted by Biome, and it compiles with `exactOptionalPropertyTypes`.

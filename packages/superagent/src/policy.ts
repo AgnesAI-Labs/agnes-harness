@@ -57,9 +57,9 @@ export interface Assessment {
   title: string
   scope: string
   reason: string
-  intent_evidence?: string | null
-  acknowledgement?: string | null
-  worktree_name?: string
+  intent_evidence?: string | null | undefined
+  acknowledgement?: string | null | undefined
+  worktree_name?: string | undefined
 }
 /**
  * Validate an assessment against enabled rules and convert it into an engine `AssessmentOutcome`.

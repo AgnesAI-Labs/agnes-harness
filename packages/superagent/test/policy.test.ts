@@ -11,7 +11,9 @@ import {
   SettingsSchema,
   settingsPolicy,
 } from '../src/policy.js'
-import { sourceScope } from './fixtures/source-scope.js'
+import { feishuKind } from '../src/sources/feishu.js'
+import { githubKind } from '../src/sources/github.js'
+import { SourceRegistry } from '../src/sources/registry.js'
 
 const MEMBER = 'ou_alice'
 const CHAT = 'oc_team'
@@ -39,7 +41,9 @@ const base = SettingsSchema.parse({
   },
 })
 function setup(settings: Settings = base) {
-  const sources = sourceScope(settings)
+  const sources = new SourceRegistry(() => settings)
+  sources.register(feishuKind)
+  sources.register(githubKind)
   return { sources, policy: settingsPolicy(settings, sources), version: policyVersion(settings) }
 }
 const { sources, policy } = setup()
@@ -84,6 +88,50 @@ const ticket = {
   ended: { at: '', by: 'executor', reason: 'closed', outcome: 'closed' },
 } as Ticket
 
+describe('source scope', () => {
+  it('listens to configured chats, reads every message only where configured, and follows the direct-message switch', () => {
+    expect(sources.scope(feishu())).toEqual({ listened: true, observed: false, row: CHAT })
+    expect(sources.scope(feishu({ meta: { chatId: OBSERVED, direct: false, mentioned: false } }))).toEqual({
+      listened: true,
+      observed: true,
+      row: OBSERVED,
+    })
+    expect(sources.scope(feishu({ meta: { chatId: 'oc_other', direct: false, mentioned: true } }))).toEqual({
+      listened: false,
+      reason: 'chat_not_allowed',
+    })
+    expect(sources.scope(feishu({ meta: { chatId: 'p2p', direct: true, mentioned: false } }))).toEqual({
+      listened: true,
+      observed: false,
+      row: 'direct',
+    })
+    expect(
+      setup({
+        ...base,
+        sources: { feishu: feishuSource({ chats: [], directMessages: false }) },
+      }).sources.scope(feishu({ meta: { chatId: 'p2p', direct: true, mentioned: false } })),
+    ).toEqual({ listened: false, reason: 'direct_messages_not_allowed' })
+    expect(sources.scope(github('anyone'))).toEqual({ listened: true, observed: false })
+  })
+  it('listens to nothing from a configured Source whose plugin is not loaded, and keeps an invalid stored configuration disabled', () => {
+    const bare = new SourceRegistry(() => base)
+    expect(bare.scope(feishu())).toEqual({ listened: false, reason: 'source_not_installed' })
+    expect(bare.scope(github('anyone'))).toEqual({ listened: true, observed: false })
+    const broken = new SourceRegistry(() =>
+      SettingsSchema.parse({ sources: { feishu: { enabled: true, config: { chats: 'oops' } } } }),
+    )
+    broken.register(feishuKind)
+    expect(broken.instance('feishu')).toMatchObject({ enabled: false })
+    expect(broken.scope(feishu())).toEqual({ listened: false, reason: 'source_disabled' })
+  })
+  it('filters everything from a disabled Source', () => {
+    expect(
+      setup({ ...base, sources: { ...base.sources, github: { enabled: false, config: {} } } }).sources.scope(
+        github('anyone'),
+      ),
+    ).toEqual({ listened: false, reason: 'source_disabled' })
+  })
+})
 describe('gate', () => {
   it("grants explicit strength when the sender is allowed in its Source's part and the Source marked the Trigger addressed", () => {
     expect(policy.gate(feishu(), thread(), [])).toMatchObject({
@@ -613,7 +661,13 @@ describe('admission table settings', () => {
     for (const cell of ['listedUnaddressed', 'unlistedUnaddressed']) {
       const part = { allowed: [], admission: { [CHAT]: { [cell]: 'explicit' } } }
       expect(() => SettingsSchema.parse({ policy: { sources: { feishu: part } } })).toThrow()
+      expect(() => sources.validatePolicy({ feishu: part })).toThrow()
     }
+    expect(
+      sources.validatePolicy({
+        feishu: { allowed: [], admission: { [CHAT]: { unlistedAddressed: 'explicit' } } },
+      }).feishu,
+    ).toMatchObject({ admission: { [CHAT]: { unlistedAddressed: 'explicit' } } })
   })
   it('accepts an explicit candidate whatever the accept mode, which bears only on inferred ones', () => {
     const rules = SettingsSchema.parse({}).policy.rules.filter((rule) => rule.enabled)
@@ -1043,5 +1097,19 @@ describe('bots and events without a sender', () => {
       row: 'ci',
     })
     expect(sources.scope(github({ ci: true, number: 4 }))).toEqual({ listened: true, observed: false })
+    const rows = githubKind.policy?.rows?.({ observeIssues: true }) ?? []
+    expect(rows.map((row) => [row.id, row.cells])).toEqual([
+      ['issues', { listedUnaddressed: true, unlistedAddressed: true, unlistedUnaddressed: true }],
+      ['pulls', { listedUnaddressed: false, unlistedAddressed: true, unlistedUnaddressed: false }],
+      ['comments', { listedUnaddressed: false, unlistedAddressed: true, unlistedUnaddressed: false }],
+      ['ci', { listedUnaddressed: false, unlistedAddressed: false, unlistedUnaddressed: false }],
+    ])
+  })
+  it("says on the GitHub bot list when a listed bot's comment is received: when it mentions the agent, or comments are observed", () => {
+    const field = githubKind.policy?.fields.find((item) => item.key === 'bots')
+    const comments = githubKind.fields.find((item) => item.key === 'observeComments')?.label
+    expect(field?.hint?.en).toContain('mentions the agent')
+    expect(field?.hint?.en).toContain(comments?.en)
+    expect(field?.hint?.zh).toContain(comments?.zh)
   })
 })
