@@ -231,10 +231,13 @@ it.skipIf(process.platform === 'win32')(
       const state = await sessions.state(orchestrator.id)
       return !state.running && state.pending.length === 0
     })
+    // Turns only: the daemon's side requests without tools quote the conversation, so one may carry the same marker.
     expect(
       daemon
         .modelRequests()
-        .filter((request) => request.marker.startsWith('RESUMED') && request.lastRole === 'user'),
+        .filter(
+          (request) => request.main && request.marker.startsWith('RESUMED') && request.lastRole === 'user',
+        ),
     ).toHaveLength(1)
     expect(store.get(KV.runtime.paused), 'the reconcile ends the pause').toBeUndefined()
 
