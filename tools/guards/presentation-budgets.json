@@ -26,5 +26,9 @@
   "judgment": {
     "bytes": 8192,
     "inputs": 4
+  },
+  "superagent": {
+    "bytes": 262144,
+    "inputs": 28
   }
 }

@@ -36,6 +36,7 @@ const LICENSE_EXCEPTIONS: Readonly<Record<string, string>> = Object.freeze({
   '@agnes/host-common': 'Apache-2.0 AND MIT',
   '@agnes/package-manager': 'Apache-2.0 AND MIT',
   '@agnes/superagent': 'Apache-2.0 AND MIT',
+  '@agnes/superagent-ui': 'Apache-2.0 AND MIT',
 })
 
 function sorted(values: string[]): string[] {

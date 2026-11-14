@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // Bundle packages/superagent into the optional Superagent payload.
 // packages/superagent stays the only source; the payload index.mjs and its prompts/, skills/ and locale/ copies are
-// generated and not committed.
-import { cpSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+// generated and not committed; so are the panel's src/client.js and client-build.json (NOTICE is generated and committed).
+import { copyFileSync, cpSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
+import { buildPresentations } from '../../../tools/presentation-build.mjs'
 
 const packageManagerRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 export const superagentPayloadDirectory = join(packageManagerRoot, 'bundled-plugins', 'superagent')
@@ -27,12 +28,15 @@ function copyResource(name, directory) {
 }
 
 /**
- * The browser panel. Its source package does not exist yet; once it does, its build output is written here into
- * `src/` together with the client descriptor, as the judgment payload does.
+ * The browser panel: `src/client.js`, `NOTICE` and `client-build.json` from packages/superagent-ui, next to the committed
+ * client descriptor, as the judgment payload does. A directory other than the payload gets a copy of the descriptor.
  */
-export async function buildSuperagentPresentation(_directory = superagentPayloadDirectory) {
-  if (!existsSync(join(packageManagerRoot, '..', 'superagent-ui'))) return
-  throw new Error('packages/superagent-ui exists: add its presentation build to build-superagent-payload.mjs')
+export async function buildSuperagentPresentation(directory = superagentPayloadDirectory) {
+  await buildPresentations({ outputDirectories: { superagent: directory }, names: ['superagent'] })
+  mkdirSync(join(directory, 'src'), { recursive: true })
+  const descriptor = join(superagentPayloadDirectory, 'src', 'agnes.client.json')
+  if (directory !== superagentPayloadDirectory)
+    copyFileSync(descriptor, join(directory, 'src', 'agnes.client.json'))
 }
 
 /**

@@ -125,6 +125,7 @@ const LAYER: Record<string, number> = {
   '@agnes/judgment': 2,
   '@agnes/judgment-ui': 5,
   '@agnes/superagent': 4, // Bundled app plugin: consumes the public author contracts and the SDK client.
+  '@agnes/superagent-ui': 5, // Browser panel of the plugin: types of the plugin and the web client.
   '@agnes/loop-jev': 2, // First-party Jev loop plugin consumes the author API.
 
   '@agnes/ai': 3,
@@ -362,6 +363,7 @@ it('keeps every command module outside core and extension-api', () => {
 describe('browser packages do not depend on backend capability packages', () => {
   const BROWSER_PACKAGES = new Set([
     '@agnes/judgment-ui',
+    '@agnes/superagent-ui',
     '@agnes/web-client',
     '@agnes/web-ui',
     '@agnes/web-units',

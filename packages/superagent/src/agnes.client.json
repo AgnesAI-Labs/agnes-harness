@@ -1,0 +1,51 @@
+{
+  "client": {
+    "id": "superagent",
+    "entry": "./client.js",
+    "lifetime": "profile",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": [],
+    "services": [
+      "superagent.state",
+      "superagent.overview",
+      "superagent.search",
+      "superagent.sources.list",
+      "superagent.sources.refreshlabels",
+      "superagent.settings.get",
+      "superagent.settings.save",
+      "superagent.threads.list",
+      "superagent.threads.get",
+      "superagent.threads.unsubscribe",
+      "superagent.triggers.requeue",
+      "superagent.decisions.list",
+      "superagent.decisions.dismiss",
+      "superagent.tickets.list",
+      "superagent.tickets.get",
+      "superagent.tickets.retry",
+      "superagent.tickets.stop",
+      "superagent.executor.pause",
+      "superagent.policy.history",
+      "superagent.policy.sync",
+      "superagent.setup.check",
+      "superagent.models.list",
+      "superagent.prompts.get",
+      "superagent.prompts.save",
+      "superagent.prompts.preview"
+    ],
+    "homeEntries": [
+      {
+        "id": "superagent",
+        "placement": "primary",
+        "navigation": {
+          "title": "Superagent",
+          "titles": {
+            "zh-CN": "Superagent"
+          },
+          "icon": "list",
+          "order": 20
+        }
+      }
+    ],
+    "requiresBackendRows": ["ext:agnes.superagent/main"]
+  }
+}

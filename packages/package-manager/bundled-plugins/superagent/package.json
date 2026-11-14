@@ -12,7 +12,9 @@
     "NOTICE",
     "prompts",
     "skills",
-    "locale"
+    "locale",
+    "src",
+    "client-build.json"
   ],
   "engines": {
     "node": ">=24.10"
@@ -947,6 +949,12 @@
           }
         }
       }
-    }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes.superagent/main",
+        "path": "./src/agnes.client.json"
+      }
+    ]
   }
 }

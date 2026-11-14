@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./panel-api": "./src/runtime/panel-api.ts"
   },
   "dependencies": {
     "@agnes/extension-api": "workspace:*",
@@ -940,7 +941,13 @@
           }
         }
       }
-    }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes.superagent/main",
+        "path": "./src/agnes.client.json"
+      }
+    ]
   },
   "devDependencies": {
     "@agnes/host": "workspace:*"

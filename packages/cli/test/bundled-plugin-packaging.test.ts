@@ -13,6 +13,7 @@ import {
 } from '@agnes/package-manager'
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
+import { verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { copyBundledExamples, copyBundledPlugins } from '../tools/build-local.js'
 import { copyExamplePayload } from '../tools/example-payload.js'
 
@@ -186,12 +187,17 @@ it('ships the optional judgment and Superagent payloads with their callable plug
     'LICENSE',
     'NOTICE',
     'README.md',
+    'client-build.json',
     'index.mjs',
     'locale',
     'package.json',
     'prompts',
     'skills',
+    'src',
   ])
+  // The panel ships as built bytes with its descriptor, and the build record matches them.
+  expect((await readdir(join(superagent, 'src'))).sort()).toEqual(['agnes.client.json', 'client.js'])
+  await verifyPresentation(superagent)
   expect(JSON.parse(await readFile(join(superagent, 'package.json'), 'utf8')).agnes.plugins[0]).toMatchObject(
     {
       export: 'superagentPlugin',
