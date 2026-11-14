@@ -304,7 +304,9 @@ const RULES: [rule: string, file: string, says: string[], gone?: string[]][] = [
   [
     'Feishu is read as the bot, never as a person',
     'cli',
-    ["Feishu uses --as bot; unavailable content does not authorize switching to the user's identity."],
+    [
+      'Feishu is read only through orchestrator_feishu_read, as the bot; unavailable content does not authorize another identity.',
+    ],
   ],
   [
     'Every GitHub message says an automated agent wrote it',

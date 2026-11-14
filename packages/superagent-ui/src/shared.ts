@@ -24,8 +24,19 @@ export const LIMITS = {
 export const HEALTH_TEXT = {
   setupPending: 'Waiting for the deployment check',
   sourceOff: 'Off',
-  feishuCliUnset: 'The Source is on, and its bot lark-cli is not set',
-  feishuBotMissing: 'Waiting for the Feishu bot',
+  feishuDedicatedBot:
+    "Direct messages and other chats need a Feishu bot instance of Superagent's own; only the listed chats are received",
+  feishuWaiting: 'Waiting for the channel subscription',
+  feishuChannelUnset: 'Setup required: the Source is on, and its channel instance is not set',
+  feishuChatsUnset: 'Setup required: no chat is listed to receive',
+  feishuChannelRefused:
+    'Setup required: the channel instance {channel} refused the chats ({reason}); retrying',
+  feishuNoHistory:
+    'The channel cannot read chat history, so nothing is recovered after a restart or disconnect',
+  feishuNoMembers:
+    'The channel cannot list chat members, so the allowlist is not synced and the allowlist in the settings applies',
+  feishuNoReads:
+    'The channel cannot read messages or threads, so orchestrator_feishu_read and context reads are unavailable',
   pollFailures: '{count} consecutive failed polls; last: {error}',
 } as const
 export type HealthCode = keyof typeof HEALTH_TEXT
@@ -188,6 +199,23 @@ export const SETUP_PROBLEMS = {
     'git does not read the github.com credential configuration Superagent writes; Superagent needs git 2.32 or later.',
   ],
   environmentFailed: ['deployment', 'Preparing the agent environment failed.'],
+  sessionTaken: [
+    'deployment',
+    'A session {session} exists that Superagent did not open; archive or remove it, then check the setup again.',
+  ],
+  agentHomeMismatch: [
+    'deployment',
+    'The daemon runs with HOME {actual}, not the agent home {home}; start this AGH with HOME set to the agent home.',
+  ],
+  agentGhNotShim: [
+    'deployment',
+    'Sessions run gh from {actual}, not the shim in {shims}; put {shims} first on the PATH this AGH starts with.',
+  ],
+  agentCredentialMixed: [
+    'deployment',
+    "git would ask other credential helpers than the agent's for github.com: {helpers}.",
+  ],
+  agentLoginMismatch: ['github', 'gh acts as @{account}, not the agent account @{login}.'],
   repositoryUnset: ['github', 'The GitHub Source names no repository.'],
   agentCliUnset: ['github', 'The agent GitHub CLI is not set.'],
   agentCliMissing: ['github', 'The agent GitHub CLI was not found.'],
@@ -196,17 +224,6 @@ export const SETUP_PROBLEMS = {
   repositoryUnreadable: ['github', '@{account} cannot read {repository}.'],
   repositoryUnreported: ['github', 'The agent GitHub CLI did not return {repository}.'],
   repositoryReadOnly: ['github', '@{account} cannot push to {repository}.'],
-  feishuCliFailed: ['feishu', 'The bot lark-cli does not work.'],
-  feishuNoApp: ['feishu', 'auth status of the bot lark-cli did not report the app.'],
-  feishuBotNotReady: [
-    'feishu',
-    'The bot identity of app {app} is {status}; configure the app secret with lark-cli.',
-  ],
-  feishuUserIdentity: [
-    'feishu',
-    'The bot lark-cli allows user identities (strict mode {mode}); give the bot its own lark-cli configuration in strict mode bot.',
-  ],
-  feishuNoBot: ['feishu', "The Feishu bot API did not return the bot's open_id."],
 } as const satisfies Record<string, readonly [SetupPlace, string]>
 export type SetupCode = keyof typeof SETUP_PROBLEMS
 export interface SetupProblem {

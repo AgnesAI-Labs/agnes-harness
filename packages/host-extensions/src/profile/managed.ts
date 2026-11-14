@@ -13,6 +13,7 @@ import { grantKey } from '@agnes/plugin-runtime/host'
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
+import { pluginRowSource } from '../ext-host/row-extension-host.js'
 import { type BundledAppProvision, openBundledApp } from './bundled-app.js'
 import { type ChannelTargets, deniedChannelTargets } from './channel-targets.js'
 import {
@@ -47,6 +48,8 @@ type Resource = ManagedPredecessor & {
     code?: string
     endpoints?: Record<string, { host: '127.0.0.1'; port: number }>
   }
+  /** Holds a release bundled-app grant: it is stopped as soon as its row is dropped (see `retireAbsent`). */
+  bundledApp?: true
 }
 const profiles = new Map<
   string,
@@ -243,12 +246,21 @@ export class ProfileManagedResources {
     let ended = false
     let stopping: Promise<void> | undefined
     let app: ReturnType<typeof openBundledApp> | undefined
+    const appFence = bundledAppFence(lifetime.signal, () => {
+      input.assert()
+      if (this.current && !this.current(input.owner, input.integrity, input.revision))
+        throw rpcError('CAPABILITY_DENIED')
+    })
+    const closeApp = async () => {
+      appFence.close()
+      await app?.close()
+    }
     let shutdownResult: Promise<{ state: 'settled' | 'unknown' } | undefined> | undefined
     const shut = (reason: Reason) => {
       if (!shutdownResult) {
         const ownConfirmation = startupComplete ? r.shutdownConfirmation : undefined
         const work = Promise.resolve()
-          .then(() => shutdown?.(reason))
+          .then(() => appFence.shutdown(() => shutdown?.(reason)))
           .then((result) => {
             if (result?.state === 'settled' && ownConfirmation) confirmManagedShutdown(ownConfirmation)
             return result
@@ -279,7 +291,7 @@ export class ProfileManagedResources {
           // A blocked definition never acquired a live instance. Retiring its registration must
           // not poison the next publication: leave the durable unknown marker for native recovery.
           if (!started) {
-            await app?.close()
+            await closeApp()
             r.status =
               input.store.get(`managed-shutdown:${r.id}`) === true
                 ? { state: 'failed', code: 'shutdown-unconfirmed' }
@@ -288,7 +300,7 @@ export class ProfileManagedResources {
             return
           }
           const result = await shut(reason)
-          await app?.close()
+          await closeApp()
           const settled =
             result?.state === 'settled' || hasManagedShutdownConfirmation(r.shutdownConfirmation, input.store)
           r.status = settled ? { state: 'stopped' } : { state: 'failed', code: 'shutdown-unconfirmed' }
@@ -331,15 +343,7 @@ export class ProfileManagedResources {
         listeners[listener.name] = { host: listener.host, port: port === 'auto' ? await freePort() : port }
       }
       lifetime.signal.throwIfAborted()
-      if (input.bundledApp)
-        app = openBundledApp(input.bundledApp, {
-          signal: lifetime.signal,
-          assertCurrent: () => {
-            input.assert()
-            if (this.current && !this.current(input.owner, input.integrity, input.revision))
-              throw rpcError('CAPABILITY_DENIED')
-          },
-        })
+      if (input.bundledApp) app = openBundledApp(input.bundledApp, appFence)
       const owner = await managedProcessOwner(process.pid, this.processIdentity)
       lifetime.signal.throwIfAborted()
       input.store.transaction(() => {
@@ -356,6 +360,7 @@ export class ProfileManagedResources {
         current: input.store,
       }
       started = true
+      if (input.bundledApp) r.bundledApp = true
       const value = await input.definition.start({
         signal: lifetime.signal,
         listeners,
@@ -450,7 +455,7 @@ export class ProfileManagedResources {
         markShutdown(input.store, r.id, result?.state !== 'settled')
         if (result?.state !== 'settled') code = 'shutdown-unconfirmed'
       }
-      await app?.close()
+      await closeApp()
       ended = true
       r.status = { state: 'failed', code }
       throw rpcError('CAPABILITY_DENIED')
@@ -468,17 +473,23 @@ export class ProfileManagedResources {
       .map((d) => `${d.owner}/${d.revision}/${d.integrity}/${d.definition.id}`)
       .sort()
       .join('\0')
-    if (previous?.manager === this && previous.stamp === stamp && !force) return previous.draining
+    // A resource whose lifetime ended (it failed, or a publication or a dropped row retired it) is
+    // never retained: the next publication starts its definition again.
+    const live = (r: Resource) => !r.lifetime.signal.aborted
+    if (previous?.manager === this && previous.stamp === stamp && !force && previous.resources.every(live))
+      return previous.draining
     const retained =
       previous?.manager === this && !force
-        ? previous.resources.filter((r) =>
-            definitions.some(
-              (d) =>
-                d.owner === r.owner &&
-                d.revision === r.revision &&
-                d.integrity === r.integrity &&
-                d.definition.id === r.id,
-            ),
+        ? previous.resources.filter(
+            (r) =>
+              live(r) &&
+              definitions.some(
+                (d) =>
+                  d.owner === r.owner &&
+                  d.revision === r.revision &&
+                  d.integrity === r.integrity &&
+                  d.definition.id === r.id,
+              ),
           )
         : []
     let retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
@@ -527,6 +538,28 @@ export class ProfileManagedResources {
     })()
     void next.draining.catch(() => undefined)
     return next.draining
+  }
+  /**
+   * Stops the bundled-app resources whose plugin row is not among `owners`, the rows of a runtime target
+   * about to be applied, without waiting for that target's generation to be built: a disabled, removed or
+   * untrusted bundled app stops its sessions as soon as the change reaches this process. A stopped
+   * resource leaves the publication, so a later publication that still defines it starts it again.
+   */
+  async retireAbsent(owners: ReadonlySet<string>): Promise<void> {
+    const profile = profiles.get(this.key)
+    if (!profile || profile.manager !== this || this.closed) return
+    const retiring = profile.resources.filter((r) => r.bundledApp && !owners.has(r.owner))
+    if (!retiring.length) return
+    profile.resources = profile.resources.filter((r) => !retiring.includes(r))
+    profile.stamp = ''
+    for (const r of retiring) r.lifetime.abort('disable')
+    await Promise.allSettled(retiring.map((r) => r.stop('disable')))
+  }
+  /** `retireAbsent` for the enabled rows of a runtime target about to be applied. */
+  retireDropped(rows: readonly Readonly<{ id: string; disabled?: boolean }>[]): Promise<void> {
+    return this.retireAbsent(
+      new Set(rows.filter((row) => !row.disabled).map((row) => pluginRowSource(row.id))),
+    )
   }
   /** Host-owned preparation; plugin presentation can never waive native admission. */
   reconciliation(owner: string, service: string) {
@@ -677,4 +710,34 @@ function managedRevision(
     instance: store.get(`managed-incarnation:${resource.id}`) ?? null,
     ...managedMarkerBinding(store, resource.id),
   })
+}
+
+/**
+ * A bundled app's grant has its own fence. The resource's lifetime aborts before `onShutdown` runs, and
+ * the shutdown needs the grant's client to stop what the app started: only while the shutdown handler
+ * runs does the grant pass without being current. `close` ends the grant for good, once the shutdown
+ * returned or its deadline passed.
+ */
+function bundledAppFence(lifetime: AbortSignal, assertCurrent: () => void) {
+  const fence = new AbortController()
+  let shuttingDown = false
+  return {
+    signal: fence.signal,
+    assertCurrent() {
+      if (shuttingDown && !fence.signal.aborted) return
+      lifetime.throwIfAborted()
+      assertCurrent()
+    },
+    async shutdown<T>(handler: () => T | Promise<T>): Promise<T> {
+      shuttingDown = true
+      try {
+        return await handler()
+      } finally {
+        shuttingDown = false
+      }
+    },
+    close() {
+      fence.abort()
+    },
+  }
 }

@@ -152,7 +152,11 @@ export function initial(): PanelServer {
     sources: {
       feishu: {
         enabled: true,
-        config: { cli: 'lark-bot', chats: [{ chatId: 'oc_team', listen: 'mentions' }], directMessages: true },
+        config: {
+          channel: 'feishu-bot',
+          chats: [{ chatId: 'oc_team', listen: 'mentions' }],
+          directMessages: true,
+        },
       },
       github: { enabled: true, config: { repository: 'acme/widgets', cli: 'gh-agent' } },
     },

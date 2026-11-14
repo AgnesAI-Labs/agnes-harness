@@ -2,8 +2,7 @@
 /** Source message link resolution and candidate card assembly for the main Session. */
 import type { Candidate, Ticket, Trigger } from '../core/index.js'
 import type { Commands } from '../infra/commands.js'
-import { feishuRef, feishuSettings } from '../sources/feishu.js'
-import { readFeishuLink } from '../sources/feishu-read.js'
+import { feishuRef } from '../sources/feishu.js'
 import type { SourceRegistry } from '../sources/registry.js'
 import type { TextCache } from './cache.js'
 import { relatedTickets, ticketCard, triggerCard } from './cards.js'
@@ -18,33 +17,17 @@ export interface LinkHost {
   readonly lifetime: AbortSignal
 }
 
-/** Resolves and caches a trigger's external message URL, falling back to a readable resource path when lookup fails. */
+/**
+ * A trigger's external message URL, or the resource that reads its message: the Feishu channel delivers no message
+ * links, so a Feishu message is referred to by that resource.
+ */
 export async function sourceLink(
-  host: LinkHost,
+  _host: LinkHost,
   trigger: Trigger,
-  signal?: AbortSignal,
+  _signal?: AbortSignal,
 ): Promise<{ source_url?: string; source_url_read?: string }> {
   if (trigger.url) return { source_url: trigger.url }
-  const ref = feishuRef(trigger)
-  if (!ref) return {}
-  const cacheKey = `${ref.chatId}:${ref.messageId}`
-  const cached = host.links.get(cacheKey)
-  if (cached) return { source_url: cached }
-  let url: string
-  try {
-    const timeout = AbortSignal.timeout(feishuSettings(host.sources).linkTimeoutMs)
-    url = await readFeishuLink(
-      host.commands.withSignal(AbortSignal.any([signal ?? host.lifetime, timeout])),
-      ref,
-    )
-  } catch {
-    host.lifetime.throwIfAborted()
-    signal?.throwIfAborted()
-    // Optional link enrichment may fail independently of the retained source message.
-    return { source_url_read: `feishu/${trigger.id}/message` }
-  }
-  host.links.set(cacheKey, url)
-  return { source_url: url }
+  return feishuRef(trigger) ? { source_url_read: `feishu/${trigger.id}/message` } : {}
 }
 
 export function repliedTo(

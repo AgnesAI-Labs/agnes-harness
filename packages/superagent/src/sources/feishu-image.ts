@@ -1,15 +1,16 @@
 // Adapted from dsh-superagent (MIT)
-/** Downloads Feishu message images and commits them as model-visible attachments during assessment. */
-import { mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises'
-import { dirname, extname, join } from 'node:path'
-import { z } from 'zod'
-import type { Commands } from '../infra/commands.js'
+/** Reads the image attachments of Feishu messages through the channel and commits them as model-visible attachments. */
+import { channelRead, type FeishuIo } from './feishu-io.js'
 import type { FeishuRef } from './feishu-read.js'
+import { IMAGE_KEY } from './feishu-trigger.js'
 import type { ImageMediaType, ImageSink } from './kind.js'
 
-/** Extracts Feishu image keys from message text so keys remain paired with the originating message; arbitrary remote IDs are not accepted. */
+/**
+ * Extracts the image keys a message's text names (`[image img_att_<n>]`, one per image attachment), so a key stays
+ * paired with the message it came with; no other id is accepted.
+ */
 export function admissionImageKeys(text: string): string[] {
-  return [...new Set(text.match(/\bimg_[a-zA-Z0-9_-]+\b/g) ?? [])]
+  return [...new Set(text.match(/\bimg_att_[1-9][0-9]*\b/g) ?? [])]
 }
 
 export interface AdmissionImage {
@@ -19,67 +20,47 @@ export interface AdmissionImage {
   image: unknown
 }
 
+const MEDIA_TYPES: Record<string, { type: ImageMediaType; extension: string }> = {
+  'image/png': { type: 'image/png', extension: '.png' },
+  'image/jpeg': { type: 'image/jpeg', extension: '.jpg' },
+  'image/jpg': { type: 'image/jpeg', extension: '.jpg' },
+  'image/webp': { type: 'image/webp', extension: '.webp' },
+  'image/gif': { type: 'image/gif', extension: '.gif' },
+}
+
+/**
+ * Reads one image of the message `ref` names: the key must be one its text names, the session's model must take images,
+ * and the channel must give the attachment's bytes, of a supported type and within the size the sink takes.
+ */
 export async function readAdmissionImage(
   sink: ImageSink,
-  commands: Commands,
+  io: FeishuIo,
   ref: FeishuRef,
   text: string,
   imageKey: string,
-  stateDir: string,
-  signal: AbortSignal,
 ): Promise<AdmissionImage> {
-  if (!admissionImageKeys(text).includes(imageKey))
+  const signal = io.signal ?? new AbortController().signal
+  const position = IMAGE_KEY.exec(imageKey)
+  if (!position || !admissionImageKeys(text).includes(imageKey))
     throw new Error('Choose an image key from this source message')
-  const messageId = z
-    .string()
-    .regex(/^om_[a-zA-Z0-9_-]+$/)
-    .parse(ref.messageId)
   const { maxBytes } = await sink.check(signal)
   signal.throwIfAborted()
-  const directory = await mkdtemp(join(stateDir, 'admission-image-'))
-  try {
-    const result = z
-      .object({ saved_path: z.string() })
-      .parse(
-        await commands
-          .withSignal(signal)
-          .lark(
-            [
-              'im',
-              '+messages-resources-download',
-              '--message-id',
-              messageId,
-              '--file-key',
-              imageKey,
-              '--type',
-              'image',
-              '--output',
-              './image',
-            ],
-            directory,
-          ),
-      )
-    const path = await realpath(result.saved_path)
-    if (dirname(path) !== (await realpath(directory)))
-      throw new Error('Image download returned a path outside its temporary directory')
-    const mediaTypes: Record<string, ImageMediaType> = {
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.webp': 'image/webp',
-      '.gif': 'image/gif',
-    }
-    const mediaType = mediaTypes[extname(path).toLowerCase()]
-    if (!mediaType) throw new Error('The downloaded resource is not a supported PNG/JPEG/WebP/GIF image')
-    const file = await stat(path)
-    if (!file.isFile() || file.size > maxBytes)
-      throw new Error('The image exceeds the deployment byte limit or is not a regular file')
-    const data = await readFile(path, { signal })
-    signal.throwIfAborted()
-    const image = await sink.save({ data, mediaType, name: `${imageKey}${extname(path)}` })
-    signal.throwIfAborted()
-    return { source_message_id: messageId, image_key: imageKey, image }
-  } finally {
-    await rm(directory, { recursive: true, force: true })
-  }
+  const [event] = await channelRead(io, 'messages', (channels, channel) =>
+    channels.fetchMessages(channel, ref.chatId, [ref.messageId]),
+  )
+  if (!event || event.messageId !== ref.messageId || event.chat.id !== ref.chatId)
+    throw new Error('The source Feishu message is unavailable')
+  const attachment = event.attachments[Number(position[1]) - 1]
+  const media = attachment ? MEDIA_TYPES[attachment.mime.toLowerCase()] : undefined
+  if (!attachment || !media) throw new Error('The attachment is not a supported PNG/JPEG/WebP/GIF image')
+  if (!attachment.bytes) throw new Error('The Feishu channel gave the image without its bytes')
+  if (attachment.bytes.byteLength > maxBytes)
+    throw new Error('The image exceeds the byte limit of the session model')
+  const image = await sink.save({
+    data: attachment.bytes,
+    mediaType: media.type,
+    name: `${imageKey}${media.extension}`,
+  })
+  signal.throwIfAborted()
+  return { source_message_id: ref.messageId, image_key: imageKey, image }
 }

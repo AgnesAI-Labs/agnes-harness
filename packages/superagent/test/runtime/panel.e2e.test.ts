@@ -341,8 +341,9 @@ it.skipIf(process.platform === 'win32')(
       expect(missing).toEqual({ failure: { status: 404, error: 'Ticket not found' } })
       await expect(query('superagent.tickets.get', { id: TICKET, extra: true })).rejects.toThrow()
 
-      // An effect needs no approval from the owner acting in their own panel; the Engine is not running in this
-      // build, so the services that act on it answer that Superagent is not ready, as a completed effect.
+      // An effect needs no approval from the owner acting in their own panel. The panel is wired with the engine from
+      // the start, so a retry of a ticket whose assignment still runs is refused by the engine (400), as a completed
+      // effect rather than an unknown outcome.
       const receipt = await client.extensions.callScoped({
         extension: EXTENSION,
         service: 'superagent.tickets.retry',
@@ -352,7 +353,7 @@ it.skipIf(process.platform === 'win32')(
       expect(receipt).toMatchObject({
         state: 'completed',
         operationId: 'panel-e2e-retry',
-        output: { failure: { status: 503 } },
+        output: { failure: { status: 400 } },
       })
       const replay = await client.extensions.readOperation({
         extension: EXTENSION,

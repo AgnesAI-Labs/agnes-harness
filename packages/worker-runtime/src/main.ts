@@ -27,7 +27,6 @@ export { decodeArtifactMediaResponse } from './artifact-media-response.js'
 
 import {
   agnesHome,
-  assertHostPublication,
   composeProductionRequestMedia,
   composeSecrets,
   createExtensionActivationBarrier,
@@ -51,7 +50,7 @@ import {
   resolveFileSecretsDirectory,
 } from '@agnes/host'
 import { createPackageManager } from '@agnes/package-manager'
-import { LocalGate, type RuntimeConvergenceReport } from '@agnes/plugin-runtime/host'
+import { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   workerGeneration as parseWorkerGeneration,
   type RpcError,
@@ -94,7 +93,7 @@ import { signOutMcpRow } from './mcp-sign-out.js'
 import { frameFailure, installWorkerProcessGuards, sessionFailure } from './process-guards.js'
 import {
   createRuntimeTargetSlot,
-  type RuntimeTargetApplyPort,
+  hostRuntimeTargetPort,
   runtimeTargetFailureMessage,
 } from './runtime-target-slot.js'
 import { createWorkerServiceAuthority } from './service-authority.js'
@@ -511,33 +510,17 @@ export async function runWorker(
     if (!host) throw new Error('session worker has no Host')
     return host
   }
-  const requireRuntimeTargetPort = (): RuntimeTargetApplyPort<RuntimeConvergenceReport> => {
-    const candidate = requireHost()
-    if (typeof candidate.applyRuntimeTarget !== 'function') {
-      throw new Error('E_RUNTIME_TARGET_UNAVAILABLE: Host has no runtime target publisher')
-    }
-    return Object.freeze({
-      async applyRuntimeTarget(target) {
-        const scope = {}
-        applying = scope
-        let report: Awaited<ReturnType<typeof candidate.applyRuntimeTarget>>
-        try {
-          report = await candidate.applyRuntimeTarget(target)
-        } finally {
-          if (applying === scope) applying = undefined
-        }
-        assertHostPublication(report.publication)
-        // Host-local per-composition diagnostics must not extend the closed wire report schema.
-        return { hash: report.hash, ok: report.ok, rows: report.rows }
-      },
-      ...(candidate.runtimeTargetSnapshot
-        ? { runtimeTargetSnapshot: candidate.runtimeTargetSnapshot.bind(candidate) }
-        : {}),
-      ...(candidate.pluginGenerationStatus
-        ? { pluginGenerationStatus: candidate.pluginGenerationStatus.bind(candidate) }
-        : {}),
+  // One target application at a time shares its verified package read (see `applying`).
+  const requireRuntimeTargetPort = () =>
+    hostRuntimeTargetPort(requireHost(), async (apply) => {
+      const scope = {}
+      applying = scope
+      try {
+        return await apply()
+      } finally {
+        if (applying === scope) applying = undefined
+      }
     })
-  }
   const bootSource =
     env.AGNES_RUNTIME_BOOT_SOURCE === 'lastGood' || env.AGNES_RUNTIME_BOOT_SOURCE === 'bootstrap'
       ? env.AGNES_RUNTIME_BOOT_SOURCE

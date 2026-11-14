@@ -1,6 +1,7 @@
-import type { PluginGenerationStatus } from '@agnes/host'
+import { assertHostPublication, type Host, type PluginGenerationStatus } from '@agnes/host'
 import {
   encodeRuntimeTargetArtifact,
+  type RuntimeConvergenceReport,
   type RuntimeTarget,
   type RuntimeTargetArtifact,
 } from '@agnes/plugin-runtime/host'
@@ -189,6 +190,33 @@ class LatestRuntimeTargetSlot<Result> implements RuntimeTargetSlot<Result> {
   #finish(entry: TargetEntry<Result>, outcome: RuntimeTargetSlotOutcome<Result>): void {
     for (const resolve of entry.waiters.splice(0)) resolve(outcome)
   }
+}
+
+/**
+ * The slot's port over a Host. Each application runs inside `track`. A bundled app whose row the target drops
+ * stops before the Host applies the target, rather than once the target's generation has been built.
+ */
+export function hostRuntimeTargetPort(
+  host: Host,
+  track: <T>(apply: () => Promise<T>) => Promise<T>,
+): RuntimeTargetApplyPort<RuntimeConvergenceReport> {
+  if (typeof host.applyRuntimeTarget !== 'function')
+    throw new Error('E_RUNTIME_TARGET_UNAVAILABLE: Host has no runtime target publisher')
+  return Object.freeze({
+    async applyRuntimeTarget(target) {
+      const report = await track(async () => {
+        await host.profileServices?.managed?.retireDropped(target.tree.rows)
+        return host.applyRuntimeTarget(target)
+      })
+      assertHostPublication(report.publication)
+      // Host-local per-composition diagnostics must not extend the closed wire report schema.
+      return { hash: report.hash, ok: report.ok, rows: report.rows }
+    },
+    ...(host.runtimeTargetSnapshot ? { runtimeTargetSnapshot: host.runtimeTargetSnapshot.bind(host) } : {}),
+    ...(host.pluginGenerationStatus
+      ? { pluginGenerationStatus: host.pluginGenerationStatus.bind(host) }
+      : {}),
+  })
 }
 
 export function createRuntimeTargetSlot<Result = void>(

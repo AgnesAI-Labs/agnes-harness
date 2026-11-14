@@ -11,7 +11,6 @@ import {
   machineOf,
   type Probe,
   resolveDeployment,
-  resolveFeishuBot,
   workerProbe,
 } from '../src/deployment.js'
 import { gitEnv } from './fixtures/git.js'
@@ -30,13 +29,6 @@ const gh = (file: string, login: string, push = true): string =>
     file,
     `case "$*" in\n  "api user") echo '{"login":"${login}","id":7}' ;;\n  "api repos/acme/"*" --jq {name: .full_name, push: .permissions.push}") echo '{"name":"acme/widgets","push":${push}}' ;;\n  *) exit 1 ;;\nesac`,
   )
-/** Fake lark-cli script body returning canned auth, strict-mode, and bot info responses. */
-const lark = (
-  status: object,
-  mode = 'bot',
-  bot: object = { bot: { open_id: 'ou_bot', app_name: 'Widgets Bot' }, code: 0 },
-): string =>
-  `case "$*" in\n  "auth status") echo '${JSON.stringify(status)}' ;;\n  "config strict-mode") echo 'strict-mode: ${mode} (source: profile)' ;;\n  "api GET /open-apis/bot/v3/info --as bot --format ndjson") echo '${JSON.stringify(bot)}' ;;\nesac`
 const minimal = (overrides: Record<string, unknown> = {}) => ({ stateDir: join(dir, 'state'), ...overrides })
 const machine = (overrides: Partial<Machine> = {}): Machine => ({ ...machineOf(minimal()), ...overrides })
 /** Runs commands like worker shells do, but locally: the stand-ins first on PATH, then the system's git. */
@@ -58,10 +50,6 @@ beforeEach(async () => {
     '/bin',
   ].join(':')
   gh(join(dir, 'bin', 'gh'), 'Agent-Bot')
-  program(
-    join(dir, 'bin', 'lark-cli'),
-    lark({ appId: 'cli_bot', brand: 'lark', identities: { bot: { status: 'ready' } } }),
-  )
   // Stale worker shims with the same binary name must be skipped regardless of PATH normalization or symlinks.
   program(join(dir, 'state', 'worker-bin', 'gh'))
   symlinkSync(join(dir, 'state'), join(dir, 'state-link'))
@@ -192,39 +180,6 @@ describe('setup', () => {
     expect(() => executable('nothing-here', join(dir, 'bin'))).toThrow(
       'nothing-here is not an executable file on PATH',
     )
-  })
-  it('reads the Feishu bot from a bot-only lark-cli, or finds none when the Feishu Source names no CLI', async () => {
-    expect(await resolveFeishuBot(machine(), {}, probe, path)).toBeUndefined()
-    expect(await resolveFeishuBot(machine(), { cli: 'lark-cli' }, probe, path)).toEqual({
-      cli: join(dir, 'bin', 'lark-cli'),
-      appId: 'cli_bot',
-      brand: 'lark',
-      botId: 'ou_bot',
-      name: 'Widgets Bot',
-    })
-    const refuses = async (code: string, values: Record<string, unknown> = {}) =>
-      expect(resolveFeishuBot(machine(), { cli: 'lark-cli' }, probe, path)).rejects.toEqual(
-        setupError('feishu', code, values),
-      )
-    program(join(dir, 'bin', 'lark-cli'), lark({ identities: { bot: { status: 'ready' } } }))
-    await refuses('feishuNoApp')
-    program(
-      join(dir, 'bin', 'lark-cli'),
-      lark({ appId: 'cli_bot', identities: { bot: { status: 'missing' } } }),
-    )
-    await refuses('feishuBotNotReady', { app: 'cli_bot', status: 'missing' })
-    program(
-      join(dir, 'bin', 'lark-cli'),
-      lark({ appId: 'cli_bot', identities: { bot: { status: 'ready' } } }, 'off'),
-    )
-    await refuses('feishuUserIdentity', { mode: 'off' })
-    program(
-      join(dir, 'bin', 'lark-cli'),
-      lark({ appId: 'cli_bot', identities: { bot: { status: 'ready' } } }, 'bot', { code: 0, data: {} }),
-    )
-    await refuses('feishuNoBot')
-    program(join(dir, 'bin', 'lark-cli'), 'echo "not configured" >&2; exit 1')
-    await refuses('feishuCliFailed', { output: expect.stringContaining('not configured') })
   })
 })
 

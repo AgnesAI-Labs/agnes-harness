@@ -576,6 +576,26 @@ export const SETTINGS_TEXT = {
     SETUP_PROBLEMS.gitTooOld[1],
   ],
   'setup.environmentFailed': ['准备智能体的运行环境失败。', SETUP_PROBLEMS.environmentFailed[1]],
+  'setup.sessionTaken': [
+    '已有一个不是 Superagent 打开的会话 {session}；归档或删除它，然后重新检查设置。',
+    SETUP_PROBLEMS.sessionTaken[1],
+  ],
+  'setup.agentHomeMismatch': [
+    'daemon 以 HOME {actual} 运行，不是智能体的 home {home}；请把 HOME 设为智能体的 home 后启动这套 AGH。',
+    SETUP_PROBLEMS.agentHomeMismatch[1],
+  ],
+  'setup.agentGhNotShim': [
+    '会话运行的 gh 来自 {actual}，不是 {shims} 里的垫片；请把 {shims} 放在这套 AGH 启动时 PATH 的最前面。',
+    SETUP_PROBLEMS.agentGhNotShim[1],
+  ],
+  'setup.agentCredentialMixed': [
+    'git 访问 github.com 时会用到智能体以外的凭据工具：{helpers}。',
+    SETUP_PROBLEMS.agentCredentialMixed[1],
+  ],
+  'setup.agentLoginMismatch': [
+    'gh 以 @{account} 身份运行，不是智能体账号 @{login}。',
+    SETUP_PROBLEMS.agentLoginMismatch[1],
+  ],
   'setup.agentCliUnset': ['没有设置智能体的 GitHub CLI。', SETUP_PROBLEMS.agentCliUnset[1]],
   'setup.agentCliMissing': ['找不到智能体的 GitHub CLI。', SETUP_PROBLEMS.agentCliMissing[1]],
   'setup.agentCliSignedOut': ['智能体的 GitHub CLI 读不到它的账号。', SETUP_PROBLEMS.agentCliSignedOut[1]],
@@ -592,20 +612,30 @@ export const SETTINGS_TEXT = {
     '@{account} 没有 {repository} 的推送权限。',
     SETUP_PROBLEMS.repositoryReadOnly[1],
   ],
-  'setup.feishuCliFailed': ['机器人的 lark-cli 不可用。', SETUP_PROBLEMS.feishuCliFailed[1]],
-  'setup.feishuNoApp': ['机器人的 lark-cli 的 auth status 没有报告应用。', SETUP_PROBLEMS.feishuNoApp[1]],
-  'setup.feishuBotNotReady': [
-    '应用 {app} 的机器人身份状态是 {status}；用 lark-cli 配置应用密钥。',
-    SETUP_PROBLEMS.feishuBotNotReady[1],
-  ],
-  'setup.feishuUserIdentity': [
-    '机器人的 lark-cli 允许用户身份（strict mode 为 {mode}）；按安装引导给机器人一份 strict mode 为 bot 的单独配置。',
-    SETUP_PROBLEMS.feishuUserIdentity[1],
-  ],
-  'setup.feishuNoBot': ['飞书机器人接口没有返回机器人的 open_id。', SETUP_PROBLEMS.feishuNoBot[1]],
   'healthCode.setupPending': ['等待部署检查', HEALTH_TEXT.setupPending],
   'healthCode.sourceOff': ['已关闭', HEALTH_TEXT.sourceOff],
-  'healthCode.feishuCliUnset': ['来源已打开，还没有设置机器人的 lark-cli', HEALTH_TEXT.feishuCliUnset],
-  'healthCode.feishuBotMissing': ['等待飞书机器人', HEALTH_TEXT.feishuBotMissing],
+  'healthCode.feishuDedicatedBot': [
+    '私聊和其他群需要 Superagent 专用的飞书机器人实例；现在只接收列出的群',
+    HEALTH_TEXT.feishuDedicatedBot,
+  ],
+  'healthCode.feishuWaiting': ['等待渠道订阅', HEALTH_TEXT.feishuWaiting],
+  'healthCode.feishuChannelUnset': [
+    '需要设置：来源已打开，还没有设置渠道实例',
+    HEALTH_TEXT.feishuChannelUnset,
+  ],
+  'healthCode.feishuChatsUnset': ['需要设置：没有列出要接收的群', HEALTH_TEXT.feishuChatsUnset],
+  'healthCode.feishuChannelRefused': [
+    '需要设置：渠道实例 {channel} 拒绝了这些群（{reason}）；正在重试',
+    HEALTH_TEXT.feishuChannelRefused,
+  ],
+  'healthCode.feishuNoHistory': ['渠道不能读取群历史，重启或断线后不补收消息', HEALTH_TEXT.feishuNoHistory],
+  'healthCode.feishuNoMembers': [
+    '渠道不能列出群成员，名单不同步，使用设置里的名单',
+    HEALTH_TEXT.feishuNoMembers,
+  ],
+  'healthCode.feishuNoReads': [
+    '渠道不能读取消息或话题，orchestrator_feishu_read 和上下文读取不可用',
+    HEALTH_TEXT.feishuNoReads,
+  ],
   'healthCode.pollFailures': ['连续 {count} 次轮询失败，最近一次：{error}', HEALTH_TEXT.pollFailures],
 } as const satisfies Record<string, readonly [string, string]>

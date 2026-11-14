@@ -3,7 +3,7 @@
 
 import { UserError } from './errors.js'
 import { key } from './ids.js'
-import type { ReportState, Ticket } from './model.js'
+import type { Assignment, ReportState, Ticket } from './model.js'
 import { latestAssignment, liveTicket, runningAssignment } from './model.js'
 import { type EngineOptions, EnginePart } from './part.js'
 import type { Replies } from './replies.js'
@@ -22,6 +22,16 @@ export interface WorkerReport {
 }
 const RECOVERY_NOTE =
   'The host restarted during this ticket. Inspect the current worktree, git history and GitHub state before continuing. Do not repeat an already completed external operation. Finish the original assignment and report its status.'
+
+/**
+ * Whether an interruption restarts a running assignment with a recovery note: unless its latest report is `waiting`,
+ * `ready`, `blocked` or `failed` and no Input reached it after that report.
+ */
+export function interruptionRestarts(assignment: Assignment): boolean {
+  const report = assignment.report
+  const busy = !!assignment.deliveredAt && !!report && assignment.deliveredAt >= report.at
+  return !(!!report && ['waiting', 'ready', 'blocked', 'failed'].includes(report.state) && !busy)
+}
 
 /**
  * Assignments records what the Executor and its workers report about the Assignments that run tickets: one started, Inputs
@@ -99,10 +109,7 @@ export class Assignments extends EnginePart {
     const ticket = this.running(ticketId, assignmentId)
     const running = ticket && runningAssignment(ticket)
     if (!ticket || !running) return
-    const report = running.report
-    const busy = !!running.deliveredAt && !!report && running.deliveredAt >= report.at
-    const settled = !!report && ['waiting', 'ready', 'blocked', 'failed'].includes(report.state) && !busy
-    if (!settled) this.tickets.restart(ticket, running, 'hostRestarted', RECOVERY_NOTE)
+    if (interruptionRestarts(running)) this.tickets.restart(ticket, running, 'hostRestarted', RECOVERY_NOTE)
     else if (ticket.undelivered.length) this.options.executor.deliver(ticket, running)
   }
   /**

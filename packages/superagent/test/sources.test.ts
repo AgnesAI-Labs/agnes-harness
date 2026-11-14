@@ -21,19 +21,7 @@ import { HealthBoard } from '../src/infra/health.js'
 import { KV } from '../src/kv.js'
 import { SettingsSchema, settingsPolicy } from '../src/policy.js'
 import { SetupError, type SetupProblem } from '../src/setup.js'
-import {
-  backfillChat,
-  consumerRetry,
-  feishuKind,
-  feishuRef,
-  feishuTime,
-  feishuTrigger,
-  feishuTriggerId,
-  historyEvent,
-  pollThreads as pollFeishuThreads,
-  startFeishu,
-} from '../src/sources/feishu.js'
-import { runFeishu } from '../src/sources/feishu-loops.js'
+import { feishuKind, feishuTrigger } from '../src/sources/feishu.js'
 import {
   githubKind,
   pollFailure,
@@ -230,29 +218,6 @@ function github(h: ReturnType<typeof host>, routes: Record<string, unknown>): st
   return reads
 }
 const bare = (reads: string[]) => reads.map((path) => path.split('?')[0])
-describe('feishu source', () => {
-  it.todo('registers its kind without a bot, and names on its health what setup still needs')
-  it.todo("translates live events into triggers keyed by root message, and drops the bot's own messages")
-  it.todo('polls subscribed threads and stores unseen replies as triggers on that thread')
-  it.todo('translates a polled topic reply as the event consumer translates the live event')
-  it.todo('reads message times given as epoch milliseconds or as local times, and refuses others')
-  it.todo('polls a subscribed topic while a live ticket follows it or it had a message in the last two weeks')
-  it.todo('keeps a quiet topic in history recovery while a subscribed Thread that is polled follows it')
-  it.todo(
-    'refuses a history page with a message outside its chat or topic, and a page token that does not advance',
-  )
-  it.todo("stops reading a polled topic at the first message it knew, once the topic's first poll ran")
-  it.todo(
-    'recovers the topics of a chat while they had a message in the last two weeks, and forgets quieter ones',
-  )
-  it.todo('skips and counts a history message it cannot read, and takes in the others')
-  it.todo(
-    'waits a second before restarting the event consumer after a run that stayed up for a minute, and backs off otherwise',
-  )
-  it.todo(
-    'syncs its part of the Policy from the sync chat: people who left are removed, names follow the chat, new people are appended',
-  )
-})
 describe('github source', () => {
   it('normalizes comments and reviews into triggers with review-thread channels, and marks only GitHub Apps and machine accounts as automated', () => {
     const trigger = commentTrigger(
@@ -1572,7 +1537,7 @@ describe('github source', () => {
 
 describe('source context', () => {
   it('gives each kind the setup problem whose place it is', () => {
-    const feishu: SetupProblem = { place: 'feishu', code: 'feishuNoBot', values: {}, detail: 'No bot' }
+    const feishu: SetupProblem = { place: 'feishu', code: 'repositoryUnset', values: {}, detail: 'No bot' }
     const github: SetupProblem = { place: 'github', code: 'agentCliUnset', values: {}, detail: 'No CLI' }
     const h = host({ feishuProblem: feishu, setupProblem: github })
     expect(h.context(feishuKind).problem).toBe(feishu)
@@ -1655,20 +1620,6 @@ it('reports GitHub as failing only after the configured number of consecutive fa
     observeCi: false,
   })
 })
-describe('feishu event consumer', () => {
-  it.todo(
-    'takes in the event lines it reads, records each chat as direct or not, and reports a malformed line without stopping',
-  )
-  it.todo('drops the events it reads once the Source is off')
-  it.todo(
-    "keeps a chat's history cursor when its read fails, and recovers known direct chats only while direct messages are on",
-  )
-  it.todo('reports an error when the consumer is not ready within 45 seconds')
-  it.todo('reports a warning the consumer prints as an error')
-  it.todo('stops the consumer within five seconds once the Source is off')
-  it.todo('starts the consumer again after it exits, and is ready once the next run listens')
-})
-
 describe('observing the GitHub repository', () => {
   /** Hour `hour` of the day before yesterday, well within the polling horizon. */
   const at = (hour: number) =>

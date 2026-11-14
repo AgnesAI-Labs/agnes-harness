@@ -6,6 +6,15 @@
 import type { SettingsVersion } from './app/store.js'
 import type { SettingsSave } from './policy.js'
 
+/** What a stop of the runtime left paused, and why. */
+export interface Paused {
+  at: string
+  reason: 'disable' | 'generation' | 'shutdown'
+  assignments: { ticketId: string; assignmentId: string }[]
+  /** How the stop went: how long cancelling and killing took, of how many sessions, and those it could not quiet. */
+  stop?: { ms: number; sessions: number; unstopped: string[] }
+}
+
 /** Prompt configuration as stored: the team's three sections, skill texts, and overrides of built-in parts by key. */
 export interface PromptConfig {
   communication: string
@@ -62,8 +71,11 @@ export const KV = {
     /** The built-in text of a prompt part an override was edited from, by its `base`, which shows what an upgrade changed. */
     builtIn: family<string, [base: string]>('prompt-built-in:'),
   },
-  /** Runtime: the main Session's ID. */
-  runtime: { masterId: record<string>('master-id') },
+  /**
+   * Runtime: the main Session's ID, and the Assignments a stop left paused (their Sessions' turns cancelled and pending
+   * Inputs dropped), which the next start reconciles.
+   */
+  runtime: { masterId: record<string>('master-id'), paused: record<Paused>('runtime-paused') },
   /** Sessions: prompt revisions each Session has worked under, ordered oldest first; the last entry (`.at(-1)`) is its active revision. */
   sessions: { prompts: family<number[], [session: string]>('session-prompts:') },
   /** Per-Source resolved display names mapping a named ID (such as a Feishu chat ID) to its display name. */
@@ -85,10 +97,18 @@ export const KV = {
   },
   /**
    * Feishu Source: known chats (`true` for direct messages); per-chat history cursor and active topics mapped from topic ID
-   * to last-seen timestamp; and per-polled-thread seen message IDs and initialization flag.
+   * to last-seen timestamp; per-polled-thread seen message IDs and initialization flag; the root message of each topic
+   * met so far; the messages the bot sent mapped to the root they answer; the bot's own sender id once learned; parts of the bot's replies that came back while being sent; and the
+   * Source's health entries as last changed, which outlive the running generation for setup checks and diagnosis.
    */
   feishu: {
     chats: record<Record<string, boolean>>('feishu-chats'),
+    roots: record<Record<string, string>>('feishu-topic-roots'),
+    sent: record<Record<string, string>>('feishu-sent'),
+    self: record<string>('feishu-self'),
+    echoes: record<Record<string, string>>('feishu-echoes'),
+    health:
+      record<Record<string, { state: string; detail: string; code?: string; at: string }>>('feishu-health'),
     history: family<string, [chat: string]>('feishu-history:'),
     topics: family<Record<string, string>, [chat: string]>('feishu-history-threads:'),
     seen: family<string[], [thread: string]>('thread-seen:'),

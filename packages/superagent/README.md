@@ -26,8 +26,8 @@ header.
 | `src/app/migrations/` | Schema version, the migration registry and one `v<N>.ts` per schema step. |
 | `src/app/store-retention.ts` | `archiveExpired`: moves conversations that ended more than 14 days ago into archive tables. |
 | `src/app/subprocess.ts` | `runCommand`: child processes without stdin or credential-shaped environment variables. |
-| `src/sources/` | The Source contract (`kind.ts`, `host.ts`, `registry.ts`), the GitHub Source and the Feishu Source. The Feishu files still call `lark-cli`. |
-| `src/infra/commands.ts`, `src/infra/health.ts` | `Commands` (the `gh`, `lark-cli` and `git` calls of the Sources, on `runCommand`) and the health board. |
+| `src/sources/` | The Source contract (`kind.ts`, `host.ts`, `registry.ts`), the GitHub Source and the Feishu Source, which receives, replies and reads through an AGH Feishu channel instance. |
+| `src/infra/commands.ts`, `src/infra/health.ts` | `Commands` (the `gh` and `git` calls of the Sources, on `runCommand`) and the health board. |
 | `src/app/` (other files) | Effect queue, outbox, notices, passes, assessment, settings, prompts, links and the read models in `views/`. |
 | `src/app/skill-files.ts` | Loads the packaged `prompts/`, `skills/` and `locale/` folders. |
 | `src/runtime/` | The plugin row `superagentPlugin`: its profile-managed service, which needs the bundled-app grant, the snapshot its `context` and `tool_call` hooks read (`hook-state.ts`) and the narrowing of the grant's SDK client (`sdk.ts`). |

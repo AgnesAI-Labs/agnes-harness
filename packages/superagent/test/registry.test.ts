@@ -3,15 +3,17 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { type SourceContextDeps, sourceContextOf } from '../src/app/source-context.js'
 import type { OutboundMessage } from '../src/core/index.js'
-import type { Commands } from '../src/infra/commands.js'
+import { Commands } from '../src/infra/commands.js'
 import { HealthBoard } from '../src/infra/health.js'
 import { SettingsSchema } from '../src/policy.js'
-import { feishuKind } from '../src/sources/feishu.js'
+import { feishuKind, feishuKindFor } from '../src/sources/feishu.js'
+import { feishuLink } from '../src/sources/feishu-io.js'
 import { feishuChannel, feishuTrigger, feishuTriggerId } from '../src/sources/feishu-trigger.js'
 import { githubKind } from '../src/sources/github.js'
 import type { ImageSink, SourceKind } from '../src/sources/kind.js'
 import { SourceRegistry } from '../src/sources/registry.js'
 import { testDeployment } from './fixtures/deployment.js'
+import { configOnly, fakeChannels } from './sources/fake-channels.js'
 
 const probe: SourceKind<{ interval: number }> = {
   kind: 'probe',
@@ -257,5 +259,35 @@ describe('Source registry', () => {
     expect(sources.channelAllowed(feishuChannel('oc_dm', 'om_1', true))).toBe(false)
     expect(sources.channelAllowed({ source: 'github', address: { number: '7' } })).toBe(true)
   })
-  it.todo('delivers a reply to a direct message under the default settings')
+  it('delivers a reply to a direct message under the default settings', async () => {
+    const fake = fakeChannels()
+    const link = feishuLink(fake.channels)
+    link.context = configOnly()
+    const sources = new SourceRegistry(() => SettingsSchema.parse({}))
+    sources.register(feishuKindFor(link))
+    const trigger = feishuTrigger(
+      {
+        message_id: 'om_dm',
+        chat_id: 'oc_dm',
+        chat_type: 'p2p',
+        sender_id: 'ou_alice',
+        sender_type: 'user',
+        content: 'fix it',
+        create_time: '1757376000000',
+      },
+      'ou_bot',
+      'cli_bot',
+    )!
+    const channel = trigger.channel!
+    expect(channel.address).toEqual({ chatId: 'oc_dm', messageId: 'om_dm', direct: 'true' })
+    expect(sources.channelAllowed(channel)).toBe(true)
+    const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
+    const reply: OutboundMessage = { id: 'reply-1', channel, text: 'Done', kind: 'reply' }
+    expect(await sources.send(reply, commands)).toBe('sent')
+    expect(fake.sent[0]).toMatchObject({
+      channel: 'feishu',
+      target: { chatType: 'dm', chatId: 'oc_dm', threadId: 'om_dm', deliveryKey: 'reply-1' },
+      message: { replyTo: { chatId: 'oc_dm', messageId: 'om_dm', chatType: 'dm' } },
+    })
+  })
 })

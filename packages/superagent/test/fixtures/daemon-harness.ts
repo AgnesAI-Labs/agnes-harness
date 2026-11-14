@@ -57,7 +57,8 @@ const textOf = (content: unknown): string =>
           .join('')
       : ''
 
-export type ModelRequest = { lastRole: string; marker: string; toolResult?: string }
+/** One request the model received; `main` is a turn of a session (it offers tools), not a side request without tools. */
+export type ModelRequest = { lastRole: string; marker: string; main: boolean; toolResult?: string }
 
 /**
  * A scripted OpenAI-compatible loopback model. The newest user message containing `[[...]]` drives it: a
@@ -101,6 +102,7 @@ export async function startScriptedModel() {
     requests.push({
       lastRole: last.role,
       marker,
+      main,
       ...(last.role === 'tool' ? { toolResult: textOf(last.content) } : {}),
     })
     const tool = user.match(/TOOL(\{.*?\})ENDTOOL/s)?.[1]
