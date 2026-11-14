@@ -13,6 +13,8 @@ export const presentationEntries: Record<string, string>
 export function buildPresentations(options?: {
   /** Alternate payload output directory; compilation still reads the real source inputs. */
   outputRoot?: string
+  /** Exact destinations for individual presentations, preserving arbitrary payload basenames. */
+  outputDirectories?: Record<string, string>
   names?: string[]
   check?: boolean
   force?: boolean

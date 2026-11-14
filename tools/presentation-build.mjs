@@ -104,6 +104,7 @@ export async function buildPresentations({
   check = false,
   force = false,
   outputRoot = defaultOutputRoot,
+  outputDirectories = {},
   names = Object.keys(presentationEntries),
 } = {}) {
   const results = []
@@ -111,7 +112,7 @@ export async function buildPresentations({
   for (const name of names) {
     const entry = presentationEntries[name]
     if (!entry) throw new Error(`Unknown presentation: ${name}`)
-    const root = join(outputRoot, name)
+    const root = outputDirectories[name] ?? join(outputRoot, name)
     let previous
     try {
       previous = await verifyPresentation(root)
@@ -177,5 +178,5 @@ export async function buildPresentations({
     if (check) createdForCheck = true
     results.push(record)
   }
-  return createdForCheck ? buildPresentations({ check: true, outputRoot, names }) : results
+  return createdForCheck ? buildPresentations({ check: true, outputRoot, outputDirectories, names }) : results
 }

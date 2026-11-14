@@ -1,4 +1,11 @@
-import type { HookContext, HookHandler, PluginContextFacets } from '@agnes/extension-api'
+import type {
+  HookContext,
+  HookHandler,
+  PluginContextFacets,
+  PreparedSideCall,
+  SideCallOptions,
+  SideCallPort,
+} from '@agnes/extension-api'
 import { expect, it, vi } from 'vitest'
 import type { Judge } from '../src/judge.js'
 import { createJudgmentRuntime, type JudgmentRuntime } from '../src/runtime.js'
@@ -123,6 +130,109 @@ it('combines rules in one native call, persists each version first and preserves
   Object.assign(other.ctx, { session: { key: 'other' } })
   other.state = other.projection.apply(other.projection.init(), { ...other.rows[0], data: { key: 'other' } })
   expect((await other.run()).result?.content).toHaveLength(2)
+})
+it('masks structured credential arguments at actual native prepare/invoke without expanding original windows', async () => {
+  const f = fixture()
+  f.dispose()
+  Object.assign(f.plugin.self, {
+    log: { warn() {} },
+    sideModels: { list: async () => [{ route: 'native', model: 'j', api: 'typesafe-systemone' }] },
+  })
+  const runtime = createJudgmentRuntime(f.plugin, f.config)
+  const prepared: SideCallOptions[] = []
+  const invoked: PreparedSideCall[] = []
+  const sideCall: SideCallPort = {
+    status: async (invocationId) => ({ status: 'absent', invocationId }),
+    prepare: async (input) => {
+      prepared.push(input)
+      return { ...input, requestHash: 'synthetic-request' } as unknown as PreparedSideCall
+    },
+    invoke: async (input) => {
+      invoked.push(input)
+      return { status: 'refused', invocationId: input.invocationId, reason: 'budget' }
+    },
+  }
+  const dispose = registerRuleChecks(f.plugin, runtime, f.config)
+  const handler = vi.mocked(f.plugin.hooks.register).mock.calls.at(-1)?.[1] as HookHandler<'tool_result'>
+  const cases = [
+    {
+      args: { password: { value: 'SYNTHETIC_OBJECT_SECRET' }, ordinary: 'VISIBLE_OBJECT' },
+      visible: 'VISIBLE_OBJECT',
+    },
+    { args: { token: ['SYNTHETIC_ARRAY_SECRET'], ordinary: 'VISIBLE_ARRAY' }, visible: 'VISIBLE_ARRAY' },
+    {
+      args: { ordinary: 'VISIBLE_NESTED', rows: [{ clientSecret: { nested: ['SYNTHETIC_NESTED_SECRET'] } }] },
+      visible: 'VISIBLE_NESTED',
+    },
+    { args: { ordinary: { list: ['VISIBLE_CONTROL'], count: 2 } }, visible: 'VISIBLE_CONTROL' },
+    {
+      args: {
+        ordinary: 'VISIBLE_WINDOW',
+        password: { value: 'S'.repeat(2100) },
+        outside: 'OUTSIDE_SENTINEL',
+      },
+      visible: 'VISIBLE_WINDOW',
+    },
+    {
+      args: { note: `password=${JSON.stringify('SYNTHETIC_QUOTED_SECRET')}`, ordinary: 'VISIBLE_QUOTED' },
+      visible: 'VISIBLE_QUOTED',
+    },
+    {
+      args: {
+        ordinary: 'VISIBLE_BOUNDARY',
+        padding: 'a'.repeat(1920),
+        password: { value: 'SYNTHETIC_BOUNDARY_SECRET' },
+      },
+      visible: 'VISIBLE_BOUNDARY',
+    },
+  ]
+  try {
+    for (const [index, item] of cases.entries()) {
+      const original = JSON.stringify(item.args)
+      const payload = { ...f.payload, toolUseId: `privacy-${index}`, args: item.args }
+      expect(await handler(payload, { ...f.ctx, sideCall })).toEqual({})
+      const request = prepared.at(-1)
+      const state = request?.payload as { state: { args: string } } | undefined
+      if (!state) throw new Error('Actual judgment preparation missing')
+      expect(prepared).toHaveLength(index + 1)
+      expect(invoked).toHaveLength(index + 1)
+      expect(request?.output).toBe('json')
+      expect(state.state.args).toContain(item.visible)
+      expect(state.state.args.length).toBeLessThanOrEqual(2000)
+      expect(JSON.stringify(request)).not.toMatch(/SYNTHETIC_\w+_SECRET|S{20}|OUTSIDE_SENTINEL/)
+      expect(JSON.stringify(invoked.at(-1))).not.toMatch(/SYNTHETIC_\w+_SECRET|S{20}|OUTSIDE_SENTINEL/)
+      expect(JSON.stringify(item.args)).toBe(original)
+      expect(payload.result).toBe(f.result)
+    }
+    const large = { rows: Array.from({ length: 1000 }, () => ({ ordinary: 'synthetic' })) }
+    const count = prepared.length
+    let ticks = 0
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => (++ticks >= 80 ? 1501 : 0))
+    try {
+      expect(
+        await handler({ ...f.payload, args: large, toolUseId: 'argument-deadline' }, { ...f.ctx, sideCall }),
+      ).toEqual({})
+      expect(ticks).toBeGreaterThanOrEqual(80)
+      expect(prepared).toHaveLength(count)
+      expect(invoked).toHaveLength(count)
+    } finally {
+      clock.mockRestore()
+    }
+    const cancel = setImmediate(() => f.controller.abort())
+    try {
+      expect(
+        await handler({ ...f.payload, args: large, toolUseId: 'argument-cancel' }, { ...f.ctx, sideCall }),
+      ).toEqual({})
+      expect(prepared).toHaveLength(count)
+      expect(invoked).toHaveLength(count)
+    } finally {
+      clearImmediate(cancel)
+    }
+    expect(f.append).not.toHaveBeenCalled()
+  } finally {
+    dispose()
+    runtime.dispose()
+  }
 })
 it('keeps concurrent real-runtime rule checks native-only for their own catalogue snapshots', async () => {
   const f = fixture([{ ...rule, tools: ['exec', 'write'] }])

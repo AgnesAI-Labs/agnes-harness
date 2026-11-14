@@ -61,11 +61,12 @@ it('mirrors the source row with API 5.17 and exports the real plugin', async () 
 })
 it('builds atomically and refreshes missing or stale payloads without rewriting a fresh one', async () => {
   const temporary = mkdtempSync(join(tmpdir(), 'agnes-judgment-payload-'))
-  const root = join(temporary, 'judgment')
+  const root = join(temporary, 'renamed-payload')
   mkdirSync(root)
   try {
     cpSync(fileURLToPath(new URL('package.json', payload)), join(root, 'package.json'))
     await ensureJudgmentPayload(root)
+    expect(readdirSync(temporary)).toEqual(['renamed-payload'])
     const file = join(root, 'index.mjs'),
       first = readFileSync(file, 'utf8'),
       at = statSync(file).mtimeMs
@@ -86,10 +87,16 @@ it('builds atomically and refreshes missing or stale payloads without rewriting 
     const browser = join(root, 'src', 'client.js')
     const before = statSync(file).mtimeMs
     const originalBrowser = readFileSync(browser, 'utf8')
-    writeFileSync(browser, 'corrupt')
-    await ensureJudgmentPayload(root)
-    expect(readFileSync(browser, 'utf8')).toBe(originalBrowser)
-    expect(statSync(file).mtimeMs).toBe(before)
+    for (const name of ['src/client.js', 'NOTICE', 'client-build.json', 'src/agnes.client.json']) {
+      const artifact = join(root, name)
+      const original = readFileSync(artifact, 'utf8')
+      writeFileSync(artifact, 'corrupt')
+      await ensureJudgmentPayload(root)
+      expect(readFileSync(artifact, 'utf8')).toBe(original)
+      expect(readFileSync(browser, 'utf8')).toBe(originalBrowser)
+      expect(statSync(file).mtimeMs).toBe(before)
+      expect(readdirSync(temporary)).toEqual(['renamed-payload'])
+    }
     for (const match of first.matchAll(/\bfrom\s*["']([^"']+)["']/g))
       expect(match[1]!.startsWith('node:') || match[1] === '@agnes/extension-api').toBe(true)
   } finally {

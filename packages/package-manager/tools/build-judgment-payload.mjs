@@ -16,7 +16,7 @@ const judgmentSource = join(packageManagerRoot, '..', 'judgment', 'src', 'index.
  * replaced in one rename, so a concurrent reader sees the old or the new bundle, never a torn one.
  */
 export async function buildJudgmentPresentation(directory = judgmentPayloadDirectory) {
-  await buildPresentations({ outputRoot: dirname(directory), names: ['judgment'] })
+  await buildPresentations({ outputDirectories: { judgment: directory }, names: ['judgment'] })
   mkdirSync(join(directory, 'src'), { recursive: true })
   const descriptor = join(judgmentPayloadDirectory, 'src', 'agnes.client.json')
   if (directory !== judgmentPayloadDirectory)

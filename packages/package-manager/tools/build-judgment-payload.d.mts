@@ -1,5 +1,5 @@
 export const judgmentPayloadDirectory: string
-/** Write `index.mjs` into the payload directory; host-provided modules stay external. */
+/** Write the complete payload into the requested directory, preserving arbitrary basenames. */
 export function buildJudgmentPayload(directory?: string): Promise<void>
 
 /** Independently validates the same-package browser presentation, even for a fresh backend. */

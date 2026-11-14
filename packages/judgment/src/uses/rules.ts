@@ -1,8 +1,12 @@
-import type { PluginContextFacets } from '@agnes/extension-api'
+import { type PluginContextFacets, redactSecrets } from '@agnes/extension-api'
+import type { JsonValue } from '@agnes/protocol'
 import { resolveRulesConfig } from '../config.js'
 import { deadlineScope, within } from '../deadline.js'
+import { type Preparation, preparation } from '../preparation.js'
 import type { JudgmentRequest } from '../questions.js'
 import type { JudgmentRuntime } from '../runtime.js'
+import { maskCredentialValues } from './credential-values.js'
+import { redactedRanges } from './redacted-range.js'
 import { redactedWindow } from './redacted-window.js'
 import {
   createRulesProjection,
@@ -12,6 +16,21 @@ import {
   sessionHash,
 } from './rules-projection.js'
 import question from './rules-questions.json' with { type: 'json' }
+
+async function argumentWindow(value: JsonValue, scope: Preparation): Promise<string> {
+  scope.check()
+  const masked = await maskCredentialValues(value, scope)
+  scope.check()
+  const original = JSON.stringify(value)
+  scope.check()
+  const serialized = JSON.stringify(masked)
+  scope.check()
+  const redacted = redactSecrets(serialized)
+  scope.check()
+  const window = redactedRanges(original, redacted)(0, Math.min(original.length, 2000))
+  scope.check()
+  return window
+}
 
 export function registerRuleChecks(
   plugin: PluginContextFacets,
@@ -66,10 +85,13 @@ export function registerRuleChecks(
           scope.signal,
         )
         if (!judge || scope.signal.aborted) return {}
+        const prep = preparation(scope.signal, started + 1500)
+        const args = await argumentWindow(payload.args, prep)
+        prep.check()
         const req: JudgmentRequest = {
           state: {
             tool: payload.name,
-            args: redactedWindow(JSON.stringify(payload.args), 2000, 'first'),
+            args,
             result: redactedWindow(
               payload.result.content
                 .flatMap((block) => (block.type === 'text' ? [block.text] : []))
@@ -91,6 +113,7 @@ export function registerRuleChecks(
             ]),
           ),
         }
+        prep.check()
         const outcome = await within(
           judge.judge('judgment.rules', req, {
             attemptMs: 1500,

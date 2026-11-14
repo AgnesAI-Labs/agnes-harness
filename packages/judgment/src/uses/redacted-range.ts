@@ -1,8 +1,10 @@
 import { redactSecrets } from '@agnes/extension-api'
 
 /** Mask full available context once, then clip in original UTF-16 source coordinates. */
-export function redactedRanges(text: string): (start: number, end: number) => string {
-  const redacted = redactSecrets(text)
+export function redactedRanges(
+  text: string,
+  redacted = redactSecrets(text),
+): (start: number, end: number) => string {
   let left = 0
   let right = text.length
   if (redacted !== text) {

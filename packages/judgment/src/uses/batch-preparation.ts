@@ -3,6 +3,7 @@ import type { JsonValue } from '@agnes/protocol'
 import { atomicRequestFits } from '../encode.js'
 import { type Preparation, preparation, snapshot } from '../preparation.js'
 import { type JudgmentRequest, object, type Question, validateRequest } from '../questions.js'
+import { maskCredentialValues } from './credential-values.js'
 
 export type BatchInput = { items: { id: string; state: JsonValue }[]; questions: Record<string, Question> }
 export class BatchPreparationInterrupted extends Error {
@@ -12,14 +13,6 @@ export class BatchPreparationInterrupted extends Error {
 }
 const RAW_BYTES = 1048576
 const encoder = new TextEncoder()
-function credentialKey(key: string): boolean {
-  return (
-    /^secret:\/\//i.test(key) ||
-    /(?:^|[_-])(?:password|passwd|token|secret|api[_-]?key|authorization|key)$/i.test(
-      key.replace(/([a-z0-9])([A-Z])/g, '$1_$2'),
-    )
-  )
-}
 async function cleanText(value: string, scope: Preparation): Promise<string> {
   const before = scope.step()
   if (before) await before
@@ -47,25 +40,6 @@ async function maskQuestion(question: Question, scope: Preparation): Promise<Que
   for (const [key, value] of Object.entries(question.criteria ?? {}))
     criteria[key] = await cleanText(value, scope)
   return { type: 'noul', instructions, ...(question.criteria ? { criteria } : {}) }
-}
-async function maskValues(value: JsonValue, scope: Preparation): Promise<JsonValue> {
-  const waiting = scope.step()
-  if (waiting) await waiting
-  if (Array.isArray(value)) {
-    const out: JsonValue[] = []
-    for (const child of value) out.push(await maskValues(child, scope))
-    return out
-  }
-  if (value && typeof value === 'object') {
-    const out: Record<string, JsonValue> = Object.create(null)
-    for (const [key, child] of Object.entries(value)) {
-      const waiting = scope.step()
-      if (waiting) await waiting
-      out[key] = credentialKey(key) ? '[REDACTED]' : await maskValues(child, scope)
-    }
-    return out
-  }
-  return value
 }
 export async function batchInput(
   value: unknown,
@@ -115,7 +89,7 @@ export async function batchInput(
       if (id === undefined) return null
       const overhead = encoder.encode(JSON.stringify({ id, state: null })).length - 4
       const raw = await snapshot(value.items[index].state, RAW_BYTES - overhead, scope)
-      const masked = await maskValues(raw.value, scope)
+      const masked = await maskCredentialValues(raw.value, scope)
       scope.check()
       const text = await cleanText(JSON.stringify(masked), scope)
       const state = JSON.parse(text) as JsonValue
