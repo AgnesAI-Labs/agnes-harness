@@ -9,6 +9,18 @@
   "references": [
     {
       "path": "."
+    },
+    {
+      "path": "../extension-api"
+    },
+    {
+      "path": "../protocol"
+    },
+    {
+      "path": "../host"
+    },
+    {
+      "path": "../sdk"
     }
   ]
 }

@@ -1735,6 +1735,10 @@ importers:
       zod:
         specifier: 4.5.4
         version: 4.5.4
+    devDependencies:
+      '@agnes/host':
+        specifier: workspace:*
+        version: link:../host
 
   packages/system-node:
     dependencies:
