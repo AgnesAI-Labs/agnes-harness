@@ -173,7 +173,7 @@ describe('the executor', () => {
   })
 
   it('fails the ticket on a lasting turn failure, and lets a passing one retry', async () => {
-    const { accept, effects, worker, watched, stop } = setup()
+    const { accept, effects, executor, worker, watched, stop } = setup()
     const ticketId = accept()
     await effects.idle('launch')
     await watched(ticketId)
@@ -182,10 +182,20 @@ describe('the executor', () => {
     try {
       session.emit({
         type: 'turn/end',
-        data: { reason: 'error', error: { code: 'rate_limit', message: '429 Too Many Requests' } },
+        data: { reason: 'error', error: { code: 'RATE_LIMIT', message: 'provider busy' } },
       })
       await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0))
       expect(latestReport(ticketOf(ticketId))).toBeUndefined()
+      // The ticket card shows the wait while the worker waits it out.
+      expect(executor.modelRetry(session.id)).toEqual({
+        model_retry: {
+          sessionId: session.id,
+          code: 'RATE_LIMIT',
+          attempts: 1,
+          since: expect.any(String),
+          lastAt: expect.any(String),
+        },
+      })
       await vi.advanceTimersByTimeAsync(15_000)
       await vi.waitFor(() =>
         expect(
@@ -203,6 +213,7 @@ describe('the executor', () => {
       data: { reason: 'error', error: { code: 'invalid_request', message: 'bad schema' } },
     })
     await vi.waitFor(() => expect(latestReport(ticketOf(ticketId))).toMatchObject({ state: 'failed' }))
+    expect(executor.modelRetry(session.id)).toEqual({})
     await stop()
   })
 

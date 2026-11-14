@@ -135,13 +135,41 @@ const PASSING = new RegExp(
   ].join('|'),
   'i',
 )
-/** True for a passing network or model-provider failure: HTTP 408, 429 or 5xx, or a refused, reset or timed-out connection. */
+/** AGH's model error codes of a passing failure: a rate limit, a timeout, or a transport failure such as a 5xx. */
+const PASSING_CODES = new Set(['RATE_LIMIT', 'TIMEOUT', 'TRANSPORT'])
+/** AGH's codes of failures that asking again cannot fix, whatever their text quotes. */
+const LASTING_CODES = new Set([
+  'AUTH',
+  'QUOTA',
+  'OVERFLOW',
+  'NO_MODEL',
+  'NO_ADAPTER',
+  'FORMAT',
+  'CONTRACT_MISMATCH',
+  'ABORTED',
+  'BUDGET_EXCEEDED',
+])
+/** A model gateway's spending budget that ran out, which it resets: waited out like a rate limit. */
+const GATEWAY_BUDGET = /\bbudget_exceeded\b|\bBudget has been exceeded\b/
+/** The error of a worker turn that ended with `error`, carrying the turn's error code. */
+export function turnError(error: { code?: string; message?: string } | undefined): Error & { code?: string } {
+  return Object.assign(new Error(`${error?.code ?? 'error'}: ${error?.message ?? ''}`), {
+    ...(error?.code ? { code: error.code } : {}),
+  })
+}
+/**
+ * True for a passing network or model-provider failure: AGH's `RATE_LIMIT`, `TIMEOUT` and `TRANSPORT` codes (a 5xx is a
+ * `TRANSPORT`), a gateway's model budget, HTTP 408, 429 or 5xx, or a refused, reset or timed-out connection. AGH's other
+ * model codes, such as `AUTH` or the context `BUDGET_EXCEEDED`, are lasting whatever their text says.
+ */
 export function transient(error: unknown): boolean {
+  const code = (error as { code?: unknown } | undefined)?.code
+  const message = error instanceof Error ? error.message : String(error)
+  if (typeof code === 'string' && PASSING_CODES.has(code)) return true
+  if (code !== 'BUDGET_EXCEEDED' && GATEWAY_BUDGET.test(message)) return true
+  if (typeof code === 'string' && LASTING_CODES.has(code)) return false
   const status = (error as { status?: unknown } | undefined)?.status
   if (typeof status === 'number') return status === 408 || status === 429 || status >= 500
-  const text =
-    error instanceof Error
-      ? `${error.name} ${error.message} ${String((error as { code?: unknown }).code ?? '')}`
-      : String(error)
+  const text = error instanceof Error ? `${error.name} ${message} ${String(code ?? '')}` : message
   return PASSING.test(text)
 }

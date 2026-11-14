@@ -35,6 +35,7 @@ import {
   sourceTrigger,
   ticketExecution,
   transient,
+  turnError,
 } from './assignment.js'
 import { messageOfCommand, type Redelivery } from './delivery.js'
 import {
@@ -82,6 +83,8 @@ export interface ExecutorHost {
   readonly effects: Pick<Effects, 'enqueue' | 'handle'>
   /** The `worker` health entry, which reports whether handling worker events failed. */
   readonly health: HealthEntry
+  /** The `models` health entry, which reports workers waiting out a passing model failure. */
+  readonly models?: HealthEntry
   readonly stateDir: string
   readonly lifetime: AbortSignal
   readonly sessions: ExecutorSessions
@@ -129,6 +132,15 @@ export class WorkerSlots {
 }
 
 type LedgerEvent = { type: string; data?: unknown }
+/** A worker waiting out a passing model failure: the ticket cards' `model_retry`. */
+export interface ModelRetry {
+  sessionId: string
+  /** AGH's error code of the last failed turn, such as `RATE_LIMIT`. */
+  code: string
+  attempts: number
+  since: string
+  lastAt: string
+}
 
 /**
  * The engine's `Executor` port: queues launches and deliveries through the effects, holds worker slots, and reports what
@@ -151,6 +163,8 @@ export class SuperagentExecutor implements Executor {
   /** When a person's message typed into a worker's session last started a turn, by ticket. */
   private readonly personal = new Map<string, string>()
   private readonly timers = new Set<ReturnType<typeof setTimeout>>()
+  /** The workers that wait out a passing model failure, by session. */
+  private readonly modelRetries = new Map<string, ModelRetry>()
   constructor(private readonly host: ExecutorHost) {
     this.slots = new WorkerSlots(
       () =>
@@ -168,6 +182,43 @@ export class SuperagentExecutor implements Executor {
       limit: () => (host.paused() ? 0 : 4),
       quiet: true,
     })
+  }
+  /** `{ model_retry }` while the session's worker waits out a passing model failure, else `{}`. */
+  modelRetry(sessionId: string | false | undefined): { model_retry?: ModelRetry } {
+    const retry = sessionId ? this.modelRetries.get(sessionId) : undefined
+    return retry ? { model_retry: { ...retry } } : {}
+  }
+  /** Every worker that waits out a passing model failure. */
+  waitingModels(): ModelRetry[] {
+    return [...this.modelRetries.values()].map((retry) => ({ ...retry }))
+  }
+  private retried(sessionId: string, code: string | undefined, attempts: number | undefined): void {
+    const at = now()
+    if (attempts === undefined) this.modelRetries.delete(sessionId)
+    else
+      this.modelRetries.set(sessionId, {
+        sessionId,
+        code: code ?? 'error',
+        attempts,
+        since: this.modelRetries.get(sessionId)?.since ?? at,
+        lastAt: at,
+      })
+    const retries = [...this.modelRetries.values()]
+    this.host.models?.set(
+      retries.length
+        ? {
+            state: 'error',
+            detail: retries
+              .slice(0, 5)
+              .map(
+                (item) =>
+                  `${item.sessionId}: ${item.code}, retried ${item.attempts} times, waiting since ${item.since}`,
+              )
+              .join('; '),
+            at,
+          }
+        : { state: 'ready', detail: 'No worker is waiting out a passing model failure', at },
+    )
   }
   /** The ids of Superagent's sessions that exist: the main session and each ticket's worker. */
   sessionIds(): string[] {
@@ -298,6 +349,7 @@ export class SuperagentExecutor implements Executor {
     const ownTurn = (report?.state === 'ready' || report?.state === 'dropped') && !busy
     const sessionId = workerKey(ticket.id)
     this.host.store.afterCommit(() => {
+      if (this.modelRetries.has(sessionId)) this.retried(sessionId, undefined, undefined)
       this.settling.get(ticket.id)?.abort()
       const cancel =
         ownTurn || !this.busy.has(sessionId) ? Promise.resolve() : this.host.sessions.cancel(sessionId)
@@ -466,13 +518,18 @@ export class SuperagentExecutor implements Executor {
     const assignment = ticket && runningAssignment(ticket)
     if (!ticket || !assignment || !liveTicket(ticket)) return
     if (data.reason === 'error') {
-      const error = Object.assign(new Error(`${data.error?.code ?? 'error'}: ${data.error?.message ?? ''}`), {
-        code: data.error?.code,
-      })
-      if (this.retries(assignment.id, error)) this.resumeAfter(ticket.id, assignment.id, error)
-      else void this.background(Promise.resolve().then(() => this.failed(ticket.id, error.message)))
+      const error = turnError(data.error)
+      if (this.retries(assignment.id, error)) {
+        this.retried(sessionId, error.code, this.transient.get(assignment.id))
+        this.resumeAfter(ticket.id, assignment.id, error)
+      } else {
+        this.retried(sessionId, undefined, undefined)
+        void this.background(Promise.resolve().then(() => this.failed(ticket.id, error.message)))
+      }
       return
     }
+    if (data.reason !== 'aborted' && data.reason !== 'interrupted')
+      this.retried(sessionId, undefined, undefined)
     // A turn a cancel ended is no end of the worker's own turn.
     if (data.reason === 'aborted' || data.reason === 'interrupted') return
     void this.background(this.workerIdle(ticket, assignment, sessionId))
