@@ -14,6 +14,7 @@ import type { RuntimeState } from './assembly-runtime.js'
 import type { SessionsState } from './assembly-session-services.js'
 import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
+import type { OwnerInputEngineDeps } from './managed-input-admission.js'
 import { createIdleSignal, driveOwnerInputs } from './managed-session-idle.js'
 import { managedSessionPorts, managedWorkspaceRoot } from './managed-session-ports.js'
 import { createManagedSessions } from './managed-sessions.js'
@@ -24,6 +25,20 @@ import { webhookSessions, webhookTriggerActor } from './webhook-sessions.js'
 
 /** The slow sweep for held owner inputs whose turns report no idle. */
 const OWNER_INPUT_SWEEP_MS = 60_000
+
+/** The owner input engine's deps when managed sessions keep input records; crash points come only from test fixtures. */
+function ownerInputDeps(
+  o: Pick<AssemblyBase['o'], 'ownerInputFaults'>,
+  inputs: StoresState['managedSessionInputs'],
+  enabled: OwnerInputEngineDeps['enabled'],
+): Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults'> | undefined {
+  if (!inputs) return undefined
+  return {
+    inputs,
+    ...(enabled ? { enabled } : {}),
+    ...(o.ownerInputFaults ? { faults: o.ownerInputFaults } : {}),
+  }
+}
 
 export function openClientServices(
   state: AssemblyBase & StoresState & WorkersState & DispatchState & RuntimeState & SessionsState,
@@ -176,7 +191,7 @@ export function openClientServices(
     })
     const sessions = createManagedSessions(
       managed.ports,
-      managedSessionInputs && { inputs: managedSessionInputs, enabled: profilePorts.managedSessionEnabled },
+      ownerInputDeps(o, managedSessionInputs, profilePorts.managedSessionEnabled),
     )
     profilePorts.managedSessions.port = sessions
     profilePorts.managedSessions.skillInstallsOff = sessions.skillInstallsOff

@@ -107,6 +107,8 @@ export type StartSupervisorOptions = {
   activationBarrier?: ExtensionActivationBarrier
   /** Test/composition injection; production creates the signal that reports idle managed sessions. */
   idleSignal?: IdleSignal
+  /** Test fixtures only: crash points inside owner input admission. Production never passes it. */
+  ownerInputFaults?: import('./managed-input-admission.js').OwnerInputEngineDeps['faults']
   /** runAgnesd's boot read boundary; startup closes it before the client socket listens. */
   bootVerification?: BootVerification
   /** PackageAdmin is composed once and registered on every matching transport endpoint. */
