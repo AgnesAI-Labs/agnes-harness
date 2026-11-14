@@ -56,6 +56,7 @@
         "examples/community/deliverables-gallery",
         "examples/ui/interaction-renderer",
         "examples/ui/tool-result-card",
+        "packages/judgment-ui",
         "packages/package-manager/bundled-plugins/browser",
         "packages/package-manager/bundled-plugins/conversation-ui",
         "packages/package-manager/bundled-plugins/deliverables-ui",
@@ -293,6 +294,7 @@
       "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Same pin line as react (WC5).",
       "consumers": [
+        "packages/judgment-ui",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
