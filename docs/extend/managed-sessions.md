@@ -96,7 +96,7 @@ const result = await init.sessions.admitInput(sessionId, {
   target: { taskId: 'task-42', taskGeneration: 3, startKey: 'task-42' },
   input: { kind: 'ownerMessage', receiptId: event.receiptId },
 })
-// later, or after a crash: the same state without changing anything
+// later, or after a crash: the same input's state (never a new request)
 const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1' })
 ```
 
@@ -105,7 +105,7 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 | `input.kind` | Text | What the platform does |
 | --- | --- | --- |
 | `ownerMessage` | Never passed. Give the `receiptId` of a [channel event](channel-targets.md#receipts). | Takes the text from the receipt the Host recorded. The receipt must belong to your service and the owner's current pairing, and one receipt is admitted once. |
-| `recoveryContinuation` | Never passed. Give `turnEndSeq`, the seq of the turn that ended. | Checks that turn was the last one, ended by cancellation or failure, with no later turn start; then writes a fixed continuation sentence. Otherwise `recoveryUnknown`. |
+| `recoveryContinuation` | Never passed. Give `turnEndSeq`, the seq of the turn that ended. | Checks that turn was the last one, ended by cancellation or failure, with no later turn start; then submits the fixed sentence "Continue the interrupted turn without treating this recovery as a new owner decision." Otherwise `recoveryUnknown`. |
 | `legacyOwnerMessage` | Passed as `text`, with `originalInbox: string \| null`. | The origin cannot be verified, so the result is always `recoveryUnknown`; the text runs only if the owner chooses to deliver it in the Web. |
 
 The result is one of these states. Everything except `legacySend` and `absent` carries `inputId` (equal to `key`), `version` (rises on every change), `reason` and `reviewLocation`.
@@ -113,16 +113,16 @@ The result is one of these states. Everything except `legacySend` and `absent` c
 | `state` | Meaning | What to do |
 | --- | --- | --- |
 | `queued` | The key is taken but the record was not completed (a crash between two steps). | Call `admitInput` again. |
-| `enqueued` | Admitted. The platform holds the text until the session is idle and the start checks pass. | Poll `inputResult`. |
+| `enqueued` | Admitted. The platform holds the text until the session is idle and the start checks pass. | Poll `inputResult`. It never changes the request, but it may submit the held input if it has become eligible; the platform also does so when the session goes idle and on a periodic sweep. |
 | `consumed` | A turn took the text. Adds `turn` and `seq`. Final. | Done. |
 | `retained` | Kept and never delivered: the owner chose keep or discard in the Web, or the session was archived. Final. | Done. |
-| `needsOwner` | Delivery cannot be shown to be right: receipt unknown or not yours, pairing changed, grant revoked, or the start checks fail (at admission or at submit). | Notify the owner; do not retry. The owner decides in the Web. |
+| `needsOwner` | Delivery cannot be shown to be right: receipt unknown or not yours, pairing changed, grant revoked, or the start checks fail (at admission or at submit). With `ownerDiscarded`, the submitted input was removed from the session inbox outside the platform; its text is kept for the owner. | Notify the owner; do not retry. The owner decides in the Web. |
 | `waitingQuestion` | The session has an unanswered question. The platform holds the input and moves it on once the question closes. | Notify the owner and wait. |
 | `recoveryUnknown` | A `legacyOwnerMessage`, or a `recoveryContinuation` that failed its checks. | Notify the owner. The owner decides in the Web. |
 | `legacySend` | The key exists only in the old `send` ledger. `delivery` is `consumed`, `pending` or `unknown`. | `consumed` is final; otherwise resubmit as `legacyOwnerMessage`. |
 | `absent` | The platform knows no such key. `historyCoverage: 'complete'` only when the session was created after input records existed; otherwise `partial`. | Admit only on `complete`; on `partial` only notify. |
 
-`reason` is one of `eligible`, `busy`, `questionOpen`, `legacySourceUnknown`, `recoveryUnverified`, `receiptUnknown`, `pairingChanged`, `grantRevoked`, `sessionArchived`, `ownerRetained`, `ownerDiscarded`. Show it as text; values may be added. `reviewLocation` is `/?session=<sessionId>&ownerInput=<inputId>`, the Web page where the owner reads the text, its source and its history and decides. The page's decisions (deliver, keep, discard, and redeliver or discard for parked channel receipts) go through `_agnes/v1/managedInput.get` and `_agnes/v1/managedInput.decide`, which accept only the owner's own Web page. A local SDK client on the Unix socket is refused with `CAPABILITY_DENIED`, and so are plugin client modules, home pages and workbench panels calling through the APIs the Web hands them. Limit: plugin code runs in the same page, so code that patches the page's WebSocket, opens its own socket or works around the SDK objects is not stopped.
+`reason` is one of `eligible`, `busy`, `questionOpen`, `legacySourceUnknown`, `recoveryUnverified`, `receiptUnknown`, `pairingChanged`, `grantRevoked`, `sessionArchived`, `ownerRetained`, `ownerDiscarded` (with `retained`, the owner discarded it; with `needsOwner`, it was removed outside the platform). Show it as text; values may be added. `reviewLocation` is `/?session=<sessionId>&ownerInput=<inputId>`, the Web page where the owner reads the text, its source and its history and decides. The page's decisions (deliver, keep, discard, and redeliver or discard for parked channel receipts) go through `_agnes/v1/managedInput.get` and `_agnes/v1/managedInput.decide`, which accept only the owner's own Web page. A local SDK client on the Unix socket is refused with `CAPABILITY_DENIED`, and so are plugin client modules, home pages and workbench panels calling through the APIs the Web hands them. Limit: plugin code runs in the same page, so code that patches the page's WebSocket, opens its own socket or works around the SDK objects is not stopped.
 
 Refusals reject as described under [Refusals](#refusals), with `data.reason`: `OWNER_INPUT_TARGET_MISMATCH` (`target` differs from the session's start key or binding), `OWNER_INPUT_KEY_REUSED` (same key, any difference in the request) and `SESSION_ARCHIVED` (thrown, never returned). `OWNER_INPUT_REQUIRED` is what `send` on a bound session returns. Malformed parameters are `INVALID_PARAMS`.
 
@@ -146,7 +146,5 @@ That check is not authentication. The calling row (owner, package, integrity and
 ## Not yet available
 
 Granting workspaces from the Web is not available yet; use `agh plugins grants`. Binding a session to the owner's channel is follow-up work.
-
-The Host side of owner input admission is wired up over several changes of the 5.18.0 release. A build that exports these types but has not finished them refuses `admitInput` and `inputResult` with `CAPABILITY_DENIED`; do not rely on them until the Host you run reports an API version that includes the finished behavior.
 
 The command rules do not cover commands they cannot see: a sub-agent that runs as an external agent process (Claude Code, Codex, ACP or SDK agents) runs its own shell, and [the gaps the rules list](../guide/security.md#outward-command-rules) run unasked under full access. Weigh that before granting full access to a session that reads outside text.
