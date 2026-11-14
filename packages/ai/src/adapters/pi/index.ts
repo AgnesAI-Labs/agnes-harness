@@ -28,7 +28,7 @@ import { networkEvent, networkFailure, watchResponse } from './network.js'
 import { probeInference } from './probe.js'
 import { probeModelsEndpoint } from './probe-models.js'
 import { buffersToolCalls } from './providers/agnes-ai.js'
-import { deepSeekDefaultOutput } from './request-output.js'
+import { defaultOutputCap, wireCompat } from './request-output.js'
 import { toContext } from './to-context.js'
 import { responseMeta, translateEvent, withResponse } from './translate.js'
 import { AMBIENT_CREDENTIAL_APIS, streamOverApi } from './wire.js'
@@ -182,6 +182,7 @@ export function toPiModel(
         ]),
       )
     : undefined
+  const compat = wireCompat(decl.api, record)
   return {
     id: record.id,
     name: record.name,
@@ -199,7 +200,7 @@ export function toPiModel(
     // Per-request headers win over the ones the catalogue declared: the caller knows about this
     // request, the catalogue only about the route.
     headers: { ...(record.headers ?? {}), ...headers },
-    ...(record.compat ? { compat: record.compat as never } : {}),
+    ...(compat ? { compat: compat as never } : {}),
   }
 }
 
@@ -467,8 +468,8 @@ export class PiAdapter extends WireAdapter {
       req.messages.some((m) => m.role === 'assistant' && m.content.some((c) => c.type === 'thinking'))
     )
       transforms.push({ event: 'thinking_replay', ext: 'pi' })
-    if (record.compat && Object.keys(record.compat).length > 0)
-      transforms.push({ event: 'compat', ext: 'pi' })
+    const compat = wireCompat(decl.api, record)
+    if (compat && Object.keys(compat).length > 0) transforms.push({ event: 'compat', ext: 'pi' })
     // These APIs accept fetch and serialize their final request before calling it. Google rejects
     // custom fetch and Bedrock uses Smithy; those remain unreported. Codex uses SSE so
     // its requests honor the same deployment proxy and account deadlines.
@@ -682,9 +683,7 @@ export class PiAdapter extends WireAdapter {
           ),
         )
         if (this.providerId) requestModel.provider = this.providerId
-        const defaultOutput = buffered
-          ? record.maxTokens
-          : deepSeekDefaultOutput(decl.baseUrl, record.maxTokens)
+        const defaultOutput = buffered ? record.maxTokens : defaultOutputCap(decl.api, decl.baseUrl, record)
         const it = network.run(() =>
           this.streamImpl(requestModel, context, {
             ...this.streamOptions(route, req, { ...opts, signal: inner.signal }),
@@ -703,7 +702,7 @@ export class PiAdapter extends WireAdapter {
                 ),
               )
             },
-            // Raw pi streaming omits output caps. Known defaults must not raise catalog capacity.
+            // Raw pi streaming omits output caps; defaultOutputCap says which streams carry one.
             ...(defaultOutput !== undefined ? { maxTokens: req.sampling?.maxTokens ?? defaultOutput } : {}),
             ...(requestAuth?.apiKey === undefined ? {} : { apiKey: requestAuth.apiKey }),
             // pi-ai checks header-owned authentication in stream options before it

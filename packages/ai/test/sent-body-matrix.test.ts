@@ -6,6 +6,8 @@ import { createProvider, NullContractStore, PiAdapter } from '../src/index.js'
 import { fakeModel, fakeRequest } from '../testkit/index.js'
 import { assertLoopbackOnly, installLoopbackOnly, restoreLoopbackOnly } from './loopback-only.js'
 
+// Models in known-models on openai-completions; the last names its own token field.
+const tableModels = ['deepseek-v4.1-flash-1017', 'deepseek-v4-pro', 'deepseek-v4-flash']
 const apis = [
   'openai-completions',
   'openai-responses',
@@ -145,6 +147,26 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
               reasoning: true,
               compat: { supportsDeveloperRole: false },
             }),
+            ...(api === 'openai-completions'
+              ? [
+                  fakeModel({
+                    id: 'deepseek-v4.1-flash-1017',
+                    route: 'matrix',
+                    api,
+                    baseUrl,
+                    maxTokens: 256000,
+                  }),
+                  fakeModel({ id: 'deepseek-v4-pro', route: 'matrix', api, baseUrl, maxTokens: 65536 }),
+                  fakeModel({
+                    id: 'deepseek-v4-flash',
+                    route: 'matrix',
+                    api,
+                    baseUrl,
+                    maxTokens: 256000,
+                    compat: { maxTokensField: 'max_completion_tokens' },
+                  }),
+                ]
+              : []),
           ],
         },
       ],
@@ -180,7 +202,8 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
         stamp: {
           sent_hash: sha256Hex(body),
           derived_hash: request.derivedHash,
-          transforms: model === 'compat' ? [{ event: 'compat', ext: 'pi' }] : [],
+          transforms:
+            model === 'compat' || tableModels.includes(model) ? [{ event: 'compat', ext: 'pi' }] : [],
         },
       })
       expect(JSON.stringify(events[0])).not.toContain('fixture-secret')
@@ -216,6 +239,22 @@ it.each(apis)('%s reports final real HTTP bodies on defaults, errors and recover
       expect(compatible.body.input).toEqual(
         expect.arrayContaining([expect.objectContaining({ role: 'system' })]),
       )
+    }
+    if (api === 'openai-completions') {
+      // A gateway sent no cap applies its own (one cut DeepSeek V4.1 flash at 65,536 tokens), and may
+      // ignore max_completion_tokens; DeepSeek Harness sends its output cap as max_tokens.
+      expect(first.body).not.toHaveProperty('max_tokens')
+      expect(first.body).not.toHaveProperty('max_completion_tokens')
+      const limit = await execute('deepseek-v4.1-flash-1017')
+      expect(limit.body).toHaveProperty('max_tokens', 256000)
+      expect(limit.body).not.toHaveProperty('max_completion_tokens')
+      expect((await execute('deepseek-v4-pro')).body).toHaveProperty('max_tokens', 65536)
+      const capped = await execute('deepseek-v4.1-flash-1017', 'capped system', 64)
+      expect(capped.body).toHaveProperty('max_tokens', 64)
+      expect(capped.body).not.toHaveProperty('max_completion_tokens')
+      const named = await execute('deepseek-v4-flash')
+      expect(named.body).toHaveProperty('max_completion_tokens', 256000)
+      expect(named.body).not.toHaveProperty('max_tokens')
     }
     if (api === 'mistral-conversations') {
       expect(first.body).not.toHaveProperty('max_tokens')
