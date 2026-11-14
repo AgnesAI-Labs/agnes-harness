@@ -8,6 +8,7 @@ import { createJudgmentScheduler } from './scheduler.js'
 
 export type JudgmentContext = Pick<HookContext, 'sideCall' | 'signal' | 'session'>
 export type JudgmentUse = 'stop' | 'findRelevant' | 'judgeBatch' | 'rules'
+type InternalJudgmentUse = JudgmentUse | 'title'
 export type JudgmentStatusReason =
   | 'none'
   | 'model-not-configured'
@@ -39,9 +40,16 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
   const listeners = new Set<() => void>()
   let current: readonly JudgeTarget[] | null = null
   let reason: JudgmentStatusReason = sideModels ? 'model-not-configured' : 'authorization-unavailable'
-  const requests: Record<JudgmentUse, number> = { stop: 0, findRelevant: 0, judgeBatch: 0, rules: 0 }
-  const purposes: Record<string, JudgmentUse> = {
+  const requests: Record<InternalJudgmentUse, number> = {
+    stop: 0,
+    findRelevant: 0,
+    judgeBatch: 0,
+    rules: 0,
+    title: 0,
+  }
+  const purposes: Record<string, InternalJudgmentUse> = {
     'judgment.stop': 'stop',
+    'judgment.title': 'title',
     'judgment.find.names': 'findRelevant',
     'judgment.find.sketches': 'findRelevant',
     'judgment.find.verify': 'findRelevant',
@@ -106,7 +114,7 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
     listeners.clear()
     current = null
     reason = 'authorization-unavailable'
-    for (const use of Object.keys(requests) as JudgmentUse[]) requests[use] = 0
+    for (const use of Object.keys(requests) as InternalJudgmentUse[]) requests[use] = 0
     scheduler.dispose()
     cache.clear()
     cooldown.clear()
@@ -115,7 +123,15 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
   ownerSignal.addEventListener('abort', dispose, { once: true })
   refresh()
   return {
-    stats: () => ({ cache: cache.stats(), requests: { ...requests } }),
+    stats: () => ({
+      cache: cache.stats(),
+      requests: {
+        stop: requests.stop,
+        findRelevant: requests.findRelevant,
+        judgeBatch: requests.judgeBatch,
+        rules: requests.rules,
+      },
+    }),
     statusReason: () => reason,
     current: () => current,
     subscribe(listener) {
