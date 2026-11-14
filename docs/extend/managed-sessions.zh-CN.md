@@ -122,7 +122,7 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 | `legacySend` | key 只出现在旧 `send` 台账。`delivery` 为 `consumed`、`pending` 或 `unknown`。 | `consumed` 是终态；否则以 `legacyOwnerMessage` 重新提交。 |
 | `absent` | 平台不知道这个 key。仅当会话创建于输入记录启用之后，`historyCoverage` 才是 `complete`，否则为 `partial`。 | 仅 `complete` 时准入；`partial` 只发通知。 |
 
-`reason` 取 `eligible`、`busy`、`questionOpen`、`legacySourceUnknown`、`recoveryUnverified`、`receiptUnknown`、`pairingChanged`、`grantRevoked`、`sessionArchived`、`ownerRetained`、`ownerDiscarded` 之一。只当文字显示，取值可增。`reviewLocation` 是 `/?session=<sessionId>&ownerInput=<inputId>`，主人在 Web 上的这个页面查看原文、来源和历史并作决定。页面上的决定（投递、保留、丢弃，以及对停放的渠道回执重投或丢弃）经 `_agnes/v1/managedInput.get` 与 `_agnes/v1/managedInput.decide`，二者只接受主人自己的 Web 页面。经 Unix 套接字连接的本地 SDK 客户端以 `CAPABILITY_DENIED` 拒绝；插件的客户端模块、主页页面和工作台面板经 Web 交给它们的接口调用时同样被拒绝。限制：插件代码与页面运行在同一页面中，改写页面 WebSocket 或自开连接的代码拦不住。
+`reason` 取 `eligible`、`busy`、`questionOpen`、`legacySourceUnknown`、`recoveryUnverified`、`receiptUnknown`、`pairingChanged`、`grantRevoked`、`sessionArchived`、`ownerRetained`、`ownerDiscarded` 之一。只当文字显示，取值可增。`reviewLocation` 是 `/?session=<sessionId>&ownerInput=<inputId>`，主人在 Web 上的这个页面查看原文、来源和历史并作决定。页面上的决定（投递、保留、丢弃，以及对停放的渠道回执重投或丢弃）经 `_agnes/v1/managedInput.get` 与 `_agnes/v1/managedInput.decide`，二者只接受主人自己的 Web 页面。经 Unix 套接字连接的本地 SDK 客户端以 `CAPABILITY_DENIED` 拒绝；插件的客户端模块、主页页面和工作台面板经 Web 交给它们的接口调用时同样被拒绝。限制：插件代码与页面运行在同一页面中，改写页面 WebSocket、自开连接或绕过 SDK 对象的代码拦不住。
 
 拒绝按[拒绝](#拒绝)一节的方式 reject，`data.reason` 为：`OWNER_INPUT_TARGET_MISMATCH`（`target` 与会话的 startKey 或绑定不符）、`OWNER_INPUT_KEY_REUSED`（同 key、请求有任何不同）和 `SESSION_ARCHIVED`（抛出，不作为结果返回）。对已绑定会话调 `send` 得到的是 `OWNER_INPUT_REQUIRED`。参数不合法为 `INVALID_PARAMS`。
 
