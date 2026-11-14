@@ -59,13 +59,31 @@ const textOf = (content: unknown): string =>
 
 /** One request the model received; `main` is a turn of a session (it offers tools), not a side request without tools. */
 export type ModelRequest = { lastRole: string; marker: string; main: boolean; toolResult?: string }
+/** A turn's request as a test's `respond` sees it: the messages, the names of the tools offered, and their text. */
+export interface ScriptRequest {
+  messages: { role: string; content?: unknown; tool_calls?: unknown[] }[]
+  tools: string[]
+  /** The text of the newest user message. */
+  user: string
+  lastRole: string
+}
+/** What the model answers instead of the `[[...]]` script: one tool call, or a plain text answer. */
+export type ScriptReply = { tool: { name: string; args: unknown } } | { text: string }
+/**
+ * Answers a turn's request (one that offers tools), or leaves it to the `[[...]]` script by returning undefined. `closed`
+ * aborts when the daemon drops the request, so a reply that is held back (a busy turn) can end with it.
+ */
+export type Respond = (
+  request: ScriptRequest,
+  closed: AbortSignal,
+) => ScriptReply | undefined | Promise<ScriptReply | undefined>
 
 /**
  * A scripted OpenAI-compatible loopback model. The newest user message containing `[[...]]` drives it: a
  * `TOOL{"name":"shell","args":{...}}ENDTOOL` marker makes the next main-loop request call that tool once; anything
  * else is answered with `ACK`. There is no remote fallback.
  */
-export async function startScriptedModel() {
+export async function startScriptedModel(respond?: Respond) {
   const requests: ModelRequest[] = []
   let calls = 0
   const finish = (response: ServerResponse, delta: Record<string, unknown>, reason: string) => {
@@ -86,6 +104,8 @@ export async function startScriptedModel() {
     for await (const chunk of request) chunks.push(Buffer.from(chunk))
     const body = JSON.parse(Buffer.concat(chunks).toString()) as { messages: Message[]; tools?: unknown[] }
     const all = JSON.stringify(body.messages)
+    const closed = new AbortController()
+    response.once('close', () => closed.abort())
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
     response.flushHeaders()
     if (all.includes('<dag-planner-protocol>'))
@@ -105,6 +125,27 @@ export async function startScriptedModel() {
       main,
       ...(last.role === 'tool' ? { toolResult: textOf(last.content) } : {}),
     })
+    if (main && respond) {
+      const newest = textOf([...body.messages].reverse().find((m) => m.role === 'user')?.content)
+      const tools = (body.tools as { function?: { name?: string } }[]).map(
+        (item) => item.function?.name ?? '',
+      )
+      const reply = await respond(
+        { messages: body.messages as ScriptRequest['messages'], tools, user: newest, lastRole: last.role },
+        closed.signal,
+      )
+      if (closed.signal.aborted) return
+      if (reply && 'tool' in reply) {
+        const call = {
+          index: 0,
+          id: `call-${++calls}`,
+          type: 'function',
+          function: { name: reply.tool.name, arguments: JSON.stringify(reply.tool.args) },
+        }
+        return finish(response, { tool_calls: [call] }, 'tool_calls')
+      }
+      if (reply) return finish(response, { role: 'assistant', content: reply.text }, 'stop')
+    }
     const tool = user.match(/TOOL(\{.*?\})ENDTOOL/s)?.[1]
     if (main && tool && last.role !== 'tool') {
       const { name, args } = JSON.parse(tool) as { name: string; args: unknown }
@@ -245,8 +286,10 @@ export async function startDaemon(opts: {
   plugins: string[]
   onHandle?: (handle: DaemonHandle) => void
   startTimeoutMs?: number
+  /** Answers the sessions' turns in place of the `[[...]]` script (see `Respond`). */
+  respond?: Respond
 }) {
-  const model = await startScriptedModel()
+  const model = await startScriptedModel(opts.respond)
   const clientId = randomUUID()
   let child: ChildProcess | undefined
   let initializer: ChildProcess | undefined
