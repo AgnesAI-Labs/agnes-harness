@@ -88,7 +88,7 @@ describe('a generation', () => {
   })
 
   it("wires the panel with every part before the lifecycle starts, and shows the agent environment's setup problem", async () => {
-    const { call, shutdown } = await start({
+    const { call, holder, shutdown } = await start({
       lifecycle: {
         environment: async () => {
           throw new SetupError('agentHomeMismatch', { actual: '/operator', home: '/state/home' })
@@ -98,6 +98,12 @@ describe('a generation', () => {
     // Wired at once: an action answers rather than saying that Superagent is not ready.
     expect(failure(await call('superagent.executor.pause', { paused: false }))).toBeUndefined()
     await vi.waitFor(async () => expect(await setupOf(call)).toMatchObject({ code: 'agentHomeMismatch' }))
+    // Its sessions stay refused for that reason, each keeping its live note.
+    const state = holder.get()
+    expect(state.guardTool({ sessionId: WORKER, toolName: 'shell', input: {} })).toMatch(
+      /Superagent cannot start: The daemon runs with HOME/,
+    )
+    expect(state.promptSections(WORKER).liveNote?.content).toBe('Ticket T-1 waits for a reply')
     await shutdown('disable')
   })
 
