@@ -21,6 +21,22 @@ export const INERT_HOOK_STATE: HookState = Object.freeze({
   guardTool: () => undefined,
 })
 
+/** The session keys Superagent opens its sessions under: its main session and each ticket's worker. */
+const RESERVED = /^superagent:(?:orchestrator(?:$|\/)|worker:.)/
+/** Why a session under Superagent's keys is refused before any service generation started in this process. */
+export const NOT_STARTED = 'Superagent has not started yet; its sessions can use tools once it has'
+/**
+ * What the hooks read in a process where no service generation has taken the state over yet, such as right after the
+ * daemon started or when the service could not start at all. The store that registers Superagent's sessions is not
+ * open then, so the sessions under the keys Superagent opens them under, and their subagents, are refused. A session
+ * the owner opened under such a key is refused too until the service starts; the registry decides from then on.
+ */
+export const UNCLAIMED_HOOK_STATE: HookState = Object.freeze({
+  isSuperagentSession: (sessionId: string) => RESERVED.test(sessionId),
+  promptSections: () => ({ stable: [] }),
+  guardTool: ({ sessionId }: { sessionId: string }) => (RESERVED.test(sessionId) ? NOT_STARTED : undefined),
+})
+
 /**
  * The process's one hook state, which every application of the plugin row reads. A generation takes it over with
  * `claim`; after that, a state changes only from the one its writer expects, so a generation that stops late cannot
@@ -35,8 +51,8 @@ export interface HookStateHolder {
   /** Replaces `expected` with `residue`, what a stop leaves; false, changing nothing, when `expected` was replaced. */
   compareAndClear(expected: HookState, residue: HookState): boolean
 }
-export function createHookStateHolder(): HookStateHolder {
-  let current = INERT_HOOK_STATE
+export function createHookStateHolder(initial: HookState = INERT_HOOK_STATE): HookStateHolder {
+  let current = initial
   const swap = (expected: HookState, next: HookState): boolean => {
     if (current !== expected) return false
     current = next
@@ -63,7 +79,7 @@ export function processHookState(): HookStateHolder {
   const shared = globalThis as typeof globalThis & { [HOOK_STATE_SLOT]?: HookStateHolder }
   const existing = shared[HOOK_STATE_SLOT]
   if (existing) return existing
-  const holder = Object.freeze(createHookStateHolder())
+  const holder = Object.freeze(createHookStateHolder(UNCLAIMED_HOOK_STATE))
   Object.defineProperty(globalThis, HOOK_STATE_SLOT, {
     value: holder,
     writable: false,

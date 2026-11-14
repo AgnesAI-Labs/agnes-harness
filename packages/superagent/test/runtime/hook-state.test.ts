@@ -6,9 +6,45 @@ import {
   createHookStateHolder,
   type HookState,
   INERT_HOOK_STATE,
+  NOT_STARTED,
   processHookState,
   stoppedHookState,
+  UNCLAIMED_HOOK_STATE,
 } from '../../src/runtime/hook-state.js'
+
+describe('a process where no service generation started yet', () => {
+  // First in this file: nothing has claimed the process's holder yet.
+  it("refuses the sessions under Superagent's keys and their subagents, and passes every other session", () => {
+    const state = processHookState().get()
+    expect(state).toBe(UNCLAIMED_HOOK_STATE)
+    const call = (sessionId: string) => state.guardTool({ sessionId, toolName: 'shell', input: {} })
+    for (const id of [
+      'superagent:orchestrator',
+      'superagent:orchestrator/01CHILD',
+      'superagent:worker:T-1',
+      'superagent:worker:T-1/01CHILD',
+    ]) {
+      expect(state.isSuperagentSession(id), id).toBe(true)
+      expect(call(id), id).toBe(NOT_STARTED)
+    }
+    for (const id of [
+      '01OWNER',
+      'superagent:orchestrator-mine',
+      'superagent:worker:',
+      'mine/superagent:worker:T-1',
+    ]) {
+      expect(state.isSuperagentSession(id), id).toBe(false)
+      expect(call(id), id).toBeUndefined()
+    }
+    expect(state.promptSections('superagent:worker:T-1')).toEqual({ stable: [] })
+  })
+
+  it('gives way to the first generation that claims the state', () => {
+    const holder = createHookStateHolder(UNCLAIMED_HOOK_STATE)
+    const cell = claimHookState(holder, named('first'), () => named('rest'))
+    expect(cell.get().guardTool({ sessionId: '01OWNER', toolName: 'read', input: {} })).toBe('first')
+  })
+})
 
 const named = (name: string): HookState => ({
   isSuperagentSession: () => true,
