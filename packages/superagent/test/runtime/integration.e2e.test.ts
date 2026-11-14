@@ -1,6 +1,6 @@
 // The whole plugin on a real daemon, from the shipped payload, with an explicit state directory and the daemon started
 // with the agent's HOME and shims: a seeded request becomes a ticket whose worker session opens in its own directory;
-// a disable through the package manager while the worker runs a turn and a job stops both within the shutdown deadline;
+// a disable through the package manager while the worker runs a turn and a job kills both within two seconds;
 // enabling again reconciles and dispatches the interrupted assignment again; the worker's report ends the ticket, which
 // the panel service shows.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
@@ -30,6 +30,11 @@ afterAll(stopAllDaemons)
 
 /** The Host's shutdown deadline for the service (the manifest's `shutdownTimeoutMs`). */
 const SHUTDOWN_DEADLINE_MS = 5_000
+/**
+ * From asking for the disable to every Superagent session confirmed quiet. The stop starts as soon as the disable
+ * reaches the worker; were it left to the next generation's publication it would start only about 5 s later.
+ */
+const DISABLE_TO_QUIET_MS = 2_000
 
 it.skipIf(process.platform === 'win32')(
   'runs a ticket end to end, stops its worker on a disable and resumes it on enable',
@@ -122,9 +127,8 @@ it.skipIf(process.platform === 'win32')(
       expect(where).toContain(join(shimsDir, 'gh'))
       await until('the worker idle again', async () => (await worker.projectUI()).opState === null)
 
-      // A background job, then a turn running a command, both of which would leave a mark if they went on. The Host
-      // calls the service's shutdown only some seconds after the disable was asked for (measured below), so the turn's
-      // command outlasts that; the worker preset moves it to the background after 5 seconds.
+      // A background job, then a turn running a command, both of which would leave a mark if they went on: the stop
+      // has to kill them, well before either ends by itself, rather than wait for them.
       const jobMark = join(root, 'job-ran')
       const turnMark = join(root, 'turn-ran')
       await worker.followUp(tool('w-job', 'shell', { command: `sleep 12; touch ${jobMark}` }))
@@ -148,18 +152,26 @@ it.skipIf(process.platform === 'win32')(
         ].join('\n'),
       )
       // Every session was cancelled and its jobs killed from within the Host's shutdown, with the SDK client still
-      // usable there: the stop read each session quiet again.
+      // usable there: the stop read each session quiet again, within the bound, long before either command would
+      // have ended by itself.
       expect(paused).toMatchObject({ assignments: [{ ticketId }] })
       expect(paused?.stop?.unstopped, 'every session confirmed quiet').toEqual([])
       expect(paused?.stop?.sessions).toBeGreaterThanOrEqual(2)
       expect(paused?.stop?.ms ?? Number.POSITIVE_INFINITY).toBeLessThan(SHUTDOWN_DEADLINE_MS)
+      expect(Number(new Date(paused?.at ?? Number.NaN)) - began, 'disable to quiet').toBeLessThanOrEqual(
+        DISABLE_TO_QUIET_MS,
+      )
       const after = await client().session.load(workerId, { history: 'none' })
       expect((await after.projectUI()).opState).toBeNull()
-      const running = (await after.jobsRead()).jobs.filter(
-        (job: { status: string; owner: string }) => job.status === 'running' && job.owner === 'agent',
+      // Both commands were killed, not left to end.
+      const jobs = (await after.jobsRead()).jobs
+      const jobOf = (path: string) => jobs.find((job) => job.command.includes(path))
+      console.info(
+        `jobs after the disable: ${JSON.stringify(jobs.map(({ command, status, code }) => ({ command, status, code })))}`,
       )
-      expect(running).toEqual([])
-      expect(daemon.stderr()).not.toMatch(/could not stop session|is still running after/)
+      expect(jobs.filter((job) => job.status === 'running' && job.owner === 'agent')).toEqual([])
+      expect(jobOf(jobMark)?.status, 'the background job was killed').toBe('killed')
+      expect(jobOf(turnMark)?.status, "the turn's command was killed").toBe('killed')
       await sleep(8_000)
       console.info(`after the wait: turn mark ${offset(mark(turnMark))}; job mark ${offset(mark(jobMark))}`)
       expect(existsSync(jobMark), 'the killed job did not finish').toBe(false)
