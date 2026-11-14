@@ -66,8 +66,13 @@ export interface LifecycleDeps {
   sessions: SessionAdapter
   control: SessionControl
   hooks: HookStateCell
-  /** The snapshot the hooks read once the reconcile registered `sessionIds`. */
+  /** The snapshot the hooks read once the reconcile has read `sessionIds`, before it acts on any of them. */
   hookState(sessionIds: ReadonlySet<string>): HookState
+  /**
+   * The Superagent session ids refused while Superagent starts or cannot (see `refusingSessions`); by default those the
+   * store knows (`storedSessionIds`).
+   */
+  registeredSessions?: () => string[]
   /**
    * The agent environment to write. `signal` aborts when the runtime stops during the start.
    * @throws SetupError when the configuration is incomplete or an account check fails.
@@ -121,11 +126,42 @@ const WORKER_PREFIX = 'superagent:worker:'
 const UNCONFIGURED: ReadonlySet<SetupCode> = new Set(['repositoryUnset', 'agentCliUnset'])
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
+const ORCHESTRATOR_KEY = 'superagent:orchestrator'
+const STARTING = 'Superagent is starting; its sessions wait until it is ready'
+
+/**
+ * The ids of the Superagent sessions the store knows: the main session (by its recorded id and its key) and each
+ * ticket's worker, ended ones included, since a person's reply can resume them.
+ */
+export function storedSessionIds(store: Store): string[] {
+  const master = store.get(KV.runtime.masterId)
+  return [
+    ...new Set([
+      ORCHESTRATOR_KEY,
+      ...(master ? [master] : []),
+      ...store.tickets.list().map((ticket) => `${WORKER_PREFIX}${ticket.id}`),
+    ]),
+  ]
+}
+
+const isWithin = (ids: ReadonlySet<string>, id: string): boolean =>
+  ids.has(id) || [...ids].some((parent) => id.startsWith(`${parent}/`))
+
+/** A snapshot that counts `sessionIds` and their children as Superagent's and refuses every tool they call for `reason`. */
+export function refusingSessions(sessionIds: ReadonlySet<string>, reason: string): HookState {
+  const ids = new Set(sessionIds)
+  return {
+    isSuperagentSession: (id) => isWithin(ids, id),
+    promptSections: () => ({ stable: [] }),
+    guardTool: ({ sessionId }) => (isWithin(ids, sessionId) ? reason : undefined),
+  }
+}
+
 /** A snapshot that counts `sessionIds` and their child sessions (`<parent>/<id>`) as Superagent's, and adds nothing else. */
 export function sessionsOnly(sessionIds: ReadonlySet<string>): HookState {
   const ids = new Set(sessionIds)
   return {
-    isSuperagentSession: (id) => ids.has(id) || [...ids].some((parent) => id.startsWith(`${parent}/`)),
+    isSuperagentSession: (id) => isWithin(ids, id),
     promptSections: () => ({ stable: [] }),
     guardTool: () => undefined,
   }
@@ -176,13 +212,16 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
   }
 
   /**
-   * Reconciles one Session by its real state. A running turn is left alone. When the ticket's running assignment would
-   * restart, the inputs queued behind the aborted turn are dropped — the restart puts back what no step took and delivers
-   * it again — and the Engine re-dispatches it once with a recovery note. Otherwise the oldest queued input is run: nothing
-   * resumes it after a daemon restart. A worker with nothing queued gets its waiting inputs flushed.
+   * Reconciles one Session from the state read for it before. A running turn is left alone. When the ticket's running
+   * assignment would restart, the inputs queued behind the aborted turn are dropped — the restart puts back what no step
+   * took and delivers it again — and the Engine re-dispatches it once with a recovery note. Otherwise the oldest queued
+   * input is run: nothing resumes it after a daemon restart. A worker with nothing queued gets its waiting inputs flushed.
    */
-  const reconcile = async (running: SuperagentApp, sessionId: string): Promise<void> => {
-    const state = await sessions.state(sessionId)
+  const reconcile = async (
+    running: SuperagentApp,
+    sessionId: string,
+    state: Awaited<ReturnType<SessionAdapter['state']>>,
+  ): Promise<void> => {
     if (state.running) return
     const ticket = ticketOf(sessionId)
     const assignment = ticket && liveTicket(ticket) ? runningAssignment(ticket) : undefined
@@ -197,6 +236,18 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     } else if (ticket && assignment) {
       running.engine.assignmentInterrupted(ticket.id, assignment.id)
     }
+  }
+
+  /** Refuses the tools of every Superagent session the store knows, for `reason`; the owner's sessions are untouched. */
+  const refuse = (reason: string): void => {
+    let ids: string[]
+    try {
+      ids = (deps.registeredSessions ?? (() => storedSessionIds(store)))()
+    } catch (error) {
+      warn(`Superagent could not list its sessions: ${message(error)}`)
+      ids = [ORCHESTRATOR_KEY]
+    }
+    hooks.set(refusingSessions(new Set(ids), reason))
   }
 
   const open = async (signal: AbortSignal): Promise<void> => {
@@ -223,10 +274,22 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       await started.start()
       if (stopping) return
       const ids = started.executor.sessionIds()
+      // Read every Session first, while they are still refused; then guard them before anything runs in one.
+      const states = new Map<string, Awaited<ReturnType<SessionAdapter['state']>>>()
       for (const id of ids) {
         if (stopping) return
         try {
-          await reconcile(started, id)
+          states.set(id, await sessions.state(id))
+        } catch (error) {
+          warn(`Superagent could not read session ${id}: ${message(error)}`)
+        }
+      }
+      if (stopping) return
+      hooks.set(deps.hookState(new Set(ids)))
+      for (const [id, state] of states) {
+        if (stopping) return
+        try {
+          await reconcile(started, id, state)
         } catch (error) {
           warn(`Superagent could not reconcile session ${id}: ${message(error)}`)
         }
@@ -236,16 +299,17 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       if (stopping) return
       timer = setInterval(() => void upkeep(), ARCHIVE_EVERY_MS)
       timer.unref?.()
-      hooks.set(deps.hookState(new Set(ids)))
       status = { state: 'running' }
     } catch (error) {
       if (stopping) return
-      if (error instanceof SetupError)
-        status = {
-          state: UNCONFIGURED.has(error.code) ? 'setupRequired' : 'setupFailed',
-          problem: error.problem,
-        }
-      else status = { state: 'failed', detail: message(error) }
+      if (error instanceof SetupError) {
+        const unconfigured = UNCONFIGURED.has(error.code)
+        status = { state: unconfigured ? 'setupRequired' : 'setupFailed', problem: error.problem }
+        refuse(`${unconfigured ? 'Superagent is not set up' : 'Superagent cannot start'}: ${error.message}`)
+      } else {
+        status = { state: 'failed', detail: message(error) }
+        refuse(`Superagent cannot start: ${message(error)}`)
+      }
     }
   }
 
@@ -280,6 +344,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       if (work) return
       stopping = false
       status = { state: 'starting' }
+      refuse(STARTING)
       aborter = new AbortController()
       work = open(aborter.signal)
     },

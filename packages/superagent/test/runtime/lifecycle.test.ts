@@ -47,19 +47,43 @@ const plan = {
 function setup(overrides: { [K in keyof LifecycleDeps]?: LifecycleDeps[K] | undefined } = {}) {
   const hooks = createHookStateCell()
   const app = fakeApp(log, () => [...sessions.keys()])
-  const seenByReconcile: boolean[] = []
+  /** What the hooks make of a session: not Superagent's, Superagent's but refused, or Superagent's and guarded. */
+  const kindOf = (id: string) => {
+    const state = hooks.get()
+    if (!state.isSuperagentSession(id)) return 'inert'
+    return state.guardTool({ sessionId: id, toolName: 'shell', input: {} }) === undefined ? 'real' : 'deny'
+  }
+  // The hooks' view of a Session while the reconcile reads it, and while it acts on it.
+  const seenByReconcile: string[] = []
+  const seenAtAct: string[] = []
   const adapter = fakeSessions(log, sessions)
-  const state = adapter.state
-  // Whether the hooks already saw a Session as Superagent's while the reconcile read it.
+  const control = fakeControl(log, sessions)
+  const { state, dropPending } = adapter
   adapter.state = (id) => {
-    seenByReconcile.push(hooks.get().isSuperagentSession(id))
+    seenByReconcile.push(kindOf(id))
     return state(id)
+  }
+  adapter.dropPending = (id, items) => {
+    seenAtAct.push(`drop ${kindOf(id)}`)
+    return dropPending(id, items)
+  }
+  const { sendNow } = control
+  control.sendNow = (id, item) => {
+    seenAtAct.push(`sendNow ${kindOf(id)}`)
+    return sendNow(id, item)
+  }
+  const { assignmentInterrupted } = app.engine
+  ;(app as { engine: typeof app.engine }).engine = {
+    assignmentInterrupted(ticketId, assignmentId) {
+      seenAtAct.push(`interrupted ${kindOf(workerKey(ticketId))}`)
+      assignmentInterrupted(ticketId, assignmentId)
+    },
   }
   const archive = vi.fn((_store: Store, _now: number) => ({ archived: 0 }))
   const deps: LifecycleDeps = {
     store,
     sessions: adapter,
-    control: fakeControl(log, sessions),
+    control,
     hooks,
     hookState: sessionsOnly,
     environment: async () => {
@@ -83,16 +107,25 @@ function setup(overrides: { [K in keyof LifecycleDeps]?: LifecycleDeps[K] | unde
     if (value === undefined) delete (deps as unknown as Record<string, unknown>)[name]
     else (deps as unknown as Record<string, unknown>)[name] = value
   }
-  return { lifecycle: createLifecycle(deps), hooks, app, archive, seenByReconcile }
+  return { lifecycle: createLifecycle(deps), hooks, app, archive, seenByReconcile, seenAtAct }
 }
 
 describe('enable', () => {
-  it('returns from start() first, then writes and checks the environment, starts the app, reconciles and only then registers the sessions', async () => {
+  it('returns from start() first, refuses the sessions while it writes and checks the environment, starts the app and reads them, and guards them before it acts', async () => {
     sessions.set(ORCHESTRATOR, { running: false, pending: [], jobs: 0 })
+    store.tickets.save(
+      runningTicket('T', { state: 'ended' }, { ended: { at: AT, by: 'human', outcome: 'stopped' } }),
+    )
     const { lifecycle, hooks, seenByReconcile } = setup()
     await lifecycle.start()
     expect(log, 'nothing ran before start() returned').toEqual([])
     expect(lifecycle.status().state).toBe('starting')
+    // From the start, the store's Superagent sessions are refused with a reason; the owner's own are not touched.
+    for (const id of [ORCHESTRATOR, workerKey('T'), `${workerKey('T')}/01CHILD`])
+      expect(hooks.get().guardTool({ sessionId: id, toolName: 'shell', input: {} }), id).toMatch(
+        /Superagent is starting/,
+      )
+    expect(hooks.get().isSuperagentSession('owner-session')).toBe(false)
     await lifecycle.settled()
     expect(log.slice(0, 5)).toEqual([
       'environment',
@@ -102,7 +135,7 @@ describe('enable', () => {
       'createApp',
       'app.start',
     ])
-    expect(seenByReconcile, 'the hooks saw no Superagent session during the reconcile').toEqual([false])
+    expect(seenByReconcile, 'the reconcile reads while the sessions are refused').toEqual(['deny'])
     expect(hooks.get().isSuperagentSession(ORCHESTRATOR)).toBe(true)
     expect(hooks.get().isSuperagentSession(`${ORCHESTRATOR}/01CHILD`), 'a child session is one too').toBe(
       true,
@@ -159,9 +192,12 @@ describe('enable', () => {
       assignments: [{ ticketId: 'B', assignmentId: 'a-B' }],
     })
 
-    const { lifecycle } = setup()
+    const { lifecycle, seenByReconcile, seenAtAct } = setup()
     await lifecycle.start()
     await lifecycle.settled()
+    // The guarded snapshot is in place after the reads and before any session is acted on.
+    expect(seenByReconcile).toEqual(['deny', 'deny', 'deny', 'deny'])
+    expect(seenAtAct).toEqual(['drop real', 'interrupted real', 'sendNow real', 'sendNow real'])
     const reconcile = log.filter(
       (line) => !line.startsWith('state') && log.indexOf(line) > log.indexOf('app.start'),
     )
@@ -187,15 +223,20 @@ describe('enable', () => {
     await lifecycle.settled()
     expect(log).toEqual(['environment'])
     expect(lifecycle.status()).toMatchObject({ state: 'setupRequired', problem: { code: 'repositoryUnset' } })
-    expect(hooks.get().isSuperagentSession(ORCHESTRATOR)).toBe(false)
+    // Superagent's sessions stay refused, with the setup problem as the reason; the owner's are not touched.
+    expect(hooks.get().guardTool({ sessionId: ORCHESTRATOR, toolName: 'shell', input: {} })).toMatch(
+      /Superagent is not set up: The GitHub Source names no repository/,
+    )
+    expect(hooks.get().isSuperagentSession('owner-session')).toBe(false)
     expect(archive).not.toHaveBeenCalled()
     await lifecycle.stop('disable')
     expect(log).toEqual(['environment'])
     expect(lifecycle.status()).toEqual({ state: 'stopped' })
   })
 
-  it('reports a failed self-check and opens no session', async () => {
-    const { lifecycle } = setup({
+  it('reports a failed self-check, opens no session and keeps refusing the existing ones', async () => {
+    store.tickets.save(runningTicket('T'))
+    const { lifecycle, hooks } = setup({
       verifyEnvironment: async () => {
         throw new SetupError('agentLoginMismatch', { account: 'operator', login: 'agent-bot' })
       },
@@ -207,6 +248,14 @@ describe('enable', () => {
       problem: { code: 'agentLoginMismatch' },
     })
     expect(log).not.toContain('createApp')
+    // An existing worker session cannot be used while the daemon may act as the operator.
+    expect(hooks.get().guardTool({ sessionId: workerKey('T'), toolName: 'shell', input: {} })).toMatch(
+      /Superagent cannot start: gh acts as @operator, not the agent account @agent-bot/,
+    )
+    expect(
+      hooks.get().guardTool({ sessionId: 'owner-session', toolName: 'shell', input: {} }),
+    ).toBeUndefined()
+    expect(hooks.get().isSuperagentSession('owner-session')).toBe(false)
   })
 
   it('starts from an empty database and never reads a DSH Superagent database beside it', async () => {
