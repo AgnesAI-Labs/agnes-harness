@@ -75,6 +75,14 @@ const unlinked = newLink(
   }),
 )
 /** The Feishu kind whose replies, reads and member sync go through `link`. */
+/**
+ * Notes of the admission rows the Source cannot serve yet: it claims only the listed group chats of the channel, so
+ * direct messages and unlisted chats reach it only once it has a Feishu bot instance of its own.
+ */
+const DEDICATED = {
+  directMessages: { zh: '需要专用机器人，暂不接收', en: 'Needs a dedicated bot; not received yet' },
+  otherChats: { zh: '仅 @，需要专用机器人，暂不接收', en: '@ only; needs a dedicated bot; not received yet' },
+}
 /** Whether the Source listens to a message of `meta`'s chat, and observes it, under `config`. */
 function feishuScope({ meta }: { meta: Record<string, unknown> }, config: FeishuConfig): ScopeResult {
   if (meta.direct === true)
@@ -92,8 +100,8 @@ const described: Omit<SourceKind<FeishuConfig>, 'channel' | 'threadContext' | 'p
   kind: SOURCE,
   title: { zh: '飞书', en: 'Feishu' },
   description: {
-    zh: '接收下列群和私聊中发给机器人的消息，补收群历史并轮询订阅的线程。',
-    en: 'Receives messages to the bot in these chats and direct messages, recovers chat history and polls subscribed Threads.',
+    zh: '经 AGH 飞书渠道接收下列群中发给机器人的消息，补收群历史并轮询订阅的线程；私聊和其他群需要专用的机器人实例。',
+    en: 'Receives messages to the bot in these chats through the AGH Feishu channel, recovers chat history and polls subscribed Threads; direct messages and other chats need a dedicated bot instance.',
   },
   schema: FeishuConfigSchema,
   fields: [
@@ -161,7 +169,7 @@ const described: Omit<SourceKind<FeishuConfig>, 'channel' | 'threadContext' | 'p
       },
     },
   ],
-  health: ['feishu', 'history', 'members', 'reads'],
+  health: ['feishu', 'history', 'members', 'reads', 'others'],
   scope: feishuScope,
   // A reply goes only to a chat the Source still receives.
   find: (query) => ({ threads: [], terms: [...new Set(query.match(/om_[A-Za-z0-9_-]+/g) ?? [])] }),
@@ -277,7 +285,7 @@ const policyDescribed: Omit<NonNullable<SourceKind['policy']>, 'sync'> = {
       {
         id: 'other',
         label: { zh: '其他群', en: 'Other chats' },
-        note: config.otherChats === 'mentions' ? mentions : { zh: '不接收', en: 'Not received' },
+        note: config.otherChats === 'mentions' ? DEDICATED.otherChats : { zh: '不接收', en: 'Not received' },
         cells: {
           listedUnaddressed: false,
           unlistedAddressed: config.otherChats === 'mentions',
@@ -287,7 +295,7 @@ const policyDescribed: Omit<NonNullable<SourceKind['policy']>, 'sync'> = {
       {
         id: 'direct',
         label: { zh: '私聊', en: 'Direct messages' },
-        note: config.directMessages ? { zh: '接收', en: 'Received' } : { zh: '不接收', en: 'Not received' },
+        note: config.directMessages ? DEDICATED.directMessages : { zh: '不接收', en: 'Not received' },
         cells: {
           listedUnaddressed: false,
           unlistedAddressed: config.directMessages,

@@ -658,6 +658,47 @@ describe('the subscription', () => {
   })
 })
 
+describe('direct messages and other chats', () => {
+  it('says they need a dedicated bot instance while either is on, and that only the listed chats are received otherwise', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] })
+    const on = open({ feishu: { directMessages: true, otherChats: 'none' } })
+    const stop = new AbortController()
+    let running = on.run(stop.signal)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(on.health.others).toMatchObject({ state: 'paused', code: 'feishuDedicatedBot' })
+    expect(on.health.others?.detail).toContain('need a Feishu bot instance of Superagent')
+    stop.abort()
+    await running
+    const other = open({ feishu: { directMessages: false, otherChats: 'mentions' } })
+    const ended = new AbortController()
+    running = other.run(ended.signal)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(other.health.others).toMatchObject({ state: 'paused', code: 'feishuDedicatedBot' })
+    ended.abort()
+    await running
+    const off = open({ feishu: { directMessages: false, otherChats: 'none' } })
+    const done = new AbortController()
+    running = off.run(done.signal)
+    await vi.advanceTimersByTimeAsync(10)
+    expect(off.health.others).toMatchObject({ state: 'ready', detail: 'Only the listed chats are received' })
+    done.abort()
+    await running
+  })
+  it('notes in the admission table that direct messages and other chats are not received yet, rather than promising them', () => {
+    const h = open()
+    const rows = (config: Record<string, unknown>) =>
+      Object.fromEntries(h.kind.policy!.rows!(config).map((row) => [row.id, row.note]))
+    expect(rows({ directMessages: true, otherChats: 'mentions' })).toMatchObject({
+      direct: { zh: '需要专用机器人，暂不接收', en: 'Needs a dedicated bot; not received yet' },
+      other: { zh: '仅 @，需要专用机器人，暂不接收', en: '@ only; needs a dedicated bot; not received yet' },
+    })
+    expect(rows({ directMessages: false, otherChats: 'none' })).toMatchObject({
+      direct: { zh: '不接收', en: 'Not received' },
+      other: { zh: '不接收', en: 'Not received' },
+    })
+  })
+})
+
 describe('missing channel features', () => {
   it('runs live on a channel without reads and reports each missing feature on its health with what it means', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] })

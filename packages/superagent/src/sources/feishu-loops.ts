@@ -208,6 +208,7 @@ async function watch(ctx: SourceContext, link: FeishuLink, signal: AbortSignal, 
       at: new Date().toISOString(),
     })
     await reportFeatures(ctx, link).catch(() => {})
+    reportOthers(ctx, link, config)
     // A new subscription catches up on what the chats said meanwhile.
     wake.wake()
     while (!signal.aborted) {
@@ -228,7 +229,22 @@ function waiting(ctx: SourceContext, link: FeishuLink, why: Health): void {
   link.listening = false
   report(ctx, link, 'feishu', why)
   const pending = why.code === 'sourceOff' ? why : health('paused', 'feishuWaiting')
-  for (const entry of ['history', 'members', 'reads']) report(ctx, link, entry, pending)
+  for (const entry of ['history', 'members', 'reads', 'others']) report(ctx, link, entry, pending)
+}
+/**
+ * Says, while direct messages or other chats are on, that they need a Feishu bot instance of Superagent's own: the
+ * Source claims only the listed group chats, and the host routes no direct chat to it.
+ */
+export function reportOthers(ctx: SourceContext, link: FeishuLink, config: FeishuConfig): void {
+  const wanted = config.directMessages || config.otherChats === 'mentions'
+  report(
+    ctx,
+    link,
+    'others',
+    wanted
+      ? health('paused', 'feishuDedicatedBot')
+      : { state: 'ready', detail: 'Only the listed chats are received', at: new Date().toISOString() },
+  )
 }
 /** Finds which reads the channel lacks and reports each missing feature on its own health entry. */
 export async function reportFeatures(ctx: SourceContext, link: FeishuLink): Promise<void> {

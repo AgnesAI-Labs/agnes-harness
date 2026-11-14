@@ -21,6 +21,8 @@ import type { SourceRegistry } from './registry.js'
 export const HEALTH_TEXT = {
   setupPending: 'Waiting for the deployment check',
   sourceOff: 'Off',
+  feishuDedicatedBot:
+    "Direct messages and other chats need a Feishu bot instance of Superagent's own; only the listed chats are received",
   feishuWaiting: 'Waiting for the channel subscription',
   feishuChannelUnset: 'Setup required: the Source is on, and its channel instance is not set',
   feishuChatsUnset: 'Setup required: no chat is listed to receive',

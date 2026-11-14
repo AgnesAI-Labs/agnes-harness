@@ -42,6 +42,7 @@ const TEXT = {
   'health.history': ['飞书补收', 'Feishu recovery'],
   'health.members': ['飞书群成员', 'Feishu chat members'],
   'health.reads': ['飞书读取', 'Feishu reads'],
+  'health.others': ['飞书私聊和其他群', 'Feishu direct messages and other chats'],
   'health.runtime': ['Superagent', 'Superagent'],
   'health.models': ['模型服务', 'Model service'],
   'health.assessment': ['发给主 Session 的评估', 'Evals sent to the main Session'],

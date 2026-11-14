@@ -594,6 +594,10 @@ export const SETTINGS_TEXT = {
   ],
   'healthCode.setupPending': ['等待部署检查', HEALTH_TEXT.setupPending],
   'healthCode.sourceOff': ['已关闭', HEALTH_TEXT.sourceOff],
+  'healthCode.feishuDedicatedBot': [
+    '私聊和其他群需要 Superagent 专用的飞书机器人实例；现在只接收列出的群',
+    HEALTH_TEXT.feishuDedicatedBot,
+  ],
   'healthCode.feishuWaiting': ['等待渠道订阅', HEALTH_TEXT.feishuWaiting],
   'healthCode.feishuChannelUnset': [
     '需要设置：来源已打开，还没有设置渠道实例',
