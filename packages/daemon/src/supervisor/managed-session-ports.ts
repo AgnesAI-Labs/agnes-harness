@@ -1,5 +1,6 @@
+import type { SessionPreferencesStore } from '@agnes/daemon-foundation/storage/session-preferences'
 import type { WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
-import { runQueued } from '@agnes/daemon-rpc/local/command-queue'
+import type { runQueued } from '@agnes/daemon-rpc/local/command-queue'
 import type { ScanRead } from '@agnes/host'
 import type {
   EventEnvelope,
@@ -8,16 +9,15 @@ import type {
   SessionViewResult,
 } from '@agnes/protocol'
 import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
+import { ManagedPortsClosed } from './managed-gate-read.js'
+import { type ManagedInputEntry, managedInputPorts } from './managed-input-ports.js'
 import { hasOpenNativeQuestion } from './managed-question-status.js'
+import type { IdleSignal } from './managed-session-idle.js'
 import type { ManagedSessionRecords } from './managed-session-records.js'
 import type { ManagedSessionCaller, ManagedSessionPorts, ManagedToolDetail } from './managed-sessions.js'
 
-type Entry = {
-  key: string
-  ac: AbortController
-  inflight: unknown
-  session: {
-    enqueue(target: 'next-turn', message: unknown, options?: { dedupeByCommandId?: boolean }): Promise<number>
+type Entry = ManagedInputEntry & {
+  session: ManagedInputEntry['session'] & {
     /** Whether the open session's live policy holds outward calls for a person, read in its worker. */
     outwardCheckpoint(): Promise<boolean>
     /** The principal the deployment resolves a credential to for answering approvals. */
@@ -61,11 +61,16 @@ export function managedSessionPorts(deps: {
   opensWithCommandRules: boolean
   /** Whether the platform's sandbox probe reports a full OS boundary; false when it cannot be read. */
   osBoundary(): Promise<boolean>
+  /** The daemon's session preferences, where an owner's Web archive is recorded. */
+  preferences: Pick<SessionPreferencesStore, 'get'>
+  idle: Pick<IdleSignal, 'onIdle'>
+  /** The shared worker's agent resolution over the daemon's own link (`sharedWorkerReads`); else through the local SDK. */
+  resolveAgent?(bundle: string): Promise<void>
 }) {
   const clients = new Set<NodeClient>()
   let closing = false
   const withClient = async <T>(work: (client: NodeClient) => Promise<T>): Promise<T> => {
-    if (closing) throw new Error('managed session admission closed')
+    if (closing) throw new ManagedPortsClosed()
     const client = createClient({
       transport: {
         kind: 'unix',
@@ -94,12 +99,21 @@ export function managedSessionPorts(deps: {
     const binding = await deps.workspaces.restoreBinding(sessionId)
     return deps.registry.open({ key: sessionId, cwd: binding.canonicalRoot, binding })
   }
+  const inputs = managedInputPorts({
+    open,
+    commandQueue: deps.commandQueue,
+    continueTurn: deps.continueTurn,
+    preferences: deps.preferences,
+    ...(deps.sessionFactRead ? { sessionFactRead: deps.sessionFactRead } : {}),
+  })
   const ports: ManagedSessionPorts = {
     authorize: deps.authorize,
     records: deps.records,
     forkParent: deps.forkParent,
     workspaceRoot: managedWorkspaceRoot(deps.workspaces),
-    resolveAgent: (bundle) => withClient(async (client) => void (await client.agents.resolve(bundle))),
+    resolveAgent:
+      deps.resolveAgent ??
+      ((bundle) => withClient(async (client) => void (await client.agents.resolve(bundle)))),
     models: deps.models,
     autoReview: () =>
       withClient(
@@ -111,6 +125,8 @@ export function managedSessionPorts(deps: {
       osBoundary: await deps.osBoundary().catch(() => false),
     }),
     sessions: {
+      ...inputs,
+      onIdle: (listener) => deps.idle.onIdle(listener),
       create: (input) =>
         withClient(async (client) => {
           const { id } = await client.createSession({
@@ -152,32 +168,8 @@ export function managedSessionPorts(deps: {
         })
       },
       async submit(sessionId, input) {
-        const entry = await open(sessionId)
-        if (entry.inflight) return 'busy'
-        try {
-          await runQueued(deps.commandQueue, entry.key, entry.ac.signal, () =>
-            entry.session.enqueue(
-              'next-turn',
-              {
-                content: [{ type: 'text', text: input.text }],
-                actor: input.actor,
-                origin: 'system',
-                trust: 'untrusted',
-                // The follow-up runner only starts a turn for a backend-minted follow_up or steer item.
-                kind: 'follow_up',
-                commandId: input.commandId,
-                ifEmpty: true,
-              },
-              { dedupeByCommandId: true },
-            ),
-          )
-        } catch (error) {
-          if (/continuation input competed with pending input/u.test(String((error as Error)?.message)))
-            return 'busy'
-          throw error
-        }
-        deps.continueTurn(entry)
-        return 'started'
+        const submitted = await inputs.submitInput(sessionId, { ...input, dedupe: true })
+        return submitted.state === 'busy' ? 'busy' : 'started'
       },
       loaded: (sessionId) => deps.registry.get(sessionId) !== undefined,
       activity: () =>

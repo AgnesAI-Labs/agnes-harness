@@ -250,6 +250,8 @@ describe('durable native question projection', () => {
       continueTurn: () => undefined,
       opensWithCommandRules: true,
       osBoundary: async () => false,
+      preferences: { get: () => ({ archived: false }) },
+      idle: { onIdle: () => () => undefined },
     }
     const withReader = managedSessionPorts({ ...deps, sessionFactRead: read })
     expect(await withReader.ports.sessions.openQuestion?.('historical')).toBe(true)

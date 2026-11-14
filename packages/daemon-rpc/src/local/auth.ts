@@ -391,6 +391,9 @@ export function authGate(
       ep.establishPrincipal(`surface:${r.surface.sourceId}:${subject}`)
       conn.surface = r.surface
     }
+    // verifyAuth accepts the local credential over WebSocket only on the local Web listener.
+    if (r.authKind === 'local')
+      conn.localListener = cx.config.transport === 'ws' && cx.config.localWeb === true ? 'web' : 'unix'
     conn.clientId = clientId
     conn.authKind = r.authKind
     conn.credentialKind = r.credential.kind

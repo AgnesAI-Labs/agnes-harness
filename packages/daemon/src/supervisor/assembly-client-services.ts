@@ -14,12 +14,32 @@ import type { RuntimeState } from './assembly-runtime.js'
 import type { SessionsState } from './assembly-session-services.js'
 import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
+import { sharedWorkerReads } from './managed-gate-read.js'
+import type { OwnerInputEngineDeps } from './managed-input-admission.js'
+import { createIdleSignal, driveOwnerInputs } from './managed-session-idle.js'
 import { managedSessionPorts, managedWorkspaceRoot } from './managed-session-ports.js'
 import { createManagedSessions } from './managed-sessions.js'
 import { managedWorkspaceGrants } from './managed-workspace-grants.js'
 import { mcpOAuthServerLookup } from './mcp-oauth-server.js'
 import { newSessionActorResolver } from './new-session-actor.js'
 import { webhookSessions, webhookTriggerActor } from './webhook-sessions.js'
+
+/** The slow sweep for held owner inputs whose turns report no idle. */
+const OWNER_INPUT_SWEEP_MS = 60_000
+
+/** The owner input engine's deps when managed sessions keep input records; crash points come only from test fixtures. */
+function ownerInputDeps(
+  o: Pick<AssemblyBase['o'], 'ownerInputFaults'>,
+  inputs: StoresState['managedSessionInputs'],
+  enabled: OwnerInputEngineDeps['enabled'],
+): Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults'> | undefined {
+  if (!inputs) return undefined
+  return {
+    inputs,
+    ...(enabled ? { enabled } : {}),
+    ...(o.ownerInputFaults ? { faults: o.ownerInputFaults } : {}),
+  }
+}
 
 export function openClientServices(
   state: AssemblyBase & StoresState & WorkersState & DispatchState & RuntimeState & SessionsState,
@@ -43,6 +63,9 @@ export function openClientServices(
     profilePorts,
     sessionOwnership,
     managedSessionRecords,
+    managedSessionInputs,
+    ownerInputHolder,
+    preferences,
   } = state
   const resolveActor: NonNullable<AgnesContext['resolveActor']> =
     o.ports?.resolveActor ??
@@ -55,8 +78,16 @@ export function openClientServices(
       return registry.require(sessionId).session.resolveActor(credential, surface)
     })
   const resolveNewSessionActor = newSessionActorResolver(o.profile)
+  const idle = o.idleSignal ?? createIdleSignal()
   const continueTrigger = createFollowUpRunner(
-    { commandQueue, activationBarrier, onPromptEnd: (id) => registry.retireAtTurnBoundary(id) },
+    {
+      commandQueue,
+      activationBarrier,
+      onPromptEnd: (id) => {
+        registry.retireAtTurnBoundary(id)
+        idle.notify(id)
+      },
+    },
     async () => undefined,
   )
   profilePorts.channelInteractions.submit = async (kind, value, credential) => {
@@ -133,11 +164,7 @@ export function openClientServices(
   })
   lifetime.own({ dispose: () => triggerSessions.close() })
   if (managedSessionRecords) {
-    const catalog = async () =>
-      (await (await pool.acquireSharedWorker()).command('session.catalog', {}, { timeoutMs: 31_000 })) as {
-        modelAdapters: readonly { models: readonly { id: string; route: string }[] }[]
-        security?: { platform?: { l1?: { level?: string } } }
-      }
+    const { catalog, resolveAgent } = sharedWorkerReads(pool)
     const managed = managedSessionPorts({
       socketPath: o.config.socketPath,
       ...(o.sessionFactRead ? { sessionFactRead: o.sessionFactRead } : {}),
@@ -156,11 +183,22 @@ export function openClientServices(
       opensWithCommandRules: true,
       // The platform's L1 sandbox probe; unprobed (no workspace bound yet) or partial is no boundary.
       osBoundary: async () => (await catalog()).security?.platform?.l1?.level === 'full',
+      preferences,
+      idle,
+      resolveAgent,
     })
-    const sessions = createManagedSessions(managed.ports)
+    const sessions = createManagedSessions(
+      managed.ports,
+      ownerInputDeps(o, managedSessionInputs, profilePorts.managedSessionEnabled),
+    )
     profilePorts.managedSessions.port = sessions
     profilePorts.managedSessions.skillInstallsOff = sessions.skillInstallsOff
     lifetime.own({ dispose: () => managed.close() })
+    if (sessions.engine) {
+      ownerInputHolder.engine = sessions.engine
+      // Owned after the session ports, so the sweeps stop before those ports close; they stop as shutdown starts.
+      lifetime.own(driveOwnerInputs(idle, sessions.engine, OWNER_INPUT_SWEEP_MS))
+    }
   }
   const workspaceGrants = managedSessionRecords
     ? managedWorkspaceGrants({
@@ -168,6 +206,7 @@ export function openClientServices(
         packages: profilePorts.managedSessionPackages,
         workspaceRoot: managedWorkspaceRoot(workspaceCatalog),
         canonical: async (path) => (await workspaceCatalog.validate(path).catch(() => undefined))?.path,
+        withdraw: async (owner, workspace) => ownerInputHolder.engine?.withdraw(owner, workspace),
       })
     : undefined
   void workspaceGrants?.prune().catch(() => undefined)
@@ -203,12 +242,15 @@ export function openClientServices(
   automationEvents.triggers = appServerAdmin.observeTriggerSession
 
   return {
+    idle,
     resolveActor,
     resolveNewSessionActor,
     continueTrigger,
     triggerSessions,
     appServerAdmin,
     workspaceGrants,
+    /** The owner-input engine for the Web review, when managed sessions have records. */
+    ownerInputs: ownerInputHolder.engine,
   }
 }
 

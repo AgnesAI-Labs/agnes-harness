@@ -257,6 +257,65 @@ it('restores explicit dock visibility only for the same session, including new-c
   }
 })
 
+it('a plugin workbench panel cannot decide through its session client', async () => {
+  localStorage.clear()
+  document.body.innerHTML =
+    '<div class="workbench-split"><div id="controls"></div><aside id="workbench-right" hidden><div id="workbench-right-content"></div></aside><aside id="workbench-bottom" hidden><div id="workbench-bottom-content"></div></aside></div>'
+  const host = document.getElementById('controls')!
+  let frame: FrameRequestCallback | undefined
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    frame = callback
+    return 1
+  })
+  vi.stubGlobal('cancelAnimationFrame', () => {})
+  const sent: string[] = []
+  const client = {
+    async call(method: string) {
+      sent.push(method)
+      return { ok: true }
+    },
+  }
+  const outcomes: Array<Promise<unknown>> = []
+  const remove = workbenchPanels.register({
+    id: 'test.plugin-decides',
+    edge: 'right',
+    order: -100,
+    titleKey: 'Plugin',
+    component: ({ context }) => {
+      const session = (context.data as { session: { client: typeof client } }).session
+      if (!outcomes.length)
+        for (const method of [
+          '_agnes/v1/managedInput.decide',
+          '_agnes/v1/managedInput.get',
+          '_agnes/v1/session.list',
+        ])
+          outcomes.push(
+            session.client.call(method).then(
+              () => 'sent',
+              (error: { data?: { code?: string } }) => error.data?.code,
+            ),
+          )
+      return <p>Plugin panel</p>
+    },
+  })
+  try {
+    renderWorkbench(host, { t: (key) => key, data: { session: { id: 's1', client } } })
+    flushSync(() => frame?.(0))
+    flushSync(() => {
+      expect(workbenchNavigation.open('test.plugin-decides')).toBe(true)
+    })
+    await vi.waitFor(() => expect(outcomes).toHaveLength(3))
+    expect(await Promise.all(outcomes)).toEqual(['CAPABILITY_DENIED', 'CAPABILITY_DENIED', 'sent'])
+    expect(sent).toEqual(['_agnes/v1/session.list'])
+  } finally {
+    unmountWorkbench(host)
+    remove()
+    vi.unstubAllGlobals()
+    localStorage.clear()
+    document.body.replaceChildren()
+  }
+})
+
 it('cycles visible trace and plugin docks in both directions and leaves modal focus intact', () => {
   document.body.innerHTML = `
     <aside class="sidebar"><button id="sidebar-action">New session</button></aside>

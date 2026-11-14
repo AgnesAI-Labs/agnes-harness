@@ -523,7 +523,7 @@ it('hands a working sessions port only to a reviewed declaration that sets sessi
   const callers: unknown[] = []
   const sessions = {
     list: async () => [],
-  } as unknown as import('@agnes/extension-api').ManagedSessions
+  } as unknown as import('../src/profile/managed-sessions.js').HostManagedSessions
   const manager = new ProfileManagedResources(
     'synthetic-sessions',
     () => ({
@@ -591,6 +591,93 @@ it('hands a working sessions port only to a reviewed declaration that sets sessi
     expect(callers).toEqual([
       { owner: 'plugin/row', packageId: '@example/driver', integrity: 'sha256-x', service: 'driver' },
     ])
+  } finally {
+    await manager.close()
+  }
+})
+
+it('never hands a plugin admitResolved, and resolves an ownerMessage receipt on the Host side', async () => {
+  const { store } = storage()
+  const admitResolved = vi.fn(async () => ({ state: 'absent', historyCoverage: 'complete' }) as const)
+  const admitInput = vi.fn(async () => ({ state: 'absent', historyCoverage: 'complete' }) as const)
+  const sessions = {
+    admitResolved,
+    admitInput,
+  } as unknown as import('../src/profile/managed-sessions.js').HostManagedSessions
+  const manager = new ProfileManagedResources(
+    'synthetic-admission',
+    () => ({
+      async enqueue() {
+        throw new Error('unbound-target')
+      },
+      async read() {
+        throw new Error('unbound-target')
+      },
+    }),
+    undefined,
+    undefined,
+    () => sessions,
+  )
+  const descriptor: ManagedServiceDescriptor = {
+    id: 'driver',
+    scope: 'profile',
+    artifact: { kind: 'in-process' },
+    healthPath: '/health',
+    apiVersion: '1.0.0',
+    listeners: [],
+    startupTimeoutMs: 1000,
+    shutdownTimeoutMs: 1000,
+    requires: [],
+  }
+  const definition = (
+    id: string,
+  ): ProfileManagedDefinition<import('@agnes/extension-api').ManagedSessions> => ({
+    id,
+    configSchema: { type: 'object', properties: {}, additionalProperties: false },
+    defaultConfig: {},
+    async start(init) {
+      init.onShutdown(async () => ({ state: 'settled' }))
+      init.ready()
+      return init.sessions
+    },
+  })
+  const base = {
+    owner: 'plugin/row',
+    packageId: '@example/driver',
+    integrity: 'sha256-x',
+    revision: 'r1',
+    store,
+    assert() {},
+  }
+  const declared = manager.register({
+    ...base,
+    descriptor: { ...descriptor, sessions: true },
+    definition: definition('driver'),
+  })
+  const undeclared = manager.register({
+    ...base,
+    descriptor: { ...descriptor, id: 'plain' },
+    definition: definition('plain'),
+  })
+  try {
+    await manager.publish()
+    for (const handle of [declared, undeclared]) {
+      const plugin = (await handle.get()) as unknown as Record<string, unknown>
+      expect('admitResolved' in plugin, 'the Host-only method is not on the plugin object').toBe(false)
+      expect(plugin.admitResolved).toBeUndefined()
+    }
+    const input = {
+      key: 'k1',
+      target: { taskId: 't1', taskGeneration: 1, startKey: 's1' },
+      input: { kind: 'ownerMessage', receiptId: 'r'.repeat(64) },
+    } as const
+    await (await declared.get()).admitInput('s1', input)
+    expect(admitInput).not.toHaveBeenCalled()
+    expect(admitResolved).toHaveBeenCalledWith('s1', input, {
+      kind: 'unresolved',
+      receiptId: 'r'.repeat(64),
+      reason: 'receiptUnknown',
+    })
   } finally {
     await manager.close()
   }

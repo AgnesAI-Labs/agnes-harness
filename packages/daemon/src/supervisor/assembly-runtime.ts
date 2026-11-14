@@ -31,7 +31,7 @@ import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
 import { describeGenerationSessions } from './generation-sessions.js'
 import { readRunningGenerationStatus } from './generation-status-read.js'
-import { quietGrantPruner } from './managed-workspace-grants.js'
+import { quietGrantPruner, releaseManagedSessions } from './managed-workspace-grants.js'
 import { managedSessionPackages } from './profile-services.js'
 import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
@@ -275,6 +275,8 @@ async function openRuntimeActivation(
     pinCoordinator,
     surfaceController,
     managedSessionRecords,
+    managedSessionInputs,
+    ownerInputHolder,
   } = state
   let latestInventory = surfaceInventory
   // Older desired artifacts predate daemon-owned web rows. Repair this narrow slice before
@@ -345,8 +347,17 @@ async function openRuntimeActivation(
                     directory: packageProfileDirectory,
                   }),
                 (message) => o.audit?.({ kind: 'worker.log', sessionKey: '@shared', level: 'warn', message }),
+                (owner) => ownerInputHolder.engine?.withdraw(owner) ?? Promise.resolve(),
               ),
-              releaseManagedSessions: (packageId: string) => managedSessionRecords.releasePackage(packageId),
+              releaseManagedSessions: (packageId: string) =>
+                releaseManagedSessions(
+                  {
+                    records: managedSessionRecords,
+                    ...(managedSessionInputs ? { inputs: managedSessionInputs } : {}),
+                    ...(ownerInputHolder.engine ? { engine: ownerInputHolder.engine } : {}),
+                  },
+                  packageId,
+                ),
             }
           : {}),
         generationStatus: async () => {

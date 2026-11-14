@@ -12,6 +12,8 @@ import type {
   ManagedWorkspaceGrantsList,
   ManagedWorkspaceGrantsListParams,
 } from '@agnes/protocol/gen/app-server'
+import type { OwnerInputEngine } from './managed-input-admission.js'
+import type { ManagedSessionInputs } from './managed-session-inputs.js'
 import type { ManagedSessionRecords } from './managed-session-records.js'
 import type { ManagedSessionPackage } from './profile-services.js'
 
@@ -25,6 +27,35 @@ export interface ManagedWorkspaceGrantPorts {
   workspaceRoot(path: string): Promise<string>
   /** The canonical spelling of a path, or undefined when it no longer resolves. */
   canonical(path: string): Promise<string | undefined>
+  /**
+   * Takes the grant key's held and submitted owner inputs back. Runs after its grant goes, so an
+   * admission racing the revoke fails its gates; one that passed them earlier is already recorded and
+   * taken back here. A failure leaves the rest to the sweep, which finds the grant gone.
+   */
+  withdraw?(owner: string, workspace?: string): Promise<void>
+}
+
+/**
+ * A removed package's owner inputs are withdrawn from the core inbox first, then its grants, send
+ * keys, bindings and inputs go with `releasePackage`, which would otherwise leave a submitted input
+ * to run with nothing left to account for it.
+ */
+export async function releaseManagedSessions(
+  deps: {
+    records: Pick<ManagedSessionRecords, 'releasePackage'>
+    inputs?: Pick<ManagedSessionInputs, 'owners'>
+    engine?: Pick<OwnerInputEngine, 'withdraw'>
+  },
+  packageId: string,
+): Promise<void> {
+  if (!deps.engine || !deps.inputs) {
+    // Before the engine exists (a removal recovered at boot): submitted inputs stay, and the first
+    // sweep finds their session detached, takes them back and deletes them.
+    deps.records.releasePackage(packageId, true)
+    return
+  }
+  for (const owner of deps.inputs.owners(grantKey(packageId, ''))) await deps.engine.withdraw(owner)
+  deps.records.releasePackage(packageId)
 }
 
 const refuse = (code: string) => rpcError('SEMANTIC_REJECTED', { code })
@@ -37,11 +68,16 @@ const refuse = (code: string) => rpcError('SEMANTIC_REJECTED', { code })
 export async function pruneOrphanGrants(
   records: Pick<ManagedSessionRecords, 'grantOwners' | 'revokeAll'>,
   packages: () => Promise<readonly ManagedSessionPackage[]>,
+  withdraw?: (owner: string) => Promise<void>,
 ): Promise<void> {
   const live = new Set(
     (await packages()).flatMap((pkg) => [...pkg.owners].map((owner) => grantKey(pkg.packageId, owner))),
   )
-  for (const key of records.grantOwners()) if (!live.has(key)) records.revokeAll(key)
+  for (const key of records.grantOwners())
+    if (!live.has(key)) {
+      records.revokeAll(key)
+      await withdraw?.(key)
+    }
 }
 
 /** `pruneOrphanGrants` for a caller with nobody to throw to: a failure is reported and the grants stay. */
@@ -49,9 +85,10 @@ export function quietGrantPruner(
   records: Pick<ManagedSessionRecords, 'grantOwners' | 'revokeAll'>,
   packages: () => Promise<readonly ManagedSessionPackage[]>,
   warn: (message: string) => void,
+  withdraw?: (owner: string) => Promise<void>,
 ): () => Promise<void> {
   return () =>
-    pruneOrphanGrants(records, packages).catch((error) =>
+    pruneOrphanGrants(records, packages, withdraw).catch((error) =>
       warn(
         `pruning managed workspace grants failed: ${error instanceof Error ? error.message : String(error)}`,
       ),
@@ -63,7 +100,7 @@ export function quietGrantPruner(
  * this module, so nothing an owner reads or types carries a row hash.
  */
 export function managedWorkspaceGrants(ports: ManagedWorkspaceGrantPorts) {
-  const prune = () => pruneOrphanGrants(ports.records, ports.packages)
+  const prune = () => pruneOrphanGrants(ports.records, ports.packages, ports.withdraw)
   const installed = async (packageId: string) => {
     await prune()
     const pkg = (await ports.packages()).find((row) => row.packageId === packageId)
@@ -119,6 +156,7 @@ export function managedWorkspaceGrants(ports: ManagedWorkspaceGrantPorts) {
         for (const owner of pkg.owners)
           if (ports.records.granted(grantKey(packageId, owner), path)) {
             ports.records.revoke(grantKey(packageId, owner), path)
+            await ports.withdraw?.(grantKey(packageId, owner), path)
             revoked ??= path
           }
       return { packageId, workspace: revoked ?? canonical ?? workspace, changed: revoked !== undefined }

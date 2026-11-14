@@ -1,3 +1,5 @@
+import type { ManagedInputAdmission, ManagedInputResult } from './managed-inputs.js'
+
 /**
  * Sessions a profile-scoped managed service opens and drives for the owner who trusted and enabled
  * its plugin. The Host records the plugin row as the session's manager; the plugin sees and drives
@@ -33,6 +35,12 @@ export interface ManagedSessionStartInput {
   readonly memoryWrites?: boolean
   /** `false` refuses every skill, plugin and MCP server install the session asks for, including saved skills. */
   readonly skillInstalls?: boolean
+  /**
+   * Binds the session to a task of the calling service. A bound session refuses `send` with
+   * `CAPABILITY_DENIED` (`OWNER_INPUT_REQUIRED`); later input goes through `admitInput`. Repeating the
+   * start key with another binding is refused (`START_KEY_REUSED`). Added in 5.21.
+   */
+  readonly taskBinding?: { readonly id: string; readonly generation: number }
 }
 
 export interface ManagedSessionStartResult {
@@ -144,4 +152,16 @@ export interface ManagedSessions {
   toolResult(sessionId: string, callSeq: number): Promise<ManagedSessionToolResult>
   interrupt(sessionId: string): Promise<void>
   archive(sessionId: string): Promise<void>
+  /**
+   * Admits one input of the owner for a session bound to a task. Refusals are `CAPABILITY_DENIED` with
+   * `data.reason`: `OWNER_INPUT_TARGET_MISMATCH` (`target` differs from the session's start key or
+   * binding), `OWNER_INPUT_KEY_REUSED` (the key was used with a different request) and
+   * `SESSION_ARCHIVED` (thrown, never returned). Invalid parameters are `INVALID_PARAMS`. Added in 5.21.
+   */
+  admitInput(sessionId: string, input: ManagedInputAdmission): Promise<ManagedInputResult>
+  /**
+   * The current state of an input by key. It never changes the request, but it may submit a held input
+   * that has since become eligible, as an idle session or the platform's periodic sweep would. Added in 5.21.
+   */
+  inputResult(sessionId: string, input: { key: string }): Promise<ManagedInputResult>
 }

@@ -18,7 +18,7 @@ const input = {
 describe('author API consistency', () => {
   it('declares independently granted background session work', () => {
     expect(api.PLUGIN_FACET_NAMES).toContain('sessionWork')
-    expect(api.API_VERSION).toBe('5.20.0')
+    expect(api.API_VERSION).toBe('5.21.0')
   })
   it('pins root and optional runtime exports without confusing them with type exports', () => {
     expect(Object.keys(api).sort()).toEqual(surface.runtimeExports)
