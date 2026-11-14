@@ -259,7 +259,7 @@ export async function refreshChatNames(
 ): Promise<Record<string, string>> {
   const io = ioOf(ctx, link, signal)
   const chats = await channelRead(io, 'chats', (channels, channel) => channels.listChats(channel))
-  const names = Object.fromEntries(chats.filter((chat) => chat.name).map((chat) => [chat.id, chat.name!]))
+  const names = Object.fromEntries(chats.flatMap((chat) => (chat.name ? [[chat.id, chat.name]] : [])))
   ctx.state.set(KV.sources.labels(SOURCE), names)
   return names
 }
@@ -304,13 +304,14 @@ async function backfillLoop(
     await wake.wait(60_000, signal)
   }
 }
-async function recoverRound(
+export async function recoverRound(
   ctx: SourceContext,
   link: FeishuLink,
   config: FeishuConfig,
   signal: AbortSignal,
 ): Promise<void> {
   const errors: string[] = []
+  const gaps: string[] = []
   const history = !link.missing.has('history')
   for (const { chatId } of config.chats) {
     if (signal.aborted) return
@@ -322,8 +323,17 @@ async function recoverRound(
       continue
     }
     try {
-      await backfillChat(ctx, link, chatId, since, started, signal)
+      // The cursor follows each slice read, so a round that fails part way resumes after what it read.
+      const recovery = await backfillChat(ctx, link, chatId, since, started, signal, (at) =>
+        ctx.state.set(cursorKey, at),
+      )
       if (!signal.aborted) ctx.state.set(cursorKey, cursorAt(started))
+      if (recovery.clamped)
+        gaps.push(`${chatId}: messages before ${recovery.clamped} were not recovered (older than 14 days)`)
+      for (const window of recovery.skipped)
+        gaps.push(
+          `${chatId}: skipped ${window.from} to ${window.to}, more messages than the channel reads at once`,
+        )
     } catch (error) {
       if (!signal.aborted) errors.push(`${chatId}: ${errorText(error)}`)
     }
@@ -338,12 +348,24 @@ async function recoverRound(
       'history',
       errors.length
         ? { state: 'error', detail: errors.join('\n') }
-        : { state: 'ready', detail: 'Listed chats recovered', at: new Date().toISOString() },
+        : gaps.length
+          ? { state: 'error', detail: `Listed chats recovered with gaps:\n${gaps.join('\n')}` }
+          : { state: 'ready', detail: 'Listed chats recovered', at: new Date().toISOString() },
     )
 }
+/** The longest stretch of chat history one read covers, so the host's page bound holds in a busy chat. */
+export const HISTORY_SLICE_MS = 3_600_000
+/** What a recovery left out: windows the channel refused as too large, and the start it moved up to the horizon. */
+export interface Recovery {
+  skipped: { from: string; to: string }[]
+  clamped?: string
+}
+const iso = (time: number) => new Date(time).toISOString()
 /**
- * Recovers a chat's messages and its active topics' messages between `since` and `until` before the caller advances
- * the chat cursor. Topics are stored as `{ id: lastSeenAt }`, and quiet topics no polled Thread follows are pruned.
+ * Recovers a chat's messages and its active topics' messages between `since` and `until`. A gap longer than the polling
+ * horizon (14 days, as quiet topics are kept) starts at the horizon; the chat is read an hour at a time, `advance`
+ * receiving the end of each hour read but the last, and an hour the channel refuses as too large is skipped and named
+ * rather than read again. Topics are stored as `{ id: lastSeenAt }`, and quiet topics no polled Thread follows are pruned.
  */
 export async function backfillChat(
   ctx: SourceContext,
@@ -352,7 +374,15 @@ export async function backfillChat(
   since: string,
   until: string,
   signal: AbortSignal,
-): Promise<void> {
+  advance: (at: string) => void = () => {},
+): Promise<Recovery> {
+  const recovery: Recovery = { skipped: [] }
+  const end = Date.parse(until)
+  let start = Date.parse(since)
+  if (end - start > POLL_HORIZON_MS) {
+    start = end - POLL_HORIZON_MS
+    recovery.clamped = iso(start)
+  }
   const io = ioOf(ctx, link, signal)
   const topicsKey = KV.feishu.topics(chatId)
   const topics = { ...ctx.state.get(topicsKey) }
@@ -361,10 +391,22 @@ export async function backfillChat(
     if (topic && !(Date.parse(topics[topic] ?? '') >= Date.parse(event.at)))
       topics[topic] = new Date(Date.parse(event.at)).toISOString()
   }
-  for (const event of await readHistory(io, chatId, Date.parse(since), Date.parse(until))) {
-    signal.throwIfAborted()
-    seen(event)
-    await takeIn(ctx, link, event)
+  for (let from = start; from < end; ) {
+    const to = Math.min(from + HISTORY_SLICE_MS, end)
+    let events: MessageEvent[] = []
+    try {
+      events = await readHistory(io, chatId, from, to)
+    } catch (error) {
+      if (channelCode(error) !== 'CHANNEL_READ_TOO_LARGE') throw error
+      recovery.skipped.push({ from: iso(from), to: iso(to) })
+    }
+    for (const event of events) {
+      signal.throwIfAborted()
+      seen(event)
+      await takeIn(ctx, link, event)
+    }
+    from = to
+    if (from < end) advance(iso(from))
   }
   // A quiet topic is forgotten unless a subscribed Thread that is still polled follows it.
   const followed = new Set(
@@ -377,17 +419,18 @@ export async function backfillChat(
     if (!followed.has(id) && Date.parse(until) - Date.parse(last) >= POLL_HORIZON_MS) delete topics[id]
   }
   ctx.state.set(topicsKey, topics)
-  if (link.missing.has('threads')) return
+  if (link.missing.has('threads')) return recovery
   for (const id of Object.keys(topics)) {
     const recent = await readTopic(io, chatId, id, 50, 'desc')
     for (const event of recent.reverse()) {
       signal.throwIfAborted()
-      if (Date.parse(event.at) < Date.parse(since)) continue
+      if (Date.parse(event.at) < start) continue
       seen(event)
       await takeIn(ctx, link, event)
     }
   }
   ctx.state.set(topicsKey, topics)
+  return recovery
 }
 
 /** Resolves the retained source message reference for polling a subscribed thread. */
