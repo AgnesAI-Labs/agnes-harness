@@ -64,6 +64,26 @@
       }
     },
     {
+      "includes": ["packages/superagent-ui/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "useSemanticElements": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/superagent-ui/src/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noArrayIndexKey": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["packages/web/public/style.css"],
       "linter": {
         "rules": {

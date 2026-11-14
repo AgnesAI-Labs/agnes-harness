@@ -86,6 +86,7 @@ export function listSourceFiles(
 /** Handwritten presentation sources use the same fences as TS. Generated clients are byte-budgeted. */
 export const PRESENTATION_NAMES = [
   'judgment',
+  'superagent',
   'browser',
   'conversation-ui',
   'navigation-ui',
@@ -93,11 +94,16 @@ export const PRESENTATION_NAMES = [
   'goal-ui',
   'deliverables-ui',
 ] as const
+/** The presentations whose source package lives beside their backend; the others are written in their payload. */
+export const PRESENTATION_SOURCES = {
+  judgment: 'packages/judgment-ui/src',
+  superagent: 'packages/superagent-ui/src',
+} as const
 export function presentationSourceFiles(root: string): string[] {
   return PRESENTATION_NAMES.flatMap((name) =>
     listSourceFiles(
-      name === 'judgment'
-        ? join(root, 'packages/judgment-ui/src')
+      name in PRESENTATION_SOURCES
+        ? join(root, PRESENTATION_SOURCES[name as keyof typeof PRESENTATION_SOURCES])
         : join(root, 'packages/package-manager/bundled-plugins', name),
       {
         extensions: [...SOURCE_EXTENSIONS, '.js', '.mjs'],

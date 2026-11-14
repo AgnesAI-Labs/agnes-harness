@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./panel-api": "./src/runtime/panel-api.ts"
   },
   "dependencies": {
     "@agnes/extension-api": "workspace:*",
@@ -387,8 +388,7 @@
                   },
                   "limit": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1000
+                    "minimum": 1
                   }
                 },
                 "required": [],
@@ -412,8 +412,7 @@
                   },
                   "limit": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 100
+                    "minimum": 1
                   },
                   "before": {
                     "type": "string",
@@ -511,8 +510,7 @@
                   },
                   "limit": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 200
+                    "minimum": 1
                   }
                 },
                 "required": [],
@@ -573,8 +571,7 @@
                   },
                   "limit": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1000
+                    "minimum": 1
                   }
                 },
                 "required": [],
@@ -940,7 +937,13 @@
           }
         }
       }
-    }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes.superagent/main",
+        "path": "./src/agnes.client.json"
+      }
+    ]
   },
   "devDependencies": {
     "@agnes/host": "workspace:*"

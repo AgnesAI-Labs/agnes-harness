@@ -12,7 +12,9 @@
     "NOTICE",
     "prompts",
     "skills",
-    "locale"
+    "locale",
+    "src",
+    "client-build.json"
   ],
   "engines": {
     "node": ">=24.10"
@@ -391,8 +393,7 @@
                   },
                   "limit": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1000
+                    "minimum": 1
                   }
                 },
                 "required": [],
@@ -416,8 +417,7 @@
                   },
                   "limit": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 100
+                    "minimum": 1
                   },
                   "before": {
                     "type": "string",
@@ -515,8 +515,7 @@
                   },
                   "limit": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 200
+                    "minimum": 1
                   }
                 },
                 "required": [],
@@ -577,8 +576,7 @@
                   },
                   "limit": {
                     "type": "integer",
-                    "minimum": 1,
-                    "maximum": 1000
+                    "minimum": 1
                   }
                 },
                 "required": [],
@@ -947,6 +945,12 @@
           }
         }
       }
-    }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes.superagent/main",
+        "path": "./src/agnes.client.json"
+      }
+    ]
   }
 }

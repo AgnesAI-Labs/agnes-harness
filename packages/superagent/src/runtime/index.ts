@@ -8,7 +8,9 @@ import type { PluginContextFacets, ProfileManagedInit, ToolResult } from '@agnes
 import type { JsonValue } from '@agnes/protocol'
 import { openStore, type Store } from '../app/store.js'
 import { createHookStateCell, type HookStateCell } from './hook-state.js'
+import { createPanelWiring, type PanelWiring } from './panel-host.js'
 import { asSdkClient } from './sdk.js'
+import { createPanelServices, type PanelService, registerPanelServices } from './services.js'
 
 export type { HookState, HookStateCell } from './hook-state.js'
 export { INERT_HOOK_STATE } from './hook-state.js'
@@ -39,15 +41,22 @@ const unavailable = (what: string) =>
   Object.assign(new Error(`${what} is not available in this Superagent build`), { code: 'CAPABILITY_DENIED' })
 
 /** A running service: what it holds, and the registered parts. */
-function createService(store: Store): SuperagentService & { readonly store: Store } {
+function createService(
+  store: Store,
+  stateDirectory: string,
+): SuperagentService & { readonly store: Store; readonly panel: PanelWiring } {
   const parts = new Map<SuperagentSlot, unknown>()
   return {
     store,
+    // What the starting parts wire into the panel services (see `panel-host.ts`).
+    panel: createPanelWiring(store, stateDirectory),
     async handleTool({ toolName }) {
       return { content: [{ type: 'text', text: `${toolName} is not available yet` }], isError: true }
     },
-    async callService(name) {
-      throw unavailable(`The service ${name}`)
+    async callService(name, input, signal) {
+      const services = parts.get('services') as PanelService | undefined
+      if (!services) throw unavailable(`The service ${name}`)
+      return services.call(name, input as JsonValue, signal)
     },
     register(slot, part) {
       if (parts.has(slot)) throw new Error(`The Superagent ${slot} part is already registered`)
@@ -81,7 +90,8 @@ async function start(init: ProfileManagedInit, hooks: HookStateCell): Promise<Su
   if (typeof grant.channels.subscribe !== 'function')
     throw new TypeError('The bundled-app grant has no channels')
   store = openStore(join(grant.stateDirectory, DATABASE_FILE))
-  const service = createService(store)
+  const service = createService(store, grant.stateDirectory)
+  service.register('services', createPanelServices(service.panel.host))
   init.ready()
   return service
 }
@@ -91,13 +101,14 @@ export const superagentPlugin = {
   inject: ['hooks', 'tools', 'services', 'self', 'profileRuntime'] as const,
   apply(plugin: PluginContextFacets) {
     const hooks = createHookStateCell()
-    plugin.profileRuntime.register<SuperagentService>({
+    const handle = plugin.profileRuntime.register<SuperagentService>({
       id: SERVICE_ID,
       configSchema: EMPTY_SCHEMA,
       defaultConfig: {},
       start: (init) => start(init, hooks),
     })
     const disposers = [
+      registerPanelServices(plugin, () => handle.get()),
       // Both hooks run for every session of the profile; an owner's own session is never touched.
       plugin.hooks.register('context', (_payload, ctx) => {
         const state = hooks.get()

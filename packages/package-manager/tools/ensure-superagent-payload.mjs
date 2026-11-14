@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   buildSuperagentPayload,
+  buildSuperagentPresentation,
   SUPERAGENT_RESOURCE_FOLDERS,
   superagentPayloadDirectory,
   superagentSourceDirectory,
@@ -15,8 +16,9 @@ const newestSource = (directory) =>
     return Math.max(newest, entry.isDirectory() ? newestSource(path) : statSync(path).mtimeMs)
   }, statSync(directory).mtimeMs)
 
-/** Rebuild only when the entry or a resource folder is missing or older than any source file. */
+/** Rebuild only when the entry or a resource folder is missing or older than any source file; the panel checks itself. */
 export async function ensureSuperagentPayload(directory = superagentPayloadDirectory) {
+  await buildSuperagentPresentation(directory)
   const entry = join(directory, 'index.mjs')
   const newest = Math.max(
     ...['src', ...SUPERAGENT_RESOURCE_FOLDERS].map((name) =>

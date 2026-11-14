@@ -84,6 +84,7 @@
         "packages/package-manager/bundled-plugins/browser",
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/resource-control-web",
+        "packages/superagent-ui",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
@@ -101,6 +102,7 @@
       "purpose": "Type declarations for react-dom 18 used by the web workbench and web-client.",
       "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
       "consumers": [
+        "packages/superagent-ui",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",

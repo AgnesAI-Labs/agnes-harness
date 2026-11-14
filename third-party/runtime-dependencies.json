@@ -63,6 +63,7 @@
         "packages/package-manager/bundled-plugins/interaction-ui",
         "packages/package-manager/bundled-plugins/navigation-ui",
         "packages/resource-control-web",
+        "packages/superagent-ui",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
@@ -293,6 +294,7 @@
       "purpose": "DOM renderer for the web workbench and client module mount points; bundled into /vendor/* shared-singleton chunks.",
       "rationale": "Same pin line as react (WC5).",
       "consumers": [
+        "packages/superagent-ui",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",

@@ -31,6 +31,9 @@ header.
 | `src/app/` (other files) | Effect queue, outbox, notices, passes, assessment, settings, prompts, links and the read models in `views/`. |
 | `src/app/skill-files.ts` | Loads the packaged `prompts/`, `skills/` and `locale/` folders. |
 | `src/runtime/` | The plugin row `superagentPlugin`: its profile-managed service, which needs the bundled-app grant, the snapshot its `context` and `tool_call` hooks read (`hook-state.ts`) and the narrowing of the grant's SDK client (`sdk.ts`). |
+| `src/runtime/services.ts` | The settings and panel services, one per route of the prototype's management API, and their registration on the plugin; `panel-views.ts` is their host contract, `panel-host.ts` the host a running service fills in as its parts start, `panel-api.ts` the types the panel reads. |
+| `src/agnes.client.json` | The descriptor of the browser panel (`packages/superagent-ui`): a primary home entry and the services it may call. |
+| `docs/setup.md` | How to set Superagent up on AGH with its operator. |
 
 ## Differences from the prototype
 

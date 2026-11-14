@@ -3,7 +3,7 @@ import { join, relative } from 'node:path'
 import { expect, it } from 'vitest'
 import { buildPresentations } from '../../presentation-build.mjs'
 import { countLines } from './count-lines.js'
-import { PRESENTATION_NAMES, presentationSourceFiles, repoRoot } from './repo.js'
+import { PRESENTATION_NAMES, PRESENTATION_SOURCES, presentationSourceFiles, repoRoot } from './repo.js'
 
 const root = repoRoot()
 const budgets = JSON.parse(
@@ -14,7 +14,9 @@ function violations(name: string, bytes: number, inputs: readonly string[]) {
   const budget = budgets[name]
   if (!budget) return [`Missing budget: ${name}`]
   const owner =
-    name === 'judgment' ? 'packages/judgment-ui/src/' : `packages/package-manager/bundled-plugins/${name}/`
+    name in PRESENTATION_SOURCES
+      ? `${PRESENTATION_SOURCES[name as keyof typeof PRESENTATION_SOURCES]}/`
+      : `packages/package-manager/bundled-plugins/${name}/`
   return [
     ...(bytes > budget.bytes ? [`${name}: ${bytes} bytes > ${budget.bytes}`] : []),
     ...(inputs.length > budget.inputs ? [`${name}: ${inputs.length} inputs > ${budget.inputs}`] : []),
@@ -42,7 +44,11 @@ it('fences handwritten presentation JS/MJS and TS, while generated JS has a byte
   for (const name of PRESENTATION_NAMES)
     expect(
       sources.some((file) =>
-        file.includes(name === 'judgment' ? '/judgment-ui/src/' : `/bundled-plugins/${name}/src/`),
+        file.includes(
+          name in PRESENTATION_SOURCES
+            ? `/${PRESENTATION_SOURCES[name as keyof typeof PRESENTATION_SOURCES].replace('packages/', '')}/`
+            : `/bundled-plugins/${name}/src/`,
+        ),
       ),
       name,
     ).toBe(true)

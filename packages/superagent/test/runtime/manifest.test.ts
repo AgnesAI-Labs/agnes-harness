@@ -12,6 +12,7 @@ type Manifest = {
     }[]
     metadata: unknown
     bundles: unknown
+    clientDescriptors: unknown
     hostProvidedExternals?: Record<string, string>
   }
 }
@@ -49,7 +50,7 @@ const PANEL_SERVICES = [
 ]
 
 it('ships the same plugin, bundles and metadata as the source package declares', () => {
-  for (const key of ['provides', 'plugins', 'metadata', 'bundles'] as const)
+  for (const key of ['provides', 'plugins', 'metadata', 'bundles', 'clientDescriptors'] as const)
     expect(payload.agnes[key], key).toEqual(source.agnes[key])
   // The payload's only external is the host-provided author API its declared range admits.
   expect(payload.agnes.hostProvidedExternals).toEqual({ '@agnes/extension-api': '^5.19.0' })
@@ -61,6 +62,26 @@ it('ships the same plugin, bundles and metadata as the source package declares',
       'utf8',
     ),
   ).toContain('Copyright (c) 2026 DeepSeek Harness Team')
+})
+
+it('declares the browser panel: one descriptor for the plugin row, copied into the payload, calling exactly the panel services', () => {
+  expect(source.agnes.clientDescriptors).toEqual([
+    { rowId: 'ext:agnes.superagent/main', path: './src/agnes.client.json' },
+  ])
+  const descriptor = readFileSync(new URL('../../src/agnes.client.json', import.meta.url), 'utf8')
+  expect(
+    readFileSync(
+      new URL('../../../package-manager/bundled-plugins/superagent/src/agnes.client.json', import.meta.url),
+      'utf8',
+    ),
+  ).toBe(descriptor)
+  expect(JSON.parse(descriptor).client).toMatchObject({
+    id: 'superagent',
+    lifetime: 'profile',
+    services: PANEL_SERVICES,
+    requiresBackendRows: ['ext:agnes.superagent/main'],
+    homeEntries: [{ id: 'superagent', placement: 'primary', navigation: { title: 'Superagent' } }],
+  })
 })
 
 it('declares the managed service, every panel service and every orchestrator tool', () => {
