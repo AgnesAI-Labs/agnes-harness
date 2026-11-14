@@ -141,6 +141,45 @@ describe('delivery', () => {
     },
   )
 
+  it('resolves a retry after a submission that never reached the daemon by sending it then, under its own id', async () => {
+    const { session, id, delivery } = await setup()
+    session.failNext = 'lost'
+    await expect(delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })).rejects.toThrow(
+      'UNCERTAIN',
+    )
+    expect(session.pending).toEqual([])
+    await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
+    expect(session.pending.map((item) => item.commandId)).toEqual(['superagent:m1'])
+    expect(session.journal.size).toBe(0)
+  })
+
+  it.each([
+    ['landed', 'renewed, then the copies dropped', 'superagent:m1:r1'],
+    ['landed', 'the copies dropped, then renewed', 'superagent:m1:r1'],
+    ['lost', 'renewed, then the copies dropped', 'superagent:m1:r1'],
+    ['lost', 'the copies dropped, then renewed', 'superagent:m1'],
+  ] as const)(
+    'leaves one copy of a message whose unconfirmed submission %s, %s',
+    async (failure, order, expected) => {
+      const { session, id, delivery } = await setup()
+      session.failNext = failure
+      await expect(delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })).rejects.toThrow(
+        'UNCERTAIN',
+      )
+      // A relaunch renews and then drops what is in the inbox; a startup reconcile drops first and renews later.
+      if (order === 'renewed, then the copies dropped') {
+        await delivery.renew(id, 'm1')
+        session.pending = []
+      } else {
+        session.pending = []
+        await delivery.renew(id, 'm1')
+      }
+      expect(session.journal.size).toBe(0)
+      await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
+      expect(session.pending.map((item) => item.commandId)).toEqual([expected])
+    },
+  )
+
   it('refuses to renew while an unconfirmed submission cannot be settled, and keeps it to settle later', async () => {
     const { session, id, delivery } = await setup()
     session.failNext = 'landed'
