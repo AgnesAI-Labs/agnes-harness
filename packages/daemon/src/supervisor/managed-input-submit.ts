@@ -127,8 +127,12 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
         // Detached by a package removal before the engine existed: what it kept is taken back, never run.
         if (detached(record)) return { state: 'needsOwner', reason: 'grantRevoked' } as const
         if (archived(record)) return { state: 'retained', reason: 'sessionArchived' } as const
-        // Every row of a session belongs to the session's manager; a disabled package's gates may fail.
-        if (!(await enabled(record.owner))) return 'paused' as const
+        // Every row of a session belongs to the session's manager; a disabled package's gates may fail,
+        // but a revoked workspace grant still takes its inputs back.
+        if (!(await enabled(record.owner)))
+          return ports.records.granted(record.owner, record.workspace)
+            ? ('paused' as const)
+            : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
         if (!(await deps.gatesPass(record))) return { state: 'needsOwner', reason: 'grantRevoked' } as const
         return 'pass' as const
       })())

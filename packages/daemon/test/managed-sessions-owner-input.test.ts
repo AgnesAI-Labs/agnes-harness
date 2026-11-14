@@ -322,6 +322,28 @@ describe('managed sessions bound to a task', () => {
     expect(w.core.ran(sessionId, 'text of r1')).toBe(0)
   })
 
+  it('a disabled package whose grant was pruned before the engine is set has its input withdrawn at the first sweep', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    expect(w.core.state.inbox.get(sessionId)).toHaveLength(1)
+    // The package is switched off, then boot recovery prunes its grant while the holder has no engine.
+    w.enabled.delete(owner)
+    const otherPkg = { packageId: other.packageId, sessions: true, owners: new Set([other.owner]) }
+    await pruneOrphanGrants(w.records, async () => [otherPkg])
+    expect(w.records.granted(owner, '/work/repo')).toBe(false)
+    await engine.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({
+      state: 'needsOwner',
+      reason: 'grantRevoked',
+      submittedSeq: null,
+    })
+    expect(w.core.state.inbox.get(sessionId)).toEqual([])
+    expect(w.core.take(sessionId)).toBeUndefined()
+    expect(w.core.ran(sessionId, 'text of r1')).toBe(0)
+  })
+
   it('a package released before the engine is set keeps its submitted inputs until the first sweep withdraws and deletes them', async () => {
     const w = world()
     const engine = w.sessions.engine as OwnerInputEngine
