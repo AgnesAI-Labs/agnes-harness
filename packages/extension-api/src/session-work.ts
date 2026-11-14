@@ -18,10 +18,8 @@ export type SessionWorkObservation = Readonly<{
   session: SessionRef
   seq: Seq
   hasGeneratedTitle: boolean
-}> & (
-  | Readonly<{ kind: 'message'; message: SessionWorkMessage }>
-  | Readonly<{ kind: 'reset' | 'close' }>
-)
+}> &
+  (Readonly<{ kind: 'message'; message: SessionWorkMessage }> | Readonly<{ kind: 'reset' | 'close' }>)
 
 export type SessionWorkBoundary = Readonly<{
   turn: number

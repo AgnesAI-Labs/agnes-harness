@@ -69,6 +69,32 @@ export function bindExtensionInvocations(
       })
     }
   return {
+    ...(ports.sessionWork
+      ? {
+          sessionWork: {
+            register: (
+              registration: import('@agnes/extension-api').SessionWorkRegistration,
+              meta: import('../ext-host/ports.js').RegMeta & { autoTitle?: true },
+            ) =>
+              ports.sessionWork!.register(
+                {
+                  ...registration,
+                  run: (context) =>
+                    Promise.resolve(
+                      invocation.runFor(
+                        context.session,
+                        context.signal,
+                        resolve,
+                        (session) => registration.run({ ...context, session: canonicalSession(session) }),
+                        meta.source,
+                      ),
+                    ),
+                },
+                meta,
+              ),
+          },
+        }
+      : {}),
     services,
     tools: {
       add: (def, meta) =>

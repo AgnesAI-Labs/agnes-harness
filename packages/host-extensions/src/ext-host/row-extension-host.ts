@@ -72,6 +72,7 @@ export type RowExtensionHostOptions = Readonly<{
         integrity?: string
         declaredCapabilities?: import('@agnes/protocol').PluginCapabilities
         sideCallDeclared?: boolean
+        sessionWorkDeclared?: boolean
       }>
     | undefined
 }>
@@ -352,6 +353,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
       ...(options.hostGrants ? { hostGrants: () => options.hostGrants!(origin) } : {}),
       ...(options.sideModels ? { sideModels: options.sideModels } : {}),
       ...(options.subscribeSideModels ? { subscribeSideModels: options.subscribeSideModels } : {}),
+      ...(info?.sessionWorkDeclared ? { sessionWorkDeclared: true } : {}),
       ...(info?.sideCallDeclared ? { sideCallDeclared: true } : {}),
       ...(openStore && sourceIntegrity
         ? {
@@ -540,6 +542,16 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
         }
       }
       new HooksService(root)
+      class SessionWorkService extends Service {
+        constructor(context: Context) {
+          super(context, 'sessionWork')
+        }
+        register(registration: import('@agnes/extension-api').SessionWorkRegistration) {
+          const dispose = apiFor(this.ctx, origins).sessionWork.register(registration)
+          return this.ctx.effect(() => dispose, `ctx.sessionWork.register(${registration.name})`)
+        }
+      }
+      new SessionWorkService(root)
       class EventLogService extends Service {
         constructor(context: Context) {
           super(context, 'eventLog')

@@ -278,3 +278,13 @@ it('enforces the profile ceiling during inspection and install before executing 
   ).rejects.toMatchObject({ code: 'E_PACKAGE_BLOCKED' })
   expect((await f.manager.inventory(f.profile)).packages).toEqual([])
 })
+
+it('keeps background execution and automatic title authority separate in capability policy', () => {
+  const value = parsePluginCapabilities({ sessionWork: true, autoTitle: true })
+  expect(capabilityAtoms(value)).toEqual(['autoTitle', 'sessionWork'])
+  expect(mergePluginCapabilities([{ sessionWork: true }, { autoTitle: true }])).toMatchObject({
+    sessionWork: true,
+    autoTitle: true,
+  })
+  expect(capabilityPolicyBlockers(value, { deny: ['autoTitle'] })).not.toHaveLength(0)
+})

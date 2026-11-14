@@ -49,6 +49,7 @@ export type RowExtensionApiInput = {
   /** Names currently registered by this exact live RowOrigin; supplied only by Host. */
   projectionNames?: () => readonly string[]
   hostGrants?: () => import('@agnes/package-manager').HostCapabilityGrant
+  sessionWorkDeclared?: boolean
   sideCallDeclared?: boolean
   sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
   subscribeSideModels?: (listener: () => void) => () => void
@@ -113,6 +114,7 @@ export type RowExtensionApi = Readonly<{
   tools: import('@agnes/extension-api').ToolRegistrationPort
   registerHook: ExtensionAPI['registerHook']
   events: ExtensionAPI['events']
+  sessionWork: import('@agnes/extension-api').PluginSessionWorkPort
 }>
 
 export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionApi {
@@ -175,6 +177,54 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
   })
   const api = {
     ctx,
+    sessionWork: {
+      register(registration: import('@agnes/extension-api').SessionWorkRegistration) {
+        const check = () => {
+          alive()
+          if (!input.rowId || !input.sessionWorkDeclared || !input.hostGrants?.().sessionWork)
+            refuse('session work not granted')
+        }
+        check()
+        if (
+          !/^[a-z][a-z0-9._-]{0,63}$/.test(registration.name) ||
+          typeof registration.observe !== 'function' ||
+          typeof registration.run !== 'function'
+        )
+          return refuse('invalid session work registration')
+        const observe = registration.observe.bind(registration)
+        const run = registration.run.bind(registration)
+        return input.attach('hook', `session-work:${registration.name}`, (ports) => {
+          if (!ports.sessionWork) return refuse('session work not granted')
+          const projections = projectionReader(
+            ports.projections,
+            meta,
+            lease,
+            check,
+            input.projectionNames ?? [],
+          )
+          return ports.sessionWork.register(
+            {
+              name: registration.name,
+              observe(event) {
+                check()
+                observe(event)
+              },
+              async run(context) {
+                check()
+                const signal = AbortSignal.any([context.signal, input.signal])
+                await run({ ...context, projections, signal })
+              },
+            },
+            {
+              ...meta,
+              ...(input.hostGrants?.().autoTitle && input.declaredCapabilities?.autoTitle
+                ? { autoTitle: true as const }
+                : {}),
+            },
+          )
+        })
+      },
+    },
     tools: {
       register(def: ToolDef) {
         registering()

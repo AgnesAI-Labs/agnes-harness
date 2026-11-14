@@ -59,6 +59,8 @@ const usage = (title: boolean): InferenceEvent => ({
 async function fixture(
   options: {
     waitTitle?: Promise<void>
+    waitSide?: Promise<void>
+    sideEntered?: () => void
     title?: string
     rawTitle?: string
     root?: string
@@ -136,6 +138,10 @@ async function fixture(
           }
           yield { type: 'done', reason: 'toolUse' }
           return
+        }
+        if (req.system === 'background-test') {
+          options.sideEntered?.()
+          await options.waitSide
         }
         if (title && options.waitTitle) await options.waitTitle
         if (!title && options.failTurn) {
@@ -709,3 +715,171 @@ it('reads trusted metadata across pages of later untrusted events and after reop
   await run(reopened.session)
   expect(reopened.calls.every((call) => !call.sessionKey.startsWith('title:'))).toBe(true)
 })
+
+it('refreshes only the accepted revision and keeps the accepted title visible while pending or failed', async () => {
+  const options: Parameters<typeof fixture>[0] = { title: 'Original topic' }
+  const f = await fixture(options)
+  await run(f.session)
+  await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+  const { createTitleRefresh } = await import('../src/runtime/sessions/title-refresh.js')
+  const end = (await f.session.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]!
+  const start = (await f.session.scan({ type: 'turn/start', order: 'desc', limit: 1 }))[0]!
+  const source = {
+    turn: 1,
+    startSeq: start.seq,
+    endSeq: end.seq,
+    lastAssistantSeq: (end.data as { lastAssistantSeq: number }).lastAssistantSeq,
+    budgetCap: null,
+    treeBudgetCap: null,
+    hard: false,
+  }
+  let release!: () => void
+  options.waitTitle = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  options.title = 'New topic'
+  const refresh = createTitleRefresh(f.session, {
+    source,
+    signal: new AbortController().signal,
+    eligible: async () => true,
+  })
+  const inspected = await refresh.inspect()
+  expect(inspected.eligible).toBe(true)
+  if (!inspected.eligible) throw new Error('missing title')
+  const pending = refresh.refresh({ expectedRevision: inspected.revision, context: 'A different user task' })
+  await vi.waitFor(() =>
+    expect(f.calls.filter((call) => call.sessionKey.startsWith('title:'))).toHaveLength(2),
+  )
+  expect(await titleRecord(f.session)).toMatchObject({ title: 'Original topic' })
+  release()
+  expect(await pending).toEqual({ status: 'applied' })
+  expect(await titleRecord(f.session)).toMatchObject({ title: 'New topic' })
+  expect(await refresh.refresh({ expectedRevision: inspected.revision, context: 'older' })).toEqual({
+    status: 'stale',
+  })
+})
+
+it.each(['next-input', 'host-close'] as const)(
+  'keeps fresh background work separate from foreground lifecycle: %s',
+  async (mode) => {
+    let release!: () => void
+    let entered!: () => void
+    const reached = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const f = await fixture({
+      waitSide: new Promise<void>((resolve) => {
+        release = resolve
+      }),
+      sideEntered: entered,
+    })
+    await run(f.session)
+    await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+    const { sessionWorkFor } = await import('../src/runtime/sessions/session-work.js')
+    let context: import('@agnes/extension-api').SessionWorkContext | undefined
+    let completed = false
+    const observations: import('@agnes/extension-api').SessionWorkObservation[] = []
+    const observer = await sessionWorkFor(f.host.kernel).start(f.session, async () => true)
+    const off = sessionWorkFor(f.host.kernel).register(
+      {
+        name: 'test',
+        observe: (event) => {
+          observations.push(event)
+        },
+        async run(ctx) {
+          context = ctx
+          expect(f.session.isRunning).toBe(false)
+          expect(f.session.op()).toBeNull()
+          await ctx.sideCall.invoke(
+            await ctx.sideCall.prepare({
+              label: 'test.title',
+              target: { route: 'gw', model: 'm1' },
+              system: 'background-test',
+            }),
+            ctx.signal,
+          )
+          completed = true
+        },
+      },
+      { source: 'plugin/test', pluginRowId: 'ext:test/title', trust: 'trusted' },
+    )
+    try {
+      expect((await run(f.session, 'Second task')).reason).toBe('completed')
+      await reached
+      expect(completed).toBe(false)
+      expect(context!.boundary.turn).toBe(2)
+      if (mode === 'next-input') {
+        expect((await run(f.session, 'Third task')).reason).toBe('completed')
+        expect(context!.signal.aborted).toBe(false)
+      } else {
+        await observer.close()
+        await f.host.close()
+        expect(context!.signal.aborted).toBe(true)
+      }
+      expect(completed).toBe(false)
+      release()
+      await vi.waitFor(() => expect(completed).toBe(true))
+      await expect(
+        context!.sideCall.prepare({ label: 'late', target: { route: 'gw', model: 'm1' } }),
+      ).rejects.toMatchObject({ code: 'E_CLOSED' })
+      expect(
+        observations.filter((event) => event.kind === 'message' && event.message.attribution === 'operator'),
+      ).toHaveLength(mode === 'next-input' ? 2 : 1)
+    } finally {
+      release()
+      off()
+      await observer.close()
+    }
+  },
+)
+
+it.each(['before', 'during', 'failure', 'hard-budget', 'authority-unavailable'] as const)(
+  'preserves the accepted title when refresh is denied: %s',
+  async (mode) => {
+    const options: Parameters<typeof fixture>[0] = { title: 'Accepted title' }
+    const f = await fixture(options)
+    await run(f.session)
+    await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+    const { createTitleRefresh } = await import('../src/runtime/sessions/title-refresh.js')
+    const start = (await f.session.scan({ type: 'turn/start', order: 'desc', limit: 1 }))[0]!
+    const end = (await f.session.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]!
+    let explicit = mode === 'before'
+    let release!: () => void
+    if (mode === 'during')
+      options.waitTitle = new Promise<void>((resolve) => {
+        release = resolve
+      })
+    if (mode === 'failure') options.rawTitle = 'invalid title JSON'
+    else options.title = 'Rejected late title'
+    const refresh = createTitleRefresh(f.session, {
+      source: {
+        turn: 1,
+        startSeq: start.seq,
+        endSeq: end.seq,
+        lastAssistantSeq: (end.data as { lastAssistantSeq: number }).lastAssistantSeq,
+        budgetCap: null,
+        treeBudgetCap: null,
+        hard: mode === 'hard-budget',
+      },
+      signal: new AbortController().signal,
+      eligible: async () => {
+        if (mode === 'authority-unavailable') throw new Error('owner offline')
+        return !explicit
+      },
+    })
+    const title = (await f.session.scan({ type: SESSION_TITLE_EVENT, order: 'desc', limit: 1 }))[0]!
+    const pending = refresh.refresh({ expectedRevision: title.seq, context: 'Different topic now' })
+    if (mode === 'during') {
+      await vi.waitFor(() =>
+        expect(f.calls.filter((request) => request.sessionKey.startsWith('title:'))).toHaveLength(2),
+      )
+      explicit = true
+      release()
+    }
+    expect(await pending).toEqual({ status: mode === 'failure' ? 'unavailable' : 'ineligible' })
+    expect(await titleRecord(f.session)).toMatchObject({ status: 'generated', title: 'Accepted title' })
+    expect(f.calls.filter((request) => request.sessionKey.startsWith('title:'))).toHaveLength(
+      mode === 'during' || mode === 'failure' ? 2 : 1,
+    )
+  },
+)

@@ -21,6 +21,12 @@ export type RegMeta = ToolSource
 
 /** Internal assembly ports, never exposed directly to an extension factory. */
 export interface KernelPorts {
+  sessionWork?: {
+    register(
+      registration: import('@agnes/extension-api').SessionWorkRegistration,
+      meta: RegMeta & { autoTitle?: true },
+    ): Disposer
+  }
   services: Pick<ServiceRegistry, 'register' | 'registerRow'>
   projections: {
     register: ProjectionRegistry['register']

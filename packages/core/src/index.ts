@@ -230,6 +230,7 @@ export { type DispatchContext, HOOK_UNHANDLED, HookEngine, WORKSPACE_HOOK_SANDBO
 export { type SessionHookInputs, SessionHookPort } from './hooks/port.js'
 export type { CoreDiagName, KernelOptions, SessionOptions } from './kernel.js'
 export { CORE_DIAG_NAMES, Kernel, KernelChildren } from './kernel.js'
+export { createSessionWorkSideCall } from './loop/background-side-call.js'
 export { LoopEventRegistry } from './loop/events.js'
 export {
   AUXILIARY_VISION_MAX_EDGE,
@@ -261,6 +262,7 @@ export {
   executeAuxiliaryVision,
 } from './orchestrator/auxiliary-vision-executor.js'
 export { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from './orchestrator/request-media-surface.js'
+export type { SideCallExecutionSource } from './orchestrator/side-call-executor.js'
 export type { ApplyLimits } from './refine/apply.js'
 // Applying a refinement is the facade's job alone, between turns under the session lock.
 export { rollbackRefine } from './refine/apply.js'

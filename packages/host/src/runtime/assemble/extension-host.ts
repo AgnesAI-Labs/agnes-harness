@@ -12,6 +12,7 @@ import { createManagedExtHost } from '@agnes/host-extensions/ext-host/index'
 import { ServiceRegistry } from '@agnes/host-extensions/ext-host/services'
 import { bestEffort } from '../../best-effort.js'
 import { compositionTools } from '../profile/composition-visibility.js'
+import { sessionWorkFor } from '../sessions/session-work.js'
 import type { AssemblyContext } from './context.js'
 import type { createEcosystemContexts } from './ecosystem-context.js'
 import type { createKernel, ExtensionLeases } from './kernel-stage.js'
@@ -79,6 +80,7 @@ export function createExtensionHost(
   const extPorts = bindExtensionInvocations(
     {
       services,
+      sessionWork: sessionWorkFor(kernel),
       serviceProviders: extensionHost.ports,
       tools: ctx.profile.composition
         ? compositionTools(kernel.tools, ctx.profile.composition, ctx.profile.compositionToolScope)

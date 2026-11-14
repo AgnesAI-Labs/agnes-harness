@@ -143,6 +143,11 @@ export function createRowHosts(
       return (
         description && {
           ...description,
+          ...(row?.inject?.includes('sessionWork') &&
+          row.runtime === 'in-process' &&
+          declaredCapabilities?.sessionWork === true
+            ? { sessionWorkDeclared: true }
+            : {}),
           ...(row?.inject?.includes('sideCall') && row.runtime === 'in-process'
             ? { sideCallDeclared: true }
             : {}),

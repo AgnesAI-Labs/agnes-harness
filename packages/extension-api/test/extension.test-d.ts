@@ -89,6 +89,7 @@ describe('plugin context facets', () => {
       | 'providers'
       | 'self'
       | 'profileRuntime'
+      | 'sessionWork'
     >()
   })
 })
