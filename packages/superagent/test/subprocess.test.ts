@@ -85,3 +85,55 @@ it('rejects a program that cannot start, and an empty command', async () => {
   await expect(run([join(directory, 'missing')])).rejects.toThrow('ENOENT')
   await expect(run([])).rejects.toThrow('needs a program')
 })
+
+/** True while a process with this id exists. */
+const alive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+const gone = async (pid: number): Promise<boolean> => {
+  for (let tries = 0; tries < 40; tries++) {
+    if (!alive(pid)) return true
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  return false
+}
+// A shell that starts a background grandchild, prints its id, and waits for it.
+const withGrandchild = ['sh', '-c', 'sleep 30 & echo $!; wait']
+
+it('stops the whole process group at the deadline, so a grandchild holding the pipes cannot hang the call', async () => {
+  const started = Date.now()
+  const result = await run(withGrandchild, { timeoutMs: 300 })
+  expect(result.code).toBe(-1)
+  expect(Date.now() - started).toBeLessThan(5000)
+  const grandchild = Number(result.stdout.trim())
+  expect(grandchild).toBeGreaterThan(0)
+  expect(await gone(grandchild)).toBe(true)
+})
+
+it('stops the whole process group when the signal aborts', async () => {
+  const controller = new AbortController()
+  const started = Date.now()
+  const running = run(withGrandchild, { signal: controller.signal, timeoutMs: 60_000 })
+  setTimeout(() => controller.abort(), 300)
+  const result = await running
+  expect(result.code).toBe(-1)
+  expect(Date.now() - started).toBeLessThan(5000)
+  expect(await gone(Number(result.stdout.trim()))).toBe(true)
+})
+
+it('returns once the process has exited even if a grandchild it left behind keeps the pipes open', async () => {
+  const started = Date.now()
+  const result = await run(['sh', '-c', 'sleep 30 & echo $!'], { timeoutMs: 60_000 })
+  const grandchild = Number(result.stdout.trim())
+  try {
+    expect(result.code).toBe(0)
+    expect(Date.now() - started).toBeLessThan(5000)
+  } finally {
+    process.kill(grandchild, 'SIGKILL')
+  }
+})
