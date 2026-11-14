@@ -198,6 +198,10 @@ export class ChannelBindings {
   bound(targetId: string): boolean {
     return this.state.bindings.some((b) => b.targetId === targetId)
   }
+  /** Whether a session is bound, or being bound, to any target of this instance. */
+  boundAny(): boolean {
+    return this.state.bindings.length > 0
+  }
   /** Whether a session is bound, or being bound, to any target in this chat. */
   boundChat(chatId: string): boolean {
     return this.state.bindings.some(

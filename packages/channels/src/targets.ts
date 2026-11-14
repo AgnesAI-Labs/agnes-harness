@@ -102,6 +102,8 @@ export function createTargetRouter(input: {
   signal: AbortSignal
   now?: () => number
   backoff?: { baseMs: number; maxMs: number }
+  /** Whether a bundled app claimed this instance whole: then nothing here pairs a chat or writes a receipt. */
+  claimed?: () => boolean
 }) {
   const { targets, instanceId, cfg } = input
   const now = input.now ?? Date.now
@@ -121,7 +123,9 @@ export function createTargetRouter(input: {
         `pairing-reply:${event.eventId}`,
       )
   }
+  const claimed = () => input.claimed?.() ?? false
   const pair = async (event: MessageEvent) => {
+    if (claimed()) return
     const runner = input.runner()
     if (!runner || !(await runner.claim(event))) return
     const route =
@@ -165,6 +169,7 @@ export function createTargetRouter(input: {
     )
   }
   const deliver = async (event: MessageEvent | CardActionEvent, pairing: Pairing) => {
+    if (claimed()) return
     const runner = input.runner()
     if (!runner) return
     // A receipt claims a paired message. A click keeps the platform claim: the session approval path may take it.

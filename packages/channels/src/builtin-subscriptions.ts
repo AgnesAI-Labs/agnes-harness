@@ -23,16 +23,21 @@ export type ChannelSubscriptionLink = {
   reads(): Reads
   /** Whether a session is bound, or being bound, to this chat. Such a chat cannot be claimed. */
   bound(chatId: string): boolean
+  /** Whether the owner paired a direct chat or bound a session here. Such an instance cannot be claimed whole. */
+  occupied(): boolean
 }
 
 /**
- * The Host port for one channel row's group chats claimed by a bundled app. A claimed group's events
- * go only to its subscriber and never reach session binding; direct chats are never claimed here.
+ * The Host port for one channel row's instances and group chats claimed by a bundled app. A claimed
+ * instance's events, direct chats included, and a claimed group's events go only to the claimant and
+ * never reach pairing or session binding. Group claims never cover a direct chat.
  */
 export interface ChannelSubscriptionsPort {
   attach(instanceId: string, link: ChannelSubscriptionLink): () => void
   /** Synchronous, so a claim decides the route of the event being received. */
+  claimedInstance(instanceId: string): boolean
   claimed(instanceId: string, chatId: string): boolean
+  /** The Host hands the event to the instance's claimant first, else to the group's subscriber. */
   deliver(instanceId: string, event: ChannelEvent): void
 }
 
@@ -40,10 +45,12 @@ export interface ChannelSubscriptionsPort {
 export const fromBot = (event: ChannelEvent) => event.sender.kind === 'bot'
 
 export function createSubscriptionRouter(port: ChannelSubscriptionsPort, instanceId: string) {
+  const claimedInstance = () => port.claimedInstance(instanceId)
   const claimsChat = (chat: { chatId: string; chatType?: 'dm' | 'group' | 'thread' }) =>
-    chat.chatType !== 'dm' && port.claimed(instanceId, chat.chatId)
+    claimedInstance() || (chat.chatType !== 'dm' && port.claimed(instanceId, chat.chatId))
   const claims = (event: ChannelEvent) => claimsChat({ chatId: event.chat.id, chatType: event.chat.type })
   return {
+    claimedInstance,
     claims,
     claimsChat,
     intercept(event: ChannelEvent): boolean {
@@ -55,6 +62,7 @@ export function createSubscriptionRouter(port: ChannelSubscriptionsPort, instanc
       adapter(): ChannelAdapter | undefined
       runner(): Runner | undefined
       bound(chatId: string): boolean
+      occupied(): boolean
     }): () => void {
       const running = () => {
         const adapter = source.adapter()
@@ -76,6 +84,7 @@ export function createSubscriptionRouter(port: ChannelSubscriptionsPort, instanc
           return reads
         },
         bound: (chatId) => source.bound(chatId),
+        occupied: () => source.occupied(),
       })
     },
   }

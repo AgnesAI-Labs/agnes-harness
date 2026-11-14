@@ -30,12 +30,19 @@ export type BundledAppChannelLink = {
   reads(): Partial<Pick<ChannelAdapter, Read>>
   /** Whether a session is bound, or being bound, to this chat. */
   bound(chatId: string): boolean
+  /** Whether the owner paired a direct chat of this instance, or bound a session to any of its chats. */
+  occupied(): boolean
 }
 
-/** The port one channel row's bridge uses: it attaches its adapters and asks which group is claimed. */
+/**
+ * The port one channel row's bridge uses: it attaches its adapters and asks which instance or group is
+ * claimed. A whole-instance claim covers every chat of the instance, direct chats included.
+ */
 export interface BundledAppChannelBridge {
   attach(instanceId: string, link: BundledAppChannelLink): () => void
+  claimedInstance(instanceId: string): boolean
   claimed(instanceId: string, chatId: string): boolean
+  /** To the instance's claimant first, else to the group's subscriber. */
   deliver(instanceId: string, event: ChannelEvent): void
 }
 
@@ -69,17 +76,42 @@ const isCurrent = (caller: BundledAppCaller) => {
   }
 }
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+const claimedError = () => rpcError('SEMANTIC_REJECTED', { code: 'CHANNEL_CLAIMED' })
+/** Hands `event` to its consumer once per recent `accountId`/`eventId`; a consumer failure stays here. */
+function handOver(consumer: Subscription, event: ChannelEvent): void {
+  const id = `${event.accountId}\0${event.eventId}`
+  if (consumer.seen.has(id)) return
+  consumer.seen.add(id)
+  if (consumer.seen.size > SEEN_EVENTS) {
+    const [oldest] = consumer.seen
+    consumer.seen.delete(oldest as string)
+  }
+  try {
+    consumer.onEvent(structuredClone(event))
+  } catch {
+    // A consumer failure must not break the channel or reach the platform.
+  }
+}
 
 /**
- * The profile's claims of channel group chats by bundled apps, and the running adapters of every
- * channel row. A group has at most one subscriber; a stale or aborted subscriber loses its claims.
+ * The profile's claims of channel instances and group chats by bundled apps, and the running adapters
+ * of every channel row. An instance claimed whole has no other consumer; a group has at most one
+ * subscriber; a stale or aborted claimant loses its claims.
  */
 export class BundledAppChannelHub {
   private readonly links = new Map<string, Map<string, BundledAppChannelLink>>()
   private readonly claims = new Map<string, Subscription>()
+  /** Whole-instance claims, by channel row and instance id; only message events reach them. */
+  private readonly instances = new Map<string, Subscription>()
+  /** The plugin id (row id) of each channel row that named one. */
+  private readonly plugins = new Map<string, string>()
 
-  /** `channel` names the channel row; instances are still addressed by their own ids. */
-  bridge(channel: string): BundledAppChannelBridge {
+  /**
+   * `channel` names the channel row and `pluginId` its plugin's row id, by which a whole instance is
+   * claimed; instances are still addressed by their own ids.
+   */
+  bridge(channel: string, pluginId?: string): BundledAppChannelBridge {
+    if (pluginId) this.plugins.set(channel, pluginId)
     return {
       attach: (instanceId, link) => {
         const rows = this.links.get(instanceId) ?? new Map<string, BundledAppChannelLink>()
@@ -91,23 +123,18 @@ export class BundledAppChannelHub {
           if (rows.size === 0 && this.links.get(instanceId) === rows) this.links.delete(instanceId)
         }
       },
+      claimedInstance: (instanceId) => !!this.liveInstance(channel, instanceId),
       // Another row running an instance with the same id must neither see nor feed this claim.
-      claimed: (instanceId, chatId) => this.live(instanceId, chatId)?.channel === channel,
+      claimed: (instanceId, chatId) =>
+        !!this.liveInstance(channel, instanceId) || this.live(instanceId, chatId)?.channel === channel,
       deliver: (instanceId, event) => {
+        const whole = this.liveInstance(channel, instanceId)
+        if (whole) {
+          if (event.kind === 'message') handOver(whole, event)
+          return
+        }
         const subscription = this.live(instanceId, event.chat.id)
-        if (subscription?.channel !== channel) return
-        const id = `${event.accountId}\0${event.eventId}`
-        if (subscription.seen.has(id)) return
-        subscription.seen.add(id)
-        if (subscription.seen.size > SEEN_EVENTS) {
-          const [oldest] = subscription.seen
-          subscription.seen.delete(oldest as string)
-        }
-        try {
-          subscription.onEvent(structuredClone(event))
-        } catch {
-          // A subscriber failure must not break the channel or reach the platform.
-        }
+        if (subscription?.channel === channel) handOver(subscription, event)
       },
     }
   }
@@ -134,6 +161,7 @@ export class BundledAppChannelHub {
   ): () => void {
     const ids = [...new Set(chats)]
     const { channel, link } = this.attached(instanceId)
+    if (this.liveInstance(channel, instanceId)) throw claimedError()
     // One consumer per group: another subscriber, or a session the owner bound to it, holds it.
     if (ids.some((id) => this.live(instanceId, id) || link.bound(id)))
       throw rpcError('SEMANTIC_REJECTED', { code: 'CHANNEL_CHAT_CLAIMED' })
@@ -145,6 +173,54 @@ export class BundledAppChannelHub {
         if (this.claims.get(claimKey(instanceId, id)) === subscription)
           this.claims.delete(claimKey(instanceId, id))
     }
+  }
+
+  /**
+   * Claims every chat of the instance `instanceId` that the channel row of `pluginId` runs. Refused
+   * while any other consumer uses the instance: a claimant, a group subscriber, an owner pairing or a
+   * bound session.
+   */
+  claimInstance(
+    caller: BundledAppCaller,
+    pluginId: string,
+    instanceId: string,
+    onEvent: (event: MessageEvent) => void,
+  ): { release(): void } {
+    const rows = [...(this.links.get(instanceId) ?? [])].filter(
+      ([channel]) => this.plugins.get(channel) === pluginId,
+    )
+    const [only] = rows.length === 1 ? rows : []
+    if (!only) throw unavailable()
+    const [channel, link] = only
+    const prefix = claimKey(instanceId, '')
+    const grouped = [...this.claims].some(
+      ([key, subscription]) =>
+        key.startsWith(prefix) &&
+        subscription.channel === channel &&
+        !!this.live(instanceId, key.slice(prefix.length)),
+    )
+    if (this.liveInstance(channel, instanceId) || grouped || link.occupied()) throw claimedError()
+    const claim: Subscription = {
+      channel,
+      caller,
+      onEvent: onEvent as (event: ChannelEvent) => void,
+      seen: new Set(),
+    }
+    const key = claimKey(channel, instanceId)
+    this.instances.set(key, claim)
+    return {
+      release: () => {
+        if (this.instances.get(key) === claim) this.instances.delete(key)
+      },
+    }
+  }
+
+  private liveInstance(channel: string, instanceId: string): Subscription | undefined {
+    const key = claimKey(channel, instanceId)
+    const claim = this.instances.get(key)
+    if (!claim || isCurrent(claim.caller)) return claim
+    this.instances.delete(key)
+    return undefined
   }
 
   private live(instanceId: string, chatId: string): Subscription | undefined {
@@ -208,6 +284,12 @@ export function bundledAppChannels(hub: BundledAppChannelHub, caller: BundledApp
       )
         throw invalid()
       return hub.subscribe(caller, channel, chats, onEvent)
+    },
+    claimInstance(channel, onEvent) {
+      admit()
+      if (!text(channel?.pluginId) || !text(channel?.instanceId) || typeof onEvent !== 'function')
+        throw invalid()
+      return hub.claimInstance(caller, channel.pluginId, channel.instanceId, onEvent)
     },
     async send(channel, target, message) {
       return await running(channel).send(target, message)
