@@ -238,8 +238,11 @@ describe('worker probe', () => {
     try {
       const probeIn = workerProbe(join(dir, 'state'), dir, new AbortController().signal)
       expect((await probeIn(['which-me'])).trim()).toBe('real')
-      await expect(probeIn(['sh', '-c', 'echo "no access" >&2; exit 2'])).rejects.toThrow('no access')
-      await expect(probeIn(['sh', '-c', 'exit 4'])).rejects.toThrow('exited with 4')
+      // The message is the command's stderr, which the command line itself does not contain.
+      program(join(dir, 'bin', 'denied'), 'echo "  no access  " >&2; exit 2')
+      await expect(probeIn(['denied'])).rejects.toThrow(/^no access$/)
+      program(join(dir, 'bin', 'silent-failure'), 'exit 4')
+      await expect(probeIn(['silent-failure'])).rejects.toThrow('silent-failure exited with 4')
     } finally {
       process.env.PATH = original
     }

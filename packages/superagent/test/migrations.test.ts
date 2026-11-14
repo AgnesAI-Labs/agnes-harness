@@ -43,6 +43,15 @@ it('refuses a database older than the oldest schema this build opens, and leaves
   again.close()
 })
 
+it('does not open a database written by dsh-superagent (schema 10)', () => {
+  const path = join(directory, 'orchestrator.sqlite')
+  const old = new DatabaseSync(path)
+  old.exec('CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+  old.prepare('INSERT INTO kv VALUES (?,?)').run('schema', '10')
+  old.close()
+  expect(() => openStore(path)).toThrow('schema 10 predates schema 11')
+})
+
 it('registers no migration yet: the first schema is the current one', () => {
   expect(MIGRATIONS).toEqual([])
 })
