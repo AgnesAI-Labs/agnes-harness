@@ -24,7 +24,7 @@ import { type AppRun, appRun } from './app-run.js'
 import { buildTools } from './app-tools.js'
 import { type Redelivery, SessionDelivery } from './delivery.js'
 import type { ExecutorSessions, SuperagentExecutor } from './executor.js'
-import type { HookState } from './hook-state.js'
+import { type HookState, stoppedHookState, withinSessions } from './hook-state.js'
 import { createHookState } from './hooks.js'
 import type { PromptBinding } from './prompt.js'
 import type { ModelCatalog } from './resources.js'
@@ -57,10 +57,16 @@ export interface SuperagentApp {
   /** The engine, through which a startup reconcile reports interrupted Assignments. */
   readonly engine: Pick<Engine, 'assignmentInterrupted'>
   /**
-   * The synchronous state the hooks read while this app runs; with `sessionIds`, only those sessions and their
-   * subagents count as Superagent's, such as the ones a reconcile went through.
+   * The synchronous state the hooks read while this app runs, over the live registry of Superagent's sessions, so a
+   * worker registered later is governed too. With `reconciled`, the sessions a reconcile went through: a session the
+   * store held when this app was built that is not among them stays refused, with its subagents.
    */
-  hookState(sessionIds?: ReadonlySet<string>): HookState
+  hookState(reconciled?: ReadonlySet<string>): HookState
+  /**
+   * What the hooks read after this app stopped: its sessions, as the store holds them now, refused every tool for
+   * `reason`, each with its live note. It reads the store once, so it outlives the store.
+   */
+  stoppedState(reason: string): HookState
   handleTool(call: ToolCall): Promise<ToolAnswer>
   /** Why Superagent's sessions cannot run now; undefined once the app is ready. */
   unavailable(): string | undefined
@@ -116,6 +122,9 @@ export interface AppDeps {
 
 export function createSuperagentApp(deps: AppDeps): SuperagentApp {
   const state = appState()
+  const { registry } = deps.sessions
+  /** The sessions of earlier runs, which a startup reconcile goes through. */
+  const inherited = new Set(registry.ids())
   let run: AppRun | undefined
   const core = buildCore(deps, state)
   const parts = buildEngine(deps, state, core, () => {
@@ -157,14 +166,17 @@ export function createSuperagentApp(deps: AppDeps): SuperagentApp {
       running.stopSignal(reason)
       await running.drain()
     },
-    hookState: (sessionIds) =>
+    hookState: (reconciled) =>
       createHookState({
-        registry: sessionIds ? only(deps.sessions.registry, sessionIds) : deps.sessions.registry,
+        registry,
         store: deps.store,
         unavailable,
+        ...(reconciled ? { held: unreconciled(inherited, reconciled) } : {}),
         prompt: tools.binding,
         liveNote: (id) => deps.delivery.liveNote(id),
       }),
+    stoppedState: (reason) =>
+      stoppedHookState(new Map(registry.ids().map((id) => [id, deps.delivery.liveNote(id)])), reason),
     handleTool: (call) => handleTool(tools.toolsHost, call),
   }
 }
@@ -209,15 +221,11 @@ export function createRuntimeParts(input: {
   return { machine, registry, sessions, delivery, roleModels }
 }
 
-/** The registry restricted to `sessionIds` and their subagents (`<parent>/<id>`). */
-function only(registry: SessionRegistry, sessionIds: ReadonlySet<string>): Pick<SessionRegistry, 'owner'> {
-  const listed = (id: string): boolean => {
-    for (let current = id; ; ) {
-      if (sessionIds.has(current)) return true
-      const parent = current.lastIndexOf('/')
-      if (parent <= 0) return false
-      current = current.slice(0, parent)
-    }
-  }
-  return { owner: (id) => (listed(id) ? registry.owner(id) : undefined) }
+/** Why a session of an earlier run that a reconcile did not go through, or a subagent of one, may not run. */
+function unreconciled(inherited: ReadonlySet<string>, reconciled: ReadonlySet<string>) {
+  const waiting = new Set([...inherited].filter((id) => !reconciled.has(id)))
+  return (sessionId: string): string | undefined =>
+    withinSessions(waiting, sessionId) === undefined
+      ? undefined
+      : 'Superagent has not reconciled this session since it started; it can use tools again once it has'
 }

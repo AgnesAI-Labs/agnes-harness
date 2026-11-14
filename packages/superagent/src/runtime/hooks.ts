@@ -7,7 +7,7 @@
 import type { PluginContextFacets, PromptSection } from '@agnes/extension-api'
 import type { Store } from '../app/store.js'
 import { liveTicket } from '../core/index.js'
-import type { HookState, HookStateCell } from './hook-state.js'
+import type { HookState, HookStateHolder } from './hook-state.js'
 import type { SessionRegistry, SessionRole } from './sessions.js'
 
 /**
@@ -54,30 +54,39 @@ export interface HookStateDeps {
   readonly store: Pick<Store, 'tickets'>
   /** Why Superagent's sessions cannot run now, such as during startup; undefined once ready. */
   unavailable(): string | undefined
+  /** Why a registered session, or a subagent of one, may not run yet, such as one no reconcile went through. */
+  held?(sessionId: string): string | undefined
   readonly prompt: { request(sessionId: string, role: SessionRole): string }
   liveNote(sessionId: string): { id: string; content: string } | undefined
 }
 
-/** The hook state of a running service; the store reads it does are synchronous. */
+/**
+ * The hook state of a running service; the store reads it does are synchronous. A registered session's live note shows
+ * in every state of the service, since a note that disappears is recorded as withdrawn; its policy section and its tools
+ * wait for the service to be ready.
+ */
 export function createHookState(deps: HookStateDeps): HookState {
+  const blocked = (sessionId: string) => deps.unavailable() ?? deps.held?.(sessionId)
   return {
     isSuperagentSession: (sessionId) => deps.registry.owner(sessionId) !== undefined,
     promptSections(sessionId) {
       const owner = deps.registry.owner(sessionId)
-      if (!owner || owner.child || deps.unavailable() !== undefined) return { stable: [] }
+      if (!owner || owner.child) return { stable: [] }
       const note = deps.liveNote(sessionId)
+      const notes = note ? { liveNote: note } : {}
+      if (blocked(sessionId) !== undefined) return { stable: [], ...notes }
       return {
         stable: [
           { id: 'superagent:policy', order: 180, content: deps.prompt.request(sessionId, owner.role) },
         ],
-        ...(note ? { liveNote: note } : {}),
+        ...notes,
       }
     },
     guardTool({ sessionId, toolName, input }) {
       const owner = deps.registry.owner(sessionId)
       if (!owner) return undefined
-      const unavailable = deps.unavailable()
-      if (unavailable !== undefined) return unavailable
+      const reason = blocked(sessionId)
+      if (reason !== undefined) return reason
       if (owner.role.kind === 'worker') {
         const ticket = deps.store.tickets.get(owner.role.ticketId)
         return !ticket || !liveTicket(ticket) ? ENDED : undefined
@@ -87,10 +96,10 @@ export function createHookState(deps: HookStateDeps): HookState {
   }
 }
 
-/** Registers both hooks on the plugin row; they read `cell` only. */
+/** Registers both hooks on the plugin row; they only read the current state of `cell`. */
 export function registerHooks(
   plugin: Pick<PluginContextFacets, 'hooks'>,
-  cell: HookStateCell,
+  cell: Pick<HookStateHolder, 'get'>,
 ): (() => void)[] {
   return [
     plugin.hooks.register('context', (_payload, ctx) => {

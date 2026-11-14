@@ -14,7 +14,7 @@ import type {
 import type { JsonValue } from '@agnes/protocol'
 import { openStore, type Store } from '../app/store.js'
 import { createRuntimeParts, createSuperagentApp, type SuperagentApp } from './app.js'
-import { createHookStateCell, type HookStateCell } from './hook-state.js'
+import { claimHookState, type HookStateCell, type HookStateHolder, processHookState } from './hook-state.js'
 import { registerHooks } from './hooks.js'
 import { asSdkClient } from './sdk.js'
 import { registerTools } from './tools.js'
@@ -22,8 +22,8 @@ import { registerTools } from './tools.js'
 export type { AppDeps, AppParts, SuperagentApp } from './app.js'
 export { createRuntimeParts, createSuperagentApp } from './app.js'
 export type { Delivery } from './delivery.js'
-export type { HookState, HookStateCell } from './hook-state.js'
-export { INERT_HOOK_STATE } from './hook-state.js'
+export type { HookState, HookStateCell, HookStateHolder } from './hook-state.js'
+export { INERT_HOOK_STATE, processHookState } from './hook-state.js'
 export { asSdkClient, type SdkClient } from './sdk.js'
 export type { SessionAdapter } from './sessions.js'
 
@@ -54,6 +54,7 @@ export interface RuntimeContext {
   readonly init: ProfileManagedInit
   readonly grant: BundledAppGrant
   readonly store: Store
+  /** This generation's hold of the process's hook state, which a lifecycle sets and clears. */
   readonly hooks: HookStateCell
   readonly app: SuperagentApp
   readonly runtime: ReturnType<typeof createRuntimeParts>
@@ -63,6 +64,8 @@ export interface RuntimeContext {
 export const SERVICE_ID = 'superagent'
 /** The database file in the grant's state directory. */
 export const DATABASE_FILE = 'superagent.sqlite'
+/** Why Superagent's sessions are refused after the service stopped. */
+export const STOPPED = 'Superagent is not running; its sessions can use tools again once it runs'
 
 const EMPTY_SCHEMA = { type: 'object', properties: {}, additionalProperties: false } as const
 const denied = (what: string) =>
@@ -91,14 +94,17 @@ function createService(app: SuperagentApp, parts: Map<SuperagentSlot, unknown>):
 /**
  * Starts the service. It needs the release grant: a payload installed from any other source, or one whose bytes differ
  * from the shipped snapshot, gets no grant and does not start. The shutdown is registered first, so a refused start
- * still reports a confirmed shutdown rather than possibly leaked resources.
+ * still reports a confirmed shutdown rather than possibly leaked resources. The service takes the process's hook state
+ * over for its generation; its shutdown replaces that state, unless a newer generation took it over meanwhile, with a
+ * refusal of Superagent's sessions that keeps their live notes.
  */
-async function start(
+export async function startService(
   init: ProfileManagedInit,
-  hooks: HookStateCell,
+  holder: HookStateHolder,
   log: { warn(message: string): void },
 ): Promise<SuperagentService> {
   let store: Store | undefined
+  let hooks: HookStateCell | undefined
   let stop: ((reason: 'disable' | 'generation' | 'shutdown') => Promise<void>) | undefined
   const lifetime = new AbortController()
   init.onShutdown(async (reason) => {
@@ -106,7 +112,8 @@ async function start(
     try {
       await stop?.(stopReason(reason))
     } finally {
-      hooks.clear()
+      // The refusal is read from the store, so it is left before the store closes.
+      hooks?.clear()
       store?.close()
     }
     return { state: 'settled' }
@@ -139,10 +146,11 @@ async function start(
   built = app
   const parts = new Map<SuperagentSlot, unknown>()
   const service = createService(app, parts)
-  const context: RuntimeContext = { init, grant, store: opened, hooks, app, runtime }
+  const cell = claimHookState(holder, app.hookState(), () => app.stoppedState(STOPPED))
+  hooks = cell
+  const context: RuntimeContext = { init, grant, store: opened, hooks: cell, app, runtime }
   // Parts register here, before the app starts: service.register('lifecycle' | 'services' | 'feishu', part(context)).
   void context
-  hooks.set(app.hookState())
   init.ready()
   // The app starts after start() returned: a registered lifecycle runs it, else it starts as it is.
   setImmediate(() => {
@@ -155,29 +163,17 @@ async function start(
   return service
 }
 
-/**
- * The hook state of this process. The Host applies the plugin row more than once in a process (the row that runs the
- * managed service and the rows that serve sessions' hooks), each from its own copy of this module, so the state the
- * running service sets is kept on the process, where every application reads it.
- */
-const PROCESS_HOOKS: HookStateCell = (() => {
-  const slot = Symbol.for('agnes.superagent.hook-state')
-  const shared = globalThis as typeof globalThis & { [slot]?: HookStateCell }
-  shared[slot] ??= createHookStateCell()
-  return shared[slot]
-})()
-
 /** The plugin row `ext:agnes.superagent/main`. */
 export const superagentPlugin = {
   inject: ['hooks', 'tools', 'services', 'self', 'profileRuntime'] as const,
   apply(plugin: PluginContextFacets) {
-    const hooks = PROCESS_HOOKS
+    const hooks = processHookState()
     const log = { warn: (message: string) => plugin.self.log.warn(message) }
     const handle = plugin.profileRuntime.register<SuperagentService>({
       id: SERVICE_ID,
       configSchema: EMPTY_SCHEMA,
       defaultConfig: {},
-      start: (init) => start(init, hooks, log),
+      start: (init) => startService(init, hooks, log),
     })
     // Both hooks run for every session of the profile; an owner's own session is never touched.
     const disposers = [...registerHooks(plugin, hooks), ...registerTools(plugin, handle)]

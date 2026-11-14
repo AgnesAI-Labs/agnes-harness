@@ -15,7 +15,7 @@ beforeEach(() => {
 })
 afterEach(() => temp.close())
 
-function setup(notes: Record<string, string> = {}) {
+function setup(notes: Record<string, string> = {}, service: { unavailable?: string } = {}) {
   const prompts = new Prompts(
     temp.store,
     () => 100_000,
@@ -48,7 +48,7 @@ function setup(notes: Record<string, string> = {}) {
     createHookState({
       registry,
       store: temp.store,
-      unavailable: () => undefined,
+      unavailable: () => service.unavailable,
       prompt: binding,
       liveNote: (id) => (notes[id] ? { id: 'superagent-notices', content: notes[id]! } : undefined),
     }),
@@ -102,6 +102,29 @@ describe('the Superagent prompt section', () => {
       delivery: 'live-note',
     })
     expect((hooks.context('superagent:worker:t1') as { sections: unknown[] }).sections).toHaveLength(1)
+  })
+
+  it('keeps showing the live note while Superagent is not ready, so the platform never records it withdrawn', () => {
+    const service: { unavailable?: string } = {}
+    const { hooks } = setup({ 'superagent:orchestrator': 'Settings saved: policy' }, service)
+    for (const reason of [
+      'Superagent is starting',
+      'Superagent is waiting for setup: The GitHub Source names no repository.',
+      'Superagent is stopping',
+    ]) {
+      service.unavailable = reason
+      expect(hooks.context('superagent:orchestrator'), reason).toEqual({
+        refreshOnRequest: true,
+        sections: [
+          {
+            id: 'superagent-notices',
+            order: NOTICE_ORDER,
+            content: 'Settings saved: policy',
+            delivery: 'live-note',
+          },
+        ],
+      })
+    }
   })
 
   it("writes the revision's skills into the AGH home skill directory and rewrites them when it changes", () => {
