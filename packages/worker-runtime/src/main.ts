@@ -109,6 +109,7 @@ export type WorkerHostLike = Host
 /** Host assembly uses the verified filesystem loader by default; tests may inject a loader. */
 export type WorkerHostDeps = {
   channelRuntime?: HostOptions['channelRuntime']
+  bundledAppClient?: HostOptions['bundledAppClient']
   loader?: PackageLoader
   extensionLoader?: { import(file: string): Promise<Record<string, unknown>> }
   hostRoot?: string
@@ -396,6 +397,7 @@ export async function runWorker(
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
           ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
+          ...(deps.bundledAppClient ? { bundledAppClient: deps.bundledAppClient } : {}),
           decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
           ...profilePorts,
@@ -431,6 +433,7 @@ export async function runWorker(
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
             ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
+            ...(deps.bundledAppClient ? { bundledAppClient: deps.bundledAppClient } : {}),
             decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
             restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
             dataDir: profile.dataDir,

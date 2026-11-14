@@ -1,7 +1,10 @@
 import { createServer } from 'node:http'
 
-/** Scripted loopback responses only; no model or remote fallback. */
-export async function startLoopProvider() {
+/** Scripted loopback responses only; no model or remote fallback. A `toolProbes` marker in a user
+ * message makes the scripted model call that tool once, until a tool result follows the marker. */
+export async function startLoopProvider(
+  options: { toolProbes?: Record<string, { name: string; arguments: unknown }> } = {},
+) {
   let blocking = false
   let entered: (() => void) | undefined
   let disconnected: (() => void) | undefined
@@ -105,6 +108,33 @@ export async function startLoopProvider() {
       }
       response.write(
         `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'native-question', type: 'function', function: { name: 'ask_user_question', arguments: JSON.stringify(args) } }] }, finish_reason: null }] })}\n\n`,
+      )
+      response.end(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
+      )
+      return
+    }
+    const probe = Object.entries(options.toolProbes ?? {}).find(([marker]) => {
+      const asked = body.messages.findLastIndex(
+        (message) => message.role === 'user' && JSON.stringify(message.content).includes(marker),
+      )
+      return asked >= 0 && !body.messages.slice(asked).some((message) => message.role === 'tool')
+    })
+    if (probe) {
+      const [, call] = probe
+      const event = { id: 'tool-probe', object: 'chat.completion.chunk', created: 0, model: 'loop-script' }
+      const delta = {
+        tool_calls: [
+          {
+            index: 0,
+            id: `probe-${requests.length}`,
+            type: 'function',
+            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+          },
+        ],
+      }
+      response.write(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`,
       )
       response.end(
         `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,

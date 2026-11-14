@@ -1,0 +1,45 @@
+{
+  "name": "@acme/bundled-app-probe",
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "exports": "./index.mjs",
+  "agnes": {
+    "plugins": [
+      {
+        "id": "ext:acme/bundled-app-probe/main",
+        "export": "bundledAppProbe",
+        "apiRange": "^5.0.0",
+        "runtime": "in-process",
+        "inject": [
+          "tools",
+          "profileRuntime"
+        ],
+        "capabilities": {
+          "store": true,
+          "tools": {
+            "prefix": "",
+            "names": [
+              "app_probe"
+            ]
+          },
+          "managedServices": [
+            {
+              "id": "app",
+              "scope": "profile",
+              "artifact": {
+                "kind": "in-process"
+              },
+              "healthPath": "/health",
+              "listeners": [],
+              "startupTimeoutMs": 30000,
+              "shutdownTimeoutMs": 5000,
+              "apiVersion": "1.0.0",
+              "requires": []
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

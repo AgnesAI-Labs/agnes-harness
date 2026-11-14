@@ -2,10 +2,14 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
-## 5.18.0
+## 5.19.0
 
 - Channel `Sender.kind` (`user` or `bot`) marks who sent a message; absent means a user, and session routing ignores bot senders.
 - `ChannelCapabilities.read` and five optional cursor-paged `ChannelAdapter` reads: `fetchMessages`, `listThread`, `listHistory`, `listChats` and `listMembers`. An adapter declares each read in `capabilities()` at run time; the manifest schema is unchanged. Adapters that implement none of them are unchanged.
+
+## 5.18.0
+
+- Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed. Channel calls refuse until the channel runtime supplies them.
 
 ## 5.17.0
 
