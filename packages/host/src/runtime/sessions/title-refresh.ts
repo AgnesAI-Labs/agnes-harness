@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import type { SideCallExecutionSource } from '@agnes/core'
 import {
   type AutoTitleInspection,
@@ -8,6 +7,7 @@ import {
 } from '@agnes/extension-api'
 import { readSessionTitle, SESSION_TITLE_EVENT, type SessionTitleRecord } from '@agnes/protocol'
 import type { HostSession } from '../lifecycle/host.js'
+import { TITLE_COST_EVENT, titleEffectId } from './title-accounting.js'
 import type { AutoTitleEligibility } from './title-eligibility.js'
 import { generateTitleWithModelSnapshot } from './title-generator.js'
 
@@ -26,7 +26,9 @@ export async function acceptedSessionTitle(session: HostSession) {
       if (record?.status === 'generated') return { record, revision: row.seq }
     }
     if (!rows.length) return undefined
-    toSeq = rows.at(-1)!.seq - 1
+    const last = rows.at(-1)
+    if (!last) return undefined
+    toSeq = last.seq - 1
   }
   return undefined
 }
@@ -81,17 +83,8 @@ export function createTitleRefresh(
       attempted = true
       const prior = await acceptedSessionTitle(session)
       if (!prior || prior.revision !== request.expectedRevision) return { status: 'stale' }
-      const effectId = `title-refresh:${createHash('sha256')
-        .update(
-          JSON.stringify([
-            session.key,
-            session.lane,
-            input.source.startSeq,
-            input.source.endSeq,
-            request.expectedRevision,
-          ]),
-        )
-        .digest('hex')}`
+      const refreshSource = { endSeq: input.source.endSeq, expectedRevision: request.expectedRevision }
+      const effectId = titleEffectId(session, input.source.startSeq, refreshSource)
       let fromSeq = input.source.endSeq
       const throughSeq = session.lastSeq
       while (fromSeq <= throughSeq) {
@@ -111,7 +104,9 @@ export function createTitleRefresh(
         )
           return { status: 'unavailable' }
         if (!previous.length) break
-        fromSeq = previous.at(-1)!.seq + 1
+        const last = previous.at(-1)
+        if (!last) break
+        fromSeq = last.seq + 1
       }
       const route = session.preset.model.route.primary
       const model =
@@ -161,6 +156,7 @@ export function createTitleRefresh(
         generateTitleWithModelSnapshot(session, seed, {
           signal: input.signal,
           effectId,
+          refresh: refreshSource,
           current: () => record,
           save,
           retainTransport(work) {
@@ -169,7 +165,7 @@ export function createTitleRefresh(
           onError() {
             input.billingFailed?.()
           },
-          accept: async (outcome, spend) => {
+          accept: async (outcome, spend, proof) => {
             const eligibility = await inspect()
             return session.locked(async () => {
               const current = await acceptedSessionTitle(session)
@@ -189,6 +185,7 @@ export function createTitleRefresh(
                     : { status: apply ? 'applied' : 'unchanged' }
               return session.append([
                 session.ev('cost/ledger', spend),
+                session.ev(TITLE_COST_EVENT, proof, { ignorable: true }),
                 session.ev(
                   'x/host/title-refresh',
                   {

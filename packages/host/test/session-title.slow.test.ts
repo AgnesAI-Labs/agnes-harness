@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { stampFor } from '@agnes/ai/testkit'
 import { BASE_SEAM_PROVIDERS } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
-import { type BillingSeam, contextTokens } from '@agnes/core'
+import { type BillingSeam, contextTokens, hasChildControl } from '@agnes/core'
 import { sqlitePersistenceProvider } from '@agnes/host-infrastructure/adapters/storage-provider'
 import {
   type InferenceEvent,
@@ -467,6 +467,7 @@ it('ignores forged and mismatched cost rows across pages when recovering title u
   let pages = 0
   const scan = vi.spyOn(f.session, 'scan').mockImplementation(async (query) => {
     if (query.type !== 'cost/ledger') return originalScan(query)
+    if ((query.fromSeq ?? 0) > cost.seq + 101) return []
     pages++
     return pages === 1 ? forged.slice(0, 100) : [...forged.slice(100), { ...cost, seq: cost.seq + 101 }]
   })
@@ -882,4 +883,114 @@ it.each(['before', 'during', 'failure', 'hard-budget', 'authority-unavailable'] 
       mode === 'during' || mode === 'failure' ? 2 : 1,
     )
   },
+)
+
+it.each(['accepted', 'failed', 'stale'] as const)(
+  'recovers all original title costs and reservations after a %s refresh without redispatch',
+  async (mode) => {
+    const records = new Map<string, Parameters<BillingSeam['record']>[0]>()
+    const ledgerInit = fakeSeamInit()
+    const durableLedger = await BASE_SEAM_PROVIDERS.billing.create(ledgerInit, new AbortController().signal)
+    const durableRows = () =>
+      ledgerInit.adapters.storage
+        .namespace('usage_ledger')
+        .entries()
+        .filter(({ key }) => key.startsWith('row:'))
+    let successfulWrites = 0
+    let healthy = false
+    const ledger: BillingSeam = {
+      projected: async () => ({ credits: 1, creditSource: 'estimated' }),
+      record: async (row) => {
+        if (row.purpose !== 'title') return
+        if (!healthy) throw new Error('billing unavailable')
+        await durableLedger.record(row)
+        successfulWrites++
+        records.set(row.effectId, row)
+      },
+    }
+    const options: Parameters<typeof fixture>[0] = { title: 'Initial title', ledger, treeBudgetCredits: 100 }
+    const f = await fixture(options)
+    await run(f.session)
+    await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+    await run(f.session, 'Second source task')
+    const start = (await f.session.scan({ type: 'turn/start', order: 'desc', limit: 1 }))[0]
+    const end = (await f.session.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]
+    const accepted = (await f.session.scan({ type: SESSION_TITLE_EVENT, order: 'desc', limit: 1 }))[0]
+    if (!start || !end || !accepted) throw new Error('missing title source')
+    const storage = f.session.d.log.storage
+    if (!hasChildControl(storage)) throw new Error('missing budget storage')
+    const settle = vi.spyOn(storage, 'settleOrigin').mockRejectedValue(new Error('settlement unavailable'))
+    options.title = 'Refreshed title'
+    if (mode === 'failed') options.rawTitle = 'invalid JSON'
+    let release: (() => void) | undefined
+    if (mode === 'stale')
+      options.waitTitle = new Promise<void>((resolve) => {
+        release = resolve
+      })
+    const { createTitleRefresh } = await import('../src/runtime/sessions/title-refresh.js')
+    const refresh = createTitleRefresh(f.session, {
+      source: {
+        turn: 2,
+        startSeq: start.seq,
+        endSeq: end.seq,
+        lastAssistantSeq: (end.data as { lastAssistantSeq: number }).lastAssistantSeq,
+        budgetCap: null,
+        treeBudgetCap: 100,
+        hard: false,
+      },
+      signal: new AbortController().signal,
+      eligible: async () => true,
+    })
+    const pending = refresh.refresh({ expectedRevision: accepted.seq, context: 'A different task' })
+    if (mode === 'stale') {
+      await vi.waitFor(() =>
+        expect(f.calls.filter((call) => call.sessionKey.startsWith('title:'))).toHaveLength(2),
+      )
+      const original = readSessionTitle(accepted)
+      if (!original || original.status !== 'generated') throw new Error('missing accepted title')
+      await f.session.append([
+        f.session.ev(
+          SESSION_TITLE_EVENT,
+          { ...original, title: 'Newer accepted title' },
+          { ignorable: true },
+        ),
+      ])
+      release?.()
+    }
+    expect(await pending).toEqual({ status: 'unavailable' })
+    expect(settle).toHaveBeenCalledOnce()
+    const failedSettlement = settle.mock.calls[0]?.[0]
+    if (!failedSettlement) throw new Error('missing original reservation')
+    const costs = (await f.session.scan({ type: 'cost/ledger', toSeq: f.session.lastSeq })).filter(
+      (row) => (row.data as { purpose?: string }).purpose === 'title',
+    )
+    expect(costs).toHaveLength(2)
+    expect(records.size).toBe(0)
+    settle.mockRestore()
+    await f.host.close()
+    healthy = true
+    const reopened = await fixture({ root: f.root, ledger, treeBudgetCredits: 100 })
+    await vi.waitFor(() => expect(records.size).toBe(2))
+    expect([...records.keys()].sort()).toEqual(
+      costs.map((row) => (row.data as { effectId: string }).effectId).sort(),
+    )
+    expect([...records.values()].map((row) => row.turn).sort()).toEqual([1, 2])
+    const reopenedStorage = reopened.session.d.log.storage
+    if (!hasChildControl(reopenedStorage) || !reopenedStorage.peekReservation)
+      throw new Error('missing durable reservation lookup')
+    expect(await reopenedStorage.peekReservation(failedSettlement.permitId)).toMatchObject({
+      status: 'settled',
+    })
+    expect(reopened.calls).toHaveLength(0)
+    const stored = durableRows()
+    expect(stored).toHaveLength(2)
+    await reopened.host.close()
+    const twice = await fixture({ root: f.root, ledger, treeBudgetCredits: 100 })
+    await vi.waitFor(() => expect(successfulWrites).toBe(4))
+    expect(durableRows()).toEqual(stored)
+    await twice.host.close()
+    expect(records.size).toBe(2)
+    expect(twice.calls).toHaveLength(0)
+  },
+  30_000,
 )

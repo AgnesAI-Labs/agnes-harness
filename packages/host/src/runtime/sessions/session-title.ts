@@ -1,21 +1,12 @@
-import { createHash } from 'node:crypto'
-import type { CostLedger, Event } from '@agnes/core'
-import {
-  readSessionTitle,
-  SESSION_TITLE_EVENT,
-  type SessionTitleRecord,
-  validateEvent,
-} from '@agnes/protocol'
+import type { Event } from '@agnes/core'
+import { readSessionTitle, SESSION_TITLE_EVENT, type SessionTitleRecord } from '@agnes/protocol'
 import type { HostSession } from '../lifecycle/host.js'
+import { recoverTitleCosts, TITLE_COST_EVENT, titleEffectId } from './title-accounting.js'
 import { bounded, generateTitleWithModelSnapshot } from './title-generator.js'
 
 export { normalizeSessionTitle } from './title-generator.js'
 
 const clip = (text: string, max: number) => Array.from(text).slice(0, max).join('')
-const titleEffectId = (session: HostSession, startSeq: number): string =>
-  `title:${createHash('sha256')
-    .update(JSON.stringify([session.key, session.lane, startSeq]))
-    .digest('hex')}`
 const plainText = (data: unknown): string => {
   const content = (data as { content?: Array<{ type?: string; text?: string }> } | null)?.content
   return Array.isArray(content)
@@ -99,11 +90,12 @@ export async function startSessionTitle(
       current: () => record,
       save,
       onError: options.onError,
-      accept: (outcome, spend) =>
+      accept: (outcome, spend, proof) =>
         session.locked(async () => {
           const replace = record?.status !== 'generated'
           const appended = await session.append([
             session.ev('cost/ledger', spend),
+            session.ev(TITLE_COST_EVENT, proof, { ignorable: true }),
             ...(replace ? [session.ev(SESSION_TITLE_EVENT, outcome, { ignorable: true })] : []),
           ])
           if (replace) record = outcome
@@ -190,54 +182,17 @@ export async function startSessionTitle(
   if (session.lane !== 'main' || session.generationDepth > 0 || !start)
     return { close: async () => undefined }
   record = await loadSessionTitle(session, start.seq)
-  if (record?.status === 'generated' || record?.status === 'failed') {
-    const seed = record
-    let recovering = true
-    // The local cost is the durable retry source; the ledger deduplicates its original effectId.
-    active = bounded(
-      (async () => {
-        const toSeq = session.lastSeq
-        let fromSeq = seed.startSeq
-        while (fromSeq <= toSeq && recovering && !stopped.signal.aborted) {
-          const rows = await session.scan({ type: 'cost/ledger', fromSeq, toSeq, limit: 100 })
-          if (!rows.length || !recovering || stopped.signal.aborted) return
-          for (const row of rows) {
-            if (
-              row.origin !== 'system' ||
-              row.trust !== 'trusted' ||
-              (row.lane ?? 'main') !== session.lane ||
-              !validateEvent(row).ok
-            )
-              continue
-            const spend = row.data as CostLedger
-            if (
-              spend.purpose !== 'title' ||
-              spend.effectId !== titleEffectId(session, seed.startSeq) ||
-              spend.sourceTurn !== seed.turn ||
-              spend.model !== seed.model
-            )
-              continue
-            const recorded = await session.d.runtime.billingRecord({
-              ...spend,
-              sessionKey: session.key,
-              lane: session.lane,
-              turn: seed.turn,
-              step: 0,
-            })
-            if (!recorded) options.onError(new Error('title usage ledger unavailable'))
-            return
-          }
-          fromSeq = (rows.at(-1)?.seq ?? toSeq) + 1
-        }
-      })(),
-      stopped.signal,
-      options.timeoutMs ?? 30_000,
-    )
-      .finally(() => {
-        recovering = false
-      })
-      .catch(options.onError)
-  }
+  // Recovery scans all title generations; it never launches a model or replaces an accepted title.
+  let recovering = true
+  active = bounded(
+    recoverTitleCosts(session, start.seq, () => recovering && !stopped.signal.aborted, options.onError),
+    stopped.signal,
+    options.timeoutMs ?? 30_000,
+  )
+    .finally(() => {
+      recovering = false
+    })
+    .catch(options.onError)
   eligible =
     !record && (await session.scan({ type: 'user/message', fromSeq: start.seq, limit: 1 })).length === 0
   if (record?.status === 'pending') {
