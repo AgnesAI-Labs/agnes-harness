@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { commandBinding } from '@agnes/daemon-rpc/local/command-binding'
 import type { ManagedInputResult, ManagedInputTarget } from '@agnes/extension-api'
 import { type Actor, type JsonValue, rpcError } from '@agnes/protocol'
+import { ownerInputNotes } from './managed-input-notes.js'
 import { inputProgress, projectInput, sessionLane } from './managed-input-submit.js'
 import {
   MANAGED_INPUT_TEXT_LIMIT,
@@ -64,6 +65,8 @@ export interface OwnerInputEngine {
   sweep(): Promise<void>
   /** Shutdown started: `advance` and `sweep` do nothing from now on, and a sweep under way stops at its next session. */
   close(): void
+  /** After an archive: held inputs are kept and a queued one is taken back; a failure is reported and left to the sweep. */
+  retainArchived(sessionId: string): Promise<void>
   withdraw(owner: string, workspace?: string): Promise<void>
   review(sessionId: string, key: string): ManagedInputReview | undefined
   decide(
@@ -90,6 +93,9 @@ export interface OwnerInputEngineDeps {
   enabled?(owner: string): Promise<boolean>
   /** Test fixtures only: throw to stand in for a crash between two writes. */
   faults?: { afterReserve?(): void; afterSubmit?(): void }
+  /** Where swallowed failures and inputs held by unreadable gates are reported; `console.warn` when absent. */
+  warn?(message: string): void
+  clock?(): number
 }
 
 type AdmissionInput =
@@ -188,7 +194,8 @@ function prepare(request: Admission, resolution: HostInputResolution | undefined
 
 export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEngine {
   const { ports, inputs } = deps
-  const progress = inputProgress(deps)
+  const notes = ownerInputNotes(deps.warn ?? ((message) => console.warn(message)), deps.clock ?? Date.now)
+  const progress = inputProgress(deps, notes)
 
   /**
    * A bound session must match. A session opened before bindings existed is bound here, once, by its
@@ -295,9 +302,13 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
         deps.faults?.afterReserve?.()
         row = inputs.get(ctx.owner, sessionId, request.key) as ManagedInputRow
       }
-      if (row.state === 'queued') await complete(row, record, request, prepared)
+      if (row.state === 'queued')
+        await complete(row, record, request, prepared).catch((error: unknown) => {
+          notes.failed('admission', sessionId)(error)
+          throw error
+        })
       // The input is recorded; a failed submit is retried by the sweep, so the caller still gets it.
-      await progress.advanceNow(sessionId, 'result').catch(() => undefined)
+      await progress.advanceNow(sessionId, 'result').catch(notes.failed('submit', sessionId))
       return projectInput(inputs.get(ctx.owner, sessionId, request.key) ?? row)
     })
   }
@@ -309,7 +320,7 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     return deps.serial(sessionLane(sessionId), async () => {
       const row = inputs.get(ctx.owner, sessionId, key)
       if (row) {
-        await progress.advanceNow(sessionId, 'result').catch(() => undefined)
+        await progress.advanceNow(sessionId, 'result').catch(notes.failed('inputResult', sessionId))
         return projectInput(inputs.get(ctx.owner, sessionId, key) ?? row)
       }
       // The sends ledger is never pruned by time: a key in neither table was never sent or admitted.
@@ -341,12 +352,15 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     close() {
       closed = true
     },
+    async retainArchived(sessionId) {
+      await this.advance(sessionId, 'result').catch(notes.failed('archive', sessionId))
+    },
     async sweep() {
       for (const sessionId of inputs.sessionsWithWork())
         if (!closed)
           await deps
             .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, 'sweep'))
-            .catch(() => undefined)
+            .catch(notes.failed('sweep', sessionId))
     },
     async withdraw(owner, workspace) {
       let failure: unknown

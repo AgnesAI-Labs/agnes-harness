@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ownerInputNotes } from '../src/supervisor/managed-input-notes.js'
 import { inputProgress } from '../src/supervisor/managed-input-submit.js'
 import { inputWorld, owner, receipt } from './fixtures/fake-input-ports.js'
 
@@ -359,13 +360,16 @@ describe('held owner inputs', () => {
     await w.engine.advance('s1')
     await w.legacy('s1', 'k2')
     await w.engine.decide('s1', 'k2', 'retain', w.row('s1', 'k2')?.version ?? 0)
-    const progress = inputProgress({
-      ports: { sessions: {}, records: w.records } as never,
-      inputs: w.inputs,
-      serial: (_key, work) => work(),
-      gatesPass: async () => true,
-      actor: () => ({}) as never,
-    })
+    const progress = inputProgress(
+      {
+        ports: { sessions: {}, records: w.records } as never,
+        inputs: w.inputs,
+        serial: (_key, work) => work(),
+        gatesPass: async () => true,
+        actor: () => ({}) as never,
+      },
+      ownerInputNotes(() => undefined, Date.now),
+    )
     for (const key of ['k1', 'k2']) {
       const final = w.row('s1', key)
       expect(final?.state).toMatch(/^(consumed|retained)$/u)

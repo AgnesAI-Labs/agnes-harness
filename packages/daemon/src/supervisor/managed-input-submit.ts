@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { ManagedInputResult } from '@agnes/extension-api'
 import { rpcError } from '@agnes/protocol'
 import type { OwnerInputEngineDeps } from './managed-input-admission.js'
+import type { OwnerInputNotes } from './managed-input-notes.js'
 import type { ManagedInputChange, ManagedInputRow } from './managed-session-inputs.js'
 import { detached, type ManagedSessionRecord } from './managed-session-records.js'
 
@@ -44,7 +45,7 @@ const archivedSession = (deps: OwnerInputEngineDeps, record: ManagedSessionRecor
   record.archived || deps.ports.sessions.archived(record.sessionId)
 
 /** The checks every submit runs that do not depend on the row, read once per pass and only when needed. */
-function checksFor(deps: OwnerInputEngineDeps, record: ManagedSessionRecord) {
+function checksFor(deps: OwnerInputEngineDeps, notes: OwnerInputNotes, record: ManagedSessionRecord) {
   const enabled = (owner: string) => deps.enabled?.(owner).catch(() => false) ?? Promise.resolve(true)
   let verdict: Promise<'pass' | 'paused' | ManagedInputChange> | undefined
   return () =>
@@ -58,8 +59,23 @@ function checksFor(deps: OwnerInputEngineDeps, record: ManagedSessionRecord) {
         return deps.ports.records.granted(record.owner, record.workspace)
           ? ('paused' as const)
           : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
-      // Gates that cannot be read hold the inputs unchanged, like a paused package, until a later pass.
-      const pass = await deps.gatesPass(record).catch(() => undefined)
+      // Gates that cannot be read hold the inputs unchanged, like a paused package, until a later pass;
+      // the owner sees them held, and the operator is told.
+      const sessionId = record.sessionId
+      const pass = await deps.gatesPass(record).then(
+        (value) => {
+          notes.readable(sessionId)
+          return value
+        },
+        (error: unknown) => {
+          const open = [...deps.inputs.held(sessionId), ...deps.inputs.inFlight(sessionId)]
+          notes.unreadable(
+            open.filter((row) => row.state !== 'queued'),
+            error,
+          )
+          return undefined
+        },
+      )
       if (pass === undefined) return 'paused' as const
       return pass ? ('pass' as const) : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
     })())
@@ -70,7 +86,7 @@ function checksFor(deps: OwnerInputEngineDeps, record: ManagedSessionRecord) {
  * submitted one, take inputs back on revoke, and apply the owner's decision. Callers hold the
  * session's lane (`sessionLane`) around every `*Now` function.
  */
-export function inputProgress(deps: OwnerInputEngineDeps) {
+export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes) {
   const { ports, inputs } = deps
   const move = (row: ManagedInputRow, next: ManagedInputChange, by: 'platform' | 'owner' = 'platform') =>
     FINAL.has(row.state)
@@ -84,7 +100,7 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
   const questionOpen = async (sessionId: string) =>
     (await ports.sessions.openQuestion?.(sessionId).catch(() => true)) === true
   const archived = (record: ManagedSessionRecord) => archivedSession(deps, record)
-  const sessionChecks = (record: ManagedSessionRecord) => checksFor(deps, record)
+  const sessionChecks = (record: ManagedSessionRecord) => checksFor(deps, notes, record)
 
   /** The turn that took a submitted input; the scan starts at the seq the submission returned. */
   const settle = async (row: ManagedInputRow): Promise<ManagedInputRow> => {

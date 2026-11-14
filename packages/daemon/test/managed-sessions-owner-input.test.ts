@@ -5,6 +5,7 @@ import { rpcError } from '@agnes/protocol'
 import { JsonRpcError, TransportClosed } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import type { HostInputResolution, OwnerInputEngine } from '../src/supervisor/managed-input-admission.js'
+import { OWNER_INPUT_WARN_INTERVAL_MS } from '../src/supervisor/managed-input-notes.js'
 import { createIdleSignal, driveOwnerInputs } from '../src/supervisor/managed-session-idle.js'
 import { ManagedSessionInputs } from '../src/supervisor/managed-session-inputs.js'
 import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
@@ -52,7 +53,7 @@ const admission = (key: string, receiptId = key, target: Record<string, unknown>
   input: { kind: 'ownerMessage' as const, receiptId },
 })
 
-function world() {
+function world(report: { warn?(message: string): void; clock?(): number } = {}) {
   const table = memoryTable()
   const records = new ManagedSessionRecords(table)
   const inputs = new ManagedSessionInputs(table)
@@ -94,6 +95,8 @@ function world() {
   const sessions = createManagedSessions(ports, {
     inputs,
     enabled: async (rowOwner) => enabled.has(rowOwner),
+    warn: report.warn ?? (() => undefined),
+    ...(report.clock ? { clock: report.clock } : {}),
   })
   /** The Host resolves the receipt the admission names; `r1` unless told otherwise. */
   const port = (c: ManagedSessionCaller = caller, receiptId = 'r1') =>
@@ -634,6 +637,77 @@ describe('managed sessions bound to a task', () => {
     expect(w.inputs.get(owner, plugin, 'k2')).toMatchObject({ state: 'retained', reason: 'sessionArchived' })
     expect(w.core.state.submits).toEqual([])
     expect(w.inputs.sessionsWithWork()).toEqual([])
+  })
+
+  it('work the engine swallows is reported once per interval for each session', async () => {
+    const warnings: string[] = []
+    let now = 1_000_000
+    const w = world({ warn: (message) => warnings.push(message), clock: () => now })
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    // The submit right after the admission fails; the caller still gets the recorded input.
+    w.core.state.failNextSubmit = true
+    expect(await w.port().admitInput(sessionId, admission('k1', 'r1'))).toMatchObject({ state: 'enqueued' })
+    expect(warnings).toEqual([`Owner input submit for session ${sessionId} failed: session could not open`])
+    // A sweep that keeps failing is reported once, then again once the interval has passed.
+    const activity = w.ports.sessions.activity
+    w.ports.sessions.activity = async () => {
+      throw new Error('activity unavailable')
+    }
+    await engine.sweep()
+    await engine.sweep()
+    now += OWNER_INPUT_WARN_INTERVAL_MS
+    await engine.sweep()
+    const sweep = `Owner input sweep for session ${sessionId} failed: activity unavailable`
+    expect(warnings.slice(1)).toEqual([sweep, sweep])
+    w.ports.sessions.activity = activity
+    // The archive still answers when taking a queued input back fails; the failure is reported.
+    const other = await w.port().start(start({ startKey: 'task-1:b', taskBinding: undefined }))
+    await w.port(caller, 'r2').admitInput(other.sessionId, admission('k2', 'r2', { startKey: 'task-1:b' }))
+    // inputResult still answers when the inbox cannot be read; the failure is reported.
+    const queued = w.ports.sessions.queued
+    w.ports.sessions.queued = async () => {
+      throw new Error('inbox unavailable')
+    }
+    expect(await w.port().inputResult(other.sessionId, { key: 'k2' })).toMatchObject({ state: 'enqueued' })
+    expect(warnings.at(-1)).toBe(
+      `Owner input inputResult for session ${other.sessionId} failed: inbox unavailable`,
+    )
+    if (queued) w.ports.sessions.queued = queued
+    w.ports.sessions.withdraw = async () => {
+      throw new Error('inbox unavailable')
+    }
+    await w.port().archive(other.sessionId)
+    expect(warnings.at(-1)).toBe(
+      `Owner input archive for session ${other.sessionId} failed: inbox unavailable`,
+    )
+  })
+
+  it('an input held because its gates cannot be read is reported with its key, once per interval', async () => {
+    const warnings: string[] = []
+    let now = 1_000_000
+    const w = world({ warn: (message) => warnings.push(message), clock: () => now })
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    w.core.state.running.add(sessionId)
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    w.core.state.running.delete(sessionId)
+    const policy = w.ports.sessions.policy
+    w.ports.sessions.policy = async () => {
+      throw new Error('transport closed')
+    }
+    for (let pass = 0; pass < 3; pass++) await engine.sweep()
+    await engine.advance(sessionId)
+    const held = `Owner input k1 of session ${sessionId} stays held: its gates could not be read (transport closed)`
+    expect(warnings).toEqual([held])
+    now += OWNER_INPUT_WARN_INTERVAL_MS
+    await engine.sweep()
+    expect(warnings).toEqual([held, held])
+    // An admission whose gates cannot be read rejects, and is reported too.
+    await expect(w.port(caller, 'r2').admitInput(sessionId, admission('k2', 'r2'))).rejects.toThrow()
+    expect(warnings.at(-1)).toBe(`Owner input admission for session ${sessionId} failed: transport closed`)
+    w.ports.sessions.policy = policy
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued', reason: 'busy' })
   })
 
   it('archiving a session retains its held inputs', async () => {
