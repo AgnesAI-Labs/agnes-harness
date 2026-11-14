@@ -13,6 +13,7 @@ import type {
 import { channelKind } from '@agnes/extension-api'
 import { createPrivateDirectorySync, hasPrivateDaclSync } from '@agnes/system-node'
 import { ChannelBindings } from './bindings.js'
+import { type ChannelSubscriptionsPort, createSubscriptionRouter, fromBot } from './builtin-subscriptions.js'
 import { decideAttention } from './runner/attention.js'
 import type { RunnerConfig } from './runner/config.js'
 import { createRunner, type Runner, type RunnerDeps, type RunnerLog } from './runner/runner.js'
@@ -28,6 +29,8 @@ export interface ChannelBridgeOptions {
   /** Host pairings of this row's direct chats to plugin services; absent, no chat is routed to a service. */
   interactions?: RunnerDeps['interactions']
   targets?: ChannelTargetsPort
+  /** Host claims of this row's group chats by a bundled app; absent, no chat is claimed. */
+  subscriptions?: ChannelSubscriptionsPort
   /** Test seam for the retries of a delivery to a paired service. */
   targetBackoff?: { baseMs: number; maxMs: number }
 }
@@ -92,6 +95,10 @@ export async function startChannelBridge(
     active?: Runner
     router?: ReturnType<typeof createTargetRouter>
     detach?: (() => void) | undefined
+    subscriptions?: ReturnType<typeof createSubscriptionRouter>
+    unlink?: (() => void) | undefined
+    /** The current adapter behind the generation guard; replaced on each supervised restart. */
+    adapter?: Awaited<ReturnType<ChannelProvider['create']>>
   }[] = []
   let stopped = false
   let stopping: Promise<void> | undefined
@@ -109,6 +116,7 @@ export async function startChannelBridge(
           try {
             await row.router?.drain()
             row.detach?.()
+            row.unlink?.()
             await row.active?.stop({ drainMs: 2000 })
           } finally {
             await row.supervisor.stop({ drainMs: 0 })
@@ -180,13 +188,23 @@ export async function startChannelBridge(
       }
       const fingerprint = createHash('sha256').update(JSON.stringify(instance)).digest('hex')
       const targets = options.targets
+      const subscriptions = options.subscriptions
+        ? createSubscriptionRouter(options.subscriptions, instance.id)
+        : undefined
       const bindings = new ChannelBindings(
         init.store,
         `bindings:${key}:${fingerprint}`,
         assertCurrent,
         (id) => targets?.paired(instance.id, id) ?? false,
+        (chat) => subscriptions?.claimsChat(chat) ?? false,
       )
-      const row: (typeof running)[number] = { id: instance.id, workspace, bindings, supervisor: undefined! }
+      const row: (typeof running)[number] = {
+        id: instance.id,
+        workspace,
+        bindings,
+        supervisor: undefined!,
+        ...(subscriptions ? { subscriptions } : {}),
+      }
       let current: Awaited<ReturnType<ChannelProvider['create']>> | undefined
       if (targets)
         row.router = createTargetRouter({
@@ -258,11 +276,14 @@ export async function startChannelBridge(
               resolve: (key) => bindings.resolve(key),
               restore: () => bindings.restore(),
               observe(event) {
-                if (event.kind !== 'message' || decideAttention(event, cfg, false) !== 'respond') return
+                if (event.kind !== 'message' || row.subscriptions?.claims(event) || fromBot(event)) return
+                if (decideAttention(event, cfg, false) !== 'respond') return
                 const intent = adapter.toSession(event, { tenant: cfg.tenant, agent: cfg.agent })
                 if (intent) bindings.observe(event, intent.sessionKey)
               },
-              intercept: (event) => row.router?.intercept(event) ?? false,
+              // A claimed group goes to its subscriber before any pairing or session route.
+              intercept: (event) =>
+                row.subscriptions?.intercept(event) || (row.router?.intercept(event) ?? false),
             },
             refsPath: join(state, 'refs.sqlite'),
           })
@@ -270,6 +291,7 @@ export async function startChannelBridge(
           current = adapter
           row.detach?.()
           row.detach = row.router?.attach(runner, provider.manifest)
+          row.adapter = guarded
           bindings.runner = runner
           return { client, runner }
         } catch (error) {
@@ -279,6 +301,11 @@ export async function startChannelBridge(
         }
       }, options.log)
       running.push(row)
+      row.unlink = row.subscriptions?.attach({
+        adapter: () => row.adapter,
+        runner: () => row.active,
+        bound: (chatId) => bindings.boundChat(chatId),
+      })
       await row.supervisor.start()
       assertCurrent()
     }

@@ -14,6 +14,7 @@ import type {
   UiActionParams,
   UiActionReceipt,
 } from '@agnes/protocol'
+import type { BundledAppChannelBridge } from './bundled-app-channels.js'
 import type { ChannelTargetsBridge } from './channel-targets.js'
 
 /** Backend composition only; never a plugin-supplied factory or transport address. */
@@ -31,6 +32,8 @@ export type ChannelRuntimeFactory = ((
     log: Logger
     /** Host pairings of this channel row's chats to managed services. */
     targets?: ChannelTargetsBridge
+    /** Bundled-app claims of this channel row's group chats, and its adapters for the app's reads. */
+    subscriptions?: BundledAppChannelBridge
     interactions?: ChannelInteractionPort
   },
 ) => Promise<ChannelRuntime>) & {
