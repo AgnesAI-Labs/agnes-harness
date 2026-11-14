@@ -8,6 +8,7 @@ import type { BundledAppGrant } from '@agnes/extension-api'
 import type { TextCache } from '../app/cache.js'
 import type { Effects } from '../app/effects.js'
 import type { ticketEnvironment } from '../app/execution-environment.js'
+import type { SessionNotices } from '../app/notices.js'
 import type { Outbox } from '../app/outbox.js'
 import type { Passes } from '../app/passes.js'
 import type { Prompts } from '../app/prompts.js'
@@ -70,6 +71,10 @@ export interface SuperagentApp {
   handleTool(call: ToolCall): Promise<ToolAnswer>
   /** Why Superagent's sessions cannot run now; undefined once the app is ready. */
   unavailable(): string | undefined
+  /** Resolves the deployment again and, once it resolves, opens what a start in setup left closed. */
+  reconfigure(): Promise<void>
+  /** Why the started app waits for setup; undefined when it does not. */
+  setupProblem(): SetupProblem | undefined
   /** What the panel services and other parts read and drive. */
   readonly parts: AppParts
 }
@@ -86,6 +91,8 @@ export interface AppParts {
   readonly health: Readonly<Record<string, unknown>>
   readonly sourceLinks: TextCache
   readonly binding: PromptBinding
+  /** The main session's notices and their delivery. */
+  readonly notices: SessionNotices
   deployment(): Deployment | undefined
   setupProblem(): SetupProblem | undefined
   models(): Promise<ModelCatalog>
@@ -118,6 +125,11 @@ export interface AppDeps {
    * only watches their sessions and queues pending launches again.
    */
   reconciled?: boolean
+  /**
+   * What a completed setup runs, such as a save of the GitHub Source: by default the app resolves the deployment again
+   * (`reconfigure`); a lifecycle that also checks the agent environment takes this over.
+   */
+  restart?(): void
 }
 
 export function createSuperagentApp(deps: AppDeps): SuperagentApp {
@@ -128,7 +140,8 @@ export function createSuperagentApp(deps: AppDeps): SuperagentApp {
   let run: AppRun | undefined
   const core = buildCore(deps, state)
   const parts = buildEngine(deps, state, core, () => {
-    setTimeout(() => void run?.reconfigure(), 0)
+    // After the current caller has its answer, as a setup restart was.
+    setTimeout(() => (deps.restart ? deps.restart() : void run?.reconfigure()), 0)
   })
   const unavailable = () => unavailableOf(state)
   const tools = buildTools(deps, state, core, parts, unavailable)
@@ -152,6 +165,7 @@ export function createSuperagentApp(deps: AppDeps): SuperagentApp {
       },
       sourceLinks: core.sourceLinks,
       binding: tools.binding,
+      notices: core.notices,
       deployment: () => state.deployment,
       setupProblem: () => state.problem,
       models: tools.models,
@@ -159,6 +173,8 @@ export function createSuperagentApp(deps: AppDeps): SuperagentApp {
       sourceHost: parts.sourceHost,
     },
     unavailable,
+    reconfigure: () => running.reconfigure(),
+    setupProblem: () => state.problem,
     start: () => running.start(),
     stopSignal: (reason) => running.stopSignal(reason),
     drain: () => running.drain(),

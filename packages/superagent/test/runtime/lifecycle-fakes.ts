@@ -126,12 +126,7 @@ export function fakeApp(
       log.push('app.drain')
       await drain()
     },
-    executor: {
-      sessionIds,
-      start: () => log.push('executor.start'),
-      deliver: () => log.push('executor.deliver'),
-      stop: () => log.push('executor.stop'),
-    },
+    executor: { sessionIds },
     engine: {
       assignmentInterrupted(ticketId, assignmentId) {
         log.push(`interrupted ${ticketId} ${assignmentId}`)

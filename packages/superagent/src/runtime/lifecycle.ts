@@ -40,6 +40,11 @@ export interface Lifecycle {
    * daily pass does.
    */
   ticketEnded(ticketId: string): Promise<void>
+  /**
+   * Checks the setup again, as "check again" in the panel and a saved GitHub Source ask: a start that waits for setup or
+   * failed runs again, from the agent environment on; a running app resolves its deployment again. Returns at once.
+   */
+  recheck(): void
 }
 
 /** Session operations the session adapter does not cover, done with the owner-level SDK client. */
@@ -73,6 +78,13 @@ export interface LifecycleDeps {
    * store knows (`storedSessionIds`).
    */
   registeredSessions?: () => string[]
+  /**
+   * What the hooks read while Superagent starts and until its reconcile has read the sessions: Superagent's sessions
+   * refused, each keeping its live note. By default `refusingSessions` over `registeredSessions`.
+   */
+  startingState?(): HookState
+  /** What the hooks read while Superagent cannot start: its sessions refused for `reason`, each keeping its live note. */
+  refusingState?(reason: string): HookState
   /**
    * The agent environment to write. `signal` aborts when the runtime stops during the start.
    * @throws SetupError when the configuration is incomplete or an account check fails.
@@ -167,6 +179,35 @@ export function sessionsOnly(sessionIds: ReadonlySet<string>): HookState {
   }
 }
 
+/**
+ * Empties a Session's inbox, cancels its turn and kills its agent jobs, and checks again: a cancel hands steers back
+ * to the inbox, where the daemon may start one as a new turn, and a turn winding down may still start a job. Up to
+ * `QUIET_PASSES` passes, until no turn runs, no job runs and (unless `keepPending`) nothing waits. The cancel is sent
+ * whatever the state says, since a turn parked on an approval reads as not running. False when the session still was
+ * not quiet after the last pass.
+ */
+async function quiet(
+  sessions: SessionAdapter,
+  control: SessionControl,
+  sessionId: string,
+  keepPending: boolean,
+): Promise<boolean> {
+  for (let pass = 0; ; pass++) {
+    const state = await sessions.state(sessionId)
+    const settled = !state.running && state.jobs === 0 && (keepPending || state.pending.length === 0)
+    if (pass > 0 && settled) return true
+    if (pass === QUIET_PASSES) return false
+    if (!keepPending && state.pending.length)
+      await sessions.dropPending(
+        sessionId,
+        state.pending.map((item) => item.itemId),
+      )
+    await sessions.cancel(sessionId)
+    await control.killAgentJobs(sessionId)
+    await new Promise((resolve) => setTimeout(resolve, QUIET_PAUSE_MS))
+  }
+}
+
 export function createLifecycle(deps: LifecycleDeps): Lifecycle {
   const { store, sessions, control, hooks } = deps
   const now = deps.now ?? Date.now
@@ -240,6 +281,14 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
 
   /** Refuses the tools of every Superagent session the store knows, for `reason`; the owner's sessions are untouched. */
   const refuse = (reason: string): void => {
+    if (deps.refusingState) {
+      try {
+        hooks.set(deps.refusingState(reason))
+        return
+      } catch (error) {
+        warn(`Superagent could not read its sessions: ${message(error)}`)
+      }
+    }
     let ids: string[]
     try {
       ids = (deps.registeredSessions ?? (() => storedSessionIds(store)))()
@@ -249,6 +298,20 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     }
     hooks.set(refusingSessions(new Set(ids), reason))
   }
+
+  /** Refuses Superagent's sessions while it starts, until the reconcile has read them. */
+  const holdWhileStarting = (): void => {
+    if (deps.startingState) hooks.set(deps.startingState())
+    else refuse(STARTING)
+  }
+  /** Reports a started app that waits for setup; its sessions stay refused and nothing is reconciled until it is set up. */
+  const waitForSetup = (problem: SetupProblem): void => {
+    const unconfigured = UNCONFIGURED.has(problem.code)
+    status = { state: unconfigured ? 'setupRequired' : 'setupFailed', problem }
+    refuse(`${unconfigured ? 'Superagent is not set up' : 'Superagent cannot start'}: ${problem.detail}`)
+  }
+  /** The app this lifecycle started; a recheck reconfigures it instead of starting it again. */
+  let begun: SuperagentApp | undefined
 
   const open = async (signal: AbortSignal): Promise<void> => {
     // Nothing of the start runs before `start()` has returned and its caller has gone on.
@@ -271,8 +334,15 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       // `stopping` is checked right before, and nothing awaits in between: a stop either sees this app or none.
       const started = deps.createApp(signal)
       app = started
-      await started.start()
+      if (begun === started) await started.reconfigure?.()
+      else {
+        begun = started
+        await started.start()
+      }
       if (stopping) return
+      // A start can end in setup without failing, such as when another session holds the main session's key.
+      const problem = started.setupProblem?.()
+      if (problem) return waitForSetup(problem)
       const ids = started.executor.sessionIds()
       // Read every Session first, while they are still refused; then guard them before anything runs in one.
       const states = new Map<string, Awaited<ReturnType<SessionAdapter['state']>>>()
@@ -313,39 +383,27 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     }
   }
 
-  /**
-   * Empties a Session's inbox, cancels its turn and kills its agent jobs, and checks again: a cancel hands steers back
-   * to the inbox, where the daemon may start one as a new turn, and a turn winding down may still start a job. Up to
-   * `QUIET_PASSES` passes, until no turn runs, no job runs and (unless `keepPending`) nothing waits. The cancel is sent
-   * whatever the state says, since a turn parked on an approval reads as not running.
-   */
-  const quiet = async (sessionId: string, keepPending: boolean): Promise<void> => {
-    for (let pass = 0; ; pass++) {
-      const state = await sessions.state(sessionId)
-      const settled = !state.running && state.jobs === 0 && (keepPending || state.pending.length === 0)
-      if (pass > 0 && settled) return
-      if (pass === QUIET_PASSES) {
-        warn(`Superagent session ${sessionId} is still running after ${QUIET_PASSES} stops`)
-        return
-      }
-      if (!keepPending && state.pending.length)
-        await sessions.dropPending(
-          sessionId,
-          state.pending.map((item) => item.itemId),
-        )
-      await sessions.cancel(sessionId)
-      await control.killAgentJobs(sessionId)
-      await new Promise((resolve) => setTimeout(resolve, QUIET_PAUSE_MS))
-    }
-  }
-
   return {
     async start() {
       if (work) return
       stopping = false
       status = { state: 'starting' }
-      refuse(STARTING)
+      holdWhileStarting()
       aborter = new AbortController()
+      work = open(aborter.signal)
+    },
+    recheck() {
+      if (!work || stopping || !aborter) return
+      if (status.state === 'running') {
+        void app?.reconfigure?.().catch((error: unknown) => {
+          warn(`Superagent could not check its setup again: ${message(error)}`)
+        })
+        return
+      }
+      if (status.state !== 'setupRequired' && status.state !== 'setupFailed' && status.state !== 'failed')
+        return
+      status = { state: 'starting' }
+      holdWhileStarting()
       work = open(aborter.signal)
     },
     /**
@@ -384,12 +442,20 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       } catch (error) {
         warn(`Superagent could not list its sessions: ${message(error)}`)
       }
+      // Every session counts as not stopped until its stop confirmed it quiet.
+      const unstopped = new Set(ids)
       await within(
         Promise.allSettled(
           ids.map((id) =>
-            quiet(id, reason === 'shutdown').catch((error: unknown) => {
-              warn(`Superagent could not stop session ${id}: ${message(error)}`)
-            }),
+            quiet(sessions, control, id, reason === 'shutdown').then(
+              (done) => {
+                if (done) unstopped.delete(id)
+                else warn(`Superagent session ${id} is still running after ${QUIET_PASSES} stops`)
+              },
+              (error: unknown) => {
+                warn(`Superagent could not stop session ${id}: ${message(error)}`)
+              },
+            ),
           ),
         ),
         left(),
@@ -399,7 +465,12 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
           const assignment = runningAssignment(ticket)
           return assignment ? [{ ticketId: ticket.id, assignmentId: assignment.id }] : []
         })
-        store.set(KV.runtime.paused, { at: new Date(now()).toISOString(), reason, assignments: paused })
+        store.set(KV.runtime.paused, {
+          at: new Date(now()).toISOString(),
+          reason,
+          assignments: paused,
+          stop: { ms: Date.now() - began, sessions: ids.length, unstopped: [...unstopped] },
+        })
       } catch (error) {
         warn(`Superagent could not record the pause: ${message(error)}`)
       }

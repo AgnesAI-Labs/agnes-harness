@@ -4,6 +4,7 @@
  * service's hook state. Starting the service only opens the store, builds the app, registers the shutdown and reports
  * ready; the app starts after `start()` has returned.
  */
+import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type {
   BundledAppGrant,
@@ -13,9 +14,12 @@ import type {
 } from '@agnes/extension-api'
 import type { JsonValue } from '@agnes/protocol'
 import { openStore, type Store } from '../app/store.js'
-import { createRuntimeParts, createSuperagentApp, type SuperagentApp } from './app.js'
-import { claimHookState, type HookStateCell, type HookStateHolder, processHookState } from './hook-state.js'
+import { type Machine, machineOf, type Probe } from '../deployment.js'
+import type { createRuntimeParts, SuperagentApp } from './app.js'
+import { composeGeneration, type Generation } from './generation.js'
+import { type HookStateCell, type HookStateHolder, processHookState } from './hook-state.js'
 import { registerHooks } from './hooks.js'
+import type { LifecycleDeps } from './lifecycle.js'
 import { createPanelWiring, type PanelWiring } from './panel-host.js'
 import { asSdkClient } from './sdk.js'
 import { createPanelServices, type PanelService, registerPanelServices } from './services.js'
@@ -43,10 +47,7 @@ export interface SuperagentService {
   callService(name: string, input: unknown, signal: AbortSignal): Promise<JsonValue>
   register(slot: SuperagentSlot, part: unknown): void
 }
-/**
- * A registered lifecycle runs the app in place of the plain start and stop below: it starts it, reconciles the sessions
- * and sets the hook state, and stops it.
- */
+/** The lifecycle the service registers: it starts the app, reconciles the sessions and sets the hook state, and stops it. */
 export interface LifecyclePart {
   start(): Promise<void>
   stop(reason: 'disable' | 'generation' | 'shutdown'): Promise<void>
@@ -56,7 +57,7 @@ export interface RuntimeContext {
   readonly init: ProfileManagedInit
   readonly grant: BundledAppGrant
   readonly store: Store
-  /** This generation's hold of the process's hook state, which a lifecycle sets and clears. */
+  /** This generation's hold of the process's hook state, which its lifecycle sets and clears. */
   readonly hooks: HookStateCell
   readonly app: SuperagentApp
   readonly runtime: ReturnType<typeof createRuntimeParts>
@@ -64,10 +65,9 @@ export interface RuntimeContext {
 
 /** The id of the managed service; the Host adds `superagent.status`, `.configure` and the other generic services. */
 export const SERVICE_ID = 'superagent'
-/** The database file in the grant's state directory. */
+/** The database file in the state directory. */
 export const DATABASE_FILE = 'superagent.sqlite'
-/** Why Superagent's sessions are refused after the service stopped. */
-export const STOPPED = 'Superagent is not running; its sessions can use tools again once it runs'
+export { STOPPED } from './generation.js'
 
 const EMPTY_SCHEMA = { type: 'object', properties: {}, additionalProperties: false } as const
 const denied = (what: string) =>
@@ -119,28 +119,49 @@ export function closeGeneration(
   }
 }
 
+/** What a test may set of a service it starts. */
+export interface ServiceOptions {
+  /** The plugin's configuration (machine settings); by default none, which keeps the state in the grant's directory. */
+  config?: unknown
+  /** Dependencies of the lifecycle that replace the composed ones. */
+  lifecycle?: Partial<LifecycleDeps>
+  /** How the app probes the deployment; by default the agent's `gh` as worker shells run it. */
+  probe?: Probe
+}
+
+/**
+ * The plugin's machine settings, with the state directory the platform gave Superagent when the configuration names
+ * none.
+ */
+export function machineConfig(config: unknown, stateDirectory: string): Machine {
+  const given = config && typeof config === 'object' ? (config as Record<string, unknown>) : {}
+  return machineOf({ ...given, stateDir: given.stateDir ?? stateDirectory })
+}
+
 /**
  * Starts the service. It needs the release grant: a payload installed from any other source, or one whose bytes differ
  * from the shipped snapshot, gets no grant and does not start. The shutdown is registered first, so a refused start
- * still reports a confirmed shutdown rather than possibly leaked resources. The service takes the process's hook state
- * over for its generation; its shutdown replaces that state, unless a newer generation took it over meanwhile, with a
- * refusal of Superagent's sessions that keeps their live notes.
+ * still reports a confirmed shutdown rather than possibly leaked resources. The service builds its whole generation
+ * at once (see `composeGeneration`), takes the process's hook state over with Superagent's sessions refused, reports
+ * ready and leaves the rest to the lifecycle, which begins after `start()` has returned. Its shutdown stops the
+ * lifecycle, then replaces the hook state, unless a newer generation took it over meanwhile, with a refusal of
+ * Superagent's sessions that keeps their live notes, and closes the store.
  */
 export async function startService(
   init: ProfileManagedInit,
   holder: HookStateHolder,
   log: { warn(message: string): void },
+  options: ServiceOptions = {},
 ): Promise<SuperagentService> {
   let store: Store | undefined
-  let hooks: HookStateCell | undefined
-  let stop: ((reason: 'disable' | 'generation' | 'shutdown') => Promise<void>) | undefined
+  let generation: Generation | undefined
   const lifetime = new AbortController()
   init.onShutdown(async (reason) => {
     lifetime.abort()
     try {
-      await stop?.(stopReason(reason))
+      await generation?.lifecycle.stop(stopReason(reason))
     } finally {
-      closeGeneration(hooks, store)
+      closeGeneration(generation?.hooks, store)
     }
     return { state: 'settled' }
   })
@@ -156,52 +177,46 @@ export async function startService(
   asSdkClient(grant.client)
   if (typeof grant.channels.subscribe !== 'function')
     throw new TypeError('The bundled-app grant has no channels')
-  const opened = openStore(join(grant.stateDirectory, DATABASE_FILE))
+  const machine = machineConfig(options.config, grant.stateDirectory)
+  mkdirSync(machine.stateDir, { recursive: true, mode: 0o700 })
+  const opened = openStore(join(machine.stateDir, DATABASE_FILE))
   store = opened
-  let built: SuperagentApp | undefined
-  const runtime = createRuntimeParts({
-    store: opened,
+  const panel = createPanelWiring(opened, machine.stateDir)
+  const composed = composeGeneration({
     grant,
+    store: opened,
+    machine,
+    holder,
     lifetime: lifetime.signal,
     log,
-    environment: (ticket) =>
-      Object.fromEntries(
-        (built?.parts.ticketEnvironment(ticket) ?? []).map((item) => [item.key, item.value]),
-      ),
+    panel,
+    ...(options.lifecycle ? { lifecycle: options.lifecycle } : {}),
+    ...(options.probe ? { probe: options.probe } : {}),
   })
-  const app = createSuperagentApp({ store: opened, grant, ...runtime, log })
-  built = app
+  generation = composed
   const parts = new Map<SuperagentSlot, unknown>()
-  const service = createService(app, parts, createPanelWiring(opened, grant.stateDirectory))
-  service.register('services', createPanelServices(service.panel.host))
-  const cell = claimHookState(holder, app.hookState(), () => app.stoppedState(STOPPED))
-  hooks = cell
-  const context: RuntimeContext = { init, grant, store: opened, hooks: cell, app, runtime }
-  // Parts register here, before the app starts: service.register('lifecycle' | 'services' | 'feishu', part(context)).
-  void context
+  const service = createService(composed.app, parts, panel)
+  service.register('services', createPanelServices(panel.host))
+  service.register('lifecycle', composed.lifecycle)
   init.ready()
-  // The app starts after start() returned: a registered lifecycle runs it, else it starts as it is.
-  setImmediate(() => {
-    if (lifetime.signal.aborted) return
-    const lifecycle = parts.get('lifecycle') as LifecyclePart | undefined
-    stop = lifecycle ? (reason) => lifecycle.stop(reason) : (reason) => app.stop(reason)
-    const started = lifecycle ? lifecycle.start() : app.start()
-    started.catch((error: unknown) => log.warn(`Superagent did not start: ${String(error)}`))
-  })
+  // The lifecycle begins once `start()` has returned; it reports its own failures through its status.
+  void composed.lifecycle
+    .start()
+    .catch((error: unknown) => log.warn(`Superagent did not start: ${String(error)}`))
   return service
 }
 
 /** The plugin row `ext:agnes.superagent/main`. */
 export const superagentPlugin = {
   inject: ['hooks', 'tools', 'services', 'self', 'profileRuntime'] as const,
-  apply(plugin: PluginContextFacets) {
+  apply(plugin: PluginContextFacets, config?: unknown) {
     const hooks = processHookState()
     const log = { warn: (message: string) => plugin.self.log.warn(message) }
     const handle = plugin.profileRuntime.register<SuperagentService>({
       id: SERVICE_ID,
       configSchema: EMPTY_SCHEMA,
       defaultConfig: {},
-      start: (init) => startService(init, hooks, log),
+      start: (init) => startService(init, hooks, log, { config }),
     })
     // Both hooks run for every session of the profile; an owner's own session is never touched.
     const disposers = [

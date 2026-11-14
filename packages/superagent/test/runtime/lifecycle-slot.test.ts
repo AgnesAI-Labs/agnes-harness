@@ -1,17 +1,11 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ProfileManagedDefinition, ProfileManagedInit } from '@agnes/extension-api'
+import type { ProfileManagedInit } from '@agnes/extension-api'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { openStore } from '../../src/app/store.js'
-import { createHookStateCell } from '../../src/runtime/hook-state.js'
-import { type SuperagentService, superagentPlugin } from '../../src/runtime/index.js'
-import {
-  createLifecycle,
-  type Lifecycle,
-  type StopReason,
-  sessionsOnly,
-} from '../../src/runtime/lifecycle.js'
+import { createHookStateHolder } from '../../src/runtime/hook-state.js'
+import { startService } from '../../src/runtime/index.js'
+import { type LifecycleDeps, sessionsOnly } from '../../src/runtime/lifecycle.js'
 import {
   type FakeSession,
   fakeApp,
@@ -30,20 +24,17 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true })
 })
 
-/** Applies the plugin with stand-in facets and starts its service with a stand-in grant. */
-async function startService() {
-  let definition: ProfileManagedDefinition<SuperagentService> | undefined
-  superagentPlugin.apply({
-    hooks: { register: () => () => {} },
-    profileRuntime: {
-      register: (value: ProfileManagedDefinition<SuperagentService>) => {
-        definition = value
-        return { get: async () => undefined as never }
-      },
-    },
-  } as never)
+/** Starts the service with a stand-in grant; `lifecycle` replaces dependencies of the lifecycle it composes. */
+async function startWith(lifecycle: Partial<LifecycleDeps> = {}) {
   let shutdown: ((reason: 'disable' | 'upgrade' | 'exit') => Promise<unknown>) | undefined
-  const client = { initialize() {}, close() {}, clientId() {}, session: {} }
+  const client = {
+    initialize() {},
+    close() {},
+    clientId() {},
+    session: {},
+    workspace: { add: async () => {} },
+    config: { get: async () => ({ accounts: [] }) },
+  }
   const init = {
     bundledApp: {
       stateDirectory: directory,
@@ -56,48 +47,47 @@ async function startService() {
       shutdown = handler
     },
   } as unknown as ProfileManagedInit
-  const service = await definition!.start(init)
+  const service = await startService(init, createHookStateHolder(), { warn: () => {} }, { lifecycle })
   return { service, shutdown: (reason: 'disable' | 'upgrade' | 'exit') => shutdown!(reason) }
 }
 
-function fakeLifecycle(log: string[]): Lifecycle {
-  return {
-    async start() {
-      log.push('start')
-    },
-    async stop(reason: StopReason) {
-      log.push(`stop ${reason}`)
-    },
-    settled: async () => {},
-    status: () => ({ state: 'running' }),
-    ticketEnded: async () => {},
-  }
-}
+/** Lifecycle dependencies whose agent environment passes and whose app is a fake that logs. */
+const passing = (log: string[], sessionIds: () => string[] = () => []): Partial<LifecycleDeps> => ({
+  environment: async () => ({
+    stateDir: '/state',
+    account: { login: 'agent-bot', email: 'a@x', blocked: [] },
+  }),
+  writeEnvironment: async () => {},
+  verifyEnvironment: async () => {},
+  archive: () => ({ archived: 0 }),
+  createApp: () => fakeApp(log, sessionIds),
+})
 
 it.each([
   ['disable', 'disable'],
   ['upgrade', 'generation'],
   ['exit', 'shutdown'],
 ] as const)(
-  'starts a registered lifecycle at once and stops it on a %s shutdown as %s',
+  'starts its lifecycle once start() returned and stops it on a %s shutdown as %s',
   async (reason, expected) => {
-    const { service, shutdown } = await startService()
     const log: string[] = []
-    service.register('lifecycle', fakeLifecycle(log))
-    expect(log).toEqual(['start'])
+    const { shutdown } = await startWith(passing(log))
+    expect(log, 'nothing started before start() returned').toEqual([])
+    await vi.waitFor(() => expect(log).toEqual(['app.start']))
     await expect(shutdown(reason)).resolves.toEqual({ state: 'settled' })
-    expect(log).toEqual(['start', `stop ${expected}`])
+    expect(log).toEqual(['app.start', `app.stopSignal ${expected}`, 'app.drain'])
   },
 )
 
-it('refuses a lifecycle part without start and stop', async () => {
-  const { service, shutdown } = await startService()
-  expect(() => service.register('lifecycle', {})).toThrow(TypeError)
+it('registers its lifecycle itself, so no second one can be registered', async () => {
+  const { service, shutdown } = await startWith()
+  expect(() => service.register('lifecycle', { start() {}, stop() {} })).toThrow(/already registered/)
   await shutdown('exit')
 })
 
-it('shuts down without a registered lifecycle', async () => {
-  const { shutdown } = await startService()
+it('shuts down a service that waits for setup', async () => {
+  const { shutdown } = await startWith()
+  await new Promise((resolve) => setImmediate(resolve))
   await expect(shutdown('disable')).resolves.toEqual({ state: 'settled' })
 })
 
@@ -118,7 +108,6 @@ async function deadlineCase(options: {
   // The main session and a few dozen workers: the registry keeps every worker until retention retires it.
   for (const id of [ORCHESTRATOR, ...Array.from({ length: SESSIONS - 1 }, (_, n) => workerKey(`T-${n}`))])
     sessions.set(id, { running: true, pending: [], jobs: 1 })
-  const store = openStore(join(directory, 'lifecycle.sqlite'))
   const adapter = fakeSessions(log, sessions)
   const cancel = adapter.cancel
   if (options.cancelMs)
@@ -126,11 +115,9 @@ async function deadlineCase(options: {
       await new Promise((resolve) => setTimeout(resolve, options.cancelMs))
       await cancel(id)
     }
-  const lifecycle = createLifecycle({
-    store,
+  const { shutdown } = await startWith({
     sessions: adapter,
     control: fakeControl(log, sessions),
-    hooks: createHookStateCell(),
     hookState: sessionsOnly,
     environment:
       options.environment ??
@@ -139,14 +126,18 @@ async function deadlineCase(options: {
     writeEnvironment: async () => {},
     verifyEnvironment: async () => {},
     archive: () => ({ archived: 0 }),
+    log: {
+      warn: () => {},
+    },
   })
-  const { service, shutdown } = await startService()
-  service.register('lifecycle', lifecycle)
+  // Started once the reconcile has read every session; those all run, so it leaves them alone.
+  const settled = () =>
+    vi.waitFor(() => expect(log.filter((line) => line.startsWith('state ')).length).toBe(SESSIONS))
   if (options.environment) {
     // The start is under way and waits in the environment check.
     await new Promise((resolve) => setImmediate(resolve))
     await new Promise((resolve) => setImmediate(resolve))
-  } else await lifecycle.settled()
+  } else await settled()
   log.length = 0
   let atDeadline: string[] | undefined
   setTimeout(() => {
@@ -158,12 +149,11 @@ async function deadlineCase(options: {
   })
   await vi.advanceTimersByTimeAsync(DEADLINE_MS)
   await done
-  store.close()
-  return { log, sessions, atDeadline: atDeadline ?? [], finished, lifecycle }
+  return { log, sessions, atDeadline: atDeadline ?? [], finished }
 }
 
 it('cancels and kills every session first, within the shutdown deadline, even when the app drains slowly', async () => {
-  const { atDeadline, sessions, finished, lifecycle } = await deadlineCase({
+  const { atDeadline, sessions, finished } = await deadlineCase({
     drain: () => new Promise(() => {}),
   })
   expect(finished, 'the shutdown handler returned before the deadline').toBe(true)
@@ -177,12 +167,11 @@ it('cancels and kills every session first, within the shutdown deadline, even wh
     lastStop,
   )
   expect([...sessions.values()].every((session) => !session.running && session.jobs === 0)).toBe(true)
-  expect(lifecycle.status()).toEqual({ state: 'stopped' })
 })
 
 it('aborts a start that is still checking the environment instead of waiting for it', async () => {
   let aborted = false
-  const { finished, log, lifecycle } = await deadlineCase({
+  const { finished, log } = await deadlineCase({
     environment: (signal) =>
       new Promise<never>((_, reject) => {
         signal.addEventListener('abort', () => {
@@ -194,7 +183,6 @@ it('aborts a start that is still checking the environment instead of waiting for
   expect(aborted).toBe(true)
   expect(finished).toBe(true)
   expect(log, 'no app was created').toEqual([])
-  expect(lifecycle.status()).toEqual({ state: 'stopped' })
 })
 
 it('returns within the deadline from a start that ignores the abort, and that start opens nothing afterwards', async () => {

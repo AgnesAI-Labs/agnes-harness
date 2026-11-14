@@ -11,6 +11,8 @@ export interface Paused {
   at: string
   reason: 'disable' | 'generation' | 'shutdown'
   assignments: { ticketId: string; assignmentId: string }[]
+  /** How the stop went: how long cancelling and killing took, of how many sessions, and those it could not quiet. */
+  stop?: { ms: number; sessions: number; unstopped: string[] }
 }
 
 /** Prompt configuration as stored: the team's three sections, skill texts, and overrides of built-in parts by key. */

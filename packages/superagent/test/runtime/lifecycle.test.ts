@@ -24,6 +24,13 @@ import {
 } from './lifecycle-fakes.js'
 
 const DAY = 24 * 3600_000
+const setupTaken = () => new SetupError('sessionTaken', { session: ORCHESTRATOR }).problem
+/** A refusal of every stored Superagent session for `reason`, standing in for the app's own. */
+const refusingState = (reason: string): HookState => ({
+  isSuperagentSession: (id) => id.startsWith('superagent:'),
+  promptSections: () => ({ stable: [] }),
+  guardTool: () => reason,
+})
 let directory: string
 let store: Store
 let log: string[]
@@ -258,6 +265,70 @@ describe('enable', () => {
     expect(hooks.get().isSuperagentSession('owner-session')).toBe(false)
   })
 
+  it('reports a started app that waits for setup, reconciles nothing until it is set up, and reconciles once a recheck has set it up', async () => {
+    // A session with a queued input and no assignment to restart: its reconcile runs the input.
+    sessions.set(workerKey('A'), { running: false, pending: [{ itemId: 'q1' }], jobs: 0 })
+    let problem: ReturnType<typeof setupTaken> | undefined = setupTaken()
+    const refusals: string[] = []
+    const { lifecycle, app, hooks } = setup({
+      startingState: () => {
+        refusals.push('starting')
+        return refusingState('starting')
+      },
+      refusingState: (reason) => {
+        refusals.push(reason)
+        return refusingState(reason)
+      },
+    })
+    Object.assign(app, {
+      setupProblem: () => problem,
+      reconfigure: async () => {
+        log.push('app.reconfigure')
+        problem = undefined
+      },
+    })
+    await lifecycle.start()
+    await lifecycle.settled()
+    expect(lifecycle.status()).toEqual({ state: 'setupFailed', problem })
+    expect(log, 'no session was read or resumed').not.toContain(`state ${workerKey('A')}`)
+    expect(refusals.at(-1)).toMatch(/^Superagent cannot start: A session superagent:orchestrator exists/)
+    expect(hooks.get().guardTool({ sessionId: workerKey('A'), toolName: 'shell', input: {} })).toMatch(
+      /cannot start/,
+    )
+
+    lifecycle.recheck()
+    expect(refusals.at(-1), 'refused as starting again at once').toBe('starting')
+    await lifecycle.settled()
+    expect(
+      log.filter((line) => line === 'app.start'),
+      'the app starts once',
+    ).toHaveLength(1)
+    expect(log).toContain('app.reconfigure')
+    expect(log).toContain(`sendNow ${workerKey('A')} q1`)
+    expect(lifecycle.status()).toEqual({ state: 'running' })
+  })
+
+  it('runs a start that waited for setup again on a recheck, from the agent environment on, and ignores a recheck while it starts', async () => {
+    let unset = true
+    const { lifecycle } = setup({
+      environment: async () => {
+        log.push('environment')
+        if (unset) throw new SetupError('repositoryUnset')
+        return plan
+      },
+    })
+    await lifecycle.start()
+    await lifecycle.settled()
+    expect(lifecycle.status().state).toBe('setupRequired')
+    unset = false
+    lifecycle.recheck()
+    lifecycle.recheck()
+    await lifecycle.settled()
+    expect(log.filter((line) => line === 'environment')).toHaveLength(2)
+    expect(log.filter((line) => line === 'app.start')).toHaveLength(1)
+    expect(lifecycle.status()).toEqual({ state: 'running' })
+  })
+
   it('starts from an empty database and never reads a DSH Superagent database beside it', async () => {
     const legacyPath = join(directory, 'orchestrator.sqlite')
     const legacy = openStore(legacyPath)
@@ -319,6 +390,8 @@ describe('disable', () => {
       at: AT,
       reason: 'disable',
       assignments: [{ ticketId: 'A', assignmentId: 'a-A' }],
+      // Every session was stopped and confirmed quiet.
+      stop: { ms: expect.any(Number), sessions: 1, unstopped: [] },
     })
     expect(hooks.get().isSuperagentSession(workerKey('A'))).toBe(false)
     expect(lifecycle.status()).toEqual({ state: 'stopped' })
@@ -434,6 +507,12 @@ describe('disable', () => {
     await lifecycle.stop('disable')
     expect(log.filter((line) => line === `cancel ${workerKey('A')}`)).toHaveLength(3)
     expect(warnings.join('\n')).toContain(`${workerKey('A')} is still running`)
+    expect(store.get(KV.runtime.paused)?.stop, 'the pause names the session it could not stop').toMatchObject(
+      {
+        sessions: 1,
+        unstopped: [workerKey('A')],
+      },
+    )
     expect(lifecycle.status()).toEqual({ state: 'stopped' })
   })
 
