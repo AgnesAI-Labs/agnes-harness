@@ -51,6 +51,15 @@ type Resource = ManagedPredecessor & {
   }
   /** Holds a release bundled-app grant: it is stopped as soon as its row is dropped (see `retireAbsent`). */
   bundledApp?: true
+  /** A publication or a dropped row retired it: never retained, and a retry may not take its slot. */
+  retired?: true
+  /** The instance a retry or reconcile installed in this slot; a pending publication keeps that one. */
+  successor?: Resource
+}
+const follow = (r: Resource): Resource => (r.successor ? follow(r.successor) : r)
+const retire = (r: Resource, reason: Reason) => {
+  r.retired = true
+  r.lifetime.abort(reason)
 }
 const profiles = new Map<
   string,
@@ -179,16 +188,7 @@ export class ProfileManagedResources {
           throw rpcError('CAPABILITY_DENIED')
         // No await between the final fence, reservation and durable marker update.
         markShutdown(input.store, r.id, false)
-        r.status = { state: 'starting' }
-        const next = await this.start(input, r)
-        const profile = profiles.get(this.key)
-        if (!profile || profile.manager !== this) {
-          await next.stop('disable')
-          throw rpcError('CAPABILITY_DENIED')
-        }
-        profile.resources.splice(profile.resources.indexOf(r), 1, next)
-        await next.value
-        return null
+        return this.restartSlot(input, r)
       },
       retry: async () => {
         const r = resource()
@@ -199,17 +199,7 @@ export class ProfileManagedResources {
             !hasManagedShutdownConfirmation(r.shutdownConfirmation, input.store))
         )
           throw rpcError('CAPABILITY_DENIED')
-        // Reserve the failed slot before yielding so two approved retries cannot start twins.
-        r.status = { state: 'starting' }
-        const next = await this.start(input, r)
-        const profile = profiles.get(this.key)
-        if (!profile || profile.manager !== this) {
-          await next.stop('disable')
-          throw rpcError('CAPABILITY_DENIED')
-        }
-        profile.resources.splice(profile.resources.indexOf(r), 1, next)
-        await next.value
-        return null
+        return this.restartSlot(input, r)
       },
       configure: async (config: JsonValue) => {
         resource()
@@ -227,6 +217,36 @@ export class ProfileManagedResources {
           : [{ name: 'runtime', state: r.status.state === 'ready' ? 'passed' : 'failed' }]
       },
     }
+  }
+  /**
+   * Starts a replacement for the failed slot `r`, reserved before the first await so two approved retries
+   * cannot start twins, and a publication meanwhile keeps the slot rather than starting its own instance.
+   * The replacement is installed only if the slot is still in the current publication and nothing retired
+   * it; otherwise it is stopped, so a racing publication can neither twin it nor leave it untracked.
+   */
+  private async restartSlot(input: (typeof this.definitions)[number], r: Resource): Promise<null> {
+    const prior = r.status,
+      reservation: Resource['status'] = { state: 'starting' }
+    if (r.retired) throw rpcError('CAPABILITY_DENIED')
+    r.status = reservation
+    let next: Resource
+    try {
+      next = await this.start(input, r)
+    } catch (error) {
+      if (r.status === reservation) r.status = prior
+      throw error
+    }
+    const profile = profiles.get(this.key)
+    const index = profile?.manager === this && !this.closed ? profile.resources.indexOf(r) : -1
+    if (!profile || index < 0 || r.retired || r.status !== reservation || reservation.state !== 'starting') {
+      if (r.status === reservation) r.status = prior
+      await next.stop('disable')
+      throw rpcError('CAPABILITY_DENIED')
+    }
+    profile.resources.splice(index, 1, next)
+    r.successor = next
+    await next.value
+    return null
   }
   private async start(input: (typeof this.definitions)[number], predecessor?: Resource): Promise<Resource> {
     const epoch = this.current?.(input.owner, input.integrity, input.revision)
@@ -478,8 +498,9 @@ export class ProfileManagedResources {
       .sort()
       .join('\0')
     // A resource whose lifetime ended (it failed, or a publication or a dropped row retired it) is
-    // never retained: the next publication starts its definition again.
-    const live = (r: Resource) => !r.lifetime.signal.aborted
+    // never retained: the next publication starts its definition again. A failed slot that a retry or
+    // reconcile reserved is retained: that call installs its instance there.
+    const live = (r: Resource) => !r.retired && (!r.lifetime.signal.aborted || r.status.state === 'starting')
     if (previous?.manager === this && previous.stamp === stamp && !force && previous.resources.every(live))
       return previous.draining
     const retained =
@@ -497,7 +518,7 @@ export class ProfileManagedResources {
           )
         : []
     let retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
-    for (const r of retiring) r.lifetime.abort(reason)
+    for (const r of retiring) retire(r, reason)
     const next = {
       manager: this,
       stamp,
@@ -510,7 +531,7 @@ export class ProfileManagedResources {
       // A predecessor may have entered start() before this publication but installed its slot
       // while we joined its drain. Include that late slot before starting any replacement.
       retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
-      for (const r of retiring) r.lifetime.abort(reason)
+      for (const r of retiring) retire(r, reason)
       const stopped = await Promise.allSettled(retiring.map((r) => r.stop(reason)))
       // An unconfirmed predecessor can be replaced only by a fenced registration of the same
       // package/service. Removed resources still report their shutdown failure to the caller.
@@ -523,10 +544,11 @@ export class ProfileManagedResources {
         )
           throw result.reason
       if (profiles.get(this.key) !== next || this.closed) return
-      next.resources = retained
+      // A retry that installed its instance in a retained slot meanwhile: keep that instance, tracked.
+      next.resources = retained.map(follow)
       for (const definition of definitions)
         if (
-          !retained.some(
+          !next.resources.some(
             (r) =>
               r.owner === definition.owner &&
               r.revision === definition.revision &&
@@ -556,7 +578,7 @@ export class ProfileManagedResources {
     if (!retiring.length) return
     profile.resources = profile.resources.filter((r) => !retiring.includes(r))
     profile.stamp = ''
-    for (const r of retiring) r.lifetime.abort('disable')
+    for (const r of retiring) retire(r, 'disable')
     await Promise.allSettled(retiring.map((r) => r.stop('disable')))
   }
   /** `retireAbsent` for the enabled rows of a runtime target about to be applied. */
