@@ -133,8 +133,10 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
           return ports.records.granted(record.owner, record.workspace)
             ? ('paused' as const)
             : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
-        if (!(await deps.gatesPass(record))) return { state: 'needsOwner', reason: 'grantRevoked' } as const
-        return 'pass' as const
+        // Gates that cannot be read hold the inputs unchanged, like a paused package, until a later pass.
+        const pass = await deps.gatesPass(record).catch(() => undefined)
+        if (pass === undefined) return 'paused' as const
+        return pass ? ('pass' as const) : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
       })())
   }
 

@@ -455,6 +455,49 @@ describe('managed sessions bound to a task', () => {
     ])
   })
 
+  it('a gate that cannot be read keeps the input held; only a refused gate gives it to the owner', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    const policy = w.ports.sessions.policy
+    const unreadable = async () => {
+      throw new Error('transport closed')
+    }
+    // A held input while the daemon shuts down: the turn ends, but the live policy cannot be read.
+    w.core.state.running.add(sessionId)
+    expect(await w.port().admitInput(sessionId, admission('k1', 'r1'))).toMatchObject({ reason: 'busy' })
+    w.core.state.running.delete(sessionId)
+    w.ports.sessions.policy = unreadable
+    await engine.advance(sessionId)
+    await engine.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({
+      state: 'enqueued',
+      reason: 'busy',
+      version: 2,
+    })
+    expect(w.core.state.submits).toEqual([])
+    // An admission whose gates cannot be read is not answered; the key stays queued for the retry.
+    await expect(w.port(caller, 'r2').admitInput(sessionId, admission('k2', 'r2'))).rejects.toThrow(
+      'transport closed',
+    )
+    expect(w.inputs.get(owner, sessionId, 'k2')).toMatchObject({ state: 'queued' })
+    // Readable again: the held input runs, and the retried admission completes.
+    w.ports.sessions.policy = policy
+    await engine.sweep()
+    expect(w.core.state.submits.map((entry) => entry.text)).toEqual(['text of r1'])
+    expect(await w.port(caller, 'r2').admitInput(sessionId, admission('k2', 'r2'))).toMatchObject({
+      state: 'enqueued',
+    })
+    // A gate that refuses still gives the input to the owner.
+    w.ports.sessions.policy = async () => ({ fullAccess: false, osBoundary: false, outwardCheckpoint: false })
+    w.core.state.running.add(sessionId)
+    await w.port(caller, 'r3').admitInput(sessionId, admission('k3', 'r3'))
+    expect(w.inputs.get(owner, sessionId, 'k3')).toMatchObject({
+      state: 'needsOwner',
+      reason: 'grantRevoked',
+    })
+  })
+
   it('archiving a session retains its held inputs', async () => {
     const w = world()
     const { sessionId } = await w.port().start(start())
