@@ -745,7 +745,7 @@ const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const references = composerReferences(prepareComposerSession, renderControls)
 // Reserve host entries before installed modules can register their reviewed declarations.
-const removeHomeEntries = registerBuiltinHomeEntries()
+const removeHomeEntries = registerBuiltinHomeEntries(ownerCall)
 homeEntries.subscribe(openApplicationHome)
 const clientModules = await startClientModules({
   agnes: client,
