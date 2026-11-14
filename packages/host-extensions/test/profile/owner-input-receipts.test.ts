@@ -210,6 +210,56 @@ describe('owner input receipts', () => {
     })
   })
 
+  it('a getter or Proxy input whose receiptId changes between reads cannot send another id than it resolved', async () => {
+    const { targets, receiptId } = await paired()
+    const forged = 'f'.repeat(64)
+    let reads = 0
+    const shifting = {
+      kind: 'ownerMessage',
+      get receiptId() {
+        return reads++ === 0 ? receiptId : forged
+      },
+    }
+    const getter = { key: 'k1', target: { taskId: 't1', taskGeneration: 1, startKey: 's1' }, input: shifting }
+    let proxied = 0
+    const proxy = new Proxy(
+      { kind: 'ownerMessage', receiptId },
+      { get: (base, key) => (key === 'receiptId' && proxied++ > 0 ? forged : Reflect.get(base, key)) },
+    )
+    const viaProxy = { ...getter, input: proxy }
+    for (const input of [getter, viaProxy]) {
+      const { sessions, calls } = host(async () => result('queued'))
+      await withOwnerReceipts(sessions, targets.receipts, DESK).admitInput(
+        's1',
+        input as unknown as ManagedInputAdmission,
+      )
+      const [, sent, resolution] = calls.admitResolved.mock.calls[0]! as [
+        string,
+        ManagedInputAdmission,
+        { receiptId: string; kind: string },
+      ]
+      expect(resolution).toMatchObject({ kind: 'receipt', receiptId })
+      expect(JSON.parse(JSON.stringify(sent)), 'what the daemon will read').toMatchObject({
+        input: { kind: 'ownerMessage', receiptId: resolution.receiptId },
+      })
+      expect(sent.input, 'a plain copy, not the plugin object').not.toBe(input.input)
+    }
+  })
+
+  it('an admission that is not plain data is refused before anything is sent', async () => {
+    const { sessions, calls } = host()
+    const cyclic: Record<string, unknown> = { key: 'k1' }
+    cyclic.self = cyclic
+    await expect(
+      withOwnerReceipts(sessions, undefined, DESK).admitInput(
+        's1',
+        cyclic as unknown as ManagedInputAdmission,
+      ),
+    ).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
+    expect(calls.admitInput).not.toHaveBeenCalled()
+    expect(calls.admitResolved).not.toHaveBeenCalled()
+  })
+
   it('recoveryContinuation and legacyOwnerMessage pass through without resolution', async () => {
     const { targets } = await paired()
     const { sessions, calls } = host()

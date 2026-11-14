@@ -1,4 +1,5 @@
-import type { ManagedInputResult, ManagedSessions } from '@agnes/extension-api'
+import type { ManagedInputAdmission, ManagedInputResult, ManagedSessions } from '@agnes/extension-api'
+import { rpcError } from '@agnes/protocol'
 import type { ChannelReceipts } from './channel-receipts.js'
 import type { ChannelTarget } from './channel-targets.js'
 import type { HostInputResolutionWire, HostManagedSessions } from './managed-sessions.js'
@@ -12,6 +13,21 @@ const RECORDED = new Set<ManagedInputResult['state']>([
   'waitingQuestion',
   'recoveryUnknown',
 ])
+
+/**
+ * One plain copy of what the plugin passed, read once: a getter or Proxy cannot answer the Host's
+ * lookup with one receipt id and the daemon's request with another.
+ */
+function snapshot(input: unknown): ManagedInputAdmission {
+  let text: string | undefined
+  try {
+    text = JSON.stringify(input)
+  } catch {
+    throw rpcError('INVALID_PARAMS')
+  }
+  if (text === undefined) throw rpcError('INVALID_PARAMS')
+  return JSON.parse(text) as ManagedInputAdmission
+}
 
 /**
  * The sessions port a plugin receives: exactly the `ManagedSessions` methods, never `admitResolved`. An
@@ -36,18 +52,20 @@ export function withOwnerReceipts(
     archive: (sessionId) => sessions.archive(sessionId),
     inputResult: (sessionId, input) => sessions.inputResult(sessionId, input),
     admitInput: async (sessionId, input) => {
-      const admission = (input as { input?: unknown } | null | undefined)?.input as
+      const plain = snapshot(input)
+      const admission = (plain as { input?: unknown } | null)?.input as
         | { kind?: unknown; receiptId?: unknown }
         | undefined
       if (admission?.kind !== 'ownerMessage' || typeof admission.receiptId !== 'string')
-        return sessions.admitInput(sessionId, input)
+        return sessions.admitInput(sessionId, plain)
       const receiptId = admission.receiptId
       const resolution: HostInputResolutionWire = receipts?.resolve(target, receiptId) ?? {
         kind: 'unresolved',
         receiptId,
         reason: 'receiptUnknown',
       }
-      const result = await sessions.admitResolved(sessionId, input, resolution)
+      // The resolution names the receipt it resolved; the daemon refuses an `args` id that differs.
+      const result = await sessions.admitResolved(sessionId, plain, resolution)
       if (resolution.kind === 'receipt' && RECORDED.has(result.state))
         receipts?.admitted(target.owner, receiptId)
       return result
