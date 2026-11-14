@@ -9,6 +9,7 @@ import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Store } from '../app/store.js'
 import { archiveExpired, retiredTickets } from '../app/store-retention.js'
+import { setAgentVariables } from '../app/subprocess.js'
 import { interruptionRestarts } from '../core/assignments.js'
 import { liveTicket, runningAssignment, type Ticket } from '../core/index.js'
 import { KV } from '../kv.js'
@@ -173,6 +174,8 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       if (stopping) return
       await (deps.verifyEnvironment ?? verifyEnvironment)(home, shimsDir, { login: plan.account.login })
       if (stopping) return
+      // The runtime's own git, gh and prepare commands act as the agent too.
+      setAgentVariables({ HOME: home, GH_CONFIG_DIR: ghConfigDir })
       const started = deps.createApp()
       app = started
       await started.start()
@@ -235,6 +238,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       timer = undefined
       const running = app
       app = undefined
+      setAgentVariables(undefined)
       if (!running) {
         hooks.clear()
         status = { state: 'stopped' }

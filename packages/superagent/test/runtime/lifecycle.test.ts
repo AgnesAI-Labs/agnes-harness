@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openStore, type Store } from '../../src/app/store.js'
+import { childEnvironment } from '../../src/app/subprocess.js'
 import type { Thread } from '../../src/core/index.js'
 import { KV } from '../../src/kv.js'
 import { createHookStateCell, type HookState } from '../../src/runtime/hook-state.js'
@@ -108,6 +109,10 @@ describe('enable', () => {
     )
     expect(hooks.get().isSuperagentSession('superagent:worker:owner-made')).toBe(false)
     expect(lifecycle.status()).toEqual({ state: 'running' })
+    // The runtime's own commands run with the agent HOME and gh configuration until it stops.
+    expect(childEnvironment()).toMatchObject({ HOME: '/state/home', GH_CONFIG_DIR: '/state/home/.config/gh' })
+    await lifecycle.stop('shutdown')
+    expect(childEnvironment().HOME).toBe(process.env.HOME)
   })
 
   it('reconciles by the real session state: a running turn is left alone, an aborted one is re-dispatched once after its superseded inputs are dropped, a queued input resumes once', async () => {

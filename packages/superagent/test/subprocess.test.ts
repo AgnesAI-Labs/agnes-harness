@@ -2,7 +2,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
-import { childEnvironment, runCommand } from '../src/app/subprocess.js'
+import { childEnvironment, runCommand, setAgentVariables } from '../src/app/subprocess.js'
 
 let directory: string
 beforeEach(() => {
@@ -45,6 +45,89 @@ it('removes variables named like credentials, whether inherited or passed, and k
   } finally {
     delete process.env.SUPERAGENT_TEST_API_KEY
   }
+})
+
+/** Sets `variables` in this process for the duration of `body`, then restores the previous values. */
+async function withParentEnv(variables: Record<string, string>, body: () => Promise<void>): Promise<void> {
+  const before = Object.fromEntries(Object.keys(variables).map((name) => [name, process.env[name]]))
+  Object.assign(process.env, variables)
+  try {
+    await body()
+  } finally {
+    for (const [name, value] of Object.entries(before)) {
+      if (value === undefined) delete process.env[name]
+      else process.env[name] = value
+    }
+  }
+}
+
+it("keeps the daemon's git and gh configuration variables out of the runtime's own git, gh and prepare commands", async () => {
+  const repo = join(directory, 'repo')
+  await run(['git', 'init', '-q', repo])
+  await withParentEnv(
+    {
+      // A count without its key makes every git that reads configuration fail ("missing config key").
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_VALUE_0: 'x',
+      GIT_CONFIG_PARAMETERS: "'credential.helper'='operator'",
+      GIT_CONFIG_GLOBAL: join(directory, 'operator-gitconfig'),
+      GIT_DIR: join(directory, 'elsewhere'),
+      GIT_AUTHOR_NAME: 'OPERATOR',
+      GIT_COMMITTER_EMAIL: 'operator@example.invalid',
+      GH_CONFIG_DIR: join(directory, 'operator-gh'),
+      GH_HOST: 'ghe.example.invalid',
+      SSH_ASKPASS: '/operator/askpass',
+      GIT_ASKPASS: '/operator/askpass',
+      GIT_TERMINAL_PROMPT: '1',
+    },
+    async () => {
+      const listed = await run(['git', 'config', '--list', '--show-origin'], { cwd: repo })
+      expect(listed.stderr).toBe('')
+      expect(listed.code).toBe(0)
+      expect(listed.stdout).not.toContain('operator')
+      const seen = await run(
+        node(
+          'process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(process.env).filter(([name]) => /^(GIT_|GH_|SSH_ASKPASS)/.test(name)))))',
+        ),
+      )
+      const child = JSON.parse(seen.stdout) as Record<string, string>
+      expect(child).toMatchObject({ GIT_ASKPASS: '', GIT_TERMINAL_PROMPT: '0' })
+      for (const name of [
+        'GIT_CONFIG_COUNT',
+        'GIT_CONFIG_VALUE_0',
+        'GIT_CONFIG_PARAMETERS',
+        'GIT_CONFIG_GLOBAL',
+        'GIT_DIR',
+        'GIT_AUTHOR_NAME',
+        'GIT_COMMITTER_EMAIL',
+        'GH_CONFIG_DIR',
+        'GH_HOST',
+        'SSH_ASKPASS',
+      ])
+        expect(child, name).not.toHaveProperty(name)
+    },
+  )
+})
+
+it("runs the runtime's commands with the agent HOME and gh configuration once they are set, and without after", async () => {
+  const read = async () =>
+    JSON.parse(
+      (
+        await run(
+          node(
+            'process.stdout.write(JSON.stringify({ home: process.env.HOME, gh: process.env.GH_CONFIG_DIR ?? null }))',
+          ),
+        )
+      ).stdout,
+    )
+  setAgentVariables({ HOME: '/state/home', GH_CONFIG_DIR: '/state/home/.config/gh' })
+  try {
+    expect(await read()).toEqual({ home: '/state/home', gh: '/state/home/.config/gh' })
+    expect(childEnvironment({ HOME: '/passed' }).HOME, 'a caller may still pass its own').toBe('/passed')
+  } finally {
+    setAgentVariables(undefined)
+  }
+  expect(await read()).toEqual({ home: process.env.HOME, gh: null })
 })
 
 it('lets passed variables replace inherited ones', async () => {
