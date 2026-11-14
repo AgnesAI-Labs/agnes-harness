@@ -77,15 +77,15 @@ it('uses narrow authenticated service grants, replays open receipts and refuses 
     expect(effects).toEqual(['open-once'])
     jobs.push({ ...jobs[0]!, id: 'agent-1', owner: 'agent' })
     for (const params of [
-      { sessionId: 's2', jobId: 'human-1' },
-      { sessionId: 's1', jobId: 'agent-1' },
-      { sessionId: 'foreign', jobId: 'human-1' },
+      { sessionId: 's2', jobId: 'human-1', operation: 'kill' },
+      // The owner may stop an agent job (session-jobs-owner.test.ts) but not otherwise drive it.
+      { sessionId: 's1', jobId: 'agent-1', operation: 'signal', signal: 'SIGINT' },
+      { sessionId: 'foreign', jobId: 'human-1', operation: 'kill' },
     ])
       expect(
         await call('control', {
           ...params,
-          operation: 'kill',
-          commandId: `kill-${params.sessionId}-${params.jobId}`,
+          commandId: `${params.operation}-${params.sessionId}-${params.jobId}`,
         }),
       ).toMatchObject({ error: { data: { code: 'CAPABILITY_DENIED' } } })
     for (const [sessionId, operation, extra] of [

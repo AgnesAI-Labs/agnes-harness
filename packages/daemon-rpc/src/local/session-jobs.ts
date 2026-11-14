@@ -70,6 +70,8 @@ export function registerSessionJobs(
             )
           ).output
           const jobs = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot) && snapshot.jobs
+          // The session owner (checked above) drives its own human terminals and may stop, but not
+          // otherwise drive, the agent's jobs in this session.
           if (
             !Array.isArray(jobs) ||
             !jobs.some(
@@ -78,7 +80,7 @@ export function registerSessionJobs(
                 typeof job === 'object' &&
                 !Array.isArray(job) &&
                 job.id === control.jobId &&
-                job.owner === 'human' &&
+                (job.owner === 'human' || (job.owner === 'agent' && control.operation === 'kill')) &&
                 job.ownerSessionId === sessionId,
             )
           )

@@ -153,8 +153,9 @@ export function createJobsServices(jobs: ShellJobs): ServiceDef[] {
         }
         if (typeof input.jobId !== 'string') throw new Error('jobId is required')
         const job = jobs.list(scope).find((candidate) => candidate.id === input.jobId)
-        if (!job || job.owner !== 'human')
-          throw new Error('CAPABILITY_DENIED: only human terminals can be controlled by the UI')
+        // The UI drives human terminals; of the agent's jobs in this session it may only stop one.
+        if (!job || (job.owner !== 'human' && !(job.owner === 'agent' && input.operation === 'kill')))
+          throw new Error('CAPABILITY_DENIED: the UI controls human terminals and may only stop agent jobs')
         if (input.operation === 'send' && typeof input.text === 'string')
           await jobs.send(scope, input.jobId, input.text)
         else if (
