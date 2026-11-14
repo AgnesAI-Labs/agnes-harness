@@ -12,7 +12,7 @@ export interface PromptConfig {
   scope: string
   delivery: string
   skills: Record<string, string>
-  overrides?: Record<string, { text: string; base?: string }> | undefined
+  overrides?: Record<string, { text: string; base?: string | undefined }> | undefined
 }
 /** A saved prompt configuration revision. */
 export interface PromptVersion {

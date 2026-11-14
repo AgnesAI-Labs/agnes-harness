@@ -8,6 +8,8 @@ export interface RunOptions {
   env?: Record<string, string>
   signal: AbortSignal
   timeoutMs: number
+  /** How many bytes of standard output are kept (the first ones); the default is 1 MiB. */
+  maxStdoutBytes?: number
 }
 export interface RunResult {
   /** Exit code of the process, or -1 when a signal, the deadline or the abort signal ended it first. */
@@ -79,7 +81,7 @@ export function runCommand(argv: readonly string[], opts: RunOptions): Promise<R
       detached: true,
       windowsHide: true,
     })
-    const out = collector(STDOUT_LIMIT)
+    const out = collector(opts.maxStdoutBytes ?? STDOUT_LIMIT)
     const err = collector(STDERR_LIMIT)
     child.stdout.on('data', (chunk: Buffer) => out.push(chunk))
     child.stderr.on('data', (chunk: Buffer) => err.push(chunk))

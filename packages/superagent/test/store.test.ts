@@ -6,6 +6,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { SCHEMA_VERSION, Store } from '../src/app/store.js'
+import { threadFacts } from '../src/app/views/records.js'
 import {
   type Assignment,
   type Decision,
@@ -204,6 +205,40 @@ it('counts triggers per Source and lists them newest first, optionally only the 
     more: true,
   })
   expect(store.read.triggers({ filtered: true }).items.map((item) => item.id)).toEqual(['dropped'])
+  store.close()
+})
+
+it('links a Thread to the page its Source named, or else to the message that started it', () => {
+  const store = new Store(join(directory, 'links.sqlite'))
+  const thread = (keyValue: string, source: string, id: string, meta: Record<string, unknown> = {}) =>
+    store.threads.save({
+      key: keyValue,
+      ref: { source, id },
+      createdAt: '',
+      subscriptions: [],
+      correlated: [],
+      pending: [],
+      meta,
+    })
+  thread('github:7', 'github', '7', { url: 'https://github.com/acme/widgets/pull/7' })
+  thread('feishu:oc_1:om_1', 'feishu', 'oc_1:om_1')
+  store.triggers.save({
+    id: 'f1',
+    source: 'feishu',
+    threads: [{ source: 'feishu', id: 'oc_1:om_1' }],
+    actor: { source: 'feishu', id: 'ou_a' },
+    human: true,
+    at: '1',
+    text: 'hi',
+    url: 'https://applink.feishu.cn/client/message/link/open?token=t',
+    meta: {},
+  })
+  expect(threadFacts(store, store.threads.get('github:7')!).url).toBe(
+    'https://github.com/acme/widgets/pull/7',
+  )
+  expect(threadFacts(store, store.threads.get('feishu:oc_1:om_1')!).url).toBe(
+    'https://applink.feishu.cn/client/message/link/open?token=t',
+  )
   store.close()
 })
 
