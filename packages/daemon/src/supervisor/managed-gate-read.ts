@@ -12,6 +12,17 @@ export class ManagedPortsClosed extends Error {
 }
 
 /**
+ * The pool could not hand out the shared worker: an activation under way, a full pool, a worker that
+ * cannot boot, a shutdown. Whatever the pool's own error says, it is no answer about a gate.
+ */
+export class SharedWorkerUnavailable extends Error {
+  constructor(cause: unknown) {
+    super('shared worker unavailable', { cause })
+    this.name = 'SharedWorkerUnavailable'
+  }
+}
+
+/**
  * Whether a failed gate read is an answer: an RPC error the daemon gave, or a domain failure the
  * shared worker replied with, such as an unknown agent or a bundle that is not installed, enabled
  * and trusted. A failure raised on this side of the link is not one: the link to the worker closed
@@ -40,15 +51,18 @@ export function sharedWorkerReads(pool: {
     ): Promise<unknown>
   }>
 }) {
+  // Only what the worker itself answers can refuse; failing to reach it is a local failure.
+  const worker = () =>
+    pool.acquireSharedWorker().catch((error: unknown) => {
+      throw new SharedWorkerUnavailable(error)
+    })
   return {
     catalog: async () =>
-      (await (await pool.acquireSharedWorker()).command('session.catalog', {}, { timeoutMs: 31_000 })) as {
+      (await (await worker()).command('session.catalog', {}, { timeoutMs: 31_000 })) as {
         modelAdapters: readonly { models: readonly { id: string; route: string }[] }[]
         security?: { platform?: { l1?: { level?: string } } }
       },
     resolveAgent: async (ref: string): Promise<void> =>
-      void (await (
-        await pool.acquireSharedWorker()
-      ).command('agents.resolve', { ref }, { timeoutMs: 31_000 })),
+      void (await (await worker()).command('agents.resolve', { ref }, { timeoutMs: 31_000 })),
   }
 }

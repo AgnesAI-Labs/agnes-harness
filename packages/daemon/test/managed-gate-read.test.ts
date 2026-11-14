@@ -24,6 +24,22 @@ describe('reading the managed-session gates over the shared worker link', () => 
     expect(gateRefused(await down.resolveAgent('@example/companion#worker').catch((e: unknown) => e))).toBe(
       false,
     )
+    // The pool's own refusals (an activation under way, a full pool, a worker that cannot boot) are not
+    // answers about the bundle, whatever error they carry.
+    for (const failure of [
+      rpcError('OVERLOADED', { retryAfterMs: 1000, reason: 'activation-in-progress' }),
+      rpcError('OVERLOADED', { retryAfterMs: 1000 }),
+      Object.assign(new Error('boot failed'), { code: 'E_WORKER_BOOT' }),
+    ]) {
+      const busy = sharedWorkerReads({
+        acquireSharedWorker: async () => {
+          throw failure
+        },
+      })
+      const error = await busy.resolveAgent('@example/companion#worker').catch((e: unknown) => e)
+      expect(gateRefused(error)).toBe(false)
+      expect((error as Error).cause).toBe(failure)
+    }
   })
 
   it('counts only answers as refusals', () => {

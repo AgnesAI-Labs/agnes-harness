@@ -4,6 +4,7 @@ import { grantKey } from '@agnes/plugin-runtime/host'
 import { rpcError } from '@agnes/protocol'
 import { JsonRpcError, TransportClosed } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
+import { sharedWorkerReads } from '../src/supervisor/managed-gate-read.js'
 import type { HostInputResolution, OwnerInputEngine } from '../src/supervisor/managed-input-admission.js'
 import { ADMISSION_GRACE_MS, OWNER_INPUT_WARN_INTERVAL_MS } from '../src/supervisor/managed-input-notes.js'
 import { createIdleSignal, driveOwnerInputs } from '../src/supervisor/managed-session-idle.js'
@@ -749,6 +750,46 @@ describe('managed sessions bound to a task', () => {
       ['k3', 'queued', 'admissionIncomplete'],
     ])
     expect(w.core.state.submits.map((entry) => entry.text)).toEqual(['text of r2'])
+  })
+
+  it('a shared worker that cannot be acquired while a package activates keeps a held input held; it runs once afterwards', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    w.core.state.running.add(sessionId)
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    w.core.state.running.delete(sessionId)
+    // The pool refuses the worker as the daemon's real pool does during a package activation.
+    let activating = true
+    const reads = sharedWorkerReads({
+      async acquireSharedWorker() {
+        if (activating)
+          throw rpcError('OVERLOADED', {
+            retryAfterMs: 1000,
+            reason: 'activation-in-progress',
+            operationId: 'op-1',
+          })
+        return { command: async () => ({ ref: 'x' }) }
+      },
+    })
+    w.ports.resolveAgent = reads.resolveAgent
+    await engine.advance(sessionId)
+    await engine.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued', reason: 'busy' })
+    expect(w.core.state.submits).toEqual([])
+    // A start during the activation rejects with that error, not a final BUNDLE_UNAVAILABLE.
+    const refused = await w
+      .port()
+      .start(start({ startKey: 'task-2:0', taskBinding: { id: 'task-2', generation: 0 } }))
+      .catch((error: unknown) => error)
+    expect((refused as { data?: { code?: unknown } }).data?.code).not.toBe('CAPABILITY_DENIED')
+    // Activation done: the next pass submits it, and it runs once.
+    activating = false
+    await engine.sweep()
+    w.core.take(sessionId)
+    await engine.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'consumed' })
+    expect(w.core.ran(sessionId, 'text of r1')).toBe(1)
   })
 
   it('archiving a session retains its held inputs', async () => {
