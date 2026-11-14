@@ -7,14 +7,14 @@ describe('reading the managed-session gates over the shared worker link', () => 
   it('passes the worker reply through and keeps a link failure a local error', async () => {
     const replies: unknown[] = []
     const link = {
-      async command(method: string, params: Record<string, unknown>) {
-        replies.push([method, params])
+      async command(method: string, params: Record<string, unknown>, options?: { timeoutMs?: number }) {
+        replies.push([method, params, options])
         throw { code: 'E_PRESET_UNSUPPORTED', message: 'agent: unknown agent' }
       },
     }
     const answered = sharedWorkerReads({ acquireSharedWorker: async () => link })
     const refusal = await answered.resolveAgent('@example/companion#worker').catch((error: unknown) => error)
-    expect(replies).toEqual([['agents.resolve', { ref: '@example/companion#worker' }]])
+    expect(replies).toEqual([['agents.resolve', { ref: '@example/companion#worker' }, { timeoutMs: 31_000 }]])
     expect(gateRefused(refusal)).toBe(true)
     const down = sharedWorkerReads({
       acquireSharedWorker: async () => {

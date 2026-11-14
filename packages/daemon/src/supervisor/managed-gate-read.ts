@@ -28,7 +28,8 @@ export function gateRefused(error: unknown): boolean {
 
 /**
  * The shared worker's reads the managed-session gates use, straight over the daemon's link to it, so
- * a link failure stays distinguishable from the worker's answer.
+ * a link failure stays distinguishable from the worker's answer. Each read is bounded; a timeout is a
+ * link failure, not an answer.
  */
 export function sharedWorkerReads(pool: {
   acquireSharedWorker(): Promise<{
@@ -46,6 +47,8 @@ export function sharedWorkerReads(pool: {
         security?: { platform?: { l1?: { level?: string } } }
       },
     resolveAgent: async (ref: string): Promise<void> =>
-      void (await (await pool.acquireSharedWorker()).command('agents.resolve', { ref })),
+      void (await (
+        await pool.acquireSharedWorker()
+      ).command('agents.resolve', { ref }, { timeoutMs: 31_000 })),
   }
 }
