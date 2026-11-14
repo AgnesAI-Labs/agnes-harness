@@ -423,6 +423,20 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "index",
       },
       {
+        "name": "managed_session_inputs_open",
+        "sql": "CREATE INDEX managed_session_inputs_open
+     ON managed_session_inputs (session_id, state) WHERE state IN ('queued', 'waitingQuestion', 'enqueued')",
+        "tbl_name": "managed_session_inputs",
+        "type": "index",
+      },
+      {
+        "name": "managed_session_inputs_receipt",
+        "sql": "CREATE UNIQUE INDEX managed_session_inputs_receipt
+     ON managed_session_inputs (receipt_id) WHERE receipt_id IS NOT NULL",
+        "tbl_name": "managed_session_inputs",
+        "type": "index",
+      },
+      {
         "name": "schedule_receipts_task_unread",
         "sql": "CREATE INDEX schedule_receipts_task_unread ON schedule_run_receipts (schedule_id, is_read, run_rowid DESC)",
         "tbl_name": "schedule_run_receipts",
@@ -549,9 +563,21 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "index",
       },
       {
+        "name": "sqlite_autoindex_managed_session_bindings_1",
+        "sql": null,
+        "tbl_name": "managed_session_bindings",
+        "type": "index",
+      },
+      {
         "name": "sqlite_autoindex_managed_session_grants_1",
         "sql": null,
         "tbl_name": "managed_session_grants",
+        "type": "index",
+      },
+      {
+        "name": "sqlite_autoindex_managed_session_inputs_1",
+        "sql": null,
+        "tbl_name": "managed_session_inputs",
         "type": "index",
       },
       {
@@ -775,11 +801,34 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "table",
       },
       {
+        "name": "managed_session_bindings",
+        "sql": "CREATE TABLE managed_session_bindings (
+    session_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, task_generation INTEGER NOT NULL,
+    input_digest TEXT
+  )",
+        "tbl_name": "managed_session_bindings",
+        "type": "table",
+      },
+      {
         "name": "managed_session_grants",
         "sql": "CREATE TABLE managed_session_grants (
       owner TEXT NOT NULL, workspace TEXT NOT NULL, PRIMARY KEY (owner, workspace)
     )",
         "tbl_name": "managed_session_grants",
+        "type": "table",
+      },
+      {
+        "name": "managed_session_inputs",
+        "sql": "CREATE TABLE managed_session_inputs (
+    owner TEXT NOT NULL, session_id TEXT NOT NULL, key TEXT NOT NULL, binding_digest TEXT NOT NULL,
+    actor_owner TEXT NOT NULL, receipt_id TEXT, kind TEXT NOT NULL, task_id TEXT NOT NULL,
+    task_generation INTEGER NOT NULL, start_key TEXT NOT NULL, content_digest TEXT, text TEXT,
+    source TEXT NOT NULL, state TEXT NOT NULL, reason TEXT NOT NULL, version INTEGER NOT NULL,
+    item_command_id TEXT, submitted_seq INTEGER, consumed_turn INTEGER, consumed_seq INTEGER,
+    history TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+    PRIMARY KEY (owner, session_id, key)
+  )",
+        "tbl_name": "managed_session_inputs",
         "type": "table",
       },
       {
