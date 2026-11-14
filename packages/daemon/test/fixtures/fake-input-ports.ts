@@ -69,6 +69,8 @@ export function fakeCore() {
     scans: [] as { sessionId: string; commandId: string; fromSeq: number }[],
     withdrawals: [] as { sessionId: string; commandId: string }[],
     idle: new Set<(sessionId: string) => void>(),
+    /** The next submit fails before anything is queued, like a session that cannot open. */
+    failNextSubmit: false,
   }
   const next = (sessionId: string) => {
     const seq = (state.seq.get(sessionId) ?? 0) + 1
@@ -83,6 +85,10 @@ export function fakeCore() {
   } = {
     async submitInput(sessionId, input) {
       state.submits.push({ sessionId, commandId: input.commandId, dedupe: input.dedupe, text: input.text })
+      if (state.failNextSubmit) {
+        state.failNextSubmit = false
+        throw new Error('session could not open')
+      }
       const key = `${sessionId}\0${input.commandId}`
       const earlier = state.known.get(key)
       if (input.dedupe && earlier !== undefined) return { state: 'submitted', seq: earlier }

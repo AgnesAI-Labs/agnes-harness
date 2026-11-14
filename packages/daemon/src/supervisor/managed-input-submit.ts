@@ -34,6 +34,9 @@ export function projectInput(row: ManagedInputRow): ManagedInputResult {
   return { state: row.state, ...fields }
 }
 
+/** `idle`: an idle report; `result`: a caller asking (inputResult, a repeated admission, a deliver); `sweep`: startup and the slow sweep. */
+export type AdvanceMode = 'idle' | 'result' | 'sweep'
+
 const rejected = (code: string) => rpcError('SEMANTIC_REJECTED', { code })
 
 /**
@@ -105,53 +108,85 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     else move(marked, { state: 'enqueued', reason: 'eligible', submittedSeq: outcome.seq })
   }
 
-  /** Sweeps only: core finds the earlier item by its id instead of queuing a second one. */
-  const resubmit = async (row: ManagedInputRow, record: ManagedSessionRecord) => {
+  /** Sweeps only: starts a turn for an input a restart left queued; core finds it by id and queues nothing new. */
+  const rekick = async (row: ManagedInputRow, record: ManagedSessionRecord) => {
     if (row.text === null || row.itemCommandId === null) return
-    const outcome = await ports.sessions.submitInput(row.sessionId, {
+    await ports.sessions.submitInput(row.sessionId, {
       text: row.text,
       actor: deps.actor(row.actorOwner, record),
       commandId: row.itemCommandId,
       dedupe: true,
     })
-    if (outcome.state === 'submitted' && row.submittedSeq === UNCONFIRMED)
-      move(row, { state: 'enqueued', reason: 'eligible', submittedSeq: outcome.seq })
+  }
+
+  /** The checks every submit runs that do not depend on the row, read once per pass and only when needed. */
+  const sessionChecks = (record: ManagedSessionRecord) => {
+    let verdict: Promise<'pass' | 'paused' | ManagedInputChange> | undefined
+    return () =>
+      (verdict ??= (async () => {
+        // Every row of a session belongs to the session's manager.
+        if (!(await enabled(record.owner))) return 'paused' as const
+        if (archived(record)) return { state: 'retained', reason: 'sessionArchived' } as const
+        if (!(await deps.gatesPass(record))) return { state: 'needsOwner', reason: 'grantRevoked' } as const
+        return 'pass' as const
+      })())
   }
 
   /**
-   * One input at a time, in admission order. `sweep` also confirms unconfirmed submissions and starts
-   * inputs a restart left in the core inbox; an idle report never does, so a session that stops
-   * without running a turn cannot loop on it.
+   * A submitted input: consumed when a turn took it, otherwise true while it may still run. An
+   * unconfirmed one (sweeps only) is taken back and held again, so the next submit runs every check
+   * under a fresh id.
    */
-  const advanceNow = async (sessionId: string, sweep = false): Promise<void> => {
-    const held = inputs.held(sessionId)
+  const land = async (
+    row: ManagedInputRow,
+    record: ManagedSessionRecord,
+    mode: AdvanceMode,
+    checks: ReturnType<typeof sessionChecks>,
+  ): Promise<boolean> => {
+    const sessionId = row.sessionId
+    const commandId = row.itemCommandId as string
+    if (row.submittedSeq === UNCONFIRMED) {
+      if (mode !== 'sweep') return true
+      const settled = await settle(row)
+      if (settled.state !== 'enqueued') return false
+      if ((await ports.sessions.withdraw(sessionId, commandId)) === 'taken')
+        return (await settle(settled)).state === 'enqueued'
+      move(settled, { state: 'enqueued', reason: 'eligible', submittedSeq: null })
+      return false
+    }
+    const settled = await settle(row)
+    if (settled.state !== 'enqueued') return false
+    if (
+      mode === 'sweep' &&
+      (await checks()) === 'pass' &&
+      !(await questionOpen(sessionId)) &&
+      !(await busy(sessionId))
+    )
+      await rekick(settled, record)
+    return true
+  }
+
+  /**
+   * One input at a time, in admission order, each after the checks. An idle report only scans for
+   * consumption from the submitted seq; `sweep` also takes unconfirmed submissions back and starts
+   * inputs a restart left queued. An idle report also comes when a runner stops without a turn, so it
+   * never resubmits anything.
+   */
+  const advanceNow = async (sessionId: string, mode: AdvanceMode = 'idle'): Promise<void> => {
     const flying = inputs.inFlight(sessionId)
-    if (held.length === 0 && flying.length === 0) return
+    if (flying.length === 0 && inputs.held(sessionId).length === 0) return
     const record = ports.records.get(sessionId)
     if (!record) return
+    const checks = sessionChecks(record)
     let waiting = 0
-    for (const row of flying) {
-      if (row.submittedSeq === UNCONFIRMED && !sweep) {
-        waiting++
-        continue
-      }
-      const settled = await settle(row)
-      if (settled.state !== 'enqueued') continue
-      waiting++
-      if (sweep) await resubmit(settled, record)
-    }
+    for (const row of flying) if (await land(row, record, mode, checks)) waiting++
     if (waiting > 0) return
-    let checks: { archived: boolean; gates: boolean } | undefined
-    for (const row of held) {
+    for (const row of inputs.held(sessionId)) {
       if (row.state === 'queued') continue // completed only by the caller's next admitInput
-      if (!(await enabled(row.owner))) return // a disabled package keeps its inputs held, unchanged
-      checks ??= { archived: archived(record), gates: !archived(record) && (await deps.gatesPass(record)) }
-      if (checks.archived) {
-        move(row, { state: 'retained', reason: 'sessionArchived' })
-        continue
-      }
-      if (!checks.gates) {
-        move(row, { state: 'needsOwner', reason: 'grantRevoked' })
+      const verdict = await checks()
+      if (verdict === 'paused') return // a disabled package keeps its inputs held, unchanged
+      if (verdict !== 'pass') {
+        move(row, verdict)
         continue
       }
       if (await questionOpen(sessionId)) {
@@ -214,7 +249,7 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     if (!moved) throw rejected('OWNER_INPUT_STALE')
     row = moved
     // The owner's choice runs the same checks an idle submit runs.
-    if (decision === 'deliver') await advanceNow(sessionId)
+    if (decision === 'deliver') await advanceNow(sessionId, 'result')
     return projectInput(inputs.get(record.owner, sessionId, key) ?? row)
   }
 

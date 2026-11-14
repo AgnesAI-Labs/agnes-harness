@@ -291,7 +291,7 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
       }
       if (row.state === 'queued') await complete(row, record, request, prepared)
       // The input is recorded; a failed submit is retried by the sweep, so the caller still gets it.
-      await progress.advanceNow(sessionId).catch(() => undefined)
+      await progress.advanceNow(sessionId, 'result').catch(() => undefined)
       return projectInput(inputs.get(ctx.owner, sessionId, request.key) ?? row)
     })
   }
@@ -303,7 +303,7 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     return deps.serial(sessionLane(sessionId), async () => {
       const row = inputs.get(ctx.owner, sessionId, key)
       if (row) {
-        await progress.advanceNow(sessionId).catch(() => undefined)
+        await progress.advanceNow(sessionId, 'result').catch(() => undefined)
         return projectInput(inputs.get(ctx.owner, sessionId, key) ?? row)
       }
       // The sends ledger is never pruned by time: a key in neither table was never sent or admitted.
@@ -333,7 +333,7 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     async sweep() {
       for (const sessionId of inputs.sessionsWithWork())
         await deps
-          .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, true))
+          .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, 'sweep'))
           .catch(() => undefined)
     },
     async withdraw(owner, workspace) {

@@ -27,6 +27,8 @@ function world(over: Parameters<typeof inputWorld>[0] = {}) {
   return { ...w, admit, legacy, row, busy }
 }
 
+type World = ReturnType<typeof world>
+
 const refusedWith = (code: string) => ({ message: 'SEMANTIC_REJECTED', data: { code } })
 
 describe('held owner inputs', () => {
@@ -96,7 +98,7 @@ describe('held owner inputs', () => {
     expect(w.core.state.submits.map((s) => s.sessionId)).toEqual(['s1', 's2'])
   })
 
-  it('first submit does not dedupe; a row with item_command_id but no confirmed submitted_seq resubmits with dedupe', async () => {
+  it('first submit does not dedupe; a row with item_command_id but no confirmed submitted_seq is taken back by a sweep and submitted again under a fresh id', async () => {
     let crash = true
     const w = world({
       faults: {
@@ -111,23 +113,105 @@ describe('held owner inputs', () => {
     const left = w.row('s1', 'k1')
     expect(left?.itemCommandId).toEqual(expect.any(String))
     expect(left?.submittedSeq).toBe(0)
-    // An idle report neither resubmits an unconfirmed input nor scans the whole history for it.
+    // Neither an idle report nor a caller resubmits an unconfirmed input or scans the whole history for it.
     w.core.state.scans.length = 0
     await w.engine.advance('s1')
-    expect(w.core.state.scans).toEqual([])
     await w.engine.result(w.ctx('s1'), { key: 'k1' })
+    expect(w.core.state.scans).toEqual([])
     expect(w.core.state.submits.map((s) => s.dedupe)).toEqual([false])
     await w.engine.sweep()
+    const fresh = w.row('s1', 'k1')?.itemCommandId
+    expect(fresh).toMatch(new RegExp(`^${left?.itemCommandId}:v\\d+$`, 'u'))
+    expect(w.core.state.withdrawals).toEqual([{ sessionId: 's1', commandId: left?.itemCommandId }])
     expect(w.core.state.submits.map((s) => [s.commandId, s.dedupe])).toEqual([
       [left?.itemCommandId, false],
-      [left?.itemCommandId, true],
+      [fresh, false],
     ])
+    expect(w.core.state.inbox.get('s1')?.map((item) => item.commandId)).toEqual([fresh])
     expect(w.row('s1', 'k1')?.submittedSeq).toBe(w.core.state.inbox.get('s1')?.[0]?.seq)
-    expect(w.core.state.inbox.get('s1')).toHaveLength(1)
     w.core.take('s1')
     await w.engine.advance('s1')
     expect(w.row('s1', 'k1')?.state).toBe('consumed')
     expect(w.core.ran('s1', 'text of s1-k1')).toBe(1)
+  })
+
+  it.each([
+    ['archived', (w: World): void => w.records.markArchived('s1'), 'retained', 'sessionArchived'],
+    [
+      'archived by the owner in the Web',
+      (w: World): void => void w.core.state.archived.add('s1'),
+      'retained',
+      'sessionArchived',
+    ],
+    [
+      'gates fail',
+      (w: World): void => {
+        w.gates.pass = false
+      },
+      'needsOwner',
+      'grantRevoked',
+    ],
+    [
+      'question open',
+      (w: World): void => void w.core.state.questions.add('s1'),
+      'waitingQuestion',
+      'questionOpen',
+    ],
+    ['busy', (w: World): void => void w.core.state.running.add('s1'), 'enqueued', 'busy'],
+    ['package disabled', (w: World): void => w.enabled.clear(), 'enqueued', 'eligible'],
+  ] as const)(
+    'a sweep runs the submit checks on an unconfirmed submission before submitting it again: %s',
+    async (_name, fail, state, reason) => {
+      let crash = true
+      const w = world({
+        faults: {
+          afterSubmit() {
+            if (crash) throw new Error('crash')
+          },
+        },
+      })
+      w.open('s1')
+      await w.admit('s1', 'k1')
+      crash = false
+      fail(w)
+      await w.engine.sweep()
+      expect(w.row('s1', 'k1')).toMatchObject({ state, reason, submittedSeq: null })
+      expect(w.core.state.submits).toHaveLength(1)
+      expect(w.core.state.inbox.get('s1')).toEqual([])
+      expect(w.core.ran('s1', 'text of s1-k1')).toBe(0)
+    },
+  )
+
+  it('a submission that never reached core is submitted again by the sweep, without dedupe', async () => {
+    const w = world()
+    w.open('s1')
+    w.core.state.failNextSubmit = true
+    await w.admit('s1', 'k1')
+    expect(w.row('s1', 'k1')?.submittedSeq).toBe(0)
+    expect(w.core.state.inbox.get('s1') ?? []).toEqual([])
+    await w.engine.sweep()
+    expect(w.core.state.submits.map((s) => s.dedupe)).toEqual([false, false])
+    expect(w.row('s1', 'k1')).toMatchObject({ state: 'enqueued', reason: 'eligible' })
+    expect(w.core.state.inbox.get('s1')).toHaveLength(1)
+  })
+
+  it('a sweep starts a confirmed input still queued only when the checks pass', async () => {
+    const w = world()
+    w.open('s1')
+    await w.admit('s1', 'k1')
+    const cid = w.row('s1', 'k1')?.itemCommandId
+    const version = w.row('s1', 'k1')?.version
+    w.gates.pass = false
+    await w.engine.sweep()
+    expect(w.core.state.submits).toHaveLength(1)
+    w.gates.pass = true
+    await w.engine.sweep()
+    expect(w.core.state.submits.map((s) => [s.commandId, s.dedupe])).toEqual([
+      [cid, false],
+      [cid, true],
+    ])
+    expect(w.row('s1', 'k1')).toMatchObject({ state: 'enqueued', version })
+    expect(w.core.state.inbox.get('s1')).toHaveLength(1)
   })
 
   it('consumed scan starts at submitted_seq and records turn and seq', async () => {
