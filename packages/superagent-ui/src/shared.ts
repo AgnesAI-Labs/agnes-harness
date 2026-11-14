@@ -3,7 +3,14 @@
  * translations are keyed by. The panel bundle carries no other package, so these are copies; a test keeps each
  * identical to its source, and the types come from the package's `panel-api`.
  */
-export type { AdmissionRowView, FieldSpec, Health, Localized, TicketStage } from '@agnes/superagent/panel-api'
+export type {
+  AdmissionRowView,
+  Choice,
+  FieldSpec,
+  Health,
+  Localized,
+  TicketStage,
+} from '@agnes/superagent/panel-api'
 
 export const TICKET_FILTERS = ['open', 'person', 'working', 'idle', 'ended'] as const
 export const THREAD_FILTERS = ['subscribed', 'evaluating', 'recent', 'all'] as const

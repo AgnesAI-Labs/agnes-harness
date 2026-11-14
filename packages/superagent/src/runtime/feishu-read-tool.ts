@@ -8,10 +8,12 @@ import { z } from 'zod'
 import type { Store } from '../app/store.js'
 import type { Ticket } from '../core/index.js'
 import { feishuIo, registerFeishu } from '../sources/feishu.js'
+import { listInstances } from '../sources/feishu-instances.js'
 import { type FeishuIo, feishuLink } from '../sources/feishu-io.js'
 import { feishuView, fetchFeishu, readTopic } from '../sources/feishu-read.js'
 import { SOURCE } from '../sources/feishu-trigger.js'
 import type { SuperagentApp } from './app.js'
+import { asSdkClient } from './sdk.js'
 import type { Tool } from './tool.js'
 
 export const FEISHU_READ_NAME = 'orchestrator_feishu_read'
@@ -119,11 +121,18 @@ export function feishuReadTool(host: FeishuReadHost, ticket: Ticket): Tool {
  * are there before the app starts, its loops with the other Sources, and the read tool for every worker.
  */
 export function attachFeishu(
-  context: { readonly app: SuperagentApp; readonly grant: Pick<BundledAppGrant, 'channels'> },
+  context: {
+    readonly app: SuperagentApp
+    readonly grant: Pick<BundledAppGrant, 'channels'> & { client?: unknown }
+  },
   log?: { warn(message: string): void },
 ) {
   const { app } = context
   const link = feishuLink(context.grant.channels, log ? (message) => log.warn(message) : undefined)
+  // The owner's client lists the running channel instances, as the Channels page does.
+  const owner = context.grant.client
+  if (owner !== undefined)
+    link.instances = () => listInstances((method, params) => asSdkClient(owner).call(method, params))
   const registered = registerFeishu(app.parts.sourceHost, link)
   app.extend({
     sources: () => {

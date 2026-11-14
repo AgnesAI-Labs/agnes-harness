@@ -375,15 +375,18 @@ export class Settings {
     }
   }
   /**
-   * Rereads a Source's display names (such as Feishu chat names) immediately.
+   * Rereads a Source's display names (such as Feishu chat names) and its field choices (such as channel instances)
+   * immediately.
    * @returns Sorted display names (`{ added }`) that were not present in the stored label map before this read.
-   * @throws UserError (`noLabels`) when the Source has no label refresh; rethrows a failed read, keeping the stored list.
+   * @throws UserError (`noLabels`) when the Source has neither; rethrows a failed read, keeping the stored list.
    */
   async refreshLabels(id: string): Promise<{ added: string[] }> {
     const { store, sources } = this.host
     const instance = sources.instance(id)
     const kind = instance && sources.kind(instance.kind)
-    if (!kind?.refreshLabels) throw new UserError('noLabels')
+    if (!kind?.refreshLabels && !kind?.refreshChoices) throw new UserError('noLabels')
+    if (kind.refreshChoices) await kind.refreshChoices(this.host.sourceHost)
+    if (!kind.refreshLabels) return { added: [] }
     const before = store.get(KV.sources.labels(id)) ?? {}
     const after = await kind.refreshLabels(this.host.sourceHost)
     return {

@@ -21,6 +21,7 @@ import {
 import { type FeishuRef, readHistory, readTopic } from './feishu-read.js'
 import { feishuRef, feishuTriggerId, messageTrigger, SOURCE } from './feishu-trigger.js'
 import { type Health, health, type SourceContext } from './host.js'
+import type { Choice } from './kind.js'
 import { cursorAt, POLL_HORIZON_MS, pause, pollThreads as pollEach, polled } from './poll.js'
 
 /** Runs the Source's loops until `signal` aborts. */
@@ -366,11 +367,28 @@ export async function refreshChatNames(
   ctx.state.set(KV.sources.labels(SOURCE), names)
   return names
 }
-/** Rereads the chat list every minute independently of history recovery, so newly joined chats appear within a minute. */
+/** Rereads the channel instances the `instance` setting may name and stores them as its choices. */
+export async function refreshInstances(
+  ctx: SourceContext,
+  link: FeishuLink,
+): Promise<Record<string, Choice[]>> {
+  if (!link.instances) return {}
+  const choices = { instance: await link.instances() }
+  ctx.state.set(KV.sources.choices(SOURCE), choices)
+  return choices
+}
+/**
+ * Rereads the channel instances, and the chat list, every minute independently of history recovery, so new instances
+ * and newly joined chats appear within a minute. Instances are read even while the Source is unset or off, so it can
+ * be set.
+ */
 async function chatNamesLoop(ctx: SourceContext, link: FeishuLink, signal: AbortSignal): Promise<void> {
   await ctx.ready
   if (!ctx.configured()) return
   while (!signal.aborted) {
+    await refreshInstances(ctx, link).catch(() => {
+      /* A display aid as well: the stored choices stay until a later read succeeds. */
+    })
     const config = enabled(ctx)
     if (channelOf(config) && !link.missing.has('chats')) {
       try {

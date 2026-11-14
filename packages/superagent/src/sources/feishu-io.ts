@@ -4,6 +4,7 @@
  * Source records as a missing feature and degrades around instead of failing.
  */
 import type { BundledAppChannels } from '@agnes/extension-api'
+import type { Choice } from './kind.js'
 
 /** The optional channel reads, as `capabilities().read` names them. */
 export type FeishuFeature = 'messages' | 'threads' | 'history' | 'chats' | 'members'
@@ -138,6 +139,8 @@ export interface FeishuLink {
   listening: boolean
   /** Replies being sent, by `chat\0asked message`, with the root they answer and how many are in flight. */
   readonly sending: Map<string, { root: string; count: number }>
+  /** Lists the running channel instances the `instance` setting may name; absent, the setting is typed. */
+  instances?: () => Promise<Choice[]>
 }
 export const feishuLink = (channels: BundledAppChannels, log?: (message: string) => void): FeishuLink => ({
   channels,

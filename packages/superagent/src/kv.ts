@@ -5,6 +5,7 @@
  */
 import type { SettingsVersion } from './app/store.js'
 import type { SettingsSave } from './policy.js'
+import type { Choice } from './sources/kind.js'
 
 /** What a stop of the runtime left paused, and why. */
 export interface Paused {
@@ -79,7 +80,11 @@ export const KV = {
   /** Sessions: prompt revisions each Session has worked under, ordered oldest first; the last entry (`.at(-1)`) is its active revision. */
   sessions: { prompts: family<number[], [session: string]>('session-prompts:') },
   /** Per-Source resolved display names mapping a named ID (such as a Feishu chat ID) to its display name. */
-  sources: { labels: family<Record<string, string>, [source: string]>('source-labels:') },
+  sources: {
+    labels: family<Record<string, string>, [source: string]>('source-labels:'),
+    /** Per-Source values that text fields with `choices` may take, by field key (such as Feishu channel instances). */
+    choices: family<Record<string, Choice[]>, [source: string]>('source-choices:'),
+  },
   /**
    * GitHub Source: notification cursor and pending retries; per-Issue/PR read cursor shared by notification and polled reads;
    * per-stream cursor, start times by kind, and ETag; default-branch CI state; and per-PR CI fingerprint and revision (`revision`

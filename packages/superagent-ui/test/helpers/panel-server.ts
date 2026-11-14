@@ -22,6 +22,7 @@ import type { Api, ApiResponse, RouteParams } from '../../../superagent/src/runt
 import { PANEL_SERVICES } from '../../../superagent/src/runtime/services.js'
 import { SetupError } from '../../../superagent/src/setup.js'
 import type { Health } from '../../../superagent/src/sources/host.js'
+import type { Choice } from '../../../superagent/src/sources/kind.js'
 import type {
   DroppedReply,
   HistoryView,
@@ -51,6 +52,8 @@ import { actor, dayAgo, KINDS, promptVersion, threadSummary } from './panel-fixt
 
 type Settings = ReturnType<typeof SettingsSchema.parse>
 export interface PanelServer {
+  /** The Source choices the settings carry, by Source and field key. */
+  choices?: Record<string, Record<string, Choice[]>>
   joined?: Record<string, string>
   joining?: Record<string, string>
   joinError?: string
@@ -135,6 +138,7 @@ function sourceSettings(): SourceView[] {
       fields: kind.fields,
       facts: kind.facts?.(resolved()) ?? {},
       labels: kind.kind === 'feishu' ? { oc_team: '团队群', oc_other: '另一个群', ...server.joined } : {},
+      choices: server.choices?.[kind.kind] ?? {},
       ...(problem ? { problem } : {}),
       ...(policy ? { policy } : {}),
     }

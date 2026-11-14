@@ -17,7 +17,7 @@ import { Button, DisclosureRow, Icon, InfoTip, Input, SegmentedControl, Select, 
 import { useDraft } from './draft.js'
 import { useAction, usePanel, usePanelData } from './provider.js'
 import { settingsRoute } from './route.js'
-import type { FieldSpec, Localized } from './shared.js'
+import type { Choice, FieldSpec, Localized } from './shared.js'
 import { errorText, localized, type T, valueLabel, when } from './text.js'
 import { Hint, LoadState } from './widgets.js'
 
@@ -530,6 +530,8 @@ export function SourceField({
   onChange,
   labels,
   refreshLabels,
+  choices,
+  config,
 }: {
   field: FieldSpec
   value: unknown
@@ -538,6 +540,10 @@ export function SourceField({
   onChange: (next: unknown) => void
   labels: Record<string, string>
   refreshLabels?: () => Promise<string[]>
+  /** The Source's choices for this field, for a text field with `choices`. */
+  choices?: readonly Choice[] | undefined
+  /** The edited configuration, which decides whether a busy choice can be chosen. */
+  config?: Record<string, unknown>
 }) {
   const { t, navigate } = usePanel()
   const label = localized(t, field.label),
@@ -574,6 +580,26 @@ export function SourceField({
         </Field>
       )
     case 'text':
+      if (field.choices && choices?.length) {
+        const when = field.choices.unavailableWhen
+        const blocked = (choice: Choice) =>
+          !!choice.busy && !!when && config?.[when.key] === when.value && choice.value !== value
+        return (
+          <Field label={label} hint={hint} note={localized(t, fact)}>
+            <Select value={String(value ?? '')} onChange={(event) => onChange(event.target.value)}>
+              <option value="">{localized(t, field.choices.choose)}</option>
+              {value && !choices.some((choice) => choice.value === value) ? (
+                <option value={String(value)}>{String(value)}</option>
+              ) : null}
+              {choices.map((choice) => (
+                <option key={choice.value} value={choice.value} disabled={blocked(choice)}>
+                  {choice.busy ? `${choice.label} (${localized(t, choice.busy)})` : choice.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )
+      }
       return (
         <Field label={label} hint={hint} note={localized(t, fact)}>
           {field.choose && Object.keys(labels).length ? (

@@ -12,7 +12,14 @@ import {
   linkIo,
   feishuLink as newLink,
 } from './feishu-io.js'
-import { channelOf, inFlight, refreshChatNames, rememberReply, runFeishu } from './feishu-loops.js'
+import {
+  channelOf,
+  inFlight,
+  refreshChatNames,
+  refreshInstances,
+  rememberReply,
+  runFeishu,
+} from './feishu-loops.js'
 import { feishuThreadContext } from './feishu-read.js'
 import { feishuTriggerId, SOURCE } from './feishu-trigger.js'
 import { type SourceContext, type SourceHost, sourceContext } from './host.js'
@@ -97,7 +104,10 @@ function feishuScope({ meta }: { meta: Record<string, unknown> }, config: Feishu
     : { listened: false, reason: 'chat_not_allowed' }
 }
 /** The Feishu kind as described, without the parts that read or write through the channel. */
-const described: Omit<SourceKind<FeishuConfig>, 'channel' | 'threadContext' | 'policy' | 'refreshLabels'> = {
+const described: Omit<
+  SourceKind<FeishuConfig>,
+  'channel' | 'threadContext' | 'policy' | 'refreshLabels' | 'refreshChoices'
+> = {
   kind: SOURCE,
   title: { zh: '飞书', en: 'Feishu' },
   description: {
@@ -110,9 +120,13 @@ const described: Omit<SourceKind<FeishuConfig>, 'channel' | 'threadContext' | 'p
       key: 'instance',
       type: 'text',
       label: { zh: '飞书渠道实例', en: 'Feishu channel instance' },
+      choices: {
+        choose: { zh: '选择渠道实例', en: 'Choose a channel instance' },
+        unavailableWhen: { key: 'claim', value: 'instance' },
+      },
       hint: {
-        zh: '渠道页上的一个飞书渠道实例，写成 <插件 id>/<实例 id>；来源经它接收、回复和读取。渠道没有运行时来源会一直重试。',
-        en: 'A Feishu channel instance from the Channels page, written <plugin id>/<instance id>; the Source receives, replies and reads through it. While the channel is not running, the Source keeps retrying.',
+        zh: '从正在运行的渠道实例中选，来源经它接收、回复和读取。整个认领时，主人已配对私聊或绑定会话的实例不能选，请选专用机器人的实例。列表读不到时手填 <渠道行 id>/<实例 id>，例如 ext:agnes.feishu/main/superagent-bot。渠道没有运行时来源会一直重试。',
+        en: "Choose one of the running channel instances; the Source receives, replies and reads through it. To claim it whole, an instance where the owner paired a direct chat or bound a session cannot be chosen: choose the dedicated bot's. When the list cannot be read, type <channel row id>/<instance id>, for example ext:agnes.feishu/main/superagent-bot. While the channel is not running, the Source keeps retrying.",
       },
     },
     {
@@ -341,6 +355,7 @@ export function feishuKindFor(link: FeishuLink): SourceKind<FeishuConfig> {
     ...described,
     refreshLabels: (host, signal) =>
       refreshChatNames(link.context ?? sourceContext(host, kind), link, signal),
+    refreshChoices: (host) => refreshInstances(link.context ?? sourceContext(host, kind), link),
     channel: {
       allowed: (address, config) =>
         feishuScope({ meta: { chatId: address.chatId ?? '', direct: address.direct === 'true' } }, config)

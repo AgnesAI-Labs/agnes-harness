@@ -37,6 +37,8 @@ function SourceCard({ source }: { source: SourceView }) {
       saved={saved.config[spec.key]}
       labels={source.labels}
       refreshLabels={refreshLabels}
+      choices={source.choices[spec.key]}
+      config={value.config}
       fact={spec.type === 'fact' || !changed(spec.key) ? source.facts[spec.key] : undefined}
       onChange={(next) => draft.edit({ ...value, config: { ...value.config, [spec.key]: next } })}
     />

@@ -97,7 +97,8 @@ steps, and the defaults. Ask for one confirmation.
    2. Add it as another instance of the AGH Feishu channel, on the Channels page. Do not pair any direct chat of this
       instance with a plugin service, and do not bind its chats to a session: Superagent claims the whole instance,
       and an instance already in use is refused.
-   3. Note the channel plugin's id and the new instance's id; the Superagent setting is `<plugin id>/<instance id>`.
+   3. Note the new instance's id. Superagent's settings list the running channel instances by plugin name and
+      instance id, so the instance is chosen there.
 
    With only one bot, Superagent can instead share it and receive only the listed chats (claim **Only these chats**);
    direct messages and other chats are then not received.
@@ -148,9 +149,13 @@ steps, and the defaults. Ask for one confirmation.
    setup agent, through the services in [Settings services](#settings-services). The agent's own tools cannot change the
    account or execution-environment fields, only the panel and these services can. In this order:
    1. **Sources:** the GitHub Source (repository and the agent's GitHub CLI), then the Feishu Source if used: the
-      dedicated bot's instance as `<plugin id>/<instance id>`, claim **Whole instance**, the chats, and whether direct
-      messages and other chats are received. If the Source reports that the instance already serves the owner or
-      another feature, choose the dedicated instance instead; Superagent never takes over the owner's direct messages.
+      dedicated bot's instance, chosen from the list of running channel instances, claim **Whole instance**, the chats,
+      and whether direct messages and other chats are received. An instance where the owner paired a direct chat or
+      bound a session is marked and cannot be chosen to claim whole. A setup agent saving through the services takes
+      the value from `choices.instance` of the Feishu Source in `superagent.settings.get`; it has the form
+      `<channel row id>/<instance id>`, for example `ext:agnes.feishu/main/superagent-bot`, and is typed by hand only
+      when that list is empty. If the Source reports that the instance already serves the owner or another feature,
+      choose the dedicated instance instead; Superagent never takes over the owner's direct messages.
    2. **Policy:** the allowed lists, and for Feishu the chat ids, chosen from the chats the channel lists.
    3. **Execution:** the ticket directory root and the prepare command from question 7, for example
       `git clone "https://github.com/<owner>/<name>.git" repo`.

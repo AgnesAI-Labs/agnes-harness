@@ -2,6 +2,7 @@
 // The Source status and settings.
 import { act } from 'react'
 import { expect, it, onTestFinished, vi } from 'vitest'
+import { OWNER_BUSY } from '../../superagent/src/sources/feishu-instances.js'
 import { zh } from '../src/locales.js'
 import {
   all,
@@ -406,4 +407,53 @@ it('reads the settings again as soon as Superagent answers after a save restarte
   expect(server.requests.filter((request) => request.path === 'settings').length).toBeGreaterThan(reads)
   expect(disabled(field('智能体的 GitHub CLI'))).toBe(false)
   expect(field<HTMLInputElement>('智能体的 GitHub CLI').value).toBe('/opt/bin/gh-agent')
+})
+
+it('picks the Feishu instance from the running channel instances, and not the owner’s for a whole-instance claim', async () => {
+  server.choices = {
+    feishu: {
+      instance: [
+        { value: 'ext:acme/feishu/main/owner-bot', label: 'Feishu · owner-bot', busy: OWNER_BUSY },
+        { value: 'ext:acme/feishu/main/superagent-bot', label: 'Feishu · superagent-bot' },
+      ],
+    },
+  }
+  await mount()
+  await click(zh['tab.source'])
+  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  const feishu = all('.dt-card')[0]!
+  const pick = field<HTMLSelectElement>('飞书渠道实例')
+  // The saved value the list does not hold stays visible as it is.
+  expect([...pick.options].map((option) => [option.textContent, option.disabled])).toEqual([
+    ['选择渠道实例', false],
+    ['feishu-bot', false],
+    ['Feishu · owner-bot (主人在用（已配对私聊或绑定会话），不能整个认领)', false],
+    ['Feishu · superagent-bot', false],
+  ])
+  // Claiming the whole instance, the owner's instance cannot be chosen.
+  await click(
+    [...feishu.querySelectorAll('button')].find((item) => item.textContent === '整个实例（专用机器人）')!,
+  )
+  expect([...field<HTMLSelectElement>('飞书渠道实例').options].map((option) => option.disabled)).toEqual([
+    false,
+    false,
+    true,
+    false,
+  ])
+  await type(field<HTMLSelectElement>('飞书渠道实例'), 'ext:acme/feishu/main/superagent-bot')
+  await act(async () => {
+    feishu.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+  })
+  await settle()
+  expect(server.requests.find((request) => request.path === 'settings/source:feishu')).toMatchObject({
+    body: { value: { config: { instance: 'ext:acme/feishu/main/superagent-bot', claim: 'instance' } } },
+  })
+})
+
+it('keeps the Feishu instance a text field while no instance list could be read', async () => {
+  await mount()
+  await click(zh['tab.source'])
+  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  expect(field<HTMLInputElement>('飞书渠道实例').tagName).toBe('INPUT')
+  expect(field<HTMLInputElement>('飞书渠道实例').value).toBe('feishu-bot')
 })

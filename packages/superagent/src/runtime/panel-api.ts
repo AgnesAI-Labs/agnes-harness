@@ -81,5 +81,5 @@ export type ApiResponse<K extends keyof Api> = Api[K]['response']
 export type { TicketStage } from '../core/stage.js'
 export type { SetupProblem } from '../setup.js'
 export type { Health } from '../sources/host.js'
-export type { AdmissionRowView, FieldSpec, Localized } from '../sources/kind.js'
+export type { AdmissionRowView, Choice, FieldSpec, Localized } from '../sources/kind.js'
 export type { ModelCatalog, PromptsView, StateView, TicketPageView }

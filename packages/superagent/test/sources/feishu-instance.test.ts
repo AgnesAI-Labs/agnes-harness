@@ -5,9 +5,11 @@
  * it subscribes only the listed groups, as on a bot shared with other features.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { settingsView } from '../../src/app/views/settings.js'
 import { key } from '../../src/core/index.js'
+import { listInstances, OWNER_BUSY } from '../../src/sources/feishu-instances.js'
 import { RELEASE_GRACE_MS } from '../../src/sources/feishu-loops.js'
-import { fakeChannels, message, PLUGIN } from './fake-channels.js'
+import { fakeChannels, message, PLUGIN, rpc } from './fake-channels.js'
 import { type FeishuHost, feishuHost, MEMBER } from './feishu-host.js'
 
 const hosts: FeishuHost[] = []
@@ -164,5 +166,69 @@ describe('a channel instance of its own', () => {
     expect(h.fake.emit(message('om_dm', { chat: 'oc_dm', direct: true }))).toBe(false)
     expect(h.health.others).toMatchObject({ state: 'ready', code: 'feishuDedicatedBot' })
     await stop()
+  })
+})
+
+describe('choosing the instance', () => {
+  const catalog = {
+    providers: [
+      { extension: 'plugin/aa', rowId: 'ext:agnes.feishu/main', manifest: { displayName: 'Feishu' } },
+      { extension: 'plugin/bb', rowId: 'ext:acme/broken/main', manifest: {} },
+    ],
+  }
+  const call = (overrides: { catalog?: () => unknown } = {}) =>
+    vi.fn(async (method: string, params: unknown) => {
+      if (method === '_agnes/v1/channels.catalog') return (overrides.catalog ?? (() => catalog))()
+      const { extension, service } = params as { extension: string; service: string }
+      if (extension === 'plugin/bb') throw rpc('CAPABILITY_DENIED')
+      if (service === 'channel.configuration')
+        return { output: { instances: [{ id: 'owner-bot' }, { id: 'superagent-bot' }] } }
+      return {
+        output: {
+          instances: [
+            { id: 'owner-bot', pairings: [{ id: 'p1' }], bindings: [] },
+            { id: 'superagent-bot', pairings: [], bindings: [] },
+          ],
+        },
+      }
+    }) as never
+  it("lists every running instance as <row id>/<instance id> by plugin name, marking the owner's as busy", async () => {
+    expect(await listInstances(call())).toEqual([
+      { value: 'ext:agnes.feishu/main/owner-bot', label: 'Feishu · owner-bot', busy: OWNER_BUSY },
+      { value: 'ext:agnes.feishu/main/superagent-bot', label: 'Feishu · superagent-bot' },
+    ])
+    await expect(
+      listInstances(
+        call({
+          catalog: () => {
+            throw rpc('CAPABILITY_DENIED')
+          },
+        }),
+      ),
+    ).rejects.toMatchObject({ message: 'CAPABILITY_DENIED' })
+  })
+
+  it('stores the instances as the choices the settings show, and keeps them when a later read fails', async () => {
+    const h = open()
+    let fail = false
+    h.link.instances = async () => {
+      if (fail) throw new Error('daemon away')
+      return listInstances(call())
+    }
+    await h.kind.refreshChoices!(h.host)
+    const view = () =>
+      settingsView(h.store, h.sources, {}, {}, '/state').sources.find((source) => source.id === 'feishu')!
+    expect(view().choices.instance?.map((choice) => choice.value)).toEqual([
+      'ext:agnes.feishu/main/owner-bot',
+      'ext:agnes.feishu/main/superagent-bot',
+    ])
+    fail = true
+    await expect(h.kind.refreshChoices!(h.host)).rejects.toThrow('daemon away')
+    expect(view().choices.instance).toHaveLength(2)
+    const field = h.kind.fields.find((spec) => spec.key === 'instance')
+    expect(field).toMatchObject({
+      type: 'text',
+      choices: { unavailableWhen: { key: 'claim', value: 'instance' } },
+    })
   })
 })

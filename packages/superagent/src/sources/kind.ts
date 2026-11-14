@@ -29,14 +29,31 @@ interface FieldBase {
   advanced?: true
 }
 /**
+ * One value a field may take, from the Source's `choices`: what is stored, what is shown, and, when `busy` is set, why
+ * it cannot be chosen while the field's `unavailableWhen` holds.
+ */
+export interface Choice {
+  value: string
+  label: string
+  busy?: Localized
+}
+/**
  * Configuration field specification; `rows` edits a list of records keyed by its first column, `choose` picks from
- * resolved source labels, and `fact` displays a read-only value from `facts`.
+ * resolved source labels, a text field with `choices` picks from the Source's choices for its key (a busy choice is
+ * not selectable while the config's `unavailableWhen.key` equals `unavailableWhen.value`), and `fact` displays a
+ * read-only value from `facts`.
  */
 export type FieldSpec =
   | (FieldBase & { type: 'switch' })
   | (FieldBase & { type: 'select'; options: { value: string; label: Localized }[] })
   | (FieldBase & { type: 'number'; min: number; max: number })
-  | (FieldBase & { type: 'text'; pattern?: string; readonly?: boolean; choose?: Localized })
+  | (FieldBase & {
+      type: 'text'
+      pattern?: string
+      readonly?: boolean
+      choose?: Localized
+      choices?: { choose: Localized; unavailableWhen?: { key: string; value: string } }
+    })
   | (FieldBase & { type: 'fact'; settings?: 'deployment' })
   | (FieldBase & {
       type: 'rows'
@@ -195,6 +212,8 @@ export interface SourceKind<C extends Record<string, unknown> = Record<string, u
   >
   /** Rereads display names for row keys (such as chat names), stores the resolved names in `KV.sources.labels(kind)`, and returns them. */
   refreshLabels?(host: SourceHost, signal?: AbortSignal): Promise<Record<string, string>>
+  /** Reads the values text fields with `choices` may take, by field key, and stores them in `KV.sources.choices(kind)`. */
+  refreshChoices?(host: SourceHost, signal?: AbortSignal): Promise<Record<string, Choice[]>>
   /** Variables the kind registers with the execution environment and how their values are computed. */
   environment?: {
     variables: readonly VariableSpec[]
