@@ -266,7 +266,8 @@ function waiting(ctx: SourceContext, link: FeishuLink, why: Health): void {
 }
 /**
  * Says, while direct messages or other chats are on, that they need a Feishu bot instance of Superagent's own: the
- * Source claims only the listed group chats, and the host routes no direct chat to it.
+ * Source claims only the listed group chats, and the host routes no direct chat to it. The note is information, not a
+ * fault: the defaults have direct messages on, and the listed chats work as they should.
  */
 export function reportOthers(ctx: SourceContext, link: FeishuLink, config: FeishuConfig): void {
   const wanted = config.directMessages || config.otherChats === 'mentions'
@@ -275,7 +276,7 @@ export function reportOthers(ctx: SourceContext, link: FeishuLink, config: Feish
     link,
     'others',
     wanted
-      ? health('paused', 'feishuDedicatedBot')
+      ? { ...health('ready', 'feishuDedicatedBot'), at: new Date().toISOString() }
       : { state: 'ready', detail: 'Only the listed chats are received', at: new Date().toISOString() },
   )
 }

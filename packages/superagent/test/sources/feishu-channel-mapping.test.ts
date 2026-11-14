@@ -697,21 +697,27 @@ describe('the subscription', () => {
 })
 
 describe('direct messages and other chats', () => {
-  it('says they need a dedicated bot instance while either is on, and that only the listed chats are received otherwise', async () => {
+  it('notes, without marking the Source unhealthy, that they need a dedicated bot instance while either is on', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] })
     const on = open({ feishu: { directMessages: true, otherChats: 'none' } })
     const stop = new AbortController()
     let running = on.run(stop.signal)
     await vi.advanceTimersByTimeAsync(10)
-    expect(on.health.others).toMatchObject({ state: 'paused', code: 'feishuDedicatedBot' })
+    // The defaults have direct messages on: the note informs, and the Source stays healthy.
+    expect(on.health.others).toMatchObject({ state: 'ready', code: 'feishuDedicatedBot' })
     expect(on.health.others?.detail).toContain('need a Feishu bot instance of Superagent')
+    expect(
+      sourcesStatus({ store: on.store, sources: on.sources, links: {} as never }, on.health, {}).find(
+        (source) => source.id === 'feishu',
+      )?.state,
+    ).toBe('ready')
     stop.abort()
     await running
     const other = open({ feishu: { directMessages: false, otherChats: 'mentions' } })
     const ended = new AbortController()
     running = other.run(ended.signal)
     await vi.advanceTimersByTimeAsync(10)
-    expect(other.health.others).toMatchObject({ state: 'paused', code: 'feishuDedicatedBot' })
+    expect(other.health.others).toMatchObject({ state: 'ready', code: 'feishuDedicatedBot' })
     ended.abort()
     await running
     const off = open({ feishu: { directMessages: false, otherChats: 'none' } })
