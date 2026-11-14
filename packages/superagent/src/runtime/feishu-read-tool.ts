@@ -106,7 +106,7 @@ export function feishuReadTool(host: FeishuReadHost, ticket: Ticket): Tool {
           missing: input.message_ids.filter((id) => !found.has(id)),
         }
       }
-      const thread = topics.get(input.thread_id!)
+      const thread = topics.get(input.thread_id ?? '')
       if (!thread) throw new Error(`The topic ${input.thread_id} is not one of this ticket's topics`)
       const events = await readTopic(io, input.chat_id, thread, input.limit, input.order)
       return { thread_id: thread, messages: events.map(feishuView) }

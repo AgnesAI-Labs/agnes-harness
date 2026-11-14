@@ -2,6 +2,7 @@
 /** Feishu source kind definition over an AGH Feishu channel instance, policy synchronization, and the entry that starts its loops. */
 import type { BundledAppChannels } from '@agnes/extension-api'
 import { z } from 'zod'
+import type { ScopeResult } from '../core/index.js'
 import { feishuLink, sendFeishu } from './feishu-channel.js'
 import {
   channelRead,
@@ -74,6 +75,18 @@ const unlinked = newLink(
   }),
 )
 /** The Feishu kind whose replies, reads and member sync go through `link`. */
+/** Whether the Source listens to a message of `meta`'s chat, and observes it, under `config`. */
+function feishuScope({ meta }: { meta: Record<string, unknown> }, config: FeishuConfig): ScopeResult {
+  if (meta.direct === true)
+    return config.directMessages
+      ? { listened: true, observed: false, row: 'direct' }
+      : { listened: false, reason: 'direct_messages_not_allowed' }
+  const chat = config.chats.find((item) => item.chatId === meta.chatId)
+  if (chat) return { listened: true, observed: chat.listen === 'all', row: chat.chatId }
+  return config.otherChats === 'mentions'
+    ? { listened: true, observed: false, row: 'other' }
+    : { listened: false, reason: 'chat_not_allowed' }
+}
 /** The Feishu kind as described, without the parts that read or write through the channel. */
 const described: Omit<SourceKind<FeishuConfig>, 'channel' | 'threadContext' | 'policy' | 'refreshLabels'> = {
   kind: SOURCE,
@@ -149,17 +162,7 @@ const described: Omit<SourceKind<FeishuConfig>, 'channel' | 'threadContext' | 'p
     },
   ],
   health: ['feishu', 'history', 'members', 'reads'],
-  scope({ meta }, config) {
-    if (meta.direct === true)
-      return config.directMessages
-        ? { listened: true, observed: false, row: 'direct' }
-        : { listened: false, reason: 'direct_messages_not_allowed' }
-    const chat = config.chats.find((item) => item.chatId === meta.chatId)
-    if (chat) return { listened: true, observed: chat.listen === 'all', row: chat.chatId }
-    return config.otherChats === 'mentions'
-      ? { listened: true, observed: false, row: 'other' }
-      : { listened: false, reason: 'chat_not_allowed' }
-  },
+  scope: feishuScope,
   // A reply goes only to a chat the Source still receives.
   find: (query) => ({ threads: [], terms: [...new Set(query.match(/om_[A-Za-z0-9_-]+/g) ?? [])] }),
   // A message's Trigger is named after the message, so the one it answers is named after its parent.
@@ -303,10 +306,8 @@ export function feishuKindFor(link: FeishuLink): SourceKind<FeishuConfig> {
       refreshChatNames(link.context ?? sourceContext(host, kind), link, signal),
     channel: {
       allowed: (address, config) =>
-        described.scope!(
-          { meta: { chatId: address.chatId ?? '', direct: address.direct === 'true' } },
-          config,
-        ).listened,
+        feishuScope({ meta: { chatId: address.chatId ?? '', direct: address.direct === 'true' } }, config)
+          .listened,
       send: (_host, message) =>
         sendFeishu(
           io(),
