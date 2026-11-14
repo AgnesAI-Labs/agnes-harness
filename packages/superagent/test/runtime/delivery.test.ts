@@ -102,7 +102,7 @@ describe('delivery', () => {
     const { session, id, delivery } = await setup()
     await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
     session.pending = []
-    delivery.renew(id, 'm1')
+    await delivery.renew(id, 'm1')
     await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
     expect(session.pending.map((item) => item.commandId)).toEqual(['superagent:m1:r1'])
     // Taken before it was renewed: the session read it, and no second copy goes out.
@@ -113,14 +113,44 @@ describe('delivery', () => {
       })),
     )
     session.pending = []
-    delivery.renew(id, 'm1')
+    await delivery.renew(id, 'm1')
     await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
     expect(session.pending).toEqual([])
     // A session that cannot be read delivers nothing.
-    delivery.renew(id, 'm2')
+    await delivery.renew(id, 'm2')
     session.unreadable = true
     await expect(delivery.deliver(id, { id: 'm2', content: 'x', mode: 'followUp' })).rejects.toThrow()
     expect(session.calls.filter((call) => call.method === 'followUp')).toHaveLength(2)
+  })
+
+  it.each(['after', 'before'] as const)(
+    'settles an unconfirmed submission when it renews a message, the copy dropped %s, so the drop is not taken for a delivery',
+    async (drop) => {
+      const { session, id, delivery } = await setup()
+      session.failNext = 'landed'
+      await expect(delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })).rejects.toThrow(
+        'UNCERTAIN',
+      )
+      // A relaunch, or a startup reconcile, drops the copy that landed; the message then goes out once, under a fresh id.
+      if (drop === 'before') session.pending = []
+      await delivery.renew(id, 'm1')
+      expect(session.journal.size).toBe(0)
+      session.pending = []
+      await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
+      expect(session.pending.map((item) => item.commandId)).toEqual(['superagent:m1:r1'])
+    },
+  )
+
+  it('refuses to renew while an unconfirmed submission cannot be settled, and keeps it to settle later', async () => {
+    const { session, id, delivery } = await setup()
+    session.failNext = 'landed'
+    await expect(delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })).rejects.toThrow()
+    session.checkFails = true
+    await expect(delivery.renew(id, 'm1')).rejects.toThrow('UNCERTAIN')
+    session.checkFails = false
+    // Not renewed: the copy that landed is the delivery, and nothing goes out again.
+    await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
+    expect(session.pending.map((item) => item.commandId)).toEqual(['superagent:m1'])
   })
 
   it('rolls one live note per session forward without waking it, and keeps it across a restart', async () => {

@@ -436,7 +436,15 @@ export class SuperagentExecutor implements Executor {
     const putBack = new Set(
       (this.host.store.tickets.get(ticket.id)?.undelivered ?? []).map((id) => messageIdOf(id)),
     )
-    if (later) for (const message of putBack) this.host.delivery.renew(sessionId, message)
+    // A put-back message whose last submission was unconfirmed is settled before its copies drop; while that cannot be
+    // read, nothing drops and the launch waits.
+    if (later)
+      for (const message of putBack)
+        await this.host.delivery.renew(sessionId, message).catch((error: unknown) => {
+          throw new Later(
+            `Whether ${sessionId} received a put-back message cannot be confirmed: ${String(error)}`,
+          )
+        })
     const waiting = (await this.host.sessions.state(sessionId)).pending
     const stale = waiting
       .filter((item) => putBack.has(messageOfCommand(item.commandId) ?? ''))

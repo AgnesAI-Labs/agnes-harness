@@ -34,6 +34,8 @@ export interface FakeSession {
    * Fails the next submission with an uncertain outcome: `landed` after the daemon enqueued it, `lost` before it did.
    */
   failNext?: 'landed' | 'lost' | undefined
+  /** `checkCommand` cannot reach a confirmed answer either: it fails as uncertain and keeps the entry. */
+  checkFails?: boolean
   /** Keeps a steer to a busy session in its inbox until the next step, as the daemon does, instead of taking it at once. */
   queueSteers?: boolean
   /** Archived by its owner: still there, and its preferences say so. */
@@ -140,6 +142,7 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
       checkCommand: record('checkCommand', (commandId: unknown) => {
         const entry = session.journal.get(commandId as string)
         if (!entry) throw new Error(`no unconfirmed command ${String(commandId)}`)
+        if (session.checkFails) throw uncertain(commandId as string)
         session.journal.delete(commandId as string)
         accept(entry.method, entry.input, commandId as string)
       }),

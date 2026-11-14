@@ -43,8 +43,14 @@ const ATTEMPTS = family<Attempt, [session: string, message: string]>('superagent
 
 /** Delivery as the executor uses it: the frozen interface, plus a fresh attempt for a message delivered anew. */
 export interface Redelivery extends Delivery {
-  /** The next delivery of the message goes under a fresh command id, as its earlier copy was dropped or lost. */
-  renew(sessionId: string, messageId: string): void
+  /**
+   * The next delivery of the message goes under a fresh command id, as its earlier copy is dropped or lost. A submission
+   * of it that has no confirmed answer is settled first, under its own id: the daemon answers from its receipt when it
+   * arrived, or takes it now. Either way the copy a caller drops next is a copy it drops, never one a later delivery would
+   * take for the message delivered; this holds whether the caller drops before or after renewing.
+   * @throws when that submission cannot be settled; the caller then drops nothing and tries again later.
+   */
+  renew(sessionId: string, messageId: string): Promise<void>
 }
 
 /** Delivery over the SDK sessions, with each session's live note kept in the store. */
@@ -84,13 +90,16 @@ export class SessionDelivery implements Redelivery {
     this.settled(name, attempt.n)
     return { seq }
   }
-  renew(sessionId: string, messageId: string): void {
+  async renew(sessionId: string, messageId: string): Promise<void> {
     const name = ATTEMPTS(sessionId, messageId)
     const attempt = this.deps.store.get(name)
-    this.deps.store.set(name, {
-      n: (attempt?.n ?? 0) + 1,
-      ...(attempt?.open !== undefined ? { open: attempt.open } : {}),
-    })
+    const open = attempt?.open
+    if (open !== undefined) {
+      const session = await this.deps.sessions.handle(sessionId)
+      if ((await session.pendingCommands()).some((entry) => entry.commandId === open))
+        await session.checkCommand(open)
+    }
+    this.deps.store.set(name, { n: (attempt?.n ?? 0) + 1 })
   }
   private settled(name: ReturnType<typeof ATTEMPTS>, n: number): void {
     if (n) this.deps.store.set(name, { n })

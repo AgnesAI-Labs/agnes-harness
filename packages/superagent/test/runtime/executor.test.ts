@@ -277,6 +277,47 @@ describe('the executor', () => {
     await again.stop()
   })
 
+  it("delivers a person's comment whose delivery was unconfirmed at the restart exactly once, under a fresh id", async () => {
+    const first = setup()
+    const ticketId = first.accept()
+    await first.effects.idle('launch')
+    await first.watched(ticketId)
+    const session = first.worker(ticketId)!
+    session.queueSteers = true
+    session.running = true
+    session.emit({ type: 'turn/start', data: { turn: 1 } })
+    // The comment reaches the daemon but its answer is lost: the submission is left unconfirmed.
+    session.failNext = 'landed'
+    first.engine.receive({ ...message('2'), text: 'also check the logout page' })
+    await vi.waitFor(() => expect(ticketOf(ticketId).delivery).toBeDefined())
+    expect(session.journal.size).toBe(1)
+    const comment = (item: { preview?: string; text?: string }) =>
+      (item.preview ?? item.text ?? '').includes('also check the logout page')
+    const original = session.pending.find(comment)!
+    await first.stop()
+    session.running = false
+    // While the daemon cannot confirm it, the relaunch neither drops the copy nor fails the ticket.
+    session.checkFails = true
+    const held = setup()
+    held.fake.sessions.set(session.id, session)
+    await held.executor.resume()
+    await held.effects.idle('launch')
+    expect(session.pending.filter(comment)).toEqual([original])
+    expect(latestReport(ticketOf(ticketId))).toBeUndefined()
+    await held.stop()
+    session.checkFails = false
+    const again = setup()
+    again.fake.sessions.set(session.id, session)
+    await again.executor.resume()
+    await again.effects.idle('launch')
+    await vi.waitFor(() => expect(ticketOf(ticketId).undelivered).toEqual([]))
+    await again.effects.idle('delivery')
+    const copies = [...session.pending.filter(comment), ...session.taken.filter(comment)]
+    expect(copies.map((item) => item.commandId)).toEqual([`${original.commandId}:r1`])
+    expect(session.journal.size).toBe(0)
+    await again.stop()
+  })
+
   it("opens a worker session its owner deleted again to deliver a person's message", async () => {
     const { accept, effects, engine, fake, worker, watched, stop } = setup()
     const ticketId = accept()
