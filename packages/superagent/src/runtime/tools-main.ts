@@ -364,6 +364,13 @@ export function mainTools(host: MainToolsHost, sessionId: string): Tool[] {
         thread: args.thread,
       }),
     }),
+    ...configurationTools(host, sessionId),
+  ]
+}
+
+/** The tools that save configuration on a person's request: a settings block, the policy sync, and the prompts. */
+function configurationTools(host: MainToolsHost, sessionId: string): Tool[] {
+  return [
     tool({
       name: 'orchestrator_settings_save',
       description:

@@ -1,57 +1,37 @@
 // Adapted from dsh-superagent (MIT)
 /**
- * The composition root: the engine and everything it drives, over the sessions and delivery of the AGH SDK client.
- * `start()` resolves the deployment, opens the main session, starts the GitHub Source and the queues, and re-dispatches
- * what a restart interrupted; `stop()` stops them again and leaves sessions, turns and jobs to the lifecycle that owns
- * cancelling them.
+ * The composition root: the engine and everything it drives, over the sessions and delivery of the AGH SDK client. Every
+ * part is built at once and does nothing until `start()` (see `app-run.ts`); `stop()` stops it again and leaves sessions,
+ * turns and jobs to the lifecycle that owns cancelling them.
  */
-import { mkdir, writeFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
 import type { BundledAppGrant } from '@agnes/extension-api'
-import { MasterAssessor } from '../app/assessment.js'
-import { TextCache } from '../app/cache.js'
-import { Effects } from '../app/effects.js'
-import { environmentOf, ticketEnvironment } from '../app/execution-environment.js'
-import { candidateCard, type LinkHost, repliedTo, sourceLink } from '../app/links.js'
-import { eventNotice, followupNotice, type SessionNotices } from '../app/notices.js'
-import { Outbox } from '../app/outbox.js'
-import { Passes } from '../app/passes.js'
-import { Prompts } from '../app/prompts.js'
-import { Settings, type SettingsSetup } from '../app/settings.js'
-import { type SourceContextDeps, sourceContextOf } from '../app/source-context.js'
+import type { TextCache } from '../app/cache.js'
+import type { Effects } from '../app/effects.js'
+import type { ticketEnvironment } from '../app/execution-environment.js'
+import type { Outbox } from '../app/outbox.js'
+import type { Passes } from '../app/passes.js'
+import type { Prompts } from '../app/prompts.js'
+import type { Settings } from '../app/settings.js'
 import type { Store } from '../app/store.js'
-import { evalsHealth } from '../app/views/overview.js'
-import { Engine, type EngineForSettings, type Ticket, type Trigger } from '../core/index.js'
-import {
-  type Deployment,
-  type Machine,
-  machineOf,
-  type Probe,
-  resolveDeployment,
-  workerProbe,
-} from '../deployment.js'
-import { Commands } from '../infra/commands.js'
-import { HealthBoard } from '../infra/health.js'
-import { family } from '../kv.js'
-import { settingsPolicy } from '../policy.js'
-import { SetupError, type SetupProblem } from '../setup.js'
-import { startGithub } from '../sources/github.js'
-import { pullEndNotices } from '../sources/github-pull.js'
-import { type SourceContext, type SourceHost, health as sourceHealth } from '../sources/host.js'
-import type { ImageSink } from '../sources/kind.js'
-import { SourceRegistry } from '../sources/registry.js'
-import { sourceTrigger } from './assignment.js'
+import type { Engine, Ticket } from '../core/index.js'
+import { type Deployment, type Machine, machineOf, type Probe } from '../deployment.js'
+import type { SetupProblem } from '../setup.js'
+import type { SourceHost } from '../sources/host.js'
+import type { SourceRegistry } from '../sources/registry.js'
+import { appState, buildCore, unavailableOf } from './app-core.js'
+import { buildEngine } from './app-engine.js'
+import { type AppRun, appRun } from './app-run.js'
+import { buildTools } from './app-tools.js'
 import { type Redelivery, SessionDelivery } from './delivery.js'
-import { type ExecutorSessions, messageIdOf, SuperagentExecutor } from './executor.js'
+import type { ExecutorSessions, SuperagentExecutor } from './executor.js'
 import type { HookState } from './hook-state.js'
 import { createHookState } from './hooks.js'
-import { aghHome, PromptBinding, SkillFiles } from './prompt.js'
+import type { PromptBinding } from './prompt.js'
 import type { ModelCatalog } from './resources.js'
-import { modelCatalog, RoleModels, resolveRoleModel } from './role-models.js'
-import { ORCHESTRATOR_KEY, type SessionClient, SessionRegistry, Sessions } from './sessions.js'
-import { handleTool, type ToolAnswer, type ToolCall, type ToolsHost } from './tools.js'
+import { RoleModels } from './role-models.js'
+import { type SessionClient, SessionRegistry, Sessions } from './sessions.js'
+import { handleTool, type ToolAnswer, type ToolCall } from './tools.js'
 
-const now = (): string => new Date().toISOString()
 export interface Log {
   warn(message: string): void
 }
@@ -134,427 +114,58 @@ export interface AppDeps {
   reconciled?: boolean
 }
 
-/** The rolling notices of the main session: the newest of each name, newest first. */
-const NOTICES = family<{ name: string; line: string }[], [session: string]>('superagent-notices:')
-const MAX_NOTICES = 10
-
 export function createSuperagentApp(deps: AppDeps): SuperagentApp {
-  const { store, sessions, delivery } = deps
-  const client = deps.grant.client as SessionClient
-  const machine = deps.machine ?? machineOf({ stateDir: deps.grant.stateDirectory })
-  const stopped = new AbortController()
-  const lifetime = stopped.signal
-  const board = new HealthBoard()
-  const runtimeHealth = board.claim('runtime', { state: 'starting', detail: '' })
-  const masterId = ORCHESTRATOR_KEY
-  let phase: 'idle' | 'starting' | 'setup' | 'ready' | 'stopping' = 'idle'
-  let deployment: Deployment | undefined
-  let problem: SetupProblem | undefined
-  let quiet = 0
-  const stops: (() => Promise<void>)[] = []
-  const draining: Promise<unknown>[] = []
-  const deployed = (): Deployment => {
-    if (!deployment)
-      throw new Error(`Superagent is waiting for setup: ${problem?.detail ?? 'setup has not run'}`)
-    return deployment
-  }
-  const closing = () => phase === 'stopping'
-  const paused = () => !deployment || store.settings().paused
-  const probe = deps.probe ?? workerProbe(machine.stateDir, machine.stateDir, lifetime)
-
-  const sources: SourceRegistry = new SourceRegistry(
-    () => store.settings(),
-    board,
-    (kind) => {
-      if (kind.policy?.sync && phase === 'ready' && settings.syncable().includes(kind.kind))
-        void settings.sync(kind.kind).catch(() => {})
-      return () => {}
-    },
-  )
-  const environment = () =>
-    deployment ? environmentOf({ deployment, sources, settings: store.settings() }) : undefined
-  const prompts = new Prompts(
-    store,
-    () => machine.promptMaxChars.get(),
-    environment,
-    () => false,
-  )
-  const commands = new Commands(deployed, deps.commandEnvironment ?? {}, lifetime)
-  const effects = new Effects(store, board)
-  const sourceLinks = new TextCache(200_000)
-  const links: LinkHost = { store, links: sourceLinks, commands, sources, lifetime }
-  const link = (trigger: Trigger, signal?: AbortSignal) => sourceLink(links, trigger, signal)
-  const environmentOfTicket = (ticket: Ticket) => {
-    const trigger = sourceTrigger({ store }, ticket)
-    return ticketEnvironment({
-      deployment: deployed(),
-      sources,
-      settings: store.settings(),
-      ticket,
-      ...(trigger ? { trigger } : {}),
-    })
-  }
-
-  // Reports and candidates are steered into the main session in queue order; notices roll its live note forward.
-  effects.handle(
-    'relay',
-    async ({ text }, requestId) => {
-      await delivery.deliver(masterId, { id: messageIdOf(requestId), content: text, mode: 'steer' })
-    },
-    { ordered: true },
-  )
-  effects.handle(
-    'notice',
-    async ({ value, summary }, name) => {
-      const entries = (store.get(NOTICES(masterId)) ?? []).filter((entry) => entry.name !== name)
-      entries.unshift({ name, line: `${now()} ${summary}: ${JSON.stringify(value)}` })
-      store.set(NOTICES(masterId), entries.slice(0, MAX_NOTICES))
-      delivery.notify(masterId, {
-        content: `Superagent notices, newest first:\n${entries
-          .slice(0, MAX_NOTICES)
-          .map((entry) => `- ${entry.line}`)
-          .join('\n')}`,
-      })
-    },
-    { ordered: true },
-  )
-  const notices: SessionNotices & { relay(id: string, text: string): void } = {
-    notify: (name, value, summary) => {
-      effects.enqueue('notice', name, { value, summary })
-      // A saved role model applies to the role's open sessions.
-      if (name === 'settings:eval' || name === 'settings:executor')
-        void deps.roleModels?.sync().catch((error: unknown) => deps.log.warn(String(error)))
-    },
-    delivery: async (name) => {
-      await effects.idle('notice')
-      return effects.pending('notice', name) ? 'pending' : 'injected'
-    },
-    relay: (id, text) => effects.enqueue('relay', id, { text }),
-  }
-
-  const setup: SettingsSetup = {
-    configured: () => deployment !== undefined,
-    checkAccounts: async (block, value) => {
-      if (block !== 'source:github') return
-      await resolveDeployment(machine, value.sources.github?.config, probe).catch((error: unknown) => {
-        if (!(error instanceof SetupError) || error.place === 'github') throw error
-      })
-    },
-    blockCommands: (blocked) => deps.blockCommands?.(blocked) ?? Promise.resolve(),
-    restart: () => {
-      setTimeout(() => void reconfigure(), 0)
-    },
-  }
-  let engine!: Engine
-  let passes!: Passes
-  const sourceDeps: SourceContextDeps = {
-    store,
-    outbox: { send: (message) => outbox.send(message) },
-    engine: {
-      bindThread: (...args) => engine.bindThread(...args),
-      threadClosed: (...args) => engine.threadClosed(...args),
-    },
-    commands,
-    sources,
-    get deployment() {
-      return deployed()
-    },
-    get ready() {
-      return started
-    },
-    configured: () => deployment !== undefined,
-    get setupProblem() {
-      return problem
-    },
-    get feishuProblem() {
-      return undefined
-    },
-    receive: (trigger) => passes.receive(trigger),
-  }
-  const sourceHost: SourceHost = {
-    sources,
-    context: (kind) => sourceContextOf(sourceDeps, kind),
-  }
-  const policyChanged: EngineForSettings['policyChanged'] = (from, to, effectsOf) => {
-    engine.policyChanged(from, to, effectsOf)
-  }
-  const settings = new Settings({
-    store,
-    sources,
-    engine: { policyChanged },
-    health: board,
-    resolveModel: (model) => resolveRoleModel(client, model),
-    lifetime,
-    sessions: notices,
-    sourceHost,
-    setup,
-    requestPass: () => passes.request(),
+  const state = appState()
+  let run: AppRun | undefined
+  const core = buildCore(deps, state)
+  const parts = buildEngine(deps, state, core, () => {
+    setTimeout(() => void run?.reconfigure(), 0)
   })
-  const executor = new SuperagentExecutor({
-    get engine() {
-      return engine
-    },
-    store,
-    effects,
-    health: board.claim('worker'),
-    models: board.claim('models', {
-      state: 'ready',
-      detail: 'No worker is waiting out a passing model failure',
-    }),
-    stateDir: machine.stateDir,
-    lifetime,
-    sessions,
-    delivery,
-    relay: (id, text) => notices.relay(id, text),
-    closing,
-    paused,
-    environment: environmentOfTicket,
-    sourceLink: link,
-    repliedTo: (trigger) => repliedTo({ store, sources }, trigger),
-  })
-  const assessor = new MasterAssessor({
-    get engine() {
-      return engine
-    },
-    commands,
-    get deployment() {
-      return deployed()
-    },
-    effects,
-    settings: () => store.settings(),
-    paused,
-    threadContext: (trigger) => sources.threadContext(trigger),
-    deliver: async (id, text) => {
-      await delivery.deliver(masterId, { id: messageIdOf(id), content: text, mode: 'steer' })
-    },
-    candidateCard: (candidate) => candidateCard(links, candidate),
-  })
-  const outbox = new Outbox({ store, effects, sources, commands, paused })
-  engine = new Engine({
-    repo: store,
-    scope: sources,
-    policy: () => settingsPolicy(store.settings(), sources),
-    assessor,
-    executor,
-    outbox,
-    prepareTicket: (ticket, outcome) => executor.prepare(ticket, outcome),
-    emit: (event) => {
-      // The main session hears of domain events it did not initiate itself.
-      const notice = quiet ? undefined : eventNotice(event, (id) => store.tickets.get(id))
-      if (notice) notices.notify(...notice)
-      const followed =
-        !quiet &&
-        (event.type === 'trigger.received' ||
-          event.type === 'ticket.resumed' ||
-          event.type === 'trigger.followup')
-      const followup = followed ? followupNotice(store, sources, event.data.triggerId) : undefined
-      if (followup) notices.relay(followup.id, followup.text)
-      const ended = event.type === 'ticket.ended' ? store.tickets.get(event.data.ticketId) : undefined
-      if (ended) store.afterCommit(() => deps.ticketEnded?.(ended.id))
-      if (ended && deployment) {
-        const request = store.triggers.get(ended.origin.triggerId)?.text ?? ''
-        for (const message of pullEndNotices(ended, request, deployment.repository)) outbox.send(message)
-      }
-    },
-  })
-  const evals = board.claim('evals', { state: 'ready', detail: 'No unavailable Eval in the last hour' })
-  passes = new Passes({
-    engine: {
-      receive: (trigger) => engine.receive(trigger),
-      evaluateDue: () => {
-        engine.evaluateDue()
-        evals.set(evalsHealth(store))
-      },
-    },
-    effects,
-    health: runtimeHealth,
-    lifetime,
-    configured: () => deployment !== undefined,
-    closing,
-  })
-  const skills = new SkillFiles(prompts, deps.skillsRoot ?? join(aghHome(), 'skills'))
-  const binding = new PromptBinding({
-    prompts,
-    store,
-    environment: (ticket) => (deployment ? environmentOfTicket(ticket) : undefined),
-    skills,
-  })
-  const pages = new TextCache(4_000_000)
-  const images: ImageSink = {
-    check: async () => ({ maxBytes: 10 * 1024 * 1024 }),
-    save: async ({ data, name }) => {
-      const dir = join(machine.stateDir, 'images')
-      await mkdir(dir, { recursive: true })
-      const path = join(dir, `${Date.now()}-${basename(name)}`)
-      await writeFile(path, data)
-      return { path, read: 'Read this file with the read tool to see the image.' }
-    },
-  }
-  const models = () => modelCatalog(client)
-  const resources = {
-    store,
-    pages,
-    prompts,
-    commands,
-    masterId,
-    promptVersion: (id: string) => binding.promptVersion(id),
-    mayRead: (id: string, revision: number) => binding.mayRead(id, revision),
-    feishuPageSize: () => 50,
-    sourceLink: link,
-    transcript: (id: string) => sessions.transcript(id),
-    sessions: {
-      status: () => ({
-        ...binding.status(sessions.registry.ids()),
-        notificationPending: effects.pending('notice', 'prompts'),
-      }),
-      modelRetry: (id: string | false | undefined) => executor.modelRetry(id),
-    },
-    settings,
-    models,
-  }
-  const github = (): SourceContext => sourceHost.context({ kind: 'github', health: ['github'] })
-  const toolsHost: ToolsHost = {
-    registry: sessions.registry,
-    store,
-    unavailable: () => unavailable(),
-    main: {
-      engine,
-      store,
-      prompts,
-      sessions: notices,
-      settings,
-      assessor,
-      resources,
-      images,
-      log: deps.log,
-      requestPass: () => passes.request(),
-      sendReplies: () => outbox.sent(),
-      quietly: (run) => {
-        quiet++
-        try {
-          return run()
-        } finally {
-          quiet--
-        }
-      },
-    },
-    executor: {
-      engine,
-      store,
-      sessions: notices,
-      resources,
-      get github() {
-        return github()
-      },
-      sendReplies: () => outbox.sent(),
-    },
-  }
-  const unavailable = (): string | undefined =>
-    phase === 'ready'
-      ? undefined
-      : phase === 'setup'
-        ? `Superagent is waiting for setup: ${problem?.detail ?? 'setup has not run'}`
-        : phase === 'stopping'
-          ? 'Superagent is stopping'
-          : 'Superagent is starting'
-
-  let started: Promise<void> = Promise.resolve()
-  async function configure(): Promise<boolean> {
-    try {
-      deployment = await resolveDeployment(machine, store.settings().sources.github?.config, probe)
-      problem = undefined
-      return true
-    } catch (error) {
-      if (!(error instanceof SetupError)) throw error
-      problem = error.problem
-      deployment = undefined
-      return false
-    }
-  }
-  /** Opens the main session and starts the Sources and queues of a configured deployment. */
-  async function begin(): Promise<void> {
-    await sessions.ensureOrchestrator()
-    skills.write(prompts.current())
-    for (const id of settings.syncable()) await settings.sync(id).catch(() => {})
-    if (closing()) return
-    stops.push(startGithub(sourceHost), ...(deps.sources?.(sourceHost) ?? []))
-    await executor.resume(!deps.reconciled)
-    passes.start()
-    effects.start()
-    phase = 'ready'
-    runtimeHealth.set({ state: 'ready', detail: 'Superagent is ready', at: now() })
-  }
-  async function reconfigure(): Promise<void> {
-    if (phase !== 'setup' && phase !== 'ready') return
-    const was = deployment !== undefined
-    if ((await configure()) && !was && phase === 'setup') await begin()
-  }
-
+  const unavailable = () => unavailableOf(state)
+  const tools = buildTools(deps, state, core, parts, unavailable)
+  const running = appRun(deps, state, core, parts, tools)
+  run = running
   return {
-    executor,
-    engine,
+    executor: parts.executor,
+    engine: parts.engine,
     parts: {
-      store,
-      machine,
-      engine,
-      settings,
-      prompts,
-      sources,
-      passes,
-      effects,
-      outbox,
+      store: deps.store,
+      machine: core.machine,
+      engine: parts.engine,
+      settings: parts.settings,
+      prompts: core.prompts,
+      sources: core.sources,
+      passes: parts.passes,
+      effects: core.effects,
+      outbox: parts.outbox,
       get health() {
-        return board.all
+        return core.board.all
       },
-      sourceLinks,
-      binding,
-      deployment: () => deployment,
-      setupProblem: () => problem,
-      models,
-      ticketEnvironment: environmentOfTicket,
-      sourceHost,
+      sourceLinks: core.sourceLinks,
+      binding: tools.binding,
+      deployment: () => state.deployment,
+      setupProblem: () => state.problem,
+      models: tools.models,
+      ticketEnvironment: core.environmentOfTicket,
+      sourceHost: parts.sourceHost,
     },
     unavailable,
-    async start() {
-      if (phase !== 'idle') throw new Error('Superagent was started already')
-      phase = 'starting'
-      started = (async () => {
-        await mkdir(machine.stateDir, { recursive: true, mode: 0o700 })
-        if (!(await configure())) {
-          phase = 'setup'
-          runtimeHealth.set({ ...sourceHealth('paused', 'setupPending'), at: now() })
-          return
-        }
-        await begin()
-      })()
-      await started
-    },
-    stopSignal(_reason) {
-      if (phase === 'stopping') return
-      phase = 'stopping'
-      // Each stop begins synchronously: polling ends, the effect queue (and with it the outbox) takes nothing more,
-      // and the executor, which reads the phase, dispatches nothing new.
-      draining.push(passes.stop(), ...stops.splice(0).map((stop) => stop()), effects.drain())
-      stopped.abort()
-      assessor.stop()
-    },
-    async drain() {
-      await Promise.allSettled(draining.splice(0))
-      await executor.shutdown()
-    },
+    start: () => running.start(),
+    stopSignal: (reason) => running.stopSignal(reason),
+    drain: () => running.drain(),
     async stop(reason) {
-      this.stopSignal(reason)
-      await this.drain()
+      running.stopSignal(reason)
+      await running.drain()
     },
     hookState: (sessionIds) =>
       createHookState({
-        registry: sessionIds ? only(sessions.registry, sessionIds) : sessions.registry,
-        store,
+        registry: sessionIds ? only(deps.sessions.registry, sessionIds) : deps.sessions.registry,
+        store: deps.store,
         unavailable,
-        prompt: binding,
-        liveNote: (id) => delivery.liveNote(id),
+        prompt: tools.binding,
+        liveNote: (id) => deps.delivery.liveNote(id),
       }),
-    handleTool: (call) => handleTool(toolsHost, call),
+    handleTool: (call) => handleTool(tools.toolsHost, call),
   }
 }
 
