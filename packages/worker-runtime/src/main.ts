@@ -203,6 +203,22 @@ export async function runWorker(
   // save can run after the turn, so the session is named here rather than taken from the context.
   const refinementSave: NonNullable<HostOptions['refinementSave']> = (sessionKey, params, signal) =>
     sharedChannel.run(sessionKey, () => sharedChannel.request('refinement-save', params, signal))
+  const autoTitleEligible: NonNullable<HostOptions['autoTitleEligible']> = async (sessionKey, signal) => {
+    if (!host?.kernel.sessions.get(sessionKey)) return false
+    try {
+      return await sharedChannel.run(
+        sessionKey,
+        async () =>
+          (await sharedChannel.request(
+            'auto-title-eligible',
+            {},
+            AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(15_000)]),
+          )) === true,
+      )
+    } catch {
+      return false
+    }
+  }
   const mcpManage: NonNullable<HostOptions['mcpManage']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('MCP management session mismatch')
@@ -402,6 +418,7 @@ export async function runWorker(
           scheduling,
           skillInstall,
           refinementSave,
+          autoTitleEligible,
           mcpManage,
           pluginManage,
           requestMedia,
@@ -444,6 +461,7 @@ export async function runWorker(
             scheduling,
             skillInstall,
             refinementSave,
+            autoTitleEligible,
             mcpManage,
             pluginManage,
             requestMedia,

@@ -253,6 +253,7 @@ export type RequestFrame = {
     | 'mcp-manage'
     | 'mcp-manage-abort'
     | 'refinement-save'
+    | 'auto-title-eligible'
   params: unknown
 }
 export type WorkerCommandFrame = {
