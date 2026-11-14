@@ -339,6 +339,12 @@
     },
     {
       "path": "packages/judgment-ui"
+    },
+    {
+      "path": "packages/superagent"
+    },
+    {
+      "path": "packages/superagent/tsconfig.test.json"
     }
   ]
 }

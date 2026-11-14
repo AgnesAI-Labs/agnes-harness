@@ -1,0 +1,16 @@
+{
+  "name": "@agnes/superagent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "zod": "4.5.4"
+  },
+  "license": "Apache-2.0 AND MIT"
+}

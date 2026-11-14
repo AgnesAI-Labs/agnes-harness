@@ -24,6 +24,12 @@ following material retains its original notices and license terms:
   also include it as THIRD-PARTY-NOTICES/jevloop.txt.
 - Bundled Skill Helper in packages/package-manager/bundled-plugins/skill-helper:
   Copyright (c) 2026 2812348473. MIT License. See its local LICENSE.
+- Superagent in packages/superagent: ported from dsh-superagent
+  (https://github.com/deepseek-ai/dsh-superagent-prototype, commit
+  8c32a9dc5d72c033816c6a8110b37f40cf94fba4). Copyright (c) 2026 DeepSeek Harness
+  Team. MIT License. The package keeps the original license in LICENSE-MIT, and
+  each copied file carries an "Adapted from dsh-superagent (MIT)" header. The
+  package also depends on zod (MIT); see third-party/runtime-dependencies.json.
 - Bundled Document Reader in packages/package-manager/bundled-plugins/document-reader:
   its own code is Apache-2.0. Pinned PDF, Word, ZIP and offline OCR dependencies
   retain their upstream licenses; the plugin payload includes THIRD-PARTY-NOTICES.

@@ -1721,6 +1721,21 @@ importers:
         specifier: 0.28.2
         version: 0.28.2
 
+  packages/superagent:
+    dependencies:
+      '@agnes/extension-api':
+        specifier: workspace:*
+        version: link:../extension-api
+      '@agnes/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@agnes/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      zod:
+        specifier: 4.5.4
+        version: 4.5.4
+
   packages/system-node:
     dependencies:
       undici:

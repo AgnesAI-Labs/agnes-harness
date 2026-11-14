@@ -124,6 +124,7 @@ const LAYER: Record<string, number> = {
   '@agnes/loop-default': 2, // First-party loop plugin consumes the author API.
   '@agnes/judgment': 2,
   '@agnes/judgment-ui': 5,
+  '@agnes/superagent': 4, // Bundled app plugin: consumes the public author contracts and the SDK client.
   '@agnes/loop-jev': 2, // First-party Jev loop plugin consumes the author API.
 
   '@agnes/ai': 3,
