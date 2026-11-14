@@ -541,6 +541,50 @@ it('keeps the grant and its client usable for the shutdown, then fences and clos
   }
 })
 
+it('refuses the grant of a retired app until its shutdown begins, when a publication waits for an earlier one', async () => {
+  // The second instance is still starting when the next publication retires it: that publication aborts its
+  // lifetime at once, but stops it only once the start returns, which the gate holds. The app is still current.
+  let release: () => void = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const seen: Record<string, unknown>[] = []
+  let leases: { closed: boolean; context: BundledAppClientContext }[] = []
+  const inits: ProfileManagedInit[] = []
+  const recording = recordingShutdown(seen, () => leases.slice(-1), inits)
+  const app = await harness({
+    definition: {
+      async start(init: ProfileManagedInit) {
+        const value = await recording.start(init)
+        if (inits.length === 2) await gate
+        return value
+      },
+    },
+  })
+  leases = app.leases
+  await app.managed.publish('upgrade', true)
+  await vi.waitFor(() => expect(inits).toHaveLength(2))
+  const grant = inits[1]?.bundledApp
+  if (!grant) throw new Error('grant missing')
+  grant.assertCurrent()
+  const retiring = app.managed.publish('upgrade', true)
+  try {
+    // Retired but not yet told to shut down: neither the grant nor its client may act or reconnect.
+    denied(() => grant.assertCurrent())
+    expect(() => app.leases[1]?.context.assertCurrent()).toThrow()
+    await expect(grant.channels.listChats('team')).rejects.toMatchObject({
+      code: AGNES_ERRORS.CAPABILITY_DENIED,
+    })
+  } finally {
+    release()
+    await retiring
+  }
+  // Its shutdown, when it came, still had the grant; afterwards the grant is closed for good.
+  expect(seen.at(-1)).toMatchObject({ grant: true, connect: true, signal: false, closed: false })
+  denied(() => grant.assertCurrent())
+  expect(app.leases[1]?.closed).toBe(true)
+})
+
 it('stops a bundled app at once when a target drops its row, and starts it again when a later one keeps it', async () => {
   const seen: Record<string, unknown>[] = []
   let leases: { closed: boolean; context: BundledAppClientContext }[] = []

@@ -247,9 +247,11 @@ export class ProfileManagedResources {
     let stopping: Promise<void> | undefined
     let app: ReturnType<typeof openBundledApp> | undefined
     // The bundled app's grant has its own fence. The lifetime aborts before `onShutdown` runs, and the
-    // shutdown needs the grant's client to stop what the app started; the grant is fenced only when the
-    // app is closed, right after `onShutdown` returns or its deadline passes.
+    // shutdown needs the grant's client to stop what the app started: only while the shutdown handler
+    // runs does the grant pass without being current. The grant is closed for good when the app is
+    // closed, right after `onShutdown` returns or its deadline passes.
     const appFence = new AbortController()
+    let shuttingDown = false
     const closeApp = async () => {
       appFence.abort()
       await app?.close()
@@ -259,7 +261,13 @@ export class ProfileManagedResources {
       if (!shutdownResult) {
         const ownConfirmation = startupComplete ? r.shutdownConfirmation : undefined
         const work = Promise.resolve()
-          .then(() => shutdown?.(reason))
+          .then(() => {
+            shuttingDown = true
+            return shutdown?.(reason)
+          })
+          .finally(() => {
+            shuttingDown = false
+          })
           .then((result) => {
             if (result?.state === 'settled' && ownConfirmation) confirmManagedShutdown(ownConfirmation)
             return result
@@ -346,8 +354,9 @@ export class ProfileManagedResources {
         app = openBundledApp(input.bundledApp, {
           signal: appFence.signal,
           assertCurrent: () => {
-            // A resource that is stopping is no longer current, but its shutdown still runs on the grant.
-            if (lifetime.signal.aborted) return
+            // A resource that is stopping is no longer current, but its shutdown handler still runs on the grant.
+            if (shuttingDown && !appFence.signal.aborted) return
+            lifetime.signal.throwIfAborted()
             input.assert()
             if (this.current && !this.current(input.owner, input.integrity, input.revision))
               throw rpcError('CAPABILITY_DENIED')
