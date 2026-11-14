@@ -159,6 +159,9 @@ export interface ManagedSessions {
    * `SESSION_ARCHIVED` (thrown, never returned). Invalid parameters are `INVALID_PARAMS`. Added in 5.18.
    */
   admitInput(sessionId: string, input: ManagedInputAdmission): Promise<ManagedInputResult>
-  /** The current state of an input by key, without changing anything. Added in 5.18. */
+  /**
+   * The current state of an input by key. It never changes the request, but it may submit a held input
+   * that has since become eligible, as an idle session or the platform's periodic sweep would. Added in 5.18.
+   */
   inputResult(sessionId: string, input: { key: string }): Promise<ManagedInputResult>
 }

@@ -256,6 +256,8 @@ export function inputWorld(over: Partial<Pick<OwnerInputEngineDeps, 'faults'>> =
       binding ? { ...binding, inputDigest: 'first-input' } : undefined,
     )
     records.markStarted(sessionId)
+    // Opening a managed session needs the workspace grant; the engine's own gates are `gates.pass`.
+    records.grant(owner, '/work/repo')
   }
   const ctx = (sessionId: string): AdmitContext => ({
     caller,

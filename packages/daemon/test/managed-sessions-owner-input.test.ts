@@ -322,6 +322,28 @@ describe('managed sessions bound to a task', () => {
     expect(w.core.ran(sessionId, 'text of r1')).toBe(0)
   })
 
+  it('a disabled package whose grant was pruned before the engine is set has its input withdrawn at the first sweep', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    expect(w.core.state.inbox.get(sessionId)).toHaveLength(1)
+    // The package is switched off, then boot recovery prunes its grant while the holder has no engine.
+    w.enabled.delete(owner)
+    const otherPkg = { packageId: other.packageId, sessions: true, owners: new Set([other.owner]) }
+    await pruneOrphanGrants(w.records, async () => [otherPkg])
+    expect(w.records.granted(owner, '/work/repo')).toBe(false)
+    await engine.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({
+      state: 'needsOwner',
+      reason: 'grantRevoked',
+      submittedSeq: null,
+    })
+    expect(w.core.state.inbox.get(sessionId)).toEqual([])
+    expect(w.core.take(sessionId)).toBeUndefined()
+    expect(w.core.ran(sessionId, 'text of r1')).toBe(0)
+  })
+
   it('a package released before the engine is set keeps its submitted inputs until the first sweep withdraws and deletes them', async () => {
     const w = world()
     const engine = w.sessions.engine as OwnerInputEngine
@@ -408,6 +430,72 @@ describe('managed sessions bound to a task', () => {
     w.enabled.add(owner)
     await engine.sweep()
     expect(w.core.state.submits.map((s) => s.text)).toEqual(['text of r1'])
+  })
+
+  it('a sweep does not start a confirmed queued input while its package is disabled', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    await w.port().admitInput(sessionId, admission('k1', 'r1'))
+    expect(w.core.state.inbox.get(sessionId)).toHaveLength(1)
+    const submits = w.core.state.submits.length
+    w.enabled.delete(owner)
+    await engine.sweep()
+    await engine.sweep()
+    // Paused: left in the inbox, neither re-kicked nor taken back, and the row is unchanged.
+    expect(w.core.state.submits).toHaveLength(submits)
+    expect(w.core.state.withdrawals).toEqual([])
+    expect(w.core.state.inbox.get(sessionId)).toHaveLength(1)
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued', reason: 'eligible' })
+    // Enabled again, the next sweep re-kicks it once under the same id.
+    w.enabled.add(owner)
+    await engine.sweep()
+    expect(w.core.state.submits.slice(submits)).toEqual([
+      expect.objectContaining({ commandId: w.core.state.submits[0]?.commandId, dedupe: true }),
+    ])
+  })
+
+  it('a gate that cannot be read keeps the input held; only a refused gate gives it to the owner', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    const policy = w.ports.sessions.policy
+    const unreadable = async () => {
+      throw new Error('transport closed')
+    }
+    // A held input while the daemon shuts down: the turn ends, but the live policy cannot be read.
+    w.core.state.running.add(sessionId)
+    expect(await w.port().admitInput(sessionId, admission('k1', 'r1'))).toMatchObject({ reason: 'busy' })
+    w.core.state.running.delete(sessionId)
+    w.ports.sessions.policy = unreadable
+    await engine.advance(sessionId)
+    await engine.sweep()
+    expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({
+      state: 'enqueued',
+      reason: 'busy',
+      version: 2,
+    })
+    expect(w.core.state.submits).toEqual([])
+    // An admission whose gates cannot be read is not answered; the key stays queued for the retry.
+    await expect(w.port(caller, 'r2').admitInput(sessionId, admission('k2', 'r2'))).rejects.toThrow(
+      'transport closed',
+    )
+    expect(w.inputs.get(owner, sessionId, 'k2')).toMatchObject({ state: 'queued' })
+    // Readable again: the held input runs, and the retried admission completes.
+    w.ports.sessions.policy = policy
+    await engine.sweep()
+    expect(w.core.state.submits.map((entry) => entry.text)).toEqual(['text of r1'])
+    expect(await w.port(caller, 'r2').admitInput(sessionId, admission('k2', 'r2'))).toMatchObject({
+      state: 'enqueued',
+    })
+    // A gate that refuses still gives the input to the owner.
+    w.ports.sessions.policy = async () => ({ fullAccess: false, osBoundary: false, outwardCheckpoint: false })
+    w.core.state.running.add(sessionId)
+    await w.port(caller, 'r3').admitInput(sessionId, admission('k3', 'r3'))
+    expect(w.inputs.get(owner, sessionId, 'k3')).toMatchObject({
+      state: 'needsOwner',
+      reason: 'grantRevoked',
+    })
   })
 
   it('archiving a session retains its held inputs', async () => {

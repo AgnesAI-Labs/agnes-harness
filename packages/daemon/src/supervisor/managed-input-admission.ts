@@ -77,7 +77,10 @@ export interface OwnerInputEngineDeps {
   inputs: ManagedSessionInputs
   /** The lane `send` uses, `session\0<id>`, so an input and a send never interleave. */
   serial: <T>(key: string, work: () => Promise<T>) => Promise<T>
-  /** The start gates and the running gate; false instead of a throw. */
+  /**
+   * The start gates and the running gate: false when one refuses. Rejects when a gate cannot be read; an
+   * admission then fails with its key left `queued`, and held inputs stay as they are until a later pass.
+   */
   gatesPass(record: ManagedSessionRecord): Promise<boolean>
   /** The identity a submitted input carries: `managedSessionActor`. */
   actor(actorOwner: string, record: ManagedSessionRecord): Actor

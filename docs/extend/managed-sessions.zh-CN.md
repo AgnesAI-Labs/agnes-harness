@@ -96,7 +96,7 @@ const result = await init.sessions.admitInput(sessionId, {
   target: { taskId: 'task-42', taskGeneration: 3, startKey: 'task-42' },
   input: { kind: 'ownerMessage', receiptId: event.receiptId },
 })
-// 之后或崩溃后：读同一状态，不改变任何东西
+// 之后或崩溃后：读同一条输入的状态（不会成为新的请求）
 const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1' })
 ```
 
@@ -105,7 +105,7 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 | `input.kind` | 原文 | 平台做什么 |
 | --- | --- | --- |
 | `ownerMessage` | 从不传入。给出[渠道事件](channel-targets.zh-CN.md#回执)的 `receiptId`。 | 按宿主记下的回执取出原文。回执必须属于你的服务和主人当前的配对，一张回执只准入一次。 |
-| `recoveryContinuation` | 从不传入。给出 `turnEndSeq`，即已结束回合的 seq。 | 核对该回合是最后一个、以取消或失败结束、之后没有新的回合开始；通过则写入固定的续跑文字，否则为 `recoveryUnknown`。 |
+| `recoveryContinuation` | 从不传入。给出 `turnEndSeq`，即已结束回合的 seq。 | 核对该回合是最后一个、以取消或失败结束、之后没有新的回合开始；通过则提交固定的英文句子 "Continue the interrupted turn without treating this recovery as a new owner decision."，否则为 `recoveryUnknown`。 |
 | `legacyOwnerMessage` | 以 `text` 传入，另带 `originalInbox: string \| null`。 | 来源无法认证，结果一律是 `recoveryUnknown`；只有主人在 Web 上选择“投递”，原文才会执行。 |
 
 结果是下列状态之一。除 `legacySend` 与 `absent` 外，都带 `inputId`（等于 `key`）、`version`（每次变化加一）、`reason` 和 `reviewLocation`。
@@ -113,16 +113,16 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 | `state` | 含义 | 该怎么做 |
 | --- | --- | --- |
 | `queued` | key 已占下但记录未完成（崩溃在两步之间）。 | 再调一次 `admitInput`。 |
-| `enqueued` | 已准入。平台持有原文，等会话空闲且开会话检查通过。 | 轮询 `inputResult`。 |
+| `enqueued` | 已准入。平台持有原文，等会话空闲且开会话检查通过。 | 轮询 `inputResult`。它从不改动请求本身，但持有的输入此时已可投时会顺带提交；会话空闲时和定期巡检时平台也会这样做。 |
 | `consumed` | 某一轮已取走原文，附带 `turn` 和 `seq`。终态。 | 完成。 |
 | `retained` | 保留不投：主人在 Web 上选了保留或丢弃，或会话已归档。终态。 | 完成。 |
-| `needsOwner` | 无法证明可投：回执查不到或不属于你、配对已变、授权已撤，或开会话检查不通过（准入时与提交时都查）。 | 通知主人，不要重试；由主人在 Web 上处置。 |
+| `needsOwner` | 无法证明可投：回执查不到或不属于你、配对已变、授权已撤，或开会话检查不通过（准入时与提交时都查）。原因为 `ownerDiscarded` 时，表示已提交的输入在平台之外被移出会话收件箱，原文为主人保留。 | 通知主人，不要重试；由主人在 Web 上处置。 |
 | `waitingQuestion` | 会话有未答的问题。平台持有输入，问题关闭后自动往下推进。 | 通知主人并等待。 |
 | `recoveryUnknown` | `legacyOwnerMessage`，或校验不过的 `recoveryContinuation`。 | 通知主人；由主人在 Web 上处置。 |
 | `legacySend` | key 只出现在旧 `send` 台账。`delivery` 为 `consumed`、`pending` 或 `unknown`。 | `consumed` 是终态；否则以 `legacyOwnerMessage` 重新提交。 |
 | `absent` | 平台不知道这个 key。仅当会话创建于输入记录启用之后，`historyCoverage` 才是 `complete`，否则为 `partial`。 | 仅 `complete` 时准入；`partial` 只发通知。 |
 
-`reason` 取 `eligible`、`busy`、`questionOpen`、`legacySourceUnknown`、`recoveryUnverified`、`receiptUnknown`、`pairingChanged`、`grantRevoked`、`sessionArchived`、`ownerRetained`、`ownerDiscarded` 之一。只当文字显示，取值可增。`reviewLocation` 是 `/?session=<sessionId>&ownerInput=<inputId>`，主人在 Web 上的这个页面查看原文、来源和历史并作决定。页面上的决定（投递、保留、丢弃，以及对停放的渠道回执重投或丢弃）经 `_agnes/v1/managedInput.get` 与 `_agnes/v1/managedInput.decide`，二者只接受主人自己的 Web 页面。经 Unix 套接字连接的本地 SDK 客户端以 `CAPABILITY_DENIED` 拒绝；插件的客户端模块、主页页面和工作台面板经 Web 交给它们的接口调用时同样被拒绝。限制：插件代码与页面运行在同一页面中，改写页面 WebSocket、自开连接或绕过 SDK 对象的代码拦不住。
+`reason` 取 `eligible`、`busy`、`questionOpen`、`legacySourceUnknown`、`recoveryUnverified`、`receiptUnknown`、`pairingChanged`、`grantRevoked`、`sessionArchived`、`ownerRetained`、`ownerDiscarded` 之一（`ownerDiscarded` 配 `retained` 表示主人已丢弃，配 `needsOwner` 表示在平台之外被移除）。只当文字显示，取值可增。`reviewLocation` 是 `/?session=<sessionId>&ownerInput=<inputId>`，主人在 Web 上的这个页面查看原文、来源和历史并作决定。页面上的决定（投递、保留、丢弃，以及对停放的渠道回执重投或丢弃）经 `_agnes/v1/managedInput.get` 与 `_agnes/v1/managedInput.decide`，二者只接受主人自己的 Web 页面。经 Unix 套接字连接的本地 SDK 客户端以 `CAPABILITY_DENIED` 拒绝；插件的客户端模块、主页页面和工作台面板经 Web 交给它们的接口调用时同样被拒绝。限制：插件代码与页面运行在同一页面中，改写页面 WebSocket、自开连接或绕过 SDK 对象的代码拦不住。
 
 拒绝按[拒绝](#拒绝)一节的方式 reject，`data.reason` 为：`OWNER_INPUT_TARGET_MISMATCH`（`target` 与会话的 startKey 或绑定不符）、`OWNER_INPUT_KEY_REUSED`（同 key、请求有任何不同）和 `SESSION_ARCHIVED`（抛出，不作为结果返回）。对已绑定会话调 `send` 得到的是 `OWNER_INPUT_REQUIRED`。参数不合法为 `INVALID_PARAMS`。
 
@@ -146,7 +146,5 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 ## 暂未提供
 
 在 Web 上授权工作区暂未提供，请用 `agh plugins grants`。会话绑定主人渠道是后续工作。
-
-主人输入准入的宿主侧分多次改动在 5.18.0 这一版里接通。导出了这些类型但尚未完成的构建，会以 `CAPABILITY_DENIED` 拒绝 `admitInput` 和 `inputResult`；在你运行的宿主报告的 API 版本包含完整行为之前，不要依赖它们。
 
 命令规则管不到它看不见的命令：以外部智能体进程运行的子代理（Claude Code、Codex、ACP 或 SDK 智能体）用自己的 shell，[规则列出的缺口](../guide/security.zh-CN.md#outward-command-rules)在完全访问下照样不经询问就执行。给读外部文字的会话开完全访问之前，先权衡这一点。

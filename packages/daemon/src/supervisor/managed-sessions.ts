@@ -455,10 +455,17 @@ async function sessionGates(ports: ManagedSessionPorts, record: ManagedSessionRe
   if (missing) throw missing
 }
 
+/**
+ * False when a gate refuses; a gate that cannot be read (a port failing, the daemon shutting down) rejects,
+ * because a read failure says nothing about the grant.
+ */
 const gatesPass = (ports: ManagedSessionPorts, record: ManagedSessionRecord) =>
   sessionGates(ports, record).then(
     () => true,
-    () => false,
+    (error: unknown) => {
+      if ((error as { data?: { code?: unknown } } | null)?.data?.code === 'CAPABILITY_DENIED') return false
+      throw error
+    },
   )
 
 /** Without `inputs` the sessions have no owner-input engine, and `admitInput` / `inputResult` refuse. */

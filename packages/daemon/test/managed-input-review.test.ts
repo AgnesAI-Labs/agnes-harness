@@ -2,14 +2,18 @@ import { LocalEndpoint } from '@agnes/daemon-foundation/local/endpoint'
 import { authGate } from '@agnes/daemon-rpc/local/auth'
 import { requireSessionOwner } from '@agnes/daemon-rpc/local/methods/agnes'
 import type { ManagedInputResult } from '@agnes/extension-api'
+import { grantKey } from '@agnes/plugin-runtime/host'
 import { rpcError } from '@agnes/protocol'
 import { afterEach, expect, it } from 'vitest'
 import {
   type ManagedInputReviewEngine,
   type ReceiptCommand,
   registerManagedInputReview,
+  registerOwnerInputReview,
 } from '../src/supervisor/managed-input-review.js'
 import type { ManagedInputRow } from '../src/supervisor/managed-session-inputs.js'
+import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
+import { memoryTable } from './fixtures/fake-input-ports.js'
 
 const SERVICE = 'ext:@example/companion/main'
 
@@ -97,8 +101,21 @@ afterEach(async () => {
   for (const ep of opened.splice(0)) await ep.close()
 })
 
+const ownerGate = requireSessionOwner({
+  sessionOwnership: {
+    resolve: (id: string) => ({ principalId: id === 'foreign' ? 'jwt:someone-else' : 'local' }),
+  } as never,
+  registry: { get: () => ({}) } as never,
+  workspaces: { sessionPath: () => undefined },
+})
+
 async function setup(
-  options: { listener?: Listener; clientId?: string; engine?: ReturnType<typeof fakeEngine> } = {},
+  options: {
+    listener?: Listener
+    clientId?: string
+    engine?: ReturnType<typeof fakeEngine>
+    register?: (ep: LocalEndpoint) => void
+  } = {},
 ) {
   const fake = options.engine ?? fakeEngine()
   const receiptCalls: ReceiptCommand[] = []
@@ -129,34 +146,30 @@ async function setup(
       },
     },
   })
-  registerManagedInputReview(ep, {
-    engine: fake.engine,
-    requireOwner: requireSessionOwner({
-      sessionOwnership: {
-        resolve: (id: string) => ({ principalId: id === 'foreign' ? 'jwt:someone-else' : 'local' }),
-      } as never,
-      registry: { get: () => ({}) } as never,
-      workspaces: { sessionPath: () => undefined },
-    }),
-    receiptOwner: (sessionId) => (sessionId === 's1' ? SERVICE : undefined),
-    async receipts(command) {
-      receiptCalls.push(command)
-      if (command.op === 'parked')
-        return {
-          receipts: [
-            {
-              receiptId: 'r'.repeat(64),
-              service: 'companion',
-              kind: 'message',
-              text: 'are you there?',
-              at: '2026-11-14T00:00:00.000Z',
-              attempts: 5,
-            },
-          ],
-        }
-      return { receipt: command.op === 'redeliver' ? 'pending' : 'discarded' }
-    },
-  })
+  if (options.register) options.register(ep)
+  else
+    registerManagedInputReview(ep, {
+      engine: fake.engine,
+      requireOwner: ownerGate,
+      receiptOwner: (sessionId) => (sessionId === 's1' ? SERVICE : undefined),
+      async receipts(command) {
+        receiptCalls.push(command)
+        if (command.op === 'parked')
+          return {
+            receipts: [
+              {
+                receiptId: 'r'.repeat(64),
+                service: 'companion',
+                kind: 'message',
+                text: 'are you there?',
+                at: '2026-11-14T00:00:00.000Z',
+                attempts: 5,
+              },
+            ],
+          }
+        return { receipt: command.op === 'redeliver' ? 'pending' : 'discarded' }
+      },
+    })
   let id = 1
   const call = async (method: string, params: unknown) => {
     const reply = (await ep.handle({ jsonrpc: '2.0', id: id++, method, params })) as {
@@ -323,4 +336,72 @@ it('receipt redeliver and discard are routed to the worker', async () => {
     { op: 'redeliver', owner: SERVICE, receiptId },
     { op: 'discard', owner: SERVICE, receiptId },
   ])
+})
+
+it('the daemon wiring reaches a parked receipt only through a session of the service that holds it', async () => {
+  // Real session records: each managed session's owner is its service's grant key, which is also the
+  // receipt store's owner. The worker stand-in keys parked receipts by owner, as the receipt store does.
+  const records = new ManagedSessionRecords(memoryTable())
+  const ownerA = grantKey('@example/a', 'plugin/aaaa')
+  const ownerB = grantKey('@example/b', 'plugin/bbbb')
+  const session = (sessionId: string, owner: string) =>
+    records.insert({
+      sessionId,
+      owner,
+      startKey: `start-${sessionId}`,
+      bundle: '@example/x#worker',
+      workspace: '/work',
+      retention: 'task',
+      permission: 'default',
+      model: null,
+      memoryWrites: false,
+      skillInstalls: false,
+    })
+  session('sa', ownerA)
+  session('sb', ownerB)
+  const receiptId = 'a'.repeat(64)
+  const parked = new Map([[`${ownerA}\u0000${receiptId}`, 'parked']])
+  const commands: Record<string, unknown>[] = []
+  const worker = {
+    async command(_method: 'channels.receipts', params: Record<string, unknown>) {
+      commands.push(params)
+      const key = `${String(params.owner)}\u0000${String(params.receiptId)}`
+      if (params.op === 'parked') return { receipts: [] }
+      if (parked.get(key) !== 'parked') throw rpcError('SEMANTIC_REJECTED', { code: 'RECEIPT_NOT_PARKED' })
+      parked.set(key, 'pending')
+      return { receipt: 'pending' }
+    },
+  }
+  const { call } = await setup({
+    register: (ep) =>
+      registerOwnerInputReview(ep, {
+        engine: fakeEngine().engine,
+        records,
+        requireOwner: ownerGate,
+        worker: async () => worker,
+      }),
+  })
+  const decide = (sessionId: string) =>
+    call('_agnes/v1/managedInput.decide', {
+      sessionId,
+      target: { kind: 'receipt', receiptId, decision: 'redeliver' },
+    })
+  // Through a session of package B the receipt of package A's service is not reachable.
+  const refused = await decide('sb')
+  expect(refused.error).toMatchObject({ message: 'SEMANTIC_REJECTED', data: { code: 'RECEIPT_NOT_PARKED' } })
+  expect(parked.get(`${ownerA}\u0000${receiptId}`)).toBe('parked')
+  // Through a session of package A it is redelivered.
+  const accepted = await decide('sa')
+  expect(accepted.result).toEqual({ receipt: 'pending' })
+  expect(commands).toEqual([
+    { op: 'redeliver', owner: ownerB, receiptId },
+    { op: 'redeliver', owner: ownerA, receiptId },
+  ])
+  // A session the records do not hold, or one detached by a package removal, reaches no receipts at all.
+  records.releasePackage('@example/a')
+  const detachedSession = await decide('sa')
+  expect(detachedSession.error).toMatchObject({ data: { code: 'RECEIPT_NOT_PARKED' } })
+  const unknown = await decide('nope')
+  expect(unknown.error).toMatchObject({ data: { code: 'RECEIPT_NOT_PARKED' } })
+  expect(commands).toHaveLength(2)
 })
