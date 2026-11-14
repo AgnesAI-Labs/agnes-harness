@@ -94,6 +94,9 @@ export interface LifecycleDeps {
 const ARCHIVE_EVERY_MS = 24 * 3600_000
 /** Below the 5 s shutdown deadline the manifest declares, with room for the Host's own steps. */
 const STOP_BUDGET_MS = 4_000
+/** Passes over one Session in a stop, and the pause between them; about a second in all. */
+const QUIET_PASSES = 3
+const QUIET_PAUSE_MS = 150
 /** How long a stop waits for an aborted start to notice before it goes on. */
 const START_ABORT_WAIT_MS = 500
 
@@ -246,21 +249,30 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     }
   }
 
-  /** Empties a Session's inbox, cancels its turn and kills its agent jobs; on `keepPending` its inbox stays. */
+  /**
+   * Empties a Session's inbox, cancels its turn and kills its agent jobs, and checks again: a cancel hands steers back
+   * to the inbox, where the daemon may start one as a new turn, and a turn winding down may still start a job. Up to
+   * `QUIET_PASSES` passes, until no turn runs, no job runs and (unless `keepPending`) nothing waits. The cancel is sent
+   * whatever the state says, since a turn parked on an approval reads as not running.
+   */
   const quiet = async (sessionId: string, keepPending: boolean): Promise<void> => {
-    const drop = async (pending: { itemId: string }[]) => {
-      if (!keepPending && pending.length)
+    for (let pass = 0; ; pass++) {
+      const state = await sessions.state(sessionId)
+      const settled = !state.running && state.jobs === 0 && (keepPending || state.pending.length === 0)
+      if (pass > 0 && settled) return
+      if (pass === QUIET_PASSES) {
+        warn(`Superagent session ${sessionId} is still running after ${QUIET_PASSES} stops`)
+        return
+      }
+      if (!keepPending && state.pending.length)
         await sessions.dropPending(
           sessionId,
-          pending.map((item) => item.itemId),
+          state.pending.map((item) => item.itemId),
         )
+      await sessions.cancel(sessionId)
+      await control.killAgentJobs(sessionId)
+      await new Promise((resolve) => setTimeout(resolve, QUIET_PAUSE_MS))
     }
-    const state = await sessions.state(sessionId)
-    await drop(state.pending)
-    if (state.running) await sessions.cancel(sessionId)
-    await control.killAgentJobs(sessionId)
-    // A cancel hands steers back to the inbox, which must not run either.
-    if (!keepPending) await drop((await sessions.state(sessionId)).pending)
   }
 
   return {

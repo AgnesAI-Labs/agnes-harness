@@ -229,13 +229,17 @@ describe('enable', () => {
 describe('disable', () => {
   it('mid-turn: stops polling and sending first, drops pending inputs, cancels the turn and kills agent jobs, records the pause, then clears the hooks', async () => {
     store.tickets.save(runningTicket('A'))
-    // The cancel returns a steer to the inbox; it is dropped as well.
+    // The first cancel returns a steer to the inbox; it is dropped as well.
+    let handedBack = false
     sessions.set(workerKey('A'), {
       running: true,
       pending: [{ itemId: 'q1', commandId: 'superagent:m-1' }],
       jobs: 2,
-      onCancel: () =>
-        sessions.get(workerKey('A'))!.pending.push({ itemId: 's1', commandId: 'superagent:m-2' }),
+      onCancel: () => {
+        if (!handedBack)
+          sessions.get(workerKey('A'))!.pending.push({ itemId: 's1', commandId: 'superagent:m-2' })
+        handedBack = true
+      },
     })
     vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
     const { lifecycle, hooks, app, archive } = setup()
@@ -252,8 +256,13 @@ describe('disable', () => {
       `drop ${workerKey('A')} q1`,
       `cancel ${workerKey('A')}`,
       `kill ${workerKey('A')}`,
+      // Another pass: the returned steer is dropped, and the turn and jobs are stopped again.
       `state ${workerKey('A')}`,
       `drop ${workerKey('A')} s1`,
+      `cancel ${workerKey('A')}`,
+      `kill ${workerKey('A')}`,
+      // The last pass finds the session quiet.
+      `state ${workerKey('A')}`,
       'app.drain',
     ])
     expect(sessions.get(workerKey('A'))).toMatchObject({ running: false, pending: [], jobs: 0 })
@@ -271,7 +280,7 @@ describe('disable', () => {
     vi.advanceTimersByTime(3 * DAY)
     expect(app.polls).toBe(1)
     expect(archive.mock.calls.length).toBe(runs)
-    expect(log).toHaveLength(8)
+    expect(log).toHaveLength(11)
   })
 
   it('drops the queued inputs of every session, which stay untaken in the store and are re-delivered after enable', async () => {
@@ -328,9 +337,55 @@ describe('disable', () => {
       `state ${ORCHESTRATOR}`,
       `cancel ${ORCHESTRATOR}`,
       `kill ${ORCHESTRATOR}`,
+      `state ${ORCHESTRATOR}`,
       'app.drain',
     ])
     expect(sessions.get(ORCHESTRATOR)!.pending).toEqual([{ itemId: 'o1', commandId: 'superagent:m' }])
+  })
+
+  it('stops a turn the follow-up runner starts from a steer the cancel handed back, and a parked turn', async () => {
+    let cancels = 0
+    sessions.set(workerKey('A'), {
+      running: true,
+      pending: [],
+      jobs: 1,
+      // The first cancel hands a steer back, which the daemon starts at once as a new turn with a new job.
+      onCancel: () => {
+        cancels++
+        if (cancels === 1) Object.assign(sessions.get(workerKey('A'))!, { running: true, jobs: 1 })
+      },
+    })
+    // A turn parked on an approval reads as not running; it is cancelled all the same.
+    sessions.set(workerKey('P'), { running: false, pending: [], jobs: 0 })
+    const { lifecycle } = setup()
+    await lifecycle.start()
+    await lifecycle.settled()
+    log.length = 0
+    await lifecycle.stop('disable')
+    expect(sessions.get(workerKey('A'))).toMatchObject({ running: false, pending: [], jobs: 0 })
+    expect(log.filter((line) => line === `cancel ${workerKey('A')}`)).toHaveLength(2)
+    expect(log.filter((line) => line === `kill ${workerKey('A')}`)).toHaveLength(2)
+    expect(log).toContain(`cancel ${workerKey('P')}`)
+  })
+
+  it('gives up on a session that keeps running after three passes, and says so', async () => {
+    sessions.set(workerKey('A'), {
+      running: true,
+      pending: [],
+      jobs: 0,
+      onCancel: () => {
+        sessions.get(workerKey('A'))!.running = true
+      },
+    })
+    const warnings: string[] = []
+    const { lifecycle } = setup({ log: { warn: (text) => warnings.push(text) } })
+    await lifecycle.start()
+    await lifecycle.settled()
+    log.length = 0
+    await lifecycle.stop('disable')
+    expect(log.filter((line) => line === `cancel ${workerKey('A')}`)).toHaveLength(3)
+    expect(warnings.join('\n')).toContain(`${workerKey('A')} is still running`)
+    expect(lifecycle.status()).toEqual({ state: 'stopped' })
   })
 
   it('during a start stops it before it opens anything', async () => {
