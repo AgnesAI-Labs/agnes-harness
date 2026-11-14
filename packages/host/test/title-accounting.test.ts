@@ -1,7 +1,7 @@
 import { hasChildControl } from '@agnes/core'
+import { withSideCallSession as withSession } from '@agnes/core/testkit'
 import { SESSION_TITLE_EVENT } from '@agnes/protocol'
 import { expect, it } from 'vitest'
-import { withSession } from '../../core/test/helpers/side-call-session.js'
 import type { HostSession } from '../src/runtime/lifecycle/host.js'
 import {
   recoverTitleCosts,

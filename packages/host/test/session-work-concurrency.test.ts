@@ -1,7 +1,11 @@
+import { createSessionWorkSideCall } from '@agnes/core'
+import {
+  gatedSideCall as gated,
+  sideCallOptions as options,
+  withSideCallSession as withSession,
+} from '@agnes/core/testkit'
+import { createJudgmentScheduler } from '@agnes/judgment'
 import { expect, it } from 'vitest'
-import { createSessionWorkSideCall } from '../../core/src/loop/background-side-call.js'
-import { gated, options, withSession } from '../../core/test/helpers/side-call-session.js'
-import { createJudgmentScheduler } from '../../judgment/src/scheduler.js'
 
 it('retains all 16 actual judgment slots after abort until non-cooperative providers settle', async () => {
   const gate = gated()
