@@ -94,7 +94,7 @@ steps, and the defaults. Ask for one confirmation.
 1. **Operator steps first.** One message with what only the operator can do, as the dedicated system user: create the
    agent GitHub account and add it to the repository with write access; accept the invitation as the agent account; and
    turn on the branch protection above. For Feishu, create and publish the bot app and enter its secret with its CLI.
-   The agent account is signed in later (step 5), once its home exists. Wait until the operator says it is done.
+   The agent account is signed in in step 5. Wait until the operator says it is done.
 2. **A separate AGH home.** Pick a directory for it and use it for every `agh` command and for the daemon:
 
    ```sh

@@ -223,21 +223,14 @@ it('tells a Superagent that does not answer from a record it does not have, and 
       },
     }),
   ).toEqual({ message: 'not running', status: 404, missing: false, unreachable: true })
-  // A refusal or a failure of the Host is no lost connection: the panel says what failed, not "offline".
+  // The real profile caller throws one generic error without the Host's code, so any other refusal reads as offline.
   expect(
     await failure({
       query: async () => {
-        throw new Error('INVALID_PARAMS (-32602)')
+        throw new Error('The plugin backend service is currently unavailable.')
       },
     }),
-  ).toEqual({ message: 'request 400', status: 400, missing: false, unreachable: false })
-  expect(
-    await failure({
-      query: async () => {
-        throw new Error('INTERNAL_ERROR (-32603)')
-      },
-    }),
-  ).toEqual({ message: 'server 500', status: 500, missing: false, unreachable: false })
+  ).toEqual({ message: 'offline', status: 0, missing: false, unreachable: true })
   expect(await failure({ query: async () => ({ failure: { status: 502 } }) })).toEqual({
     message: 'server 502',
     status: 502,

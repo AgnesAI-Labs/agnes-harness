@@ -566,7 +566,8 @@ async function dispatch(
   const invalid = service ? problems(service.inputSchema as never, input) : []
   if (invalid.length) {
     server.misuse.push(`${name}: ${invalid.join('; ')}`)
-    throw new Error('INVALID_PARAMS (-32602)')
+    // What `clientProfileCaller` throws for any refusal of the Host: one localized error, no code.
+    throw new Error('The plugin backend service is currently unavailable.')
   }
   const route = routeOf(name)
   if (!route) return { failure: { status: 404, error: 'Unknown operation' } }

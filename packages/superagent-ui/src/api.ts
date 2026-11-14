@@ -87,15 +87,15 @@ function refusal(messages: ApiMessages, failure: Failure): ApiError {
     ...(user ? { user } : {}),
   })
 }
-/** A call the Host refused or could not reach: the plugin is off or restarting, or the connection dropped. */
+/**
+ * A call that got no result. The web client throws `CAPABILITY_DENIED` itself when the plugin is not active; every other
+ * failure of a profile call reaches the panel as one generic "service unavailable" error that keeps no Host code
+ * (`clientProfileCaller` in the web app), so it cannot be told from a lost connection and is reported as offline.
+ */
 function unreachable(messages: ApiMessages, error: unknown): ApiError {
   const text = error instanceof Error ? error.message : String(error)
-  // A refusal of the Host (a JSON-RPC error) names its code; only a call that never got an answer is "offline".
   if (/CAPABILITY_DENIED|not running/i.test(text))
     return new ApiError(messages.notRunning, 404, { unreachable: true })
-  if (/INVALID_PARAMS/.test(text)) return new ApiError(messages.requestFailed(400), 400)
-  if (/INTERNAL_ERROR|OUTCOME_UNKNOWN|REQUEST_TIMEOUT|OVERLOADED/.test(text))
-    return new ApiError(messages.serverError(500), 500)
   return new ApiError(messages.offline, 0, { unreachable: true })
 }
 
