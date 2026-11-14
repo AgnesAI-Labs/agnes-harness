@@ -177,17 +177,12 @@ export function createRowHosts(
       : undefined
     return description && { ...description, ...(declaredCapabilities ? { declaredCapabilities } : {}) }
   }
-  const backendScope = {
-    home: dirname(dirname(deps.profileDir)),
-    profile: ctx.profile.name,
-    dataDir: deps.dataDir,
-    workspace: deps.workspaceRoot,
-  }
+  const scope = backendScope(ctx)
   const rowServices = createRowServiceHost(describeServices, {
     ...(deps.channelInteractions ? { channelInteractions: deps.channelInteractions } : {}),
     ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
     channelStateDirectory: join(deps.dataDir, 'channels'),
-    channelScope: backendScope,
+    channelScope: scope,
     resolveSecret: proc.secrets,
     channelLog: deps.log,
     channelDirectory: proc.channelDirectory,
@@ -198,17 +193,7 @@ export function createRowHosts(
     managed: proc.profileManaged,
     streams: proc.profileStreams,
     hostGrants,
-    ...(deps.bundledAppClient
-      ? {
-          bundledApp: {
-            stateRoot: join(deps.dataDir, 'bundled-apps'),
-            scope: backendScope,
-            client: deps.bundledAppClient,
-            // One hub per assembly: its channel rows attach here and the bundled app's grant reads it.
-            channels: new BundledAppChannelHub(),
-          },
-        }
-      : {}),
+    ...bundledAppBackend(ctx, scope),
     namespace: (owner, name) =>
       proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}:${name}`),
     describe: describeServices,
@@ -243,6 +228,26 @@ export function createRowHosts(
     rowServices,
     refreshPluginCatalogue,
   }
+}
+
+/** Where row backends keep their state; channel rows and the bundled app's grant share it. */
+function backendScope(ctx: AssemblyContext) {
+  const { deps } = ctx
+  return {
+    home: dirname(dirname(deps.profileDir)),
+    profile: ctx.profile.name,
+    dataDir: deps.dataDir,
+    workspace: deps.workspaceRoot,
+  }
+}
+
+/** The bundled app's grant inputs, present only when the daemon wired an owner client. */
+function bundledAppBackend(ctx: AssemblyContext, scope: ReturnType<typeof backendScope>) {
+  const client = ctx.deps.bundledAppClient
+  if (!client) return {}
+  // One hub per assembly: its channel rows attach here and the bundled app's grant reads it.
+  const channels = new BundledAppChannelHub()
+  return { bundledApp: { stateRoot: join(ctx.deps.dataDir, 'bundled-apps'), scope, client, channels } }
 }
 
 export type RowHosts = ReturnType<typeof createRowHosts>
