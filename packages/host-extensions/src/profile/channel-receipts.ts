@@ -8,6 +8,8 @@ export const RECEIPT_ATTEMPTS = 5
 /** How long an acknowledged receipt that no admission took stays resolvable. */
 export const RECEIPT_ACK_TTL_MS = 30 * 86_400_000
 export const REDELIVERY_INTERVAL_MS = 300_000
+/** The most parked receipts one list across owners returns: the owner's list shows as many. */
+export const PARKED_LIST_LIMIT = 256
 /** One delivery tries the handler up to three times in process, waiting these between tries (10 s in all). */
 export const RECEIPT_RETRY_DELAYS_MS: readonly number[] = [2_000, 8_000]
 
@@ -72,7 +74,7 @@ export type ParkedReceipt = {
 
 export type ChannelReceiptsParams =
   | { op: 'parked'; owner: string }
-  | { op: 'parkedAll' }
+  | { op: 'parkedAll'; limit?: number }
   | { op: 'redeliver' | 'discard'; owner: string; receiptId: string }
 
 /** What the send ledger recorded for a clicked message. */
@@ -302,9 +304,15 @@ export class ChannelReceipts {
     }))
   }
 
-  /** Every owner's parked receipts, each with its owner: the owner's list across services. */
-  parkedAll(): (ParkedReceipt & { owner: string })[] {
-    return this.rows((row) => row.state === 'parked').map((row) => ({
+  /**
+   * Every owner's parked receipts, each with its owner: the owner's list across services. Oldest event
+   * first and at most `limit` (never more than `PARKED_LIST_LIMIT`), so a long backlog never crosses
+   * the worker link whole.
+   */
+  parkedAll(limit = PARKED_LIST_LIMIT): (ParkedReceipt & { owner: string })[] {
+    const parked = this.rows((row) => row.state === 'parked')
+    parked.sort((a, b) => a.at.localeCompare(b.at) || a.receiptId.localeCompare(b.receiptId))
+    return parked.slice(0, Math.max(0, Math.min(limit, PARKED_LIST_LIMIT))).map((row) => ({
       owner: row.target.owner,
       receiptId: row.receiptId,
       service: row.target.service,
@@ -323,7 +331,10 @@ export class ChannelReceipts {
     | { receipts: (ParkedReceipt & { owner: string })[] }
     | { receipt: 'pending' | 'discarded' } {
     const p = (params ?? {}) as Record<string, unknown>
-    if (p.op === 'parkedAll') return { receipts: this.parkedAll() }
+    if (p.op === 'parkedAll')
+      return {
+        receipts: this.parkedAll(Number.isSafeInteger(p.limit) ? (p.limit as number) : PARKED_LIST_LIMIT),
+      }
     if (typeof p.owner !== 'string' || !p.owner) throw rpcError('INVALID_PARAMS')
     if (p.op === 'parked') return { receipts: this.parked(p.owner) }
     if (

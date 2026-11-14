@@ -33,7 +33,7 @@ export interface ManagedInputReviewEngine {
 /** The worker's `channels.receipts` command for one receipt owner, or (`parkedAll`) for every one. */
 export type ReceiptCommand =
   | { op: 'parked'; owner: string }
-  | { op: 'parkedAll' }
+  | { op: 'parkedAll'; limit: number }
   | { op: 'redeliver' | 'discard'; owner: string; receiptId: string }
 
 export interface ManagedInputReviewDeps {
@@ -154,7 +154,7 @@ export function registerManagedInputReview(ep: LocalEndpoint, deps: ManagedInput
         .attention(LIST_LIMIT)
         .filter((item) => mine(item.input.sessionId))
         .map(listed),
-      parkedReceipts: allParked(await deps.receipts({ op: 'parkedAll' }), session),
+      parkedReceipts: allParked(await deps.receipts({ op: 'parkedAll', limit: LIST_LIMIT }), session),
     }
   })
   ep.register('_agnes/v1/managedInput.get', async (params, context): Promise<ManagedInputGetResult> => {

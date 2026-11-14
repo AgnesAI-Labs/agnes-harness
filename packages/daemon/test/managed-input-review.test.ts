@@ -359,7 +359,7 @@ it('list shows every parked receipt and every input needing the owner, with no k
       attempts: 5,
     })),
   })
-  expect(receiptCalls).toEqual([{ op: 'parkedAll' }])
+  expect(receiptCalls).toEqual([{ op: 'parkedAll', limit: 256 }])
   // The Unix socket is not the owner's page: refused before anything is read.
   const unix = await setup({ listener: 'unix', attention })
   const refused = await unix.call('_agnes/v1/managedInput.list', {})
