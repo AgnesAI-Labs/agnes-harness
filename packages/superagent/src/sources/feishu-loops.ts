@@ -361,6 +361,7 @@ export async function recoverRound(
 ): Promise<void> {
   const errors: string[] = []
   const gaps: string[] = []
+  const behind: string[] = []
   const history = !link.missing.has('history')
   for (const { chatId } of config.chats) {
     if (signal.aborted) return
@@ -376,9 +377,8 @@ export async function recoverRound(
       const recovery = await backfillChat(ctx, link, chatId, since, started, signal, (at) =>
         ctx.state.set(cursorKey, at),
       )
-      if (!signal.aborted) ctx.state.set(cursorKey, cursorAt(started))
-      if (recovery.clamped)
-        gaps.push(`${chatId}: messages before ${recovery.clamped} were not recovered (older than 14 days)`)
+      if (recovery.behind) behind.push(`${chatId}: recovered up to ${recovery.behind}`)
+      else if (!signal.aborted) ctx.state.set(cursorKey, cursorAt(started))
       for (const window of recovery.skipped)
         gaps.push(
           `${chatId}: skipped ${window.from} to ${window.to}, more messages than the channel reads at once`,
@@ -399,22 +399,32 @@ export async function recoverRound(
         ? { state: 'error', detail: errors.join('\n') }
         : gaps.length
           ? { state: 'error', detail: `Listed chats recovered with gaps:\n${gaps.join('\n')}` }
-          : { state: 'ready', detail: 'Listed chats recovered', at: new Date().toISOString() },
+          : behind.length
+            ? {
+                state: 'ready',
+                detail: `Catching up on chat history:\n${behind.join('\n')}`,
+                at: new Date().toISOString(),
+              }
+            : { state: 'ready', detail: 'Listed chats recovered', at: new Date().toISOString() },
     )
 }
 /** The longest stretch of chat history one read covers, so the host's page bound holds in a busy chat. */
 export const HISTORY_SLICE_MS = 3_600_000
-/** What a recovery left out: windows the channel refused as too large, and the start it moved up to the horizon. */
+/** How many slices one round reads per chat, so a long outage is caught up over rounds rather than in one burst. */
+export const HISTORY_SLICES_PER_ROUND = 24
+/** What a recovery left out: windows the channel refused as too large, and where it stopped when the gap was longer. */
 export interface Recovery {
   skipped: { from: string; to: string }[]
-  clamped?: string
+  /** The end of the last slice read when the round's slices ran out before `until`; the next round goes on from it. */
+  behind?: string
 }
 const iso = (time: number) => new Date(time).toISOString()
 /**
- * Recovers a chat's messages and its active topics' messages between `since` and `until`. A gap longer than the polling
- * horizon (14 days, as quiet topics are kept) starts at the horizon; the chat is read an hour at a time, `advance`
- * receiving the end of each hour read but the last, and an hour the channel refuses as too large is skipped and named
- * rather than read again. Topics are stored as `{ id: lastSeenAt }`, and quiet topics no polled Thread follows are pruned.
+ * Recovers a chat's messages and its active topics' messages between `since` and `until`, however long the gap, as DSH
+ * did. The chat is read an hour at a time, at most `HISTORY_SLICES_PER_ROUND` hours per call: `advance` receives the end
+ * of each hour read short of `until`, and a gap longer than that ends at `behind` for the next round. An hour the channel
+ * refuses as too large is skipped and named rather than read again. Topics are stored as `{ id: lastSeenAt }`, and quiet
+ * topics no polled Thread follows are pruned.
  */
 export async function backfillChat(
   ctx: SourceContext,
@@ -427,11 +437,7 @@ export async function backfillChat(
 ): Promise<Recovery> {
   const recovery: Recovery = { skipped: [] }
   const end = Date.parse(until)
-  let start = Date.parse(since)
-  if (end - start > POLL_HORIZON_MS) {
-    start = end - POLL_HORIZON_MS
-    recovery.clamped = iso(start)
-  }
+  const start = Date.parse(since)
   const io = ioOf(ctx, link, signal)
   const topicsKey = KV.feishu.topics(chatId)
   const topics = { ...ctx.state.get(topicsKey) }
@@ -440,7 +446,11 @@ export async function backfillChat(
     if (topic && !(Date.parse(topics[topic] ?? '') >= Date.parse(event.at)))
       topics[topic] = new Date(Date.parse(event.at)).toISOString()
   }
-  for (let from = start; from < end; ) {
+  for (let from = start, slices = 0; from < end; slices++) {
+    if (slices === HISTORY_SLICES_PER_ROUND) {
+      recovery.behind = iso(from)
+      break
+    }
     const to = Math.min(from + HISTORY_SLICE_MS, end)
     let events: MessageEvent[] = []
     try {

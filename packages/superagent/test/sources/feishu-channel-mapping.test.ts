@@ -331,54 +331,54 @@ describe('history recovery', () => {
     expect(h.receive.mock.calls.map(([trigger]) => trigger.meta.messageId)).toEqual(['om_new', 'om_t1'])
     expect(h.ctx.state.get(KV.feishu.topics('oc_team'))).toEqual({ omt_1: minutes(0.7) })
   })
-  it('reads a long gap an hour at a time from the 14-day horizon, skips and names an hour the channel refuses as too large, and ends', async () => {
+  it('recovers a gap of 30 days in full over rounds of at most 24 hours read, skipping and naming an hour the channel refuses as too large', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const now = Date.parse('2026-11-14T08:00:00.000Z')
     vi.setSystemTime(now)
     const hour = 3_600_000
+    const at = (ago: number) => new Date(now - ago).toISOString()
     const h = open({ feishu: { chats: [{ chatId: 'oc_team', listen: 'mentions' }] } })
     h.link.listening = true
-    h.ctx.state.set(KV.feishu.history('oc_team'), new Date(now - 30 * 24 * hour).toISOString())
-    const reads: { start: string; end: string }[] = []
+    h.ctx.state.set(KV.feishu.history('oc_team'), at(30 * 24 * hour))
+    let reads: { start: string; end: string }[] = []
     h.fake.channels.listHistory = async (_channel, _chat, opts) => {
       reads.push(opts)
-      // One busy hour is more than the host joins in one read; the hour after it has a request.
-      if (opts.start === new Date(now - 3 * hour).toISOString())
-        throw rpc('SEMANTIC_REJECTED', 'CHANNEL_READ_TOO_LARGE')
-      return opts.start === new Date(now - 2 * hour).toISOString()
-        ? [message('om_late', { at: now - 2 * hour + 1000, mentioned: true })]
-        : []
+      // One busy hour is more than the host joins in one read; a request 29 days ago and one after the busy hour.
+      if (opts.start === at(3 * hour)) throw rpc('SEMANTIC_REJECTED', 'CHANNEL_READ_TOO_LARGE')
+      if (opts.start === at(29 * 24 * hour))
+        return [message('om_old', { at: now - 29 * 24 * hour + 1000, mentioned: true })]
+      if (opts.start === at(2 * hour))
+        return [message('om_late', { at: now - 2 * hour + 1000, mentioned: true })]
+      return []
     }
-    const cursors: string[] = []
-    const set = h.ctx.state.set.bind(h.ctx.state)
-    h.ctx.state.set = (key, value) => {
-      if (key === KV.feishu.history('oc_team')) cursors.push(String(value))
-      set(key, value)
+    const perRound: number[] = []
+    const all: { start: string; end: string }[] = []
+    for (let round = 0; round < 40; round++) {
+      reads = []
+      await recoverRound(h.ctx, h.link, h.ctx.config('feishu')!, new AbortController().signal)
+      perRound.push(reads.length)
+      all.push(...reads)
+      if (h.ctx.state.get(KV.feishu.history('oc_team')) === at(5000)) break
+      // Until then the cursor stands at the end of what the round read, and the Source says it is catching up.
+      expect(h.ctx.state.get(KV.feishu.history('oc_team'))).toBe(all.at(-1)?.end)
+      expect(h.health.history).toMatchObject({ state: 'ready' })
+      expect(h.health.history?.detail).toContain(
+        `Catching up on chat history:\noc_team: recovered up to ${all.at(-1)?.end}`,
+      )
     }
-    await recoverRound(h.ctx, h.link, h.ctx.config('feishu')!, new AbortController().signal)
-    expect(reads).toHaveLength(14 * 24)
-    expect(reads[0]).toEqual({
-      start: new Date(now - 14 * 24 * hour).toISOString(),
-      end: new Date(now - 14 * 24 * hour + hour).toISOString(),
-    })
-    // The cursor follows every hour read, then ends five seconds before the round started.
-    expect(cursors).toHaveLength(14 * 24)
-    expect(cursors.at(-1)).toBe(new Date(now - 5000).toISOString())
+    // Thirty rounds of 24 hours each read every hour of the gap once, from its start.
+    expect(perRound).toEqual(Array(30).fill(24))
+    expect(all[0]).toEqual({ start: at(30 * 24 * hour), end: at(30 * 24 * hour - hour) })
+    expect(new Set(all.map((read) => read.start)).size).toBe(30 * 24)
+    expect(h.trigger('om_old')).toBeDefined()
     expect(h.trigger('om_late')).toBeDefined()
     expect(h.health.history).toMatchObject({ state: 'error' })
-    expect(h.health.history?.detail).toContain(
-      `oc_team: skipped ${new Date(now - 3 * hour).toISOString()} to ${new Date(now - 2 * hour).toISOString()}`,
-    )
-    expect(h.health.history?.detail).toContain(
-      `messages before ${new Date(now - 14 * 24 * hour).toISOString()} were not recovered`,
-    )
-    // The next round reads only what came since, and the gaps are behind it.
-    reads.length = 0
+    expect(h.health.history?.detail).toContain(`oc_team: skipped ${at(3 * hour)} to ${at(2 * hour)}`)
+    // The next round reads only what came since.
+    reads = []
     vi.setSystemTime(now + 60_000)
     await recoverRound(h.ctx, h.link, h.ctx.config('feishu')!, new AbortController().signal)
-    expect(reads).toEqual([
-      { start: new Date(now - 5000).toISOString(), end: new Date(now + 60_000).toISOString() },
-    ])
+    expect(reads).toEqual([{ start: at(5000), end: new Date(now + 60_000).toISOString() }])
     expect(h.health.history).toMatchObject({ state: 'ready', detail: 'Listed chats recovered' })
   })
   it('keeps a quiet topic in history recovery while a subscribed Thread that is polled follows it', async () => {
