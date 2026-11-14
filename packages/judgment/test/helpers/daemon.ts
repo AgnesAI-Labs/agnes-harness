@@ -1,9 +1,10 @@
 import { type ChildProcess, spawn } from 'node:child_process'
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { answersFor, type FakeSystemOneBehaviour, startFakeSystemOne } from '@agnes/ai/testkit'
+import { redactSecrets } from '@agnes/extension-api'
 import { createCredentialStore, initializeHome } from '@agnes/host'
 import type { EventEnvelope, PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal, unixTransport } from '@agnes/sdk'
@@ -43,7 +44,7 @@ export type TurnCapture = {
 }
 
 /** A real daemon/SDK fixture. Only synthetic text and a loopback credential enter its home. */
-export async function judgmentDaemon() {
+export async function judgmentDaemon(options: { tools?: boolean; scriptedTool?: boolean } = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-judgment-e2e-')))
   let daemon: ChildProcess | undefined
   let exited: Promise<number | null> | undefined
@@ -95,6 +96,10 @@ export async function judgmentDaemon() {
   const close = () => (closing ??= shutdown())
   try {
     initializeHome(root, PROFILE)
+    if (options.tools) {
+      mkdirSync(join(root, 'source'))
+      writeFileSync(join(root, 'source', 'example.ts'), 'export const semanticSample = true\n')
+    }
     await createCredentialStore({ root }).putApiKey('secret://jev/key', 'TEST-KEY-0123456789')
     const model = (over: Record<string, unknown>) => ({
       name: over.id,
@@ -117,6 +122,34 @@ export async function judgmentDaemon() {
       },
       { type: 'done', reason: 'stop' },
     ]
+    const toolReply = (name: string, args: unknown, toolUseId = '') => [
+      { type: 'toolcall_end', call: { toolUseId, name, args, ordinal: 0 } },
+      {
+        type: 'usage',
+        tokens: { input: 100, output: 10, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      },
+      { type: 'done', reason: 'toolUse' },
+    ]
+    if (options.scriptedTool)
+      writeFileSync(join(root, 'synthetic-rule.txt'), 'Synthetic record: pending review. No private data.\n')
+    const replies = options.tools
+      ? [
+          toolReply('find_relevant', { query: 'semantic sample', path: 'source' }),
+          toolReply('judge_batch', {
+            items: [{ id: 'sample', state: { text: 'synthetic sample', password: 'fixture-pass' } }],
+            questions: { q: { type: 'noul', instructions: 'Is the sample synthetic?' } },
+          }),
+          reply(DONE_REPLY),
+        ]
+      : options.scriptedTool
+        ? [
+            toolReply('read', { path: 'synthetic-rule.txt' }, 'read-one'),
+            reply(DONE_REPLY),
+            toolReply('read', { path: 'synthetic-rule.txt' }, 'read-two'),
+            reply(DONE_REPLY),
+          ]
+        : [reply(PROMISE_REPLY), reply(DONE_REPLY)]
     writeFileSync(
       join(root, 'profiles', PROFILE, 'profile.yaml'),
       JSON.stringify({
@@ -139,7 +172,7 @@ export async function judgmentDaemon() {
               route: 'main',
               api: 'scripted',
               baseUrl: 'https://scripted.invalid',
-              compat: { replies: [reply(PROMISE_REPLY), reply(DONE_REPLY)], repeatLast: true },
+              compat: { replies, repeatLast: true },
               models: [
                 model({
                   id: 'main-1',
@@ -167,7 +200,13 @@ export async function judgmentDaemon() {
           stderr = (stderr + String(data)).slice(-64 * 1024)
           if (stderr.includes('agnesd listening on ')) resolve()
         })
-        daemon!.once('exit', (code) => reject(new Error(`owned daemon exited ${code}`)))
+        daemon!.once('exit', (code) =>
+          reject(
+            new Error(
+              `owned daemon exited ${code}: ${redactSecrets(stderr).replaceAll(root, '[owned-home]').slice(-8000)}`,
+            ),
+          ),
+        )
       }),
       'daemon boot',
     )
@@ -191,19 +230,51 @@ export async function judgmentDaemon() {
     })
     const client = sdk
     await bounded(client.initialize(), 'SDK initialize')
-    async function operation(receipt: PackageOperationReceipt) {
-      const deadline = Date.now() + 120_000
+    async function operation(receipt: PackageOperationReceipt, stage = 'package-operation') {
+      const deadline = Date.now() + (options.scriptedTool ? 45_000 : 120_000)
+      let last: Awaited<ReturnType<Sdk['packages']['operation']['get']>> | undefined
+      let previous = ''
+      const stages: { stage: string; operation: string; state: string; progress: number }[] = []
+      const diagnostic = async () => {
+        const packages = await bounded(
+          client.packages.list({ profile: PROFILE }),
+          'package diagnostic',
+          3000,
+        ).catch(() => null)
+        return JSON.stringify({
+          stage,
+          stages,
+          operation: last?.operation,
+          state: last?.state,
+          progress: last?.progress,
+          error: last?.error,
+          packages: packages?.packages
+            .filter((pkg) => pkg.id === PACKAGE)
+            .map((pkg) => ({
+              id: pkg.id,
+              actual: pkg.actual,
+              primaryStatus: pkg.primaryStatus,
+              reason: pkg.actualReason,
+            })),
+          stderr: redactSecrets(stderr).replaceAll(root, '[owned-home]').slice(-8000),
+        })
+      }
       while (Date.now() < deadline) {
-        const state = await client.packages.operation.get(receipt)
-        if (state.state === 'completed') return state
-        if (['failed', 'cancelled', 'rolled-back'].includes(state.state))
-          throw new Error(`package ${state.state}`)
+        last = await client.packages.operation.get(receipt)
+        if (options.scriptedTool && previous !== last.state) {
+          previous = last.state
+          stages.push({ stage, operation: last.operation, state: last.state, progress: last.progress })
+          if (stages.length > 32) stages.shift()
+        }
+        if (last.state === 'completed') return last
+        if (['failed', 'cancelled', 'rolled-back'].includes(last.state)) throw new Error(await diagnostic())
         await new Promise((resolve) => setTimeout(resolve, 100))
       }
-      throw new Error('owned package operation timed out')
+      throw new Error(`owned package operation timed out: ${await diagnostic()}`)
     }
     return {
       sdk: client,
+      operation,
       fake,
       root,
       close,
@@ -218,6 +289,7 @@ export async function judgmentDaemon() {
           const source = { type: 'file' as const, ref: 'file:./bundled-plugins/judgment' }
           const inspected = await operation(
             await client.packages.inspect({ ...common, commandId: 'judgment-inspect', source }),
+            'inspect',
           )
           const preview = inspected.preview
           if (!preview || preview.blockers.length || !preview.capabilityHash)
@@ -229,6 +301,7 @@ export async function judgmentDaemon() {
               source,
               expectedIntegrity: preview.integrity,
             }),
+            'install',
           )
           await operation(
             await client.packages.trust({
@@ -238,9 +311,11 @@ export async function judgmentDaemon() {
               expectedIntegrity: preview.integrity,
               capabilityHash: preview.capabilityHash,
             }),
+            'trust',
           )
           await operation(
             await client.packages.enable({ ...common, commandId: 'judgment-enable', id: PACKAGE }),
+            'enable',
           )
           installed = true
         }
@@ -263,7 +338,10 @@ export async function judgmentDaemon() {
         const iterator = session
           .events({
             types: [
+              'x/plugin/524280817e87343c/rules.reminded',
               'user/message',
+              'tool/call',
+              'tool/result',
               'assistant/message',
               'cost/ledger',
               'effect/settled',

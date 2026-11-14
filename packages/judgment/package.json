@@ -18,13 +18,15 @@
         "id": "ext:agnes.judgment/main",
         "runtime": "in-process",
         "configReload": "next-session",
-        "apiRange": "^5.16.0",
+        "apiRange": "^5.17.0",
         "inject": [
           "hooks",
           "projections",
           "eventLog",
           "sideCall",
-          "self"
+          "services",
+          "self",
+          "tools"
         ],
         "configSchema": {
           "type": "object",
@@ -81,6 +83,73 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "find": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Opt in to redacted model judgment. Human effectiveness evaluation has not been performed."
+                    }
+                  }
+                },
+                "batch": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Opt in to redacted model judgment. Human effectiveness evaluation has not been performed."
+                    }
+                  }
+                },
+                "rules": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Opt in to native rule reminders after configured exact tool results."
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "text",
+                          "tools"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+                          },
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 1000
+                          },
+                          "tools": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 16,
+                            "uniqueItems": true,
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
                 "stop": {
                   "type": "object",
                   "additionalProperties": false,
@@ -103,19 +172,20 @@
         },
         "metadata": {
           "displayName": "Judgment",
-          "summary": "Optional detection of replies that promise to act but end early.",
-          "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in.",
+          "summary": "Optional stop detection, source finding, batch judgment, rule reminders and settings.",
+          "description": "All uses are off by default. Stop detection sends redacted request/reply excerpts (2,000/8,000 characters). find_relevant locally scans workspace files and sends redacted query, candidate paths, summaries (256 original characters) and source windows (8 KiB each) from at most 20 fresh 1 MiB file prefixes. judge_batch sends up to 500 redacted JSON states plus redacted question text; unsafe question or choice identifiers are refused. Each declared raw item and complete shared questions object is limited to 1 MiB serialized UTF-8 JSON before masking; preparation yields to cancellation. Remote providers receive remaining content; redaction does not remove all confidential information. Native probabilities and text decisions differ. Human effectiveness evaluations have not been performed. Rule reminders are separately disabled by default; when enabled, they send configured rule text, the first 2,000 characters of tool arguments and last 8,000 characters of text output after full-context credential masking. The profile settings page exposes only current-instance status and bounded counters.",
           "locales": {
             "zh-CN": {
               "displayName": "判断",
-              "summary": "可选检测：回复说了要做，却提前结束。",
-              "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。"
+              "summary": "可选的收工检测、源码查找、批量判断、规则提醒与设置。",
+              "description": "全部用途默认关闭。收工检测发送遮蔽后的请求/回复摘录（2,000/8,000 字符）。find_relevant 在工作区本地扫描后，发送遮蔽后的查询、候选路径、摘要（256 原始字符）和源码窗口（每段 8 KiB），最多来自 20 个文件各自新读的前 1 MiB。judge_batch 发送最多 500 条遮蔽后的 JSON 状态及题目文本；含凭据的题目或选项标识整批拒绝。遮蔽前，原始条目及完整共享题目对象按序列化 UTF-8 JSON 各限 1 MiB，准备阶段可取消。远程服务会收到剩余内容，遮蔽不能移除所有机密。原生概率与文字决策不同；真实人工效果评测尚未执行。 规则提醒默认另行关闭；开启后发送配置规则正文、工具参数前 2,000 字符与文本结果后 8,000 字符，均先按完整上下文遮蔽凭据。设置页仅展示当前实例状态和有限计数。"
             }
           }
         },
         "capabilities": {
           "hooks": [
-            "turn_stopping"
+            "turn_stopping",
+            "tool_result"
           ],
           "events": true,
           "projections": [
@@ -129,24 +199,280 @@
                 "x/plugin/524280817e87343c/stop.continued"
               ],
               "maxStateBytes": 262144
+            },
+            {
+              "name": "rules.reminders",
+              "inputEventTypes": [
+                "session/start",
+                "x/plugin/524280817e87343c/rules.reminded"
+              ],
+              "maxStateBytes": 150000
+            },
+            {
+              "name": "tools.session",
+              "inputEventTypes": [
+                "session/start"
+              ],
+              "maxStateBytes": 256
             }
-          ]
+          ],
+          "ui": true,
+          "services": [
+            {
+              "name": "judgment.status",
+              "kind": "query",
+              "scope": "profile",
+              "timeoutMs": 1000,
+              "maxResultBytes": 4096,
+              "inputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [],
+                "properties": {}
+              },
+              "outputSchema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "version",
+                  "configurationRevision",
+                  "state",
+                  "reason",
+                  "hookTimeout",
+                  "cache",
+                  "uses"
+                ],
+                "properties": {
+                  "version": {
+                    "const": 1
+                  },
+                  "configurationRevision": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "state": {
+                    "enum": [
+                      "ready",
+                      "unconfigured",
+                      "unavailable"
+                    ]
+                  },
+                  "reason": {
+                    "enum": [
+                      "none",
+                      "model-not-configured",
+                      "model-unavailable",
+                      "ambiguous-model",
+                      "authorization-unavailable"
+                    ]
+                  },
+                  "hookTimeout": {
+                    "const": "unknown"
+                  },
+                  "cache": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "hit",
+                      "miss",
+                      "size"
+                    ],
+                    "properties": {
+                      "hit": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "miss": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2000
+                      }
+                    }
+                  },
+                  "uses": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "stop",
+                      "findRelevant",
+                      "judgeBatch",
+                      "rules"
+                    ],
+                    "properties": {
+                      "stop": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "enabled",
+                          "available",
+                          "reason",
+                          "requests"
+                        ],
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "enum": [
+                              "none",
+                              "disabled",
+                              "native-required",
+                              "model-unavailable",
+                              "authorization-unavailable"
+                            ]
+                          },
+                          "requests": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        }
+                      },
+                      "findRelevant": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "enabled",
+                          "available",
+                          "reason",
+                          "requests"
+                        ],
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "enum": [
+                              "none",
+                              "disabled",
+                              "native-required",
+                              "model-unavailable",
+                              "authorization-unavailable"
+                            ]
+                          },
+                          "requests": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        }
+                      },
+                      "judgeBatch": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "enabled",
+                          "available",
+                          "reason",
+                          "requests"
+                        ],
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "enum": [
+                              "none",
+                              "disabled",
+                              "native-required",
+                              "model-unavailable",
+                              "authorization-unavailable"
+                            ]
+                          },
+                          "requests": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        }
+                      },
+                      "rules": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "enabled",
+                          "available",
+                          "reason",
+                          "requests"
+                        ],
+                        "properties": {
+                          "enabled": {
+                            "type": "boolean"
+                          },
+                          "available": {
+                            "type": "boolean"
+                          },
+                          "reason": {
+                            "enum": [
+                              "none",
+                              "disabled",
+                              "native-required",
+                              "model-unavailable",
+                              "authorization-unavailable"
+                            ]
+                          },
+                          "requests": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 9007199254740991
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "tools": {
+            "prefix": "",
+            "names": [
+              "find_relevant",
+              "judge_batch"
+            ]
+          },
+          "filesystem": {
+            "read": [
+              "**"
+            ]
+          }
         },
         "default": false
       }
     ],
     "metadata": {
       "displayName": "Judgment",
-      "summary": "Optional detection of replies that promise to act but end early.",
-      "description": "Uses sideCall and reads conversation messages to detect unexpected stops. Sends the first 2,000 characters of the latest request and last 8,000 characters of the final reply after credential redaction. Detection is off by default and requires explicit opt-in.",
+      "summary": "Optional stop detection, source finding, batch judgment, rule reminders and settings.",
+      "description": "All uses are off by default. Stop detection sends redacted request/reply excerpts (2,000/8,000 characters). find_relevant locally scans workspace files and sends redacted query, candidate paths, summaries (256 original characters) and source windows (8 KiB each) from at most 20 fresh 1 MiB file prefixes. judge_batch sends up to 500 redacted JSON states plus redacted question text; unsafe question or choice identifiers are refused. Each declared raw item and complete shared questions object is limited to 1 MiB serialized UTF-8 JSON before masking; preparation yields to cancellation. Remote providers receive remaining content; redaction does not remove all confidential information. Native probabilities and text decisions differ. Human effectiveness evaluations have not been performed. Rule reminders are separately disabled by default; when enabled, they send configured rule text, the first 2,000 characters of tool arguments and last 8,000 characters of text output after full-context credential masking. The profile settings page exposes only current-instance status and bounded counters.",
       "locales": {
         "zh-CN": {
           "displayName": "判断",
-          "summary": "可选检测：回复说了要做，却提前结束。",
-          "description": "通过 sideCall 读取对话消息进行意外收工判断。凭据遮蔽后发送最近请求的前 2,000 字符和最后回复的后 8,000 字符。检测默认关闭，需要手动开启。"
+          "summary": "可选的收工检测、源码查找、批量判断、规则提醒与设置。",
+          "description": "全部用途默认关闭。收工检测发送遮蔽后的请求/回复摘录（2,000/8,000 字符）。find_relevant 在工作区本地扫描后，发送遮蔽后的查询、候选路径、摘要（256 原始字符）和源码窗口（每段 8 KiB），最多来自 20 个文件各自新读的前 1 MiB。judge_batch 发送最多 500 条遮蔽后的 JSON 状态及题目文本；含凭据的题目或选项标识整批拒绝。遮蔽前，原始条目及完整共享题目对象按序列化 UTF-8 JSON 各限 1 MiB，准备阶段可取消。远程服务会收到剩余内容，遮蔽不能移除所有机密。原生概率与文字决策不同；真实人工效果评测尚未执行。 规则提醒默认另行关闭；开启后发送配置规则正文、工具参数前 2,000 字符与文本结果后 8,000 字符，均先按完整上下文遮蔽凭据。设置页仅展示当前实例状态和有限计数。"
         }
       }
-    }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes.judgment/main",
+        "path": "./src/agnes.client.json"
+      }
+    ]
   },
   "devDependencies": {
     "@agnes/ai": "workspace:*",

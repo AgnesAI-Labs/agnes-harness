@@ -1,6 +1,7 @@
 import type { CostLedger, EventEnvelope, UINode, UITurn, UITurnCall, UITurnUsage } from '@agnes/protocol'
 import { callTiming } from './call-timing.js'
 import { clipUtf16 } from './clip.js'
+import { SideCallDisplay } from './side-call-display.js'
 import { createTraceState, hydrateTraceState, type TraceFoldState, traceFold } from './trace.js'
 
 type TurnEndReason = NonNullable<UITurn['reason']>
@@ -123,6 +124,7 @@ const callFrom = (event: EventEnvelope, row: CostLedger): UITurnCall => ({
 /** Stable turn ownership and billing derived only from committed ledger rows. */
 export class TurnProjection {
   private readonly values: UITurn[] = []
+  private readonly sideCallDisplay = new SideCallDisplay()
   private readonly byId = new Map<string, UITurn>()
   private readonly physicalTurns = new Map<number, string>()
   private readonly effectTurns = new Map<string, string>()
@@ -142,7 +144,7 @@ export class TurnProjection {
   }
 
   apply(event: EventEnvelope): { changed: Set<string>; owner?: string } {
-    const changed = new Set<string>()
+    const changed = new Set<string>(this.sideCallDisplay.observe(event))
     let owner = this.current
     const data = event.data as Record<string, unknown> | null
     switch (event.type) {
@@ -250,6 +252,7 @@ export class TurnProjection {
         const usage = this.usageOf(turn)
         if (usage.counted.has(row.effectId)) break
         const call = callFrom(event, row)
+        this.sideCallDisplay.attach(row, call, turn.id, event.lane ?? 'main')
         turn.usage.calls.push(call)
         usage.counted.add(call.id)
         usage.sum.add(call)

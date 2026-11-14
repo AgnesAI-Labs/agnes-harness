@@ -8,6 +8,7 @@ export type KeyValueStore = Pick<OwnedStore, 'get' | 'set' | 'delete' | 'scan'>
 export interface AnswerCache {
   get(state: JsonValue, target: JudgeTarget, question: Question): Answer | null
   set(state: JsonValue, target: JudgeTarget, question: Question, answer: Answer): void
+  stats(): { hit: number; miss: number; size: number }
   clear(): void
 }
 function canonical(value: JsonValue): string {
@@ -40,6 +41,8 @@ export function createAnswerCache(
 ): AnswerCache {
   const memory = new Map<string, { answer: Answer; at: number }>()
   let disabled = false
+  let hit = 0,
+    miss = 0
   const fail = () => {
     disabled = true
     memory.clear()
@@ -53,7 +56,9 @@ export function createAnswerCache(
     }
   }
   return {
+    stats: () => ({ hit, miss, size: memory.size }),
     get(state, target, question) {
+      miss = Math.min(Number.MAX_SAFE_INTEGER, miss + 1)
       if (disabled || !target.native) return null
       try {
         const key = keyFor(state, target, question)
@@ -74,6 +79,8 @@ export function createAnswerCache(
         memory.delete(key)
         memory.set(key, { answer, at: value.at })
         trim()
+        miss--
+        hit = Math.min(Number.MAX_SAFE_INTEGER, hit + 1)
         return structuredClone(answer)
       } catch {
         fail()

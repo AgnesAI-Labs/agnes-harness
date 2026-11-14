@@ -11,7 +11,7 @@ import { SessionHookPort } from '../src/hooks/port.js'
 import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeSeams } from './helpers/fake-seams.js'
-import { actor, noTimers, testFsOps, testWorkspaceInvocation } from './helpers/open-session.js'
+import { actor, noTimers, testFsOps } from './helpers/open-session.js'
 import {
   answer,
   data,
@@ -70,7 +70,6 @@ function setup(script: SideScript = answer()) {
     contract: { contract_id: null, parser_version: '1' },
     preset: presetDefaults(),
     fsOps,
-    workspaceInvocation: testWorkspaceInvocation(fsOps, seams),
     netFetch: async () => new Response(''),
     logger: { debug() {}, info() {}, warn() {}, error() {} },
     timers: noTimers,

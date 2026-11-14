@@ -385,5 +385,6 @@
     "@agnes/protocol",
     "@agnes/cordis"
   ],
-  "@agnes/judgment": ["@agnes/extension-api", "@agnes/protocol"]
+  "@agnes/judgment": ["@agnes/extension-api", "@agnes/protocol"],
+  "@agnes/judgment-ui": ["@agnes/web-client", "@agnes/web-ui"]
 }

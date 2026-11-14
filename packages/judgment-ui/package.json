@@ -1,0 +1,27 @@
+{
+  "name": "@agnes/judgment-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser settings source for the judgment optional package",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "license": "Apache-2.0"
+}

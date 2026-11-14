@@ -107,8 +107,16 @@ export function createConversationProjection(owner: string): PluginProjectionDef
     init: () => ({ child: false, request: null, reply: null, continuedSeq: 0, goalSources: [], queued: [] }),
     apply(state, event) {
       const data = event.data
-      if (event.type === 'session/start' && object(data))
-        return retainUnchanged(state, { ...state, child: object(data.parent) })
+      if (
+        event.type === 'session/start' &&
+        event.origin === 'system' &&
+        event.trust === 'trusted' &&
+        object(data)
+      )
+        return retainUnchanged(state, {
+          ...state,
+          child: ['parent', 'delegation', 'fork'].some((key) => Object.hasOwn(data, key)),
+        })
       if (
         event.type === marker &&
         (event.origin === `ext:${owner}` || event.origin === 'system') &&

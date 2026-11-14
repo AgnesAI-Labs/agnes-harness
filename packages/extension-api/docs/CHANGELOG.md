@@ -2,6 +2,10 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.17.0
+
+- Optional `ExtensionContext.sideModels.subscribe(listener)` emits payload-free catalogue change notices. Subscribe before `list()` to observe late provider readiness. The existing grant, declaration and lifetime checks still apply; unsubscribe on disposal. `list()` retains its route/model/api-only shape.
+
 ## 5.16.0
 
 ### Added

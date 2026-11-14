@@ -1,53 +1,45 @@
 import type { PluginContextFacets } from '@agnes/extension-api'
-import { createAnswerCache } from './cache.js'
-import { resolveJudgeChain, resolveStopConfig } from './config.js'
-import { createJudge, createRouteCooldown } from './judge.js'
+import { resolveStopConfig } from './config.js'
+import { createJudgmentRuntime } from './runtime.js'
+import { registerJudgmentStatus } from './status.js'
+import { registerRuleChecks } from './uses/rules.js'
 import { registerStopDetection } from './uses/stop.js'
+import { registerJudgmentTools } from './uses/tools.js'
 
+export type { JudgmentAccounting } from './accounting.js'
 export { createAnswerCache } from './cache.js'
 export type { JudgeTarget, StopConfig } from './config.js'
-export { CONFIG_SCHEMA, resolveJudgeChain, resolveStopConfig } from './config.js'
+export { CONFIG_SCHEMA, resolveJudgeChain, resolveStopConfig, resolveToolConfig } from './config.js'
 export { nativePayload, splitRequest } from './encode.js'
-export type { Judge, JudgeOutcome } from './judge.js'
+export type { Judge, JudgeOptions, JudgeOutcome } from './judge.js'
 export { createJudge, createRouteCooldown } from './judge.js'
 export type * from './questions.js'
 export { validateRequest } from './questions.js'
+export type { JudgmentContext, JudgmentRuntime } from './runtime.js'
+export { createJudgmentRuntime } from './runtime.js'
+export type { JudgmentScheduler } from './scheduler.js'
+export { createJudgmentScheduler } from './scheduler.js'
 export { parseAnswers, renderPrompt } from './text-bridge.js'
 
+export { registerJudgmentTools } from './uses/tools.js'
+
 export const judgmentPlugin = {
-  inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'self'] as const,
+  inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'services', 'self', 'tools'] as const,
   apply(plugin: PluginContextFacets, config?: unknown) {
-    const cache = createAnswerCache(null, {
-      ttlMs: 30 * 86400000,
-      maxEntries: 2000,
-      onError: () => plugin.self.log.warn('Judgment answer cache disabled'),
-    })
-    const cooldown = createRouteCooldown()
+    const runtime = createJudgmentRuntime(plugin, config)
     const dispose = registerStopDetection(plugin, {
       config: () => resolveStopConfig(config),
-      async judge(ctx) {
-        if (!ctx.sideCall || !plugin.self.sideModels || ctx.signal.aborted) return null
-        const models = await plugin.self.sideModels.list()
-        if (ctx.signal.aborted) return null
-        const chain = resolveJudgeChain(config, models)
-        if (!chain) {
-          plugin.self.log.info('Judgment idle: select an unambiguous available judgment model')
-          return null
-        }
-        return createJudge({
-          port: ctx.sideCall,
-          chain,
-          cache,
-          cooldown,
-          session: ctx.session.key,
-          now: Date.now,
-        })
-      },
+      judge: (ctx) => runtime.judge(ctx),
     })
+    const disposeTools = registerJudgmentTools(plugin, runtime, config)
+    const rules = registerRuleChecks(plugin, runtime, config)
+    const status = registerJudgmentStatus(plugin, runtime, config)
     return () => {
+      disposeTools()
+      status()
+      rules()
       dispose()
-      cache.clear()
-      cooldown.clear()
+      runtime.dispose()
     }
   },
 }

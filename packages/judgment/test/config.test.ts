@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { resolveJudgeChain, resolveStopConfig } from '../src/config.js'
+import { resolveJudgeChain, resolveStopConfig, resolveToolConfig } from '../src/config.js'
 
 const native = { route: 'jev', model: 'j', api: 'typesafe-systemone' }
 const chat = { route: 'chat', model: 'c', api: 'openai-completions' }
@@ -33,4 +33,12 @@ it('requires explicit U2 opt-in', () => {
   expect(resolveStopConfig({})).toEqual({ enabled: false })
   expect(resolveStopConfig({ uses: { stop: { enabled: true } } })).toEqual({ enabled: true })
   expect(resolveStopConfig({ uses: { stop: { enabled: 'true' } } })).toEqual({ enabled: false })
+})
+
+it('requires explicit independent find and batch opt-in', () => {
+  expect(resolveToolConfig({})).toEqual({ find: false, batch: false })
+  expect(resolveToolConfig({ uses: { find: { enabled: true }, batch: { enabled: 'true' } } })).toEqual({
+    find: true,
+    batch: false,
+  })
 })

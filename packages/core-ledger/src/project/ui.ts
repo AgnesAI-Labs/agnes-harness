@@ -50,8 +50,8 @@ import {
   cacheHealthView,
   initialCacheHealthState,
 } from './cache-health.js'
-import { callTiming } from './call-timing.js'
 import { clipUtf16 as clip } from './clip.js'
+import { createCostNode, SideCallDisplay } from './side-call-display.js'
 import { SurfaceCache } from './surface.js'
 import { initialToolNode } from './tool-node.js'
 import { TurnProjection, turnsForNodes } from './turns.js'
@@ -272,6 +272,7 @@ export class UIProjectionCell {
   private contextBase: { seq: Seq; total: number } | undefined
   private contextTokensValue = 0
   private readonly turnsProjection = new TurnProjection()
+  private readonly sideCallDisplay = new SideCallDisplay()
   private cacheHealth: CacheHealthState = initialCacheHealthState()
 
   private recording = false
@@ -579,7 +580,11 @@ export class UIProjectionCell {
     const changed = this.applyNode(event)
     for (const node of this.refinement.apply(event, nextState, this.lane))
       changed.add(placeNode(this.nodes, this.nodeIndexes, node))
-    for (const id of this.turnsProjection.associate(event, changed, turnUpdate.owner))
+    for (const id of this.turnsProjection.associate(
+      event,
+      event.type === 'x/core/side-call-intent' ? [] : changed,
+      turnUpdate.owner,
+    ))
       turnUpdate.changed.add(id)
     this.state = nextState
     this.applied += 1
@@ -664,7 +669,7 @@ export class UIProjectionCell {
   }
 
   private applyNode(event: Event): Set<string> {
-    const changed = new Set<string>()
+    const changed = new Set<string>(this.sideCallDisplay.observe(event))
     if ((event.lane ?? 'main') !== this.lane) return changed
     const { id, seq } = event
     const data = event.data
@@ -969,19 +974,9 @@ export class UIProjectionCell {
       }
       case 'cost/ledger': {
         const cost = data as CostLedger
-        this.pushNode({
-          kind: 'cost',
-          id,
-          seq,
-          source: cost.creditSource,
-          purpose: cost.purpose,
-          ...(!cost.adjustment ? { tokens: structuredClone(cost.tokens) } : {}),
-          ...(cost.billing ? { billing: structuredClone(cost.billing) } : {}),
-          model: cost.model,
-          ...(cost.interrupted !== undefined ? { interrupted: cost.interrupted } : {}),
-          ...(cost.timing ? { timing: callTiming(cost.timing) } : {}),
-          ...(cost.credits !== undefined ? { credits: cost.credits } : {}),
-        })
+        const node = createCostNode(event, cost)
+        this.sideCallDisplay.attach(cost, node, id, event.lane ?? 'main')
+        this.pushNode(node)
         changed.add(id)
         break
       }

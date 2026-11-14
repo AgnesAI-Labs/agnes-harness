@@ -1,5 +1,6 @@
 import { decisionLocaleCatalog } from './decision.js'
 import type { LocaleCatalog } from './index.js'
+import { judgmentCostLocaleCatalog } from './judgment-cost.js'
 import { turnErrorLocaleCatalog } from './turn-error.js'
 
 /**
@@ -8,6 +9,7 @@ import { turnErrorLocaleCatalog } from './turn-error.js'
  */
 export const conversationLocaleCatalog: LocaleCatalog = {
   en: {
+    ...judgmentCostLocaleCatalog.en,
     'accounts.keepEditing': 'Keep editing',
     'accounts.discardAction': 'Discard changes',
     'accounts.or': 'Or',
@@ -406,6 +408,7 @@ export const conversationLocaleCatalog: LocaleCatalog = {
     'settings.oauth.methodLabel': 'Auth method',
   },
   'zh-CN': {
+    ...judgmentCostLocaleCatalog['zh-CN'],
     'accounts.keepEditing': '继续编辑',
     'accounts.discardAction': '放弃更改',
     'accounts.or': '或者',
