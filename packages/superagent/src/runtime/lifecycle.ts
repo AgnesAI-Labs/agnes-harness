@@ -12,7 +12,7 @@ import { archiveExpired, retiredTickets } from '../app/store-retention.js'
 import { setAgentVariables } from '../app/subprocess.js'
 import { interruptionRestarts } from '../core/assignments.js'
 import { liveTicket, runningAssignment, type Ticket } from '../core/index.js'
-import { KV } from '../kv.js'
+import { KV, type Paused } from '../kv.js'
 import { type SetupCode, SetupError, type SetupProblem } from '../setup.js'
 import type { SessionAdapter, SuperagentApp } from './contracts.js'
 import { agentPaths, type EnvironmentConfig, verifyEnvironment, writeEnvironment } from './environment.js'
@@ -208,27 +208,18 @@ async function quiet(
   }
 }
 
-export function createLifecycle(deps: LifecycleDeps): Lifecycle {
-  const { store, sessions, control, hooks } = deps
-  const now = deps.now ?? Date.now
+type SessionState = Awaited<ReturnType<SessionAdapter['state']>>
+
+/**
+ * The upkeep of the records: `retire` removes the workspace registrations of the tickets retention retired, which also
+ * archives their Sessions, while an ended ticket that a person's reply can still resume keeps both; `upkeep` archives
+ * expired records, then retires the tickets whose conversation that archived. Neither throws.
+ */
+function upkeepOf(deps: LifecycleDeps, now: () => number, warn: (text: string) => void) {
+  const { store, control } = deps
   const archive = deps.archive ?? archiveExpired
-  const warn = (text: string) => deps.log?.warn(text)
-  let status: LifecycleStatus = { state: 'stopped' }
-  let work: Promise<void> | undefined
-  let app: SuperagentApp | undefined
-  let timer: ReturnType<typeof setInterval> | undefined
-  let stopping = false
-  let aborter: AbortController | undefined
-
-  const ticketOf = (sessionId: string): Ticket | undefined =>
-    sessionId.startsWith(WORKER_PREFIX) ? store.tickets.get(sessionId.slice(WORKER_PREFIX.length)) : undefined
-
   /** Directories whose registration this lifecycle already removed, so a daily pass does not ask again. */
   const retired = new Set<string>()
-  /**
-   * Removes the workspace registrations of the tickets retention retired, which also archives their Sessions; an ended
-   * ticket that a person's reply can still resume keeps both. Never throws.
-   */
   const retire = async (tickets: readonly Ticket[]): Promise<void> => {
     const dirs = tickets.flatMap((ticket) => {
       const dir = ticket.execution?.directory
@@ -242,7 +233,6 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       warn(`Superagent could not remove the workspaces of retired tickets: ${message(error)}`)
     }
   }
-  /** Archives expired records, then retires the tickets whose conversation that archived; never throws. */
   const upkeep = async (): Promise<void> => {
     try {
       archive(store, now())
@@ -251,33 +241,103 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     }
     await retire(retiredTickets(store, now()))
   }
+  return { upkeep, retire }
+}
 
-  /**
-   * Reconciles one Session from the state read for it before. A running turn is left alone. When the ticket's running
-   * assignment would restart, the inputs queued behind the aborted turn are dropped — the restart puts back what no step
-   * took and delivers it again — and the Engine re-dispatches it once with a recovery note. Otherwise the oldest queued
-   * input is run: nothing resumes it after a daemon restart. A worker with nothing queued gets its waiting inputs flushed.
-   */
-  const reconcile = async (
-    running: SuperagentApp,
-    sessionId: string,
-    state: Awaited<ReturnType<SessionAdapter['state']>>,
-  ): Promise<void> => {
-    if (state.running) return
-    const ticket = ticketOf(sessionId)
-    const assignment = ticket && liveTicket(ticket) ? runningAssignment(ticket) : undefined
-    if (ticket && assignment && interruptionRestarts(assignment)) {
-      const superseded = state.pending
-        .filter((item) => item.commandId?.startsWith(DELIVERY_PREFIX))
-        .map((item) => item.itemId)
-      if (superseded.length) await sessions.dropPending(sessionId, superseded)
-      running.engine.assignmentInterrupted(ticket.id, assignment.id)
-    } else if (state.pending.length) {
-      await control.sendNow(sessionId, state.pending[0]!.itemId)
-    } else if (ticket && assignment) {
-      running.engine.assignmentInterrupted(ticket.id, assignment.id)
-    }
+/**
+ * Reconciles one Session from the state read for it before. A running turn is left alone. When the ticket's running
+ * assignment would restart, the inputs queued behind the aborted turn are dropped — the restart puts back what no step
+ * took and delivers it again — and the Engine re-dispatches it once with a recovery note. Otherwise the oldest queued
+ * input is run: nothing resumes it after a daemon restart. A worker with nothing queued gets its waiting inputs flushed.
+ */
+async function reconcileSession(
+  { store, sessions, control }: LifecycleDeps,
+  running: SuperagentApp,
+  sessionId: string,
+  state: SessionState,
+): Promise<void> {
+  if (state.running) return
+  const ticket = sessionId.startsWith(WORKER_PREFIX)
+    ? store.tickets.get(sessionId.slice(WORKER_PREFIX.length))
+    : undefined
+  const assignment = ticket && liveTicket(ticket) ? runningAssignment(ticket) : undefined
+  if (ticket && assignment && interruptionRestarts(assignment)) {
+    const superseded = state.pending
+      .filter((item) => item.commandId?.startsWith(DELIVERY_PREFIX))
+      .map((item) => item.itemId)
+    if (superseded.length) await sessions.dropPending(sessionId, superseded)
+    running.engine.assignmentInterrupted(ticket.id, assignment.id)
+  } else if (state.pending.length) {
+    await control.sendNow(sessionId, state.pending[0]!.itemId)
+  } else if (ticket && assignment) {
+    running.engine.assignmentInterrupted(ticket.id, assignment.id)
   }
+}
+
+/**
+ * Stops every session in parallel, within `budgetMs` (see `quiet`), and returns those it did not confirm quiet: every
+ * session counts as not stopped until its stop confirmed it quiet.
+ */
+async function quietAll(
+  { sessions, control }: LifecycleDeps,
+  ids: readonly string[],
+  reason: StopReason,
+  budgetMs: number,
+  warn: (text: string) => void,
+): Promise<string[]> {
+  const unstopped = new Set(ids)
+  await within(
+    Promise.allSettled(
+      ids.map((id) =>
+        quiet(sessions, control, id, reason === 'shutdown').then(
+          (done) => {
+            if (done) unstopped.delete(id)
+            else warn(`Superagent session ${id} is still running after ${QUIET_PASSES} stops`)
+          },
+          (error: unknown) => {
+            warn(`Superagent could not stop session ${id}: ${message(error)}`)
+          },
+        ),
+      ),
+    ),
+    budgetMs,
+  )
+  return [...unstopped]
+}
+
+/** Records the running assignments of open tickets as paused by this stop, and how the stop went; never throws. */
+function recordPause(
+  store: Store,
+  reason: StopReason,
+  at: number,
+  stop: NonNullable<Paused['stop']>,
+  warn: (text: string) => void,
+): void {
+  try {
+    const assignments = store.tickets.open().flatMap((ticket) => {
+      const assignment = runningAssignment(ticket)
+      return assignment ? [{ ticketId: ticket.id, assignmentId: assignment.id }] : []
+    })
+    store.set(KV.runtime.paused, { at: new Date(at).toISOString(), reason, assignments, stop })
+  } catch (error) {
+    warn(`Superagent could not record the pause: ${message(error)}`)
+  }
+}
+
+export function createLifecycle(deps: LifecycleDeps): Lifecycle {
+  const { store, sessions, control, hooks } = deps
+  const now = deps.now ?? Date.now
+  const warn = (text: string) => deps.log?.warn(text)
+  let status: LifecycleStatus = { state: 'stopped' }
+  let work: Promise<void> | undefined
+  let app: SuperagentApp | undefined
+  let timer: ReturnType<typeof setInterval> | undefined
+  let stopping = false
+  let aborter: AbortController | undefined
+
+  const { upkeep, retire } = upkeepOf(deps, now, warn)
+  const reconcile = (running: SuperagentApp, sessionId: string, state: SessionState) =>
+    reconcileSession(deps, running, sessionId, state)
 
   /** Refuses the tools of every Superagent session the store knows, for `reason`; the owner's sessions are untouched. */
   const refuse = (reason: string): void => {
@@ -345,7 +405,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       if (problem) return waitForSetup(problem)
       const ids = started.executor.sessionIds()
       // Read every Session first, while they are still refused; then guard them before anything runs in one.
-      const states = new Map<string, Awaited<ReturnType<SessionAdapter['state']>>>()
+      const states = new Map<string, SessionState>()
       for (const id of ids) {
         if (stopping) return
         try {
@@ -442,38 +502,8 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       } catch (error) {
         warn(`Superagent could not list its sessions: ${message(error)}`)
       }
-      // Every session counts as not stopped until its stop confirmed it quiet.
-      const unstopped = new Set(ids)
-      await within(
-        Promise.allSettled(
-          ids.map((id) =>
-            quiet(sessions, control, id, reason === 'shutdown').then(
-              (done) => {
-                if (done) unstopped.delete(id)
-                else warn(`Superagent session ${id} is still running after ${QUIET_PASSES} stops`)
-              },
-              (error: unknown) => {
-                warn(`Superagent could not stop session ${id}: ${message(error)}`)
-              },
-            ),
-          ),
-        ),
-        left(),
-      )
-      try {
-        const paused = store.tickets.open().flatMap((ticket) => {
-          const assignment = runningAssignment(ticket)
-          return assignment ? [{ ticketId: ticket.id, assignmentId: assignment.id }] : []
-        })
-        store.set(KV.runtime.paused, {
-          at: new Date(now()).toISOString(),
-          reason,
-          assignments: paused,
-          stop: { ms: Date.now() - began, sessions: ids.length, unstopped: [...unstopped] },
-        })
-      } catch (error) {
-        warn(`Superagent could not record the pause: ${message(error)}`)
-      }
+      const unstopped = await quietAll(deps, ids, reason, left(), warn)
+      recordPause(store, reason, now(), { ms: Date.now() - began, sessions: ids.length, unstopped }, warn)
       hooks.clear()
       await within(
         Promise.resolve().then(() => running.drain()),
