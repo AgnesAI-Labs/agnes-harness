@@ -43,6 +43,8 @@ export interface BundledAppChannelBridge {
 export type BundledAppCaller = { assertCurrent(): void; signal?: AbortSignal }
 
 type Subscription = {
+  /** The channel row whose instance the subscriber claimed; only that row may route to it. */
+  channel: string
   caller: BundledAppCaller
   onEvent: (event: ChannelEvent) => void
   /** Recently delivered `accountId`/`eventId` pairs, oldest first. */
@@ -89,10 +91,11 @@ export class BundledAppChannelHub {
           if (rows.size === 0 && this.links.get(instanceId) === rows) this.links.delete(instanceId)
         }
       },
-      claimed: (instanceId, chatId) => this.live(instanceId, chatId) !== undefined,
+      // Another row running an instance with the same id must neither see nor feed this claim.
+      claimed: (instanceId, chatId) => this.live(instanceId, chatId)?.channel === channel,
       deliver: (instanceId, event) => {
         const subscription = this.live(instanceId, event.chat.id)
-        if (!subscription) return
+        if (subscription?.channel !== channel) return
         const id = `${event.accountId}\0${event.eventId}`
         if (subscription.seen.has(id)) return
         subscription.seen.add(id)
@@ -111,16 +114,16 @@ export class BundledAppChannelHub {
 
   /** A connected instance, by its id. Two channel rows with the same instance id name none. */
   link(instanceId: string): BundledAppChannelLink {
-    const link = this.attached(instanceId)
+    const { link } = this.attached(instanceId)
     if (!link.connected()) throw unavailable()
     return link
   }
 
-  private attached(instanceId: string): BundledAppChannelLink {
+  private attached(instanceId: string): { channel: string; link: BundledAppChannelLink } {
     const rows = this.links.get(instanceId)
-    const link = rows?.size === 1 ? [...rows.values()][0] : undefined
-    if (!link) throw unavailable()
-    return link
+    const [only] = rows?.size === 1 ? rows : []
+    if (!only) throw unavailable()
+    return { channel: only[0], link: only[1] }
   }
 
   subscribe(
@@ -130,11 +133,11 @@ export class BundledAppChannelHub {
     onEvent: (event: ChannelEvent) => void,
   ): () => void {
     const ids = [...new Set(chats)]
-    const link = this.attached(instanceId)
+    const { channel, link } = this.attached(instanceId)
     // One consumer per group: another subscriber, or a session the owner bound to it, holds it.
     if (ids.some((id) => this.live(instanceId, id) || link.bound(id)))
       throw rpcError('SEMANTIC_REJECTED', { code: 'CHANNEL_CHAT_CLAIMED' })
-    const subscription: Subscription = { caller, onEvent, seen: new Set() }
+    const subscription: Subscription = { channel, caller, onEvent, seen: new Set() }
     for (const id of ids) this.claims.set(claimKey(instanceId, id), subscription)
     // A stale or aborted caller's claims lapse on their next lookup; unsubscribing ends them now.
     return () => {
