@@ -4110,6 +4110,8 @@
             "source": {
               "enum": ["gateway", "estimated"]
             },
+            "caller": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "label": { "type": "string", "minLength": 1, "maxLength": 64 },
             "purpose": {
               "type": "string"
             },
@@ -4515,6 +4517,8 @@
           "type": "integer",
           "minimum": 1
         },
+        "caller": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 64 },
         "purpose": {
           "enum": [
             "inference",

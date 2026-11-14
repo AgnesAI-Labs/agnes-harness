@@ -1,6 +1,8 @@
 import type { PluginContextFacets } from '@agnes/extension-api'
 import { resolveStopConfig } from './config.js'
 import { createJudgmentRuntime } from './runtime.js'
+import { registerJudgmentStatus } from './status.js'
+import { registerRuleChecks } from './uses/rules.js'
 import { registerStopDetection } from './uses/stop.js'
 import { registerJudgmentTools } from './uses/tools.js'
 
@@ -22,7 +24,7 @@ export { parseAnswers, renderPrompt } from './text-bridge.js'
 export { registerJudgmentTools } from './uses/tools.js'
 
 export const judgmentPlugin = {
-  inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'self', 'tools'] as const,
+  inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'services', 'self', 'tools'] as const,
   apply(plugin: PluginContextFacets, config?: unknown) {
     const runtime = createJudgmentRuntime(plugin, config)
     const dispose = registerStopDetection(plugin, {
@@ -30,8 +32,12 @@ export const judgmentPlugin = {
       judge: (ctx) => runtime.judge(ctx),
     })
     const disposeTools = registerJudgmentTools(plugin, runtime, config)
+    const rules = registerRuleChecks(plugin, runtime, config)
+    const status = registerJudgmentStatus(plugin, runtime, config)
     return () => {
       disposeTools()
+      status()
+      rules()
       dispose()
       runtime.dispose()
     }

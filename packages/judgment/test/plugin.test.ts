@@ -9,11 +9,12 @@ function fixture(config: unknown) {
   const list = vi.fn(async () => models)
   const plugin = {
     hooks: {
-      register: (_: string, fn: HookHandler<'turn_stopping'>) => {
-        handler = fn
+      register: (name: string, fn: HookHandler<'turn_stopping'>) => {
+        if (name === 'turn_stopping') handler = fn
         return () => {}
       },
     },
+    services: { register: () => () => {} },
     projections: { register: () => () => {} },
     eventLog: { append: vi.fn(async () => 3) },
     self: {

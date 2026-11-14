@@ -171,7 +171,10 @@ export function pairingCodeShaped(text: string): boolean {
   return value.length === 8 && [...value].every((letter) => ALPHABET.includes(letter))
 }
 
-const shared = new Map<string, { targets: ChannelTargets; refs: number }>()
+const shared = new Map<
+  string,
+  { targets: ChannelTargets; stores: Map<symbol, PersistenceMetadataNamespace> }
+>()
 
 /**
  * Pairings of channel chats to managed services, their one-time codes and the send ledger. The Host is
@@ -189,8 +192,11 @@ export class ChannelTargets {
 
   /** The instance for `key`, shared by every caller in this process until each has released it. */
   static retain(key: string, store: () => PersistenceMetadataNamespace, clock: () => number = Date.now) {
-    const entry = shared.get(key) ?? { targets: new ChannelTargets(store(), clock), refs: 0 }
-    entry.refs++
+    const namespace = store()
+    const entry = shared.get(key) ?? { targets: new ChannelTargets(namespace, clock), stores: new Map() }
+    const token = Symbol()
+    entry.stores.set(token, namespace)
+    entry.targets.store = namespace
     shared.set(key, entry)
     let released = false
     return {
@@ -198,7 +204,14 @@ export class ChannelTargets {
       release() {
         if (released) return
         released = true
-        if (--entry.refs > 0 || shared.get(key) !== entry) return
+        entry.stores.delete(token)
+        const next = entry.stores.values().next()
+        if (!next.done) {
+          // Each namespace is fenced by its Host generation's storage handle. Never keep a retired one.
+          entry.targets.store = next.value
+          return
+        }
+        if (shared.get(key) !== entry) return
         shared.delete(key)
         clearInterval(entry.targets.sweep)
       },
@@ -206,7 +219,7 @@ export class ChannelTargets {
   }
 
   constructor(
-    private readonly store: PersistenceMetadataNamespace,
+    private store: PersistenceMetadataNamespace,
     private readonly clock: () => number = Date.now,
   ) {
     this.prune()

@@ -3,13 +3,23 @@ import { createAnswerCache } from './cache.js'
 import { type JudgeTarget, resolveJudgeChain } from './config.js'
 import { within } from './deadline.js'
 import { createJudge, createRouteCooldown, type Judge } from './judge.js'
+import { object } from './questions.js'
 import { createJudgmentScheduler } from './scheduler.js'
 
 export type JudgmentContext = Pick<HookContext, 'sideCall' | 'signal' | 'session'>
+export type JudgmentUse = 'stop' | 'findRelevant' | 'judgeBatch' | 'rules'
+export type JudgmentStatusReason =
+  | 'none'
+  | 'model-not-configured'
+  | 'model-unavailable'
+  | 'ambiguous-model'
+  | 'authorization-unavailable'
 export interface JudgmentRuntime {
+  stats(): { cache: { hit: number; miss: number; size: number }; requests: Record<JudgmentUse, number> }
+  statusReason(): JudgmentStatusReason
   current(): readonly JudgeTarget[] | null
   subscribe(listener: () => void): () => void
-  judge(ctx: JudgmentContext): Promise<Judge | null>
+  judge(ctx: JudgmentContext, requirements?: { nativeOnly?: boolean }): Promise<Judge | null>
   dispose(): void
 }
 
@@ -28,6 +38,16 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
   const cooldown = createRouteCooldown()
   const listeners = new Set<() => void>()
   let current: readonly JudgeTarget[] | null = null
+  let reason: JudgmentStatusReason = sideModels ? 'model-not-configured' : 'authorization-unavailable'
+  const requests: Record<JudgmentUse, number> = { stop: 0, findRelevant: 0, judgeBatch: 0, rules: 0 }
+  const purposes: Record<string, JudgmentUse> = {
+    'judgment.stop': 'stop',
+    'judgment.find.names': 'findRelevant',
+    'judgment.find.sketches': 'findRelevant',
+    'judgment.find.verify': 'findRelevant',
+    'judgment.batch': 'judgeBatch',
+    'judgment.rules': 'rules',
+  }
   const publish = (next: readonly JudgeTarget[] | null) => {
     if (signal.aborted || JSON.stringify(current) === JSON.stringify(next)) return
     current = next
@@ -38,9 +58,26 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
     try {
       const models = await within(sideModels.list(), readSignal)
       const next = resolveJudgeChain(config, models)
+      const selected = object(config) && object(config.judge) ? config.judge : {}
+      const explicit = typeof selected.route === 'string' || typeof selected.model === 'string'
+      const eligible = models.filter(
+        (model) =>
+          (typeof selected.route === 'string'
+            ? model.route === selected.route
+            : model.api === 'typesafe-systemone') &&
+          (typeof selected.model !== 'string' || model.model === selected.model),
+      )
+      reason = next
+        ? 'none'
+        : eligible.length
+          ? 'ambiguous-model'
+          : explicit
+            ? 'model-unavailable'
+            : 'model-not-configured'
       publish(next)
       return next
     } catch {
+      reason = 'model-unavailable'
       publish(null)
       return null
     }
@@ -68,6 +105,8 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
     unsubscribe?.()
     listeners.clear()
     current = null
+    reason = 'authorization-unavailable'
+    for (const use of Object.keys(requests) as JudgmentUse[]) requests[use] = 0
     scheduler.dispose()
     cache.clear()
     cooldown.clear()
@@ -76,6 +115,8 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
   ownerSignal.addEventListener('abort', dispose, { once: true })
   refresh()
   return {
+    stats: () => ({ cache: cache.stats(), requests: { ...requests } }),
+    statusReason: () => reason,
     current: () => current,
     subscribe(listener) {
       if (signal.aborted) return () => {}
@@ -84,11 +125,11 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
         listeners.delete(listener)
       }
     },
-    async judge(ctx) {
+    async judge(ctx, requirements) {
       const callSignal = AbortSignal.any([ctx.signal, signal])
       if (!ctx.sideCall || callSignal.aborted) return null
       const chain = await read(callSignal)
-      if (!chain || callSignal.aborted) return null
+      if (!chain || callSignal.aborted || (requirements?.nativeOnly && !chain[0]?.native)) return null
       const judge = createJudge({
         port: ctx.sideCall,
         chain,
@@ -99,11 +140,21 @@ export function createJudgmentRuntime(plugin: PluginContextFacets, config: unkno
         now: Date.now,
       })
       return {
-        judge: (purpose, req, opts) =>
-          judge.judge(purpose, req, {
+        async judge(purpose, req, opts) {
+          const outcome = await judge.judge(purpose, req, {
             ...opts,
             signal: AbortSignal.any([opts.signal, callSignal]),
-          }),
+          })
+          const use = Object.hasOwn(purposes, purpose) ? purposes[purpose] : undefined
+          if (use && !signal.aborted)
+            requests[use] = Math.min(
+              Number.MAX_SAFE_INTEGER,
+              requests[use] +
+                outcome.accounting.calls.filter((call) => !call.replayed && call.dispatch === 'may-have-sent')
+                  .length,
+            )
+          return outcome
+        },
       }
     },
     dispose,

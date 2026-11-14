@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import type { PluginContextFacets, ToolContext, ToolDef } from '@agnes/extension-api'
 import { validateAgainst } from '@agnes/protocol'
 import { expect, it, vi } from 'vitest'
-import type { JudgmentRuntime } from '../src/runtime.js'
+import { createJudgmentRuntime, type JudgmentRuntime } from '../src/runtime.js'
 import { registerJudgmentTools } from '../src/uses/tools.js'
 
 function fixture(config: unknown, native = true) {
@@ -50,6 +50,7 @@ function fixture(config: unknown, native = true) {
     },
   } as unknown as ToolContext
   return {
+    plugin,
     definitions,
     runtime,
     judge,
@@ -71,6 +72,69 @@ const valid = {
   items: [{ id: 'one', state: { text: 'synthetic' } }],
   questions: { q: { type: 'noul', instructions: 'Relevant?' } },
 }
+it('binds concurrent find calls to native captured catalogues while keeping text batch dispatch', async () => {
+  const f = fixture(enabled)
+  f.dispose()
+  let reads = 0,
+    textOnly = false
+  Object.assign(f.plugin.self, {
+    log: { warn() {} },
+    sideModels: {
+      async list() {
+        reads++
+        return [
+          {
+            route: 'selected',
+            model: 'j',
+            api: textOnly || reads === 2 ? 'openai-completions' : 'typesafe-systemone',
+          },
+        ]
+      },
+    },
+  })
+  const config = { ...enabled, judge: { route: 'selected', model: 'j' } }
+  const runtime = createJudgmentRuntime(f.plugin, config)
+  const prepared: Array<{ output: string }> = []
+  const invoked: Array<{ output: string }> = []
+  Object.assign(f.ctx, {
+    fs: {
+      stat: async (path: string) => ({ kind: path === '/repo' ? 'dir' : 'file', size: 15, mtimeMs: 1 }),
+      list: async () => [{ name: 'sample.ts', kind: 'file' }],
+      read: async () => Buffer.from('semantic match\n'),
+    },
+    sideCall: {
+      status: async (invocationId: string) => ({ status: 'absent', invocationId }),
+      prepare: async (input: { output: string }) => {
+        prepared.push(input)
+        return input
+      },
+      invoke: async (input: { output: string }) => {
+        invoked.push(input)
+        return { status: 'refused', reason: 'budget' }
+      },
+    },
+  })
+  for (let i = 0; i < 10; i++) await Promise.resolve()
+  const dispose = registerJudgmentTools(f.plugin, runtime, config)
+  try {
+    const find = tool(f.definitions, 'find_relevant')
+    await Promise.all([
+      find.execute({ query: 'semantic' }, f.ctx),
+      find.execute({ query: 'semantic' }, { ...f.ctx, session: { ...f.ctx.session, toolUseId: 'second' } }),
+    ])
+    expect(reads).toBe(3)
+    expect(runtime.current()).toEqual([{ route: 'selected', model: 'j', native: true }])
+    expect(prepared.map((input) => input.output)).toEqual(['json'])
+    expect(invoked.map((input) => input.output)).toEqual(['json'])
+    textOnly = true
+    await tool(f.definitions, 'judge_batch').execute(valid, f.ctx)
+    expect(prepared.map((input) => input.output)).toEqual(['json', 'text'])
+    expect(invoked.map((input) => input.output)).toEqual(['json', 'text'])
+  } finally {
+    dispose()
+    runtime.dispose()
+  }
+})
 it('registers only opted-in available tools, refreshes and revokes them', () => {
   const off = fixture({})
   off.ready(true)

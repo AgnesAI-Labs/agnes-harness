@@ -1708,3 +1708,127 @@ describe('approval card facts', () => {
     expect(approvalFactsOf(subject)).toEqual(expected)
   })
 })
+it('derives side-call caller and purpose labels from committed audits through replay and late rows', async () => {
+  let seq = 0
+  const event = (type: string, data: unknown, extra = {}) =>
+    ({
+      ...row(type, data as any),
+      sessionKey: 'cost-labels',
+      lane: 'main',
+      seq: ++seq,
+      ts: new Date(0).toISOString(),
+      id: `label-${seq}`,
+      ...extra,
+    }) as Event
+  const caller = 'ext:agnes.judgment/main'
+  const cost = (effectId: string, extra = {}) => ({
+    effectId,
+    purpose: 'side-call',
+    caller,
+    model: 'j',
+    tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+    credits: 2,
+    creditSource: 'gateway',
+    billing: { usdMicros: 5, source: 'gateway', subscription: false },
+    ...extra,
+  })
+  const audit = (effectId: string, label = 'judgment.rules', extra = {}) =>
+    event(
+      'x/core/side-call-intent',
+      { version: 1, binding: { effectId }, bindingHash: 'a'.repeat(64), audit: { caller, label } },
+      extra,
+    )
+  const events = [
+    event('turn/start', { turn: 1, trigger: 'prompt' }),
+    event('effect/intent', { effectId: 'side:r', kind: 'side-call', replay: 'never' }),
+    event('cost/ledger', cost('side:r', { label: 'forged-label' })),
+    audit('side:r'),
+    audit('side:late', 'judgment.batch'),
+    event('effect/intent', { effectId: 'side:late', kind: 'side-call', replay: 'never' }),
+    event('turn/end', { turn: 1, reason: 'completed' }),
+    event('cost/ledger', cost('side:late')),
+    audit('side:forged', 'judgment.stop', { origin: 'ext:other', trust: 'untrusted' }),
+    event('cost/ledger', cost('side:forged')),
+    event('cost/ledger', cost('side:old', { caller: undefined })),
+    event('cost/ledger', cost('side:adj', { adjustment: { of: 3, delta: -1, usdMicrosDelta: -2 } })),
+  ]
+  const timeline = await projectUI(events, { sessionKey: 'cost-labels' })
+  const costs = kind(timeline.nodes, 'cost')
+  expect(costs[0]).toMatchObject({ caller, label: 'judgment.rules', credits: 2, billing: { usdMicros: 5 } })
+  expect(costs[1]).toMatchObject({ caller, label: 'judgment.batch' })
+  expect(costs[2]?.label).toBeUndefined()
+  expect(costs[3]?.caller).toBeUndefined()
+  expect(timeline.turns?.[0]?.usage.calls.slice(0, 2)).toMatchObject([
+    { caller, label: 'judgment.rules' },
+    { caller, label: 'judgment.batch' },
+  ])
+  expect(timeline.turns?.[0]?.usage.credits?.amount).toBe(3)
+  expect(timeline.turns?.[0]?.usage.cost?.usdMicros).toBe(8)
+  expect(await projectUI(JSON.parse(JSON.stringify(events)), { sessionKey: 'cost-labels' })).toEqual(timeline)
+})
+it('keeps side-call label evidence within its committed lane', async () => {
+  let seq = 0
+  const event = (type: string, data: unknown, lane = 'main') =>
+    ({
+      ...row(type, data as any),
+      seq: ++seq,
+      id: `lane-label-${seq}`,
+      ts: new Date(0).toISOString(),
+      lane,
+    }) as Event
+  const caller = 'ext:agnes.judgment/main'
+  const timeline = await projectUI(
+    [
+      event(
+        'x/core/side-call-intent',
+        { version: 1, binding: { effectId: 'side:same' }, audit: { caller, label: 'judgment.rules' } },
+        'other',
+      ),
+      event('cost/ledger', {
+        effectId: 'side:same',
+        purpose: 'side-call',
+        caller,
+        model: 'j',
+        tokens: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      }),
+    ],
+    { sessionKey: 'lane-labels' },
+  )
+  expect(kind(timeline.nodes, 'cost')[0]?.label).toBeUndefined()
+})
+it('updates late audit labels without assigning an earlier cost node to the next turn', async () => {
+  let seq = 0
+  const event = (type: string, data: unknown) =>
+    ({
+      ...row(type, data as any),
+      seq: ++seq,
+      id: `late-label-${seq}`,
+      ts: new Date(0).toISOString(),
+      lane: 'main',
+    }) as Event
+  const caller = 'ext:agnes.judgment/main'
+  const timeline = await projectUI(
+    [
+      event('turn/start', { turn: 1, trigger: 'prompt' }),
+      event('cost/ledger', {
+        effectId: 'side:old',
+        purpose: 'side-call',
+        caller,
+        model: 'j',
+        tokens: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      }),
+      event('turn/end', { turn: 1, reason: 'completed' }),
+      event('turn/start', { turn: 2, trigger: 'prompt' }),
+      event('x/core/side-call-intent', {
+        version: 1,
+        binding: { effectId: 'side:old' },
+        audit: { caller, label: 'judgment.rules' },
+      }),
+    ],
+    { sessionKey: 'late-labels' },
+  )
+  expect(timeline.turns?.[0]?.usage.calls[0]?.label).toBe('judgment.rules')
+  expect(timeline.turns?.[1]?.nodeIds).not.toContain('late-label-2')
+})

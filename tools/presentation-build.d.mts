@@ -13,6 +13,7 @@ export const presentationEntries: Record<string, string>
 export function buildPresentations(options?: {
   /** Alternate payload output directory; compilation still reads the real source inputs. */
   outputRoot?: string
+  names?: string[]
   check?: boolean
   force?: boolean
 }): Promise<PresentationBuild[]>

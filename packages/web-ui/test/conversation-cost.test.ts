@@ -175,3 +175,24 @@ it('renders unknown purpose identifiers as plain generic scope without React obj
     expect(rows()[0]).toEqual(['记录范围', '单次费用记录'])
   }
 })
+it('classifies judgment only by side-call and exact caller, and shows unknown use without audit evidence', () => {
+  const judgment = {
+    ...call,
+    purpose: 'side-call',
+    caller: 'ext:agnes.judgment/main',
+    label: 'judgment.rules',
+  }
+  expect(costDetails(judgment, zhT)).toContainEqual(['记录范围', '判断'])
+  expect(costDetails(judgment, zhT)).toContainEqual(['判断用途', '规则提醒'])
+  const { label: _label, ...withoutLabel } = judgment
+  const { caller: _caller, ...withoutCaller } = judgment
+  expect(costDetails(withoutLabel, zhT)).toContainEqual(['判断用途', '未知'])
+  expect(costDetails(judgment, fallbackT)).toContainEqual(['Record range', 'Judgment'])
+  for (const node of [
+    { ...judgment, caller: 'ext:agnes.judgment/main-similar' },
+    withoutCaller,
+    { ...judgment, purpose: 'inference' },
+  ])
+    expect(costDetails(node, zhT).some(([, value]) => value === '判断')).toBe(false)
+  expect(costDetails({ ...judgment, label: 'judgment.made-up' }, zhT)).toContainEqual(['判断用途', '未知'])
+})

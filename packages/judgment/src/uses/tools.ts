@@ -46,7 +46,10 @@ export function registerJudgmentTools(
         return failure('Judgment session projection unavailable.')
       if (!runtime.current() || (kind === 'find' && !runtime.current()?.[0]?.native))
         return failure('Judgment model unavailable.')
-      const judge = await within(runtime.judge({ ...ctx, signal: scope.signal }), scope.signal)
+      const judge = await within(
+        runtime.judge({ ...ctx, signal: scope.signal }, { nativeOnly: kind === 'find' }),
+        scope.signal,
+      )
       if (!judge || !runtime.current() || (kind === 'find' && !runtime.current()?.[0]?.native))
         return failure('Judgment port unavailable.')
       const result =

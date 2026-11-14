@@ -24,6 +24,9 @@
     },
     {
       "path": "../sdk"
+    },
+    {
+      "path": "../judgment-ui"
     }
   ]
 }

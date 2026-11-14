@@ -123,6 +123,7 @@ const LAYER: Record<string, number> = {
   '@agnes/core': 2,
   '@agnes/loop-default': 2, // First-party loop plugin consumes the author API.
   '@agnes/judgment': 2,
+  '@agnes/judgment-ui': 5,
   '@agnes/loop-jev': 2, // First-party Jev loop plugin consumes the author API.
 
   '@agnes/ai': 3,
@@ -359,6 +360,7 @@ it('keeps every command module outside core and extension-api', () => {
 // error-sanitization.
 describe('browser packages do not depend on backend capability packages', () => {
   const BROWSER_PACKAGES = new Set([
+    '@agnes/judgment-ui',
     '@agnes/web-client',
     '@agnes/web-ui',
     '@agnes/web-units',

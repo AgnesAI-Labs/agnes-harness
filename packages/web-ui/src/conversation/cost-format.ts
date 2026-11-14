@@ -23,6 +23,17 @@ const purposeKeys = new Map([
   ['side-call', 'cost.purpose.side-call'],
 ])
 
+export const isJudgmentCall = (node: { purpose?: string; caller?: string }): boolean =>
+  node.purpose === 'side-call' && node.caller === 'ext:agnes.judgment/main'
+const judgmentUses = new Map([
+  ['judgment.stop', 'cost.judgment.stop'],
+  ['judgment.find.names', 'cost.judgment.find'],
+  ['judgment.find.sketches', 'cost.judgment.find'],
+  ['judgment.find.verify', 'cost.judgment.find'],
+  ['judgment.batch', 'cost.judgment.batch'],
+  ['judgment.rules', 'cost.judgment.rules'],
+])
+
 export function costSummary(node: CostNode, t: Translate = fallbackT): string {
   const parts = node.tokens
     ? [
@@ -60,7 +71,22 @@ export function costDetails(
   const purpose = node.purpose ?? ''
   const purposeKey = purposeKeys.get(purpose)
   return [
-    [t('cost.rows.range'), purposeKey === undefined ? t('cost.rows.singleRecord') : t(purposeKey)],
+    [
+      t('cost.rows.range'),
+      isJudgmentCall(node)
+        ? t('cost.purpose.judgment')
+        : purposeKey === undefined
+          ? t('cost.rows.singleRecord')
+          : t(purposeKey),
+    ],
+    ...(isJudgmentCall(node)
+      ? [
+          [t('cost.rows.judgmentUse'), t(judgmentUses.get(node.label ?? '') ?? 'cost.judgment.unknown')] as [
+            string,
+            string,
+          ],
+        ]
+      : []),
     ...(node.model ? [[t('cost.rows.model'), node.model] as [string, string]] : []),
     ...(node.tokens
       ? tokenRows(node.tokens, t)

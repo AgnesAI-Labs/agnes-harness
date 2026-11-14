@@ -22,5 +22,9 @@
   "browser": {
     "bytes": 34816,
     "inputs": 6
+  },
+  "judgment": {
+    "bytes": 8192,
+    "inputs": 4
   }
 }
