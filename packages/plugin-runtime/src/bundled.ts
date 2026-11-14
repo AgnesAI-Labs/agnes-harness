@@ -52,6 +52,7 @@ function facetsOver(api: ExtensionAPI): PluginContextFacets {
       resolve: () => refuse('provider resolution'),
     }),
     profileRuntime: () => refuse('profile runtime'),
+    sessionWork: () => undefined,
     self: () => api.ctx,
   }
   return new Proxy({} as PluginContextFacets, {

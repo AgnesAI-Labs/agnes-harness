@@ -4,11 +4,12 @@ import { API_VERSION, type SideModelEntry } from '@agnes/extension-api'
 import { pinOptionalBundledRowGrants } from '@agnes/host-extensions/assemble/host-grants'
 import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owners'
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
-import { createRowExtensionHost } from '@agnes/host-extensions/ext-host/row-extension-host'
+import { createRowExtensionHost, pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
 import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { parseAgnesPluginEntries, readPluginCapabilities } from '@agnes/package-manager'
+import { createSessionWorkAuthority } from '../sessions/session-work-authority.js'
 import { channelState } from './channel-state.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
@@ -65,6 +66,17 @@ export function createRowHosts(
   const requestSkillInstall = deps.skillInstall
   const rowExtensions = createRowExtensionHost({
     hostGrants,
+    sessionWorkAuthority: (origin, integrity) =>
+      createSessionWorkAuthority({
+        activations: proc.profileActivations,
+        owner: pluginRowSource(origin.rowId),
+        packageId: origin.packageId,
+        integrity,
+        mountIdentity: origin.mountIdentity ?? '',
+        profileDir: deps.profileDir,
+        profile: ctx.profile.name,
+        agnesVersion: deps.agnesVersion ?? '0.0.0',
+      }),
     sideModels: () => sideModels(),
     subscribeSideModels,
     projectionNames: (origin) => rowServices.projectionNames(origin),
@@ -143,6 +155,11 @@ export function createRowHosts(
       return (
         description && {
           ...description,
+          ...(row?.inject?.includes('sessionWork') &&
+          row.runtime === 'in-process' &&
+          declaredCapabilities?.sessionWork === true
+            ? { sessionWorkDeclared: true }
+            : {}),
           ...(row?.inject?.includes('sideCall') && row.runtime === 'in-process'
             ? { sideCallDeclared: true }
             : {}),

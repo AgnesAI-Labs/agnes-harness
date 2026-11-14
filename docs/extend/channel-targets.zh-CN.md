@@ -59,7 +59,7 @@ init.channels.onPairingChange(async () => console.log(await init.channels.pairin
 
 ## 回执
 
-5.18.0 新增。宿主持久记下事件的来源与原文之后，事件会带上 `receiptId`（1–256 个字符）。只有配对到托管服务的事件才带回执。原文由宿主保管；把这个 id 作为 `ownerMessage` 传给[`admitInput`](managed-sessions.zh-CN.md#准入主人的输入)，不要传原文。
+5.21.0 新增。宿主持久记下事件的来源与原文之后，事件会带上 `receiptId`（1–256 个字符）。只有配对到托管服务的事件才带回执。原文由宿主保管；把这个 id 作为 `ownerMessage` 传给[`admitInput`](managed-sessions.zh-CN.md#准入主人的输入)，不要传原文。
 
 - `onEvent` 处理函数正常返回即确认该事件。处理函数抛错时，一次投递在约十秒内共尝试三次；仍然抛错则回执保持待处理，服务注册处理函数时以及每五分钟，宿主会用同一个 `receiptId` 再投同一事件。请按 `eventId` 或 `receiptId` 去重。累计五次投递失败后回执转为停放，主人在 Web 上能看到，并可重投或丢弃。
 - 服务启动时也会重投，所以事件记下之后、你确认之前崩溃，不会丢事件。

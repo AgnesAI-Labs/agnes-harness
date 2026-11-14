@@ -12,6 +12,7 @@ export type WorkerHostSkillResources = Readonly<{
   pluginManage?: NonNullable<HostOptions['pluginManage']>
   skillInstall?: NonNullable<HostOptions['skillInstall']>
   refinementSave?: NonNullable<HostOptions['refinementSave']>
+  autoTitleEligible?: NonNullable<HostOptions['autoTitleEligible']>
   /** The same bounded, session-scoped artifact reader used by the executable-owned Host path. */
   requestMedia: NonNullable<HostOptions['requestMedia']>
   skillResources?: NonNullable<HostOptions['skillResources']>

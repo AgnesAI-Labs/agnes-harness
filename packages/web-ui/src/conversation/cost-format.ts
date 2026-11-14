@@ -32,6 +32,7 @@ const judgmentUses = new Map([
   ['judgment.find.verify', 'cost.judgment.find'],
   ['judgment.batch', 'cost.judgment.batch'],
   ['judgment.rules', 'cost.judgment.rules'],
+  ['judgment.title', 'cost.judgment.title'],
 ])
 
 export function costSummary(node: CostNode, t: Translate = fallbackT): string {

@@ -20,7 +20,8 @@
     "testkit/op-check-sweep.ts",
     "testkit/op-mark-checks.ts",
     "testkit/record-transitions.ts",
-    "testkit/tool-heavy-ledger.ts"
+    "testkit/tool-heavy-ledger.ts",
+    "test/helpers/side-call-session.ts"
   ],
   "exclude": ["dist", "node_modules"],
   "references": [

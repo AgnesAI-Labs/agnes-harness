@@ -179,6 +179,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
   }
   switch (e.type) {
     case 'session/start': {
+      s.completedTurns = ChunkedMap.empty()
       const start = d as unknown as SessionStart
       if (start.parent) {
         // A fork starts these over; lastTurn, planItems, artifactJobs, harnessEntries with their
@@ -242,11 +243,26 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       table('taint').set(lane, e.origin === 'system' && e.trust === 'trusted' && d?.inputTainted === true)
       break
     }
-    case 'turn/end':
+    case 'turn/end': {
+      const source = s.openTurn.get(lane)
+      if (
+        source &&
+        e.origin === 'system' &&
+        e.trust === 'trusted' &&
+        d?.reason === 'completed' &&
+        typeof d.lastAssistantSeq === 'number'
+      )
+        s.completedTurns = s.completedTurns.set(e.seq, {
+          lane,
+          turn: source.turn,
+          startSeq: source.startSeq,
+          lastAssistantSeq: d.lastAssistantSeq,
+        })
       remove('openTurn', lane)
       remove('openStep', lane)
       remove('lastStep', lane)
       break
+    }
     case 'step/start':
       table('openStep').set(lane, { turn: Number(d?.turn), step: Number(d?.step), startSeq: e.seq })
       table('lastStep').set(lane, Number(d?.step))

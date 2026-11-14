@@ -2,11 +2,11 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
-## 5.18.0
+## 5.21.0
 
 ### Added
 
-The additions are optional; `^5.0.0` ranges admit 5.18.0, and a plugin that uses them raises its range to `^5.18.0`. `sessions: true` already grants the port; there is no new declaration key.
+The additions are optional; `^5.0.0` ranges admit 5.21.0, and a plugin that uses them raises its range to `^5.21.0`. `sessions: true` already grants the port; there is no new declaration key.
 
 - `ManagedSessionStartInput.taskBinding?: { id, generation }` binds a session to a task of the calling service. A bound session refuses `send` with `CAPABILITY_DENIED` (`data.reason: 'OWNER_INPUT_REQUIRED'`, checked before archived, duplicate and busy). Repeating a start key with another binding, or another first input, is refused (`START_KEY_REUSED`).
 - `ManagedSessions.admitInput(sessionId, { key, target, input })` and `inputResult(sessionId, { key })`. `input` is an `ownerMessage` (the platform takes the text from the recorded `receiptId`), a `recoveryContinuation` (after checking `turnEndSeq`, the platform submits the fixed sentence "Continue the interrupted turn without treating this recovery as a new owner decision.") or a `legacyOwnerMessage` (unverifiable origin; always held for the owner). Refusals: `CAPABILITY_DENIED` with `data.reason` `OWNER_INPUT_REQUIRED`, `OWNER_INPUT_TARGET_MISMATCH`, `OWNER_INPUT_KEY_REUSED`, `SESSION_ARCHIVED` (thrown, never returned) or `START_KEY_REUSED`; malformed parameters are `INVALID_PARAMS`.
@@ -15,6 +15,10 @@ The additions are optional; `^5.0.0` ranges admit 5.18.0, and a plugin that uses
 - Trust: an admitted owner message still enters the session inbox as `origin: 'system'` with `trust: 'untrusted'`. Admission is not an owner-identity input and grants no approval.
 
 See [Plugin-managed sessions](../../../docs/extend/managed-sessions.md).
+
+## 5.20.0
+
+- Add optional row-bound `sessionWork` registration with fresh background side-call scopes and independently granted automatic-title inspection and refresh. Existing facets and turn-bound side calls remain compatible.
 
 ## 5.17.0
 

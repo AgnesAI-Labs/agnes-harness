@@ -314,6 +314,7 @@ const RULES: Readonly<Record<LedgerPurpose, TerminalRules>> = {
         'adapter',
         'endpointHost',
         'caller',
+        'sourceTurn',
       ],
     },
     head: (value) => ownData(value, HEAD, SIDE_CALL_KEYS),

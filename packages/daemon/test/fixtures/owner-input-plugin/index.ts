@@ -215,7 +215,7 @@ function writePlugins(root: string, workspace: string) {
       COMPANION,
       {
         id: 'ext:acme/companion/main',
-        apiRange: '^5.18.0',
+        apiRange: '^5.21.0',
         inject: ['profileRuntime'],
         capabilities: {
           store: true,

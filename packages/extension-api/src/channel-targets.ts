@@ -21,7 +21,7 @@ interface ChannelTargetEventBase {
   /**
    * 1–256 characters. Present only after the platform durably recorded the event's source and text; pass it
    * to `admitInput` as an `ownerMessage` receipt instead of the text. Redeliveries of one event carry the
-   * same id. Added in 5.18.
+   * same id. Added in 5.21.
    */
   readonly receiptId?: string
 }

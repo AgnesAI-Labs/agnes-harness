@@ -101,6 +101,7 @@ type ComputerUseStatusSource = Readonly<{
   setSessionYolo(session: Readonly<{ key: string; lane: string }>, enabled: boolean): Promise<void>
 }>
 const embeddedSessionOwnership = new WeakMap<Host, MemorySessionPrincipalOwnership>()
+const embeddedSessionPreferences = new WeakMap<Host, SessionPreferencesStore>()
 
 function lockedPackageMutationStatusSource(host: Host): LockedPackageMutationStatusSource | undefined {
   try {
@@ -443,7 +444,16 @@ export function createLocalEndpoint(
     configurationReadOnly: (context: import('@agnes/daemon-foundation/local/endpoint').CallContext) =>
       opts.packageAdmin === undefined ? Promise.resolve(false) : packagesReadOnly(context),
   }
-  const preferences = new SessionPreferencesStore()
+  let preferences = embeddedSessionPreferences.get(host)
+  if (!preferences) {
+    preferences = new SessionPreferencesStore()
+    embeddedSessionPreferences.set(host, preferences)
+  }
+  const titlePreferences = preferences
+  const unbindAutoTitle = host.bindAutoTitleEligibility?.(async (sessionKey, signal) => {
+    if (signal?.aborted || !host.kernel.sessions.get(sessionKey)) return false
+    return titlePreferences.get(sessionKey).title === undefined
+  })
   const lister = withSessionPreferences(opts.lister ?? new RegistryLister(registry), preferences)
   registerSessionPreferences(ep, lister, preferences)
   registerConfiguration(ep, opts.configuration)
@@ -670,6 +680,7 @@ export function createLocalEndpoint(
       ep.stopIntake()
       // The embedded endpoint owns these callbacks; drain them before retiring session seams.
       prompterLifetime.abort()
+      unbindAutoTitle?.()
       await close()
       disposeFeeds(feeds)
       if (ownsCommandQueue) await commandQueue.close()

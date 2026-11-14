@@ -83,6 +83,26 @@ export const CONFIG_SCHEMA = {
             },
           },
         },
+        title: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            enabled: {
+              type: 'boolean',
+              default: false,
+              description: 'Opt in to background automatic-title drift checks.',
+              'x-locales': { 'zh-CN': { description: '手动开启后台自动标题漂移检查。' } },
+            },
+            refreshAfterPrompts: {
+              type: 'integer',
+              minimum: 0,
+              maximum: Number.MAX_SAFE_INTEGER,
+              default: 0,
+              description: 'Check after this many meaningful operator prompts; zero disables checks.',
+              'x-locales': { 'zh-CN': { description: '累计指定次数的有效操作者提示后检查；0 表示关闭。' } },
+            },
+          },
+        },
         stop: {
           type: 'object',
           additionalProperties: false,
@@ -162,4 +182,12 @@ export function resolveRulesConfig(config: unknown): { enabled: boolean; items: 
     items.push({ id: item.id, text: item.text, tools: [...new Set(item.tools as string[])].sort() })
   }
   return { enabled: true, items }
+}
+
+export function resolveTitleConfig(config: unknown): { enabled: boolean; refreshAfterPrompts: number } {
+  const uses = object(config) && object(config.uses) ? config.uses : {}
+  const title = object(uses.title) ? uses.title : {}
+  const n = title.refreshAfterPrompts
+  const refreshAfterPrompts = typeof n === 'number' && Number.isSafeInteger(n) && n > 0 ? n : 0
+  return { enabled: title.enabled === true && refreshAfterPrompts > 0, refreshAfterPrompts }
 }

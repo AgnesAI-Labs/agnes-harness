@@ -1,7 +1,7 @@
 /**
  * Owner input admission for managed sessions. A managed service that holds a task for the owner does
  * not hand the owner's words to a session with `send`; it asks the platform to admit them, and the
- * platform decides whether and when a session turn may take them. Added in 5.18.
+ * platform decides whether and when a session turn may take them. Added in 5.21.
  *
  * Trust: the text of an admitted `ownerMessage` still enters the session inbox as `origin: 'system'`
  * with `trust: 'untrusted'`. Admission proves the text came from the paired owner's channel receipt;

@@ -59,7 +59,7 @@ init.channels.onPairingChange(async () => console.log(await init.channels.pairin
 
 ## Receipts
 
-Added in 5.18.0. When the Host has durably recorded an event's source and text, the event carries `receiptId` (1–256 characters). Only events of a pairing to a managed service carry one. The Host keeps the text; pass the id to [`admitInput`](managed-sessions.md#admit-the-owners-input) as an `ownerMessage` instead of the text.
+Added in 5.21.0. When the Host has durably recorded an event's source and text, the event carries `receiptId` (1–256 characters). Only events of a pairing to a managed service carry one. The Host keeps the text; pass the id to [`admitInput`](managed-sessions.md#admit-the-owners-input) as an `ownerMessage` instead of the text.
 
 - Returning from the `onEvent` handler acknowledges the event. One delivery tries a throwing handler three times within about ten seconds; if it still throws, the receipt stays pending and the Host delivers the same event again with the same `receiptId` when the service registers its handler and every five minutes. Deduplicate on `eventId` or `receiptId`. After five failed deliveries the receipt is parked, and the owner sees it in the Web and can redeliver or discard it.
 - Redelivery on service start also means a crash between recording the event and your acknowledgement does not lose it.

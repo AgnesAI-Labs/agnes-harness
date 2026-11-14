@@ -60,6 +60,7 @@ import {
   validateResourceControlData,
 } from '@agnes/protocol'
 import { trimNativeHeap } from '@agnes/system-node'
+import { autoTitlePolicy } from './auto-title-policy.js'
 import {
   admitWorkerCommand,
   applyMcpRowChange,
@@ -402,6 +403,7 @@ export async function runWorker(
           scheduling,
           skillInstall,
           refinementSave,
+          ...autoTitlePolicy(sharedChannel, (key) => !!host?.kernel.sessions.get(key)),
           mcpManage,
           pluginManage,
           requestMedia,
@@ -444,6 +446,7 @@ export async function runWorker(
             scheduling,
             skillInstall,
             refinementSave,
+            ...autoTitlePolicy(sharedChannel, (key) => !!host?.kernel.sessions.get(key)),
             mcpManage,
             pluginManage,
             requestMedia,

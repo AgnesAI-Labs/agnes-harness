@@ -18,6 +18,11 @@ export {
 } from '../test/helpers/fake-provider.js'
 export { fakeSeams } from '../test/helpers/fake-seams.js'
 export { actor, noTimers, openSession, readTool, shellTool } from '../test/helpers/open-session.js'
+export {
+  gated as gatedSideCall,
+  options as sideCallOptions,
+  withSession as withSideCallSession,
+} from '../test/helpers/side-call-session.js'
 export { fencedFs, testFsPolicy } from './fenced-fs.js'
 export { defaultLoops } from './loops.js'
 export { OP_CELL_CASES } from './op-cell-cases.js'

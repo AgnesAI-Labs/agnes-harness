@@ -26,6 +26,8 @@ type ModelExecutionInput = {
   turnId: number
   step: number
   memory: SessionImpl['turn']
+  onBillingFailure?: () => void
+  sourceTurn?: number
   /** The purpose the cost row records. */
   purpose?: 'inference' | 'side-call'
   /**
@@ -124,6 +126,19 @@ export class ModelExecution {
   private thinking = ''
   private providerIterator: AsyncIterator<InferenceEvent> | undefined
   private providerClosed = false
+  private readonly transport = new Set<Promise<unknown>>()
+  private retainTransport<T>(work: Promise<T>): Promise<T> {
+    this.transport.add(work)
+    void work.then(
+      () => this.transport.delete(work),
+      () => this.transport.delete(work),
+    )
+    return work
+  }
+  /** Actual adapter work may outlive cancellation; callers retaining concurrency wait for it separately. */
+  async transportSettled(): Promise<void> {
+    while (this.transport.size) await Promise.allSettled([...this.transport])
+  }
   // False until the first provider read starts unaborted, and again after a refusal before sent.
   private dispatched = false
   private completed = false
@@ -155,7 +170,7 @@ export class ModelExecution {
     if (!this.providerIterator || this.providerClosed) return
     this.providerClosed = true
     try {
-      void Promise.resolve(this.providerIterator.return?.()).catch(
+      void this.retainTransport(Promise.resolve(this.providerIterator.return?.())).catch(
         bestEffort(this.s.d.logger, 'provider-close'),
       )
     } catch (error) {
@@ -247,7 +262,7 @@ export class ModelExecution {
       for (;;) {
         const active = iterator
         const next = await interruptible(
-          Promise.resolve().then(() => active.next()),
+          this.retainTransport(Promise.resolve().then(() => active.next())),
           this.signal,
         )
         if (next.done) {
@@ -305,7 +320,7 @@ export class ModelExecution {
           // Resume past the terminal yield so provider wrappers can finish their receipt/recording.
           // return() would skip that normal completion; cancellation still interrupts a stuck drain.
           const tail = await interruptible(
-            Promise.resolve().then(() => active.next()),
+            this.retainTransport(Promise.resolve().then(() => active.next())),
             this.signal,
           )
           if (!tail.done) throw new CoreError('E_ENVELOPE', 'events after terminal')
@@ -393,6 +408,7 @@ export class ModelExecution {
           : { inputTokens: 0, credits: 0 }
     const spend: CostLedger = {
       purpose: input.purpose ?? 'inference',
+      ...(input.sourceTurn === undefined ? {} : { sourceTurn: input.sourceTurn }),
       effectId: input.effect.effectId,
       model: input.wire.model,
       tokens: usage?.tokens ?? {
@@ -497,14 +513,20 @@ export class ModelExecution {
   private async accountCost(cost: CostLedger, costSeq?: Seq): Promise<void> {
     if (!this.billed) {
       this.billed = true
-      const ok = await this.s.d.runtime.billingRecord({
-        ...cost,
-        sessionKey: this.s.key,
-        lane: this.s.lane,
-        turn: this.op.turn,
-        step: this.op.step,
-      })
+      const ok = await this.s.d.runtime
+        .billingRecord({
+          ...cost,
+          sessionKey: this.s.key,
+          lane: this.s.lane,
+          turn: this.op.turn,
+          step: this.op.step,
+        })
+        .catch((error: unknown) => {
+          this.input.onBillingFailure?.()
+          throw error
+        })
       if (!ok) {
+        this.input.onBillingFailure?.()
         if (this.turn) this.turn.ledgerFailed = true
         if (this.s.loopScope.alive) await this.s.diag('seam-failed', { seam: 'billing', op: 'record' })
       }
