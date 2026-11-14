@@ -28,6 +28,12 @@ export interface ManagedInputSessionPorts {
     commandId: string,
     fromSeq: number,
   ): Promise<{ seq: number; turn: number } | undefined>
+  /**
+   * Whether the session's inbox still holds the input, from its latest inbox fact. An input that was
+   * submitted, is not queued and has no `user/message` was removed by someone else (the owner can drop
+   * a queued item in the Web). Absent from a port: treated as still queued.
+   */
+  queued?(sessionId: string, commandId: string): Promise<boolean>
   /** Removes the queued input; `taken` when a turn already took it, `absent` when it never ran. */
   withdraw(sessionId: string, commandId: string): Promise<'withdrawn' | 'taken' | 'absent'>
   /** The daemon's archive state for the session, so an owner archiving it in the Web counts. */
@@ -56,6 +62,13 @@ const WITHDRAWER: Actor = {
   role: 'system',
   deptPath: [],
   attrs: {},
+}
+
+/** The pending item for `commandId` in the session's latest inbox fact. */
+async function inboxItem(entry: ManagedInputEntry, commandId: string) {
+  const [inbox] = await entry.session.scan({ type: 'inbox', lane: 'main', order: 'desc', limit: 1 })
+  const items = (inbox?.data as { items?: { itemId: string; commandId?: string }[] } | null)?.items
+  return items?.find((candidate) => candidate.commandId === commandId)
 }
 
 const failed = (error: unknown, pattern: RegExp) => pattern.test(String((error as Error)?.message))
@@ -91,6 +104,9 @@ export function managedInputPorts<E extends ManagedInputEntry>(deps: {
     return undefined
   }
   return {
+    async queued(sessionId, commandId) {
+      return (await inboxItem(await deps.open(sessionId), commandId)) !== undefined
+    },
     async submitInput(sessionId, input) {
       const entry = await deps.open(sessionId)
       if (entry.inflight) return { state: 'busy' }
@@ -123,9 +139,7 @@ export function managedInputPorts<E extends ManagedInputEntry>(deps: {
     async withdraw(sessionId, commandId) {
       const entry = await deps.open(sessionId)
       const removed = await runQueued(deps.commandQueue, entry.key, entry.ac.signal, async () => {
-        const [inbox] = await entry.session.scan({ type: 'inbox', lane: 'main', order: 'desc', limit: 1 })
-        const items = (inbox?.data as { items?: { itemId: string; commandId?: string }[] } | null)?.items
-        const item = items?.find((candidate) => candidate.commandId === commandId)
+        const item = await inboxItem(entry, commandId)
         if (!item) return false
         try {
           await entry.session.removeQueuedInput(item.itemId, WITHDRAWER, `withdraw:${commandId}`)

@@ -135,7 +135,8 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
   /**
    * A submitted input: consumed when a turn took it, otherwise true while it may still run. An
    * unconfirmed one (sweeps only) is taken back and held again, so the next submit runs every check
-   * under a fresh id.
+   * under a fresh id. A confirmed one that is neither queued nor taken was removed outside the
+   * platform; it leaves flight for the owner to decide, so later inputs are not blocked.
    */
   const land = async (
     row: ManagedInputRow,
@@ -156,19 +157,27 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     }
     const settled = await settle(row)
     if (settled.state !== 'enqueued') return false
-    if (
-      mode === 'sweep' &&
-      (await checks()) === 'pass' &&
-      !(await questionOpen(sessionId)) &&
-      !(await busy(sessionId))
-    )
-      await rekick(settled, record)
-    return true
+    if (mode === 'idle') return true
+    if (await (ports.sessions.queued?.(sessionId, commandId) ?? true)) {
+      if (
+        mode === 'sweep' &&
+        (await checks()) === 'pass' &&
+        !(await questionOpen(sessionId)) &&
+        !(await busy(sessionId))
+      )
+        await rekick(settled, record)
+      return true
+    }
+    const again = await settle(settled) // a turn may have taken it between the two reads
+    if (again.state !== 'enqueued') return false
+    move(again, { state: 'needsOwner', reason: 'ownerDiscarded', submittedSeq: null })
+    return false
   }
 
   /**
    * One input at a time, in admission order, each after the checks. An idle report only scans for
-   * consumption from the submitted seq; `sweep` also takes unconfirmed submissions back and starts
+   * consumption from the submitted seq; `result` (an inputResult or a repeated admission) also notices
+   * an input removed outside the platform; `sweep` also takes unconfirmed submissions back and starts
    * inputs a restart left queued. An idle report also comes when a runner stops without a turn, so it
    * never resubmits anything.
    */

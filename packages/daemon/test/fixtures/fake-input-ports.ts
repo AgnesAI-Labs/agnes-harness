@@ -71,6 +71,8 @@ export function fakeCore() {
     idle: new Set<(sessionId: string) => void>(),
     /** The next submit fails before anything is queued, like a session that cannot open. */
     failNextSubmit: false,
+    /** Runs as the inbox is read, to stand in for a turn taking the item between two reads. */
+    beforeQueued: undefined as ((sessionId: string) => void) | undefined,
   }
   const next = (sessionId: string) => {
     const seq = (state.seq.get(sessionId) ?? 0) + 1
@@ -102,6 +104,10 @@ export function fakeCore() {
       state.scans.push({ sessionId, commandId, fromSeq })
       const found = messages(sessionId).find((m) => m.commandId === commandId && m.seq >= fromSeq)
       return found ? { seq: found.seq, turn: found.turn } : undefined
+    },
+    async queued(sessionId, commandId) {
+      state.beforeQueued?.(sessionId)
+      return inbox(sessionId).some((item) => item.commandId === commandId)
     },
     async withdraw(sessionId, commandId) {
       state.withdrawals.push({ sessionId, commandId })
@@ -138,6 +144,13 @@ export function fakeCore() {
       const message = { commandId: item.commandId, text: item.text, seq: next(sessionId), turn }
       state.messages.set(sessionId, [...messages(sessionId), message])
       return message
+    },
+    /** Someone other than the platform removes a queued item, as the owner can in the Web. */
+    drop(sessionId: string, commandId: string) {
+      state.inbox.set(
+        sessionId,
+        inbox(sessionId).filter((item) => item.commandId !== commandId),
+      )
     },
     /** Ran turns of this text, counted from the message log: "at most once" checks read this. */
     ran(sessionId: string, text: string) {

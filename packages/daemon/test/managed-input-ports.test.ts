@@ -177,6 +177,17 @@ describe('managed input ports', () => {
     expect(await w.ports.withdraw('session-1', 'unknown')).toBe('absent')
   })
 
+  it('queued reads the latest inbox fact for the commandId', async () => {
+    const w = world([
+      { seq: 1, type: 'inbox', data: { items: [{ itemId: 'item-a', commandId: 'cmd-1' }] } },
+      { seq: 2, type: 'inbox', data: { items: [{ itemId: 'item-b', commandId: 'cmd-2' }] } },
+    ])
+    queues.push(w.commandQueue)
+    expect(await w.ports.queued?.('session-1', 'cmd-2')).toBe(true)
+    expect(await w.ports.queued?.('session-1', 'cmd-1'), 'only in an older inbox fact').toBe(false)
+    expect(await w.ports.queued?.('session-1', 'missing')).toBe(false)
+  })
+
   it('withdraw that loses the race to a turn reports taken', async () => {
     const w = world([{ seq: 1, type: 'inbox', data: { items: [{ itemId: 'item-b', commandId: 'cmd-1' }] } }])
     queues.push(w.commandQueue)

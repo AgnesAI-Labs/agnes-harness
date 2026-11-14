@@ -195,6 +195,54 @@ describe('held owner inputs', () => {
     expect(w.core.state.inbox.get('s1')).toHaveLength(1)
   })
 
+  it('an input removed from the core inbox outside the platform leaves flight as needsOwner and later inputs run', async () => {
+    const w = world()
+    for (const id of ['s1', 's2']) {
+      w.open(id)
+      await w.admit(id, 'k1')
+      await w.admit(id, 'k2')
+      expect(w.row(id, 'k2')).toMatchObject({ state: 'enqueued', submittedSeq: null })
+      w.core.drop(id, w.row(id, 'k1')?.itemCommandId as string)
+    }
+    // An idle report stays cheap and does not read the inbox.
+    await w.engine.advance('s1')
+    expect(w.row('s1', 'k1')?.state).toBe('enqueued')
+    expect(await w.engine.result(w.ctx('s1'), { key: 'k1' })).toMatchObject({
+      state: 'needsOwner',
+      reason: 'ownerDiscarded',
+    })
+    await w.engine.sweep()
+    for (const id of ['s1', 's2']) {
+      expect(w.row(id, 'k1')).toMatchObject({
+        state: 'needsOwner',
+        reason: 'ownerDiscarded',
+        submittedSeq: null,
+      })
+      expect(w.row(id, 'k2')?.submittedSeq).toBeGreaterThan(0)
+      expect(w.core.state.inbox.get(id)?.map((item) => item.text)).toEqual([`text of ${id}-k2`])
+    }
+    // The owner can still deliver it, under a fresh id.
+    w.core.take('s1')
+    await w.engine.advance('s1')
+    const k1 = w.row('s1', 'k1')
+    expect(await w.engine.decide('s1', 'k1', 'deliver', k1?.version ?? 0)).toMatchObject({
+      state: 'enqueued',
+    })
+    expect(w.core.state.inbox.get('s1')?.[0]?.commandId).toMatch(
+      new RegExp(`^${k1?.itemCommandId}:v\\d+$`, 'u'),
+    )
+  })
+
+  it('an input a turn takes between the consumption scan and the inbox read is consumed, not given to the owner', async () => {
+    const w = world()
+    w.open('s1')
+    await w.admit('s1', 'k1')
+    w.core.state.beforeQueued = (sessionId) => {
+      w.core.take(sessionId)
+    }
+    expect(await w.engine.result(w.ctx('s1'), { key: 'k1' })).toMatchObject({ state: 'consumed', turn: 1 })
+  })
+
   it('a sweep starts a confirmed input still queued only when the checks pass', async () => {
     const w = world()
     w.open('s1')
