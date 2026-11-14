@@ -1,28 +1,21 @@
 // Adapted from dsh-superagent (MIT)
-import { expect, it, vi } from 'vitest'
-import type { Trigger } from '../src/core/index.js'
+import type { MessageEvent } from '@agnes/extension-api/channel-contract'
+import { expect, it } from 'vitest'
 import { Commands } from '../src/infra/commands.js'
 import { SettingsSchema } from '../src/policy.js'
 import { admissionContext, threadWindow } from '../src/sources/admission-context.js'
-import { feishuKind } from '../src/sources/feishu.js'
+import { feishuKindFor, messageTrigger } from '../src/sources/feishu.js'
+import { feishuLink } from '../src/sources/feishu-io.js'
 import type { ContextMessage } from '../src/sources/kind.js'
 import { SourceRegistry } from '../src/sources/registry.js'
 import { testDeployment } from './fixtures/deployment.js'
+import { configOnly, fakeChannels, message as feishuMessage } from './sources/fake-channels.js'
 
 const message = (index: number): ContextMessage => ({
   id: `om_${index}`,
   from: 'ou_user',
   at: String(index),
   text: `Message ${index}`,
-})
-/** The same message as a Feishu topic page lists it. */
-const listed = (index: number) => ({
-  message_id: `om_${index}`,
-  chat_id: 'oc_chat',
-  content: `Message ${index}`,
-  msg_type: 'text',
-  sender: { id: 'ou_user', sender_type: 'user' },
-  create_time: String(index),
 })
 it('returns the thread opening and trigger neighbors with exact internal and trailing gaps', () => {
   const result = threadWindow(
@@ -47,5 +40,54 @@ it('deduplicates overlapping windows and reports an absent source without invent
     omitted_after: 7,
   })
 })
-it.todo('retains pagination limits and exact loaded counts rather than claiming complete history')
-it.todo('gives a message outside a topic the five chat messages before it, and says it read the chat')
+/** The Feishu kind on fake channels holding `history`, registered with its context reading `readPageSize`. */
+function registered(history: MessageEvent[], readPageSize = 20) {
+  const fake = fakeChannels({ history })
+  const link = feishuLink(fake.channels)
+  link.context = configOnly({ readPageSize })
+  const sources = new SourceRegistry(() =>
+    SettingsSchema.parse({
+      sources: { feishu: { enabled: true, config: { channel: 'feishu', readPageSize } } },
+    }),
+  )
+  sources.register(feishuKindFor(link))
+  return { fake, sources }
+}
+const commands = () => new Commands(() => testDeployment(), {}, new AbortController().signal)
+it('retains pagination limits and exact loaded counts rather than claiming complete history', async () => {
+  const at = (n: number) => new Date(Date.parse('2026-11-14T08:00:00.000Z') + n * 1000).toISOString()
+  const { fake, sources } = registered(
+    [0, 1, 2].map((n) => feishuMessage(`om_${n}`, { chat: 'oc_chat', at: at(n), thread: 'omt_thread' })),
+    2,
+  )
+  const trigger = messageTrigger(
+    feishuMessage('om_9', { chat: 'oc_chat', at: at(9), thread: 'omt_thread' }),
+    'om_0',
+  )!
+  const result = await admissionContext(sources.threadContext(trigger)!, commands(), 1)
+  expect(result).toMatchObject({
+    complete: false,
+    next: '2',
+    window: { loaded_messages: 2, source_found: false },
+  })
+  expect(fake.calls('listThread').map((call) => call.args)).toEqual([
+    ['oc_chat', 'omt_thread', { order: 'asc', limit: 3 }],
+  ])
+})
+it('gives a message outside a topic the five chat messages before it, and says it read the chat', async () => {
+  const at = Date.parse('2026-09-11T12:00:00Z')
+  const { fake, sources } = registered(
+    [0, -1, -2, -3, -4, -5, -6].map((n) =>
+      feishuMessage(`om_${n}`, { chat: 'oc_chat', at: at + n * 1000, text: `message ${n}` }),
+    ),
+  )
+  const trigger = messageTrigger(feishuMessage('om_0', { chat: 'oc_chat', at, text: 'message 0' }), 'om_0')!
+  const result = await admissionContext(sources.threadContext(trigger)!, commands(), 3)
+  expect(result).toMatchObject({
+    status: 'chat_neighbours',
+    complete: true,
+    window: { source_found: true, loaded_messages: 6 },
+  })
+  expect(result.messages.map((item) => item.id)).toEqual([-5, -4, -3, -2, -1, 0].map((n) => `om_${n}`))
+  expect(fake.calls('listHistory')).toHaveLength(1)
+})

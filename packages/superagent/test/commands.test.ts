@@ -41,7 +41,6 @@ describe('account-isolated operations', () => {
       delete process.env.GH_TOKEN
     }
   })
-  it.todo('refuses Feishu commands when the deployment has no Feishu bot')
   it('reconciles an uncertain GitHub send with its stable marker', async () => {
     const commands = new Commands(() => deployment, {}, new AbortController().signal)
     vi.spyOn(commands, 'pages').mockResolvedValue([
@@ -92,7 +91,6 @@ describe('account-isolated operations', () => {
       expect.stringContaining('Done'),
     ])
   })
-  it.todo('uses Feishu bot identity and one idempotency key on retries')
 })
 
 it('reports Feishu failures with their code and without command arguments', () => {
@@ -108,13 +106,6 @@ it('reports Feishu failures with their code and without command arguments', () =
 })
 describe('Channels', () => {
   const commands = () => new Commands(() => deployment, {}, new AbortController().signal)
-  const feishu = { ...reply, channel: feishuChannel('oc_1', 'om_1') }
-  const lark = (code: number, message: string) =>
-    commandError({ stderr: JSON.stringify({ error: { code, message } }), code: 1 })
-  it.todo(
-    'drop a Feishu reply to a recalled message or one Feishu no longer finds, and say how to add the bot to a chat',
-  )
-  it.todo('keep a Feishu reply whose command timed out for a retry, whatever its text says')
   it('drop a GitHub reply to an Issue that is deleted or locked, and keep others for a retry', async () => {
     const value = commands()
     vi.spyOn(value, 'pages').mockResolvedValue([])
@@ -223,24 +214,6 @@ describe('GitHub calls', () => {
     await expect(value.pages(z.looseObject({ id: z.number() }), 'issues/12/comments')).rejects.toThrow()
   })
 })
-it('says how to add the bot to a chat when Feishu answers that it is not a member, and keeps the code', async () => {
-  const commands = new Commands(() => deployment, {}, new AbortController().signal)
-  const membership = JSON.stringify({ error: { code: 232011, message: 'operator is not in the chat' } })
-  const run = vi.spyOn(commands, 'run').mockRejectedValueOnce(commandError({ stderr: membership, code: 1 }))
-  const hint = 'The Feishu bot is not a member of the chat. Add the bot in the chat settings, then retry.'
-  await expect(commands.lark(['im', '+chat-members-list'])).rejects.toMatchObject({
-    message: hint,
-    code: 232011,
-    exitCode: 1,
-  })
-  run.mockResolvedValueOnce(
-    JSON.stringify({ ok: false, error: { code: 232011, message: 'operator is not in the chat' } }),
-  )
-  await expect(commands.lark(['im', '+chat-members-list'])).rejects.toMatchObject({
-    message: hint,
-    code: 232011,
-  })
-})
 it('names only the program and how it ended when a command prints no diagnostics, never its arguments', async () => {
   const commands = new Commands(() => deployment, {}, new AbortController().signal)
   const reply = 'private reply text'
@@ -264,10 +237,10 @@ it('names only the program and how it ended when a command prints no diagnostics
     signal: 'SIGTERM',
     code: null,
     stderr: '',
-    message: 'Command failed: /path/lark-bot im +messages-reply --markdown withdrawn',
+    message: 'Command failed: /path/gh-bot api repos/acme/app --field body=withdrawn',
   }
-  expect(commandError(timedOut, '/path/lark-bot')).toMatchObject({ message: 'lark-bot timed out after 90 s' })
-  expect(String(commandError(timedOut, '/path/lark-bot'))).not.toContain('withdrawn')
+  expect(commandError(timedOut, '/path/gh-bot')).toMatchObject({ message: 'gh-bot timed out after 90 s' })
+  expect(String(commandError(timedOut, '/path/gh-bot'))).not.toContain('withdrawn')
 })
 it('reports failures as CliError with the code the CLI names and the exit status', async () => {
   const notFound = commandError({ stderr: 'gh: Not Found (HTTP 404)\n', code: 1 })
@@ -286,14 +259,6 @@ it('reports failures as CliError with the code the CLI names and the exit status
   const running = new Commands(() => deployment, {}, controller.signal).run('sleep', ['5'])
   controller.abort()
   await expect(running).rejects.toMatchObject({ name: 'AbortError' })
-  const commands = new Commands(() => deployment, {}, new AbortController().signal)
-  vi.spyOn(commands, 'run').mockResolvedValue(
-    JSON.stringify({ ok: false, error: { code: 231003, message: 'message not found' } }),
-  )
-  await expect(commands.lark(['im', '+messages-reply'])).rejects.toMatchObject({
-    message: 'message not found (231003)',
-    code: 231003,
-  })
 })
 
 it('returns the whole output of a command up to the limit, and refuses one that printed more than it may', async () => {

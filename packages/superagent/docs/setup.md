@@ -44,7 +44,6 @@ Run once, as the user that will run Superagent, and keep the result to yourself:
 ```sh
 git --version; gh --version | head -1; node -v
 gh api user --jq .login          # the operator's own login, a recommendation for question 5
-command -v lark-cli              # only matters with Feishu
 echo "${AGH_HOME:-$HOME/.agh}"
 ```
 
@@ -93,7 +92,8 @@ steps, and the defaults. Ask for one confirmation.
 
 1. **Operator steps first.** One message with what only the operator can do, as the dedicated system user: create the
    agent GitHub account and add it to the repository with write access; accept the invitation as the agent account; and
-   turn on the branch protection above. For Feishu, create and publish the bot app and enter its secret with its CLI.
+   turn on the branch protection above. For Feishu, set up the AGH Feishu channel with its bot and note the channel
+   instance id; Superagent shares that bot through the channel.
    The agent account is signed in in step 5. Wait until the operator says it is done.
 2. **A separate AGH home.** Pick a directory for it and use it for every `agh` command and for the daemon:
 
@@ -127,7 +127,6 @@ steps, and the defaults. Ask for one confirmation.
    GH_CONFIG_DIR="<stateDir>/home/.config/gh" gh api user --jq .login   # must print the agent account
    ```
 
-   For Feishu, enter the bot's secret with its CLI under the same `HOME`.
 6. **Restart the daemon with the agent's identity.** Stop the daemon you started in step 2, by its process id, and start
    it again with `HOME` set to the proxy home and the shim directory first on `PATH`, so that the sessions it runs act as
    the agent account and never as the operator, even when the operator is signed in on the same machine:
@@ -141,8 +140,9 @@ steps, and the defaults. Ask for one confirmation.
 7. **Save the settings.** Open the **Superagent** entry on the home page and save from the **Settings** tab, or, for a
    setup agent, through the services in [Settings services](#settings-services). The agent's own tools cannot change the
    account or execution-environment fields, only the panel and these services can. In this order:
-   1. **Sources:** the GitHub Source (repository and the agent's GitHub CLI), then the Feishu Source if used.
-   2. **Policy:** the allowed lists, and for Feishu the chat ids, looked up with the bot's CLI first.
+   1. **Sources:** the GitHub Source (repository and the agent's GitHub CLI), then the Feishu Source if used (the
+      Feishu channel instance id and the chats).
+   2. **Policy:** the allowed lists, and for Feishu the chat ids, chosen from the chats the channel lists.
    3. **Execution:** the ticket directory root and the prepare command from question 7, for example
       `git clone "https://github.com/<owner>/<name>.git" repo`.
    4. **Prompts:** the commit identity of question 8 and the auto-merge answer of question 9 in Delivery requirements.

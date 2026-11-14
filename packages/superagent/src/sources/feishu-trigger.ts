@@ -1,8 +1,9 @@
 // Adapted from dsh-superagent (MIT)
-/** Normalizes Feishu live events, chat history items, and topic replies into domain Triggers. */
+/** Normalizes the Feishu channel's messages, live or read back, into domain Triggers. */
+import type { MessageEvent } from '@agnes/extension-api/channel-contract'
 import { z } from 'zod'
 import { type ChannelRef, key, type Trigger } from '../core/index.js'
-import type { FeishuMessage, FeishuRef } from './feishu-read.js'
+import type { FeishuRef } from './feishu-read.js'
 
 export const SOURCE = 'feishu'
 /** Constructs a Feishu reply channel address; records `direct` explicitly because both group and direct chat IDs start with `oc_`. */
@@ -11,7 +12,7 @@ export const feishuChannel = (chatId: string, messageId: string, direct = false)
   thread: `feishu:${chatId}`,
   address: { chatId, messageId, ...(direct ? { direct: 'true' } : {}) },
 })
-/** A message as the live event consumer prints it; the history and topic-page paths normalize what they read into this shape. */
+/** A Feishu message in the shape Triggers are made from; `channelEvent` brings a channel message into it. */
 const EventSchema = z.object({
   message_id: z.string(),
   chat_id: z.string(),
@@ -85,80 +86,62 @@ export const feishuParent = (trigger: Trigger): string | undefined =>
     ? feishuTriggerId(trigger.meta.parentId)
     : undefined
 export function feishuRef(trigger: Trigger): FeishuRef | undefined {
-  const meta = trigger.meta as { chatId?: string; messageId?: string }
+  const meta = trigger.meta as {
+    chatId?: string
+    messageId?: string
+    rootId?: string
+    parentId?: string
+    threadId?: string
+  }
   if (trigger.source !== SOURCE || !meta.chatId || !meta.messageId) return undefined
-  return { triggerId: trigger.id, chatId: meta.chatId, messageId: meta.messageId, at: trigger.at }
+  return {
+    triggerId: trigger.id,
+    chatId: meta.chatId,
+    messageId: meta.messageId,
+    at: trigger.at,
+    ...(meta.rootId ? { rootId: meta.rootId } : {}),
+    ...(meta.parentId ? { parentId: meta.parentId } : {}),
+    ...(meta.threadId ? { threadId: meta.threadId } : {}),
+  }
 }
 
-/** A message from the history API; a deleted message may have no body/content. */
-export const HistoricalMessageSchema = z.looseObject({
-  message_id: z.string(),
-  chat_id: z.string(),
-  create_time: z.string(),
-  root_id: z.string().optional(),
-  parent_id: z.string().optional(),
-  thread_id: z.string().optional(),
-  deleted: z.boolean().optional(),
-  message_app_link: z.string().optional(),
-  sender: z.looseObject({ id: z.string().default(''), sender_type: z.string() }),
-  body: z.looseObject({ content: z.string() }).optional(),
-  mentions: z
-    .array(z.looseObject({ id: z.string(), key: z.string().optional(), name: z.string().optional() }))
-    .optional(),
-})
-export type HistoricalMessage = z.infer<typeof HistoricalMessageSchema>
-/** One page of the history API; items are validated individually so an unreadable item is skipped alone. */
-export const HistoryPageSchema = z.looseObject({
-  items: z.array(z.unknown()).default([]),
-  has_more: z.boolean().default(false),
-  page_token: z.string().optional(),
-})
-export function historyText(message: HistoricalMessage): string {
-  let content: unknown
-  try {
-    content = JSON.parse(message.body?.content ?? '')
-  } catch {
-    content = message.body?.content ?? '' /* Feishu also returns plain-text system messages. */
-  }
-  const plain =
-    content && typeof content === 'object' && 'text' in content && typeof content.text === 'string'
-      ? content.text
-      : undefined
-  return typeof content === 'string' ? content : (plain ?? JSON.stringify(content))
+/**
+ * Stands for the bot in a channel message's mentions: the channel says whether the bot was mentioned, not under which
+ * id, and the bot's own id is known only once one of its replies came back.
+ */
+export const BOT_MENTION = '\u0000bot'
+/** The key an image attachment of a message is read by: its 1-based position among the message's attachments. */
+export const imageKey = (position: number): string => `img_att_${position}`
+export const IMAGE_KEY = /^img_att_([1-9][0-9]*)$/
+/** A message's text followed by a marker for each image attachment, which assessments read by its key. */
+export function channelText(event: Pick<MessageEvent, 'text' | 'attachments'>): string {
+  const images = event.attachments.flatMap((attachment, index) =>
+    attachment.mime.startsWith('image/') ? [`[image ${imageKey(index + 1)}]`] : [],
+  )
+  return [event.text, ...images].filter(Boolean).join('\n')
 }
-export function historyEvent(message: HistoricalMessage, chatId: string, direct: boolean): unknown {
+/**
+ * Brings a channel message into the Trigger input shape. `root` is the first message of its topic or reply chain as the
+ * Source resolved it (the message itself when it starts one); the quoted message is its parent.
+ */
+export function channelEvent(event: MessageEvent, root: string): FeishuEvent {
   return {
-    message_id: message.message_id,
-    chat_id: chatId,
-    chat_type: direct ? 'p2p' : 'group',
-    create_time: message.create_time,
-    sender_id: message.sender.id,
-    sender_type: message.sender.sender_type === 'user' ? 'user' : 'bot',
-    content: historyText(message),
-    mentions: message.mentions ?? [],
-    root_id: message.root_id,
-    parent_id: message.parent_id,
-    thread_id: message.thread_id,
-    message_app_link: message.message_app_link,
+    message_id: event.messageId,
+    chat_id: event.chat.id,
+    chat_type: event.chat.type === 'dm' ? 'p2p' : 'group',
+    sender_id: event.sender.userId,
+    sender_type: event.sender.kind === 'bot' ? 'bot' : 'user',
+    content: channelText(event),
+    create_time: event.at,
+    mentions: event.mentions.bot ? [{ id: BOT_MENTION }] : [],
+    ...(root !== event.messageId ? { root_id: root } : {}),
+    ...(event.quotedMessageId ? { parent_id: event.quotedMessageId } : {}),
+    ...(event.chat.threadId ? { thread_id: event.chat.threadId } : {}),
   }
 }
 /**
- * Adapts a topic-page message into the live-event schema, falling back to `root` when Feishu omits `root_id` on replies;
- * an app's message carries its bot's `open_bot_id`, and a deleted message may have no content.
+ * The Trigger of a channel message, or undefined for a message of the bot itself (`self`, the bot's sender id once
+ * known). The Trigger is the one a message of the same content always made: same id, Thread, actor and text.
  */
-export function topicEvent(message: FeishuMessage, chatId: string, direct: boolean, root: string): unknown {
-  return {
-    message_id: message.message_id,
-    chat_id: chatId,
-    chat_type: direct ? 'p2p' : 'group',
-    create_time: message.create_time,
-    sender_id: message.sender.open_bot_id ?? message.sender.id,
-    sender_type: message.sender.sender_type === 'user' ? 'user' : 'bot',
-    content: message.content ?? '',
-    mentions: message.mentions ?? [],
-    parent_id: message.parent_id,
-    thread_id: message.thread_id,
-    root_id: message.root_id ?? (message.message_id === root ? undefined : root),
-    message_app_link: message.message_app_link,
-  }
-}
+export const messageTrigger = (event: MessageEvent, root: string, self = ''): Trigger | undefined =>
+  feishuTrigger(channelEvent(event, root), self || BOT_MENTION, BOT_MENTION)

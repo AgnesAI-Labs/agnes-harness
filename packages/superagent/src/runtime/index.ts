@@ -16,6 +16,7 @@ import type { JsonValue } from '@agnes/protocol'
 import { openStore, type Store } from '../app/store.js'
 import { type Machine, machineOf, type Probe } from '../deployment.js'
 import type { createRuntimeParts, SuperagentApp } from './app.js'
+import { attachFeishu } from './feishu-read-tool.js'
 import { composeGeneration, type Generation } from './generation.js'
 import { type HookStateCell, type HookStateHolder, processHookState } from './hook-state.js'
 import { registerHooks } from './hooks.js'
@@ -198,6 +199,8 @@ export async function startService(
   const service = createService(composed.app, parts, panel)
   service.register('services', createPanelServices(panel.host))
   service.register('lifecycle', composed.lifecycle)
+  // The Feishu Source and its worker tool join the app before the lifecycle starts it.
+  service.register('feishu', attachFeishu({ app: composed.app, grant }, log))
   init.ready()
   // The lifecycle begins once `start()` has returned; it reports its own failures through its status.
   void composed.lifecycle

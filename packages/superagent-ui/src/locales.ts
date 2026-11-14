@@ -40,6 +40,9 @@ const TEXT = {
   'health.github': ['GitHub 来源', 'GitHub Source'],
   'health.feishu': ['飞书来源', 'Feishu Source'],
   'health.history': ['飞书补收', 'Feishu recovery'],
+  'health.members': ['飞书群成员', 'Feishu chat members'],
+  'health.reads': ['飞书读取', 'Feishu reads'],
+  'health.others': ['飞书私聊和其他群', 'Feishu direct messages and other chats'],
   'health.runtime': ['Superagent', 'Superagent'],
   'health.models': ['模型服务', 'Model service'],
   'health.assessment': ['发给主 Session 的评估', 'Evals sent to the main Session'],
@@ -550,8 +553,8 @@ const TEXT = {
   prepareCommandEmpty: ['留空：空目录', 'Empty: an empty directory'],
   blockedCommands: ['禁止调用的命令', 'Blocked commands'],
   blockedCommandsHint: [
-    '执行器 Session 调用这些命令名时直接失败，例如用你个人账号登录的 CLI。只拦按名字的调用，用绝对路径仍能运行，所以不是安全边界。gh、git、lark-cli 不能禁止。',
-    'Command names that fail when an Executor Session calls them, such as a CLI signed in to your own account. Only calls by name fail; an absolute path still runs, so this is not a security boundary. gh, git and lark-cli cannot be blocked.',
+    '执行器 Session 调用这些命令名时直接失败，例如用你个人账号登录的 CLI。只拦按名字的调用，用绝对路径仍能运行，所以不是安全边界。gh、git 不能禁止。',
+    'Command names that fail when an Executor Session calls them, such as a CLI signed in to your own account. Only calls by name fail; an absolute path still runs, so this is not a security boundary. gh and git cannot be blocked.',
   ],
   blockedCommandsNone: ['以空格分隔；没有', 'Separated by spaces; none'],
   environmentIntro: [

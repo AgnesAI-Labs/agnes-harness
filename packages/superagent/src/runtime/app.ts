@@ -31,6 +31,7 @@ import type { PromptBinding } from './prompt.js'
 import type { ModelCatalog } from './resources.js'
 import { RoleModels } from './role-models.js'
 import { type SessionClient, SessionRegistry, Sessions } from './sessions.js'
+import type { Tool } from './tool.js'
 import { handleTool, type ToolAnswer, type ToolCall } from './tools.js'
 
 export interface Log {
@@ -77,6 +78,16 @@ export interface SuperagentApp {
   setupProblem(): SetupProblem | undefined
   /** What the panel services and other parts read and drive. */
   readonly parts: AppParts
+  /**
+   * Adds a part's Sources, started with the others once setup completed, and its tools of a ticket's worker; called
+   * before `start()`.
+   */
+  extend(part: AppExtension): void
+}
+/** What a part adds to the app, such as the Feishu Source and its worker tool. */
+export interface AppExtension {
+  sources?(host: SourceHost): (() => Promise<void>)[]
+  tools?(ticket: Ticket): Tool[]
 }
 export interface AppParts {
   readonly store: Store
@@ -118,6 +129,8 @@ export interface AppDeps {
   blockCommands?(blocked: readonly string[]): Promise<void>
   /** Starts further Sources, such as Feishu; each returns its stop. */
   sources?: (host: SourceHost) => (() => Promise<void>)[]
+  /** Further tools of the worker of a ticket, such as the Feishu read tool. */
+  tools?(ticket: Ticket): Tool[]
   /** Called once a ticket ended. */
   ticketEnded?(ticketId: string): void
   /**
@@ -132,7 +145,20 @@ export interface AppDeps {
   restart?(): void
 }
 
-export function createSuperagentApp(deps: AppDeps): SuperagentApp {
+export function createSuperagentApp(given: AppDeps): SuperagentApp {
+  const extensions: AppExtension[] = []
+  // What the parts read of the Sources and tools reaches the extensions added before the app starts.
+  const deps: AppDeps = {
+    ...given,
+    sources: (host) => [
+      ...(given.sources?.(host) ?? []),
+      ...extensions.flatMap((part) => part.sources?.(host) ?? []),
+    ],
+    tools: (ticket) => [
+      ...(given.tools?.(ticket) ?? []),
+      ...extensions.flatMap((part) => part.tools?.(ticket) ?? []),
+    ],
+  }
   const state = appState()
   const { registry } = deps.sessions
   /** The sessions of earlier runs, which a startup reconcile goes through. */
@@ -194,6 +220,9 @@ export function createSuperagentApp(deps: AppDeps): SuperagentApp {
     stoppedState: (reason) =>
       stoppedHookState(new Map(registry.ids().map((id) => [id, deps.delivery.liveNote(id)])), reason),
     handleTool: (call) => handleTool(tools.toolsHost, call),
+    extend: (part) => {
+      extensions.push(part)
+    },
   }
 }
 
