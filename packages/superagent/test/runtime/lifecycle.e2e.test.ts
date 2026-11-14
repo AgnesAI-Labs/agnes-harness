@@ -193,7 +193,7 @@ it.skipIf(process.platform === 'win32')(
       assignments: [{ ticketId: 'T-1', assignmentId: 'a-T-1' }],
     })
     // The first start found the worker idle with its assignment running, and re-dispatched it once.
-    expect(firstLog).toEqual(['app.start', 'interrupted T-1 a-T-1', 'app.stop disable'])
+    expect(firstLog).toEqual(['app.start', 'interrupted T-1 a-T-1', 'app.stopSignal disable', 'app.drain'])
 
     // The same push from a session that was never stopped reaches the remote: the check above is not vacuous.
     expect(

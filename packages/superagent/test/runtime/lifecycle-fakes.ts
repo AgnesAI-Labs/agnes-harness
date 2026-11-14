@@ -99,8 +99,15 @@ export function fakeControl(log: string[], sessions: Map<string, FakeSession>): 
   }
 }
 
-/** A composed app that logs its calls; `polls` counts Source polls, which run while it is started. */
-export function fakeApp(log: string[], sessionIds: () => string[]) {
+/**
+ * A composed app that logs its calls; `polls` counts Source polls, which run while it is started, and `drain` is what
+ * its drain waits for (by default nothing).
+ */
+export function fakeApp(
+  log: string[],
+  sessionIds: () => string[],
+  drain: () => Promise<void> = async () => {},
+) {
   let started = false
   const app: SuperagentApp & { polls: number; poll(): void } = {
     polls: 0,
@@ -111,9 +118,13 @@ export function fakeApp(log: string[], sessionIds: () => string[]) {
       log.push('app.start')
       started = true
     },
-    async stop(reason) {
-      log.push(`app.stop ${reason}`)
+    stopSignal(reason) {
+      log.push(`app.stopSignal ${reason}`)
       started = false
+    },
+    async drain() {
+      log.push('app.drain')
+      await drain()
     },
     executor: {
       sessionIds,

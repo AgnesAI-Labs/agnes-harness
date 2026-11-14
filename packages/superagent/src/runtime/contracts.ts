@@ -25,8 +25,13 @@ export interface SuperagentExecutor extends Executor {
 export interface SuperagentApp {
   /** Builds the parts and starts polling the Sources; it does not reconcile Sessions. */
   start(): Promise<void>
-  /** Stops polling, the Outbox and the Executor; it leaves the Sessions alone. */
-  stop(reason: 'disable' | 'generation' | 'shutdown'): Promise<void>
+  /**
+   * Stops polling the Sources, sending from the Outbox and launching or delivering, at once, and returns without waiting
+   * for work already in flight. It leaves the Sessions alone.
+   */
+  stopSignal(reason: 'disable' | 'generation' | 'shutdown'): void
+  /** Resolves once the work in flight when `stopSignal` was called has finished; the caller bounds the wait. */
+  drain(): Promise<void>
   readonly executor: SuperagentExecutor
   /** The Engine, through which the startup reconcile reports interrupted Assignments. */
   readonly engine: Pick<Engine, 'assignmentInterrupted'>

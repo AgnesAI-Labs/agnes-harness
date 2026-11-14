@@ -68,17 +68,49 @@ export interface LifecycleDeps {
   hooks: HookStateCell
   /** The snapshot the hooks read once the reconcile registered `sessionIds`. */
   hookState(sessionIds: ReadonlySet<string>): HookState
-  /** The agent environment to write. @throws SetupError when the configuration is incomplete or an account check fails. */
-  environment(): Promise<EnvironmentPlan>
-  createApp(): SuperagentApp
+  /**
+   * The agent environment to write. `signal` aborts when the runtime stops during the start.
+   * @throws SetupError when the configuration is incomplete or an account check fails.
+   */
+  environment(signal: AbortSignal): Promise<EnvironmentPlan>
+  createApp(signal: AbortSignal): SuperagentApp
   log?: { warn(message: string): void }
   writeEnvironment?: typeof writeEnvironment
-  verifyEnvironment?: (home: string, shimsDir: string, cfg: { login: string }) => Promise<void>
+  verifyEnvironment?: (
+    home: string,
+    shimsDir: string,
+    cfg: { login: string },
+    signal: AbortSignal,
+  ) => Promise<void>
   archive?: (store: Store, now: number) => { archived: number }
   now?: () => number
+  /**
+   * How long a stop may take in all, below the Host's shutdown deadline: cancelling and killing come first, then the wait
+   * for an aborted start, the app's drain and anything else get what is left.
+   */
+  stopBudgetMs?: number
 }
 
 const ARCHIVE_EVERY_MS = 24 * 3600_000
+/** Below the 5 s shutdown deadline the manifest declares, with room for the Host's own steps. */
+const STOP_BUDGET_MS = 4_000
+/** How long a stop waits for an aborted start to notice before it goes on. */
+const START_ABORT_WAIT_MS = 500
+
+/** `promise`, or nothing once `ms` passed; it never rejects. */
+async function within(promise: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([
+    promise.then(
+      () => {},
+      () => {},
+    ),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, ms)
+    }),
+  ])
+  clearTimeout(timer)
+}
 /** Deliveries carry this command-id prefix; anything else in a Session's inbox someone else queued. */
 const DELIVERY_PREFIX = 'superagent:'
 const WORKER_PREFIX = 'superagent:worker:'
@@ -106,6 +138,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
   let app: SuperagentApp | undefined
   let timer: ReturnType<typeof setInterval> | undefined
   let stopping = false
+  let aborter: AbortController | undefined
 
   const ticketOf = (sessionId: string): Ticket | undefined =>
     sessionId.startsWith(WORKER_PREFIX) ? store.tickets.get(sessionId.slice(WORKER_PREFIX.length)) : undefined
@@ -163,20 +196,26 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     }
   }
 
-  const open = async (): Promise<void> => {
+  const open = async (signal: AbortSignal): Promise<void> => {
     // Nothing of the start runs before `start()` has returned and its caller has gone on.
     await new Promise<void>((resolve) => setImmediate(resolve))
     try {
-      const plan = await deps.environment()
+      if (stopping) return
+      const plan = await deps.environment(signal)
       if (stopping) return
       const { home, shimsDir, ghConfigDir } = agentPaths(plan.stateDir)
       await (deps.writeEnvironment ?? writeEnvironment)(home, shimsDir, { ...plan.account, ghConfigDir })
       if (stopping) return
-      await (deps.verifyEnvironment ?? verifyEnvironment)(home, shimsDir, { login: plan.account.login })
+      const verify =
+        deps.verifyEnvironment ??
+        ((h: string, d: string, cfg: { login: string }, s: AbortSignal) =>
+          verifyEnvironment(h, d, cfg, process.env, s))
+      await verify(home, shimsDir, { login: plan.account.login }, signal)
       if (stopping) return
       // The runtime's own git, gh and prepare commands act as the agent too.
       setAgentVariables({ HOME: home, GH_CONFIG_DIR: ghConfigDir })
-      const started = deps.createApp()
+      // `stopping` is checked right before, and nothing awaits in between: a stop either sees this app or none.
+      const started = deps.createApp(signal)
       app = started
       await started.start()
       if (stopping) return
@@ -197,6 +236,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       hooks.set(deps.hookState(new Set(ids)))
       status = { state: 'running' }
     } catch (error) {
+      if (stopping) return
       if (error instanceof SetupError)
         status = {
           state: UNCONFIGURED.has(error.code) ? 'setupRequired' : 'setupFailed',
@@ -228,41 +268,70 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       if (work) return
       stopping = false
       status = { state: 'starting' }
-      work = open()
+      aborter = new AbortController()
+      work = open(aborter.signal)
     },
+    /**
+     * Within `stopBudgetMs`: abort a start in progress, stop polling and sending at once, then cancel, kill and empty
+     * every Session in parallel — the part that keeps a worker from acting after a disable — and only then wait for an
+     * aborted start and for the app's drain with whatever budget is left.
+     */
     async stop(reason) {
+      const began = Date.now()
+      const left = () => Math.max(0, (deps.stopBudgetMs ?? STOP_BUDGET_MS) - (Date.now() - began))
       stopping = true
-      await work
-      work = undefined
+      aborter?.abort()
       if (timer) clearInterval(timer)
       timer = undefined
+      setAgentVariables(undefined)
+      // A start past `createApp` already holds the app; an earlier one opens nothing more once it sees `stopping`.
+      const starting = work
+      work = undefined
+      if (starting && !app) await within(starting, Math.min(START_ABORT_WAIT_MS, left()))
       const running = app
       app = undefined
-      setAgentVariables(undefined)
       if (!running) {
         hooks.clear()
         status = { state: 'stopped' }
         return
       }
       status = { state: 'stopping' }
-      const ids = running.executor.sessionIds()
-      await running.stop(reason).catch((error: unknown) => {
-        warn(`Superagent could not stop polling and sending: ${message(error)}`)
-      })
-      for (const id of ids)
-        await quiet(id, reason === 'shutdown').catch((error: unknown) => {
-          warn(`Superagent could not stop session ${id}: ${message(error)}`)
-        })
-      const paused = store.tickets.open().flatMap((ticket) => {
-        const assignment = runningAssignment(ticket)
-        return assignment ? [{ ticketId: ticket.id, assignmentId: assignment.id }] : []
-      })
+      let ids: string[] = []
       try {
+        running.stopSignal(reason)
+      } catch (error) {
+        warn(`Superagent could not stop polling and sending: ${message(error)}`)
+      }
+      try {
+        ids = running.executor.sessionIds()
+      } catch (error) {
+        warn(`Superagent could not list its sessions: ${message(error)}`)
+      }
+      await within(
+        Promise.allSettled(
+          ids.map((id) =>
+            quiet(id, reason === 'shutdown').catch((error: unknown) => {
+              warn(`Superagent could not stop session ${id}: ${message(error)}`)
+            }),
+          ),
+        ),
+        left(),
+      )
+      try {
+        const paused = store.tickets.open().flatMap((ticket) => {
+          const assignment = runningAssignment(ticket)
+          return assignment ? [{ ticketId: ticket.id, assignmentId: assignment.id }] : []
+        })
         store.set(KV.runtime.paused, { at: new Date(now()).toISOString(), reason, assignments: paused })
       } catch (error) {
         warn(`Superagent could not record the pause: ${message(error)}`)
       }
       hooks.clear()
+      await within(
+        Promise.resolve().then(() => running.drain()),
+        left(),
+      )
+      if (starting) await within(starting, left())
       status = { state: 'stopped' }
     },
     async settled() {

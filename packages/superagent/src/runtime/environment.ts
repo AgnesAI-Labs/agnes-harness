@@ -174,11 +174,11 @@ export async function writeEnvironment(
 }
 
 /** Runs `argv` with only the variables a session's shell inherits from `env`, so `GIT_CONFIG_*` and tokens stay out. */
-function asSession(env: NodeJS.ProcessEnv, argv: string[], cwd: string) {
+function asSession(env: NodeJS.ProcessEnv, argv: string[], cwd: string, signal?: AbortSignal) {
   const pairs = SESSION_VARIABLES.flatMap((name) => (env[name] === undefined ? [] : [`${name}=${env[name]}`]))
   return runCommand(['env', '-i', ...pairs, ...argv], {
     cwd,
-    signal: AbortSignal.timeout(CHECK_MS),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(CHECK_MS)]) : AbortSignal.timeout(CHECK_MS),
     timeoutMs: CHECK_MS,
   })
 }
@@ -197,6 +197,7 @@ function forGithub(key: string): boolean {
 /**
  * The setup self-check, in the environment sessions inherit (`env`, the daemon's own by default): HOME is the agent home,
  * `gh` resolves to the shim, git asks only the agent's helper for github.com credentials, and `gh` acts as `login`.
+ * `signal` stops the checks, as when the runtime stops while it starts.
  * @throws SetupError naming the first check that failed.
  */
 export async function verifyEnvironment(
@@ -204,11 +205,12 @@ export async function verifyEnvironment(
   shimsDir: string,
   cfg: { login: string },
   env: NodeJS.ProcessEnv = process.env,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (!env.HOME || !samePath(env.HOME, home))
     throw new SetupError('agentHomeMismatch', { home, actual: env.HOME ?? '(unset)' })
 
-  const gh = await asSession(env, ['/bin/sh', '-c', 'command -v gh'], home)
+  const gh = await asSession(env, ['/bin/sh', '-c', 'command -v gh'], home, signal)
   const actual = gh.stdout.trim()
   if (gh.code !== 0 || !samePath(actual, join(shimsDir, 'gh')))
     throw new SetupError('agentGhNotShim', { actual: actual || '(none)', shims: shimsDir })
@@ -218,6 +220,7 @@ export async function verifyEnvironment(
     env,
     ['git', 'config', '-z', '--show-origin', '--get-regexp', '^credential\\..*helper$'],
     home,
+    signal,
   )
   if (listed.code !== 0 && listed.code !== 1)
     throw new SetupError('environmentFailed', { output: listed.stderr.trim() })
@@ -243,7 +246,7 @@ export async function verifyEnvironment(
       helpers: helpers.map((helper) => `${helper.origin} ${helper.value}`).join('; ') || '(none)',
     })
 
-  const user = await asSession(env, ['gh', 'api', 'user', '--jq', '.login'], home)
+  const user = await asSession(env, ['gh', 'api', 'user', '--jq', '.login'], home, signal)
   if (user.code !== 0) throw new SetupError('agentCliSignedOut', { output: user.stderr.trim() })
   const account = user.stdout.trim()
   if (account !== cfg.login) throw new SetupError('agentLoginMismatch', { account, login: cfg.login })

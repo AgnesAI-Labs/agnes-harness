@@ -247,13 +247,14 @@ describe('disable', () => {
 
     await lifecycle.stop('disable')
     expect(log).toEqual([
-      'app.stop disable',
+      'app.stopSignal disable',
       `state ${workerKey('A')}`,
       `drop ${workerKey('A')} q1`,
       `cancel ${workerKey('A')}`,
       `kill ${workerKey('A')}`,
       `state ${workerKey('A')}`,
       `drop ${workerKey('A')} s1`,
+      'app.drain',
     ])
     expect(sessions.get(workerKey('A'))).toMatchObject({ running: false, pending: [], jobs: 0 })
     expect(store.get(KV.runtime.paused)).toEqual({
@@ -270,7 +271,7 @@ describe('disable', () => {
     vi.advanceTimersByTime(3 * DAY)
     expect(app.polls).toBe(1)
     expect(archive.mock.calls.length).toBe(runs)
-    expect(log).toHaveLength(7)
+    expect(log).toHaveLength(8)
   })
 
   it('drops the queued inputs of every session, which stay untaken in the store and are re-delivered after enable', async () => {
@@ -323,10 +324,11 @@ describe('disable', () => {
     log.length = 0
     await lifecycle.stop('shutdown')
     expect(log).toEqual([
-      'app.stop shutdown',
+      'app.stopSignal shutdown',
       `state ${ORCHESTRATOR}`,
       `cancel ${ORCHESTRATOR}`,
       `kill ${ORCHESTRATOR}`,
+      'app.drain',
     ])
     expect(sessions.get(ORCHESTRATOR)!.pending).toEqual([{ itemId: 'o1', commandId: 'superagent:m' }])
   })
