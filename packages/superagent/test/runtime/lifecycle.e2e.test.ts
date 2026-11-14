@@ -170,8 +170,12 @@ it.skipIf(process.platform === 'win32')(
     first.app.poll()
     expect(first.app.polls).toBe(1)
 
-    // Off, mid-turn.
+    // Off, mid-turn, within the Host's 5 s shutdown deadline.
+    const stopStarted = Date.now()
     await first.lifecycle.stop('disable')
+    const stopMs = Date.now() - stopStarted
+    console.info(`disable stop took ${stopMs} ms`)
+    expect(stopMs).toBeLessThan(5_000)
     // Past both deadlines (the turn's command and the job push at 10 s and 12 s): no push reached the remote.
     await sleep(14_000)
     const refs = await remote.refs()
