@@ -1,50 +1,64 @@
 // Adapted from dsh-superagent (MIT)
-/** Feishu outbound channel: posts threaded bot replies and constructs chat deep links. */
+/** Feishu outbound channel: replies under the asked message through the AGH channel and builds chat deep links. */
+import type { MessageRef } from '@agnes/extension-api/channel-contract'
 import type { OutboundMessage } from '../core/index.js'
-import { CliError } from '../infra/commands.js'
 import { checkedImText } from '../infra/text.js'
+import type { FeishuIo } from './feishu-io.js'
 import { feishuTriggerId } from './feishu-trigger.js'
-import type { SourceContext } from './host.js'
 import type { ChannelLink, ChannelLinks } from './kind.js'
 
 /** Feishu or Lark AppLink that opens a chat; used when the message's own link was not delivered with the event. */
 export const feishuChatLink = (brand: 'feishu' | 'lark', chatId: string): string =>
   `https://applink.${brand === 'lark' ? 'larksuite.com' : 'feishu.cn'}/client/chat/open?openChatId=${encodeURIComponent(chatId)}`
 /**
- * True when Feishu permanently rejects a reply because the target message was recalled, withdrawn, or not found.
- * Only a Feishu response carrying one of these error codes means the target message is gone; timeouts or crashes do not.
+ * True when Feishu permanently refuses a reply because the target message was recalled, withdrawn or not found: its
+ * error code 230011, or a 2300xx code that says not found. Timeouts, crashes and other refusals may pass on a retry.
  */
-const gone = (error: unknown): boolean =>
-  error instanceof CliError &&
-  error.code !== undefined &&
-  (error.code === 230011 ||
-    /withdrawn/i.test(error.message) ||
-    (Math.floor(error.code / 100) === 2300 && /not found/i.test(error.message)))
-/** Replies in the topic of the target message; Feishu keeps at most one reply per idempotency key (the outgoing message's `message.id`). */
+export function gone(error: unknown): boolean {
+  const text =
+    error instanceof Error ? error.message : String((error as { message?: unknown })?.message ?? '')
+  const data = JSON.stringify((error as { data?: unknown })?.data ?? '')
+  const all = `${text} ${data}`
+  return (
+    /\b230011\b/.test(all) ||
+    /withdrawn|recalled/i.test(all) ||
+    (/\b2300\d\d\b/.test(all) && /not found/i.test(all))
+  )
+}
+/** Where a reply to a message goes: its topic, or the message itself when it starts none, and its chain's root. */
+export interface ReplyPlace {
+  threadId?: string | undefined
+  root: string
+}
+/**
+ * Replies to the message an outgoing message answers, in its topic, through the channel. The outgoing message's id is
+ * the delivery key, so a retried send posts at most one reply. On a channel without replies or topics the reply posts
+ * as a new message of the chat with the same key.
+ */
 export async function sendFeishu(
-  host: Pick<SourceContext, 'commands'>,
+  io: FeishuIo,
   message: OutboundMessage,
+  place: (messageId: string) => ReplyPlace,
+  sent: (ref: MessageRef, root: string) => void,
 ): Promise<'sent' | 'gone'> {
-  const messageId = message.channel.address.messageId
-  if (!messageId) throw new Error('Missing Feishu reply target')
+  const { chatId, messageId } = message.channel.address
+  if (!chatId || !messageId) throw new Error('Missing Feishu reply target')
+  if (!io.channel) throw new Error('The Feishu Source has no channel instance set')
   const text = checkedImText(message.text)
-  const reply = [
-    'im',
-    '+messages-reply',
-    '--message-id',
-    messageId,
-    '--markdown',
-    text,
-    '--reply-in-thread',
-    '--idempotency-key',
-    message.id,
-  ]
+  const chatType = message.channel.address.direct === 'true' ? ('dm' as const) : ('group' as const)
+  const { threadId, root } = place(messageId)
+  let ref: MessageRef
   try {
-    await host.commands.lark(reply)
+    ref = await io.channels.send(
+      io.channel,
+      { chatType, chatId, threadId: threadId ?? root, deliveryKey: message.id },
+      { blocks: [{ kind: 'text', markdown: text }], replyTo: { chatId, messageId, chatType } },
+    )
   } catch (error) {
     if (gone(error)) return 'gone'
     throw error
   }
+  sent(ref, root)
   return 'sent'
 }
 /** Fallback chat link on the bot's brand; the message's own deep link on its Trigger is preferred when available. */

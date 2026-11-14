@@ -90,10 +90,10 @@ it('rereads the chats the bot has joined on request and says which are new, keep
   ])
   await click(button())
   expect([...document.querySelectorAll('.dt-toast')].at(-1)?.textContent).toBe(zh.labelsCurrent)
-  server.joinError = 'lark-cli: token expired'
+  server.joinError = 'channel: token expired'
   await click(button())
   expect([...document.querySelectorAll('.dt-toast')].at(-1)?.textContent).toBe(
-    '读取失败，列表保持不变：lark-cli: token expired',
+    '读取失败，列表保持不变：channel: token expired',
   )
   expect(button().disabled).toBe(false)
   // Only a field whose key column offers a refresh shows the button.
@@ -182,7 +182,8 @@ it('shows the account each CLI signs in as, and keeps a saved CLI on screen whil
     )!,
   )
   expect(labels()).toEqual(['监听的仓库', '智能体的 GitHub CLI', '轮询间隔 / 秒', '连续失败几次后报告异常'])
-  expect(all('.dt-card')[0]!.textContent).toContain('当前机器人 Widgets Bot')
+  // The Feishu Source names its channel instance; it has no bot of its own to show.
+  expect(all('.dt-card')[0]!.textContent).toContain('飞书渠道实例')
   await type(field<HTMLInputElement>('智能体的 GitHub CLI'), '/opt/bin/gh-agent')
   expect(github.textContent).toContain(
     '保存会重启 Superagent：2 个进行中的派工会中断，并带恢复说明重新开始。',
@@ -239,35 +240,6 @@ it('points a setup problem at the settings that fix it', async () => {
     zh['settingsGroup.deployment'],
   )
   expect(text()).toContain('部署检查未通过：git 没有读取 Superagent 为 github.com 写的凭据配置')
-})
-
-it('shows a failed Feishu bot check as a problem of the Feishu Source only, with a check after a fix outside Superagent', async () => {
-  server.setup = {
-    ...server.setup,
-    feishuProblem: problemOf('feishuBotNotReady', { app: 'cli_bot', status: 'missing' }),
-    accounts: { ...server.setup.accounts!, feishu: null },
-  }
-  await mount()
-  expect(text()).toContain(zh.problemSetupFeishu)
-  expect(text()).not.toContain('飞书 来源异常')
-  await click(find(zh.problemSetupFeishu, 'button, a, [role="button"]'))
-  const feishu = all('.dt-card')[0]!
-  expect(feishu.textContent).toContain(
-    '部署检查未通过：应用 cli_bot 的机器人身份状态是 missing；用 lark-cli 配置应用密钥。',
-  )
-  // Superagent runs meanwhile, so checking again asks first: the restart interrupts running Executor Sessions.
-  await click([...feishu.querySelectorAll('button')].find((button) => button.textContent === '重新检查')!)
-  expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-    '重新检查会重启 Superagent：2 个进行中的派工会中断',
-  )
-  expect(server.requests.some((request) => request.path === 'setup/check')).toBe(false)
-  await click(zh.confirm)
-  expect(server.requests.some((request) => request.path === 'setup/check')).toBe(true)
-  await click(tab(zh['tab.source']))
-  // The Source's state carries the problem once, not again as its health.
-  expect(
-    all('.dt-form > .dt-list > .dt-row')[0]!.textContent?.match(/cli_bot 的机器人身份状态是 missing/g),
-  ).toHaveLength(1)
 })
 
 it('leaves Feishu out of a GitHub-only deployment', async () => {
@@ -328,14 +300,15 @@ it('shows a refused Source save with the output of the tool that failed on its o
   await mount()
   await click(zh['tab.source'])
   await click(find(zh['tab.settings'], '.dt-status-head button'))
-  const feishu = all('.dt-card')[0]!
-  await type(field<HTMLInputElement>('机器人的 lark-cli'), 'lark-broken')
+  const cli = field<HTMLInputElement>('智能体的 GitHub CLI')
+  const github = cli.closest<HTMLElement>('.dt-card')!
+  await type(cli, 'gh-broken')
   await act(async () => {
-    feishu.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    github.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
   })
   await settle()
-  expect(feishu.querySelector('.dt-savebar [role="alert"]')?.textContent).toBe(
-    '机器人的 lark-cli 不可用。\nlark-cli: app secret missing',
+  expect(github.querySelector('.dt-savebar [role="alert"]')?.textContent).toBe(
+    '找不到智能体的 GitHub CLI。\ngh-broken: not found',
   )
 })
 

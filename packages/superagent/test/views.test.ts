@@ -180,6 +180,8 @@ it('states each Source by the first state that holds', () => {
       {
         feishu: { state: 'ready', detail: '' },
         history: { state: 'paused', detail: '' },
+        members: { state: 'ready', detail: '' },
+        reads: { state: 'ready', detail: '' },
         github: { state: 'error', detail: 'x' },
       },
     ),

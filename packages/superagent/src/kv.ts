@@ -95,10 +95,17 @@ export const KV = {
   },
   /**
    * Feishu Source: known chats (`true` for direct messages); per-chat history cursor and active topics mapped from topic ID
-   * to last-seen timestamp; and per-polled-thread seen message IDs and initialization flag.
+   * to last-seen timestamp; per-polled-thread seen message IDs and initialization flag; the root message of each topic
+   * met so far; the messages the bot sent mapped to the root they answer; the bot's own sender id once learned; and the
+   * Source's health entries as last changed, which outlive the running generation for setup checks and diagnosis.
    */
   feishu: {
     chats: record<Record<string, boolean>>('feishu-chats'),
+    roots: record<Record<string, string>>('feishu-topic-roots'),
+    sent: record<Record<string, string>>('feishu-sent'),
+    self: record<string>('feishu-self'),
+    health:
+      record<Record<string, { state: string; detail: string; code?: string; at: string }>>('feishu-health'),
     history: family<string, [chat: string]>('feishu-history:'),
     topics: family<Record<string, string>, [chat: string]>('feishu-history-threads:'),
     seen: family<string[], [thread: string]>('thread-seen:'),

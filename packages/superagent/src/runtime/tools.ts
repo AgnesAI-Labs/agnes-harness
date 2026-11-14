@@ -8,6 +8,7 @@ import type { PluginContextFacets, ProfileManagedHandle, ToolMeta, ToolResult } 
 import { z } from 'zod'
 import type { Store } from '../app/store.js'
 import { liveTicket, type Ticket, UserError } from '../core/index.js'
+import { FEISHU_READ_DESCRIPTION, FEISHU_READ_NAME, FeishuReadSchema } from './feishu-read-tool.js'
 import type { SessionRegistry } from './sessions.js'
 import type { Tool } from './tool.js'
 import { type ExecutorToolsHost, executorTools } from './tools-executor.js'
@@ -67,10 +68,9 @@ export async function handleTool(host: ToolsHost, call: ToolCall): Promise<ToolA
  * `ToolsHost.extra`, and until then a call answers that it is not available.
  */
 export const FEISHU_READ: Tool = {
-  name: 'orchestrator_feishu_read',
-  description:
-    "Read Feishu messages of this ticket's chats by message id or by thread, as the dsh-superagent-feishu skill describes.",
-  schema: z.object({}).catchall(z.unknown()),
+  name: FEISHU_READ_NAME,
+  description: FEISHU_READ_DESCRIPTION,
+  schema: FeishuReadSchema,
   execute: async () => {
     throw new Error('orchestrator_feishu_read is not available')
   },

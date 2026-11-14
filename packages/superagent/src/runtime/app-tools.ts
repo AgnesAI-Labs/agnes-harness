@@ -6,6 +6,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { TextCache } from '../app/cache.js'
+import { feishuIo } from '../sources/feishu.js'
 import type { SourceContext } from '../sources/host.js'
 import type { ImageSink } from '../sources/kind.js'
 import type { AppDeps } from './app.js'
@@ -53,6 +54,7 @@ export function buildTools(
     promptVersion: (id: string) => binding.promptVersion(id),
     mayRead: (id: string, revision: number) => binding.mayRead(id, revision),
     feishuPageSize: () => 50,
+    feishu: (signal?: AbortSignal) => feishuIo(core.sources, signal),
     sourceLink: core.link,
     transcript: (id: string) => sessions.transcript(id),
     sessions: {
@@ -70,6 +72,7 @@ export function buildTools(
     registry: sessions.registry,
     store,
     unavailable,
+    extra: (ticket) => deps.tools?.(ticket) ?? [],
     main: {
       engine,
       store,

@@ -14,6 +14,7 @@ import type {
 import type { JsonValue } from '@agnes/protocol'
 import { openStore, type Store } from '../app/store.js'
 import { createRuntimeParts, createSuperagentApp, type SuperagentApp } from './app.js'
+import { attachFeishu } from './feishu-read-tool.js'
 import { claimHookState, type HookStateCell, type HookStateHolder, processHookState } from './hook-state.js'
 import { registerHooks } from './hooks.js'
 import { createPanelWiring, type PanelWiring } from './panel-host.js'
@@ -178,7 +179,7 @@ export async function startService(
   hooks = cell
   const context: RuntimeContext = { init, grant, store: opened, hooks: cell, app, runtime }
   // Parts register here, before the app starts: service.register('lifecycle' | 'services' | 'feishu', part(context)).
-  void context
+  service.register('feishu', attachFeishu(context, log))
   init.ready()
   // The app starts after start() returned: a registered lifecycle runs it, else it starts as it is.
   setImmediate(() => {

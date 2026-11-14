@@ -164,7 +164,7 @@ describe('the agent home git configuration', () => {
 })
 
 describe('the shims directory', () => {
-  it('holds gh and one shim per blocked command, never lark-cli, git or a second gh', async () => {
+  it('holds gh and one shim per blocked command, never git or a second gh', async () => {
     await writeEnvironment(home, shims, config(['curl', 'wget', 'git', 'gh', 'curl']))
     expect(readdirSync(shims).sort()).toEqual(['curl', 'gh', 'wget'])
     const blocked = await run(['curl', 'https://example.com'], sessionEnv(), home)

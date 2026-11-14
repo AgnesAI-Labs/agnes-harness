@@ -436,8 +436,8 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
         const { enabled, config: value } = SourceSave.parse(body.value)
         const config = source.schema.parse(value)
         // As on the server, a changed CLI that fails its check refuses the save with the setup problem.
-        if (config.cli === 'lark-broken') {
-          const refused = new SetupError('feishuCliFailed', { output: 'lark-cli: app secret missing' })
+        if (config.cli === 'gh-broken') {
+          const refused = new SetupError('agentCliMissing', { output: 'gh-broken: not found' })
           return refuse(400, refused.message, { setup: refused.problem })
         }
         restarting = (config.cli ?? '') !== (server.settings.sources[source.kind]?.config.cli ?? '')
