@@ -192,9 +192,12 @@ async function quiet(
   sessionId: string,
   keepPending: boolean,
 ): Promise<boolean> {
+  /** A cancel in flight: it returns only once the turn wound down, which a running command can hold up. */
+  let cancelling: Promise<void> | undefined
   for (let pass = 0; ; pass++) {
     const state = await sessions.state(sessionId)
     const settled = !state.running && state.jobs === 0 && (keepPending || state.pending.length === 0)
+    // A session that reads quiet is stopped, whether or not a cancel sent to it has returned yet.
     if (pass > 0 && settled) return true
     if (pass === QUIET_PASSES) return false
     if (!keepPending && state.pending.length)
@@ -202,9 +205,18 @@ async function quiet(
         sessionId,
         state.pending.map((item) => item.itemId),
       )
-    await sessions.cancel(sessionId)
+    // The cancel is not awaited before the kill: killing the jobs, the turn's own command among them,
+    // is what lets a turn held up by that command wind down.
+    cancelling ??= sessions.cancel(sessionId).then(
+      () => {
+        cancelling = undefined
+      },
+      () => {
+        cancelling = undefined
+      },
+    )
     await control.killAgentJobs(sessionId)
-    await new Promise((resolve) => setTimeout(resolve, QUIET_PAUSE_MS))
+    await Promise.race([cancelling, new Promise((resolve) => setTimeout(resolve, QUIET_PAUSE_MS))])
   }
 }
 

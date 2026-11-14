@@ -535,6 +535,44 @@ describe('disable', () => {
     expect(lifecycle.status()).toEqual({ state: 'stopped' })
   })
 
+  it("kills a session's jobs while its cancel waits for a command that holds the turn up, and counts it stopped", async () => {
+    // The turn runs a command (a job). Its cancel returns only once that command ended, which it does when killed.
+    sessions.set(workerKey('A'), { running: true, pending: [], jobs: 1 })
+    let release: () => void = () => {}
+    const commandEnded = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const adapter = fakeSessions(log, sessions)
+    adapter.cancel = async (id) => {
+      log.push(`cancel ${id}`)
+      await commandEnded
+      sessions.get(id)!.running = false
+    }
+    const control = fakeControl(log, sessions)
+    const { lifecycle } = setup({
+      sessions: adapter,
+      control: {
+        ...control,
+        killAgentJobs: async (id) => {
+          const killed = await control.killAgentJobs(id)
+          release()
+          return killed
+        },
+      },
+    })
+    await lifecycle.start()
+    await lifecycle.settled()
+    log.length = 0
+    await lifecycle.stop('disable')
+    expect(log.slice(1, 4)).toEqual([
+      `state ${workerKey('A')}`,
+      `cancel ${workerKey('A')}`,
+      `kill ${workerKey('A')}`,
+    ])
+    expect(sessions.get(workerKey('A'))).toMatchObject({ running: false, jobs: 0 })
+    expect(store.get(KV.runtime.paused)?.stop).toMatchObject({ sessions: 1, unstopped: [] })
+  })
+
   it('keeps going when one session cannot be stopped', async () => {
     sessions.set(workerKey('A'), { running: true, pending: [], jobs: 0 })
     sessions.set(workerKey('B'), { running: true, pending: [], jobs: 0 })
