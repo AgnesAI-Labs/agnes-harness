@@ -9,12 +9,14 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
-import { startDaemon } from './daemon-harness.js'
+import { afterAll, afterEach, expect, it } from 'vitest'
+import { startDaemon, stopAllDaemons } from './daemon-harness.js'
 import { startGitHttpRemote } from './git-http-remote.js'
 import { AGENT_CREDENTIAL, makeHomes, OPERATOR_CREDENTIAL } from './homes.js'
+import { isAlive, startedPids } from './process-tree.js'
 
 const cleanups: (() => Promise<unknown> | unknown)[] = []
+afterAll(stopAllDaemons)
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
@@ -84,10 +86,8 @@ it.skipIf(process.platform === 'win32')(
       home: homes.agentHome,
       path,
       plugins: [plugin],
-    })
-    let stopped = false
-    cleanups.push(async () => {
-      if (!stopped) await daemon.stop()
+      // Registered before the start, so a test timeout during a slow start still stops the daemon.
+      onHandle: (handle) => cleanups.push(() => handle.stop()),
     })
 
     const probe = (n: number) =>
@@ -124,8 +124,57 @@ it.skipIf(process.platform === 'win32')(
     const socketDir = daemon.socketDir
     expect(socketDir, 'the long home path moved the socket to a /tmp directory').toBeDefined()
     await daemon.stop()
-    stopped = true
     expect(existsSync(socketDir as string), 'the /tmp socket directory is removed').toBe(false)
   },
   240_000,
+)
+
+// Startup failures must leave no process behind: every pid the failed start created is dead afterwards.
+const claim = () => {
+  const before = new Set(startedPids())
+  return () => startedPids().filter((pid) => !before.has(pid))
+}
+function scratchRoot() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-daemon-fixture-')))
+  cleanups.push(() => rmSync(root, { recursive: true, force: true }))
+  return root
+}
+const options = (root: string) => ({
+  aghHome: join(root, 'agh'),
+  home: root,
+  path: process.env.PATH ?? '',
+  plugins: [],
+})
+
+it.skipIf(process.platform === 'win32')(
+  'caps the whole start, rejects with a clear error and kills every process the start created',
+  async () => {
+    const mine = claim()
+    const root = scratchRoot()
+    // The home initializer alone takes over a second and a boot several more, so 2.5 s ends the start mid-way.
+    await expect(startDaemon({ ...options(root), startTimeoutMs: 2_500 })).rejects.toThrow(
+      /daemon startup exceeded 2500 ms and was stopped/,
+    )
+    expect(mine().length, 'the start spawned something').toBeGreaterThan(0)
+    expect(mine().filter(isAlive), 'no process of the failed start is left').toEqual([])
+  },
+  60_000,
+)
+
+it.skipIf(process.platform === 'win32')(
+  'lets the caller stop a start that is still running, before it returns',
+  async () => {
+    const mine = claim()
+    const root = scratchRoot()
+    let stop: (() => Promise<void>) | undefined
+    const starting = startDaemon({ ...options(root), onHandle: (handle) => (stop = () => handle.stop()) })
+    const rejected = expect(starting).rejects.toThrow(/stopped/)
+    await new Promise((resolve) => setTimeout(resolve, 2_500))
+    expect(stop, 'the handle exists before the start finishes').toBeDefined()
+    await stop?.()
+    await rejected
+    expect(mine().length).toBeGreaterThan(0)
+    expect(mine().filter(isAlive)).toEqual([])
+  },
+  60_000,
 )

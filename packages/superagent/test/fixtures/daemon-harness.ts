@@ -10,18 +10,26 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { promisify } from 'node:util'
 import { createClient, memoryJournal } from '@agnes/sdk'
+import { killTree, trackRoot } from './process-tree.js'
 
 const repository = fileURLToPath(new URL('../../../../', import.meta.url))
 const sourceDaemon = join(repository, 'packages/daemon/test/fixtures/source-loop-daemon.ts')
 const PROFILE = 'local-dev'
 const STEP_MS = 120_000
+/** The whole of `startDaemon`, kept below the test timeout the e2e files use (240 s). */
+const START_MS = 180_000
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
-async function until<T>(label: string, probe: () => T | Promise<T>, ms = STEP_MS): Promise<NonNullable<T>> {
+async function until<T>(
+  label: string,
+  probe: () => T | Promise<T>,
+  ms = STEP_MS,
+  aborted: () => boolean = () => false,
+): Promise<NonNullable<T>> {
   const deadline = Date.now() + ms
   for (;;) {
+    if (aborted()) throw new Error(`stopped while waiting for ${label}`)
     const value = await probe()
     if (value) return value as NonNullable<T>
     if (Date.now() > deadline) throw new Error(`timed out waiting for ${label}`)
@@ -128,20 +136,30 @@ export async function startScriptedModel() {
 /**
  * Lays out a fresh home with the host's own initializer, which the daemon requires before a profile is
  * written. It runs in the daemon package, the one place that resolves `@agnes/host` for tests, in a child
- * process that ends on its own.
+ * process that ends on its own, or is killed after `STEP_MS`, or by `onSpawn`'s owner.
  */
-async function initializeHome(aghHome: string, tsx: string): Promise<void> {
-  await promisify(execFile)(
-    process.execPath,
-    [
-      '--import',
-      tsx,
-      '--input-type=module',
-      '-e',
-      `import { initializeHome } from '@agnes/host'; initializeHome(${JSON.stringify(aghHome)}, ${JSON.stringify(PROFILE)})`,
-    ],
-    { cwd: join(repository, 'packages', 'daemon'), env: { PATH: process.env.PATH ?? '', TMPDIR: tmpdir() } },
-  )
+function initializeHome(aghHome: string, tsx: string, onSpawn: (child: ChildProcess) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      process.execPath,
+      [
+        '--import',
+        tsx,
+        '--input-type=module',
+        '-e',
+        `import { initializeHome } from '@agnes/host'; initializeHome(${JSON.stringify(aghHome)}, ${JSON.stringify(PROFILE)})`,
+      ],
+      {
+        cwd: join(repository, 'packages', 'daemon'),
+        env: { PATH: process.env.PATH ?? '', TMPDIR: tmpdir() },
+        timeout: STEP_MS,
+        killSignal: 'SIGKILL',
+      },
+      (error, _stdout, stderr) =>
+        error ? reject(new Error(`home initialization failed: ${stderr || error}`)) : resolve(),
+    )
+    onSpawn(child)
+  })
 }
 
 function writeProfile(aghHome: string, baseUrl: string): void {
@@ -190,28 +208,57 @@ function writeProfile(aghHome: string, baseUrl: string): void {
 
 type DaemonClient = ReturnType<typeof createClient>
 
+/** The stop handle `startDaemon` gives its caller before anything is started. */
+export interface DaemonHandle {
+  /** Ends whatever has started so far, at any stage, and makes a pending `startDaemon` reject. Safe to repeat. */
+  stop(): Promise<void>
+}
+
+const handles = new Set<DaemonHandle>()
+/** Stops every daemon started by this module that is still running (for an `afterAll`). */
+export async function stopAllDaemons(): Promise<void> {
+  for (const handle of [...handles]) await handle.stop()
+}
+
 /**
  * Starts the source daemon on `aghHome` with the process environment reduced to what is given: `HOME` and `PATH`
  * exactly as passed (plus `TMPDIR` and `AGH_HOME`), nothing else of the caller's environment. `plugins` are plugin
  * source directories; each is installed, trusted and enabled once, before the first start returns.
  *
- * `client` is the live client; read it again after `restart()`, which replaces it (same client id). `stop()` ends
- * the daemon, the client and the scripted model and removes the socket directory it may have created in /tmp;
- * `aghHome` stays the caller's to remove. `shell(command, cwd)` runs one shell tool call in a fresh full-access
- * session and returns its output, which is how a test sees the environment the session shell inherits.
+ * Stopping is possible from the first moment: `onHandle` receives a `stop()` before anything is spawned, so a
+ * caller can register its cleanup before the (slow) start, and `stopAllDaemons()` covers the rest. The whole start
+ * is capped at `startTimeoutMs` (default 180 s); on the cap, on `stop()` or on any failure every process the start
+ * created (the home initializer, the daemon, and the processes below it) is killed by pid and the start rejects.
+ *
+ * `client` is the live client; read it again after `restart()`, which replaces it (same client id). A `restart()`
+ * that fails leaves nothing running. `stop()` ends the daemon, the client and the scripted model and removes the
+ * socket directory it may have created in /tmp; `aghHome` stays the caller's to remove. `shell(command, cwd)` runs
+ * one shell tool call in a fresh full-access session and returns its output, which is how a test sees the
+ * environment the session shell inherits.
  */
-export async function startDaemon(opts: { aghHome: string; home: string; path: string; plugins: string[] }) {
+export async function startDaemon(opts: {
+  aghHome: string
+  home: string
+  path: string
+  plugins: string[]
+  onHandle?: (handle: DaemonHandle) => void
+  startTimeoutMs?: number
+}) {
   const model = await startScriptedModel()
   const clientId = randomUUID()
   let child: ChildProcess | undefined
+  let initializer: ChildProcess | undefined
   let socketDir: string | undefined
   let current: DaemonClient | undefined
   let stderr = ''
   let shells = 0
+  let stopped = false
+  let failStartup: (error: Error) => void = () => {}
   const workspaces = new Set<string>()
   const tsx = pathToFileURL(createRequire(join(repository, 'package.json')).resolve('tsx')).href
 
   const launch = async () => {
+    if (stopped) throw new Error('stopped before the daemon was spawned')
     stderr = ''
     const spawned = spawn(process.execPath, ['--import', tsx, sourceDaemon, opts.aghHome, opts.aghHome], {
       cwd: repository,
@@ -219,6 +266,7 @@ export async function startDaemon(opts: { aghHome: string; home: string; path: s
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     child = spawned
+    trackRoot(spawned)
     spawned.stderr?.on('data', (data) => {
       stderr += String(data)
     })
@@ -239,24 +287,25 @@ export async function startDaemon(opts: { aghHome: string; home: string; path: s
           reject(new Error(`daemon exited ${code} during boot:\n${stderr.slice(-2000)}`))
         })
       })
+      if (stopped) throw new Error('stopped during daemon boot')
+      const owner = JSON.parse(readFileSync(join(opts.aghHome, 'daemon', 'owner.json'), 'utf8')) as {
+        socketPath: string
+      }
+      if (!owner.socketPath.startsWith(opts.aghHome)) socketDir = dirname(owner.socketPath)
+      current = createClient({
+        journal: memoryJournal(clientId),
+        auth: { kind: 'local' },
+        transport: { kind: 'unix', path: owner.socketPath },
+        timeouts: { request: STEP_MS },
+      })
+      await current.initialize()
     } catch (error) {
       await terminate()
       throw error
     }
-    const owner = JSON.parse(readFileSync(join(opts.aghHome, 'daemon', 'owner.json'), 'utf8')) as {
-      socketPath: string
-    }
-    if (!owner.socketPath.startsWith(opts.aghHome)) socketDir = dirname(owner.socketPath)
-    current = createClient({
-      journal: memoryJournal(clientId),
-      auth: { kind: 'local' },
-      transport: { kind: 'unix', path: owner.socketPath },
-      timeouts: { request: STEP_MS },
-    })
-    await current.initialize()
   }
 
-  /** SIGTERM by handle; SIGKILL by the same handle if it has not exited in time. */
+  /** The client first, then the daemon and everything below it by pid (SIGTERM, then SIGKILL). */
   const terminate = async () => {
     const process_ = child
     child = undefined
@@ -266,12 +315,7 @@ export async function startDaemon(opts: { aghHome: string; home: string; path: s
       /* the connection is going away with the daemon */
     }
     current = undefined
-    if (!process_ || process_.exitCode !== null || process_.signalCode !== null) return
-    const exited = new Promise<void>((resolve) => process_.once('exit', () => resolve()))
-    process_.kill('SIGTERM')
-    const timer = setTimeout(() => process_.kill('SIGKILL'), 60_000)
-    await exited
-    clearTimeout(timer)
+    if (process_) await killTree(process_)
   }
 
   const installPlugins = async (client: DaemonClient) => {
@@ -281,15 +325,20 @@ export async function startDaemon(opts: { aghHome: string; home: string; path: s
       commandId: randomUUID(),
     })
     const finished = async (receipt: { profile: string; operationId: string }) =>
-      until(`package operation ${receipt.operationId}`, async () => {
-        const result = await client.packages.operation.get({
-          profile: receipt.profile,
-          operationId: receipt.operationId,
-        })
-        if (['failed', 'cancelled', 'rolled-back'].includes(result.state))
-          throw new Error(`package ${result.operation}: ${JSON.stringify(result.error)}`)
-        return result.state === 'completed' ? result : undefined
-      })
+      until(
+        `package operation ${receipt.operationId}`,
+        async () => {
+          const result = await client.packages.operation.get({
+            profile: receipt.profile,
+            operationId: receipt.operationId,
+          })
+          if (['failed', 'cancelled', 'rolled-back'].includes(result.state))
+            throw new Error(`package ${result.operation}: ${JSON.stringify(result.error)}`)
+          return result.state === 'completed' ? result : undefined
+        },
+        STEP_MS,
+        () => stopped,
+      )
     for (const directory of opts.plugins) {
       const source = { type: 'file' as const, ref: `file:${directory}` }
       const preview = (await finished(await client.packages.inspect({ ...(await command()), source })))
@@ -313,20 +362,47 @@ export async function startDaemon(opts: { aghHome: string; home: string; path: s
     }
   }
 
-  const cleanup = async () => {
-    await terminate()
-    await model.close()
-    if (socketDir) rmSync(socketDir, { recursive: true, force: true })
+  const handle: DaemonHandle = {
+    async stop() {
+      stopped = true
+      failStartup(new Error('daemon stopped during startup'))
+      handles.delete(handle)
+      await terminate()
+      if (initializer) await killTree(initializer, 'SIGKILL', 5_000)
+      initializer = undefined
+      await model.close()
+      if (socketDir) rmSync(socketDir, { recursive: true, force: true })
+    },
   }
+  handles.add(handle)
+  opts.onHandle?.(handle)
 
-  try {
-    await initializeHome(opts.aghHome, tsx)
+  const cap = opts.startTimeoutMs ?? START_MS
+  let capTimer: ReturnType<typeof setTimeout> | undefined
+  const failure = new Promise<never>((_, reject) => {
+    failStartup = reject
+    capTimer = setTimeout(() => reject(new Error(`daemon startup exceeded ${cap} ms and was stopped`)), cap)
+  })
+  failure.catch(() => {})
+  const startup = (async () => {
+    await initializeHome(opts.aghHome, tsx, (spawned) => {
+      initializer = spawned
+      trackRoot(spawned)
+      if (stopped) void killTree(spawned, 'SIGKILL', 5_000)
+    })
+    if (stopped) throw new Error('daemon stopped during startup')
     writeProfile(opts.aghHome, model.baseUrl)
     await launch()
     await installPlugins(current as DaemonClient)
+  })()
+  startup.catch(() => {})
+  try {
+    await Promise.race([startup, failure])
   } catch (error) {
-    await cleanup()
+    await handle.stop()
     throw error
+  } finally {
+    clearTimeout(capTimer)
   }
 
   return {
@@ -344,9 +420,7 @@ export async function startDaemon(opts: { aghHome: string; home: string; path: s
       await terminate()
       await launch()
     },
-    async stop(): Promise<void> {
-      await cleanup()
-    },
+    stop: () => handle.stop(),
     async shell(command: string, cwd: string): Promise<string> {
       const client = this.client
       if (!workspaces.has(cwd)) {

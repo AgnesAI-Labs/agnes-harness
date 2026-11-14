@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,6 +8,7 @@ import type { ChannelAdapter, ChannelEvent, MessageEvent } from '@agnes/extensio
 import { afterEach, describe, expect, it } from 'vitest'
 import { startGitHttpRemote } from './git-http-remote.js'
 import { AGENT_CREDENTIAL, makeHomes, OPERATOR_CREDENTIAL } from './homes.js'
+import { isAlive, killTree } from './process-tree.js'
 import { createTestChannel } from './test-channel.js'
 
 const exec = promisify(execFile)
@@ -292,5 +293,31 @@ describe('test channel', () => {
       { method: 'listChats' },
       { method: 'listChats', cursor: '2' },
     ])
+  })
+})
+
+describe('process tree', () => {
+  it('kills the processes below a SIGKILLed parent by pid, which the parent would otherwise orphan', async () => {
+    const parent = spawn(
+      process.execPath,
+      [
+        '-e',
+        "const c = require('node:child_process').spawn('sleep', ['60'], { stdio: 'ignore' }); console.log(c.pid); setInterval(() => {}, 1000)",
+      ],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    )
+    const grandchild = await new Promise<number>((resolve, reject) => {
+      parent.once('error', reject)
+      parent.stdout.once('data', (data) => resolve(Number(String(data).trim())))
+    })
+    try {
+      expect(isAlive(grandchild)).toBe(true)
+      await killTree(parent, 'SIGKILL')
+      for (let wait = 0; wait < 40 && isAlive(grandchild); wait++) await new Promise((r) => setTimeout(r, 50))
+      expect(isAlive(grandchild)).toBe(false)
+    } finally {
+      if (isAlive(grandchild)) process.kill(grandchild, 'SIGKILL')
+      if (parent.exitCode === null && parent.signalCode === null) parent.kill('SIGKILL')
+    }
   })
 })
