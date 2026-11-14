@@ -210,15 +210,24 @@ describe('channel receipts', () => {
     expect(seen, 'an acked receipt never reaches the service again').toHaveLength(1)
 
     fail = true
-    const poison = message(pairing.id, 'e2')
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const poison = message(pairing.id, 'e2', 'secret words')
     const receiptId = await ingest(bridge, pairing, poison)
     expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'pending', attempts: 1 })
     for (let attempt = 2; attempt < RECEIPT_ATTEMPTS; attempt++) {
       await expect(bridge.deliver(pairing, { ...poison, receiptId })).rejects.toThrow('poison')
       expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'pending', attempts: attempt })
     }
+    expect(warn).not.toHaveBeenCalled()
     await expect(bridge.deliver(pairing, { ...poison, receiptId })).rejects.toThrow('poison')
     expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'parked', attempts: RECEIPT_ATTEMPTS })
+    // The operator is told once, by receipt and service, never with the text.
+    expect(warn.mock.calls).toEqual([
+      [
+        `Channel receipt ${receiptId.slice(0, 12)} for desk parked: its service failed ${RECEIPT_ATTEMPTS} deliveries; the owner can redeliver or discard it in the Web`,
+      ],
+    ])
+    warn.mockRestore()
     expect(bridge.receive(pairing, poison)).toEqual({ receiptId, state: 'parked' })
     await bridge.deliver(pairing, { ...poison, receiptId })
     expect(seen.filter((event) => event.eventId === 'e2')).toHaveLength(RECEIPT_ATTEMPTS * TRIES)
@@ -329,9 +338,16 @@ describe('channel receipts', () => {
     expect(again.id).toBe(pairing.id)
     expect(again.pairedAt).not.toBe(pairing.pairedAt)
     const handler = vi.fn(async () => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     desk.port.onEvent(handler)
     await vi.waitFor(() => expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'parked' }))
     expect(handler).not.toHaveBeenCalled()
+    expect(warn.mock.calls).toEqual([
+      [
+        `Channel receipt ${receiptId.slice(0, 12)} for desk parked: its pairing changed; the owner can redeliver or discard it in the Web`,
+      ],
+    ])
+    warn.mockRestore()
   })
 
   it('prune deletes admitted receipts at once, acked unadmitted ones after 30 days, never parked ones', async () => {
@@ -464,6 +480,17 @@ describe('channel receipts', () => {
       at: '2026-11-14T00:00:00.000Z',
       attempts: RECEIPT_ATTEMPTS,
     })
+    // The owner's list across services names each receipt's owner.
+    const all = targets.receipts.command({ op: 'parkedAll' }) as {
+      receipts: { owner: string; text: string }[]
+    }
+    expect(all.receipts.map((r) => [r.owner, r.text]).sort()).toEqual(
+      [
+        [DESK.owner, 'first'],
+        [DESK.owner, 'second'],
+        [OTHER.owner, 'elsewhere'],
+      ].sort(),
+    )
 
     fail = false
     expect(targets.receipts.command({ op: 'redeliver', owner: DESK.owner, receiptId: first })).toEqual({

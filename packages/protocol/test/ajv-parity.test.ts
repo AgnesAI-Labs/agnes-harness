@@ -425,6 +425,8 @@ const AGNES_DEFS: Record<string, TSchema> = {
   FactChainEdge: AgnesGen.FactChainEdge,
   FactChainGap: AgnesGen.FactChainGap,
   FactChainResult: AgnesGen.FactChainResult,
+  ManagedInputListParams: AgnesGen.ManagedInputListParams,
+  ManagedInputListResult: AgnesGen.ManagedInputListResult,
   ManagedInputGetParams: AgnesGen.ManagedInputGetParams,
   ManagedInputGetResult: AgnesGen.ManagedInputGetResult,
   ManagedInputDecideParams: AgnesGen.ManagedInputDecideParams,
@@ -2399,6 +2401,70 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'bounded immutable read watermark',
   },
 
+  ManagedInputListParams: {
+    valid: {},
+    invalid: [{ sessionId: 'owned' }, { owner: 'plugin' }],
+    note: 'owner input list: no session, no key, no caller-chosen owner',
+  },
+  ManagedInputListResult: {
+    valid: {
+      inputs: [
+        {
+          sessionId: 's1',
+          key: 'k1',
+          kind: 'ownerMessage',
+          state: 'needsOwner',
+          reason: 'receiptUnknown',
+          version: 2,
+          at: '2026-11-14T00:00:00Z',
+        },
+        {
+          sessionId: 's1',
+          key: 'k2',
+          kind: 'ownerMessage',
+          state: 'enqueued',
+          reason: 'busy',
+          version: 2,
+          at: '2026-11-14T00:00:00Z',
+          held: 'gatesUnreadable',
+        },
+      ],
+      parkedReceipts: [
+        {
+          sessionId: null,
+          receiptId: 'r1',
+          service: 'companion',
+          kind: 'message',
+          text: 'hi',
+          at: '',
+          attempts: 5,
+        },
+      ],
+    },
+    invalid: [
+      { inputs: [] },
+      {
+        inputs: [
+          {
+            sessionId: 's1',
+            key: 'k1',
+            kind: 'ownerMessage',
+            state: 'needsOwner',
+            reason: 'x',
+            version: 1,
+            at: '',
+            held: 'stuck',
+          },
+        ],
+        parkedReceipts: [],
+      },
+      {
+        inputs: [],
+        parkedReceipts: [{ receiptId: 'r1', service: 's', kind: 'message', text: '', at: '', attempts: 5 }],
+      },
+    ],
+    note: 'every input waiting on the owner or held without progress, and every parked receipt, across sessions',
+  },
   ManagedInputGetParams: {
     valid: { sessionId: 'owned', key: 'k1' },
     invalid: [
@@ -9249,6 +9315,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'PluginConfigSaveResult',
   },
 
+  '_agnes/v1/managedInput.list': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'ManagedInputListParams',
+    result: 'ManagedInputListResult',
+  },
   '_agnes/v1/managedInput.get': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'ManagedInputGetParams',
@@ -10390,6 +10461,11 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{}, { profile: 'default' }],
   },
 
+  '_agnes/v1/managedInput.list': {
+    valid: {},
+    invalid: [{ owner: 'plugin' }],
+    note: 'no caller-chosen owner: the owner page and the session owner gate decide',
+  },
   '_agnes/v1/managedInput.get': {
     valid: { sessionId: 'owned', key: 'k1' },
     invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', key: 'k1', owner: 'plugin' }],
@@ -11432,6 +11508,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.controls': AGNES_SAMPLES.SessionControlStateResult as Sample,
   '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadResultSchema as Sample,
   '_agnes/v1/session.factChain': AGNES_SAMPLES.FactChainResult!,
+  '_agnes/v1/managedInput.list': AGNES_SAMPLES.ManagedInputListResult!,
   '_agnes/v1/managedInput.get': AGNES_SAMPLES.ManagedInputGetResult!,
   '_agnes/v1/managedInput.decide': AGNES_SAMPLES.ManagedInputDecideResult!,
   '_agnes/v1/doctor.run': AppSamples.DoctorResult!,

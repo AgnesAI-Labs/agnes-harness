@@ -107,6 +107,7 @@ export type MethodName =
   | '_agnes/v1/systemPrompt.get'
   | '_agnes/v1/systemPrompt.save'
   | '_agnes/v1/session.factChain'
+  | '_agnes/v1/managedInput.list'
   | '_agnes/v1/managedInput.get'
   | '_agnes/v1/managedInput.decide'
   | '_agnes/v1/trace.request'
@@ -275,6 +276,7 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/systemPrompt.save': clientRequest(A.SystemPromptSaveParams, A.SystemPromptSnapshot),
   '_agnes/v1/trace.clear': clientRequest(A.ModelRequestClearParams, A.ModelRequestClearResult),
   '_agnes/v1/session.factChain': clientRequest(A.FactChainParams, A.FactChainResult),
+  '_agnes/v1/managedInput.list': clientRequest(A.ManagedInputListParams, A.ManagedInputListResult),
   '_agnes/v1/managedInput.get': clientRequest(A.ManagedInputGetParams, A.ManagedInputGetResult),
   '_agnes/v1/managedInput.decide': clientRequest(A.ManagedInputDecideParams, A.ManagedInputDecideResult),
   '_agnes/v1/trace.request': clientRequest(A.ModelRequestParams, A.ModelRequestResult),

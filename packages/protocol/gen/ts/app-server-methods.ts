@@ -121,6 +121,7 @@ export interface AppServerMethods {
   "_agnes/v1/systemPrompt.save": { params: Static<typeof import("./agnes-v1.js").SystemPromptSaveParams>; result: Static<typeof import("./agnes-v1.js").SystemPromptSnapshot>; direction: "c2s"; kind: "request" }
   "_agnes/v1/trace.clear": { params: Static<typeof import("./agnes-v1.js").ModelRequestClearParams>; result: Static<typeof import("./agnes-v1.js").ModelRequestClearResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/session.factChain": { params: Static<typeof import("./agnes-v1.js").FactChainParams>; result: Static<typeof import("./agnes-v1.js").FactChainResult>; direction: "c2s"; kind: "request" }
+  "_agnes/v1/managedInput.list": { params: Static<typeof import("./agnes-v1.js").ManagedInputListParams>; result: Static<typeof import("./agnes-v1.js").ManagedInputListResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/managedInput.get": { params: Static<typeof import("./agnes-v1.js").ManagedInputGetParams>; result: Static<typeof import("./agnes-v1.js").ManagedInputGetResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/managedInput.decide": { params: Static<typeof import("./agnes-v1.js").ManagedInputDecideParams>; result: Static<typeof import("./agnes-v1.js").ManagedInputDecideResult>; direction: "c2s"; kind: "request" }
   "_agnes/v1/trace.request": { params: Static<typeof import("./agnes-v1.js").ModelRequestParams>; result: Static<typeof import("./agnes-v1.js").ModelRequestResult>; direction: "c2s"; kind: "request" }

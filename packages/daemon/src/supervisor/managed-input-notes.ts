@@ -1,4 +1,4 @@
-import type { ManagedInputRow } from './managed-session-inputs.js'
+import type { ManagedInputRow, ManagedSessionInputs } from './managed-session-inputs.js'
 
 /** One warning per subject at most this often, however many passes hit it. */
 export const OWNER_INPUT_WARN_INTERVAL_MS = 600_000
@@ -71,3 +71,33 @@ export function ownerInputNotes(warn: (message: string) => void, clock: () => nu
 }
 
 export type OwnerInputNotes = ReturnType<typeof ownerInputNotes>
+
+/** A `queued` row this much older than its last change is an admission its caller did not complete. */
+export const ADMISSION_GRACE_MS = 60_000
+
+/** One entry of the owner's list: why the input needs the owner, or why it is held without progress. */
+export interface OwnerInputAttention {
+  input: ManagedInputRow
+  held?: 'gatesUnreadable' | 'admissionIncomplete'
+}
+
+/**
+ * Every input the owner may have to look at, across sessions: those waiting on the owner's decision,
+ * admissions their caller did not complete, and held inputs whose gates could not be read.
+ */
+export function ownerInputAttention(
+  inputs: Pick<ManagedSessionInputs, 'get' | 'attention'>,
+  notes: OwnerInputNotes,
+  now: number,
+  limit: number,
+): OwnerInputAttention[] {
+  const items: OwnerInputAttention[] = []
+  for (const note of notes.held()) {
+    const row = inputs.get(note.owner, note.sessionId, note.key)
+    if (row?.state === 'enqueued' || row?.state === 'waitingQuestion')
+      items.push({ input: row, held: 'gatesUnreadable' })
+  }
+  for (const row of inputs.attention(now - ADMISSION_GRACE_MS, limit))
+    items.push(row.state === 'queued' ? { input: row, held: 'admissionIncomplete' } : { input: row })
+  return items.slice(0, limit)
+}

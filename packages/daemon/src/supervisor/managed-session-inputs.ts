@@ -75,6 +75,8 @@ export const MANAGED_INPUT_TEXT_LIMIT = 64 * 1024
 /** Rows the owner or the platform can still move: only `consumed` and `retained` are final. */
 const OPEN = "('queued', 'waitingQuestion', 'enqueued')"
 const FINAL = "('consumed', 'retained')"
+/** Rows the owner may have to look at: waiting on the owner's decision, or an admission not completed. */
+const ATTENTION = "('queued', 'needsOwner', 'recoveryUnknown')"
 
 /** New tables only; the managed-session records constructor runs these with its own. */
 export const MANAGED_INPUT_TABLES = [
@@ -97,6 +99,9 @@ export const MANAGED_INPUT_TABLES = [
   // only the open rows however many finished ones there are.
   `CREATE INDEX IF NOT EXISTS managed_session_inputs_open
      ON managed_session_inputs (session_id, state) WHERE state IN ${OPEN}`,
+  // Partial as well: the owner's list across sessions reads only these rows.
+  `CREATE INDEX IF NOT EXISTS managed_session_inputs_attention
+     ON managed_session_inputs (state) WHERE state IN ${ATTENTION}`,
 ] as const
 
 type Row = {
@@ -346,6 +351,21 @@ export class ManagedSessionInputs {
         WHERE session_id = ? AND NOT (state = 'enqueued' AND submitted_seq IS NOT NULL)`,
       [sessionId],
     )
+  }
+
+  /**
+   * Across sessions, oldest first: every row waiting on the owner (`needsOwner`, `recoveryUnknown`) and
+   * every `queued` row last changed at or before `queuedBefore`, an admission its caller did not complete.
+   * The repeated `IN` term lets the planner use the partial index.
+   */
+  attention(queuedBefore: number, limit: number): ManagedInputRow[] {
+    return this.table
+      .all<Row>(
+        `SELECT * FROM managed_session_inputs
+          WHERE state IN ${ATTENTION} AND (state <> 'queued' OR updated_at <= ?) ORDER BY rowid LIMIT ?`,
+        [queuedBefore, limit],
+      )
+      .map(row)
   }
 
   sessionsWithWork(): string[] {

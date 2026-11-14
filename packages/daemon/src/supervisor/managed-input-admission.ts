@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { commandBinding } from '@agnes/daemon-rpc/local/command-binding'
 import type { ManagedInputResult, ManagedInputTarget } from '@agnes/extension-api'
 import { type Actor, type JsonValue, rpcError } from '@agnes/protocol'
-import { ownerInputNotes } from './managed-input-notes.js'
+import { type OwnerInputAttention, ownerInputAttention, ownerInputNotes } from './managed-input-notes.js'
 import { inputProgress, projectInput, sessionLane } from './managed-input-submit.js'
 import {
   MANAGED_INPUT_TEXT_LIMIT,
@@ -67,6 +67,8 @@ export interface OwnerInputEngine {
   close(): void
   /** After an archive: held inputs are kept and a queued one is taken back; a failure is reported and left to the sweep. */
   retainArchived(sessionId: string): Promise<void>
+  /** The owner's list across sessions (`ownerInputAttention`), at most `limit` entries. */
+  attention(limit: number): OwnerInputAttention[]
   withdraw(owner: string, workspace?: string): Promise<void>
   review(sessionId: string, key: string): ManagedInputReview | undefined
   decide(
@@ -352,6 +354,7 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     close() {
       closed = true
     },
+    attention: (limit) => ownerInputAttention(inputs, notes, (deps.clock ?? Date.now)(), limit),
     async retainArchived(sessionId) {
       await this.advance(sessionId, 'result').catch(notes.failed('archive', sessionId))
     },

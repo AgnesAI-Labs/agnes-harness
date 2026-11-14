@@ -131,6 +131,16 @@ describe.skipIf(process.platform === 'win32')('owner input receipts on a real da
         'parked receipt on the review page',
       )
       expect(listed).toMatchObject({ text: failText, kind: 'message', service: 'companion', attempts: 5 })
+      // The owner finds it with no input key: the list across sessions names it and a session to act through.
+      const ownerList = (await h.owner().request('_agnes/v1/managedInput.list', {} as never)) as {
+        parkedReceipts: { sessionId: string | null; receiptId: string; text: string }[]
+      }
+      expect(ownerList.parkedReceipts).toContainEqual(
+        expect.objectContaining({ sessionId, receiptId: parkedId, text: failText }),
+      )
+      await expect(h.sdk().request('_agnes/v1/managedInput.list', {} as never)).rejects.toMatchObject({
+        data: { code: 'CAPABILITY_DENIED' },
+      })
       expect(failures()).toHaveLength(15)
       // Parked: a further delivery of the same event no longer reaches the companion.
       h.inject(failText, { eventId: event.eventId, messageId: event.messageId, at: event.at })

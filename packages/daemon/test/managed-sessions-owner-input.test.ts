@@ -5,7 +5,7 @@ import { rpcError } from '@agnes/protocol'
 import { JsonRpcError, TransportClosed } from '@agnes/sdk'
 import { describe, expect, it, vi } from 'vitest'
 import type { HostInputResolution, OwnerInputEngine } from '../src/supervisor/managed-input-admission.js'
-import { OWNER_INPUT_WARN_INTERVAL_MS } from '../src/supervisor/managed-input-notes.js'
+import { ADMISSION_GRACE_MS, OWNER_INPUT_WARN_INTERVAL_MS } from '../src/supervisor/managed-input-notes.js'
 import { createIdleSignal, driveOwnerInputs } from '../src/supervisor/managed-session-idle.js'
 import { ManagedSessionInputs } from '../src/supervisor/managed-session-inputs.js'
 import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
@@ -56,7 +56,7 @@ const admission = (key: string, receiptId = key, target: Record<string, unknown>
 function world(report: { warn?(message: string): void; clock?(): number } = {}) {
   const table = memoryTable()
   const records = new ManagedSessionRecords(table)
-  const inputs = new ManagedSessionInputs(table)
+  const inputs = new ManagedSessionInputs(table, report.clock)
   const core = fakeCore()
   const authorized = new Set([caller.owner, other.owner])
   const enabled = new Set([owner, grantKey(other.packageId, other.owner)])
@@ -708,6 +708,47 @@ describe('managed sessions bound to a task', () => {
     expect(warnings.at(-1)).toBe(`Owner input admission for session ${sessionId} failed: transport closed`)
     w.ports.sessions.policy = policy
     expect(w.inputs.get(owner, sessionId, 'k1')).toMatchObject({ state: 'enqueued', reason: 'busy' })
+  })
+
+  it("the owner's list has inputs waiting on the owner, admissions not completed, and inputs held on unreadable gates", async () => {
+    let now = 1_000_000
+    const w = world({ clock: () => now })
+    const engine = w.sessions.engine as OwnerInputEngine
+    const { sessionId } = await w.port().start(start())
+    const listed = () =>
+      engine.attention(256).map((item) => [item.input.key, item.input.state, item.held ?? null])
+    // An unresolved receipt waits on the owner; nothing else needs the owner yet.
+    w.core.state.running.add(sessionId)
+    await w.port(caller, 'r9').admitInput(sessionId, admission('k1', 'r1'))
+    await w.port(caller, 'r2').admitInput(sessionId, admission('k2', 'r2'))
+    w.core.state.running.delete(sessionId)
+    expect(listed()).toEqual([['k1', 'needsOwner', null]])
+    // Gates that cannot be read: the held input is listed with why; a rejected admission once its
+    // caller has not come back for a while.
+    const policy = w.ports.sessions.policy
+    w.ports.sessions.policy = async () => {
+      throw new Error('transport closed')
+    }
+    await engine.sweep()
+    await expect(w.port(caller, 'r3').admitInput(sessionId, admission('k3', 'r3'))).rejects.toThrow()
+    expect(listed()).toEqual([
+      ['k2', 'enqueued', 'gatesUnreadable'],
+      ['k1', 'needsOwner', null],
+    ])
+    now += ADMISSION_GRACE_MS
+    expect(listed()).toEqual([
+      ['k2', 'enqueued', 'gatesUnreadable'],
+      ['k1', 'needsOwner', null],
+      ['k3', 'queued', 'admissionIncomplete'],
+    ])
+    // Readable again: the held input is no longer listed, and it runs.
+    w.ports.sessions.policy = policy
+    await engine.sweep()
+    expect(listed()).toEqual([
+      ['k1', 'needsOwner', null],
+      ['k3', 'queued', 'admissionIncomplete'],
+    ])
+    expect(w.core.state.submits.map((entry) => entry.text)).toEqual(['text of r2'])
   })
 
   it('archiving a session retains its held inputs', async () => {

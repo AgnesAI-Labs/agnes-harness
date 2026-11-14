@@ -423,6 +423,13 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "index",
       },
       {
+        "name": "managed_session_inputs_attention",
+        "sql": "CREATE INDEX managed_session_inputs_attention
+     ON managed_session_inputs (state) WHERE state IN ('queued', 'needsOwner', 'recoveryUnknown')",
+        "tbl_name": "managed_session_inputs",
+        "type": "index",
+      },
+      {
         "name": "managed_session_inputs_open",
         "sql": "CREATE INDEX managed_session_inputs_open
      ON managed_session_inputs (session_id, state) WHERE state IN ('queued', 'waitingQuestion', 'enqueued')",

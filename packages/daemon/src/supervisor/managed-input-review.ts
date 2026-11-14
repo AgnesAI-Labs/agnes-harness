@@ -5,8 +5,10 @@ import {
   type ManagedInputDecideResult,
   type ManagedInputGetParams,
   type ManagedInputGetResult,
+  type ManagedInputListResult,
   rpcError,
 } from '@agnes/protocol'
+import type { OwnerInputAttention } from './managed-input-notes.js'
 import type { ManagedInputRow } from './managed-session-inputs.js'
 import { detached, type ManagedSessionRecord } from './managed-session-records.js'
 
@@ -24,11 +26,14 @@ export interface ManagedInputReviewEngine {
     decision: 'deliver' | 'retain' | 'discard',
     expectVersion: number,
   ): Promise<ManagedInputResult>
+  /** Across sessions: inputs waiting on the owner, and inputs held without progress. */
+  attention(limit: number): OwnerInputAttention[]
 }
 
-/** The worker's `channels.receipts` command for one receipt owner. */
+/** The worker's `channels.receipts` command for one receipt owner, or (`parkedAll`) for every one. */
 export type ReceiptCommand =
   | { op: 'parked'; owner: string }
+  | { op: 'parkedAll' }
   | { op: 'redeliver' | 'discard'; owner: string; receiptId: string }
 
 export interface ManagedInputReviewDeps {
@@ -37,6 +42,8 @@ export interface ManagedInputReviewDeps {
   requireOwner(method: string, sessionId: string, context: CallContext): void
   /** The channel receipt owner of the managed service that holds this session; undefined for any other session. */
   receiptOwner(sessionId: string): string | undefined
+  /** A session of the managed service a receipt owner names, through which its panel can act; undefined when it has none. */
+  receiptSession(owner: string): string | undefined
   receipts(command: ReceiptCommand): Promise<unknown>
 }
 
@@ -95,7 +102,61 @@ function parked(value: unknown): ManagedInputGetResult['parkedReceipts'] {
   }))
 }
 
+/** Every parked receipt, each with the session its panel can act through, or null when the service has none. */
+function allParked(value: unknown, session: (owner: string) => string | null) {
+  const receipts = (value as { receipts?: unknown } | null)?.receipts
+  if (!Array.isArray(receipts)) throw rpcError('INTERNAL_ERROR', { code: 'RECEIPTS_UNAVAILABLE' })
+  return receipts
+    .slice(0, LIST_LIMIT)
+    .map((receipt: ManagedInputGetResult['parkedReceipts'][number] & { owner: string }) => ({
+      sessionId: session(receipt.owner),
+      receiptId: receipt.receiptId,
+      service: receipt.service,
+      kind: receipt.kind,
+      text: receipt.text,
+      at: receipt.at,
+      attempts: receipt.attempts,
+    }))
+}
+
+function listed(item: OwnerInputAttention): ManagedInputListResult['inputs'][number] {
+  const input = item.input
+  return {
+    sessionId: input.sessionId,
+    key: input.key,
+    kind: input.kind,
+    state: input.state,
+    reason: input.reason,
+    version: input.version,
+    at: new Date(input.updatedAt).toISOString(),
+    ...(item.held ? { held: item.held } : {}),
+  }
+}
+
 export function registerManagedInputReview(ep: LocalEndpoint, deps: ManagedInputReviewDeps): void {
+  // The owner finds what needs them without knowing a key: inputs and parked receipts across sessions.
+  ep.register('_agnes/v1/managedInput.list', async (_params, context): Promise<ManagedInputListResult> => {
+    requireOwnerPage('managedInput.list', context)
+    const mine = (sessionId: string) => {
+      try {
+        deps.requireOwner('managedInput.list', sessionId, context)
+        return true
+      } catch {
+        return false
+      }
+    }
+    const session = (owner: string) => {
+      const sessionId = deps.receiptSession(owner)
+      return sessionId !== undefined && mine(sessionId) ? sessionId : null
+    }
+    return {
+      inputs: deps.engine
+        .attention(LIST_LIMIT)
+        .filter((item) => mine(item.input.sessionId))
+        .map(listed),
+      parkedReceipts: allParked(await deps.receipts({ op: 'parkedAll' }), session),
+    }
+  })
   ep.register('_agnes/v1/managedInput.get', async (params, context): Promise<ManagedInputGetResult> => {
     const { sessionId, key } = params as ManagedInputGetParams
     requireOwnerPage('managedInput.get', context)
@@ -146,12 +207,30 @@ export function managedInputReceiptOwner(records: {
   }
 }
 
+/**
+ * The session a parked receipt's actions go through: the newest of its service's sessions, an archived
+ * one only when there is no other. A receipt owner is a `grantKey`, never a detached owner.
+ */
+export function managedInputReceiptSession(records: {
+  list(owner: string): readonly Pick<ManagedSessionRecord, 'sessionId' | 'archived'>[]
+}): (owner: string) => string | undefined {
+  return (owner) => {
+    const sessions = records.list(owner)
+    return (sessions.findLast((record) => !record.archived) ?? sessions.at(-1))?.sessionId
+  }
+}
+
 /** The daemon's wiring: the owner input engine, the session records and the shared worker's receipt command. */
 export function registerOwnerInputReview(
   ep: LocalEndpoint,
   deps: {
     engine: ManagedInputReviewEngine | undefined
-    records: { get(sessionId: string): Pick<ManagedSessionRecord, 'owner'> | undefined } | undefined
+    records:
+      | {
+          get(sessionId: string): Pick<ManagedSessionRecord, 'owner'> | undefined
+          list(owner: string): readonly Pick<ManagedSessionRecord, 'sessionId' | 'archived'>[]
+        }
+      | undefined
     requireOwner: ManagedInputReviewDeps['requireOwner']
     worker(): Promise<{
       command(method: 'channels.receipts', params: Record<string, unknown>): Promise<unknown>
@@ -163,6 +242,7 @@ export function registerOwnerInputReview(
     engine: deps.engine,
     requireOwner: deps.requireOwner,
     receiptOwner: managedInputReceiptOwner(deps.records),
+    receiptSession: managedInputReceiptSession(deps.records),
     receipts: async (command) => (await deps.worker()).command('channels.receipts', { ...command }),
   })
 }

@@ -2,7 +2,7 @@ import { rpcError } from '@agnes/protocol'
 import { JsonRpcError } from '@agnes/sdk/browser'
 
 /**
- * Methods only the owner's own workbench page may call: reviewing and deciding owner inputs. Plugin
+ * Methods only the owner's own workbench page may call: listing, reviewing and deciding owner inputs. Plugin
  * code in the page shares that page's connection, so the page's client refuses them at the call site
  * (`reserveOwnerOnly`) and the host APIs handed to plugin code (the client module facade, plugin home
  * pages, workbench panels) refuse them again. Same-page code is not an isolated boundary; this closes
