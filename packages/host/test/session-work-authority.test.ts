@@ -38,6 +38,7 @@ it.each(['disable', 'untrust', 'remove'] as const)(
       const source = parseSource('file:./source')
       const preview = await manager.inspect(profileDir, source)
       await manager.install(profileDir, source, { expectedIntegrity: preview.integrity })
+      if (!preview.capabilityHash) throw new Error('fixture package is missing its capability hash')
       const decision = { integrity: preview.integrity, capabilityHash: preview.capabilityHash }
       await manager.trust(profileDir, preview.id, decision)
       await manager.setEnabled(profileDir, preview.id, true)
