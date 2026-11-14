@@ -236,15 +236,32 @@ it.skipIf(process.platform === 'win32')(
 
     await second.lifecycle.stop('shutdown')
 
-    // A ticket that ended loses its workspace registration.
+    // A ticket that ends keeps its workspace and session: a person's later reply resumes it in the same session and
+    // directory.
     store.tickets.save({
       ...store.tickets.get('T-1')!,
       ended: { at: new Date().toISOString(), by: 'human', outcome: 'stopped' },
     })
     const listed = async () => (await client().workspace.list()).items.map((item) => realpathSync(item.path))
-    expect(await listed()).toContain(ticketDir)
     await second.lifecycle.ticketEnded('T-1')
-    expect(await listed()).not.toContain(ticketDir)
+    expect(await listed(), 'the ended ticket keeps its workspace').toContain(ticketDir)
+    const resumed = await client().session.open(worker.id)
+    await resumed.followUp(tool('RESUME', { command: 'pwd' }), { commandId: 'superagent:m-reply' })
+    const answered = await until('the resumed worker turn', () =>
+      daemon
+        .modelRequests()
+        .find((request) => request.marker.startsWith('RESUME') && request.lastRole === 'tool'),
+    )
+    expect(answered.toolResult, 'the same session works in the same directory').toContain(ticketDir)
+    await until('the resumed turn to end', async () => !(await sessions.state(worker.id)).running)
+
+    // Once retention archived its conversation (here: ended more than 14 days ago, no thread left), it is retired.
+    store.tickets.save({
+      ...store.tickets.get('T-1')!,
+      ended: { at: new Date(Date.now() - 15 * 24 * 3600_000).toISOString(), by: 'human', outcome: 'stopped' },
+    })
+    await second.lifecycle.ticketEnded('T-1')
+    expect(await listed(), 'the retired ticket loses its workspace').not.toContain(ticketDir)
     await daemon.stop()
   },
   240_000,

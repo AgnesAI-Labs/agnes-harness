@@ -8,7 +8,7 @@
 import { realpathSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Store } from '../app/store.js'
-import { archiveExpired } from '../app/store-retention.js'
+import { archiveExpired, retiredTickets } from '../app/store-retention.js'
 import { interruptionRestarts } from '../core/assignments.js'
 import { liveTicket, runningAssignment, type Ticket } from '../core/index.js'
 import { KV } from '../kv.js'
@@ -33,7 +33,11 @@ export interface Lifecycle {
   /** Resolves once the work `start()` began has finished, whatever its outcome. */
   settled(): Promise<void>
   status(): LifecycleStatus
-  /** Removes the workspace registration of a ticket that ended. */
+  /**
+   * Called when a ticket ends. An ended ticket keeps its workspace and Session, since a person's reply resumes it there;
+   * this removes the registration only once retention has archived its conversation (see `retiredTickets`), as the
+   * daily pass does.
+   */
   ticketEnded(ticketId: string): Promise<void>
 }
 
@@ -103,21 +107,33 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
   const ticketOf = (sessionId: string): Ticket | undefined =>
     sessionId.startsWith(WORKER_PREFIX) ? store.tickets.get(sessionId.slice(WORKER_PREFIX.length)) : undefined
 
-  /** Archives expired records and drops the workspace registrations of ended tickets; never throws. */
+  /** Directories whose registration this lifecycle already removed, so a daily pass does not ask again. */
+  const retired = new Set<string>()
+  /**
+   * Removes the workspace registrations of the tickets retention retired, which also archives their Sessions; an ended
+   * ticket that a person's reply can still resume keeps both. Never throws.
+   */
+  const retire = async (tickets: readonly Ticket[]): Promise<void> => {
+    const dirs = tickets.flatMap((ticket) => {
+      const dir = ticket.execution?.directory
+      return dir && !retired.has(dir) ? [dir] : []
+    })
+    if (!dirs.length) return
+    try {
+      await control.removeWorkspaces(dirs)
+      for (const dir of dirs) retired.add(dir)
+    } catch (error) {
+      warn(`Superagent could not remove the workspaces of retired tickets: ${message(error)}`)
+    }
+  }
+  /** Archives expired records, then retires the tickets whose conversation that archived; never throws. */
   const upkeep = async (): Promise<void> => {
     try {
       archive(store, now())
     } catch (error) {
       warn(`Superagent could not archive expired records: ${message(error)}`)
     }
-    const dirs = store.tickets
-      .list()
-      .filter((ticket) => !liveTicket(ticket) && ticket.execution?.directory)
-      .map((ticket) => ticket.execution!.directory)
-    if (dirs.length)
-      await control.removeWorkspaces(dirs).catch((error: unknown) => {
-        warn(`Superagent could not remove the workspaces of ended tickets: ${message(error)}`)
-      })
+    await retire(retiredTickets(store, now()))
   }
 
   /**
@@ -249,9 +265,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     },
     status: () => status,
     async ticketEnded(ticketId) {
-      const ticket = store.tickets.get(ticketId)
-      const dir = ticket && !liveTicket(ticket) ? ticket.execution?.directory : undefined
-      if (dir) await control.removeWorkspaces([dir])
+      await retire(retiredTickets(store, now()).filter((ticket) => ticket.id === ticketId))
     },
   }
 }

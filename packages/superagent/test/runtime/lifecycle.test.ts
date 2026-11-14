@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openStore, type Store } from '../../src/app/store.js'
+import type { Thread } from '../../src/core/index.js'
 import { KV } from '../../src/kv.js'
 import { createHookStateCell, type HookState } from '../../src/runtime/hook-state.js'
 import { DATABASE_FILE } from '../../src/runtime/index.js'
@@ -375,24 +376,59 @@ describe('disable', () => {
 })
 
 describe('upkeep', () => {
-  it('removes the workspace registration of a ticket that ended, and of ended tickets on start', async () => {
-    store.tickets.save(
-      runningTicket('E', { state: 'ended' }, { ended: { at: AT, by: 'executor', outcome: 'completed' } }),
-    )
+  it("keeps an ended ticket's workspace and session until retention archives its conversation", async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const ago = (days: number) => new Date(Date.parse(AT) - days * DAY).toISOString()
+    const thread = (id: string, lastAt: string, ticketId: string): Thread => ({
+      key: `github:${id}`,
+      ref: { source: 'github', id },
+      createdAt: lastAt,
+      lastAt,
+      subscriptions: [ticketId],
+      correlated: [],
+      pending: [],
+      meta: {},
+    })
+    const ended = (id: string, days: number) =>
+      runningTicket(
+        id,
+        { state: 'ended' },
+        { ended: { at: ago(days), by: 'executor', outcome: 'completed' } },
+      )
+    // E ended 5 days ago: a person may still reply on its thread and resume it in the same session and directory.
+    store.tickets.save(ended('E', 5))
+    store.threads.save(thread('e', ago(5), 'E'))
+    // R ended 20 days ago and its thread went quiet with it: retention archives the conversation, which retires R.
+    store.tickets.save(ended('R', 20))
+    store.threads.save(thread('r', ago(20), 'R'))
+    // P ended 20 days ago, but a person wrote on its thread two days ago: the conversation stays, and so does P.
+    store.tickets.save(ended('P', 20))
+    store.threads.save(thread('p', ago(2), 'P'))
     store.tickets.save(runningTicket('O'))
-    const { lifecycle } = setup()
+    sessions.set(workerKey('E'), { running: false, pending: [], jobs: 0 })
+    let now = Date.parse(AT)
+    const { lifecycle } = setup({ archive: undefined, now: () => now })
     await lifecycle.start()
     await lifecycle.settled()
-    expect(log).toContain('removeWorkspaces /work/E')
-    log.length = 0
+    const removals = () => log.filter((line) => line.startsWith('removeWorkspaces'))
+    expect(removals()).toEqual(['removeWorkspaces /work/R'])
+    expect(store.threads.get('github:e'), 'the ended ticket keeps its thread').toBeDefined()
+
+    // Ending a ticket removes nothing.
+    await lifecycle.ticketEnded('E')
+    store.tickets.save({ ...store.tickets.get('O')!, ended: { at: AT, by: 'human', outcome: 'stopped' } })
     await lifecycle.ticketEnded('O')
-    expect(log, 'an open ticket keeps its workspace').toEqual([])
-    store.tickets.save({
-      ...store.tickets.get('O')!,
-      ended: { at: AT, by: 'human', outcome: 'stopped' },
-    })
-    await lifecycle.ticketEnded('O')
-    expect(log).toEqual(['removeWorkspaces /work/O'])
+    expect(removals()).toEqual(['removeWorkspaces /work/R'])
+
+    // Ten days on, the daily pass archives E's conversation, quiet for 15 days, and only then retires E's workspace
+    // and session; P's conversation (quiet for 12 days) and O (ended 10 days ago) stay.
+    now += 10 * DAY
+    vi.advanceTimersByTime(DAY)
+    await vi.waitFor(() => expect(removals()).toHaveLength(2))
+    expect(removals()[1]).toBe('removeWorkspaces /work/E')
+    expect(store.threads.get('github:e')).toBeUndefined()
+    expect(store.threads.get('github:p'), 'a conversation with recent activity is kept').toBeDefined()
+    await lifecycle.stop('shutdown')
   })
 
   it('archives expired records on start and then once a day while running', async () => {
