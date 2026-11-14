@@ -376,15 +376,31 @@ export async function refreshChatNames(
   ctx.state.set(KV.sources.labels(SOURCE), names)
   return names
 }
-/** Rereads the channel instances the `instance` setting may name and stores them as its choices. */
+/** How long reading the channel instances may take; a channel row that is starting can hold the read. */
+export const INSTANCES_TIMEOUT_MS = 10_000
+/**
+ * Rereads the channel instances the `instance` setting may name and stores them as its choices. A read that fails or
+ * takes longer than `INSTANCES_TIMEOUT_MS` throws, and the choices stored before stay.
+ */
 export async function refreshInstances(
   ctx: SourceContext,
   link: FeishuLink,
 ): Promise<Record<string, Choice[]>> {
   if (!link.instances) return {}
-  const choices = { instance: await link.instances() }
-  ctx.state.set(KV.sources.choices(SOURCE), choices)
-  return choices
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`The channel instances were not read within ${INSTANCES_TIMEOUT_MS / 1000} s`)),
+      INSTANCES_TIMEOUT_MS,
+    )
+  })
+  try {
+    const choices = { instance: await Promise.race([link.instances(), late]) }
+    ctx.state.set(KV.sources.choices(SOURCE), choices)
+    return choices
+  } finally {
+    clearTimeout(timer)
+  }
 }
 /**
  * Rereads the channel instances, and the chat list, every minute independently of history recovery, so new instances

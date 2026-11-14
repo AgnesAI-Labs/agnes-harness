@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { settingsView } from '../../src/app/views/settings.js'
 import { key } from '../../src/core/index.js'
 import { listInstances, OWNER_BUSY } from '../../src/sources/feishu-instances.js'
-import { RELEASE_GRACE_MS } from '../../src/sources/feishu-loops.js'
+import { INSTANCES_TIMEOUT_MS, RELEASE_GRACE_MS } from '../../src/sources/feishu-loops.js'
 import { fakeChannels, message, PLUGIN, rpc } from './fake-channels.js'
 import { type FeishuHost, feishuHost, MEMBER } from './feishu-host.js'
 
@@ -265,5 +265,25 @@ describe('choosing the instance', () => {
       type: 'text',
       choices: { unavailableWhen: { key: 'claim', value: 'instance' } },
     })
+  })
+
+  it('gives up a read of the instances that does not answer within 10 s, keeps the choices and reads the chats', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'Date'] })
+    const h = open()
+    h.link.instances = async () => listInstances(call())
+    await h.kind.refreshChoices!(h.host)
+    // A channel row that is starting holds the read.
+    h.link.instances = () => new Promise(() => {})
+    const refreshed = h.kind.refreshChoices!(h.host)
+    const failed = expect(refreshed).rejects.toThrow('The channel instances were not read within 10 s')
+    await vi.advanceTimersByTimeAsync(INSTANCES_TIMEOUT_MS)
+    await failed
+    const view = () =>
+      settingsView(h.store, h.sources, {}, {}, '/state').sources.find((source) => source.id === 'feishu')!
+    expect(view().choices.instance).toHaveLength(2)
+    // The minute's loop goes on to the chat names rather than waiting for the instances.
+    const stop = await started(h, INSTANCES_TIMEOUT_MS + 100)
+    expect(h.fake.calls('listChats').length).toBeGreaterThan(0)
+    await stop()
   })
 })
