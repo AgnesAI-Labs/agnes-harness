@@ -78,3 +78,15 @@ export function appendPinned(config: SystemPromptConfig, append: string): boolea
   const suffix = config.personaSuffix
   return suffix === text || (suffix?.endsWith(`\n\n${text}`) ?? false)
 }
+
+/**
+ * The append an open still has to apply: none when the session's pinned config already carries it, as when the
+ * open that created the session is repeated (retried after a reload, or recovered). A different append, or one for
+ * an existing session that never had it, stays and is refused.
+ */
+export function appendToOpen(
+  pinned: SystemPromptConfig | undefined,
+  append: string | undefined,
+): string | undefined {
+  return append !== undefined && pinned && appendPinned(pinned, append) ? undefined : append
+}
