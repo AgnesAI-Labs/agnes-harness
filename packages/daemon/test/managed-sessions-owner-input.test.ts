@@ -602,6 +602,40 @@ describe('managed sessions bound to a task', () => {
     }
   })
 
+  it('a queued input whose admission never completed is retained once its session is archived', async () => {
+    const w = world()
+    const engine = w.sessions.engine as OwnerInputEngine
+    const policy = w.ports.sessions.policy
+    const unreadable = async () => {
+      throw new Error('transport closed')
+    }
+    const queued = async (startKey: string, key: string) => {
+      const { sessionId } = await w
+        .port()
+        .start(start({ startKey, taskBinding: { id: startKey, generation: 0 } }))
+      w.ports.sessions.policy = unreadable
+      await expect(
+        w.port(caller, key).admitInput(sessionId, admission(key, key, { taskId: startKey, startKey })),
+      ).rejects.toThrow('transport closed')
+      w.ports.sessions.policy = policy
+      expect(w.inputs.get(owner, sessionId, key)).toMatchObject({ state: 'queued' })
+      return sessionId
+    }
+    // Not archived: a sweep leaves it for the caller's retry.
+    const web = await queued('a', 'k1')
+    await engine.sweep()
+    expect(w.inputs.get(owner, web, 'k1')).toMatchObject({ state: 'queued' })
+    // Archived by the owner in the Web, then swept; or archived by the plugin.
+    w.core.state.archived.add(web)
+    await engine.sweep()
+    expect(w.inputs.get(owner, web, 'k1')).toMatchObject({ state: 'retained', reason: 'sessionArchived' })
+    const plugin = await queued('b', 'k2')
+    await w.port().archive(plugin)
+    expect(w.inputs.get(owner, plugin, 'k2')).toMatchObject({ state: 'retained', reason: 'sessionArchived' })
+    expect(w.core.state.submits).toEqual([])
+    expect(w.inputs.sessionsWithWork()).toEqual([])
+  })
+
   it('archiving a session retains its held inputs', async () => {
     const w = world()
     const { sessionId } = await w.port().start(start())

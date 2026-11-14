@@ -39,6 +39,32 @@ export type AdvanceMode = 'idle' | 'result' | 'sweep'
 
 const rejected = (code: string) => rpcError('SEMANTIC_REJECTED', { code })
 
+/** Archived by its manager, or by the owner in the Web. */
+const archivedSession = (deps: OwnerInputEngineDeps, record: ManagedSessionRecord) =>
+  record.archived || deps.ports.sessions.archived(record.sessionId)
+
+/** The checks every submit runs that do not depend on the row, read once per pass and only when needed. */
+function checksFor(deps: OwnerInputEngineDeps, record: ManagedSessionRecord) {
+  const enabled = (owner: string) => deps.enabled?.(owner).catch(() => false) ?? Promise.resolve(true)
+  let verdict: Promise<'pass' | 'paused' | ManagedInputChange> | undefined
+  return () =>
+    (verdict ??= (async () => {
+      // Detached by a package removal before the engine existed: what it kept is taken back, never run.
+      if (detached(record)) return { state: 'needsOwner', reason: 'grantRevoked' } as const
+      if (archivedSession(deps, record)) return { state: 'retained', reason: 'sessionArchived' } as const
+      // Every row of a session belongs to the session's manager; a disabled package's gates may fail,
+      // but a revoked workspace grant still takes its inputs back.
+      if (!(await enabled(record.owner)))
+        return deps.ports.records.granted(record.owner, record.workspace)
+          ? ('paused' as const)
+          : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
+      // Gates that cannot be read hold the inputs unchanged, like a paused package, until a later pass.
+      const pass = await deps.gatesPass(record).catch(() => undefined)
+      if (pass === undefined) return 'paused' as const
+      return pass ? ('pass' as const) : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
+    })())
+}
+
 /**
  * Moving held inputs on: submit to an idle session after the checks pass, find the turn that took a
  * submitted one, take inputs back on revoke, and apply the owner's decision. Callers hold the
@@ -57,9 +83,8 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
   // An unreadable question state holds the input rather than risk a turn answering the question.
   const questionOpen = async (sessionId: string) =>
     (await ports.sessions.openQuestion?.(sessionId).catch(() => true)) === true
-  const archived = (record: ManagedSessionRecord) =>
-    record.archived || ports.sessions.archived(record.sessionId)
-  const enabled = (owner: string) => deps.enabled?.(owner).catch(() => false) ?? Promise.resolve(true)
+  const archived = (record: ManagedSessionRecord) => archivedSession(deps, record)
+  const sessionChecks = (record: ManagedSessionRecord) => checksFor(deps, record)
 
   /** The turn that took a submitted input; the scan starts at the seq the submission returned. */
   const settle = async (row: ManagedInputRow): Promise<ManagedInputRow> => {
@@ -119,27 +144,6 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     })
   }
 
-  /** The checks every submit runs that do not depend on the row, read once per pass and only when needed. */
-  const sessionChecks = (record: ManagedSessionRecord) => {
-    let verdict: Promise<'pass' | 'paused' | ManagedInputChange> | undefined
-    return () =>
-      (verdict ??= (async () => {
-        // Detached by a package removal before the engine existed: what it kept is taken back, never run.
-        if (detached(record)) return { state: 'needsOwner', reason: 'grantRevoked' } as const
-        if (archived(record)) return { state: 'retained', reason: 'sessionArchived' } as const
-        // Every row of a session belongs to the session's manager; a disabled package's gates may fail,
-        // but a revoked workspace grant still takes its inputs back.
-        if (!(await enabled(record.owner)))
-          return ports.records.granted(record.owner, record.workspace)
-            ? ('paused' as const)
-            : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
-        // Gates that cannot be read hold the inputs unchanged, like a paused package, until a later pass.
-        const pass = await deps.gatesPass(record).catch(() => undefined)
-        if (pass === undefined) return 'paused' as const
-        return pass ? ('pass' as const) : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
-      })())
-  }
-
   /**
    * A submitted input: consumed when a turn took it, otherwise true while it may still run. An
    * unconfirmed one (sweeps only) is taken back and held again, so the next submit runs every check
@@ -150,7 +154,7 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     row: ManagedInputRow,
     record: ManagedSessionRecord,
     mode: AdvanceMode,
-    checks: ReturnType<typeof sessionChecks>,
+    checks: ReturnType<typeof checksFor>,
   ): Promise<boolean> => {
     const sessionId = row.sessionId
     const commandId = row.itemCommandId as string
@@ -211,7 +215,11 @@ export function inputProgress(deps: OwnerInputEngineDeps) {
     }
     if (waiting > 0) return
     for (const row of inputs.held(sessionId)) {
-      if (row.state === 'queued') continue // completed only by the caller's next admitInput
+      // Completed only by the caller's next admitInput; on an archived session it is kept, never delivered.
+      if (row.state === 'queued') {
+        if (archived(record)) move(row, { state: 'retained', reason: 'sessionArchived' })
+        continue
+      }
       const verdict = await checks()
       if (verdict === 'paused') return // a disabled package keeps its inputs held, unchanged
       if (verdict !== 'pass') {
