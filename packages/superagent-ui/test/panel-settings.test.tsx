@@ -5,10 +5,22 @@ import { createRoot } from 'react-dom/client'
 import { expect, it, onTestFinished } from 'vitest'
 import { zh } from '../src/locales.js'
 import { Fields } from '../src/settings-kit.js'
-import { all, click, field, find, mount, remount, settle, tab, text, type, usePanel } from './helpers/panel.js'
+import {
+  all,
+  click,
+  field,
+  find,
+  installPanel,
+  mount,
+  remount,
+  settle,
+  tab,
+  text,
+  type,
+} from './helpers/panel.js'
 import { server } from './helpers/panel-server.js'
 
-usePanel()
+installPanel()
 it("keeps a person's own value where another save changed the same setting, and says so", async () => {
   await mount()
   await click(zh['tab.execution'])
@@ -41,14 +53,20 @@ it('saves the Eval block on the Policy settings and the Executor with its execut
   await click(find(zh['promptPart.runtime/work'], '.dt-settings-link'))
   await type(field<HTMLInputElement>(zh.maxWorkers), '5')
   // An empty root uses the default directory, which the field names instead of looking set.
-  expect(field<HTMLInputElement>(zh.executionDirectory).closest('.dt-field')!.querySelector('small')?.textContent).toBe('留空时用 /srv/superagent/work')
+  expect(
+    field<HTMLInputElement>(zh.executionDirectory).closest('.dt-field')!.querySelector('small')?.textContent,
+  ).toBe('留空时用 /srv/superagent/work')
   await type(field<HTMLInputElement>(zh.executionDirectory), '/srv/work')
   // A variable picked from the list goes where the caret is in the prepare command.
   const prepare = field<HTMLTextAreaElement>(zh.prepareCommand)
   await type(prepare, 'git worktree add ')
   prepare.setSelectionRange(17, 17)
   await click('可用的环境变量 3')
-  expect(all('.dt-table tbody tr').map((row) => row.textContent)).toEqual(['DSH_SUPERAGENT_DIR工单的执行目录执行器', 'DSH_SUPERAGENT_NAME工单短名执行器', 'DSH_SUPERAGENT_GITHUB_REPOSITORY仓库GitHub · 已关闭'])
+  expect(all('.dt-table tbody tr').map((row) => row.textContent)).toEqual([
+    'DSH_SUPERAGENT_DIR工单的执行目录执行器',
+    'DSH_SUPERAGENT_NAME工单短名执行器',
+    'DSH_SUPERAGENT_GITHUB_REPOSITORY仓库GitHub · 已关闭',
+  ])
   await click('DSH_SUPERAGENT_DIR')
   expect(field<HTMLTextAreaElement>(zh.prepareCommand).value).toBe('git worktree add "$DSH_SUPERAGENT_DIR"')
   await type(field<HTMLInputElement>(zh.blockedCommands), 'gh-personal  gh.other')
@@ -56,7 +74,11 @@ it('saves the Eval block on the Policy settings and the Executor with its execut
   await type(workerProvider as HTMLInputElement, 'worker-provider')
   await type(workerModel as HTMLInputElement, 'worker-model')
   await type(effort as HTMLInputElement, 'high')
-  expect([...document.querySelectorAll('#dt-worker-model-efforts option')].map((option) => option.getAttribute('value'))).toEqual(['high'])
+  expect(
+    [...document.querySelectorAll('#dt-worker-model-efforts option')].map((option) =>
+      option.getAttribute('value'),
+    ),
+  ).toEqual(['high'])
   await click(zh.save)
   expect(server.settings.executor).toEqual({
     maxWorkers: 5,
@@ -65,7 +87,9 @@ it('saves the Eval block on the Policy settings and the Executor with its execut
     blockedCommands: ['gh-personal', 'gh.other'],
     model: { provider: 'worker-provider', model: 'worker-model', reasoningEffort: 'high' },
   })
-  expect(server.requests.filter((request) => request.method === 'PUT').map((request) => request.path)).toEqual(['settings/eval', 'settings/executor'])
+  expect(
+    server.requests.filter((request) => request.method === 'PUT').map((request) => request.path),
+  ).toEqual(['settings/eval', 'settings/executor'])
 })
 
 it('loads configuration history on demand with localized changes, Source field labels and notified Tickets', async () => {
@@ -94,7 +118,14 @@ it('loads configuration history on demand with localized changes, Source field l
   await click(find(zh['tab.settings'], '.dt-status-head button'))
   expect(server.requests.some((request) => request.path === 'policy/history')).toBe(false)
   await click(zh.configHistory)
-  for (const expected of ['第 3 次保存 · 从群同步', '生成策略版本 abcdef12', '接单模式：关闭 → 仅观察', '飞书 · 能发起工作的飞书用户 新增：Bob', '飞书 · 同步来源群：未设置 → oc_team', '因策略变更通知了 1 个进行中的工单：修复回归'])
+  for (const expected of [
+    '第 3 次保存 · 从群同步',
+    '生成策略版本 abcdef12',
+    '接单模式：关闭 → 仅观察',
+    '飞书 · 能发起工作的飞书用户 新增：Bob',
+    '飞书 · 同步来源群：未设置 → oc_team',
+    '因策略变更通知了 1 个进行中的工单：修复回归',
+  ])
     expect(text()).toContain(expected)
 })
 
@@ -128,7 +159,9 @@ it('shows save and discard only while a settings block has edits, at the end of 
   expect(document.activeElement).toBe(workers.form)
   await click(find(zh['term.source'], '.dt-settings-link'))
   expect(all('.dt-savebar')).toHaveLength(0)
-  const github = all('.dt-card').find((card) => card.querySelector('.dt-card-title')?.textContent === 'GitHub')!
+  const github = all('.dt-card').find(
+    (card) => card.querySelector('.dt-card-title')?.textContent === 'GitHub',
+  )!
   await type(field<HTMLInputElement>('智能体的 GitHub CLI'), 'gh-other')
   expect(github.lastElementChild!.classList.contains('dt-savebar')).toBe(true)
   // The agent CLI is read by setup, so the bar warns that saving restarts Superagent and interrupts running work.
@@ -170,8 +203,16 @@ it("gives the focus back to the field that had it once a block's save ends", asy
 it("lists the settings groups stages first, opens each stage's group from its status, and returns to the last group opened", async () => {
   await mount()
   await click(tab(zh['tab.settings']))
-  expect(all('.dt-settings-link').map((link) => link.textContent)).toEqual(['来源', '评估', '执行', '提示词', '部署'])
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['term.source'])
+  expect(all('.dt-settings-link').map((link) => link.textContent)).toEqual([
+    '来源',
+    '评估',
+    '执行',
+    '提示词',
+    '部署',
+  ])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(
+    zh['term.source'],
+  )
   for (const [tab, group] of [
     ['来源', '来源'],
     ['评估', '评估'],
@@ -185,9 +226,13 @@ it("lists the settings groups stages first, opens each stage's group from its st
   await click(tab(zh['tab.trigger']))
   expect(all('.dt-status-head button').map((button) => button.textContent)).not.toContain(zh['tab.settings'])
   await click(tab(zh['tab.settings']))
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['promptPart.runtime/work'])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(
+    zh['promptPart.runtime/work'],
+  )
   await click(tab(zh['tab.trigger']))
   await remount()
   await click(tab(zh['tab.settings']))
-  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(zh['promptPart.runtime/work'])
+  expect(document.querySelector('.dt-settings-link[aria-current="page"]')?.textContent).toBe(
+    zh['promptPart.runtime/work'],
+  )
 })

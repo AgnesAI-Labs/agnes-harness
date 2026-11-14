@@ -5,15 +5,35 @@ import { DisclosureRow, Icon, InfoTip, Input, Pill } from './controls.js'
 import { SaveBar } from './draft.js'
 import { usePanel } from './provider.js'
 import { TicketLine } from './rows.js'
-import { ConfigHistory, Field, Fields, ModelField, numberOf, useBlockDraft, useSettings } from './settings-kit.js'
+import {
+  ConfigHistory,
+  Field,
+  Fields,
+  ModelField,
+  numberOf,
+  useBlockDraft,
+  useSettings,
+} from './settings-kit.js'
 import { LIMITS, TICKET_FILTERS, type TicketFilter } from './shared.js'
 import { localized } from './text.js'
 import { ConfirmButton, Hint, LabelValue, LoadMore, LoadState, Section, StatusHead } from './widgets.js'
 
-export function ExecutionStatus({ filter: current, state, reload }: { filter: TicketFilter; state: StateView; reload: () => Promise<void> }) {
+export function ExecutionStatus({
+  filter: current,
+  state,
+  reload,
+}: {
+  filter: TicketFilter
+  state: StateView
+  reload: () => Promise<void>
+}) {
   const { t, call, navigate } = usePanel()
   const [limit, setLimit] = useState(20)
-  const { data, error, reload: reloadTickets } = usePoll(() => call('GET tickets', { query: { state: current, limit } }), [current, limit])
+  const {
+    data,
+    error,
+    reload: reloadTickets,
+  } = usePoll(() => call('GET tickets', { query: { state: current, limit } }), [current, limit])
   const {
     paused,
     load: { maxWorkers },
@@ -23,7 +43,11 @@ export function ExecutionStatus({ filter: current, state, reload }: { filter: Ti
     await call('POST executor/pause', { body: { paused: !paused } })
     await reload()
   }
-  const status = state.setup.problem ? { tone: 'warning', label: t('executorWaitingSetup') } : paused ? { tone: 'warning', label: t('processingPaused') } : { tone: 'ongoing', label: t('executorRunning') }
+  const status = state.setup.problem
+    ? { tone: 'warning', label: t('executorWaitingSetup') }
+    : paused
+      ? { tone: 'warning', label: t('processingPaused') }
+      : { tone: 'ongoing', label: t('executorRunning') }
   const action = paused ? 'resumeProcessing' : 'pauseProcessing'
   return (
     <>
@@ -38,7 +62,14 @@ export function ExecutionStatus({ filter: current, state, reload }: { filter: Ti
             <LabelValue label={t('queuedLabel')} value={state.load.queued} />
           </>
         )}
-        <ConfirmButton variant="outline" icon={paused ? 'play' : 'pause'} label={t(action)} title={t(action)} message={t(paused ? 'resumeProcessingConfirm' : 'pauseProcessingConfirm')} onConfirm={pause} />
+        <ConfirmButton
+          variant="outline"
+          icon={paused ? 'play' : 'pause'}
+          label={t(action)}
+          title={t(action)}
+          message={t(paused ? 'resumeProcessingConfirm' : 'pauseProcessingConfirm')}
+          onConfirm={pause}
+        />
       </div>
       <div className="dt-filters">
         {TICKET_FILTERS.map((value) => (
@@ -58,7 +89,15 @@ export function ExecutionStatus({ filter: current, state, reload }: { filter: Ti
       <LoadState error={error} loading={!data} />
       {data &&
         (data.items.length ? (
-          <ul className="dt-list">{data.items.map((ticket) => (ticket.stage === 'person' ? <TicketLine key={ticket.id} ticket={ticket} question onChanged={reloadTickets} /> : <TicketLine key={ticket.id} ticket={ticket} />))}</ul>
+          <ul className="dt-list">
+            {data.items.map((ticket) =>
+              ticket.stage === 'person' ? (
+                <TicketLine key={ticket.id} ticket={ticket} question onChanged={reloadTickets} />
+              ) : (
+                <TicketLine key={ticket.id} ticket={ticket} />
+              ),
+            )}
+          </ul>
         ) : (
           <Hint>{t('none')}</Hint>
         ))}
@@ -68,10 +107,21 @@ export function ExecutionStatus({ filter: current, state, reload }: { filter: Ti
 }
 
 const firstSentence = (text: string): string => /^[^。；;.]*(?:[。；;]|\.(?=\s|$))?/.exec(text)?.[0] ?? text
-function EnvironmentVariables({ groups, sources, onPick }: { groups: SettingsView['environment']['variables']; sources: SourceView[]; onPick: (key: string) => void }) {
+function EnvironmentVariables({
+  groups,
+  sources,
+  onPick,
+}: {
+  groups: SettingsView['environment']['variables']
+  sources: SourceView[]
+  onPick: (key: string) => void
+}) {
   const { t } = usePanel()
   const [open, setOpen] = useState(false)
-  const owner = (id: string) => (id === 'executor' ? t('term.executor') : localized(t, sources.find((source) => source.id === id)?.title ?? id))
+  const owner = (id: string) =>
+    id === 'executor'
+      ? t('term.executor')
+      : localized(t, sources.find((source) => source.id === id)?.title ?? id)
   const count = groups.reduce((sum, group) => sum + group.variables.length, 0)
   return (
     <DisclosureRow
@@ -99,11 +149,17 @@ function EnvironmentVariables({ groups, sources, onPick }: { groups: SettingsVie
               group.variables.map((variable) => (
                 <tr key={variable.key}>
                   <td>
-                    <button type="button" className="dt-textlink dt-mono" onClick={() => onPick(variable.key)}>
+                    <button
+                      type="button"
+                      className="dt-textlink dt-mono"
+                      onClick={() => onPick(variable.key)}
+                    >
                       {variable.key}
                     </button>
                   </td>
-                  <td title={localized(t, variable.description)}>{firstSentence(localized(t, variable.description))}</td>
+                  <td title={localized(t, variable.description)}>
+                    {firstSentence(localized(t, variable.description))}
+                  </td>
                   <td>
                     {owner(group.owner)}
                     {!group.enabled && <span className="dt-hint"> · {t('sourceOff')}</span>}
@@ -164,7 +220,14 @@ export function ExecutionSettings() {
               <ModelField id="dt-worker-model" value={value.model} onChange={(model) => edit({ model })} />
             </Section>
             <Field label={t('maxWorkers')} hint={t('maxWorkersHint')}>
-              <Input type="number" min={LIMITS.maxWorkers.min} max={LIMITS.maxWorkers.max} required value={value.maxWorkers} onChange={(event) => edit({ maxWorkers: event.target.value })} />
+              <Input
+                type="number"
+                min={LIMITS.maxWorkers.min}
+                max={LIMITS.maxWorkers.max}
+                required
+                value={value.maxWorkers}
+                onChange={(event) => edit({ maxWorkers: event.target.value })}
+              />
             </Field>
           </div>
           <div className="dt-form dt-block">
@@ -172,8 +235,19 @@ export function ExecutionSettings() {
               {t('term.environment')}
               <InfoTip text={t('environmentIntro')} />
             </h2>
-            <Field label={t('executionDirectory')} hint={t('executionDirectoryHint')} note={value.directory ? undefined : t('executionDirectoryDefault', { root: environment.root })}>
-              <Input className="dt-mono" value={value.directory} placeholder={t('executionDirectoryEmpty')} spellCheck={false} pattern="/.*" onChange={(event) => edit({ directory: event.target.value })} />
+            <Field
+              label={t('executionDirectory')}
+              hint={t('executionDirectoryHint')}
+              note={value.directory ? undefined : t('executionDirectoryDefault', { root: environment.root })}
+            >
+              <Input
+                className="dt-mono"
+                value={value.directory}
+                placeholder={t('executionDirectoryEmpty')}
+                spellCheck={false}
+                pattern="/.*"
+                onChange={(event) => edit({ directory: event.target.value })}
+              />
             </Field>
             <Field label={t('prepareCommand')} hint={t('prepareCommandHint')}>
               <textarea
@@ -189,7 +263,13 @@ export function ExecutionSettings() {
             </Field>
             <EnvironmentVariables groups={environment.variables} sources={sources} onPick={insert} />
             <Field label={t('blockedCommands')} hint={t('blockedCommandsHint')}>
-              <Input className="dt-mono" value={value.blockedCommands} placeholder={t('blockedCommandsNone')} spellCheck={false} onChange={(event) => edit({ blockedCommands: event.target.value })} />
+              <Input
+                className="dt-mono"
+                value={value.blockedCommands}
+                placeholder={t('blockedCommandsNone')}
+                spellCheck={false}
+                onChange={(event) => edit({ blockedCommands: event.target.value })}
+              />
             </Field>
           </div>
         </Fields>

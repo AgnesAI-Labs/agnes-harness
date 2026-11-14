@@ -15,7 +15,10 @@ export const sessionPage = (sessionId: string) => `/?session=${encodeURIComponen
 function Panel({ ctx }: { ctx: ClientContext }) {
   const language = useSyncExternalStore(ctx.locale.subscribe, () => ctx.locale.locale)
   const t = useMemo(() => translator(language === 'zh-CN' ? zh : en), [language])
-  const openSession = useCallback(async (sessionId: string) => window.location.assign(sessionPage(sessionId)), [])
+  const openSession = useCallback(
+    async (sessionId: string) => window.location.assign(sessionPage(sessionId)),
+    [],
+  )
   return <App t={t} openSession={openSession} services={ctx.profile.services} />
 }
 

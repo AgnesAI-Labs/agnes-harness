@@ -15,7 +15,11 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 export const translator = (dictionary: Record<string, string>): T =>
   ((key: string, params?: Record<string, unknown>) => {
     const template = dictionary[key] ?? key
-    return params ? template.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match)) : template
+    return params
+      ? template.replace(/\{(\w+)\}/g, (match, name: string) =>
+          name in params ? String(params[name]) : match,
+        )
+      : template
   }) as T
 function Panel({ t }: { t: T }) {
   return (
@@ -37,7 +41,7 @@ function unmount() {
   root = undefined
   container?.remove()
 }
-export const usePanel = () => usePanelServer(unmount)
+export const installPanel = () => usePanelServer(unmount)
 
 /** Flush pending fake-server responses and React state updates. */
 export async function settle() {
@@ -68,7 +72,9 @@ export async function remount(dictionary: Record<string, string> = zh) {
 export const all = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)]
 const CONTROLS = 'button, [role="button"], [role="tab"], [role="switch"], a'
 export function find(name: string, selector = CONTROLS): HTMLElement {
-  const match = all(selector).find((element) => element.textContent?.trim() === name || element.getAttribute('aria-label') === name)
+  const match = all(selector).find(
+    (element) => element.textContent?.trim() === name || element.getAttribute('aria-label') === name,
+  )
   if (!match) throw new Error(`No ${selector} named ${name}`)
   return match
 }
@@ -80,22 +86,44 @@ export async function click(target: string | HTMLElement) {
   })
   await settle()
 }
-export async function type(element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
-  const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : element instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
+export async function type(
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+  value: string,
+) {
+  const prototype =
+    element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : element instanceof HTMLSelectElement
+        ? HTMLSelectElement.prototype
+        : HTMLInputElement.prototype
   await act(async () => {
     Object.getOwnPropertyDescriptor(prototype, 'value')!.set!.call(element, value)
-    element.dispatchEvent(new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }))
+    element.dispatchEvent(
+      new Event(element instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }),
+    )
   })
   await settle()
 }
 /** The page's text without its stylesheet. */
-export const text = () => [...document.body.querySelectorAll('style')].reduce((all, style) => all.replace(style.textContent ?? '', ''), document.body.textContent ?? '')
+export const text = () =>
+  [...document.body.querySelectorAll('style')].reduce(
+    (all, style) => all.replace(style.textContent ?? '', ''),
+    document.body.textContent ?? '',
+  )
 export function field<E extends HTMLElement>(label: string): E {
-  const labelled = (element: HTMLElement) => !!element.id && all('label').some((item) => (item as HTMLLabelElement).htmlFor === element.id && item.textContent === label)
-  const match = all('input, textarea, select').find((element) => element.getAttribute('aria-label') === label || labelled(element))
+  const labelled = (element: HTMLElement) =>
+    !!element.id &&
+    all('label').some(
+      (item) => (item as HTMLLabelElement).htmlFor === element.id && item.textContent === label,
+    )
+  const match = all('input, textarea, select').find(
+    (element) => element.getAttribute('aria-label') === label || labelled(element),
+  )
   if (!match) throw new Error(`No field ${label}`)
   return match as unknown as E
 }
-export const at = (route: object) => sessionStorage.setItem('superagent/route', JSON.stringify({ route, stack: [] }))
+export const at = (route: object) =>
+  sessionStorage.setItem('superagent/route', JSON.stringify({ route, stack: [] }))
 /** Whether a field cannot be edited: disabled itself, or inside a disabled fieldset (happy-dom does not match `:disabled` through one). */
-export const disabled = (element: Element) => element.matches(':disabled') || !!element.closest('fieldset[disabled]')
+export const disabled = (element: Element) =>
+  element.matches(':disabled') || !!element.closest('fieldset[disabled]')

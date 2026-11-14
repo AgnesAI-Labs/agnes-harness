@@ -1,13 +1,34 @@
 import { expect, it } from 'vitest'
 import { defaultPrompts, SKILL_NAME } from '../../superagent/src/app/prompts.js'
-import { changedSections, lineDiff, partText, partWith, sectionText, skillNameFree, withOverride, withOverrides, withoutSkill, withSection } from '../src/prompt-config.js'
+import {
+  changedSections,
+  lineDiff,
+  partText,
+  partWith,
+  sectionText,
+  skillNameFree,
+  withOverride,
+  withOverrides,
+  withoutSkill,
+  withSection,
+} from '../src/prompt-config.js'
 
 it('reads and writes a configuration by section, and lists the sections two configurations differ in', () => {
   const config = withSection(defaultPrompts(), 'skill/testing', 'Run the tests.')
   expect(sectionText(config, 'skill/testing')).toBe('Run the tests.')
-  expect([sectionText(config, 'runtime/shared'), sectionText(config, 'skill/github'), sectionText(config, 'skills')]).toEqual([undefined, undefined, undefined])
-  expect(changedSections(withSection(config, 'scope', 'Mine'), withoutSkill(config, 'skill/testing'))).toEqual(['scope', 'skill/testing'])
-  expect(['testing', 'github', 'Bad Name', 'ok-2'].map((name) => skillNameFree(name, config, { skillName: SKILL_NAME.source, builtin: ['github'] }))).toEqual([false, false, false, true])
+  expect([
+    sectionText(config, 'runtime/shared'),
+    sectionText(config, 'skill/github'),
+    sectionText(config, 'skills'),
+  ]).toEqual([undefined, undefined, undefined])
+  expect(
+    changedSections(withSection(config, 'scope', 'Mine'), withoutSkill(config, 'skill/testing')),
+  ).toEqual(['scope', 'skill/testing'])
+  expect(
+    ['testing', 'github', 'Bad Name', 'ok-2'].map((name) =>
+      skillNameFree(name, config, { skillName: SKILL_NAME.source, builtin: ['github'] }),
+    ),
+  ).toEqual([false, false, false, true])
 })
 
 it('diffs two texts by line, folding a long unchanged run to its ends, and reads a team part with another text', () => {
@@ -36,7 +57,11 @@ it('overrides a built-in part, keeping the built-in text it was edited from unti
   }
   const edited = withOverride(defaultPrompts(), part, 'Ours.')
   expect(edited.overrides).toEqual({ 'runtime/shared': { text: 'Ours.', base: 'now' } })
-  expect([sectionText(edited, 'part/runtime/shared'), partText(edited, part), partText(defaultPrompts(), part)]).toEqual(['Ours.', 'Ours.', 'Built in.'])
+  expect([
+    sectionText(edited, 'part/runtime/shared'),
+    partText(edited, part),
+    partText(defaultPrompts(), part),
+  ]).toEqual(['Ours.', 'Ours.', 'Built in.'])
   // An override edited from an earlier built-in text keeps that base while edited, and takes the current one when re-based.
   const earlier = { ...defaultPrompts(), overrides: { 'runtime/shared': { text: 'Ours.', base: 'earlier' } } }
   expect(withOverride(earlier, part, 'Ours, edited.').overrides).toEqual({

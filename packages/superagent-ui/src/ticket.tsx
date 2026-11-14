@@ -7,19 +7,48 @@ import { usePanel } from './provider.js'
 import { settingsRoute } from './route.js'
 import { automatedRuns, Earlier, ThreadLine } from './rows.js'
 import { actorName, localized, readableMarkers, reasonLabel, valueLabel, when } from './text.js'
-import { ActionLink, ConfirmButton, ExternalLink, Hint, KeyValues, LabelValue, LoadState, MarkdownLite, PageHead, Section, SessionButton, StageMark, When } from './widgets.js'
+import {
+  ActionLink,
+  ConfirmButton,
+  ExternalLink,
+  Hint,
+  KeyValues,
+  LabelValue,
+  LoadState,
+  MarkdownLite,
+  PageHead,
+  Section,
+  SessionButton,
+  StageMark,
+  When,
+} from './widgets.js'
 
 type Input = TicketPageView['inputs'][number]
-function InputLine({ input, earlier = [] }: { input: Input; earlier?: { id: string; at: string; preview: string }[] }) {
+function InputLine({
+  input,
+  earlier = [],
+}: {
+  input: Input
+  earlier?: { id: string; at: string; preview: string }[]
+}) {
   const { t, navigate } = usePanel()
   const trigger = input.kind === 'trigger' ? input.trigger : undefined
   return (
     <li className="dt-row">
-      <Dot state={input.delivered ? 'idle' : 'warning'} label={input.delivered ? t('inputDelivered') : t('inputUndelivered')} />
+      <Dot
+        state={input.delivered ? 'idle' : 'warning'}
+        label={input.delivered ? t('inputDelivered') : t('inputUndelivered')}
+      />
       <div className="dt-row-main">
         {trigger ? (
           <div className="dt-row-title">
-            <button type="button" className="dt-open" onClick={() => navigate({ page: 'trigger', id: trigger.thread, query: { trigger: trigger.id } })}>
+            <button
+              type="button"
+              className="dt-open"
+              onClick={() =>
+                navigate({ page: 'trigger', id: trigger.thread, query: { trigger: trigger.id } })
+              }
+            >
               {actorName(t, trigger.actor)}
               {t('labelSeparator')}
               {readableMarkers(t, trigger.preview) || t('empty')}
@@ -44,7 +73,10 @@ function InputLine({ input, earlier = [] }: { input: Input; earlier?: { id: stri
   )
 }
 function InputList({ inputs }: { inputs: Input[] }) {
-  const sender = (input: Input) => (input.kind === 'trigger' && input.trigger && !input.trigger.human ? `${input.trigger.actor.source}:${input.trigger.actor.id}` : undefined)
+  const sender = (input: Input) =>
+    input.kind === 'trigger' && input.trigger && !input.trigger.human
+      ? `${input.trigger.actor.source}:${input.trigger.actor.id}`
+      : undefined
   const shown = (input: Input) => ({
     id: input.id,
     at: input.at,
@@ -59,7 +91,17 @@ function InputList({ inputs }: { inputs: Input[] }) {
   )
 }
 
-function Details({ icon, title, open = false, children }: { icon: IconName; title: ReactNode; open?: boolean; children: ReactNode }) {
+function Details({
+  icon,
+  title,
+  open = false,
+  children,
+}: {
+  icon: IconName
+  title: ReactNode
+  open?: boolean
+  children: ReactNode
+}) {
   const [shown, setShown] = useState(open)
   return (
     <DisclosureRow icon={<Icon name={icon} />} title={title} open={shown} onToggle={() => setShown(!shown)}>
@@ -77,12 +119,23 @@ function Assignments({ ticket }: { ticket: TicketPageView }) {
         .reverse()
         .map((item, index) => (
           <li key={item.id} className="dt-row">
-            <Dot state={item.state === 'running' ? reportDot(item.report?.state) : 'idle'} label={valueLabel(t, 'assignment', item.state)} />
+            <Dot
+              state={item.state === 'running' ? reportDot(item.report?.state) : 'idle'}
+              label={valueLabel(t, 'assignment', item.state)}
+            />
             <div className="dt-row-main">
-              <div className="dt-row-title">{t('assignmentNumber', { number: ticket.assignments.length - index })}</div>
+              <div className="dt-row-title">
+                {t('assignmentNumber', { number: ticket.assignments.length - index })}
+              </div>
               <div className="dt-row-meta">
                 {/* A running Assignment whose worker reported a non-progress state has ended its turn; show that report as its tag and end its span there. */}
-                {item.turnEndedAt && item.report ? <Tag tone="neutral">{report(item.report.state)}</Tag> : <Tag tone={item.state === 'running' ? 'info' : 'neutral'}>{valueLabel(t, 'assignment', item.state)}</Tag>}
+                {item.turnEndedAt && item.report ? (
+                  <Tag tone="neutral">{report(item.report.state)}</Tag>
+                ) : (
+                  <Tag tone={item.state === 'running' ? 'info' : 'neutral'}>
+                    {valueLabel(t, 'assignment', item.state)}
+                  </Tag>
+                )}
                 {item.state !== 'running' && item.report && <span>{report(item.report.state)}</span>}
                 <span>
                   {t('assignmentSpan', {
@@ -122,6 +175,7 @@ function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: stri
         [
           t('term.trigger'),
           <button
+            key="trigger"
             type="button"
             className="dt-trigger-link"
             onClick={() =>
@@ -143,11 +197,13 @@ function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: stri
         ],
         [
           t('term.decision'),
-          <div className="dt-kv-stack">
+          <div key="decision" className="dt-kv-stack">
             <span>{decisionMark(t, decision.outcome).label}</span>
             <Hint>{reasonLabel(t, decision.reason)}</Hint>
             {decision.rules.map((rule) => (
-              <Hint key={rule.id}>{t(rule.matched ? 'ruleMatched' : 'ruleUnmatched', { rule: rule.name, reason: rule.reason })}</Hint>
+              <Hint key={rule.id}>
+                {t(rule.matched ? 'ruleMatched' : 'ruleUnmatched', { rule: rule.name, reason: rule.reason })}
+              </Hint>
             ))}
             {direction && (
               <Hint>
@@ -164,7 +220,11 @@ function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: stri
       ]
     : []
   const version = (
-    <button type="button" className="dt-textlink dt-mono" onClick={() => navigate(settingsRoute('eval', { version: mandate.policyVersion }))}>
+    <button
+      type="button"
+      className="dt-textlink dt-mono"
+      onClick={() => navigate(settingsRoute('eval', { version: mandate.policyVersion }))}
+    >
       {mandate.policyVersion.slice(0, 8)}
     </button>
   )
@@ -193,7 +253,11 @@ export function TicketPage({ id }: { id: string }) {
     return (
       <>
         <PageHead title={t('term.ticket')} />
-        {error instanceof ApiError && error.missing ? <Hint>{t('ticketNotFound')}</Hint> : <LoadState error={error} loading />}
+        {error instanceof ApiError && error.missing ? (
+          <Hint>{t('ticketNotFound')}</Hint>
+        ) : (
+          <LoadState error={error} loading />
+        )}
       </>
     )
   const status = ticketMark(t, data)
@@ -215,15 +279,34 @@ export function TicketPage({ id }: { id: string }) {
   return (
     <>
       <PageHead title={data.title}>
-        {opening?.url && <ActionLink href={opening.url}>{t('openThread', { source: valueLabel(t, 'source', opening.source) })}</ActionLink>}
-        {data.actions.retry && <ConfirmButton variant="outline" icon="refresh" label={t('retry')} title={t('retryTitle')} message={t('retryConfirm', { title: data.title })} onConfirm={() => after(call('POST tickets/:id/retry', { id }))} />}
+        {opening?.url && (
+          <ActionLink href={opening.url}>
+            {t('openThread', { source: valueLabel(t, 'source', opening.source) })}
+          </ActionLink>
+        )}
+        {data.actions.retry && (
+          <ConfirmButton
+            variant="outline"
+            icon="refresh"
+            label={t('retry')}
+            title={t('retryTitle')}
+            message={t('retryConfirm', { title: data.title })}
+            onConfirm={() => after(call('POST tickets/:id/retry', { id }))}
+          />
+        )}
         {data.sessionId && <SessionButton variant="outline" sessionId={data.sessionId} />}
       </PageHead>
       {error && <LoadState error={error} loading={false} />}
       <div className="dt-row-meta dt-status-line">
         <StageMark state={status.dot} icon={status.icon} label={status.label} />
-        <LabelValue label={t('ticketMandateLabel')} value={valueLabel(t, 'strength', data.mandate.strength)} />
-        <LabelValue label={t('ticketActorLabel')} value={`${valueLabel(t, 'source', data.mandate.actor.source)} · ${actor}`} />
+        <LabelValue
+          label={t('ticketMandateLabel')}
+          value={valueLabel(t, 'strength', data.mandate.strength)}
+        />
+        <LabelValue
+          label={t('ticketActorLabel')}
+          value={`${valueLabel(t, 'source', data.mandate.actor.source)} · ${actor}`}
+        />
         <LabelValue label={t('ticketUpdatedLabel')} value={when(data.updatedAt, t('lang'))} />
       </div>
       {ended && <Hint>{ended}</Hint>}
@@ -256,7 +339,13 @@ export function TicketPage({ id }: { id: string }) {
       <MandateDetails ticket={data} actor={actor} />
       {undelivered.length > 0 && (
         <Section title={t('undeliveredInputs')} count={undelivered.length}>
-          <Hint>{data.deliveryError ? t('inputRetryHint') : data.paused ? t('inputPausedHint') : t('inputWaitingHint')}</Hint>
+          <Hint>
+            {data.deliveryError
+              ? t('inputRetryHint')
+              : data.paused
+                ? t('inputPausedHint')
+                : t('inputWaitingHint')}
+          </Hint>
           <InputList inputs={undelivered} />
         </Section>
       )}
@@ -283,7 +372,9 @@ export function TicketPage({ id }: { id: string }) {
                 {data.environment.map((variable) => (
                   <tr key={variable.key} title={localized(t, variable.description)}>
                     <td className="dt-mono">{variable.key}</td>
-                    <td className="dt-mono">{variable.value || <span className="dt-hint">{t('empty')}</span>}</td>
+                    <td className="dt-mono">
+                      {variable.value || <span className="dt-hint">{t('empty')}</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -302,16 +393,38 @@ export function TicketPage({ id }: { id: string }) {
           </ul>
         </Details>
         {data.inputs.length > undelivered.length && (
-          <Details icon="inbox" title={t('deliveredInputs', { count: data.inputs.length - undelivered.length })}>
+          <Details
+            icon="inbox"
+            title={t('deliveredInputs', { count: data.inputs.length - undelivered.length })}
+          >
             <InputList inputs={data.inputs.filter((input) => input.delivered)} />
           </Details>
         )}
         <Details icon="hash" title={t('identifiers')}>
           <KeyValues
             rows={[
-              [t('ticketId'), <span className="dt-mono">{data.id}</span>],
-              [t('executionDirectory'), <span className="dt-mono">{data.directory ?? t('empty')}</span>],
-              ...(legacy && data.mandate.scope ? [[t('legacyAssignment'), <span className="dt-mono dt-clamp">{data.mandate.scope}</span>] as [string, ReactNode]] : []),
+              [
+                t('ticketId'),
+                <span key="id" className="dt-mono">
+                  {data.id}
+                </span>,
+              ],
+              [
+                t('executionDirectory'),
+                <span key="directory" className="dt-mono">
+                  {data.directory ?? t('empty')}
+                </span>,
+              ],
+              ...(legacy && data.mandate.scope
+                ? [
+                    [
+                      t('legacyAssignment'),
+                      <span key="scope" className="dt-mono dt-clamp">
+                        {data.mandate.scope}
+                      </span>,
+                    ] as [string, ReactNode],
+                  ]
+                : []),
             ]}
           />
         </Details>
@@ -319,7 +432,13 @@ export function TicketPage({ id }: { id: string }) {
       {data.actions.stop && (
         <div className="dt-danger-zone">
           <span className="dt-hint">{t('stopHint')}</span>
-          <ConfirmButton variant="outline" label={t('stop')} title={t('stopConfirmTitle')} message={t('stopConfirm', { title: data.title })} onConfirm={() => after(call('POST tickets/:id/stop', { id }))} />
+          <ConfirmButton
+            variant="outline"
+            label={t('stop')}
+            title={t('stopConfirmTitle')}
+            message={t('stopConfirm', { title: data.title })}
+            onConfirm={() => after(call('POST tickets/:id/stop', { id }))}
+          />
         </div>
       )}
     </>

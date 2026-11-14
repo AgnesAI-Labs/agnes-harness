@@ -37,13 +37,30 @@ it('marks each Ticket stage by whom it waits for, and an ended Ticket by its out
       ended: { at: '', by: outcome === 'stopped' ? 'human' : 'executor', outcome },
     }),
   )
-  expect(ended.map((mark) => mark.label)).toEqual(['已完成', 'PR 已合并', 'PR 已关闭（未合并）', '无需处理', '人工停止'])
-  expect(new Set(ended.map(({ tone, dot, icon }) => `${tone} ${dot} ${icon}`))).toEqual(new Set(['neutral idle stop']))
-  expect(['failed', 'blocked', 'waiting', 'ready', 'progress', undefined].map(reportDot)).toEqual(['error', 'warning', 'warning', 'done', 'ongoing', 'ongoing'])
+  expect(ended.map((mark) => mark.label)).toEqual([
+    '已完成',
+    'PR 已合并',
+    'PR 已关闭（未合并）',
+    '无需处理',
+    '人工停止',
+  ])
+  expect(new Set(ended.map(({ tone, dot, icon }) => `${tone} ${dot} ${icon}`))).toEqual(
+    new Set(['neutral idle stop']),
+  )
+  expect(['failed', 'blocked', 'waiting', 'ready', 'progress', undefined].map(reportDot)).toEqual([
+    'error',
+    'warning',
+    'warning',
+    'done',
+    'ongoing',
+    'ongoing',
+  ])
 })
 
 it('marks each Thread stage, Source state and Decision outcome', () => {
-  const threads = (['error', 'evaluating', 'queued', 'subscribed', 'dormant', 'unsubscribed'] as const).map((stage) => threadMark(t, { stage, pending: 2 }))
+  const threads = (['error', 'evaluating', 'queued', 'subscribed', 'dormant', 'unsubscribed'] as const).map(
+    (stage) => threadMark(t, { stage, pending: 2 }),
+  )
   expect(threads.map(({ label, dot, icon }) => [label, dot, icon])).toEqual([
     ['轮询失败', 'error', 'alert'],
     ['评估进行中', 'ongoing', 'running'],
@@ -52,7 +69,9 @@ it('marks each Thread stage, Source state and Decision outcome', () => {
     ['工单已结束', 'idle', 'clock'],
     ['未订阅', 'idle', 'hash'],
   ])
-  const sources = (['missing', 'off', 'error', 'setup', 'starting', 'paused', 'ready'] as const).map((state) => sourceMark(t, state))
+  const sources = (['missing', 'off', 'error', 'setup', 'starting', 'paused', 'ready'] as const).map(
+    (state) => sourceMark(t, state),
+  )
   expect(sources.map(({ label, dot }) => [label, dot])).toEqual([
     ['插件未安装', 'idle'],
     ['已关闭', 'idle'],
@@ -62,7 +81,9 @@ it('marks each Thread stage, Source state and Decision outcome', () => {
     ['待处理', 'warning'],
     ['运行中', 'done'],
   ])
-  const decisions = (['accept', 'reopen', 'stop', 'ignore', 'unavailable', 'wouldAccept'] as const).map((outcome) => decisionMark(t, outcome))
+  const decisions = (['accept', 'reopen', 'stop', 'ignore', 'unavailable', 'wouldAccept'] as const).map(
+    (outcome) => decisionMark(t, outcome),
+  )
   expect(decisions.map(({ label, tone, dot, icon }) => [label, tone, dot, icon])).toEqual([
     ['接单', 'success', 'done', 'decision'],
     ['续做', 'success', 'done', 'refresh'],

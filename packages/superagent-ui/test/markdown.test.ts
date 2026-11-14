@@ -13,7 +13,9 @@ it('reads headings, paragraphs and lists, a list ending at a blank line or at an
 
 it('reads bold, inline code and links, and shows a bare address by its host and a short path', () => {
   const log = 'https://ci.example.com/runs/123456789012345678901234/log'
-  expect(inlines(`**Done**: \`npm test\` in [the PR](https://github.com/acme/widgets/pull/42), log at ${log}`)).toEqual([
+  expect(
+    inlines(`**Done**: \`npm test\` in [the PR](https://github.com/acme/widgets/pull/42), log at ${log}`),
+  ).toEqual([
     { kind: 'bold', text: 'Done' },
     { kind: 'text', text: ': ' },
     { kind: 'code', text: 'npm test' },
@@ -34,7 +36,9 @@ it('keeps a link to anything but a web address as text, and leaves the punctuati
         .join(''),
     ).toBe(text)
   }
-  expect(linkify('See https://example.com/a. Then (https://example.com/b) and https://example.com/c?')).toEqual([
+  expect(
+    linkify('See https://example.com/a. Then (https://example.com/b) and https://example.com/c?'),
+  ).toEqual([
     { kind: 'text', text: 'See ' },
     { kind: 'link', text: 'example.com/a', url: 'https://example.com/a' },
     { kind: 'text', text: '. Then (' },

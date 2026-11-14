@@ -11,7 +11,13 @@ import { CheckSetupButton, ConfirmButton, Hint, LoadState, Section, SetupMessage
 function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () => Promise<void> }) {
   const { t, call, navigate } = usePanel()
   const post = useAction((request: () => Promise<unknown>) => request(), { reload: onChanged })
-  const row = (title: string, detail: ReactNode, route: Route | undefined, hint?: string, actions?: ReactNode) => (
+  const row = (
+    title: string,
+    detail: ReactNode,
+    route: Route | undefined,
+    hint?: string,
+    actions?: ReactNode,
+  ) => (
     <li className="dt-row dt-link dt-att dt-att-error">
       <div className="dt-row-main">
         <div className="dt-att-what">
@@ -30,7 +36,12 @@ function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () =
     </li>
   )
   const go = (label: string, route: Route) => (
-    <Button variant="outline" size="sm" icon={<Icon name="settings" size={14} />} onClick={() => navigate(route)}>
+    <Button
+      variant="outline"
+      size="sm"
+      icon={<Icon name="settings" size={14} />}
+      onClick={() => navigate(route)}
+    >
       {label}
     </Button>
   )
@@ -49,9 +60,21 @@ function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () =
         <CheckSetupButton />,
       )
     case 'no-source':
-      return row(t('problemNoSource'), undefined, settingsRoute('source'), undefined, go(t('actionOpenSources'), settingsRoute('source')))
+      return row(
+        t('problemNoSource'),
+        undefined,
+        settingsRoute('source'),
+        undefined,
+        go(t('actionOpenSources'), settingsRoute('source')),
+      )
     case 'no-allowed':
-      return row(t('problemNoAllowed'), undefined, settingsRoute('eval'), undefined, go(t('actionAddAllowed'), settingsRoute('eval')))
+      return row(
+        t('problemNoAllowed'),
+        undefined,
+        settingsRoute('eval'),
+        undefined,
+        go(t('actionAddAllowed'), settingsRoute('eval')),
+      )
     case 'executor-paused':
       return row(
         t('problemPaused'),
@@ -71,10 +94,19 @@ function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () =
         />,
       )
     case 'runtime-error':
-      return row(t('problemRuntime', { name: valueLabel(t, 'health', problem.name) }), raw(problem.detail), undefined)
+      return row(
+        t('problemRuntime', { name: valueLabel(t, 'health', problem.name) }),
+        raw(problem.detail),
+        undefined,
+      )
     case 'source-error': {
       const health = problem.source.health
-      return row(t('sourceError', { source: localized(t, problem.source.title) }), health.code ? worded(healthText(t, health)) : raw(health.detail), { page: 'source' }, t('sourceErrorHint'))
+      return row(
+        t('sourceError', { source: localized(t, problem.source.title) }),
+        health.code ? worded(healthText(t, health)) : raw(health.detail),
+        { page: 'source' },
+        t('sourceErrorHint'),
+      )
     }
     case 'eval-overdue':
       return row(t('problemEvalOverdue', { thread: readableMarkers(t, problem.thread.title) }), undefined, {
@@ -173,7 +205,11 @@ export function OverviewPage() {
         {/* Received and evaluated counts operate on Triggers rather than Threads or Decisions, so they do not link to filtered views. */}
         <div className="dt-stats">
           {stat(t('flowReceivedLabel'), data.flow.received)}
-          {stat(t('flowFilteredLabel'), data.flow.filtered, data.flow.filtered ? { page: 'source' } : undefined)}
+          {stat(
+            t('flowFilteredLabel'),
+            data.flow.filtered,
+            data.flow.filtered ? { page: 'source' } : undefined,
+          )}
           {stat(t('flowJudgedLabel'), data.flow.judged)}
           {stat(t('flowAcceptedLabel'), data.flow.accepted, { page: 'eval', query: { window: '24h' } })}
           {data.flow.dropped > 0 && stat(t('flowDroppedLabel'), data.flow.dropped, { page: 'source' })}

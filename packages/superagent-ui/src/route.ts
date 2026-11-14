@@ -1,7 +1,13 @@
 /** Typed panel routes, route parser, and sessionStorage location history. */
 
 import { DECISION_FILTERS, type DecisionFilter } from './api.js'
-import { type SetupPlace, THREAD_FILTERS, type ThreadFilter, TICKET_FILTERS, type TicketFilter } from './shared.js'
+import {
+  type SetupPlace,
+  THREAD_FILTERS,
+  type ThreadFilter,
+  TICKET_FILTERS,
+  type TicketFilter,
+} from './shared.js'
 import type { T } from './text.js'
 
 export const TABS = ['overview', 'source', 'trigger', 'eval', 'execution', 'settings'] as const
@@ -10,18 +16,32 @@ export const SETTINGS_GROUPS = ['source', 'eval', 'execution', 'prompts', 'deplo
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 export type Route =
   | { page: 'overview' | 'source'; id?: undefined; query?: undefined }
-  | { page: 'trigger'; id?: undefined; query?: { filter?: ThreadFilter } }
-  | { page: 'trigger'; id: string; query?: { trigger?: string } }
-  | { page: 'eval'; id?: undefined; query?: { filter?: DecisionFilter; window?: '24h' } }
-  | { page: 'execution'; id?: undefined; query?: { filter?: TicketFilter } }
+  | { page: 'trigger'; id?: undefined; query?: { filter?: ThreadFilter | undefined } | undefined }
+  | { page: 'trigger'; id: string; query?: { trigger?: string | undefined } | undefined }
+  | {
+      page: 'eval'
+      id?: undefined
+      query?: { filter?: DecisionFilter | undefined; window?: '24h' | undefined } | undefined
+    }
+  | { page: 'execution'; id?: undefined; query?: { filter?: TicketFilter | undefined } | undefined }
   | { page: 'execution'; id: string; query?: undefined }
-  | { page: 'settings'; id?: undefined; query: { group: SettingsGroup; source?: string; version?: string } }
+  | {
+      page: 'settings'
+      id?: undefined
+      query: { group: SettingsGroup; source?: string | undefined; version?: string | undefined }
+    }
 export const HOME: Route = { page: 'overview' }
-export const settingsRoute = (group: SettingsGroup, query: { source?: string; version?: string } = {}): Route => ({ page: 'settings', query: { group, ...query } })
-export const setupPage = (place: SetupPlace): Route => (place === 'deployment' ? settingsRoute('deployment') : settingsRoute('source', { source: place }))
-export const routeLabel = (t: T, route: Route): string => (route.id ? t(route.page === 'trigger' ? 'term.thread' : 'term.ticket') : t(`tab.${route.page}`))
+export const settingsRoute = (
+  group: SettingsGroup,
+  query: { source?: string | undefined; version?: string | undefined } = {},
+): Route => ({ page: 'settings', query: { group, ...query } })
+export const setupPage = (place: SetupPlace): Route =>
+  place === 'deployment' ? settingsRoute('deployment') : settingsRoute('source', { source: place })
+export const routeLabel = (t: T, route: Route): string =>
+  route.id ? t(route.page === 'trigger' ? 'term.thread' : 'term.ticket') : t(`tab.${route.page}`)
 
-const pick = <V extends string>(values: readonly V[], value: unknown): V | undefined => values.find((item) => item === value)
+const pick = <V extends string>(values: readonly V[], value: unknown): V | undefined =>
+  values.find((item) => item === value)
 function compact<Q extends object>(query: Q): Q | undefined {
   const set = Object.entries(query).filter(([, value]) => value !== undefined)
   return set.length ? (Object.fromEntries(set) as Q) : undefined
@@ -40,7 +60,9 @@ export function parseRoute(value: unknown): Route | undefined {
     case 'source':
       return { page }
     case 'trigger':
-      return record ? { page, id: record, query: compact({ trigger: text('trigger') }) } : { page, query: compact({ filter: pick(THREAD_FILTERS, query?.filter) }) }
+      return record
+        ? { page, id: record, query: compact({ trigger: text('trigger') }) }
+        : { page, query: compact({ filter: pick(THREAD_FILTERS, query?.filter) }) }
     case 'eval':
       return {
         page,
@@ -50,7 +72,9 @@ export function parseRoute(value: unknown): Route | undefined {
         }),
       }
     case 'execution':
-      return record ? { page, id: record } : { page, query: compact({ filter: pick(TICKET_FILTERS, query?.filter) }) }
+      return record
+        ? { page, id: record }
+        : { page, query: compact({ filter: pick(TICKET_FILTERS, query?.filter) }) }
     case 'settings':
       return {
         page,
@@ -70,7 +94,8 @@ export interface Location {
   stack: Route[]
   group?: SettingsGroup | undefined
 }
-export const lastSettingsGroup = ({ route, group }: Location): SettingsGroup => (route.page === 'settings' ? route.query.group : (group ?? 'source'))
+export const lastSettingsGroup = ({ route, group }: Location): SettingsGroup =>
+  route.page === 'settings' ? route.query.group : (group ?? 'source')
 export function initialLocation(): Location {
   try {
     const stored = JSON.parse(sessionStorage.getItem(ROUTE_KEY) ?? 'null') as {

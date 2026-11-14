@@ -12,7 +12,8 @@
   },
   "dependencies": {
     "@agnes/superagent": "workspace:*",
-    "@agnes/web-client": "workspace:*"
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*"
   },
   "peerDependencies": {
     "react": "18.3.1"

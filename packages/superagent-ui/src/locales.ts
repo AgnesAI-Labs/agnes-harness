@@ -11,9 +11,15 @@ const TEXT = {
   confirm: ['确定', 'Confirm'],
   loading: ['正在读取…', 'Loading…'],
   loadMore: ['加载更多', 'Load more'],
-  offline: ['无法连接到 Superagent 服务。请确认 AGH 正在运行、插件已启用，然后重试。', 'Cannot reach the Superagent service. Check that AGH is running and the plugin is enabled, then retry.'],
+  offline: [
+    '无法连接到 Superagent 服务。请确认 AGH 正在运行、插件已启用，然后重试。',
+    'Cannot reach the Superagent service. Check that AGH is running and the plugin is enabled, then retry.',
+  ],
   effectNotDone: ['操作没有完成（{state}）。', 'The action did not complete ({state}).'],
-  serverError: ['Superagent 服务内部错误（{status}），请查看运行日志后重试。', 'Superagent service error ({status}). Check the log, then retry.'],
+  serverError: [
+    'Superagent 服务内部错误（{status}），请查看运行日志后重试。',
+    'Superagent service error ({status}). Check the log, then retry.',
+  ],
   requestFailed: ['请求失败（{status}）。', 'Request failed ({status}).'],
   empty: ['—', '—'],
   yes: ['是', 'Yes'],
@@ -76,7 +82,10 @@ const TEXT = {
   listSeparator: ['、', ', '],
   labelSeparator: ['：', ': '],
   lang: ['zh', 'en'],
-  automatedEarlier: ['同一发送者之前还有 {count} 条自动消息', '{count} earlier automated messages from the same sender'],
+  automatedEarlier: [
+    '同一发送者之前还有 {count} 条自动消息',
+    '{count} earlier automated messages from the same sender',
+  ],
   collapse: ['收起', 'Collapse'],
   expand: ['展开全文', 'Show all'],
   cardMarker: ['[卡片消息]', '[card message]'],
@@ -94,8 +103,14 @@ const TEXT = {
   executingLabel: ['执行中', 'Executing'],
   queuedLabel: ['排队', 'Queued'],
   resumeProcessing: ['恢复处理', 'Resume processing'],
-  resumeProcessingConfirm: ['恢复后继续评估、派工和发送回复。', 'Resuming starts Evals, Assignments and replies again.'],
-  restartInterrupts: ['保存会重启 Superagent：{count} 个进行中的派工会中断，并带恢复说明重新开始。', 'Saving restarts Superagent: {count} running Assignments stop and start again with a recovery note.'],
+  resumeProcessingConfirm: [
+    '恢复后继续评估、派工和发送回复。',
+    'Resuming starts Evals, Assignments and replies again.',
+  ],
+  restartInterrupts: [
+    '保存会重启 Superagent：{count} 个进行中的派工会中断，并带恢复说明重新开始。',
+    'Saving restarts Superagent: {count} running Assignments stop and start again with a recovery note.',
+  ],
   sourceOff: ['已关闭', 'Off'],
   executorWaitingSetup: ['执行器等待部署检查', 'Executor waiting for the deployment check'],
   // Header, search, and tabs
@@ -104,14 +119,32 @@ const TEXT = {
   pagesLabel: ['Superagent 页面', 'Superagent pages'],
   searchPlaceholder: ['搜索工单、线程、触发或链接', 'Search Tickets, Threads, Triggers or links'],
   searchLabel: ['搜索', 'Search'],
-  searchFound: ['找到 {tickets} 个工单、{threads} 个线程、{items} 条触发', 'Found {tickets} Tickets, {threads} Threads and {items} Triggers'],
-  searchNone: ['没有找到。可以输入触发文字、GitHub PR 或 Issue 链接、#编号、飞书消息链接或 om_ 开头的消息 id。', 'Nothing found. Try Trigger text, a GitHub PR or Issue link, #number, a Feishu message link, or an om_ message id.'],
-  searchNoneGithub: ['没有找到。可以输入触发文字、GitHub PR 或 Issue 链接或 #编号。', 'Nothing found. Try Trigger text, a GitHub PR or Issue link, or #number.'],
+  searchFound: [
+    '找到 {tickets} 个工单、{threads} 个线程、{items} 条触发',
+    'Found {tickets} Tickets, {threads} Threads and {items} Triggers',
+  ],
+  searchNone: [
+    '没有找到。可以输入触发文字、GitHub PR 或 Issue 链接、#编号、飞书消息链接或 om_ 开头的消息 id。',
+    'Nothing found. Try Trigger text, a GitHub PR or Issue link, #number, a Feishu message link, or an om_ message id.',
+  ],
+  searchNoneGithub: [
+    '没有找到。可以输入触发文字、GitHub PR 或 Issue 链接或 #编号。',
+    'Nothing found. Try Trigger text, a GitHub PR or Issue link, or #number.',
+  ],
   'ticket.ended': ['已结束', 'ended'],
-  sessionListNotReady: ['Session 列表尚未加载，请稍后重试。', 'The Session list has not loaded yet; try again shortly.'],
-  sessionNotListed: ['这个 Session 不在当前会话列表里，可能已被归档或删除。', 'This Session is not in the current list; it may have been archived or deleted.'],
+  sessionListNotReady: [
+    'Session 列表尚未加载，请稍后重试。',
+    'The Session list has not loaded yet; try again shortly.',
+  ],
+  sessionNotListed: [
+    '这个 Session 不在当前会话列表里，可能已被归档或删除。',
+    'This Session is not in the current list; it may have been archived or deleted.',
+  ],
   searchFiltered: ['被来源过滤：{reason}', 'Filtered by its Source: {reason}'],
-  searchFoundCapped: ['找到 {tickets} 个工单、{threads} 个线程、前 {items} 条触发（请缩小搜索范围）', 'Found {tickets} Tickets, {threads} Threads and the first {items} Triggers (narrow the search)'],
+  searchFoundCapped: [
+    '找到 {tickets} 个工单、{threads} 个线程、前 {items} 条触发（请缩小搜索范围）',
+    'Found {tickets} Tickets, {threads} Threads and the first {items} Triggers (narrow the search)',
+  ],
   inThread: ['在 {thread}', 'in {thread}'],
   'tab.overview': ['概览', 'Overview'],
   'tab.source': ['来源', 'Source'],
@@ -126,11 +159,20 @@ const TEXT = {
   problemSetup: ['部署检查未通过，Superagent 暂不接单', 'Deployment check failed; Superagent takes no work'],
   problemNoSource: ['没有运行中的来源，不会收到任何触发', 'No Source is running; no Triggers arrive'],
   actionOpenSources: ['去打开来源', 'Turn on a Source'],
-  problemPaused: ['处理已暂停：不开始新的评估，不派工，不发送回复', 'Processing paused: no new Evals, Assignments or replies'],
-  problemReply: ['{source} 回复发送失败（已重试 {attempts} 次）', '{source} reply failing (retried {attempts} times)'],
+  problemPaused: [
+    '处理已暂停：不开始新的评估，不派工，不发送回复',
+    'Processing paused: no new Evals, Assignments or replies',
+  ],
+  problemReply: [
+    '{source} 回复发送失败（已重试 {attempts} 次）',
+    '{source} reply failing (retried {attempts} times)',
+  ],
   problemRuntime: ['运行异常：{name}', '{name} failing'],
   problemEvalUnavailable: ['评估未完成：{thread}', 'Eval unavailable: {thread}'],
-  sourceErrorHint: ['来源会在每次轮询时自动重试。持续出现时检查网络和该来源的登录状态。', "The Source retries on every poll. If this persists, check the network and the Source's sign-in."],
+  sourceErrorHint: [
+    '来源会在每次轮询时自动重试。持续出现时检查网络和该来源的登录状态。',
+    "The Source retries on every poll. If this persists, check the network and the Source's sign-in.",
+  ],
   details: ['详情 ›', 'Details ›'],
   lastDay: ['过去 24 小时', 'Last 24 hours'],
   flowReceivedLabel: ['到达', 'Arrived'],
@@ -139,7 +181,10 @@ const TEXT = {
   flowJudgedLabel: ['已评估', 'Evaluated'],
   flowAcceptedLabel: ['接单或续做', 'Accepted or continued'],
   idleLabel: ['等待新触发', 'Waiting for a Trigger'],
-  problemNoAllowed: ['没有人能发起工作：各来源上的名单都为空，任何请求都不会成为工单', 'No one may originate work: the lists on every Source are empty, so no request can become a Ticket'],
+  problemNoAllowed: [
+    '没有人能发起工作：各来源上的名单都为空，任何请求都不会成为工单',
+    'No one may originate work: the lists on every Source are empty, so no request can become a Ticket',
+  ],
   actionAddAllowed: ['去添加', 'Add senders'],
   'problemSetupFix.github': [
     '在设置 › 来源的 GitHub 卡片修正后保存，会重新检查；在 Superagent 之外修复的（例如登录 CLI），点“重新检查”。',
@@ -153,20 +198,32 @@ const TEXT = {
     '在部署设置里修正后保存，会重新检查；在 Superagent 之外修复的（例如升级 git），点“重新检查”。',
     'Fix it in the Deployment settings and save to check again; after a fix outside Superagent, such as upgrading git, choose Check again.',
   ],
-  problemSetupFeishu: ['飞书机器人检查未通过，飞书来源暂停', 'Feishu bot check failed; the Feishu Source is paused'],
+  problemSetupFeishu: [
+    '飞书机器人检查未通过，飞书来源暂停',
+    'Feishu bot check failed; the Feishu Source is paused',
+  ],
   // Source
   labelsAdded: ['列表已更新，新增：{names}', 'List updated, added: {names}'],
   labelsCurrent: ['列表已是最新', 'List is up to date'],
   labelsFailed: ['读取失败，列表保持不变：{error}', 'Could not read the list; it stays as it was: {error}'],
   sourceNotInstalled: ['插件未安装', 'Plugin not installed'],
-  sourceNotInstalledHint: ['提供这个来源的插件没有加载，配置按保存时的样子保留。', 'The plugin that provides this Source is not loaded; its configuration is kept as saved.'],
+  sourceNotInstalledHint: [
+    '提供这个来源的插件没有加载，配置按保存时的样子保留。',
+    'The plugin that provides this Source is not loaded; its configuration is kept as saved.',
+  ],
   sourceEnable: ['运行来源：{name}', 'Run Source: {name}'],
   addRow: ['添加', 'Add'],
   removeRow: ['移除：{name}', 'Remove: {name}'],
   sourceFilteredTitle: ['24 小时内最近被过滤的触发', 'Latest Triggers filtered in the last 24 hours'],
   sourceDroppedTitle: ['24 小时内放弃发送的消息', 'Not sent in the last 24 hours'],
-  sourceDroppedHint: ['这些消息要发往的对话已无法接收，或来源已不再监听该对话，因此放弃发送。', 'Their conversation can no longer receive them, or the Source no longer listens to it, so they are not sent.'],
-  sourceStatusIntro: ['每个来源是否在运行、过去 24 小时到达和被过滤的触发，以及被过滤的原因。', 'Whether each Source runs, the Triggers that arrived and were filtered in the last 24 hours, and why they were filtered.'],
+  sourceDroppedHint: [
+    '这些消息要发往的对话已无法接收，或来源已不再监听该对话，因此放弃发送。',
+    'Their conversation can no longer receive them, or the Source no longer listens to it, so they are not sent.',
+  ],
+  sourceStatusIntro: [
+    '每个来源是否在运行、过去 24 小时到达和被过滤的触发，以及被过滤的原因。',
+    'Whether each Source runs, the Triggers that arrived and were filtered in the last 24 hours, and why they were filtered.',
+  ],
   sourceReceivedLabel: ['24 小时到达', 'Arrived in 24 h'],
   sourceFilteredLabel: ['被过滤', 'Filtered'],
   sourceLatestLabel: ['最近', 'Latest'],
@@ -190,17 +247,32 @@ const TEXT = {
   pollFailed: ['轮询失败：{error}', 'Polling failed: {error}'],
   unsubscribe: ['取消订阅', 'Unsubscribe'],
   unsubscribeTitle: ['取消订阅', 'Unsubscribe'],
-  unsubscribeConfirm: ['取消后，“{title}”的新触发不再扇出给工单，直到下一次接单或关联。', 'New Triggers in "{title}" will stop fanning out to Tickets until the next accept or attach.'],
-  unsubscribePending: ['已取消订阅，结果等待注入主 Session。', 'Unsubscribed; the receipt is waiting to reach the main Session.'],
+  unsubscribeConfirm: [
+    '取消后，“{title}”的新触发不再扇出给工单，直到下一次接单或关联。',
+    'New Triggers in "{title}" will stop fanning out to Tickets until the next accept or attach.',
+  ],
+  unsubscribePending: [
+    '已取消订阅，结果等待注入主 Session。',
+    'Unsubscribed; the receipt is waiting to reach the main Session.',
+  ],
   openOriginal: ['打开原文', 'Open original'],
-  evaluatingBanner: ['评估进行中：{count} 条触发，{strength}，{deadline} 到期。', 'Eval running: {count} Triggers, {strength}, due {deadline}.'],
+  evaluatingBanner: [
+    '评估进行中：{count} 条触发，{strength}，{deadline} 到期。',
+    'Eval running: {count} Triggers, {strength}, due {deadline}.',
+  ],
   noTriggers: ['没有保留的触发。', 'No retained Triggers.'],
   dispositionQueued: ['已排队，等待评估', 'Queued for Eval'],
   dispositionEvaluating: ['评估进行中', 'Eval running'],
   dispositionFanout: ['扇出到 {count} 个工单', 'Fanned out to {count} Tickets'],
   dispositionDelivered: ['已送达工单', 'Delivered to Ticket'],
-  dispositionDeliveredHint: ['有人在已有工单的线程上跟进时，消息直接送达工单的执行器，不经评估，也不产生决定。', "A person's follow-up on a Thread with a Ticket goes straight to the Ticket's Executor, with no Eval and no Decision."],
-  handedBack: ['“{ticket}”的执行器把这条触发交回评估：{reason}', 'The Executor of “{ticket}” handed it back for an Eval: {reason}'],
+  dispositionDeliveredHint: [
+    '有人在已有工单的线程上跟进时，消息直接送达工单的执行器，不经评估，也不产生决定。',
+    "A person's follow-up on a Thread with a Ticket goes straight to the Ticket's Executor, with no Eval and no Decision.",
+  ],
+  handedBack: [
+    '“{ticket}”的执行器把这条触发交回评估：{reason}',
+    'The Executor of “{ticket}” handed it back for an Eval: {reason}',
+  ],
   inputHandedBack: ['已交回评估：{reason}', 'Handed back for an Eval: {reason}'],
   contextOnly: ['仅作上下文', 'Context only'],
   contextOnlyHint: [
@@ -218,12 +290,18 @@ const TEXT = {
   threadSubscribed: ['已订阅', 'Subscribed'],
   threadUnsubscribed: ['未订阅', 'Not subscribed'],
   fanoutTo: ['扇出给', 'Fans out to'],
-  unsubscribeHint: ['取消订阅后，这个线程的新触发不再扇出给工单，直到下一次接单或关联。', 'After unsubscribing, new Triggers here stop fanning out to Tickets until the next accept or attach.'],
+  unsubscribeHint: [
+    '取消订阅后，这个线程的新触发不再扇出给工单，直到下一次接单或关联。',
+    'After unsubscribing, new Triggers here stop fanning out to Tickets until the next accept or attach.',
+  ],
   'threadFilter.subscribed': ['已被订阅', 'Subscribed'],
   'threadFilter.evaluating': ['评估中', 'Evaluating'],
   'threadFilter.recent': ['24 小时内有新触发', 'New Triggers in 24 h'],
   'threadFilter.all': ['全部线程', 'All Threads'],
-  triggerIntro: ['触发按线程归组；线程决定它们扇出给哪些工单、由哪次评估处理。', 'Triggers grouped by Thread; the Thread decides which Tickets they fan out to and which Eval handles them.'],
+  triggerIntro: [
+    '触发按线程归组；线程决定它们扇出给哪些工单、由哪次评估处理。',
+    'Triggers grouped by Thread; the Thread decides which Tickets they fan out to and which Eval handles them.',
+  ],
   threadDecisions: ['这个线程的决定 · {count}', 'Decisions in this Thread · {count}'],
   // Eval
   policyVersionHint: [
@@ -232,8 +310,14 @@ const TEXT = {
   ],
   syncNeedsSave: ['请先保存或放弃修改，再同步。', 'Save or discard your changes before syncing.'],
   acceptMode: ['接单模式', 'Accept mode'],
-  'modeOption.off': ['只处理明确的请求，不评估其他触发', 'Only explicit requests are handled; other Triggers are not evaluated'],
-  'modeOption.observe': ['评估其他触发并记录研判，但不接单', 'Other Triggers are evaluated and Assessments recorded, but nothing is accepted'],
+  'modeOption.off': [
+    '只处理明确的请求，不评估其他触发',
+    'Only explicit requests are handled; other Triggers are not evaluated',
+  ],
+  'modeOption.observe': [
+    '评估其他触发并记录研判，但不接单',
+    'Other Triggers are evaluated and Assessments recorded, but nothing is accepted',
+  ],
   'modeOption.auto': ['其他触发符合规则时接单', 'Other Triggers that match a rule are accepted'],
   rulesHint: [
     '写明可以接什么、应忽略什么，也可以写明按这条规则接下的工单请谁审阅 PR。多条命中只接一单，有冲突或不明确时不接单。',
@@ -243,14 +327,23 @@ const TEXT = {
   rulesEmpty: ['暂无规则，不会主动接单。', 'No rules; nothing is accepted proactively.'],
   ruleName: ['规则名称', 'Rule name'],
   ruleInstruction: ['接单条件', 'Acceptance condition'],
-  ruleInstructionPlaceholder: ['例如：明确要求修正已有说明中的失效链接；不新增或改变产品承诺。', 'For example: explicit requests to fix broken links in existing docs; no new product promises.'],
+  ruleInstructionPlaceholder: [
+    '例如：明确要求修正已有说明中的失效链接；不新增或改变产品承诺。',
+    'For example: explicit requests to fix broken links in existing docs; no new product promises.',
+  ],
   ruleEnable: ['启用规则：{name}', 'Enable rule: {name}'],
   newRule: ['新规则', 'New rule'],
   duplicate: ['复制', 'Duplicate'],
   copySuffix: [' 副本', ' copy'],
   evalTimeout: ['单次评估时限 / 秒', 'Eval time limit / seconds'],
-  evalTimeoutHint: ['主 Session 读取上下文并研判。到期后记为未完成，后续触发重新评估。', 'The main Session reads context and assesses. When time runs out the Eval is unavailable and later Triggers are evaluated again.'],
-  evalIntro: ['评估决定一批触发是否成为工作：推断出的候选能否接单、评估时限和研判模型。', 'Eval decides whether a batch of Triggers becomes work: whether inferred candidates may be accepted, the time limit, and the assessor model.'],
+  evalTimeoutHint: [
+    '主 Session 读取上下文并研判。到期后记为未完成，后续触发重新评估。',
+    'The main Session reads context and assesses. When time runs out the Eval is unavailable and later Triggers are evaluated again.',
+  ],
+  evalIntro: [
+    '评估决定一批触发是否成为工作：推断出的候选能否接单、评估时限和研判模型。',
+    'Eval decides whether a batch of Triggers becomes work: whether inferred candidates may be accepted, the time limit, and the assessor model.',
+  ],
   evalSettings: ['评估设置', 'Eval settings'],
   policyIntro: [
     '评估依据的规则：接单规则，以及各来源上谁能发起工作。修改会生成新的策略版本，并通知进行中的工单。',
@@ -268,7 +361,10 @@ const TEXT = {
   'decisionFilter.unavailable': ['未完成', 'Unavailable'],
   'decisionFilter.all': ['全部', 'All'],
   lastDayOnly: ['仅过去 24 小时到达的触发 ✕', 'Triggers from the last 24 hours only ✕'],
-  evalStatusIntro: ['评估按策略对触发做出的决定，每条写明理由。', 'The Decisions Eval made on Triggers under the Policy, each with its reason.'],
+  evalStatusIntro: [
+    '评估按策略对触发做出的决定，每条写明理由。',
+    'The Decisions Eval made on Triggers under the Policy, each with its reason.',
+  ],
   policyPerSource: ['在各来源上', 'On each Source'],
   policyPerSourceHint: [
     '策略在每个来源上的部分：谁能通过这个来源发起工作，用这个来源自己的身份；不同来源之间不对应。要让智能体知道同一个人在各来源的账号，写在提示词里。',
@@ -292,13 +388,19 @@ const TEXT = {
   'admissionValue.explicit': ['明确的请求', 'Explicit request'],
   'admissionValue.inferred': ['推断的候选', 'Inferred candidate'],
   'admissionValue.ignore': ['忽略', 'Ignore'],
-  admissionAnyoneWarning: ['这个范围里任何人点名智能体都能直接发起工作', 'Anyone here who addresses the agent can originate work directly'],
+  admissionAnyoneWarning: [
+    '这个范围里任何人点名智能体都能直接发起工作',
+    'Anyone here who addresses the agent can originate work directly',
+  ],
   admissionFootnote: [
     '「推断的候选」按接单模式评估：模式为关闭时忽略。已有工单的线程里的跟进不看这张表。改成更弱的选项时，按这一格接下的进行中工单的授权失效。',
     'Inferred candidates follow the accept mode and are ignored when it is off. Follow-ups on Threads that have Tickets do not use this table. Weakening a cell revokes the Mandates of open Tickets accepted under it.',
   ],
   syncDone: ['上次同步', 'Last synced'],
-  evalRecordsPaused: ['处理已暂停：新的触发会被记录，但不会被评估。', 'Processing is paused: new Triggers are recorded but not evaluated.'],
+  evalRecordsPaused: [
+    '处理已暂停：新的触发会被记录，但不会被评估。',
+    'Processing is paused: new Triggers are recorded but not evaluated.',
+  ],
   resumeWhere: ['在执行状态中恢复', 'Resume in the Execution status'],
   // Execution
   'outcome.completed': ['已完成', 'Completed'],
@@ -337,7 +439,10 @@ const TEXT = {
   endedAt: ['{time} {outcome}：{reason}', '{time} {outcome}: {reason}'],
   assignmentNumber: ['第 {number} 次派工', 'Assignment {number}'],
   inputDelivered: ['已送达', 'Delivered'],
-  inputPausedHint: ['未送达：处理已暂停，恢复后送达', 'Undelivered: processing is paused; delivery resumes with it'],
+  inputPausedHint: [
+    '未送达：处理已暂停，恢复后送达',
+    'Undelivered: processing is paused; delivery resumes with it',
+  ],
   inputWaitingHint: ['未送达：等待派工运行', 'Undelivered: waiting for the Assignment to run'],
   inputRetryHint: ['未送达：会自动重试，直到送达', 'Undelivered: delivery is retried until it succeeds'],
   deliveryFailedPrefix: ['送达失败：', 'Delivery failed: '],
@@ -357,11 +462,17 @@ const TEXT = {
   'legacy.thread_followup': ['线程内跟进', 'Thread follow-up'],
   ruleMatched: ['{rule} · 匹配：{reason}', '{rule} · matched: {reason}'],
   ruleUnmatched: ['{rule} · 不匹配：{reason}', '{rule} · not matched: {reason}'],
-  directionLine: ['实施意图：{intent}；修改依据：{basis}；{design}', 'Implementation intent: {intent}; target: {basis}; {design}'],
+  directionLine: [
+    '实施意图：{intent}；修改依据：{basis}；{design}',
+    'Implementation intent: {intent}; target: {basis}; {design}',
+  ],
   intentYes: ['已明确', 'established'],
   intentNo: ['未明确', 'not established'],
   'targetBasis.specified': ['已明确目标', 'specified'],
-  'targetBasis.existing-standard': ['既有规范／已验证正确状态', 'existing standard or verified correct state'],
+  'targetBasis.existing-standard': [
+    '既有规范／已验证正确状态',
+    'existing standard or verified correct state',
+  ],
   'targetBasis.undetermined': ['目标未定', 'undetermined'],
   designNeeded: ['仍需产品／视觉设计决策', 'a product or design decision remains'],
   designNotNeeded: ['无需新增设计决策', 'no new design decision'],
@@ -372,9 +483,15 @@ const TEXT = {
   'basis.addressed': ['点名方式', 'Addressed by'],
   'addressed.mention': ['@ 智能体', 'Mention'],
   'addressed.direct': ['私聊', 'Direct message'],
-  executorIntro: ['执行器执行派工：每个工单一个执行器 Session 和执行目录。', 'The Executor runs Assignments: one Executor Session and directory per Ticket.'],
+  executorIntro: [
+    '执行器执行派工：每个工单一个执行器 Session 和执行目录。',
+    'The Executor runs Assignments: one Executor Session and directory per Ticket.',
+  ],
   executorModel: ['执行器模型', 'Executor model'],
-  executorModelHint: ['保存后用于新建的执行器 Session，已有 Session 保持原选择。留空继承 AGH 默认值。', 'Applies to new Executor Sessions; existing Sessions keep their choice. Leave empty to inherit the AGH default.'],
+  executorModelHint: [
+    '保存后用于新建的执行器 Session，已有 Session 保持原选择。留空继承 AGH 默认值。',
+    'Applies to new Executor Sessions; existing Sessions keep their choice. Leave empty to inherit the AGH default.',
+  ],
   assignmentReportShort: ['报告：{state}', 'Report: {state}'],
   assignmentSpan: ['{from} → {to}', '{from} → {to}'],
   inputUndelivered: ['未送达', 'Undelivered'],
@@ -384,7 +501,10 @@ const TEXT = {
     '停止后当前派工结束，Session 和执行目录保留；停止收回授权，之后线程里的消息不再恢复它，要继续需要重新接单。',
     'Stopping ends the current Assignment; its Session and directory stay. Stopping withdraws its Mandate: later messages on its Threads do not resume it, and continuing needs a new accept.',
   ],
-  idleHint: ['执行器结束了当前回合，没有提出问题；这些工单订阅的线程收到新触发时继续。', 'The Executor ended its turn without asking anything; a new Trigger on a subscribed Thread resumes it.'],
+  idleHint: [
+    '执行器结束了当前回合，没有提出问题；这些工单订阅的线程收到新触发时继续。',
+    'The Executor ended its turn without asking anything; a new Trigger on a subscribed Thread resumes it.',
+  ],
   'stage.answer': ['待回答', 'Awaiting answer'],
   'stage.review': ['待验收', 'Awaiting review'],
   'stage.blocked': ['待处理受阻', 'Blocked'],
@@ -400,10 +520,16 @@ const TEXT = {
   retry: ['重试', 'Retry'],
   failedPrefix: ['失败：', 'Failed: '],
   blockedPrefix: ['受阻：', 'Blocked: '],
-  retryConfirm: ['为“{title}”结束当前派工并重新派工？授权和订阅不变。', 'End the current Assignment of "{title}" and start a new one? Mandate and Subscriptions stay.'],
+  retryConfirm: [
+    '为“{title}”结束当前派工并重新派工？授权和订阅不变。',
+    'End the current Assignment of "{title}" and start a new one? Mandate and Subscriptions stay.',
+  ],
   retryTitle: ['重试工单', 'Retry Ticket'],
   undeliveredInputs: ['未送达的输入', 'Undelivered Inputs'],
-  executionStatusIntro: ['执行器的状态，以及按在等谁分组的工单。', "The Executor's state, and the Tickets grouped by who they wait on."],
+  executionStatusIntro: [
+    '执行器的状态，以及按在等谁分组的工单。',
+    "The Executor's state, and the Tickets grouped by who they wait on.",
+  ],
   ticketUndeliveredLabel: ['未送达', 'Undelivered'],
   ticketMandateLabel: ['授权', 'Mandate'],
   ticketActorLabel: ['发起', 'From'],
@@ -439,7 +565,10 @@ const TEXT = {
   environmentOwner: ['注册者', 'Registered by'],
   executorRunning: ['执行器运行中', 'Executor running'],
   pauseProcessing: ['暂停处理', 'Pause processing'],
-  pauseProcessingConfirm: ['暂停后，来源继续记录触发，但不开始新的评估、不派工、不发送回复，直到恢复。', 'While paused, Sources keep recording Triggers, but no Evals or Assignments start and no replies are sent until processing resumes.'],
+  pauseProcessingConfirm: [
+    '暂停后，来源继续记录触发，但不开始新的评估、不派工、不发送回复，直到恢复。',
+    'While paused, Sources keep recording Triggers, but no Evals or Assignments start and no replies are sent until processing resumes.',
+  ],
   processingPaused: ['处理已暂停', 'Processing paused'],
   'ticketFilter.open': ['进行中', 'Open'],
   'ticketFilter.person': ['待处理', 'Pending'],
@@ -449,7 +578,11 @@ const TEXT = {
   ...SETTINGS_TEXT,
 } as const satisfies Record<string, readonly [string, string]>
 export type SuperagentKey = keyof typeof TEXT
-const language = (index: 0 | 1) => Object.fromEntries(Object.entries(TEXT).map(([key, pair]) => [key, pair[index]])) as Record<SuperagentKey, string>
+const language = (index: 0 | 1) =>
+  Object.fromEntries(Object.entries(TEXT).map(([key, pair]) => [key, pair[index]])) as Record<
+    SuperagentKey,
+    string
+  >
 export const zh = language(0),
   en = language(1)
 
@@ -462,9 +595,32 @@ export const GLOSSARY = {
   execution: ['executor', 'environment', 'ticket', 'assignment', 'input', 'report', 'attention'],
 } as const
 export const GLOSSARY_VALUES = {
-  decision: ['decision.accept', 'decision.reopen', 'decision.stop', 'decision.ignore', 'decision.unavailable'],
+  decision: [
+    'decision.accept',
+    'decision.reopen',
+    'decision.stop',
+    'decision.ignore',
+    'decision.unavailable',
+  ],
   strength: ['strength.explicit', 'strength.inferred'],
-  ticket: ['stage.answer', 'stage.review', 'stage.blocked', 'stage.failed', 'stage.delivery', 'stage.queued', 'stage.working', 'stage.idle', 'ticket.ended'],
+  ticket: [
+    'stage.answer',
+    'stage.review',
+    'stage.blocked',
+    'stage.failed',
+    'stage.delivery',
+    'stage.queued',
+    'stage.working',
+    'stage.idle',
+    'ticket.ended',
+  ],
   assignment: ['assignment.pending', 'assignment.running', 'assignment.ended'],
-  report: ['report.progress', 'report.waiting', 'report.ready', 'report.blocked', 'report.failed', 'report.dropped'],
+  report: [
+    'report.progress',
+    'report.waiting',
+    'report.ready',
+    'report.blocked',
+    'report.failed',
+    'report.dropped',
+  ],
 } as const

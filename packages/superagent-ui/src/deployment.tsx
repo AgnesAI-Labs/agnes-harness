@@ -16,7 +16,11 @@ export function DeploymentPage({ setup }: { setup: SetupView }) {
   const { t } = usePanel()
   const accounts = setup.accounts
   const { machine } = setup
-  const feishu = accounts?.feishu ? accounts.feishu.name || accounts.feishu.botId : setup.feishuProblem ? setupText(t, setup.feishuProblem) : t('deploymentFeishuNone')
+  const feishu = accounts?.feishu
+    ? accounts.feishu.name || accounts.feishu.botId
+    : setup.feishuProblem
+      ? setupText(t, setup.feishuProblem)
+      : t('deploymentFeishuNone')
   return (
     <div className="dt-form">
       <Fields disabled>

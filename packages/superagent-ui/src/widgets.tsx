@@ -1,6 +1,8 @@
 /** Context-aware shared UI widgets: page/section headers, timestamps, Markdown rendering, and confirmation actions. */
+
+import { ConfirmDialog } from '@agnes/web-ui'
 import { Fragment, type ReactNode, useState } from 'react'
-import { Button, type DotState, Icon, type IconName, InfoTip, Modal, StateDot } from './controls.js'
+import { Button, type DotState, Icon, type IconName, InfoTip, StateDot } from './controls.js'
 import { type Inline, inlines, linkify, markdownBlocks } from './markdown.js'
 import { useAction, usePanel, usePanelData } from './provider.js'
 import { type SettingsGroup, settingsRoute } from './route.js'
@@ -17,7 +19,13 @@ export function When({ at }: { at: string | undefined }) {
     </time>
   )
 }
-export function SetupMessage({ problem, lead }: { problem: Pick<SetupProblem, 'code' | 'values'>; lead?: boolean }) {
+export function SetupMessage({
+  problem,
+  lead,
+}: {
+  problem: Pick<SetupProblem, 'code' | 'values'>
+  lead?: boolean
+}) {
   const { t } = usePanel()
   const text = setupText(t, problem)
   return (
@@ -27,7 +35,23 @@ export function SetupMessage({ problem, lead }: { problem: Pick<SetupProblem, 'c
     </>
   )
 }
-export function Section({ title, count, children, action, hint, badge, icon }: { title: string; count?: number | string; children: ReactNode; action?: ReactNode; hint?: string; badge?: ReactNode; icon?: IconName }) {
+export function Section({
+  title,
+  count,
+  children,
+  action,
+  hint,
+  badge,
+  icon,
+}: {
+  title: string
+  count?: number | string
+  children: ReactNode
+  action?: ReactNode
+  hint?: string
+  badge?: ReactNode
+  icon?: IconName
+}) {
   return (
     <section className="dt-section">
       <h2 className="dt-section-title">
@@ -133,44 +157,61 @@ export function ClampText({ text }: { text: string }) {
   )
 }
 
-export function ConfirmButton({ label, title, message, onConfirm, variant = 'ghost', icon }: { label: string; title: string; message: string; onConfirm: () => Promise<unknown>; variant?: 'ghost' | 'outline'; icon?: IconName }) {
+export function ConfirmButton({
+  label,
+  title,
+  message,
+  onConfirm,
+  variant = 'ghost',
+  icon,
+}: {
+  label: string
+  title: string
+  message: string
+  onConfirm: () => Promise<unknown>
+  variant?: 'ghost' | 'outline'
+  icon?: IconName
+}) {
   const { t } = usePanel()
   const [open, setOpen] = useState(false)
   const confirm = useAction(onConfirm)
   return (
     <>
-      <Button variant={variant} size="sm" icon={icon && <Icon name={icon} size={14} />} onClick={() => setOpen(true)}>
+      <Button
+        variant={variant}
+        size="sm"
+        icon={icon && <Icon name={icon} size={14} />}
+        onClick={() => setOpen(true)}
+      >
         {label}
       </Button>
-      <Modal
+      <ConfirmDialog
         open={open}
-        onClose={() => setOpen(false)}
         title={title}
-        closeLabel={t('close')}
-        description={message}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setOpen(false)}>
-              {t('cancel')}
-            </Button>
-            <Button
-              variant="primary"
-              disabled={confirm.busy}
-              onClick={() => {
-                void confirm.run().then((done) => {
-                  if (done) setOpen(false)
-                })
-              }}
-            >
-              {t('confirm')}
-            </Button>
-          </>
-        }
-      />
+        confirmLabel={t('confirm')}
+        cancelLabel={t('cancel')}
+        busy={confirm.busy}
+        onCancel={() => setOpen(false)}
+        onConfirm={() => {
+          void confirm.run().then((done) => {
+            if (done) setOpen(false)
+          })
+        }}
+      >
+        {message}
+      </ConfirmDialog>
     </>
   )
 }
-export function SessionButton({ sessionId, label, variant = 'ghost' }: { sessionId: string; label?: string; variant?: 'ghost' | 'outline' }) {
+export function SessionButton({
+  sessionId,
+  label,
+  variant = 'ghost',
+}: {
+  sessionId: string
+  label?: string
+  variant?: 'ghost' | 'outline'
+}) {
   const { t, openSession, notify } = usePanel()
   return (
     <Button
@@ -185,7 +226,15 @@ export function SessionButton({ sessionId, label, variant = 'ghost' }: { session
     </Button>
   )
 }
-export function ExternalLink({ href, children, icon = 'external' }: { href: string; children: ReactNode; icon?: IconName }) {
+export function ExternalLink({
+  href,
+  children,
+  icon = 'external',
+}: {
+  href: string
+  children: ReactNode
+  icon?: IconName
+}) {
   return (
     <a className="dt-inline-link dt-icon-link" href={href} {...external}>
       <Icon name={icon} size={13} />
@@ -193,7 +242,15 @@ export function ExternalLink({ href, children, icon = 'external' }: { href: stri
     </a>
   )
 }
-export function ActionLink({ href, children, icon = 'external' }: { href: string; children: ReactNode; icon?: IconName }) {
+export function ActionLink({
+  href,
+  children,
+  icon = 'external',
+}: {
+  href: string
+  children: ReactNode
+  icon?: IconName
+}) {
   return (
     <a className="dt-btn dt-btn-outline dt-btn-sm" href={href} {...external}>
       <span className="dt-btn-icon">
@@ -239,7 +296,12 @@ export function StatusHead({ hint, settings }: { hint: string; settings?: Settin
         <InfoTip text={hint} />
       </h2>
       {settings && (
-        <Button variant="ghost" size="sm" icon={<Icon name="settings" />} onClick={() => navigate(settingsRoute(settings))}>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<Icon name="settings" />}
+          onClick={() => navigate(settingsRoute(settings))}
+        >
           {t('tab.settings')}
         </Button>
       )}
@@ -272,7 +334,16 @@ export function CheckSetupButton() {
   const action = useAction(check)
   if (running > 0) {
     const message = t('setupCheckInterrupts', { count: running })
-    return <ConfirmButton variant="outline" icon="refresh" label={t('setupCheck')} title={t('setupCheck')} message={message} onConfirm={check} />
+    return (
+      <ConfirmButton
+        variant="outline"
+        icon="refresh"
+        label={t('setupCheck')}
+        title={t('setupCheck')}
+        message={message}
+        onConfirm={check}
+      />
+    )
   }
   const icon = <Icon name="refresh" size={14} />
   return (

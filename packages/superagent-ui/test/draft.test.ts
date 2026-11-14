@@ -9,7 +9,13 @@ const merged = (base: unknown, mine: unknown, theirs: unknown) => {
 
 it('takes each key from the side that changed it, through nested records', () => {
   const base = { mode: 'observe', model: { provider: 'a', model: 'x' }, skills: { one: '1', two: '2' } }
-  expect(merged(base, { ...base, mode: 'auto', skills: { one: '1!', two: '2' } }, { ...base, model: { provider: 'b', model: 'x' }, skills: { one: '1', two: '2?' } })).toEqual({
+  expect(
+    merged(
+      base,
+      { ...base, mode: 'auto', skills: { one: '1!', two: '2' } },
+      { ...base, model: { provider: 'b', model: 'x' }, skills: { one: '1', two: '2?' } },
+    ),
+  ).toEqual({
     value: { mode: 'auto', model: { provider: 'b', model: 'x' }, skills: { one: '1!', two: '2?' } },
     conflicts: [],
   })
@@ -17,7 +23,13 @@ it('takes each key from the side that changed it, through nested records', () =>
 
 it('keeps mine where both sides changed a key, and names it by its path', () => {
   const base = { eval: { timeoutSeconds: 120, mode: 'off' } }
-  expect(merged(base, { eval: { timeoutSeconds: 60, mode: 'off' } }, { eval: { timeoutSeconds: 300, mode: 'auto' } })).toEqual({
+  expect(
+    merged(
+      base,
+      { eval: { timeoutSeconds: 60, mode: 'off' } },
+      { eval: { timeoutSeconds: 300, mode: 'auto' } },
+    ),
+  ).toEqual({
     value: { eval: { timeoutSeconds: 60, mode: 'auto' } },
     conflicts: [['eval', 'timeoutSeconds']],
   })
@@ -59,8 +71,12 @@ it('merges a list without names as a whole', () => {
 
 type Value = { mode: string; limit: number }
 const saved: Value = { mode: 'off', limit: 1 }
-const t = ((key: string, values?: Record<string, unknown>) => (values ? `${key} ${JSON.stringify(values)}` : key)) as T
-const after = (actions: DraftAction<Value, undefined>[], state: DraftState<Value, undefined> = { phase: 'clean', seen: 1 }) => actions.reduce(draftReducer<Value, undefined>, state)
+const t = ((key: string, values?: Record<string, unknown>) =>
+  values ? `${key} ${JSON.stringify(values)}` : key) as T
+const after = (
+  actions: DraftAction<Value, undefined>[],
+  state: DraftState<Value, undefined> = { phase: 'clean', seen: 1 },
+) => actions.reduce(draftReducer<Value, undefined>, state)
 const edit = (value: Value, from = saved, revision = 1): DraftAction<Value, undefined> => ({
   type: 'edit',
   value,
@@ -97,8 +113,12 @@ it('merges another saved revision into a draft, tells a merge from a conflict, a
   })
   const conflict = after([arrived({ mode: 'observe', limit: 1 }, 2)], editing)
   expect(saveBarText(t, conflict)).toEqual({ error: 'saveConflict', status: '' })
-  expect(after([edit({ mode: 'auto', limit: 6 }, { mode: 'off', limit: 5 }, 2)], merged).notice).toBeUndefined()
-  expect(after([edit({ mode: 'auto', limit: 2 }, { mode: 'observe', limit: 1 }, 2)], conflict).notice).toMatchObject({ kind: 'conflict' })
+  expect(
+    after([edit({ mode: 'auto', limit: 6 }, { mode: 'off', limit: 5 }, 2)], merged).notice,
+  ).toBeUndefined()
+  expect(
+    after([edit({ mode: 'auto', limit: 2 }, { mode: 'observe', limit: 1 }, 2)], conflict).notice,
+  ).toMatchObject({ kind: 'conflict' })
   // Another save that made the same change leaves nothing to save.
   expect(after([arrived({ mode: 'auto', limit: 1 }, 2)], editing)).toEqual({ phase: 'clean', seen: 2 })
 })
@@ -141,7 +161,10 @@ it('waits for the revision its save made, keeping the value it sent, while an ol
 })
 
 it('keeps editing when the browser cannot store the draft, and says so', () => {
-  const unstored = after([edit({ mode: 'auto', limit: 1 }), { type: 'refused', notice: { kind: 'unstored', error: 'QuotaExceededError' } }])
+  const unstored = after([
+    edit({ mode: 'auto', limit: 1 }),
+    { type: 'refused', notice: { kind: 'unstored', error: 'QuotaExceededError' } },
+  ])
   expect(unstored.phase).toBe('editing')
   expect(saveBarText(t, unstored)).toEqual({
     error: 'draftFailed {"error":"QuotaExceededError"}',
@@ -155,5 +178,7 @@ it('keeps editing when the browser cannot store the draft, and says so', () => {
 
 it('removes an element of a named list that mine deleted and theirs changed, and names the conflict', () => {
   const rule = (id: string, name: string) => ({ id, name })
-  expect(merged([rule('a', 'A'), rule('b', 'B')], [rule('a', 'A')], [rule('a', 'A'), rule('b', 'B?')])).toEqual({ value: [rule('a', 'A')], conflicts: [['b']] })
+  expect(
+    merged([rule('a', 'A'), rule('b', 'B')], [rule('a', 'A')], [rule('a', 'A'), rule('b', 'B?')]),
+  ).toEqual({ value: [rule('a', 'A')], conflicts: [['b']] })
 })

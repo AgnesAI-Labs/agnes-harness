@@ -10,7 +10,15 @@ import { SettingsProvider } from './settings-kit.js'
 import { SourceSettings } from './source.js'
 
 const STAGE_GROUPS: readonly SettingsGroup[] = ['source', 'eval', 'execution']
-export function SettingsPage({ group, query, state }: { group: SettingsGroup; query: { source?: string; version?: string }; state: StateView }) {
+export function SettingsPage({
+  group,
+  query,
+  state,
+}: {
+  group: SettingsGroup
+  query: { source?: string | undefined; version?: string | undefined }
+  state: StateView
+}) {
   const { t, navigate } = usePanel()
   const content = (() => {
     switch (group) {
@@ -42,7 +50,14 @@ export function SettingsPage({ group, query, state }: { group: SettingsGroup; qu
     <div className="dt-settings">
       <nav className="dt-settings-nav" aria-label={t('tab.settings')}>
         {SETTINGS_GROUPS.map((value) => (
-          <button key={value} type="button" className="dt-settings-link" data-stage={STAGE_GROUPS.includes(value) || undefined} aria-current={value === group ? 'page' : undefined} onClick={() => navigate(settingsRoute(value), true)}>
+          <button
+            key={value}
+            type="button"
+            className="dt-settings-link"
+            data-stage={STAGE_GROUPS.includes(value) || undefined}
+            aria-current={value === group ? 'page' : undefined}
+            onClick={() => navigate(settingsRoute(value), true)}
+          >
             {t(`settingsGroup.${value}`)}
           </button>
         ))}

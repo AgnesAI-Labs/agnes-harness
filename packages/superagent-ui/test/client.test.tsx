@@ -2,9 +2,9 @@
 import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
+import { PANEL_SERVICES } from '../../superagent/src/runtime/services.js'
 import { ApiError, caller, inputOf, SERVICES, usePoll } from '../src/api.js'
 import { apply, sessionPage } from '../src/index.js'
-import { PANEL_SERVICES } from '../../superagent/src/runtime/services.js'
 import { en, zh } from '../src/locales.js'
 import { problems } from './helpers/schema.js'
 
@@ -161,7 +161,7 @@ it('sends each route as its service, with the path, query and body as one input'
       output: {},
     }))
   const call = caller(() => messages, { query, effect } as never)
-  await call('GET tickets', { query: { state: 'ended', limit: 20, offset: undefined } })
+  await call('GET tickets', { query: { state: 'ended', limit: 20, offset: undefined as never } })
   await call('GET search', { query: { q: '' } })
   await call('GET threads/:key', { key: 'feishu:oc_1:om/root', query: { limit: 50, before: 'x' } })
   await call('POST tickets/:id/stop', { id: 't1' })
@@ -193,7 +193,8 @@ it('sends each route as its service, with the path, query and body as one input'
 it('names the service of every route once, as a query for a GET and an effect for the rest', () => {
   const names = Object.values(SERVICES).map(([name]) => name)
   expect(new Set(names).size).toBe(25)
-  for (const [route, [, kind]] of Object.entries(SERVICES)) expect(kind, route).toBe(route.startsWith('GET ') ? 'query' : 'effect')
+  for (const [route, [, kind]] of Object.entries(SERVICES))
+    expect(kind, route).toBe(route.startsWith('GET ') ? 'query' : 'effect')
 })
 
 it('tells a Superagent that does not answer from a record it does not have, and words each failure by what failed', async () => {
@@ -223,8 +224,20 @@ it('tells a Superagent that does not answer from a record it does not have, and 
     }),
   ).toEqual({ message: 'not running', status: 404, missing: false, unreachable: true })
   // A refusal or a failure of the Host is no lost connection: the panel says what failed, not "offline".
-  expect(await failure({ query: async () => { throw new Error('INVALID_PARAMS (-32602)') } })).toEqual({ message: 'request 400', status: 400, missing: false, unreachable: false })
-  expect(await failure({ query: async () => { throw new Error('INTERNAL_ERROR (-32603)') } })).toEqual({ message: 'server 500', status: 500, missing: false, unreachable: false })
+  expect(
+    await failure({
+      query: async () => {
+        throw new Error('INVALID_PARAMS (-32602)')
+      },
+    }),
+  ).toEqual({ message: 'request 400', status: 400, missing: false, unreachable: false })
+  expect(
+    await failure({
+      query: async () => {
+        throw new Error('INTERNAL_ERROR (-32603)')
+      },
+    }),
+  ).toEqual({ message: 'server 500', status: 500, missing: false, unreachable: false })
   expect(await failure({ query: async () => ({ failure: { status: 502 } }) })).toEqual({
     message: 'server 502',
     status: 502,
@@ -247,7 +260,9 @@ it('tells a Superagent that does not answer from a record it does not have, and 
     missing: true,
     unreachable: false,
   })
-  expect(await failure({ query: async () => ({ failure: { status: 404, error: 'Ticket not found' } }) })).toMatchObject({ message: 'Ticket not found', missing: true })
+  expect(
+    await failure({ query: async () => ({ failure: { status: 404, error: 'Ticket not found' } }) }),
+  ).toMatchObject({ message: 'Ticket not found', missing: true })
 })
 
 it('reports an effect that did not complete, and an effect refused as a failure', async () => {
@@ -269,9 +284,17 @@ it('reports an effect that did not complete, and an effect refused as a failure'
 
 it('asks for as many rows as "load more" has grown to: no limit is refused by the Host, the services clamp it', () => {
   // The Eval list grows its limit by one page per click without bound; the declared schemas must admit that.
-  for (const [route, limit] of [['GET decisions', 5000], ['GET tickets', 5000], ['GET threads', 5000], ['GET threads/:key', 5000]] as const) {
+  for (const [route, limit] of [
+    ['GET decisions', 5000],
+    ['GET tickets', 5000],
+    ['GET threads', 5000],
+    ['GET threads/:key', 5000],
+  ] as const) {
     const [name] = SERVICES[route]
-    const input = inputOf(route, { ...(route === 'GET threads/:key' ? { key: 'github:1' } : {}), query: { limit } })
+    const input = inputOf(route, {
+      ...(route === 'GET threads/:key' ? { key: 'github:1' } : {}),
+      query: { limit },
+    })
     const service = PANEL_SERVICES.find((item) => item.name === name)
     expect(problems(service?.inputSchema as never, input), route).toEqual([])
   }

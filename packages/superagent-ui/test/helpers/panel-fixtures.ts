@@ -5,7 +5,14 @@ import { feishuChannel } from '../../../superagent/src/sources/feishu-trigger.js
 import { githubKind } from '../../../superagent/src/sources/github.js'
 import { githubChannel } from '../../../superagent/src/sources/github-trigger.js'
 import type { SourceKind } from '../../../superagent/src/sources/kind.js'
-import type { DroppedReply, PromptsView, ThreadRow, TicketRow, TicketStage, TriggerRow } from '../../src/api.js'
+import type {
+  DroppedReply,
+  PromptsView,
+  ThreadRow,
+  TicketRow,
+  TicketStage,
+  TriggerRow,
+} from '../../src/api.js'
 
 export const MEMBER = 'ou_alice'
 export const ALLOWED: Record<string, { id: string; name?: string }[]> = {
@@ -19,7 +26,8 @@ export function actor(source: string, id: string, human = true): Actor {
   const entry = ALLOWED[source]?.find((item) => item.id.toLowerCase() === id.toLowerCase())
   const unnamed = source === 'feishu' ? feishuKind.policy?.unnamed : undefined
   const name = entry ? entry.name || entry.id : unnamed ? undefined : id
-  return { source, id, name: name ? { zh: name, en: name } : human ? unnamed?.person : unnamed?.bot }
+  const shown = name ? { zh: name, en: name } : human ? unnamed?.person : unnamed?.bot
+  return { source, id, ...(shown ? { name: shown } : {}) }
 }
 type TicketFields = Omit<TicketRow, 'stage' | 'action'>
 export const TICKET = {
@@ -52,7 +60,10 @@ export const TICKET = {
     },
   ],
 } satisfies TicketFields
-export const ticketSummary = (fields: Partial<TicketFields> = {}, stage: TicketStage = { stage: 'working' }): TicketRow => ({ ...TICKET, ...fields, ...stage })
+export const ticketSummary = (
+  fields: Partial<TicketFields> = {},
+  stage: TicketStage = { stage: 'working' },
+): TicketRow => ({ ...TICKET, ...fields, ...stage })
 export const threadSummary = (fields: Partial<ThreadRow> = {}): ThreadRow => ({
   key: 'feishu:oc_1:om_root',
   source: 'feishu',
@@ -100,13 +111,26 @@ export function trigger(id: string, at: string, { disposition, ...fields }: Trig
   return { ...row, actions: { requeue: requeueable(row) } }
 }
 const requeueable = ({ human, disposition: d }: Pick<TriggerRow, 'human' | 'disposition'>) =>
-  human && !d.queued && !d.evaluating && (!!d.filtered || d.decision?.outcome === 'unavailable' || d.delivered || (d.fanout.length > 0 && !d.decision))
+  human &&
+  !d.queued &&
+  !d.evaluating &&
+  (!!d.filtered ||
+    d.decision?.outcome === 'unavailable' ||
+    d.delivered ||
+    (d.fanout.length > 0 && !d.decision))
 type SearchItem = ApiResponse<'GET search'>['items'][number]
-export function found(id: string, at: string, { threadTitle, filtered, ...fields }: TriggerFields & { threadTitle?: string; filtered?: string } = {}): SearchItem {
+export function found(
+  id: string,
+  at: string,
+  { threadTitle, filtered, ...fields }: TriggerFields & { threadTitle?: string; filtered?: string } = {},
+): SearchItem {
   const { text: _text, ...result } = trigger(id, at, fields)
   return filtered === undefined ? { ...result, threadTitle } : { ...result, threadTitle: undefined, filtered }
 }
-export const promptVersion = (revision: number, config: PromptsView['current']['config']): PromptsView['current'] => ({
+export const promptVersion = (
+  revision: number,
+  config: PromptsView['current']['config'],
+): PromptsView['current'] => ({
   revision,
   previousRevision: revision ? revision - 1 : null,
   savedAt: '',
@@ -114,7 +138,13 @@ export const promptVersion = (revision: number, config: PromptsView['current']['
   config,
 })
 /** Build a dropped outbound reply fixture (`feishu` replies to `oc_1`/`om_root`; `github` comments on PR #42). */
-export const droppedReply = (id: string, hoursAgo: number, source: 'feishu' | 'github', reason: DroppedReply['dropped']['reason'], { ticket, thread }: { ticket?: DroppedReply['ticket']; thread?: false } = {}): DroppedReply => ({
+export const droppedReply = (
+  id: string,
+  hoursAgo: number,
+  source: 'feishu' | 'github',
+  reason: DroppedReply['dropped']['reason'],
+  { ticket, thread }: { ticket?: DroppedReply['ticket']; thread?: false } = {},
+): DroppedReply => ({
   id,
   preview: `Reply ${id}`,
   kind: 'reply',
@@ -124,7 +154,8 @@ export const droppedReply = (id: string, hoursAgo: number, source: 'feishu' | 'g
   ...(thread === false ? {} : { thread: source === 'feishu' ? 'feishu:oc_1:om_root' : 'github:42' }),
 })
 export const dayAgo = () => new Date(Date.now() - 86_400_000).toISOString()
-export const problemOf = (code: SetupCode, values: Record<string, string> = {}) => new SetupError(code, values).problem
+export const problemOf = (code: SetupCode, values: Record<string, string> = {}) =>
+  new SetupError(code, values).problem
 // The kinds' configurations differ, and the fake reads them only as the records the views carry.
 export const KINDS = [feishuKind, githubKind] as unknown as SourceKind[]
 export const MACHINE = {

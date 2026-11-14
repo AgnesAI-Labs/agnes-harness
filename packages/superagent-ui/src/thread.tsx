@@ -53,7 +53,19 @@ function triggerTags(t: T, trigger: TriggerRow, subscribed?: Set<string>): React
   return tags
 }
 
-function TriggerItem({ trigger, earlier, target, subscribed, requeue }: { trigger: TriggerRow; earlier: TriggerRow[]; target: string | undefined; subscribed: Set<string>; requeue: { busy: boolean; run: () => void } | undefined }) {
+function TriggerItem({
+  trigger,
+  earlier,
+  target,
+  subscribed,
+  requeue,
+}: {
+  trigger: TriggerRow
+  earlier: TriggerRow[]
+  target: string | undefined
+  subscribed: Set<string>
+  requeue: { busy: boolean; run: () => void } | undefined
+}) {
   const { t, navigate } = usePanel()
   const ticketId = trigger.disposition.decision?.ticketId
   const scroll = (element: HTMLLIElement | null) => {
@@ -63,7 +75,11 @@ function TriggerItem({ trigger, earlier, target, subscribed, requeue }: { trigge
     }
   }
   return (
-    <li id={`trigger-${trigger.id}`} className={`dt-event${target === trigger.id ? ' dt-highlight' : ''}${trigger.human ? '' : ' dt-event-quiet'}`} ref={scroll}>
+    <li
+      id={`trigger-${trigger.id}`}
+      className={`dt-event${target === trigger.id ? ' dt-highlight' : ''}${trigger.human ? '' : ' dt-event-quiet'}`}
+      ref={scroll}
+    >
       <div className="dt-event-foot">
         <strong className="dt-event-actor">{actorName(t, trigger.actor)}</strong>
         <When at={trigger.at} />
@@ -76,12 +92,22 @@ function TriggerItem({ trigger, earlier, target, subscribed, requeue }: { trigge
       <div className="dt-event-foot">
         {triggerTags(t, trigger, subscribed)}
         {ticketId && !subscribed.has(ticketId) && (
-          <button type="button" className="dt-textlink dt-icon-link" onClick={() => navigate({ page: 'execution', id: ticketId })}>
+          <button
+            type="button"
+            className="dt-textlink dt-icon-link"
+            onClick={() => navigate({ page: 'execution', id: ticketId })}
+          >
             {t('openTicket')}
           </button>
         )}
         {requeue && (
-          <button type="button" className="dt-textlink dt-icon-link dt-reveal" disabled={requeue.busy} aria-busy={requeue.busy} onClick={requeue.run}>
+          <button
+            type="button"
+            className="dt-textlink dt-icon-link dt-reveal"
+            disabled={requeue.busy}
+            aria-busy={requeue.busy}
+            onClick={requeue.run}
+          >
             <Icon name="refresh" size={13} />
             {t('requeue')}
           </button>
@@ -94,9 +120,12 @@ interface Older {
   triggers: TriggerRow[]
   cursor: string | null
 }
-const overlaps = (some: TriggerRow[], others: TriggerRow[]) => some.some((item) => others.some((other) => other.id === item.id))
-const byTime = (triggers: TriggerRow[]) => [...new Map(triggers.map((item) => [item.id, item])).values()].sort((a, b) => a.at.localeCompare(b.at))
-const gapBetween = (newest: ThreadPageView, older: Older | undefined): boolean => !!older && newest.earlier !== null && !overlaps(newest.timeline, older.triggers)
+const overlaps = (some: TriggerRow[], others: TriggerRow[]) =>
+  some.some((item) => others.some((other) => other.id === item.id))
+const byTime = (triggers: TriggerRow[]) =>
+  [...new Map(triggers.map((item) => [item.id, item])).values()].sort((a, b) => a.at.localeCompare(b.at))
+const gapBetween = (newest: ThreadPageView, older: Older | undefined): boolean =>
+  !!older && newest.earlier !== null && !overlaps(newest.timeline, older.triggers)
 function mergeTimeline(newest: ThreadPageView, older: Older | undefined): ThreadPageView {
   if (!older || newest.earlier === null || gapBetween(newest, older)) return newest
   return { ...newest, timeline: byTime([...older.triggers, ...newest.timeline]), earlier: older.cursor }
@@ -109,9 +138,14 @@ const PAGE = 50
 function useThreadTimeline(key: string, target: string | undefined) {
   const { call, notify } = usePanel()
   const [older, setOlder] = useState<Older>()
-  const { data: newest, error, reload } = usePoll(() => call('GET threads/:key', { key, query: { limit: PAGE } }), [key])
+  const {
+    data: newest,
+    error,
+    reload,
+  } = usePoll(() => call('GET threads/:key', { key, query: { limit: PAGE } }), [key])
   const data = newest && mergeTimeline(newest, older)
-  const read = (id: string) => !!newest?.timeline.some((item) => item.id === id) || !!older?.triggers.some((item) => item.id === id)
+  const read = (id: string) =>
+    !!newest?.timeline.some((item) => item.id === id) || !!older?.triggers.some((item) => item.id === id)
   const missing = !!target && !!newest && !read(target)
   useEffect(() => {
     if (!missing) return
@@ -159,7 +193,7 @@ function useThreadTimeline(key: string, target: string | undefined) {
   })
   return { data, error, reload, earlier }
 }
-export function ThreadPage({ id, target }: { id: string; target?: string }) {
+export function ThreadPage({ id, target }: { id: string; target?: string | undefined }) {
   const { t, call, navigate, notify } = usePanel()
   const [decisionsOpen, setDecisionsOpen] = useState(false)
   const { data, error, reload, earlier } = useThreadTimeline(id, target)
@@ -174,12 +208,17 @@ export function ThreadPage({ id, target }: { id: string; target?: string }) {
     return (
       <>
         <PageHead title={t('term.thread')} />
-        {error instanceof ApiError && error.missing ? <Hint>{t('threadNotFound')}</Hint> : <LoadState error={error} loading />}
+        {error instanceof ApiError && error.missing ? (
+          <Hint>{t('threadNotFound')}</Hint>
+        ) : (
+          <LoadState error={error} loading />
+        )}
       </>
     )
   const subscribed = new Set(data.tickets.map((ticket) => ticket.id))
   // Never fold a deep-linked `target` Trigger into an automated run.
-  const sender = (trigger: TriggerRow) => (!trigger.human && trigger.id !== target ? `${trigger.actor.source}:${trigger.actor.id}` : undefined)
+  const sender = (trigger: TriggerRow) =>
+    !trigger.human && trigger.id !== target ? `${trigger.actor.source}:${trigger.actor.id}` : undefined
   const unsubscribe = async () => {
     const result = await call('POST threads/:key/unsubscribe', { key: data.key })
     if (result.context_delivery === 'pending') notify(t('unsubscribePending'))
@@ -187,7 +226,9 @@ export function ThreadPage({ id, target }: { id: string; target?: string }) {
   }
   return (
     <>
-      <PageHead title={readableMarkers(t, data.title)}>{data.url && <ActionLink href={data.url}>{t('openOriginal')}</ActionLink>}</PageHead>
+      <PageHead title={readableMarkers(t, data.title)}>
+        {data.url && <ActionLink href={data.url}>{t('openOriginal')}</ActionLink>}
+      </PageHead>
       {error && <LoadState error={error} loading={false} />}
       <div className="dt-row-meta dt-status-line">
         <span>{valueLabel(t, 'source', data.source)}</span>
@@ -214,7 +255,12 @@ export function ThreadPage({ id, target }: { id: string; target?: string }) {
         </Section>
       )}
       {data.decisions.length > 0 && (
-        <DisclosureRow icon={<Icon name="decision" />} title={t('threadDecisions', { count: data.decisions.length })} open={decisionsOpen} onToggle={() => setDecisionsOpen(!decisionsOpen)}>
+        <DisclosureRow
+          icon={<Icon name="decision" />}
+          title={t('threadDecisions', { count: data.decisions.length })}
+          open={decisionsOpen}
+          onToggle={() => setDecisionsOpen(!decisionsOpen)}
+        >
           <div className="dt-disclosure-body">
             <ul className="dt-list">
               {data.decisions.map((decision) => (
@@ -229,7 +275,11 @@ export function ThreadPage({ id, target }: { id: string; target?: string }) {
           <ul className="dt-plain-list">
             {data.correlated.map((item) => (
               <li key={item.key}>
-                <button type="button" className="dt-textlink" onClick={() => navigate({ page: 'trigger', id: item.key })}>
+                <button
+                  type="button"
+                  className="dt-textlink"
+                  onClick={() => navigate({ page: 'trigger', id: item.key })}
+                >
                   {readableMarkers(t, item.title)}
                 </button>
               </li>
@@ -282,7 +332,14 @@ export function ThreadPage({ id, target }: { id: string; target?: string }) {
       {data.tickets.length > 0 && (
         <div className="dt-danger-zone">
           <span className="dt-hint">{t('unsubscribeHint')}</span>
-          <ConfirmButton variant="outline" icon="unsubscribe" label={t('unsubscribe')} title={t('unsubscribeTitle')} message={t('unsubscribeConfirm', { title: data.title })} onConfirm={unsubscribe} />
+          <ConfirmButton
+            variant="outline"
+            icon="unsubscribe"
+            label={t('unsubscribe')}
+            title={t('unsubscribeTitle')}
+            message={t('unsubscribeConfirm', { title: data.title })}
+            onConfirm={unsubscribe}
+          />
         </div>
       )}
     </>

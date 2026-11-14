@@ -2,7 +2,18 @@
  * Context-free UI primitives styled with `--dsw-alias-*` tokens.
  * Mirrors DSH ui-primitives markup and keyboard behavior without coupling to its internal package API.
  */
-import { type ButtonHTMLAttributes, type InputHTMLAttributes, type KeyboardEvent, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type KeyboardEvent,
+  type ReactNode,
+  type SelectHTMLAttributes,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
 
 const cx = (...names: (string | false | undefined)[]) => names.filter(Boolean).join(' ')
@@ -13,7 +24,8 @@ const ICON_PATHS = {
   'chevron-down': 'M5 9l7 7 7-7',
   'chevron-up': 'M5 15l7-7 7 7',
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
-  question: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01',
+  question:
+    'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01',
   plus: 'M12 5v14M5 12h14',
   trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   refresh: 'M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5',
@@ -34,7 +46,8 @@ const ICON_PATHS = {
   pause: 'M9 6v12M15 6v12',
   play: 'M8 5l11 7-11 7z',
   unsubscribe: 'M6 16v-5a6 6 0 0 1 10-4.5M18 11v5l2 2H8M10 20h4M4 4l16 16',
-  dismiss: 'M4 4l16 16M9.9 5.2A9 9 0 0 1 21 12a12 12 0 0 1-2.4 3.2M6.3 6.4A12 12 0 0 0 3 12c2 4 5.5 6 9 6 1.4 0 2.7-.3 3.9-.9',
+  dismiss:
+    'M4 4l16 16M9.9 5.2A9 9 0 0 1 21 12a12 12 0 0 1-2.4 3.2M6.3 6.4A12 12 0 0 0 3 12c2 4 5.5 6 9 6 1.4 0 2.7-.3 3.9-.9',
   pull: 'M7 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8v8M7 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM17 16a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM17 16V9a2 2 0 0 0-2-2h-4M13 5l-2 2 2 2',
   copy: 'M9 9h10v11H9zM5 15V4h10',
   review: 'M9 4h6v3H9zM7 5H5v15h14V5h-2M9 13l2 2 4-4',
@@ -47,7 +60,17 @@ const ICON_PATHS = {
 export type IconName = keyof typeof ICON_PATHS
 export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d={ICON_PATHS[name]} />
     </svg>
   )
@@ -57,9 +80,17 @@ type ButtonProps = {
   variant?: 'primary' | 'ghost' | 'outline'
   size?: 'md' | 'sm'
   icon?: ReactNode
-  className?: string
+  className?: string | undefined
 } & ButtonHTMLAttributes<HTMLButtonElement>
-export function Button({ variant = 'ghost', size = 'md', icon, className, children, type = 'button', ...rest }: ButtonProps) {
+export function Button({
+  variant = 'ghost',
+  size = 'md',
+  icon,
+  className,
+  children,
+  type = 'button',
+  ...rest
+}: ButtonProps) {
   return (
     <button type={type} className={cx('dt-btn', `dt-btn-${variant}`, `dt-btn-${size}`, className)} {...rest}>
       {icon !== undefined && <span className="dt-btn-icon">{icon}</span>}
@@ -69,7 +100,15 @@ export function Button({ variant = 'ghost', size = 'md', icon, className, childr
 }
 
 export type TagTone = 'outline' | 'neutral' | 'quiet' | 'success' | 'info' | 'warning' | 'danger'
-export function Tag({ tone = 'outline', title, children }: { tone?: TagTone; title?: string; children: ReactNode }) {
+export function Tag({
+  tone = 'outline',
+  title,
+  children,
+}: {
+  tone?: TagTone
+  title?: string
+  children: ReactNode
+}) {
   return (
     <span className="dt-tag" data-tone={tone} title={title}>
       {children}
@@ -77,15 +116,33 @@ export function Tag({ tone = 'outline', title, children }: { tone?: TagTone; tit
   )
 }
 
-export function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+export function Pill({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
   return (
-    <button type="button" className={cx('dt-pill', active && 'dt-pill-active')} aria-pressed={active} onClick={onClick}>
+    <button
+      type="button"
+      className={cx('dt-pill', active && 'dt-pill-active')}
+      aria-pressed={active}
+      onClick={onClick}
+    >
       {children}
     </button>
   )
 }
 
-function walk<V extends string>(event: KeyboardEvent, values: readonly V[], value: V, onChange: (next: V) => void) {
+function walk<V extends string>(
+  event: KeyboardEvent,
+  values: readonly V[],
+  value: V,
+  onChange: (next: V) => void,
+) {
   const index = values.indexOf(value)
   const steps: Record<string, number> = {
     ArrowRight: index + 1,
@@ -108,7 +165,19 @@ interface TabItem<V extends string> {
   panelId: string
 }
 /** Page-level tab bar that re-emits `onChange` when clicking the active tab so callers can reset to the tab root. */
-export function SegmentedTabs<V extends string>({ items, value, onChange, label, className }: { items: readonly TabItem<V>[]; value: V; onChange: (next: V) => void; label: string; className?: string }) {
+export function SegmentedTabs<V extends string>({
+  items,
+  value,
+  onChange,
+  label,
+  className,
+}: {
+  items: readonly TabItem<V>[]
+  value: V
+  onChange: (next: V) => void
+  label: string
+  className?: string
+}) {
   const list = useRef<HTMLDivElement>(null)
   const [more, setMore] = useState<'start' | 'end' | 'both'>()
   const measure = useCallback(() => {
@@ -119,6 +188,7 @@ export function SegmentedTabs<V extends string>({ items, value, onChange, label,
     setMore(start && end ? 'both' : start ? 'start' : end ? 'end' : undefined)
   }, [])
   // Observe both the tablist container (pane resize) and individual tabs (locale label changes).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: observe the tabs again whenever their number changes
   useEffect(() => {
     measure()
     if (!list.current || typeof ResizeObserver === 'undefined') return
@@ -148,7 +218,17 @@ export function SegmentedTabs<V extends string>({ items, value, onChange, label,
       }
     >
       {items.map((item) => (
-        <button key={item.value} type="button" role="tab" id={item.id} aria-controls={item.panelId} aria-selected={item.value === value} tabIndex={item.value === value ? 0 : -1} className="dt-tab" onClick={() => onChange(item.value)}>
+        <button
+          key={item.value}
+          type="button"
+          role="tab"
+          id={item.id}
+          aria-controls={item.panelId}
+          aria-selected={item.value === value}
+          tabIndex={item.value === value ? 0 : -1}
+          className="dt-tab"
+          onClick={() => onChange(item.value)}
+        >
           {item.label}
         </button>
       ))}
@@ -207,7 +287,11 @@ export function SegmentedControl<V extends string>({
   )
 }
 
-export function Input({ icon, className, ...rest }: { icon?: ReactNode; className?: string } & InputHTMLAttributes<HTMLInputElement>) {
+export function Input({
+  icon,
+  className,
+  ...rest
+}: { icon?: ReactNode; className?: string | undefined } & InputHTMLAttributes<HTMLInputElement>) {
   return (
     <span className={cx('dt-input', className)}>
       {icon !== undefined && <span className="dt-input-icon">{icon}</span>}
@@ -216,9 +300,34 @@ export function Input({ icon, className, ...rest }: { icon?: ReactNode; classNam
   )
 }
 
-export function Switch({ checked, onChange, label, className }: { checked: boolean; onChange: (next: boolean) => void; label: string; className?: string }) {
+/** A native select in the panel's style; the one place a raw `<select>` is written. */
+export function Select({
+  className,
+  ...rest
+}: { className?: string | undefined } & SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select className={cx('dt-select', className)} {...rest} />
+}
+
+export function Switch({
+  checked,
+  onChange,
+  label,
+  className,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  label: string
+  className?: string
+}) {
   return (
-    <button type="button" role="switch" aria-checked={checked} aria-label={label} className={cx('dt-switch', className)} onClick={() => onChange(!checked)}>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      className={cx('dt-switch', className)}
+      onClick={() => onChange(!checked)}
+    >
       <span className="dt-switch-thumb" />
     </button>
   )
@@ -228,7 +337,14 @@ export type DotState = 'done' | 'warning' | 'ongoing' | 'error' | 'idle'
 export function StateDot({ state, className }: { state: DotState; className?: string }) {
   if (state === 'ongoing') {
     return (
-      <svg className={cx('dt-spinner', className)} data-state="ongoing" width={14} height={14} viewBox="0 0 24 24" aria-hidden="true">
+      <svg
+        className={cx('dt-spinner', className)}
+        data-state="ongoing"
+        width={14}
+        height={14}
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
         <g>
           <circle cx="12" cy="12" r="9.5" />
           <circle cx="12" cy="12" r="9.5" />
@@ -249,7 +365,21 @@ export function Dot({ state, label }: { state: DotState; label?: string }) {
   )
 }
 
-export function DisclosureRow({ icon, title, open, onToggle, collapsedContent, children }: { icon: ReactNode; title: ReactNode; open: boolean; onToggle: () => void; collapsedContent?: ReactNode; children?: ReactNode }) {
+export function DisclosureRow({
+  icon,
+  title,
+  open,
+  onToggle,
+  collapsedContent,
+  children,
+}: {
+  icon: ReactNode
+  title: ReactNode
+  open: boolean
+  onToggle: () => void
+  collapsedContent?: ReactNode
+  children?: ReactNode
+}) {
   return (
     <div className="dt-disclosure" data-open={open || undefined}>
       <div
@@ -280,7 +410,8 @@ export function DisclosureRow({ icon, title, open, onToggle, collapsedContent, c
   )
 }
 
-const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+const FOCUSABLE =
+  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
 function trapTab(event: globalThis.KeyboardEvent, dialog: HTMLElement) {
   // Query `*` and filter so elements stay in document order across all DOM implementations.
   const items = [...dialog.querySelectorAll<HTMLElement>('*')].filter((element) => element.matches(FOCUSABLE))
@@ -288,7 +419,12 @@ function trapTab(event: globalThis.KeyboardEvent, dialog: HTMLElement) {
     last = items.at(-1),
     active = document.activeElement
   const target = event.shiftKey ? last : first
-  if (!target || !dialog.contains(active) || active === dialog || active === (event.shiftKey ? first : last)) {
+  if (
+    !target ||
+    !dialog.contains(active) ||
+    active === dialog ||
+    active === (event.shiftKey ? first : last)
+  ) {
     event.preventDefault()
     target?.focus()
   }
@@ -335,7 +471,14 @@ export function Modal({
   return createPortal(
     <div className="dt-modal-root" role="presentation">
       <div className="dt-modal-mask" aria-hidden="true" onClick={onClose} />
-      <div ref={dialog} className={cx('dt-modal', className)} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
+      <div
+        ref={dialog}
+        className={cx('dt-modal', className)}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+      >
         <div className="dt-modal-header">
           <h2>{title}</h2>
           <button type="button" className="dt-modal-close" aria-label={closeLabel} onClick={onClose}>
@@ -352,7 +495,15 @@ export function Modal({
 }
 
 /** Portaled tooltip trigger supporting hover, keyboard focus, and touch toggle. */
-export function InfoTip({ text, icon = 'question', warn }: { text: string; icon?: IconName; warn?: boolean }) {
+export function InfoTip({
+  text,
+  icon = 'question',
+  warn,
+}: {
+  text: string
+  icon?: IconName
+  warn?: boolean
+}) {
   const anchor = useRef<HTMLButtonElement>(null)
   const bubble = useRef<HTMLSpanElement>(null)
   const [open, setOpen] = useState(false)

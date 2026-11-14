@@ -18,7 +18,11 @@ export function problems(schema: Schema, value: unknown, path = 'input'): string
   if (schema.const !== undefined && value !== schema.const) return [`${path}: not ${String(schema.const)}`]
   if (schema.enum && !schema.enum.includes(value)) return [`${path}: not one of ${schema.enum.join(', ')}`]
   const typed = (type: string) =>
-    type === 'integer' ? Number.isInteger(value) : type === 'object' ? !!value && typeof value === 'object' && !Array.isArray(value) : typeof value === type
+    type === 'integer'
+      ? Number.isInteger(value)
+      : type === 'object'
+        ? !!value && typeof value === 'object' && !Array.isArray(value)
+        : typeof value === type
   if (schema.type && !typed(schema.type)) return [`${path}: not a ${schema.type}`]
   const found: string[] = []
   if (typeof value === 'number') {
@@ -28,7 +32,8 @@ export function problems(schema: Schema, value: unknown, path = 'input'): string
   if (typeof value === 'string') {
     if (schema.minLength !== undefined && value.length < schema.minLength) found.push(`${path}: too short`)
     if (schema.maxLength !== undefined && value.length > schema.maxLength) found.push(`${path}: too long`)
-    if (schema.pattern && !new RegExp(schema.pattern).test(value)) found.push(`${path}: does not match the pattern`)
+    if (schema.pattern && !new RegExp(schema.pattern).test(value))
+      found.push(`${path}: does not match the pattern`)
   }
   if (schema.type === 'object') {
     const object = value as Record<string, unknown>

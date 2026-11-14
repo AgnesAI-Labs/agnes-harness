@@ -1748,6 +1748,9 @@ importers:
       '@agnes/web-client':
         specifier: workspace:*
         version: link:../web-client
+      '@agnes/web-ui':
+        specifier: workspace:*
+        version: link:../web-ui
     devDependencies:
       '@types/react':
         specifier: 18.3.12

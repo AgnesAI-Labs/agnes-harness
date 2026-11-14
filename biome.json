@@ -65,24 +65,20 @@
     },
     {
       "includes": ["packages/superagent-ui/**"],
-      "formatter": {
-        "lineWidth": 240
-      },
       "linter": {
         "rules": {
           "a11y": {
-            "useSemanticElements": "off",
-            "useAriaPropsSupportedByRole": "off",
-            "noStaticElementInteractions": "off"
-          },
-          "correctness": {
-            "useExhaustiveDependencies": "off",
-            "useHookAtTopLevel": "off",
-            "useJsxKeyInIterable": "off"
-          },
+            "useSemanticElements": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["packages/superagent-ui/src/**"],
+      "linter": {
+        "rules": {
           "suspicious": {
-            "noArrayIndexKey": "off",
-            "noAssignInExpressions": "off"
+            "noArrayIndexKey": "off"
           }
         }
       }

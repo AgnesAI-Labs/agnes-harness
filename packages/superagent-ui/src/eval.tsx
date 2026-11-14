@@ -1,16 +1,57 @@
 /** Eval status view (Decision log) and Eval settings group (Policy rules, per-Source admission, and assessor settings). */
 import { useState } from 'react'
-import { DECISION_FILTERS, DECISION_KINDS, type DecisionFilter, type Settings, type SourceView, usePoll } from './api.js'
-import { Button, DisclosureRow, Icon, InfoTip, Input, Pill, SegmentedControl, Switch } from './controls.js'
+import {
+  DECISION_FILTERS,
+  DECISION_KINDS,
+  type DecisionFilter,
+  type Settings,
+  type SourceView,
+  usePoll,
+} from './api.js'
+import {
+  Button,
+  DisclosureRow,
+  Icon,
+  InfoTip,
+  Input,
+  Pill,
+  SegmentedControl,
+  Select,
+  Switch,
+} from './controls.js'
 import { SaveBar } from './draft.js'
 import { useAction, usePanel } from './provider.js'
 import { DecisionLine } from './rows.js'
-import { ConfigHistory, Field, Fields, ModelField, numberOf, SourceField, useBlockDraft, useSettings } from './settings-kit.js'
-import { ADMISSION_DEFAULTS, ADMISSION_OPTIONS, type Admission, type AdmissionCell, type AdmissionRowView, LIMITS } from './shared.js'
+import {
+  ConfigHistory,
+  Field,
+  Fields,
+  ModelField,
+  numberOf,
+  SourceField,
+  useBlockDraft,
+  useSettings,
+} from './settings-kit.js'
+import {
+  ADMISSION_DEFAULTS,
+  ADMISSION_OPTIONS,
+  type Admission,
+  type AdmissionCell,
+  type AdmissionRowView,
+  LIMITS,
+} from './shared.js'
 import { localized, valueLabel, when } from './text.js'
 import { Hint, LabelValue, LoadMore, LoadState, Section, StatusHead } from './widgets.js'
 
-export function EvalStatus({ filter, window, paused }: { filter: DecisionFilter; window: '24h' | undefined; paused: boolean }) {
+export function EvalStatus({
+  filter,
+  window,
+  paused,
+}: {
+  filter: DecisionFilter
+  window: '24h' | undefined
+  paused: boolean
+}) {
   const { t, call, navigate } = usePanel()
   const [limit, setLimit] = useState(30)
   const { data, error } = usePoll(
@@ -78,15 +119,40 @@ export function EvalStatus({ filter, window, paused }: { filter: DecisionFilter;
 }
 
 type Rule = Settings['policy']['rules'][number]
-function RuleRow({ rule, expanded, onToggle, onChange, onDuplicate, onRemove }: { rule: Rule; expanded: boolean; onToggle: () => void; onChange: (rule: Rule) => void; onDuplicate: () => void; onRemove: () => void }) {
+function RuleRow({
+  rule,
+  expanded,
+  onToggle,
+  onChange,
+  onDuplicate,
+  onRemove,
+}: {
+  rule: Rule
+  expanded: boolean
+  onToggle: () => void
+  onChange: (rule: Rule) => void
+  onDuplicate: () => void
+  onRemove: () => void
+}) {
   const { t } = usePanel()
   const name = rule.name.trim() || t('newRule')
   return (
     <li className="dt-rule">
-      <DisclosureRow icon={<span className="dt-rule-dot" data-enabled={rule.enabled || undefined} />} title={name} open={expanded} onToggle={onToggle} collapsedContent={<span className="dt-rule-preview">{rule.instruction}</span>}>
+      <DisclosureRow
+        icon={<span className="dt-rule-dot" data-enabled={rule.enabled || undefined} />}
+        title={name}
+        open={expanded}
+        onToggle={onToggle}
+        collapsedContent={<span className="dt-rule-preview">{rule.instruction}</span>}
+      >
         <div className="dt-rule-body">
           <Field label={t('ruleName')}>
-            <Input value={rule.name} required maxLength={LIMITS.ruleName} onChange={(event) => onChange({ ...rule, name: event.target.value })} />
+            <Input
+              value={rule.name}
+              required
+              maxLength={LIMITS.ruleName}
+              onChange={(event) => onChange({ ...rule, name: event.target.value })}
+            />
           </Field>
           <Field label={t('ruleInstruction')}>
             <textarea
@@ -109,13 +175,32 @@ function RuleRow({ rule, expanded, onToggle, onChange, onDuplicate, onRemove }: 
           </div>
         </div>
       </DisclosureRow>
-      <Switch className="dt-rule-switch" checked={rule.enabled} onChange={(enabled) => onChange({ ...rule, enabled })} label={t('ruleEnable', { name })} />
+      <Switch
+        className="dt-rule-switch"
+        checked={rule.enabled}
+        onChange={(enabled) => onChange({ ...rule, enabled })}
+        label={t('ruleEnable', { name })}
+      />
     </li>
   )
 }
 
 type Part = Record<string, unknown>
-function SourcePart({ source, part, saved, dirty, onChange, reload }: { source: SourceView; part: Part; saved: Part; dirty: boolean; onChange: (next: Part) => void; reload: () => Promise<void> }) {
+function SourcePart({
+  source,
+  part,
+  saved,
+  dirty,
+  onChange,
+  reload,
+}: {
+  source: SourceView
+  part: Part
+  saved: Part
+  dirty: boolean
+  onChange: (next: Part) => void
+  reload: () => Promise<void>
+}) {
   const { t, call, notify } = usePanel()
   const policy = source.policy!
   const sync = policy.sync
@@ -128,19 +213,41 @@ function SourcePart({ source, part, saved, dirty, onChange, reload }: { source: 
   return (
     <div className="dt-part">
       {policy.fields.map((field) => (
-        <SourceField key={field.key} field={field} value={part[field.key]} saved={saved[field.key]} fact={undefined} labels={source.labels} onChange={(next) => onChange({ ...part, [field.key]: next })} />
+        <SourceField
+          key={field.key}
+          field={field}
+          value={part[field.key]}
+          saved={saved[field.key]}
+          fact={undefined}
+          labels={source.labels}
+          onChange={(next) => onChange({ ...part, [field.key]: next })}
+        />
       ))}
       {sync && (
         <div className="dt-row-buttons">
-          <Button variant="outline" size="sm" icon={<Icon name="refresh" />} disabled={run.busy || !sync.ready} onClick={syncNow}>
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Icon name="refresh" />}
+            disabled={run.busy || !sync.ready}
+            onClick={syncNow}
+          >
             {localized(t, sync.label)}
           </Button>
-          {sync.health?.state === 'ready' && sync.health.at && <LabelValue label={t('syncDone')} value={when(sync.health.at, t('lang'))} />}
+          {sync.health?.state === 'ready' && sync.health.at && (
+            <LabelValue label={t('syncDone')} value={when(sync.health.at, t('lang'))} />
+          )}
           {sync.health?.state === 'error' && <span className="dt-error dt-clamp">{sync.health.detail}</span>}
         </div>
       )}
       {policy.rows ? (
-        <AdmissionTable rows={policy.rows} labels={source.labels} table={(part.admission ?? {}) as AdmissionTable} explicit={localized(t, policy.explicit)} onChange={(admission) => onChange({ ...part, admission })} />
+        <AdmissionTable
+          rows={policy.rows}
+          labels={source.labels}
+          table={(part.admission ?? {}) as AdmissionTable}
+          explicit={localized(t, policy.explicit)}
+          onChange={(admission) => onChange({ ...part, admission })}
+        />
       ) : (
         <div className="dt-field">
           <span className="dt-field-head">{t('explicitRequest')}</span>
@@ -153,24 +260,45 @@ function SourcePart({ source, part, saved, dirty, onChange, reload }: { source: 
 
 type AdmissionTable = Record<string, Partial<Record<AdmissionCell, Admission>>>
 const CELLS: readonly AdmissionCell[] = ['listedUnaddressed', 'unlistedAddressed', 'unlistedUnaddressed']
-function AdmissionTable({ rows, labels, table, explicit, onChange }: { rows: AdmissionRowView[]; labels: Record<string, string>; table: AdmissionTable; explicit: string; onChange: (table: AdmissionTable) => void }) {
+function AdmissionTable({
+  rows,
+  labels,
+  table,
+  explicit,
+  onChange,
+}: {
+  rows: AdmissionRowView[]
+  labels: Record<string, string>
+  table: AdmissionTable
+  explicit: string
+  onChange: (table: AdmissionTable) => void
+}) {
   const { t } = usePanel()
   const name = (row: AdmissionRowView) => labels[row.id] ?? localized(t, row.label)
-  const set = (row: string, cell: AdmissionCell, value: Admission) => onChange({ ...table, [row]: { ...table[row], [cell]: value } })
+  const set = (row: string, cell: AdmissionCell, value: Admission) =>
+    onChange({ ...table, [row]: { ...table[row], [cell]: value } })
   const select = (row: AdmissionRowView, cell: AdmissionCell) => {
     const value = table[row.id]?.[cell] ?? ADMISSION_DEFAULTS[cell]
     // Reserve a fixed-width slot for the warning icon so selecting a value never shifts column widths.
     return (
       <td key={cell}>
         <span className="dt-admission-cell">
-          <select className="dt-select" aria-label={`${name(row)} · ${t(`admissionCell.${cell}`)}`} value={value} onChange={(event) => set(row.id, cell, event.target.value as Admission)}>
+          <Select
+            aria-label={`${name(row)} · ${t(`admissionCell.${cell}`)}`}
+            value={value}
+            onChange={(event) => set(row.id, cell, event.target.value as Admission)}
+          >
             {ADMISSION_OPTIONS[cell].map((option) => (
               <option key={option} value={option}>
                 {t(`admissionValue.${option}`)}
               </option>
             ))}
-          </select>
-          <span className="dt-admission-slot">{cell === 'unlistedAddressed' && value === 'explicit' && <InfoTip text={t('admissionAnyoneWarning')} icon="alert" warn />}</span>
+          </Select>
+          <span className="dt-admission-slot">
+            {cell === 'unlistedAddressed' && value === 'explicit' && (
+              <InfoTip text={t('admissionAnyoneWarning')} icon="alert" warn />
+            )}
+          </span>
         </span>
       </td>
     )
@@ -241,10 +369,12 @@ function PolicyBlock() {
   }
   // Expand all rules when native form validation fails inside a collapsed rule.
   const reveal = (target: EventTarget) => {
-    if (target instanceof Element && target.closest('.dt-rules')) setExpanded(new Set(policy.rules.map((rule) => rule.id)))
+    if (target instanceof Element && target.closest('.dt-rules'))
+      setExpanded(new Set(policy.rules.map((rule) => rule.id)))
   }
   const part = (id: string) => (policy.sources[id] ?? { allowed: [] }) as Part
-  const add = () => insert({ id: crypto.randomUUID(), name: '', enabled: true, instruction: '' }, policy.rules.length)
+  const add = () =>
+    insert({ id: crypto.randomUUID(), name: '', enabled: true, instruction: '' }, policy.rules.length)
   return (
     <form
       className="dt-form dt-block"
@@ -259,7 +389,10 @@ function PolicyBlock() {
           <InfoTip text={t('policyIntro')} />
         </h2>
         <p className="dt-flow">
-          <LabelValue label={t('policyVersion')} value={<span className="dt-mono">{policyVersion.slice(0, 8)}</span>} />
+          <LabelValue
+            label={t('policyVersion')}
+            value={<span className="dt-mono">{policyVersion.slice(0, 8)}</span>}
+          />
           <InfoTip text={t('policyVersionHint')} />
         </p>
         <Section
@@ -279,7 +412,9 @@ function PolicyBlock() {
                   rule={rule}
                   expanded={expanded.has(rule.id)}
                   onToggle={() => toggle(rule.id)}
-                  onChange={(next) => edit({ rules: policy.rules.map((item, position) => (position === index ? next : item)) })}
+                  onChange={(next) =>
+                    edit({ rules: policy.rules.map((item, position) => (position === index ? next : item)) })
+                  }
                   onDuplicate={() =>
                     insert(
                       {
@@ -303,7 +438,14 @@ function PolicyBlock() {
             {parts.length > 1 && (
               <div className="dt-subtabs" role="tablist" aria-label={t('policyPerSource')}>
                 {parts.map((source) => (
-                  <button key={source.id} type="button" role="tab" aria-selected={source === current} className="dt-subtab" onClick={() => setTab(source.id)}>
+                  <button
+                    key={source.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={source === current}
+                    className="dt-subtab"
+                    onClick={() => setTab(source.id)}
+                  >
                     {localized(t, source.title)}
                   </button>
                 ))}
@@ -366,7 +508,14 @@ function EvalBlock() {
           />
         </Section>
         <Field label={t('evalTimeout')} hint={t('evalTimeoutHint')}>
-          <Input type="number" min={LIMITS.evalTimeoutSeconds.min} max={LIMITS.evalTimeoutSeconds.max} required value={value.timeoutSeconds} onChange={(event) => edit({ timeoutSeconds: event.target.value })} />
+          <Input
+            type="number"
+            min={LIMITS.evalTimeoutSeconds.min}
+            max={LIMITS.evalTimeoutSeconds.max}
+            required
+            value={value.timeoutSeconds}
+            onChange={(event) => edit({ timeoutSeconds: event.target.value })}
+          />
         </Field>
         <Section title={t('assessorModel')} hint={t('assessorModelHint')}>
           <ModelField id="dt-eval-model" value={value.model} onChange={(model) => edit({ model })} />

@@ -8,15 +8,24 @@ import { usePanel } from './provider.js'
 import { errorText, type T } from './text.js'
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
-const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
 const LIST_KEYS = ['id', 'chatId']
-const named = (list: unknown[], field: string) => list.every((item) => isRecord(item) && typeof item[field] === 'string') && new Set(list.map((item) => (item as Record<string, unknown>)[field])).size === list.length
+const named = (list: unknown[], field: string) =>
+  list.every((item) => isRecord(item) && typeof item[field] === 'string') &&
+  new Set(list.map((item) => (item as Record<string, unknown>)[field])).size === list.length
 /**
  * Three-way merge between `base`, local `mine`, and remote `theirs`.
  * Merges objects by key and arrays of keyed records (`id` or `chatId`) by element: a key or element removed by one side is
  * deleted if the other side left it unchanged; a removal against a modification keeps `mine` and is recorded in `conflicts`.
  */
-export function merge3(base: unknown, mine: unknown, theirs: unknown, conflicts: string[][] = [], path: string[] = []): unknown {
+export function merge3(
+  base: unknown,
+  mine: unknown,
+  theirs: unknown,
+  conflicts: string[][] = [],
+  path: string[] = [],
+): unknown {
   if (same(mine, base) || same(mine, theirs)) return theirs
   if (same(theirs, base)) return mine
   if (Array.isArray(mine) && Array.isArray(theirs) && (base === undefined || Array.isArray(base))) {
@@ -35,9 +44,16 @@ export function merge3(base: unknown, mine: unknown, theirs: unknown, conflicts:
   }
   return merged
 }
-function mergeList([base, mine, theirs]: unknown[][], field: string, conflicts: string[][], path: string[]): unknown[] {
+function mergeList(
+  [base, mine, theirs]: unknown[][],
+  field: string,
+  conflicts: string[][],
+  path: string[],
+): unknown[] {
   const name = (item: unknown) => String((item as Record<string, unknown>)[field])
-  const [before, ours, others] = [base!, mine!, theirs!].map((list) => new Map(list.map((item) => [name(item), item])))
+  const [before, ours, others] = [base!, mine!, theirs!].map(
+    (list) => new Map(list.map((item) => [name(item), item])),
+  )
   const order = theirs!.map(name)
   mine!.forEach((item, index) => {
     if (order.includes(name(item))) return
@@ -65,7 +81,9 @@ function read<V, M>(key: string | undefined): Stored<V, M> | undefined {
   try {
     const stored = JSON.parse(sessionStorage.getItem(key) ?? 'null') as Partial<Stored<V, M>> | null
     // Drop drafts without `base` (stored by older versions) because they cannot be three-way merged.
-    return stored && 'base' in stored && 'value' in stored && Number.isInteger(stored.revision) ? (stored as Stored<V, M>) : undefined
+    return stored && 'base' in stored && 'value' in stored && Number.isInteger(stored.revision)
+      ? (stored as Stored<V, M>)
+      : undefined
   } catch (error) {
     void error /* An unreadable draft is dropped; the saved value stays authoritative. */
     return undefined
@@ -133,7 +151,10 @@ export function draftReducer<V, M>(state: DraftState<V, M>, action: DraftAction<
       // Defer rebasing while a save is running; its completion will either advance to `awaitingRevision` or reload and merge.
       if (phase === 'saving') return state
       const { revision, saved } = action
-      if (state.sent) return revision >= state.sent.revision ? { phase: 'clean', seen: revision } : { ...state, seen: revision }
+      if (state.sent)
+        return revision >= state.sent.revision
+          ? { phase: 'clean', seen: revision }
+          : { ...state, seen: revision }
       if (!draft || draft.revision === revision) return { ...state, seen: revision }
       const paths: string[][] = []
       const value = merge3(draft.base, draft.value, saved, paths) as V
@@ -152,7 +173,11 @@ export interface DraftWords {
   conflict?: (revision: number, paths: string[][]) => string
   editing?: string
 }
-export function saveBarText(t: T, { phase, sent, notice }: DraftState<unknown, unknown>, words: DraftWords = {}): { error?: string; status: string } {
+export function saveBarText(
+  t: T,
+  { phase, sent, notice }: DraftState<unknown, unknown>,
+  words: DraftWords = {},
+): { error?: string; status: string } {
   switch (notice?.kind) {
     case 'conflict':
       return { error: words.conflict?.(notice.revision, notice.paths) ?? t('saveConflict'), status: '' }
@@ -169,7 +194,10 @@ export function saveBarText(t: T, { phase, sent, notice }: DraftState<unknown, u
   }
   if (phase === 'awaitingRevision') return { status: t(sent?.restarting ? 'savedRestarting' : 'saved') }
   return {
-    status: phase === 'clean' ? t('saved') : (words.editing ?? t(notice?.kind === 'restored' ? 'draftRestored' : 'draftKept')),
+    status:
+      phase === 'clean'
+        ? t('saved')
+        : (words.editing ?? t(notice?.kind === 'restored' ? 'draftRestored' : 'draftKept')),
   }
 }
 
@@ -185,10 +213,15 @@ export function useDraft<V, M = undefined>({ key, saved, revision, save, reload 
   const { restart } = usePanel()
   const [state, dispatch] = useReducer(draftReducer<V, M>, undefined, () => {
     const stored = read<V, M>(key)
-    const initial: DraftState<V, M> = stored ? { phase: 'editing', draft: stored, notice: { kind: 'restored' } } : { phase: 'clean' }
-    return revision === undefined ? initial : draftReducer(initial, { type: 'revisionArrived', saved, revision })
+    const initial: DraftState<V, M> = stored
+      ? { phase: 'editing', draft: stored, notice: { kind: 'restored' } }
+      : { phase: 'clean' }
+    return revision === undefined
+      ? initial
+      : draftReducer(initial, { type: 'revisionArrived', saved, revision })
   })
-  if (state.phase !== 'saving' && revision !== undefined && revision !== state.seen) dispatch({ type: 'revisionArrived', saved, revision })
+  if (state.phase !== 'saving' && revision !== undefined && revision !== state.seen)
+    dispatch({ type: 'revisionArrived', saved, revision })
   useEffect(() => {
     if (!key) return
     try {
@@ -198,7 +231,8 @@ export function useDraft<V, M = undefined>({ key, saved, revision, save, reload 
       dispatch({ type: 'refused', notice: { kind: 'unstored', error: errorText(failure) } })
     }
   }, [key, state.draft])
-  const failed = (failure: unknown) => dispatch({ type: 'refused', notice: { kind: 'failed', error: errorText(failure) } })
+  const failed = (failure: unknown) =>
+    dispatch({ type: 'refused', notice: { kind: 'failed', error: errorText(failure) } })
   const submit = async (event?: FormEvent) => {
     event?.preventDefault()
     const { draft } = state
@@ -276,6 +310,7 @@ export function SaveBar({
     if (next && !bar.current?.contains(next)) focused.current = false
   }
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: the bar only tracks where focus goes, to know when it left; it is not itself operable
     <div
       ref={bar}
       className="dt-savebar"
@@ -296,7 +331,12 @@ export function SaveBar({
       <Button variant="ghost" size="sm" disabled={!dirty || busy} onClick={onDiscard}>
         {t('discard')}
       </Button>
-      <Button variant="primary" size="sm" disabled={!dirty || busy} {...(onSave ? { onClick: onSave } : { type: 'submit' as const })}>
+      <Button
+        variant="primary"
+        size="sm"
+        disabled={!dirty || busy}
+        {...(onSave ? { onClick: onSave } : { type: 'submit' as const })}
+      >
         {t('save')}
       </Button>
     </div>

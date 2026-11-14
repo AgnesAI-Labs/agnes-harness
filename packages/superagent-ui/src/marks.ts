@@ -22,7 +22,16 @@ export function ticketMark(t: T, ticket: TicketStage & Pick<TicketSummary, 'ende
       }
     case 'person': {
       const action = ticket.action
-      const icon: IconName = action === 'review' ? 'review' : action === 'failed' ? 'alert' : action === 'blocked' ? 'blocked' : action === 'delivery' ? 'inbox' : 'ask'
+      const icon: IconName =
+        action === 'review'
+          ? 'review'
+          : action === 'failed'
+            ? 'alert'
+            : action === 'blocked'
+              ? 'blocked'
+              : action === 'delivery'
+                ? 'inbox'
+                : 'ask'
       return {
         label: t(`stage.${action}`),
         tone: action === 'failed' ? 'danger' : 'warning',
@@ -31,12 +40,21 @@ export function ticketMark(t: T, ticket: TicketStage & Pick<TicketSummary, 'ende
       }
     }
     case 'working':
-      return ticket.action === 'queued' ? { label: t('stage.queued'), tone: 'neutral', dot: 'idle', icon: 'queue' } : { label: t('stage.working'), tone: 'info', dot: 'ongoing', icon: 'running' }
+      return ticket.action === 'queued'
+        ? { label: t('stage.queued'), tone: 'neutral', dot: 'idle', icon: 'queue' }
+        : { label: t('stage.working'), tone: 'info', dot: 'ongoing', icon: 'running' }
     default:
       return { label: t('stage.idle'), tone: 'neutral', dot: 'idle', icon: 'clock' }
   }
 }
-export const reportDot = (report: string | undefined): DotState => (report === 'failed' ? 'error' : report === 'blocked' || report === 'waiting' ? 'warning' : report === 'ready' ? 'done' : 'ongoing')
+export const reportDot = (report: string | undefined): DotState =>
+  report === 'failed'
+    ? 'error'
+    : report === 'blocked' || report === 'waiting'
+      ? 'warning'
+      : report === 'ready'
+        ? 'done'
+        : 'ongoing'
 
 const THREAD_MARKS: Record<ThreadRow['stage'], Omit<Mark, 'label' | 'tone'> & { label: SuperagentKey }> = {
   error: { dot: 'error', icon: 'alert', label: 'threadPollFailed' },

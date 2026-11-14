@@ -4,9 +4,12 @@ import { type Health, type Localized, type Reason, reasonText, type SetupProblem
 
 /** The translator of the active language: a dictionary key and the values of its `{name}` placeholders. */
 export type T = (key: SuperagentKey, params?: Record<string, string | number>) => string
-export const errorText = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure))
-export const localized = (t: T, text: Localized | string | undefined): string => (typeof text === 'string' ? text : text ? text[t('lang') === 'en' ? 'en' : 'zh'] : '')
-export const actorName = (t: T, actor: { name?: Localized } | undefined): string => (actor?.name ? localized(t, actor.name) : t('automatedNotice'))
+export const errorText = (failure: unknown): string =>
+  failure instanceof Error ? failure.message : String(failure)
+export const localized = (t: T, text: Localized | string | undefined): string =>
+  typeof text === 'string' ? text : text ? text[t('lang') === 'en' ? 'en' : 'zh'] : ''
+export const actorName = (t: T, actor: { name?: Localized } | undefined): string =>
+  actor?.name ? localized(t, actor.name) : t('automatedNotice')
 export function valueLabel(t: T, group: string, key: string | undefined): string {
   if (!key) return ''
   const name = `${group}.${key}` as SuperagentKey
@@ -26,15 +29,20 @@ function label(t: T, reason: Reason): string {
   const key = `reason.${reason.code}` as SuperagentKey
   const text = reason.code === 'said' ? (reason.values?.text ?? '') : t(key, reason.values)
   if (reason.code !== 'said' && text !== key) return text
-  const written = reason.code === 'said' ? text : reasonText({ ...reason, triggerId: undefined })
+  const written =
+    reason.code === 'said'
+      ? text
+      : reasonText({ code: reason.code, ...(reason.values ? { values: reason.values } : {}) })
   if (/^\w*Error\b/.test(written)) {
     const first = written.split('\n')[0]!
     return first.length > 140 ? `${first.slice(0, 140)}…` : first
   }
   return written
 }
-export const setupText = (t: T, problem: Pick<SetupProblem, 'code' | 'values'>): string => t(`setup.${problem.code}`, problem.values)
-export const healthText = (t: T, health: Pick<Health, 'detail' | 'code' | 'values'>): string => (health.code ? t(`healthCode.${health.code}` as const, health.values) : health.detail)
+export const setupText = (t: T, problem: Pick<SetupProblem, 'code' | 'values'>): string =>
+  t(`setup.${problem.code}`, problem.values)
+export const healthText = (t: T, health: Pick<Health, 'detail' | 'code' | 'values'>): string =>
+  health.code ? t(`healthCode.${health.code}` as const, health.values) : health.detail
 /** Replaces Feishu and GitHub content placeholders (images, cards, media, forwards, unresolved mentions) with localized labels. */
 export function readableMarkers(t: T, text: string): string {
   return text
@@ -74,6 +82,10 @@ export function fullTime(value: string | undefined, lang: string): string {
 export function translator(dictionary: Readonly<Record<string, string>>): T {
   return ((key: string, params?: Record<string, string | number>) => {
     const template = dictionary[key] ?? key
-    return params ? template.replace(/\{(\w+)\}/g, (match, name: string) => (name in params ? String(params[name]) : match)) : template
+    return params
+      ? template.replace(/\{(\w+)\}/g, (match, name: string) =>
+          name in params ? String(params[name]) : match,
+        )
+      : template
   }) as T
 }

@@ -1,8 +1,19 @@
 /** Shared settings context, block draft hook, form controls, Source schema field renderer, and configuration history. */
-import { cloneElement, createContext, type ReactElement, type ReactNode, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import {
+  cloneElement,
+  createContext,
+  type ReactElement,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { ApiResponse } from './api.js'
 import { type HistoryView, type Settings, type SettingsView, type SourceView, usePoll } from './api.js'
-import { Button, DisclosureRow, Icon, InfoTip, Input, SegmentedControl, Switch } from './controls.js'
+import { Button, DisclosureRow, Icon, InfoTip, Input, SegmentedControl, Select, Switch } from './controls.js'
 import { useDraft } from './draft.js'
 import { useAction, usePanel, usePanelData } from './provider.js'
 import { settingsRoute } from './route.js'
@@ -34,7 +45,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     </SettingsContext.Provider>
   )
 }
-export function useBlockDraft<V>(block: string, saved: V, revision: number, toValue: (draft: V) => unknown = (draft) => draft) {
+export function useBlockDraft<V>(
+  block: string,
+  saved: V,
+  revision: number,
+  toValue: (draft: V) => unknown = (draft) => draft,
+) {
   const { t, call, notify } = usePanel()
   const { state } = usePanelData()
   const { reload } = useSettings()
@@ -60,7 +76,8 @@ export function Fields({ disabled, children }: { disabled: boolean; children: Re
   const focused = useRef<HTMLElement | null>(null)
   useLayoutEffect(() => {
     const active = document.activeElement
-    if (disabled) focused.current = active instanceof HTMLElement && set.current?.contains(active) ? active : null
+    if (disabled)
+      focused.current = active instanceof HTMLElement && set.current?.contains(active) ? active : null
     else if (focused.current && (!active || active === document.body)) {
       focused.current.focus({ preventScroll: true })
       focused.current = null
@@ -72,7 +89,17 @@ export function Fields({ disabled, children }: { disabled: boolean; children: Re
     </fieldset>
   )
 }
-export function Field({ label, hint, note, children }: { label: string; hint?: string | undefined; note?: ReactNode; children: ReactElement<{ id?: string }> }) {
+export function Field({
+  label,
+  hint,
+  note,
+  children,
+}: {
+  label: string
+  hint?: string | undefined
+  note?: ReactNode
+  children: ReactElement<{ id?: string }>
+}) {
   const id = useId()
   return (
     <div className="dt-field">
@@ -85,7 +112,17 @@ export function Field({ label, hint, note, children }: { label: string; hint?: s
     </div>
   )
 }
-function SwitchRow({ label, hint, checked, onChange }: { label: string; hint?: string | undefined; checked: boolean; onChange: (next: boolean) => void }) {
+function SwitchRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string
+  hint?: string | undefined
+  checked: boolean
+  onChange: (next: boolean) => void
+}) {
   return (
     <div className="dt-switch-row">
       <div className="dt-field-head">
@@ -97,7 +134,15 @@ function SwitchRow({ label, hint, checked, onChange }: { label: string; hint?: s
   )
 }
 type RoleModel = Settings['eval']['model']
-export function ModelField({ id, value, onChange }: { id: string; value: RoleModel; onChange: (next: RoleModel) => void }) {
+export function ModelField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string
+  value: RoleModel
+  onChange: (next: RoleModel) => void
+}) {
   const { t, call } = usePanel()
   const [catalog, setCatalog] = useState<ApiResponse<'GET models'>>()
   const [error, setError] = useState<string>()
@@ -111,13 +156,23 @@ export function ModelField({ id, value, onChange }: { id: string; value: RoleMod
   }
   const set = (next: Partial<typeof current>) => {
     const { provider, model, effort } = { ...current, ...next }
-    onChange(provider.trim() || model.trim() || effort.trim() ? { provider, model, ...(effort ? { reasoningEffort: effort } : {}) } : null)
+    onChange(
+      provider.trim() || model.trim() || effort.trim()
+        ? { provider, model, ...(effort ? { reasoningEffort: effort } : {}) }
+        : null,
+    )
   }
   const models = catalog?.groups.find((group) => group.id === current.provider.trim())?.models ?? []
   const fallback = catalog?.default
   const input = (name: keyof typeof current, label: string, placeholder: string) => (
     <Field label={label}>
-      <Input list={`${id}-${name}s`} spellCheck={false} placeholder={placeholder} value={current[name]} onChange={(event) => set({ [name]: event.target.value })} />
+      <Input
+        list={`${id}-${name}s`}
+        spellCheck={false}
+        placeholder={placeholder}
+        value={current[name]}
+        onChange={(event) => set({ [name]: event.target.value })}
+      />
     </Field>
   )
   return (
@@ -150,11 +205,13 @@ export function ModelField({ id, value, onChange }: { id: string; value: RoleMod
         ))}
       </datalist>
       <datalist id={`${id}-efforts`}>
-        {(models.find((model) => model.id === current.model.trim())?.reasoning?.efforts ?? []).map((effort) => (
-          <option key={effort.id} value={effort.id}>
-            {effort.name}
-          </option>
-        ))}
+        {(models.find((model) => model.id === current.model.trim())?.reasoning?.efforts ?? []).map(
+          (effort) => (
+            <option key={effort.id} value={effort.id}>
+              {effort.name}
+            </option>
+          ),
+        )}
       </datalist>
     </div>
   )
@@ -163,9 +220,17 @@ export function ModelField({ id, value, onChange }: { id: string; value: RoleMod
 type HistoryChange = NonNullable<HistoryView['items'][number]['changes']>[number]
 function changeText(t: T, change: HistoryChange, sources: SourceView[]): string {
   const source = sources.find((item) => item.id === change.source)
-  const field = (change.part ? source?.policy?.fields : source?.fields)?.find((item) => item.key === change.field)
+  const field = (change.part ? source?.policy?.fields : source?.fields)?.find(
+    (item) => item.key === change.field,
+  )
   const shown = (value: unknown) =>
-    value === undefined || value === null || value === '' ? t('unsetValue') : typeof value === 'boolean' ? t(value ? 'yes' : 'no') : change.code === 'mode' ? valueLabel(t, 'mode', String(value)) : String(value)
+    value === undefined || value === null || value === ''
+      ? t('unsetValue')
+      : typeof value === 'boolean'
+        ? t(value ? 'yes' : 'no')
+        : change.code === 'mode'
+          ? valueLabel(t, 'mode', String(value))
+          : String(value)
   return t(`change.${change.code}`, {
     items: (change.items ?? []).map((item) => source?.labels[item] ?? item).join(t('listSeparator')),
     from: shown(change.from),
@@ -179,21 +244,38 @@ function changeText(t: T, change: HistoryChange, sources: SourceView[]): string 
  * Collapsible revision history for the specified settings blocks, optionally including all Policy-changing saves.
  * Revisions saved before per-block tracking existed have no `block` and appear under `policy`.
  */
-export function ConfigHistory({ blocks, versions, focus }: { blocks: string[]; versions?: boolean; focus?: string }) {
+export function ConfigHistory({
+  blocks,
+  versions,
+  focus,
+}: {
+  blocks: string[]
+  versions?: boolean
+  focus?: string
+}) {
   const { t, call } = usePanel()
   const { settings } = useSettings()
   const { sources } = settings
   const [open, setOpen] = useState(!!focus)
   const [data, setData] = useState<HistoryView>()
   const [error, setError] = useState<string>()
-  const revisions = JSON.stringify([Object.values(settings.blocks).map((block) => block.revision), sources.map((source) => source.revision)])
+  const revisions = JSON.stringify([
+    Object.values(settings.blocks).map((block) => block.revision),
+    sources.map((source) => source.revision),
+  ])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: read the history again whenever a saved revision moves
   useEffect(() => {
     if (open) call('GET policy/history').then(setData, (failure) => setError(errorText(failure)))
   }, [open, call, revisions])
-  const listed = (block: string | undefined) => (block ? blocks.some((item) => item === block || (item.endsWith(':') && block.startsWith(item))) : blocks.includes('policy'))
+  const listed = (block: string | undefined) =>
+    block
+      ? blocks.some((item) => item === block || (item.endsWith(':') && block.startsWith(item)))
+      : blocks.includes('policy')
   const items = data?.items.filter((item) => (versions && item.policyChanged) || listed(item.block)) ?? []
   // Match the oldest save that produced the focused Policy version (where that version originated).
-  const target = focus ? items.filter((item) => item.policyChanged && item.policyVersion.startsWith(focus)).at(-1) : undefined
+  const target = focus
+    ? items.filter((item) => item.policyChanged && item.policyVersion.startsWith(focus)).at(-1)
+    : undefined
   const scroll = (element: HTMLLIElement | null) => {
     if (element && !element.dataset.scrolled) {
       element.dataset.scrolled = '1'
@@ -201,7 +283,12 @@ export function ConfigHistory({ blocks, versions, focus }: { blocks: string[]; v
     }
   }
   return (
-    <DisclosureRow icon={<Icon name="history" />} title={t('configHistory')} open={open} onToggle={() => setOpen(!open)}>
+    <DisclosureRow
+      icon={<Icon name="history" />}
+      title={t('configHistory')}
+      open={open}
+      onToggle={() => setOpen(!open)}
+    >
       <div className="dt-disclosure-body">
         {error && <p className="dt-error">{error}</p>}
         {data && (
@@ -211,7 +298,11 @@ export function ConfigHistory({ blocks, versions, focus }: { blocks: string[]; v
             {items.length ? (
               <ul className="dt-timeline">
                 {items.map((item) => (
-                  <li key={item.revision} className={item === target ? 'dt-event dt-highlight' : 'dt-event'} ref={item === target ? scroll : undefined}>
+                  <li
+                    key={item.revision}
+                    className={item === target ? 'dt-event dt-highlight' : 'dt-event'}
+                    ref={item === target ? scroll : undefined}
+                  >
                     <div className="dt-row-title">
                       {t('historyItem', {
                         revision: item.revision,
@@ -220,7 +311,9 @@ export function ConfigHistory({ blocks, versions, focus }: { blocks: string[]; v
                     </div>
                     <div className="dt-event-foot">
                       {when(item.savedAt, t('lang'))}
-                      {item.policyChanged && <> · {t('historyPolicyChanged', { version: item.policyVersion.slice(0, 8) })}</>}
+                      {item.policyChanged && (
+                        <> · {t('historyPolicyChanged', { version: item.policyVersion.slice(0, 8) })}</>
+                      )}
                     </div>
                     {item.changes === null ? (
                       <Hint>{t('historyNoBaseline')}</Hint>
@@ -286,16 +379,20 @@ function RowsField({
   const label = localized(t, field.label),
     hint = localized(t, field.hint)
   const rows = Array.isArray(value) ? (value as Row[]) : []
-  const set = (index: number, row: Row) => onChange(rows.map((item, position) => (position === index ? row : item)))
+  const set = (index: number, row: Row) =>
+    onChange(rows.map((item, position) => (position === index ? row : item)))
   const key = field.columns[0]!
   const savedKeys = new Set((Array.isArray(saved) ? (saved as Row[]) : []).map((row) => row[key.key]))
-  const choose = key.type === 'text' && key.choose && Object.keys(labels).length ? localized(t, key.choose) : ''
+  const choose =
+    key.type === 'text' && key.choose && Object.keys(labels).length ? localized(t, key.choose) : ''
   // Exclude options already selected in another row.
   const choices = (id: string) =>
     Object.entries(labels)
       .filter(([option]) => option === id || !rows.some((other) => other[key.key] === option))
       .sort(byName)
-  const blank = Object.fromEntries(field.columns.map((column) => [column.key, column.type === 'select' ? column.options[0]!.value : '']))
+  const blank = Object.fromEntries(
+    field.columns.map((column) => [column.key, column.type === 'select' ? column.options[0]!.value : '']),
+  )
   // Summarize a row by its second column only when that column is free text (e.g., a display name), not a select option.
   const named = field.columns[1]?.type === 'text' ? field.columns[1] : undefined
   const rowName = (row: Row) => (named && row[named.key]) || labels[row[key.key] ?? ''] || row[key.key] || ''
@@ -311,7 +408,13 @@ function RowsField({
     }
     if (column === key && choose) {
       return (
-        <select key={column.key} className="dt-select" aria-label={choose} required value={id} onChange={(event) => change(event.target.value)}>
+        <Select
+          key={column.key}
+          aria-label={choose}
+          required
+          value={id}
+          onChange={(event) => change(event.target.value)}
+        >
           <option value="" disabled>
             {choose}
           </option>
@@ -320,18 +423,23 @@ function RowsField({
               {name}
             </option>
           ))}
-        </select>
+        </Select>
       )
     }
     if (column.type === 'select') {
       return (
-        <select key={column.key} className="dt-select" aria-label={localized(t, column.label)} value={row[column.key] ?? ''} onChange={(event) => change(event.target.value)}>
+        <Select
+          key={column.key}
+          aria-label={localized(t, column.label)}
+          value={row[column.key] ?? ''}
+          onChange={(event) => change(event.target.value)}
+        >
           {column.options.map((option) => (
             <option key={option.value} value={option.value}>
               {localized(t, option.label)}
             </option>
           ))}
-        </select>
+        </Select>
       )
     }
     return (
@@ -386,7 +494,12 @@ function RowsField({
         </span>
       </div>
       {rows.length > ROWS_SHOWN && (
-        <button type="button" className="dt-textlink dt-rows-summary" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <button
+          type="button"
+          className="dt-textlink dt-rows-summary"
+          aria-expanded={open}
+          onClick={() => setOpen(!open)}
+        >
           {open ? t('collapse') : rows.map(rowName).join(t('listSeparator'))}
         </button>
       )}
@@ -450,16 +563,25 @@ export function SourceField({
     case 'number':
       return (
         <Field label={label} hint={hint}>
-          <Input type="number" min={field.min} max={field.max} required value={String(value ?? '')} onChange={(event) => onChange(event.target.value === '' ? '' : Number(event.target.value))} />
+          <Input
+            type="number"
+            min={field.min}
+            max={field.max}
+            required
+            value={String(value ?? '')}
+            onChange={(event) => onChange(event.target.value === '' ? '' : Number(event.target.value))}
+          />
         </Field>
       )
     case 'text':
       return (
         <Field label={label} hint={hint} note={localized(t, fact)}>
           {field.choose && Object.keys(labels).length ? (
-            <select className="dt-select" value={String(value ?? '')} onChange={(event) => onChange(event.target.value)}>
+            <Select value={String(value ?? '')} onChange={(event) => onChange(event.target.value)}>
               <option value="">{localized(t, field.choose)}</option>
-              {value && !labels[String(value)] ? <option value={String(value)}>{String(value)}</option> : null}
+              {value && !labels[String(value)] ? (
+                <option value={String(value)}>{String(value)}</option>
+              ) : null}
               {Object.entries(labels)
                 .sort(byName)
                 .map(([option, name]) => (
@@ -467,9 +589,15 @@ export function SourceField({
                     {name}
                   </option>
                 ))}
-            </select>
+            </Select>
           ) : (
-            <Input value={String(value ?? '')} readOnly={field.readonly} pattern={field.pattern} spellCheck={false} onChange={(event) => onChange(event.target.value)} />
+            <Input
+              value={String(value ?? '')}
+              readOnly={field.readonly}
+              pattern={field.pattern}
+              spellCheck={false}
+              onChange={(event) => onChange(event.target.value)}
+            />
           )}
         </Field>
       )
@@ -483,7 +611,11 @@ export function SourceField({
           <span className="dt-mono">{localized(t, fact) || t('empty')}</span>
           {field.settings && (
             <small>
-              <button type="button" className="dt-textlink" onClick={() => navigate(settingsRoute(field.settings!))}>
+              <button
+                type="button"
+                className="dt-textlink"
+                onClick={() => navigate(settingsRoute(field.settings!))}
+              >
                 {t(`openSettingsOf.${field.settings}`)}
               </button>
             </small>
@@ -491,6 +623,15 @@ export function SourceField({
         </div>
       )
     case 'rows':
-      return <RowsField field={field} value={value} saved={saved} onChange={onChange} labels={labels} refreshLabels={refreshLabels} />
+      return (
+        <RowsField
+          field={field}
+          value={value}
+          saved={saved}
+          onChange={onChange}
+          labels={labels}
+          refreshLabels={refreshLabels}
+        />
+      )
   }
 }

@@ -1,7 +1,24 @@
 /** Shared panel React contexts, state polling, restart detection, and action runner hook. */
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { createPortal } from 'react-dom'
-import { type ApiMessages, type Call, caller, type Services, type SetupView, type StateView, usePoll } from './api.js'
+import {
+  type ApiMessages,
+  type Call,
+  caller,
+  type Services,
+  type SetupView,
+  type StateView,
+  usePoll,
+} from './api.js'
 import type { Route } from './route.js'
 import { STYLES } from './styles.js'
 import { errorText, setupText, type T, valueLabel } from './text.js'
@@ -39,7 +56,10 @@ export function usePanelData(): PanelData {
   return value
 }
 /** Wrap an async action with re-entrancy protection, busy state, optional reload, and error toast reporting. */
-export function useAction<A extends unknown[]>(action: (...args: A) => Promise<unknown>, { reload }: { reload?: () => Promise<unknown> } = {}) {
+export function useAction<A extends unknown[]>(
+  action: (...args: A) => Promise<unknown>,
+  { reload }: { reload?: () => Promise<unknown> } = {},
+) {
   const { notify } = usePanel()
   const [busy, setBusy] = useState(false)
   const running = useRef(false)
@@ -68,9 +88,14 @@ const messages = (t: T): ApiMessages => ({
   notRunning: t('hostNotRunning'),
   serverError: (status) => t('serverError', { status }),
   requestFailed: (status) => t('requestFailed', { status }),
-  setup: (problem) => (problem.values.output ? `${setupText(t, problem)}\n${problem.values.output}` : setupText(t, problem)),
+  setup: (problem) =>
+    problem.values.output ? `${setupText(t, problem)}\n${problem.values.output}` : setupText(t, problem),
   // A refusal names a prompt part by its label.
-  user: ({ code, values }) => t(`userError.${code}`, values.part ? { ...values, part: valueLabel(t, 'promptPart', values.part) } : values),
+  user: ({ code, values }) =>
+    t(
+      `userError.${code}`,
+      values.part ? { ...values, part: valueLabel(t, 'promptPart', values.part) } : values,
+    ),
 })
 function Toast({ text, onDone, holdMs = 3000 }: { text: string; onDone: () => void; holdMs?: number }) {
   const done = useRef(onDone)
@@ -117,7 +142,11 @@ export function PanelProvider({
   const [restarting, setRestarting] = useState<{ down: boolean }>()
   const [restarts, setRestarts] = useState(0)
   const restart = useCallback(() => setRestarting({ down: false }), [])
-  const { data: state, error, reload } = usePoll(() => call('GET state'), [call], restarting ? 1000 : interval)
+  const {
+    data: state,
+    error,
+    reload,
+  } = usePoll(() => call('GET state'), [call], restarting ? 1000 : interval)
   if (restarting && !!error !== restarting.down) {
     setRestarting(error ? { down: true } : undefined)
     if (!error) setRestarts(restarts + 1)
@@ -127,8 +156,14 @@ export function PanelProvider({
     const timer = setTimeout(() => setRestarting(undefined), 30_000)
     return () => clearTimeout(timer)
   }, [restarting])
-  const context = useMemo(() => ({ t, call, navigate, back, backLabel, openSession, notify, restart }), [t, call, navigate, back, backLabel, openSession, notify, restart])
-  const data = useMemo(() => ({ state, error, reload, setup: state?.setup, running: state?.load.running ?? 0, restarts }), [state, error, reload, restarts])
+  const context = useMemo(
+    () => ({ t, call, navigate, back, backLabel, openSession, notify, restart }),
+    [t, call, navigate, back, backLabel, openSession, notify, restart],
+  )
+  const data = useMemo(
+    () => ({ state, error, reload, setup: state?.setup, running: state?.load.running ?? 0, restarts }),
+    [state, error, reload, restarts],
+  )
   return (
     <Panel.Provider value={context}>
       <PanelState.Provider value={data}>

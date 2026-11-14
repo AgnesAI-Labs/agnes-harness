@@ -3,21 +3,39 @@
 import { act } from 'react'
 import { expect, it } from 'vitest'
 import { en, zh } from '../src/locales.js'
-import { all, click, field, find, mount, remount, settle, tab, text, type, usePanel } from './helpers/panel.js'
+import {
+  all,
+  click,
+  field,
+  find,
+  installPanel,
+  mount,
+  remount,
+  settle,
+  tab,
+  text,
+  type,
+} from './helpers/panel.js'
 import { server } from './helpers/panel-server.js'
 
-usePanel()
+installPanel()
 it('opens the Decisions under Policy from the flow line with their reasons, Decisions that start work first, filterable by kind', async () => {
   await mount()
   await click(all('.dt-stat button')[1]!)
   expect(tab(zh['tab.eval']).getAttribute('aria-selected')).toBe('true')
-  expect(server.requests.some((request) => request.path === 'decisions?limit=30&kind=accept,reopen&window=24h')).toBe(true)
+  expect(
+    server.requests.some((request) => request.path === 'decisions?limit=30&kind=accept,reopen&window=24h'),
+  ).toBe(true)
   expect(text()).toContain(zh['reason.explicitRouted'])
   await click(zh.stop)
-  expect(server.requests.some((request) => request.path === 'decisions?limit=30&kind=stop&window=24h')).toBe(true)
+  expect(server.requests.some((request) => request.path === 'decisions?limit=30&kind=stop&window=24h')).toBe(
+    true,
+  )
   expect(text()).toContain('@bot 修一下')
   await click(zh['decision.ignore'])
-  expect(server.requests.some((request) => request.path === 'decisions?limit=30&kind=ignore&window=24h')).toBe(true)
+  expect(
+    server.requests.some((request) => request.path === 'decisions?limit=30&kind=ignore&window=24h'),
+  ).toBe(true)
   expect(text()).toContain(zh.none)
   await click(zh.lastDayOnly)
   expect(server.requests.some((request) => request.path === 'decisions?limit=30&kind=ignore')).toBe(true)
@@ -105,9 +123,13 @@ it("syncs a Source's list from where the Source keeps it, but not while a Policy
   await mount()
   await click(zh['tab.eval'])
   await click(find(zh['tab.settings'], '.dt-status-head button'))
-  expect([...all('.dt-part select')[0]!.querySelectorAll('option')].map((option) => option.textContent)).toEqual(['不同步', '另一个群', '团队群'])
+  expect(
+    [...all('.dt-part select')[0]!.querySelectorAll('option')].map((option) => option.textContent),
+  ).toEqual(['不同步', '另一个群', '团队群'])
   await click(find('立即同步', '.dt-part button'))
-  expect(server.requests.some((request) => request.path === 'policy-sync/feishu' && request.method === 'POST')).toBe(true)
+  expect(
+    server.requests.some((request) => request.path === 'policy-sync/feishu' && request.method === 'POST'),
+  ).toBe(true)
   await type(all('.dt-part select')[0] as HTMLSelectElement, 'oc_other')
   const before = server.requests.length
   await click(find('立即同步', '.dt-part button'))
@@ -123,7 +145,9 @@ it('adds, copies, renames, disables and deletes rules in Policy without touching
   await type(field<HTMLInputElement>(zh.ruleName), '文档')
   await type(field<HTMLTextAreaElement>(zh.ruleInstruction), '修复失效链接')
   await click(zh.duplicate)
-  expect(all('.dt-rule').map((rule) => rule.querySelector('[data-disclosure-row]')!.textContent)).toEqual(expect.arrayContaining([expect.stringContaining('文档 副本')]))
+  expect(all('.dt-rule').map((rule) => rule.querySelector('[data-disclosure-row]')!.textContent)).toEqual(
+    expect.arrayContaining([expect.stringContaining('文档 副本')]),
+  )
   await click('启用规则：文案修改')
   const removeButtons = all('button').filter((button) => button.textContent === '删除')
   await click(removeButtons.at(-1)!)
@@ -132,7 +156,9 @@ it('adds, copies, renames, disables and deletes rules in Policy without touching
     ['文案修改', false],
     ['文档', true],
   ])
-  expect(server.requests.filter((request) => request.method === 'PUT').map((request) => request.path)).toEqual(['settings/policy'])
+  expect(
+    server.requests.filter((request) => request.method === 'PUT').map((request) => request.path),
+  ).toEqual(['settings/policy'])
 })
 
 it("shows the current Policy version once, explains what makes it up, and opens a Mandate's version in the Policy history", async () => {
@@ -180,7 +206,10 @@ it('sets the Feishu admission table per receiving scope, offering only the cells
   await mount()
   await click(tab(zh['tab.settings']))
   await click(find(zh['term.eval'], '.dt-settings-link'))
-  const rows = all('.dt-admission tbody tr').map((row) => [row.querySelector('.dt-admission-scope')!.firstChild?.textContent, row.querySelectorAll('select').length])
+  const rows = all('.dt-admission tbody tr').map((row) => [
+    row.querySelector('.dt-admission-scope')!.firstChild?.textContent,
+    row.querySelectorAll('select').length,
+  ])
   // Chats receiving every message have all three cells; @-only chats only the mention cell; other chats nothing while not received.
   expect(rows).toEqual([
     ['团队群', 3],
@@ -192,10 +221,14 @@ it('sets the Feishu admission table per receiving scope, offering only the cells
   expect(cell.value).toBe('ignore')
   await type(cell, 'explicit')
   // The warning is an icon in a slot every cell reserves, with the text on hover, so the table does not move.
-  expect(document.querySelector('.dt-admission .dt-info-warn')?.getAttribute('aria-label')).toBe(zh.admissionAnyoneWarning)
+  expect(document.querySelector('.dt-admission .dt-info-warn')?.getAttribute('aria-label')).toBe(
+    zh.admissionAnyoneWarning,
+  )
   expect(all('.dt-admission-slot')).toHaveLength(5)
   // A message not addressed to the bot cannot be an explicit request.
-  expect([...field<HTMLSelectElement>('团队群 · 名单外 · 未 @').options].map((option) => option.value)).toEqual(['inferred', 'ignore'])
+  expect(
+    [...field<HTMLSelectElement>('团队群 · 名单外 · 未 @').options].map((option) => option.value),
+  ).toEqual(['inferred', 'ignore'])
   await click(zh.save)
   expect(server.settings.policy.sources.feishu!.admission).toEqual({
     oc_team: { unlistedAddressed: 'explicit' },
@@ -206,14 +239,27 @@ it("lists each Source's bots next to its people and saves them, and sets the Git
   await mount()
   await click(tab(zh['tab.settings']))
   // The GitHub Source receives only what is addressed to the agent until a switch opens a scope of the repository.
-  const github = all('.dt-card').find((card) => card.querySelector('.dt-card-title')?.textContent === 'GitHub')!
-  expect([...github.querySelectorAll('.dt-switch-row')].map((row) => row.textContent)).toEqual(['接收仓库里的新 Issue', '接收仓库里的新 PR', '接收仓库里的评论', '接收默认分支的 CI'])
-  expect([...github.querySelectorAll('[role="switch"]')].slice(1).map((item) => item.getAttribute('aria-checked'))).toEqual(['false', 'false', 'false', 'false'])
+  const github = all('.dt-card').find(
+    (card) => card.querySelector('.dt-card-title')?.textContent === 'GitHub',
+  )!
+  expect([...github.querySelectorAll('.dt-switch-row')].map((row) => row.textContent)).toEqual([
+    '接收仓库里的新 Issue',
+    '接收仓库里的新 PR',
+    '接收仓库里的评论',
+    '接收默认分支的 CI',
+  ])
+  expect(
+    [...github.querySelectorAll('[role="switch"]')].slice(1).map((item) => item.getAttribute('aria-checked')),
+  ).toEqual(['false', 'false', 'false', 'false'])
   await click(find(zh['term.eval'], '.dt-settings-link'))
-  const lists = () => all('.dt-part > .dt-field .dt-subhead .dt-field-head').map((head) => head.firstChild?.textContent)
-  const list = (label: string) => all('.dt-part > .dt-field').find((item) => item.textContent?.startsWith(label))!
+  const lists = () =>
+    all('.dt-part > .dt-field .dt-subhead .dt-field-head').map((head) => head.firstChild?.textContent)
+  const list = (label: string) =>
+    all('.dt-part > .dt-field').find((item) => item.textContent?.startsWith(label))!
   const add = async (label: string) => {
-    await click([...list(label).querySelectorAll('button')].find((button) => button.textContent === zh.addRow)!)
+    await click(
+      [...list(label).querySelectorAll('button')].find((button) => button.textContent === zh.addRow)!,
+    )
     return [...list(label).querySelectorAll('.dt-rows-item')].at(-1)!
   }
   expect(lists()).toEqual(['能发起工作的飞书用户', '消息可以成为候选的机器人'])
@@ -222,9 +268,17 @@ it("lists each Source's bots next to its people and saves them, and sets the Git
   await type(bot.querySelector<HTMLInputElement>('input[aria-label="名字"]')!, '评审机器人')
   await click(find(zh['source.github'], '.dt-subtab'))
   expect(lists()).toEqual(['能发起工作的 GitHub 账号', '评论可以成为候选的机器人'])
-  await type((await add('评论可以成为候选的机器人')).querySelector<HTMLInputElement>('input[aria-label="账号"]')!, 'dependabot[bot]')
+  await type(
+    (await add('评论可以成为候选的机器人')).querySelector<HTMLInputElement>('input[aria-label="账号"]')!,
+    'dependabot[bot]',
+  )
   // Until the GitHub Source receives the repository's Issues, pull requests, comments or CI, only messages that mention the agent arrive.
-  const rows = () => all('.dt-admission tbody tr').map((row) => [row.querySelector('.dt-admission-scope')!.firstChild?.textContent, row.querySelector('.dt-admission-scope small')?.textContent, row.querySelectorAll('select').length])
+  const rows = () =>
+    all('.dt-admission tbody tr').map((row) => [
+      row.querySelector('.dt-admission-scope')!.firstChild?.textContent,
+      row.querySelector('.dt-admission-scope small')?.textContent,
+      row.querySelectorAll('select').length,
+    ])
   expect(rows()).toEqual([
     ['新 Issue', '仅 @', 1],
     ['新 PR', '仅 @', 1],
@@ -244,8 +298,15 @@ it("shows the GitHub Source's switches for what it receives across the repositor
   }
   await mount(en)
   await click(tab(en['tab.settings']))
-  const github = all('.dt-card').find((card) => card.querySelector('.dt-card-title')?.textContent === 'GitHub')!
-  expect([...github.querySelectorAll('.dt-switch-row')].map((row) => [row.textContent, row.querySelector('[role="switch"]')?.getAttribute('aria-checked')])).toEqual([
+  const github = all('.dt-card').find(
+    (card) => card.querySelector('.dt-card-title')?.textContent === 'GitHub',
+  )!
+  expect(
+    [...github.querySelectorAll('.dt-switch-row')].map((row) => [
+      row.textContent,
+      row.querySelector('[role="switch"]')?.getAttribute('aria-checked'),
+    ]),
+  ).toEqual([
     ['Receive new Issues in the repository', 'true'],
     ['Receive new pull requests in the repository', 'false'],
     ['Receive comments in the repository', 'false'],
@@ -263,7 +324,10 @@ it("shows the GitHub Source's switches for what it receives across the repositor
   })
   await click(find(en['term.eval'], '.dt-settings-link'))
   await click(find(en['source.github'], '.dt-subtab'))
-  const rows = all('.dt-admission tbody tr').map((row) => [row.querySelector('.dt-admission-scope')!.firstChild?.textContent, row.querySelectorAll('select').length])
+  const rows = all('.dt-admission tbody tr').map((row) => [
+    row.querySelector('.dt-admission-scope')!.firstChild?.textContent,
+    row.querySelectorAll('select').length,
+  ])
   expect(rows).toEqual([
     ['New Issues', 3],
     ['New pull requests', 1],

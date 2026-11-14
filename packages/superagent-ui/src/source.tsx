@@ -59,7 +59,13 @@ function SourceCard({ source }: { source: SourceView }) {
               {!source.installed && <Tag tone="warning">{t('sourceNotInstalled')}</Tag>}
             </div>
           </div>
-          {source.installed && <Switch checked={value.enabled} onChange={(enabled) => draft.edit({ ...value, enabled })} label={t('sourceEnable', { name: localized(t, source.title) })} />}
+          {source.installed && (
+            <Switch
+              checked={value.enabled}
+              onChange={(enabled) => draft.edit({ ...value, enabled })}
+              label={t('sourceEnable', { name: localized(t, source.title) })}
+            />
+          )}
         </div>
         {problem && (
           <div className="dt-row-buttons">
@@ -72,12 +78,21 @@ function SourceCard({ source }: { source: SourceView }) {
         {!source.installed && <Hint>{t('sourceNotInstalledHint')}</Hint>}
         {source.installed && source.fields.filter((spec) => !spec.advanced).map(field)}
         {source.installed && advanced.length > 0 && (
-          <DisclosureRow icon={<Icon name="settings" />} title={t('advanced')} open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)}>
+          <DisclosureRow
+            icon={<Icon name="settings" />}
+            title={t('advanced')}
+            open={advancedOpen}
+            onToggle={() => setAdvancedOpen(!advancedOpen)}
+          >
             <div className="dt-disclosure-body">{advanced.map(field)}</div>
           </DisclosureRow>
         )}
       </Fields>
-      <SaveBar {...draft} status={restarts && running > 0 ? t('restartInterrupts', { count: running }) : undefined} onDiscard={draft.discard} />
+      <SaveBar
+        {...draft}
+        status={restarts && running > 0 ? t('restartInterrupts', { count: running }) : undefined}
+        onDiscard={draft.discard}
+      />
     </form>
   )
 }
@@ -102,7 +117,11 @@ function DroppedReplies({ items }: { items: DroppedReply[] }) {
   const [open, setOpen] = useState(false)
   // Link to the message's Ticket, or fall back to its Thread for messages queued before receipts recorded `ticketId`.
   const target = (item: DroppedReply): { route: Route; name: string } | undefined =>
-    item.ticket ? { route: { page: 'execution', id: item.ticket.id }, name: item.ticket.title } : item.thread ? { route: { page: 'trigger', id: item.thread }, name: t('term.thread') } : undefined
+    item.ticket
+      ? { route: { page: 'execution', id: item.ticket.id }, name: item.ticket.title }
+      : item.thread
+        ? { route: { page: 'trigger', id: item.thread }, name: t('term.thread') }
+        : undefined
   return (
     <DisclosureRow
       icon={<Icon name="dismiss" />}
@@ -150,7 +169,10 @@ function SourceRow({ source }: { source: SourceStatusRow }) {
   const { dot, label: state } = sourceMark(t, source.state)
   const { received, filtered, lastAt } = source.stats
   // Omit healthy parts and suppress per-part notes when a setup problem already explains why the Source is stopped.
-  const notes = source.enabled && !problem && !setup?.problem ? source.health.filter((item) => item.state === 'error' || item.state === 'paused') : []
+  const notes =
+    source.enabled && !problem && !setup?.problem
+      ? source.health.filter((item) => item.state === 'error' || item.state === 'paused')
+      : []
   return (
     <li className="dt-row">
       <Dot state={dot} label={state} />
@@ -169,7 +191,11 @@ function SourceRow({ source }: { source: SourceStatusRow }) {
         {problem && (
           <p className="dt-error">
             <SetupMessage problem={problem} lead />{' '}
-            <button type="button" className="dt-textlink" onClick={() => navigate(settingsRoute('source', { source: source.id }))}>
+            <button
+              type="button"
+              className="dt-textlink"
+              onClick={() => navigate(settingsRoute('source', { source: source.id }))}
+            >
               {t('sourceOpenSettings')}
             </button>
           </p>
@@ -182,7 +208,12 @@ function SourceRow({ source }: { source: SourceStatusRow }) {
           </p>
         ))}
         {source.filtered.length > 0 && (
-          <DisclosureRow icon={<Icon name="filter" />} title={t('sourceFilteredTitle')} open={filteredOpen} onToggle={() => setFilteredOpen(!filteredOpen)}>
+          <DisclosureRow
+            icon={<Icon name="filter" />}
+            title={t('sourceFilteredTitle')}
+            open={filteredOpen}
+            onToggle={() => setFilteredOpen(!filteredOpen)}
+          >
             <div className="dt-disclosure-body">
               <ul className="dt-list">
                 {source.filtered.map((item) => (

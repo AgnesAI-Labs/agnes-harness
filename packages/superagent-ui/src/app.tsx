@@ -8,7 +8,18 @@ import { en, GLOSSARY, GLOSSARY_VALUES, type SuperagentKey, zh } from './locales
 import { ticketMark } from './marks.js'
 import { OverviewPage } from './overview.js'
 import { PanelProvider, usePanel, usePanelData } from './provider.js'
-import { HOME, initialLocation, type Location, lastSettingsGroup, type Route, remember, routeLabel, settingsRoute, TABS, type Tab } from './route.js'
+import {
+  HOME,
+  initialLocation,
+  type Location,
+  lastSettingsGroup,
+  type Route,
+  remember,
+  routeLabel,
+  settingsRoute,
+  TABS,
+  type Tab,
+} from './route.js'
 import { SettingsPage } from './settings.js'
 import { SourceStatus } from './source.js'
 import { actorName, errorText, readableMarkers, reasonLabel, type T, valueLabel } from './text.js'
@@ -27,7 +38,8 @@ function Glossary({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = usePanel()
   const chinese = t('tab.overview') === zh['tab.overview']
   const [own, other] = chinese ? [zh, en] : [en, zh]
-  const heading = (group: keyof typeof GLOSSARY) => t(group === 'roles' ? 'glossaryGroup.roles' : `tab.${group}`)
+  const heading = (group: keyof typeof GLOSSARY) =>
+    t(group === 'roles' ? 'glossaryGroup.roles' : `tab.${group}`)
   return (
     <Modal
       className="dt-glossary-modal"
@@ -101,7 +113,15 @@ function Highlight({ text, query }: { text: string; query: string }) {
     </>
   )
 }
-function Result({ name, open, children }: { name: ReactNode; open: (() => void) | undefined; children: ReactNode }) {
+function Result({
+  name,
+  open,
+  children,
+}: {
+  name: ReactNode
+  open: (() => void) | undefined
+  children: ReactNode
+}) {
   return (
     <li className="dt-row dt-link">
       <div className="dt-row-main">
@@ -119,7 +139,15 @@ function Result({ name, open, children }: { name: ReactNode; open: (() => void) 
     </li>
   )
 }
-function SearchResults({ result, query, onClose }: { result: SearchView; query: string; onClose: () => void }) {
+function SearchResults({
+  result,
+  query,
+  onClose,
+}: {
+  result: SearchView
+  query: string
+  onClose: () => void
+}) {
   const { t, navigate } = usePanel()
   const { setup } = usePanelData()
   const empty = !result.items.length && !result.threads.length && !result.tickets.length
@@ -135,19 +163,37 @@ function SearchResults({ result, query, onClose }: { result: SearchView; query: 
   return (
     <div className="dt-search-results" role="region" aria-label={t('searchLabel')}>
       <div className="dt-search-head">
-        <span className="dt-hint">{empty ? t(setup?.accounts?.feishu ? 'searchNone' : 'searchNoneGithub') : t(result.items.length >= 20 ? 'searchFoundCapped' : 'searchFound', counts)}</span>
-        <Button variant="ghost" size="sm" icon={<Icon name="close" size={14} />} aria-label={t('close')} onClick={onClose} />
+        <span className="dt-hint">
+          {empty
+            ? t(setup?.accounts?.feishu ? 'searchNone' : 'searchNoneGithub')
+            : t(result.items.length >= 20 ? 'searchFoundCapped' : 'searchFound', counts)}
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<Icon name="close" size={14} />}
+          aria-label={t('close')}
+          onClick={onClose}
+        />
       </div>
       {!empty && (
         <ul className="dt-list">
           {result.tickets.map((ticket) => (
-            <Result key={ticket.id} name={<Highlight text={ticket.title} query={query} />} open={go({ page: 'execution', id: ticket.id })}>
+            <Result
+              key={ticket.id}
+              name={<Highlight text={ticket.title} query={query} />}
+              open={go({ page: 'execution', id: ticket.id })}
+            >
               <span>{t('term.ticket')}</span>
               <span>{ticket.stage === 'ended' ? t('ticket.ended') : ticketMark(t, ticket).label}</span>
             </Result>
           ))}
           {result.threads.map((thread) => (
-            <Result key={thread.key} name={readableMarkers(t, thread.title)} open={go({ page: 'trigger', id: thread.key })}>
+            <Result
+              key={thread.key}
+              name={readableMarkers(t, thread.title)}
+              open={go({ page: 'trigger', id: thread.key })}
+            >
               <span>{t('term.thread')}</span>
             </Result>
           ))}
@@ -156,13 +202,23 @@ function SearchResults({ result, query, onClose }: { result: SearchView; query: 
             <Result
               key={item.id}
               name={<Highlight text={readableMarkers(t, item.preview) || t('empty')} query={query} />}
-              open={item.filtered === undefined ? go({ page: 'trigger', id: item.threads[0]!, query: { trigger: item.id } }) : undefined}
+              open={
+                item.filtered === undefined
+                  ? go({ page: 'trigger', id: item.threads[0]!, query: { trigger: item.id } })
+                  : undefined
+              }
             >
               <span>{valueLabel(t, 'source', item.source)}</span>
               <span>{actorName(t, item.actor)}</span>
               <When at={item.at} />
-              {item.threadTitle && <span className="dt-ellipsis">{t('inThread', { thread: readableMarkers(t, item.threadTitle) })}</span>}
-              {item.filtered !== undefined && <span>{t('searchFiltered', { reason: reasonLabel(t, item.filtered) })}</span>}
+              {item.threadTitle && (
+                <span className="dt-ellipsis">
+                  {t('inThread', { thread: readableMarkers(t, item.threadTitle) })}
+                </span>
+              )}
+              {item.filtered !== undefined && (
+                <span>{t('searchFiltered', { reason: reasonLabel(t, item.filtered) })}</span>
+              )}
             </Result>
           ))}
         </ul>
@@ -183,6 +239,7 @@ function Header({ masterId }: { masterId: string | undefined }) {
     setResult(value)
   }
   const search = useRef<HTMLFormElement>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: bound only while results show; `show` just clears them
   useEffect(() => {
     if (!result) return
     const close = (event: PointerEvent) => {
@@ -246,7 +303,15 @@ function Header({ masterId }: { masterId: string | undefined }) {
             />
           )}
         </form>
-        <Button variant="ghost" size="sm" icon={<Icon name="question" />} aria-label={t('glossary')} title={t('glossary')} aria-haspopup="dialog" onClick={() => setGlossary(true)} />
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<Icon name="question" />}
+          aria-label={t('glossary')}
+          title={t('glossary')}
+          aria-haspopup="dialog"
+          onClick={() => setGlossary(true)}
+        />
         <Button
           variant="outline"
           size="sm"
@@ -285,13 +350,33 @@ function Pages({ route, openTab }: { route: Route; openTab: (tab: Tab) => void }
       case 'source':
         return <SourceStatus />
       case 'trigger':
-        return route.id !== undefined ? <ThreadPage key={route.id} id={route.id} target={route.query?.trigger} /> : <TriggerStatus filter={route.query?.filter ?? 'subscribed'} />
+        return route.id !== undefined ? (
+          <ThreadPage key={route.id} id={route.id} target={route.query?.trigger} />
+        ) : (
+          <TriggerStatus filter={route.query?.filter ?? 'subscribed'} />
+        )
       case 'eval':
-        return <EvalStatus filter={route.query?.filter ?? 'work'} window={route.query?.window} paused={!!state?.paused} />
+        return (
+          <EvalStatus
+            filter={route.query?.filter ?? 'work'}
+            window={route.query?.window}
+            paused={!!state?.paused}
+          />
+        )
       case 'execution':
-        return route.id !== undefined ? <TicketPage key={route.id} id={route.id} /> : state ? <ExecutionStatus filter={route.query?.filter ?? 'open'} state={state} reload={reload} /> : waiting
+        return route.id !== undefined ? (
+          <TicketPage key={route.id} id={route.id} />
+        ) : state ? (
+          <ExecutionStatus filter={route.query?.filter ?? 'open'} state={state} reload={reload} />
+        ) : (
+          waiting
+        )
       case 'settings':
-        return state ? <SettingsPage key={state.masterId} group={route.query.group} query={route.query} state={state} /> : waiting
+        return state ? (
+          <SettingsPage key={state.masterId} group={route.query.group} query={route.query} state={state} />
+        ) : (
+          waiting
+        )
     }
   })()
   return (
@@ -330,7 +415,11 @@ export function App({ t, openSession, services }: AppProps) {
     remember(location)
   }, [location])
   // Preserve the last opened settings group across navigation so the Settings tab reopens at it.
-  const move = useCallback((next: (current: Location) => Pick<Location, 'route' | 'stack'>) => setLocation((current) => ({ ...next(current), group: lastSettingsGroup(current) })), [])
+  const move = useCallback(
+    (next: (current: Location) => Pick<Location, 'route' | 'stack'>) =>
+      setLocation((current) => ({ ...next(current), group: lastSettingsGroup(current) })),
+    [],
+  )
   /** Navigates to `route`; `replace` swaps the current entry (filters, paging) instead of pushing a back step. */
   const navigate = useCallback(
     (route: Route, replace = false) =>
@@ -340,7 +429,10 @@ export function App({ t, openSession, services }: AppProps) {
       })),
     [move],
   )
-  const back = useCallback(() => move((current) => ({ route: current.stack.at(-1) ?? HOME, stack: current.stack.slice(0, -1) })), [move])
+  const back = useCallback(
+    () => move((current) => ({ route: current.stack.at(-1) ?? HOME, stack: current.stack.slice(0, -1) })),
+    [move],
+  )
   const openTab = useCallback(
     (tab: Tab) =>
       move((current) => ({
@@ -350,7 +442,14 @@ export function App({ t, openSession, services }: AppProps) {
     [move],
   )
   return (
-    <PanelProvider t={t} services={services} openSession={openSession} navigate={navigate} back={back} backLabel={routeLabel(t, location.stack.at(-1) ?? HOME)}>
+    <PanelProvider
+      t={t}
+      services={services}
+      openSession={openSession}
+      navigate={navigate}
+      back={back}
+      backLabel={routeLabel(t, location.stack.at(-1) ?? HOME)}
+    >
       <Pages route={location.route} openTab={openTab} />
     </PanelProvider>
   )

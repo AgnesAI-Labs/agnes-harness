@@ -12,10 +12,13 @@ declare global {
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const SOURCE = join(process.cwd(), 'packages/superagent-ui/src')
-it('imports no Agnes package at run time, only React and type declarations', () => {
+it("imports no Agnes package at run time but the page's own web-ui, only React and type declarations", () => {
   for (const name of readdirSync(SOURCE)) {
     const source = readFileSync(join(SOURCE, name), 'utf8')
-    for (const match of source.matchAll(/^import (type )?[^'"]*from '(@agnes\/[^']+)'/gm)) expect({ name, from: match[2], typeOnly: !!match[1] }).toMatchObject({ typeOnly: true })
+    for (const match of source.matchAll(/^import (type )?[^'"]*from '(@agnes\/[^']+)'/gm))
+      expect({ name, from: match[2], typeOnly: !!match[1] || match[2] === '@agnes/web-ui' }).toMatchObject({
+        typeOnly: true,
+      })
   }
 })
 
@@ -24,7 +27,12 @@ it('imports each module of the panel only from modules that do not import it bac
   const graph = new Map(
     readdirSync(dir)
       .filter((name) => /\.tsx?$/.test(name))
-      .map((name) => [name, [...readFileSync(join(dir, name), 'utf8').matchAll(/^import [^'"]*from '\.\/([\w-]+\.tsx?)'/gm)].map((match) => match[1]!)]),
+      .map((name) => [
+        name,
+        [...readFileSync(join(dir, name), 'utf8').matchAll(/^import [^'"]*from '\.\/([\w-]+\.tsx?)'/gm)].map(
+          (match) => match[1]!,
+        ),
+      ]),
   )
   const done = new Set<string>(),
     cycles: string[] = []
@@ -89,7 +97,13 @@ it('keeps the focus inside the dialog when its parent re-renders, and Tab and Sh
     rerender = () => setCount((count) => count + 1)
     // Pass a new inline onClose on each render (as polling parents do) to verify the effect does not reset focus.
     return (
-      <Modal open onClose={() => {}} title="Title" closeLabel="Close" footer={<button type="button">last</button>}>
+      <Modal
+        open
+        onClose={() => {}}
+        title="Title"
+        closeLabel="Close"
+        footer={<button type="button">last</button>}
+      >
         <input aria-label="first field" />
       </Modal>
     )
@@ -106,7 +120,9 @@ it('keeps the focus inside the dialog when its parent re-renders, and Tab and Sh
     rerender()
   })
   expect(document.activeElement).toBe(field)
-  const [close, , last] = [...document.querySelectorAll<HTMLElement>('[role="dialog"] button, [role="dialog"] input')]
+  const [close, , last] = [
+    ...document.querySelectorAll<HTMLElement>('[role="dialog"] button, [role="dialog"] input'),
+  ]
   const tab = (shiftKey = false) =>
     act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey, cancelable: true }))

@@ -3,21 +3,51 @@
  * undeclared query parameter or body mismatch in `server.misuse`, which `usePanelServer` asserts is empty after each test.
  */
 import { afterEach, beforeEach, expect } from 'vitest'
-import { builtInBase, builtInPart, builtInParts, composePrompt, composeSkill, defaultPrompts, environmentSection, policySection, promptParts, SKILL_NAME, SKILL_PREFIX, TEAM_SECTIONS } from '../../../superagent/src/app/prompts.js'
+import {
+  builtInPart,
+  composePrompt,
+  composeSkill,
+  environmentSection,
+  policySection,
+  promptParts,
+} from '../../../superagent/src/app/prompts.js'
 import { SETUP_FIELDS } from '../../../superagent/src/deployment.js'
-import { EvalConfigSchema, ExecutorConfigSchema, PolicyConfigSchema, SettingsSchema } from '../../../superagent/src/policy.js'
+import {
+  EvalConfigSchema,
+  ExecutorConfigSchema,
+  PolicyConfigSchema,
+  SettingsSchema,
+} from '../../../superagent/src/policy.js'
 import type { Api, ApiResponse, RouteParams } from '../../../superagent/src/runtime/panel-api.js'
+import { PANEL_SERVICES } from '../../../superagent/src/runtime/services.js'
 import { SetupError } from '../../../superagent/src/setup.js'
 import type { Health } from '../../../superagent/src/sources/host.js'
-import type { DroppedReply, HistoryView, Problem, PromptsView, SetupView, SourceStatusRow, SourceView, StateView, ThreadPageView, ThreadRow, TicketPageView, TicketRow, TriggerRow } from '../../src/api.js'
-import { PANEL_SERVICES } from '../../../superagent/src/runtime/services.js'
+import type {
+  DroppedReply,
+  HistoryView,
+  Problem,
+  PromptsView,
+  SetupView,
+  SourceStatusRow,
+  SourceView,
+  StateView,
+  ThreadPageView,
+  ThreadRow,
+  TicketPageView,
+  TicketRow,
+  TriggerRow,
+} from '../../src/api.js'
 import { SERVICES } from '../../src/api.js'
-import { problems } from './schema.js'
 import { testDeployment } from './deployment.js'
+import { problems } from './schema.js'
 
 export * from './panel-fixtures.js'
 
-import { actor, dayAgo, KINDS, MACHINE, MEMBER, promptVersion, threadSummary, ticketSummary, trigger } from './panel-fixtures.js'
+import { acceptDecision, initial } from './panel-state.js'
+
+export { acceptDecision }
+
+import { actor, dayAgo, KINDS, promptVersion, threadSummary } from './panel-fixtures.js'
 
 type Settings = ReturnType<typeof SettingsSchema.parse>
 export interface PanelServer {
@@ -68,9 +98,12 @@ function healthOf(name: string): Health {
   if (server.setup.problem) return { state: 'paused', detail: 'Waiting for setup', code: 'setupPending' }
   if (server.health[name]) return server.health[name]
   if (name !== 'feishu') return { state: 'ready', detail: '' }
-  return server.setup.feishuProblem ? { state: 'paused', detail: server.setup.feishuProblem.detail } : { state: 'error', detail: 'socket closed' }
+  return server.setup.feishuProblem
+    ? { state: 'paused', detail: server.setup.feishuProblem.detail }
+    : { state: 'error', detail: 'socket closed' }
 }
-const problemOf_ = (id: string) => [server.setup.problem, server.setup.feishuProblem].find((item) => item?.place === id) ?? undefined
+const problemOf_ = (id: string) =>
+  [server.setup.problem, server.setup.feishuProblem].find((item) => item?.place === id) ?? undefined
 function sourceSettings(): SourceView[] {
   return KINDS.map((kind) => {
     const config = kind.schema.parse(server.settings.sources[kind.kind]?.config ?? {})
@@ -144,7 +177,9 @@ function sourceStatuses(): SourceStatusRow[] {
               reason: { code: 'source_disabled' },
             },
           ],
-      dropped: server.dropped.filter((item) => item.channel.source === kind.kind && item.dropped.at >= dayAgo()),
+      dropped: server.dropped.filter(
+        (item) => item.channel.source === kind.kind && item.dropped.at >= dayAgo(),
+      ),
     }
   })
 }
@@ -178,7 +213,9 @@ const settingsView = (): ApiResponse<'GET settings'> => ({
       {
         owner: 'github',
         enabled: false,
-        variables: [{ key: 'DSH_SUPERAGENT_GITHUB_REPOSITORY', description: { zh: '仓库', en: 'Repository' } }],
+        variables: [
+          { key: 'DSH_SUPERAGENT_GITHUB_REPOSITORY', description: { zh: '仓库', en: 'Repository' } },
+        ],
       },
     ],
   },
@@ -189,7 +226,9 @@ const overviewView = (): ApiResponse<'GET overview'> => {
   return {
     problems: [
       ...(setup ? [{ kind: 'setup' as const, ...setup }] : []),
-      ...(KINDS.some((kind) => server.settings.sources[kind.kind]?.enabled !== false) ? [] : [{ kind: 'no-source' as const }]),
+      ...(KINDS.some((kind) => server.settings.sources[kind.kind]?.enabled !== false)
+        ? []
+        : [{ kind: 'no-source' as const }]),
       ...(feishuProblem || server.settings.sources.feishu?.enabled === false
         ? []
         : [
@@ -202,7 +241,9 @@ const overviewView = (): ApiResponse<'GET overview'> => {
               },
             },
           ]),
-      ...server.threads.filter((thread) => thread.evaluating && thread.evaluating.deadline < new Date().toISOString()).map((thread) => ({ kind: 'eval-overdue' as const, thread })),
+      ...server.threads
+        .filter((thread) => thread.evaluating && thread.evaluating.deadline < new Date().toISOString())
+        .map((thread) => ({ kind: 'eval-overdue' as const, thread })),
       {
         kind: 'eval-unavailable' as const,
         decisionId: 'u1',
@@ -213,9 +254,17 @@ const overviewView = (): ApiResponse<'GET overview'> => {
       ...(server.settings.paused ? [{ kind: 'executor-paused' as const }] : []),
       // As on the host, every entry in error that is not a Source's own, a Policy sync, or the individually listed unavailable Evals is a runtime-error.
       ...Object.entries(server.health)
-        .filter(([name, item]) => item.state === 'error' && !KINDS.some((kind) => kind.health.includes(name)) && !name.startsWith('sync:') && name !== 'evals')
+        .filter(
+          ([name, item]) =>
+            item.state === 'error' &&
+            !KINDS.some((kind) => kind.health.includes(name)) &&
+            !name.startsWith('sync:') &&
+            name !== 'evals',
+        )
         .map(([name, item]) => ({ kind: 'runtime-error' as const, name, detail: item.detail })),
-      ...(Object.values(server.settings.policy.sources).some((part) => part.allowed.length) ? [] : [{ kind: 'no-allowed' as const }]),
+      ...(Object.values(server.settings.policy.sources).some((part) => part.allowed.length)
+        ? []
+        : [{ kind: 'no-allowed' as const }]),
       ...server.failing.map((outgoing) => ({ kind: 'outgoing' as const, outgoing })),
     ],
     person: server.person,
@@ -232,264 +281,6 @@ const overviewView = (): ApiResponse<'GET overview'> => {
     policyVersion: 'abcdef1234567890',
   }
 }
-export const acceptDecision = (): NonNullable<TicketPageView['decision']> => ({
-  id: 'd1',
-  kind: 'accept',
-  outcome: 'accept',
-  reason: [{ code: 'explicitRouted' }],
-  at: '2026-09-22T00:00:00Z',
-  strength: 'explicit',
-  ticketId: undefined,
-  triggerIds: ['e1'],
-  thread: 'feishu:oc_1:om_root',
-  rules: [],
-  preview: '@bot 修一下',
-  ticketTitle: undefined,
-})
-const ticketDetail = (): TicketPageView => ({
-  ...ticketSummary(),
-  paused: false,
-  decision: acceptDecision(),
-  decisionArchived: false,
-  threads: [threadSummary()],
-  mandate: {
-    strength: 'explicit',
-    policyVersion: 'abcdef1234567890',
-    basis: { via: 'addressed', sender: 'Alice', addressed: 'mention' },
-    actor: actor('feishu', MEMBER),
-    scope: '修复登录页回归',
-  },
-  basis: {
-    facts: [
-      { name: 'sender', value: 'Alice' },
-      { name: 'addressed', value: 'mention' },
-    ],
-    legacy: false,
-  },
-  environment: [
-    {
-      key: 'DSH_SUPERAGENT_DIR',
-      value: '/w/t1',
-      description: { zh: '执行目录', en: 'Directory' },
-      owner: 'executor',
-    },
-    {
-      key: 'DSH_SUPERAGENT_GITHUB_NUMBER',
-      value: '',
-      description: { zh: '编号', en: 'Number' },
-      owner: 'github',
-    },
-  ],
-  channels: [
-    {
-      source: 'feishu',
-      url: 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1',
-      label: { zh: '飞书消息', en: 'Feishu message' },
-    },
-    {
-      source: 'github',
-      url: 'https://github.com/acme/widgets/issues/42',
-      label: { zh: 'GitHub #42', en: 'GitHub #42' },
-    },
-  ],
-  assignments: [
-    {
-      id: 'a1',
-      state: 'running',
-      createdAt: '2026-09-22T00:00:00Z',
-      startedAt: '2026-09-22T00:01:00Z',
-      report: { state: 'progress', summary: 'working', at: '2026-09-22T00:02:00Z' },
-    },
-  ],
-  inputs: [
-    {
-      id: 'i1',
-      kind: 'trigger',
-      triggerId: 'e2',
-      at: '2026-09-22T00:03:00Z',
-      delivered: false,
-      trigger: {
-        id: 'e2',
-        actor: actor('feishu', MEMBER),
-        human: true,
-        preview: '顺便改标题',
-        thread: 'feishu:oc_1:om_root',
-      },
-    },
-    {
-      id: 'i2',
-      kind: 'policy-changed',
-      at: '2026-09-22T00:04:00Z',
-      delivered: true,
-      from: 'aaaaaaaaaaaaaaaa',
-      to: 'bbbbbbbbbbbbbbbb',
-    },
-  ],
-})
-function threadPage(key: string, { before, around }: { before?: string; around?: string }): ThreadPageView | undefined {
-  if (key !== threadSummary().key) return undefined
-  const base = {
-    ...threadSummary(),
-    tickets: [ticketSummary()],
-    correlated: [{ key: 'github:42', title: 'PR 42' }],
-    decisions: [],
-    url: 'https://example.test/thread',
-    context: [],
-  }
-  const decision = {
-    id: 'd1',
-    outcome: 'accept' as const,
-    reason: [{ code: 'said', values: { text: 'x' } }],
-    ticketId: 't1',
-  }
-  if (before === 'cursor-1' || around === 'e1')
-    return {
-      ...base,
-      timeline: [trigger('e1', '2026-09-20T00:00:00Z', { disposition: { decision } })],
-      earlier: null,
-    }
-  return {
-    ...base,
-    earlier: 'cursor-1',
-    timeline: [trigger('e3', '2026-09-23T00:00:00Z', { disposition: { fanout: ['t1'] } }), trigger('e4', '2026-09-23T00:01:00Z', { disposition: { filtered: { code: 'not_a_member' } } })],
-  }
-}
-function initial(): PanelServer {
-  const settings = SettingsSchema.parse({
-    policy: {
-      sources: {
-        feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }], syncChat: 'oc_team' },
-        github: { allowed: [{ id: 'alice' }] },
-      },
-      rules: [{ id: 'copy', name: '文案修改', enabled: true, instruction: '修正明确的文案错误' }],
-    },
-    sources: {
-      feishu: {
-        enabled: true,
-        config: { cli: 'lark-bot', chats: [{ chatId: 'oc_team', listen: 'mentions' }], directMessages: true },
-      },
-      github: { enabled: true, config: { repository: 'acme/widgets', cli: 'gh-agent' } },
-    },
-    executor: { blockedCommands: ['gh-personal'] },
-  })
-  const ended = ticketSummary(
-    {
-      id: 't0',
-      title: '旧工单',
-      state: 'ended',
-      actions: { retry: false, stop: false },
-      ended: { at: '2026-09-21T00:00:00Z', by: 'human', reason: 'Human asked to stop', outcome: 'stopped' },
-    },
-    { stage: 'ended' },
-  )
-  const reply = {
-    source: 'feishu',
-    url: 'https://applink.feishu.cn/client/chat/open?openChatId=oc_1',
-    label: { zh: '飞书消息', en: 'Feishu message' },
-  }
-  const defaults = { revision: 0, previousRevision: null, savedAt: '', source: 'defaults' }
-  return {
-    health: {},
-    down: false,
-    pending: 0,
-    opened: [],
-    requests: [],
-    calls: [],
-    misuse: [],
-    queued: new Set(),
-    dropped: [],
-    failing: [],
-    setup: {
-      machine: MACHINE,
-      problem: null,
-      feishuProblem: null,
-      accounts: {
-        repository: 'acme/widgets',
-        agent: 'agent-bot',
-        feishu: { appId: 'cli_bot', brand: 'feishu', botId: 'ou_bot', name: 'Widgets Bot' },
-      },
-    },
-    settings,
-    revisions: { policy: 3, eval: 1, executor: 0 },
-    prompts: {
-      masterId: 'master',
-      sections: TEAM_SECTIONS,
-      skillName: SKILL_NAME.source,
-      builtin: ['feishu', 'github'],
-      skillPrefix: SKILL_PREFIX,
-      revision: 0,
-      current: { ...defaults, config: defaultPrompts() },
-      defaults: defaultPrompts(),
-      parts: Object.entries(builtInParts()).map(([key, part]) => ({
-        key,
-        ...part,
-        base: builtInBase(part.text),
-      })),
-      defaultChanged: [],
-      revisions: [{ ...defaults, changed: [] }],
-      sessions: [],
-      notificationPending: false,
-      next_offset: null,
-    },
-    tickets: { open: [ticketSummary()], ended: [ended] },
-    ticketDetails: { t1: ticketDetail() },
-    threads: [threadSummary()],
-    threadPages: threadPage,
-    person: [
-      ticketSummary(
-        {
-          attention: { id: 'q1', question: '需要确认按钮颜色' },
-          note: { text: '需要确认按钮颜色', error: false },
-          reply,
-        },
-        { stage: 'person', action: 'answer' },
-      ),
-      ticketSummary(
-        {
-          id: 't4',
-          title: '截图工具',
-          actions: { retry: true, stop: true },
-          sessionId: 'worker-t4',
-          summary: 'LlmError: no adapter registered for provider "provider-a"',
-          note: { text: 'LlmError: no adapter registered for provider "provider-a"', error: true },
-        },
-        { stage: 'person', action: 'failed' },
-      ),
-    ],
-    search: { items: [], threads: [] },
-    history: {
-      current: 3,
-      policyVersion: 'abcdef1234567890',
-      items: [
-        {
-          revision: 4,
-          savedAt: '2026-09-23T00:00:00Z',
-          source: 'panel',
-          policyVersion: '9876543210fedcba',
-          policyChanged: true,
-          notified: [],
-          block: 'source:feishu',
-          changes: [{ code: 'sourceRowsAdded', source: 'feishu', field: 'chats', items: ['oc_team'] }],
-        },
-        {
-          revision: 3,
-          savedAt: '2026-09-22T00:00:00Z',
-          source: 'panel',
-          policyVersion: 'abcdef1234567890',
-          policyChanged: true,
-          notified: [{ id: 't1', title: '修复回归' }],
-          block: 'policy',
-          changes: [
-            { code: 'mode', from: 'off', to: 'observe' },
-            { code: 'sourceField', source: 'feishu', field: 'directMessages', from: true, to: false },
-            { code: 'sourceRowsAdded', source: 'feishu', field: 'chats', items: ['oc_other', 'oc_new'] },
-          ],
-        },
-      ],
-    },
-  }
-}
-
 /** A refusal response carrying the host's HTTP status code and JSON error body. Returned by route handlers when a request is rejected. */
 class Refusal {
   constructor(
@@ -497,7 +288,8 @@ class Refusal {
     readonly body: Record<string, unknown>,
   ) {}
 }
-const refuse = (status: Refusal['status'], error: string, more: Record<string, unknown> = {}) => new Refusal(status, { error, ...more })
+const refuse = (status: Refusal['status'], error: string, more: Record<string, unknown> = {}) =>
+  new Refusal(status, { error, ...more })
 type Query<K extends keyof Api> = Api[K] extends { query?: infer Q } ? keyof NonNullable<Q> & string : never
 type Body<K extends keyof Api> = Api[K] extends { body: infer B } ? B : undefined
 interface Request<K extends keyof Api> {
@@ -511,7 +303,9 @@ type Route<K extends keyof Api> = {
   answer: (request: Request<K>) => Answer<K> | Promise<Answer<K>>
 } & (Api[K] extends { body: unknown } ? { body: true } : { body?: never })
 const page = <T>(items: T[]) => ({ items, total: items.length, next_offset: null })
-const ticketOf = (id: string) => [...server.tickets.open, ...server.person, ...server.tickets.ended].find((ticket) => ticket.id === id) ?? server.ticketDetails[id]
+const ticketOf = (id: string) =>
+  [...server.tickets.open, ...server.person, ...server.tickets.ended].find((ticket) => ticket.id === id) ??
+  server.ticketDetails[id]
 const SourceSave = { parse: (value: unknown) => value as { enabled: boolean; config: unknown } }
 
 const ROUTES: { [K in keyof Api]: Route<K> } = {
@@ -537,7 +331,7 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
       if (server.joinError) return refuse(500, server.joinError)
       const added = Object.values(server.joining ?? {})
       server.joined = { ...server.joined, ...server.joining }
-      server.joining = undefined
+      delete server.joining
       return { added }
     },
   },
@@ -577,7 +371,8 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     answer: ({ query }) => ({ items: query.kind === 'ignore' ? [] : [acceptDecision()], next_offset: null }),
   },
   'POST decisions/:id/dismiss': {
-    answer: ({ params }) => (params.id === 'u1' ? { dismissed: true } : refuse(404, 'Unavailable Eval not found')),
+    answer: ({ params }) =>
+      params.id === 'u1' ? { dismissed: true } : refuse(404, 'Unavailable Eval not found'),
   },
   'GET tickets': {
     query: ['state', 'offset', 'limit'],
@@ -592,10 +387,14 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
       if (!ticket) return refuse(404, 'Ticket not found')
       return ticket.actions.retry
         ? { retried: true }
-        : refuse(400, 'Only an open ticket can be retried, and only when its worker last reported failed or blocked and no person has sent a message since, or when delivering an Input to its worker failed', {
-            code: 'notRetryable',
-            values: {},
-          })
+        : refuse(
+            400,
+            'Only an open ticket can be retried, and only when its worker last reported failed or blocked and no person has sent a message since, or when delivering an Input to its worker failed',
+            {
+              code: 'notRetryable',
+              values: {},
+            },
+          )
     },
   },
   'POST tickets/:id/stop': {
@@ -617,13 +416,22 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
   'PUT settings/:block': {
     body: true,
     answer: ({ params: { block }, body }) => {
-      const source = block.startsWith('source:') ? KINDS.find((kind) => `source:${kind.kind}` === block) : undefined
-      if (!['policy', 'eval', 'executor'].includes(block) && !source) return block.startsWith('source:') ? refuse(404, 'Source not found') : refuse(400, 'Invalid settings: block')
-      if (body.revision !== (server.revisions[block] ?? 0)) return refuse(409, 'Settings changed. Reload before saving.')
+      const source = block.startsWith('source:')
+        ? KINDS.find((kind) => `source:${kind.kind}` === block)
+        : undefined
+      if (!['policy', 'eval', 'executor'].includes(block) && !source)
+        return block.startsWith('source:')
+          ? refuse(404, 'Source not found')
+          : refuse(400, 'Invalid settings: block')
+      if (body.revision !== (server.revisions[block] ?? 0))
+        return refuse(409, 'Settings changed. Reload before saving.')
       let restarting = false
-      if (block === 'policy') server.settings = { ...server.settings, policy: PolicyConfigSchema.parse(body.value) }
-      else if (block === 'executor') server.settings = { ...server.settings, executor: ExecutorConfigSchema.parse(body.value) }
-      else if (block === 'eval') server.settings = { ...server.settings, eval: EvalConfigSchema.parse(body.value) }
+      if (block === 'policy')
+        server.settings = { ...server.settings, policy: PolicyConfigSchema.parse(body.value) }
+      else if (block === 'executor')
+        server.settings = { ...server.settings, executor: ExecutorConfigSchema.parse(body.value) }
+      else if (block === 'eval')
+        server.settings = { ...server.settings, eval: EvalConfigSchema.parse(body.value) }
       else if (source) {
         const { enabled, config: value } = SourceSave.parse(body.value)
         const config = source.schema.parse(value)
@@ -670,12 +478,15 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
     body: true,
     answer: ({ body }) => {
       const { revision } = server.prompts
-      if (body.baseRevision !== revision) return refuse(409, `Prompt version changed to ${revision}; compare the latest version before saving`)
+      if (body.baseRevision !== revision)
+        return refuse(409, `Prompt version changed to ${revision}; compare the latest version before saving`)
       // As the host does: a template keeps its placeholders, and no overrides are stored as none.
       const { overrides = {}, ...config } = body.config as PromptsView['current']['config']
       for (const [part, override] of Object.entries(overrides)) {
         if (!builtInPart(part)) return refuse(400, 'refused', { code: 'unknownPromptPart', values: { part } })
-        const missing = (builtInPart(part)?.placeholders ?? []).filter((placeholder) => !override.text.includes(placeholder))
+        const missing = (builtInPart(part)?.placeholders ?? []).filter(
+          (placeholder) => !override.text.includes(placeholder),
+        )
         if (missing.length)
           return refuse(400, 'refused', {
             code: 'promptPlaceholders',
@@ -683,14 +494,21 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
           })
       }
       server.prompts.revision++
-      server.prompts.current = promptVersion(server.prompts.revision, Object.keys(overrides).length ? { ...config, overrides } : config)
+      server.prompts.current = promptVersion(
+        server.prompts.revision,
+        Object.keys(overrides).length ? { ...config, overrides } : config,
+      )
       return { revision: server.prompts.revision, context_delivery: 'injected' }
     },
   },
   'POST prompts/preview': {
     body: true,
     answer: ({ body }) => {
-      const skills = [...(server.setup.accounts?.feishu ? ['feishu'] : []), 'github', ...Object.keys(body.skills)].map((name) => [name, composeSkill(body, name)])
+      const skills = [
+        ...(server.setup.accounts?.feishu ? ['feishu'] : []),
+        'github',
+        ...Object.keys(body.skills),
+      ].map((name) => [name, composeSkill(body, name)])
       // The generated parts from their templates, without variables or rules.
       const environment = environmentSection(body, []),
         policy = policySection(SettingsSchema.parse({ policy: { rules: [] } }), body)
@@ -708,11 +526,18 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
   },
 }
 
-async function run<K extends keyof Api>(key: K, params: Record<string, string>, query: URLSearchParams, body: unknown): Promise<Answer<K>> {
+async function run<K extends keyof Api>(
+  key: K,
+  params: Record<string, string>,
+  query: URLSearchParams,
+  body: unknown,
+): Promise<Answer<K>> {
   const route: Route<K> = ROUTES[key]
   const read: readonly string[] = route.query ?? []
-  for (const name of query.keys()) if (!read.includes(name)) server.misuse.push(`${key} with the query parameter ${name}`)
-  if ((body !== undefined) !== !!route.body) server.misuse.push(`${key} ${body === undefined ? 'without' : 'with'} a body`)
+  for (const name of query.keys())
+    if (!read.includes(name)) server.misuse.push(`${key} with the query parameter ${name}`)
+  if ((body !== undefined) !== !!route.body)
+    server.misuse.push(`${key} ${body === undefined ? 'without' : 'with'} a body`)
   const values: Partial<Record<Query<K>, string>> = {}
   for (const name of route.query ?? []) {
     const value = query.get(name)
@@ -722,13 +547,19 @@ async function run<K extends keyof Api>(key: K, params: Record<string, string>, 
 }
 /** The route a service stands for, its path parameters and what is left of the input after them. */
 function routeOf(name: string) {
-  const entry = (Object.entries(SERVICES) as [keyof Api, readonly [string, 'query' | 'effect']][]).find(([, [service]]) => service === name)
+  const entry = (Object.entries(SERVICES) as [keyof Api, readonly [string, 'query' | 'effect']][]).find(
+    ([, [service]]) => service === name,
+  )
   if (!entry) return undefined
   const [key, [, kind]] = entry
   return { key, kind }
 }
 /** Answers one service call from the route table, recording the request as the route it replaces. */
-async function dispatch(name: string, kind: 'query' | 'effect', input: Record<string, unknown>): Promise<unknown> {
+async function dispatch(
+  name: string,
+  kind: 'query' | 'effect',
+  input: Record<string, unknown>,
+): Promise<unknown> {
   if (server.down) throw new Error('CAPABILITY_DENIED')
   // The Host checks the input against the declared schema before the handler runs, and refuses what does not fit.
   const service = PANEL_SERVICES.find((item) => item.name === name)
@@ -748,7 +579,9 @@ async function dispatch(name: string, kind: 'query' | 'effect', input: Record<st
   const spec = ROUTES[route.key] as unknown as Route<keyof Api>
   // The preview takes the prompt configuration itself as its body; every other body is the rest of the input.
   const body = spec.body ? (route.key === 'POST prompts/preview' ? rest.config : rest) : undefined
-  const query = new URLSearchParams(spec.body ? {} : Object.fromEntries(Object.entries(rest).map(([field, value]) => [field, String(value)])))
+  const query = new URLSearchParams(
+    spec.body ? {} : Object.fromEntries(Object.entries(rest).map(([field, value]) => [field, String(value)])),
+  )
   const path = pattern.replace(/:(\w+)/g, (_match, field: string) => params[field]!)
   server.requests.push({
     path: decodeURIComponent(`${path}${query.size ? `?${query}` : ''}`),

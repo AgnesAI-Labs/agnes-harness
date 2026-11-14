@@ -3,10 +3,10 @@
 import { act } from 'react'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { en, zh } from '../src/locales.js'
-import { all, at, click, find, mount, remount, settle, text, usePanel } from './helpers/panel.js'
+import { all, at, click, find, installPanel, mount, remount, settle, text } from './helpers/panel.js'
 import { server, threadSummary, ticketSummary, trigger } from './helpers/panel-server.js'
 
-usePanel()
+installPanel()
 it('walks a Thread timeline newest first with dispositions as tags and its Decisions, requeues a filtered Trigger, pages backwards and returns', async () => {
   await mount()
   await click(zh['tab.trigger'])
@@ -17,12 +17,19 @@ it('walks a Thread timeline newest first with dispositions as tags and its Decis
   expect(text()).not.toContain('扇出到 1 个工单')
   expect(text()).toContain('已过滤：发送者不在这个来源的名单里')
   expect(text()).toContain(zh['term.correlation'])
-  expect(all('.dt-event .dt-event-text').map((element) => element.textContent)).toEqual(['message e4', 'message e3'])
+  expect(all('.dt-event .dt-event-text').map((element) => element.textContent)).toEqual([
+    'message e4',
+    'message e3',
+  ])
   await click(zh.requeue)
   expect(server.requests.some((request) => request.path === 'triggers/e4/requeue')).toBe(true)
   expect(text()).toContain(zh.dispositionQueued)
   await click(zh.loadEarlier)
-  expect(all('.dt-event .dt-event-text').map((element) => element.textContent)).toEqual(['message e4', 'message e3', 'message e1'])
+  expect(all('.dt-event .dt-event-text').map((element) => element.textContent)).toEqual([
+    'message e4',
+    'message e3',
+    'message e1',
+  ])
   await click(document.querySelector<HTMLElement>('.dt-page-head .dt-btn')!)
   expect(find(zh['threadFilter.subscribed'], '.dt-pill').getAttribute('aria-pressed')).toBe('true')
 })
@@ -32,8 +39,12 @@ it("offers to send a person's message that reached a ticket to Eval, for one its
   await click(zh['tab.trigger'])
   await click('这个文案好奇怪')
   const event = all('.dt-event').find((element) => element.textContent?.includes('message e3'))!
-  await click([...event.querySelectorAll<HTMLElement>('button')].find((button) => button.textContent === zh.requeue)!)
-  expect(server.requests.some((request) => request.path === 'triggers/e3/requeue' && request.method === 'POST')).toBe(true)
+  await click(
+    [...event.querySelectorAll<HTMLElement>('button')].find((button) => button.textContent === zh.requeue)!,
+  )
+  expect(
+    server.requests.some((request) => request.path === 'triggers/e3/requeue' && request.method === 'POST'),
+  ).toBe(true)
 })
 
 it('filters the Thread list by activity, and unsubscribes from a Thread page after confirmation', async () => {
@@ -46,7 +57,9 @@ it('filters the Thread list by activity, and unsubscribes from a Thread page aft
   await click('这个文案好奇怪')
   await click(zh.unsubscribe)
   await click(zh.confirm)
-  expect(server.requests.some((request) => request.path === 'threads/feishu:oc_1:om_root/unsubscribe')).toBe(true)
+  expect(server.requests.some((request) => request.path === 'threads/feishu:oc_1:om_root/unsubscribe')).toBe(
+    true,
+  )
 })
 
 it('folds consecutive automated messages from one sender on a Thread, showing the newest with its text', async () => {
@@ -64,13 +77,25 @@ it('folds consecutive automated messages from one sender on a Thread, showing th
     decisions: [],
     earlier: null,
     context: [],
-    timeline: [bot('b1', '2026-09-23T00:00:00Z'), bot('b2', '2026-09-23T00:01:00Z'), trigger('h1', '2026-09-23T00:02:00Z'), bot('b3', '2026-09-23T00:03:00Z'), bot('b4', '2026-09-23T00:04:00Z')],
+    timeline: [
+      bot('b1', '2026-09-23T00:00:00Z'),
+      bot('b2', '2026-09-23T00:01:00Z'),
+      trigger('h1', '2026-09-23T00:02:00Z'),
+      bot('b3', '2026-09-23T00:03:00Z'),
+      bot('b4', '2026-09-23T00:04:00Z'),
+    ],
   })
   await mount()
   await click(zh['tab.trigger'])
   await click('这个文案好奇怪')
-  expect(all('.dt-event .dt-event-text').map((element) => element.textContent)).toEqual(['CI of PR #42 at abc1234: 3 checks, 0 failed, 1 running.', 'message h1', 'CI of PR #42 at abc1234: 3 checks, 0 failed, 1 running.'])
-  const folds = all('.dt-event').map((event) => event.querySelector('button.dt-textlink[aria-expanded]')?.textContent ?? '')
+  expect(all('.dt-event .dt-event-text').map((element) => element.textContent)).toEqual([
+    'CI of PR #42 at abc1234: 3 checks, 0 failed, 1 running.',
+    'message h1',
+    'CI of PR #42 at abc1234: 3 checks, 0 failed, 1 running.',
+  ])
+  const folds = all('.dt-event').map(
+    (event) => event.querySelector('button.dt-textlink[aria-expanded]')?.textContent ?? '',
+  )
   expect(folds).toEqual(['同一发送者之前还有 1 条自动消息', '', '同一发送者之前还有 1 条自动消息'])
   await click(find('同一发送者之前还有 1 条自动消息'))
   expect(text()).toContain('CI b3')
@@ -87,7 +112,9 @@ it("reads the page around a link's target once, also for a Trigger the Thread do
     await vi.advanceTimersByTimeAsync(5000)
   })
   await settle()
-  expect(server.requests.filter((request) => request.path.startsWith('threads/')).map((request) => request.path)).toEqual([
+  expect(
+    server.requests.filter((request) => request.path.startsWith('threads/')).map((request) => request.path),
+  ).toEqual([
     'threads/feishu:oc_1:om_root?limit=50',
     'threads/feishu:oc_1:om_root?limit=50&around=gone',
     'threads/feishu:oc_1:om_root?limit=50',
@@ -109,20 +136,32 @@ it('shows a follow-up delivered to its Ticket without an Eval, a hand-back with 
         disposition: {
           queued: true,
           fanout: ['t1'],
-          handbacks: [{ ticketId: 't1', title: '修复回归', reason: 'Asks for a new page', at: '2026-09-23T00:02:00Z' }],
+          handbacks: [
+            { ticketId: 't1', title: '修复回归', reason: 'Asks for a new page', at: '2026-09-23T00:02:00Z' },
+          ],
         },
       }),
     ],
   })
   at({ page: 'trigger', id: 'feishu:oc_1:om_root' })
   await mount()
-  const events = () => all('.dt-event').map((event) => [event.querySelector('.dt-event-text')?.textContent, [...event.querySelectorAll('.dt-tag')].map((tag) => tag.textContent), event.querySelector('.dt-hint')?.textContent])
+  const events = () =>
+    all('.dt-event').map((event) => [
+      event.querySelector('.dt-event-text')?.textContent,
+      [...event.querySelectorAll('.dt-tag')].map((tag) => tag.textContent),
+      event.querySelector('.dt-hint')?.textContent,
+    ])
   expect(events()).toEqual([
     ['message f2', [zh.dispositionQueued], '“修复回归”的执行器把这条触发交回评估：Asks for a new page'],
     ['message f1', [zh.dispositionDelivered], undefined],
   ])
   expect(document.querySelector(`.dt-tag[title="${zh.dispositionDeliveredHint}"]`)).not.toBeNull()
-  expect(all('.dt-list .dt-ticket').map((row) => [row.querySelector('.dt-open')?.textContent, row.querySelector('.dt-tag')?.textContent])).toEqual([
+  expect(
+    all('.dt-list .dt-ticket').map((row) => [
+      row.querySelector('.dt-open')?.textContent,
+      row.querySelector('.dt-tag')?.textContent,
+    ]),
+  ).toEqual([
     ['修复回归', undefined],
     ['相关工单', zh.contextOnly],
   ])
@@ -138,7 +177,9 @@ function busyThread(count: number) {
     triggers: Array.from({ length: count }, (_, n) => trigger(`m${n}`, minute(n))),
     add: (more: number) => {
       const from = thread.triggers.length
-      thread.triggers.push(...Array.from({ length: more }, (_, n) => trigger(`m${from + n}`, minute(from + n))))
+      thread.triggers.push(
+        ...Array.from({ length: more }, (_, n) => trigger(`m${from + n}`, minute(from + n))),
+      )
     },
   }
   server.threadPages = (_key, { before, around }) => {

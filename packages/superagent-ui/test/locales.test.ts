@@ -13,7 +13,8 @@ it('names the same placeholders in both languages', () => {
 })
 
 it('words a reason by its code with its values, each of a batch, and words a person or an assessor wrote as written', () => {
-  const t = ((key: SuperagentKey, values: Record<string, string> = {}) => (zh[key] ?? key).replace(/\{(\w+)\}/g, (_match, name: string) => values[name] ?? '')) as T
+  const t = ((key: SuperagentKey, values: Record<string, string> = {}) =>
+    (zh[key] ?? key).replace(/\{(\w+)\}/g, (_match, name: string) => values[name] ?? '')) as T
   expect(reasonLabel(t, 'retried')).toBe(zh['reason.retried'])
   expect(reasonLabel(t, [{ code: 'routed', values: { ticket: 't1' } }])).toBe('已转给工单 t1')
   expect(
@@ -22,7 +23,9 @@ it('words a reason by its code with its values, each of a batch, and words a per
       { code: 'no_mention', triggerId: '2' },
     ]),
   ).toBe(`${zh['reason.not_a_member']}；${zh['reason.no_mention']}`)
-  expect(reasonLabel(t, [{ code: 'said', values: { text: 'The button is already blue' } }])).toBe('The button is already blue')
+  expect(reasonLabel(t, [{ code: 'said', values: { text: 'The button is already blue' } }])).toBe(
+    'The button is already blue',
+  )
   // A code the panel has no words for reads as the host words it.
   expect(reasonLabel(t, { code: 'some_new_filter' })).toBe('some_new_filter')
   expect(reasonLabel(t, 'The button is already blue')).toBe('The button is already blue')
@@ -47,7 +50,11 @@ it('names every health entry of Superagent itself, which the overview shows when
 })
 
 it('words every refusal the host words by code, in both languages', () => {
-  expect(Object.keys(USER_ERRORS).filter((code) => !zh[`userError.${code}` as SuperagentKey] || !en[`userError.${code}` as SuperagentKey])).toEqual([])
+  expect(
+    Object.keys(USER_ERRORS).filter(
+      (code) => !zh[`userError.${code}` as SuperagentKey] || !en[`userError.${code}` as SuperagentKey],
+    ),
+  ).toEqual([])
 })
 
 it('has words for every reason code the core records', () => {

@@ -19,7 +19,9 @@ export const testMachine = (overrides: Partial<Machine> = {}): Machine => ({
   admissionContextTimeoutMs: reference(15000),
   ...overrides,
 })
-export const testDeployment = (overrides: { [K in keyof Deployment]?: Deployment[K] | undefined } = {}): Deployment =>
+export const testDeployment = (
+  overrides: { [K in keyof Deployment]?: Deployment[K] | undefined } = {},
+): Deployment =>
   ({
     ...testMachine(),
     repository: 'acme/widgets',

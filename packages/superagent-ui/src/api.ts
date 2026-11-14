@@ -49,7 +49,8 @@ export interface ApiMessages {
   setup: (problem: SetupProblem) => string
   user: (failure: UserFailure) => string
 }
-const isUserError = (code: unknown): code is UserErrorCode => typeof code === 'string' && Object.hasOwn(USER_ERRORS, code)
+const isUserError = (code: unknown): code is UserErrorCode =>
+  typeof code === 'string' && Object.hasOwn(USER_ERRORS, code)
 
 /** The two calls a panel makes of the backend: its profile services, as the web client hands them over. */
 export type Services = Pick<ClientProfileServices, 'query' | 'effect'>
@@ -62,13 +63,24 @@ type Failure = {
   values?: Record<string, string>
 }
 /** The answer a service gives for what the original route answered with an error status; see the services' contract. */
-const failureOf = (value: unknown): Failure | undefined => (value && typeof value === 'object' && !Array.isArray(value) && 'failure' in value ? ((value as { failure: Failure }).failure ?? {}) : undefined)
+const failureOf = (value: unknown): Failure | undefined =>
+  value && typeof value === 'object' && !Array.isArray(value) && 'failure' in value
+    ? ((value as { failure: Failure }).failure ?? {})
+    : undefined
 
 function refusal(messages: ApiMessages, failure: Failure): ApiError {
   const status = typeof failure.status === 'number' ? failure.status : 500
   const issues = Array.isArray(failure.issues) ? (failure.issues as { path: string; message: string }[]) : []
   const user = isUserError(failure.code) ? { code: failure.code, values: failure.values ?? {} } : undefined
-  const message = failure.setup ? messages.setup(failure.setup) : user ? messages.user(user) : typeof failure.error === 'string' ? failure.error : status >= 500 ? messages.serverError(status) : messages.requestFailed(status)
+  const message = failure.setup
+    ? messages.setup(failure.setup)
+    : user
+      ? messages.user(user)
+      : typeof failure.error === 'string'
+        ? failure.error
+        : status >= 500
+          ? messages.serverError(status)
+          : messages.requestFailed(status)
   return new ApiError(message, status, {
     issues,
     ...(failure.setup ? { setup: failure.setup } : {}),
@@ -79,9 +91,11 @@ function refusal(messages: ApiMessages, failure: Failure): ApiError {
 function unreachable(messages: ApiMessages, error: unknown): ApiError {
   const text = error instanceof Error ? error.message : String(error)
   // A refusal of the Host (a JSON-RPC error) names its code; only a call that never got an answer is "offline".
-  if (/CAPABILITY_DENIED|not running/i.test(text)) return new ApiError(messages.notRunning, 404, { unreachable: true })
+  if (/CAPABILITY_DENIED|not running/i.test(text))
+    return new ApiError(messages.notRunning, 404, { unreachable: true })
   if (/INVALID_PARAMS/.test(text)) return new ApiError(messages.requestFailed(400), 400)
-  if (/INTERNAL_ERROR|OUTCOME_UNKNOWN|REQUEST_TIMEOUT|OVERLOADED/.test(text)) return new ApiError(messages.serverError(500), 500)
+  if (/INTERNAL_ERROR|OUTCOME_UNKNOWN|REQUEST_TIMEOUT|OVERLOADED/.test(text))
+    return new ApiError(messages.serverError(500), 500)
   return new ApiError(messages.offline, 0, { unreachable: true })
 }
 
@@ -115,7 +129,10 @@ export const SERVICES = {
 } as const satisfies Record<keyof Api, readonly [string, 'query' | 'effect']>
 
 /** The service input of a request: path parameters, query parameters and body fields as one closed object. */
-export function inputOf(route: keyof Api, request: Record<string, unknown> | undefined): Record<string, unknown> {
+export function inputOf(
+  route: keyof Api,
+  request: Record<string, unknown> | undefined,
+): Record<string, unknown> {
   const { query, body, ...params } = (request ?? {}) as Record<string, unknown> & {
     query?: Record<string, unknown>
     body?: unknown
@@ -124,10 +141,17 @@ export function inputOf(route: keyof Api, request: Record<string, unknown> | und
   const fields = route === 'POST prompts/preview' ? { config: body } : { ...(body as object | undefined) }
   // A blank query parameter is no parameter, as it was in the URL.
   const asked = Object.entries(query ?? {}).filter(([, value]) => value !== '')
-  return Object.fromEntries(Object.entries({ ...params, ...Object.fromEntries(asked), ...fields }).filter(([, value]) => value !== undefined))
+  return Object.fromEntries(
+    Object.entries({ ...params, ...Object.fromEntries(asked), ...fields }).filter(
+      ([, value]) => value !== undefined,
+    ),
+  )
 }
 
-export type Call = <K extends keyof Api>(route: K, ...request: {} extends ApiRequest<K> ? [request?: ApiRequest<K>] : [request: ApiRequest<K>]) => Promise<ApiResponse<K>>
+export type Call = <K extends keyof Api>(
+  route: K,
+  ...request: {} extends ApiRequest<K> ? [request?: ApiRequest<K>] : [request: ApiRequest<K>]
+) => Promise<ApiResponse<K>>
 /** Build a typed route caller over the profile services; it resolves localized error messages on each request. */
 export function caller(messages: () => ApiMessages, services: Services): Call {
   return async (route, ...[request]) => {
@@ -142,7 +166,8 @@ export function caller(messages: () => ApiMessages, services: Services): Call {
           state?: string
           output?: unknown
         }
-        if (receipt?.state !== 'completed') throw new ApiError(messages().effectNotDone(String(receipt?.state)), 500)
+        if (receipt?.state !== 'completed')
+          throw new ApiError(messages().effectNotDone(String(receipt?.state)), 500)
         value = receipt.output
       }
     } catch (error) {
@@ -175,7 +200,14 @@ export function usePoll<T>(load: () => Promise<T>, deps: readonly unknown[], int
       clearTimeout(timer)
       try {
         const value = await loader.current()
-        if (active) setState((previous) => (same(previous.data, value) ? (previous.error ? { data: previous.data as T } : previous) : { data: value }))
+        if (active)
+          setState((previous) =>
+            same(previous.data, value)
+              ? previous.error
+                ? { data: previous.data as T }
+                : previous
+              : { data: value },
+          )
       } catch (failure) {
         if (active)
           setState((previous) => ({

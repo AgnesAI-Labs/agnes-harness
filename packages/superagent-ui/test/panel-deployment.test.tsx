@@ -5,15 +5,25 @@ import { act } from 'react'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { PLUGIN_PAGE } from '../src/deployment.js'
 import { zh } from '../src/locales.js'
-import { all, at, click, find, mount, settle, tab, text, usePanel } from './helpers/panel.js'
+import { all, at, click, find, installPanel, mount, settle, tab, text } from './helpers/panel.js'
 import { problemOf, server } from './helpers/panel-server.js'
 
-usePanel()
+installPanel()
 it("shows this machine's values and the derived accounts read-only, and links to the plugin configuration", async () => {
   await mount()
   await click(tab(zh['tab.settings']))
   await click(find(zh['settingsGroup.deployment'], '.dt-settings-link'))
-  for (const fact of ['/srv/superagent', '100000', '10', '15000', 'acme/widgets', '@agent-bot', 'Widgets Bot', zh.deploymentIntro]) expect(text()).toContain(fact)
+  for (const fact of [
+    '/srv/superagent',
+    '100000',
+    '10',
+    '15000',
+    'acme/widgets',
+    '@agent-bot',
+    'Widgets Bot',
+    zh.deploymentIntro,
+  ])
+    expect(text()).toContain(fact)
   // The panel changes none of it: no fields and no save bar, only the way to the page that does.
   expect(all('.dt-settings-body input, .dt-settings-body textarea, .dt-settings-body select')).toEqual([])
   expect(all('button').some((button) => button.textContent === zh.save)).toBe(false)
@@ -26,7 +36,9 @@ it('shows the setup problem and rechecks it with one effect', async () => {
   await mount()
   expect(text()).toContain('部署检查未通过：GitHub 来源没有设置监听的仓库。')
   await click(zh.setupCheck)
-  expect(server.requests.filter((request) => request.method === 'POST')).toEqual([{ path: 'setup/check', method: 'POST' }])
+  expect(server.requests.filter((request) => request.method === 'POST')).toEqual([
+    { path: 'setup/check', method: 'POST' },
+  ])
 })
 
 it('says Superagent does not answer when the service is not reachable', async () => {
