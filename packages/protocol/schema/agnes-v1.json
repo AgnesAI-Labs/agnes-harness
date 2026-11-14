@@ -5048,7 +5048,8 @@
       "required": ["itemId", "preview"],
       "properties": {
         "itemId": { "type": "string" },
-        "preview": { "type": "string", "maxLength": 2000 }
+        "preview": { "type": "string", "maxLength": 2000 },
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 128 }
       }
     },
     "UITimeline": {

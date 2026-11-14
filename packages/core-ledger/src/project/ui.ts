@@ -51,6 +51,7 @@ import {
   initialCacheHealthState,
 } from './cache-health.js'
 import { clipUtf16 as clip } from './clip.js'
+import { pendingCommandId } from './pending-command-id.js'
 import { createCostNode, SideCallDisplay } from './side-call-display.js'
 import { SurfaceCache } from './surface.js'
 import { initialToolNode } from './tool-node.js'
@@ -1125,6 +1126,7 @@ export class UIProjectionCell {
       .map((item) => ({
         itemId: item.itemId,
         preview: clip(text(item.content), 2000),
+        ...pendingCommandId(item),
       }))
   }
 
