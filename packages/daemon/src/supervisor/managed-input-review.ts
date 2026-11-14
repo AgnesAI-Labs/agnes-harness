@@ -8,6 +8,7 @@ import {
   rpcError,
 } from '@agnes/protocol'
 import type { ManagedInputRow } from './managed-session-inputs.js'
+import { detached, type ManagedSessionRecord } from './managed-session-records.js'
 
 /** What the review RPC reads and decides through: the owner input engine's `review` and `decide`. */
 export interface ManagedInputReviewEngine {
@@ -128,5 +129,40 @@ export function registerManagedInputReview(ep: LocalEndpoint, deps: ManagedInput
     const result = await deps.engine.decide(sessionId, target.key, target.decision, target.version)
     if (!('version' in result)) throw rpcError('INTERNAL_ERROR', { code: 'INPUT_STATE_UNAVAILABLE' })
     return { state: result.state, version: result.version }
+  })
+}
+
+/**
+ * The receipt owner of a managed session: the channel receipt store keys a service's receipts by the same
+ * `grantKey(packageId, row)` the session records use as owner, so a session's panel reaches only the
+ * receipts of the service that holds it. A detached session (its package removed) has none.
+ */
+export function managedInputReceiptOwner(records: {
+  get(sessionId: string): Pick<ManagedSessionRecord, 'owner'> | undefined
+}): (sessionId: string) => string | undefined {
+  return (sessionId) => {
+    const record = records.get(sessionId)
+    return record && !detached(record) ? record.owner : undefined
+  }
+}
+
+/** The daemon's wiring: the owner input engine, the session records and the shared worker's receipt command. */
+export function registerOwnerInputReview(
+  ep: LocalEndpoint,
+  deps: {
+    engine: ManagedInputReviewEngine | undefined
+    records: { get(sessionId: string): Pick<ManagedSessionRecord, 'owner'> | undefined } | undefined
+    requireOwner: ManagedInputReviewDeps['requireOwner']
+    worker(): Promise<{
+      command(method: 'channels.receipts', params: Record<string, unknown>): Promise<unknown>
+    }>
+  },
+): void {
+  if (!deps.engine || !deps.records) return
+  registerManagedInputReview(ep, {
+    engine: deps.engine,
+    requireOwner: deps.requireOwner,
+    receiptOwner: managedInputReceiptOwner(deps.records),
+    receipts: async (command) => (await deps.worker()).command('channels.receipts', { ...command }),
   })
 }
