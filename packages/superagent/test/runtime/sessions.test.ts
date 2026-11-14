@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   PrepareFailed,
   SessionArchived,
@@ -70,6 +70,36 @@ describe('worker sessions', () => {
     expect(existsSync(dir)).toBe(false)
     expect(fake.workspaces).toEqual([])
     expect(registry.ids()).toEqual([])
+  })
+
+  it('prepares again a directory whose prepare was stopped part way, and only then counts it as prepared', async () => {
+    const dir = join(temp.dir, 'work', 'stopped')
+    const lifetime = new AbortController()
+    const first = setup({
+      prepareCommand: () => 'mkdir repo && touch repo/half && sleep 5 && touch repo/done',
+      lifetime: lifetime.signal,
+    })
+    const stopped = first.sessions.ensureWorker(ticket('t12'), dir)
+    await vi.waitFor(() => expect(existsSync(join(dir, 'repo', 'half'))).toBe(true))
+    lifetime.abort()
+    await expect(stopped).rejects.toThrow(/stopped/)
+    expect(existsSync(join(dir, '.superagent-prepared'))).toBe(false)
+    // The next launch finds the half-prepared directory and prepares it again from the start.
+    const again = setup({ prepareCommand: () => 'mkdir repo && touch repo/done' })
+    await again.sessions.ensureWorker(ticket('t12'), dir)
+    expect(existsSync(join(dir, 'repo', 'done'))).toBe(true)
+    expect(existsSync(join(dir, 'repo', 'half'))).toBe(false)
+    expect(existsSync(join(dir, '.superagent-prepared'))).toBe(true)
+    // A failed check of the prepared directory leaves it unprepared too.
+    const checked = join(temp.dir, 'work', 'unchecked')
+    const failing = setup({
+      prepareCommand: () => 'touch made',
+      verify: async () => {
+        throw new Error('git config is wrong')
+      },
+    })
+    await expect(failing.sessions.ensureWorker(ticket('t13'), checked)).rejects.toThrow('git config is wrong')
+    expect(existsSync(join(checked, '.superagent-prepared'))).toBe(false)
   })
 
   it('loads an existing session instead of creating another, and an existing directory counts as prepared', async () => {

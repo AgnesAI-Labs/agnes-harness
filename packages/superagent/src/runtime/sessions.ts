@@ -3,7 +3,8 @@
  * belongs to Superagent only when the store registered its id, never because of its key: an owner may create a session
  * with any key.
  */
-import { mkdir, readdir, rmdir, stat } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import type { Store } from '../app/store.js'
 import { runCommand } from '../app/subprocess.js'
 import type { Ticket } from '../core/index.js'
@@ -61,6 +62,8 @@ export const ROLE_BUNDLES = {
 } as const
 /** How long a ticket's prepare command may run. */
 export const PREPARE_TIMEOUT_MS = 10 * 60_000
+/** The file a ticket directory holds once its prepare command and its check succeeded. */
+export const PREPARED_MARKER = '.superagent-prepared'
 
 /** The session ids Superagent opened, by role: `orchestrator`, or `worker:<ticket id>`. */
 const SESSION_IDS = family<string, [role: string]>('superagent-session:')
@@ -204,16 +207,19 @@ export class Sessions implements SessionAdapter {
     return this.ensure({ kind: 'orchestrator' }, dir, 'Superagent orchestrator')
   }
   /**
-   * Prepares a new ticket directory and opens the ticket's worker session in it. The directory is created first and the
-   * prepare command runs inside it, checking the repository out into `repo/`; an existing directory counts as prepared.
-   * A failed prepare command throws `PrepareFailed` and removes the directory only when it left it empty.
+   * Prepares the ticket directory unless it is prepared, and opens the ticket's worker session in it. The directory is
+   * created and the prepare command runs inside it, checking the repository out into `repo/`; it counts as prepared only
+   * once the prepare command and the check succeeded and wrote the marker. A directory without the marker, which a
+   * stopped or failed prepare left, is prepared again from an empty directory. A failed prepare command throws
+   * `PrepareFailed` and removes the directory only when it left it empty.
    */
   async ensureWorker(ticket: Ticket, dir: string): Promise<string> {
-    if (!(await exists(dir))) await this.prepare(ticket, dir)
+    if (!(await exists(join(dir, PREPARED_MARKER)))) await this.prepare(ticket, dir)
     await this.deps.instructions?.(ticket, dir)
     return this.ensure({ kind: 'worker', ticketId: ticket.id }, dir, ticket.title, ticket)
   }
   private async prepare(ticket: Ticket, dir: string): Promise<void> {
+    await rm(dir, { recursive: true, force: true })
     await mkdir(dir, { recursive: true })
     const command = this.deps.prepareCommand().trim()
     const signal = AbortSignal.any([this.deps.lifetime, AbortSignal.timeout(PREPARE_TIMEOUT_MS)])
@@ -232,7 +238,11 @@ export class Sessions implements SessionAdapter {
         )
       }
     }
+    this.deps.lifetime.throwIfAborted()
     await this.deps.verify?.(dir, this.deps.lifetime)
+    const marker = join(dir, PREPARED_MARKER)
+    await writeFile(`${marker}.tmp`, `${new Date().toISOString()}\n`)
+    await rename(`${marker}.tmp`, marker)
   }
   /**
    * Loads the role's session, or creates it with the role's bundle and preset. A registered session its owner deleted is
