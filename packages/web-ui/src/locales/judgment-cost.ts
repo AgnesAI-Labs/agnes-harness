@@ -8,6 +8,7 @@ export const judgmentCostLocaleCatalog: LocaleCatalog = {
     'cost.judgment.find': 'Find relevant files',
     'cost.judgment.batch': 'Batch judgment',
     'cost.judgment.rules': 'Rule reminder',
+    'cost.judgment.title': 'Title drift',
     'cost.judgment.unknown': 'Unknown',
   },
   'zh-CN': {
@@ -17,6 +18,7 @@ export const judgmentCostLocaleCatalog: LocaleCatalog = {
     'cost.judgment.find': '查找相关文件',
     'cost.judgment.batch': '批量判断',
     'cost.judgment.rules': '规则提醒',
+    'cost.judgment.title': '标题漂移',
     'cost.judgment.unknown': '未知',
   },
 }
