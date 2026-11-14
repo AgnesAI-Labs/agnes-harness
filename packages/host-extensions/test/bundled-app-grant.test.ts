@@ -636,3 +636,38 @@ it('stops a package without the grant, and an upgraded bundled app, only when th
   await app.managed.publish('upgrade')
   expect(upgraded).toEqual([{ reason: 'upgrade', grant: true, connect: true, signal: false, closed: false }])
 })
+
+it('starts a service again on the next publication with the same definitions after its start failed', async () => {
+  let starts = 0
+  const app = await harness({
+    definition: {
+      async start(init: ProfileManagedInit) {
+        starts++
+        init.onShutdown(async () => ({ state: 'settled' }))
+        if (starts === 2) throw new Error('a transient start failure')
+        init.ready()
+        return { starts }
+      },
+    },
+  })
+  await app.managed.publish('upgrade', true)
+  await expect(app.handle.get()).rejects.toThrow()
+  expect(app.managed.statuses(SUPERAGENT.id)).toEqual([{ id: 'app', state: 'failed', code: 'unavailable' }])
+  await app.managed.publish()
+  await expect(app.handle.get()).resolves.toEqual({ starts: 3 })
+  expect(app.managed.statuses(SUPERAGENT.id).map((row) => row.state)).toEqual(['ready'])
+})
+
+it('does not keep a service that a superseded publication retired when the next one defines it again', async () => {
+  // The service stops being current and is current again before the publication that retires it drained:
+  // the second publication must not count the retired instance as running.
+  let current = true
+  const app = await harness({ current: () => current })
+  current = false
+  const retiring = app.managed.publish()
+  current = true
+  const restoring = app.managed.publish()
+  await Promise.allSettled([retiring, restoring])
+  await expect(app.handle.get()).resolves.toEqual({ started: 2 })
+  expect(app.managed.statuses(SUPERAGENT.id).map((row) => row.state)).toEqual(['ready'])
+})

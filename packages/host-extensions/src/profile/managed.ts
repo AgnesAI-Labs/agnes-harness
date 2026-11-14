@@ -491,17 +491,23 @@ export class ProfileManagedResources {
       .map((d) => `${d.owner}/${d.revision}/${d.integrity}/${d.definition.id}`)
       .sort()
       .join('\0')
-    if (previous?.manager === this && previous.stamp === stamp && !force) return previous.draining
+    // A resource whose lifetime ended (it failed, or a publication or a dropped row retired it) is
+    // never retained: the next publication starts its definition again.
+    const live = (r: Resource) => !r.lifetime.signal.aborted
+    if (previous?.manager === this && previous.stamp === stamp && !force && previous.resources.every(live))
+      return previous.draining
     const retained =
       previous?.manager === this && !force
-        ? previous.resources.filter((r) =>
-            definitions.some(
-              (d) =>
-                d.owner === r.owner &&
-                d.revision === r.revision &&
-                d.integrity === r.integrity &&
-                d.definition.id === r.id,
-            ),
+        ? previous.resources.filter(
+            (r) =>
+              live(r) &&
+              definitions.some(
+                (d) =>
+                  d.owner === r.owner &&
+                  d.revision === r.revision &&
+                  d.integrity === r.integrity &&
+                  d.definition.id === r.id,
+              ),
           )
         : []
     let retiring = (previous?.resources ?? []).filter((r) => !retained.includes(r))
