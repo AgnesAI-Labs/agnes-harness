@@ -49,7 +49,7 @@ export {
 
 const FeishuConfigSchema = z
   .object({
-    /** `<plugin id>/<instance id>`; a bare instance id is enough while `claim` is `groups`. */
+    /** `<channel row id>/<instance id>`; a bare instance id is enough while `claim` is `groups`. */
     instance: z.string().trim().max(300).default(''),
     claim: z.enum(['instance', 'groups']).default('instance'),
     readPageSize: z.number().int().min(1).max(50).default(20),

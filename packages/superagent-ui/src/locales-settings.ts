@@ -629,7 +629,7 @@ export const SETTINGS_TEXT = {
     HEALTH_TEXT.feishuChannelRefused,
   ],
   'healthCode.feishuPluginUnset': [
-    '需要设置：要整个认领实例，请连同渠道插件写成 <插件 id>/<实例 id>',
+    '需要设置：要整个认领实例，请连同渠道行写成 <渠道行 id>/<实例 id>',
     HEALTH_TEXT.feishuPluginUnset,
   ],
   'healthCode.feishuInstanceShared': [

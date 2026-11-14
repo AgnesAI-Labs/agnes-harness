@@ -29,7 +29,7 @@ export const HEALTH_TEXT = {
   feishuChannelRefused:
     'Setup required: the channel instance {channel} refused the chats ({reason}); retrying',
   feishuPluginUnset:
-    'Setup required: to claim the whole instance, name it with its channel plugin, as <plugin id>/<instance id>',
+    'Setup required: to claim the whole instance, name it with its channel row, as <channel row id>/<instance id>',
   feishuInstanceShared:
     'Setup required: the channel instance {channel} already serves the owner or another feature; use a dedicated bot instance',
   feishuInstanceReleasing:

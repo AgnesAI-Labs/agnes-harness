@@ -27,8 +27,9 @@ export interface FeishuIo {
 }
 
 /**
- * The channel plugin and instance the `instance` setting names, written `<plugin id>/<instance id>` (a plugin id may
- * contain `/`, an instance id never does). A bare instance id names no plugin; it is enough to subscribe groups.
+ * The channel row and instance the `instance` setting names, written `<channel row id>/<instance id>` (a row id such as
+ * `ext:agnes.feishu/main` contains `/`, an instance id never does). A bare instance id names no row; it is enough to
+ * subscribe groups.
  */
 export function instanceRef(value: string): { pluginId: string; instanceId: string } {
   const at = value.lastIndexOf('/')

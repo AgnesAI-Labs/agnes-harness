@@ -145,6 +145,8 @@ describe('a channel instance of its own', () => {
     const bare = open({ feishu: { claim: 'instance', instance: 'feishu' } })
     const ended = await started(bare)
     expect(bare.health.feishu).toMatchObject({ state: 'paused', code: 'feishuPluginUnset' })
+    // It names the form the instance picker writes.
+    expect(bare.health.feishu?.detail).toContain('as <channel row id>/<instance id>')
     expect(bare.fake.calls('claimInstance')).toEqual([])
     await ended()
   })
