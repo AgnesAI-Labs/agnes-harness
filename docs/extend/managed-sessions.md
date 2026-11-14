@@ -43,6 +43,7 @@ if (sent.state === 'notSubmitted') console.log(sent.reason) // busy | archived |
 ```
 
 - `start` takes a reviewed Bundle of the calling package (`<package>#<bundle>`). The Bundle's launch decides the preset, as an application launch does. The workspace must be one the owner [authorized](#authorize-a-workspace) for this plugin. A repeated `startKey` returns the session it opened (`created: false`), including after a crash during the start. Every start, a retry included, passes the workspace, model and permission checks again. A retry that asks for a different Bundle, workspace, retention, permission, model or switch is refused with `START_KEY_REUSED`.
+- `taskBinding: { id, generation }` (optional, added in 5.18.0) binds the session to a task of the calling service. A bound session refuses `send` with `CAPABILITY_DENIED` (`data.reason: 'OWNER_INPUT_REQUIRED'`, checked before archived, duplicate and busy); every later input goes through [`admitInput`](#admit-the-owners-input). Repeating a `startKey` with another binding or another first input is refused with `START_KEY_REUSED`.
 - A session belongs to the package and plugin row that opened it. Another package that declares the same row id cannot list, read, stop or archive it, even after the first package is removed. Neither can a package installed later under the first package's id: removal detaches the session from every package. On every call the backend rechecks the calling row against current inventory: the package must be enabled and trusted, its service must declare `sessions`, and the row must be one of that package's own plugin rows. [Trust boundary](#trust-boundary) explains what this does not cover.
 - An optional `model` selects the primary model route. A route the deployment lacks refuses the start. There is no fallback to the default route.
 - Every managed session runs with the [outward checkpoint](../guide/security.md#outward-checkpoint) and its command rules. Each time the backend opens the session, its sub-agents, role children or forks, it turns the rules on, whatever opens them: the first start, a send after a restart, or a bound wake. A `git push`, a package publish or another outward command in its shell waits for a person, and so does a tool that declares itself outward. A terminal (`pty_open`, `pty_send`) and a persistent shell are refused, because the check cannot see their history. An opened session whose policy does not enforce the checkpoint is refused with `CAPABILITY_DENIED` and reason `OUTWARD_CHECKPOINT_UNAVAILABLE`; a start archives it. A session already open without the rules is refused with reason `OUTWARD_COMMAND_RULES_OFF` and is not reused.
@@ -85,6 +86,48 @@ An `approval` event keeps the seq the approval first appeared at, so a reader th
 
 `interrupt(id)` stops the running turn. `archive(id)` archives the session.
 
+## Admit the owner's input
+
+Added in 5.18.0. A service that holds a task for the owner does not push the owner's words into a bound session with `send`. It asks the platform to admit them. The platform records the input, holds the text, and submits it only while the session is idle and the start checks pass, so a busy session, an unanswered question, a revoked workspace grant or an archived session cannot lose or misroute it.
+
+```ts
+const result = await init.sessions.admitInput(sessionId, {
+  key: 'task-42:owner:1', // 1–256 characters; your idempotency key
+  target: { taskId: 'task-42', taskGeneration: 3, startKey: 'task-42' },
+  input: { kind: 'ownerMessage', receiptId: event.receiptId },
+})
+// later, or after a crash: the same state without changing anything
+const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1' })
+```
+
+`target` must match the session's `startKey` and its binding. Repeating a key with the same request returns the same input; any difference is refused.
+
+| `input.kind` | Text | What the platform does |
+| --- | --- | --- |
+| `ownerMessage` | Never passed. Give the `receiptId` of a [channel event](channel-targets.md#receipts). | Takes the text from the receipt the Host recorded. The receipt must belong to your service and the owner's current pairing, and one receipt is admitted once. |
+| `recoveryContinuation` | Never passed. Give `turnEndSeq`, the seq of the turn that ended. | Checks that turn was the last one, ended by cancellation or failure, with no later turn start; then writes a fixed continuation sentence. Otherwise `recoveryUnknown`. |
+| `legacyOwnerMessage` | Passed as `text`, with `originalInbox: string \| null`. | The origin cannot be verified, so the result is always `recoveryUnknown`; the text runs only if the owner chooses to deliver it in the Web. |
+
+The result is one of these states. Everything except `legacySend` and `absent` carries `inputId` (equal to `key`), `version` (rises on every change), `reason` and `reviewLocation`.
+
+| `state` | Meaning | What to do |
+| --- | --- | --- |
+| `queued` | The key is taken but the record was not completed (a crash between two steps). | Call `admitInput` again. |
+| `enqueued` | Admitted. The platform holds the text until the session is idle and the start checks pass. | Poll `inputResult`. |
+| `consumed` | A turn took the text. Adds `turn` and `seq`. Final. | Done. |
+| `retained` | Kept and never delivered: the owner chose keep or discard in the Web, or the session was archived. Final. | Done. |
+| `needsOwner` | Delivery cannot be shown to be right: receipt unknown or not yours, pairing changed, grant revoked, or the start checks fail (at admission or at submit). | Notify the owner; do not retry. The owner decides in the Web. |
+| `waitingQuestion` | The session has an unanswered question. The platform holds the input and moves it on once the question closes. | Notify the owner and wait. |
+| `recoveryUnknown` | A `legacyOwnerMessage`, or a `recoveryContinuation` that failed its checks. | Notify the owner. The owner decides in the Web. |
+| `legacySend` | The key exists only in the old `send` ledger. `delivery` is `consumed`, `pending` or `unknown`. | `consumed` is final; otherwise resubmit as `legacyOwnerMessage`. |
+| `absent` | The platform knows no such key. `historyCoverage: 'complete'` only when the session was created after input records existed; otherwise `partial`. | Admit only on `complete`; on `partial` only notify. |
+
+`reason` is one of `eligible`, `busy`, `questionOpen`, `legacySourceUnknown`, `recoveryUnverified`, `receiptUnknown`, `pairingChanged`, `grantRevoked`, `sessionArchived`, `ownerRetained`, `ownerDiscarded`. Show it as text; values may be added. `reviewLocation` is `/?session=<sessionId>&ownerInput=<inputId>`, the Web page where the owner reads the text, its source and its history and decides.
+
+Refusals reject as described under [Refusals](#refusals), with `data.reason`: `OWNER_INPUT_TARGET_MISMATCH` (`target` differs from the session's start key or binding), `OWNER_INPUT_KEY_REUSED` (same key, any difference in the request) and `SESSION_ARCHIVED` (thrown, never returned). `OWNER_INPUT_REQUIRED` is what `send` on a bound session returns. Malformed parameters are `INVALID_PARAMS`.
+
+Trust: an admitted owner message still enters the session inbox as `origin: 'system'` with `trust: 'untrusted'`. Admission proves the text came from the paired owner's channel receipt; it does not make the text an owner-identity input and it grants no approval. There is no new declaration key: `sessions: true` already grants both methods. A plugin that needs them sets its `apiRange` to `^5.18.0`.
+
 ## Retention and lifecycle
 
 - `retention: 'task'` keeps the session. `retention: 'ephemeral'` archives it once `result` reads an ended last turn, and keeps it out of task-experience mining: automatic refinement and the model's own proposals are refused. The owner's own refinement request still works.
@@ -103,5 +146,7 @@ That check is not authentication. The calling row (owner, package, integrity and
 ## Not yet available
 
 Granting workspaces from the Web is not available yet; use `agh plugins grants`. Binding a session to the owner's channel is follow-up work.
+
+The Host side of owner input admission is wired up over several changes of the 5.18.0 release. A build that exports these types but has not finished them refuses `admitInput` and `inputResult` with `CAPABILITY_DENIED`; do not rely on them until the Host you run reports an API version that includes the finished behavior.
 
 The command rules do not cover commands they cannot see: a sub-agent that runs as an external agent process (Claude Code, Codex, ACP or SDK agents) runs its own shell, and [the gaps the rules list](../guide/security.md#outward-command-rules) run unasked under full access. Weigh that before granting full access to a session that reads outside text.

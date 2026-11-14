@@ -1102,6 +1102,11 @@ describe('the managed session owner', () => {
     const forged = { ...own, owner: victim.owner }
     records.grant(grantKey(victim.packageId, victim.owner), '/work/repo')
     const victimSession = await port(victim).start({ ...start, bundle: '@example/other#worker' })
+    const admission = {
+      key: 'k',
+      target: { taskId: 't', taskGeneration: 1, startKey: 's' },
+      input: { kind: 'ownerMessage', receiptId: 'r' },
+    } as const
     const calls: [string, () => Promise<unknown>][] = [
       ['start', () => port(forged).start(start)],
       ['send', () => port(forged).send(victimSession.sessionId, { text: 'x', idempotencyKey: 'k' })],
@@ -1113,6 +1118,8 @@ describe('the managed session owner', () => {
       ['toolResult', () => port(forged).toolResult(victimSession.sessionId, 1)],
       ['interrupt', () => port(forged).interrupt(victimSession.sessionId)],
       ['archive', () => port(forged).archive(victimSession.sessionId)],
+      ['admitInput', () => port(forged).admitInput(victimSession.sessionId, admission)],
+      ['inputResult', () => port(forged).inputResult(victimSession.sessionId, { key: 'k' })],
     ]
     for (const [, call] of calls) await expect(call()).rejects.toMatchObject(denied)
     await expect(port(own).start(start)).rejects.toMatchObject(refused('WORKSPACE_NOT_AUTHORIZED'))

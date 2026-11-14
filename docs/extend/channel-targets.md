@@ -57,6 +57,17 @@ init.channels.onPairingChange(async () => console.log(await init.channels.pairin
 | `delivery(pairingId, deliveryKey)` | `delivered` with the message id, `pending` while a send is running, or `unknown` when no confirmed outcome is recorded: the key was never sent, the send was not confirmed, or its record is older than seven days. `failed` is part of the type for a definite failure; the current bridge does not report it. |
 | `unpair(pairingId)` | Ends the pairing. |
 
+## Receipts
+
+Added in 5.18.0. When the Host has durably recorded an event's source and text, the event carries `receiptId` (1–256 characters). Only events of a pairing to a managed service carry one. The Host keeps the text; pass the id to [`admitInput`](managed-sessions.md#admit-the-owners-input) as an `ownerMessage` instead of the text.
+
+- Returning from the `onEvent` handler acknowledges the event. A handler that throws leaves the receipt pending and the Host delivers the same event again with the same `receiptId`; deduplicate on `eventId` or `receiptId`. After repeated failures the receipt is parked, and the owner sees it in the Web and can redeliver or discard it.
+- Redelivery also happens when the service starts and on a slow sweep, so a crash between recording the event and your acknowledgement does not lose it.
+- An acknowledged receipt can be admitted later, within thirty days. After that, or after the owner re-pairs, `admitInput` returns `needsOwner` (`receiptUnknown` or `pairingChanged`) and the text never reaches the session.
+- A receipt belongs to one service and pairing and can be admitted once.
+
+Until the Host reports an API version that includes receipts, events carry no `receiptId` and a throwing handler keeps the retry behavior described under `onEvent`.
+
 ## Buttons
 
 - `textChars` is the provider's text limit minus 395 characters the platform reserves for what it adds: the `title` line and, on a channel without cards, the button list. A `text` of exactly `textChars` therefore always fits.

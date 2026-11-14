@@ -57,6 +57,17 @@ init.channels.onPairingChange(async () => console.log(await init.channels.pairin
 | `delivery(pairingId, deliveryKey)` | 返回 `delivered`（带消息 id）、发送进行中时的 `pending`，或没有确认结果时的 `unknown`：这个键从未发送、发送未获确认，或记录已超过七天。`failed` 是类型里为明确失败保留的状态，当前渠道桥不会返回。 |
 | `unpair(pairingId)` | 解除配对。 |
 
+## 回执
+
+5.18.0 新增。宿主持久记下事件的来源与原文之后，事件会带上 `receiptId`（1–256 个字符）。只有配对到托管服务的事件才带回执。原文由宿主保管；把这个 id 作为 `ownerMessage` 传给[`admitInput`](managed-sessions.zh-CN.md#准入主人的输入)，不要传原文。
+
+- `onEvent` 处理函数正常返回即确认该事件。处理函数抛错则回执保持待处理，宿主会用同一个 `receiptId` 再投同一事件；请按 `eventId` 或 `receiptId` 去重。多次失败后回执转为停放，主人在 Web 上能看到，并可重投或丢弃。
+- 服务启动时和慢速巡检时也会重投，所以事件记下之后、你确认之前崩溃，不会丢事件。
+- 已确认的回执在三十天内仍可准入。超过期限，或主人重新配对后，`admitInput` 返回 `needsOwner`（`receiptUnknown` 或 `pairingChanged`），原文不会进会话。
+- 一张回执只属于一个服务和一个配对，且只能准入一次。
+
+宿主报告的 API 版本包含回执之前，事件不带 `receiptId`，处理函数抛错仍按 `onEvent` 一节所述重试。
+
 ## 按钮
 
 - `textChars` 是渠道文字上限减去平台预留的 395 个字符，用来容纳平台自己加的内容：`title` 行，以及不支持卡片的渠道上的按钮列表。因此长度恰为 `textChars` 的 `text` 总能发出。
