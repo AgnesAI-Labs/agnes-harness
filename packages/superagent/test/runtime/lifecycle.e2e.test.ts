@@ -103,7 +103,7 @@ it.skipIf(process.platform === 'win32')(
     })
     const ids = [worker.id, orchestrator.id]
 
-    const store = openStore(join(root, 'state', DATABASE_FILE))
+    const store = openStore(join(env.stateDir, DATABASE_FILE))
     cleanups.push(() => store.close())
     store.tickets.save(
       runningTicket('T-1', {}, { execution: { name: 'T-1', directory: ticketDir, assignment: 'do it' } }),
@@ -118,7 +118,7 @@ it.skipIf(process.platform === 'win32')(
         control: sdkSessionControl(client()),
         hooks,
         hookState: sessionsOnly,
-        environment: async () => ({ home: env.agentHome, shimsDir: env.shims, config: env.config }),
+        environment: async () => ({ stateDir: env.stateDir, account: env.config }),
         createApp: () => app,
         writeEnvironment: (home, shims, cfg) => env.write(home, shims, cfg),
         verifyEnvironment: (home, shims, cfg) =>

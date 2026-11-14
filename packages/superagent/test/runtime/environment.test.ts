@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
+  agentPaths,
   credentialHelper,
   verifyDirectory,
   verifyEnvironment,
@@ -88,6 +89,14 @@ const sessionEnv = (extra: Record<string, string> = {}) => ({
 })
 const gitAsWorker = (args: string[], cwd = home) =>
   run(['git', ...args], { ...gitEnv(), GIT_CONFIG_NOSYSTEM: undefined, ...sessionEnv() }, cwd)
+
+it('puts the agent HOME, its gh login and the shims at the places the daemon launch names in the state directory', () => {
+  expect(agentPaths('/srv/superagent')).toEqual({
+    home: '/srv/superagent/home',
+    shimsDir: '/srv/superagent/worker-bin',
+    ghConfigDir: '/srv/superagent/home/.config/gh',
+  })
+})
 
 describe('the agent home git configuration', () => {
   it('names the agent, resets every credential helper before the agent one for github.com, rewrites SSH and turns askPass off', async () => {

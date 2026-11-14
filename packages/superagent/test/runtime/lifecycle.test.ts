@@ -40,14 +40,8 @@ afterEach(() => {
 })
 
 const plan = {
-  home: '/agent-home',
-  shimsDir: '/state/worker-bin',
-  config: {
-    login: 'agent-bot',
-    email: 'a@example.invalid',
-    ghConfigDir: '/agent-home/.config/gh',
-    blocked: [],
-  },
+  stateDir: '/state',
+  account: { login: 'agent-bot', email: 'a@example.invalid', blocked: [] },
 }
 function setup(overrides: { [K in keyof LifecycleDeps]?: LifecycleDeps[K] | undefined } = {}) {
   const hooks = createHookStateCell()
@@ -75,8 +69,8 @@ function setup(overrides: { [K in keyof LifecycleDeps]?: LifecycleDeps[K] | unde
       log.push('createApp')
       return app
     },
-    writeEnvironment: async (home, shims) => {
-      log.push(`write ${home} ${shims}`)
+    writeEnvironment: async (home, shims, cfg) => {
+      log.push(`write ${home} ${shims} ${cfg.ghConfigDir}`)
     },
     verifyEnvironment: async (home, shims, cfg) => {
       log.push(`verify ${home} ${shims} ${cfg.login}`)
@@ -101,8 +95,9 @@ describe('enable', () => {
     await lifecycle.settled()
     expect(log.slice(0, 5)).toEqual([
       'environment',
-      'write /agent-home /state/worker-bin',
-      'verify /agent-home /state/worker-bin agent-bot',
+      // The agent HOME and the shims sit where the daemon's launch environment names them.
+      'write /state/home /state/worker-bin /state/home/.config/gh',
+      'verify /state/home /state/worker-bin agent-bot',
       'createApp',
       'app.start',
     ])

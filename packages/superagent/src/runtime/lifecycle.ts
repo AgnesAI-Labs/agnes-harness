@@ -14,7 +14,7 @@ import { liveTicket, runningAssignment, type Ticket } from '../core/index.js'
 import { KV } from '../kv.js'
 import { type SetupCode, SetupError, type SetupProblem } from '../setup.js'
 import type { SessionAdapter, SuperagentApp } from './contracts.js'
-import { type EnvironmentConfig, verifyEnvironment, writeEnvironment } from './environment.js'
+import { agentPaths, type EnvironmentConfig, verifyEnvironment, writeEnvironment } from './environment.js'
 import type { HookState, HookStateCell } from './hook-state.js'
 import type { SdkClient } from './sdk.js'
 
@@ -51,11 +51,13 @@ export interface SessionControl {
   removeWorkspaces(dirs: readonly string[]): Promise<number>
 }
 
-/** Where the agent environment goes and what it holds. */
+/**
+ * The agent environment to write: the state directory, which fixes where it goes (see `agentPaths`), and the agent
+ * account it is written for.
+ */
 export interface EnvironmentPlan {
-  home: string
-  shimsDir: string
-  config: EnvironmentConfig
+  stateDir: string
+  account: Omit<EnvironmentConfig, 'ghConfigDir'>
 }
 
 export interface LifecycleDeps {
@@ -166,11 +168,10 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     try {
       const plan = await deps.environment()
       if (stopping) return
-      await (deps.writeEnvironment ?? writeEnvironment)(plan.home, plan.shimsDir, plan.config)
+      const { home, shimsDir, ghConfigDir } = agentPaths(plan.stateDir)
+      await (deps.writeEnvironment ?? writeEnvironment)(home, shimsDir, { ...plan.account, ghConfigDir })
       if (stopping) return
-      await (deps.verifyEnvironment ?? verifyEnvironment)(plan.home, plan.shimsDir, {
-        login: plan.config.login,
-      })
+      await (deps.verifyEnvironment ?? verifyEnvironment)(home, shimsDir, { login: plan.account.login })
       if (stopping) return
       const started = deps.createApp()
       app = started

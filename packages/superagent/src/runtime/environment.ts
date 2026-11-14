@@ -10,6 +10,7 @@ import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node
 import { basename, dirname, join, resolve } from 'node:path'
 import { runCommand } from '../app/subprocess.js'
 import { executable } from '../deployment.js'
+import { workerBin } from '../infra/worker-paths.js'
 import { SetupError } from '../setup.js'
 
 const MARKER = '# Written by Superagent on every start; edits are lost.'
@@ -46,6 +47,16 @@ const real = (path: string): string => {
   }
 }
 const samePath = (a: string, b: string): boolean => real(a) === real(b)
+
+/**
+ * Where the agent environment lives in the state directory. The daemon must start with `HOME` set to `home` and `shimsDir`
+ * first on `PATH` (its launch command, or its launchd or systemd unit, sets both); the agent's `gh` login is kept under
+ * that home.
+ */
+export function agentPaths(stateDir: string): { home: string; shimsDir: string; ghConfigDir: string } {
+  const home = join(stateDir, 'home')
+  return { home, shimsDir: workerBin(stateDir), ghConfigDir: join(home, '.config', 'gh') }
+}
 
 /** The credential helper git runs for github.com: the agent's `gh`, through its shim. */
 export const credentialHelper = (shimsDir: string): string =>

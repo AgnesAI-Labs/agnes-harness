@@ -8,7 +8,12 @@ import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { credentialHelper, type EnvironmentConfig, writeEnvironment } from '../../src/runtime/environment.js'
+import {
+  agentPaths,
+  credentialHelper,
+  type EnvironmentConfig,
+  writeEnvironment,
+} from '../../src/runtime/environment.js'
 import { gitEnv } from '../fixtures/git.js'
 import { AGENT_CREDENTIAL, makeHomes } from '../fixtures/homes.js'
 
@@ -19,8 +24,9 @@ export const AGENT_EMAIL = 'agent-bot@example.invalid'
 
 export async function prepareAgentEnvironment(root: string, remoteUrl: string) {
   const homes = makeHomes(join(root, 'homes'))
-  const agentHome = join(root, 'agent-home')
-  const shims = join(root, 'agent-shims')
+  // The places a deployment uses: `<state directory>/home` and `<state directory>/worker-bin`.
+  const stateDir = join(root, 'state')
+  const { home: agentHome, shimsDir: shims, ghConfigDir } = agentPaths(stateDir)
   const cliDir = join(root, 'agent-cli')
   const ghLog = join(cliDir, 'fake-gh.log')
   const configDirs = join(cliDir, 'config-dirs.log')
@@ -50,7 +56,7 @@ export async function prepareAgentEnvironment(root: string, remoteUrl: string) {
   const config: EnvironmentConfig = {
     login: AGENT_LOGIN,
     email: AGENT_EMAIL,
-    ghConfigDir: join(agentHome, '.config', 'gh'),
+    ghConfigDir,
     blocked: ['curl'],
     cli,
   }
@@ -78,6 +84,7 @@ export async function prepareAgentEnvironment(root: string, remoteUrl: string) {
   await write()
   return {
     homes,
+    stateDir,
     agentHome,
     shims,
     config,
