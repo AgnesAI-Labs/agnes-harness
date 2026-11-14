@@ -30,6 +30,7 @@ header.
 | `src/infra/commands.ts`, `src/infra/health.ts` | `Commands` (the `gh`, `lark-cli` and `git` calls of the Sources, on `runCommand`) and the health board. |
 | `src/app/` (other files) | Effect queue, outbox, notices, passes, assessment, settings, prompts, links and the read models in `views/`. |
 | `src/app/skill-files.ts` | Loads the packaged `prompts/`, `skills/` and `locale/` folders. |
+| `src/runtime/` | The plugin row `superagentPlugin`: its profile-managed service, which needs the bundled-app grant, the snapshot its `context` and `tool_call` hooks read (`hook-state.ts`) and the narrowing of the grant's SDK client (`sdk.ts`). |
 
 ## Differences from the prototype
 
@@ -42,4 +43,7 @@ header.
   `acknowledgement.ts`).
 - `prompts/`, `skills/` and `locale/` are the prototype's files (their text is read verbatim, so they carry no per-file
   header); `locale/` words the plugin for the host in the prototype's two languages.
+- The plugin ships as the optional payload `packages/package-manager/bundled-plugins/superagent`, built from this
+  package (`pnpm --filter @agnes/package-manager build:superagent-payload`); `package.json` here declares the same plugin
+  row and bundles the payload declares.
 - Imports use `.js` suffixes, the code is formatted by Biome, and it compiles with `exactOptionalPropertyTypes`.

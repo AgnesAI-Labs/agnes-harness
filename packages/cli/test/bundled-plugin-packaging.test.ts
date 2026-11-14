@@ -30,7 +30,7 @@ it.each([
   roots.push(root)
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
-  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop', 'judgment'])
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop', 'judgment', 'superagent'])
   // The release digest is the same formula boot would otherwise compute over the final payload.
   const payload = { root: output, path: `bundled-plugins/${helper.name}` }
   expect(bundledPluginDigest(payload)).toBe(hashDirectory(join(output, payload.path)))
@@ -176,10 +176,33 @@ it('packages a declared TypeScript entry and public Markdown without a family pr
   expect(await readdir(output)).not.toEqual(expect.arrayContaining(['src', 'unpublished.md']))
 })
 
-it('ships the optional judgment payload with its callable plugin and release digest', async () => {
+it('ships the optional judgment and Superagent payloads with their callable plugins and release digests', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-judgment-delivery-'))
   roots.push(root)
   await copyBundledPlugins(root)
+  // Superagent reads its generated prompts, skills and locale folders next to its entry.
+  const superagent = join(root, 'bundled-plugins', 'superagent')
+  expect((await readdir(superagent)).sort()).toEqual([
+    'LICENSE',
+    'NOTICE',
+    'README.md',
+    'index.mjs',
+    'locale',
+    'package.json',
+    'prompts',
+    'skills',
+  ])
+  expect(JSON.parse(await readFile(join(superagent, 'package.json'), 'utf8')).agnes.plugins[0]).toMatchObject(
+    {
+      export: 'superagentPlugin',
+      apiRange: '^5.19.0',
+    },
+  )
+  expect(bundledPluginDigest({ root, path: 'bundled-plugins/superagent' })).toBe(hashDirectory(superagent))
+  const superagentBundle = await readFile(join(superagent, 'index.mjs'), 'utf8')
+  expect(superagentBundle).toMatch(/^export \{[^}]*\bsuperagentPlugin\b[^}]*\}/m)
+  expect(superagentBundle).not.toMatch(/from "@agnes\/(?:core|daemon|host|worker-runtime)/)
+
   const payload = join(root, 'bundled-plugins', 'judgment')
   expect((await readdir(payload)).sort()).toEqual([
     'LICENSE',

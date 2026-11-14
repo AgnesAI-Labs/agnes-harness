@@ -171,6 +171,8 @@ describe('5.x major API', () => {
     expect(ranges.filter(([, range]) => range !== '^5.0.0')).toEqual([
       ['package-manager/bundled-plugins/judgment/ ext:agnes.judgment/main', '^5.17.0'],
       ['package-manager/bundled-plugins/judgment/ hostProvidedExternals', '^5.17.0'],
+      ['package-manager/bundled-plugins/superagent/ ext:agnes.superagent/main', '^5.19.0'],
+      ['package-manager/bundled-plugins/superagent/ hostProvidedExternals', '^5.19.0'],
     ])
   })
 })
