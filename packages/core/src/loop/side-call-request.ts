@@ -192,12 +192,16 @@ async function projectedCreditsOf(
  * writes nothing and sends nothing. Only this context can send what it prepared, in the same turn,
  * and only while the route still resolves to the same catalog record and full route description.
  */
-export function sideCallRequests(s: SessionImpl, caller?: string) {
+export function sideCallRequests(
+  s: SessionImpl,
+  caller?: string,
+  boundary?: import('@agnes/extension-api').SessionWorkBoundary,
+) {
   const prepared = new WeakMap<object, SideCallRequest>()
   return {
     async prepare(options: SideCallOptions): Promise<PreparedSideCall> {
-      const op = s.op()
-      if (!op) throw noTurn()
+      const turn = boundary?.turn ?? s.op()?.meta.turn
+      if (turn === undefined) throw noTurn()
       const given: Partial<SideCallOptions> = options ?? {}
       const { label, deadlineMs = DEFAULT_DEADLINE_MS, output = 'text', system = '' } = given
       if (typeof label !== 'string' || !LABEL.test(label))
@@ -288,6 +292,7 @@ export function sideCallRequests(s: SessionImpl, caller?: string) {
             model: target.model,
           }),
           audit: Object.freeze({
+            ...(boundary ? { source: boundary } : {}),
             ...(caller === undefined ? {} : { caller }),
             label,
             adapter: adapter && Object.freeze({ id: adapter.id, version: adapter.version }),
@@ -300,7 +305,7 @@ export function sideCallRequests(s: SessionImpl, caller?: string) {
             projectedCredits,
             payloadBytes: bytes,
           }),
-          turnId: op.meta.turn,
+          turnId: turn,
           targetDigest: resolved.digest,
         }),
       )
@@ -314,9 +319,9 @@ export function sideCallRequests(s: SessionImpl, caller?: string) {
         throw new CoreError('E_REQUEST_FROZEN', 'Side call was not prepared by this loop context', {
           reason: 'foreign',
         })
-      const op = s.op()
-      if (!op) throw noTurn()
-      if (known.turnId !== op.meta.turn)
+      const turn = boundary?.turn ?? s.op()?.meta.turn
+      if (turn === undefined) throw noTurn()
+      if (known.turnId !== turn)
         throw new CoreError('E_REQUEST_FROZEN', 'Side call was prepared in another turn', { reason: 'turn' })
       const { target } = known.prepared
       if (resolveTarget(s, target.route, target.model)?.digest !== known.targetDigest)

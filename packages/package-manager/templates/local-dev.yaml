@@ -41,5 +41,5 @@ computerUse:
 presets: { default: standard, allowed: [standard, minimal, ptc] }
 permissions: { default: workspace-write, allowed: [read-only, workspace-write, full-access] }
 policy:
-  capabilityCeiling: ["services", "tools", "hooks", "slots", "projections", "events", "resources", "ui", "network", "network.publicRead", "tools.invoke", "artifacts", "subagent", "exec", "filesystem.read", "filesystem.write", "model", "childAgents", "secrets", "credentials", "device", "uiData", "store", "wake", "streams", "managedServices"]
+  capabilityCeiling: ["services", "tools", "hooks", "slots", "projections", "events", "resources", "ui", "network", "network.publicRead", "tools.invoke", "artifacts", "subagent", "exec", "filesystem.read", "filesystem.write", "model", "childAgents", "secrets", "credentials", "device", "uiData", "store", "wake", "streams", "managedServices", "sessionWork", "autoTitle"]
   workspacePackages: require-project-trust

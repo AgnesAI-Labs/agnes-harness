@@ -8,6 +8,7 @@ import { redactSecrets } from '@agnes/extension-api'
 import { createCredentialStore, initializeHome } from '@agnes/host'
 import type { EventEnvelope, PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal, unixTransport } from '@agnes/sdk'
+import { ensureJudgmentPayload } from '../../../package-manager/tools/ensure-judgment-payload.mjs'
 
 export const PROFILE = 'local-dev'
 export const PACKAGE = '@agnes/judgment'
@@ -44,7 +45,10 @@ export type TurnCapture = {
 }
 
 /** A real daemon/SDK fixture. Only synthetic text and a loopback credential enter its home. */
-export async function judgmentDaemon(options: { tools?: boolean; scriptedTool?: boolean } = {}) {
+export async function judgmentDaemon(
+  options: { tools?: boolean; scriptedTool?: boolean; modelServerUrl?: string } = {},
+) {
+  await ensureJudgmentPayload()
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-judgment-e2e-')))
   let daemon: ChildProcess | undefined
   let exited: Promise<number | null> | undefined
@@ -170,15 +174,17 @@ export async function judgmentDaemon(options: { tools?: boolean; scriptedTool?: 
             })),
             {
               route: 'main',
-              api: 'scripted',
-              baseUrl: 'https://scripted.invalid',
-              compat: { replies, repeatLast: true },
+              api: options.modelServerUrl ? 'openai-completions' : 'scripted',
+              baseUrl: options.modelServerUrl ?? 'https://scripted.invalid',
+              ...(options.modelServerUrl
+                ? { credentialRef: 'secret://jev/key' }
+                : { compat: { replies, repeatLast: true } }),
               models: [
                 model({
                   id: 'main-1',
                   route: 'main',
-                  api: 'scripted',
-                  baseUrl: 'https://scripted.invalid',
+                  api: options.modelServerUrl ? 'openai-completions' : 'scripted',
+                  baseUrl: options.modelServerUrl ?? 'https://scripted.invalid',
                   toolCallFormats: ['native'],
                   contextWindow: 200000,
                 }),
@@ -293,7 +299,9 @@ export async function judgmentDaemon(options: { tools?: boolean; scriptedTool?: 
           )
           const preview = inspected.preview
           if (!preview || preview.blockers.length || !preview.capabilityHash)
-            throw new Error('shipped judgment preview blocked')
+            throw new Error(
+              `shipped judgment preview blocked: ${JSON.stringify({ blockers: preview?.blockers, hasCapabilityHash: !!preview?.capabilityHash })}`,
+            )
           await operation(
             await client.packages.install({
               ...common,

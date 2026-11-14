@@ -113,6 +113,7 @@ export type SideCallEffectBinding = Readonly<{
 /** What a side call records for audit beside its identity; it takes no part in identity checks. */
 export type SideCallEffectAudit = Readonly<{
   caller?: string
+  source?: Readonly<{ turn: number; startSeq: number; endSeq: number; lastAssistantSeq: number }>
   label: string
   adapter: Readonly<{ id: string; version: string | null }> | null
   api: string | null
@@ -165,10 +166,16 @@ function snapshotBinding(purpose: LedgerPurpose, value: unknown) {
 }
 
 function snapshotAudit(value: unknown): SideCallEffectAudit {
-  const record = ownData(value, AUDIT_KEYS, ['caller'])
+  const record = ownData(value, AUDIT_KEYS, ['caller', 'source'])
+  const source =
+    record?.source === undefined
+      ? undefined
+      : exactOwn(record.source, ['turn', 'startSeq', 'endSeq', 'lastAssistantSeq'])
   const adapter = record?.adapter === null ? null : exactOwn(record?.adapter, ['id', 'version'])
   if (
     !record ||
+    (record.source !== undefined &&
+      (!source || Object.values(source).some((value) => !count(value) || value < 1))) ||
     (record.caller !== undefined && !bounded(record.caller, 256)) ||
     typeof record.label !== 'string' ||
     !LABEL.test(record.label) ||
@@ -191,6 +198,16 @@ function snapshotAudit(value: unknown): SideCallEffectAudit {
     SIDE_CALL.terminal.invalid('side-call effect audit is invalid')
   return Object.freeze({
     ...(record.caller === undefined ? {} : { caller: record.caller as string }),
+    ...(source
+      ? {
+          source: Object.freeze({
+            turn: source.turn as number,
+            startSeq: source.startSeq as number,
+            endSeq: source.endSeq as number,
+            lastAssistantSeq: source.lastAssistantSeq as number,
+          }),
+        }
+      : {}),
     label: record.label,
     adapter:
       adapter && Object.freeze({ id: adapter.id as string, version: adapter.version as string | null }),

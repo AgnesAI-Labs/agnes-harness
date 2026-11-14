@@ -85,3 +85,5 @@ export function toolSideCallPort(session: SessionImpl, source: ToolSource, scope
     ? createScopedSideCallPort(session, { caller: source.pluginRowId, kind: 'tool', scopeId })
     : undefined
 }
+
+export { createSessionWorkSideCall } from './background-side-call.js'

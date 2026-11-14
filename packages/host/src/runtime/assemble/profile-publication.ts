@@ -22,6 +22,11 @@ export function publishProfileActivations(
               revision: createTreeSnapshot([row]).hash,
               integrity: description.integrity,
             },
+            {
+              owner: `session-work:${pluginRowSource(row.id)}`,
+              revision: row.mountIdentity,
+              integrity: description.integrity,
+            },
           ]
         : []
     }),

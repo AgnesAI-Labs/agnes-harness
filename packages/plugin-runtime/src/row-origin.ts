@@ -5,6 +5,8 @@ export interface RowOrigin {
   readonly packageId: string
   readonly snapshotId: string
   readonly rowRevision?: string
+  /** Executable mount identity, excluding next-session configuration. */
+  readonly mountIdentity?: string
   readonly configDigest?: string
   readonly rowId: string
   readonly exportName: string

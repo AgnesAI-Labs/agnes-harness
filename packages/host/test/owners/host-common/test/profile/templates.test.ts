@@ -32,6 +32,7 @@ describe('templates', () => {
       allowed: ['read-only', 'workspace-write', 'full-access'],
     })
     expect(t.computerUse).toMatchObject({ enabled: true, appAccess: 'all' })
+    expect(t.policy?.capabilityCeiling).toEqual(expect.arrayContaining(['sessionWork', 'autoTitle']))
   })
   it('enterprise routes principals at the governance package and demands a sandbox', () => {
     const t = loadTemplate('enterprise')
@@ -39,6 +40,8 @@ describe('templates', () => {
     expect(t.limits?.['sandbox.required']).toBe(1)
     expect(t.transports).toEqual([{ kind: 'unix' }])
     expect(t.computerUse).toMatchObject({ enabled: false, appAccess: 'allowlist' })
+    expect(t.policy?.capabilityCeiling).not.toContain('sessionWork')
+    expect(t.policy?.capabilityCeiling).not.toContain('autoTitle')
   })
   it('rejects unknown template with E_DEP_MISSING', () => {
     expect(() => loadTemplate('nope')).toThrow(/E_DEP_MISSING/)

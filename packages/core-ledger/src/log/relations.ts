@@ -3,6 +3,7 @@ import { type SurfaceCache, validateReplace } from '../project/surface.js'
 import { reduce } from '../reduce/reducer.js'
 import { type LedgerState, MAINTENANCE_LANE } from '../reduce/state.js'
 import type { StateTracker } from '../reduce/tracker.js'
+import { backgroundAppendAllowed } from './background-authority.js'
 import type { SessionLogImpl } from './session-log.js'
 import type { OpWrite } from './storage.js'
 
@@ -51,6 +52,7 @@ export function checkRelations(
   start: LedgerState,
   surfaces?: Map<string, SurfaceCache>,
   opLanes?: ReadonlySet<string>,
+  allowBackground = true,
 ): void {
   let s = start
   for (const e of batch) {
@@ -62,7 +64,55 @@ export function checkRelations(
     const turn = s.openTurn.get(lane)
     if (e.type === 'turn/start' && turn)
       throw new CoreError('E_LANE_BUSY', 'turn already open', { lane, seq })
-    if (IN_TURN.has(e.type) && !turn && !(lane === MAINTENANCE_LANE && MAINTENANCE_EFFECTS.has(e.type)))
+    const backgroundSideCall =
+      allowBackground &&
+      e.origin === 'system' &&
+      e.trust === 'trusted' &&
+      ((e.type === 'effect/intent' &&
+        d?.kind === 'side-call' &&
+        batch.some((row) => {
+          const data = row.data as {
+            binding?: { effectId?: string }
+            audit?: {
+              caller?: string
+              source?: { turn: number; startSeq: number; endSeq: number; lastAssistantSeq: number }
+            }
+          }
+          const source = data.audit?.source
+          const completed = source && s.completedTurns.get(source.endSeq)
+          return (
+            row.type === 'x/core/side-call-intent' &&
+            row.origin === 'system' &&
+            row.trust === 'trusted' &&
+            (row.lane ?? 'main') === lane &&
+            data.binding?.effectId === d.effectId &&
+            typeof data.audit?.caller === 'string' &&
+            completed?.lane === lane &&
+            completed.turn === source?.turn &&
+            completed.startSeq === source?.startSeq &&
+            completed.lastAssistantSeq === source?.lastAssistantSeq
+          )
+        })) ||
+        (e.type === 'effect/settled' &&
+          s.pendingEffects.get(String(d?.effectId))?.kind === 'side-call' &&
+          s.pendingEffects.get(String(d?.effectId))?.lane === lane))
+    const detachedIntent =
+      e.type === 'effect/intent' &&
+      batch.some(
+        (row) =>
+          row.type === 'x/core/side-call-intent' &&
+          (row.data as { binding?: { effectId?: string }; audit?: { source?: unknown } }).binding
+            ?.effectId === d?.effectId &&
+          (row.data as { audit?: { source?: unknown } }).audit?.source !== undefined,
+      )
+    if (detachedIntent && !backgroundSideCall)
+      throw new CoreError('E_RELATION', 'Background effect source or writer claim is invalid')
+    if (
+      IN_TURN.has(e.type) &&
+      !turn &&
+      !backgroundSideCall &&
+      !(lane === MAINTENANCE_LANE && MAINTENANCE_EFFECTS.has(e.type))
+    )
       throw new CoreError('E_RELATION', `${e.type} outside an open turn`, { lane, seq })
     if (e.type === 'step/start') {
       if (s.openStep.has(lane)) throw new CoreError('E_RELATION', 'step already open', { lane, seq })
@@ -209,7 +259,18 @@ export function opLanesAfter(log: SessionLogImpl, op: OpWrite | undefined): Set<
 export function makeRelationCheck(
   tracker: StateTracker,
   surfaces?: Map<string, SurfaceCache>,
-): (events: readonly CheckedEvent[], log?: SessionLogImpl, op?: OpWrite) => void {
-  return (events, log, op) =>
-    checkRelations(events, tracker.state, surfaces, log ? opLanesAfter(log, op) : undefined)
+): (
+  events: readonly CheckedEvent[],
+  log?: SessionLogImpl,
+  op?: OpWrite,
+  backgroundAuthority?: object,
+) => void {
+  return (events, log, op, authority) =>
+    checkRelations(
+      events,
+      tracker.state,
+      surfaces,
+      log ? opLanesAfter(log, op) : undefined,
+      log ? backgroundAppendAllowed(authority, log, events) : true,
+    )
 }

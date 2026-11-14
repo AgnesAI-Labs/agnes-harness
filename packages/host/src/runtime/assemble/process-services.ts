@@ -139,6 +139,7 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
   windowsAcl = await openWindowsAcl(ctx, adapters)
   const profileActivations = new ProfileActivations(
     adapters.storage.metadata.namespace('@agnes/host', `activation:${ctx.profile.name}`),
+    `${dataDir}/profile:${ctx.profile.name}`,
   )
   const channelTargets = ChannelTargets.retain(`${dataDir}/profile:${ctx.profile.name}`, () =>
     adapters.storage.metadata.namespace('host:channel-targets', `profile:${ctx.profile.name}`),

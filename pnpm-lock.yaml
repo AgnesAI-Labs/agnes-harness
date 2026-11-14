@@ -976,6 +976,9 @@ importers:
       '@agnes/code':
         specifier: workspace:*
         version: link:../code
+      '@agnes/judgment':
+        specifier: workspace:*
+        version: link:../judgment
       '@agnes/loop-default':
         specifier: workspace:*
         version: link:../loop-default
