@@ -79,6 +79,7 @@ export interface ChannelTargetsPort {
 }
 
 const NOTICE_INTERVAL_MS = 600_000
+const CLAIMED_REPLY = '这个机器人由随包应用（如 Superagent）整个使用，不能在这里配对。请换一个机器人配对。'
 const STALE_CARD = '这次点击没有收到：这张卡片是升级前发出的。请在最新的卡片上选择，或到 AGH 网页处理。'
 const ATTEMPTS = 3
 
@@ -128,6 +129,12 @@ export function createTargetRouter(input: {
     if (claimed()) return
     const runner = input.runner()
     if (!runner || !(await runner.claim(event))) return
+    // A bundled app may have claimed the instance while the platform claim was awaited: from here to `confirm`
+    // nothing awaits, so a claim cannot slip in between.
+    if (claimed()) {
+      await reply(event, CLAIMED_REPLY)
+      return
+    }
     const route =
       input.adapter().toSession(event, { tenant: cfg.tenant, agent: cfg.agent })?.sessionKey ??
       sessionKeyFor({ tenant: cfg.tenant, agent: cfg.agent, channel: cfg.channel, chat: event.chat })
@@ -174,6 +181,8 @@ export function createTargetRouter(input: {
     if (!runner) return
     // A receipt claims a paired message. A click keeps the platform claim: the session approval path may take it.
     if ((event.kind === 'cardAction' || !targets.receive) && !(await runner.claim(event))) return
+    // Claimed while the platform claim was awaited: no receipt, no delivery.
+    if (claimed()) return
     if (event.accountId !== pairing.accountId) {
       // The instance now runs another platform account: the old pairing no longer names this chat.
       targets.drop(pairing.id)

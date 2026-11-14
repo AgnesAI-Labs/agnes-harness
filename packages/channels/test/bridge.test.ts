@@ -7,6 +7,7 @@ import type { CardBlock } from '../src/adapter.js'
 import { channelBindingSnapshot, startChannelBridge } from '../src/bridge.js'
 import { createTargetRouter } from '../src/targets.js'
 import { createFakeClient, FAKE_MANIFEST, FakeChannel } from '../testkit/index.js'
+import { memoryTargets } from './memory-targets.js'
 
 const cleanups: (() => Promise<unknown>)[] = []
 afterEach(async () => {
@@ -419,42 +420,6 @@ it.each(['credentials', 'adapter', 'backend'] as const)(
   },
 )
 
-/** An in-memory stand-in for the Host pairing port: one live code, recorded calls. */
-function memoryTargets() {
-  const pairings: { id: string; accountId: string; chatId: string; userId: string; instance: string }[] = []
-  const delivered: import('@agnes/extension-api').ChannelTargetEvent[] = []
-  const links = new Map<string, Parameters<import('../src/targets.js').ChannelTargetsPort['attach']>[1]>()
-  const state = { code: 'ABCD-EFGH' as string | undefined, fail: 0, retained: [] as unknown[] }
-  const port: import('../src/targets.js').ChannelTargetsPort = {
-    retain: (instances) => state.retained.push(instances),
-    attach: (instanceId, link) => {
-      links.set(instanceId, link)
-      return () => links.delete(instanceId)
-    },
-    expectsCode: (_instanceId, text) => !!state.code && /^[A-Z2-9]{8}$/i.test(text.replace(/[\s-]/g, '')),
-    confirm: (instance, text, chat) => {
-      if (text.replace(/[\s-]/g, '').toUpperCase() !== state.code?.replace('-', '')) return undefined
-      state.code = undefined
-      pairings.push({ ...chat, instance })
-      return { label: 'Desk' }
-    },
-    find: (instance, chatId) => pairings.find((p) => p.instance === instance && p.chatId === chatId),
-    deliver: async (_pairing, event) => {
-      if (state.fail-- > 0) throw new Error('service stopped')
-      delivered.push(event)
-    },
-    drop: (id) => {
-      pairings.splice(
-        pairings.findIndex((p) => p.id === id),
-        1,
-      )
-    },
-    paired: (instance, id) => pairings.some((p) => p.instance === instance && p.id === id),
-    pairings: (instance) => pairings.filter((p) => p.instance === instance).map((p) => ({ id: p.id })),
-  }
-  return { port, pairings, delivered, links, state }
-}
-
 const dm = (text: string, over: Record<string, unknown> = {}) =>
   ({
     kind: 'message',
@@ -714,79 +679,4 @@ it('refuses binding a session to a chat paired with a plugin service and marks i
       session,
     ),
   ).rejects.toThrow('paired with a plugin service')
-})
-
-it('gives a whole claimed instance to its claimant before group claims and before pairing or sessions', async () => {
-  const f = await fixture()
-  const targets = memoryTargets()
-  const claimant: string[] = []
-  const state = { whole: true }
-  let link: import('../src/builtin-subscriptions.js').ChannelSubscriptionLink | undefined
-  // The order inside the Host hub is instance, then group; the bridge asks the hub before the router.
-  const subscriptions: import('../src/builtin-subscriptions.js').ChannelSubscriptionsPort = {
-    attach: (_instanceId, attached) => {
-      link = attached
-      return () => {}
-    },
-    claimedInstance: (instanceId) => instanceId === 'first' && state.whole,
-    claimed: (instanceId) => instanceId === 'first' && state.whole,
-    deliver: (_instanceId, event) => void claimant.push(event.eventId),
-  }
-  Object.assign(f.init, { config: { instances: [f.instance] } })
-  const runtime = await startChannelBridge(f.provider, f.init, {
-    ...f.options,
-    targets: targets.port,
-    subscriptions,
-  })
-  cleanups.push(f.stop)
-  const adapter = f.adapters[0]!
-  // A pairing code minted for this instance before the claim must not pair its direct chat.
-  adapter.emit(dm('ABCD-EFGH', { eventId: 'code' }))
-  adapter.emit(dm('hello', { eventId: 'bot-dm', sender: { userId: 'ci', kind: 'bot', raw: {} } }))
-  adapter.emit(dm('@bot group', { eventId: 'group', chat: { id: 'group-chat', type: 'group' } }))
-  expect(claimant).toEqual(['code', 'bot-dm', 'group'])
-  await new Promise((resolve) => setTimeout(resolve, 20))
-  expect(targets.pairings, 'no pairing on a claimed instance').toHaveLength(0)
-  expect(targets.state.code).toBe('ABCD-EFGH')
-  expect(texts(adapter)).toEqual([])
-  const session = { id: 'web-session', workspace: f.root }
-  const view = (await runtime.session!(session)) as { instances: { targets: unknown[] }[] }
-  expect(view.instances[0]!.targets, 'a claimed instance offers no chat to bind').toEqual([])
-  // Released, the instance routes as before: the code pairs its direct chat.
-  state.whole = false
-  expect(link!.occupied()).toBe(false)
-  adapter.emit(dm('ABCD-EFGH', { eventId: 'after-release' }))
-  await vi.waitFor(() => expect(targets.pairings).toHaveLength(1))
-  expect(link!.occupied(), 'an owner pairing keeps the instance from being claimed whole').toBe(true)
-  expect(claimant).toEqual(['code', 'bot-dm', 'group'])
-})
-
-it('creates no pairing and no receipt on an instance claimed whole, even when an event reaches it', async () => {
-  const targets = memoryTargets()
-  const receive = vi.fn(() => 'dropped' as const)
-  targets.pairings.push({
-    id: 'p1',
-    accountId: 'account',
-    chatId: 'owner-chat',
-    userId: 'owner',
-    instance: 'first',
-  })
-  const confirm = vi.spyOn(targets.port, 'confirm')
-  const router = createTargetRouter({
-    targets: { ...targets.port, receive },
-    instanceId: 'first',
-    credentials: 'c',
-    cfg: { allowFrom: [], requireMention: false } as never,
-    adapter: () => ({ toSession: () => ({ sessionKey: 'route' }) }) as never,
-    runner: () => ({ claim: async () => true, sendDirect: async () => ({}) }) as never,
-    bindings: { serial: (work: () => Promise<void>) => work(), bound: () => false } as never,
-    signal: new AbortController().signal,
-    claimed: () => true,
-  })
-  expect(router.intercept(dm('ABCD-EFGH', { chat: { id: 'other-chat', type: 'dm' } }))).toBe(true)
-  expect(router.intercept(dm('hello'))).toBe(true)
-  await router.drain()
-  expect(confirm).not.toHaveBeenCalled()
-  expect(receive).not.toHaveBeenCalled()
-  expect(targets.delivered).toEqual([])
 })
