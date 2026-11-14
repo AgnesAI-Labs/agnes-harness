@@ -57,7 +57,11 @@ async function start(
     },
     ready: () => {},
   } as unknown as ProfileManagedInit
-  const service = await startService(init, holder, log, options)
+  // The setup's platform check is pinned, so these cases read the same on every operating system.
+  const service = await startService(init, holder, log, {
+    ...options,
+    lifecycle: { platform: 'linux', ...options.lifecycle },
+  })
   const call = (name: string, input: JsonValue = {}) =>
     service.callService(name, input, new AbortController().signal) as Promise<Record<string, unknown>>
   return { service, holder, call, shutdown: (reason: 'disable' | 'upgrade' | 'exit') => shutdown!(reason) }

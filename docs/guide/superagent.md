@@ -16,6 +16,9 @@ agent walks through with you, including the settings and the panel, is in the pl
 
 ## Before you start
 
+- **macOS or Linux.** Superagent runs on macOS and Linux only: its ticket sessions and commands use POSIX tools (`sh`,
+  executable shims, process groups), as the original does. On Windows it reports the setup problem "Superagent supports
+  macOS and Linux" and does nothing else.
 - **A dedicated operating-system user (strongly recommended).** Every ticket session runs with full access as the user
   that runs the daemon. Only a separate user, with none of your own files, keys or signed-in tools, limits what a mistaken
   or manipulated session can reach. See [Security boundaries](#security-boundaries).

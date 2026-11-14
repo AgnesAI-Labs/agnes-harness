@@ -11,7 +11,7 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it } from 'vitest'
 import {
   agentPaths,
   credentialHelper,
@@ -21,6 +21,7 @@ import {
 } from '../../src/runtime/environment.js'
 import { SetupError } from '../../src/setup.js'
 import { gitEnv } from '../fixtures/git.js'
+import { posixDescribe } from '../fixtures/posix.js'
 
 const LOGIN = 'agent-bot'
 const EMAIL = '1+agent-bot@users.noreply.github.com'
@@ -98,7 +99,7 @@ it('puts the agent HOME, its gh login and the shims at the places the daemon lau
   })
 })
 
-describe('the agent home git configuration', () => {
+posixDescribe('the agent home git configuration', () => {
   it('names the agent, resets every credential helper before the agent one for github.com, rewrites SSH and turns askPass off', async () => {
     await writeEnvironment(home, shims, config())
     const file = join(home, '.gitconfig')
@@ -163,7 +164,7 @@ describe('the agent home git configuration', () => {
   })
 })
 
-describe('the shims directory', () => {
+posixDescribe('the shims directory', () => {
   it('holds gh and one shim per blocked command, never git or a second gh', async () => {
     await writeEnvironment(home, shims, config(['curl', 'wget', 'git', 'gh', 'curl']))
     expect(readdirSync(shims).sort()).toEqual(['curl', 'gh', 'wget'])
@@ -209,7 +210,7 @@ describe('the shims directory', () => {
   })
 })
 
-describe('the setup self-check', () => {
+posixDescribe('the setup self-check', () => {
   const env = (extra: Record<string, string> = {}) => ({ ...sessionEnv(), ...extra })
 
   it('passes when sessions resolve gh to the shim, only the agent helper for github.com and the agent login', async () => {
@@ -281,7 +282,7 @@ describe('the setup self-check', () => {
   })
 })
 
-describe('the ticket repository check', () => {
+posixDescribe('the ticket repository check', () => {
   it('passes a repository whose own configuration adds no credentials', async () => {
     const repo = join(root, 'ticket', 'repo')
     await run(['git', 'init', '-q', repo], gitEnv(), root)

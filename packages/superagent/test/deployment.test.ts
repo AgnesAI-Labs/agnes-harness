@@ -14,6 +14,7 @@ import {
   workerProbe,
 } from '../src/deployment.js'
 import { gitEnv } from './fixtures/git.js'
+import { posixDescribe } from './fixtures/posix.js'
 
 const exec = promisify(execFile)
 let dir: string
@@ -100,7 +101,7 @@ describe('configuration schema', () => {
   })
 })
 
-describe('setup', () => {
+posixDescribe('setup', () => {
   it('reads the repository from the GitHub Source and the accounts from their CLIs, skipping the worker shims', async () => {
     const deployment = await resolveDeployment(
       machine(),
@@ -183,7 +184,7 @@ describe('setup', () => {
   })
 })
 
-describe('worker probe', () => {
+posixDescribe('worker probe', () => {
   it('runs a command with the worker shim directory off PATH, and names a failure by its stderr or its exit', async () => {
     const shims = join(dir, 'state', 'worker-bin')
     program(join(shims, 'which-me'), 'echo shim')

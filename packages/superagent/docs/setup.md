@@ -24,6 +24,8 @@ The setup takes as little of the operator's attention as possible.
 
 ## Before you start
 
+- **macOS or Linux only.** Superagent's sessions and commands use POSIX tools; on Windows it reports the setup problem
+  "Superagent supports macOS and Linux" and does not run.
 - **Branch protection on the repository is required.** The agent pushes branches named
   `agent/<short name>-<ticket id prefix>` (the ticket's English short name and the first 12 characters of its id; the
   part after `agent/` is the `DSH_SUPERAGENT_NAME` value in the ticket's `SUPERAGENT.md`) and opens pull requests; it

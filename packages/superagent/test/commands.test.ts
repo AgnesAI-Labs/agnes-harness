@@ -10,6 +10,7 @@ import { githubKind } from '../src/sources/github.js'
 import { githubChannel } from '../src/sources/github-trigger.js'
 import { SourceRegistry } from '../src/sources/registry.js'
 import { testDeployment } from './fixtures/deployment.js'
+import { posixIt } from './fixtures/posix.js'
 
 const sources = new SourceRegistry(() => SettingsSchema.parse({}))
 sources.register(feishuKind)
@@ -214,35 +215,38 @@ describe('GitHub calls', () => {
     await expect(value.pages(z.looseObject({ id: z.number() }), 'issues/12/comments')).rejects.toThrow()
   })
 })
-it('names only the program and how it ended when a command prints no diagnostics, never its arguments', async () => {
-  const commands = new Commands(() => deployment, {}, new AbortController().signal)
-  const reply = 'private reply text'
-  await expect(commands.run('sh', ['-c', 'exit 3', reply])).rejects.toMatchObject({
-    message: 'sh exited with code 3',
-    exitCode: 3,
-  })
-  await expect(commands.run('sh', ['-c', 'kill -9 $$', reply])).rejects.toMatchObject({
-    message: 'sh was stopped before it finished',
-  })
-  // A command that runs past its time is stopped, and its error says how long it was given.
-  await expect(
-    new Commands(() => deployment, {}, new AbortController().signal, 100).run('sleep', ['5']),
-  ).rejects.toMatchObject({ message: 'sleep timed out after 0.1 s' })
-  await expect(commands.run('/no/such/program', [reply])).rejects.toMatchObject({
-    message: 'program could not run: ENOENT',
-  })
-  // Timeouts kill the child with SIGTERM; Node's default error message would echo every argument.
-  const timedOut = {
-    killed: true,
-    signal: 'SIGTERM',
-    code: null,
-    stderr: '',
-    message: 'Command failed: /path/gh-bot api repos/acme/app --field body=withdrawn',
-  }
-  expect(commandError(timedOut, '/path/gh-bot')).toMatchObject({ message: 'gh-bot timed out after 90 s' })
-  expect(String(commandError(timedOut, '/path/gh-bot'))).not.toContain('withdrawn')
-})
-it('reports failures as CliError with the code the CLI names and the exit status', async () => {
+posixIt(
+  'names only the program and how it ended when a command prints no diagnostics, never its arguments',
+  async () => {
+    const commands = new Commands(() => deployment, {}, new AbortController().signal)
+    const reply = 'private reply text'
+    await expect(commands.run('sh', ['-c', 'exit 3', reply])).rejects.toMatchObject({
+      message: 'sh exited with code 3',
+      exitCode: 3,
+    })
+    await expect(commands.run('sh', ['-c', 'kill -9 $$', reply])).rejects.toMatchObject({
+      message: 'sh was stopped before it finished',
+    })
+    // A command that runs past its time is stopped, and its error says how long it was given.
+    await expect(
+      new Commands(() => deployment, {}, new AbortController().signal, 100).run('sleep', ['5']),
+    ).rejects.toMatchObject({ message: 'sleep timed out after 0.1 s' })
+    await expect(commands.run('/no/such/program', [reply])).rejects.toMatchObject({
+      message: 'program could not run: ENOENT',
+    })
+    // Timeouts kill the child with SIGTERM; Node's default error message would echo every argument.
+    const timedOut = {
+      killed: true,
+      signal: 'SIGTERM',
+      code: null,
+      stderr: '',
+      message: 'Command failed: /path/gh-bot api repos/acme/app --field body=withdrawn',
+    }
+    expect(commandError(timedOut, '/path/gh-bot')).toMatchObject({ message: 'gh-bot timed out after 90 s' })
+    expect(String(commandError(timedOut, '/path/gh-bot'))).not.toContain('withdrawn')
+  },
+)
+posixIt('reports failures as CliError with the code the CLI names and the exit status', async () => {
   const notFound = commandError({ stderr: 'gh: Not Found (HTTP 404)\n', code: 1 })
   expect(notFound).toBeInstanceOf(CliError)
   expect(notFound).toMatchObject({ message: 'gh: Not Found (HTTP 404)', code: 404, exitCode: 1 })
@@ -261,27 +265,35 @@ it('reports failures as CliError with the code the CLI names and the exit status
   await expect(running).rejects.toMatchObject({ name: 'AbortError' })
 })
 
-it('returns the whole output of a command up to the limit, and refuses one that printed more than it may', async () => {
-  const commands = new Commands(() => deployment, {}, new AbortController().signal)
-  // More than the 1 MiB `runCommand` keeps by default, which a paginated GitHub list can reach.
-  const output = await commands.run('sh', ['-c', "head -c 3000000 /dev/zero | tr '\\0' x"])
-  expect(output).toHaveLength(3_000_000)
-  await expect(commands.run('sh', ['-c', "head -c 17000000 /dev/zero | tr '\\0' x"])).rejects.toMatchObject({
-    message: 'sh printed more output than it may',
-  })
-})
-it('stops a running command when the signal of its work aborts, or the lifetime, and leaves the other work running', async () => {
-  const lifetime = new AbortController(),
-    work = new AbortController()
-  const commands = new Commands(() => deployment, {}, lifetime.signal)
-  const started = Date.now()
-  const running = commands.withSignal(work.signal).run('sleep', ['5'])
-  work.abort()
-  await expect(running).rejects.toThrow()
-  // Only commands bound to the aborted work signal stop.
-  expect(await commands.run('echo', ['still'])).toBe('still\n')
-  const other = commands.withSignal(new AbortController().signal).run('sleep', ['5'])
-  lifetime.abort()
-  await expect(other).rejects.toThrow()
-  expect(Date.now() - started).toBeLessThan(4000)
-})
+posixIt(
+  'returns the whole output of a command up to the limit, and refuses one that printed more than it may',
+  async () => {
+    const commands = new Commands(() => deployment, {}, new AbortController().signal)
+    // More than the 1 MiB `runCommand` keeps by default, which a paginated GitHub list can reach.
+    const output = await commands.run('sh', ['-c', "head -c 3000000 /dev/zero | tr '\\0' x"])
+    expect(output).toHaveLength(3_000_000)
+    await expect(commands.run('sh', ['-c', "head -c 17000000 /dev/zero | tr '\\0' x"])).rejects.toMatchObject(
+      {
+        message: 'sh printed more output than it may',
+      },
+    )
+  },
+)
+posixIt(
+  'stops a running command when the signal of its work aborts, or the lifetime, and leaves the other work running',
+  async () => {
+    const lifetime = new AbortController(),
+      work = new AbortController()
+    const commands = new Commands(() => deployment, {}, lifetime.signal)
+    const started = Date.now()
+    const running = commands.withSignal(work.signal).run('sleep', ['5'])
+    work.abort()
+    await expect(running).rejects.toThrow()
+    // Only commands bound to the aborted work signal stop.
+    expect(await commands.run('echo', ['still'])).toBe('still\n')
+    const other = commands.withSignal(new AbortController().signal).run('sleep', ['5'])
+    lifetime.abort()
+    await expect(other).rejects.toThrow()
+    expect(Date.now() - started).toBeLessThan(4000)
+  },
+)

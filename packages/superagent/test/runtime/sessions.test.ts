@@ -9,6 +9,7 @@ import {
   type SessionsDeps,
   SessionTaken,
 } from '../../src/runtime/sessions.js'
+import { posixDescribe } from '../fixtures/posix.js'
 import { fakeClient } from './fake-sdk.js'
 import { tempStore, ticket } from './helpers.js'
 
@@ -37,7 +38,7 @@ function setup(fields: Partial<SessionsDeps> = {}) {
   return { fake, registry, sessions, models }
 }
 
-describe('worker sessions', () => {
+posixDescribe('worker sessions', () => {
   it('creates the ticket directory, runs prepare inside it, then opens the worker session there', async () => {
     const { fake, registry, sessions, models } = setup()
     const dir = join(temp.dir, 'work', 'fix-login')

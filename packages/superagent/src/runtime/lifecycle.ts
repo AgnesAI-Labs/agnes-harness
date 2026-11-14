@@ -13,7 +13,7 @@ import { setAgentVariables } from '../app/subprocess.js'
 import { interruptionRestarts } from '../core/assignments.js'
 import { liveTicket, runningAssignment, type Ticket } from '../core/index.js'
 import { KV, type Paused } from '../kv.js'
-import { type SetupCode, SetupError, type SetupProblem } from '../setup.js'
+import { assertSupportedPlatform, type SetupCode, SetupError, type SetupProblem } from '../setup.js'
 import type { SessionAdapter, SuperagentApp } from './contracts.js'
 import { agentPaths, type EnvironmentConfig, verifyEnvironment, writeEnvironment } from './environment.js'
 import type { HookState, HookStateCell } from './hook-state.js'
@@ -101,6 +101,8 @@ export interface LifecycleDeps {
   ) => Promise<void>
   archive?: (store: Store, now: number) => { archived: number }
   now?: () => number
+  /** The operating system, this process's by default; Superagent refuses Windows with a setup problem. */
+  platform?: string
   /**
    * How long a stop may take in all, below the Host's shutdown deadline: cancelling and killing come first, then the wait
    * for an aborted start, the app's drain and anything else get what is left.
@@ -391,6 +393,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     await new Promise<void>((resolve) => setImmediate(resolve))
     try {
       if (stopping) return
+      assertSupportedPlatform(deps.platform ?? process.platform) // guards-allow-platform: POSIX-only plugin.
       const plan = await deps.environment(signal)
       if (stopping) return
       const { home, shimsDir, ghConfigDir } = agentPaths(plan.stateDir)

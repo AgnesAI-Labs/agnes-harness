@@ -8,6 +8,7 @@ import type { ChannelAdapter, ChannelEvent, MessageEvent } from '@agnes/extensio
 import { afterEach, describe, expect, it } from 'vitest'
 import { startGitHttpRemote } from './git-http-remote.js'
 import { AGENT_CREDENTIAL, makeHomes, OPERATOR_CREDENTIAL } from './homes.js'
+import { posixDescribe } from './posix.js'
 import { isAlive, killTree, type ProcessIo } from './process-tree.js'
 import { createTestChannel } from './test-channel.js'
 
@@ -105,7 +106,7 @@ describe('fake gh', () => {
   })
 })
 
-describe('homes', () => {
+posixDescribe('homes', () => {
   it('gives each home its own git identity and its own gh', async () => {
     const homes = makeHomes(scratch())
     const env = (home: string, bin: string) => ({
@@ -128,7 +129,7 @@ describe('homes', () => {
   })
 })
 
-describe('authenticated git remote', () => {
+posixDescribe('authenticated git remote', () => {
   const users = {
     [AGENT_CREDENTIAL.user]: AGENT_CREDENTIAL.password,
     [OPERATOR_CREDENTIAL.user]: OPERATOR_CREDENTIAL.password,
@@ -313,7 +314,7 @@ describe('test channel', () => {
   })
 })
 
-describe('process tree', () => {
+posixDescribe('process tree', () => {
   it('kills the processes below a SIGKILLed parent by pid, which the parent would otherwise orphan', async () => {
     const parent = spawn(
       process.execPath,

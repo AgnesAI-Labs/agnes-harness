@@ -47,7 +47,14 @@ async function startWith(lifecycle: Partial<LifecycleDeps> = {}) {
       shutdown = handler
     },
   } as unknown as ProfileManagedInit
-  const service = await startService(init, createHookStateHolder(), { warn: () => {} }, { lifecycle })
+  const service = await startService(
+    init,
+    createHookStateHolder(),
+    { warn: () => {} },
+    {
+      lifecycle: { platform: 'linux', ...lifecycle },
+    },
+  )
   return { service, shutdown: (reason: 'disable' | 'upgrade' | 'exit') => shutdown!(reason) }
 }
 

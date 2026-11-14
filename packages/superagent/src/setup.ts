@@ -13,6 +13,7 @@ export const SETUP_PROBLEMS = {
     'git does not read the github.com credential configuration Superagent writes; Superagent needs git 2.32 or later.',
   ],
   environmentFailed: ['deployment', 'Preparing the agent environment failed.'],
+  platformUnsupported: ['deployment', 'Superagent supports macOS and Linux; it does not run on {platform}.'],
   sessionTaken: [
     'deployment',
     'A session {session} exists that Superagent did not open; archive or remove it, then check the setup again.',
@@ -45,6 +46,14 @@ export interface SetupProblem {
   code: SetupCode
   values: Record<string, string>
   detail: string
+}
+
+/**
+ * Superagent's sessions and commands rely on POSIX tools (`sh`, `env`, process groups, executable shims), as the
+ * original does: it runs on macOS and Linux. Refuses any other platform with a setup problem before anything is written.
+ */
+export function assertSupportedPlatform(platform: string): void {
+  if (platform === 'win32') throw new SetupError('platformUnsupported', { platform: 'Windows' })
 }
 
 /**

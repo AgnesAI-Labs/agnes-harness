@@ -109,6 +109,7 @@ function setup(overrides: { [K in keyof LifecycleDeps]?: LifecycleDeps[K] | unde
     },
     archive,
     now: () => Date.parse(AT),
+    platform: 'linux',
   }
   for (const [name, value] of Object.entries(overrides)) {
     if (value === undefined) delete (deps as unknown as Record<string, unknown>)[name]
@@ -239,6 +240,22 @@ describe('enable', () => {
     await lifecycle.stop('disable')
     expect(log).toEqual(['environment'])
     expect(lifecycle.status()).toEqual({ state: 'stopped' })
+  })
+
+  it('refuses Windows with a setup problem before it reads the configuration or writes anything', async () => {
+    store.tickets.save(runningTicket('T'))
+    const { lifecycle, hooks } = setup({ platform: 'win32' })
+    await lifecycle.start()
+    await lifecycle.settled()
+    expect(log).toEqual([])
+    expect(lifecycle.status()).toMatchObject({
+      state: 'setupFailed',
+      problem: { place: 'deployment', code: 'platformUnsupported', values: { platform: 'Windows' } },
+    })
+    expect(hooks.get().guardTool({ sessionId: workerKey('T'), toolName: 'shell', input: {} })).toMatch(
+      /Superagent cannot start: Superagent supports macOS and Linux; it does not run on Windows/,
+    )
+    await lifecycle.stop('disable')
   })
 
   it('reports a failed self-check, opens no session and keeps refusing the existing ones', async () => {

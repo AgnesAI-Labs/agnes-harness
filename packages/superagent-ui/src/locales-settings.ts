@@ -576,6 +576,10 @@ export const SETTINGS_TEXT = {
     SETUP_PROBLEMS.gitTooOld[1],
   ],
   'setup.environmentFailed': ['准备智能体的运行环境失败。', SETUP_PROBLEMS.environmentFailed[1]],
+  'setup.platformUnsupported': [
+    'Superagent 支持 macOS 与 Linux，不能在 {platform} 上运行。',
+    SETUP_PROBLEMS.platformUnsupported[1],
+  ],
   'setup.sessionTaken': [
     '已有一个不是 Superagent 打开的会话 {session}；归档或删除它，然后重新检查设置。',
     SETUP_PROBLEMS.sessionTaken[1],
