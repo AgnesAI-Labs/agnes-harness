@@ -32,6 +32,8 @@ const MANAGED_SESSION_ACTIONS = new Set<string>([
   'toolResult',
   'interrupt',
   'archive',
+  'admitInput',
+  'inputResult',
 ])
 
 export async function packageRowOwners(packageId: string, directory: string): Promise<Set<string>> {

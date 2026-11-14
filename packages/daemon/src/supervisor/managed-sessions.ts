@@ -592,6 +592,9 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
 
   const skillInstallsOff = (sessionId: string) => lineageSkillInstallsOff(ports, sessionId)
 
+  const deniedInputPort = async (): Promise<never> => {
+    throw rpcError('CAPABILITY_DENIED')
+  }
   /**
    * The port one managed service row receives. Every call rechecks the row first. Records and send
    * keys are keyed by package and row, like grants: row ids are author-chosen, so a later package
@@ -636,6 +639,9 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       toolResult: guarded((sessionId, callSeq) => toolResult(own(owner, sessionId), callSeq)),
       interrupt: guarded((sessionId) => ports.sessions.cancel(own(owner, sessionId).sessionId)),
       archive: guarded((sessionId) => archive(own(owner, sessionId))),
+      // Placeholders until the admission engine is wired in.
+      admitInput: guarded(deniedInputPort),
+      inputResult: guarded(deniedInputPort),
     }
   }
   return Object.assign(port, { skillInstallsOff })

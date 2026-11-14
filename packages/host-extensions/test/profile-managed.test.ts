@@ -523,7 +523,7 @@ it('hands a working sessions port only to a reviewed declaration that sets sessi
   const callers: unknown[] = []
   const sessions = {
     list: async () => [],
-  } as unknown as import('@agnes/extension-api').ManagedSessions
+  } as unknown as import('../src/profile/managed-sessions.js').HostManagedSessions
   const manager = new ProfileManagedResources(
     'synthetic-sessions',
     () => ({
