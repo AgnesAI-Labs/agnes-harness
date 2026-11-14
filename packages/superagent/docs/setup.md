@@ -92,10 +92,9 @@ steps, and the defaults. Ask for one confirmation.
 ## 4. Execute
 
 1. **Operator steps first.** One message with what only the operator can do, as the dedicated system user: create the
-   agent GitHub account and add it to the repository with write access; accept the invitation as the agent account; turn
-   on the branch protection above; and sign the agent account in to its own GitHub CLI configuration (the agent's
-   credentials live under its own home, never in the operator's). For Feishu, create and publish the bot app and enter its
-   secret with its CLI. Wait until the operator says it is done, then check each login with `gh api user --jq .login`.
+   agent GitHub account and add it to the repository with write access; accept the invitation as the agent account; and
+   turn on the branch protection above. For Feishu, create and publish the bot app and enter its secret with its CLI.
+   The agent account is signed in later (step 5), once its home exists. Wait until the operator says it is done.
 2. **A separate AGH home.** Pick a directory for it and use it for every `agh` command and for the daemon:
 
    ```sh
@@ -103,26 +102,45 @@ steps, and the defaults. Ask for one confirmation.
    ```
 
    Create it with the first command that uses it, and configure a model provider in it as in
-   [Install](../../../docs/guide/install.md).
-3. **Start the daemon with the agent's identity.** Superagent writes the agent's git configuration, its credential helper
-   and shims for the commands the agent must not use under its state directory. Start the daemon with `HOME` set to that
-   proxy home and the shim directory first on `PATH`, so that the sessions it runs act as the agent account and never as
-   the operator, even when the operator is signed in on the same machine. Start it from a shell that has the proxy
-   environment, as the dedicated system user:
-
-   ```sh
-   HOME="<state directory>/home" PATH="<state directory>/worker-bin:$PATH" agh serve
-   ```
-
-   The state directory is the plugin setting `stateDir`, shown on the Deployment page of the panel. Superagent checks
-   this environment when it starts and reports a setup problem, with its cause, if the daemon was started without it.
-4. **Install and enable the plugin.** Open **Plugins → Marketplace**, find **Superagent**, and select **Install**. The
+   [Install](../../../docs/guide/install.md). Start the daemon once as usual (`agh serve`).
+3. **Install and enable the plugin.** Open **Plugins → Marketplace**, find **Superagent**, and select **Install**. The
    package ships with AGH but is not installed by default. Review what it asks for: model and session access, the
    credentials of the agent account, and running commands on this machine. Finish the installation and enable the plugin
-   (see [Plugins](../../../docs/guide/packages.md)).
-5. **Save the settings through the panel.** Open the **Superagent** entry on the home page. Everything below is saved
-   from the **Settings** tab, which calls the plugin's settings services; the agent's own tools cannot change the account
-   or execution-environment fields, only the panel can. In this order:
+   (see [Plugins](../../../docs/guide/packages.md)). It reports a setup problem, because the agent's environment does
+   not exist yet; that is expected.
+4. **Fix the state directory.** Superagent keeps the agent's identity under its state directory, the plugin setting
+   `stateDir`. Either set `stateDir` to an absolute path of your choice on the plugin's settings page, or leave it unset
+   and read the default from the **Deployment** page of the panel (it is under the AGH data directory, in
+   `bundled-apps/<hash>`). Use the same path in the next steps. Below, `<stateDir>` stands for it:
+
+   | Path | What it is |
+   | --- | --- |
+   | `<stateDir>/home` | The agent's `HOME`: its git configuration and credential helper. Superagent writes it. |
+   | `<stateDir>/home/.config/gh` | The agent's GitHub CLI login. |
+   | `<stateDir>/worker-bin` | Shims for `gh` and the commands the agent must not use. Superagent writes it. |
+
+5. **Sign the agent in.** As the dedicated system user, with the agent's own configuration directory, never the
+   operator's:
+
+   ```sh
+   GH_CONFIG_DIR="<stateDir>/home/.config/gh" gh auth login
+   GH_CONFIG_DIR="<stateDir>/home/.config/gh" gh api user --jq .login   # must print the agent account
+   ```
+
+   For Feishu, enter the bot's secret with its CLI under the same `HOME`.
+6. **Restart the daemon with the agent's identity.** Stop the daemon you started in step 2, by its process id, and start
+   it again with `HOME` set to the proxy home and the shim directory first on `PATH`, so that the sessions it runs act as
+   the agent account and never as the operator, even when the operator is signed in on the same machine:
+
+   ```sh
+   HOME="<stateDir>/home" PATH="<stateDir>/worker-bin:$PATH" agh serve
+   ```
+
+   Superagent checks this environment when it starts and reports a setup problem, with its cause, if the daemon was
+   started without it. Select **Check again** on the overview.
+7. **Save the settings.** Open the **Superagent** entry on the home page and save from the **Settings** tab, or, for a
+   setup agent, through the services in [Settings services](#settings-services). The agent's own tools cannot change the
+   account or execution-environment fields, only the panel and these services can. In this order:
    1. **Sources:** the GitHub Source (repository and the agent's GitHub CLI), then the Feishu Source if used.
    2. **Policy:** the allowed lists, and for Feishu the chat ids, looked up with the bot's CLI first.
    3. **Execution:** the ticket directory root and the prepare command from question 7, for example
@@ -130,9 +148,68 @@ steps, and the defaults. Ask for one confirmation.
    4. **Prompts:** the commit identity of question 8 and the auto-merge answer of question 9 in Delivery requirements.
 
    Every save keeps a version, shown in the history of the Settings tab. A save that changes the agent's account or CLI
-   re-runs the deployment check; a refused save names the setup problem in the panel.
-6. **Failures.** A setup problem is shown on the overview and on the settings that fix it, in plain words. Fix it, then
-   select **Check again**. Ask the operator only for what you cannot fix yourself.
+   re-runs the deployment check; a refused save names the setup problem.
+8. **Failures.** A setup problem is shown on the overview and on the settings that fix it, in plain words. Fix it, then
+   select **Check again** (`superagent.setup.check`). Ask the operator only for what you cannot fix yourself.
+
+## Settings services
+
+The panel is a client of the plugin's profile services; a setup agent calls the same ones. There is no `agh` command for
+them: use the SDK client of the daemon, as the plugin's own end-to-end test does.
+
+```ts
+import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { createClient, memoryJournal } from '@agnes/sdk'
+
+const owner = JSON.parse(readFileSync(`${process.env.AGH_HOME}/daemon/owner.json`, 'utf8'))
+const client = createClient({
+  journal: memoryJournal(),
+  auth: { kind: 'local' },
+  transport: { kind: 'unix', path: owner.socketPath },
+})
+await client.initialize()
+// The extension id is derived from the plugin row id, `d1215cfcd1af03a1` for this plugin.
+const extension = `plugin/${createHash('sha256').update('ext:agnes.superagent/main').digest('hex').slice(0, 16)}`
+const query = async (service: string, input: object = {}) =>
+  (await client.extensions.callScoped({ extension, service, input })).output
+const effect = async (service: string, input: object) =>
+  (await client.extensions.callScoped({ extension, service, input, operationId: crypto.randomUUID() })).output
+```
+
+Services that read are queries, services that change something are effects (give each its own `operationId`; reuse one
+only to retry the same call). The ones a setup uses:
+
+| Service | Input | Result |
+| --- | --- | --- |
+| `superagent.settings.get` | none | `blocks.{policy,eval,executor}` as `{ value, revision }`, and `sources` with each Source's fields and revision |
+| `superagent.settings.save` | `block` (`policy`, `eval`, `executor`, or `source:<id>`), `value`, `revision` | `{ revision, restarting }` |
+| `superagent.prompts.get` / `superagent.prompts.save` | none / `config`, `baseRevision` | the prompt versions / `{ revision }` |
+| `superagent.state` | none | setup problem, accounts, load and the health of each part |
+| `superagent.setup.check` | none | `{ restarting }`; runs the deployment check again |
+
+Save one block at a time, with the `revision` read from `superagent.settings.get` just before. For a Source block the
+value is `{ enabled, config }`, with the fields the Source declares in `superagent.settings.get`.
+
+A refusal is a normal result, not an exception: it is `{ failure: { status, error, ... } }`.
+
+- `status: 409` means the block changed since you read it: read `superagent.settings.get` again and retry with the new
+  `revision`.
+- `status: 400` with `issues` names the invalid fields; with `setup` it names the setup problem (a missing or signed-out
+  CLI, an unreadable repository). Fix that, then save again.
+- `status: 503` means Superagent has not finished starting: wait and retry.
+- A result with `restarting: true` means the save re-runs setup: wait until `superagent.state` answers without a setup
+  problem before the next save, and read the revisions again.
+
+```ts
+const current = (await query('superagent.settings.get')) as { blocks: { executor: { value: object; revision: number } } }
+const { value, revision } = current.blocks.executor
+const result = await effect('superagent.settings.save', {
+  block: 'executor',
+  value: { ...value, prepare: 'git clone "https://github.com/acme/widgets.git" repo' },
+  revision,
+})
+```
 
 ## 5. Verify and hand over
 
