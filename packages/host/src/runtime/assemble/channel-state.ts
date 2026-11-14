@@ -96,5 +96,7 @@ export function channelControls(
       const target = { owner: params.target.owner, service: params.target.service }
       return (await pairing.mint({ instance, target }, params.operationId)) as unknown as JsonValue
     },
+    channelReceipts: (params: Record<string, unknown>): JsonValue =>
+      proc.channelTargets.receipts.command(params),
   }
 }

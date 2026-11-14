@@ -51,7 +51,7 @@ init.channels.onPairingChange(async () => console.log(await init.channels.pairin
 | 调用 | 作用 |
 | --- | --- |
 | `pairing()` | 返回本服务的配对或 `undefined`：配对 id、实例、渠道、主人与私聊 id、标签、机器人是否在线，以及 `textChars`，即一次发送的 `text` 最多可带的字符数。 |
-| `onEvent(handler)` | 每个主人事件收到一次：`message`（渠道报告了它回复或引用的消息时带 `quotedMessageId`），或点击产生的 `action`。服务未运行时到达的消息不会保留：机器人会提醒主人稍后重发，十分钟内最多一次。处理函数抛错会重试，共三次。 |
+| `onEvent(handler)` | 接收主人事件：`message`（渠道报告了它回复或引用的消息时带 `quotedMessageId`），或点击产生的 `action`。服务未运行时到达的事件会保留：机器人告诉主人服务恢复后会自动转交（十分钟内最多提醒一次），服务注册处理函数时宿主再投递。处理函数抛错时，一次投递在约十秒内共尝试三次；之后宿主重投，累计五次投递失败后停放（见[回执](#回执)）。 |
 | `onPairingChange(handler)` | 配对建立、撤销或删除后调用。 |
 | `send(pairingId, { deliveryKey, text, title?, actions? })` | 向已配对私聊发一条消息，返回平台消息 id。`deliveryKey`（1–256 个字符）让重试安全：已送达的键直接返回同一个消息 id，不会重发。不带 `actions` 时发文字，`title` 作为加粗首行；带 `actions` 时发卡片，不支持卡片的渠道收到同样内容的编号文字。 |
 | `delivery(pairingId, deliveryKey)` | 返回 `delivered`（带消息 id）、发送进行中时的 `pending`，或没有确认结果时的 `unknown`：这个键从未发送、发送未获确认，或记录已超过七天。`failed` 是类型里为明确失败保留的状态，当前渠道桥不会返回。 |
@@ -61,19 +61,20 @@ init.channels.onPairingChange(async () => console.log(await init.channels.pairin
 
 5.18.0 新增。宿主持久记下事件的来源与原文之后，事件会带上 `receiptId`（1–256 个字符）。只有配对到托管服务的事件才带回执。原文由宿主保管；把这个 id 作为 `ownerMessage` 传给[`admitInput`](managed-sessions.zh-CN.md#准入主人的输入)，不要传原文。
 
-- `onEvent` 处理函数正常返回即确认该事件。处理函数抛错则回执保持待处理，宿主会用同一个 `receiptId` 再投同一事件；请按 `eventId` 或 `receiptId` 去重。多次失败后回执转为停放，主人在 Web 上能看到，并可重投或丢弃。
-- 服务启动时和慢速巡检时也会重投，所以事件记下之后、你确认之前崩溃，不会丢事件。
+- `onEvent` 处理函数正常返回即确认该事件。处理函数抛错时，一次投递在约十秒内共尝试三次；仍然抛错则回执保持待处理，服务注册处理函数时以及每五分钟，宿主会用同一个 `receiptId` 再投同一事件。请按 `eventId` 或 `receiptId` 去重。累计五次投递失败后回执转为停放，主人在 Web 上能看到，并可重投或丢弃。
+- 服务启动时也会重投，所以事件记下之后、你确认之前崩溃，不会丢事件。
+- 已配对私聊里的卡片点击同样带回执。点击回执的原文是本服务发出时（或最近一次 `update` 替换后）该按钮的文字；像主人打字一样作为 `ownerMessage` 准入。宿主开始记录按钮之前发出的卡片，点击不产生回执，机器人会提示主人在最新的卡片上选择或到 Web 处理。
 - 已确认的回执在三十天内仍可准入。超过期限，或主人重新配对后，`admitInput` 返回 `needsOwner`（`receiptUnknown` 或 `pairingChanged`），原文不会进会话。
 - 一张回执只属于一个服务和一个配对，且只能准入一次。
 
-宿主报告的 API 版本包含回执之前，事件不带 `receiptId`，处理函数抛错仍按 `onEvent` 一节所述重试。
+宿主报告的 API 版本包含回执之前，事件不带 `receiptId`；服务未运行时到达的消息不保留（机器人提醒主人稍后重发），处理函数抛错共尝试三次。
 
 ## 按钮
 
 - `textChars` 是渠道文字上限减去平台预留的 395 个字符，用来容纳平台自己加的内容：`title` 行，以及不支持卡片的渠道上的按钮列表。因此长度恰为 `textChars` 的 `text` 总能发出。
 - `actions` 含 1–6 个按钮。每个 `id` 为 1–64 个 `A-Z a-z 0-9 : _ -` 字符，同一条消息内不重复；每个 `label` 为 1–40 个字符、不含换行；`style` 为 `primary`、`default` 或 `danger`。`title` 为 1–100 个字符、不含换行。
 - 只有配对主人在已配对私聊里点击本服务七天内发出的消息，点击才以 `{ kind: 'action', messageId, actionId, ... }` 送达；其他点击被丢弃，也不会进入 AGH 会话。
-- Host 不记录按钮列表。请核对 `actionId` 是被点消息给出的按钮之一；点击等同主人打字，不授予更多权限。
+- Host 记录每条已发消息的按钮，只用来给点击回执取文字。仍请核对 `actionId` 是被点消息给出的按钮之一；点击等同主人打字，不授予更多权限。
 
 ## 拒绝
 

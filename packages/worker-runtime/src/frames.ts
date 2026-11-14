@@ -73,6 +73,7 @@ export type WorkerMethod =
   | 'channels.catalog'
   | 'channels.clear'
   | 'channels.pairing'
+  | 'channels.receipts'
   | 'ping'
   | 'pluginGenerations.status'
   | 'pluginGenerations.publicationStatus'
