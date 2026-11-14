@@ -1,7 +1,7 @@
 import type { BoundWakes, ProfileManagedDefinition } from '@agnes/extension-api'
 import type { ManagedServiceDescriptor } from '@agnes/protocol'
-import { afterEach, expect, it } from 'vitest'
-import { ProfileManagedResources } from '../src/profile/managed.js'
+import { afterEach, expect, it, vi } from 'vitest'
+import { FAILED_RESTART_BACKOFF_MS, ProfileManagedResources } from '../src/profile/managed.js'
 import { ownedStore } from '../src/profile/owned-store.js'
 
 const wakes: BoundWakes = {
@@ -15,6 +15,7 @@ const wakes: BoundWakes = {
 const closers: (() => Promise<void>)[] = []
 afterEach(async () => {
   for (const close of closers.splice(0)) await close().catch(() => undefined)
+  vi.useRealTimers()
 })
 
 function storage() {
@@ -126,6 +127,8 @@ it('keeps a failed slot that a retry reserved when a same-stamp publication race
   register('@example/other', other.definition)
   await managed.publish()
   await expect(handle.get()).rejects.toThrow()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(Date.now() + FAILED_RESTART_BACKOFF_MS)
   const retry = handle.retry()
   const publication = managed.publish()
   await Promise.all([retry, publication])
@@ -143,6 +146,8 @@ it('tracks the instance a retry installs in a slot that a pending publication ke
   const handle = register('@example/flaky', flaky.definition)
   await managed.publish()
   await expect(handle.get()).rejects.toThrow()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(Date.now() + FAILED_RESTART_BACKOFF_MS)
   // Another definition changes the stamp: this publication keeps the reserved slot and drains after the
   // retry has installed its instance there.
   const retry = handle.retry()
@@ -185,6 +190,8 @@ it('refuses a retry of a slot that a pending publication already retired', async
   const handle = register('@example/flaky', flaky.definition)
   await managed.publish()
   await expect(handle.get()).rejects.toThrow()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(Date.now() + FAILED_RESTART_BACKOFF_MS)
   // The first publication's drain is held; the second retires the failed slot and waits on that drain.
   register('@example/slow', slow.definition)
   const first = managed.publish()
@@ -216,4 +223,47 @@ it('puts the slot back when a retry cannot start, so a later retry may start it'
   expect(managed.statuses('@example/flaky')).toMatchObject([{ state: 'failed', code: 'unavailable' }])
   await handle.retry()
   await expect(handle.get()).resolves.toBe(2)
+})
+
+it('does not restart a failed service within the backoff after its failure, then once per publication', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const flaky = service('flaky', (n) => (n <= 2 ? 'fail' : undefined))
+  const { managed, register } = manager()
+  const handle = register('@example/flaky', flaky.definition)
+  await managed.publish()
+  await expect(handle.get()).rejects.toThrow()
+  expect(flaky.counts.starts).toBe(1)
+  // Publications inside the backoff leave the failed service alone.
+  vi.setSystemTime(Date.now() + FAILED_RESTART_BACKOFF_MS - 1000)
+  await managed.publish()
+  register('@example/other', service('other').definition)
+  await managed.publish()
+  await expect(handle.get()).rejects.toThrow()
+  expect(flaky.counts.starts).toBe(1)
+  expect(managed.statuses('@example/flaky')).toMatchObject([{ state: 'failed', code: 'unavailable' }])
+  // After it, one publication makes one attempt; that failure starts a new backoff.
+  vi.setSystemTime(Date.now() + 1001)
+  await managed.publish()
+  await expect(handle.get()).rejects.toThrow()
+  expect(flaky.counts.starts).toBe(2)
+  await managed.publish()
+  await expect(handle.get()).rejects.toThrow()
+  expect(flaky.counts.starts).toBe(2)
+  vi.setSystemTime(Date.now() + FAILED_RESTART_BACKOFF_MS)
+  await managed.publish()
+  await expect(handle.get()).resolves.toBe(3)
+  expect(states(managed, '@example/flaky')).toEqual(['ready'])
+})
+
+it('lets a forced publication and a retry start a failed service inside the backoff', async () => {
+  const flaky = service('flaky', (n) => (n <= 2 ? 'fail' : undefined))
+  const { managed, register } = manager()
+  const handle = register('@example/flaky', flaky.definition)
+  await managed.publish()
+  await expect(handle.get()).rejects.toThrow()
+  await managed.publish('upgrade', true)
+  await expect(handle.get()).rejects.toThrow()
+  expect(flaky.counts.starts).toBe(2)
+  await handle.retry()
+  await expect(handle.get()).resolves.toBe(3)
 })

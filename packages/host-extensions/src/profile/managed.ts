@@ -55,7 +55,11 @@ type Resource = ManagedPredecessor & {
   retired?: true
   /** The instance a retry or reconcile installed in this slot; a pending publication keeps that one. */
   successor?: Resource
+  /** When its own start failed (not a retirement); see `FAILED_RESTART_BACKOFF_MS`. */
+  failedAt?: number
 }
+/** A failed service is not started again by a publication within this long of its last failure. */
+export const FAILED_RESTART_BACKOFF_MS = 30_000
 const follow = (r: Resource): Resource => (r.successor ? follow(r.successor) : r)
 const retire = (r: Resource, reason: Reason) => {
   r.retired = true
@@ -481,6 +485,7 @@ export class ProfileManagedResources {
       }
       await closeApp()
       ended = true
+      r.failedAt = Date.now()
       r.status = { state: 'failed', code }
       throw rpcError('CAPABILITY_DENIED')
     })
@@ -497,10 +502,17 @@ export class ProfileManagedResources {
       .map((d) => `${d.owner}/${d.revision}/${d.integrity}/${d.definition.id}`)
       .sort()
       .join('\0')
-    // A resource whose lifetime ended (it failed, or a publication or a dropped row retired it) is
-    // never retained: the next publication starts its definition again. A failed slot that a retry or
-    // reconcile reserved is retained: that call installs its instance there.
-    const live = (r: Resource) => !r.retired && (!r.lifetime.signal.aborted || r.status.state === 'starting')
+    // A retired resource is never retained. One whose own start failed is retained (not started
+    // again) for FAILED_RESTART_BACKOFF_MS after that failure; later each publication starts it once. A
+    // failed slot that a retry or reconcile reserved is retained: that call installs its instance there.
+    const now = Date.now()
+    const live = (r: Resource) =>
+      !r.retired &&
+      (!r.lifetime.signal.aborted ||
+        r.status.state === 'starting' ||
+        (r.status.state === 'failed' &&
+          r.lifetime.signal.reason === 'failed' &&
+          now - (r.failedAt ?? 0) < FAILED_RESTART_BACKOFF_MS))
     if (previous?.manager === this && previous.stamp === stamp && !force && previous.resources.every(live))
       return previous.draining
     const retained =

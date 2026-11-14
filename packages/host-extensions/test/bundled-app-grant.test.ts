@@ -26,7 +26,7 @@ import { createRowServiceHost } from '../src/ext-host/row-services.js'
 import type { BundledAppClientContext } from '../src/profile/bundled-app.js'
 import { type BundledAppChannelBridge, BundledAppChannelHub } from '../src/profile/bundled-app-channels.js'
 import type { ChannelRuntimeFactory } from '../src/profile/channel-runtime.js'
-import { ProfileManagedResources } from '../src/profile/managed.js'
+import { FAILED_RESTART_BACKOFF_MS, ProfileManagedResources } from '../src/profile/managed.js'
 import type { ProfileStreams } from '../src/profile/streams.js'
 
 const SUPERAGENT = {
@@ -643,7 +643,7 @@ it('stops a package without the grant, and an upgraded bundled app, only when th
   expect(upgraded).toEqual([{ reason: 'upgrade', grant: true, connect: true, signal: false, closed: false }])
 })
 
-it('starts a service again on the next publication with the same definitions after its start failed', async () => {
+it('starts a service again on a publication with the same definitions once its failure backoff passed', async () => {
   let starts = 0
   const app = await harness({
     definition: {
@@ -659,7 +659,13 @@ it('starts a service again on the next publication with the same definitions aft
   await app.managed.publish('upgrade', true)
   await expect(app.handle.get()).rejects.toThrow()
   expect(app.managed.statuses(SUPERAGENT.id)).toEqual([{ id: 'app', state: 'failed', code: 'unavailable' }])
-  await app.managed.publish()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  try {
+    vi.setSystemTime(Date.now() + FAILED_RESTART_BACKOFF_MS)
+    await app.managed.publish()
+  } finally {
+    vi.useRealTimers()
+  }
   await expect(app.handle.get()).resolves.toEqual({ starts: 3 })
   expect(app.managed.statuses(SUPERAGENT.id).map((row) => row.state)).toEqual(['ready'])
 })
