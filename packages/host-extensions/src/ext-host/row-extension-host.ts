@@ -33,6 +33,10 @@ import { buildRowExtensionAPI, OBSERVE_HOOK_EVENTS, type RowExtensionApi } from 
 export type RowExtensionHostOptions = Readonly<{
   /** Called only for a live, verified installed RowOrigin. */
   hostGrants?: (origin: Readonly<RowOrigin>) => import('@agnes/package-manager').HostCapabilityGrant
+  sessionWorkAuthority?: (
+    origin: Readonly<RowOrigin>,
+    integrity: string,
+  ) => import('./ports.js').SessionWorkAuthority & { dispose(): void }
   projectionNames?: (origin: Readonly<RowOrigin>) => readonly string[]
   sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
   subscribeSideModels?: (listener: () => void) => () => void
@@ -337,6 +341,7 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
     const requestMcpManage = options.mcpManage
     const requestPluginManage = options.pluginManage
     const sourceIntegrity = info?.integrity
+    const backgroundAuthority = options.sessionWorkAuthority
     const openStore = options.store
     const bindWake = options.bindWake
     record.api = buildRowExtensionAPI({
@@ -349,6 +354,9 @@ export function createRowExtensionHost(options: RowExtensionHostOptions) {
           throw new ExtensionError('E_LEASE_EXPIRED', 'row is closed')
       },
       rowId,
+      ...(backgroundAuthority && sourceIntegrity
+        ? { sessionWorkAuthority: () => backgroundAuthority(origin, sourceIntegrity) }
+        : {}),
       ...(options.projectionNames ? { projectionNames: () => options.projectionNames!(origin) } : {}),
       ...(options.hostGrants ? { hostGrants: () => options.hostGrants!(origin) } : {}),
       ...(options.sideModels ? { sideModels: options.sideModels } : {}),

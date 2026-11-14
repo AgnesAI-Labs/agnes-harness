@@ -15,9 +15,20 @@ it('requires an independent declaration and Host grant for background registrati
 it('checks the live row again and owns the background registration disposer', () => {
   let attached = false
   let title = false
+  let disposed = false
   const fixture = rowApiFixture(
     { sessionWork: true, autoTitle: true },
-    { sessionWorkDeclared: true, declaredCapabilities: { autoTitle: true } },
+    {
+      sessionWorkDeclared: true,
+      declaredCapabilities: { autoTitle: true },
+      sessionWorkAuthority: () => ({
+        check: () => true,
+        signal: new AbortController().signal,
+        dispose() {
+          disposed = true
+        },
+      }),
+    },
   )
   fixture.ports.sessionWork = {
     register(_registration, meta) {
@@ -33,6 +44,19 @@ it('checks the live row again and owns the background registration disposer', ()
   expect(title).toBe(true)
   off()
   expect(attached).toBe(false)
+  expect(disposed).toBe(true)
   fixture.controller.abort()
   expect(() => fixture.api.sessionWork.register({ name: 'late', observe() {}, async run() {} })).toThrow()
+})
+
+it('refuses background registration without a current profile authority', () => {
+  const fixture = rowApiFixture({ sessionWork: true }, { sessionWorkDeclared: true })
+  fixture.ports.sessionWork = {
+    register() {
+      throw new Error('must not register')
+    },
+  }
+  expect(() => fixture.api.sessionWork.register({ name: 'title', observe() {}, async run() {} })).toThrow(
+    /not granted/,
+  )
 })

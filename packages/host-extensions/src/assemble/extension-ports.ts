@@ -74,7 +74,7 @@ export function bindExtensionInvocations(
           sessionWork: {
             register: (
               registration: import('@agnes/extension-api').SessionWorkRegistration,
-              meta: import('../ext-host/ports.js').RegMeta & { autoTitle?: true },
+              meta: import('../ext-host/ports.js').SessionWorkMeta,
             ) =>
               ports.sessionWork!.register(
                 {

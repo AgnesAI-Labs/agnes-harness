@@ -18,13 +18,15 @@ import type { JsonValue } from '@agnes/protocol'
 import type { ServiceRegistry } from './services.js'
 
 export type RegMeta = ToolSource
+export type SessionWorkAuthority = { check(): boolean; signal: AbortSignal }
+export type SessionWorkMeta = RegMeta & { autoTitle?: true; authority?: SessionWorkAuthority }
 
 /** Internal assembly ports, never exposed directly to an extension factory. */
 export interface KernelPorts {
   sessionWork?: {
     register(
       registration: import('@agnes/extension-api').SessionWorkRegistration,
-      meta: RegMeta & { autoTitle?: true },
+      meta: SessionWorkMeta,
     ): Disposer
   }
   services: Pick<ServiceRegistry, 'register' | 'registerRow'>

@@ -1,4 +1,10 @@
-import { createSessionWorkSideCall, type Event, type Kernel, type SideCallExecutionSource } from '@agnes/core'
+import {
+  CoreError,
+  createSessionWorkSideCall,
+  type Event,
+  type Kernel,
+  type SideCallExecutionSource,
+} from '@agnes/core'
 import {
   redactSecrets,
   type SessionWorkMessage,
@@ -6,7 +12,7 @@ import {
   type SessionWorkRegistration,
   unavailableProjections,
 } from '@agnes/extension-api'
-import type { KernelPorts, RegMeta } from '@agnes/host-extensions/ext-host/ports'
+import type { KernelPorts, SessionWorkMeta } from '@agnes/host-extensions/ext-host/ports'
 import { readSessionTitle } from '@agnes/protocol'
 import type { HostSession } from '../lifecycle/host.js'
 import type { AutoTitleEligibility } from './title-eligibility.js'
@@ -14,7 +20,7 @@ import { acceptedSessionTitle, createTitleRefresh } from './title-refresh.js'
 
 type Registration = {
   definition: SessionWorkRegistration
-  meta: RegMeta & { autoTitle?: true }
+  meta: SessionWorkMeta
   controller: AbortController
 }
 const registries = new WeakMap<Kernel, SessionWorkRegistry>()
@@ -102,7 +108,7 @@ class SessionWorkRegistry {
       const recipients = [...this.registrations]
       observations = observations.then(() => {
         for (const entry of recipients) {
-          if (entry.controller.signal.aborted) continue
+          if (entry.controller.signal.aborted || entry.meta.authority?.check() === false) continue
           try {
             entry.definition.observe(event)
           } catch {
@@ -126,11 +132,19 @@ class SessionWorkRegistry {
           cancellation.signal,
           entry.controller.signal,
           controller.signal,
+          ...(entry.meta.authority ? [entry.meta.authority.signal] : []),
         ])
+        const current = () => {
+          if (signal.aborted || entry.meta.authority?.check() === false) {
+            controller.abort()
+            return false
+          }
+          return true
+        }
         let transport = Promise.resolve()
         const work = observations
           .then(async () => {
-            if (signal.aborted || session.closingOrClosed) return
+            if (!current() || session.closingOrClosed) return
             const final = (
               await session.scan({
                 fromSeq: source.lastAssistantSeq,
@@ -149,11 +163,23 @@ class SessionWorkRegistry {
               source,
               signal,
             })
+            const guardedSideCall = {
+              ...sideCall,
+              prepare: (async (...args) => {
+                if (!current()) throw new CoreError('E_CLOSED', 'Background authority revoked')
+                return sideCall.prepare(...args)
+              }) as typeof sideCall.prepare,
+              invoke: (async (...args) => {
+                if (!current()) throw new CoreError('E_CLOSED', 'Background authority revoked')
+                return sideCall.invoke(...args)
+              }) as typeof sideCall.invoke,
+            }
             const title = entry.meta.autoTitle
               ? createTitleRefresh(session, {
                   source,
                   signal,
                   eligible,
+                  current,
                   spendAllowed: sideCall.spendAllowed,
                   billingFailed: sideCall.billingFailed,
                 })
@@ -170,7 +196,7 @@ class SessionWorkRegistry {
                       endSeq: source.endSeq,
                       lastAssistantSeq: source.lastAssistantSeq,
                     },
-                    sideCall,
+                    sideCall: guardedSideCall,
                     projections: unavailableProjections,
                     ...(title ? { title } : {}),
                   }),
@@ -230,7 +256,7 @@ class SessionWorkRegistry {
             const message = messageOf(row)
             if (!message) return
             for (const entry of recipients)
-              if (!entry.controller.signal.aborted) {
+              if (!entry.controller.signal.aborted && entry.meta.authority?.check() !== false) {
                 try {
                   entry.definition.observe(
                     Object.freeze({

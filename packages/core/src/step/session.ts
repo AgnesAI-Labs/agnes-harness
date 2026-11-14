@@ -942,7 +942,7 @@ export class SessionImpl {
     return this.d.log.lastSeq
   }
   /** Every committed batch, in commit order, as it is committed. */
-  readonly onAppended = (fn: (events: Event[]) => void): (() => void) => this.d.log.observeCommitted('*', fn)
+  onAppended = (fn: (events: Event[]) => void): (() => void) => this.d.log.observeCommitted('*', fn)
   /** Streamed model text as it arrives. It is never a ledger row and carries no seq. */
   readonly onPreview = (fn: (p: PreviewDelta) => void): (() => void) => this.preview.on(fn)
   private readonly listeners = {

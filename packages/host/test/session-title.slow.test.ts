@@ -834,7 +834,7 @@ it.each(['next-input', 'host-close'] as const)(
   },
 )
 
-it.each(['before', 'during', 'failure', 'hard-budget', 'authority-unavailable'] as const)(
+it.each(['before', 'during', 'failure', 'hard-budget', 'authority-unavailable', 'source-revoked'] as const)(
   'preserves the accepted title when refresh is denied: %s',
   async (mode) => {
     const options: Parameters<typeof fixture>[0] = { title: 'Accepted title' }
@@ -844,9 +844,23 @@ it.each(['before', 'during', 'failure', 'hard-budget', 'authority-unavailable'] 
     const { createTitleRefresh } = await import('../src/runtime/sessions/title-refresh.js')
     const start = (await f.session.scan({ type: 'turn/start', order: 'desc', limit: 1 }))[0]!
     const end = (await f.session.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]!
+    const { ProfileActivations } = await import('@agnes/host-extensions/profile/activation')
+    const { createSessionWorkAuthority } = await import('../src/runtime/sessions/session-work-authority.js')
+    const activations = new ProfileActivations(fakeSeamInit().adapters.storage.namespace('refresh-authority'))
+    activations.publish([{ owner: 'session-work:plugin/test', revision: 'code', integrity: 'integrity' }])
+    const authority = createSessionWorkAuthority({
+      activations,
+      owner: 'plugin/test',
+      packageId: 'test',
+      integrity: 'integrity',
+      mountIdentity: 'code',
+      profileDir: f.root,
+      profile: 'local-dev',
+      agnesVersion: '0.1.0',
+    })
     let explicit = mode === 'before'
     let release!: () => void
-    if (mode === 'during')
+    if (mode === 'during' || mode === 'source-revoked')
       options.waitTitle = new Promise<void>((resolve) => {
         release = resolve
       })
@@ -863,6 +877,7 @@ it.each(['before', 'during', 'failure', 'hard-budget', 'authority-unavailable'] 
         hard: mode === 'hard-budget',
       },
       signal: new AbortController().signal,
+      current: authority.check,
       eligible: async () => {
         if (mode === 'authority-unavailable') throw new Error('owner offline')
         return !explicit
@@ -870,18 +885,22 @@ it.each(['before', 'during', 'failure', 'hard-budget', 'authority-unavailable'] 
     })
     const title = (await f.session.scan({ type: SESSION_TITLE_EVENT, order: 'desc', limit: 1 }))[0]!
     const pending = refresh.refresh({ expectedRevision: title.seq, context: 'Different topic now' })
-    if (mode === 'during') {
+    if (mode === 'during' || mode === 'source-revoked') {
       await vi.waitFor(() =>
         expect(f.calls.filter((request) => request.sessionKey.startsWith('title:'))).toHaveLength(2),
       )
-      explicit = true
+      if (mode === 'source-revoked') {
+        activations.publish([])
+        expect(authority.signal.aborted).toBe(true)
+      } else explicit = true
       release()
     }
     expect(await pending).toEqual({ status: mode === 'failure' ? 'unavailable' : 'ineligible' })
     expect(await titleRecord(f.session)).toMatchObject({ status: 'generated', title: 'Accepted title' })
     expect(f.calls.filter((request) => request.sessionKey.startsWith('title:'))).toHaveLength(
-      mode === 'during' || mode === 'failure' ? 2 : 1,
+      mode === 'during' || mode === 'failure' || mode === 'source-revoked' ? 2 : 1,
     )
+    authority.dispose()
   },
 )
 

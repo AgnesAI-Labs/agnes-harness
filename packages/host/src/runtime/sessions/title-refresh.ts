@@ -40,6 +40,7 @@ export function createTitleRefresh(
     source: SideCallExecutionSource
     signal: AbortSignal
     eligible: AutoTitleEligibility
+    current?: () => boolean
     spendAllowed?: () => boolean
     billingFailed?: () => void
   },
@@ -48,7 +49,11 @@ export function createTitleRefresh(
   let attempted = false
   const pending = new Set<Promise<unknown>>()
   let transport = Promise.resolve()
-  const live = () => !input.signal.aborted && !session.closingOrClosed && session.state.session === identity
+  const live = () =>
+    !input.signal.aborted &&
+    !session.closingOrClosed &&
+    session.state.session === identity &&
+    input.current?.() !== false
   const inspect = async (): Promise<AutoTitleInspection> => {
     if (!live()) return { eligible: false, reason: 'closed' }
     if (input.source.hard || input.spendAllowed?.() === false) return { eligible: false, reason: 'budget' }

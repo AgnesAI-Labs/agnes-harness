@@ -50,6 +50,7 @@ export type RowExtensionApiInput = {
   projectionNames?: () => readonly string[]
   hostGrants?: () => import('@agnes/package-manager').HostCapabilityGrant
   sessionWorkDeclared?: boolean
+  sessionWorkAuthority?: () => import('./ports.js').SessionWorkAuthority & { dispose(): void }
   sideCallDeclared?: boolean
   sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
   subscribeSideModels?: (listener: () => void) => () => void
@@ -194,34 +195,53 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
         const observe = registration.observe.bind(registration)
         const run = registration.run.bind(registration)
         return input.attach('hook', `session-work:${registration.name}`, (ports) => {
-          if (!ports.sessionWork) return refuse('session work not granted')
-          const projections = projectionReader(
-            ports.projections,
-            meta,
-            lease,
-            check,
-            input.projectionNames ?? [],
-          )
-          return ports.sessionWork.register(
-            {
-              name: registration.name,
-              observe(event) {
-                check()
-                observe(event)
+          if (!ports.sessionWork || !input.sessionWorkAuthority) return refuse('session work not granted')
+          const authority = input.sessionWorkAuthority()
+          const current = () => {
+            check()
+            if (!authority.check())
+              throw new ExtensionError('E_LEASE_EXPIRED', 'background authority revoked', { extId: source })
+          }
+          try {
+            const projections = projectionReader(
+              ports.projections,
+              meta,
+              lease,
+              current,
+              input.projectionNames ?? [],
+            )
+            const off = ports.sessionWork.register(
+              {
+                name: registration.name,
+                observe(event) {
+                  current()
+                  observe(event)
+                },
+                async run(context) {
+                  current()
+                  const signal = AbortSignal.any([context.signal, input.signal, authority.signal])
+                  await run({ ...context, projections, signal })
+                },
               },
-              async run(context) {
-                check()
-                const signal = AbortSignal.any([context.signal, input.signal])
-                await run({ ...context, projections, signal })
+              {
+                ...meta,
+                authority,
+                ...(input.hostGrants?.().autoTitle && input.declaredCapabilities?.autoTitle
+                  ? { autoTitle: true as const }
+                  : {}),
               },
-            },
-            {
-              ...meta,
-              ...(input.hostGrants?.().autoTitle && input.declaredCapabilities?.autoTitle
-                ? { autoTitle: true as const }
-                : {}),
-            },
-          )
+            )
+            return () => {
+              try {
+                off()
+              } finally {
+                authority.dispose()
+              }
+            }
+          } catch (error) {
+            authority.dispose()
+            throw error
+          }
         })
       },
     },
