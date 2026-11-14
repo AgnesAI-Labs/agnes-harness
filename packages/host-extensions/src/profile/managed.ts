@@ -32,6 +32,7 @@ import {
 } from './managed-owner.js'
 import { deniedManagedSessions, type ManagedSessionsFactory } from './managed-sessions.js'
 import { managedStore } from './managed-store.js'
+import { withOwnerReceipts } from './owner-input-receipts.js'
 
 type Reason = 'disable' | 'upgrade' | 'exit'
 type Resource = ManagedPredecessor & {
@@ -378,7 +379,7 @@ export class ProfileManagedResources {
                 throw rpcError('CAPABILITY_DENIED')
               },
             },
-        sessions:
+        sessions: withOwnerReceipts(
           input.descriptor.sessions === true && this.sessions
             ? this.sessions({
                 owner: input.owner,
@@ -387,6 +388,9 @@ export class ProfileManagedResources {
                 service: input.definition.id,
               })
             : deniedManagedSessions,
+          input.descriptor.channelTargets === true ? this.targets?.receipts : undefined,
+          { owner: grantKey(input.packageId, input.owner), service: input.definition.id },
+        ),
         channels:
           input.descriptor.channelTargets === true && this.targets
             ? this.targets.port({

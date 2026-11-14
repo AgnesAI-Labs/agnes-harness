@@ -34,6 +34,18 @@ The plugin can prompt continuation only once for the same user request. A sessio
 
 A judgment attempt may wait up to 5 seconds. With a configured native fallback it can make one more attempt; the end-of-turn hook has a 15-second limit. A missing model, invalid result, exhausted judgment budget or remaining failure lets the turn finish normally. Budget refusal does not trigger a retry. Cancellation or a new user message abandons the pending check; a late answer cannot resume the old turn.
 
+## Refresh an outdated automatic title
+
+New local-dev homes admit the `sessionWork` and `autoTitle` capability categories. Existing or restricted profiles keep their administrator-defined policy: add both names to the existing `policy.capabilityCeiling` list before inspecting an updated package, preserving its other entries. This allows package review; the exact source grant, installation, trust, enablement and title opt-in are still required.
+
+Title drift is a separate opt-in. Enable `uses.title.enabled` and set `uses.title.refreshAfterPrompts` to a positive integer in the plugin settings, then start a new session. The cadence defaults to **0 (off)**. It counts meaningful operator prompts after an automatic title exists; acknowledgements and other low-signal inputs are filtered. Counts are in memory and reset when the plugin session is released or the process restarts.
+
+After a normal completed reply, a background check asks whether the title still describes the task. Continuing, reviewing, testing, fixing or shipping the same work still fits. A valid fits value **below 0.5** requests a new title from AGH's existing title model; exactly 0.5 keeps the title. An explicitly selected chat judgment model uses its parsed yes/no values. Errors, missing models and a 15-second judgment timeout keep the previous title. Judgment and title generation each have their own recorded usage and remain subject to existing credits policies.
+
+The reply and subsequent prompts do not wait for this work. Only one refresh runs per session; prompts received while it runs count toward a later completed reply. Ordinary new prompts do not cancel an admitted refresh. Manual names, including explicitly named forks or scheduled sessions, keep priority. Disabling, withdrawing trust, uninstalling or cancelling the session revokes background work; already sent requests can still incur charges.
+
+The judge receives the current title and cleaned recent operator/assistant text: at most **3,000 UTF-16 characters total, 1,000 per turn**, oldest first, with a recent user anchor when needed. It receives no assistant thinking. If drift is detected, generation reads the latest context again: up to **six turns**, necessary **400-character user anchors**, and a final **2,000-character** context retaining the beginning and end. This generation context may include public plain assistant thinking; provider signatures, tool payloads, replay state and attachments are excluded. Credential masking precedes excerpt selection, but remaining conversation text may still be confidential and is sent to the selected providers. This use requires the separately reviewed background-work and automatic-title capabilities. Real-session title quality has not been evaluated.
+
 ## What is sent
 
 For this check the plugin sends the selected judgment model:

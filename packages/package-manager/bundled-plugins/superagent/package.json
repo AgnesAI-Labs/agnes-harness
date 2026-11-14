@@ -30,7 +30,7 @@
         "export": "superagentPlugin",
         "id": "ext:agnes.superagent/main",
         "runtime": "in-process",
-        "apiRange": "^5.19.0",
+        "apiRange": "^5.22.0",
         "inject": [
           "hooks",
           "tools",
@@ -864,7 +864,7 @@
       }
     },
     "hostProvidedExternals": {
-      "@agnes/extension-api": "^5.19.0"
+      "@agnes/extension-api": "^5.22.0"
     },
     "bundles": {
       "router": {

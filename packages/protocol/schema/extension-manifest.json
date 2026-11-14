@@ -135,6 +135,14 @@
         "childAgents": {
           "type": "boolean"
         },
+        "sessionWork": {
+          "type": "boolean",
+          "description": "Requests independently granted session-bound background execution."
+        },
+        "autoTitle": {
+          "type": "boolean",
+          "description": "Requests Host-owned automatic title inspection and conditional refresh."
+        },
         "wake": {
           "type": "boolean",
           "description": "Bound notifications to targets created by admitted session invocations."

@@ -64,6 +64,12 @@ export type ConnectionState = {
   // a bare LocalEndpoint without registerAcp) should not silently read as authenticated.
   authKind?: 'local' | 'jwt' | 'source-auth' | 'portal-identity' | 'surface'
   credentialKind?: 'local' | 'jwt' | 'portal-identity' | 'sso' | 'channel'
+  /**
+   * Set by authGate with the local credential only: `web` when the connection came through the local
+   * Web listener (the owner's browser page, admitted by its loopback Host and page-Origin checks),
+   * `unix` for the Unix socket that any local program can open (the CLI, a bundled app's SDK client).
+   */
+  localListener?: 'web' | 'unix'
   credential?: { kind: string } & Record<string, unknown>
   surface?: Readonly<{
     sourceId: string

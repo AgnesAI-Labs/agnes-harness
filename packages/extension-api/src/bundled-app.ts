@@ -8,7 +8,7 @@ import type {
 
 /**
  * Group-chat access for a bundled application runtime, through the owner's running channel
- * instances (since 5.19). `channel` is a channel instance id; the Host joins adapter pages.
+ * instances. Added in 5.22. `channel` is a channel instance id; the Host joins adapter pages.
  *
  * - `subscribe` claims group chats of one instance: their events go only to `onEvent` and never
  *   to session routing. Direct chats are never routed to a subscriber. A platform redelivery of
@@ -45,7 +45,7 @@ export interface BundledAppChannels {
 /**
  * Host-private authority for a release-whitelisted bundled application. Release assembly alone
  * decides who receives it; package code, manifests and configuration cannot request or replace it.
- * Every member stops working when the package is disabled or its activation changes. Added in 5.18.
+ * Every member stops working when the package is disabled or its activation changes. Added in 5.22.
  */
 export interface BundledAppGrant {
   /** Platform-chosen private directory, stable for this package in this profile. */

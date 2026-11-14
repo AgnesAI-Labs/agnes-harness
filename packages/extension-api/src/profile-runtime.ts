@@ -15,7 +15,7 @@ export interface ProfileManagedInit {
   /** Refuses every call unless the reviewed declaration sets `channelTargets: true`. Added in 5.12. */
   readonly channels: ManagedChannelTargets
   /** Present only for a release-whitelisted bundled package whose payload matches the shipped
-   * digest. Release assembly decides this; plugins cannot request it. Added in 5.18. */
+   * digest. Release assembly decides this; plugins cannot request it. Added in 5.22. */
   readonly bundledApp?: BundledAppGrant
   readonly config: JsonValue
   readonly listeners: Readonly<Record<string, { host: '127.0.0.1'; port: number }>>

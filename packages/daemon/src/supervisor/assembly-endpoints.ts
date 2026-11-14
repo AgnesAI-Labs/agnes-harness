@@ -53,6 +53,7 @@ import type { Conn, StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
 import { daemonDoctor } from './doctor.js'
 import { feedbackPorts } from './feedback-ports.js'
+import { registerOwnerInputReview } from './managed-input-review.js'
 import { registerManagedWorkspaceGrants } from './managed-workspace-grants.js'
 import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
 import { activateForkOwnership } from './registry-facade.js'
@@ -142,6 +143,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     resolveActor,
     resolveNewSessionActor,
     effectivePackageAdmin,
+    idle,
   } = state
   const feeds = new Map<string, Feed>()
   const attached = new Map<string, AttachedFeed>()
@@ -265,6 +267,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     onPromptEnd: (sessionId) => {
       inflightConn.delete(sessionId)
       registry.retireAtTurnBoundary(sessionId)
+      idle.notify(sessionId)
     },
   }
 
@@ -332,6 +335,12 @@ function registerSessionEndpoints(
     skills: (params, actor) => state.savedSkills.manage(params, actor),
   })
   registerSessionRefine(ep, cx, requireSessionOwner(cx))
+  registerOwnerInputReview(ep, {
+    engine: state.ownerInputs,
+    records: state.managedSessionRecords,
+    requireOwner: requireSessionOwner(cx),
+    worker: () => pool.acquireSharedWorker(),
+  })
   registerDoctor(ep, {
     home: o.config.home ?? dirname(dirname(o.profileDir)),
     profile: o.profile.name,

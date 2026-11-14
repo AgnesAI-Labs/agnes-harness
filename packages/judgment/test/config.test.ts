@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 import { resolveJudgeChain, resolveStopConfig, resolveToolConfig } from '../src/config.js'
 
@@ -41,4 +42,36 @@ it('requires explicit independent find and batch opt-in', () => {
     find: true,
     batch: false,
   })
+})
+
+it('publishes title cadence opt-in consistently in both manifests and registers its lifecycle', async () => {
+  const { CONFIG_SCHEMA } = await import('../src/config.js')
+  const source = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const bundled = JSON.parse(
+    readFileSync(
+      new URL('../../package-manager/bundled-plugins/judgment/package.json', import.meta.url),
+      'utf8',
+    ),
+  )
+  const title = (CONFIG_SCHEMA.properties.uses.properties as Record<string, unknown>).title
+  expect(title).toMatchObject({
+    additionalProperties: false,
+    properties: {
+      enabled: { default: false },
+      refreshAfterPrompts: { type: 'integer', minimum: 0, maximum: Number.MAX_SAFE_INTEGER, default: 0 },
+    },
+  })
+  expect(source.agnes.plugins[0]?.default).toBe(false)
+  for (const manifest of [source, bundled]) {
+    const row = manifest.agnes.plugins[0]
+    expect(row.apiRange).toBe('^5.20.0')
+    expect(row.inject).toContain('sessionWork')
+    expect(row.capabilities).toMatchObject({ sessionWork: true, autoTitle: true })
+    expect(row.configSchema).toEqual(CONFIG_SCHEMA)
+    expect(
+      row.capabilities.projections.find(
+        (item: { name: string; maxStateBytes: number }) => item.name === 'title.context',
+      )?.maxStateBytes,
+    ).toBeLessThanOrEqual(262144)
+  }
 })

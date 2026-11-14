@@ -194,7 +194,7 @@ it('admits the real optional judgment release only with its matching source dige
     exportName: 'judgmentPlugin',
   }
   const grant = authority.pinOptionalBundledRowGrants([pkg], () => current, HOST_CAPABILITY_GRANTS)
-  expect(grant(row)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
+  expect(grant(row)).toEqual({ sideCall: true, sessionWork: true, autoTitle: true, hookTimeoutMs: 15000 })
   expect(grant({ ...row, exportName: 'other' })).toEqual({})
   expect(grant({ ...row, snapshotId: 'changed' })).toEqual({})
 })

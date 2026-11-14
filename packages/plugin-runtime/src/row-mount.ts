@@ -658,6 +658,7 @@ function originOf(mount: DescriptorSnapshot): Readonly<RowOrigin> {
     packageId: mount.snapshot.packageId,
     snapshotId: mount.snapshot.snapshotId,
     rowRevision: canonicalRowRevision(mount.boundRow),
+    mountIdentity: mount.boundRow.mountIdentity,
     configDigest: pluginConfigDigest(mount.boundRow.config),
     rowId: mount.row.id,
     exportName: mount.snapshot.exportName,
@@ -797,6 +798,7 @@ function createVerifiedRowAdapter(
           restoreOrigin = gate.origins.replace(state.fiber, {
             ...bound,
             rowRevision: canonicalRowRevision(snapshotBoundRow(row)),
+            mountIdentity: row.mountIdentity,
             configDigest: pluginConfigDigest(row.config),
           })
         await state.fiber.update(normalized)

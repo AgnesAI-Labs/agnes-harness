@@ -112,6 +112,23 @@ export function createWorkerRequests(
     workerSignal,
     sharedWorker,
   ) => {
+    if (f.method === 'auto-title-eligible') {
+      if (
+        workerSignal.aborted ||
+        !f.params ||
+        typeof f.params !== 'object' ||
+        Array.isArray(f.params) ||
+        Object.keys(f.params).length !== 0 ||
+        !sessionOwnership.resolve(sessionKey)?.active
+      )
+        return false
+      try {
+        // Only the supervisor's presentation owner may authorize changing an automatic title.
+        return state.preferences.get(sessionKey).title === undefined
+      } catch {
+        return false
+      }
+    }
     if (f.method === 'scheduling')
       return callWorkerScheduling(schedules, workspaceCatalog, sessionKey, f.params, workerSignal)
     if (f.method === 'bound-wake') return profilePorts.ownedWake(f.params)

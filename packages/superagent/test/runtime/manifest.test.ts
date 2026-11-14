@@ -53,7 +53,7 @@ it('ships the same plugin, bundles and metadata as the source package declares',
   for (const key of ['provides', 'plugins', 'metadata', 'bundles', 'clientDescriptors'] as const)
     expect(payload.agnes[key], key).toEqual(source.agnes[key])
   // The payload's only external is the host-provided author API its declared range admits.
-  expect(payload.agnes.hostProvidedExternals).toEqual({ '@agnes/extension-api': '^5.19.0' })
+  expect(payload.agnes.hostProvidedExternals).toEqual({ '@agnes/extension-api': '^5.22.0' })
   // The trust gate admits single allowlisted licenses; the NOTICE carries the MIT text of the ported code.
   expect(payload.license).toBe('Apache-2.0')
   expect(

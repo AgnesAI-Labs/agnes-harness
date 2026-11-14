@@ -157,7 +157,9 @@ export type SideCallStatus =
  * - `invoke` throws `E_ENVELOPE` (`signal`) when its signal is not an `AbortSignal`. `status` throws
  *   `E_ENVELOPE` (`invocation-id`) for an id that does not match the invocation id pattern or looks
  *   like a credential.
- * - `prepare` and `invoke` throw `E_RELATION` (`no-turn`) outside an open turn. `invoke` throws
+ * - Hook and tool contexts require an open turn: `prepare` and `invoke` throw `E_RELATION`
+ *   (`no-turn`) outside it. Host-granted session work instead uses a fresh execution scope tied
+ *   to its completed source turn. In ordinary turn scopes, `invoke` throws
  *   `E_RELATION` (`turn-closing`) only while a turn end that found calls in flight is waiting for
  *   them to settle; a call made after the turn has ended finds no turn and throws `no-turn`.
  * - `invoke` throws `E_REQUEST_FROZEN` for a call prepared by another context or turn (`foreign`,
@@ -171,7 +173,7 @@ export type SideCallStatus =
  *   while a call is in flight, the call is still recorded (its intent, a late receipt and an
  *   estimated cost row), and the replacement context reads it back with `status`.
  *
- * Calls may run concurrently within a turn. While a call is still unsettled, `ctx.events.finish`
+ * Calls may run concurrently within a turn. For ordinary turn scopes, while a call is unsettled, `ctx.events.finish`
  * (`E_RELATION`, `side-call-in-flight`), `ctx.turn.endStep` (`E_RELATION` with no `detail.reason`),
  * `ctx.events.assistant` and `tools.execute` / `tools.batch` with `announce` are refused. Await every
  * call before you end the step or finish the turn.

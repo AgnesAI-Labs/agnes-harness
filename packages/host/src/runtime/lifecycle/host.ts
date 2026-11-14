@@ -59,13 +59,15 @@ import {
   sessionPresetForOpen,
   sessionSelection,
 } from '../sessions/session.js'
+import { startSessionBackground } from '../sessions/session-background.js'
 import {
   assertSandboxUnchanged,
   validateModelSwitch,
   validatePresetSwitch,
 } from '../sessions/session-switch.js'
-import { createTitleQueue, startSessionTitle } from '../sessions/session-title.js'
+import { createTitleQueue } from '../sessions/session-title.js'
 import { readStoredSessionView } from '../sessions/session-view.js'
+import { type AutoTitleEligibility, titleEligibilityAuthority } from '../sessions/title-eligibility.js'
 import { adminSecurityStatus } from './admin-security-status.js'
 import {
   type HostConvergenceReport,
@@ -88,11 +90,14 @@ export type HostOptions = Omit<AssembleDeps, 'audit' | 'loader'> & {
    *  other concern (compaction, skill discovery, ...) has no scripted response to spare for the
    *  background title generation every session otherwise gets. Production callers never set this. */
   disableSessionTitle?: boolean
+  /** Owner-bound read-only preference authority; absent authority refuses refresh. */
+  autoTitleEligible?: AutoTitleEligibility
   /** Host-private per-binding runtime constructor. Required for authenticated multi-workspace opens. */
   openWorkspaceRuntime?: Assembled['openWorkspaceRuntime']
 }
 
 export interface Host extends HostManagement {
+  bindAutoTitleEligibility(check: AutoTitleEligibility): () => void
   systemPromptPreview(
     config: import('@agnes/protocol').SystemPromptConfig,
   ): import('@agnes/protocol').SystemPromptSnapshot
@@ -265,6 +270,7 @@ export interface Host extends HostManagement {
 const ROLE_DELEGATION_ROW = 'x/core/role-delegation'
 
 export async function createHost(profile: ResolvedProfile, opts: HostOptions): Promise<Host> {
+  opts = { ...opts, autoTitleEligible: titleEligibilityAuthority(opts.autoTitleEligible).check }
   if (
     profile.composition ||
     profile.bundlePresets ||
@@ -336,6 +342,7 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
     audit,
   })
   const host: Host = {
+    bindAutoTitleEligibility: titleEligibilityAuthority(opts.autoTitleEligible).bind,
     activationBarrier: a.activationBarrier,
     ...hostManagement(a),
     resolveService: async (sessionId, names) => {
@@ -747,21 +754,16 @@ async function createHostInstance(profile: ResolvedProfile, opts: HostOptions): 
           throw error
         }
         const close = s.close.bind(s)
-        let title: Awaited<ReturnType<typeof startSessionTitle>> | undefined
-        if (!opts.disableSessionTitle && !o.skipBackgroundWriters) {
-          try {
-            title = await startSessionTitle(s, {
-              schedule: scheduleTitle,
-              onError: () => opts.log.warn('session title background task failed', { sessionKey: s.key }),
-            })
-          } catch {
-            // Title metadata is optional; failure must not refuse a usable session.
-            opts.log.warn('session title initialization failed', { sessionKey: s.key })
-          }
-        }
+        const background = await startSessionBackground(
+          a.kernel,
+          s,
+          opts,
+          o.skipBackgroundWriters,
+          scheduleTitle,
+        )
         ;(s as HostSession & { close: () => Promise<void> }).close = async () => {
           try {
-            await title?.close()
+            await background.close()
             await expiry.close()
           } finally {
             try {

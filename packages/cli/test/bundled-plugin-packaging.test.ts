@@ -222,7 +222,7 @@ it('ships the optional Superagent payload with its resource folders, callable pl
   expect(JSON.parse(await readFile(join(superagent, 'package.json'), 'utf8')).agnes.plugins[0]).toMatchObject(
     {
       export: 'superagentPlugin',
-      apiRange: '^5.19.0',
+      apiRange: '^5.22.0',
     },
   )
   expect(bundledPluginDigest({ root, path: 'bundled-plugins/superagent' })).toBe(hashDirectory(superagent))

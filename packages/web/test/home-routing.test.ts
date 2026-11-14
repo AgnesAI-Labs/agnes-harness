@@ -139,3 +139,74 @@ it('replaces the selected registration lifetime on batched plugin reload, and un
     host.remove()
   }
 })
+
+it('a plugin home page cannot call managedInput.decide through HomePageData.call', async () => {
+  const { Context } = await import('@agnes/cordis')
+  const { homeEntries, LocaleService } = await import('@agnes/web-client')
+  const { createDocumentLocaleSource } = await import('@agnes/web-ui')
+  const { act, createElement } = await import('react')
+  const { createRoot } = await import('react-dom/client')
+  const { HomePageHost } = await import('../src/pages/host.js')
+  ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+  const ctx = new Context()
+  const locale = new LocaleService(ctx, 'en')
+  const source = createDocumentLocaleSource({})
+  const host = document.createElement('main')
+  document.body.append(host)
+  const root = createRoot(host)
+  const sent: string[] = []
+  const send = async <T>(method: string): Promise<T> => {
+    sent.push(method)
+    return { ok: true } as T
+  }
+  const outcomes: unknown[] = []
+  function PluginPage({ context }: { context: import('@agnes/web-client').UiExtensionContext }) {
+    const data = context.data as import('../src/pages/host.js').HomePageData
+    if (!outcomes.length)
+      for (const call of [data.call, data.channelCall])
+        for (const method of ['_agnes/v1/managedInput.decide', '_agnes/v1/session.list'])
+          outcomes.push(
+            call?.(method, {}).then(
+              () => 'sent',
+              (error: { data?: { code?: string } }) => error.data?.code,
+            ),
+          )
+    return null
+  }
+  const remove = homeEntries.registerOwned('@example/plugin', {
+    id: 'example.page',
+    order: 1,
+    icon: 'plug',
+    titleKey: 'example',
+    component: PluginPage,
+  })
+  try {
+    homeNavigation.openRef('@example/plugin#example.page')
+    await act(async () =>
+      root.render(
+        createElement(HomePageHost, {
+          locale,
+          source: source.source,
+          data: {
+            call: send,
+            channelCall: send,
+            sessionId: () => undefined,
+            openSettings: () => undefined,
+            startDraft: () => undefined,
+          },
+          onActive: () => undefined,
+        }),
+      ),
+    )
+    expect(await Promise.all(outcomes)).toEqual(['CAPABILITY_DENIED', 'sent', 'CAPABILITY_DENIED', 'sent'])
+    expect(sent).toEqual(['_agnes/v1/session.list', '_agnes/v1/session.list'])
+  } finally {
+    await act(async () => {
+      remove()
+      root.unmount()
+    })
+    source.dispose()
+    await ctx.fiber.dispose()
+    host.remove()
+  }
+})

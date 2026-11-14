@@ -184,6 +184,7 @@ it('classifies judgment only by side-call and exact caller, and shows unknown us
   }
   expect(costDetails(judgment, zhT)).toContainEqual(['记录范围', '判断'])
   expect(costDetails(judgment, zhT)).toContainEqual(['判断用途', '规则提醒'])
+  expect(costDetails({ ...judgment, label: 'judgment.title' }, zhT)).toContainEqual(['判断用途', '标题漂移'])
   const { label: _label, ...withoutLabel } = judgment
   const { caller: _caller, ...withoutCaller } = judgment
   expect(costDetails(withoutLabel, zhT)).toContainEqual(['判断用途', '未知'])

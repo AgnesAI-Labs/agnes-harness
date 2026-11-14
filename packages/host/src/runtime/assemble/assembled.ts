@@ -56,6 +56,8 @@ export type Assembled = {
   channelPairing(
     params: import('@agnes/protocol').AppServerMethods['_agnes/v1/channels.pairing']['params'],
   ): Promise<import('@agnes/protocol').JsonValue>
+  /** The owner's parked channel receipts: list, redeliver or discard. */
+  channelReceipts(params: Record<string, unknown>): import('@agnes/protocol').JsonValue
   serviceBinding: (names: readonly string[]) => { extension: string; packageId: string } | undefined
   callService: ReturnType<typeof serviceInvoker>['call']
   inspectService: ReturnType<typeof serviceInvoker>['inspect']

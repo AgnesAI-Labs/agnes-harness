@@ -1,3 +1,5 @@
+export { createBackgroundAppendAuthority } from './background-authority.js'
+
 import {
   type Clock,
   CoreError,
@@ -42,6 +44,8 @@ import { makeVerifiedHead } from './verified-head.js'
 export type { FullVerifyReport } from './history-verification.js'
 
 export type AppendOptions = {
+  /** Internal per-invocation writer claim, never serialized or exposed to extensions. */
+  backgroundAuthority?: object
   /** Backend command authority recheck after queued writes, immediately before storage commit. */
   beforeCommit?: () => void | Promise<void>
   /** Synchronous authority fence after async rechecks, with no await before commit admission. */
@@ -78,7 +82,12 @@ export type OpenLogOptions = {
   clock: Clock
   timers?: Timers
   /** `op` is the program-counter cell the batch will write, when it writes one. */
-  relationCheck?: (events: PreparedEvent[], log: SessionLogImpl, op: OpWrite | undefined) => void
+  relationCheck?: (
+    events: PreparedEvent[],
+    log: SessionLogImpl,
+    op: OpWrite | undefined,
+    backgroundAuthority?: object,
+  ) => void
   onAppended?: (events: Event[], extra: AppendedExtra) => void
   /** Folds open-time checked pages in order; the prefix remains provisional until fullVerified(). */
   verification?: import('./integrity.js').VerificationOptions
@@ -710,7 +719,7 @@ export class SessionLogImpl {
           errors: checked.errors,
         })
     }
-    this.o.relationCheck?.(events, this, op)
+    this.o.relationCheck?.(events, this, op, opts.backgroundAuthority)
     let release!: () => void
     const gate = new Promise<void>((res) => {
       release = res
@@ -723,9 +732,9 @@ export class SessionLogImpl {
       // one must not reach storage if that earlier batch sealed the session while this one waited.
       // `closed` is deliberately not re-checked, because close() promises to drain what it admitted.
       this.sealCheck()
-      this.o.relationCheck?.(events, this, op)
+      this.o.relationCheck?.(events, this, op, opts.backgroundAuthority)
       if (opts.beforeCommit) await opts.beforeCommit()
-      this.o.relationCheck?.(events, this, op)
+      this.o.relationCheck?.(events, this, op, opts.backgroundAuthority)
       this.sealCheck()
       if (events.some(attestsHistory) && !this.historyVerified)
         throw new CoreError(

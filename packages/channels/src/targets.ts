@@ -63,6 +63,15 @@ export interface ChannelTargetsPort {
   ): { label: string } | undefined
   find(instanceId: string, chatId: string): Pairing | undefined
   interact?(pairing: Pairing, event: CardActionEvent): Promise<boolean>
+  /**
+   * Writes the Host's durable receipt for a paired-chat event, which replaces the platform claim: only a
+   * `pending` receipt is delivered, and the Host redelivers it until the service acknowledges it.
+   * `unrecorded`: a click on a card whose buttons the Host never recorded; the owner is told, never silently dropped.
+   */
+  receive?(
+    pairing: Pairing,
+    event: ChannelTargetEvent,
+  ): { receiptId: string; state: 'pending' | 'acked' | 'parked' } | 'conflict' | 'dropped' | 'unrecorded'
   deliver(pairing: Pairing, event: ChannelTargetEvent): Promise<void>
   drop(pairingId: string): void
   paired(instanceId: string, targetId: string): boolean
@@ -70,6 +79,7 @@ export interface ChannelTargetsPort {
 }
 
 const NOTICE_INTERVAL_MS = 600_000
+const STALE_CARD = '这次点击没有收到：这张卡片是升级前发出的。请在最新的卡片上选择，或到 AGH 网页处理。'
 const ATTEMPTS = 3
 
 /** Credential references only, never secret values: a changed reference ends the instance's pairings. */
@@ -138,9 +148,27 @@ export function createTargetRouter(input: {
         : '配对码无效或已过期，请在 AGH 渠道页重新生成。',
     )
   }
+  const notice = async (
+    runner: Runner,
+    event: MessageEvent | CardActionEvent,
+    pairing: Pairing,
+    text: string,
+  ) => {
+    const key = `${pairing.id}\0${text}`
+    const last = noticed.get(key)
+    if (last !== undefined && now() - last < NOTICE_INTERVAL_MS) return
+    noticed.set(key, now())
+    await runner.sendDirect(
+      { chatId: event.chat.id },
+      { kind: 'text', markdown: text },
+      `pairing-notice:${event.eventId}`,
+    )
+  }
   const deliver = async (event: MessageEvent | CardActionEvent, pairing: Pairing) => {
     const runner = input.runner()
-    if (!runner || !(await runner.claim(event))) return
+    if (!runner) return
+    // A receipt claims a paired message. A click keeps the platform claim: the session approval path may take it.
+    if ((event.kind === 'cardAction' || !targets.receive) && !(await runner.claim(event))) return
     if (event.accountId !== pairing.accountId) {
       // The instance now runs another platform account: the old pairing no longer names this chat.
       targets.drop(pairing.id)
@@ -150,6 +178,26 @@ export function createTargetRouter(input: {
     if (event.kind === 'cardAction' && (await targets.interact?.(pairing, event))) return
     const payload = targetEvent(event, pairing.id, instanceId)
     if (!payload) return
+    if (targets.receive) {
+      const receipt = targets.receive(pairing, payload)
+      if (receipt === 'unrecorded') {
+        await notice(runner, event, pairing, STALE_CARD)
+        return
+      }
+      if (typeof receipt === 'string' || receipt.state !== 'pending') return
+      try {
+        await targets.deliver(pairing, { ...payload, receiptId: receipt.receiptId })
+      } catch {
+        // The receipt stays pending and the Host hands it over when the service is back: a resend would duplicate it.
+        await notice(
+          runner,
+          event,
+          pairing,
+          '已收到。接收这个聊天的插件服务现在没在运行，服务恢复后会自动转交，不用重发。',
+        )
+      }
+      return
+    }
     const delays = backoffDelays(input.backoff)
     for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
       try {
@@ -159,14 +207,7 @@ export function createTargetRouter(input: {
         if (attempt < ATTEMPTS) await delay(delays.next().value, input.signal)
       }
     }
-    const last = noticed.get(pairing.id)
-    if (last !== undefined && now() - last < NOTICE_INTERVAL_MS) return
-    noticed.set(pairing.id, now())
-    await runner.sendDirect(
-      { chatId: event.chat.id },
-      { kind: 'text', markdown: '接收这个聊天的插件服务现在没在运行，这条没有收到，请稍后再发。' },
-      `pairing-notice:${event.eventId}`,
-    )
+    await notice(runner, event, pairing, '接收这个聊天的插件服务现在没在运行，这条没有收到，请稍后再发。')
   }
   return {
     intercept(event: ChannelEvent): boolean {

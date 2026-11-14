@@ -4,6 +4,7 @@ import type { Host } from './host.js'
 /** Every new Host member needs an ownership decision before it can be exposed by a facade. */
 export const HOST_MEMBER_SCOPES = {
   systemPromptPreview: 'deployment',
+  bindAutoTitleEligibility: 'deployment',
   securityStatus: 'deployment',
   compositionSessions: 'deployment',
   resolveAgent: 'deployment',
@@ -33,6 +34,7 @@ export const HOST_MEMBER_SCOPES = {
   channelCatalog: 'deployment',
   clearChannelState: 'deployment',
   channelPairing: 'deployment',
+  channelReceipts: 'deployment',
   resolveService: 'session',
   callService: 'session',
   inspectService: 'session',

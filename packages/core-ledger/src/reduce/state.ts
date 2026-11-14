@@ -82,6 +82,11 @@ export type LedgerState = {
   // and the relation check numbers the next step from lastStep, which openStep can no longer answer
   // once step/end has closed it — reading openStep there numbers every second step back to 1.
   lastTurn: ReadonlyMap<string, number>
+  /** Durable successful boundaries used to validate detached effect provenance during replay. */
+  completedTurns: ChunkedMap<
+    number,
+    { lane: string; turn: number; startSeq: number; lastAssistantSeq: number }
+  >
   lastStep: ReadonlyMap<string, number>
   pendingEffects: ReadonlyMap<string, Omit<EffectNode, 'children'>>
   resumedRequests: ReadonlySet<string>
@@ -129,6 +134,7 @@ export function initialState(): LedgerState {
     openTurn: new Map(),
     openStep: new Map(),
     lastTurn: new Map(),
+    completedTurns: ChunkedMap.empty(),
     lastStep: new Map(),
     pendingEffects: new Map(),
     resumedRequests: new Set(),

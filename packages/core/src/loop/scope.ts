@@ -13,10 +13,13 @@ export const sessionIdentity = (session: object): object => owners.get(session) 
  * session; only its writer and control-claim receiver are scoped. In particular, an async helper
  * cannot accidentally pick up the replacement driver's token after an await.
  */
-export function sessionForLoop(session: SessionImpl): SessionImpl {
+export function sessionForLoop(
+  session: SessionImpl,
+  independent?: { scope: LoopScope; controller: AbortController; backgroundAuthority?: object },
+): SessionImpl {
   // Reusing a scoped session preserves its generation and avoids nesting late-receipt writers.
-  if (owners.has(session)) return session
-  const scope = session.loopScope
+  if (!independent && owners.has(session)) return session
+  const scope = independent?.scope ?? session.loopScope
   const effects = new Map<string, number>()
   const receipts = new Set(['effect/settled', 'tool/result', 'x/core/tool-response', 'assistant/message'])
   async function append(events: EventInput[], options: AppendOptions = {}) {
@@ -52,6 +55,7 @@ export function sessionForLoop(session: SessionImpl): SessionImpl {
     try {
       const committed = await session.d.log.append(events, {
         ...options,
+        ...(independent?.backgroundAuthority ? { backgroundAuthority: independent.backgroundAuthority } : {}),
         commitCheck: () => {
           scope.assertAlive()
           options.commitCheck?.()
@@ -85,6 +89,9 @@ export function sessionForLoop(session: SessionImpl): SessionImpl {
   const scoped = new Proxy(session, {
     get(target, key, receiver) {
       if (key === 'd') return deps
+      if (independent && key === 'ac') return independent.controller
+      if (independent && key === 'turn') return null
+      if (independent && key === 'op') return () => null
       if (key === 'loopScope') return scope
       if (key === 'controls') return controls
       if (key === 'loopChildrenPort') return session.loopChildrenPort.bind(session)

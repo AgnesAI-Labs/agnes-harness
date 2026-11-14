@@ -1,4 +1,5 @@
 import type { ToolContext } from '@agnes/extension-api'
+import { AGH_DIR } from '@agnes/protocol'
 import { within } from '../deadline.js'
 
 export type FindFs = Pick<ToolContext['fs'], 'list' | 'stat' | 'read' | 'revision'>
@@ -17,7 +18,7 @@ const ENTRY_LIMIT = 10000
 const CANDIDATE_LIMIT = 128
 const READ_LIMIT = 1024 * 1024
 const OMIT_DIR = new Set([
-  '.agh',
+  AGH_DIR,
   '.git',
   '.hg',
   '.svn',

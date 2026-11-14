@@ -2,15 +2,30 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
-## 5.19.0
+## 5.22.0
 
+- Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed.
 - Channel `Sender.kind` (`user` or `bot`) marks who sent a message; absent means a user, and session routing ignores bot senders.
 - `ChannelCapabilities.read` and five optional cursor-paged `ChannelAdapter` reads: `fetchMessages`, `listThread`, `listHistory`, `listChats` and `listMembers`. An adapter declares each read in `capabilities()` at run time; the manifest schema is unchanged. Adapters that implement none of them are unchanged.
-- `BundledAppGrant.channels` now reaches the owner's running channel instances. `subscribe` claims group chats exclusively (never direct chats, never a chat a session is bound to); `send` is split and throttled as a session reply; reads use only the reads the adapter declares. Errors: `CAPABILITY_DENIED` for a stale grant or an undeclared read; `SEMANTIC_REJECTED` with `CHANNEL_UNAVAILABLE` (retry once the channel row runs), `CHANNEL_CHAT_CLAIMED`, `CHANNEL_READ_INVALID`, `CHANNEL_CURSOR_STALLED` or `CHANNEL_READ_TOO_LARGE`; `INVALID_PARAMS` for malformed arguments.
+- `BundledAppGrant.channels` reaches the owner's running channel instances. `subscribe` claims group chats exclusively (never direct chats, never a chat a session is bound to); `send` is split and throttled as a session reply; reads use only the reads the adapter declares. Errors: `CAPABILITY_DENIED` for a stale grant or an undeclared read; `SEMANTIC_REJECTED` with `CHANNEL_UNAVAILABLE` (retry once the channel row runs), `CHANNEL_CHAT_CLAIMED`, `CHANNEL_READ_INVALID`, `CHANNEL_CURSOR_STALLED` or `CHANNEL_READ_TOO_LARGE`; `INVALID_PARAMS` for malformed arguments.
 
-## 5.18.0
+## 5.21.0
 
-- Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed. Until 5.19.0, channel calls refuse with `CAPABILITY_DENIED`.
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.21.0, and a plugin that uses them raises its range to `^5.21.0`. `sessions: true` already grants the port; there is no new declaration key.
+
+- `ManagedSessionStartInput.taskBinding?: { id, generation }` binds a session to a task of the calling service. A bound session refuses `send` with `CAPABILITY_DENIED` (`data.reason: 'OWNER_INPUT_REQUIRED'`, checked before archived, duplicate and busy). Repeating a start key with another binding, or another first input, is refused (`START_KEY_REUSED`).
+- `ManagedSessions.admitInput(sessionId, { key, target, input })` and `inputResult(sessionId, { key })`. `input` is an `ownerMessage` (the platform takes the text from the recorded `receiptId`), a `recoveryContinuation` (after checking `turnEndSeq`, the platform submits the fixed sentence "Continue the interrupted turn without treating this recovery as a new owner decision.") or a `legacyOwnerMessage` (unverifiable origin; always held for the owner). Refusals: `CAPABILITY_DENIED` with `data.reason` `OWNER_INPUT_REQUIRED`, `OWNER_INPUT_TARGET_MISMATCH`, `OWNER_INPUT_KEY_REUSED`, `SESSION_ARCHIVED` (thrown, never returned) or `START_KEY_REUSED`; malformed parameters are `INVALID_PARAMS`.
+- `ManagedInputResult` states: `queued`, `enqueued`, `consumed` (with `turn` and `seq`), `retained`, `needsOwner`, `waitingQuestion`, `recoveryUnknown`, `legacySend` (`delivery`: `consumed`, `pending` or `unknown`) and `absent` (`historyCoverage`: `complete` for every session the service still manages; `partial` is reserved). Held and final states carry `inputId` (equal to `key`), a `version` that rises on every change, a `reason` from the open `ManagedInputReason` set (display it as text) and `reviewLocation`, `/?session=<sessionId>&ownerInput=<inputId>`, the Web page where the owner reviews the input.
+- `ChannelTargetEvent.receiptId?` (1-256 characters) is present only after the platform durably recorded the event's source and text, and is the same on redeliveries.
+- Trust: an admitted owner message still enters the session inbox as `origin: 'system'` with `trust: 'untrusted'`. Admission is not an owner-identity input and grants no approval.
+
+See [Plugin-managed sessions](../../../docs/extend/managed-sessions.md).
+
+## 5.20.0
+
+- Add optional row-bound `sessionWork` registration with fresh background side-call scopes and independently granted automatic-title inspection and refresh. Existing facets and turn-bound side calls remain compatible.
 
 ## 5.17.0
 

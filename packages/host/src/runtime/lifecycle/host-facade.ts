@@ -6,7 +6,12 @@ import { HOST_MEMBER_SCOPES, type HostFacadeOverrides, memberScope } from './hos
 /** Authenticated deployment management ports, never exposed as model tools. */
 export type HostManagement = Readonly<
   Pick<Assembled, 'approvalGrants'> &
-    Partial<Pick<Assembled, 'profileServices' | 'channelCatalog' | 'clearChannelState' | 'channelPairing'>>
+    Partial<
+      Pick<
+        Assembled,
+        'profileServices' | 'channelCatalog' | 'clearChannelState' | 'channelPairing' | 'channelReceipts'
+      >
+    >
 >
 
 /** The management ports an assembly hands to its Host. */
@@ -16,6 +21,7 @@ export const hostManagement = (a: Assembled): HostManagement => ({
   channelCatalog: a.channelCatalog,
   clearChannelState: a.clearChannelState,
   channelPairing: a.channelPairing,
+  channelReceipts: a.channelReceipts,
 })
 
 const sources = new WeakMap<Host, () => Host>()

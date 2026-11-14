@@ -7,6 +7,7 @@ export type EncodedLedgerState = Omit<
   | 'openTurn'
   | 'openStep'
   | 'lastTurn'
+  | 'completedTurns'
   | 'lastStep'
   | 'pendingEffects'
   | 'resumedRequests'
@@ -24,6 +25,9 @@ export type EncodedLedgerState = Omit<
   }
   openTurn: Array<[string, LedgerState['openTurn'] extends ReadonlyMap<string, infer V> ? V : never]>
   openStep: Array<[string, LedgerState['openStep'] extends ReadonlyMap<string, infer V> ? V : never]>
+  completedTurns: Array<
+    [number, LedgerState['completedTurns'] extends ReadonlyMap<number, infer V> ? V : never]
+  >
   lastTurn: Array<[string, number]>
   lastStep: Array<[string, number]>
   pendingEffects: Array<
@@ -61,6 +65,7 @@ export function encodeLedgerState(state: LedgerState): EncodedLedgerState {
     openTurn: [...state.openTurn],
     openStep: [...state.openStep],
     lastTurn: [...state.lastTurn],
+    completedTurns: [...state.completedTurns],
     lastStep: [...state.lastStep],
     pendingEffects: [...state.pendingEffects],
     resumedRequests: [...state.resumedRequests],

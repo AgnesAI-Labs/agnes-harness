@@ -44,6 +44,9 @@ export async function profileServiceCommand(
       return host.channelPairing(
         p as unknown as import('@agnes/protocol').AppServerMethods['_agnes/v1/channels.pairing']['params'],
       )
+    case 'channels.receipts':
+      if (!host?.channelReceipts) throw rpcError('CAPABILITY_DENIED')
+      return host.channelReceipts(p)
     case 'profileManaged.status': {
       const manager = host?.profileServices?.managed
       if (!manager) throw rpcError('CAPABILITY_DENIED')

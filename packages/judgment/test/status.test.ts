@@ -107,7 +107,9 @@ it('reports text/native availability separately and hashes active config canonic
   reordered.runtime.dispose()
 })
 it('counts non-replayed requests per purpose and returns detached snapshots', async () => {
-  const f = fixture({}, [{ route: 'jev', model: 'j', api: 'typesafe-systemone' }])
+  const f = fixture({ uses: { title: { enabled: true, refreshAfterPrompts: 1 } } }, [
+    { route: 'jev', model: 'j', api: 'typesafe-systemone' },
+  ])
   const signal = new AbortController().signal
   let replay = false
   const port = {
@@ -128,6 +130,11 @@ it('counts non-replayed requests per purpose and returns detached snapshots', as
   const req = { state: 'PRIVATE_INPUT', questions: { q: { type: 'noul' as const, instructions: 'ok?' } } }
   await judge!.judge('judgment.rules', req, { signal, idPrefix: 'r1', totalMs: 1000, attemptMs: 1000 })
   await judge!.judge('judgment.rules', req, { signal, idPrefix: 'r2', totalMs: 1000, attemptMs: 1000 })
+  await judge!.judge(
+    'judgment.title',
+    { ...req, state: 'title input' },
+    { signal, idPrefix: 't1', totalMs: 1000, attemptMs: 1000 },
+  )
   replay = true
   await judge!.judge(
     'judgment.batch',
@@ -137,7 +144,13 @@ it('counts non-replayed requests per purpose and returns detached snapshots', as
   const status = (await f.service.handler({}, {} as any)) as any
   expect(status.uses.rules.requests).toBe(1)
   expect(status.uses.judgeBatch.requests).toBe(0)
-  expect(status.cache).toMatchObject({ hit: 1, size: 2 })
+  expect(status.cache).toMatchObject({ hit: 1, size: 3 })
+  expect(Object.keys(status.uses).sort()).toEqual(['findRelevant', 'judgeBatch', 'rules', 'stop'])
+  const schema = f.service.outputSchema as {
+    properties: { uses: { additionalProperties: boolean; required: string[] } }
+  }
+  expect(schema.properties.uses.additionalProperties).toBe(false)
+  expect(schema.properties.uses.required.sort()).toEqual(['findRelevant', 'judgeBatch', 'rules', 'stop'])
   status.uses.rules.requests = 99
   expect(((await f.service.handler({}, {} as any)) as any).uses.rules.requests).toBe(1)
   f.dispose()

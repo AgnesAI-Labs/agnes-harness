@@ -18,6 +18,12 @@ interface ChannelTargetEventBase {
   readonly at: string
   readonly chat: { readonly id: string; readonly type: 'dm' }
   readonly sender: { readonly userId: string }
+  /**
+   * 1–256 characters. Present only after the platform durably recorded the event's source and text; pass it
+   * to `admitInput` as an `ownerMessage` receipt instead of the text. Redeliveries of one event carry the
+   * same id. Added in 5.21.
+   */
+  readonly receiptId?: string
 }
 
 /** A text message the paired owner sent in the paired direct chat. Attachments and empty text never arrive. */

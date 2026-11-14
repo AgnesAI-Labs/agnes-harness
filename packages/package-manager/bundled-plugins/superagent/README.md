@@ -12,5 +12,5 @@ It publishes two bundles: `@agnes/superagent#router` for its main session and `@
 sessions. Its `orchestrator_*` tools are visible only in sessions that select one of them; the owner's other sessions are
 unchanged.
 
-The generated entry requires an in-process host compatible with Extension API 5.19. It is built from
+The generated entry requires an in-process host compatible with Extension API 5.22. It is built from
 `packages/superagent`; it is not a separate implementation. See NOTICE for the MIT-licensed material it contains.

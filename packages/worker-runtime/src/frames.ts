@@ -73,6 +73,7 @@ export type WorkerMethod =
   | 'channels.catalog'
   | 'channels.clear'
   | 'channels.pairing'
+  | 'channels.receipts'
   | 'ping'
   | 'pluginGenerations.status'
   | 'pluginGenerations.publicationStatus'
@@ -253,6 +254,7 @@ export type RequestFrame = {
     | 'mcp-manage'
     | 'mcp-manage-abort'
     | 'refinement-save'
+    | 'auto-title-eligible'
   params: unknown
 }
 export type WorkerCommandFrame = {

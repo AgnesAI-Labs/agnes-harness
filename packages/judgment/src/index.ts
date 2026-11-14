@@ -4,12 +4,19 @@ import { createJudgmentRuntime } from './runtime.js'
 import { registerJudgmentStatus } from './status.js'
 import { registerRuleChecks } from './uses/rules.js'
 import { registerStopDetection } from './uses/stop.js'
+import { registerTitleDrift } from './uses/title-drift.js'
 import { registerJudgmentTools } from './uses/tools.js'
 
 export type { JudgmentAccounting } from './accounting.js'
 export { createAnswerCache } from './cache.js'
 export type { JudgeTarget, StopConfig } from './config.js'
-export { CONFIG_SCHEMA, resolveJudgeChain, resolveStopConfig, resolveToolConfig } from './config.js'
+export {
+  CONFIG_SCHEMA,
+  resolveJudgeChain,
+  resolveStopConfig,
+  resolveTitleConfig,
+  resolveToolConfig,
+} from './config.js'
 export { nativePayload, splitRequest } from './encode.js'
 export type { Judge, JudgeOptions, JudgeOutcome } from './judge.js'
 export { createJudge, createRouteCooldown } from './judge.js'
@@ -24,7 +31,16 @@ export { parseAnswers, renderPrompt } from './text-bridge.js'
 export { registerJudgmentTools } from './uses/tools.js'
 
 export const judgmentPlugin = {
-  inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'services', 'self', 'tools'] as const,
+  inject: [
+    'hooks',
+    'projections',
+    'eventLog',
+    'sideCall',
+    'services',
+    'self',
+    'tools',
+    'sessionWork',
+  ] as const,
   apply(plugin: PluginContextFacets, config?: unknown) {
     const runtime = createJudgmentRuntime(plugin, config)
     const dispose = registerStopDetection(plugin, {
@@ -33,8 +49,10 @@ export const judgmentPlugin = {
     })
     const disposeTools = registerJudgmentTools(plugin, runtime, config)
     const rules = registerRuleChecks(plugin, runtime, config)
+    const title = registerTitleDrift(plugin, runtime, config)
     const status = registerJudgmentStatus(plugin, runtime, config)
     return () => {
+      title()
       disposeTools()
       status()
       rules()

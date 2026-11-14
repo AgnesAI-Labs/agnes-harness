@@ -11,6 +11,8 @@ import type {
 import type { CardActionEvent, CardBlock, MessageRef, TextBlock } from '@agnes/extension-api/channel-contract'
 import { grantKey } from '@agnes/plugin-runtime/host'
 import { rpcError } from '@agnes/protocol'
+import { buttonsOf, type DeliveryRow, pruneLedger, recordButtons, sentReference } from './channel-ledger.js'
+import { ChannelReceipts, REDELIVERY_INTERVAL_MS } from './channel-receipts.js'
 
 /** A managed service that may receive a paired chat: `owner` is the `grantKey` of its package row. */
 export type ChannelTarget = { owner: string; service: string }
@@ -34,19 +36,6 @@ export type OwnerPairing = {
   pairedAt: string
 }
 
-type DeliveryRow = {
-  accountId?: string
-  chatType?: 'dm' | 'group'
-  state: 'sending' | 'delivered' | 'unknown'
-  incarnation: string
-  messageId?: string
-  /** The id a click on this message reports, when the channel's differs from `messageId`. */
-  cardBizId?: string
-  /** Who sent it: a click counts only on a message the clicked chat's current service sent. */
-  pairingId?: string
-  service?: string
-  at: string
-}
 type Code = { digest: Buffer; instance: ChannelInstanceRef; target: ChannelTarget; expiresAt: number }
 type Service = {
   packageId: string
@@ -107,6 +96,8 @@ export interface ChannelTargetsBridge {
   ): { label: string } | undefined
   find(instanceId: string, chatId: string): OwnerPairing | undefined
   interact(pairing: OwnerPairing, event: CardActionEvent): Promise<boolean>
+  /** Writes the event's durable receipt; it replaces the platform claim for a paired chat. */
+  receive(pairing: OwnerPairing, event: ChannelTargetEvent): ReturnType<ChannelReceipts['receive']>
   deliver(pairing: OwnerPairing, event: ChannelTargetEvent): Promise<void>
   drop(pairingId: string): void
   paired(instanceId: string, targetId: string): boolean
@@ -122,7 +113,6 @@ export interface ChannelTargetsBridge {
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const CODE_TTL_MS = 3_600_000
 const MAX_MISSES = 5
-const LEDGER_TTL_MS = 7 * 86_400_000
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 const normalize = (text: string) => text.replace(/[\s-]/g, '').toUpperCase()
 const codeDigest = (code: string) => createHash('sha256').update(normalize(code)).digest()
@@ -189,6 +179,13 @@ export class ChannelTargets {
   private readonly links = new Map<string, ChannelTargetLink>()
   private readonly incarnation = randomUUID()
   private readonly sweep: ReturnType<typeof setInterval>
+  readonly receipts = new ChannelReceipts({
+    store: () => this.store,
+    clock: () => this.clock(),
+    pairing: (id) => this.pairing(id),
+    handler: (target) => this.services.get(targetKey(target))?.onEvent,
+    retryDelaysMs: () => this.receiptRetryMs,
+  })
 
   /** The instance for `key`, shared by every caller in this process until each has released it. */
   static retain(key: string, store: () => PersistenceMetadataNamespace, clock: () => number = Date.now) {
@@ -221,9 +218,13 @@ export class ChannelTargets {
   constructor(
     private store: PersistenceMetadataNamespace,
     private readonly clock: () => number = Date.now,
+    private readonly receiptRetryMs?: readonly number[],
   ) {
     this.prune()
-    this.sweep = setInterval(() => this.prune(), 3_600_000)
+    this.sweep = setInterval(() => {
+      this.prune()
+      void this.receipts.redeliver()
+    }, REDELIVERY_INTERVAL_MS)
     this.sweep.unref?.()
   }
 
@@ -277,7 +278,8 @@ export class ChannelTargets {
       if (code.instance.channel.startsWith(prefix) || code.target.owner.startsWith(prefix))
         this.codes.delete(key)
     this.store.transaction(() => {
-      for (const { key } of this.store.entries()) if (key.startsWith(`d:${prefix}`)) this.store.delete(key)
+      for (const { key } of this.store.entries())
+        if (key.startsWith(`d:${prefix}`) || key.startsWith(`r:${prefix}`)) this.store.delete(key)
     })
   }
 
@@ -335,17 +337,19 @@ export class ChannelTargets {
         }
         return (await this.link(current.instance)?.interaction?.(event, routes)) ?? false
       },
+      receive: (pairing, event) =>
+        this.receipts.receive(channel, pairing, event, (p, clicked) => this.sentReference(p, clicked)),
       deliver: async (pairing, event) => {
         let delivered = event
         if (event.kind === 'action') {
           // Not a failure to retry or report: the click was on a message this service did not send.
-          const messageId = this.sentBy(pairing, event.messageId)
+          const messageId = this.sentReference(pairing, event.messageId)?.messageId
           if (!messageId) return
           delivered = { ...event, messageId }
         }
-        const service = this.services.get(targetKey(pairing.target))
-        if (!service?.onEvent || !this.pairing(pairing.id)) throw refused('CHANNEL_UNAVAILABLE')
-        await service.onEvent(structuredClone(delivered))
+        const onEvent = this.services.get(targetKey(pairing.target))?.onEvent
+        if (!onEvent || !this.pairing(pairing.id)) throw refused('CHANNEL_UNAVAILABLE')
+        await this.receipts.settle(pairing.target.owner, delivered, (next) => onEvent(structuredClone(next)))
       },
       drop: (pairingId) => {
         const pairing = this.pairing(pairingId)
@@ -415,6 +419,7 @@ export class ChannelTargets {
       onEvent: (handler) => {
         caller.assertCurrent()
         service.onEvent = handler
+        void this.receipts.redeliver(target)
       },
       onPairingChange: (handler) => {
         caller.assertCurrent()
@@ -486,6 +491,7 @@ export class ChannelTargets {
           },
           block,
         )
+        recordButtons(this.store, sent, block)
         own(pairingId)
       },
       delivery: async (pairingId, deliveryKey) => this.delivery(own(pairingId), deliveryKey),
@@ -565,6 +571,7 @@ export class ChannelTargets {
         ...(typeof cardBizId === 'string' && cardBizId && cardBizId !== messageId ? { cardBizId } : {}),
         pairingId: pairing.id,
         service: pairing.target.service,
+        ...buttonsOf(block),
       })
       assertCurrent()
       return { messageId }
@@ -712,7 +719,7 @@ export class ChannelTargets {
     state: DeliveryRow['state'],
     sent: Pick<
       DeliveryRow,
-      'messageId' | 'cardBizId' | 'pairingId' | 'service' | 'accountId' | 'chatType'
+      'messageId' | 'cardBizId' | 'pairingId' | 'service' | 'accountId' | 'chatType' | 'actions'
     > = {},
   ): void {
     const row: DeliveryRow = {
@@ -724,35 +731,13 @@ export class ChannelTargets {
     this.store.set(key, row)
   }
 
-  /** The send-returned id of the live ledger row `clicked` names, when this pairing's service sent it. */
-  private sentBy(pairing: OwnerPairing, clicked: string): string | undefined {
-    return this.sentReference(pairing, clicked)?.messageId
-  }
-
-  private sentReference(pairing: OwnerPairing, clicked: string): DeliveryRow | undefined {
-    const prefix = `d:${pairing.target.owner}:`
-    const before = this.clock() - LEDGER_TTL_MS
-    for (const { key, value } of this.store.entries()) {
-      const row = value as DeliveryRow
-      if (
-        key.startsWith(prefix) &&
-        row.state === 'delivered' &&
-        row.pairingId === pairing.id &&
-        row.service === pairing.target.service &&
-        Date.parse(row.at) > before &&
-        (row.messageId === clicked || row.cardBizId === clicked)
-      )
-        return row
-    }
-    return undefined
+  private sentReference(pairing: OwnerPairing, clicked: string) {
+    return sentReference(this.store, this.clock(), pairing, clicked)
   }
 
   private prune(): void {
-    const before = this.clock() - LEDGER_TTL_MS
-    this.store.transaction(() => {
-      for (const { key, value } of this.store.entries())
-        if (key.startsWith('d:') && !(Date.parse((value as DeliveryRow).at) > before)) this.store.delete(key)
-    })
+    pruneLedger(this.store, this.clock())
+    this.receipts.prune()
   }
 }
 
