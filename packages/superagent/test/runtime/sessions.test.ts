@@ -1,0 +1,142 @@
+import { existsSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { PrepareFailed, SessionRegistry, Sessions, type SessionsDeps } from '../../src/runtime/sessions.js'
+import { fakeClient } from './fake-sdk.js'
+import { tempStore, ticket } from './helpers.js'
+
+let temp: ReturnType<typeof tempStore>
+beforeEach(() => {
+  temp = tempStore()
+})
+afterEach(() => temp.close())
+
+function setup(fields: Partial<SessionsDeps> = {}) {
+  const fake = fakeClient()
+  const registry = new SessionRegistry(temp.store)
+  const models: string[] = []
+  const sessions = new Sessions({
+    client: fake.client,
+    registry,
+    orchestratorDir: () => join(temp.dir, 'state'),
+    prepareCommand: () => 'git init -q repo && echo "$SUPERAGENT_TICKET" > repo/ticket',
+    environment: (item) => ({ SUPERAGENT_TICKET: item.id }),
+    applyModel: async (role) => {
+      models.push(role)
+    },
+    lifetime: new AbortController().signal,
+    ...fields,
+  })
+  return { fake, registry, sessions, models }
+}
+
+describe('worker sessions', () => {
+  it('creates the ticket directory, runs prepare inside it, then opens the worker session there', async () => {
+    const { fake, registry, sessions, models } = setup()
+    const dir = join(temp.dir, 'work', 'fix-login')
+    const id = await sessions.ensureWorker(ticket('t1', { title: 'Fix login' }), dir)
+    // The prepare command ran in the ticket directory with the ticket's variables and put the repository in repo/.
+    expect(readFileSync(join(dir, 'repo', 'ticket'), 'utf8').trim()).toBe('t1')
+    expect(existsSync(join(dir, 'repo', '.git'))).toBe(true)
+    expect(fake.workspaces).toEqual([dir])
+    expect(fake.sessions.get(id)?.options).toEqual({
+      cwd: dir,
+      sessionKey: 'superagent:worker:t1',
+      permission: 'full-access',
+      bundles: ['@agnes/superagent#worker'],
+      preset: 'superagent-worker',
+    })
+    // The SDK session key is the AGH session id, which the store records.
+    expect(id).toBe('superagent:worker:t1')
+    expect(registry.role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
+    expect(new SessionRegistry(temp.store).role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
+    expect(fake.renamed).toEqual([[id, 'Fix login']])
+    expect(models).toEqual(['worker'])
+  })
+
+  it('fails the ticket without retrying when prepare fails, removing the directory it left empty', async () => {
+    const { fake, registry, sessions } = setup({ prepareCommand: () => 'echo no access >&2; exit 3' })
+    const dir = join(temp.dir, 'work', 'broken')
+    const failed = sessions.ensureWorker(ticket('t2'), dir)
+    await expect(failed).rejects.toBeInstanceOf(PrepareFailed)
+    await expect(failed).rejects.toThrow(/exit 3.*no access/s)
+    expect(existsSync(dir)).toBe(false)
+    expect(fake.workspaces).toEqual([])
+    expect(registry.ids()).toEqual([])
+  })
+
+  it('loads an existing session instead of creating another, and an existing directory counts as prepared', async () => {
+    const { fake, sessions } = setup()
+    const dir = join(temp.dir, 'work', 'again')
+    const first = await sessions.ensureWorker(ticket('t3'), dir)
+    const reopened = setup({ prepareCommand: () => 'exit 1' })
+    // A new process: the session exists in the daemon and the store, not in memory.
+    reopened.fake.sessions.set(first, fake.sessions.get(first)!)
+    expect(await reopened.sessions.ensureWorker(ticket('t3', { title: 'Renamed' }), dir)).toBe(first)
+    expect(reopened.fake.loads).toEqual([first])
+    expect(reopened.fake.renamed).toEqual([[first, 'Renamed']])
+  })
+
+  it('does not replace a registered session its owner deleted', async () => {
+    const { registry, sessions } = setup()
+    registry.record({ kind: 'worker', ticketId: 't4' }, 'superagent:worker:t4')
+    await expect(sessions.ensureWorker(ticket('t4'), join(temp.dir, 'w4'))).rejects.toThrow(/unknown session/)
+  })
+
+  it('takes over a session with its key that the store did not record', async () => {
+    const { fake, registry, sessions } = setup()
+    fake.make('superagent:worker:t5')
+    expect(await sessions.ensureWorker(ticket('t5'), join(temp.dir, 'w5'))).toBe('superagent:worker:t5')
+    expect(registry.role('superagent:worker:t5')).toEqual({ kind: 'worker', ticketId: 't5' })
+  })
+})
+
+describe('main session and pending inputs', () => {
+  it('opens the main session with the router bundle in the state directory', async () => {
+    const { fake, sessions, registry, models } = setup()
+    const id = await sessions.ensureOrchestrator()
+    expect(fake.sessions.get(id)?.options).toMatchObject({
+      cwd: join(temp.dir, 'state'),
+      sessionKey: 'superagent:orchestrator',
+      permission: 'full-access',
+      bundles: ['@agnes/superagent#router'],
+      preset: 'superagent-router',
+    })
+    expect(registry.role(id)).toEqual({ kind: 'orchestrator' })
+    expect(models).toEqual(['orchestrator'])
+    expect(await sessions.ensureOrchestrator()).toBe(id)
+  })
+
+  it('reads the real session state and removes the named pending items only', async () => {
+    const { fake, sessions } = setup()
+    const id = await sessions.ensureOrchestrator()
+    const session = fake.sessions.get(id)!
+    session.pending.push(
+      { itemId: 'i1', commandId: 'superagent:a', preview: 'a' },
+      { itemId: 'i2', preview: 'b' },
+    )
+    session.jobs.push({ id: 'j1', owner: 'agent', status: 'running', command: 'npm test' })
+    session.jobs.push({ id: 'j2', owner: 'human', status: 'running', command: 'top' })
+    session.running = true
+    expect(await sessions.state(id)).toEqual({
+      running: true,
+      pending: [{ itemId: 'i1', commandId: 'superagent:a' }, { itemId: 'i2' }],
+      jobs: 1,
+    })
+    await sessions.dropPending(id, ['i1'])
+    expect((await sessions.state(id)).pending).toEqual([{ itemId: 'i2' }])
+    await sessions.cancel(id)
+    expect((await sessions.state(id)).running).toBe(false)
+  })
+
+  it('finds the role of a child session through its key', () => {
+    const { registry } = setup()
+    registry.record({ kind: 'worker', ticketId: 't6' }, 'superagent:worker:t6')
+    expect(registry.owner('superagent:worker:t6/01HX/01HY')).toEqual({
+      role: { kind: 'worker', ticketId: 't6' },
+      child: true,
+    })
+    expect(registry.owner('superagent:worker:t7')).toBeUndefined()
+    expect(registry.owner('superagent:owner-made/01HX')).toBeUndefined()
+  })
+})
