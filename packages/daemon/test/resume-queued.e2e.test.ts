@@ -170,12 +170,19 @@ it.skipIf(process.platform === 'win32')(
       sockets.add(after.socketPath)
       await after.client.initialize()
       const resumed = await after.client.session.load(sessionId, { cwd: root })
-      const pending = (await resumed.projectUI()).pendingInputs ?? []
+      const loaded = await resumed.projectUI()
+      // Left alone, the restarted daemon does not start the queued follow-up on its own.
+      await new Promise((resolve) => setTimeout(resolve, 3_000))
+      const idle = await resumed.projectUI()
+      expect(idle.opState, 'no turn started on its own after the restart').toBeNull()
+      expect(idle.turns.length, 'no turn started on its own after the restart').toBe(loaded.turns.length)
+      expect(followUpRuns(provider.requests), 'nothing ran the follow-up on its own').toBe(0)
+      const pending = idle.pendingInputs ?? []
       expect(pending, 'the queued follow-up is still pending after the restart').toHaveLength(1)
       const oldest = pending[0]
       if (!oldest) throw new Error('no pending input after the restart')
       expect(oldest.preview).toContain(MARKER)
-      expect(followUpRuns(provider.requests), 'nothing ran the follow-up before the restart').toBe(0)
+      expect(oldest.commandId).toBe(COMMAND_ID)
 
       const sentAt = Date.now()
       await resumed.sendNow(oldest.itemId)
