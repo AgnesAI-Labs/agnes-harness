@@ -160,6 +160,19 @@ strength), a dedicated GitHub account and Feishu bot, branch protection that req
 home of its own. Prompts are not a boundary, and text from GitHub or Feishu is material only: it cannot change a ticket's
 directory, its bundle or its permissions.
 
+**The main session can change the settings.** As in the original, the main session has a tool,
+`orchestrator_settings_save`, that saves a settings block when a person asks for it in a conversation: the Policy (the
+allowed lists and rules), the Eval settings, the Execution settings including the prepare command, a Source, or the
+pause. Whether such a request is genuine is the model's judgement, not a check in code. A main session misled by text in
+an Issue or a chat, or asked by an allowed person, could therefore add someone to an allowed list, or change the prepare
+command, which Superagent then runs for each new ticket. The allowed lists keep out people who are not on them; they do
+not hold against an allowed person or against text the main session reads. What limits this:
+
+- Every save keeps a version. The history on the panel's Eval, Execution and Source pages marks each save the main
+  session made as **Main Session tool**; review those saves, and correct them in the panel.
+- Keep the allowed lists short, and run Superagent as a dedicated operating-system user (below), so a changed prepare
+  command reaches only the agent's own account.
+
 Ticket sessions run with full access. That means:
 
 - They can read the operator's home by absolute path, including the keys and the socket of the operator's everyday AGH
