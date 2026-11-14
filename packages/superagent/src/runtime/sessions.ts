@@ -23,6 +23,8 @@ export type SessionHandle = Pick<
   | 'projectUI'
   | 'removeQueued'
   | 'sendNow'
+  | 'pendingCommands'
+  | 'checkCommand'
   | 'jobsRead'
   | 'jobsControl'
   | 'setModel'

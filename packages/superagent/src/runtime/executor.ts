@@ -36,7 +36,7 @@ import {
   ticketExecution,
   transient,
 } from './assignment.js'
-import { commandIdOf, type Delivery } from './delivery.js'
+import { messageOfCommand, type Redelivery } from './delivery.js'
 import {
   PrepareFailed,
   type SessionAdapter,
@@ -56,7 +56,7 @@ const BACKGROUND_LIMIT_MS = 30 * 60_000
 const QUIET_POLL_MS = 2000
 /** How long a worker that goes on after a passing failure waits for a slot, or for processing to resume, between looks. */
 const SLOT_WAIT_MS = 5000
-/** The id of the message delivered under a request id, the same on every retry. */
+/** The id of the message delivered under a request id; each delivery attempt of it has its own command id. */
 export const messageIdOf = (requestId: string): string => key(requestId)
 
 /** What the executor uses of the sessions besides the frozen adapter. */
@@ -85,7 +85,7 @@ export interface ExecutorHost {
   readonly stateDir: string
   readonly lifetime: AbortSignal
   readonly sessions: ExecutorSessions
-  readonly delivery: Delivery
+  readonly delivery: Redelivery
   /** Steers a report into the main session once per id. */
   relay(id: string, text: string): void
   closing(): boolean
@@ -358,20 +358,22 @@ export class SuperagentExecutor implements Executor {
     // The background work of the Assignment this one replaces stops first, so its end does not clear this one's message.
     await this.stopped(ticket.id)
     if (!current()) return
-    // A message put back for this Assignment may still wait in the session, kept by a cancel or a restart: the copy
-    // delivered next is the only one.
+    // A message put back for this Assignment may still wait in the session, kept by a cancel or a restart: that copy is
+    // dropped, and the copy delivered next goes under a fresh command id, since the daemon answers a reused one from its
+    // receipt instead of queueing it again.
+    const later = ticket.assignments.length > 1
     const putBack = new Set(
-      (this.host.store.tickets.get(ticket.id)?.undelivered ?? []).map((id) => commandIdOf(messageIdOf(id))),
+      (this.host.store.tickets.get(ticket.id)?.undelivered ?? []).map((id) => messageIdOf(id)),
     )
+    if (later) for (const message of putBack) this.host.delivery.renew(sessionId, message)
     const waiting = (await this.host.sessions.state(sessionId)).pending
     const stale = waiting
-      .filter((item) => item.commandId && putBack.has(item.commandId))
+      .filter((item) => putBack.has(messageOfCommand(item.commandId) ?? ''))
       .map((item) => item.itemId)
     if (stale.length) await this.host.sessions.dropPending(sessionId, stale)
     // The first message holds the assignment and the source trigger; a later Assignment's says only what is new, unless
     // the session lost the first.
     const first = `assignment:${ticket.id}`
-    const later = ticket.assignments.length > 1
     const told = later && (await this.holds(sessionId, first))
     if (!current()) return
     const retried = ticket.assignments.at(-2)?.endedReason === 'retried' ? { note: RETRIED } : {}
@@ -445,13 +447,13 @@ export class SuperagentExecutor implements Executor {
     if (event.type === 'user/message') {
       const commandId = data.commandId
       if (commandId?.startsWith('superagent:')) {
-        // The inputs a message of Superagent's carries, which its worker reads once the session took it.
+        // The inputs a message of Superagent's carries, under whichever attempt, which its worker reads once taken.
+        const message = messageOfCommand(commandId)
         const read =
           this.host.store.tickets
             .get(ticketId)
             ?.inputs.filter(
-              (input) =>
-                input.kind === 'trigger' && !input.readAt && commandIdOf(messageIdOf(input.id)) === commandId,
+              (input) => input.kind === 'trigger' && !input.readAt && messageIdOf(input.id) === message,
             )
             .map((input) => input.id) ?? []
         if (read.length) this.host.engine.inputsRead(ticketId, read)

@@ -224,6 +224,48 @@ describe('the executor', () => {
     await stop()
   })
 
+  it("delivers a person's comment put back at a restart again under a fresh command id, and exactly once", async () => {
+    const first = setup()
+    const ticketId = first.accept()
+    await first.effects.idle('launch')
+    await first.watched(ticketId)
+    const session = first.worker(ticketId)!
+    session.queueSteers = true
+    session.running = true
+    session.emit({ type: 'turn/start', data: { turn: 1 } })
+    // A person comments while the worker is busy: the comment waits in the worker's inbox.
+    first.engine.receive({ ...message('2'), text: 'also check the logout page' })
+    await vi.waitFor(() => expect(ticketOf(ticketId).undelivered).toEqual([]))
+    const comment = (item: { preview?: string; text?: string }) =>
+      (item.preview ?? item.text ?? '').includes('also check the logout page')
+    const original = session.pending.find(comment)!
+    expect(original.commandId).toMatch(/^superagent:[0-9a-f]{32}$/)
+    // The daemon restarts: the turn ends, the comment stays queued, and Superagent starts again and re-dispatches.
+    await first.stop()
+    session.running = false
+    const again = setup()
+    again.fake.sessions.set(session.id, session)
+    await again.executor.resume()
+    await again.effects.idle('launch')
+    await vi.waitFor(() => expect(ticketOf(ticketId).undelivered).toEqual([]))
+    await again.effects.idle('delivery')
+    const copies = [...session.pending.filter(comment), ...session.taken.filter(comment)]
+    expect(copies).toHaveLength(1)
+    expect(copies[0]!.commandId).toBe(`${original.commandId}:r1`)
+    expect(ticketOf(ticketId).assignments).toHaveLength(2)
+    expect(ticketOf(ticketId).delivery).toBeUndefined()
+    // The worker taking that copy reads the comment.
+    expect(ticketOf(ticketId).inputs.find((input) => input.kind === 'trigger')?.readAt).toBeNull()
+    await again.watched(ticketId)
+    session.emit({ type: 'user/message', data: { commandId: copies[0]!.commandId } })
+    await vi.waitFor(() =>
+      expect(ticketOf(ticketId).inputs.find((input) => input.kind === 'trigger')?.readAt).toEqual(
+        expect.any(String),
+      ),
+    )
+    await again.stop()
+  })
+
   it('after a restart, re-dispatches an assignment whose worker no longer runs and keeps one that still does', async () => {
     const first = setup()
     const ticketId = first.accept()

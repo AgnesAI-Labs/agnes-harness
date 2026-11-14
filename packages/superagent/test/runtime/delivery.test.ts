@@ -63,6 +63,66 @@ describe('delivery', () => {
     expect(session.calls.filter((call) => ['steer', 'followUp'].includes(call.method))).toEqual([])
   })
 
+  it('resolves a retry after an uncertain submission under its own id, so the message arrives once', async () => {
+    const { session, id, delivery } = await setup()
+    session.running = true
+    session.queueSteers = true
+    session.failNext = 'landed'
+    await expect(delivery.deliver(id, { id: 'm1', content: 'report', mode: 'steer' })).rejects.toThrow(
+      'UNCERTAIN',
+    )
+    // The busy state flips before the retry: the original steer is confirmed, not resent as a follow-up.
+    session.running = false
+    await delivery.deliver(id, { id: 'm1', content: 'report', mode: 'steer' })
+    expect(session.calls.filter((call) => call.method === 'checkCommand')).toEqual([
+      { method: 'checkCommand', args: ['superagent:m1'] },
+    ])
+    expect(session.pending.map((item) => item.commandId)).toEqual(['superagent:m1'])
+    // The next message goes out at once, so an ordered queue behind it moves on.
+    await delivery.deliver(id, { id: 'm2', content: 'next', mode: 'steer' })
+    expect(session.pending.map((item) => item.commandId)).toEqual(['superagent:m1', 'superagent:m2'])
+  })
+
+  it('retries a submission refused for good under a fresh id, whatever its receipt says', async () => {
+    const { session, id, delivery } = await setup()
+    session.running = true
+    session.queueSteers = true
+    session.failNext = 'landed'
+    await expect(delivery.deliver(id, { id: 'm1', content: 'report', mode: 'steer' })).rejects.toThrow()
+    // The client gave up on the submission and the copy left the inbox; only the daemon's receipt remains.
+    session.journal.clear()
+    session.pending = []
+    session.running = false
+    await delivery.deliver(id, { id: 'm1', content: 'report', mode: 'steer' })
+    expect(session.pending.map((item) => item.commandId)).toEqual(['superagent:m1:r1'])
+    expect(await delivery.status(id, 'm1')).toBe('pending')
+  })
+
+  it('delivers a renewed message under its next attempt, unless the session already holds a copy', async () => {
+    const { session, id, delivery } = await setup()
+    await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
+    session.pending = []
+    delivery.renew(id, 'm1')
+    await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
+    expect(session.pending.map((item) => item.commandId)).toEqual(['superagent:m1:r1'])
+    // Taken before it was renewed: the session read it, and no second copy goes out.
+    session.taken.push(
+      ...session.pending.map(({ commandId, preview }) => ({
+        ...(commandId ? { commandId } : {}),
+        text: preview,
+      })),
+    )
+    session.pending = []
+    delivery.renew(id, 'm1')
+    await delivery.deliver(id, { id: 'm1', content: 'comment', mode: 'followUp' })
+    expect(session.pending).toEqual([])
+    // A session that cannot be read delivers nothing.
+    delivery.renew(id, 'm2')
+    session.unreadable = true
+    await expect(delivery.deliver(id, { id: 'm2', content: 'x', mode: 'followUp' })).rejects.toThrow()
+    expect(session.calls.filter((call) => call.method === 'followUp')).toHaveLength(2)
+  })
+
   it('rolls one live note per session forward without waking it, and keeps it across a restart', async () => {
     const { session, id, delivery } = await setup()
     expect(delivery.liveNote(id)).toBeUndefined()

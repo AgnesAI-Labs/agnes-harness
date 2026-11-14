@@ -23,6 +23,19 @@ export interface FakeSession {
   }[]
   /** Throws from `projectUI` when set, as a read that failed. */
   unreadable?: boolean
+  /**
+   * The daemon's receipt of each command id, kept long after the input left the inbox: the same command again is answered
+   * from it and enqueues nothing; another command under that id is refused as a conflict.
+   */
+  receipts: Map<string, { digest: string; seq: number }>
+  /** The client journal's unconfirmed submissions, which only `checkCommand` resolves. */
+  journal: Map<string, { state: 'needs-confirmation'; method: string; input: unknown }>
+  /**
+   * Fails the next submission with an uncertain outcome: `landed` after the daemon enqueued it, `lost` before it did.
+   */
+  failNext?: 'landed' | 'lost' | undefined
+  /** Keeps a steer to a busy session in its inbox until the next step, as the daemon does, instead of taking it at once. */
+  queueSteers?: boolean
   emit(event: Omit<FakeEvent, 'seq'>): void
   /** How many event readers the session has. */
   listening(): number
@@ -46,6 +59,8 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
       taken: [],
       assistant: [],
       jobs: [],
+      receipts: new Map(),
+      journal: new Map(),
       emit: (event) => {
         for (const listener of listeners) listener({ ...event, seq: ++seq })
       },
@@ -58,14 +73,47 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
         session.calls.push({ method, args })
         return typeof result === 'function' ? (result as (...a: unknown[]) => unknown)(...args) : result
       }
+    const enqueue = (method: string, input: unknown, commandId?: string): number => {
+      const text = typeof input === 'string' ? input : JSON.stringify(input)
+      const o = commandId ? { commandId } : {}
+      if (method === 'steer' && session.running && !session.queueSteers) session.taken.push({ ...o, text })
+      else session.pending.push({ itemId: `item-${++seq}`, preview: text, ...o })
+      return ++seq
+    }
+    /** What the daemon answers a command: its receipt, a conflict, or a new entry in the inbox. */
+    const accept = (method: string, input: unknown, commandId?: string): number => {
+      const digest = `${method}\0${typeof input === 'string' ? input : JSON.stringify(input)}`
+      const receipt = commandId ? session.receipts.get(commandId) : undefined
+      if (receipt) {
+        if (receipt.digest !== digest)
+          throw Object.assign(new Error(`command ${commandId} conflicts with its receipt`), {
+            code: 'CONFLICT',
+          })
+        return receipt.seq
+      }
+      const at = enqueue(method, input, commandId)
+      if (commandId) session.receipts.set(commandId, { digest, seq: at })
+      return at
+    }
+    const uncertain = (commandId: string) =>
+      Object.assign(new Error('UNCERTAIN'), {
+        code: 'UNCERTAIN',
+        submission: { sessionId: id, commandId, state: 'needs-confirmation' },
+      })
     const submit =
       (method: string) =>
       async (input: unknown, o: { commandId?: string } = {}) => {
         session.calls.push({ method, args: [input, o] })
-        const text = typeof input === 'string' ? input : JSON.stringify(input)
-        if (method === 'steer' && session.running) session.taken.push({ ...o, text })
-        else session.pending.push({ itemId: `item-${++seq}`, preview: text, ...o })
-        return seq
+        const commandId = o.commandId
+        if (commandId && session.journal.has(commandId)) throw uncertain(commandId)
+        const failure = session.failNext
+        if (failure && commandId) {
+          session.failNext = undefined
+          if (failure === 'landed') accept(method, input, commandId)
+          session.journal.set(commandId, { state: 'needs-confirmation', method, input })
+          throw uncertain(commandId)
+        }
+        return accept(method, input, commandId)
       }
     session.handle = {
       id,
@@ -79,6 +127,14 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
         return ++seq
       }),
       sendNow: record('sendNow'),
+      pendingCommands: async () =>
+        [...session.journal].map(([commandId, entry]) => ({ commandId, state: entry.state })),
+      checkCommand: record('checkCommand', (commandId: unknown) => {
+        const entry = session.journal.get(commandId as string)
+        if (!entry) throw new Error(`no unconfirmed command ${String(commandId)}`)
+        session.journal.delete(commandId as string)
+        accept(entry.method, entry.input, commandId as string)
+      }),
       setModel: record('setModel', () => ({})),
       jobsControl: record('jobsControl', (input: unknown) => {
         const { jobId } = input as { jobId: string }

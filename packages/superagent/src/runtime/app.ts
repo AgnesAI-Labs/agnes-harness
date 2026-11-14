@@ -41,7 +41,7 @@ import { type SourceContext, type SourceHost, health as sourceHealth } from '../
 import type { ImageSink } from '../sources/kind.js'
 import { SourceRegistry } from '../sources/registry.js'
 import { sourceTrigger } from './assignment.js'
-import { type Delivery, SessionDelivery } from './delivery.js'
+import { type Redelivery, SessionDelivery } from './delivery.js'
 import { type ExecutorSessions, messageIdOf, SuperagentExecutor } from './executor.js'
 import type { HookState } from './hook-state.js'
 import { createHookState } from './hooks.js'
@@ -59,7 +59,7 @@ export interface Log {
 export interface AppSessions extends ExecutorSessions {
   readonly registry: SessionRegistry
 }
-export interface AppDelivery extends Delivery {
+export interface AppDelivery extends Redelivery {
   liveNote(sessionId: string): { id: string; content: string } | undefined
 }
 export interface SuperagentApp {
