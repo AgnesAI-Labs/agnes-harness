@@ -140,6 +140,9 @@ within a few seconds, and records the running assignments as paused. Sessions, t
 directory stay. Enabling again reads each session's real state: work still running is left alone, an interrupted
 assignment is dispatched again with a recovery note, and a message that waited in a session's queue runs once.
 
+Installing, updating, enabling or disabling any other plugin in Superagent's AGH home restarts Superagent in the same way:
+it stops as described here and starts again at once. See [Restart and recovery](#restart-and-recovery).
+
 ## Clear data
 
 Only the owner clears data, explicitly; disabling never does. To remove everything:
@@ -194,6 +197,11 @@ and not enforced.
   checks the agent environment, then reconciles each of its sessions by its real state: a turn still running is left
   alone; an interrupted assignment is dispatched again once with a recovery note; the oldest message waiting in a
   session's queue is started, since nothing resumes it after a restart.
+- **A plugin change in this AGH home.** Installing, updating, enabling or disabling any plugin in Superagent's AGH home,
+  not only Superagent itself, restarts Superagent. Every running ticket is interrupted: its turn is cancelled and its
+  jobs are stopped, so a `git push` or a test run in progress is cut off. Once Superagent is back, the interrupted
+  tickets resume as after a daemon restart: each interrupted assignment is dispatched again with a recovery note.
+  Change plugins in this home when the overview shows no ticket running.
 - **Stored work.** Every outward action (a reply, a launch, a delivery) is stored before it runs and removed only once it
   succeeded, and retried with backoff. While processing is paused, Sources keep recording.
 - **A delivery whose outcome is unknown** is looked up by its command id; when that cannot be confirmed it is recorded as
