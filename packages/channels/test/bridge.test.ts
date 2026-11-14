@@ -724,7 +724,10 @@ it('gives a whole claimed instance to its claimant before group claims and befor
   let link: import('../src/builtin-subscriptions.js').ChannelSubscriptionLink | undefined
   // The order inside the Host hub is instance, then group; the bridge asks the hub before the router.
   const subscriptions: import('../src/builtin-subscriptions.js').ChannelSubscriptionsPort = {
-    attach: (_instanceId, attached) => ((link = attached), () => {}),
+    attach: (_instanceId, attached) => {
+      link = attached
+      return () => {}
+    },
     claimedInstance: (instanceId) => instanceId === 'first' && state.whole,
     claimed: (instanceId) => instanceId === 'first' && state.whole,
     deliver: (_instanceId, event) => void claimant.push(event.eventId),

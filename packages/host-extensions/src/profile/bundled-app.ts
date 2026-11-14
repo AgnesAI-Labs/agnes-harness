@@ -38,6 +38,9 @@ export const deniedBundledAppChannels: BundledAppChannels = Object.freeze({
   subscribe: () => {
     throw rpcError('CAPABILITY_DENIED')
   },
+  claimInstance: () => {
+    throw rpcError('CAPABILITY_DENIED')
+  },
   send: refuse,
   fetchMessages: refuse,
   listThread: refuse,
