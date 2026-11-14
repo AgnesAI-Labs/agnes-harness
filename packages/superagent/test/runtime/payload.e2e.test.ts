@@ -207,8 +207,8 @@ it.skipIf(process.platform === 'win32')(
       )
       expect(states, 'one platform state directory holds the database').toHaveLength(1)
 
-      // Each bundle resolves with its preset, and every platform tool it names is a real one. The orchestrator_* tools
-      // are declared but registered only by later parts of the plugin.
+      // Each bundle resolves with its preset, and every tool it names is a real one, the plugin's orchestrator_* tools
+      // included.
       const manifest = JSON.parse(readFileSync(join(payloadDirectory, 'package.json'), 'utf8')) as {
         agnes: { bundles: Record<'router' | 'worker', { profile: { tools: string[] } }> }
       }
@@ -225,9 +225,7 @@ it.skipIf(process.platform === 'win32')(
           bundles: [`${PACKAGE}#${role}`],
         })
         expect(tools.tools.map((tool) => tool.name).sort()).toEqual(
-          manifest.agnes.bundles[role].profile.tools
-            .filter((name) => !name.startsWith('orchestrator_'))
-            .sort(),
+          [...manifest.agnes.bundles[role].profile.tools].sort(),
         )
       }
 
