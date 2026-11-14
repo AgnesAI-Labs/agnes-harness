@@ -52,3 +52,30 @@ export function createIdleSignal(): IdleSignal {
     },
   }
 }
+
+/**
+ * Held managed inputs move on when their session reports idle, once after startup, and on a slow
+ * sweep for turns that report no idle (bound-wake deliveries, manual compaction). Sweeps never overlap.
+ */
+export function driveOwnerInputs(
+  idle: Pick<IdleSignal, 'onIdle' | 'onStartup'>,
+  engine: { advance(sessionId: string): Promise<void>; sweep(): Promise<void> },
+  intervalMs: number,
+): () => void {
+  let sweeping: Promise<void> | undefined
+  const sweep = () => {
+    sweeping ??= engine.sweep().finally(() => {
+      sweeping = undefined
+    })
+    return sweeping
+  }
+  const offIdle = idle.onIdle((sessionId) => engine.advance(sessionId))
+  const offStartup = idle.onStartup(sweep)
+  const timer = setInterval(() => void sweep().catch(report), intervalMs)
+  timer.unref?.()
+  return () => {
+    offIdle()
+    offStartup()
+    clearInterval(timer)
+  }
+}

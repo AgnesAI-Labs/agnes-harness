@@ -49,6 +49,9 @@ const record = (row: Row): ManagedSessionRecord => ({
   archived: row.archived === 1,
 })
 
+/** Whether a package removal detached the session: its records moved to an owner no `grantKey` produces. */
+export const detached = (record: Pick<ManagedSessionRecord, 'owner'>) => record.owner.startsWith('~')
+
 /** The task a session was opened for; `inputDigest` is null for a session opened before bindings existed. */
 export interface ManagedSessionBinding {
   sessionId: string
@@ -247,7 +250,7 @@ export class ManagedSessionRecords {
    * marks its session and every descendant as managed. Compared with `substr`, not LIKE: a package
    * id may contain `_`.
    */
-  releasePackage(packageId: string): void {
+  releasePackage(packageId: string, keepInFlight = false): void {
     const prefix = grantKey(packageId, '')
     const match = 'substr(owner, 1, length(?)) = ?'
     this.table.transaction(() => {
@@ -259,12 +262,12 @@ export class ManagedSessionRecords {
         prefix,
         prefix,
       ])
-      this.table.exec(`DELETE FROM managed_session_inputs WHERE ${match} OR session_id IN (${sessions})`, [
-        prefix,
-        prefix,
-        prefix,
-        prefix,
-      ])
+      // `keepInFlight`: inputs that may sit in a core inbox stay until a sweep takes them back.
+      const kept = keepInFlight ? " AND NOT (state = 'enqueued' AND submitted_seq IS NOT NULL)" : ''
+      this.table.exec(
+        `DELETE FROM managed_session_inputs WHERE (${match} OR session_id IN (${sessions}))${kept}`,
+        [prefix, prefix, prefix, prefix],
+      )
       this.table.exec(`UPDATE managed_sessions SET owner = '~' || session_id WHERE ${match}`, [
         prefix,
         prefix,

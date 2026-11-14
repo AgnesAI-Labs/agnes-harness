@@ -13,7 +13,13 @@ import type {
 import { grantKey } from '@agnes/plugin-runtime/host'
 import type { Actor, SessionActivity, SessionViewResult } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
+import {
+  createOwnerInputEngine,
+  type HostInputResolution,
+  type OwnerInputEngineDeps,
+} from './managed-input-admission.js'
 import type { ManagedInputSessionPorts } from './managed-input-ports.js'
+import { newBinding, parseTaskBinding, startBindingMatches } from './managed-input-resolution.js'
 import type { ManagedSessionRecord, ManagedSessionRecords } from './managed-session-records.js'
 
 /** The Host-verified row a managed service runs for; rechecked by `authorize` on every call. */
@@ -421,7 +427,45 @@ async function managedStatus(
   return managedSessionStatus({ loaded, activity: current, lastTurn })
 }
 
-export function createManagedSessions(ports: ManagedSessionPorts) {
+/**
+ * The refusal for a session that may not run a turn: every managed session needs the outward
+ * checkpoint on its live policy, and effective full access also needs a full OS boundary.
+ */
+async function runningGateMissing(ports: ManagedSessionPorts, sessionId: string) {
+  const effective = await ports.sessions.policy(sessionId)
+  if (!effective.outwardCheckpoint)
+    return effective.fullAccess
+      ? refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'outward-checkpoint' })
+      : refuse('OUTWARD_CHECKPOINT_UNAVAILABLE')
+  return effective.fullAccess && !effective.osBoundary
+    ? refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'os-boundary' })
+    : undefined
+}
+
+/** A revoked grant or a lost gate refuses a new turn; a running turn is left to finish. */
+async function sessionGates(ports: ManagedSessionPorts, record: ManagedSessionRecord) {
+  const chosen = storedModel(record.model)
+  await startGates(ports, record.owner, {
+    workspace: record.workspace,
+    bundle: record.bundle,
+    permission: record.permission,
+    ...(chosen ? { model: { route: chosen.route, model: chosen.model } } : {}),
+  })
+  const missing = await runningGateMissing(ports, record.sessionId)
+  if (missing) throw missing
+}
+
+const gatesPass = (ports: ManagedSessionPorts, record: ManagedSessionRecord) =>
+  sessionGates(ports, record).then(
+    () => true,
+    () => false,
+  )
+
+/** Without `inputs` the sessions have no owner-input engine, and `admitInput` / `inputResult` refuse. */
+export function createManagedSessions(
+  ports: ManagedSessionPorts,
+  deps?: Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults'>,
+) {
   const chains = new Map<string, Promise<unknown>>()
   const serial = <T>(key: string, work: () => Promise<T>): Promise<T> => {
     const next = (chains.get(key) ?? Promise.resolve()).catch(() => undefined).then(work)
@@ -436,23 +480,20 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
   const own = (owner: string, sessionId: unknown) => ownedRecord(ports.records, owner, sessionId)
   const status = (record: ManagedSessionRecord, activity?: readonly SessionActivity[]) =>
     managedStatus(ports, record, activity)
-  /**
-   * The refusal for a session that may not run a turn: every managed session needs the outward
-   * checkpoint on its live policy, and effective full access also needs a full OS boundary.
-   */
-  const runningGateMissing = async (sessionId: string) => {
-    const effective = await ports.sessions.policy(sessionId)
-    if (!effective.outwardCheckpoint)
-      return effective.fullAccess
-        ? refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'outward-checkpoint' })
-        : refuse('OUTWARD_CHECKPOINT_UNAVAILABLE')
-    return effective.fullAccess && !effective.osBoundary
-      ? refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'os-boundary' })
-      : undefined
-  }
+  const engine =
+    deps &&
+    createOwnerInputEngine({
+      ...deps,
+      ports,
+      serial,
+      gatesPass: (record) => gatesPass(ports, record),
+      actor: managedSessionActor,
+    })
   const archive = async (record: ManagedSessionRecord) => {
     await ports.sessions.archive(record.sessionId)
     ports.records.markArchived(record.sessionId)
+    // Held inputs of an archived session are kept, never delivered; a queued one is taken back now.
+    await engine?.advance(record.sessionId, 'result').catch(() => undefined)
   }
 
   const start = async (caller: ManagedSessionCaller, owner: string, input: ManagedSessionStartInput) => {
@@ -467,7 +508,8 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
         input.permission !== 'full-access') ||
       (input.model !== undefined && (!text(input.model.route, 256) || !text(input.model.model, 256))) ||
       (input.memoryWrites !== undefined && typeof input.memoryWrites !== 'boolean') ||
-      (input.skillInstalls !== undefined && typeof input.skillInstalls !== 'boolean')
+      (input.skillInstalls !== undefined && typeof input.skillInstalls !== 'boolean') ||
+      parseTaskBinding(input.taskBinding) === false
     )
       throw rpcError('INVALID_PARAMS')
     if (!input.bundle.startsWith(`${caller.packageId}#`)) throw refuse('BUNDLE_NOT_OWN')
@@ -487,7 +529,7 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
         const same =
           record.workspace === root &&
           (Object.keys(wanted) as (keyof typeof wanted)[]).every((k) => record?.[k] === wanted[k])
-        if (!same) throw refuse('START_KEY_REUSED')
+        if (!same || !startBindingMatches(ports.records, record, input)) throw refuse('START_KEY_REUSED')
         if (record.archived) throw refuse('SESSION_ARCHIVED')
         if (record.started) return { sessionId: record.sessionId, created: false }
       }
@@ -498,13 +540,10 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
         ports.records.opening.add(sessionKey)
         try {
           const sessionId = await ports.sessions.create({ sessionKey, cwd: root, agent: input.bundle })
-          ports.records.insert({
-            sessionId,
-            owner,
-            startKey: input.startKey,
-            workspace: root,
-            ...wanted,
-          })
+          ports.records.insert(
+            { sessionId, owner, startKey: input.startKey, workspace: root, ...wanted },
+            newBinding(input),
+          )
         } finally {
           ports.records.opening.delete(sessionKey)
         }
@@ -512,7 +551,7 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       }
       if (input.model) await ports.sessions.setModel(record.sessionId, input.model)
       if (input.permission === 'full-access') await ports.sessions.setFullAccess(record.sessionId)
-      const missing = await runningGateMissing(record.sessionId)
+      const missing = await runningGateMissing(ports, record.sessionId)
       if (missing) {
         await archive(record)
         throw missing
@@ -537,6 +576,8 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
     input: { text: string; idempotencyKey: string },
   ) => {
     const record = own(owner, sessionId)
+    // A session bound to a task takes the owner's words only through admission.
+    if (ports.records.binding(record.sessionId)) throw refuse('OWNER_INPUT_REQUIRED')
     if (!text(input?.text, 65536) || !text(input.idempotencyKey, 256)) throw rpcError('INVALID_PARAMS')
     return serial(`session\0${record.sessionId}`, async () => {
       const current = ports.records.get(record.sessionId) as ManagedSessionRecord
@@ -547,17 +588,8 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       // A pending key is a send interrupted after it was recorded: retry it, deduplicated below.
       if (recorded === undefined && (await status(current)).kind === 'active')
         return { state: 'notSubmitted', reason: 'busy' } as const
-      // A new turn needs what the start needed: a revoked grant or a lost gate refuses it. A running
-      // turn is left to finish; the plugin and the owner can still interrupt it.
-      const chosen = storedModel(current.model)
-      await startGates(ports, owner, {
-        workspace: current.workspace,
-        bundle: current.bundle,
-        permission: current.permission,
-        ...(chosen ? { model: { route: chosen.route, model: chosen.model } } : {}),
-      })
-      const missing = await runningGateMissing(current.sessionId)
-      if (missing) throw missing
+      // A new turn needs what the start needed; the plugin and the owner can still interrupt one.
+      await sessionGates(ports, current)
       ports.records.setSend(owner, record.sessionId, key, 'pending')
       const actor = managedSessionActor(caller.owner, current)
       const outcome = await ports.sessions.submit(record.sessionId, {
@@ -593,15 +625,20 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
 
   const skillInstallsOff = (sessionId: string) => lineageSkillInstallsOff(ports, sessionId)
 
-  const deniedInputPort = async (): Promise<never> => {
-    throw rpcError('CAPABILITY_DENIED')
+  const admission = (caller: ManagedSessionCaller, owner: string, sessionId: unknown) => {
+    if (!engine) throw rpcError('CAPABILITY_DENIED')
+    return { engine, ctx: { caller, owner, record: own(owner, sessionId) } }
   }
   /**
    * The port one managed service row receives. Every call rechecks the row first. Records and send
    * keys are keyed by package and row, like grants: row ids are author-chosen, so a later package
-   * declaring the same id must not reach the sessions an earlier one opened.
+   * declaring the same id must not reach the sessions an earlier one opened. `host.resolution` is the
+   * Host's receipt resolution for `admitInput`, never a plugin argument.
    */
-  const port = (caller: ManagedSessionCaller): ManagedSessions => {
+  const port = (
+    caller: ManagedSessionCaller,
+    host?: { readonly resolution?: HostInputResolution | undefined },
+  ): ManagedSessions => {
     const owner = grantKey(caller.packageId, caller.owner)
     const guarded =
       <A extends unknown[], R>(work: (...args: A) => Promise<R>) =>
@@ -640,10 +677,15 @@ export function createManagedSessions(ports: ManagedSessionPorts) {
       toolResult: guarded((sessionId, callSeq) => toolResult(own(owner, sessionId), callSeq)),
       interrupt: guarded((sessionId) => ports.sessions.cancel(own(owner, sessionId).sessionId)),
       archive: guarded((sessionId) => archive(own(owner, sessionId))),
-      // Placeholders until the admission engine is wired in.
-      admitInput: guarded(deniedInputPort),
-      inputResult: guarded(deniedInputPort),
+      admitInput: guarded(async (sessionId, input) => {
+        const { engine, ctx } = admission(caller, owner, sessionId)
+        return engine.admit(ctx, input, host?.resolution)
+      }),
+      inputResult: guarded(async (sessionId, input) => {
+        const { engine, ctx } = admission(caller, owner, sessionId)
+        return engine.result(ctx, input)
+      }),
     }
   }
-  return Object.assign(port, { skillInstallsOff })
+  return Object.assign(port, { skillInstallsOff, engine })
 }

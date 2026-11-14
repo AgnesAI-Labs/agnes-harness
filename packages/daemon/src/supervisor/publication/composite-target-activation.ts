@@ -34,7 +34,7 @@ export type CompositeTargetActivationOptions = Readonly<{
    * Revokes the package's managed workspace grants and detaches its managed session records. Throws to
    * refuse the removal: a package installed later under the same id must inherit neither.
    */
-  releaseManagedSessions?(packageId: string): void
+  releaseManagedSessions?(packageId: string): void | Promise<void>
   workerGeneration?: () => number | undefined
   /** Read-only observation of an admitted shared-worker startup, never starts a worker. */
   workerStarting?: () => boolean
@@ -289,7 +289,7 @@ export function createCompositeTargetActivation(
       await options.collectPins?.()
       await options.collectGenerations?.()
       try {
-        options.releaseManagedSessions?.(packageId)
+        await options.releaseManagedSessions?.(packageId)
       } catch (error) {
         throw new Error('E_PACKAGE_STATE: managed session grants and records could not be released', {
           cause: error,

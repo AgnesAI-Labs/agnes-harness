@@ -36,6 +36,8 @@ import {
 import type { AssemblyLifetime } from './assembly-lifetime.js'
 import type { AssemblyBase, StartSupervisorOptions } from './assembly-options.js'
 import { startJwksCache } from './jwks-cache.js'
+import type { OwnerInputEngine } from './managed-input-admission.js'
+import { ManagedSessionInputs } from './managed-session-inputs.js'
 import { ManagedSessionRecords } from './managed-session-records.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { canonicalPath } from './scope.js'
@@ -73,9 +75,14 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
     ? new SessionPrincipalOwnershipIndex(jobTables.table('session_principal_ownership'))
     : new MemorySessionPrincipalOwnership()
   // Read by the session opener from its first open, so it exists before any worker does.
-  const managedSessionRecords = jobTables
-    ? new ManagedSessionRecords(jobTables.table('managed_sessions'))
+  const managedSessionTable = jobTables?.table('managed_sessions')
+  const managedSessionRecords = managedSessionTable
+    ? new ManagedSessionRecords(managedSessionTable)
     : undefined
+  // Same table handle: `releasePackage` deletes owner inputs in the records' transaction.
+  const managedSessionInputs = managedSessionTable ? new ManagedSessionInputs(managedSessionTable) : undefined
+  /** Set once client services build the engine; package removal and grant pruning start earlier. */
+  const ownerInputHolder: { engine?: OwnerInputEngine } = {}
   const workspaceCatalog = await openWorkspaceCatalog({
     dataDir: o.config.dataDir,
     ownerHome,
@@ -245,6 +252,8 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
     workspaces,
     sessionOwnership,
     managedSessionRecords,
+    managedSessionInputs,
+    ownerInputHolder,
     workspaceCatalog,
     resourceControlDirectory,
     resourceWorkerRoot,

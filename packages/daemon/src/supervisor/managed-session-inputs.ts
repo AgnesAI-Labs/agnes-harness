@@ -328,6 +328,26 @@ export class ManagedSessionInputs {
       .map(row)
   }
 
+  /** Grant keys under a package prefix with rows not final; package removal only, so it may scan. */
+  owners(prefix: string): string[] {
+    return this.table
+      .all<{ owner: string }>(
+        `SELECT DISTINCT owner FROM managed_session_inputs
+          WHERE substr(owner, 1, length(?)) = ? AND state NOT IN ${FINAL} ORDER BY owner`,
+        [prefix, prefix],
+      )
+      .map((value) => value.owner)
+  }
+
+  /** Every row of a detached session but those still in flight, once a sweep has taken them back. */
+  deleteSettled(sessionId: string): void {
+    this.table.exec(
+      `DELETE FROM managed_session_inputs
+        WHERE session_id = ? AND NOT (state = 'enqueued' AND submitted_seq IS NOT NULL)`,
+      [sessionId],
+    )
+  }
+
   sessionsWithWork(): string[] {
     return this.table
       .all<{ session_id: string }>(
