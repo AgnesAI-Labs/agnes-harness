@@ -20,7 +20,7 @@ import {
 } from '@agnes/package-manager'
 import type { RowOrigin } from '@agnes/plugin-runtime/host'
 import { AGNES_ERRORS, type ManagedServiceDescriptor } from '@agnes/protocol'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { pinOptionalBundledRowGrants } from '../src/assemble/host-grants.js'
 import { createRowServiceHost } from '../src/ext-host/row-services.js'
 import type { BundledAppClientContext } from '../src/profile/bundled-app.js'
@@ -443,7 +443,8 @@ it('channels reach the channel host', async () => {
   const app = await harness({ channel: { hub, runtime } })
   const grant = app.init().bundledApp
   if (!grant) throw new Error('grant missing')
-  expect(bridges).toHaveLength(1)
+  // The channel row starts beside the app, and nothing above waits for it.
+  await vi.waitFor(() => expect(bridges).toHaveLength(1))
 
   const received: string[] = []
   grant.channels.subscribe('team', ['group-a'], (event) => received.push(event.eventId))
