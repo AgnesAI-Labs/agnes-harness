@@ -194,4 +194,5 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
 | `A session superagent:… exists that Superagent did not open` | 归档或删除这个不属于 Superagent 的会话，再点 **Check again** |
 | 工单失败并带有 prepare 命令的输出 | 在执行设置里修好命令，再重试工单 |
 | `deliveries` 健康项点名某个工单 | 重新派工时一直无法确认会话是否收到某条消息；确认 daemon 有应答，再重试工单 |
+| `relay` 健康项点名某个工单或触发 | 转达给主会话的某条消息一直失败（常见原因是无法确认会话是否已收到），后面的转达都排在它之后；确认 daemon 有应答。它会按退避重试 |
 | @ 之后没有反应 | 检查发起人在允许名单里、来源已开启、处理没有暂停 |

@@ -166,6 +166,23 @@ export function followupRelay(
     text: JSON.stringify({ kind: 'follow_up', ...message, delivered_to: tickets, note: FOLLOWUP_NOTE }),
   }
 }
+/**
+ * What a queued relay is about, to name it where it waits: its ticket, the trigger of a follow-up, or else its request id.
+ * Reads the relay's own text, which every relay builder writes as JSON.
+ */
+export function relaySubject(requestId: string, text: string): string {
+  let value: { ticket?: { ticket_id?: unknown }; kind?: unknown; trigger_id?: unknown } | undefined
+  try {
+    value = JSON.parse(text)
+  } catch {
+    value = undefined
+  }
+  const ticket = value?.ticket?.ticket_id
+  if (typeof ticket === 'string') return `The relay of ticket ${ticket} (${requestId})`
+  if (value?.kind === 'follow_up' && typeof value.trigger_id === 'string')
+    return `The follow-up relay of trigger ${value.trigger_id}`
+  return `The relay ${requestId}`
+}
 /** Formats a worker report relay for the main Session (truncating summaries over 600 characters behind `ticket/<id>/result`); `replyTo` names the human question trigger it answers. */
 export function resultRelay(ticket: Ticket, state: string, text: string, replyTo?: string): Relay {
   const id = key('worker-result', ticket.id, ticket.updatedAt, text)

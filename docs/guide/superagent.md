@@ -232,4 +232,5 @@ again after you fixed something outside the panel.
 | `A session superagent:… exists that Superagent did not open` | Archive or remove that session, which is not Superagent's, then select **Check again** |
 | A ticket fails with the prepare command's output | Fix the command in Execution, then retry the ticket |
 | The `deliveries` health names a ticket | A relaunch keeps waiting to confirm whether a session got a message; check that the daemon answers, then retry the ticket |
+| The `relay` health names a ticket or a trigger | A relay to the main session keeps failing, often because whether the session got it cannot be confirmed, and later relays wait behind it; check that the daemon answers. It is tried again with backoff |
 | Nothing happens after a mention | Check that the author is on the allowed list, the Source is on and processing is not paused |

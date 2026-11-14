@@ -4,10 +4,10 @@
  * commands, the effect queue with the main session's relays and notices, and the links of triggers to their sources.
  */
 import { TextCache } from '../app/cache.js'
-import { Effects } from '../app/effects.js'
+import { Effects, Later } from '../app/effects.js'
 import { environmentOf, ticketEnvironment } from '../app/execution-environment.js'
 import { type LinkHost, sourceLink } from '../app/links.js'
-import type { SessionNotices } from '../app/notices.js'
+import { relaySubject, type SessionNotices } from '../app/notices.js'
 import type { Outbox } from '../app/outbox.js'
 import type { Passes } from '../app/passes.js'
 import { Prompts } from '../app/prompts.js'
@@ -155,9 +155,9 @@ const MAX_NOTICES = 10
 
 /**
  * The main session's relays and notices: reports and candidates are steered into it in queue order, and notices roll its
- * live note forward without waking it.
+ * live note forward without waking it. Exported for tests.
  */
-function sessionNotices(deps: {
+export function sessionNotices(deps: {
   store: Store
   effects: Effects
   delivery: AppDelivery
@@ -169,7 +169,17 @@ function sessionNotices(deps: {
   effects.handle(
     'relay',
     async ({ text }, requestId) => {
-      await delivery.deliver(masterId, { id: messageIdOf(requestId), content: text, mode: 'steer' })
+      try {
+        await delivery.deliver(masterId, { id: messageIdOf(requestId), content: text, mode: 'steer' })
+      } catch (error) {
+        if (error instanceof Later) throw error
+        // Relays are ordered: one that keeps failing holds back every later one. Its error, which the `relay` health
+        // entry shows after repeated failures, names what waits.
+        const reason = error instanceof Error ? error.message : String(error)
+        throw new Error(`${relaySubject(requestId, text)} waits to reach the main session: ${reason}`, {
+          cause: error,
+        })
+      }
     },
     { ordered: true },
   )
