@@ -6,8 +6,26 @@ import type {
   MessageRef,
 } from './channel-contract.js'
 
-/** Group-chat access for a bundled application runtime. `channel` is a channel instance id;
- * the Host aggregates adapter pages. Calls refuse with CAPABILITY_DENIED when unavailable. */
+/**
+ * Group-chat access for a bundled application runtime, through the owner's running channel
+ * instances (since 5.19). `channel` is a channel instance id; the Host joins adapter pages.
+ *
+ * - `subscribe` claims group chats of one instance: their events go only to `onEvent` and never
+ *   to session routing. Direct chats are never routed to a subscriber. A platform redelivery of
+ *   a recent event is dropped while the subscription lives. Unsubscribe before changing the set.
+ * - `send` is split and throttled as a session reply.
+ *
+ * Errors (JSON-RPC errors; `data.code` names the case):
+ * - `CAPABILITY_DENIED`: the grant is no longer current, or the adapter does not declare the read
+ *   in `capabilities().read`. Subscriptions of a stale grant end on their own.
+ * - `SEMANTIC_REJECTED` `CHANNEL_UNAVAILABLE`: no running instance has that id (or two channel rows
+ *   use it); retry once the channel row is running.
+ * - `SEMANTIC_REJECTED` `CHANNEL_CHAT_CLAIMED`: a requested chat already has a consumer, another
+ *   subscriber or a session the owner bound to it; nothing is claimed.
+ * - `SEMANTIC_REJECTED` `CHANNEL_READ_INVALID`, `CHANNEL_CURSOR_STALLED`, `CHANNEL_READ_TOO_LARGE`:
+ *   the adapter returned a malformed page, repeated a cursor, or exceeded the page bound.
+ * - `INVALID_PARAMS`: malformed arguments.
+ */
 export interface BundledAppChannels {
   subscribe(channel: string, chats: readonly string[], onEvent: (event: ChannelEvent) => void): () => void
   send(channel: string, target: ChatTarget, message: ChannelMessage): Promise<MessageRef>

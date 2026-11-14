@@ -212,6 +212,6 @@ Extension API 5.16.0 新增可选的 `HookContext.sideCall` 和 `ToolContext.sid
 
 Extension API 5.17.0 新增可选的 `self.sideModels.subscribe(listener)`，提供无载荷、合并后的模型目录变化通知。先订阅再读取 `list()` 可观察晚就绪的 provider；两个方法沿用原有 grant、进程内声明和生命周期检查，卸载时取消订阅。`list()` 仍只返回 route/model/api。
 
-Extension API 5.18.0 新增可选的 `ProfileManagedInit.bundledApp`（`BundledAppGrant`：`stateDirectory`、主人级本地 SDK `client`、`channels` 与 `assertCurrent()`）。只有发布装配白名单内、安装载荷与随包摘要一致的随包插件才会获得；插件代码、清单与配置都不能申请或替换。停用插件或替换其激活后授予失效、客户端关闭。渠道群聊调用在渠道运行时接入前一律返回 `CAPABILITY_DENIED`。
+Extension API 5.18.0 新增可选的 `ProfileManagedInit.bundledApp`（`BundledAppGrant`：`stateDirectory`、主人级本地 SDK `client`、`channels` 与 `assertCurrent()`）。只有发布装配白名单内、安装载荷与随包摘要一致的随包插件才会获得；插件代码、清单与配置都不能申请或替换。停用插件或替换其激活后授予失效、客户端关闭。在 5.19.0 之前，渠道群聊调用一律返回 `CAPABILITY_DENIED`。
 
-Extension API 5.19.0 为渠道新增可选的 `Sender.kind`（`user` 或 `bot`；缺省视为用户，会话路由忽略机器人发送者）、`ChannelCapabilities.read`，以及 `ChannelAdapter` 上五个可选的游标分页读取方法：`fetchMessages`、`listThread`、`listHistory`、`listChats`、`listMembers`。适配器在运行时由 `capabilities()` 声明各项读取；清单 schema 不变，未声明的读取不会被调用。读取结果与实时消息事件同形。不实现这些方法的适配器行为不变。
+Extension API 5.19.0 为渠道新增可选的 `Sender.kind`（`user` 或 `bot`；缺省视为用户，会话路由忽略机器人发送者）、`ChannelCapabilities.read`，以及 `ChannelAdapter` 上五个可选的游标分页读取方法：`fetchMessages`、`listThread`、`listHistory`、`listChats`、`listMembers`。适配器在运行时由 `capabilities()` 声明各项读取；清单 schema 不变，未声明的读取不会被调用。读取结果与实时消息事件同形。不实现这些方法的适配器行为不变。自 5.19.0 起，`BundledAppGrant.channels` 接入主人正在运行的渠道实例：`subscribe` 独占认领群聊，`send` 按会话回复的方式分段与限流，读取使用适配器已声明的读取方法；错误为 `CAPABILITY_DENIED`（授权已失效或读取未声明）、`SEMANTIC_REJECTED` 的 `CHANNEL_UNAVAILABLE`（渠道行运行后重试）或 `CHANNEL_CHAT_CLAIMED`、读取错误与 `INVALID_PARAMS`。
