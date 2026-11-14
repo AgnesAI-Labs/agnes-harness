@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { Context, type Fiber } from '@agnes/cordis'
 import type {
   BoundWakes,
+  ChannelRuntime,
   ProfileManagedDefinition,
   ProfileManagedHandle,
   ProfileManagedInit,
@@ -23,6 +24,8 @@ import { afterEach, expect, it } from 'vitest'
 import { pinOptionalBundledRowGrants } from '../src/assemble/host-grants.js'
 import { createRowServiceHost } from '../src/ext-host/row-services.js'
 import type { BundledAppClientContext } from '../src/profile/bundled-app.js'
+import { type BundledAppChannelBridge, BundledAppChannelHub } from '../src/profile/bundled-app-channels.js'
+import type { ChannelRuntimeFactory } from '../src/profile/channel-runtime.js'
 import { ProfileManagedResources } from '../src/profile/managed.js'
 import type { ProfileStreams } from '../src/profile/streams.js'
 
@@ -109,6 +112,8 @@ async function harness(options: {
   source?: string
   current?: () => boolean
   definition?: Partial<ProfileManagedDefinition<unknown>> & Record<string, unknown>
+  /** Also run a channel package row whose channel runtime is `runtime`, sharing `hub` with the grant. */
+  channel?: { hub: BundledAppChannelHub; runtime: ChannelRuntimeFactory }
 }) {
   const identity = options.identity ?? SUPERAGENT
   const fixture = options.fixture ?? release(identity)
@@ -181,9 +186,31 @@ async function harness(options: {
       entries: () => [...data].map(([key, value]) => ({ key, value })),
       transaction: (fn) => fn(),
     }),
-    describe: () => ({ integrity, declaredCapabilities: { store: true, managedServices: [descriptor] } }),
+    describe: (packageId) =>
+      packageId === CHAT.packageId
+        ? {
+            integrity,
+            declaredCapabilities: {
+              store: true,
+              network: ['chat.example.test'],
+              managedServices: [{ ...descriptor, id: 'channel' }],
+            },
+          }
+        : { integrity, declaredCapabilities: { store: true, managedServices: [descriptor] } },
     hostGrants,
+    ...(options.channel
+      ? {
+          channelRuntime: options.channel.runtime,
+          channelStateDirectory: join(dataDir, 'channels'),
+          channelScope: { home: dataDir, profile: 'local-dev', dataDir, workspace: dataDir },
+          resolveSecret: () => {
+            throw new Error('no secrets in this test')
+          },
+          channelLog: { debug() {}, info() {}, warn() {}, error() {} },
+        }
+      : {}),
     bundledApp: {
+      ...(options.channel ? { channels: options.channel.hub } : {}),
       stateRoot: join(dataDir, 'bundled-apps'),
       scope: { home: dataDir, profile: 'local-dev', dataDir, workspace: dataDir },
       client(context) {
@@ -219,6 +246,14 @@ async function harness(options: {
     },
     ...options.definition,
   } as ProfileManagedDefinition<unknown>
+  if (options.channel) {
+    root.provide('providers', { register: () => () => {} })
+    const chat = Object.freeze({ ...origin, ...CHAT })
+    await root.plugin((ctx) => {
+      origins.set(ctx.fiber, chat)
+      ctx.profileRuntime.registerChannel!(chatProvider)
+    })
+  }
   const row = root.plugin((ctx) => {
     origins.set(ctx.fiber, origin)
     handle = ctx.profileRuntime.register(definition)
@@ -238,6 +273,26 @@ async function harness(options: {
     },
   }
 }
+
+/** A channel package row; its provider never connects anywhere, the channel runtime is stubbed. */
+const CHAT = { packageId: '@sample/chat', rowId: 'ext:sample.chat/main', exportName: 'chatPlugin' }
+const chatProvider = {
+  id: 'sample',
+  version: '1.0.0',
+  manifest: {
+    id: 'sample',
+    displayName: 'Sample',
+    version: '1.0.0',
+    connection: { modes: ['websocket'], default: 'websocket' },
+    capabilities: { edit: false, card: false, thread: true, attachment: false },
+    credentials: { required: [], optional: [], exposes: [] },
+    limits: { textChars: 1000, cardBytes: 1000, editWindowMs: 0 },
+    events: { supported: ['message'] },
+  },
+  create() {
+    throw new Error('the stubbed channel runtime never creates an adapter')
+  },
+} as unknown as import('@agnes/extension-api').ChannelProvider
 
 const denied = (fn: () => unknown) =>
   expect(fn).toThrow(expect.objectContaining({ code: AGNES_ERRORS.CAPABILITY_DENIED }))
@@ -350,4 +405,79 @@ it('grant cannot be supplied by package code or configuration', async () => {
   const grant = granted.init().bundledApp
   expect(grant?.stateDirectory).not.toBe(forged.stateDirectory)
   expect(grant?.client).toBe(granted.leases[0]?.client)
+})
+
+it('channels reach the channel host', async () => {
+  // The channel runtime of a channel row attaches its running instance to the hub it is handed,
+  // as the channel bridge does; the bundled app reaches that instance only through its grant.
+  const hub = new BundledAppChannelHub()
+  const bridges: BundledAppChannelBridge[] = []
+  const sent: unknown[] = []
+  const runtime: ChannelRuntimeFactory = async (_provider, init, context) => {
+    const bridge = context.subscriptions
+    if (!bridge) throw new Error('the channel runtime was not handed the bundled-app hub')
+    bridges.push(bridge)
+    const unlink = bridge.attach('team', {
+      connected: () => true,
+      capabilities: () => ({
+        edit: false,
+        card: false,
+        thread: true,
+        attachment: false,
+        read: { chats: true },
+      }),
+      send: async (target, message) => {
+        sent.push([target, message])
+        return { chatId: target.chatId, messageId: 'sent-1' }
+      },
+      reads: () => ({ listChats: async () => ({ chats: [{ id: 'group-a', name: 'Team' }] }) }),
+      bound: () => false,
+    })
+    init.onShutdown(async () => {
+      unlink()
+      return { state: 'settled' }
+    })
+    init.ready()
+    return { status: () => ({ provider: 'sample', instances: [] }) } as unknown as ChannelRuntime
+  }
+  const app = await harness({ channel: { hub, runtime } })
+  const grant = app.init().bundledApp
+  if (!grant) throw new Error('grant missing')
+  expect(bridges).toHaveLength(1)
+
+  const received: string[] = []
+  grant.channels.subscribe('team', ['group-a'], (event) => received.push(event.eventId))
+  const bridge = bridges[0]!
+  expect(bridge.claimed('team', 'group-a')).toBe(true)
+  bridge.deliver('team', {
+    kind: 'message',
+    eventId: 'event-1',
+    messageId: 'message-1',
+    accountId: 'account',
+    text: 'hello',
+    attachments: [],
+    at: '2026-11-14T00:00:00.000Z',
+    chat: { id: 'group-a', type: 'group' },
+    sender: { userId: 'user', raw: {} },
+    mentions: { bot: false, replyToBot: false, quoteBot: false },
+  })
+  expect(received).toEqual(['event-1'])
+  expect(await grant.channels.listChats('team')).toEqual([{ id: 'group-a', name: 'Team' }])
+  await expect(
+    grant.channels.send('team', { chatId: 'group-a' }, { blocks: [{ kind: 'text', markdown: 'on it' }] }),
+  ).resolves.toEqual({ chatId: 'group-a', messageId: 'sent-1' })
+  expect(sent).toHaveLength(1)
+  // Undeclared reads stay refused through the grant.
+  await expect(grant.channels.listMembers('team', 'group-a')).rejects.toMatchObject({
+    code: AGNES_ERRORS.CAPABILITY_DENIED,
+  })
+
+  // Disabling the bundled app ends its claim and its channel access.
+  await app.row.dispose()
+  await app.managed.publish('disable')
+  expect(bridge.claimed('team', 'group-a')).toBe(false)
+  denied(() => grant.channels.subscribe('team', ['group-b'], () => {}))
+  await expect(grant.channels.listChats('team')).rejects.toMatchObject({
+    code: AGNES_ERRORS.CAPABILITY_DENIED,
+  })
 })

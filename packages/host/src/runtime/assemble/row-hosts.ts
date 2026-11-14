@@ -6,6 +6,7 @@ import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owner
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
 import { createRowExtensionHost } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
+import { BundledAppChannelHub } from '@agnes/host-extensions/profile/bundled-app-channels'
 import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { parseAgnesPluginEntries, readPluginCapabilities } from '@agnes/package-manager'
@@ -186,6 +187,8 @@ export function createRowHosts(
             stateRoot: join(deps.dataDir, 'bundled-apps'),
             scope: backendScope,
             client: deps.bundledAppClient,
+            // One hub per assembly: its channel rows attach here and the bundled app's grant reads it.
+            channels: new BundledAppChannelHub(),
           },
         }
       : {}),

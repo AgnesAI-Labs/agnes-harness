@@ -1,3 +1,4 @@
+import type { BundledAppChannels } from '@agnes/extension-api'
 import type {
   ChannelAdapter,
   ChannelCapabilities,
@@ -36,22 +37,6 @@ export interface BundledAppChannelBridge {
   attach(instanceId: string, link: BundledAppChannelLink): () => void
   claimed(instanceId: string, chatId: string): boolean
   deliver(instanceId: string, event: ChannelEvent): void
-}
-
-/** The channel half of the bundled-app grant. `channel` is a channel instance id; the Host joins pages. */
-export interface BundledAppChannelsApi {
-  subscribe(channel: string, chats: readonly string[], onEvent: (event: ChannelEvent) => void): () => void
-  send(channel: string, target: ChatTarget, message: ChannelMessage): Promise<MessageRef>
-  fetchMessages(channel: string, chatId: string, ids: readonly string[]): Promise<MessageEvent[]>
-  listThread(
-    channel: string,
-    chatId: string,
-    threadId: string,
-    opts: { order: 'asc' | 'desc'; limit: number },
-  ): Promise<MessageEvent[]>
-  listHistory(channel: string, chatId: string, opts: { start: string; end: string }): Promise<MessageEvent[]>
-  listChats(channel: string): Promise<{ id: string; name?: string }[]>
-  listMembers(channel: string, chatId: string): Promise<{ userId: string; displayName?: string }[]>
 }
 
 /** The grant holder. A subscription and every call last only while `assertCurrent` passes. */
@@ -171,10 +156,7 @@ export class BundledAppChannelHub {
 const claimKey = (instanceId: string, chatId: string) => `${instanceId}\0${chatId}`
 
 /** The grant's channel methods for one caller. Reads not declared by the adapter are CAPABILITY_DENIED. */
-export function bundledAppChannels(
-  hub: BundledAppChannelHub,
-  caller: BundledAppCaller,
-): BundledAppChannelsApi {
+export function bundledAppChannels(hub: BundledAppChannelHub, caller: BundledAppCaller): BundledAppChannels {
   const admit = () => {
     if (!isCurrent(caller)) throw rpcError('CAPABILITY_DENIED')
   }

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { BundledAppChannels, BundledAppGrant } from '@agnes/extension-api'
 import { rpcError } from '@agnes/protocol'
 import { createPrivateDirectorySync, hasPrivateDaclSync } from '@agnes/system-node'
+import { type BundledAppChannelHub, bundledAppChannels } from './bundled-app-channels.js'
 
 /** The worker's own backend scope; never the destination workspace of a plugin operation. */
 export type BundledAppScope = Readonly<{ home: string; profile: string; dataDir: string; workspace: string }>
@@ -23,6 +24,8 @@ export type BundledAppHost = Readonly<{
   stateRoot: string
   scope: BundledAppScope
   client: BundledAppClientFactory
+  /** The assembly's channel rows and group claims; absent, every channel call is refused. */
+  channels?: BundledAppChannelHub
 }>
 /** Chosen by release assembly for one granted row and managed service; never by package input. */
 export type BundledAppProvision = Readonly<{ host: BundledAppHost; packageId: string; service: string }>
@@ -30,7 +33,7 @@ export type BundledAppProvision = Readonly<{ host: BundledAppHost; packageId: st
 const refuse = async (): Promise<never> => {
   throw rpcError('CAPABILITY_DENIED')
 }
-/** Channel group access is supplied by the channel runtime; until then every call is refused. */
+/** Channel access where the assembly has no channel hub: every call is refused. */
 export const deniedBundledAppChannels: BundledAppChannels = Object.freeze({
   subscribe: () => {
     throw rpcError('CAPABILITY_DENIED')
@@ -73,7 +76,9 @@ export function openBundledApp(
     grant: Object.freeze({
       stateDirectory,
       client: lease.client,
-      channels: deniedBundledAppChannels,
+      channels: host.channels
+        ? bundledAppChannels(host.channels, { assertCurrent, signal: fence.signal })
+        : deniedBundledAppChannels,
       assertCurrent,
     }),
     close: () => (closing ??= lease.close().catch(() => undefined)),
