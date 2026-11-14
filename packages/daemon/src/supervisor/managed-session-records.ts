@@ -1,6 +1,7 @@
 import type { TableHandle } from '@agnes/daemon-foundation/storage/table'
 import type { ManagedSessionRetention } from '@agnes/extension-api'
 import { grantKey } from '@agnes/plugin-runtime/host'
+import { MANAGED_INPUT_TABLES } from './managed-session-inputs.js'
 
 export interface ManagedSessionRecord {
   sessionId: string
@@ -48,6 +49,14 @@ const record = (row: Row): ManagedSessionRecord => ({
   archived: row.archived === 1,
 })
 
+/** The task a session was opened for; `inputDigest` is null for a session opened before bindings existed. */
+export interface ManagedSessionBinding {
+  sessionId: string
+  taskId: string
+  taskGeneration: number
+  inputDigest: string | null
+}
+
 /**
  * Which package and plugin row manages which session, the workspaces the owner authorized for each,
  * and the send keys each used, all under a `grantKey`. New tables only: no existing table changes shape.
@@ -71,6 +80,7 @@ export class ManagedSessionRecords {
     table.exec(`CREATE TABLE IF NOT EXISTS managed_session_grants (
       owner TEXT NOT NULL, workspace TEXT NOT NULL, PRIMARY KEY (owner, workspace)
     )`)
+    for (const ddl of MANAGED_INPUT_TABLES) table.exec(ddl)
   }
 
   get(sessionId: string): ManagedSessionRecord | undefined {
@@ -92,25 +102,75 @@ export class ManagedSessionRecords {
       .map(record)
   }
 
-  insert(value: Omit<ManagedSessionRecord, 'started' | 'archived'>): void {
-    this.table.exec(
-      `INSERT INTO managed_sessions
+  /** With a binding, the record and the binding are written in one transaction. */
+  insert(
+    value: Omit<ManagedSessionRecord, 'started' | 'archived'>,
+    binding?: Omit<ManagedSessionBinding, 'sessionId'>,
+  ): void {
+    const write = () =>
+      this.table.exec(
+        `INSERT INTO managed_sessions
          (session_id, owner, start_key, bundle, workspace, retention, permission, model, memory_writes,
           skill_installs)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-      [
-        value.sessionId,
-        value.owner,
-        value.startKey,
-        value.bundle,
-        value.workspace,
-        value.retention,
-        value.permission,
-        value.model,
-        value.memoryWrites ? 1 : 0,
-        value.skillInstalls ? 1 : 0,
-      ],
-    )
+        [
+          value.sessionId,
+          value.owner,
+          value.startKey,
+          value.bundle,
+          value.workspace,
+          value.retention,
+          value.permission,
+          value.model,
+          value.memoryWrites ? 1 : 0,
+          value.skillInstalls ? 1 : 0,
+        ],
+      )
+    if (!binding) {
+      write()
+      return
+    }
+    this.table.transaction(() => {
+      write()
+      // A record that lost to another session's (owner, start_key) was ignored: no binding to orphan.
+      if (this.get(value.sessionId) === undefined) return
+      this.table.exec(
+        `INSERT INTO managed_session_bindings (session_id, task_id, task_generation, input_digest)
+         VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+        [value.sessionId, binding.taskId, binding.taskGeneration, binding.inputDigest],
+      )
+    })
+  }
+
+  binding(sessionId: string): ManagedSessionBinding | undefined {
+    const row = this.table.get<{
+      session_id: string
+      task_id: string
+      task_generation: number
+      input_digest: string | null
+    }>('SELECT * FROM managed_session_bindings WHERE session_id = ?', [sessionId])
+    return row
+      ? {
+          sessionId: row.session_id,
+          taskId: row.task_id,
+          taskGeneration: row.task_generation,
+          inputDigest: row.input_digest,
+        }
+      : undefined
+  }
+
+  /** Binds a session opened before bindings existed; false when it already has one or has no record. */
+  bindLate(binding: ManagedSessionBinding & { inputDigest: null }): boolean {
+    return this.table.transaction(() => {
+      if (this.get(binding.sessionId) === undefined || this.binding(binding.sessionId) !== undefined)
+        return false
+      this.table.exec(
+        `INSERT INTO managed_session_bindings (session_id, task_id, task_generation, input_digest)
+         VALUES (?, ?, ?, NULL)`,
+        [binding.sessionId, binding.taskId, binding.taskGeneration],
+      )
+      return true
+    })
   }
 
   markStarted(sessionId: string): void {
@@ -181,7 +241,7 @@ export class ManagedSessionRecords {
   }
 
   /**
-   * A removed package's grants and send keys go, and its records move to an owner no `grantKey` can
+   * A removed package's grants, send keys, bindings and owner inputs go, and its records move to an owner no `grantKey` can
    * produce: a package id never starts with `~`, and the session id keeps `(owner, start_key)` unique
    * however often the id is installed and removed again. The records stay, because a record also
    * marks its session and every descendant as managed. Compared with `substr`, not LIKE: a package
@@ -193,6 +253,18 @@ export class ManagedSessionRecords {
     this.table.transaction(() => {
       this.table.exec(`DELETE FROM managed_session_grants WHERE ${match}`, [prefix, prefix])
       this.table.exec(`DELETE FROM managed_session_sends WHERE ${match}`, [prefix, prefix])
+      // Before the records move away from the prefix. Owner inputs are never pruned by time, only here.
+      const sessions = `SELECT session_id FROM managed_sessions WHERE ${match}`
+      this.table.exec(`DELETE FROM managed_session_bindings WHERE session_id IN (${sessions})`, [
+        prefix,
+        prefix,
+      ])
+      this.table.exec(`DELETE FROM managed_session_inputs WHERE ${match} OR session_id IN (${sessions})`, [
+        prefix,
+        prefix,
+        prefix,
+        prefix,
+      ])
       this.table.exec(`UPDATE managed_sessions SET owner = '~' || session_id WHERE ${match}`, [
         prefix,
         prefix,
