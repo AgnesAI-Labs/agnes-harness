@@ -4,7 +4,9 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ApiError, caller, inputOf, SERVICES, usePoll } from '../src/api.js'
 import { apply, sessionPage } from '../src/index.js'
+import { PANEL_SERVICES } from '../../superagent/src/runtime/services.js'
 import { en, zh } from '../src/locales.js'
+import { problems } from './helpers/schema.js'
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean
@@ -220,6 +222,9 @@ it('tells a Superagent that does not answer from a record it does not have, and 
       },
     }),
   ).toEqual({ message: 'not running', status: 404, missing: false, unreachable: true })
+  // A refusal or a failure of the Host is no lost connection: the panel says what failed, not "offline".
+  expect(await failure({ query: async () => { throw new Error('INVALID_PARAMS (-32602)') } })).toEqual({ message: 'request 400', status: 400, missing: false, unreachable: false })
+  expect(await failure({ query: async () => { throw new Error('INTERNAL_ERROR (-32603)') } })).toEqual({ message: 'server 500', status: 500, missing: false, unreachable: false })
   expect(await failure({ query: async () => ({ failure: { status: 502 } }) })).toEqual({
     message: 'server 502',
     status: 502,
@@ -260,4 +265,14 @@ it('reports an effect that did not complete, and an effect refused as a failure'
     })),
   ).toBe('user notRetryable')
   expect(await run(async () => ({ state: 'completed', output: { retried: true } }))).toBe('done')
+})
+
+it('asks for as many rows as "load more" has grown to: no limit is refused by the Host, the services clamp it', () => {
+  // The Eval list grows its limit by one page per click without bound; the declared schemas must admit that.
+  for (const [route, limit] of [['GET decisions', 5000], ['GET tickets', 5000], ['GET threads', 5000], ['GET threads/:key', 5000]] as const) {
+    const [name] = SERVICES[route]
+    const input = inputOf(route, { ...(route === 'GET threads/:key' ? { key: 'github:1' } : {}), query: { limit } })
+    const service = PANEL_SERVICES.find((item) => item.name === name)
+    expect(problems(service?.inputSchema as never, input), route).toEqual([])
+  }
 })

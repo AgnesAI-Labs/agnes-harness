@@ -10,7 +10,9 @@ import type { Api, ApiResponse, RouteParams } from '../../../superagent/src/runt
 import { SetupError } from '../../../superagent/src/setup.js'
 import type { Health } from '../../../superagent/src/sources/host.js'
 import type { DroppedReply, HistoryView, Problem, PromptsView, SetupView, SourceStatusRow, SourceView, StateView, ThreadPageView, ThreadRow, TicketPageView, TicketRow, TriggerRow } from '../../src/api.js'
+import { PANEL_SERVICES } from '../../../superagent/src/runtime/services.js'
 import { SERVICES } from '../../src/api.js'
+import { problems } from './schema.js'
 import { testDeployment } from './deployment.js'
 
 export * from './panel-fixtures.js'
@@ -728,6 +730,13 @@ function routeOf(name: string) {
 /** Answers one service call from the route table, recording the request as the route it replaces. */
 async function dispatch(name: string, kind: 'query' | 'effect', input: Record<string, unknown>): Promise<unknown> {
   if (server.down) throw new Error('CAPABILITY_DENIED')
+  // The Host checks the input against the declared schema before the handler runs, and refuses what does not fit.
+  const service = PANEL_SERVICES.find((item) => item.name === name)
+  const invalid = service ? problems(service.inputSchema as never, input) : []
+  if (invalid.length) {
+    server.misuse.push(`${name}: ${invalid.join('; ')}`)
+    throw new Error('INVALID_PARAMS (-32602)')
+  }
   const route = routeOf(name)
   if (!route) return { failure: { status: 404, error: 'Unknown operation' } }
   server.calls.push([kind, name])

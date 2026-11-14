@@ -77,10 +77,12 @@ function refusal(messages: ApiMessages, failure: Failure): ApiError {
 }
 /** A call the Host refused or could not reach: the plugin is off or restarting, or the connection dropped. */
 function unreachable(messages: ApiMessages, error: unknown): ApiError {
-  const denied = /CAPABILITY_DENIED|not running/i.test(error instanceof Error ? error.message : String(error))
-  return new ApiError(denied ? messages.notRunning : messages.offline, denied ? 404 : 0, {
-    unreachable: true,
-  })
+  const text = error instanceof Error ? error.message : String(error)
+  // A refusal of the Host (a JSON-RPC error) names its code; only a call that never got an answer is "offline".
+  if (/CAPABILITY_DENIED|not running/i.test(text)) return new ApiError(messages.notRunning, 404, { unreachable: true })
+  if (/INVALID_PARAMS/.test(text)) return new ApiError(messages.requestFailed(400), 400)
+  if (/INTERNAL_ERROR|OUTCOME_UNKNOWN|REQUEST_TIMEOUT|OVERLOADED/.test(text)) return new ApiError(messages.serverError(500), 500)
+  return new ApiError(messages.offline, 0, { unreachable: true })
 }
 
 /** The service each original route became, and whether it is a query (a GET) or an effect. */

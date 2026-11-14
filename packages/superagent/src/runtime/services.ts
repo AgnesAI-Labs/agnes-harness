@@ -237,9 +237,10 @@ const schema = (properties: Record<string, JsonValue>, required: readonly string
   additionalProperties: false as const,
 })
 const id = { type: 'string', minLength: 1, maxLength: 256 } as const
-const paging = (max: number) => ({
+// No `maximum`: the Host would refuse a larger limit, and the routes clamped it (see the handlers).
+const paging = () => ({
   offset: { type: 'integer', minimum: 0 },
-  limit: { type: 'integer', minimum: 1, maximum: max },
+  limit: { type: 'integer', minimum: 1 },
 })
 const effect = (flags: { destructive?: boolean; openWorld?: boolean } = {}) => ({
   isDestructive: flags.destructive ?? false,
@@ -269,13 +270,13 @@ const TABLE: readonly [string, ReturnType<typeof schema>, ReturnType<typeof effe
     ),
     effect(),
   ],
-  ['superagent.threads.list', schema({ filter: { enum: [...THREAD_FILTERS] }, ...paging(1000) })],
+  ['superagent.threads.list', schema({ filter: { enum: [...THREAD_FILTERS] }, ...paging() })],
   [
     'superagent.threads.get',
     schema(
       {
         key: { type: 'string', minLength: 1, maxLength: 1024 },
-        limit: { type: 'integer', minimum: 1, maximum: 100 },
+        limit: { type: 'integer', minimum: 1 },
         before: { type: 'string', maxLength: 1024 },
         around: { type: 'string', maxLength: 1024 },
       },
@@ -290,10 +291,10 @@ const TABLE: readonly [string, ReturnType<typeof schema>, ReturnType<typeof effe
   ['superagent.triggers.requeue', schema({ id }, ['id']), effect()],
   [
     'superagent.decisions.list',
-    schema({ kind: { type: 'string', maxLength: 1024 }, window: { const: '24h' }, ...paging(200) }),
+    schema({ kind: { type: 'string', maxLength: 1024 }, window: { const: '24h' }, ...paging() }),
   ],
   ['superagent.decisions.dismiss', schema({ id }, ['id']), effect()],
-  ['superagent.tickets.list', schema({ state: { enum: [...TICKET_FILTERS] }, ...paging(1000) })],
+  ['superagent.tickets.list', schema({ state: { enum: [...TICKET_FILTERS] }, ...paging() })],
   ['superagent.tickets.get', schema({ id }, ['id'])],
   ['superagent.tickets.retry', schema({ id }, ['id']), effect()],
   ['superagent.tickets.stop', schema({ id }, ['id']), effect({ destructive: true })],
