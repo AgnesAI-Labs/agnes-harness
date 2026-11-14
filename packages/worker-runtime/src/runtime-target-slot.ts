@@ -203,7 +203,7 @@ export function hostRuntimeTargetPort(
   if (typeof host.applyRuntimeTarget !== 'function')
     throw new Error('E_RUNTIME_TARGET_UNAVAILABLE: Host has no runtime target publisher')
   return Object.freeze({
-    async applyRuntimeTarget(target: RuntimeTarget) {
+    async applyRuntimeTarget(target) {
       const report = await track(async () => {
         await host.profileServices?.managed?.retireDropped(target.tree.rows)
         return host.applyRuntimeTarget(target)
