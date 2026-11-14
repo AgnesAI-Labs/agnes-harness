@@ -12,6 +12,8 @@ import { afterAll, expect, it } from 'vitest'
 import { openStore } from '../../src/app/store.js'
 import { key } from '../../src/core/index.js'
 import { SettingsSchema } from '../../src/policy.js'
+import { agentPaths } from '../../src/runtime/environment.js'
+import { SERVICE_ID } from '../../src/runtime/index.js'
 import { CHANNEL_PACKAGE, writeChannelPlugin } from '../fixtures/channel-plugin.js'
 import { type DaemonHandle, startDaemon, stopAllDaemons } from '../fixtures/daemon-harness.js'
 import { makeHomes } from '../fixtures/homes.js'
@@ -23,6 +25,14 @@ const PACKAGE = '@agnes/superagent'
 const INSTANCE = 'feishu-test'
 const EXTENSION = `plugin/${createHash('sha256').update('ext:agnes.superagent/main').digest('hex').slice(0, 16)}`
 const STEP_MS = 120_000
+/** The state directory the platform gives the service by default (see the bundled-app grant). */
+const defaultStateDir = (aghHome: string) =>
+  join(
+    aghHome,
+    'data',
+    'bundled-apps',
+    createHash('sha256').update(`${PROFILE}\0${PACKAGE}\0${SERVICE_ID}`).digest('hex').slice(0, 32),
+  )
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 async function until<T>(label: string, probe: () => T | Promise<T>, ms = STEP_MS): Promise<NonNullable<T>> {
   const deadline = Date.now() + ms
@@ -84,15 +94,19 @@ async function bootstrap(root: string, options: { reads: boolean; channel: strin
   const homes = makeHomes(root)
   homes.writeGhScript({
     rules: [
+      { args: ['api', 'user', '--jq', '.login'], stdout: 'agent-bot\n' },
       { args: ['api', 'user'], stdout: '{"login":"agent-bot","id":42}\n' },
       { args: ['api', 'repos/acme/app'], stdout: '{"name":"acme/app","push":true}\n' },
     ],
   })
   const aghHome = join(root, 'agh')
+  // The daemon runs as the deployment guide starts it: the agent's HOME and shims in the state directory the platform
+  // gives Superagent by default. The home is not created here; Superagent writes it when it starts.
+  const agent = agentPaths(defaultStateDir(aghHome))
   const daemon = await startDaemon({
     aghHome,
-    home: homes.agentHome,
-    path: `${homes.shimsDir}:${process.env.PATH ?? ''}`,
+    home: agent.home,
+    path: `${agent.shimsDir}:${process.env.PATH ?? ''}`,
     plugins: ['./bundled-plugins/superagent'],
     onHandle: (started) => {
       handle = started
@@ -153,6 +167,9 @@ async function bootstrap(root: string, options: { reads: boolean; channel: strin
       : []
     return found.length === 1 ? join(apps, found[0]!) : undefined
   })
+  expect(stateDir, "the agent's HOME lies in the state directory the platform gave").toBe(
+    defaultStateDir(aghHome),
+  )
   const database = join(stateDir, 'superagent.sqlite')
   /** Disables Superagent, writes its settings on `channel`, and enables it again. */
   const reconfigure = async (channel: string) => {
@@ -218,7 +235,7 @@ async function bootstrap(root: string, options: { reads: boolean; channel: strin
         .filter((line) => /superagent|feishu|channel|bundled|error/i.test(line))
         .slice(-60)
       const effects = query<{ kind: string; error: string | null }>('SELECT kind, error FROM effect')
-      return `status: ${await call('superagent.status')}\nsources: ${await call('superagent.sources.list')}\nmain session: ${main}\nkv:\n${kv}\n${lines.join('\n')}\neffects: ${JSON.stringify(effects)}\ntriggers: ${JSON.stringify(query('SELECT id FROM trigger'))}\nsent: ${JSON.stringify(chat.sent())}`
+      return `status: ${await call('superagent.status')}\nsetup: ${await call('superagent.state')}\nsources: ${await call('superagent.sources.list')}\nmain session: ${main}\nkv:\n${kv}\n${lines.join('\n')}\neffects: ${JSON.stringify(effects)}\ntriggers: ${JSON.stringify(query('SELECT id FROM trigger'))}\nsent: ${JSON.stringify(chat.sent())}`
     },
     triggers: () =>
       query<{ id: string }>("SELECT id FROM trigger WHERE json_extract(value, '$.source') = ?", 'feishu').map(
