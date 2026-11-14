@@ -57,6 +57,7 @@
     "./profile/streams": "./src/profile/streams.ts",
     "./assemble/host-grants": "./src/assemble/host-grants.ts",
     "./profile/channel-runtime": "./src/profile/channel-runtime.ts",
+    "./profile/bundled-app": "./src/profile/bundled-app.ts",
     "./profile/channel-targets": "./src/profile/channel-targets.ts",
     "./profile/channel-pairing": "./src/profile/channel-pairing.ts"
   },

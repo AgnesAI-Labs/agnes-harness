@@ -2,6 +2,10 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.18.0
+
+- Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed. Channel calls refuse until the channel runtime supplies them.
+
 ## 5.17.0
 
 - Optional `ExtensionContext.sideModels.subscribe(listener)` emits payload-free catalogue change notices. Subscribe before `list()` to observe late provider readiness. The existing grant, declaration and lifetime checks still apply; unsubscribe on disposal. `list()` retains its route/model/api-only shape.

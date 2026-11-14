@@ -159,16 +159,17 @@ export function createRowHosts(
       : undefined
     return description && { ...description, ...(declaredCapabilities ? { declaredCapabilities } : {}) }
   }
+  const backendScope = {
+    home: dirname(dirname(deps.profileDir)),
+    profile: ctx.profile.name,
+    dataDir: deps.dataDir,
+    workspace: deps.workspaceRoot,
+  }
   const rowServices = createRowServiceHost(describeServices, {
     ...(deps.channelInteractions ? { channelInteractions: deps.channelInteractions } : {}),
     ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
     channelStateDirectory: join(deps.dataDir, 'channels'),
-    channelScope: {
-      home: dirname(dirname(deps.profileDir)),
-      profile: ctx.profile.name,
-      dataDir: deps.dataDir,
-      workspace: deps.workspaceRoot,
-    },
+    channelScope: backendScope,
     resolveSecret: proc.secrets,
     channelLog: deps.log,
     channelDirectory: proc.channelDirectory,
@@ -178,6 +179,16 @@ export function createRowHosts(
       proc.profileActivations.require(owner, integrity, undefined, revision),
     managed: proc.profileManaged,
     streams: proc.profileStreams,
+    hostGrants,
+    ...(deps.bundledAppClient
+      ? {
+          bundledApp: {
+            stateRoot: join(deps.dataDir, 'bundled-apps'),
+            scope: backendScope,
+            client: deps.bundledAppClient,
+          },
+        }
+      : {}),
     namespace: (owner, name) =>
       proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}:${name}`),
     describe: describeServices,

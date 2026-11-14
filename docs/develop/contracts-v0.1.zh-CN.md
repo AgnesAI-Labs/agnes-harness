@@ -4,13 +4,13 @@
 
 [插件架构](architecture-plugins.zh-CN.md) · [作者指南](../extend/README.zh-CN.md) · [版本规则](../maintainers/versioning.zh-CN.md)
 
-本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.17.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
+本文维护产品 v0.1 的作者合同清单，Extension API 为 **5.18.0**。源码、schema 与包出口共同定义当前行为；请固定源码版本。本文不代表已发行或完整部署验收，发行结果应引用对应版本的 CI 与验收记录。
 
 ## 稳定性与兼容政策
 
 **stable** 表示已建立、拟在 v0.1 中给予兼容保护的作者合同；**experimental** 表示仍演进的合同，使用时必须对齐源码、示例与 testkit 版本。两种标签都不代表生产就绪、平台支持、任意插件隔离或 npm 可用。候选政策在维护者接受产品冻结时生效；已有预览版本仍遵循[预览版本政策](../maintainers/versioning.zh-CN.md)。
 
-已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.17.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
+已接受的 stable 合同在公开包中遵循 semver：不兼容签名、删除、缩小可接受输入或改变可观察保证须升主版本；兼容新增升次版本；兼容修复升补丁版本。产品 `v0.1` 发布 extension API `5.18.0`。experimental 修改也必须给出变更与迁移说明，即使预览版本号暂不变。仓库的已发布包 semver 规则也适用于 experimental 出口，本候选不新增已发布包例外。已发布的 stable 接口不能靠改标 experimental 来绕过主版本规则。
 
 弃用说明必须在 API changelog 与双语指南中写明旧名称、替代方案、兼容窗口和迁移办法。此规则只保护公开发布后已接受的 stable 别名：至少保留至后续一个次版本发行，且只能在主版本中删除。尚未发布的预览构建不承诺永久保留现有别名；退役格式明确拒绝并提示使用新的空 home，不做转换或沿用旧字节的信任摘要。安全原因的例外须明确发行说明与恢复步骤。本文不为 `defineKind` 输入 `restartRequired`（改用 `scope`；重启要求由它推导）指定删除日期。本轮保留 generation 别名、ACP `session/load`、without/fresh 执行闸门、旧 home 布局检测与 Windows 安全回退。插件 checkpoint 和数据迁移需要各自的兼容决定；升级包或迁移 generation 不会自动迁移 schema。
 
@@ -257,3 +257,5 @@ Extension API 5.16.0 新增可选的 `HookContext.sideCall` 和 `ToolContext.sid
 可选的 `ExtensionContext.sideModels.list()` 仅向获授权的声明者返回 `{route, model, api}`，不含端点和凭据；提供方可能在 apply 后才完成装配，应在调用时重新读取。公开纯函数 `redactSecrets(text)` 用于遮蔽文本，不授予执行或审批权限。`HookRegisterOptions.timeoutMs` 只对获宿主授权的 `turn_stopping`、`tool_result` 生效，上限 15,000 ms；未授权的申请沿用事件默认值并记录诊断。钩子的失败策略不变。
 
 Extension API 5.17.0 新增可选的 `self.sideModels.subscribe(listener)`，提供无载荷、合并后的模型目录变化通知。先订阅再读取 `list()` 可观察晚就绪的 provider；两个方法沿用原有 grant、进程内声明和生命周期检查，卸载时取消订阅。`list()` 仍只返回 route/model/api。
+
+Extension API 5.18.0 新增可选的 `ProfileManagedInit.bundledApp`（`BundledAppGrant`：`stateDirectory`、主人级本地 SDK `client`、`channels` 与 `assertCurrent()`）。只有发布装配白名单内、安装载荷与随包摘要一致的随包插件才会获得；插件代码、清单与配置都不能申请或替换。停用插件或替换其激活后授予失效、客户端关闭。渠道群聊调用在渠道运行时接入前一律返回 `CAPABILITY_DENIED`。
