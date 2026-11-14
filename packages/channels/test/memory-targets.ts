@@ -11,6 +11,7 @@ export function memoryTargets() {
       links.set(instanceId, link)
       return () => links.delete(instanceId)
     },
+    pending: () => !!state.code,
     expectsCode: (_instanceId, text) => !!state.code && /^[A-Z2-9]{8}$/i.test(text.replace(/[\s-]/g, '')),
     confirm: (instance, text, chat) => {
       if (text.replace(/[\s-]/g, '').toUpperCase() !== state.code?.replace('-', '')) return undefined

@@ -40,6 +40,8 @@ export interface ChannelTargetsPort {
       cardBytes: number
       rendered(block: TextBlock | CardBlock): number
       connected(): boolean
+      /** Whether a bundled app claimed the instance whole; no code is minted for it then. */
+      claimed?(): boolean
       send(
         chat: { chatId: string; accountId: string; chatType: 'dm' },
         block: TextBlock | CardBlock,
@@ -48,6 +50,8 @@ export interface ChannelTargetsPort {
     },
   ): () => void
   expectsCode(instanceId: string, text: string): boolean
+  /** Whether a pairing code for this instance is still live; such an instance cannot be claimed whole. */
+  pending?(instanceId: string): boolean
   confirm(
     instanceId: string,
     text: string,
@@ -258,6 +262,7 @@ export function createTargetRouter(input: {
             0,
           ),
         connected: () => runner.status().channel === 'connected',
+        claimed,
         async send(chat, block, deliveryKey) {
           const ref = await runner.sendDirect(chat, block, deliveryKey)
           return ref

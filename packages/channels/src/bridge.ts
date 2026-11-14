@@ -306,7 +306,10 @@ export async function startChannelBridge(
         adapter: () => row.adapter,
         runner: () => row.active,
         bound: (chatId) => bindings.boundChat(chatId),
-        occupied: () => (options.targets?.pairings(instance.id).length ?? 0) > 0 || bindings.boundAny(),
+        occupied: () =>
+          (options.targets?.pairings(instance.id).length ?? 0) > 0 ||
+          (options.targets?.pending?.(instance.id) ?? false) ||
+          bindings.boundAny(),
       })
       await row.supervisor.start()
       assertCurrent()

@@ -102,9 +102,13 @@ export function ChannelPairings({
             ? zh
               ? '机器人尚未连接，连接后再生成。'
               : 'The bot is not connected. Create the code once it connects.'
-            : zh
-              ? '生成未确认，可重试同一次操作。'
-              : 'Not confirmed. Retry the same operation.',
+            : refusal === 'CHANNEL_CLAIMED'
+              ? zh
+                ? '这个机器人由 Superagent 等随包应用整个使用，不能配对。请选另一个机器人。'
+                : 'This bot is used whole by a bundled app such as Superagent and cannot be paired. Choose another bot.'
+              : zh
+                ? '生成未确认，可重试同一次操作。'
+                : 'Not confirmed. Retry the same operation.',
       )
     } finally {
       if (alive.current) setBusy(false)

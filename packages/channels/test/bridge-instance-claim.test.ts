@@ -92,8 +92,14 @@ it('gives a whole claimed instance to its claimant before group claims and befor
   const view = (await runtime.session!(session)) as { instances: { targets: unknown[] }[] }
   expect(view.instances[0]!.targets, 'a claimed instance offers no chat to bind').toEqual([])
   // Released, the instance routes as before: the code pairs its direct chat.
+  // The Host's pairing side sees the claim too, so it mints no code for this bot.
+  expect(targets.links.get('first')?.claimed?.()).toBe(true)
   state.whole = false
+  expect(targets.links.get('first')?.claimed?.()).toBe(false)
+  expect(link!.occupied(), 'a live pairing code keeps the instance from being claimed whole').toBe(true)
+  targets.state.code = undefined
   expect(link!.occupied()).toBe(false)
+  targets.state.code = 'ABCD-EFGH'
   adapter.emit(dm('ABCD-EFGH', { eventId: 'after-release' }))
   await vi.waitFor(() => expect(targets.pairings).toHaveLength(1))
   expect(link!.occupied(), 'an owner pairing keeps the instance from being claimed whole').toBe(true)
