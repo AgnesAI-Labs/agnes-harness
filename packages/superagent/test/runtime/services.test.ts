@@ -16,7 +16,7 @@ import { Store } from '../../src/app/store.js'
 import { UserError } from '../../src/core/index.js'
 import { HealthBoard } from '../../src/infra/health.js'
 import { SettingsSchema } from '../../src/policy.js'
-import { createPanelWiring } from '../../src/runtime/panel-host.js'
+import { createPanelWiring, type PanelParts } from '../../src/runtime/panel-host.js'
 import type { PanelHost } from '../../src/runtime/panel-views.js'
 import {
   createPanelServices,
@@ -24,7 +24,7 @@ import {
   type PanelService,
   registerPanelServices,
 } from '../../src/runtime/services.js'
-import { SetupError } from '../../src/setup.js'
+import { SetupError, type SetupProblem } from '../../src/setup.js'
 import { githubKind } from '../../src/sources/github.js'
 import { SourceRegistry } from '../../src/sources/registry.js'
 import { testDeployment, testMachine } from '../fixtures/deployment.js'
@@ -414,12 +414,7 @@ describe('the host while the other parts start', () => {
     store.close()
     rmSync(directory, { recursive: true, force: true })
   })
-
-  it('answers from the store at once, and answers "not ready" for what needs a part that is not wired, until it is', async () => {
-    const wiring = createPanelWiring(store, directory)
-    const services = createPanelServices(wiring.host)
-    expect(await run(services, 'superagent.overview')).toMatchObject({ person: [], executor: { running: 0 } })
-    expect(await run(services, 'superagent.policy.history')).toMatchObject({ items: [] })
+  const saveTicket = () =>
     store.tickets.save({
       id: 't1',
       title: 'T',
@@ -439,23 +434,146 @@ describe('the host while the other parts start', () => {
       assignments: [{ id: 'a1', state: 'running', createdAt: '', startedAt: '2026-01-01T00:00:00Z' }],
       inputs: [],
     })
-    const stop = vi.fn()
-    expect(await failureOf(run(services, 'superagent.tickets.stop', { id: 't1' }))).toMatchObject({
-      failure: { status: 503, error: expect.stringContaining('engine') },
+  /** Every part, as the starting parts wire them in one call; the actions are spies. */
+  const parts = (): PanelParts & Record<'calls', string[]> => {
+    const board = new HealthBoard()
+    const sources = new SourceRegistry(() => store.settings(), board)
+    sources.register(githubKind)
+    const calls: string[] = []
+    return {
+      calls,
+      sourceLinks: { entries: () => new Map<string, string>().entries() },
+      sources,
+      prompts: { current: () => ({ revision: 0 }) } as never,
+      sessions: {
+        status: () => ({ revision: 0, sessions: [], notificationPending: false }),
+        notify: () => {},
+        delivery: async () => 'injected',
+      },
+      settings: {
+        save: async (block: string) => {
+          calls.push(`save ${block}`)
+          return { revision: 1, restarting: false }
+        },
+      } as never,
+      engine: {
+        stopTicket: (id: string) => calls.push(`stop ${id}`),
+        unsubscribe: (key: string) => {
+          calls.push(`unsubscribe ${key}`)
+          return true
+        },
+        reevaluate: (id: string) => {
+          calls.push(`reevaluate ${id}`)
+          return true
+        },
+      } as never,
+      executor: { activeCount: () => 0 },
+      health: board.all,
+      machine: testMachine(),
+      masterId: 'master',
+      deployment: testDeployment(),
+      configured: () => true,
+      links: () => () => ({ url: '', label: { zh: '', en: '' } }),
+      workerSessionId: () => undefined,
+      ticketEnvironment: () => [],
+      checkSetup: () => calls.push('check'),
+      requestPass: () => calls.push('pass'),
+      models: async () => ({ groups: [] }),
+    }
+  }
+
+  it('answers from the store at once, and every action says not ready until all parts are wired', async () => {
+    const wiring = createPanelWiring(store, directory)
+    const services = createPanelServices(wiring.host)
+    expect(await run(services, 'superagent.overview')).toMatchObject({ person: [], executor: { running: 0 } })
+    expect(await run(services, 'superagent.policy.history')).toMatchObject({ items: [] })
+    saveTicket()
+    // Each path that used to run half-way is refused first: nothing is read, validated or applied.
+    const refused = async (name: string, input: Record<string, unknown>) =>
+      (await failureOf(run(services, name, input))).failure
+    expect(await refused('superagent.tickets.stop', { id: 't1' })).toMatchObject({ status: 503 })
+    expect(await refused('superagent.tickets.retry', { id: 'nope' })).toMatchObject({ status: 503 })
+    expect(await refused('superagent.threads.unsubscribe', { key: 'github:1' })).toMatchObject({
+      status: 503,
     })
-    wiring.wire({ engine: { stopTicket: stop } as never })
+    expect(await refused('superagent.triggers.requeue', { id: 'e1' })).toMatchObject({ status: 503 })
+    expect(await refused('superagent.decisions.dismiss', { id: 'd1' })).toMatchObject({ status: 503 })
+    expect(await refused('superagent.executor.pause', { paused: true })).toMatchObject({ status: 503 })
+    expect(await refused('superagent.setup.check', {})).toMatchObject({ status: 503 })
+    // The settings save is not checked against the empty source list the fallback has: not a 404 "Source not found".
+    expect(
+      await refused('superagent.settings.save', { block: 'source:github', value: {}, revision: 0 }),
+    ).toMatchObject({ status: 503, error: expect.stringContaining('not ready') })
+    expect(await refused('superagent.prompts.save', { config: {}, baseRevision: 0 })).toMatchObject({
+      status: 503,
+    })
+
+    const wired = parts()
+    wiring.wire(wired)
     expect(await run(services, 'superagent.tickets.stop', { id: 't1' })).toEqual({ stopped: true })
-    expect(stop).toHaveBeenCalledWith('t1')
-    // The worker's key is no use to the panel: its session page needs the id the platform gave it, when there is one.
+    expect(await run(services, 'superagent.threads.unsubscribe', { key: 'github:1' })).toMatchObject({
+      removed: true,
+      context_delivery: 'injected',
+    })
+    // A requeue asks for a pass, as the prototype's route did, so the trigger is judged at once.
+    expect(await run(services, 'superagent.triggers.requeue', { id: 'e1' })).toEqual({ queued: true })
+    expect(
+      await run(services, 'superagent.settings.save', {
+        block: 'source:github',
+        value: { enabled: false, config: {} },
+        revision: 0,
+      }),
+    ).toMatchObject({ revision: 1 })
+    expect(wired.calls).toEqual([
+      'stop t1',
+      'unsubscribe github:1',
+      'reevaluate e1',
+      'pass',
+      'save source:github',
+    ])
+    wiring.unwire()
+    expect(await refused('superagent.tickets.stop', { id: 't1' })).toMatchObject({ status: 503 })
+  })
+
+  it('reads live fields through the wiring: a setup problem that changes shows, and a pending deployment is never read', async () => {
+    const wiring = createPanelWiring(store, directory)
+    const services = createPanelServices(wiring.host)
+    let problem: SetupProblem | undefined = new SetupError('repositoryUnset').problem
+    let ready = false
+    const live = parts()
+    wiring.wire({
+      ...live,
+      get setupProblem() {
+        return problem
+      },
+      configured: () => ready,
+      // As the prototype's host: it throws while setup waits.
+      get deployment() {
+        if (!ready) throw new Error('waiting for setup')
+        return testDeployment()
+      },
+    })
+    const state = async () =>
+      (await run(services, 'superagent.state')) as {
+        setup: { problem: { code: string } | null; accounts: unknown }
+      }
+    expect((await state()).setup).toMatchObject({ problem: { code: 'repositoryUnset' }, accounts: null })
+    problem = new SetupError('agentCliUnset').problem
+    expect((await state()).setup.problem).toMatchObject({ code: 'agentCliUnset' })
+    problem = undefined
+    ready = true
+    expect((await state()).setup).toMatchObject({ problem: null, accounts: { repository: 'acme/widgets' } })
+  })
+
+  it('shows the worker session by the id the platform gave it, when there is one', async () => {
+    const wiring = createPanelWiring(store, directory)
+    const services = createPanelServices(wiring.host)
+    saveTicket()
     const ref = async () =>
       ((await run(services, 'superagent.tickets.get', { id: 't1' })) as { assignments: { ref?: string }[] })
         .assignments[0]?.ref
     expect(await ref()).toBeUndefined()
-    wiring.wire({ workerSessionId: () => '01HSESSION' })
+    wiring.wire({ ...parts(), workerSessionId: () => '01HSESSION' })
     expect(await ref()).toBe('01HSESSION')
-    wiring.unwire()
-    expect(await failureOf(run(services, 'superagent.tickets.stop', { id: 't1' }))).toMatchObject({
-      failure: { status: 503 },
-    })
   })
 })

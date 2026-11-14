@@ -85,7 +85,28 @@ const promptLimit = (host: PanelHost) => 4 * host.machine.promptMaxChars.get() +
 const text = (input: Input, key: string): string =>
   typeof input[key] === 'string' ? (input[key] as string) : ''
 
-const HANDLERS: Readonly<Record<string, Handler>> = {
+/** An action that changes something: refused as not ready before anything is read or applied, until every part is wired. */
+const acting =
+  (handler: Handler): Handler =>
+  (host, input) => {
+    if (host.wired === false) throw new NotReady('the other parts')
+    return handler(host, input)
+  }
+const ACTIONS: readonly string[] = [
+  'superagent.sources.refreshlabels',
+  'superagent.settings.save',
+  'superagent.threads.unsubscribe',
+  'superagent.triggers.requeue',
+  'superagent.decisions.dismiss',
+  'superagent.tickets.retry',
+  'superagent.tickets.stop',
+  'superagent.executor.pause',
+  'superagent.policy.sync',
+  'superagent.setup.check',
+  'superagent.prompts.save',
+]
+
+const READS_AND_ACTIONS: Readonly<Record<string, Handler>> = {
   'superagent.state': (host) => stateView(host),
   'superagent.overview': (host) =>
     overview(
@@ -182,6 +203,12 @@ const HANDLERS: Readonly<Record<string, Handler>> = {
   'superagent.prompts.preview': (host, input) =>
     host.prompts.preview(bounded(input.config, promptLimit(host))),
 }
+const HANDLERS: Readonly<Record<string, Handler>> = Object.fromEntries(
+  Object.entries(READS_AND_ACTIONS).map(([name, handler]) => [
+    name,
+    ACTIONS.includes(name) ? acting(handler) : handler,
+  ]),
+)
 function existingTicket(host: PanelHost, id: string): string {
   if (!host.store.tickets.get(id)) throw new RouteError(404, 'Ticket not found')
   return id

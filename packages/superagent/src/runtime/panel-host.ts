@@ -19,19 +19,23 @@ export class NotReady extends Error {
   }
 }
 
-/** What the starting parts wire in; each is optional until its part is running. */
-export type PanelWires = Partial<Omit<PanelHost, 'store'>>
+/** Everything the starting parts wire in, in one call: a half-wired host would let an action run against a half-started plugin. */
+export type PanelParts = Omit<PanelHost, 'store' | 'wired'>
 /** The wiring handle: the host the services answer from, and the one call that fills it in. */
 export interface PanelWiring {
   readonly host: PanelHost
-  /** Adds parts to the host; a part wired again replaces the earlier one. */
-  wire(parts: PanelWires): void
+  /**
+   * Wires the complete set of parts, replacing any earlier set. Fields are read live from `parts` on every use, so a
+   * getter (`deployment`, `setupProblem`, `feishuProblem`) keeps answering as setup moves on, and `deployment` is
+   * never read while `configured()` is false.
+   */
+  wire(parts: PanelParts): void
   /** Takes every part back out, as a stopped Superagent has none. */
   unwire(): void
 }
 
 export function createPanelWiring(store: Store, stateDirectory: string): PanelWiring {
-  let wired: PanelWires = {}
+  let wired: Partial<PanelParts> | undefined
   const board = new HealthBoard()
   const sources = new SourceRegistry(() => store.settings(), board)
   const prompts = new Prompts(
@@ -40,7 +44,7 @@ export function createPanelWiring(store: Store, stateDirectory: string): PanelWi
     () => undefined,
     () => false,
   )
-  const fallback: PanelWires = {
+  const fallback: Partial<PanelParts> = {
     sourceLinks: new TextCache(0),
     sources,
     prompts,
@@ -70,6 +74,8 @@ export function createPanelWiring(store: Store, stateDirectory: string): PanelWi
     requestPass: () => {},
   }
   const host = { store } as Record<string, unknown>
+  // Until everything is wired, only what reads the store answers; every action that changes something says not ready.
+  Object.defineProperty(host, 'wired', { enumerable: true, get: () => wired !== undefined })
   const names = [
     'sourceLinks',
     'sources',
@@ -96,18 +102,19 @@ export function createPanelWiring(store: Store, stateDirectory: string): PanelWi
     Object.defineProperty(host, name, {
       enumerable: true,
       get() {
-        if (name in wired) return wired[name]
+        if (wired) return wired[name]
         if (name in fallback) return fallback[name]
         throw new NotReady(name)
       },
     })
   return {
     host: host as unknown as PanelHost,
+    // Property descriptors, not values: copying the values would call each getter once and freeze it.
     wire: (parts) => {
-      wired = { ...wired, ...parts }
+      wired = Object.defineProperties({}, Object.getOwnPropertyDescriptors(parts)) as Partial<PanelParts>
     },
     unwire: () => {
-      wired = {}
+      wired = undefined
     },
   }
 }

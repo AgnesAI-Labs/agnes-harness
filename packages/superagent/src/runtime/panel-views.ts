@@ -51,6 +51,8 @@ export interface PanelSessions extends SessionNotices {
 /** Everything the panel services read and call; the runtime provides it once its parts are running. */
 export interface PanelHost {
   readonly store: Store
+  /** False until every part is wired; an action that changes something is refused until then. Absent means wired. */
+  readonly wired?: boolean
   /** Feishu message links resolved since startup, used by search to match AppLink URLs. */
   readonly sourceLinks: Pick<TextCache, 'entries'>
   readonly sources: SourceRegistry
