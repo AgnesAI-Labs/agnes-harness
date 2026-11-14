@@ -1,7 +1,14 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { PrepareFailed, SessionRegistry, Sessions, type SessionsDeps } from '../../src/runtime/sessions.js'
+import {
+  PrepareFailed,
+  SessionArchived,
+  SessionRegistry,
+  Sessions,
+  type SessionsDeps,
+  SessionTaken,
+} from '../../src/runtime/sessions.js'
 import { fakeClient } from './fake-sdk.js'
 import { tempStore, ticket } from './helpers.js'
 
@@ -77,17 +84,63 @@ describe('worker sessions', () => {
     expect(reopened.fake.renamed).toEqual([[first, 'Renamed']])
   })
 
-  it('does not replace a registered session its owner deleted', async () => {
-    const { registry, sessions } = setup()
-    registry.record({ kind: 'worker', ticketId: 't4' }, 'superagent:worker:t4')
-    await expect(sessions.ensureWorker(ticket('t4'), join(temp.dir, 'w4'))).rejects.toThrow(/unknown session/)
+  it('opens a registered worker session its owner deleted again, under the same key', async () => {
+    const { fake, registry, sessions } = setup()
+    const dir = join(temp.dir, 'w4')
+    const id = await sessions.ensureWorker(ticket('t4'), dir)
+    fake.remove(id)
+    expect(await sessions.ensureWorker(ticket('t4'), dir)).toBe(id)
+    expect(fake.sessions.get(id)?.options).toMatchObject({ sessionKey: id, preset: 'superagent-worker' })
+    expect(fake.sessions.get(id)?.deleted).toBeUndefined()
+    expect(registry.role(id)).toEqual({ kind: 'worker', ticketId: 't4' })
   })
 
-  it('takes over a session with its key that the store did not record', async () => {
+  it('fails the assignment when the owner archived the worker session, and opens no other', async () => {
+    const { fake, sessions } = setup()
+    const dir = join(temp.dir, 'w8')
+    const id = await sessions.ensureWorker(ticket('t8'), dir)
+    fake.sessions.get(id)!.archived = true
+    const opened = sessions.ensureWorker(ticket('t8'), dir)
+    await expect(opened).rejects.toBeInstanceOf(SessionArchived)
+    await expect(opened).rejects.toThrow(/archived.*superagent:worker:t8/)
+    expect([...fake.sessions.keys()]).toEqual([id])
+  })
+
+  it('never takes over a session under its key that Superagent did not open', async () => {
     const { fake, registry, sessions } = setup()
     fake.make('superagent:worker:t5')
-    expect(await sessions.ensureWorker(ticket('t5'), join(temp.dir, 'w5'))).toBe('superagent:worker:t5')
-    expect(registry.role('superagent:worker:t5')).toEqual({ kind: 'worker', ticketId: 't5' })
+    const opened = sessions.ensureWorker(ticket('t5'), join(temp.dir, 'w5'))
+    await expect(opened).rejects.toBeInstanceOf(SessionTaken)
+    await expect(opened).rejects.toThrow(/superagent:worker:t5/)
+    expect(registry.ids()).toEqual([])
+    expect(fake.sessions.get('superagent:worker:t5')?.options).toBeUndefined()
+    const main = setup()
+    main.fake.make('superagent:orchestrator')
+    await expect(main.sessions.ensureOrchestrator()).rejects.toBeInstanceOf(SessionTaken)
+    // Another principal's session under the key: the daemon denies both opening and creating it.
+    const other = setup()
+    other.fake.foreign.add('superagent:worker:t11')
+    await expect(other.sessions.ensureWorker(ticket('t11'), join(temp.dir, 'w11'))).rejects.toBeInstanceOf(
+      SessionTaken,
+    )
+  })
+
+  it('adopts a session it created but had not recorded yet, as after a stop in between', async () => {
+    const { fake, registry, sessions } = setup()
+    registry.intend({ kind: 'worker', ticketId: 't9' }, 'superagent:worker:t9')
+    fake.make('superagent:worker:t9')
+    expect(await sessions.ensureWorker(ticket('t9'), join(temp.dir, 'w9'))).toBe('superagent:worker:t9')
+    expect(registry.role('superagent:worker:t9')).toEqual({ kind: 'worker', ticketId: 't9' })
+    expect(fake.sessions.get('superagent:worker:t9')?.options).toBeUndefined()
+  })
+
+  it('names the session with a title the daemon accepts', async () => {
+    const { fake, sessions } = setup()
+    await sessions.ensureWorker(
+      ticket('t10', { title: `${'x'.repeat(100)}\nsecond line` }),
+      join(temp.dir, 'w10'),
+    )
+    expect(fake.renamed.at(-1)?.[1]).toBe('x'.repeat(80))
   })
 })
 

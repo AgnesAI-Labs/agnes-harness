@@ -44,6 +44,7 @@ import {
   type SessionHandle,
   type SessionJob,
   type SessionRegistry,
+  sessionMissing,
   workerKey,
 } from './sessions.js'
 
@@ -64,6 +65,8 @@ export const messageIdOf = (requestId: string): string => key(requestId)
 export interface ExecutorSessions extends SessionAdapter {
   readonly registry: Pick<SessionRegistry, 'ids'>
   handle(sessionId: string): Promise<SessionHandle>
+  /** Forgets a session's handle so the next use loads it again. */
+  forget(sessionId: string): void
   jobs(sessionId: string, except?: ReadonlySet<string>): Promise<SessionJob[]>
   killJobs(sessionId: string, except?: ReadonlySet<string>): Promise<void>
   transcript(sessionId: string): Promise<{ type: 'user' | 'assistant'; text: string }[]>
@@ -278,7 +281,7 @@ export class SuperagentExecutor implements Executor {
         const input = ticket.inputs.find((item) => item.id === inputId)
         this.watch(workerKey(ticketId), ticketId)
         try {
-          if (input) await this.deliverInput(ticket, assignment, input)
+          if (input) await this.reopening(ticket, () => this.deliverInput(ticket, assignment, input))
         } catch (error) {
           if (this.host.closing() || error instanceof Later) throw error
           const current = this.host.store.tickets.get(ticketId)
@@ -290,6 +293,22 @@ export class SuperagentExecutor implements Executor {
       }
     } finally {
       if (woken) this.slots.free(ticketId)
+    }
+  }
+  /** Runs `work` on the ticket's worker session, opening the session again once when its owner deleted it. */
+  private async reopening(ticket: Ticket, work: () => Promise<void>): Promise<void> {
+    try {
+      await work()
+    } catch (error) {
+      const directory = ticket.execution?.directory
+      if (!sessionMissing(error) || !directory) throw error
+      const sessionId = workerKey(ticket.id)
+      this.host.sessions.forget(sessionId)
+      this.watched.get(sessionId)?.stop()
+      this.watched.delete(sessionId)
+      await this.host.sessions.ensureWorker(ticket, directory)
+      this.watch(sessionId, ticket.id)
+      await work()
     }
   }
   private async deliverInput(ticket: Ticket, assignment: Assignment, input: TicketInput): Promise<void> {

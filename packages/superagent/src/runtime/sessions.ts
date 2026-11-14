@@ -64,6 +64,8 @@ export const PREPARE_TIMEOUT_MS = 10 * 60_000
 
 /** The session ids Superagent opened, by role: `orchestrator`, or `worker:<ticket id>`. */
 const SESSION_IDS = family<string, [role: string]>('superagent-session:')
+/** The key of a session Superagent is creating for a role, until the store records its id. */
+const SESSION_INTENTS = family<string, [role: string]>('superagent-session-intent:')
 export type SessionRole = { kind: 'orchestrator' } | { kind: 'worker'; ticketId: string }
 
 /**
@@ -72,7 +74,7 @@ export type SessionRole = { kind: 'orchestrator' } | { kind: 'worker'; ticketId:
  */
 export class SessionRegistry {
   private byId?: Map<string, SessionRole>
-  constructor(private readonly store: Pick<Store, 'get' | 'set' | 'keys'>) {}
+  constructor(private readonly store: Pick<Store, 'get' | 'set' | 'keys' | 'delete'>) {}
   private load(): Map<string, SessionRole> {
     if (this.byId) return this.byId
     const byId = new Map<string, SessionRole>()
@@ -86,7 +88,16 @@ export class SessionRegistry {
   }
   record(role: SessionRole, id: string): void {
     this.store.set(SESSION_IDS(roleName(role)), id)
+    this.store.delete(SESSION_INTENTS(roleName(role)))
     this.load().set(id, role)
+  }
+  /** Notes that Superagent creates the role's session under `key`, so a stop before `record` does not orphan it. */
+  intend(role: SessionRole, key: string): void {
+    this.store.set(SESSION_INTENTS(roleName(role)), key)
+  }
+  /** Whether Superagent was creating the role's session under `key`. */
+  intended(role: SessionRole, key: string): boolean {
+    return this.store.get(SESSION_INTENTS(roleName(role))) === key
   }
   id(role: SessionRole): string | undefined {
     return this.store.get(SESSION_IDS(roleName(role)))
@@ -118,6 +129,40 @@ const roleOf = (name: string): SessionRole =>
 
 /** A ticket's prepare command failed; the ticket fails and is not retried automatically. */
 export class PrepareFailed extends Error {}
+/** A session Superagent did not open holds the key of one of its roles; it is never taken over. */
+export class SessionTaken extends Error {
+  constructor(readonly key: string) {
+    super(
+      `A session ${key} exists that Superagent did not open; Superagent does not take it over. Archive or remove it, then try again.`,
+    )
+  }
+}
+/** The owner archived a ticket's worker session: the assignment fails for a person to decide; no other session opens. */
+export class SessionArchived extends Error {
+  constructor(readonly key: string) {
+    super(
+      `The owner archived the worker session ${key}; Superagent opens no other session for the ticket. Restore the session and retry the ticket, or stop it.`,
+    )
+  }
+}
+/**
+ * Whether an SDK error says the session does not exist, as for one its owner deleted. Opening a session the daemon does
+ * not know answers the fixed ownership denial it also gives for another principal's session; a session Superagent then
+ * creates under that key is refused when it is another's (see `SessionTaken`).
+ */
+export function sessionMissing(error: unknown): boolean {
+  const failure = error as { code?: unknown; data?: { code?: unknown; reason?: unknown } } | undefined
+  const code = failure?.data?.code ?? failure?.code
+  if (code === 'SESSION_NOT_FOUND' || code === 'E_SESSION_NOT_FOUND') return true
+  return code === 'CAPABILITY_DENIED' && failure?.data?.reason === 'session owner unavailable'
+}
+/** A title the daemon accepts: one line of at most 80 characters. */
+function titleOf(title: string, key: string): string {
+  const line = [
+    ...(title.split(/[\r\n]/)[0] ?? '').replace(/[\p{Cc}\u202a-\u202e\u2066-\u2069]/gu, '').trim(),
+  ]
+  return line.slice(0, 80).join('').trim() || key
+}
 
 export interface SessionsDeps {
   readonly client: SessionClient
@@ -190,37 +235,70 @@ export class Sessions implements SessionAdapter {
     await this.deps.verify?.(dir, this.deps.lifetime)
   }
   /**
-   * Loads the role's session, or creates it with the role's bundle and preset when it never existed. A registered session
-   * that cannot be loaded, such as one its owner deleted, is an error: no other session silently replaces it.
+   * Loads the role's session, or creates it with the role's bundle and preset. A registered session its owner deleted is
+   * created again under the same key; one its owner archived fails a worker's assignment instead, and no other session
+   * opens. An unregistered session under the role's key is taken over only when Superagent was creating it (see
+   * `SessionRegistry.intend`); any other is the owner's, and is refused.
    */
   private async ensure(role: SessionRole, dir: string, title: string, ticket?: Ticket): Promise<string> {
     const { client, registry } = this.deps
     const key = role.kind === 'orchestrator' ? ORCHESTRATOR_KEY : workerKey(role.ticketId)
     await client.workspace.add(dir)
     const known = registry.id(role)
-    let session: SessionHandle
-    if (known) session = await this.handle(known)
-    else {
-      session = await client.session.load(key, { history: 'none' }).catch(async () => {
-        const { bundle, preset } = ROLE_BUNDLES[role.kind]
-        const prompt = ticket && this.deps.workerPrompt?.(ticket, dir)
-        const created = await client.session.new({
-          cwd: dir,
-          sessionKey: key,
-          permission: 'full-access',
-          bundles: [bundle],
-          preset,
-          ...(prompt ? { systemPromptAppend: prompt } : {}),
-        })
-        if (created.id !== key) throw new Error(`The session for ${key} was created as ${created.id}`)
-        await this.deps.applyModel?.(role.kind, created)
-        return created
-      })
+    if (known) this.handles.delete(known)
+    const found = await (known ? this.handle(known) : client.session.load(key, { history: 'none' })).catch(
+      (error: unknown) => {
+        if (sessionMissing(error)) return undefined
+        throw error
+      },
+    )
+    if (found && !known && !registry.intended(role, key)) throw new SessionTaken(key)
+    const session = found ?? (await this.create(role, key, dir, ticket, !!known))
+    if (!known || !found) {
       this.handles.set(session.id, Promise.resolve(session))
       registry.record(role, session.id)
     }
-    await client.session.rename(session.id, title.slice(0, 200) || key)
+    const preferences = (await client.session.rename(session.id, titleOf(title, key))) as
+      | { archived?: boolean }
+      | undefined
+    if (role.kind === 'worker' && preferences?.archived) throw new SessionArchived(key)
     return session.id
+  }
+  private async create(
+    role: SessionRole,
+    key: string,
+    dir: string,
+    ticket: Ticket | undefined,
+    deleted: boolean,
+  ): Promise<SessionHandle> {
+    const { bundle, preset } = ROLE_BUNDLES[role.kind]
+    const prompt = ticket && this.deps.workerPrompt?.(ticket, dir)
+    this.deps.registry.intend(role, key)
+    const created = await this.deps.client.session
+      .new({
+        cwd: dir,
+        sessionKey: key,
+        permission: 'full-access',
+        bundles: [bundle],
+        preset,
+        ...(prompt ? { systemPromptAppend: prompt } : {}),
+      })
+      .catch((error: unknown) => {
+        if (deleted)
+          throw new Error(`The session ${key} was deleted and could not be opened again: ${String(error)}`, {
+            cause: error,
+          })
+        // Another principal's session holds the key.
+        if (sessionMissing(error)) throw new SessionTaken(key)
+        throw error
+      })
+    if (created.id !== key) throw new Error(`The session for ${key} was created as ${created.id}`)
+    await this.deps.applyModel?.(role.kind, created)
+    return created
+  }
+  /** Forgets a session's handle, such as one to a session that was deleted, so the next use loads it again. */
+  forget(sessionId: string): void {
+    this.handles.delete(sessionId)
   }
   /** The session's handle, loaded once without replaying its history. */
   handle(sessionId: string): Promise<SessionHandle> {

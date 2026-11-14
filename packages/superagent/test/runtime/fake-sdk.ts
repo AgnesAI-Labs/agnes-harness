@@ -36,6 +36,10 @@ export interface FakeSession {
   failNext?: 'landed' | 'lost' | undefined
   /** Keeps a steer to a busy session in its inbox until the next step, as the daemon does, instead of taking it at once. */
   queueSteers?: boolean
+  /** Archived by its owner: still there, and its preferences say so. */
+  archived?: boolean
+  /** Deleted: every call on a handle to it fails as the daemon answers for an unknown session. */
+  deleted?: boolean
   emit(event: Omit<FakeEvent, 'seq'>): void
   /** How many event readers the session has. */
   listening(): number
@@ -47,6 +51,8 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
   const workspaces: string[] = []
   const renamed: [string, string][] = []
   const loads: string[] = []
+  /** Keys held by another principal's sessions: the daemon denies loading or creating them. */
+  const foreign = new Set<string>()
   let seq = 0
   const make = (id: string, options?: NewSessionOptions): FakeSession => {
     const listeners = new Set<(event: FakeEvent) => void>()
@@ -70,6 +76,7 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
     const record =
       (method: string, result: unknown = ++seq) =>
       async (...args: unknown[]) => {
+        if (session.deleted) throw missing(id)
         session.calls.push({ method, args })
         return typeof result === 'function' ? (result as (...a: unknown[]) => unknown)(...args) : result
       }
@@ -103,6 +110,7 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
     const submit =
       (method: string) =>
       async (input: unknown, o: { commandId?: string } = {}) => {
+        if (session.deleted) throw missing(id)
         session.calls.push({ method, args: [input, o] })
         const commandId = o.commandId
         if (commandId && session.journal.has(commandId)) throw uncertain(commandId)
@@ -154,6 +162,7 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
         completions: [],
       }),
       projectUI: async () => {
+        if (session.deleted) throw missing(id)
         if (session.unreadable) throw new Error('projection unavailable')
         return {
           sessionId: id,
@@ -220,16 +229,21 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
       },
     },
     session: {
-      new: async (options: NewSessionOptions) => make(options.sessionKey ?? `s-${++seq}`, options).handle,
+      new: async (options: NewSessionOptions) => {
+        if (options.sessionKey && foreign.has(options.sessionKey)) throw denied(options.sessionKey)
+        return make(options.sessionKey ?? `s-${++seq}`, options).handle
+      },
       load: async (id: string) => {
         loads.push(id)
         const found = sessions.get(id)
-        if (!found) throw Object.assign(new Error(`unknown session ${id}`), { code: 'SESSION_NOT_FOUND' })
+        if (!found) throw denied(id)
         return found.handle
       },
       rename: async (id: string, title: string) => {
+        const found = sessions.get(id)
+        if (!found) throw missing(id)
         renamed.push([id, title])
-        return {}
+        return { title, archived: !!found.archived }
       },
     },
     config: {
@@ -254,5 +268,30 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
         }) as never,
     },
   }
-  return { client, sessions, workspaces, renamed, loads, make }
+  /** Deletes a session: it leaves the daemon, and handles to it fail from now on. */
+  const remove = (id: string) => {
+    const found = sessions.get(id)
+    if (found) found.deleted = true
+    sessions.delete(id)
+  }
+  return { client, sessions, workspaces, renamed, loads, make, remove, foreign }
 }
+
+/**
+ * What the daemon answers `session/load` for a session that does not exist: the denial it also gives for another
+ * principal's session, so the two cannot be told apart.
+ */
+const denied = (id: string) =>
+  Object.assign(new Error('CAPABILITY_DENIED (-32003)'), {
+    data: {
+      code: 'CAPABILITY_DENIED',
+      method: 'session/load',
+      sessionId: id,
+      reason: 'session owner unavailable',
+    },
+  })
+/** What the daemon answers a call on a session it does not know, as the SDK raises it. */
+const missing = (id: string) =>
+  Object.assign(new Error(`Session not found (${id})`), {
+    data: { code: 'SESSION_NOT_FOUND', sessionId: id },
+  })

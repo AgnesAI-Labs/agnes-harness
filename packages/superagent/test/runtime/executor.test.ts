@@ -277,6 +277,21 @@ describe('the executor', () => {
     await again.stop()
   })
 
+  it("opens a worker session its owner deleted again to deliver a person's message", async () => {
+    const { accept, effects, engine, fake, worker, watched, stop } = setup()
+    const ticketId = accept()
+    await effects.idle('launch')
+    await watched(ticketId)
+    fake.remove(worker(ticketId)!.id)
+    engine.receive({ ...message('2'), text: 'also check the logout page' })
+    await vi.waitFor(() => expect(ticketOf(ticketId).undelivered).toEqual([]))
+    expect(ticketOf(ticketId).delivery).toBeUndefined()
+    const reopened = worker(ticketId)!
+    expect(reopened.deleted).toBeUndefined()
+    expect(reopened.pending.some((item) => item.preview.includes('also check the logout page'))).toBe(true)
+    await stop()
+  })
+
   it('after a restart, re-dispatches an assignment whose worker no longer runs and keeps one that still does', async () => {
     const first = setup()
     const ticketId = first.accept()
