@@ -15,6 +15,7 @@ import {
   acceptRequest,
   type Bootstrapped,
   bootstrap,
+  EXTENSION,
   groupMessage,
   INSTANCE,
   sleep,
@@ -99,7 +100,7 @@ async function mintCode(world: Bootstrapped, instanceId: string): Promise<string
 }
 
 it.skipIf(process.platform === 'win32')(
-  'claims instance A whole for group and direct messages, leaves the paired direct chat on B alone, and gives A back when disabled',
+  'claims instance A whole for group and direct messages, lists the instances, refuses the owner-paired B and gives A back',
   async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'sa-feishu-instance-e2e-')))
     let world: Bootstrapped | undefined
@@ -157,8 +158,65 @@ it.skipIf(process.platform === 'win32')(
       expect(current.triggers().sort()).toEqual([key('feishu', 'om_d1'), key('feishu', 'om_g1')])
       expect(b.sent().every((row) => !row.message.replyTo)).toBe(true)
 
-      // Disabled, Superagent's claim ends: A pairs and routes a direct chat as any instance does.
-      await current.disable()
+      // The settings list the running instances through the owner's client; B, which the owner paired, is marked.
+      const choices = await until(
+        'the instance choices with B marked',
+        () => {
+          const [row] = current.query<{ value: string }>(
+            'SELECT value FROM kv WHERE key = ?',
+            'source-choices:feishu',
+          )
+          const list = row
+            ? (JSON.parse(row.value) as { instance: { value: string; busy?: unknown }[] }).instance
+            : []
+          return list.some((choice) => choice.busy) ? list : undefined
+        },
+        150_000,
+      )
+      expect(choices.map((choice) => [choice.value, !!choice.busy])).toEqual([
+        [`${PLUGIN}/${B}`, true],
+        [`${PLUGIN}/${INSTANCE}`, false],
+      ])
+
+      // Switched to the owner's B while running, Superagent is refused and releases A at once.
+      const scoped = (service: string, input: Record<string, unknown>, operationId?: string) =>
+        current.client().extensions.callScoped({
+          extension: EXTENSION,
+          service,
+          input: input as never,
+          ...(operationId ? { operationId } : {}),
+        }) as Promise<{ output: Record<string, unknown> }>
+      const view = (await scoped('superagent.settings.get', {})).output as {
+        sources: {
+          id: string
+          revision: number
+          value: { enabled: boolean; config: Record<string, unknown> }
+        }[]
+      }
+      const source = view.sources.find((item) => item.id === 'feishu')!
+      await scoped(
+        'superagent.settings.save',
+        {
+          block: 'source:feishu',
+          value: { ...source.value, config: { ...source.value.config, instance: `${PLUGIN}/${B}` } },
+          revision: source.revision,
+        },
+        `switch-${randomUUID()}`,
+      )
+      await until(
+        'the refusal of B',
+        () => current.feishuHealth().feishu?.code === 'feishuInstanceShared',
+        60_000,
+      )
+      expect(current.feishuHealth().feishu?.detail).toContain('use a dedicated bot instance')
+      b.emit(ownerDm('om_b3', 'the desk again'), false)
+      const third = await until('the third paired message on B', () =>
+        desk.events().find((event) => event.kind === 'message' && event.text === 'the desk again'),
+      )
+      expect(third).toMatchObject({ instanceId: B, receiptId: expect.any(String) })
+      expect(current.triggers()).not.toContain(key('feishu', 'om_b3'))
+
+      // A, released in the same host, pairs and routes a direct chat as any instance does.
       await current.client().request('_agnes/v1/channels.pairing', {
         action: 'revoke',
         pairingId: (paired as ChannelTargetEvent).pairingId,

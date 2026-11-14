@@ -18,7 +18,7 @@ import { makeHomes } from './homes.js'
 export const PROFILE = 'local-dev'
 const PACKAGE = '@agnes/superagent'
 export const INSTANCE = 'feishu-test'
-const EXTENSION = `plugin/${createHash('sha256').update('ext:agnes.superagent/main').digest('hex').slice(0, 16)}`
+export const EXTENSION = `plugin/${createHash('sha256').update('ext:agnes.superagent/main').digest('hex').slice(0, 16)}`
 const STEP_MS = 120_000
 /** The state directory the platform gives the service by default (see the bundled-app grant). */
 const defaultStateDir = (aghHome: string) =>
