@@ -9,6 +9,8 @@ export const RISK_DIRECTORIES = [
   'packages/core/src/execution/turn',
   'packages/host/src/runtime/generation',
   'packages/daemon/src/supervisor',
+  'packages/superagent/src',
+  'packages/superagent-ui/src',
 ] as const
 export type FunctionMeasurement = {
   path: string

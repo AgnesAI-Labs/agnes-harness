@@ -26,14 +26,11 @@ export interface CiSnapshot {
 const FAILING = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure', 'error'])
 export function ciCounts(snapshot: CiSnapshot): { failed: number; running: number } {
   const statuses = snapshot.statuses ?? []
-  return {
-    failed:
-      snapshot.checks.filter((check) => FAILING.has(check.conclusion ?? '')).length +
-      statuses.filter((status) => FAILING.has(status.state)).length,
-    running:
-      snapshot.checks.filter((check) => check.status !== 'completed').length +
-      statuses.filter((status) => status.state === 'pending').length,
-  }
+  const failedChecks = snapshot.checks.filter((check) => FAILING.has(check.conclusion ?? '')).length
+  const failedStatuses = statuses.filter((status) => FAILING.has(status.state)).length
+  const runningChecks = snapshot.checks.filter((check) => check.status !== 'completed').length
+  const pendingStatuses = statuses.filter((status) => status.state === 'pending').length
+  return { failed: failedChecks + failedStatuses, running: runningChecks + pendingStatuses }
 }
 export function ciSummary(snapshot: CiSnapshot, where: string, read: string): string {
   const checks = snapshot.checks.map((check) => ({
