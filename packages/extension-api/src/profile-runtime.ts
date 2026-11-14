@@ -1,4 +1,5 @@
 import type { JsonValue } from '@agnes/protocol'
+import type { BundledAppGrant } from './bundled-app.js'
 import type { ManagedChannelTargets } from './channel-targets.js'
 import type { ManagedSessions } from './managed-sessions.js'
 import type { BoundWakes, OwnedStore } from './profile-services.js'
@@ -13,6 +14,9 @@ export interface ProfileManagedInit {
   readonly sessions: ManagedSessions
   /** Refuses every call unless the reviewed declaration sets `channelTargets: true`. Added in 5.12. */
   readonly channels: ManagedChannelTargets
+  /** Present only for a release-whitelisted bundled package whose payload matches the shipped
+   * digest. Release assembly decides this; plugins cannot request it. Added in 5.18. */
+  readonly bundledApp?: BundledAppGrant
   readonly config: JsonValue
   readonly listeners: Readonly<Record<string, { host: '127.0.0.1'; port: number }>>
   assertCurrent(): void

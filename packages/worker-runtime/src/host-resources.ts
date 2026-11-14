@@ -4,6 +4,7 @@ import type { HostOptions, ResolvedProfile } from '@agnes/host'
 export type WorkerHostSkillResources = Readonly<{
   channelInteractions?: NonNullable<HostOptions['channelInteractions']>
   channelRuntime?: NonNullable<HostOptions['channelRuntime']>
+  bundledAppClient?: NonNullable<HostOptions['bundledAppClient']>
   scheduling?: NonNullable<HostOptions['scheduling']>
   decisionsChanged?: NonNullable<HostOptions['decisionsChanged']>
   boundWakes?: NonNullable<HostOptions['boundWakes']>

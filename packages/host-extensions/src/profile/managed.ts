@@ -13,6 +13,7 @@ import { grantKey } from '@agnes/plugin-runtime/host'
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
+import { type BundledAppProvision, openBundledApp } from './bundled-app.js'
 import { type ChannelTargets, deniedChannelTargets } from './channel-targets.js'
 import {
   confirmManagedShutdown,
@@ -84,6 +85,7 @@ export class ProfileManagedResources {
     descriptor: ManagedServiceDescriptor
     store: OwnedStore
     wakesAllowed?: boolean
+    bundledApp?: BundledAppProvision
     assert(): void
   }[] = []
   private closed = false
@@ -104,6 +106,8 @@ export class ProfileManagedResources {
     definition: ProfileManagedDefinition<T>
     store: OwnedStore
     wakesAllowed?: boolean
+    /** Release-assembly grant, decided by the caller from Host grants; never from the definition. */
+    bundledApp?: BundledAppProvision
     assert(): void
   }) {
     if (
@@ -238,6 +242,7 @@ export class ProfileManagedResources {
     let startupComplete = false
     let ended = false
     let stopping: Promise<void> | undefined
+    let app: ReturnType<typeof openBundledApp> | undefined
     let shutdownResult: Promise<{ state: 'settled' | 'unknown' } | undefined> | undefined
     const shut = (reason: Reason) => {
       if (!shutdownResult) {
@@ -274,6 +279,7 @@ export class ProfileManagedResources {
           // A blocked definition never acquired a live instance. Retiring its registration must
           // not poison the next publication: leave the durable unknown marker for native recovery.
           if (!started) {
+            await app?.close()
             r.status =
               input.store.get(`managed-shutdown:${r.id}`) === true
                 ? { state: 'failed', code: 'shutdown-unconfirmed' }
@@ -282,6 +288,7 @@ export class ProfileManagedResources {
             return
           }
           const result = await shut(reason)
+          await app?.close()
           const settled =
             result?.state === 'settled' || hasManagedShutdownConfirmation(r.shutdownConfirmation, input.store)
           r.status = settled ? { state: 'stopped' } : { state: 'failed', code: 'shutdown-unconfirmed' }
@@ -324,6 +331,15 @@ export class ProfileManagedResources {
         listeners[listener.name] = { host: listener.host, port: port === 'auto' ? await freePort() : port }
       }
       lifetime.signal.throwIfAborted()
+      if (input.bundledApp)
+        app = openBundledApp(input.bundledApp, {
+          signal: lifetime.signal,
+          assertCurrent: () => {
+            input.assert()
+            if (this.current && !this.current(input.owner, input.integrity, input.revision))
+              throw rpcError('CAPABILITY_DENIED')
+          },
+        })
       const owner = await managedProcessOwner(process.pid, this.processIdentity)
       lifetime.signal.throwIfAborted()
       input.store.transaction(() => {
@@ -397,6 +413,7 @@ export class ProfileManagedResources {
           if (shutdown) throw new Error('shutdown already registered')
           shutdown = handler
         },
+        ...(app ? { bundledApp: app.grant } : {}),
         ready: () => {
           if (!shutdown) throw new Error('shutdown required')
           lifetime.signal.throwIfAborted()
@@ -433,6 +450,7 @@ export class ProfileManagedResources {
         markShutdown(input.store, r.id, result?.state !== 'settled')
         if (result?.state !== 'settled') code = 'shutdown-unconfirmed'
       }
+      await app?.close()
       ended = true
       r.status = { state: 'failed', code }
       throw rpcError('CAPABILITY_DENIED')

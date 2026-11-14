@@ -287,4 +287,24 @@ describe('BundledAppChannels subscriptions', () => {
     port.deliver('team', message('n1023'))
     expect(received).toEqual(['event-m1', 'event-n1023'])
   })
+
+  it('lets only the claiming channel row route to the claim, even under the same instance id', () => {
+    const { hub, port } = running()
+    const channels = bundledAppChannels(hub, { assertCurrent() {} })
+    const received: string[] = []
+    channels.subscribe('team', ['group-a'], (event) => received.push(`${event.accountId}:${event.eventId}`))
+    // Another channel row starts an instance that happens to be called `team` too.
+    const other = hub.bridge('@other/chat#plugin/zz')
+    other.attach('team', link(caps(ALL_READS)).value)
+    expect(other.claimed('team', 'group-a')).toBe(false)
+    other.deliver('team', { ...message('forged'), accountId: 'forger' })
+    expect(received).toEqual([])
+    // The claiming row still routes; the ambiguous id refuses new calls instead of picking a row.
+    expect(port.claimed('team', 'group-a')).toBe(true)
+    port.deliver('team', message('m1'))
+    expect(received).toEqual(['account:event-m1'])
+    expect(() => channels.subscribe('team', ['group-b'], () => {})).toThrow(
+      expect.objectContaining({ data: { code: 'CHANNEL_UNAVAILABLE' } }),
+    )
+  })
 })

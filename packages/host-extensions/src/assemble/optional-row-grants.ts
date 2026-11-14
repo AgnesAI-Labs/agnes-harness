@@ -27,6 +27,7 @@ export function pinOptionalBundledRowGrants(
   sourceFor: (packageId: string, snapshotId: string) => Readonly<RuntimePluginSnapshot> | undefined,
   declarations: readonly HostGrantDeclaration[] = HOST_CAPABILITY_GRANTS,
   releaseSourceFor = bundledPluginSource,
+  optionalPackages: readonly Readonly<{ id: string; ref: string }>[] = OPTIONAL_BUNDLED_PACKAGES,
 ) {
   const expected = new Map<string, string | undefined>()
   const bindings = new Map<string, string>()
@@ -64,7 +65,7 @@ export function pinOptionalBundledRowGrants(
       origin.trustTier !== 'third-party'
     )
       return empty
-    const optional = OPTIONAL_BUNDLED_PACKAGES.find((p) => p.id === pkg.id && p.ref === pkg.source)
+    const optional = optionalPackages.find((p) => p.id === pkg.id && p.ref === pkg.source)
     const snapshot = source.snapshot
     if (
       !optional ||

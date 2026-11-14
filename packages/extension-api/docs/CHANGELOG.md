@@ -2,10 +2,15 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
-## 5.18.0
+## 5.19.0
 
 - Channel `Sender.kind` (`user` or `bot`) marks who sent a message; absent means a user, and session routing ignores bot senders.
 - `ChannelCapabilities.read` and five optional cursor-paged `ChannelAdapter` reads: `fetchMessages`, `listThread`, `listHistory`, `listChats` and `listMembers`. An adapter declares each read in `capabilities()` at run time; the manifest schema is unchanged. Adapters that implement none of them are unchanged.
+- `BundledAppGrant.channels` now reaches the owner's running channel instances. `subscribe` claims group chats exclusively (never direct chats, never a chat a session is bound to); `send` is split and throttled as a session reply; reads use only the reads the adapter declares. Errors: `CAPABILITY_DENIED` for a stale grant or an undeclared read; `SEMANTIC_REJECTED` with `CHANNEL_UNAVAILABLE` (retry once the channel row runs), `CHANNEL_CHAT_CLAIMED`, `CHANNEL_READ_INVALID`, `CHANNEL_CURSOR_STALLED` or `CHANNEL_READ_TOO_LARGE`; `INVALID_PARAMS` for malformed arguments.
+
+## 5.18.0
+
+- Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed. Until 5.19.0, channel calls refuse with `CAPABILITY_DENIED`.
 
 ## 5.17.0
 

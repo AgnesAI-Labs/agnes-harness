@@ -58,6 +58,7 @@
     "./assemble/host-grants": "./src/assemble/host-grants.ts",
     "./profile/bundled-app-channels": "./src/profile/bundled-app-channels.ts",
     "./profile/channel-runtime": "./src/profile/channel-runtime.ts",
+    "./profile/bundled-app": "./src/profile/bundled-app.ts",
     "./profile/channel-targets": "./src/profile/channel-targets.ts",
     "./profile/channel-pairing": "./src/profile/channel-pairing.ts"
   },

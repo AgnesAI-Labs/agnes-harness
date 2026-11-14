@@ -147,6 +147,8 @@ export type TestHostOptions = {
   currentRuntime?: import('@agnes/core').KernelOptions['currentRuntime']
   serviceAuthority?: import('@agnes/host-extensions/ext-host/service-invocation').ServiceAuthority
   channelRuntime?: HostOptions['channelRuntime']
+  /** Daemon-owned owner client for release-granted bundled applications. */
+  bundledAppClient?: HostOptions['bundledAppClient']
   dataDir: string
   workspaceRoot?: string
   /** Builtin template loaded by the real resolver; omitted uses local-dev. */
@@ -432,6 +434,7 @@ export async function createTestHost(o: TestHostOptions): Promise<TestHost> {
     env: o.env ?? { ...process.env },
     ...(o.serviceAuthority ? { serviceAuthority: o.serviceAuthority } : {}),
     ...(o.channelRuntime ? { channelRuntime: o.channelRuntime } : {}),
+    ...(o.bundledAppClient ? { bundledAppClient: o.bundledAppClient } : {}),
     ...(o.runtimePluginCatalogue ? { runtimePluginCatalogue: o.runtimePluginCatalogue } : {}),
     ...(o.runtimePluginSnapshots ? { runtimePluginSnapshots: o.runtimePluginSnapshots } : {}),
     ...(o.deferInitialGeneration ? { deferInitialGeneration: true } : {}),

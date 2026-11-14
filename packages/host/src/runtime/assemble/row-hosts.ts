@@ -6,6 +6,7 @@ import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owner
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
 import { createRowExtensionHost } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
+import { BundledAppChannelHub } from '@agnes/host-extensions/profile/bundled-app-channels'
 import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { parseAgnesPluginEntries, readPluginCapabilities } from '@agnes/package-manager'
@@ -159,16 +160,17 @@ export function createRowHosts(
       : undefined
     return description && { ...description, ...(declaredCapabilities ? { declaredCapabilities } : {}) }
   }
+  const backendScope = {
+    home: dirname(dirname(deps.profileDir)),
+    profile: ctx.profile.name,
+    dataDir: deps.dataDir,
+    workspace: deps.workspaceRoot,
+  }
   const rowServices = createRowServiceHost(describeServices, {
     ...(deps.channelInteractions ? { channelInteractions: deps.channelInteractions } : {}),
     ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
     channelStateDirectory: join(deps.dataDir, 'channels'),
-    channelScope: {
-      home: dirname(dirname(deps.profileDir)),
-      profile: ctx.profile.name,
-      dataDir: deps.dataDir,
-      workspace: deps.workspaceRoot,
-    },
+    channelScope: backendScope,
     resolveSecret: proc.secrets,
     channelLog: deps.log,
     channelDirectory: proc.channelDirectory,
@@ -178,6 +180,18 @@ export function createRowHosts(
       proc.profileActivations.require(owner, integrity, undefined, revision),
     managed: proc.profileManaged,
     streams: proc.profileStreams,
+    hostGrants,
+    ...(deps.bundledAppClient
+      ? {
+          bundledApp: {
+            stateRoot: join(deps.dataDir, 'bundled-apps'),
+            scope: backendScope,
+            client: deps.bundledAppClient,
+            // One hub per assembly: its channel rows attach here and the bundled app's grant reads it.
+            channels: new BundledAppChannelHub(),
+          },
+        }
+      : {}),
     namespace: (owner, name) =>
       proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}:${name}`),
     describe: describeServices,
