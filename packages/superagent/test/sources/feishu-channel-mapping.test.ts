@@ -359,16 +359,18 @@ describe('history recovery', () => {
       perRound.push(reads.length)
       all.push(...reads)
       if (h.ctx.state.get(KV.feishu.history('oc_team')) === at(5000)) break
-      // Until then the cursor stands at the end of what the round read, and the Source says it is catching up.
-      expect(h.ctx.state.get(KV.feishu.history('oc_team'))).toBe(all.at(-1)?.end)
+      // Until then the cursor stands at the end of the hours the round read (each read reaches a second into the next
+      // hour), and the Source says it is catching up.
+      const read = new Date(Date.parse(all.at(-1)?.end ?? '') - 1000).toISOString()
+      expect(h.ctx.state.get(KV.feishu.history('oc_team'))).toBe(read)
       expect(h.health.history).toMatchObject({ state: 'ready' })
       expect(h.health.history?.detail).toContain(
-        `Catching up on chat history:\noc_team: recovered up to ${all.at(-1)?.end}`,
+        `Catching up on chat history:\noc_team: recovered up to ${read}`,
       )
     }
     // Thirty rounds of 24 hours each read every hour of the gap once, from its start.
     expect(perRound).toEqual(Array(30).fill(24))
-    expect(all[0]).toEqual({ start: at(30 * 24 * hour), end: at(30 * 24 * hour - hour) })
+    expect(all[0]).toEqual({ start: at(30 * 24 * hour), end: at(30 * 24 * hour - hour - 1000) })
     expect(new Set(all.map((read) => read.start)).size).toBe(30 * 24)
     expect(h.trigger('om_old')).toBeDefined()
     expect(h.trigger('om_late')).toBeDefined()

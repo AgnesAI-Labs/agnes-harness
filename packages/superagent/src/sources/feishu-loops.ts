@@ -491,6 +491,12 @@ export async function recoverRound(
 }
 /** The longest stretch of chat history one read covers, so the host's page bound holds in a busy chat. */
 export const HISTORY_SLICE_MS = 3_600_000
+/**
+ * How far a read reaches into the next slice. The channel contract does not say whether `start` and `end` are inclusive;
+ * Superagent reads them as inclusive at second granularity, and overlaps adjacent slices by a second so a message at a
+ * slice edge is read even by a channel that excludes both ends or truncates to seconds. Trigger ids drop the copy.
+ */
+export const HISTORY_OVERLAP_MS = 1000
 /** How many slices one round reads per chat, so a long outage is caught up over rounds rather than in one burst. */
 export const HISTORY_SLICES_PER_ROUND = 24
 /** What a recovery left out: windows the channel refused as too large, and where it stopped when the gap was longer. */
@@ -535,7 +541,7 @@ export async function backfillChat(
     const to = Math.min(from + HISTORY_SLICE_MS, end)
     let events: MessageEvent[] = []
     try {
-      events = await readHistory(io, chatId, from, to)
+      events = await readHistory(io, chatId, from, Math.min(to + HISTORY_OVERLAP_MS, end))
     } catch (error) {
       if (channelCode(error) !== 'CHANNEL_READ_TOO_LARGE') throw error
       recovery.skipped.push({ from: iso(from), to: iso(to) })
