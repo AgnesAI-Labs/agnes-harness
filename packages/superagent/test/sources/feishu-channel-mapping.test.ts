@@ -116,6 +116,44 @@ describe('channel messages as Triggers', () => {
     expect(await takeIn(h.ctx, h.link, message('om_9', { sender: 'ou_bot', bot: true }))).toBe('own')
     expect(h.receive).not.toHaveBeenCalled()
   })
+  it("drops every part of the bot's reply that comes back while it is being sent, without taking another bot for itself", async () => {
+    const h = open()
+    await takeIn(h.ctx, h.link, message('om_1', { mentioned: true }))
+    let release = () => {}
+    h.fake.state.sendHold = new Promise((resolve) => {
+      release = resolve
+    })
+    h.fake.state.nextIds = ['om_p1']
+    const sending = h.kind.channel!.send({ commands: h.ctx.commands }, reply('r1', 'om_1'))
+    await Promise.resolve()
+    // Two parts of the reply come back before the send returns (it returns only the first part's id).
+    const part = (id: string) => message(id, { sender: 'ou_bot', bot: true, quoted: 'om_1' })
+    expect(await takeIn(h.ctx, h.link, part('om_p1'))).toBe('own')
+    expect(await takeIn(h.ctx, h.link, part('om_p2'))).toBe('own')
+    // A bot message that answers the request after the send is no part of it.
+    release()
+    expect(await sending).toBe('sent')
+    expect(
+      await takeIn(h.ctx, h.link, message('om_ci', { sender: 'cli_ci', bot: true, quoted: 'om_1' })),
+    ).toBe('stored')
+    // Nothing taught the bot's id from a message that may be another bot's; history reads the parts as the bot's.
+    expect(h.ctx.state.get(KV.feishu.self)).toBeUndefined()
+    expect(await takeIn(h.ctx, h.link, part('om_p2'))).toBe('own')
+    expect(await takeIn(h.ctx, h.link, part('om_p1'))).toBe('own')
+    expect(h.ctx.state.get(KV.feishu.self)).toBe('ou_bot')
+    expect(h.trigger('om_p1')).toBeUndefined()
+    expect(h.trigger('om_p2')).toBeUndefined()
+  })
+  it("learns the bot's id from its reply's first part when that part came back and was taken in before the send returned", async () => {
+    const h = open()
+    await takeIn(h.ctx, h.link, message('om_1', { mentioned: true }))
+    // The part came back without quoting the request, so it was taken in as some bot's message.
+    expect(await takeIn(h.ctx, h.link, message('om_p1', { sender: 'ou_bot', bot: true }))).toBe('stored')
+    h.fake.state.nextIds = ['om_p1']
+    await h.kind.channel!.send({ commands: h.ctx.commands }, reply('r1', 'om_1'))
+    expect(h.ctx.state.get(KV.feishu.self)).toBe('ou_bot')
+    expect(await takeIn(h.ctx, h.link, message('om_p9', { sender: 'ou_bot', bot: true }))).toBe('own')
+  })
   it('makes a message of a listed bot an inferred candidate, and admits no other bot', async () => {
     const h = open()
     expect(

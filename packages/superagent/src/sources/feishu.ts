@@ -12,7 +12,7 @@ import {
   linkIo,
   feishuLink as newLink,
 } from './feishu-io.js'
-import { refreshChatNames, rememberSent, runFeishu } from './feishu-loops.js'
+import { inFlight, refreshChatNames, rememberReply, runFeishu } from './feishu-loops.js'
 import { feishuThreadContext } from './feishu-read.js'
 import { feishuTriggerId, SOURCE } from './feishu-trigger.js'
 import { type SourceContext, type SourceHost, sourceContext } from './host.js'
@@ -322,8 +322,9 @@ export function feishuKindFor(link: FeishuLink): SourceKind<FeishuConfig> {
           message,
           (messageId) => replyPlace(link.context, messageId),
           (ref, root) => {
-            if (link.context) rememberSent(link.context, ref.messageId, root)
+            if (link.context) rememberReply(link.context, ref.messageId, root)
           },
+          (chatId, messageId, root) => inFlight(link, chatId, messageId, root),
         ),
       link: feishuLink,
     },

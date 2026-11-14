@@ -84,6 +84,10 @@ export function fakeChannels(
     chats: options.chats ?? [],
     /** What the next sends throw, in order. */
     sendErrors: [] as unknown[],
+    /** Holds every send until it settles, as a slow multi-part send does. */
+    sendHold: undefined as Promise<void> | undefined,
+    /** The message ids the next sends return, before the counted ones. */
+    nextIds: [] as string[],
   }
   const subscribers = new Map<string, (event: ChannelEvent) => void>()
   const sent: { channel: string; target: ChatTarget; message: ChannelMessage }[] = []
@@ -109,8 +113,9 @@ export function fakeChannels(
       if (channel !== state.instance || !state.running) throw rpc('SEMANTIC_REJECTED', 'CHANNEL_UNAVAILABLE')
       const error = state.sendErrors.shift()
       if (error) throw error
+      await state.sendHold
       sent.push({ channel, target, message })
-      return { chatId: target.chatId, messageId: `om_sent${++counter}` }
+      return { chatId: target.chatId, messageId: state.nextIds.shift() ?? `om_sent${++counter}` }
     },
     async fetchMessages(channel, chatId, ids) {
       calls.push({ method: 'fetchMessages', args: [chatId, [...ids]] })

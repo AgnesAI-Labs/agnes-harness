@@ -76,6 +76,27 @@ function remember(
   entries.push([name, value])
   ctx.state.set(record, Object.fromEntries(entries.slice(-REMEMBERED)))
 }
+const flightKey = (chatId: string, messageId: string) => `${chatId}\0${messageId}`
+/** Marks a reply to `messageId` as being sent until the returned function runs. */
+export function inFlight(link: FeishuLink, chatId: string, messageId: string, root: string): () => void {
+  const key = flightKey(chatId, messageId)
+  const current = link.sending.get(key)
+  link.sending.set(key, { root, count: (current?.count ?? 0) + 1 })
+  return () => {
+    const now = link.sending.get(key)
+    if (!now || now.count <= 1) link.sending.delete(key)
+    else link.sending.set(key, { ...now, count: now.count - 1 })
+  }
+}
+/**
+ * Records a reply the bot sent: its id with the root of the chain it answers, and, when it came back before the send
+ * returned and was taken in, the bot's own id from it.
+ */
+export function rememberReply(ctx: SourceContext, messageId: string, root: string): void {
+  rememberSent(ctx, messageId, root)
+  const echoed = ctx.triggers.get(feishuTriggerId(messageId))
+  if (echoed) ctx.state.set(KV.feishu.self, echoed.actor.id)
+}
 /** Records a message the bot sent and the root of the chain it answers. */
 export const rememberSent = (ctx: SourceContext, messageId: string, root: string): void =>
   remember(ctx, KV.feishu.sent, messageId, root)
@@ -122,7 +143,19 @@ export async function takeIn(ctx: SourceContext, link: FeishuLink, event: Messag
     if (event.chat.threadId) remember(ctx, KV.feishu.roots, event.chat.threadId, answered)
     return 'own'
   }
-  const trigger = messageTrigger(event, await rootOf(ctx, link, event), ctx.state.get(KV.feishu.self))
+  const self = ctx.state.get(KV.feishu.self)
+  if (ctx.state.get(KV.feishu.echoes)?.[event.messageId] !== undefined) return 'own'
+  // A bot message that answers a message the bot is replying to now is a part of that reply, unless the bot is known
+  // and it is someone else. It is dropped, but teaches nothing: another bot may answer the same message meanwhile.
+  const flight =
+    event.sender.kind === 'bot' && event.quotedMessageId && (!self || self === event.sender.userId)
+      ? link.sending.get(flightKey(event.chat.id, event.quotedMessageId))
+      : undefined
+  if (flight) {
+    remember(ctx, KV.feishu.echoes, event.messageId, flight.root)
+    return 'own'
+  }
+  const trigger = messageTrigger(event, await rootOf(ctx, link, event), self)
   if (!trigger) return 'own'
   return receive(ctx, trigger)
 }

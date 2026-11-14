@@ -125,12 +125,15 @@ export interface FeishuLink {
   readonly logged: Map<string, string>
   /** Whether the listed chats are subscribed now; history is recovered only then. */
   listening: boolean
+  /** Replies being sent, by `chat\0asked message`, with the root they answer and how many are in flight. */
+  readonly sending: Map<string, { root: string; count: number }>
 }
 export const feishuLink = (channels: BundledAppChannels, log?: (message: string) => void): FeishuLink => ({
   channels,
   missing: new Set(),
   logged: new Map(),
   listening: false,
+  sending: new Map(),
   ...(log ? { log } : {}),
 })
 /** The io of `link` on the channel instance `channel`. */

@@ -40,6 +40,7 @@ export async function sendFeishu(
   message: OutboundMessage,
   place: (messageId: string) => ReplyPlace,
   sent: (ref: MessageRef, root: string) => void,
+  during: (chatId: string, messageId: string, root: string) => () => void = () => () => {},
 ): Promise<'sent' | 'gone'> {
   const { chatId, messageId } = message.channel.address
   if (!chatId || !messageId) throw new Error('Missing Feishu reply target')
@@ -48,6 +49,8 @@ export async function sendFeishu(
   const chatType = message.channel.address.direct === 'true' ? ('dm' as const) : ('group' as const)
   const { threadId, root } = place(messageId)
   let ref: MessageRef
+  // A reply in several parts returns only its first part, and parts may come back before it returns.
+  const done = during(chatId, messageId, root)
   try {
     ref = await io.channels.send(
       io.channel,
@@ -57,6 +60,8 @@ export async function sendFeishu(
   } catch (error) {
     if (gone(error)) return 'gone'
     throw error
+  } finally {
+    done()
   }
   sent(ref, root)
   return 'sent'
