@@ -10,7 +10,7 @@ import { type Deployment, type Machine, type Probe, resolveDeployment, workerPro
 import { createRuntimeParts, createSuperagentApp, type Log, type SuperagentApp } from './app.js'
 import { agentPaths, verifyDirectory, writeEnvironment } from './environment.js'
 import { claimHookState, type HookStateCell, type HookStateHolder } from './hook-state.js'
-import { writeTicketInstructions } from './instructions.js'
+import { workerSystemPromptAppend, writeTicketInstructions } from './instructions.js'
 import {
   createLifecycle,
   type EnvironmentPlan,
@@ -67,8 +67,7 @@ export function composeGeneration(input: GenerationInput): Generation {
     environment: ticketVariables,
     verify: (dir) => verifyDirectory(dir),
     instructions: (ticket, dir) => writeTicketInstructions(dir, ticket, ticketVariables(ticket)),
-    // No `systemPromptAppend` on the worker session: the daemon answers `session/new` with one from this client with
-    // INTERNAL_ERROR. The worker's policy section carries the same execution variables in every request.
+    workerPrompt: (_ticket, dir) => workerSystemPromptAppend(dir),
   })
   const built = createSuperagentApp({
     store,
