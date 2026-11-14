@@ -88,7 +88,14 @@ export type { IntelligentUiRenderer, IntelligentUiRendererApi } from './intellig
 export { slotLocaleCatalog } from './locales.js'
 export type { SlotOutletProps } from './outlet.js'
 export { SlotOutlet, SlotsProvider } from './outlet.js'
-export { isOwnerOnlyMethod, pluginClient, pluginSession, withoutOwnerOnly } from './owner-only.js'
+export {
+  isOwnerOnlyMethod,
+  type OwnerCall,
+  pluginClient,
+  pluginSession,
+  reserveOwnerOnly,
+  withoutOwnerOnly,
+} from './owner-only.js'
 export type {
   ComposerPresentationControls,
   ComposerPresentationPort,

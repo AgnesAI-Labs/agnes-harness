@@ -3,9 +3,10 @@ import { JsonRpcError } from '@agnes/sdk/browser'
 
 /**
  * Methods only the owner's own workbench page may call: reviewing and deciding owner inputs. Plugin
- * code in the page shares that page's connection, so every host API handed to plugin code (the client
- * module facade, plugin home pages, workbench panels) refuses them. Same-page code is not an isolated
- * boundary; this closes the official plugin paths, not a page that patches its own WebSocket.
+ * code in the page shares that page's connection, so the page's client refuses them at the call site
+ * (`reserveOwnerOnly`) and the host APIs handed to plugin code (the client module facade, plugin home
+ * pages, workbench panels) refuse them again. Same-page code is not an isolated boundary; this closes
+ * the plugin APIs, not a page that patches its own WebSocket or works around the SDK objects.
  */
 export function isOwnerOnlyMethod(method: unknown): boolean {
   return typeof method === 'string' && method.startsWith('_agnes/v1/managedInput.')
@@ -22,6 +23,27 @@ export function withoutOwnerOnly<A extends unknown[], R>(
   call: (method: string, ...rest: A) => Promise<R>,
 ): (method: string, ...rest: A) => Promise<R> {
   return (method, ...rest) => (isOwnerOnlyMethod(method) ? refuse(method) : call(method, ...rest))
+}
+
+type Sender = (method: string, ...rest: never[]) => Promise<unknown>
+/** The page's own way to call an owner-only method; only the code that reserved the client holds it. */
+export type OwnerCall = <T>(method: string, params: unknown) => Promise<T>
+const reserved = new WeakSet<object>()
+
+/**
+ * Make `client` refuse the owner-only methods wherever a call starts: its own `call` and `notify`
+ * shadow the SDK's, so `request`, every `Session.client` and every facade over it hit the same check.
+ * Returns the one caller that still reaches them. The page calls this once, before any plugin code
+ * loads, and keeps the result private; a second reservation of the same client is refused.
+ */
+export function reserveOwnerOnly(client: { call: Sender; notify: Sender }): OwnerCall {
+  if (reserved.has(client)) throw new Error('Owner-only methods are already reserved for this client')
+  reserved.add(client)
+  const call = client.call.bind(client) as (method: string, params: unknown) => Promise<unknown>
+  const notify = client.notify.bind(client) as (method: string, params: unknown) => Promise<unknown>
+  Object.defineProperty(client, 'call', { value: withoutOwnerOnly(call) })
+  Object.defineProperty(client, 'notify', { value: withoutOwnerOnly(notify) })
+  return <T>(method: string, params: unknown) => call(method, params) as Promise<T>
 }
 
 const clients = new WeakMap<object, object>()

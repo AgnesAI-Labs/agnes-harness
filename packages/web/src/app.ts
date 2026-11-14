@@ -2,7 +2,7 @@ import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import type { StartedSession } from '@agnes/web-admin/agents'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
-import { factChainLinks } from '@agnes/web-client'
+import { factChainLinks, reserveOwnerOnly } from '@agnes/web-client'
 import {
   appServerErrorMessage,
   bindDialogSheets,
@@ -682,6 +682,8 @@ const client = createClient({
   auth: { kind: 'local' },
   journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
 })
+// Before any plugin code can reach the client: owner-only methods go out only through ownerCall.
+const ownerCall = reserveOwnerOnly(client)
 onPageHide(
   bindJobsClient({
     client,
@@ -2491,7 +2493,7 @@ run(async () => {
   await awaitModels()
   if (!sessionBinding.isCurrent(modelSelection)) return
   const anchored = sessionBinding.session?.id === selected ? selected : undefined
-  openStartupAnchors(startupRequest, anchored, (method, params) => client.call(method, params))
+  openStartupAnchors(startupRequest, anchored, ownerCall)
   const shown = await firstRun.initialize(
     snapshot,
     !empty || Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),
