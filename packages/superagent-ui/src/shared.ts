@@ -41,7 +41,7 @@ export const HEALTH_TEXT = {
   feishuPluginUnset:
     'Setup required: to claim the whole instance, name it with its channel row, as <channel row id>/<instance id>',
   feishuInstanceShared:
-    'Setup required: the channel instance {channel} already serves the owner or another feature; use a dedicated bot instance',
+    'Setup required: the channel instance {channel} already serves the owner or another feature, or a pairing code for it is still unused (it expires within an hour); use a dedicated bot instance',
   feishuInstanceReleasing:
     'Setup required: the channel instance {channel} is in use; waiting for a previous Superagent run to release it',
   feishuInstanceRefused:

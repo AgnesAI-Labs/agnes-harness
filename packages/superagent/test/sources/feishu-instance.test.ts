@@ -133,6 +133,10 @@ describe('a channel instance of its own', () => {
       values: { channel: 'feishu' },
     })
     expect(h.health.feishu?.detail).toMatch(/^Setup required: .*use a dedicated bot instance/)
+    // An unused pairing code also holds the instance, until it expires; the message says so.
+    expect(h.health.feishu?.detail).toContain(
+      'or a pairing code for it is still unused (it expires within an hour)',
+    )
     for (const entry of ['history', 'members', 'reads', 'others'])
       expect(h.health[entry]).toMatchObject({ state: 'paused', code: 'feishuWaiting' })
     // Retried with backoff, never stealing the instance: it is claimed once the owner frees it.

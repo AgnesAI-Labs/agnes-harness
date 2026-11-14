@@ -155,7 +155,8 @@ steps, and the defaults. Ask for one confirmation.
       the value from `choices.instance` of the Feishu Source in `superagent.settings.get`; it has the form
       `<channel row id>/<instance id>`, for example `ext:agnes.feishu/main/superagent-bot`, and is typed by hand only
       when that list is empty. If the Source reports that the instance already serves the owner or another feature,
-      choose the dedicated instance instead; Superagent never takes over the owner's direct messages.
+      choose the dedicated instance instead; Superagent never takes over the owner's direct messages. An unused
+      pairing code for the instance holds it the same way until the code expires (within an hour).
    2. **Policy:** the allowed lists, and for Feishu the chat ids, chosen from the chats the channel lists.
    3. **Execution:** the ticket directory root and the prepare command from question 7, for example
       `git clone "https://github.com/<owner>/<name>.git" repo`.
