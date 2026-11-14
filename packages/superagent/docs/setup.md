@@ -24,9 +24,11 @@ The setup takes as little of the operator's attention as possible.
 
 ## Before you start
 
-- **Branch protection on the repository is required.** The agent pushes branches named `agent/<ticket id>` and opens
-  pull requests; it never pushes to the default branch and never merges unless you enable auto-merge. Branch protection
-  is what makes that a rule instead of a habit. On the default branch, require a pull request with at least one approving
+- **Branch protection on the repository is required.** The agent pushes branches named
+  `agent/<short name>-<ticket id prefix>` (the ticket's English short name and the first 12 characters of its id; the
+  part after `agent/` is the `DSH_SUPERAGENT_NAME` value in the ticket's `SUPERAGENT.md`) and opens pull requests; it
+  never pushes to the default branch and never merges unless you enable auto-merge. Branch protection is what makes that
+  a rule instead of a habit. On the default branch, require a pull request with at least one approving
   review, and refuse force pushes and deletions. Do not start Superagent on a repository without it.
 - **A dedicated system user is strongly recommended.** Each ticket's session runs with full access to the machine as the
   user that runs the AGH daemon. A separate operating-system user with no access to your own files, keys or signed-in CLIs
