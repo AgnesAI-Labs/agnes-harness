@@ -13,7 +13,9 @@ const FINAL = new Set(['consumed', 'retained'])
 
 /**
  * `submitted_seq` 0 marks a submission begun but not confirmed: a crash may have left the input in
- * the core inbox or not. Such a row counts as in flight, and only a sweep resubmits it, deduplicated.
+ * the core inbox or not. Such a row counts as in flight until a sweep settles it: the sweep takes the
+ * item back out of the inbox (one a turn already took is recorded as consumed), holds the row again,
+ * and the next submit runs every check and goes in under a fresh command id.
  */
 const UNCONFIRMED = 0
 
