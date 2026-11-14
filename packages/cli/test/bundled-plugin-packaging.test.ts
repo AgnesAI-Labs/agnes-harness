@@ -176,8 +176,29 @@ it('packages a declared TypeScript entry and public Markdown without a family pr
   expect(await readdir(output)).not.toEqual(expect.arrayContaining(['src', 'unpublished.md']))
 })
 
-it('ships the optional judgment and Superagent payloads with their callable plugins and release digests', async () => {
+it('ships the optional judgment payload with its callable plugin and release digest', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agnes-judgment-delivery-'))
+  roots.push(root)
+  await copyBundledPlugins(root)
+  const payload = join(root, 'bundled-plugins', 'judgment')
+  expect((await readdir(payload)).sort()).toEqual([
+    'LICENSE',
+    'NOTICE',
+    'README.md',
+    'index.mjs',
+    'package.json',
+  ])
+  const manifest = JSON.parse(await readFile(join(payload, 'package.json'), 'utf8'))
+  expect(manifest.agnes.plugins[0]).toMatchObject({ export: 'judgmentPlugin', apiRange: '^5.17.0' })
+  expect(bundledPluginDigest({ root, path: 'bundled-plugins/judgment' })).toBe(hashDirectory(payload))
+  const bundle = await readFile(join(payload, 'index.mjs'), 'utf8')
+  expect(bundle).toMatch(/^export \{[^}]*\bjudgmentPlugin\b[^}]*\}/m)
+  expect(bundle).toContain('from "@agnes/extension-api"')
+  expect(bundle).not.toContain('from "@agnes/core"')
+})
+
+it('ships the optional Superagent payload with its resource folders, callable plugin and release digest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-superagent-delivery-'))
   roots.push(root)
   await copyBundledPlugins(root)
   // Superagent reads its generated prompts, skills and locale folders next to its entry.
@@ -202,20 +223,4 @@ it('ships the optional judgment and Superagent payloads with their callable plug
   const superagentBundle = await readFile(join(superagent, 'index.mjs'), 'utf8')
   expect(superagentBundle).toMatch(/^export \{[^}]*\bsuperagentPlugin\b[^}]*\}/m)
   expect(superagentBundle).not.toMatch(/from "@agnes\/(?:core|daemon|host|worker-runtime)/)
-
-  const payload = join(root, 'bundled-plugins', 'judgment')
-  expect((await readdir(payload)).sort()).toEqual([
-    'LICENSE',
-    'NOTICE',
-    'README.md',
-    'index.mjs',
-    'package.json',
-  ])
-  const manifest = JSON.parse(await readFile(join(payload, 'package.json'), 'utf8'))
-  expect(manifest.agnes.plugins[0]).toMatchObject({ export: 'judgmentPlugin', apiRange: '^5.17.0' })
-  expect(bundledPluginDigest({ root, path: 'bundled-plugins/judgment' })).toBe(hashDirectory(payload))
-  const bundle = await readFile(join(payload, 'index.mjs'), 'utf8')
-  expect(bundle).toMatch(/^export \{[^}]*\bjudgmentPlugin\b[^}]*\}/m)
-  expect(bundle).toContain('from "@agnes/extension-api"')
-  expect(bundle).not.toContain('from "@agnes/core"')
 })
