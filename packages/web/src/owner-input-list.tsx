@@ -22,7 +22,7 @@ type Parked = ManagedInputListResult['parkedReceipts'][number]
 
 const COPY = {
   en: {
-    title: 'Owner inputs',
+    heading: 'Owner inputs',
     description:
       'Messages to your managed sessions that need your decision or are held, and channel messages a service could not take.',
     inputs: 'Inputs',
@@ -55,7 +55,7 @@ const COPY = {
     },
   },
   zh: {
-    title: '主人输入',
+    heading: '主人输入',
     description: '发给受管会话、需要你决定或被暂留的消息，以及服务没能接收的渠道消息。',
     inputs: '输入',
     noInputs: '没有需要你处理的输入。',
@@ -144,7 +144,7 @@ export function OwnerInputListPage({ call, changed }: { call: OwnerInputCall; ch
     if (live.current) setPending(false)
   }
   return (
-    <HomePageFrame id={OWNER_INPUT_ENTRY} title={text.title} description={text.description}>
+    <HomePageFrame id={OWNER_INPUT_ENTRY} title={text.heading} description={text.description}>
       <section className="owner-input-list" data-testid="owner-input-list">
         {reading && !list && <SettingsState tone="loading">{text.reading}</SettingsState>}
         {notice && (
