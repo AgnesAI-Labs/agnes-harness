@@ -6,7 +6,7 @@
  */
 import type { Store } from '../app/store.js'
 import { family } from '../kv.js'
-import type { SessionHandle } from './sessions.js'
+import { type SessionHandle, sessionHead } from './sessions.js'
 
 /** The frozen interface. */
 export interface Delivery {
@@ -83,7 +83,7 @@ export class SessionDelivery implements Redelivery {
     }
     const commandId = commandIdOf(msg.id, attempt.n)
     this.deps.store.set(name, { n: attempt.n, open: commandId })
-    const busy = msg.mode === 'steer' && (await session.projectUI()).opState !== null
+    const busy = msg.mode === 'steer' && (await sessionHead(session)).opState !== null
     const seq = busy
       ? await session.steer(msg.content, { commandId })
       : await session.followUp(msg.content, { commandId })
@@ -109,8 +109,10 @@ export class SessionDelivery implements Redelivery {
   private async held(session: SessionHandle, messageId: string, open: string | undefined) {
     if (open !== undefined && (await session.pendingCommands()).some((entry) => entry.commandId === open)) {
       await session.checkCommand(open)
-      return (await session.projectUI()).upto
+      return (await sessionHead(session)).upto
     }
+    // Only this rare path, a message delivered anew or not confirmed, reads the full projection: a taken message shows
+    // only in the history.
     const ui = await session.projectUI()
     return holding(ui, messageId) === 'absent' ? undefined : ui.upto
   }

@@ -22,6 +22,7 @@ export type SessionHandle = Pick<
   | 'followUp'
   | 'cancel'
   | 'projectUI'
+  | 'projectUIOpening'
   | 'removeQueued'
   | 'sendNow'
   | 'pendingCommands'
@@ -339,7 +340,7 @@ export class Sessions implements SessionAdapter {
   }
   async state(sessionId: string) {
     const session = await this.handle(sessionId)
-    const [ui, jobs] = await Promise.all([session.projectUI(), this.jobs(sessionId)])
+    const [ui, jobs] = await Promise.all([sessionHead(session), this.jobs(sessionId)])
     return {
       running: ui.opState !== null && !ui.opState.parked,
       pending: (ui.pendingInputs ?? []).map((item) => ({
@@ -392,6 +393,16 @@ export class Sessions implements SessionAdapter {
           : [],
     )
   }
+}
+
+/**
+ * A session's head: its position, whether a turn runs, and its pending inputs, read with at most one history node. The main
+ * session lives for months; its full projection grows with every turn, so a read on each delivery must not pull it.
+ */
+export async function sessionHead(
+  session: Pick<SessionHandle, 'projectUIOpening'>,
+): Promise<Pick<Awaited<ReturnType<SessionHandle['projectUI']>>, 'upto' | 'opState' | 'pendingInputs'>> {
+  return (await session.projectUIOpening({ maxNodes: 1 })).timeline
 }
 
 async function exists(path: string): Promise<boolean> {

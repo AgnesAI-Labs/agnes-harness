@@ -24,7 +24,7 @@ async function setup() {
   })
   const id = await sessions.ensureOrchestrator()
   const delivery = new SessionDelivery({ sessions, store: temp.store })
-  return { fake, session: fake.sessions.get(id)!, id, delivery }
+  return { fake, session: fake.sessions.get(id)!, id, delivery, sessions }
 }
 
 describe('delivery', () => {
@@ -43,6 +43,27 @@ describe('delivery', () => {
       { method: 'followUp', args: ['candidate', { commandId: 'superagent:m2' }] },
       { method: 'followUp', args: ['queued', { commandId: 'superagent:m3' }] },
     ])
+  })
+
+  it('reads only the head of a long-lived session to steer a message or read its state, never its history', async () => {
+    const { session, id, delivery, sessions } = await setup()
+    // The main session after months: thousands of messages in its history.
+    for (let n = 0; n < 5000; n++) session.taken.push({ commandId: `superagent:old-${n}`, text: `old ${n}` })
+    session.running = true
+    for (let n = 0; n < 20; n++) {
+      await delivery.deliver(id, { id: `m${n}`, content: `report ${n}`, mode: 'steer' })
+      expect((await sessions.state(id)).running).toBe(true)
+    }
+    session.running = false
+    await delivery.deliver(id, { id: 'idle', content: 'candidate', mode: 'steer' })
+    expect(await sessions.state(id)).toMatchObject({
+      running: false,
+      pending: [{ commandId: 'superagent:idle' }],
+    })
+    // No full projection; each head read returns at most one history node, however long the history is.
+    expect(session.reads.full).toBe(0)
+    expect(session.reads.opening).toBe(42)
+    expect(session.reads.openingNodes).toBeLessThanOrEqual(session.reads.opening)
   })
 
   it('tells whether the session holds a message: waiting in its inbox, taken into its history, or neither', async () => {

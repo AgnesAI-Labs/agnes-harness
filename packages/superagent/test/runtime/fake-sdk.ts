@@ -21,8 +21,10 @@ export interface FakeSession {
     status: 'running' | 'completed' | 'killed'
     command: string
   }[]
-  /** Throws from `projectUI` when set, as a read that failed. */
+  /** Throws from `projectUI` and `projectUIOpening` when set, as a read that failed. */
   unreadable?: boolean
+  /** How many full projections and bounded openings were read, and how many history nodes the openings returned. */
+  reads: { full: number; opening: number; openingNodes: number }
   /**
    * The daemon's receipt of each command id, kept long after the input left the inbox: the same command again is answered
    * from it and enqueues nothing; another command under that id is refused as a conflict.
@@ -69,6 +71,7 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
       jobs: [],
       receipts: new Map(),
       journal: new Map(),
+      reads: { full: 0, opening: 0, openingNodes: 0 },
       emit: (event) => {
         for (const listener of listeners) listener({ ...event, seq: ++seq })
       },
@@ -125,6 +128,37 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
         }
         return accept(method, input, commandId)
       }
+    const timeline = () => {
+      if (session.deleted) throw missing(id)
+      if (session.unreadable) throw new Error('projection unavailable')
+      return {
+        sessionId: id,
+        upto: seq,
+        generation: 1,
+        opState: session.running ? { turn: 1, step: 1, phase: 'model' } : null,
+        pendingInputs: session.pending.map(({ itemId, commandId, preview }) => ({
+          itemId,
+          preview,
+          ...(commandId ? { commandId } : {}),
+        })),
+        nodes: [
+          ...session.taken.map((item, index) => ({
+            kind: 'user' as const,
+            id: `u${index}`,
+            seq: index,
+            content: [{ type: 'text' as const, text: item.text }],
+            ...(item.commandId ? { commandId: item.commandId } : {}),
+          })),
+          ...session.assistant.map((text, index) => ({
+            kind: 'assistant' as const,
+            id: `a${index}`,
+            seq: 1000 + index,
+            text,
+          })),
+        ],
+        turns: [],
+      }
+    }
     session.handle = {
       id,
       steer: submit('steer'),
@@ -165,35 +199,20 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
         completions: [],
       }),
       projectUI: async () => {
-        if (session.deleted) throw missing(id)
-        if (session.unreadable) throw new Error('projection unavailable')
+        session.reads.full++
+        return timeline()
+      },
+      projectUIOpening: async (opts: { maxNodes?: number } = {}) => {
+        session.reads.opening++
+        const full = timeline()
+        const start = Math.max(0, full.nodes.length - (opts.maxNodes ?? 200))
+        session.reads.openingNodes += full.nodes.length - start
         return {
-          sessionId: id,
-          upto: seq,
-          generation: 1,
-          opState: session.running ? { turn: 1, step: 1, phase: 'model' } : null,
-          pendingInputs: session.pending.map(({ itemId, commandId, preview }) => ({
-            itemId,
-            preview,
-            ...(commandId ? { commandId } : {}),
-          })),
-          nodes: [
-            ...session.taken.map((item, index) => ({
-              kind: 'user' as const,
-              id: `u${index}`,
-              seq: index,
-              content: [{ type: 'text' as const, text: item.text }],
-              ...(item.commandId ? { commandId: item.commandId } : {}),
-            })),
-            ...session.assistant.map((text, index) => ({
-              kind: 'assistant' as const,
-              id: `a${index}`,
-              seq: 1000 + index,
-              text,
-            })),
-          ],
-          turns: [],
-        }
+          timeline: { ...full, nodes: full.nodes.slice(start) },
+          history: start
+            ? { hasEarlier: true, cursor: 'earlier', startIndex: start, totalNodes: full.nodes.length }
+            : { hasEarlier: false },
+        } as unknown as Awaited<ReturnType<SessionHandle['projectUIOpening']>>
       },
       events: () => ({
         [Symbol.asyncIterator]() {
