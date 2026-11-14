@@ -184,6 +184,7 @@ export class ChannelTargets {
     clock: () => this.clock(),
     pairing: (id) => this.pairing(id),
     handler: (target) => this.services.get(targetKey(target))?.onEvent,
+    retryDelaysMs: () => this.receiptRetryMs,
   })
 
   /** The instance for `key`, shared by every caller in this process until each has released it. */
@@ -217,6 +218,7 @@ export class ChannelTargets {
   constructor(
     private store: PersistenceMetadataNamespace,
     private readonly clock: () => number = Date.now,
+    private readonly receiptRetryMs?: readonly number[],
   ) {
     this.prune()
     this.sweep = setInterval(() => {

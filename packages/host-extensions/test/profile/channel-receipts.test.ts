@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   RECEIPT_ACK_TTL_MS,
   RECEIPT_ATTEMPTS,
+  RECEIPT_RETRY_DELAYS_MS,
   REDELIVERY_INTERVAL_MS,
   type ReceiptRow,
 } from '../../src/profile/channel-receipts.js'
@@ -16,6 +17,8 @@ const OTHER = { owner: '@sample/other#plugin/cc', service: 'desk' }
 const PAIR_ID = 'a'.repeat(32)
 const OTHER_PAIR_ID = 'b'.repeat(32)
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
+/** Handler runs in one delivery: the first try and the in-process retries. */
+const TRIES = RECEIPT_RETRY_DELAYS_MS.length + 1
 
 function namespace(): PersistenceMetadataNamespace & { map: Map<string, unknown> } {
   const map = new Map<string, unknown>()
@@ -73,7 +76,8 @@ const thrown = (work: () => unknown) => {
 }
 
 /** A paired desk service on a controllable clock; `handler` is registered only when the test asks. */
-function setup() {
+/** In-process retries wait nothing unless a test asks for the real delays. */
+function setup(retryDelaysMs: readonly number[] | 'real' = [0, 0]) {
   const store = namespace()
   let now = Date.parse('2026-11-14T00:00:00.000Z')
   const clock = {
@@ -82,7 +86,7 @@ function setup() {
       now += ms
     },
   }
-  const targets = new ChannelTargets(store, clock.now)
+  const targets = new ChannelTargets(store, clock.now, retryDelaysMs === 'real' ? undefined : retryDelaysMs)
   const bridge = targets.bridge(CHANNEL)
   bridge.attach('desk-bot', link())
   const start = (target = DESK) => {
@@ -217,7 +221,7 @@ describe('channel receipts', () => {
     expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'parked', attempts: RECEIPT_ATTEMPTS })
     expect(bridge.receive(pairing, poison)).toEqual({ receiptId, state: 'parked' })
     await bridge.deliver(pairing, { ...poison, receiptId })
-    expect(seen.filter((event) => event.eventId === 'e2')).toHaveLength(RECEIPT_ATTEMPTS)
+    expect(seen.filter((event) => event.eventId === 'e2')).toHaveLength(RECEIPT_ATTEMPTS * TRIES)
   })
 
   it('onEvent registration and the five-minute sweep redeliver pending receipts with the same receiptId', async () => {
@@ -241,15 +245,79 @@ describe('channel receipts', () => {
     expect(seen[0]).toEqual({ ...message(pairing.id, 'e1'), receiptId })
 
     fail = false
+    expect(seen, 'one burst of in-process tries, counted as one attempt').toHaveLength(TRIES)
     await vi.advanceTimersByTimeAsync(REDELIVERY_INTERVAL_MS - 1)
-    expect(seen).toHaveLength(1)
+    expect(seen).toHaveLength(TRIES)
     await vi.advanceTimersByTimeAsync(1)
     await flush()
     expect(row(store, DESK.owner, receiptId)).toMatchObject({ state: 'acked', attempts: 1 })
-    expect(seen).toHaveLength(2)
-    expect(seen[1]).toEqual(seen[0])
+    expect(seen).toHaveLength(TRIES + 1)
+    expect(seen.at(-1)).toEqual(seen[0])
     await vi.advanceTimersByTimeAsync(REDELIVERY_INTERVAL_MS)
-    expect(seen, 'the sweep skips acked receipts').toHaveLength(2)
+    expect(seen, 'the sweep skips acked receipts').toHaveLength(TRIES + 1)
+  })
+
+  it('a throwing handler is retried in process with short backoff, and one burst counts one attempt', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const { store, bridge, desk, pairing } = setup('real')
+    expect(RECEIPT_RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0)).toBe(10_000)
+    let failures = 2
+    let runs = 0
+    desk.port.onEvent(async () => {
+      runs++
+      if (failures-- > 0) throw new Error('transient')
+    })
+    const event = message(pairing.id, 'e1')
+    const first = bridge.receive(pairing, event) as { receiptId: string }
+    const delivery = bridge.deliver(pairing, { ...event, receiptId: first.receiptId })
+    await flush()
+    expect(runs).toBe(1)
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(runs).toBe(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(runs).toBe(2)
+    await vi.advanceTimersByTimeAsync(7_999)
+    expect(runs).toBe(2)
+    await vi.advanceTimersByTimeAsync(1)
+    await delivery
+    expect(runs).toBe(3)
+    expect(row(store, DESK.owner, first.receiptId)).toMatchObject({ state: 'acked', attempts: 0 })
+
+    failures = Number.POSITIVE_INFINITY
+    const poison = message(pairing.id, 'e2')
+    const second = bridge.receive(pairing, poison) as { receiptId: string }
+    const failed = bridge.deliver(pairing, { ...poison, receiptId: second.receiptId })
+    const outcome = failed.then(
+      () => 'resolved',
+      () => 'rejected',
+    )
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(await outcome).toBe('rejected')
+    expect(runs).toBe(3 + TRIES)
+    expect(row(store, DESK.owner, second.receiptId), 'left pending for the sweep').toMatchObject({
+      state: 'pending',
+      attempts: 1,
+    })
+  })
+
+  it('a click on a card sent before buttons were recorded gets no receipt and is reported unrecorded', async () => {
+    const { store, bridge, desk, pairing } = setup()
+    const card = await desk.port.send(pairing.id, {
+      deliveryKey: 'old-card',
+      text: 'pick one',
+      actions: [{ id: 'pick:1', label: 'Ship it' }],
+    })
+    const [ledger] = [...store.map].find(
+      ([, value]) => (value as { messageId?: string }).messageId === card.messageId,
+    )!
+    const { actions: _, ...legacy } = store.map.get(ledger) as Record<string, unknown>
+    store.set(ledger, legacy as never)
+    expect(bridge.receive(pairing, click(pairing.id, 'old', card.messageId, 'pick:1'))).toBe('unrecorded')
+    expect(
+      [...store.map.keys()].filter((key) => key.startsWith('r:')),
+      'no receipt for it',
+    ).toEqual([])
+    expect(bridge.receive(pairing, click(pairing.id, 'unknown', 'm-unknown', 'pick:1'))).toBe('dropped')
   })
 
   it('a pending receipt whose pairing changed is parked, not delivered', async () => {
@@ -404,7 +472,7 @@ describe('channel receipts', () => {
     await vi.waitFor(() =>
       expect(row(store, DESK.owner, first)).toMatchObject({ state: 'acked', attempts: 0 }),
     )
-    expect(seen.filter((id) => id === 'e1')).toHaveLength(RECEIPT_ATTEMPTS + 1)
+    expect(seen.filter((id) => id === 'e1')).toHaveLength(RECEIPT_ATTEMPTS * TRIES + 1)
     expect(targets.receipts.command({ op: 'discard', owner: DESK.owner, receiptId: second })).toEqual({
       receipt: 'discarded',
     })

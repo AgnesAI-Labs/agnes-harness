@@ -8,6 +8,8 @@ export const RECEIPT_ATTEMPTS = 5
 /** How long an acknowledged receipt that no admission took stays resolvable. */
 export const RECEIPT_ACK_TTL_MS = 30 * 86_400_000
 export const REDELIVERY_INTERVAL_MS = 300_000
+/** One delivery tries the handler up to three times in process, waiting these between tries (10 s in all). */
+export const RECEIPT_RETRY_DELAYS_MS: readonly number[] = [2_000, 8_000]
 
 /** One inbound event of a paired chat, held by the Host until its service acknowledges it. */
 export type ReceiptRow = {
@@ -96,20 +98,23 @@ export class ChannelReceipts {
       pairing(id: string): OwnerPairing | undefined
       /** The registered handler of a running service. */
       handler(target: ChannelTarget): Handler | undefined
+      /** Waits between in-process tries; `RECEIPT_RETRY_DELAYS_MS` unless a test shortens them. */
+      retryDelaysMs?(): readonly number[] | undefined
     },
   ) {}
 
   /**
    * Claims `event` for the current pairing of `channel`'s chat: a new receipt is pending, the same event
    * again returns its state, and the same id with other content is a conflict. A click counts only on a
-   * button the paired service sent; the label recorded at send becomes its text.
+   * button the paired service sent; the label recorded at send becomes its text. A click on a message sent
+   * before the ledger recorded buttons is `unrecorded`: it gets no receipt, and the owner is told.
    */
   receive(
     channel: string,
     pairing: OwnerPairing,
     event: ChannelTargetEvent,
     sent: (pairing: OwnerPairing, clicked: string) => SentMessage | undefined,
-  ): { receiptId: string; state: ReceiptState } | 'conflict' | 'dropped' {
+  ): { receiptId: string; state: ReceiptState } | 'conflict' | 'dropped' | 'unrecorded' {
     const current = this.deps.pairing(pairing.id)
     if (
       !current ||
@@ -127,6 +132,7 @@ export class ChannelReceipts {
     let messageId = event.messageId
     if (event.kind === 'action') {
       const message = sent(current, event.messageId)
+      if (message?.messageId && message.actions === undefined) return 'unrecorded'
       const label = message?.actions?.find((action) => action.id === event.actionId)?.label
       if (!message?.messageId || label === undefined) return 'dropped'
       text = label
@@ -170,7 +176,8 @@ export class ChannelReceipts {
 
   /**
    * Runs one delivery of `event`. With a pending receipt of `owner`'s for it, a resolved run acknowledges
-   * the receipt and a throw counts an attempt; an acknowledged or parked receipt is not delivered again.
+   * the receipt; a run that still throws after the in-process tries counts one attempt and leaves the
+   * receipt to the sweep or the service's restart. An acknowledged or parked receipt is not delivered again.
    * A receipt id `owner` does not hold for this event is removed before the service sees the event.
    */
   async settle(owner: string, event: ChannelTargetEvent, run: Handler): Promise<void> {
@@ -184,7 +191,18 @@ export class ChannelReceipts {
     if (row.state !== 'pending' || this.inflight.has(id)) return
     this.inflight.add(id)
     try {
-      await run(event)
+      const delays = this.deps.retryDelaysMs?.() ?? RECEIPT_RETRY_DELAYS_MS
+      for (let tried = 0; ; tried++) {
+        try {
+          await run(event)
+          break
+        } catch (error) {
+          const wait = delays[tried]
+          const live = this.deps.store().get(rowKey(owner, id)) as ReceiptRow | undefined
+          if (wait === undefined || live?.state !== 'pending') throw error
+          if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait).unref?.())
+        }
+      }
       this.change(owner, id, () => ({ state: 'acked' }))
     } catch (error) {
       this.change(owner, id, (current) => ({

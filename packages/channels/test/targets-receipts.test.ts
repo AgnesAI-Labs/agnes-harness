@@ -44,6 +44,7 @@ function receiptTargets() {
     },
     receive: (_pairing, event) => {
       received.push(event.eventId)
+      if (event.kind === 'action' && event.actionId.startsWith('old:')) return 'unrecorded'
       const existing = receipts.get(event.eventId)
       if (existing) return { ...existing }
       const receipt = { receiptId: `r-${event.eventId}`, state: 'pending' as const }
@@ -252,4 +253,16 @@ it('service not running: the notice says it will be handed over, and the receipt
   ).toBe(false)
   expect(targets.receipts.get('m2')?.state).toBe('pending')
   expect(targets.attempts, 'the Host redelivers; the bridge does not retry in process').toEqual(['m2'])
+})
+
+it('a click on a card whose buttons were never recorded tells the owner instead of dropping it silently', async () => {
+  const { targets, adapter, claimed } = await paired()
+  adapter.emit(click('old:1', 'stale'))
+  await vi.waitFor(() =>
+    expect(texts(adapter).some((text) => text.includes('最新的卡片') && text.includes('网页'))).toBe(true),
+  )
+  expect(claimed('stale')).toBe(true)
+  expect(targets.received).toEqual(['stale'])
+  expect(targets.attempts, 'never delivered').toEqual([])
+  expect(targets.receipts.size).toBe(0)
 })

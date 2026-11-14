@@ -66,11 +66,12 @@ export interface ChannelTargetsPort {
   /**
    * Writes the Host's durable receipt for a paired-chat event, which replaces the platform claim: only a
    * `pending` receipt is delivered, and the Host redelivers it until the service acknowledges it.
+   * `unrecorded`: a click on a card whose buttons the Host never recorded; the owner is told, never silently dropped.
    */
   receive?(
     pairing: Pairing,
     event: ChannelTargetEvent,
-  ): { receiptId: string; state: 'pending' | 'acked' | 'parked' } | 'conflict' | 'dropped'
+  ): { receiptId: string; state: 'pending' | 'acked' | 'parked' } | 'conflict' | 'dropped' | 'unrecorded'
   deliver(pairing: Pairing, event: ChannelTargetEvent): Promise<void>
   drop(pairingId: string): void
   paired(instanceId: string, targetId: string): boolean
@@ -78,6 +79,7 @@ export interface ChannelTargetsPort {
 }
 
 const NOTICE_INTERVAL_MS = 600_000
+const STALE_CARD = '这次点击没有收到：这张卡片是升级前发出的。请在最新的卡片上选择，或到 AGH 网页处理。'
 const ATTEMPTS = 3
 
 /** Credential references only, never secret values: a changed reference ends the instance's pairings. */
@@ -152,9 +154,10 @@ export function createTargetRouter(input: {
     pairing: Pairing,
     text: string,
   ) => {
-    const last = noticed.get(pairing.id)
+    const key = `${pairing.id}\0${text}`
+    const last = noticed.get(key)
     if (last !== undefined && now() - last < NOTICE_INTERVAL_MS) return
-    noticed.set(pairing.id, now())
+    noticed.set(key, now())
     await runner.sendDirect(
       { chatId: event.chat.id },
       { kind: 'text', markdown: text },
@@ -177,6 +180,10 @@ export function createTargetRouter(input: {
     if (!payload) return
     if (targets.receive) {
       const receipt = targets.receive(pairing, payload)
+      if (receipt === 'unrecorded') {
+        await notice(runner, event, pairing, STALE_CARD)
+        return
+      }
       if (typeof receipt === 'string' || receipt.state !== 'pending') return
       try {
         await targets.deliver(pairing, { ...payload, receiptId: receipt.receiptId })

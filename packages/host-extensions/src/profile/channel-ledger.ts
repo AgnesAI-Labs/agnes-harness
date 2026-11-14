@@ -15,16 +15,18 @@ export type DeliveryRow = {
   /** Who sent it: a click counts only on a message the clicked chat's current service sent. */
   pairingId?: string
   service?: string
-  /** The buttons the message offers now: a click's receipt takes its text from the label. */
+  /** The buttons the message offers now: a click's receipt takes its text from the label. Absent on rows written before buttons were recorded. */
   actions?: { id: string; label: string }[]
   at: string
 }
 
-/** The buttons `block` offers, as the ledger records them. */
-export const buttonsOf = (block: TextBlock | CardBlock): Pick<DeliveryRow, 'actions'> =>
-  block.kind === 'card' && block.actions?.length
-    ? { actions: block.actions.map(({ id, label }) => ({ id, label })) }
-    : {}
+/**
+ * The buttons `block` offers, as the ledger records them: none is an empty list. A row without `actions`
+ * was written before buttons were recorded.
+ */
+export const buttonsOf = (block: TextBlock | CardBlock): Required<Pick<DeliveryRow, 'actions'>> => ({
+  actions: block.kind === 'card' ? (block.actions ?? []).map(({ id, label }) => ({ id, label })) : [],
+})
 
 /** The live ledger row `clicked` names, with its key, when this pairing's service sent it. */
 export function sentReference(
