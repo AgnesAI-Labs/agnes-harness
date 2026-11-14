@@ -178,3 +178,22 @@ it.skipIf(process.platform === 'win32')(
   },
   60_000,
 )
+
+it.skipIf(process.platform === 'win32')(
+  'a restart that fails leaves neither the old nor a new daemon running',
+  async () => {
+    const mine = claim()
+    const root = scratchRoot()
+    const daemon = await startDaemon({
+      ...options(root),
+      onHandle: (handle) => cleanups.push(() => handle.stop()),
+    })
+    // A profile the daemon cannot start from: the second boot exits.
+    writeFileSync(join(root, 'agh', 'profiles', 'local-dev', 'profile.yaml'), '{ not a profile')
+    await expect(daemon.restart()).rejects.toThrow(/daemon exited|boot timed out/)
+    expect(() => daemon.client, 'no client is left').toThrow(/not running/)
+    expect(mine().filter(isAlive)).toEqual([])
+    await daemon.stop()
+  },
+  120_000,
+)

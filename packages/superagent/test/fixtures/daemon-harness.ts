@@ -267,6 +267,10 @@ export async function startDaemon(opts: {
     })
     child = spawned
     trackRoot(spawned)
+    let spawnError: Error | undefined
+    spawned.on('error', (error) => {
+      spawnError = error
+    })
     spawned.stderr?.on('data', (data) => {
       stderr += String(data)
     })
@@ -282,10 +286,15 @@ export async function startDaemon(opts: {
           resolve()
         }
         spawned.stderr?.on('data', check)
+        spawned.once('error', (error) => {
+          clearTimeout(timer)
+          reject(new Error(`daemon could not be spawned: ${error.message}`))
+        })
         spawned.once('exit', (code) => {
           clearTimeout(timer)
           reject(new Error(`daemon exited ${code} during boot:\n${stderr.slice(-2000)}`))
         })
+        if (spawnError) reject(spawnError)
       })
       if (stopped) throw new Error('stopped during daemon boot')
       const owner = JSON.parse(readFileSync(join(opts.aghHome, 'daemon', 'owner.json'), 'utf8')) as {
@@ -417,8 +426,13 @@ export async function startDaemon(opts: {
     modelRequests: () => model.requests.map((request) => ({ ...request })),
     stderr: () => stderr,
     async restart(): Promise<void> {
-      await terminate()
-      await launch()
+      try {
+        await terminate()
+        await launch()
+      } catch (error) {
+        await terminate()
+        throw error
+      }
     },
     stop: () => handle.stop(),
     async shell(command: string, cwd: string): Promise<string> {
