@@ -481,3 +481,88 @@ it('channels reach the channel host', async () => {
     code: AGNES_ERRORS.CAPABILITY_DENIED,
   })
 })
+
+/** A service whose shutdown records what its grant allows while it runs. */
+function recordingShutdown(
+  seen: Record<string, unknown>[],
+  leases: () => { closed: boolean; context: BundledAppClientContext }[],
+  inits: ProfileManagedInit[] = [],
+) {
+  return {
+    async start(init: ProfileManagedInit) {
+      inits.push(init)
+      init.onShutdown(async (reason) => {
+        const lease = leases()[0]
+        const allowed = (fn: () => unknown) => {
+          try {
+            fn()
+            return true
+          } catch {
+            return false
+          }
+        }
+        seen.push({
+          reason,
+          grant: allowed(() => init.bundledApp?.assertCurrent()),
+          connect: allowed(() => lease?.context.assertCurrent()),
+          signal: lease?.context.signal.aborted,
+          closed: lease?.closed,
+        })
+        return { state: 'settled' }
+      })
+      init.ready()
+      return {}
+    },
+  }
+}
+
+it('keeps the grant and its client usable for the shutdown, then fences and closes it', async () => {
+  for (const change of ['disable', 'upgrade'] as const) {
+    const seen: Record<string, unknown>[] = []
+    let leases: { closed: boolean; context: BundledAppClientContext }[] = []
+    const inits: ProfileManagedInit[] = []
+    const app = await harness({ definition: recordingShutdown(seen, () => leases, inits) })
+    leases = app.leases
+    const grant = inits[0]?.bundledApp
+    if (!grant) throw new Error('grant missing')
+    if (change === 'disable') await app.row.dispose()
+    else app.retire()
+    await app.managed.publish(change)
+    // During the shutdown the service is no longer current, but its grant and client still work.
+    expect(seen, change).toEqual([
+      { reason: change, grant: true, connect: true, signal: false, closed: false },
+    ])
+    // Once the shutdown returned, the grant is fenced and the connection closed.
+    denied(() => grant.assertCurrent())
+    expect(app.leases[0]?.closed).toBe(true)
+    expect(app.leases[0]?.context.signal.aborted).toBe(true)
+    expect(() => app.leases[0]?.context.assertCurrent()).toThrow()
+  }
+})
+
+it('stops a bundled app at once when a target drops its row, and starts it again when a later one keeps it', async () => {
+  const seen: Record<string, unknown>[] = []
+  let leases: { closed: boolean; context: BundledAppClientContext }[] = []
+  const app = await harness({ definition: recordingShutdown(seen, () => leases) })
+  leases = app.leases
+  // A target that keeps the row changes nothing.
+  await app.managed.retireDropped([{ id: SUPERAGENT.row }])
+  expect(seen).toEqual([])
+  expect(app.managed.statuses(SUPERAGENT.id).map((row) => row.state)).toEqual(['ready'])
+  // A target without the row stops the service before any publication, as a disable, with its grant usable.
+  await app.managed.retireDropped([{ id: 'ext:other/main' }, { id: SUPERAGENT.row, disabled: true }])
+  expect(seen).toEqual([{ reason: 'disable', grant: true, connect: true, signal: false, closed: false }])
+  expect(app.leases[0]?.closed).toBe(true)
+  await expect(app.handle.get()).rejects.toThrow()
+  // If the row stays after all (the target was not applied), the next publication starts the service again.
+  await app.managed.publish()
+  await app.handle.get()
+  expect(app.leases).toHaveLength(2)
+  expect(app.leases[1]?.closed).toBe(false)
+})
+
+it('leaves resources without the bundled-app grant to the publication', async () => {
+  const judgment = await harness({ identity: JUDGMENT })
+  await judgment.managed.retireDropped([])
+  expect(await judgment.handle.get()).toBeDefined()
+})

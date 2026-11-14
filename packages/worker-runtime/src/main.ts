@@ -522,6 +522,8 @@ export async function runWorker(
         applying = scope
         let report: Awaited<ReturnType<typeof candidate.applyRuntimeTarget>>
         try {
+          // A bundled app whose row the target drops stops now, not once the target's generation is built.
+          await candidate.profileServices?.managed?.retireDropped(target.tree.rows)
           report = await candidate.applyRuntimeTarget(target)
         } finally {
           if (applying === scope) applying = undefined
