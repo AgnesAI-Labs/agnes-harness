@@ -14,13 +14,10 @@ beforeEach(() => {
 })
 afterEach(() => temp.close())
 
-/** A configured deployment whose GitHub checks pass, over a fake SDK client. */
-function setup() {
-  temp.store.saveSettings(
-    SettingsSchema.parse({
-      sources: { github: { enabled: true, config: { repository: 'acme/app', cli: process.execPath } } },
-    }),
-  )
+const GITHUB = { enabled: true, config: { repository: 'acme/app', cli: process.execPath } }
+/** A configured deployment whose GitHub checks pass, over a fake SDK client; `fresh` leaves the settings empty. */
+function setup(fresh = false) {
+  if (!fresh) temp.store.saveSettings(SettingsSchema.parse({ sources: { github: GITHUB } }))
   const fake = fakeClient()
   const lifetime = new AbortController()
   const grant = { stateDirectory: join(temp.dir, 'state'), client: fake.client }
@@ -50,7 +47,8 @@ function watchStarts(app: SuperagentApp) {
   return {
     passes: vi.spyOn(app.parts.passes, 'start'),
     effects: vi.spyOn(app.parts.effects, 'start'),
-    sources: vi.spyOn(app.parts.sources, 'register'),
+    // A Source's polling begins by taking its context; its kind registers when the app is built.
+    sources: vi.spyOn(app.parts.sourceHost, 'context'),
   }
 }
 
@@ -119,6 +117,22 @@ describe('the app', () => {
     expect(app.parts.setupProblem()).toMatchObject({ code: 'sessionTaken' })
     expect(app.unavailable()).toMatch(/waiting for setup: .*superagent:orchestrator/)
     expect(starts.passes).not.toHaveBeenCalled()
+    await app.stop('disable')
+  })
+
+  it('lists the GitHub Source on a fresh start, saves its repository during setup and then starts it', async () => {
+    const { app } = setup(true)
+    const starts = watchStarts(app)
+    await app.start()
+    expect(app.parts.setupProblem()).toMatchObject({ code: 'repositoryUnset' })
+    expect(app.parts.sources.instances().map((instance) => instance.id)).toContain('github')
+    expect(starts.sources).not.toHaveBeenCalled()
+    const saved = await app.parts.settings.save('source:github', GITHUB, 0, 'panel')
+    expect(saved).toMatchObject({ saved: true, restarting: true })
+    await vi.waitFor(() => expect(app.unavailable()).toBeUndefined())
+    expect(app.parts.setupProblem()).toBeUndefined()
+    expect(starts.sources).toHaveBeenCalledWith(expect.objectContaining({ kind: 'github' }))
+    expect(starts.passes).toHaveBeenCalledOnce()
     await app.stop('disable')
   })
 })

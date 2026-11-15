@@ -73,8 +73,8 @@ export const githubKind: SourceKind<GithubConfig> = {
       pattern: '[A-Za-z0-9_.\\-]+/[A-Za-z0-9_.\\-]+',
       label: { zh: '监听的仓库', en: 'Repository' },
       hint: {
-        zh: '写作 owner/name。这个来源接收这个仓库的通知和讨论；保存时检查智能体账号能否推送到它，然后重启 dsh-superagent。',
-        en: "Written owner/name. This Source receives the repository's notifications and discussion; saving checks that the agent account can push to it, then restarts dsh-superagent.",
+        zh: '写作 owner/name。这个来源接收这个仓库的通知和讨论；保存时检查智能体账号能否推送到它，然后 Superagent 重新运行设置，无需重启。',
+        en: "Written owner/name. This Source receives the repository's notifications and discussion; saving checks that the agent account can push to it, then Superagent runs its setup again, without a restart.",
       },
     },
     {
@@ -82,8 +82,8 @@ export const githubKind: SourceKind<GithubConfig> = {
       type: 'text',
       label: { zh: '智能体的 GitHub CLI', en: 'Agent GitHub CLI' },
       hint: {
-        zh: '命令名或绝对路径，通常是用 GH_CONFIG_DIR 登录智能体账号的 gh 包装脚本。智能体以它登录的账号行事，执行器以 gh 调用它。保存时检查它登录的账号能否推送到仓库，然后重启 dsh-superagent。',
-        en: 'A command name or absolute path, usually a gh wrapper signed in to the agent account through GH_CONFIG_DIR. The agent acts as the account it is signed in to, and the Executor calls it as gh. Saving checks that this account can push to the repository, then restarts dsh-superagent.',
+        zh: '命令名或绝对路径，通常是用 GH_CONFIG_DIR 登录智能体账号的 gh 包装脚本。智能体以它登录的账号行事，执行器以 gh 调用它。保存时检查它登录的账号能否推送到仓库，然后 Superagent 重新运行设置，无需重启。',
+        en: 'A command name or absolute path, usually a gh wrapper signed in to the agent account through GH_CONFIG_DIR. The agent acts as the account it is signed in to, and the Executor calls it as gh. Saving checks that this account can push to the repository, then Superagent runs its setup again, without a restart.',
       },
     },
     {
@@ -292,21 +292,37 @@ export const githubKind: SourceKind<GithubConfig> = {
       : {},
 }
 /**
+ * Registers the GitHub Source kind, so its settings are listed and saved before setup completes; `run` starts its
+ * polling loop and returns the function that stops the loop and waits for it to end. `unregister` removes the kind.
+ */
+export function registerGithub(host: SourceHost) {
+  const unregister = host.sources.register(githubKind)
+  return {
+    unregister,
+    run(): () => Promise<void> {
+      const source = sourceContext(host, githubKind)
+      const controller = new AbortController()
+      // A failure escaping the polling loop is reported as source health instead of becoming an unhandled rejection.
+      const running = watch(source, controller.signal).catch((error: unknown) => {
+        source.report('github', { state: 'error', detail: String(error) })
+      })
+      return async () => {
+        controller.abort()
+        await running
+      }
+    },
+  }
+}
+/**
  * Registers the GitHub Source kind and starts its polling loop. The returned function stops the loop, waits for it to end
  * and unregisters the kind.
  */
 export function startGithub(host: SourceHost): () => Promise<void> {
-  const unregister = host.sources.register(githubKind)
-  const source = sourceContext(host, githubKind)
-  const controller = new AbortController()
-  // A failure escaping the polling loop is reported as source health instead of becoming an unhandled rejection.
-  const running = watch(source, controller.signal).catch((error: unknown) => {
-    source.report('github', { state: 'error', detail: String(error) })
-  })
+  const registered = registerGithub(host)
+  const stop = registered.run()
   return async () => {
-    controller.abort()
-    await running
-    unregister()
+    await stop()
+    registered.unregister()
   }
 }
 /** Returns an error health once `failures` consecutive polls fail, or undefined so a single network interruption stays quiet. */
@@ -319,7 +335,7 @@ async function watch(ctx: SourceContext, signal: AbortSignal): Promise<void> {
   let interval = 60
   let failures = 0
   await ctx.ready
-  // Setup restarts dsh-superagent once it resolves the accounts; until then nothing is polled.
+  // The app starts this loop once setup resolved the accounts; until then nothing is polled.
   if (!ctx.configured()) {
     ctx.report('github', health('paused', 'setupPending'))
     return
