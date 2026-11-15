@@ -9,7 +9,7 @@ import { join } from 'node:path'
 import { afterAll, expect, it } from 'vitest'
 import { agentPaths } from '../../src/runtime/environment.js'
 import { type DaemonHandle, startDaemon, stopAllDaemons } from '../fixtures/daemon-harness.js'
-import { defaultStateDir, EXTENSION, ownerCalls, until } from '../runtime/integration-fixtures.js'
+import { defaultStateDir, EXTENSION, ownerCalls, sleep, until } from '../runtime/integration-fixtures.js'
 import { githubWorld, REPOSITORY } from './github-world.js'
 
 afterAll(stopAllDaemons)
@@ -45,6 +45,10 @@ it.skipIf(process.platform === 'win32')(
         },
       })
       const calls = ownerCalls(() => daemon.client)
+      /** The GitHub Source's notification polls, apart from the setup check's single read. */
+      const polls = () =>
+        world.calls().filter((call) => call.argv[1]?.startsWith(`repos/${REPOSITORY}/notifications?all=true`))
+          .length
       const listed = await daemon.client.packages.list({ profile: 'local-dev' })
       expect(
         listed.packages.find((entry: { id: string }) => entry.id === '@agnes/superagent')?.source,
@@ -63,7 +67,10 @@ it.skipIf(process.platform === 'win32')(
       const settings = (await calls.service('superagent.settings.get')) as { sources: SourceRow[] }
       const github = settings.sources.find((source) => source.id === 'github')
       expect(github, 'the settings carry the GitHub Source').toBeDefined()
-      expect(world.calls(), 'nothing polls before setup').toEqual([])
+      // A window while waiting for setup: the GitHub Source is listed, yet it never reads notifications.
+      await sleep(3000)
+      expect(polls(), 'no notifications poll before setup').toBe(0)
+      expect(world.calls(), 'no gh call at all before setup').toEqual([])
 
       // The save the panel's GitHub card sends, as an effect of the owner's own panel.
       const saved = await daemon.client.extensions.callScoped({
@@ -83,9 +90,14 @@ it.skipIf(process.platform === 'win32')(
         const state = await calls.service('superagent.state').catch(() => undefined)
         return state && !(state.setup as SetupView).problem
       })
-      await until('the GitHub Source to poll', () =>
-        world.calls().some((call) => call.argv[1]?.startsWith(`repos/${REPOSITORY}/notifications`)),
-      )
+      await until('the GitHub Source to poll', () => polls() > 0)
+      // The setup check read the notifications once, as a token that cannot read them would fail there.
+      expect(
+        world
+          .calls()
+          .filter((call) => call.argv[1] === `repos/${REPOSITORY}/notifications?per_page=1`)
+          .map((call) => call.exit),
+      ).toContain(0)
       const after = (await calls.service('superagent.sources.list')) as unknown as (SourceRow & {
         state: string
       })[]
