@@ -466,6 +466,12 @@ async function sessionGates(ports: ManagedSessionPorts, record: ManagedSessionRe
   if (missing) throw missing
 }
 
+const heldGates = (ports: ManagedSessionPorts, record: ManagedSessionRecord) =>
+  held.heldInputGates(
+    (seen) => sessionGates(ports, record, seen),
+    () => ports.sessions.policy(record.sessionId),
+  )
+
 /** Without `inputs` the sessions have no owner-input engine, and `admitInput` / `inputResult` refuse. */
 export function createManagedSessions(
   ports: ManagedSessionPorts,
@@ -491,11 +497,7 @@ export function createManagedSessions(
       ...deps,
       ports,
       serial,
-      gates: (record) =>
-        held.heldInputGates(
-          (seen) => sessionGates(ports, record, seen),
-          () => ports.sessions.policy(record.sessionId),
-        ),
+      gates: (record) => heldGates(ports, record),
       actor: managedSessionActor,
     })
   const archive = async (record: ManagedSessionRecord) => {
