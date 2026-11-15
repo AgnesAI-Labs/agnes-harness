@@ -78,10 +78,30 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
     state.phase = 'ready'
     runtimeHealth.set({ state: 'ready', detail: 'Superagent is ready', at: now() })
   }
-  async function reconfigure(): Promise<void> {
+  async function reconfigureOnce(): Promise<void> {
     if (state.phase !== 'setup' && state.phase !== 'ready') return
     const was = state.deployment !== undefined
     if ((await configure()) && !was && state.phase === 'setup') await track(begin())
+  }
+  /** The reconfiguration that runs; one asked for meanwhile runs once after it, so only one ever opens the app. */
+  let reconfiguring: Promise<void> | undefined
+  let again = false
+  function reconfigure(): Promise<void> {
+    if (reconfiguring) {
+      again = true
+      return reconfiguring
+    }
+    reconfiguring = (async () => {
+      try {
+        do {
+          again = false
+          await reconfigureOnce()
+        } while (again)
+      } finally {
+        reconfiguring = undefined
+      }
+    })()
+    return reconfiguring
   }
   return {
     reconfigure,
