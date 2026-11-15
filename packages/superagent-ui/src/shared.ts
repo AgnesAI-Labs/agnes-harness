@@ -240,6 +240,10 @@ export const SETUP_PROBLEMS = {
   repositoryUnreadable: ['github', '@{account} cannot read {repository}.'],
   repositoryUnreported: ['github', 'The agent GitHub CLI did not return {repository}.'],
   repositoryReadOnly: ['github', '@{account} cannot push to {repository}.'],
+  agentTokenNoNotifications: [
+    'github',
+    "The agent's GitHub token cannot read notifications; sign in with gh auth login or a classic token.",
+  ],
 } as const satisfies Record<string, readonly [SetupPlace, string]>
 export type SetupCode = keyof typeof SETUP_PROBLEMS
 export interface SetupProblem {

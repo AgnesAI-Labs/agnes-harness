@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -29,6 +30,22 @@ const gh = (file: string, login: string, push = true): string =>
   program(
     file,
     `case "$*" in\n  "api user") echo '{"login":"${login}","id":7}' ;;\n  "api repos/acme/"*" --jq {name: .full_name, push: .permissions.push}") echo '{"name":"acme/widgets","push":${push}}' ;;\n  *) exit 1 ;;\nesac`,
+  )
+const FAKE_GH = fileURLToPath(new URL('./fixtures/fake-gh.mjs', import.meta.url))
+const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+/** The scripted fake `gh` signed in as Agent-Bot with push access to acme/widgets, answering the notifications read with `notifications`. */
+const scriptedGh = (file: string, notifications: { stdout?: string; stderr?: string; exit?: number }) =>
+  program(
+    file,
+    `FAKE_GH_SCRIPT=${quote(
+      JSON.stringify({
+        rules: [
+          { pattern: '^api user$', stdout: '{"login":"Agent-Bot","id":7}' },
+          { pattern: '^api repos/acme/widgets --jq', stdout: '{"name":"acme/widgets","push":true}' },
+          { pattern: '^api repos/acme/widgets/notifications\\?', ...notifications },
+        ],
+      }),
+    )} exec ${quote(process.execPath)} ${quote(FAKE_GH)} "$@"`,
   )
 const minimal = (overrides: Record<string, unknown> = {}) => ({ stateDir: join(dir, 'state'), ...overrides })
 const machine = (overrides: Partial<Machine> = {}): Machine => ({ ...machineOf(minimal()), ...overrides })
@@ -181,6 +198,35 @@ posixDescribe('setup', () => {
     expect(() => executable('nothing-here', join(dir, 'bin'))).toThrow(
       'nothing-here is not an executable file on PATH',
     )
+  })
+  it('refuses a token GitHub does not let read notifications, and leaves other failures to the Source', async () => {
+    const resolve = (cli: string) =>
+      resolveDeployment(machine(), { repository: 'acme/widgets', cli }, probe, path)
+    // A fine-grained token: GitHub answers the notifications API with 403, or 401.
+    for (const [name, stderr] of [
+      ['gh-fine-grained', 'gh: Resource not accessible by personal access token (HTTP 403)\n'],
+      ['gh-unauthorized', 'gh: Bad credentials (HTTP 401)\n'],
+    ] as const)
+      await expect(resolve(scriptedGh(join(dir, 'bin', name), { stderr, exit: 1 }))).rejects.toEqual(
+        setupError('github', 'agentTokenNoNotifications', {
+          account: 'Agent-Bot',
+          output: expect.stringContaining('HTTP 40'),
+        }),
+      )
+    expect((await resolve(scriptedGh(join(dir, 'bin', 'gh-classic'), { stdout: '[]' }))).github.login).toBe(
+      'Agent-Bot',
+    )
+    // A network failure is no verdict on the token; the Source's polling reports it.
+    expect(
+      (
+        await resolve(
+          scriptedGh(join(dir, 'bin', 'gh-offline'), {
+            stderr: 'error connecting to api.github.com\n',
+            exit: 1,
+          }),
+        )
+      ).repository,
+    ).toBe('acme/widgets')
   })
 })
 
