@@ -38,7 +38,7 @@ export const judgmentCatalog: LocaleCatalog = {
     'judgment.use.rules': 'Tool-result rule reminders',
   },
   'zh-CN': {
-    'judgment.title': '判断',
+    'judgment.title': 'jev判断',
     'judgment.group': '插件',
     'judgment.loading': '正在读取判断状态…',
     'judgment.unavailable': '判断状态暂不可用。请刷新或检查插件设置。',
