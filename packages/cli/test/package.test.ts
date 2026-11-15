@@ -635,3 +635,54 @@ describe('failed package operation reporting', () => {
     expect(stderr).toBe('agh: The request failed. Inspect its status with agh doctor.\n')
   })
 })
+
+describe('a package named instead of a source', () => {
+  const bundled = {
+    ...preview,
+    id: '@agnes/superagent',
+    source: { type: 'file' as const, ref: 'file:./bundled-plugins/superagent' },
+  }
+  async function failure(argv: string[], catalog: unknown[] = [bundled]) {
+    const fixture = client()
+    const packages = fixture.value.packages as unknown as {
+      catalog: { get(params: { id: string }): Promise<unknown> }
+    }
+    packages.catalog.get = async ({ id }) => {
+      const entry = catalog.find((item) => (item as { id: string }).id === id)
+      if (!entry) throw new Error('E_PACKAGE_NOT_FOUND')
+      return entry
+    }
+    const caught = await runPackageCommand(parseArgs(argv), fixture.value, {
+      write: () => {},
+      confirm: async () => true,
+    }).catch((e: unknown) => e)
+    let stderr = ''
+    const sink = new Writable({
+      write(chunk, _encoding, done) {
+        stderr += String(chunk)
+        done()
+      },
+    })
+    const code = reportCommandFailure(caught, argv[0], { env: {}, stderr: sink })
+    expect(fixture.installs()).toBe(0)
+    return { code, stderr }
+  }
+
+  it.each([['package', 'add'], ['plugins', 'add'], ['install']])(
+    '`agh %s` names the bundled source and the marketplace for a catalog package',
+    async (...argv) => {
+      const { code, stderr } = await failure([...argv, '@agnes/superagent', '--yes'])
+      expect(code).toBe(2)
+      expect(stderr).toContain('@agnes/superagent is a package name, not a source')
+      expect(stderr).toContain('agh plugins add file:./bundled-plugins/superagent')
+      expect(stderr).toContain('marketplace')
+    },
+  )
+
+  it('says how sources are written for a name the catalog does not hold', async () => {
+    const { code, stderr } = await failure(['package', 'add', 'not-a-package', '--yes'], [])
+    expect(code).toBe(2)
+    expect(stderr).toContain('Use a git HTTPS URL, folder/archive path, or npm:package@version')
+    expect(stderr).toContain('marketplace')
+  })
+})

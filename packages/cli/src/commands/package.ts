@@ -1,4 +1,9 @@
-import type { PackageInstalledDescriptor, PackageOperation, PackagePreview } from '@agnes/protocol'
+import type {
+  PackageInstalledDescriptor,
+  PackageOperation,
+  PackagePreview,
+  PackageSource,
+} from '@agnes/protocol'
 import type { NodeClient } from '@agnes/sdk'
 import { UsageError } from '../errors.js'
 import {
@@ -133,6 +138,28 @@ async function updateInstalled(
     )
 }
 
+/** A package id as the catalog names it, such as `@agnes/superagent`. */
+const PACKAGE_ID = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/
+/**
+ * Parses a package source. A package id is not one: a catalog package, such as a bundled plugin, is named by the
+ * command that installs it from its source, and every other refusal says how sources are written.
+ */
+async function sourceOf(client: NodeClient, profile: string, value: string): Promise<PackageSource> {
+  try {
+    return parsePackageSource(value)
+  } catch (error) {
+    if (!(error instanceof Error) || error.name !== 'UsageError') throw error
+    const entry = PACKAGE_ID.test(value)
+      ? await client.packages.catalog.get({ profile, id: value }).catch(() => undefined)
+      : undefined
+    throw new UsageError(
+      entry
+        ? `${value} is a package name, not a source; install it from the marketplace in the Web admin, or with agh plugins add ${entry.source.ref}`
+        : `${error.message}; a catalog package installs from the marketplace in the Web admin`,
+    )
+  }
+}
+
 export async function runPackageCommand(
   p: ParsedArgs,
   client: NodeClient,
@@ -177,7 +204,7 @@ export async function runPackageCommand(
       const preview = await inspectPackage(
         client,
         profile,
-        parsePackageSource(requireArg(args, 1, 'agh package inspect <source>')),
+        await sourceOf(client, profile, requireArg(args, 1, 'agh package inspect <source>')),
       )
       io.write(formatPreview(preview))
       return
@@ -186,7 +213,7 @@ export async function runPackageCommand(
       const preview = await inspectPackage(
         client,
         profile,
-        parsePackageSource(requireArg(args, 1, 'agh install <source>')),
+        await sourceOf(client, profile, requireArg(args, 1, 'agh install <source>')),
       )
       const current = (await client.packages.list({ profile })).packages.find(
         (entry) => entry.id === preview.id,
