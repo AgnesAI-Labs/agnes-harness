@@ -288,6 +288,15 @@ it.skipIf(process.platform === 'win32')(
       expect(Buffer.from(asset.base64, 'base64').toString()).toBe(
         readFileSync(join(payloadDirectory, 'src', 'client.js'), 'utf8'),
       )
+      // Its stylesheet is a file the page loads (the page's CSP refuses an inline <style>), served as the panel's own.
+      const [styleUrl, ...extra] = row.styleUrls ?? []
+      expect({ styleUrl: !!styleUrl, extra }).toEqual({ styleUrl: true, extra: [] })
+      if (!styleUrl) throw new Error('panel stylesheet not rostered')
+      const sheet = await client.clientModules.read(PROFILE, styleUrl)
+      if (!sheet.found) throw new Error('installed panel stylesheet unavailable')
+      expect(Buffer.from(sheet.base64, 'base64').toString()).toBe(
+        readFileSync(new URL('../../../superagent-ui/src/superagent.css', import.meta.url), 'utf8'),
+      )
 
       // The service writes its database in the directory the platform chose; a ticket seeded there is what the panel
       // services read back (no part of the plugin that runs tickets is wired on this branch).

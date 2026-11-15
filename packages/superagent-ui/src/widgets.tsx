@@ -1,8 +1,8 @@
 /** Context-aware shared UI widgets: page/section headers, timestamps, Markdown rendering, and confirmation actions. */
 
-import { ConfirmDialog } from '@agnes/web-ui'
+import { Banner, ConfirmDialog, EmptyState, Icon as UiIcon } from '@agnes/web-ui'
 import { Fragment, type ReactNode, useState } from 'react'
-import { Button, type DotState, Icon, type IconName, InfoTip, StateDot } from './controls.js'
+import { Button, type DotState, Icon, type IconName, InfoTip, LinkButton, StateDot } from './controls.js'
 import { type Inline, inlines, linkify, markdownBlocks } from './markdown.js'
 import { useAction, usePanel, usePanelData } from './provider.js'
 import { type SettingsGroup, settingsRoute } from './route.js'
@@ -252,12 +252,9 @@ export function ActionLink({
   icon?: IconName
 }) {
   return (
-    <a className="dt-btn dt-btn-outline dt-btn-sm" href={href} {...external}>
-      <span className="dt-btn-icon">
-        <Icon name={icon} size={14} />
-      </span>
+    <LinkButton href={href} icon={<Icon name={icon} size={14} />}>
       {children}
-    </a>
+    </LinkButton>
   )
 }
 export function StageMark({ state, icon, label }: { state: DotState; icon: IconName; label: string }) {
@@ -268,13 +265,26 @@ export function StageMark({ state, icon, label }: { state: DotState; icon: IconN
     </span>
   )
 }
+/**
+ * A view's read: nothing yet shows a loading line; a failure with nothing to show is the AGH empty state (the service
+ * is not answering, or the read failed); a failure over data already shown is a banner above it.
+ */
 export function LoadState({ error, loading }: { error?: Error | undefined; loading: boolean }) {
   const { t } = usePanel()
+  if (error && loading)
+    return (
+      <EmptyState
+        className="dt-empty"
+        role="alert"
+        icon={<UiIcon name="plug" size={48} />}
+        title={error.message}
+      />
+    )
   if (error)
     return (
-      <p className="dt-error" role="alert">
+      <Banner tone="warning" role="alert" className="dt-load-banner">
         {error.message}
-      </p>
+      </Banner>
     )
   return loading ? <Hint>{t('loading')}</Hint> : null
 }

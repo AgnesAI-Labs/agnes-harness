@@ -431,9 +431,7 @@ it('picks the Feishu instance from the running channel instances, and not the ow
     ['Feishu · superagent-bot', false],
   ])
   // Claiming the whole instance, the owner's instance cannot be chosen.
-  await click(
-    [...feishu.querySelectorAll('button')].find((item) => item.textContent === '整个实例（专用机器人）')!,
-  )
+  await type(field<HTMLSelectElement>('认领'), 'instance')
   expect([...field<HTMLSelectElement>('飞书渠道实例').options].map((option) => option.disabled)).toEqual([
     false,
     false,

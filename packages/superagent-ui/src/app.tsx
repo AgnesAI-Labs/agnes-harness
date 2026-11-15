@@ -1,7 +1,9 @@
 /** Root panel shell: header with global search and glossary, top-level navigation tabs, and active route view. */
+
+import { Banner, Dialog, IconButton, PageHeader } from '@agnes/web-ui'
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import type { SearchView, Services } from './api.js'
-import { Button, Dot, Icon, Input, Modal, SegmentedTabs } from './controls.js'
+import { Button, Dot, Icon, Input, SegmentedTabs } from './controls.js'
 import { EvalStatus } from './eval.js'
 import { ExecutionStatus } from './execution.js'
 import { en, GLOSSARY, GLOSSARY_VALUES, type SuperagentKey, zh } from './locales.js'
@@ -26,7 +28,7 @@ import { actorName, errorText, readableMarkers, reasonLabel, type T, valueLabel 
 import { ThreadPage } from './thread.js'
 import { TicketPage } from './ticket.js'
 import { TriggerStatus } from './trigger.js'
-import { When } from './widgets.js'
+import { LoadState, When } from './widgets.js'
 
 export interface AppProps {
   t: T
@@ -41,19 +43,20 @@ function Glossary({ open, onClose }: { open: boolean; onClose: () => void }) {
   const heading = (group: keyof typeof GLOSSARY) =>
     t(group === 'roles' ? 'glossaryGroup.roles' : `tab.${group}`)
   return (
-    <Modal
-      className="dt-glossary-modal"
+    <Dialog
+      className="dt-modal dt-glossary-modal"
+      size="lg"
       open={open}
-      onClose={onClose}
+      onCancel={onClose}
       title={t('glossary')}
-      closeLabel={t('close')}
-      description={t('glossaryIntro')}
+      closable={{ 'aria-label': t('close') }}
       footer={
         <Button variant="primary" onClick={onClose}>
           {t('close')}
         </Button>
       }
     >
+      <p className="dt-modal-description">{t('glossaryIntro')}</p>
       <div className="dt-glossary-body">
         <table className="dt-glossary">
           <thead>
@@ -98,7 +101,7 @@ function Glossary({ open, onClose }: { open: boolean; onClose: () => void }) {
           ))}
         </dl>
       </div>
-    </Modal>
+    </Dialog>
   )
 }
 
@@ -161,7 +164,7 @@ function SearchResults({
     navigate(route)
   }
   return (
-    <div className="dt-search-results" role="region" aria-label={t('searchLabel')}>
+    <section className="dt-search-results" aria-label={t('searchLabel')}>
       <div className="dt-search-head">
         <span className="dt-hint">
           {empty
@@ -223,7 +226,7 @@ function SearchResults({
           ))}
         </ul>
       )}
-    </div>
+    </section>
   )
 }
 
@@ -268,81 +271,70 @@ function Header({ masterId }: { masterId: string | undefined }) {
     )
   }
   return (
-    <header className="dt-head">
-      <div className="dt-head-title">
-        <h1 className="dt-title">{t('title')}</h1>
-      </div>
-      <div className="dt-toolbar">
-        <form
-          ref={search}
-          className="dt-search"
-          role="search"
-          onSubmit={submit}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') show()
-          }}
-        >
-          <Input
-            type="search"
-            icon={<Icon name="search" />}
-            value={query}
-            placeholder={t('searchPlaceholder')}
-            aria-label={t('searchLabel')}
-            onChange={(event) => {
-              setQuery(event.target.value)
-              if (!event.target.value) show()
+    <PageHeader
+      className="dt-head"
+      title={t('title')}
+      actions={
+        <div className="dt-toolbar">
+          {/* biome-ignore lint/a11y/useSemanticElements: a search form; the page's React does not know the <search> element. */}
+          <form
+            ref={search}
+            className="dt-search"
+            role="search"
+            onSubmit={submit}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') show()
             }}
-          />
-          {result && (
-            <SearchResults
-              result={result.value}
-              query={result.query}
-              onClose={() => {
-                show()
+          >
+            <Input
+              type="search"
+              icon={<Icon name="search" />}
+              value={query}
+              placeholder={t('searchPlaceholder')}
+              aria-label={t('searchLabel')}
+              onChange={(event) => {
+                setQuery(event.target.value)
+                if (!event.target.value) show()
               }}
             />
-          )}
-        </form>
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={<Icon name="question" />}
-          aria-label={t('glossary')}
-          title={t('glossary')}
-          aria-haspopup="dialog"
-          onClick={() => setGlossary(true)}
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          icon={<Icon name="session" size={14} />}
-          disabled={!masterId}
-          onClick={() => {
-            if (masterId) openSession(masterId).catch((failure) => notify(errorText(failure)))
-          }}
-        >
-          {t('openMaster')}
-        </Button>
-      </div>
-      <Glossary open={glossary} onClose={() => setGlossary(false)} />
-    </header>
+            {result && (
+              <SearchResults
+                result={result.value}
+                query={result.query}
+                onClose={() => {
+                  show()
+                }}
+              />
+            )}
+          </form>
+          <IconButton
+            name="file-text"
+            label={t('glossary')}
+            aria-haspopup="dialog"
+            onClick={() => setGlossary(true)}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            icon={<Icon name="session" size={14} />}
+            disabled={!masterId}
+            onClick={() => {
+              if (masterId) openSession(masterId).catch((failure) => notify(errorText(failure)))
+            }}
+          >
+            {t('openMaster')}
+          </Button>
+          <Glossary open={glossary} onClose={() => setGlossary(false)} />
+        </div>
+      }
+    />
   )
 }
 
 function Pages({ route, openTab }: { route: Route; openTab: (tab: Tab) => void }) {
   const { t } = usePanel()
   const { state, error, reload } = usePanelData()
-  // Keep the active tab scrolled into view on narrow screens when routes change via links.
-  useEffect(() => {
-    document.getElementById(`dt-tab-${route.page}`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
-  }, [route.page])
-  const waiting = error ? (
-    <p className="dt-error" role="alert">
-      {error.message}
-    </p>
-  ) : (
-    <p className="dt-hint">{t('loading')}</p>
-  )
+  const waiting = <LoadState error={error} loading />
   const page = (() => {
     switch (route.page) {
       case 'overview':
@@ -384,21 +376,16 @@ function Pages({ route, openTab }: { route: Route; openTab: (tab: Tab) => void }
       <div className="dt-column">
         <Header masterId={state?.masterId} />
         {error && state && (
-          <p className="dt-error" role="status">
+          <Banner tone="warning" role="status" className="dt-load-banner">
             {error.message}
-          </p>
+          </Banner>
         )}
         <SegmentedTabs
-          className="dt-tabs"
+          id="dt"
           label={t('pagesLabel')}
           value={route.page}
           onChange={openTab}
-          items={TABS.map((value) => ({
-            value,
-            label: t(`tab.${value}`),
-            id: `dt-tab-${value}`,
-            panelId: 'dt-page',
-          }))}
+          items={TABS.map((value) => ({ value, label: t(`tab.${value}`) }))}
         />
         <main id="dt-page" role="tabpanel" aria-labelledby={`dt-tab-${route.page}`} className="dt-main">
           {page}

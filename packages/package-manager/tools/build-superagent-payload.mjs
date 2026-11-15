@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Bundle packages/superagent into the optional Superagent payload.
 // packages/superagent stays the only source; the payload index.mjs and its prompts/, skills/ and locale/ copies are
-// generated and not committed; so are the panel's src/client.js and client-build.json (NOTICE is generated and committed).
+// generated and not committed; so are the panel's src/client.js, its stylesheet and client-build.json (NOTICE is generated
+// and committed).
 import { copyFileSync, cpSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { buildPresentations } from '../../../tools/presentation-build.mjs'
@@ -27,9 +28,13 @@ function copyResource(name, directory) {
   }
 }
 
+/** The panel's sources: its stylesheets are copied next to the bundle under the names the descriptor lists. */
+export const superagentPanelDirectory = join(packageManagerRoot, '..', 'superagent-ui', 'src')
+
 /**
  * The browser panel: `src/client.js`, `NOTICE` and `client-build.json` from packages/superagent-ui, next to the committed
- * client descriptor, as the judgment payload does. A directory other than the payload gets a copy of the descriptor.
+ * client descriptor, as the judgment payload does, and each stylesheet the descriptor lists. A directory other than the
+ * payload gets a copy of the descriptor.
  */
 export async function buildSuperagentPresentation(directory = superagentPayloadDirectory) {
   await buildPresentations({ outputDirectories: { superagent: directory }, names: ['superagent'] })
@@ -37,6 +42,10 @@ export async function buildSuperagentPresentation(directory = superagentPayloadD
   const descriptor = join(superagentPayloadDirectory, 'src', 'agnes.client.json')
   if (directory !== superagentPayloadDirectory)
     copyFileSync(descriptor, join(directory, 'src', 'agnes.client.json'))
+  for (const style of JSON.parse(readFileSync(descriptor, 'utf8')).client.styles ?? []) {
+    const name = basename(style)
+    copyFileSync(join(superagentPanelDirectory, name), join(directory, 'src', name))
+  }
 }
 
 /**
