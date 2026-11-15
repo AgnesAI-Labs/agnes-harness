@@ -40,6 +40,9 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
 
 1. 以服务用户、`AGH_HOME=/srv/superagent/agh` 先启动一次 daemon（`agh serve`），按[安装](install.zh-CN.md)配好模型。
 2. 打开 **插件 → 市场**，安装 **Superagent**，审阅它申请的权限（模型与会话访问、在本机运行命令），然后启用（见[插件](packages.zh-CN.md)）。
+   在终端里，用同一个 `AGH_HOME` 运行 `agh plugins add file:./bundled-plugins/superagent` 效果相同：这个引用是载荷的官方随包来源，也就是市场安装所用的来源；
+   命令先给出审阅内容，你确认后安装、信任并启用 Superagent。只用这两种方式之一。包名（如 `agh package add @agnes/superagent`）不是来源，会被拒绝；
+   用文件夹路径安装得到的是没有随包应用授权的本地副本（见[排错](#排错)）。
 3. 在插件设置页把 `stateDir` 设为 `/srv/superagent/state`。此时 Superagent 会报告一个设置问题，因为智能体的环境还没就绪，这是正常的。
 4. 用智能体自己的配置目录登录智能体账号，绝不要用你自己的：
 
@@ -116,7 +119,8 @@ WantedBy=multi-user.target
 
 打开 AGH 首页上的 **Superagent** 入口，依次保存：来源（仓库与智能体的 GitHub CLI；用飞书时选飞书渠道实例）、策略（谁可以提请求）、
 执行设置（工单目录根与 prepare 命令，例如 `git clone "https://github.com/<owner>/<name>.git" repo`）以及团队提示段。
-各字段的含义见[设置指南](../../packages/superagent/docs/setup.md)。然后用允许名单里的账号在某个 Issue 下评论 `@<智能体登录名> <请求>`，
+各字段的含义见[设置指南](../../packages/superagent/docs/setup.md)。全新安装时总览会报告 GitHub 来源没有设置仓库：
+**来源** 设置从首次启动起就列出 GitHub，保存仓库与 CLI 后设置会自行继续，无需重启。然后用允许名单里的账号在某个 Issue 下评论 `@<智能体登录名> <请求>`，
 大约一分钟内总览里就会出现工单。
 
 ## 停用
@@ -185,6 +189,9 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
 
 | 问题 | 处理 |
 | --- | --- |
+| `The GitHub Source names no repository.` | 打开 **设置 → 来源**，在 GitHub 卡片上填写仓库（`owner/name`）和智能体的 GitHub CLI 并保存；设置随即继续，无需重启 |
+| 面板说连不上 Superagent，调用返回 `CAPABILITY_DENIED` | 请从市场安装；本地路径安装没有特权授权。用文件夹路径安装得到的是 `local-source` 包，它永远拿不到 Superagent 运行所需的随包应用授权，这是有意的。先卸载它，再从 **插件 → 市场** 或用 `agh plugins add file:./bundled-plugins/superagent` 安装 |
+| `agh package add @agnes/superagent` 被拒绝 | 包名不是来源。从市场安装，或用 `agh plugins add file:./bundled-plugins/superagent` |
 | `The daemon runs with HOME …, not the agent home …` | 以 `HOME` 为 `<stateDir>/home` 启动 daemon（单元里的 `HOME`） |
 | `Sessions run gh from …, not the shim in …` | 把 `<stateDir>/worker-bin` 放在单元 `PATH` 的最前面 |
 | `git would ask other credential helpers than the agent's for github.com` | 从系统 git 配置里去掉列出的凭据助手，或换一个没有它们的用户运行 |

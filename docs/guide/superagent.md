@@ -50,7 +50,12 @@ panel's **Deployment** page names. Setting it explicitly before the service star
 1. As the service user, with `AGH_HOME=/srv/superagent/agh`, start the daemon once (`agh serve`) and configure a model
    provider as in [Install](install.md).
 2. Open **Plugins → Marketplace**, install **Superagent**, review what it asks for (model and session access, running
-   commands on this machine), and enable it ([Plugins](packages.md)).
+   commands on this machine), and enable it ([Plugins](packages.md)). From a terminal, with the same `AGH_HOME`,
+   `agh plugins add file:./bundled-plugins/superagent` does the same: that reference is the payload's official bundled
+   source, the one the marketplace installs from; the command shows the review and, once you confirm it, installs,
+   trusts and enables Superagent. Use one of these two ways. A package name, as in `agh package add @agnes/superagent`,
+   is not a source and is refused, and a folder path installs a local copy without the bundled-app grant (see
+   [Troubleshooting](#troubleshooting)).
 3. On the plugin's settings page set `stateDir` to `/srv/superagent/state`. Superagent then reports a setup problem
    because the agent's environment is not in place yet; that is expected.
 4. Sign the agent account in, with its own configuration directory, never yours:
@@ -132,7 +137,9 @@ cleanly. A restart is safe at any time: see [Restart and recovery](#restart-and-
 Open the **Superagent** entry on the AGH home page and save, in order, the Sources (repository and the agent's GitHub
 CLI; the Feishu channel instance if used), the Policy (who may ask), the Execution settings (the ticket directory root and
 the prepare command, for example `git clone "https://github.com/<owner>/<name>.git" repo`) and the team prompt sections.
-The [setup guide](../../packages/superagent/docs/setup.md) explains each field. Then, from an allowed account, comment
+The [setup guide](../../packages/superagent/docs/setup.md) explains each field. On a fresh install the overview reports
+that the GitHub Source names no repository: the **Source** settings list GitHub from the first start, and once its
+repository and CLI are saved, setup goes on by itself, without a restart. Then, from an allowed account, comment
 `@<agent login> <request>` on an Issue: a ticket appears on the overview within about a minute.
 
 ## Disable
@@ -223,6 +230,9 @@ again after you fixed something outside the panel.
 
 | Problem | Fix |
 | --- | --- |
+| `The GitHub Source names no repository.` | Open **Settings → Source**, enter the repository (`owner/name`) and the agent's GitHub CLI on the GitHub card, and save; setup goes on without a restart |
+| The panel says it cannot connect to Superagent, and its calls return `CAPABILITY_DENIED` | Install from the marketplace; a local-path install has no privileged grant. A folder path installs a `local-source` package, which never receives the bundled-app grant Superagent runs with; this is intended. Uninstall it, then install from **Plugins → Marketplace** or with `agh plugins add file:./bundled-plugins/superagent` |
+| `agh package add @agnes/superagent` is refused | A package name is not a source. Install from the marketplace, or with `agh plugins add file:./bundled-plugins/superagent` |
 | `The daemon runs with HOME …, not the agent home …` | Start the daemon with `HOME` set to `<stateDir>/home` (the unit's `HOME`) |
 | `Sessions run gh from …, not the shim in …` | Put `<stateDir>/worker-bin` first on the unit's `PATH` |
 | `git would ask other credential helpers than the agent's for github.com` | Remove the named helpers from the system git configuration, or run as a user without them |
