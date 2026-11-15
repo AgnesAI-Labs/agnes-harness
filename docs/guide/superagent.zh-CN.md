@@ -39,6 +39,8 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
 ## 安装与启用
 
 1. 以服务用户、`AGH_HOME=/srv/superagent/agh` 先启动一次 daemon（`agh serve`），按[安装](install.zh-CN.md)配好模型。
+   全新的 home 在首次启动之前不要在 `AGH_HOME` 下创建任何文件：那里有文件（比如把 daemon 输出重定向到其中的日志）时，启动器会以
+   `E_HOME_VERSION` 拒绝这个 home。日志请写到 home 之外，例如 `/srv/superagent/agh.log`。
 2. 打开 **插件 → 市场**，安装 **Superagent**，审阅它申请的权限（模型与会话访问、在本机运行命令），然后启用（见[插件](packages.zh-CN.md)）。
    在终端里，用同一个 `AGH_HOME` 运行 `agh plugins add file:./bundled-plugins/superagent` 效果相同：这个引用是载荷的官方随包来源，也就是市场安装所用的来源；
    命令先给出审阅内容，你确认后安装、信任并启用 Superagent。只用这两种方式之一。包名（如 `agh package add @agnes/superagent`）不是来源，会被拒绝；
@@ -192,6 +194,7 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
 | `The GitHub Source names no repository.` | 打开 **设置 → 来源**，在 GitHub 卡片上填写仓库（`owner/name`）和智能体的 GitHub CLI 并保存；设置随即继续，无需重启 |
 | 面板说连不上 Superagent，调用返回 `CAPABILITY_DENIED` | 请从市场安装；本地路径安装没有特权授权。用文件夹路径安装得到的是 `local-source` 包，它永远拿不到 Superagent 运行所需的随包应用授权，这是有意的。先卸载它，再从 **插件 → 市场** 或用 `agh plugins add file:./bundled-plugins/superagent` 安装 |
 | `agh package add @agnes/superagent` 被拒绝 | 包名不是来源。从市场安装，或用 `agh plugins add file:./bundled-plugins/superagent` |
+| 首次 `agh serve` 以 `E_HOME_VERSION` 拒绝 home | 全新的 `AGH_HOME` 在首次启动前被建了东西，比如日志文件。删掉它再启动，并把日志写到 home 之外 |
 | `The daemon runs with HOME …, not the agent home …` | 以 `HOME` 为 `<stateDir>/home` 启动 daemon（单元里的 `HOME`） |
 | `Sessions run gh from …, not the shim in …` | 把 `<stateDir>/worker-bin` 放在单元 `PATH` 的最前面 |
 | `git would ask other credential helpers than the agent's for github.com` | 从系统 git 配置里去掉列出的凭据助手，或换一个没有它们的用户运行 |

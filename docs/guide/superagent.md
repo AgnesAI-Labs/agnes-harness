@@ -48,7 +48,9 @@ panel's **Deployment** page names. Setting it explicitly before the service star
 ## Install and enable
 
 1. As the service user, with `AGH_HOME=/srv/superagent/agh`, start the daemon once (`agh serve`) and configure a model
-   provider as in [Install](install.md).
+   provider as in [Install](install.md). In a fresh home, create nothing under `AGH_HOME` before this first start: a
+   file there, such as a log the daemon's output is redirected to, makes the launcher refuse the home with
+   `E_HOME_VERSION`. Write the log outside the home, for example to `/srv/superagent/agh.log`.
 2. Open **Plugins → Marketplace**, install **Superagent**, review what it asks for (model and session access, running
    commands on this machine), and enable it ([Plugins](packages.md)). From a terminal, with the same `AGH_HOME`,
    `agh plugins add file:./bundled-plugins/superagent` does the same: that reference is the payload's official bundled
@@ -233,6 +235,7 @@ again after you fixed something outside the panel.
 | `The GitHub Source names no repository.` | Open **Settings → Source**, enter the repository (`owner/name`) and the agent's GitHub CLI on the GitHub card, and save; setup goes on without a restart |
 | The panel says it cannot connect to Superagent, and its calls return `CAPABILITY_DENIED` | Install from the marketplace; a local-path install has no privileged grant. A folder path installs a `local-source` package, which never receives the bundled-app grant Superagent runs with; this is intended. Uninstall it, then install from **Plugins → Marketplace** or with `agh plugins add file:./bundled-plugins/superagent` |
 | `agh package add @agnes/superagent` is refused | A package name is not a source. Install from the marketplace, or with `agh plugins add file:./bundled-plugins/superagent` |
+| The first `agh serve` refuses the home with `E_HOME_VERSION` | Something was created under the fresh `AGH_HOME` before its first start, such as a log file. Remove it, start again, and write the log outside the home |
 | `The daemon runs with HOME …, not the agent home …` | Start the daemon with `HOME` set to `<stateDir>/home` (the unit's `HOME`) |
 | `Sessions run gh from …, not the shim in …` | Put `<stateDir>/worker-bin` first on the unit's `PATH` |
 | `git would ask other credential helpers than the agent's for github.com` | Remove the named helpers from the system git configuration, or run as a user without them |
