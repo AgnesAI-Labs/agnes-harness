@@ -13,6 +13,7 @@ import {
 } from '@agnes/package-manager'
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
+import { verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { copyBundledExamples, copyBundledPlugins } from '../tools/build-local.js'
 import { copyExamplePayload } from '../tools/example-payload.js'
 
@@ -30,7 +31,7 @@ it.each([
   roots.push(root)
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
-  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop', 'judgment'])
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop', 'judgment', 'superagent'])
   // The release digest is the same formula boot would otherwise compute over the final payload.
   const payload = { root: output, path: `bundled-plugins/${helper.name}` }
   expect(bundledPluginDigest(payload)).toBe(hashDirectory(join(output, payload.path)))
@@ -195,4 +196,37 @@ it('ships the optional judgment payload with its callable plugin and release dig
   expect(bundle).toMatch(/^export \{[^}]*\bjudgmentPlugin\b[^}]*\}/m)
   expect(bundle).toContain('from "@agnes/extension-api"')
   expect(bundle).not.toContain('from "@agnes/core"')
+})
+
+it('ships the optional Superagent payload with its resource folders, callable plugin and release digest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-superagent-delivery-'))
+  roots.push(root)
+  await copyBundledPlugins(root)
+  // Superagent reads its generated prompts, skills and locale folders next to its entry.
+  const superagent = join(root, 'bundled-plugins', 'superagent')
+  expect((await readdir(superagent)).sort()).toEqual([
+    'LICENSE',
+    'NOTICE',
+    'README.md',
+    'client-build.json',
+    'index.mjs',
+    'locale',
+    'package.json',
+    'prompts',
+    'skills',
+    'src',
+  ])
+  // The panel ships as built bytes with its descriptor, and the build record matches them.
+  expect((await readdir(join(superagent, 'src'))).sort()).toEqual(['agnes.client.json', 'client.js'])
+  await verifyPresentation(superagent)
+  expect(JSON.parse(await readFile(join(superagent, 'package.json'), 'utf8')).agnes.plugins[0]).toMatchObject(
+    {
+      export: 'superagentPlugin',
+      apiRange: '^5.22.0',
+    },
+  )
+  expect(bundledPluginDigest({ root, path: 'bundled-plugins/superagent' })).toBe(hashDirectory(superagent))
+  const superagentBundle = await readFile(join(superagent, 'index.mjs'), 'utf8')
+  expect(superagentBundle).toMatch(/^export \{[^}]*\bsuperagentPlugin\b[^}]*\}/m)
+  expect(superagentBundle).not.toMatch(/from "@agnes\/(?:core|daemon|host|worker-runtime)/)
 })

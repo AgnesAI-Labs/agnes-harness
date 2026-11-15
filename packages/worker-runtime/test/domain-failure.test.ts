@@ -103,6 +103,13 @@ it.each([
     data: { code: 'E_PRESET_UNSUPPORTED' },
   },
   {
+    code: 'E_ENVELOPE',
+    reason: 'system-prompt-append',
+    wire: -32011,
+    message: 'SEMANTIC_REJECTED',
+    data: { code: 'SEMANTIC_REJECTED', reason: 'systemPromptAppend refused' },
+  },
+  {
     code: 'E_MODEL_UNSUPPORTED',
     reason: 'bundle-unavailable',
     wire: -32008,
@@ -149,6 +156,12 @@ it('keeps unknown worker failures generic even when exception accessors throw', 
     Object.defineProperty({ code: 'E_SCAN_TRUNCATED' }, 'message', {
       get() {
         throw new Error('private scan getter')
+      },
+    }),
+    { code: 'E_ENVELOPE', message: 'private envelope failure', detail: { reason: 'private-reason' } },
+    Object.defineProperty({ code: 'E_ENVELOPE' }, 'detail', {
+      get() {
+        throw new Error('private detail getter')
       },
     }),
     Object.defineProperty({ code: 'UNKNOWN_DENIED' }, 'message', {

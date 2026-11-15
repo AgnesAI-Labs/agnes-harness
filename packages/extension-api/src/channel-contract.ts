@@ -1,17 +1,25 @@
 import type {
   AcpPermissionKind,
   ApprovalAction,
-  ChannelCapabilities,
   ChannelManifest,
   ContentBlock,
   DirectoryEntry,
+  ChannelCapabilities as ProtocolChannelCapabilities,
   ChannelCredential as ProtocolChannelCredential,
   UINode,
   UiActionParams,
   UiRevision,
 } from '@agnes/protocol'
 
-export type { ApprovalAction, ChannelCapabilities, ChannelManifest, DirectoryEntry } from '@agnes/protocol'
+export type { ApprovalAction, ChannelManifest, DirectoryEntry } from '@agnes/protocol'
+
+/**
+ * What a connected adapter supports. `read` is declared by `capabilities()` at run time only: the
+ * manifest keeps the protocol shape, and a read that is not declared here is never called.
+ */
+export type ChannelCapabilities = ProtocolChannelCapabilities & {
+  read?: { messages?: boolean; threads?: boolean; history?: boolean; chats?: boolean; members?: boolean }
+}
 
 export type ChatRef = {
   id: string
@@ -23,6 +31,8 @@ export type Sender = {
   userId: string
   unionId?: string
   displayName?: string
+  /** Absent means a user. Session routing ignores `bot` senders. */
+  kind?: 'user' | 'bot'
   raw: Record<string, string>
 }
 
@@ -253,6 +263,24 @@ export interface ChannelAdapter {
   credentialOf(event: ChannelEvent): ChannelCredential
   syncDirectory?(options: { since?: string; signal: AbortSignal }): AsyncIterable<DirectoryEntry>
   capabilities(): ChannelCapabilities
+  // Optional reads, each declared in `capabilities().read`. Messages have the shape of live events.
+  // Lists are cursor-paged: an absent `cursor` in a result means the last page.
+  fetchMessages?(chatId: string, ids: readonly string[]): Promise<MessageEvent[]>
+  listThread?(
+    chatId: string,
+    threadId: string,
+    opts: { cursor?: string; order: 'asc' | 'desc'; pageSize: number },
+  ): Promise<{ events: MessageEvent[]; cursor?: string }>
+  /** `start` and `end` are ISO times. */
+  listHistory?(
+    chatId: string,
+    opts: { start: string; end: string; cursor?: string },
+  ): Promise<{ events: MessageEvent[]; cursor?: string }>
+  listChats?(opts: { cursor?: string }): Promise<{ chats: { id: string; name?: string }[]; cursor?: string }>
+  listMembers?(
+    chatId: string,
+    opts: { cursor?: string },
+  ): Promise<{ members: { userId: string; displayName?: string }[]; cursor?: string }>
 }
 
 const SESSION_KEY_SEPARATOR = ':'

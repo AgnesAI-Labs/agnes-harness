@@ -23,7 +23,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.41',
+    version: '0.2.43',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
@@ -89,6 +89,17 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
     ref: 'file:./bundled-plugins/judgment',
     sourcePath: 'package-manager/bundled-plugins/judgment',
     build: 'pnpm --filter @agnes/package-manager build:judgment-payload',
+  },
+  {
+    name: 'superagent',
+    id: '@agnes/superagent',
+    version: '0.1.0',
+    // The payload is Apache-2.0; its NOTICE carries the MIT license of the ported code and of zod.
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/superagent',
+    // index.mjs and the prompts, skills and locale folders are generated from packages/superagent.
+    sourcePath: 'package-manager/bundled-plugins/superagent',
+    build: 'pnpm --filter @agnes/package-manager build:superagent-payload',
   },
 ])
 

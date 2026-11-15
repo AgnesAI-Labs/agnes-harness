@@ -38,6 +38,8 @@ export type AssembleDeps = HostPaths &
     /** Daemon-owned channel bridge; absent embedders refuse channel activation. */
     channelInteractions?: import('@agnes/host-extensions/profile/channel-runtime').ChannelInteractionsFactory
     channelRuntime?: import('@agnes/host-extensions/profile/channel-runtime').ChannelRuntimeFactory
+    /** Daemon-owned owner client for release-granted bundled applications; absent embedders refuse it. */
+    bundledAppClient?: import('@agnes/host-extensions/profile/bundled-app').BundledAppClientFactory
     loader: PackageLoader
     packageDirs?: Map<string, string>
     extensionLoader?: { import(file: string): Promise<Record<string, unknown>> }

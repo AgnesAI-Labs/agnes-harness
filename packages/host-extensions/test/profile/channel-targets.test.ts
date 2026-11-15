@@ -117,6 +117,25 @@ describe('channel targets', () => {
     expect(() => deniedChannelTargets.onEvent(async () => {})).toThrow()
   })
 
+  it('refuses a code for an instance a bundled app claimed whole, and reports a live code as pending', () => {
+    const targets = new ChannelTargets(namespace())
+    const instance = { channel: CHANNEL, instanceId: 'desk-bot' }
+    service(targets)
+    const bridge = targets.bridge(CHANNEL)
+    const state = { claimed: true }
+    bridge.attach('desk-bot', link([], { claimed: () => state.claimed }))
+    expect(targets.mintRefusal(instance, DESK)).toBe('CHANNEL_CLAIMED')
+    expect(() => targets.mint(instance, DESK)).toThrow(
+      expect.objectContaining({ data: { code: 'CHANNEL_CLAIMED' } }),
+    )
+    expect(bridge.pending('desk-bot')).toBe(false)
+    state.claimed = false
+    targets.mint(instance, DESK)
+    // While the code is live, the instance cannot be claimed whole.
+    expect(bridge.pending('desk-bot')).toBe(true)
+    expect(bridge.pending('other-bot')).toBe(false)
+  })
+
   it('mints a code only for a running unpaired service on a connected instance, and voids it after five misses', () => {
     const targets = new ChannelTargets(namespace())
     const instance = { channel: CHANNEL, instanceId: 'desk-bot' }

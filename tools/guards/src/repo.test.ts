@@ -70,6 +70,8 @@ describe('repo', () => {
       '@agnes/runtime-python',
       '@agnes/sandbox-remote',
       '@agnes/sdk',
+      '@agnes/superagent',
+      '@agnes/superagent-ui',
       '@agnes/system-node',
       '@agnes/web',
       '@agnes/web-admin',

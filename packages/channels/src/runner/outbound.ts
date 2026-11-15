@@ -142,6 +142,26 @@ export class Outbound {
    * owner. It shares the account rate with session lanes and keeps one message per second per chat.
    */
   async sendDirect(chat: ChatTarget, block: Block, deliveryKey: string): Promise<MessageRef> {
+    return this.sendThrottled(chat, degrade({ blocks: [block] }, this.dependencies.caps).msg, deliveryKey)
+  }
+
+  /**
+   * A whole message outside any session lane, degraded and split into parts exactly as a session
+   * reply is, each part throttled as `sendDirect`. Part `i > 0` sends under `<deliveryKey>:<i>`.
+   */
+  async sendMessage(chat: ChatTarget, message: ChannelMessage, deliveryKey?: string): Promise<MessageRef> {
+    const pieces = this.split(degrade(message, this.dependencies.caps).msg)
+    let first: MessageRef | undefined
+    for (const [index, piece] of pieces.entries()) {
+      const key = deliveryKey === undefined || index === 0 ? deliveryKey : `${deliveryKey}:${index}`
+      const ref = await this.sendThrottled(chat, piece, key)
+      first ??= ref
+    }
+    if (first === undefined) throw new Error('channel outbound message has no blocks')
+    return first
+  }
+
+  private async sendThrottled(chat: ChatTarget, message: ChannelMessage, deliveryKey?: string) {
     if (this.stopped) throw new Error('channel outbound stopped')
     let bucket = this.chatBuckets.get(chat.chatId)
     if (bucket === undefined) {
@@ -150,9 +170,10 @@ export class Outbound {
       this.chatBuckets.set(chat.chatId, bucket)
     }
     await this.takeTokens(bucket, this.direct.signal)
+    const { deliveryKey: _replaced, ...target } = chat
     return this.dependencies.adapter.send(
-      { ...chat, deliveryKey },
-      degrade({ blocks: [block] }, this.dependencies.caps).msg,
+      deliveryKey === undefined ? target : { ...target, deliveryKey },
+      message,
     )
   }
 

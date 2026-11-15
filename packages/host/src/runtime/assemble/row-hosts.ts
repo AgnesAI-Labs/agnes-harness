@@ -6,6 +6,7 @@ import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owner
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
 import { createRowExtensionHost, pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
+import { BundledAppChannelHub } from '@agnes/host-extensions/profile/bundled-app-channels'
 import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { parseAgnesPluginEntries, readPluginCapabilities } from '@agnes/package-manager'
@@ -176,16 +177,12 @@ export function createRowHosts(
       : undefined
     return description && { ...description, ...(declaredCapabilities ? { declaredCapabilities } : {}) }
   }
+  const scope = backendScope(ctx)
   const rowServices = createRowServiceHost(describeServices, {
     ...(deps.channelInteractions ? { channelInteractions: deps.channelInteractions } : {}),
     ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
     channelStateDirectory: join(deps.dataDir, 'channels'),
-    channelScope: {
-      home: dirname(dirname(deps.profileDir)),
-      profile: ctx.profile.name,
-      dataDir: deps.dataDir,
-      workspace: deps.workspaceRoot,
-    },
+    channelScope: scope,
     resolveSecret: proc.secrets,
     channelLog: deps.log,
     channelDirectory: proc.channelDirectory,
@@ -195,6 +192,8 @@ export function createRowHosts(
       proc.profileActivations.require(owner, integrity, undefined, revision),
     managed: proc.profileManaged,
     streams: proc.profileStreams,
+    hostGrants,
+    ...bundledAppBackend(ctx, scope),
     namespace: (owner, name) =>
       proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}:${name}`),
     describe: describeServices,
@@ -229,6 +228,26 @@ export function createRowHosts(
     rowServices,
     refreshPluginCatalogue,
   }
+}
+
+/** Where row backends keep their state; channel rows and the bundled app's grant share it. */
+function backendScope(ctx: AssemblyContext) {
+  const { deps } = ctx
+  return {
+    home: dirname(dirname(deps.profileDir)),
+    profile: ctx.profile.name,
+    dataDir: deps.dataDir,
+    workspace: deps.workspaceRoot,
+  }
+}
+
+/** The bundled app's grant inputs, present only when the daemon wired an owner client. */
+function bundledAppBackend(ctx: AssemblyContext, scope: ReturnType<typeof backendScope>) {
+  const client = ctx.deps.bundledAppClient
+  if (!client) return {}
+  // One hub per assembly: its channel rows attach here and the bundled app's grant reads it.
+  const channels = new BundledAppChannelHub()
+  return { bundledApp: { stateRoot: join(ctx.deps.dataDir, 'bundled-apps'), scope, client, channels } }
 }
 
 export type RowHosts = ReturnType<typeof createRowHosts>

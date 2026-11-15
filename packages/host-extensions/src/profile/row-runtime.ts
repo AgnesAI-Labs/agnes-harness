@@ -5,11 +5,13 @@ import type {
   ProfileManagedDefinition,
 } from '@agnes/extension-api'
 import { CHANNEL_CONFIG_SCHEMA, channelKind, channelServiceCapabilities } from '@agnes/extension-api'
-import { grantKey, type RowOriginLookup } from '@agnes/plugin-runtime/host'
+import type { HostCapabilityGrant } from '@agnes/package-manager'
+import { grantKey, type RowOrigin, type RowOriginLookup } from '@agnes/plugin-runtime/host'
 import type { PluginCapabilities } from '@agnes/protocol'
 import { rpcError } from '@agnes/protocol'
 import { frozenJson } from '../ext-host/frozen-json.js'
 import { pluginRowSource } from '../ext-host/row-extension-host.js'
+import type { BundledAppHost } from './bundled-app.js'
 import type { ChannelRuntimeFactory } from './channel-runtime.js'
 import type { ChannelTargets } from './channel-targets.js'
 import type { ProfileManagedResources } from './managed.js'
@@ -33,6 +35,10 @@ export function installProfileRuntime(
     channelTargets?: ChannelTargets
     managed: ProfileManagedResources
     streams: ProfileStreams
+    /** Assembly-scoped release grants for verified rows; plugins never supply them. */
+    hostGrants?(origin: Readonly<RowOrigin>): HostCapabilityGrant
+    /** Backend inputs for rows whose release grant includes `bundledApp`. */
+    bundledApp?: BundledAppHost
     namespace(owner: string, name: string): import('@agnes/extension-api').PersistenceMetadataNamespace
     describe(
       packageId: string,
@@ -136,6 +142,15 @@ export function installProfileRuntime(
             ...(deps.channelTargets
               ? { targets: deps.channelTargets.bridge(grantKey(row.origin.packageId, row.owner)) }
               : {}),
+            // Instance and group claims by the bundled app, and the instance links behind its grant's channels.
+            ...(deps.bundledApp?.channels
+              ? {
+                  subscriptions: deps.bundledApp.channels.bridge(
+                    grantKey(row.origin.packageId, row.owner),
+                    row.origin.rowId,
+                  ),
+                }
+              : {}),
           }),
         async check(value) {
           return value.status()
@@ -211,10 +226,15 @@ export function installProfileRuntime(
         )
       if (!descriptor || descriptor.artifact.kind !== 'in-process' || row.capabilities?.store !== true)
         throw rpcError('CAPABILITY_DENIED')
+      const bundledApp =
+        deps.bundledApp && deps.hostGrants?.(row.origin).bundledApp === true
+          ? { host: deps.bundledApp, packageId: row.origin.packageId, service: definition.id }
+          : undefined
       const handle = deps.managed.register({
         ...row,
         packageId: row.origin.packageId,
         wakesAllowed: row.capabilities?.wake === true,
+        ...(bundledApp ? { bundledApp } : {}),
         definition,
         descriptor,
         store: ownedStore(deps.namespace(row.owner, `managed:${definition.id}`), () => {}, true),

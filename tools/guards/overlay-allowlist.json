@@ -1,6 +1,7 @@
 {
   "packages/resource-control-web/src/credential-editor.tsx": 1,
   "packages/resource-control-web/src/credentials.tsx": 1,
+  "packages/superagent-ui/src/app.tsx": 1,
   "packages/web-admin/src/admin/plugins/skill-authoring.tsx": 1,
   "packages/web-admin/src/settings/diagnostics.tsx": 1,
   "packages/web-admin/src/settings/jobs-panel.tsx": 1,

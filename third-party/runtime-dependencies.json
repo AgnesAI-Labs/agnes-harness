@@ -64,6 +64,7 @@
         "packages/package-manager/bundled-plugins/interaction-ui",
         "packages/package-manager/bundled-plugins/navigation-ui",
         "packages/resource-control-web",
+        "packages/superagent-ui",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
@@ -295,6 +296,7 @@
       "rationale": "Same pin line as react (WC5).",
       "consumers": [
         "packages/judgment-ui",
+        "packages/superagent-ui",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
@@ -347,6 +349,15 @@
       "purpose": "Measure terminal cells and fit the workbench PTY to its panel.",
       "rationale": "Shared, lazy-loaded terminal renderer behind the Web UI boundary; uses the existing session jobs transport.",
       "consumers": ["packages/web-ui"]
+    },
+    {
+      "name": "zod",
+      "version": "4.5.4",
+      "license": "MIT",
+      "source": "https://github.com/colinhacks/zod",
+      "purpose": "Validate the Superagent settings, machine configuration, stored records and CLI output it reads from outside the process.",
+      "rationale": "Superagent's settings blocks, policy and deployment checks are written as zod schemas and carry their error messages, so the ported code keeps them instead of rewriting them in another validation library; the version was already in the lockfile as a transitive dependency.",
+      "consumers": ["packages/superagent"]
     }
   ]
 }

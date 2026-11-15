@@ -476,6 +476,79 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     expect(pool.acquire).toHaveBeenCalledTimes(2)
   })
 
+  // The discarded open's worker said hello, so it created the session and pinned the append it carried. The
+  // kernel refuses an append to an existing session, so the replacement must reopen without sending it again.
+  it('reopens a session created with a system prompt append without sending the append again', async () => {
+    let releaseFirst: ((link: unknown) => void) | undefined
+    const first = new Promise<unknown>((resolve) => {
+      releaseFirst = resolve
+    })
+    // A ledger that, like the kernel, pins an append only when it creates the session.
+    let pinned: string | undefined
+    let created = false
+    const createOrOpen = (append: string | undefined) => {
+      if (append !== undefined && created)
+        throw Object.assign(new Error('E_ENVELOPE: system prompt append applies only to a new session'), {
+          code: 'E_ENVELOPE',
+          detail: { reason: 'system-prompt-append' },
+        })
+      if (!created) pinned = append
+      created = true
+    }
+    const link = (token: string) => ({
+      alive: true,
+      hello: Promise.resolve({
+        kind: 'hello' as const,
+        token,
+        sessionKey: 'appended-session',
+        writerRunId: token,
+        generation: 1,
+        profileHash: 'sha256-profile',
+        lastSeq: 0,
+      }),
+      onExit: vi.fn(),
+      closeSession: vi.fn(async () => undefined),
+      command: vi.fn(),
+    })
+    const initial = link('old-generation')
+    const replacement = link('new-generation')
+    let acquireCalls = 0
+    const pool = {
+      acquire: vi.fn(async (_key: string, opts: { systemPromptAppend?: string }) => {
+        createOrOpen(opts.systemPromptAppend)
+        return ++acquireCalls === 1 ? first : replacement
+      }),
+      retire: vi.fn(),
+    } as unknown as WorkerPool
+    const registry = new WorkerRegistry(pool)
+    const request = {
+      key: 'appended-session',
+      cwd: '/workspace',
+      binding: await workspaceBinding('appended-session'),
+      systemPromptAppend: 'Work the ticket.',
+    }
+    const opening = registry.open(request)
+    await Promise.resolve()
+
+    registry.noteResourceSnapshotCommitted()
+    releaseFirst?.(initial)
+    const opened = await opening
+
+    expect(opened.session.writerRunId).toBe('new-generation')
+    expect(initial.closeSession).toHaveBeenCalledWith('resource-snapshot-reload')
+    expect(pinned).toBe('Work the ticket.')
+    expect(vi.mocked(pool.acquire).mock.calls.map(([, opts]) => opts.systemPromptAppend)).toEqual([
+      'Work the ticket.',
+      undefined,
+    ])
+    // The same open again is the same session; a different append for it is still refused.
+    await expect(registry.open(request)).resolves.toBe(opened)
+    await expect(registry.open({ ...request, systemPromptAppend: 'Something else.' })).rejects.toMatchObject({
+      data: { code: 'ID_CONFLICT' },
+    })
+    expect(pool.acquire).toHaveBeenCalledTimes(2)
+  })
+
   // The worker's tail replay for the discarded open can still be in flight when the fence trips. Were
   // those frames projected after the entry was gone they would fail the key, and that failure retires
   // whichever channel then holds the key: the replacement, so the open failed as an internal error.

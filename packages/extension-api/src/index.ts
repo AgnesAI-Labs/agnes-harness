@@ -4,6 +4,7 @@ export type { SystemInput, SystemInputPresentation } from '@agnes/protocol'
 
 export * from './api-range.js'
 export * from './attachments.js'
+export type * from './bundled-app.js'
 export * from './channel.js'
 export * from './channel-targets.js'
 export * from './child-agent.js'

@@ -77,6 +77,7 @@ node "$AGH_SOURCE/agnes.mjs" --new -p 'call plugin_hello_tool {"message":"hello"
 | [候选审阅](extend/agent-built-plugins.zh-CN.md) | 核对 Agent 草稿、测试与权限后发布 |
 | [来源与 MCP 隔离](guide/security.zh-CN.md#package-provenance-and-source-policy) | 安装来源、完整性与本地 MCP 进程边界 |
 | [网络部署与 Linux](guide/deployment.zh-CN.md) | 出站代理、超时与 Linux 准备 |
+| [Superagent 部署](guide/superagent.zh-CN.md) | 把可选的 GitHub 与飞书智能体作为服务运行：账号、launchd 与 systemd 单元、停用、清除数据与安全边界 |
 | [App Server stdio](reference/app-server.zh-CN.md) | 通过共享后台集成自己的客户端 |
 | [排错](guide/troubleshooting.zh-CN.md) | 从错误码和运行状态定位下一步 |
 

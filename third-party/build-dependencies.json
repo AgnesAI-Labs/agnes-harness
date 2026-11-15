@@ -85,6 +85,7 @@
         "packages/package-manager/bundled-plugins/browser",
         "packages/package-manager/bundled-plugins/goal-ui",
         "packages/resource-control-web",
+        "packages/superagent-ui",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",
@@ -103,6 +104,7 @@
       "rationale": "Type-only companion of the pinned react-dom dependency; same version line.",
       "consumers": [
         "packages/judgment-ui",
+        "packages/superagent-ui",
         "packages/web",
         "packages/web-admin",
         "packages/web-client",

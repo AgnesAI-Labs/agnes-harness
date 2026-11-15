@@ -70,3 +70,12 @@ packages/package-manager/bundled-plugins/judgment/index.mjs.*.tmp
 
 # Browser client generated into the existing optional judgment package.
 packages/package-manager/bundled-plugins/judgment/src/client.js
+
+# Generated optional Superagent payload: the entry and copies of its packaged folders
+packages/package-manager/bundled-plugins/superagent/index.mjs
+packages/package-manager/bundled-plugins/superagent/src/client.js
+packages/package-manager/bundled-plugins/superagent/index.mjs.*.tmp
+packages/package-manager/bundled-plugins/superagent/prompts/
+packages/package-manager/bundled-plugins/superagent/skills/
+packages/package-manager/bundled-plugins/superagent/locale/
+packages/package-manager/bundled-plugins/superagent/*.tmp/

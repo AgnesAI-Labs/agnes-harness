@@ -68,6 +68,8 @@ export interface ChannelTargetLink {
   rendered(block: TextBlock | CardBlock): number
   /** False while the instance reconnects or stops; a send then is refused before the ledger is written. */
   connected(): boolean
+  /** Whether a bundled app claimed the instance whole: no code is minted for it then. */
+  claimed?(): boolean
   send(
     chat: { chatId: string; accountId: string; chatType: 'dm' },
     block: TextBlock | CardBlock,
@@ -81,6 +83,8 @@ export interface ChannelTargetsBridge {
   attach(instanceId: string, link: ChannelTargetLink): () => void
   /** Whether `text` should be checked as a pairing code: the instance has a live code and the text is code-shaped. */
   expectsCode(instanceId: string, text: string): boolean
+  /** Whether a code for this instance is still live; a bundled app cannot claim the instance whole meanwhile. */
+  pending(instanceId: string): boolean
   confirm(
     instanceId: string,
     text: string,
@@ -246,7 +250,10 @@ export class ChannelTargets {
   mintRefusal(instance: ChannelInstanceRef, target: ChannelTarget): string | undefined {
     if (!this.services.has(targetKey(target))) return 'TARGET_UNAVAILABLE'
     if (this.byTarget(target)) return 'TARGET_PAIRED'
-    if (!this.link(instance)) return 'CHANNEL_UNAVAILABLE'
+    const link = this.link(instance)
+    if (!link) return 'CHANNEL_UNAVAILABLE'
+    // The bot belongs whole to a bundled app (Superagent): a code would only reach that app.
+    if (link.claimed?.()) return 'CHANNEL_CLAIMED'
     return undefined
   }
 
@@ -314,6 +321,7 @@ export class ChannelTargets {
       },
       expectsCode: (instanceId, text) =>
         pairingCodeShaped(text) && this.liveCodes(ref(instanceId)).length > 0,
+      pending: (instanceId) => this.liveCodes(ref(instanceId)).length > 0,
       confirm: (instanceId, text, chat) => this.confirm(ref(instanceId), text, chat),
       find: (instanceId, chatId) =>
         this.all().find((p) => sameInstance(p.instance, ref(instanceId)) && p.chatId === chatId),

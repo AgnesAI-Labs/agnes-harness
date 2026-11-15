@@ -21,6 +21,8 @@ export type HostCapabilityGrant = Readonly<{
   autoTitle?: true
   sideCall?: true
   hookTimeoutMs?: number
+  /** Bundled application runtime: state directory, owner-level local client and channel access. */
+  bundledApp?: true
 }>
 
 export type HostGrantDeclaration = Readonly<{
@@ -58,6 +60,12 @@ export const HOST_CAPABILITY_GRANTS: readonly HostGrantDeclaration[] = freezeDat
     extensions: {
       'ext:agnes.judgment/main': { sideCall: true, sessionWork: true, autoTitle: true, hookTimeoutMs: 15000 },
     },
+    seams: {},
+  },
+  {
+    packageId: '@agnes/superagent',
+    package: {},
+    extensions: { 'ext:agnes.superagent/main': { bundledApp: true } },
     seams: {},
   },
 ])

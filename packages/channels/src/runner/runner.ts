@@ -6,10 +6,12 @@ import {
   type Block,
   type ChannelAdapter,
   type ChannelEvent,
+  type ChannelMessage,
   type ChatTarget,
   type MessageRef,
   sessionKeyFor,
 } from '../adapter.js'
+import { fromBot } from '../builtin-subscriptions.js'
 import { ChannelError } from '../errors.js'
 import { Approval } from './approval.js'
 import { backoffDelays } from './backoff.js'
@@ -95,6 +97,8 @@ export type Runner = {
   handleInteraction(event: ChannelEvent, keys: readonly string[]): Promise<boolean>
   updateDirect(ref: MessageRef, block: Block): Promise<void>
   sendDirect(chat: ChatTarget, block: Block, deliveryKey: string): Promise<MessageRef>
+  /** A whole message to a chat outside any session, chunked and throttled as a session reply. */
+  sendMessage(chat: ChatTarget, message: ChannelMessage, deliveryKey?: string): Promise<MessageRef>
   /** At most once per event across processes, as for session-bound events; false when already claimed. */
   claim(event: ChannelEvent): Promise<boolean>
 }
@@ -356,6 +360,7 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       subscribers.push(handler)
     },
     sendDirect: (chat, block, deliveryKey) => outbound.sendDirect(chat, block, deliveryKey),
+    sendMessage: (chat, message, deliveryKey) => outbound.sendMessage(chat, message, deliveryKey),
     async claim(event) {
       const key = `${dependencies.adapter.manifest.id}:${event.accountId}:${event.eventId}`
       try {
@@ -405,6 +410,8 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       lastEventAt = new Date().toISOString()
       return
     }
+    // A bot sender may reach a subscriber or paired service above, but never a session.
+    if (fromBot(event)) return
     if (dependencies.bindings) {
       const key =
         dependencies.adapter.toSession(event, {

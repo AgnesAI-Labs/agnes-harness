@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Superagent",
+    "description": "监听单个 GitHub 仓库，把获授权的请求转为 Ticket，并在各自的 Agnes 会话中执行。"
+  }
+}
