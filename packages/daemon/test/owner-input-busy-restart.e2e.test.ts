@@ -1,8 +1,8 @@
-import { readdirSync, statSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { OwnerInputTrace } from '../src/supervisor/managed-input-trace.js'
+import { inputRef, type OwnerInputTrace } from '../src/supervisor/managed-input-trace.js'
 import { bounded } from './fixtures/managed-probe.js'
 import { COMPANION, type Harness, openHarness, pause, setUp } from './fixtures/owner-input-plugin/index.js'
 
@@ -34,6 +34,20 @@ function dropGrants(root: string) {
     }
   }
   throw new Error('no daemon database holds the managed workspace grants')
+}
+
+/** Every record of the daemon's `audit/owner-input.jsonl` under `root`, rotated file included. */
+function auditLines(root: string): Record<string, unknown>[] {
+  const files = (dir: string): string[] =>
+    readdirSync(dir).flatMap((name) => {
+      const full = join(dir, name)
+      const stat = statSync(full, { throwIfNoEntry: false })
+      return stat?.isDirectory() ? files(full) : stat?.isFile() ? [full] : []
+    })
+  return files(root)
+    .filter((path) => /[\\/]audit[\\/]owner-input\.jsonl(?:\.1)?$/.test(path))
+    .flatMap((path) => readFileSync(path, 'utf8').trim().split('\n').filter(Boolean))
+    .map((line) => (JSON.parse(line) as { detail: Record<string, unknown> }).detail)
 }
 
 describe.skipIf(process.platform === 'win32')('owner input across a restart of a full-access session', () => {
@@ -133,11 +147,11 @@ describe.skipIf(process.platform === 'win32')('owner input across a restart of a
       }
 
       const lines = after(mark, sessionId)
-      // The first gate read after the restart found the probe not yet run, opened the session, read again.
-      const first = lines.find((entry) => entry.gate !== undefined) as OwnerInputTrace
-      expect(first.gate).toMatchObject({ reopenedAfter: 'unprobed' })
-      expect(['startup-sweep', 'inputResult', 'admit']).toContain(first.trigger)
+      // The startup sweep read k1's gates first after the restart: the probe had not run, so it opened
+      // the session and read them again.
       const original = lines.filter((entry) => entry.key === 'k1')
+      const first = original.find((entry) => entry.gate !== undefined) as OwnerInputTrace
+      expect(first).toMatchObject({ trigger: 'startup-sweep', gate: { reopenedAfter: 'unprobed' } })
       expect(original.some((entry) => entry.to?.startsWith('needsOwner'))).toBe(false)
       expect(original.filter((entry) => entry.to === 'consumed/eligible')).toHaveLength(1)
       expect(JSON.stringify(lines)).not.toContain(text)
@@ -167,7 +181,18 @@ describe.skipIf(process.platform === 'win32')('owner input across a restart of a
         from: 'enqueued/busy',
         gate: { verdict: 'refused', gate: 'workspace', code: 'WORKSPACE_NOT_AUTHORIZED' },
       })
-      expect(['startup-sweep', 'inputResult']).toContain(parked?.trigger)
+      expect(parked?.trigger).toBe('startup-sweep')
+      // The daemon's own audit file has the same park, redacted: what an operator collects from a real daemon.
+      const audited = auditLines(h.root).filter((line) => line.to === 'needsOwner/grantRevoked')
+      expect(audited).toContainEqual(
+        expect.objectContaining({
+          trigger: 'startup-sweep',
+          session: sessionId.slice('managed-'.length, 'managed-'.length + 12),
+          input: inputRef(sessionId, 'k1'),
+          gate: { verdict: 'refused', gate: 'workspace', code: 'WORKSPACE_NOT_AUTHORIZED' },
+        }),
+      )
+      expect(JSON.stringify(auditLines(h.root))).not.toContain(text)
       // A new grant does not deliver it: a parked input waits for the owner's decision.
       await h
         .sdk()
