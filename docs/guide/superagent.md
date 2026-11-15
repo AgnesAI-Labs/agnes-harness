@@ -67,7 +67,12 @@ panel's **Deployment** page names. Setting it explicitly before the service star
    GH_CONFIG_DIR=/srv/superagent/state/home/.config/gh gh api user --jq .login
    ```
 
-   The second command must print the agent's login.
+   The second command must print the agent's login. Signing in through the browser grants what Superagent needs. A
+   token given with `gh auth login --with-token` must read and write the repository's contents, Issues and pull
+   requests, read the commit statuses and checks, and read the agent's notifications, through which requests arrive.
+   Reading the default branch's protection, for example with
+   `gh api repos/<owner>/<name>/branches/<branch>/protection` to check it, also needs the token's Administration (read)
+   permission. Superagent does not read it, so that permission is optional.
 5. Stop that daemon and run it as a service with the agent's identity, as below.
 
 ## Run as a service

@@ -53,7 +53,10 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
    GH_CONFIG_DIR=/srv/superagent/state/home/.config/gh gh api user --jq .login
    ```
 
-   第二条命令必须打印智能体的登录名。
+   第二条命令必须打印智能体的登录名。在浏览器里登录即可得到 Superagent 所需的权限。用 `gh auth login --with-token` 给出的令牌，
+   须能读写仓库的内容、Issue 和 PR，读取提交状态与检查，并读取智能体的通知（请求经通知到达）。读取默认分支的保护规则
+   （例如用 `gh api repos/<owner>/<name>/branches/<branch>/protection` 核对）还需要令牌的 Administration（只读）权限；
+   Superagent 不读它，所以这项权限是可选的。
 5. 停掉这个 daemon，按下文以智能体身份作为服务运行。
 
 ## 作为服务运行
