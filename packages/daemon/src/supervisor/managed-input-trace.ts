@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import type { GateReport } from './managed-input-gates.js'
 import type { ManagedInputRow } from './managed-session-inputs.js'
 
@@ -52,9 +52,93 @@ export interface TracePass {
 
 export const formatTrace = (entry: OwnerInputTrace) => `owner-input ${JSON.stringify(entry)}`
 
+/** The audit record kind the daemon writes to `<dataDir>/audit/owner-input.jsonl`. */
+export const OWNER_INPUT_TRACE_KIND = 'owner-input.trace'
+
+/** The short correlation id of an input in the audit file: sha256(`<sessionId>\0<key>`), first 12 hex. */
+export const inputRef = (sessionId: string, key: string) =>
+  createHash('sha256').update(`${sessionId}\0${key}`).digest('hex').slice(0, 12)
+
+const pick = <T extends string>(value: unknown, allowed: ReadonlySet<T>) =>
+  typeof value === 'string' && allowed.has(value as T) ? (value as T) : undefined
+const word = (value: unknown, pattern: RegExp) =>
+  typeof value === 'string' && pattern.test(value) ? value : undefined
+const count = (value: unknown) => (Number.isSafeInteger(value) && (value as number) >= 0 ? value : undefined)
+const EVENTS = new Set(['transition', 'held', 'withdraw'])
+const TRIGGERS = new Set<string>([
+  'startup-sweep',
+  'sweep',
+  'idle',
+  'admit',
+  'inputResult',
+  'decide',
+  'archive',
+  'withdraw',
+])
+const VERDICTS = new Set(['pass', 'refused', 'pending'])
+const INBOX = new Set(['withdrawn', 'taken', 'absent'])
+const STATE = /^[A-Za-z]{1,32}\/[A-Za-z]{1,32}$/
+const CODE = /^[A-Za-z0-9_-]{1,64}$/
+const LEVEL = /^[a-z-]{1,32}$/
+/** Managed session ids are derived digests (`managed-<40 hex>`); the file keeps their first 12 hex, anything else is left out. */
+const SESSION = /^managed-[0-9a-f]{40}$/
+
 /**
- * Where trace lines go: an input parked for the owner is a warning, everything else is debug output;
- * `observe` (test fixtures, embedders) also gets every entry. A failing sink never changes the outcome.
+ * The allowlisted fields of a trace entry, each checked against a fixed vocabulary or a bounded
+ * pattern; the session id is shortened and the key replaced by `inputRef`. Anything else, text, a receipt or a credential
+ * included, is dropped. Undefined for something that is not a trace entry.
+ */
+export function ownerInputAuditRecord(value: unknown): Record<string, unknown> | undefined {
+  const entry = value as Partial<Record<keyof OwnerInputTrace, unknown>> | null
+  const event = pick(entry?.event, EVENTS)
+  if (!entry || !event) return undefined
+  const out: Record<string, unknown> = { event }
+  const set = (name: string, field: unknown) => {
+    if (field !== undefined) out[name] = field
+  }
+  set('pass', word(entry.pass, /^(?:[0-9a-f]{8}|-)$/))
+  set('trigger', pick(entry.trigger, TRIGGERS))
+  set('at', word(entry.at, /^\d{4}-\d\d-\d\dT[\d:.]{8,12}Z$/))
+  // Short ids only: a full 40-hex session id would be redacted as token-shaped by the audit sink.
+  set('session', word(entry.sessionId, SESSION)?.slice('managed-'.length, 'managed-'.length + 12))
+  if (typeof entry.key === 'string' && typeof entry.sessionId === 'string')
+    set('input', inputRef(entry.sessionId, entry.key))
+  set('from', word(entry.from, STATE))
+  set('to', word(entry.to, STATE))
+  set('version', count(entry.version))
+  set('submittedSeq', entry.submittedSeq === null ? null : count(entry.submittedSeq))
+  set('inbox', pick(entry.inbox, INBOX))
+  if (typeof entry.scoped === 'boolean') set('scoped', entry.scoped)
+  set('rows', count(entry.rows))
+  set('matched', count(entry.matched))
+  const gate = entry.gate as Partial<Record<keyof GateReport, unknown>> | undefined
+  const verdict = pick(gate?.verdict, VERDICTS)
+  if (gate && verdict) {
+    const g: Record<string, unknown> = { verdict }
+    for (const name of ['gate', 'code', 'missing'] as const) {
+      const field = word(gate[name], CODE)
+      if (field !== undefined) g[name] = field
+    }
+    for (const name of ['l1', 'reopenedAfter'] as const) {
+      const field = word(gate[name], LEVEL)
+      if (field !== undefined) g[name] = field
+    }
+    const live = gate.live as Record<string, unknown> | undefined
+    if (live)
+      g.live = {
+        fullAccess: live.fullAccess === true,
+        osBoundary: live.osBoundary === true,
+        outwardCheckpoint: live.outwardCheckpoint === true,
+      }
+    out.gate = g
+  }
+  return out
+}
+
+/**
+ * Where trace lines go: an input parked for the owner is a warning, everything else is debug output
+ * (dropped by default); `trace` (the daemon's audit file, fixtures) also gets every entry. A failing
+ * sink never changes the outcome.
  */
 export function ownerInputTracer(deps: {
   warn: (message: string) => void
@@ -62,7 +146,8 @@ export function ownerInputTracer(deps: {
   trace?: (entry: OwnerInputTrace) => void
   clock?: () => number
 }) {
-  const debug = deps.debug ?? ((message: string) => console.debug(message))
+  // Debug lines go nowhere unless a sink is given; the audit file (via `trace`) is the durable record.
+  const debug = deps.debug ?? (() => undefined)
   const clock = deps.clock ?? Date.now
   const passes = new Map<string, TracePass>()
   const emit = (entry: Omit<OwnerInputTrace, 'at'>) => {

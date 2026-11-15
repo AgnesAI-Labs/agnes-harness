@@ -1,7 +1,10 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { rpcError } from '@agnes/protocol'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { GatePending, gateReport, type LivePolicy } from '../src/supervisor/managed-input-gates.js'
-import type { OwnerInputTrace } from '../src/supervisor/managed-input-trace.js'
+import { inputRef, type OwnerInputTrace } from '../src/supervisor/managed-input-trace.js'
 import { ManagedSessionInputs } from '../src/supervisor/managed-session-inputs.js'
 import {
   livePolicy,
@@ -10,7 +13,24 @@ import {
 } from '../src/supervisor/managed-session-ports.js'
 import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
 import { createManagedSessions, type ManagedSessionPorts } from '../src/supervisor/managed-sessions.js'
+import { openOwnerInputLog } from '../src/supervisor/runtime-log.js'
 import { caller, fakeCore, memoryTable, owner, receipt } from './fixtures/fake-input-ports.js'
+
+const directories: string[] = []
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
+})
+const scratch = () => {
+  const directory = mkdtempSync(join(tmpdir(), 'agh-owner-input-audit-'))
+  directories.push(directory)
+  return directory
+}
+const lines = (file: string) =>
+  readFileSync(file, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { kind: string; detail: Record<string, unknown> })
 
 const refused = (reason: string) => ({ data: { code: 'CAPABILITY_DENIED', reason } })
 const startOf = (startKey: string) => ({
@@ -111,6 +131,8 @@ describe('the full-access gate before the sandbox probe ran', () => {
       unread: undefined as LivePolicy['unread'],
     }
     const traces: OwnerInputTrace[] = []
+    const audit = scratch()
+    const log = openOwnerInputLog(audit)
     const warnings: string[] = []
     const ports: ManagedSessionPorts = {
       authorize: async () => undefined,
@@ -157,7 +179,10 @@ describe('the full-access gate before the sandbox probe ran', () => {
       enabled: async () => true,
       warn: (message) => warnings.push(message),
       debug: () => undefined,
-      trace: (entry) => traces.push(entry),
+      trace: (entry) => {
+        traces.push(entry)
+        log.record(entry)
+      },
     })
     const engine = sessions.engine as NonNullable<typeof sessions.engine>
     const port = (receiptId = 'r1') => sessions(caller, { resolution: receipt(receiptId) })
@@ -190,6 +215,8 @@ describe('the full-access gate before the sandbox probe ran', () => {
     }
     const row = (sessionId: string, key = 'k1') => inputs.get(owner, sessionId, key)
     const of = (key: string) => traces.filter((entry) => entry.key === key)
+    /** The lines this world wrote to its `owner-input.jsonl`. */
+    const audited = () => lines(join(audit, 'audit', 'owner-input.jsonl')).map((line) => line.detail)
     return {
       state,
       core,
@@ -204,6 +231,7 @@ describe('the full-access gate before the sandbox probe ran', () => {
       heldAcrossRestart,
       row,
       of,
+      audited,
     }
   }
 
@@ -469,5 +497,100 @@ describe('the full-access gate before the sandbox probe ran', () => {
       osBoundary: true,
       outwardCheckpoint: true,
     })
+  })
+
+  it('audit file: a parked input writes one redacted line naming the gate', async () => {
+    const w = world()
+    const sessionId = await w.heldAcrossRestart()
+    w.records.revokeAll(owner)
+    await w.engine.sweep('startup')
+    const parked = w.audited().filter((line) => line.to === 'needsOwner/grantRevoked')
+    expect(parked).toEqual([
+      {
+        event: 'transition',
+        pass: expect.stringMatching(/^[0-9a-f]{8}$/u),
+        trigger: 'startup-sweep',
+        at: expect.any(String),
+        session: sessionId.slice(8, 20),
+        input: inputRef(sessionId, 'k1'),
+        from: 'enqueued/busy',
+        to: 'needsOwner/grantRevoked',
+        version: 3,
+        submittedSeq: null,
+        gate: { verdict: 'refused', gate: 'workspace', code: 'WORKSPACE_NOT_AUTHORIZED' },
+      },
+    ])
+    const text = JSON.stringify(w.audited())
+    expect(text).not.toContain('text of k1')
+    expect(text).not.toContain('"key"')
+  })
+
+  it('audit file: a held pass the gates cannot answer writes its line', async () => {
+    const w = world()
+    await w.heldAcrossRestart()
+    w.state.probeOnOpen = false
+    await w.engine.sweep('startup')
+    expect(w.audited().filter((line) => line.event === 'held')).toMatchObject([
+      {
+        trigger: 'startup-sweep',
+        from: 'enqueued/busy',
+        gate: {
+          verdict: 'pending',
+          gate: 'full-access',
+          code: 'l1-unprobed',
+          l1: 'unprobed',
+          reopenedAfter: 'unprobed',
+        },
+      },
+    ])
+  })
+
+  it('audit file: keeps only allowlisted fields; no text, receipt or credential reaches it', async () => {
+    const directory = scratch()
+    const log = openOwnerInputLog(directory)
+    log.record({
+      event: 'transition',
+      pass: 'abcdef01',
+      trigger: 'sweep',
+      at: '2026-11-15T00:00:00.000Z',
+      sessionId: `managed-${'a'.repeat(40)}`,
+      key: 'task-1:owner:SECRET-KEY',
+      from: 'enqueued/busy',
+      to: 'needsOwner/grantRevoked',
+      text: 'SECRET-TEXT',
+      receiptId: 'SECRET-RECEIPT',
+      credential: 'SECRET-CREDENTIAL',
+      gate: {
+        verdict: 'refused',
+        gate: 'workspace',
+        code: 'WORKSPACE_NOT_AUTHORIZED',
+        message: 'SECRET-GATE',
+      },
+    })
+    log.record({ event: 'nonsense', text: 'SECRET-OTHER' })
+    log.record('SECRET-STRING')
+    await log.close()
+    const file = join(directory, 'audit', 'owner-input.jsonl')
+    expect(readFileSync(file, 'utf8')).not.toContain('SECRET')
+    expect(lines(file)).toMatchObject([
+      {
+        kind: 'owner-input.trace',
+        detail: { session: 'a'.repeat(12), to: 'needsOwner/grantRevoked' },
+      },
+    ])
+  })
+
+  it('audit file: rotates at its byte bound, keeping one previous file', async () => {
+    const directory = scratch()
+    const log = openOwnerInputLog(directory, 400)
+    for (let n = 0; n < 30; n++)
+      log.record({ event: 'held', pass: 'abcdef01', trigger: 'sweep', at: '2026-11-15T00:00:00.000Z' })
+    await log.close()
+    const file = join(directory, 'audit', 'owner-input.jsonl')
+    for (const path of [file, `${file}.1`]) {
+      const size = readFileSync(path).length
+      expect(size).toBeGreaterThan(0)
+      expect(size).toBeLessThan(800)
+    }
   })
 })

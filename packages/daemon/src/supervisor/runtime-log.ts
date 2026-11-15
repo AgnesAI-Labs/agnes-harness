@@ -4,6 +4,7 @@ import { createFileAudit } from '@agnes/host'
 import { publicErrorContract } from '@agnes/protocol'
 import { workerBootFailureCode } from '@agnes/worker-runtime'
 import { bestEffortOperations } from './best-effort.js'
+import { OWNER_INPUT_TRACE_KIND, ownerInputAuditRecord } from './managed-input-trace.js'
 
 const KINDS = new Set([
   'worker.log',
@@ -47,27 +48,10 @@ export function openRuntimeLog(
   source: Pick<NodeJS.Process, 'on' | 'off'> = process,
   maxBytes = 2 * 1024 * 1024,
 ) {
-  const file = join(dataDir, 'audit', 'runtime.jsonl')
-  const safe = () => {
-    if (!existsSync(file)) return
-    const stat = lstatSync(file)
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error('unsafe runtime log')
-  }
-  safe()
-  let sink = createFileAudit(file)
+  const log = rotatingLog(join(dataDir, 'audit', 'runtime.jsonl'), maxBytes)
   let closed = false
   const write = (kind: string, detail: Record<string, unknown> = {}) => {
-    if (closed) return
-    try {
-      safe()
-      if (existsSync(file) && lstatSync(file).size >= maxBytes) {
-        renameSync(file, `${file}.1`)
-        sink = createFileAudit(file)
-      }
-      sink.write({ kind, detail })
-    } catch {
-      /* Diagnostic failures never change execution outcomes. */
-    }
+    if (!closed) log.write(kind, detail)
   }
   const crash = () => write('daemon.crashed')
   source.on('uncaughtExceptionMonitor', crash)
@@ -101,8 +85,49 @@ export function openRuntimeLog(
       write('daemon.stopped', { pid: process.pid })
       closed = true
       source.off('uncaughtExceptionMonitor', crash)
-      await sink.close?.()
+      await log.close()
     },
+  }
+}
+
+/** One JSONL file kept under `maxBytes`, the previous one as `<file>.1`; a regular, single-link file only. */
+function rotatingLog(file: string, maxBytes: number) {
+  const safe = () => {
+    if (!existsSync(file)) return
+    const stat = lstatSync(file)
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error('unsafe runtime log')
+  }
+  safe()
+  let sink = createFileAudit(file)
+  return {
+    write(kind: string, detail: Record<string, unknown>) {
+      try {
+        safe()
+        if (existsSync(file) && lstatSync(file).size >= maxBytes) {
+          renameSync(file, `${file}.1`)
+          sink = createFileAudit(file)
+        }
+        sink.write({ kind, detail })
+      } catch {
+        /* Diagnostic failures never change execution outcomes. */
+      }
+    },
+    close: async () => void (await sink.close?.()),
+  }
+}
+
+/**
+ * `<dataDir>/audit/owner-input.jsonl`: the owner input engine's trace, rotated like the runtime log.
+ * Only the allowlisted fields of `ownerInputAuditRecord` are written: never text, receipts or credentials.
+ */
+export function openOwnerInputLog(dataDir: string, maxBytes = 2 * 1024 * 1024) {
+  const log = rotatingLog(join(dataDir, 'audit', 'owner-input.jsonl'), maxBytes)
+  return {
+    record(value: unknown) {
+      const detail = ownerInputAuditRecord(value)
+      if (detail) log.write(OWNER_INPUT_TRACE_KIND, detail)
+    },
+    close: log.close,
   }
 }
 
@@ -110,10 +135,21 @@ export function openRuntimeLog(
 export function openDaemonLogs(dataDir: string) {
   const runtime = openRuntimeLog(dataDir)
   const requests = createFileAudit(join(dataDir, 'audit', 'daemon.jsonl'))
+  let ownerInputs: ReturnType<typeof openOwnerInputLog> | undefined
   return {
     record(record: unknown) {
       runtime.record(record)
       if (!record || typeof record !== 'object' || !('kind' in record)) return
+      if (record.kind === OWNER_INPUT_TRACE_KIND) {
+        try {
+          // Opened on first use, so a daemon without managed inputs leaves no file.
+          ownerInputs ??= openOwnerInputLog(dataDir)
+          ownerInputs.record('detail' in record ? record.detail : undefined)
+        } catch {
+          /* Diagnostic failures never change execution outcomes. */
+        }
+        return
+      }
       if (record.kind === 'daemon.request_failed' || record.kind === 'plugin.tree.reverted')
         requests.write({
           kind: record.kind,
@@ -125,6 +161,7 @@ export function openDaemonLogs(dataDir: string) {
         await runtime.close()
       } finally {
         await requests.close?.()
+        await ownerInputs?.close()
       }
     },
   }

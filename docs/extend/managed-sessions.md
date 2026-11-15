@@ -140,6 +140,18 @@ Trust: an admitted owner message still enters the session inbox as `origin: 'sys
 
 A refused call rejects with a plain object that has the JSON-RPC `code` (for example `-32006` for `CAPABILITY_DENIED`), a `message` that repeats the error name, and `data`. `data.code` is the error name. `data.reason` carries the refusal, such as `WORKSPACE_NOT_AUTHORIZED`, `FULL_ACCESS_UNAVAILABLE`, `OUTWARD_CHECKPOINT_UNAVAILABLE`, `START_KEY_REUSED` or `PLUGIN_ROW_AMBIGUOUS`. A `FULL_ACCESS_UNAVAILABLE` refusal also carries `data.missing`, either `outward-checkpoint` or `os-boundary`. Read `error.data.reason` to pause the task and tell the owner what to grant. No other field of the daemon's error reaches the plugin: no message text, path or stack. A failure that is not a refusal rejects with `code: 'E_REQUEST'` and carries no reason.
 
+## Troubleshooting
+
+To see why an owner input moved, or why it waits, read `<dataDir>/audit/owner-input.jsonl` on the daemon's machine (rotated at 2 MiB, the previous file kept as `owner-input.jsonl.1`). The daemon writes one JSON line per state change, per pass that leaves an input held because a start check cannot answer yet, and per revoke, prune or uninstall:
+
+- `trigger`: `startup-sweep`, `sweep`, `idle`, `admit`, `inputResult`, `decide`, `archive` or `withdraw`; `pass`, a short id shared by the lines of one pass; `at`.
+- `session`: the first 12 hex digits of the session id after `managed-`; `input`: the first 12 hex digits of the SHA-256 of `<sessionId>` + NUL + `<key>`.
+- `from` and `to` as `state/reason`, `version`, `submittedSeq`, and `inbox` when an input was taken back from the session inbox.
+- `gate`: `verdict` (`pass`, `refused` or `pending`), the gate (`workspace`, `model`, `full-access`, `auto-review`, `bundle`, `live-policy`), its refusal `code` and `missing` before they are reported as `grantRevoked`, the sandbox `l1` level the full-access check read, the open session's `live` booleans, and `reopenedAfter` when the session was opened so the sandbox probe could run.
+- For a withdrawal: `scoped`, `rows` and `matched`.
+
+The file never holds the input's text, a receipt, a credential or a path. A `pending` gate is not a refusal: after a restart the sandbox probe has not run until a workspace binds, so the platform opens the session and checks again, and an input whose checks still cannot answer stays held until the next idle report, `inputResult` or sweep (at most a minute).
+
 ## Trust boundary
 
 A managed service runs in-process in the shared session worker, together with every other in-process plugin, and reaches the backend over that worker's private channel. The backend serves a managed-session request only when it comes from the shared session worker on the profile lane that profile-scope services use. A request from another worker, or from a session's own work, is refused with `CAPABILITY_DENIED` and reason `MANAGED_SESSION_LANE`.

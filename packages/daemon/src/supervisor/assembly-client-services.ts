@@ -16,6 +16,7 @@ import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
 import { sharedWorkerReads } from './managed-gate-read.js'
 import type { OwnerInputEngineDeps } from './managed-input-admission.js'
+import { OWNER_INPUT_TRACE_KIND } from './managed-input-trace.js'
 import { createIdleSignal, driveOwnerInputs } from './managed-session-idle.js'
 import { managedSessionPorts, managedWorkspaceRoot } from './managed-session-ports.js'
 import { createManagedSessions } from './managed-sessions.js'
@@ -29,7 +30,7 @@ const OWNER_INPUT_SWEEP_MS = 60_000
 
 /** The owner input engine's deps when managed sessions keep input records; crash points come only from test fixtures. */
 function ownerInputDeps(
-  o: Pick<AssemblyBase['o'], 'ownerInputFaults' | 'ownerInputTrace'>,
+  o: Pick<AssemblyBase['o'], 'ownerInputFaults' | 'ownerInputTrace' | 'audit'>,
   inputs: StoresState['managedSessionInputs'],
   enabled: OwnerInputEngineDeps['enabled'],
 ): Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults' | 'trace'> | undefined {
@@ -38,7 +39,11 @@ function ownerInputDeps(
     inputs,
     ...(enabled ? { enabled } : {}),
     ...(o.ownerInputFaults ? { faults: o.ownerInputFaults } : {}),
-    ...(o.ownerInputTrace ? { trace: o.ownerInputTrace } : {}),
+    // Every trace entry reaches the daemon's audit fanout, which keeps `audit/owner-input.jsonl`.
+    trace: (entry) => {
+      o.ownerInputTrace?.(entry)
+      o.audit?.({ kind: OWNER_INPUT_TRACE_KIND, detail: entry })
+    },
   }
 }
 

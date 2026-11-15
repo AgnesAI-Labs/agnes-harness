@@ -48,6 +48,7 @@ export const AUDIT_KINDS = [
   'startup.failed',
   'daemon.request_failed',
   'plugin.tree.reverted',
+  'owner-input.trace',
   'host.assembling',
   'host.ready',
   'host.closed',

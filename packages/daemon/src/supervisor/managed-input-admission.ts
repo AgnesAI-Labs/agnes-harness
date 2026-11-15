@@ -101,7 +101,7 @@ export interface OwnerInputEngineDeps {
   faults?: { afterReserve?(): void; afterSubmit?(): void }
   /** Where swallowed failures, inputs held by unreadable gates and parked inputs are reported; `console.warn` when absent. */
   warn?(message: string): void
-  /** Where the other trace lines go; `console.debug` when absent. */
+  /** Where the other trace lines go; dropped when absent. */
   debug?(message: string): void
   /** Also handed every trace entry (test fixtures, embedders). */
   trace?(entry: OwnerInputTrace): void
