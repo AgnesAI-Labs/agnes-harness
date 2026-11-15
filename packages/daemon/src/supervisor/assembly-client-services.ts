@@ -29,15 +29,16 @@ const OWNER_INPUT_SWEEP_MS = 60_000
 
 /** The owner input engine's deps when managed sessions keep input records; crash points come only from test fixtures. */
 function ownerInputDeps(
-  o: Pick<AssemblyBase['o'], 'ownerInputFaults'>,
+  o: Pick<AssemblyBase['o'], 'ownerInputFaults' | 'ownerInputTrace'>,
   inputs: StoresState['managedSessionInputs'],
   enabled: OwnerInputEngineDeps['enabled'],
-): Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults'> | undefined {
+): Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults' | 'trace'> | undefined {
   if (!inputs) return undefined
   return {
     inputs,
     ...(enabled ? { enabled } : {}),
     ...(o.ownerInputFaults ? { faults: o.ownerInputFaults } : {}),
+    ...(o.ownerInputTrace ? { trace: o.ownerInputTrace } : {}),
   }
 }
 
@@ -181,8 +182,8 @@ export function openClientServices(
       commandQueue,
       continueTurn: (entry) => continueTrigger(entry as unknown as Parameters<typeof continueTrigger>[0]),
       opensWithCommandRules: true,
-      // The platform's L1 sandbox probe; unprobed (no workspace bound yet) or partial is no boundary.
-      osBoundary: async () => (await catalog()).security?.platform?.l1?.level === 'full',
+      // The platform's L1 sandbox probe; only `full` is a boundary, unprobed (no workspace bound yet) or partial is not.
+      sandboxL1: async () => (await catalog()).security?.platform?.l1?.level,
       preferences,
       idle,
       resolveAgent,

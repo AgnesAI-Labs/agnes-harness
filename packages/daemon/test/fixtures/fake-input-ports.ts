@@ -8,7 +8,9 @@ import {
   type HostInputResolution,
   type OwnerInputEngineDeps,
 } from '../../src/supervisor/managed-input-admission.js'
+import type { GateReport } from '../../src/supervisor/managed-input-gates.js'
 import type { ManagedInputSessionPorts } from '../../src/supervisor/managed-input-ports.js'
+import type { OwnerInputTrace } from '../../src/supervisor/managed-input-trace.js'
 import { ManagedSessionInputs } from '../../src/supervisor/managed-session-inputs.js'
 import { ManagedSessionRecords } from '../../src/supervisor/managed-session-records.js'
 import {
@@ -188,7 +190,10 @@ export function inputWorld(over: Partial<Pick<OwnerInputEngineDeps, 'faults'>> =
   const records = new ManagedSessionRecords(table)
   const inputs = new ManagedSessionInputs(table)
   const core = fakeCore()
-  const gates = { pass: true, calls: 0 }
+  // `pending`: a gate that cannot answer yet, as the full-access gate before the sandbox probe ran.
+  const gates = { pass: true, pending: false, calls: 0 }
+  const traces: OwnerInputTrace[] = []
+  const warnings: string[] = []
   const enabled = new Set<string>([owner])
   const unavailable = async (): Promise<never> => {
     throw new Error('not used by the engine')
@@ -227,10 +232,17 @@ export function inputWorld(over: Partial<Pick<OwnerInputEngineDeps, 'faults'>> =
     ports,
     inputs,
     serial,
-    gatesPass: async () => {
+    gates: async (): Promise<GateReport> => {
       gates.calls++
+      if (gates.pending)
+        return { verdict: 'pending', gate: 'full-access', code: 'l1-unprobed', l1: 'unprobed' }
       return gates.pass
+        ? { verdict: 'pass' }
+        : { verdict: 'refused', gate: 'workspace', code: 'WORKSPACE_NOT_AUTHORIZED' }
     },
+    trace: (entry) => traces.push(entry),
+    warn: (message) => warnings.push(message),
+    debug: () => undefined,
     actor: (actorOwner, record) => managedSessionActor(actorOwner, record),
     enabled: async (rowOwner) => enabled.has(rowOwner),
     ...(over.faults ? { faults: over.faults } : {}),
@@ -273,5 +285,5 @@ export function inputWorld(over: Partial<Pick<OwnerInputEngineDeps, 'faults'>> =
     startKey: `start-${sessionId}`,
     ...over,
   })
-  return { table, records, inputs, core, gates, enabled, engine, open, ctx, target }
+  return { table, records, inputs, core, gates, traces, warnings, enabled, engine, open, ctx, target }
 }

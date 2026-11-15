@@ -19,6 +19,7 @@ import {
   type HostInputResolution,
   type OwnerInputEngineDeps,
 } from './managed-input-admission.js'
+import { GatePending, type GateSeen, gateReport, L1_UNKNOWN } from './managed-input-gates.js'
 import type { ManagedInputSessionPorts } from './managed-input-ports.js'
 import { newBinding, parseTaskBinding, startBindingMatches } from './managed-input-resolution.js'
 import type { ManagedSessionRecord, ManagedSessionRecords } from './managed-session-records.js'
@@ -51,9 +52,10 @@ export interface ManagedSessionPorts {
   /**
    * What the daemon knows before a session exists; there is no tool policy to read yet. Whether its
    * opener turns outward command rules on for managed sessions, and whether the platform's sandbox
-   * probe reports a full OS boundary.
+   * probe reports a full OS boundary, with the probe's L1 level when it was read (`unprobed` before
+   * a workspace binds, `unreadable` when the worker did not answer).
    */
-  fullAccess(): Promise<{ outwardCheckpoint: boolean; osBoundary: boolean }>
+  fullAccess(): Promise<{ outwardCheckpoint: boolean; osBoundary: boolean; l1?: string }>
   sessions: ManagedInputSessionPorts & {
     create(input: { sessionKey: string; cwd: string; agent: string }): Promise<string>
     setModel(sessionId: string, model: { route: string; model: string }): Promise<void>
@@ -337,11 +339,15 @@ function ownedRecord(
   return record
 }
 
-/** The checks a start's input names; run again on every start, a resumed one included, and every send. */
+/**
+ * The checks a start's input names; run again on every start, a resumed one included, and every send.
+ * With `seen` (a held input's checks) an L1 probe that has not answered is `GatePending`, not a refusal.
+ */
 async function startGates(
   ports: ManagedSessionPorts,
   owner: string,
   input: Pick<ManagedSessionStartInput, 'workspace' | 'model' | 'permission' | 'bundle'>,
+  seen?: GateSeen,
 ): Promise<string> {
   let root: string
   try {
@@ -355,8 +361,13 @@ async function startGates(
     throw refuse('MODEL_ROUTE_MISSING')
   if (input.permission === 'full-access') {
     const gates = await ports.fullAccess()
+    if (seen && gates.l1 !== undefined) seen.l1 = gates.l1
     if (!gates.outwardCheckpoint) throw refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'outward-checkpoint' })
-    if (!gates.osBoundary) throw refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'os-boundary' })
+    if (!gates.osBoundary) {
+      if (seen && gates.l1 !== undefined && L1_UNKNOWN.has(gates.l1))
+        throw new GatePending('full-access', `l1-${gates.l1}`)
+      throw refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'os-boundary' })
+    }
   }
   if (await ports.autoReview()) throw refuse('AUTO_REVIEW')
   try {
@@ -433,8 +444,9 @@ async function managedStatus(
  * The refusal for a session that may not run a turn: every managed session needs the outward
  * checkpoint on its live policy, and effective full access also needs a full OS boundary.
  */
-async function runningGateMissing(ports: ManagedSessionPorts, sessionId: string) {
+async function runningGateMissing(ports: ManagedSessionPorts, sessionId: string, seen?: GateSeen) {
   const effective = await ports.sessions.policy(sessionId)
+  if (seen) seen.live = { ...effective }
   if (!effective.outwardCheckpoint)
     return effective.fullAccess
       ? refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'outward-checkpoint' })
@@ -445,35 +457,45 @@ async function runningGateMissing(ports: ManagedSessionPorts, sessionId: string)
 }
 
 /** A revoked grant or a lost gate refuses a new turn; a running turn is left to finish. */
-async function sessionGates(ports: ManagedSessionPorts, record: ManagedSessionRecord) {
+async function sessionGates(ports: ManagedSessionPorts, record: ManagedSessionRecord, seen?: GateSeen) {
   const chosen = storedModel(record.model)
-  await startGates(ports, record.owner, {
+  const input = {
     workspace: record.workspace,
     bundle: record.bundle,
     permission: record.permission,
     ...(chosen ? { model: { route: chosen.route, model: chosen.model } } : {}),
-  })
-  const missing = await runningGateMissing(ports, record.sessionId)
+  }
+  try {
+    await startGates(ports, record.owner, input, seen)
+  } catch (error) {
+    if (!(error instanceof GatePending) || !seen) throw error
+    // The platform probes its sandbox when a workspace binds, as after a restart: opening this session
+    // (the running gate opens it anyway) binds its workspace, and the gates are read again.
+    seen.reopenedAfter = seen.l1 ?? 'unreadable'
+    await ports.sessions.policy(record.sessionId)
+    await startGates(ports, record.owner, input, seen)
+  }
+  if (seen) seen.stage = 'live'
+  const missing = await runningGateMissing(ports, record.sessionId, seen)
   if (missing) throw missing
 }
 
 /**
- * False when a gate refuses; a gate that cannot be read (a port failing, the daemon shutting down) rejects,
- * because a read failure says nothing about the grant.
+ * `refused` when a gate refuses, `pending` when one cannot answer yet; a gate that cannot be read (a
+ * port failing, the daemon shutting down) rejects, because a read failure says nothing about the grant.
  */
-const gatesPass = (ports: ManagedSessionPorts, record: ManagedSessionRecord) =>
-  sessionGates(ports, record).then(
-    () => true,
-    (error: unknown) => {
-      if ((error as { data?: { code?: unknown } } | null)?.data?.code === 'CAPABILITY_DENIED') return false
-      throw error
-    },
+const sessionGateReport = (ports: ManagedSessionPorts, record: ManagedSessionRecord) => {
+  const seen: GateSeen = { stage: 'start' }
+  return sessionGates(ports, record, seen).then(
+    () => gateReport(seen),
+    (error: unknown) => gateReport(seen, error),
   )
+}
 
 /** Without `inputs` the sessions have no owner-input engine, and `admitInput` / `inputResult` refuse. */
 export function createManagedSessions(
   ports: ManagedSessionPorts,
-  deps?: Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults' | 'warn' | 'clock'>,
+  deps?: Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults' | 'warn' | 'debug' | 'trace' | 'clock'>,
 ) {
   const chains = new Map<string, Promise<unknown>>()
   const serial = <T>(key: string, work: () => Promise<T>): Promise<T> => {
@@ -495,7 +517,7 @@ export function createManagedSessions(
       ...deps,
       ports,
       serial,
-      gatesPass: (record) => gatesPass(ports, record),
+      gates: (record) => sessionGateReport(ports, record),
       actor: managedSessionActor,
     })
   const archive = async (record: ManagedSessionRecord) => {

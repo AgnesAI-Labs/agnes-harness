@@ -249,7 +249,7 @@ describe('durable native question projection', () => {
       commandQueue: {} as never,
       continueTurn: () => undefined,
       opensWithCommandRules: true,
-      osBoundary: async () => false,
+      sandboxL1: async () => 'unavailable',
       preferences: { get: () => ({ archived: false }) },
       idle: { onIdle: () => () => undefined },
     }

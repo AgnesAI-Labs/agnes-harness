@@ -59,8 +59,8 @@ export function managedSessionPorts(deps: {
   continueTurn(entry: Entry): void
   /** Whether `registry.open` turns outward command rules on for managed sessions and their lineage. */
   opensWithCommandRules: boolean
-  /** Whether the platform's sandbox probe reports a full OS boundary; false when it cannot be read. */
-  osBoundary(): Promise<boolean>
+  /** The platform's sandbox L1 level: `full` is an OS boundary; `unprobed` until a workspace binds. */
+  sandboxL1(): Promise<string | undefined>
   /** The daemon's session preferences, where an owner's Web archive is recorded. */
   preferences: Pick<SessionPreferencesStore, 'get'>
   idle: Pick<IdleSignal, 'onIdle'>
@@ -120,10 +120,11 @@ export function managedSessionPorts(deps: {
         async (client) =>
           (await client.call<{ enabled?: boolean }>('_agnes/v1/autoReview.get', {})).enabled === true,
       ),
-    fullAccess: async () => ({
-      outwardCheckpoint: deps.opensWithCommandRules,
-      osBoundary: await deps.osBoundary().catch(() => false),
-    }),
+    fullAccess: async () => {
+      // One that cannot be read is no boundary; for a held input's checks it is no answer either.
+      const l1 = (await deps.sandboxL1().catch(() => undefined)) ?? 'unreadable'
+      return { outwardCheckpoint: deps.opensWithCommandRules, osBoundary: l1 === 'full', l1 }
+    },
     sessions: {
       ...inputs,
       onIdle: (listener) => deps.idle.onIdle(listener),

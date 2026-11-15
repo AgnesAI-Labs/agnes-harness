@@ -21,6 +21,7 @@ import {
 import { initializeHome } from '@agnes/host'
 import type { DecisionHandle, PackageOperationReceipt, SessionViewResult } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
+import type { OwnerInputTrace } from '../../../src/supervisor/managed-input-trace.js'
 import { startLoopProvider } from '../loop-provider.js'
 import { bounded, STEP_MS, spawnDaemon, stopDaemon, writeProfile } from '../managed-probe.js'
 
@@ -411,6 +412,8 @@ export async function openHarness(name: string) {
     lines(join(chatDir, 'sent.jsonl')) as { message: { blocks: { kind: string; markdown?: string }[] } }[]
   const calls = () =>
     lines(join(companionDir, 'calls.jsonl')) as { receiptId: string | null; eventId: string; text: string }[]
+  /** The daemon's owner input trace entries, oldest first, across restarts. */
+  const trace = () => lines(join(root, 'owner-input-trace.jsonl')) as OwnerInputTrace[]
   const handled = () =>
     lines(join(companionDir, 'events.jsonl')) as { receiptId?: string; eventId: string; text?: string }[]
 
@@ -550,7 +553,12 @@ export async function openHarness(name: string) {
   }
 
   /** A managed session of the companion bound to task `task`, after its first turn ended. */
-  const start = async (task: string, input = `Start ${task}.`, binding = true) => {
+  const start = async (
+    task: string,
+    input = `Start ${task}.`,
+    binding = true,
+    over: { permission?: 'default' | 'full-access' } = {},
+  ) => {
     const started = await companion<{ sessionId: string }>('sessions.start', {
       bundle: `${COMPANION}#worker`,
       workspace,
@@ -558,6 +566,7 @@ export async function openHarness(name: string) {
       startKey: task,
       retention: 'task',
       ...(binding ? { taskBinding: { id: task, generation: 0 } } : {}),
+      ...over,
     })
     if (!started.ok || !started.value) throw new Error(`start ${task}: ${JSON.stringify(started.error)}`)
     return started.value.sessionId
@@ -663,6 +672,7 @@ export async function openHarness(name: string) {
     ownerSays,
     calls,
     handled,
+    trace,
     companion,
     fire,
     start,

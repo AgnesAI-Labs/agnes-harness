@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ownerInputNotes } from '../src/supervisor/managed-input-notes.js'
 import { inputProgress } from '../src/supervisor/managed-input-submit.js'
+import { ownerInputTracer } from '../src/supervisor/managed-input-trace.js'
 import { inputWorld, owner, receipt } from './fixtures/fake-input-ports.js'
 
 const ownerMessage = (receiptId: string) => ({ kind: 'ownerMessage' as const, receiptId })
@@ -365,10 +366,11 @@ describe('held owner inputs', () => {
         ports: { sessions: {}, records: w.records } as never,
         inputs: w.inputs,
         serial: (_key, work) => work(),
-        gatesPass: async () => true,
+        gates: async () => ({ verdict: 'pass' }),
         actor: () => ({}) as never,
       },
       ownerInputNotes(() => undefined, Date.now),
+      ownerInputTracer({ warn: () => undefined, debug: () => undefined, clock: Date.now }),
     )
     for (const key of ['k1', 'k2']) {
       const final = w.row('s1', key)
