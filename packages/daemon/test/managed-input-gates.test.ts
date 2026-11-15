@@ -1,14 +1,26 @@
 import { rpcError } from '@agnes/protocol'
 import { describe, expect, it } from 'vitest'
-import { GatePending, gateReport } from '../src/supervisor/managed-input-gates.js'
+import { GatePending, gateReport, type LivePolicy } from '../src/supervisor/managed-input-gates.js'
 import type { OwnerInputTrace } from '../src/supervisor/managed-input-trace.js'
 import { ManagedSessionInputs } from '../src/supervisor/managed-session-inputs.js'
-import { managedSessionPorts } from '../src/supervisor/managed-session-ports.js'
+import {
+  livePolicy,
+  managedSessionPorts,
+  readOutwardCheckpoint,
+} from '../src/supervisor/managed-session-ports.js'
 import { ManagedSessionRecords } from '../src/supervisor/managed-session-records.js'
 import { createManagedSessions, type ManagedSessionPorts } from '../src/supervisor/managed-sessions.js'
 import { caller, fakeCore, memoryTable, owner, receipt } from './fixtures/fake-input-ports.js'
 
 const refused = (reason: string) => ({ data: { code: 'CAPABILITY_DENIED', reason } })
+const startOf = (startKey: string) => ({
+  bundle: '@example/companion#worker',
+  workspace: '/work/repo',
+  input: 'Fix the failing test.',
+  startKey,
+  retention: 'task' as const,
+  permission: 'full-access' as const,
+})
 
 describe('gateReport', () => {
   it('tells a pass, a refusal before folding, and a gate that cannot answer yet apart; a failed read is rethrown', () => {
@@ -87,17 +99,33 @@ describe('the full-access gate before the sandbox probe ran', () => {
     const records = new ManagedSessionRecords(table)
     const inputs = new ManagedSessionInputs(table)
     const core = fakeCore()
-    const state = { l1: 'full', probeOnOpen: true, live: true, opens: 0, readFails: false }
+    const state = {
+      l1: 'full',
+      probeOnOpen: true,
+      live: true,
+      opens: 0,
+      readFails: false,
+      autoReview: false,
+      bundleRefused: false,
+      workspace: undefined as Error | undefined,
+      unread: undefined as LivePolicy['unread'],
+    }
     const traces: OwnerInputTrace[] = []
     const warnings: string[] = []
     const ports: ManagedSessionPorts = {
       authorize: async () => undefined,
       records,
       forkParent: () => undefined,
-      workspaceRoot: async (path) => path,
-      resolveAgent: async () => undefined,
+      async workspaceRoot(path) {
+        if (state.workspace) throw state.workspace
+        return path
+      },
+      async resolveAgent() {
+        // The shared worker's reply for a bundle it does not resolve.
+        if (state.bundleRefused) throw { code: 'E_PRESET_UNSUPPORTED', message: 'agent: unknown agent' }
+      },
       models: async () => [],
-      autoReview: async () => false,
+      autoReview: async () => state.autoReview,
       async fullAccess() {
         if (state.readFails) throw new Error('shared worker link closed')
         return { outwardCheckpoint: true, osBoundary: state.l1 === 'full', l1: state.l1 }
@@ -110,6 +138,8 @@ describe('the full-access gate before the sandbox probe ran', () => {
         async policy() {
           state.opens++
           if (state.probeOnOpen && state.l1 === 'unprobed') state.l1 = 'full'
+          if (state.unread)
+            return { fullAccess: true, osBoundary: false, outwardCheckpoint: false, unread: state.unread }
           return { fullAccess: true, osBoundary: state.live, outwardCheckpoint: true }
         },
         submit: async (sessionId) => (core.state.running.has(sessionId) ? 'busy' : 'started'),
@@ -343,5 +373,101 @@ describe('the full-access gate before the sandbox probe ran', () => {
     expect(text).not.toContain('text of k1')
     expect(text).toContain(sessionId)
     for (const entry of w.traces) expect(entry.pass).toMatch(/^[0-9a-f]{8}$|^-$/u)
+  })
+
+  it('auto-review on or a refused bundle parks the held input as that gate, never opening the session for the probe', async () => {
+    for (const refusal of ['auto-review', 'bundle'] as const) {
+      const w = world()
+      const sessionId = await w.heldAcrossRestart()
+      w.state.probeOnOpen = false
+      if (refusal === 'auto-review') w.state.autoReview = true
+      else w.state.bundleRefused = true
+      const opens = w.state.opens
+      await w.engine.sweep('startup')
+      expect(w.row(sessionId)).toMatchObject({ state: 'needsOwner', reason: 'grantRevoked' })
+      expect(w.state.opens, `${refusal} answered first`).toBe(opens)
+      expect(w.of('k1').at(-1)?.gate).toMatchObject({
+        verdict: 'refused',
+        gate: refusal,
+        code: refusal === 'auto-review' ? 'AUTO_REVIEW' : 'BUNDLE_UNAVAILABLE',
+        l1: 'unprobed',
+      })
+    }
+  })
+
+  it('a workspace read that fails without refusing holds the input; a missing or invalid workspace parks it; start still refuses', async () => {
+    const w = world()
+    const sessionId = await w.heldAcrossRestart()
+    w.state.l1 = 'full'
+    w.state.workspace = new Error('workspace catalog closed')
+    const before = w.row(sessionId)
+    await w.engine.sweep('startup')
+    expect(w.row(sessionId)).toEqual(before)
+    expect(w.of('k1').at(-1)).toMatchObject({
+      event: 'held',
+      gate: { verdict: 'pending', gate: 'workspace', code: 'workspace-unreadable' },
+    })
+    await expect(w.port().start(startOf('other'))).rejects.toMatchObject(refused('WORKSPACE_NOT_AUTHORIZED'))
+    for (const answer of [
+      new Error('workspace_missing'),
+      Object.assign(new Error('workspace directory is invalid: not-found'), {
+        name: 'WorkspaceDirectoryError',
+      }),
+    ]) {
+      const v = world()
+      const id = await v.heldAcrossRestart()
+      v.state.l1 = 'full'
+      v.state.workspace = answer
+      await v.engine.sweep()
+      expect(v.row(id)).toMatchObject({ state: 'needsOwner', reason: 'grantRevoked' })
+      expect(v.of('k1').at(-1)?.gate).toMatchObject({ verdict: 'refused', gate: 'workspace' })
+    }
+  })
+
+  it('a live policy part that could not be read holds the input; start refuses on it as before', async () => {
+    for (const unread of ['outward-checkpoint', 'policy'] as const) {
+      const w = world()
+      const sessionId = await w.heldAcrossRestart()
+      w.state.l1 = 'full'
+      w.state.unread = unread
+      const before = w.row(sessionId)
+      await w.engine.sweep('startup')
+      expect(w.row(sessionId)).toEqual(before)
+      expect(w.core.state.submits).toEqual([])
+      expect(w.of('k1').at(-1)).toMatchObject({
+        event: 'held',
+        gate: { verdict: 'pending', gate: 'live-policy', code: `${unread}-unreadable` },
+      })
+      await expect(w.port().start(startOf(`again-${unread}`))).rejects.toMatchObject(
+        refused('FULL_ACCESS_UNAVAILABLE'),
+      )
+    }
+  })
+
+  it('reads a failed checkpoint read or a missing policy as unread; an answer from the worker as a refusal', async () => {
+    const lost = Object.assign(new Error('link closed'), { kind: 'transport-closed' })
+    const answered = { code: -32006, message: 'CAPABILITY_DENIED' }
+    expect(await readOutwardCheckpoint({ outwardCheckpoint: async () => true })).toEqual({
+      outwardCheckpoint: true,
+    })
+    expect(await readOutwardCheckpoint({ outwardCheckpoint: () => Promise.reject(lost) })).toEqual({
+      outwardCheckpoint: false,
+      unread: 'outward-checkpoint',
+    })
+    expect(await readOutwardCheckpoint({ outwardCheckpoint: () => Promise.reject(answered) })).toEqual({
+      outwardCheckpoint: false,
+    })
+    expect(livePolicy(undefined, { outwardCheckpoint: true })).toEqual({
+      fullAccess: true,
+      osBoundary: false,
+      outwardCheckpoint: true,
+      unread: 'policy',
+    })
+    const policy = { permission: { policy: 'full-access' }, sandbox: { enforcement: { level: 'full' } } }
+    expect(livePolicy(policy as never, { outwardCheckpoint: true })).toEqual({
+      fullAccess: true,
+      osBoundary: true,
+      outwardCheckpoint: true,
+    })
   })
 })

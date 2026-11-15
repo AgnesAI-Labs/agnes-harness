@@ -9,7 +9,8 @@ import type {
   SessionViewResult,
 } from '@agnes/protocol'
 import { createClient, memoryJournal, type NodeClient } from '@agnes/sdk'
-import { ManagedPortsClosed } from './managed-gate-read.js'
+import { gateRefused, ManagedPortsClosed } from './managed-gate-read.js'
+import type { LivePolicy } from './managed-input-gates.js'
 import { type ManagedInputEntry, managedInputPorts } from './managed-input-ports.js'
 import { hasOpenNativeQuestion } from './managed-question-status.js'
 import type { IdleSignal } from './managed-session-idle.js'
@@ -35,6 +36,34 @@ export function managedWorkspaceRoot(workspaces: Pick<WorkspaceCatalog, 'validat
     const known = (await workspaces.list()).items
     if (!known.some((entry) => entry.available && entry.path === root)) throw new Error('workspace_missing')
     return root
+  }
+}
+
+/**
+ * Whether the open session's live policy holds outward calls for a person. A read that failed
+ * without the worker answering is no checkpoint, and is marked `unread`: a start or send refuses on
+ * it, a held input's checks wait.
+ */
+export async function readOutwardCheckpoint(session: Pick<Entry['session'], 'outwardCheckpoint'>) {
+  try {
+    return { outwardCheckpoint: await session.outwardCheckpoint() }
+  } catch (error) {
+    return gateRefused(error)
+      ? { outwardCheckpoint: false }
+      : { outwardCheckpoint: false, unread: 'outward-checkpoint' as const }
+  }
+}
+
+/** The live policy the gates read; a session whose policy cannot be read counts as full access with no boundary, and as `unread`. */
+export function livePolicy(
+  policy: SessionRuntimeDescriptor['policy'] | undefined,
+  outward: { outwardCheckpoint: boolean; unread?: 'outward-checkpoint' },
+): LivePolicy {
+  if (!policy) return { fullAccess: true, osBoundary: false, ...outward, unread: outward.unread ?? 'policy' }
+  return {
+    fullAccess: policy.permission?.policy === 'full-access' || policy.toolPolicy === 'full-access',
+    osBoundary: policy.sandbox.enforcement?.level === 'full',
+    ...outward,
   }
 }
 
@@ -154,18 +183,12 @@ export function managedSessionPorts(deps: {
         }),
       async policy(sessionId) {
         const entry = await open(sessionId)
-        const outwardCheckpoint = await entry.session.outwardCheckpoint().catch(() => false)
+        const outward = await readOutwardCheckpoint(entry.session)
         return withClient(async (client) => {
           const { policy } = await client.call<SessionRuntimeDescriptor>('_agnes/v1/session.runtime', {
             sessionId,
           })
-          // A session whose policy cannot be read is treated as full access with no boundary.
-          if (!policy) return { fullAccess: true, osBoundary: false, outwardCheckpoint }
-          return {
-            fullAccess: policy.permission?.policy === 'full-access' || policy.toolPolicy === 'full-access',
-            osBoundary: policy.sandbox.enforcement?.level === 'full',
-            outwardCheckpoint,
-          }
+          return livePolicy(policy, outward)
         })
       },
       async submit(sessionId, input) {

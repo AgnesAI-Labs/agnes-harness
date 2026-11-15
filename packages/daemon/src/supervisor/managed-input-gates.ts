@@ -48,10 +48,79 @@ export class GatePending extends Error {
   constructor(
     readonly gate: GateName,
     readonly code: string,
+    /** Opening the session may let it answer: the platform probes its sandbox when a workspace binds. */
+    readonly probe = false,
   ) {
     super(`gate ${gate} cannot answer yet (${code})`)
     this.name = 'GatePending'
   }
+}
+
+/** What an open session runs with; `unread` names a part of it that could not be read. */
+export interface LivePolicy {
+  fullAccess: boolean
+  osBoundary: boolean
+  outwardCheckpoint: boolean
+  unread?: 'outward-checkpoint' | 'policy'
+}
+
+/** A workspace that is not registered, not present or not a usable directory is an answer; any other failure is not. */
+const workspaceRefused = (error: unknown) => {
+  const value = error as { name?: unknown; message?: unknown; data?: { code?: unknown } } | null
+  return (
+    value?.name === 'WorkspaceDirectoryError' ||
+    value?.message === 'workspace_missing' ||
+    typeof value?.data?.code === 'string'
+  )
+}
+
+/**
+ * For a held input's checks (`seen`), what keeps a gate from answering, as `GatePending`; undefined
+ * where the caller refuses as before (and always for a start or a send, which pass no `seen`).
+ */
+export const pendingWorkspace = (seen: GateSeen | undefined, error: unknown) =>
+  seen && !workspaceRefused(error) ? new GatePending('workspace', 'workspace-unreadable') : undefined
+
+/** Records the L1 level the full-access gate read; an unknown one is pending, and only `unprobed` is worth opening the session for. */
+export function pendingFullAccess(seen: GateSeen | undefined, gates: { osBoundary: boolean; l1?: string }) {
+  if (!seen) return undefined
+  if (gates.l1 !== undefined) seen.l1 = gates.l1
+  if (gates.osBoundary || gates.l1 === undefined || !L1_UNKNOWN.has(gates.l1)) return undefined
+  return new GatePending('full-access', `l1-${gates.l1}`, gates.l1 === 'unprobed')
+}
+
+/** Records the live policy; a part of it that could not be read throws `GatePending`. */
+export function observeLive(seen: GateSeen | undefined, effective: LivePolicy) {
+  if (!seen) return
+  seen.stage = 'live'
+  const { fullAccess, osBoundary, outwardCheckpoint } = effective
+  seen.live = { fullAccess, osBoundary, outwardCheckpoint }
+  if (effective.unread) throw new GatePending('live-policy', `${effective.unread}-unreadable`)
+}
+
+/**
+ * A held input's gates, read by `read`. When the full-access gate finds the sandbox unprobed (after a
+ * restart, before a workspace binds) and every other start gate passed, the session is opened, which
+ * binds its workspace so the platform probes, and the gates are read again.
+ */
+export async function heldInputGates(
+  read: (seen: GateSeen) => Promise<void>,
+  open: () => Promise<unknown>,
+): Promise<GateReport> {
+  const seen: GateSeen = { stage: 'start' }
+  try {
+    try {
+      await read(seen)
+    } catch (error) {
+      if (!(error instanceof GatePending && error.probe)) throw error
+      seen.reopenedAfter = seen.l1 ?? 'unprobed'
+      await open()
+      await read(seen)
+    }
+  } catch (error) {
+    return gateReport(seen, error)
+  }
+  return gateReport(seen)
 }
 
 const GATE_OF: Record<string, GateName> = {
