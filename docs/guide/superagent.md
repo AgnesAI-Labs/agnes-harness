@@ -67,12 +67,20 @@ panel's **Deployment** page names. Setting it explicitly before the service star
    GH_CONFIG_DIR=/srv/superagent/state/home/.config/gh gh api user --jq .login
    ```
 
-   The second command must print the agent's login. Signing in through the browser grants what Superagent needs. A
-   token given with `gh auth login --with-token` must read and write the repository's contents, Issues and pull
-   requests, read the commit statuses and checks, and read the agent's notifications, through which requests arrive.
-   Reading the default branch's protection, for example with
-   `gh api repos/<owner>/<name>/branches/<branch>/protection` to check it, also needs the token's Administration (read)
-   permission. Superagent does not read it, so that permission is optional.
+   The second command must print the agent's login. Sign in through the browser, as the agent's own GitHub account:
+   a dedicated account, added as a collaborator with write access to this one repository and to nothing else, so that
+   whatever it signs in with reaches only that repository. Superagent receives requests through the account's
+   notifications, and GitHub's notifications API accepts only a browser sign-in or a classic token:
+
+   - **Fine-grained personal access tokens are not supported**: the notifications API refuses them. Superagent's setup
+     check then reports "The agent's GitHub token cannot read notifications".
+   - **A classic personal access token**, given with `gh auth login --with-token`, works with the `repo` and
+     `notifications` scopes. It reaches every repository the account can reach, which is one more reason to give the
+     account access to this repository only.
+
+   Branch protection on the default branch, not the token, is what keeps the agent from pushing there or merging
+   without a person's approval. Superagent never reads that protection, and reading it needs admin rights on the
+   repository, which the agent account should not have: check it with your own account.
 5. Stop that daemon and run it as a service with the agent's identity, as below.
 
 ## Run as a service
@@ -244,6 +252,7 @@ again after you fixed something outside the panel.
 | `The daemon runs with HOME …, not the agent home …` | Start the daemon with `HOME` set to `<stateDir>/home` (the unit's `HOME`) |
 | `Sessions run gh from …, not the shim in …` | Put `<stateDir>/worker-bin` first on the unit's `PATH` |
 | `git would ask other credential helpers than the agent's for github.com` | Remove the named helpers from the system git configuration, or run as a user without them |
+| `The agent's GitHub token cannot read notifications; …` | The agent is signed in with a fine-grained token, which GitHub's notifications API refuses. Sign in again with its `GH_CONFIG_DIR` through the browser, or with a classic token with the `repo` and `notifications` scopes, as in step 4 |
 | `gh acts as @…, not the agent account @…` | Sign in again with the agent's `GH_CONFIG_DIR`, as in step 4 |
 | `The agent GitHub CLI was not found.` | Make `gh` reachable on the unit's `PATH`, or set an absolute path on the GitHub Source |
 | A file `… was not written by Superagent` | Move it out of `<stateDir>/worker-bin` or `<stateDir>/home`, or choose another state directory |

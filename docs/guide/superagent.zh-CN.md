@@ -53,10 +53,16 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
    GH_CONFIG_DIR=/srv/superagent/state/home/.config/gh gh api user --jq .login
    ```
 
-   第二条命令必须打印智能体的登录名。在浏览器里登录即可得到 Superagent 所需的权限。用 `gh auth login --with-token` 给出的令牌，
-   须能读写仓库的内容、Issue 和 PR，读取提交状态与检查，并读取智能体的通知（请求经通知到达）。读取默认分支的保护规则
-   （例如用 `gh api repos/<owner>/<name>/branches/<branch>/protection` 核对）还需要令牌的 Administration（只读）权限；
-   Superagent 不读它，所以这项权限是可选的。
+   第二条命令必须打印智能体的登录名。请以智能体自己的 GitHub 账号在浏览器里登录：这是一个专用账号，作为协作者只对这一个仓库有写权限、
+   别的都没有，这样它无论用什么方式登录都只能碰到这个仓库。Superagent 通过这个账号的通知接收请求，而 GitHub 的通知 API
+   只接受浏览器登录或经典令牌：
+
+   - **不支持细粒度个人访问令牌**：通知 API 拒绝它们。这时 Superagent 的设置检查会报告“智能体的 GitHub 令牌读不到通知”。
+   - **经典个人访问令牌**（用 `gh auth login --with-token` 给出）带上 `repo` 和 `notifications` 两个范围即可使用。它能碰到这个账号能碰到的
+     所有仓库，这也是只让该账号访问这一个仓库的又一个理由。
+
+   阻止智能体直接推送默认分支、或不经人批准就合并的，是默认分支上的分支保护，而不是令牌。Superagent 从不读取分支保护；
+   读取它需要仓库的管理员权限，而智能体账号不应有这个权限，请用你自己的账号核对。
 5. 停掉这个 daemon，按下文以智能体身份作为服务运行。
 
 ## 作为服务运行
@@ -201,6 +207,7 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
 | `The daemon runs with HOME …, not the agent home …` | 以 `HOME` 为 `<stateDir>/home` 启动 daemon（单元里的 `HOME`） |
 | `Sessions run gh from …, not the shim in …` | 把 `<stateDir>/worker-bin` 放在单元 `PATH` 的最前面 |
 | `git would ask other credential helpers than the agent's for github.com` | 从系统 git 配置里去掉列出的凭据助手，或换一个没有它们的用户运行 |
+| `The agent's GitHub token cannot read notifications; …` | 智能体用细粒度令牌登录，GitHub 的通知 API 拒绝它。用它的 `GH_CONFIG_DIR` 在浏览器里重新登录，或改用带 `repo` 与 `notifications` 范围的经典令牌，见第 4 步 |
 | `gh acts as @…, not the agent account @…` | 用智能体的 `GH_CONFIG_DIR` 重新登录，见第 4 步 |
 | `The agent GitHub CLI was not found.` | 让单元 `PATH` 能找到 `gh`，或在 GitHub 来源里写绝对路径 |
 | 某个文件 `… was not written by Superagent` | 把它移出 `<stateDir>/worker-bin` 或 `<stateDir>/home`，或换一个状态目录 |
