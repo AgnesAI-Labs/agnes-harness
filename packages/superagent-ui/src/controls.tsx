@@ -220,8 +220,7 @@ export function Select({
 }
 
 /**
- * The shared AGH switch, at its one size. AGH's refinement sizes only antd's default switch (38×22, 18px knob); antd's
- * `small` size reads other variables, so it would keep a 28px track with a 12px knob under AGH's 22px height.
+ * The shared AGH switch, at its one size (38×22, 18px knob). No size is passed: AGH has a single switch size.
  */
 export function Switch({
   checked,
