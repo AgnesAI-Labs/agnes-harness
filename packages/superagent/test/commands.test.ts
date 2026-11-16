@@ -56,7 +56,8 @@ describe('account-isolated operations', () => {
     expect(gh).not.toHaveBeenCalled()
   })
   it('posts the reply as the model wrote it, only to the fixed repository', async () => {
-    const commands = new Commands(() => deployment, {}, new AbortController().signal)
+    // The arguments a POSIX daemon passes; on Windows the text goes through standard input (see the next test).
+    const commands = new Commands(() => deployment, {}, new AbortController().signal, undefined, 'linux')
     vi.spyOn(commands, 'pages').mockResolvedValue([])
     const gh = vi.spyOn(commands, 'gh').mockResolvedValue({})
     await send(commands, reply)
@@ -104,7 +105,7 @@ describe('account-isolated operations', () => {
       ).toBe('one\ntwo')
   })
   it('routes review-comment replies to the root review comment', async () => {
-    const commands = new Commands(() => deployment, {}, new AbortController().signal)
+    const commands = new Commands(() => deployment, {}, new AbortController().signal, undefined, 'linux')
     vi.spyOn(commands, 'pages').mockResolvedValue([])
     const gh = vi
       .spyOn(commands, 'gh')
@@ -137,22 +138,28 @@ it('reports Feishu failures with their code and without command arguments', () =
   ).toBe('scope missing (999)')
 })
 describe('Channels', () => {
-  const commands = () => new Commands(() => deployment, {}, new AbortController().signal)
+  // The arguments a POSIX daemon passes; on Windows a reply's text goes through standard input.
+  const commands = (platform = 'linux') =>
+    new Commands(() => deployment, {}, new AbortController().signal, undefined, platform)
   it('drop a GitHub reply to an Issue that is deleted or locked, and keep others for a retry', async () => {
-    const value = commands()
-    vi.spyOn(value, 'pages').mockResolvedValue([])
-    const gh = vi.spyOn(value, 'gh')
-    for (const stderr of [
-      'gh: This issue was deleted (HTTP 410)',
-      'gh: Unable to create comment because issue is locked. (HTTP 403)',
-    ]) {
-      gh.mockRejectedValueOnce(commandError({ stderr, code: 1 }))
-      expect(await send(value, reply)).toBe('gone')
-    }
-    // GitHub also answers 404 for a private repository the agent lost access to, so 404 is retried rather than dropped.
-    for (const stderr of ['gh: Not Found (HTTP 404)', 'gh: Server Error (HTTP 500)']) {
-      gh.mockRejectedValueOnce(commandError({ stderr, code: 1 }))
-      await expect(send(value, reply)).rejects.toThrow(stderr)
+    // The agent's CLI answers the same through either way of posting.
+    for (const platform of ['linux', 'win32']) {
+      const value = commands(platform)
+      vi.spyOn(value, 'pages').mockResolvedValue([])
+      const run = vi.spyOn(value, 'run')
+      for (const stderr of [
+        'gh: This issue was deleted (HTTP 410)',
+        'gh: Unable to create comment because issue is locked. (HTTP 403)',
+      ]) {
+        run.mockRejectedValueOnce(commandError({ stderr, code: 1 }))
+        expect(await send(value, reply), platform).toBe('gone')
+      }
+      // GitHub also answers 404 for a private repository the agent lost access to, so 404 is retried rather than dropped.
+      for (const stderr of ['gh: Not Found (HTTP 404)', 'gh: Server Error (HTTP 500)']) {
+        run.mockRejectedValueOnce(commandError({ stderr, code: 1 }))
+        await expect(send(value, reply), platform).rejects.toThrow(stderr)
+      }
+      expect(run, platform).toHaveBeenCalledTimes(4)
     }
   })
   it("reply on the PR's conversation when the review comment a reply points at is gone", async () => {

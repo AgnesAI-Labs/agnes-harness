@@ -51,6 +51,8 @@ function setup(notes: Record<string, string> = {}, service: { unavailable?: stri
     store: temp.store,
     environment: () => [],
     skills: new SkillFiles(prompts, skills),
+    // The section as POSIX shells read it; prompt-platform.test.ts pins the Windows wording.
+    platform: 'linux',
   })
   const hooks = hookHarness()
   hooks.cell.set(

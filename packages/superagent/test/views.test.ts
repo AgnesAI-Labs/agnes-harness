@@ -1,7 +1,7 @@
 // Adapted from dsh-superagent (MIT)
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { policyHistory } from '../src/app/settings-history.js'
 import { Store } from '../src/app/store.js'
@@ -360,6 +360,8 @@ it('words each settings save by what it changed from the one before, and nothing
   })
   const alice = { id: 'ou_alice', name: 'Alice Liu' },
     bob = { id: 'ou_bob', name: 'Bob' }
+  // An absolute path on the daemon's machine: on Windows one with its drive.
+  const work = resolve('/srv/work')
   store.saveSettings({
     ...first,
     policy: allowed([alice, bob, { id: 'ou_carol' }]),
@@ -367,7 +369,7 @@ it('words each settings save by what it changed from the one before, and nothing
     sources: { ...first.sources, feishu: { enabled: false, config: {} } },
     executor: {
       ...first.executor,
-      directory: '/srv/work',
+      directory: work,
       prepare: 'npm ci',
       blockedCommands: ['rm', 'curl'],
     },
@@ -386,7 +388,7 @@ it('words each settings save by what it changed from the one before, and nothing
     { code: 'sourceRowsAdded', source: 'feishu', part: true, field: 'allowed', items: ['Bob', 'ou_carol'] },
     { code: 'sourceRowsChanged', source: 'feishu', part: true, field: 'allowed', items: ['Alice Liu'] },
     { code: 'paused' },
-    { code: 'executionDirectory', from: '', to: '/srv/work' },
+    { code: 'executionDirectory', from: '', to: work },
     { code: 'prepareCommand' },
     { code: 'blockedCommands', from: '', to: 'rm curl' },
     { code: 'sourceDisabled', source: 'feishu' },

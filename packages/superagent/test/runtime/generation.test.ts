@@ -169,7 +169,8 @@ it('keeps the sessions of earlier runs refused after the app is ready, until the
     (store) =>
       store.saveSettings(
         SettingsSchema.parse({
-          sources: { github: { enabled: true, config: { repository: 'acme/app', cli: '/bin/sh' } } },
+          // Any executable file on every operating system stands for the agent's CLI: the probe answers for it.
+          sources: { github: { enabled: true, config: { repository: 'acme/app', cli: process.execPath } } },
         }),
       ),
   )

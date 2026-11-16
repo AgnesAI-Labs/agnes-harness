@@ -124,6 +124,15 @@ describe('configuration schema', () => {
   })
 })
 
+/**
+ * `path` as its machine compares it: Windows paths compare without case, and a program found through PATHEXT carries its
+ * extension as PATHEXT spells it (`gh.CMD` for `gh.cmd`).
+ */
+const samePath = (path: string): unknown =>
+  process.platform === 'win32'
+    ? expect.stringMatching(new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'))
+    : path
+
 describe('setup', () => {
   it('reads the repository from the GitHub Source and the accounts from their CLIs, skipping the worker shims', async () => {
     const deployment = await resolveDeployment(
@@ -135,13 +144,13 @@ describe('setup', () => {
     expect(deployment).toMatchObject({
       repository: 'acme/widgets',
       github: {
-        cli: commandPath(join(dir, 'bin', 'gh')),
+        cli: samePath(commandPath(join(dir, 'bin', 'gh'))),
         login: 'Agent-Bot',
         noreply: '7+Agent-Bot@users.noreply.github.com',
       },
     })
     expect(deployment.github).toEqual({
-      cli: commandPath(join(dir, 'bin', 'gh')),
+      cli: samePath(commandPath(join(dir, 'bin', 'gh'))),
       login: 'Agent-Bot',
       noreply: '7+Agent-Bot@users.noreply.github.com',
     })
