@@ -78,6 +78,9 @@ it('writes the texts for PowerShell on Windows: no POSIX variable or assignment 
   )
   expect(worker).toContain('`git push "--force-with-lease=<head branch>:$old"`')
   expect(worker, 'a Windows worker learns its gh cannot take a line break').toContain('--body-file <file>')
+  expect(worker, 'a worker leaves credentials to gh and reports its error as is').toContain(
+    'Never read, parse or copy credential files or tokens; if gh fails, report its exact error output.',
+  )
   expect(worker, "people's text never reaches the batch file's command line").toContain(
     'text from people (titles, bodies, comments), and any multi-line text, goes to gh in a file or on standard input, never on its command line',
   )
