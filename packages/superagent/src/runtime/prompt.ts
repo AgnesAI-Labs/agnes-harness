@@ -14,9 +14,13 @@ import { type Prompts, type PromptVersion, SKILL_PREFIX } from '../app/prompts.j
 import { bundledSkills } from '../app/skill-files.js'
 import type { Store } from '../app/store.js'
 import type { Ticket } from '../core/index.js'
+import { BUSY_DELAYS_MS, retryBusySync } from '../infra/busy.js'
+import { HOST_PLATFORM, isWindows } from '../infra/platform.js'
 import { KV } from '../kv.js'
+import type { Health } from '../sources/host.js'
 import { mandateInstructions } from './assignment.js'
 import type { SessionRole } from './sessions.js'
+import { forShell, WINDOWS_SHELL_NOTE } from './shell-text.js'
 
 export interface PromptHost {
   readonly prompts: Pick<Prompts, 'current' | 'version' | 'compose' | 'skills'>
@@ -25,17 +29,27 @@ export interface PromptHost {
   environment(ticket: Ticket): Variable[] | undefined
   /** Writes a revision's skills; called whenever a session starts working under a revision that has not been written. */
   readonly skills?: SkillFiles
+  /** The operating system the sessions' commands run on, this process's by default (see `forShell`). */
+  readonly platform?: string
 }
 
-/** The section text, and the revision it was composed from. */
+/**
+ * The section text, and the revision it was composed from, for the sessions' shell (see `forShell`); a Windows worker is
+ * also told about its shell.
+ */
 export function sectionText(host: PromptHost, version: PromptVersion, role: SessionRole): string {
+  const platform = host.platform ?? HOST_PLATFORM
   const ticket = role.kind === 'worker' ? host.store.tickets.get(role.ticketId) : undefined
   const composed = host.prompts.compose(
     version.config,
     role.kind,
     ticket ? host.environment(ticket) : undefined,
   )
-  return `[dsh-superagent prompt revision ${version.revision}]\n${composed}\n${ticket ? mandateInstructions(ticket.mandate) : ''}`
+  const note = isWindows(platform) && role.kind === 'worker' ? `${WINDOWS_SHELL_NOTE}\n` : ''
+  return forShell(
+    `[dsh-superagent prompt revision ${version.revision}]\n${composed}\n${note}${ticket ? mandateInstructions(ticket.mandate) : ''}`,
+    platform,
+  )
 }
 
 /** Prompt revisions by session: the one a session works under, and those it may read. */
@@ -80,18 +94,53 @@ export function aghHome(env: Readonly<Record<string, string | undefined>> = proc
 /** Marks a skill directory Superagent wrote, so it never removes one it did not write. */
 const MARK = '.superagent-revision'
 
+/** Where `SkillFiles` reports writes that failed, and that they work again; the panel shows it. */
+export interface SkillFilesHealth {
+  set(health: Health): void
+}
+/** The options of `SkillFiles`: the sessions' platform, where it reports, and the pauses of its retries. */
+export interface SkillFilesOptions {
+  platform?: string
+  health?: SkillFilesHealth
+  busyDelaysMs?: readonly number[]
+}
+
 /**
- * Superagent's skills as files in `<AGH home>/skills/dsh-superagent-<name>/SKILL.md`. A revision's skills replace the
- * previous revision's; a skill directory without Superagent's mark is left alone.
+ * Superagent's skills as files in `<AGH home>/skills/dsh-superagent-<name>/SKILL.md`, in the text the sessions' shell
+ * reads (see `forShell`). A revision's skills replace the previous revision's; a skill directory without Superagent's
+ * mark is left alone. A file another program holds (as Windows reports while it is open) is retried a few times; if it
+ * stays held, the failure is reported to `health` and the write is tried again at the next request, which goes on with
+ * the skills as they were.
  */
 export class SkillFiles {
   private written?: number
+  private failing = false
   constructor(
     private readonly prompts: Pick<Prompts, 'skills'>,
     private readonly root: string,
+    private readonly options: SkillFilesOptions = {},
   ) {}
   write(version: PromptVersion): void {
     if (this.written === version.revision) return
+    const platform = this.options.platform ?? HOST_PLATFORM
+    try {
+      this.replace(version, platform)
+    } catch (error) {
+      if (!this.options.health) throw error
+      this.failing = true
+      this.options.health.set({
+        state: 'error',
+        detail: `The skill files in ${this.root} could not be written; retrying at the next request: ${String(error)}`,
+        at: new Date().toISOString(),
+      })
+      return
+    }
+    if (this.failing) this.options.health?.set({ state: 'ready', detail: 'The skill files are written' })
+    this.failing = false
+    this.written = version.revision
+  }
+  private replace(version: PromptVersion, platform: string): void {
+    const delays = this.options.busyDelaysMs ?? BUSY_DELAYS_MS
     mkdirSync(this.root, { recursive: true })
     const wanted = new Map<string, string>()
     for (const [name, content] of this.prompts.skills(version.config)) {
@@ -101,22 +150,21 @@ export class SkillFiles {
         (content.replace(/\s+/g, ' ').trim().slice(0, 120) || 'Custom Superagent skill.')
       wanted.set(
         `${SKILL_PREFIX}${name}`,
-        `---\nname: ${SKILL_PREFIX}${name}\ndescription: ${JSON.stringify(description)}\n---\n\n${content}\n`,
+        `---\nname: ${SKILL_PREFIX}${name}\ndescription: ${JSON.stringify(description)}\n---\n\n${forShell(content, platform)}\n`,
       )
     }
     for (const entry of readdirSync(this.root, { withFileTypes: true })) {
       const dir = join(this.root, entry.name)
       if (entry.isDirectory() && !wanted.has(entry.name) && existsSync(join(dir, MARK)))
-        rmSync(dir, { recursive: true, force: true })
+        retryBusySync(() => rmSync(dir, { recursive: true, force: true }), platform, delays)
     }
     for (const [name, text] of wanted) {
       const dir = join(this.root, name)
       if (existsSync(dir) && !existsSync(join(dir, MARK))) continue
       mkdirSync(dir, { recursive: true })
-      replaceChanged(dir, 'SKILL.md', text)
-      replaceChanged(dir, MARK, `${version.revision}\n`)
+      retryBusySync(() => replaceChanged(dir, 'SKILL.md', text), platform, delays)
+      retryBusySync(() => replaceChanged(dir, MARK, `${version.revision}\n`), platform, delays)
     }
-    this.written = version.revision
   }
 }
 

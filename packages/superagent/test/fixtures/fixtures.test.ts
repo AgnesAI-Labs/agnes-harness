@@ -1,18 +1,18 @@
-import { execFile, spawn } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { promisify } from 'node:util'
 import type { ChannelAdapter, ChannelEvent, MessageEvent } from '@agnes/extension-api/channel-contract'
 import { afterEach, describe, expect, it } from 'vitest'
+import { runCommand } from '../../src/app/subprocess.js'
+import { hostFloor } from './daemon-harness.js'
 import { startGitHttpRemote } from './git-http-remote.js'
 import { AGENT_CREDENTIAL, makeHomes, OPERATOR_CREDENTIAL } from './homes.js'
 import { posixDescribe } from './posix.js'
 import { isAlive, killTree, type ProcessIo } from './process-tree.js'
 import { createTestChannel } from './test-channel.js'
 
-const exec = promisify(execFile)
 const FAKE_GH = fileURLToPath(new URL('./fake-gh.mjs', import.meta.url))
 
 const cleanups: (() => Promise<unknown> | unknown)[] = []
@@ -24,15 +24,22 @@ function scratch(): string {
   cleanups.push(() => rmSync(root, { recursive: true, force: true }))
   return root
 }
+/**
+ * Runs `file` with exactly `env` (and on Windows what a program needs there to start), found on its PATH as a shell
+ * finds it, so a fake command's `.cmd` launcher runs on Windows too.
+ */
 const run = (file: string, args: string[], env: Record<string, string | undefined>, cwd?: string) =>
-  exec(file, args, { env: env as NodeJS.ProcessEnv, ...(cwd ? { cwd } : {}) }).then(
-    ({ stdout, stderr }) => ({ code: 0, stdout, stderr }),
-    (error: { code: number; stdout: string; stderr: string }) => ({
-      code: error.code,
-      stdout: error.stdout,
-      stderr: error.stderr,
-    }),
-  )
+  runCommand([file, ...args], {
+    env: Object.fromEntries(
+      Object.entries({ ...hostFloor(env.HOME), ...env }).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined,
+      ),
+    ),
+    replaceEnv: true,
+    ...(cwd ? { cwd } : {}),
+    signal: new AbortController().signal,
+    timeoutMs: 60_000,
+  })
 
 describe('fake gh', () => {
   const gh = (root: string, script: unknown, ...args: string[]) => {
@@ -106,11 +113,11 @@ describe('fake gh', () => {
   })
 })
 
-posixDescribe('homes', () => {
+describe('homes', () => {
   it('gives each home its own git identity and its own gh', async () => {
     const homes = makeHomes(scratch())
     const env = (home: string, bin: string) => ({
-      PATH: `${bin}:${process.env.PATH}`,
+      PATH: `${bin}${delimiter}${process.env.PATH}`,
       HOME: home,
       GIT_CONFIG_NOSYSTEM: '1',
     })
@@ -129,7 +136,7 @@ posixDescribe('homes', () => {
   })
 })
 
-posixDescribe('authenticated git remote', () => {
+describe('authenticated git remote', () => {
   const users = {
     [AGENT_CREDENTIAL.user]: AGENT_CREDENTIAL.password,
     [OPERATOR_CREDENTIAL.user]: OPERATOR_CREDENTIAL.password,
@@ -314,6 +321,8 @@ describe('test channel', () => {
   })
 })
 
+// Not on Windows: the parent's grandchild is `sleep`, and the fixture finds descendants in the table `ps` prints; on
+// Windows the fixture ends a tree with taskkill instead.
 posixDescribe('process tree', () => {
   it('kills the processes below a SIGKILLed parent by pid, which the parent would otherwise orphan', async () => {
     const parent = spawn(

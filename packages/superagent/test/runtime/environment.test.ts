@@ -1,4 +1,3 @@
-import { execFile } from 'node:child_process'
 import {
   chmodSync,
   existsSync,
@@ -12,8 +11,9 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { delimiter, join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { runCommand } from '../../src/app/subprocess.js'
 import {
   agentCommandVariables,
   agentSessionEnvironment,
@@ -24,8 +24,13 @@ import {
   writeEnvironment,
 } from '../../src/runtime/environment.js'
 import { SetupError } from '../../src/setup.js'
+import { commandPath, nodeCommand } from '../fixtures/commands.js'
+import { hostFloor } from '../fixtures/daemon-harness.js'
 import { gitEnv } from '../fixtures/git.js'
-import { posixDescribe } from '../fixtures/posix.js'
+
+const windows = process.platform === 'win32'
+/** A path written into a git configuration file: Git for Windows reads forward slashes, and a backslash escapes. */
+const gitPath = (path: string) => path.replaceAll('\\', '/')
 
 const LOGIN = 'agent-bot'
 const EMAIL = '1+agent-bot@users.noreply.github.com'
@@ -35,12 +40,26 @@ interface Run {
   stdout: string
   stderr: string
 }
-function run(argv: string[], env: Record<string, string | undefined>, cwd: string): Promise<Run> {
-  return new Promise((resolve) => {
-    execFile(argv[0]!, argv.slice(1), { env, cwd }, (error, stdout, stderr) => {
-      const code = error ? (typeof error.code === 'number' ? error.code : 1) : 0
-      resolve({ code, stdout: String(stdout), stderr: String(stderr) })
-    })
+/**
+ * Runs `argv` with exactly `env`, the program found on its PATH as a shell finds it (a `.cmd` shim on Windows too);
+ * `input` is its standard input.
+ */
+function run(
+  argv: string[],
+  env: Record<string, string | undefined>,
+  cwd: string,
+  input?: string,
+): Promise<Run> {
+  const exact = Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  )
+  return runCommand(argv, {
+    cwd,
+    env: exact,
+    replaceEnv: true,
+    ...(input === undefined ? {} : { input }),
+    signal: new AbortController().signal,
+    timeoutMs: 60_000,
   })
 }
 
@@ -70,25 +89,30 @@ beforeEach(() => {
   // The operator's own git: an identity and a credential helper that must never answer for the agent.
   writeFileSync(
     join(operatorHome, '.gitconfig'),
-    `[user]\n\tname = OPERATOR\n\temail = operator@example.invalid\n[credential]\n\thelper = !echo OPERATOR >> '${join(root, 'operator.log')}'\n`,
+    `[user]\n\tname = OPERATOR\n\temail = operator@example.invalid\n[credential]\n\thelper = !echo OPERATOR >> '${gitPath(join(root, 'operator.log'))}'\n`,
   )
-  writeFileSync(
+  // The operator's real `gh`, which logs each run and acts as the agent only with the agent's configuration directory.
+  nodeCommand(
     join(realBin, 'gh'),
-    `#!/bin/sh
-echo "config=$GH_CONFIG_DIR token=\${GH_TOKEN-unset} github=\${GITHUB_TOKEN-unset} args=$*" >> '${cliLog}'
-if [ "$1 $2" = "api user" ]; then
-  if [ "$GH_CONFIG_DIR" = '${agentConfig}' ]; then echo ${LOGIN}; else echo operator-login; fi
-  exit 0
-fi
-if [ "$1 $2 $3" = "auth git-credential get" ]; then echo username=agent-user; echo password=agent-pass; exit 0; fi
-exit 0
-`,
+    [
+      "import { appendFileSync } from 'node:fs'",
+      'const args = process.argv.slice(2)',
+      'const env = process.env',
+      `appendFileSync(${JSON.stringify(cliLog)}, \`config=\${env.GH_CONFIG_DIR} token=\${env.GH_TOKEN ?? 'unset'} github=\${env.GITHUB_TOKEN ?? 'unset'} args=\${args.join(' ')}\\n\`)`,
+      "if (args.slice(0, 2).join(' ') === 'api user')",
+      `  console.log(env.GH_CONFIG_DIR === ${JSON.stringify(agentConfig)} ? ${JSON.stringify(LOGIN)} : 'operator-login')`,
+      "else if (args.slice(0, 3).join(' ') === 'auth git-credential get') console.log('username=agent-user\\npassword=agent-pass')",
+      '',
+    ].join('\n'),
   )
-  chmodSync(join(realBin, 'gh'), 0o755)
-  cli = join(root, 'local-bin', 'gh-agent')
+  // The `gh-agent` wrapper the guide shows: the agent's configuration directory, then `gh` by name.
   mkdirSync(join(root, 'local-bin'))
-  writeFileSync(cli, `#!/bin/sh\nGH_CONFIG_DIR='${agentConfig}' exec gh "$@"\n`)
-  chmodSync(cli, 0o755)
+  cli = commandPath(join(root, 'local-bin', 'gh-agent'))
+  if (windows) writeFileSync(cli, `@set "GH_CONFIG_DIR=${agentConfig}"\r\n@gh %*\r\n`)
+  else {
+    writeFileSync(cli, `#!/bin/sh\nGH_CONFIG_DIR='${agentConfig}' exec gh "$@"\n`)
+    chmodSync(cli, 0o755)
+  }
 })
 afterEach(() => {
   rmSync(root, { recursive: true, force: true })
@@ -102,8 +126,9 @@ const config = (blocked: readonly string[] = ['curl', 'git', 'gh']) => ({
 })
 /** The daemon's own environment, started as usual: the operator's HOME and PATH, which reaches the real `gh`. */
 const daemonEnv = (extra: Record<string, string> = {}) => ({
+  ...hostFloor(operatorHome),
   HOME: operatorHome,
-  PATH: `${realBin}:/usr/bin:/bin`,
+  PATH: [realBin, ...(windows ? [process.env.PATH ?? ''] : ['/usr/bin', '/bin'])].join(delimiter),
   ...extra,
 })
 /** What a Superagent session's command gets: the platform's floor of the daemon's environment, then the agent's. */
@@ -113,35 +138,37 @@ const gitAsWorker = (args: string[], cwd = stateDir) => run(['git', ...args], se
 
 it('opens sessions with the shims first on PATH, the agent git configuration, no prompts and no GitHub tokens', () => {
   expect(agentSessionEnvironment('/srv/superagent')).toEqual({
-    pathPrepend: ['/srv/superagent/worker-bin'],
+    pathPrepend: [join('/srv/superagent', 'worker-bin')],
     set: {
-      GIT_CONFIG_GLOBAL: '/srv/superagent/worker-gitconfig',
+      GIT_CONFIG_GLOBAL: join('/srv/superagent', 'worker-gitconfig'),
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_TERMINAL_PROMPT: '0',
       GIT_ASKPASS: '',
     },
     unset: ['GH_TOKEN', 'GITHUB_TOKEN'],
   })
+  // As on POSIX, where PATH entries are separated by colons.
   expect(
     withEnvironment(
       { PATH: '/usr/bin', HOME: '/srv/operator', GH_TOKEN: 'x', GITHUB_TOKEN: 'y' },
       agentSessionEnvironment('/s'),
+      'linux',
     ),
   ).toEqual({
-    PATH: '/s/worker-bin:/usr/bin',
+    PATH: `${join('/s', 'worker-bin')}:/usr/bin`,
     HOME: '/srv/operator',
-    GIT_CONFIG_GLOBAL: '/s/worker-gitconfig',
+    GIT_CONFIG_GLOBAL: join('/s', 'worker-gitconfig'),
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_TERMINAL_PROMPT: '0',
     GIT_ASKPASS: '',
   })
-  expect(agentCommandVariables('/s', '/usr/bin')).toMatchObject({
-    PATH: '/s/worker-bin:/usr/bin',
-    GIT_CONFIG_GLOBAL: '/s/worker-gitconfig',
+  expect(agentCommandVariables('/s', '/usr/bin', 'linux')).toMatchObject({
+    PATH: `${join('/s', 'worker-bin')}:/usr/bin`,
+    GIT_CONFIG_GLOBAL: join('/s', 'worker-gitconfig'),
   })
 })
 
-posixDescribe('the agent git configuration', () => {
+describe('the agent git configuration', () => {
   it('names the agent, resets every credential helper before the agent CLI for github.com, rewrites SSH and turns askPass off', async () => {
     await writeEnvironment(stateDir, config())
     const list = await run(['git', 'config', '--file', gitconfig, '-z', '--list'], gitEnv(), root)
@@ -162,7 +189,7 @@ posixDescribe('the agent git configuration', () => {
       ['credential.helper', ''],
       ['credential.https://github.com.helper', credentialHelper(cli)],
     ])
-    expect(credentialHelper(cli)).toBe(`!'${cli}' auth git-credential`)
+    expect(credentialHelper(cli)).toBe(`!'${gitPath(cli)}' auth git-credential`)
     expect(entries.filter(([key]) => key === 'url.https://github.com/.insteadof').map(([, v]) => v)).toEqual([
       'git@github.com:',
       'ssh://git@github.com/',
@@ -179,9 +206,10 @@ posixDescribe('the agent git configuration', () => {
       'https://github.com/acme/widgets.git',
     )
     const fill = await run(
-      ['sh', '-c', 'printf "protocol=https\\nhost=github.com\\n\\n" | git credential fill'],
+      ['git', 'credential', 'fill'],
       sessionEnv({ GH_TOKEN: 'leaked' }),
       stateDir,
+      'protocol=https\nhost=github.com\n\n',
     )
     expect(fill.stdout).toContain('username=agent-user')
     expect(readFileSync(cliLog, 'utf8')).toContain(`config=${agentConfig} token=unset`)
@@ -197,10 +225,12 @@ posixDescribe('the agent git configuration', () => {
   })
 })
 
-posixDescribe('the shims directory', () => {
+describe('the shims directory', () => {
   it('holds gh and one shim per blocked command, never git or a second gh', async () => {
     await writeEnvironment(stateDir, config(['curl', 'wget', 'git', 'gh', 'curl']))
-    expect(readdirSync(shims).sort()).toEqual(['curl', 'gh', 'wget'])
+    expect(readdirSync(shims).sort()).toEqual(
+      ['curl', 'gh', 'wget'].map((name) => (windows ? `${name}.cmd` : name)),
+    )
     const blocked = await run(['curl', 'https://example.com'], sessionEnv(), stateDir)
     expect(blocked.code).toBe(1)
     expect(blocked.stderr).toContain(`curl is blocked in this installation; use gh, which acts as ${LOGIN}.`)
@@ -233,7 +263,7 @@ posixDescribe('the shims directory', () => {
   it('removes the shims of commands no longer blocked and rewrites its own files', async () => {
     await writeEnvironment(stateDir, config(['curl', 'wget']))
     await writeEnvironment(stateDir, config(['wget']))
-    expect(readdirSync(shims).sort()).toEqual(['gh', 'wget'])
+    expect(readdirSync(shims).sort()).toEqual(['gh', 'wget'].map((name) => (windows ? `${name}.cmd` : name)))
   })
 
   it('fails as setup when the agent CLI is not an executable', async () => {
@@ -244,9 +274,9 @@ posixDescribe('the shims directory', () => {
 
   it('refuses an agent CLI inside the shims directory, whose gh shim would run itself forever', async () => {
     await writeEnvironment(stateDir, config())
-    const shim = join(shims, 'gh')
+    const shim = commandPath(join(shims, 'gh'))
     // Named by its path, as pasted from `command -v gh` under the earlier PATH setup, or through a link to it.
-    const link = join(root, 'local-bin', 'gh-shim')
+    const link = commandPath(join(root, 'local-bin', 'gh-shim'))
     symlinkSync(shim, link)
     for (const named of [shim, link])
       await expect(writeEnvironment(stateDir, { ...config(), cli: named }), named).rejects.toMatchObject({
@@ -258,20 +288,20 @@ posixDescribe('the shims directory', () => {
       verifyEnvironment(
         stateDir,
         { login: LOGIN, cli: 'gh-shim' },
-        daemonEnv({ PATH: `${join(root, 'local-bin')}:${realBin}:/usr/bin:/bin` }),
+        daemonEnv({ PATH: [join(root, 'local-bin'), daemonEnv().PATH].join(delimiter) }),
       ),
     ).rejects.toMatchObject({ code: 'agentCliInShims', values: { cli: 'gh-shim' } })
     // So is the shim's path before Superagent ever wrote it, on a fresh state directory.
     const fresh = join(root, 'fresh-state')
     await expect(
-      writeEnvironment(fresh, { ...config(), cli: join(fresh, 'worker-bin', 'gh') }),
+      writeEnvironment(fresh, { ...config(), cli: commandPath(join(fresh, 'worker-bin', 'gh')) }),
     ).rejects.toMatchObject({ code: 'agentCliInShims' })
     // The shims the refused writes found are untouched: the gh shim still runs the agent CLI.
     expect(readFileSync(shim, 'utf8')).toContain(cli)
   })
 })
 
-posixDescribe('the setup self-check', () => {
+describe('the setup self-check', () => {
   const check = (login = LOGIN, env = daemonEnv(), cliPath = cli) =>
     verifyEnvironment(stateDir, { login, cli: cliPath }, env)
 
@@ -303,9 +333,9 @@ posixDescribe('the setup self-check', () => {
 
   it('fails when the helper git resolves is not the agent CLI', async () => {
     await writeEnvironment(stateDir, config())
-    await expect(check(LOGIN, daemonEnv(), join(realBin, 'gh'))).rejects.toMatchObject({
+    await expect(check(LOGIN, daemonEnv(), commandPath(join(realBin, 'gh')))).rejects.toMatchObject({
       code: 'agentCredentialMixed',
-      values: { helpers: expect.stringContaining(cli) },
+      values: { helpers: expect.stringContaining(gitPath(cli)) },
     })
   })
 
@@ -355,7 +385,7 @@ posixDescribe('the setup self-check', () => {
   })
 })
 
-posixDescribe('the ticket repository check', () => {
+describe('the ticket repository check', () => {
   it('passes a repository whose own configuration adds no credentials', async () => {
     const repo = join(root, 'ticket', 'repo')
     await run(['git', 'init', '-q', repo], gitEnv(), root)

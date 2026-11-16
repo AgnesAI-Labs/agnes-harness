@@ -1,11 +1,11 @@
 // Adapted from dsh-superagent (MIT)
 import { execFile } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { delimiter, join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { runCommand } from '../src/app/subprocess.js'
 import {
   executable,
   type Machine,
@@ -14,44 +14,51 @@ import {
   resolveDeployment,
   workerProbe,
 } from '../src/deployment.js'
+import { commandPath, fakeGhCommand, nodeCommand } from './fixtures/commands.js'
+import { hostFloor } from './fixtures/daemon-harness.js'
 import { gitEnv } from './fixtures/git.js'
-import { posixDescribe } from './fixtures/posix.js'
 
 const exec = promisify(execFile)
 let dir: string
 let path: string
-const program = (file: string, body = ''): string => {
-  writeFileSync(file, `#!/bin/sh\n${body}\n`)
-  chmodSync(file, 0o755)
-  return file
-}
+/** A fake command running `body`, a Node module that reads its arguments as `args` (they joined by spaces). */
+const program = (file: string, body = ''): string =>
+  nodeCommand(file, `const args = process.argv.slice(2).join(' ')\n${body}\n`)
 /** Fake gh CLI signed in as `login` with configurable push access to acme/widgets (including its former name acme/gadgets). */
 const gh = (file: string, login: string, push = true): string =>
   program(
     file,
-    `case "$*" in\n  "api user") echo '{"login":"${login}","id":7}' ;;\n  "api repos/acme/"*" --jq {name: .full_name, push: .permissions.push}") echo '{"name":"acme/widgets","push":${push}}' ;;\n  *) exit 1 ;;\nesac`,
+    [
+      `if (args === 'api user') console.log('{"login":"${login}","id":7}')`,
+      'else if (/^api repos\\/acme\\/\\S+ --jq \\{name: \\.full_name, push: \\.permissions\\.push\\}$/.test(args))',
+      `  console.log('{"name":"acme/widgets","push":${push}}')`,
+      'else process.exit(1)',
+    ].join('\n'),
   )
-const FAKE_GH = fileURLToPath(new URL('./fixtures/fake-gh.mjs', import.meta.url))
-const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 /** The scripted fake `gh` signed in as Agent-Bot with push access to acme/widgets, answering the notifications read with `notifications`. */
 const scriptedGh = (file: string, notifications: { stdout?: string; stderr?: string; exit?: number }) =>
-  program(
-    file,
-    `FAKE_GH_SCRIPT=${quote(
-      JSON.stringify({
-        rules: [
-          { pattern: '^api user$', stdout: '{"login":"Agent-Bot","id":7}' },
-          { pattern: '^api repos/acme/widgets --jq', stdout: '{"name":"acme/widgets","push":true}' },
-          { pattern: '^api repos/acme/widgets/notifications\\?', ...notifications },
-        ],
-      }),
-    )} exec ${quote(process.execPath)} ${quote(FAKE_GH)} "$@"`,
-  )
+  fakeGhCommand(file, {
+    script: JSON.stringify({
+      rules: [
+        { pattern: '^api user$', stdout: '{"login":"Agent-Bot","id":7}' },
+        { pattern: '^api repos/acme/widgets --jq', stdout: '{"name":"acme/widgets","push":true}' },
+        { pattern: '^api repos/acme/widgets/notifications\\?', ...notifications },
+      ],
+    }),
+  })
 const minimal = (overrides: Record<string, unknown> = {}) => ({ stateDir: join(dir, 'state'), ...overrides })
 const machine = (overrides: Partial<Machine> = {}): Machine => ({ ...machineOf(minimal()), ...overrides })
 /** Runs commands like worker shells do, but locally: the stand-ins first on PATH, then the system's git. */
-const probe: Probe = async (argv) =>
-  (await exec(argv[0]!, argv.slice(1), { env: { PATH: path, HOME: dir } })).stdout
+const probe: Probe = async (argv) => {
+  const { code, stdout, stderr } = await runCommand(argv, {
+    env: { ...hostFloor(dir), PATH: path, HOME: dir },
+    replaceEnv: true,
+    signal: new AbortController().signal,
+    timeoutMs: 30_000,
+  })
+  if (code !== 0) throw new Error(stderr.trim() || `${argv[0]} exited with ${code}`)
+  return stdout
+}
 const setupError = (place: string, code: string, values: Record<string, unknown> = {}) =>
   expect.objectContaining({ place, code, values: expect.objectContaining(values) })
 
@@ -64,9 +71,8 @@ beforeEach(async () => {
     join(dir, 'state-link', 'worker-bin'),
     `${join(dir, 'state', 'worker-bin')}/`,
     join(dir, 'bin'),
-    '/usr/bin',
-    '/bin',
-  ].join(':')
+    ...(process.platform === 'win32' ? [] : ['/usr/bin', '/bin']),
+  ].join(delimiter)
   gh(join(dir, 'bin', 'gh'), 'Agent-Bot')
   // Stale worker shims with the same binary name must be skipped regardless of PATH normalization or symlinks.
   program(join(dir, 'state', 'worker-bin', 'gh'))
@@ -118,7 +124,7 @@ describe('configuration schema', () => {
   })
 })
 
-posixDescribe('setup', () => {
+describe('setup', () => {
   it('reads the repository from the GitHub Source and the accounts from their CLIs, skipping the worker shims', async () => {
     const deployment = await resolveDeployment(
       machine(),
@@ -129,13 +135,13 @@ posixDescribe('setup', () => {
     expect(deployment).toMatchObject({
       repository: 'acme/widgets',
       github: {
-        cli: join(dir, 'bin', 'gh'),
+        cli: commandPath(join(dir, 'bin', 'gh')),
         login: 'Agent-Bot',
         noreply: '7+Agent-Bot@users.noreply.github.com',
       },
     })
     expect(deployment.github).toEqual({
-      cli: join(dir, 'bin', 'gh'),
+      cli: commandPath(join(dir, 'bin', 'gh')),
       login: 'Agent-Bot',
       noreply: '7+Agent-Bot@users.noreply.github.com',
     })
@@ -169,7 +175,7 @@ posixDescribe('setup', () => {
       'github',
       'agentCliSignedOut',
       {},
-      { repository, cli: program(join(dir, 'bin', 'gh-broken'), 'exit 1') },
+      { repository, cli: program(join(dir, 'bin', 'gh-broken'), 'process.exit(1)') },
     )
     await needs(
       'github',
@@ -180,7 +186,7 @@ posixDescribe('setup', () => {
     // Signed in, but the account cannot read the repository, or the CLI names no account.
     const unreadable = program(
       join(dir, 'bin', 'gh-outsider'),
-      `case "$*" in\n  "api user") echo '{"login":"Agent-Bot","id":7}' ;;\n  *) echo 'HTTP 404' >&2; exit 1 ;;\nesac`,
+      'if (args === \'api user\') console.log(\'{"login":"Agent-Bot","id":7}\')\nelse {\n  console.error(\'HTTP 404\')\n  process.exit(1)\n}',
     )
     const output = expect.stringContaining('HTTP 404') as unknown
     await needs(
@@ -193,7 +199,7 @@ posixDescribe('setup', () => {
       'github',
       'agentCliNoAccount',
       {},
-      { repository, cli: program(join(dir, 'bin', 'gh-anonymous'), `echo '{}'`) },
+      { repository, cli: program(join(dir, 'bin', 'gh-anonymous'), "console.log('{}')") },
     )
     expect(() => executable('nothing-here', join(dir, 'bin'))).toThrow(
       'nothing-here is not an executable file on PATH',
@@ -230,20 +236,20 @@ posixDescribe('setup', () => {
   })
 })
 
-posixDescribe('worker probe', () => {
+describe('worker probe', () => {
   it('runs a command with the worker shim directory off PATH, and names a failure by its stderr or its exit', async () => {
     const shims = join(dir, 'state', 'worker-bin')
-    program(join(shims, 'which-me'), 'echo shim')
-    program(join(dir, 'bin', 'which-me'), 'echo real')
+    program(join(shims, 'which-me'), "console.log('shim')")
+    program(join(dir, 'bin', 'which-me'), "console.log('real')")
     const original = process.env.PATH
-    process.env.PATH = [shims, join(dir, 'bin'), '/usr/bin', '/bin'].join(':')
+    process.env.PATH = [shims, join(dir, 'bin'), original].join(delimiter)
     try {
       const probeIn = workerProbe(join(dir, 'state'), dir, new AbortController().signal)
       expect((await probeIn(['which-me'])).trim()).toBe('real')
       // The message is the command's stderr, which the command line itself does not contain.
-      program(join(dir, 'bin', 'denied'), 'echo "  no access  " >&2; exit 2')
+      program(join(dir, 'bin', 'denied'), "console.error('  no access  ')\nprocess.exit(2)")
       await expect(probeIn(['denied'])).rejects.toThrow(/^no access$/)
-      program(join(dir, 'bin', 'silent-failure'), 'exit 4')
+      program(join(dir, 'bin', 'silent-failure'), 'process.exit(4)')
       await expect(probeIn(['silent-failure'])).rejects.toThrow('silent-failure exited with 4')
     } finally {
       process.env.PATH = original

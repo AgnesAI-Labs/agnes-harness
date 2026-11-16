@@ -214,7 +214,6 @@ export const SETUP_PROBLEMS = {
     'git does not read the github.com credential configuration Superagent writes; Superagent needs git 2.32 or later.',
   ],
   environmentFailed: ['deployment', 'Preparing the agent environment failed.'],
-  platformUnsupported: ['deployment', 'Superagent supports macOS and Linux; it does not run on {platform}.'],
   sessionTaken: [
     'deployment',
     'A session {session} exists that Superagent did not open; archive or remove it, then check the setup again.',

@@ -19,11 +19,11 @@ export function sameDirectory(a: string, b: string): boolean {
   }
   return real(a) === real(b)
 }
-export function withoutDirectory(path: string, dir: string): string {
+export function withoutDirectory(path: string, dir: string, separator: string = delimiter): string {
   return path
-    .split(delimiter)
+    .split(separator)
     .filter((entry) => !sameDirectory(entry, dir))
-    .join(delimiter)
+    .join(separator)
 }
 
 /**

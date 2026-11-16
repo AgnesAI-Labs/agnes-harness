@@ -6,25 +6,30 @@
 import { rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Ticket } from '../core/index.js'
+import { HOST_PLATFORM, isWindows } from '../infra/platform.js'
 
 export const TICKET_INSTRUCTIONS_FILE = 'SUPERAGENT.md'
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim()
 
 /**
  * Writes `SUPERAGENT.md` in the ticket directory `dir` with the ticket and the value of each execution variable, replacing
- * the previous version atomically, so a launch always leaves the current values.
+ * the previous version atomically, so a launch always leaves the current values. On Windows its example sets a variable
+ * as PowerShell does.
  */
 export async function writeTicketInstructions(
   dir: string,
   ticket: Pick<Ticket, 'id' | 'title'>,
   env: Record<string, string>,
+  platform: string = HOST_PLATFORM,
 ): Promise<void> {
   const lines = [
     '<!-- Written by Superagent on every launch of this ticket; edits are lost. -->',
     `# Ticket ${oneLine(ticket.id)}: ${oneLine(ticket.title)}`,
     '',
     'This session has no `DSH_SUPERAGENT_*` environment variables. Wherever your instructions or a command name one,',
-    'use its value here; in a shell command, set it first, for example `DSH_SUPERAGENT_NAME=<value> ...`.',
+    isWindows(platform)
+      ? "use its value here; in a PowerShell command, set it first, for example `$env:DSH_SUPERAGENT_NAME = '<value>'; ...`."
+      : 'use its value here; in a shell command, set it first, for example `DSH_SUPERAGENT_NAME=<value> ...`.',
     '',
     ...Object.entries(env).map(([key, value]) => `- ${key} = ${JSON.stringify(value)}`),
     '',

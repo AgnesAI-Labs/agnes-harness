@@ -1,5 +1,7 @@
 import { type ChildProcess, execFileSync } from 'node:child_process'
 
+const windows = process.platform === 'win32'
+
 // Bookkeeping for every process a fixture starts. Processes are stopped by pid (the child handle, plus the
 // descendants found in the process table below it), never by name or pattern. A pid is only ever signalled while
 // the process that held it when it was recorded is still the one holding it: a child that has exited is not walked
@@ -89,6 +91,13 @@ export async function killTree(
   const snapshot = below(pid, io.table())
   for (const each of snapshot.keys()) started.add(each)
   const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()))
+  // Windows has no process table to walk here (no `ps`) and no signals: taskkill ends the whole tree by its root.
+  if (windows && io === realIo)
+    try {
+      execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+    } catch {
+      /* gone already */
+    }
   child.kill(signal)
   const timer = setTimeout(() => child.kill('SIGKILL'), graceMs)
   await exited

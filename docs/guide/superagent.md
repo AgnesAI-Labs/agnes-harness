@@ -9,16 +9,18 @@ through an AGH Feishu channel instance), turns requests from allowed people into
 session. That session works in the ticket's directory, pushes its own branch and opens a pull request; the main session
 answers people. Superagent is not installed or enabled by default; until you enable it, nothing changes.
 
-This page covers running it as a long-lived service: the accounts and the separate AGH home, a launchd or systemd unit,
+This page covers running it as a long-lived service: the accounts and the separate AGH home, a launchd or systemd unit
+or a Windows scheduled task,
 enabling, disabling, clearing its data, and what its sessions can and cannot reach. The step-by-step setup that a coding
 agent walks through with you, including the settings and the panel, is in the plugin's
 [setup guide](../../packages/superagent/docs/setup.md).
 
 ## Before you start
 
-- **macOS or Linux.** Superagent runs on macOS and Linux only: its ticket sessions and commands use POSIX tools (`sh`,
-  executable shims, process groups), as the original does. On Windows it reports the setup problem "Superagent supports
-  macOS and Linux" and does nothing else.
+- **macOS, Linux or Windows.** On Windows the ticket sessions and the prepare command run in Windows PowerShell, where a
+  variable reads as `$env:NAME`; Superagent's shims are `.cmd` files; and Git for Windows is required, since git runs
+  the agent's credential helper with its own shell. The paths below are the POSIX ones; on Windows use any absolute
+  paths, such as `C:\Superagent\agh`.
 - **A dedicated operating-system user (strongly recommended).** Every ticket session runs with full access as the user
   that runs the daemon. Only a separate user, with none of your own files, keys or signed-in tools, limits what a mistaken
   or manipulated session can reach. See [Security boundaries](#security-boundaries).
@@ -59,8 +61,9 @@ panel's **Deployment** page names. Setting it explicitly before the service star
    trusts and enables Superagent. Use one of these two ways. A package name, as in `agh package add @agnes/superagent`,
    is not a source and is refused, and a folder path installs a local copy without the bundled-app grant (see
    [Troubleshooting](#troubleshooting)).
-3. On the plugin's settings page set `stateDir` to `/srv/superagent/state`. Superagent then reports a setup problem
-   because the agent's environment is not in place yet; that is expected.
+3. On the plugin's settings page set `stateDir` to `/srv/superagent/state` (on Windows, leave it unset; see
+   [Windows](#windows-task-scheduler)). Superagent then reports a setup problem because the agent's environment is not
+   in place yet; that is expected.
 4. Give the agent a GitHub CLI that uses only its own login, never yours: a `gh-agent` wrapper with its own
    configuration directory. Then sign it in:
 
@@ -74,6 +77,20 @@ panel's **Deployment** page names. Setting it explicitly before the service star
    /srv/superagent/bin/gh-agent auth login
    /srv/superagent/bin/gh-agent api user --jq .login
    ```
+
+   On Windows the wrapper is `gh-agent.cmd`. It runs `gh.exe` by its full path (`where.exe gh` prints it), so it never
+   reaches Superagent's `gh` shim. In PowerShell:
+
+   ```powershell
+   New-Item -ItemType Directory -Force C:\Superagent\bin | Out-Null
+   $gh = (Get-Command gh.exe).Source
+   Set-Content -Encoding ascii C:\Superagent\bin\gh-agent.cmd "@set `"GH_CONFIG_DIR=C:\Superagent\gh-agent`"`r`n@`"$gh`" %*"
+   C:\Superagent\bin\gh-agent.cmd auth login
+   C:\Superagent\bin\gh-agent.cmd api user --jq .login
+   ```
+
+   A batch file cannot pass a line break on in an argument. Superagent gives it a comment's text on standard input, and
+   tells its Windows sessions to give multi-line text to `gh` in a file (`--body-file`).
 
    The last command prints the account the agent acts as; Superagent reads it the same way. Sign in through the
    browser, as the agent's own GitHub account: a dedicated account, added as a collaborator with write access to this
@@ -139,6 +156,26 @@ wrapper runs.
 </plist>
 ```
 
+### Windows (Task Scheduler)
+
+Windows has no service unit for `agh serve`: register a scheduled task that starts it when the service user signs in,
+here from an elevated PowerShell. The task runs the daemon in that user's session, with that user's profile:
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'C:\Program Files\nodejs\agh.cmd' -Argument 'serve' -WorkingDirectory 'C:\Superagent'
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User 'superagent'
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName 'AGH Superagent' -Action $action -Trigger $trigger -Settings $settings -User 'superagent'
+[Environment]::SetEnvironmentVariable('AGH_HOME', 'C:\Superagent\agh', 'User')   # as the service user
+```
+
+Name the `agh` your installation provides in `-Execute`. Set `AGH_HOME` as a user variable of the service user (run the
+last line signed in as that user), so the task and every terminal of that user reach the same home; the user's `Path`
+must reach `node`, `git` and `gh`. On Windows, leave `stateDir` unset: Superagent keeps its state in the directory the
+platform gives it, which only the current user can open, and refuses a `stateDir` outside it. Stop the daemon with
+`agh daemon stop` as that user: ending the task (`Stop-ScheduledTask`) kills the process without letting the sessions
+end their turns.
+
 ### Linux (systemd)
 
 `/etc/systemd/system/superagent.service`, started with `systemctl enable --now superagent`:
@@ -163,8 +200,8 @@ TimeoutStopSec=60
 WantedBy=multi-user.target
 ```
 
-Stop the service through its manager (`launchctl bootout`, `systemctl stop`): the daemon then ends its sessions' turns
-cleanly. A restart is safe at any time: see [Restart and recovery](#restart-and-recovery).
+Stop the service through its manager (`launchctl bootout`, `systemctl stop`), or on Windows with `agh daemon stop`:
+the daemon then ends its sessions' turns cleanly. A restart is safe at any time: see [Restart and recovery](#restart-and-recovery).
 
 **Set up the earlier way.** An installation whose unit starts the daemon with `HOME=<stateDir>/home` and
 `<stateDir>/worker-bin` first on `PATH`, and whose GitHub card names `gh`, keeps working: that `gh` still reads the login

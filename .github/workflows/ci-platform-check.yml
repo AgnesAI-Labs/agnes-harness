@@ -98,10 +98,9 @@ jobs:
       - name: test fast tier (includes Protocol conformance)
         id: suite
         if: runner.os != 'Linux'
-        # Files run alone below on Windows are held out here. Superagent supports macOS and Linux only
-        # (its setup refuses Windows), so its tests are held out on Windows too.
+        # Files run alone below on Windows are held out here.
         env:
-          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts,packages/cli/test/windows-runtime.test.ts,packages/host-infrastructure/test/adapters/powershell.test.ts,packages/host-infrastructure/test/adapters/powershell-probe-trace.test.ts,packages/superagent/test/**' || '' }}
+          AGNES_TEST_EXCLUDE: ${{ runner.os == 'Windows' && 'packages/daemon/test/skill-install-requests.slow.test.ts,packages/daemon/test/windows-startup-directories.test.ts,packages/daemon/test/conversation-mcp.e2e.test.ts,packages/cli/test/windows-runtime.test.ts,packages/host-infrastructure/test/adapters/powershell.test.ts,packages/host-infrastructure/test/adapters/powershell-probe-trace.test.ts' || '' }}
         run: pnpm exec vitest run --project fast --maxWorkers=2 ${{ matrix.shard != '' && format('--shard={0}', matrix.shard) || '' }}
       # Keep this native Windows gate on PRs after moving real-process tests to the heavy tier.
       # Other events already execute it once in Windows heavy shard 6.

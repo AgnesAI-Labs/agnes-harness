@@ -10,18 +10,37 @@
  */
 import { existsSync, realpathSync } from 'node:fs'
 import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SessionEnvironment } from '@agnes/protocol'
 import { runCommand } from '../app/subprocess.js'
 import { executable } from '../deployment.js'
+import { retryBusy } from '../infra/busy.js'
+import { HOST_PLATFORM, isWindows, mergeVariables, pathDelimiter, variable } from '../infra/platform.js'
 import { workerBin, workerGitConfig } from '../infra/worker-paths.js'
 import { SetupError } from '../setup.js'
+import { windowsBlockedShim, windowsGhShim } from './windows-shims.js'
 
 const MARKER = '# Written by Superagent on every start; edits are lost.'
+/** The marker of a Windows shim, a batch comment. */
+const WINDOWS_SHIM_MARKER = `rem ${MARKER}`
 /** Commands sessions need, which the blocked commands cannot shadow. */
 const NEEDED: ReadonlySet<string> = new Set(['gh', 'git'])
 /** The variables the platform passes to a session's commands before the session's own environment applies. */
 const SESSION_VARIABLES = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR'] as const
+/** On Windows the platform's floor also holds what Windows programs need to start and find the user's profile. */
+const WINDOWS_SESSION_VARIABLES = [
+  ...SESSION_VARIABLES,
+  'TEMP',
+  'TMP',
+  'SystemRoot',
+  'COMSPEC',
+  'PATHEXT',
+  'USERPROFILE',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'HOMEDRIVE',
+  'HOMEPATH',
+] as const
 /** Variables that would make `gh` act with a token instead of the agent's login. */
 const GH_TOKENS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_HOST']
 const CHECK_MS = 60_000
@@ -51,7 +70,9 @@ const real = (path: string): string => {
     return resolve(path)
   }
 }
-const samePath = (a: string, b: string): boolean => real(a) === real(b)
+/** Windows paths compare without case, and git names a file with forward slashes there. */
+const samePath = (a: string, b: string, platform: string): boolean =>
+  isWindows(platform) ? real(a).toLowerCase() === real(b).toLowerCase() : real(a) === real(b)
 const within = (path: string, directory: string): boolean => {
   const rest = relative(real(directory), real(path))
   return rest === '' || (!rest.startsWith('..') && !isAbsolute(rest))
@@ -62,12 +83,12 @@ const within = (path: string, directory: string): boolean => {
  * the `gh` shim itself named by its path, would run itself forever, so it is refused.
  * @throws SetupError `agentCliInShims` for such a CLI, `agentCliMissing` when it is not an executable.
  */
-function agentCli(name: string, path: string, shimsDir: string): string {
+function agentCli(name: string, env: NodeJS.ProcessEnv, shimsDir: string, platform: string): string {
   if (isAbsolute(name) && within(name, shimsDir))
     throw new SetupError('agentCliInShims', { cli: name, shims: shimsDir })
   let cli: string
   try {
-    cli = executable(name, path, shimsDir)
+    cli = executable(name, variable(env, 'PATH', platform) ?? '', shimsDir, platform, env)
   } catch (error) {
     throw new SetupError('agentCliMissing', { output: reason(error) })
   }
@@ -115,19 +136,23 @@ export function agentSessionEnvironment(stateDir: string): SessionEnvironment {
   }
 }
 
-/** `environment` over `base`, as the platform applies a session's environment to a command's. */
+/**
+ * `environment` over `base`, as the platform applies a session's environment to a command's. On Windows, where
+ * variable names compare without case, the directories go first on an existing `Path` rather than into a second key.
+ */
 export function withEnvironment(
   base: Readonly<Record<string, string | undefined>>,
   environment: SessionEnvironment,
+  platform: string = HOST_PLATFORM,
 ): Record<string, string> {
-  const env: Record<string, string | undefined> = { ...base }
-  for (const name of environment.unset ?? []) delete env[name]
-  Object.assign(env, environment.set)
-  if (environment.pathPrepend?.length)
-    env.PATH = [...environment.pathPrepend, ...(env.PATH ? [env.PATH] : [])].join(delimiter)
-  return Object.fromEntries(
-    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-  )
+  const removed = Object.fromEntries((environment.unset ?? []).map((name) => [name, undefined]))
+  const env = mergeVariables([base, removed, environment.set ?? {}], platform)
+  if (environment.pathPrepend?.length) {
+    const fold = (name: string) => (isWindows(platform) ? name.toUpperCase() : name)
+    const key = Object.keys(env).find((name) => fold(name) === 'PATH') ?? 'PATH'
+    env[key] = [...environment.pathPrepend, ...(env[key] ? [env[key]] : [])].join(pathDelimiter(platform))
+  }
+  return env
 }
 
 /**
@@ -137,17 +162,26 @@ export function withEnvironment(
 export function agentCommandVariables(
   stateDir: string,
   path = process.env.PATH ?? '',
+  platform: string = HOST_PLATFORM,
 ): Record<string, string> {
-  return withEnvironment({ PATH: path }, agentSessionEnvironment(stateDir))
+  return withEnvironment({ PATH: path }, agentSessionEnvironment(stateDir), platform)
 }
 
-/** The credential helper git runs for github.com: the agent's GitHub CLI. */
-export const credentialHelper = (cli: string): string => `!${shellQuote(cli)} auth git-credential`
+/**
+ * The credential helper git runs for github.com: the agent's GitHub CLI. Git runs a `!` helper with a POSIX shell, Git
+ * for Windows' own too, so on Windows the path is written with forward slashes, which that shell reads as a path.
+ */
+export const credentialHelper = (cli: string, platform: string = HOST_PLATFORM): string =>
+  `!${shellQuote(isWindows(platform) ? cli.replaceAll('\\', '/') : cli)} auth git-credential`
 
-/** True when `file` is a regular file with the marker in its first two lines; a link or directory never counts. */
-async function written(file: string): Promise<boolean> {
+/**
+ * True when `file` is a regular file with `marker` as one of its first two lines (without a carriage return); a link
+ * or directory never counts.
+ */
+async function written(file: string, marker = MARKER): Promise<boolean> {
   if (!(await lstat(file)).isFile()) return false
-  return (await readFile(file, 'utf8')).split('\n', 2).includes(MARKER)
+  const lines = (await readFile(file, 'utf8')).split('\n', 2)
+  return marker === MARKER ? lines.includes(MARKER) : lines.some((line) => line.replace(/\r$/, '') === marker)
 }
 /** Refuses a file that exists and was not written here. */
 async function claim(file: string): Promise<void> {
@@ -159,11 +193,14 @@ async function claim(file: string): Promise<void> {
   }
   if (foreign) throw new SetupError('foreignFile', { file })
 }
-/** Writes through a temporary file and a rename, so a concurrent reader never sees a partial file. */
-async function replace(file: string, text: string, mode: number): Promise<void> {
+/**
+ * Writes through a temporary file and a rename, so a concurrent reader never sees a partial file. A file another
+ * program holds, as a running shim on Windows, is retried a few times.
+ */
+async function replace(file: string, text: string, mode: number, platform: string): Promise<void> {
   const temporary = join(dirname(file), `.${basename(file)}.${process.pid}.tmp`)
   await writeFile(temporary, text, { mode })
-  await rename(temporary, file)
+  await retryBusy(() => rename(temporary, file), platform)
 }
 
 /**
@@ -175,21 +212,56 @@ async function replace(file: string, text: string, mode: number): Promise<void> 
  * @throws SetupError `foreignFile` for such a file, `agentCliMissing` when the agent's GitHub CLI is not an executable,
  * `agentCliInShims` when it is inside the shims directory.
  */
-export async function writeEnvironment(stateDir: string, cfg: EnvironmentConfig): Promise<void> {
+export async function writeEnvironment(
+  stateDir: string,
+  cfg: EnvironmentConfig,
+  platform: string = HOST_PLATFORM,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
   const shimsDir = workerBin(stateDir)
-  const cli = agentCli(cfg.cli ?? 'gh', process.env.PATH ?? '', shimsDir)
+  const windows = isWindows(platform)
+  const cli = agentCli(cfg.cli ?? 'gh', env, shimsDir, platform)
   await mkdir(shimsDir, { recursive: true })
   const before = await readdir(shimsDir)
   for (const name of before) {
     const file = join(shimsDir, name)
-    if (!(await written(file))) throw new SetupError('foreignFile', { file })
+    if (!(await written(file, windows ? WINDOWS_SHIM_MARKER : MARKER)))
+      throw new SetupError('foreignFile', { file })
   }
   const gitconfig = workerGitConfig(stateDir)
   await claim(gitconfig)
 
   const kept = new Set<string>()
+  if (windows) {
+    // `.cmd` files, which PowerShell and cmd find on PATH by PATHEXT; see `windows-shims.ts`.
+    const shim = async (name: string, text: string): Promise<void> => {
+      await replace(join(shimsDir, `${name}.cmd`), text, 0o755, platform)
+      kept.add(`${name}.cmd`)
+    }
+    await shim('gh', windowsGhShim(WINDOWS_SHIM_MARKER, shimsDir, cli, GH_TOKENS))
+    // File names compare without case on Windows: `GH` would be the gh shim's file.
+    const names = new Set(cfg.blocked.map((command) => command.toLowerCase()))
+    for (const name of [...names].filter((command) => !NEEDED.has(command))) {
+      const message = `${name} is blocked in this installation; use gh, which acts as ${cfg.login}.`
+      await shim(name, windowsBlockedShim(WINDOWS_SHIM_MARKER, message))
+    }
+  } else await writePosixShims(shimsDir, cli, cfg, kept)
+  // The Windows shims are kept in lower case, and a file there keeps the case it had.
+  for (const name of before)
+    if (!kept.has(windows ? name.toLowerCase() : name))
+      await retryBusy(() => unlink(join(shimsDir, name)), platform)
+  await replace(gitconfig, gitConfigText(cfg, cli, platform), 0o644, platform)
+}
+
+/** The POSIX shims: `#!/bin/sh` scripts, as the original writes them. */
+async function writePosixShims(
+  shimsDir: string,
+  cli: string,
+  cfg: EnvironmentConfig,
+  kept: Set<string>,
+): Promise<void> {
   const shim = async (name: string, body: string): Promise<void> => {
-    await replace(join(shimsDir, name), `#!/bin/sh\n${MARKER}\n${body}\n`, 0o755)
+    await replace(join(shimsDir, name), `#!/bin/sh\n${MARKER}\n${body}\n`, 0o755, 'posix')
     kept.add(name)
   }
   // Without the shims on PATH, a wrapper that calls `gh` by name reaches the real one rather than this shim again.
@@ -209,8 +281,10 @@ export async function writeEnvironment(stateDir: string, cfg: EnvironmentConfig)
     const message = `${name} is blocked in this installation; use gh, which acts as ${cfg.login}.`
     await shim(name, `echo ${shellQuote(message)} >&2\nexit 1`)
   }
-  for (const name of before) if (!kept.has(name)) await unlink(join(shimsDir, name))
+}
 
+/** The agent's git configuration; Windows adds `core.longpaths`, as checkouts there reach the 260-character limit. */
+function gitConfigText(cfg: EnvironmentConfig, cli: string, platform: string): string {
   const text = [
     MARKER,
     '[user]',
@@ -221,13 +295,14 @@ export async function writeEnvironment(stateDir: string, cfg: EnvironmentConfig)
     '[credential]',
     '\thelper =',
     '[credential "https://github.com"]',
-    `\thelper = ${gitQuote(credentialHelper(cli))}`,
+    `\thelper = ${gitQuote(credentialHelper(cli, platform))}`,
     '[url "https://github.com/"]',
     '\tinsteadOf = git@github.com:',
     '\tinsteadOf = ssh://git@github.com/',
     // When the agent's helper has no answer, git fails rather than asking anyone.
     '[core]',
     '\taskPass =',
+    ...(isWindows(platform) ? ['\tlongpaths = true'] : []),
     // The operator's own git configuration, which usually holds the LFS filters, is not read.
     '[filter "lfs"]',
     '\tclean = git-lfs clean -- %f',
@@ -235,7 +310,7 @@ export async function writeEnvironment(stateDir: string, cfg: EnvironmentConfig)
     '\tprocess = git-lfs filter-process',
     '\trequired = true',
   ].join('\n')
-  await replace(gitconfig, `${text}\n`, 0o644)
+  return `${text}\n`
 }
 
 /**
@@ -248,13 +323,16 @@ function asSession(
   cwd: string,
   signal?: AbortSignal,
   session?: SessionEnvironment,
+  platform: string = HOST_PLATFORM,
 ) {
-  const floor = Object.fromEntries(SESSION_VARIABLES.map((name) => [name, env[name]]))
-  const pairs = Object.entries(session ? withEnvironment(floor, session) : floor).flatMap(([name, value]) =>
-    value === undefined ? [] : [`${name}=${value}`],
-  )
-  return runCommand(['env', '-i', ...pairs, ...argv], {
+  const names = isWindows(platform) ? WINDOWS_SESSION_VARIABLES : SESSION_VARIABLES
+  const floor = Object.fromEntries(names.map((name) => [name, variable(env, name, platform)]))
+  return runCommand(argv, {
     cwd,
+    // The child gets exactly this environment, found on its PATH, as a session's command would.
+    env: session ? withEnvironment(floor, session, platform) : mergeVariables([floor], platform),
+    replaceEnv: true,
+    platform,
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(CHECK_MS)]) : AbortSignal.timeout(CHECK_MS),
     timeoutMs: CHECK_MS,
   })
@@ -283,9 +361,10 @@ export async function verifyEnvironment(
   cfg: { login: string; cli?: string },
   env: NodeJS.ProcessEnv = process.env,
   signal?: AbortSignal,
+  platform: string = HOST_PLATFORM,
 ): Promise<void> {
   const session = agentSessionEnvironment(stateDir)
-  const cli = agentCli(cfg.cli ?? 'gh', env.PATH ?? '', workerBin(stateDir))
+  const cli = agentCli(cfg.cli ?? 'gh', env, workerBin(stateDir), platform)
   // `-z` separates entries with NUL and never quotes paths: origin, then `key\nvalue`.
   const listed = await asSession(
     env,
@@ -293,6 +372,7 @@ export async function verifyEnvironment(
     stateDir,
     signal,
     session,
+    platform,
   )
   if (listed.code !== 0 && listed.code !== 1)
     throw new SetupError('environmentFailed', { output: listed.stderr.trim() })
@@ -311,16 +391,28 @@ export async function verifyEnvironment(
   if (
     !own ||
     !own.origin.startsWith('file:') ||
-    !samePath(own.origin.slice('file:'.length), workerGitConfig(stateDir)) ||
-    own.value !== credentialHelper(cli)
+    !samePath(own.origin.slice('file:'.length), workerGitConfig(stateDir), platform) ||
+    own.value !== credentialHelper(cli, platform)
   )
     throw new SetupError('agentCredentialMixed', {
       helpers: helpers.map((helper) => `${helper.origin} ${helper.value}`).join('; ') || '(none)',
     })
-  const netrc = await githubNetrc(env.HOME)
+  // Git for Windows reads the netrc in the user's profile when HOME is not set.
+  const home =
+    variable(env, 'HOME', platform) ||
+    (isWindows(platform) ? variable(env, 'USERPROFILE', platform) : undefined)
+  const netrc = await githubNetrc(home)
   if (netrc) throw new SetupError('agentNetrc', { file: netrc })
 
-  const user = await asSession(env, ['gh', 'api', 'user', '--jq', '.login'], stateDir, signal, session)
+  // `gh` is found on the sessions' PATH as their shell finds it: the shim, which runs the agent's CLI.
+  const user = await asSession(
+    env,
+    ['gh', 'api', 'user', '--jq', '.login'],
+    stateDir,
+    signal,
+    session,
+    platform,
+  )
   if (user.code !== 0) throw new SetupError('agentCliSignedOut', { output: user.stderr.trim() })
   const account = user.stdout.trim()
   if (account !== cfg.login) throw new SetupError('agentLoginMismatch', { account, login: cfg.login })
@@ -331,13 +423,16 @@ export async function verifyEnvironment(
  * `http.*extraheader` keys, which the agent's git would read and act on. Checks `directory` and, when present, the
  * repository the ticket directory holds in `repo/`.
  */
-export async function verifyDirectory(directory: string): Promise<void> {
+export async function verifyDirectory(directory: string, platform: string = HOST_PLATFORM): Promise<void> {
   const places = [directory, ...(existsSync(join(directory, 'repo')) ? [join(directory, 'repo')] : [])]
   for (const place of places) {
     const listed = await asSession(
       process.env,
       ['git', 'config', '-z', '--show-scope', '--get-regexp', '^(credential\\..*|http\\..*extraheader)$'],
       place,
+      undefined,
+      undefined,
+      platform,
     )
     // `git config --get-regexp` exits with 1 when no key matches.
     if (listed.code !== 0 && listed.code !== 1)

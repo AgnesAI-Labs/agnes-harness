@@ -4,12 +4,16 @@ import { accessSync, constants, statSync } from 'node:fs'
 import { delimiter, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { runCommand } from './app/subprocess.js'
+import { findWindowsProgram } from './app/windows-launch.js'
+import { HOST_PLATFORM, isAbsolutePath, isWindows, pathDelimiter, variable } from './infra/platform.js'
 import { sameDirectory, withoutDirectory, workerBin } from './infra/worker-paths.js'
 import { LIMITS } from './limits.js'
 import { SetupError } from './setup.js'
 
 const reason = (error: unknown): string => (error instanceof Error ? error.message : String(error))
-const absolute = (description: string) => z.string().regex(/^\//, `${description} Absolute path.`)
+/** An absolute path, on POSIX or, with its drive, on Windows; `machineOf` checks it against this platform. */
+const absolute = (description: string) =>
+  z.string().regex(/^(\/|[A-Za-z]:[\\/])/, `${description} Absolute path.`)
 const bounded = (limits: { min: number; max: number }, fallback: number) =>
   z.number().int().min(limits.min).max(limits.max).default(fallback)
 /**
@@ -47,7 +51,7 @@ const MOVED: Record<string, string> = {
 }
 
 /** Read machine settings and reject unknown configuration keys (naming where deprecated keys moved). */
-export function machineOf(raw: unknown): Machine {
+export function machineOf(raw: unknown, platform: string = HOST_PLATFORM): Machine {
   const input = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const unknown = Object.keys(input).filter((key) => !(key in ConfigSchema.shape))
   if (unknown.length) {
@@ -58,6 +62,10 @@ export function machineOf(raw: unknown): Machine {
   }
   const { stateDir, promptMaxChars, admissionContextMaxPages, admissionContextTimeoutMs } =
     ConfigSchema.parse(input)
+  if (!isAbsolutePath(stateDir, platform))
+    throw new Error(
+      `Superagent configuration names a stateDir that is not an absolute path here: ${stateDir}`,
+    )
   const fixed = <T>(value: T): Volatile<T> => ({ get: () => value })
   return {
     stateDir,
@@ -97,8 +105,18 @@ export interface FeishuBot {
   name: string
 }
 
-/** Resolve a command name or absolute path to an executable file, ignoring the worker shim directory. */
-export function executable(name: string, path: string, exclude?: string): string {
+/**
+ * Resolve a command name or absolute path to an executable file, ignoring the worker shim directory. On Windows the name
+ * is found as a shell finds it, with the extensions PATHEXT in `env` lists (`gh-agent` is `gh-agent.cmd`).
+ */
+export function executable(
+  name: string,
+  path: string,
+  exclude?: string,
+  platform: string = HOST_PLATFORM,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string {
+  if (isWindows(platform)) return windowsExecutable(name, path, exclude, env)
   if (name.includes('/') && !isAbsolute(name))
     throw new Error(`${name} must be a command name or an absolute path`)
   const candidates = isAbsolute(name)
@@ -119,17 +137,44 @@ export function executable(name: string, path: string, exclude?: string): string
   }
   throw new Error(`${name} is not an executable file${isAbsolute(name) ? '' : ' on PATH'}`)
 }
+function windowsExecutable(
+  name: string,
+  path: string,
+  exclude: string | undefined,
+  env: Readonly<Record<string, string | undefined>>,
+): string {
+  const named = /[\\/]/.test(name)
+  if (named && !isAbsolute(name)) throw new Error(`${name} must be a command name or an absolute path`)
+  const dirs = path.split(';').filter((dir) => isAbsolute(dir) && !(exclude && sameDirectory(dir, exclude)))
+  const found = findWindowsProgram(name, {
+    PATH: named ? '' : dirs.join(';'),
+    PATHEXT: variable(env, 'PATHEXT', 'win32'),
+  })
+  if (found) return found
+  throw new Error(`${name} is not an executable file${named ? '' : ' on PATH'}`)
+}
 
 export type Probe = (argv: string[]) => Promise<string>
 /**
  * Run startup checks as a child process with worker shims removed from PATH so a `gh` wrapper script reaches the real
  * binary. A failing command throws with its trimmed stderr as the message.
  */
-export function workerProbe(stateDir: string, cwd: string, signal: AbortSignal): Probe {
-  const path = withoutDirectory(process.env.PATH ?? '', workerBin(stateDir))
+export function workerProbe(
+  stateDir: string,
+  cwd: string,
+  signal: AbortSignal,
+  platform: string = HOST_PLATFORM,
+): Probe {
+  const path = withoutDirectory(
+    variable(process.env, 'PATH', platform) ?? '',
+    workerBin(stateDir),
+    pathDelimiter(platform),
+  )
   return async (argv) => {
-    const { code, stdout, stderr } = await runCommand(['env', `PATH=${path}`, ...argv], {
+    const { code, stdout, stderr } = await runCommand(argv, {
       cwd,
+      env: { PATH: path },
+      platform,
       signal,
       timeoutMs: 60_000,
     })
@@ -160,6 +205,7 @@ export async function resolveDeployment(
   github: unknown,
   probe: Probe,
   path = process.env.PATH ?? '',
+  platform: string = HOST_PLATFORM,
 ): Promise<Deployment> {
   const { stateDir } = machine
   const accounts = GithubAccountsSchema.parse(github ?? {})
@@ -168,7 +214,7 @@ export async function resolveDeployment(
   if (!accounts.cli) throw new SetupError('agentCliUnset')
   let cli: string
   try {
-    cli = executable(accounts.cli, path, workerBin(stateDir))
+    cli = executable(accounts.cli, path, workerBin(stateDir), platform)
   } catch (error) {
     throw new SetupError('agentCliMissing', { output: reason(error) })
   }

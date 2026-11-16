@@ -24,8 +24,9 @@ The setup takes as little of the operator's attention as possible.
 
 ## Before you start
 
-- **macOS or Linux only.** Superagent's sessions and commands use POSIX tools; on Windows it reports the setup problem
-  "Superagent supports macOS and Linux" and does not run.
+- **macOS, Linux or Windows.** On Windows the ticket sessions and the prepare command run in Windows PowerShell, where
+  a variable reads as `$env:NAME`, the shims are `.cmd` files, and Git for Windows is required: git runs the agent's
+  credential helper with its own shell. The Windows differences are noted in the steps below.
 - **Branch protection on the repository is required.** The agent pushes branches named
   `agent/<short name>-<ticket id prefix>` (the ticket's English short name and the first 12 characters of its id; the
   part after `agent/` is the `DSH_SUPERAGENT_NAME` value in the ticket's `SUPERAGENT.md`) and opens pull requests; it
@@ -123,11 +124,12 @@ steps, and the defaults. Ask for one confirmation.
 4. **Fix the state directory.** Superagent writes the agent's environment into its state directory, the plugin setting
    `stateDir`. Either set `stateDir` to an absolute path of your choice on the plugin's settings page, or leave it unset
    and read the default from the **Deployment** page of the panel (it is under the AGH data directory, in
-   `bundled-apps/<hash>`). Below, `<stateDir>` stands for it:
+   `bundled-apps/<hash>`). On Windows leave it unset: only that default directory admits the current user alone, and
+   Superagent refuses a `stateDir` outside it. Below, `<stateDir>` stands for it:
 
    | Path | What it is |
    | --- | --- |
-   | `<stateDir>/worker-bin` | Shims for `gh` and the commands the agent must not use. Superagent writes it. |
+   | `<stateDir>/worker-bin` | Shims for `gh` and the commands the agent must not use (`.cmd` files on Windows). Superagent writes it. |
    | `<stateDir>/worker-gitconfig` | The agent's git configuration: its identity and credential helper. Superagent writes it. |
 
 5. **Give the agent a GitHub CLI and sign it in.** As the dedicated system user, make a `gh-agent` wrapper that runs `gh`
@@ -143,6 +145,20 @@ steps, and the defaults. Ask for one confirmation.
    ~/.local/bin/gh-agent auth login
    ~/.local/bin/gh-agent api user --jq .login   # prints the account the agent acts as
    ```
+
+   On Windows the wrapper is a `gh-agent.cmd` file. Have it run `gh.exe` by its full path (`where.exe gh` prints it),
+   so it never reaches Superagent's `gh` shim; in PowerShell:
+
+   ```powershell
+   New-Item -ItemType Directory -Force "$env:USERPROFILE\bin" | Out-Null
+   $gh = (Get-Command gh.exe).Source
+   Set-Content -Encoding ascii "$env:USERPROFILE\bin\gh-agent.cmd" "@set `"GH_CONFIG_DIR=%USERPROFILE%\.config\gh-agent`"`r`n@`"$gh`" %*"
+   & "$env:USERPROFILE\bin\gh-agent.cmd" auth login
+   & "$env:USERPROFILE\bin\gh-agent.cmd" api user --jq .login
+   ```
+
+   A batch file cannot pass a line break on in an argument: Superagent sends a comment's text to it on standard input,
+   and tells the Windows sessions to give multi-line text to `gh` in a file (`--body-file`).
 
    Sign in through the browser, as the dedicated agent account, a collaborator with write access to this one
    repository only; for a trial, the operator's own account works too, and the agent then acts as the operator. Superagent receives requests through the account's notifications, and GitHub's notifications API
@@ -175,7 +191,10 @@ steps, and the defaults. Ask for one confirmation.
       pairing code for the instance holds it the same way until the code expires (within an hour).
    2. **Policy:** the allowed lists, and for Feishu the chat ids, chosen from the chats the channel lists.
    3. **Execution:** the ticket directory root and the prepare command from question 7, for example
-      `git clone "https://github.com/<owner>/<name>.git" repo`.
+      `git clone "https://github.com/$DSH_SUPERAGENT_GITHUB_REPOSITORY.git" repo`. The command runs with `sh -c`, and on
+      Windows with Windows PowerShell (`powershell -NoProfile -NonInteractive -Command`), where the same command reads
+      the variable as `$env:DSH_SUPERAGENT_GITHUB_REPOSITORY` and `&&` does not exist; the panel shows the example for
+      the daemon's platform and inserts a variable in its form.
    4. **Prompts:** the commit identity of question 8 and the auto-merge answer of question 9 in Delivery requirements.
 
    Every save keeps a version, shown in the history of the Settings tab. A save that changes the agent's account or CLI

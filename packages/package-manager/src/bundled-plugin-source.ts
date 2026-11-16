@@ -93,7 +93,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
   {
     name: 'superagent',
     id: '@agnes/superagent',
-    version: '0.1.0',
+    version: '0.2.0',
     // The payload is Apache-2.0; its NOTICE carries the MIT license of the ported code and of zod.
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/superagent',

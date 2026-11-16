@@ -1,10 +1,11 @@
 // Adapted from dsh-superagent (MIT)
 /** Settings view combining versioned configuration blocks, per-source forms and policy metadata, and execution environment details. */
 import { SETUP_FIELDS } from '../../deployment.js'
+import { HOST_PLATFORM } from '../../infra/platform.js'
 import { KV } from '../../kv.js'
 import { policyVersion } from '../../policy.js'
 import type { SourceRegistry } from '../../sources/registry.js'
-import { declaredVariables, executionRoot } from '../execution-environment.js'
+import { declaredVariables, executionRoot, prepareShell } from '../execution-environment.js'
 import type { Store } from '../store.js'
 import { type HealthMap, problemOf, type SetupState, sourceHealth } from './sources.js'
 
@@ -37,6 +38,7 @@ export function settingsView(
   health: HealthMap,
   setup: SetupState,
   stateDir: string,
+  platform: string = HOST_PLATFORM,
 ) {
   const settings = store.settings()
   const block = <V>(name: 'policy' | 'eval' | 'executor', value: V) => ({
@@ -71,7 +73,11 @@ export function settingsView(
         ...policyOf(sources, instance.id, health),
       }
     }),
-    environment: { root: executionRoot(settings, stateDir), variables: declaredVariables(sources, settings) },
+    environment: {
+      root: executionRoot(settings, stateDir),
+      variables: declaredVariables(sources, settings),
+      ...prepareShell(platform),
+    },
   }
 }
 export type SettingsView = ReturnType<typeof settingsView>

@@ -27,7 +27,9 @@ export function buildTools(
   const { store, sessions, log } = deps
   const { effects, prompts } = core
   const { engine, settings, assessor, outbox, passes, executor } = parts
-  const skills = new SkillFiles(prompts, deps.skillsRoot ?? join(aghHome(), 'skills'))
+  const skills = new SkillFiles(prompts, deps.skillsRoot ?? join(aghHome(), 'skills'), {
+    health: core.board.claim('skills'),
+  })
   const binding = new PromptBinding({
     prompts,
     store,

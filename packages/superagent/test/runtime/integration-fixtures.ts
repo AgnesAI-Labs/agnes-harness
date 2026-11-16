@@ -1,15 +1,15 @@
 // What the real-daemon tests of the whole plugin share: the agent's scripted `gh`, a ticket seeded as the engine records
 // one, the package operations, the panel services and the waits.
 import { createHash, randomUUID } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
-import { fileURLToPath } from 'node:url'
 import { openStore } from '../../src/app/store.js'
 import { type Candidate, Engine, type Policy } from '../../src/core/index.js'
 import { SettingsSchema } from '../../src/policy.js'
 import { ticketExecution } from '../../src/runtime/assignment.js'
 import { SERVICE_ID } from '../../src/runtime/index.js'
+import { fakeGhCommand } from '../fixtures/commands.js'
 
 export const PROFILE = 'local-dev'
 export const PACKAGE = '@agnes/superagent'
@@ -26,8 +26,6 @@ export const defaultStateDir = (aghHome: string) =>
     createHash('sha256').update(`${PROFILE}\0${PACKAGE}\0${SERVICE_ID}`).digest('hex').slice(0, 32),
   )
 export const AGENT_LOGIN = 'agent-bot'
-const FAKE_GH = fileURLToPath(new URL('../fixtures/fake-gh.mjs', import.meta.url))
-const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 export async function until<T>(
@@ -43,6 +41,12 @@ export async function until<T>(
     await sleep(200)
   }
 }
+/**
+ * A session's shell command for this platform: `posix` for `sh`, `powershell` for Windows PowerShell, which a session
+ * runs on Windows (no `&&`, no `touch`, variables as `$env:NAME`).
+ */
+export const byShell = (posix: string, powershell: string): string =>
+  process.platform === 'win32' ? powershell : posix // guards-allow-platform: a session's shell is PowerShell on Windows.
 /** A message that makes the scripted model call `name` with `args` once. */
 export const tool = (marker: string, name: string, args: unknown) =>
   `[[${marker} TOOL${JSON.stringify({ name, args })}ENDTOOL]]`
@@ -65,13 +69,7 @@ export function writeAgentCli(root: string): string {
       ],
     }),
   )
-  const cli = join(dir, 'gh')
-  writeFileSync(
-    cli,
-    `#!/bin/sh\nFAKE_GH_SCRIPT=${quote(script)} FAKE_GH_LOG=${quote(join(dir, 'gh.log'))} exec ${quote(process.execPath)} ${quote(FAKE_GH)} "$@"\n`,
-  )
-  chmodSync(cli, 0o755)
-  return cli
+  return fakeGhCommand(join(dir, 'gh'), { script, log: join(dir, 'gh.log') })
 }
 
 /**

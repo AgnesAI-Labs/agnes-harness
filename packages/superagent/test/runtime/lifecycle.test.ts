@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { openStore, type Store } from '../../src/app/store.js'
 import { childEnvironment } from '../../src/app/subprocess.js'
@@ -109,7 +109,6 @@ function setup(overrides: { [K in keyof LifecycleDeps]?: LifecycleDeps[K] | unde
     },
     archive,
     now: () => Date.parse(AT),
-    platform: 'linux',
   }
   for (const [name, value] of Object.entries(overrides)) {
     if (value === undefined) delete (deps as unknown as Record<string, unknown>)[name]
@@ -152,14 +151,17 @@ describe('enable', () => {
     expect(lifecycle.status()).toEqual({ state: 'running' })
     // The runtime's own commands run with the shims first on PATH and the agent's git configuration until it stops;
     // the daemon's HOME stays.
+    // PATH by any spelling: Windows names it `Path`.
+    const pathOf = (env: Record<string, string>) =>
+      Object.entries(env).find(([name]) => name.toUpperCase() === 'PATH')?.[1]
+    expect(pathOf(childEnvironment())).toBe(`${join('/state', 'worker-bin')}${delimiter}${process.env.PATH}`)
     expect(childEnvironment()).toMatchObject({
       HOME: process.env.HOME,
-      PATH: `/state/worker-bin:${process.env.PATH}`,
-      GIT_CONFIG_GLOBAL: '/state/worker-gitconfig',
+      GIT_CONFIG_GLOBAL: join('/state', 'worker-gitconfig'),
       GIT_CONFIG_NOSYSTEM: '1',
     })
     await lifecycle.stop('shutdown')
-    expect(childEnvironment().PATH).toBe(process.env.PATH)
+    expect(pathOf(childEnvironment())).toBe(process.env.PATH)
     expect(childEnvironment().GIT_CONFIG_GLOBAL).toBeUndefined()
   })
 
@@ -249,19 +251,18 @@ describe('enable', () => {
     expect(lifecycle.status()).toEqual({ state: 'stopped' })
   })
 
-  it('refuses Windows with a setup problem before it reads the configuration or writes anything', async () => {
-    store.tickets.save(runningTicket('T'))
-    const { lifecycle, hooks } = setup({ platform: 'win32' })
+  it('starts on Windows too, writing the agent environment for Windows', async () => {
+    const platforms: unknown[] = []
+    const { lifecycle } = setup({
+      platform: 'win32',
+      writeEnvironment: async (_stateDir, _cfg, platform) => {
+        platforms.push(platform)
+      },
+    })
     await lifecycle.start()
     await lifecycle.settled()
-    expect(log).toEqual([])
-    expect(lifecycle.status()).toMatchObject({
-      state: 'setupFailed',
-      problem: { place: 'deployment', code: 'platformUnsupported', values: { platform: 'Windows' } },
-    })
-    expect(hooks.get().guardTool({ sessionId: workerKey('T'), toolName: 'shell', input: {} })).toMatch(
-      /Superagent cannot start: Superagent supports macOS and Linux; it does not run on Windows/,
-    )
+    expect(platforms).toEqual(['win32'])
+    expect(lifecycle.status()).toEqual({ state: 'running' })
     await lifecycle.stop('disable')
   })
 

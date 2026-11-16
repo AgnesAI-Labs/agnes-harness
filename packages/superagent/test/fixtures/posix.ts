@@ -1,8 +1,8 @@
 import { describe, it } from 'vitest'
 
 /**
- * Superagent runs on macOS and Linux only, as the original does: its setup refuses Windows. Tests that run POSIX tools
- * (`sh`, shebang scripts made executable with `chmod`, process groups) or start the plugin for real skip on Windows.
+ * For the few tests that need a POSIX tool Windows has not, such as `ps` or `sleep`; each says which where it is used.
+ * Superagent itself runs on macOS, Linux and Windows, and its other tests run on all three.
  */
 export const posixIt: ReturnType<typeof it.skipIf> = it.skipIf(process.platform === 'win32')
 export const posixDescribe: ReturnType<typeof describe.skipIf> = describe.skipIf(process.platform === 'win32')

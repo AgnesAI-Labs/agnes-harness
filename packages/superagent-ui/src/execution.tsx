@@ -107,6 +107,8 @@ export function ExecutionStatus({
 }
 
 const firstSentence = (text: string): string => /^[^。；;.]*(?:[。；;]|\.(?=\s|$))?/.exec(text)?.[0] ?? text
+/** An absolute Windows directory, as an input `pattern`: with its drive, or a UNC path. */
+const WINDOWS_ABSOLUTE = String.raw`([A-Za-z]:[\\\/]|[\\\/]{2}).*`
 function EnvironmentVariables({
   groups,
   sources,
@@ -191,14 +193,17 @@ export function ExecutionSettings() {
   const value = draft.value
   const edit = (next: Partial<typeof value>) => draft.edit({ ...value, ...next })
   const prepare = useRef<HTMLTextAreaElement>(null)
+  // The prepare command runs in sh, or in PowerShell on Windows, where a variable reads as `$env:NAME`.
+  const powershell = environment.shell === 'powershell'
   const insert = (key: string) => {
     const field = prepare.current
     const at = field?.selectionStart ?? value.prepare.length,
       to = field?.selectionEnd ?? at
-    edit({ prepare: `${value.prepare.slice(0, at)}"$${key}"${value.prepare.slice(to)}` })
+    const reference = `"${powershell ? '$env:' : '$'}${key}"`
+    edit({ prepare: `${value.prepare.slice(0, at)}${reference}${value.prepare.slice(to)}` })
     requestAnimationFrame(() => {
       field?.focus()
-      const caret = at + key.length + 3
+      const caret = at + reference.length
       field?.setSelectionRange(caret, caret)
     })
   }
@@ -245,11 +250,15 @@ export function ExecutionSettings() {
                 value={value.directory}
                 placeholder={t('executionDirectoryEmpty')}
                 spellCheck={false}
-                pattern="/.*"
+                pattern={powershell ? WINDOWS_ABSOLUTE : '/.*'}
                 onChange={(event) => edit({ directory: event.target.value })}
               />
             </Field>
-            <Field label={t('prepareCommand')} hint={t('prepareCommandHint')}>
+            <Field
+              label={t('prepareCommand')}
+              hint={t(powershell ? 'prepareCommandHintPowerShell' : 'prepareCommandHint')}
+              note={value.prepare ? undefined : t('prepareCommandExample', { example: environment.example })}
+            >
               <textarea
                 ref={prepare}
                 className="dt-textarea dt-mono"

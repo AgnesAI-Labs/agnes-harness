@@ -14,6 +14,27 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import { killTree, trackRoot } from './process-tree.js'
 
 const repository = fileURLToPath(new URL('../../../../', import.meta.url))
+
+/**
+ * What a process needs on Windows to start (its system directory, shell and temporary directory) and to find its user
+ * profile, which Windows programs read in place of HOME; `home` stands for the profile when given. Nothing elsewhere.
+ */
+export function hostFloor(home?: string): Record<string, string> {
+  if (process.platform !== 'win32') return {}
+  const floor: Record<string, string | undefined> = {
+    SystemRoot: process.env.SystemRoot,
+    ComSpec: process.env.ComSpec,
+    PATHEXT: process.env.PATHEXT,
+    TEMP: tmpdir(),
+    TMP: tmpdir(),
+    USERPROFILE: home ?? process.env.USERPROFILE,
+    APPDATA: home ? join(home, 'AppData', 'Roaming') : process.env.APPDATA,
+    LOCALAPPDATA: home ? join(home, 'AppData', 'Local') : process.env.LOCALAPPDATA,
+  }
+  return Object.fromEntries(
+    Object.entries(floor).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  )
+}
 const sourceDaemon = join(repository, 'packages/daemon/test/fixtures/source-loop-daemon.ts')
 const PROFILE = 'local-dev'
 const STEP_MS = 120_000
@@ -194,7 +215,7 @@ function initializeHome(aghHome: string, tsx: string, onSpawn: (child: ChildProc
       ],
       {
         cwd: join(repository, 'packages', 'daemon'),
-        env: { PATH: process.env.PATH ?? '', TMPDIR: tmpdir() },
+        env: { ...hostFloor(), PATH: process.env.PATH ?? '', TMPDIR: tmpdir() },
         timeout: STEP_MS,
         killSignal: 'SIGKILL',
       },
@@ -309,7 +330,14 @@ export async function startDaemon(opts: {
     stderr = ''
     const spawned = spawn(process.execPath, ['--import', tsx, sourceDaemon, opts.aghHome, opts.aghHome], {
       cwd: repository,
-      env: { ...opts.env, PATH: opts.path, HOME: opts.home, TMPDIR: tmpdir(), AGH_HOME: opts.aghHome },
+      env: {
+        ...hostFloor(opts.home),
+        ...opts.env,
+        PATH: opts.path,
+        HOME: opts.home,
+        TMPDIR: tmpdir(),
+        AGH_HOME: opts.aghHome,
+      },
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     child = spawned
