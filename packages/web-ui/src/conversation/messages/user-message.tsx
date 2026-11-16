@@ -260,7 +260,11 @@ export function UserMessage({
                 : 'tool.detail.expand',
             )}
           >
-            <pre className="system-input-data">{JSON.stringify(node.system.data, null, 2)}</pre>
+            <pre className="system-input-data">
+              {typeof node.system.data === 'string'
+                ? node.system.data
+                : JSON.stringify(node.system.data, null, 2)}
+            </pre>
           </Disclosure>
         )}
       </div>
