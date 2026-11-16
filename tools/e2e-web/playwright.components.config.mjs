@@ -10,6 +10,7 @@ export default defineConfig({
   testMatch: [
     '**/web-ui/test/button-contrast.spec.ts',
     '**/web-ui/test/primitives.spec.ts',
+    '**/web-ui/test/switch.spec.ts',
     '**/superagent-ui/test/panel-styles.spec.ts',
   ],
   forbidOnly: true,

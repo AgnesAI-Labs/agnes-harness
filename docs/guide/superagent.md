@@ -224,6 +224,14 @@ that the GitHub Source names no repository: the **Source** settings list GitHub 
 repository and CLI are saved, setup goes on by itself, without a restart. Then, from an allowed account, comment
 `@<agent login> <request>` on an Issue: a ticket appears on the overview within about a minute.
 
+In the Web sidebar each ticket session is titled `Worker · <ticket title>` and sits under its ticket directory's project;
+the main session keeps its own name, and a ticket's link still opens its session. What Superagent delivers into its
+sessions, such as an assignment, a relayed report or a Feishu message, shows as a collapsed line saying an app delivered
+it, not as text a person typed; expand it to read what was delivered. Only the display changes: the model reads it, and
+it waits in the session's queue, exactly as before. Limitation: only sessions Superagent creates from this release on are
+marked, so a main session created earlier keeps showing its deliveries as messages, also after it is deleted and created
+again; the same text typed or pasted by a person always stays an ordinary message.
+
 ## Disable
 
 Disable the plugin under **Plugins**, or use **Pause processing** in the panel to stop new work while it keeps running.

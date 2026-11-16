@@ -1,6 +1,6 @@
 import type { EventInput } from '@agnes/core-common/types'
 import type { Inbox, InboxItem } from '@agnes/core-ledger/reduce/shapes'
-import type { Actor, ContentBlock, SystemInput } from '@agnes/protocol'
+import type { Actor, ContentBlock, InputDeliverer, SystemInput } from '@agnes/protocol'
 
 export type EnqueueMsg = {
   /** Backend cancellation for attachment admission; never persisted. */
@@ -17,6 +17,12 @@ export type EnqueueMsg = {
   trust?: 'trusted' | 'untrusted'
   /** Backend-owned provenance; system inputs are always untrusted. Never accepted from RPC payloads. */
   origin?: 'principal' | 'system'
+  /**
+   * Backend-owned and display only: the verified app that delivered this input in place of a person. Kept beside the
+   * item and its message in `x/core/*` rows (see delivery-marker.ts), never inside them; it changes neither trust,
+   * queueing nor what the model reads. Never from RPC payloads.
+   */
+  deliveredBy?: InputDeliverer
   /** Replaces `budget.per_request_cap` for the one next turn opened by this inbox item. The value
    * is ledger-bound to the item and turn, so worker recovery cannot lose or leak it. */
   budget?: number

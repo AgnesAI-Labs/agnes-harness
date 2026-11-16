@@ -91,6 +91,131 @@ describe('human Loop controls', () => {
     await session.close()
   })
 
+  it("keeps an app's delivery marker beside its queued input, never in it, and drops it when a person edits it", async () => {
+    const { session, log } = await openSession({
+      provider: fakeProvider([textTurn('first'), textTurn('second')]),
+    })
+    const deliveredBy = { kind: 'bundled-app' as const, appId: '@agnes/superagent/superagent' }
+    await session.enqueue('next-turn', { content: content('assignment'), actor, deliveredBy })
+    await session.enqueue('next-turn', { content: content('next'), actor, deliveredBy })
+    type Item = { itemId: string; content: unknown; deliveredBy?: unknown }
+    const inbox = () => (session.latest('inbox') as { items: Item[] }).items
+    // The items are as an earlier release writes and reads them.
+    expect(inbox()).toHaveLength(2)
+    for (const item of inbox()) expect(item).not.toHaveProperty('deliveredBy')
+    await session.controls.edit(inbox()[0]?.itemId ?? '', content('my own words'), actor, 'edit')
+    expect(inbox()[0]?.content).toEqual(content('my own words'))
+    await run(session)
+    await run(session)
+    const shown = (await session.projectUI()).nodes.flatMap((node) =>
+      node.kind === 'user' ? [[JSON.stringify(node.content), node.deliveredBy]] : [],
+    )
+    expect(shown).toEqual([
+      [JSON.stringify(content('my own words')), undefined],
+      [JSON.stringify(content('next')), deliveredBy],
+    ])
+    // No message row carries the marker either.
+    for (const row of await log.scan({ type: 'user/message', limit: 10 }))
+      expect(row.data).not.toHaveProperty('deliveredBy')
+    await session.close()
+  })
+
+  it("reads a claimed item's marker from the session's index, never by scanning its marker rows", async () => {
+    const { session, log } = await openSession({
+      provider: fakeProvider([textTurn('1'), textTurn('2'), textTurn('3'), textTurn('4')]),
+    })
+    const deliveredBy = { kind: 'bundled-app' as const, appId: '@agnes/superagent/superagent' }
+    for (const text of ['one', 'two', 'three'])
+      await session.enqueue('next-turn', { content: content(text), actor, deliveredBy })
+    // The first claim builds the index in one pass.
+    await run(session)
+    const scan = vi.spyOn(log, 'scan')
+    // Rows written after it is built keep it current: an edit's clearing row, an unmarked item.
+    type Item = { itemId: string; content: unknown }
+    const third = (session.latest('inbox') as { items: Item[] }).items.find(
+      (item) => JSON.stringify(item.content) === JSON.stringify(content('three')),
+    )
+    await session.controls.edit(third?.itemId ?? '', content('edited'), actor, 'edit')
+    await session.enqueue('next-turn', { content: content('four'), actor })
+    await run(session)
+    await run(session)
+    await run(session)
+    const markerScans = scan.mock.calls.filter(([query]) =>
+      [query.type].flat().includes('x/core/inbox-delivered-by'),
+    )
+    expect(markerScans).toEqual([])
+    const shown = (await session.projectUI()).nodes.flatMap((node) =>
+      node.kind === 'user' ? [[JSON.stringify(node.content), node.deliveredBy]] : [],
+    )
+    expect(shown).toEqual([
+      [JSON.stringify(content('one')), deliveredBy],
+      [JSON.stringify(content('two')), deliveredBy],
+      [JSON.stringify(content('edited')), undefined],
+      [JSON.stringify(content('four')), undefined],
+    ])
+    await session.close()
+  })
+
+  it('reads an item an earlier release marked inline, writes no row with the marker in it, and still shows it', async () => {
+    const storage = new MemoryStorage()
+    const deliveredBy = { kind: 'bundled-app' as const, appId: '@agnes/superagent/superagent' }
+    // The inbox as the release that kept the marker on the item left it, without integrity metadata.
+    await storage.open('k', { writerRunId: 'legacy', ttlMs: 1 })
+    const legacyItem = {
+      itemId: 'legacy-1',
+      target: 'next-turn',
+      content: content('dispatch'),
+      actor,
+      enqueuedAt: '2026-11-16T00:00:00.000Z',
+      kind: 'follow_up',
+      commandId: 'superagent:m1',
+      trust: 'trusted',
+      deliveredBy,
+    }
+    await storage.commit('k', {
+      events: [
+        {
+          id: 'legacy-inbox',
+          ts: '2026-11-16T00:00:00.000Z',
+          actor,
+          origin: 'system',
+          trust: 'trusted',
+          lane: 'main',
+          v: 1,
+          type: 'inbox',
+          register: 'inbox',
+          data: { items: [legacyItem] },
+        } as never,
+      ],
+      expectedWriterRunId: 'legacy',
+    })
+    await storage.release('k', 'legacy')
+    const { session, log } = await openSession({
+      storage,
+      provider: fakeProvider([textTurn('first'), textTurn('second')]),
+    })
+    // It loads with the item queued, and a new item queues behind it.
+    expect((session.latest('inbox') as { items: Array<{ itemId: string }> }).items[0]?.itemId).toBe(
+      'legacy-1',
+    )
+    await session.enqueue('next-turn', { content: content('owner note'), actor })
+    await run(session)
+    await run(session)
+    // Everything this build wrote is free of the inline marker; the item's moved beside it.
+    for (const row of await log.scan({ fromSeq: 2, type: ['inbox', 'user/message'], limit: 50 })) {
+      const items = (row.data as { items?: object[] }).items ?? [row.data as object]
+      for (const item of items) expect(item, row.type).not.toHaveProperty('deliveredBy')
+    }
+    const shown = (await session.projectUI()).nodes.flatMap((node) =>
+      node.kind === 'user' ? [[JSON.stringify(node.content), node.deliveredBy]] : [],
+    )
+    expect(shown).toEqual([
+      [JSON.stringify(content('dispatch')), deliveredBy],
+      [JSON.stringify(content('owner note')), undefined],
+    ])
+    await session.close()
+  })
+
   it.each(['active', 'completed'] as const)(
     'promotes one queue item atomically during %s, preserving content on failure',
     async (mode) => {

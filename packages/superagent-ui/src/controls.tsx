@@ -219,7 +219,9 @@ export function Select({
   return <SettingsSelect {...rest} className={cx('dt-select', className)} />
 }
 
-/** The shared AGH switch. */
+/**
+ * The shared AGH switch, at its one size (38×22, 18px knob). No size is passed: AGH has a single switch size.
+ */
 export function Switch({
   checked,
   onChange,
@@ -233,7 +235,6 @@ export function Switch({
 }) {
   return (
     <UiSwitch
-      size="small"
       checked={checked}
       aria-label={label}
       className={cx('dt-switch', className)}

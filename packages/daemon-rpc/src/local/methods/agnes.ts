@@ -1617,7 +1617,7 @@ export function registerAgnes(
       case 'followUp': {
         const entry = cx.registry.require(sessionId)
         // Input targets the existing pinned session; generation publication cannot block control.
-        const seq = await enqueueFollowUp(cx, entry, kind, {
+        const seq = await enqueueFollowUp(cx, entry, kind, c.conn, {
           content: await resolvePromptReferences(entry.session, payload.content as never, payload.references),
           actor: connActor(c.conn),
           kind: kind === 'steer' ? 'steer' : 'follow_up',

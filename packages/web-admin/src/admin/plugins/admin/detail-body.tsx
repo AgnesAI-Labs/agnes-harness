@@ -147,8 +147,16 @@ export function PluginDetailBody({
           )}
           {installed && (
             <>
-              <ProvenanceReview value={installed.provenance} t={t} />
-              <CapabilityReview value={installed.declaredCapabilities} t={t} />
+              <ProvenanceReview
+                value={installed.provenance}
+                bundled={installed.bundledOrigin !== undefined}
+                t={t}
+              />
+              <CapabilityReview
+                value={installed.declaredCapabilities}
+                ownerApplication={installed.bundledOrigin?.ownerApplication === true}
+                t={t}
+              />
             </>
           )}
           {installed &&

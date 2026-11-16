@@ -239,6 +239,17 @@ export function formatPreview(
   return [
     `Preview ${preview.id}@${preview.version}`,
     `integrity ${preview.integrity}`,
+    // A Host fact apart from publisher evidence: the reviewed tree is the copy this AGH ships.
+    ...(preview.bundledOrigin
+      ? [
+          'source provided with this AGH: contents match the shipped copy; publisher signature not separately verified',
+        ]
+      : []),
+    ...(preview.bundledOrigin?.ownerApplication
+      ? [
+          'bundled app access once trusted and enabled: a private state directory and a local client acting as the profile owner; it can use chat channels',
+        ]
+      : []),
     ...(preview.preflight ? [`preflight ${preview.preflight.level}: ${preview.preflight.next}`] : []),
     `capabilityHash ${preview.capabilityHash}`,
     `declared capabilities ${preview.declaredCapabilities === undefined ? 'not declared' : JSON.stringify(preview.declaredCapabilities)}`,

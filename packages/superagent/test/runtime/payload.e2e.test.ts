@@ -178,6 +178,13 @@ it('the shipped payload starts its managed service with the bundled-app grant an
       .preview
     if (!preview?.capabilityHash) throw new Error('the payload preview has no capability hash')
     expect(preview.blockers, 'the shipped payload installs without blockers').toEqual([])
+    // The daemon reports the shipped copy and its app access apart from publisher evidence, which stays unverified.
+    expect(preview.bundledOrigin).toEqual({ ownerApplication: true })
+    expect(preview.provenance.signatureVerified).toBe(false)
+    // The fact is derived: the package-operation journal on disk never carries it.
+    const journal = join(root, 'daemon', 'package-operations', 'operations.json')
+    expect(readFileSync(journal, 'utf8')).toContain(preview.integrity)
+    expect(readFileSync(journal, 'utf8')).not.toContain('bundledOrigin')
     await operation(
       await client.packages.install({
         ...(await common('install')),
@@ -194,6 +201,13 @@ it('the shipped payload starts its managed service with the bundled-app grant an
       }),
     )
     await operation(await client.packages.enable({ ...(await common('enable')), id: PACKAGE }))
+    const listed = (await client.packages.list({ profile: PROFILE })).packages.find(
+      (pkg) => pkg.id === PACKAGE,
+    )
+    expect(listed?.bundledOrigin, 'the installed copy is proven again for enable and details').toEqual({
+      ownerApplication: true,
+    })
+    expect(readFileSync(journal, 'utf8')).not.toContain('bundledOrigin')
 
     // start() refuses without a grant carrying a state directory, an SDK client and channels, so a ready service
     // shows the grant reached it; its database sits in the directory the platform chose for it.

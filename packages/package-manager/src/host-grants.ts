@@ -69,3 +69,13 @@ export const HOST_CAPABILITY_GRANTS: readonly HostGrantDeclaration[] = freezeDat
     seams: {},
   },
 ])
+
+/** The release grant one row of an optional bundled package receives once its package is proven: only
+ * an in-process row the declaration names gets the package grant merged with its own. */
+export function optionalRowGrant(
+  declaration: HostGrantDeclaration,
+  row: Readonly<{ id: string; runtime: string }>,
+): HostCapabilityGrant | undefined {
+  const extension = row.runtime === 'in-process' ? declaration.extensions[row.id] : undefined
+  return extension ? { ...declaration.package, ...extension } : undefined
+}

@@ -100,6 +100,26 @@ it('opens the main and worker sessions on a real daemon, backgrounds a slow comm
       return ui.nodes.some((node) => node.kind === 'user' && node.commandId?.startsWith('superagent:'))
     })
     await until('the worker idle', async () => (await worker.projectUI()).opState === null)
+    // The platform marks it as Superagent's delivery for the reader; it is the owner's input as before otherwise.
+    const assignment = (await worker.projectUI()).nodes.find(
+      (node) => node.kind === 'user' && node.commandId?.startsWith('superagent:'),
+    )
+    expect(assignment).toMatchObject({
+      origin: 'principal',
+      deliveredBy: { kind: 'bundled-app', appId: '@agnes/superagent/superagent' },
+    })
+    expect(JSON.stringify(assignment?.kind === 'user' ? assignment.content : [])).toContain(ticketId)
+    // The worker is named for its role and ticket, and the daemon groups it under its ticket directory's workspace.
+    const workspace = (await client().workspace.list()).items.find((entry) => entry.path === ticketDir[0])
+    expect(workspace?.workspaceId).toBeDefined()
+    const grouped = await client().session.list({
+      sidebar: { groupId: workspace?.workspaceId ?? '' },
+      limit: 5,
+    })
+    expect(grouped.items.find((row) => row.sessionId === workerId)).toMatchObject({
+      title: 'Worker · Fix the login page',
+      cwd: ticketDir[0],
+    })
     const answered = async (marker: string) =>
       until(`the tool result of ${marker}`, () =>
         daemon
@@ -129,14 +149,19 @@ it('opens the main and worker sessions on a real daemon, backgrounds a slow comm
     })
     expect(ticket.assignments.at(-1)?.report).toMatchObject({ state: 'ready', summary: 'E2E-REPORT done' })
     expect(ticket.ended).toMatchObject({ outcome: 'completed' })
-    await until('the relay in the main session', async () =>
-      (await main.projectUI()).nodes.some(
+    const relay = await until('the relay in the main session', async () =>
+      (await main.projectUI()).nodes.find(
         (node) =>
           node.kind === 'user' &&
           node.commandId?.startsWith('superagent:') &&
           node.content.some((block) => block.type === 'text' && block.text.includes('E2E-REPORT done')),
       ),
     )
+    // Relayed as Superagent's delivery too, not shown as a person's message.
+    expect(relay).toMatchObject({
+      origin: 'principal',
+      deliveredBy: { kind: 'bundled-app', appId: '@agnes/superagent/superagent' },
+    })
     // The panel shows the ended ticket with the report.
     const detail = await calls.service('superagent.tickets.get', { id: ticketId })
     expect(detail).toMatchObject({ id: ticketId, ended: { outcome: 'completed' } })

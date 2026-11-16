@@ -1,4 +1,7 @@
-import type { SessionPrincipalOwnership } from '@agnes/daemon-foundation/storage/session-ownership'
+import type {
+  SessionCreator,
+  SessionPrincipalOwnership,
+} from '@agnes/daemon-foundation/storage/session-ownership'
 import type { WorkspaceBindingEnvelope, WorkspaceCatalog } from '@agnes/daemon-foundation/storage/workspaces'
 import type { Host, WorkspaceBinding } from '@agnes/host'
 
@@ -28,6 +31,8 @@ export async function reserveOwnedSession(input: {
   canonicalRoot: string
   extraRoots?: readonly string[]
   hasSessionFact: boolean
+  /** Recorded only by a first reservation; a replay keeps the creator, or the absence of one, it began with. */
+  creator?: SessionCreator
 }): Promise<{ envelope: WorkspaceBindingEnvelope; reservedNew: boolean }> {
   let reservedNew = false
   if (input.hasSessionFact) {
@@ -44,7 +49,7 @@ export async function reserveOwnedSession(input: {
     }
   } else {
     try {
-      if (!input.ownership.bindNew(input.sessionKey, input.principalId))
+      if (!input.ownership.bindNew(input.sessionKey, input.principalId, input.creator))
         throw new SessionAdmissionDenied(input.sessionKey)
       reservedNew = true
     } catch (error) {

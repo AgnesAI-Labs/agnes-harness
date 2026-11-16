@@ -206,9 +206,15 @@ export function nativeContent(
   }
 }
 
-/** A system-origin input with a typed payload renders as a status line, never as a user bubble. */
+/**
+ * An input no person wrote here renders as a status line, never as a user bubble: a system-origin input with a typed
+ * payload, or what an app delivered (`deliveredBy`, which the backend stamps; it changes nothing but this display).
+ */
 export function isSystemInput(node: UINode): boolean {
-  return node.kind === 'user' && node.origin === 'system' && node.system !== undefined
+  return (
+    node.kind === 'user' &&
+    ((node.origin === 'system' && node.system !== undefined) || node.deliveredBy !== undefined)
+  )
 }
 
 export function isEmptyStreamingAssistant(node: UINode): boolean {

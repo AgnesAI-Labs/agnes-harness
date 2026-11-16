@@ -1,22 +1,23 @@
-import { lstatSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ResolvedPackage } from '@agnes/host-common/profile/types'
 import {
-  BUNDLED_PLUGIN_DIGESTS,
-  bundledPluginDigest,
   bundledPluginSource,
+  bundledReleaseEntry,
   HOST_CAPABILITY_GRANTS,
   type HostCapabilityGrant,
   type HostGrantDeclaration,
-  hashDirectory,
+  matchesShippedRelease,
   OPTIONAL_BUNDLED_PACKAGES,
+  optionalRowGrant,
   parseAgnesPluginEntries,
-  parseSource,
   type RuntimePluginSnapshot,
+  type ShippedBundledRelease,
+  shippedBundledRelease,
   verifiedDirectoryDigest,
 } from '@agnes/package-manager'
 import type { RowOrigin } from '@agnes/plugin-runtime/host'
-import { jcs, validatePackageAdminData } from '@agnes/protocol'
+import { jcs } from '@agnes/protocol'
 
 const empty: HostCapabilityGrant = Object.freeze({})
 
@@ -29,28 +30,12 @@ export function pinOptionalBundledRowGrants(
   releaseSourceFor = bundledPluginSource,
   optionalPackages: readonly Readonly<{ id: string; ref: string }>[] = OPTIONAL_BUNDLED_PACKAGES,
 ) {
-  const expected = new Map<string, string | undefined>()
+  const expected = new Map<string, ShippedBundledRelease | undefined>()
   const bindings = new Map<string, string>()
-  const releaseDigest = (ref: string): string | undefined => {
-    if (expected.has(ref)) return expected.get(ref)
-    let digest: string | undefined
-    try {
-      const source = releaseSourceFor(ref)
-      if (source) {
-        let absent = false
-        try {
-          lstatSync(join(source.root, BUNDLED_PLUGIN_DIGESTS))
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-          absent = true
-        }
-        digest = absent ? hashDirectory(join(source.root, source.path)) : bundledPluginDigest(source)
-      }
-    } catch {
-      /* Missing or unreadable release evidence never grants a capability. */
-    }
-    expected.set(ref, digest)
-    return digest
+  // Missing or unreadable release evidence is undefined and never grants a capability.
+  const shipped = (ref: string): ShippedBundledRelease | undefined => {
+    if (!expected.has(ref)) expected.set(ref, shippedBundledRelease(ref, releaseSourceFor))
+    return expected.get(ref)
   }
   return (origin: Readonly<RowOrigin>): HostCapabilityGrant => {
     const pkg = packages.find((p) => p.id === origin.packageId)
@@ -65,10 +50,14 @@ export function pinOptionalBundledRowGrants(
       origin.trustTier !== 'third-party'
     )
       return empty
-    const optional = optionalPackages.find((p) => p.id === pkg.id && p.ref === pkg.source)
     const snapshot = source.snapshot
+    // The same canonical-source and release-table proof the install review's bundled origin uses.
+    const provenance = snapshot.source
+    const optional = bundledReleaseEntry(pkg.id, provenance, optionalPackages)
     if (
       !optional ||
+      !provenance ||
+      optional.ref !== pkg.source ||
       snapshot.packageId !== pkg.id ||
       snapshot.snapshotId !== origin.snapshotId ||
       snapshot.version !== pkg.version ||
@@ -78,14 +67,6 @@ export function pinOptionalBundledRowGrants(
     let identity: string
     let proof: { digest: string; rows: ReturnType<typeof parseAgnesPluginEntries> }
     try {
-      const provenance = snapshot.source
-      if (
-        !provenance ||
-        !validatePackageAdminData('PackageSource', provenance).ok ||
-        provenance.ref !== pkg.source ||
-        jcs(parseSource(provenance.ref)) !== jcs(provenance)
-      )
-        return empty
       identity = jcs({
         packageId: snapshot.packageId,
         profile: snapshot.profile,
@@ -108,17 +89,16 @@ export function pinOptionalBundledRowGrants(
     } catch {
       return empty
     }
-    const expectedDigest = releaseDigest(optional.ref)
     if (
       !proof ||
-      !expectedDigest ||
       proof.digest !== snapshot.treeIntegrity ||
-      proof.digest !== expectedDigest
+      !matchesShippedRelease(optional, { version: pkg.version, digest: proof.digest }, shipped(optional.ref))
     )
       return empty
     const row = proof.rows.find((r) => r.id === origin.rowId && r.export === origin.exportName)
-    if (!row || row.runtime !== 'in-process' || !declaration.extensions[row.id]) return empty
+    const grant = row && optionalRowGrant(declaration, row)
+    if (!grant) return empty
     bindings.set(pkg.id, identity)
-    return Object.freeze({ ...declaration.package, ...declaration.extensions[row.id] })
+    return Object.freeze(grant)
   }
 }
