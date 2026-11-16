@@ -312,7 +312,12 @@ export type {
 export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
   AgentRef,
+  ApplicationAsset,
+  ApplicationBrand,
+  ApplicationPageRef,
   ApplicationPanelTab,
+  ApplicationPresentation,
+  ApplicationRoleTarget,
   ApplicationTemplate,
   ApplicationWorkAction,
   ApplicationWorkbench,
@@ -327,6 +332,7 @@ export type {
   PluginMetadata,
   PluginMetadataLocale,
   PluginProvide,
+  PresentationRole,
   SkinContribution,
   SkinTokenValue,
   UiComponentDeclaration,
@@ -335,14 +341,6 @@ export type { ServiceCapability } from '../gen/ts/extension-service.js'
 /** The one capabilities shape every plugin declares, bundled or installed. */
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
 
-export type {
-  ApplicationAsset,
-  ApplicationBrand,
-  ApplicationPageRef,
-  ApplicationPresentation,
-  ApplicationRoleTarget,
-  PresentationRole,
-} from '../gen/ts/extension-manifest.js'
 export type {
   BoundWakeEnqueueParams,
   BoundWakeReadParams,
@@ -447,6 +445,7 @@ export type {
   PackageAdminError,
   PackageAdminPermission,
   PackageBlocker,
+  PackageBundledOrigin,
   PackageCapabilityDiff,
   PackageCatalogDescriptor,
   PackageCatalogGetParams,

@@ -170,6 +170,9 @@ it('the shipped payload starts its managed service with the bundled-app grant an
       .preview
     if (!preview?.capabilityHash) throw new Error('the payload preview has no capability hash')
     expect(preview.blockers, 'the shipped payload installs without blockers').toEqual([])
+    // The daemon reports the shipped copy and its app access apart from publisher evidence, which stays unverified.
+    expect(preview.bundledOrigin).toEqual({ ownerApplication: true })
+    expect(preview.provenance.signatureVerified).toBe(false)
     await operation(
       await client.packages.install({
         ...(await common('install')),

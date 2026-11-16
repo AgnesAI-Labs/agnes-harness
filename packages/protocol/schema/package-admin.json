@@ -1071,6 +1071,9 @@
         "declaredCapabilities": {
           "$ref": "#/$defs/PluginCapabilities"
         },
+        "bundledOrigin": {
+          "$ref": "#/$defs/PackageBundledOrigin"
+        },
         "metadata": {
           "$ref": "extension-manifest.json#/$defs/PluginMetadata"
         },
@@ -1130,6 +1133,17 @@
         "warnings",
         "blockers"
       ]
+    },
+    "PackageBundledOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Read-only Host fact that this exact tree is the optional plugin shipped with the running AGH: its canonical bundled source, the release identity and version, and the shipped directory digest all match. It is not publisher evidence (signatureVerified is unchanged) and changes no trust, install, enable or capability decision. Absent for every other tree and from older Hosts.",
+      "properties": {
+        "ownerApplication": {
+          "const": true,
+          "description": "The release grants this shipped copy the bundled-application runtime once it is trusted and enabled: a private state directory, a local client acting as the profile owner, and chat channel access."
+        }
+      }
     },
     "PackageTrustDecision": {
       "type": "object",

@@ -9,27 +9,73 @@ import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './local
 
 type Text = (key: string) => string
 
-/** Each capability a package declares, as one line of plain words. */
+/** A named list kept short enough for one review line: the first few names, then the count. */
+function named(label: string, names: readonly string[]): string {
+  return names.length > 4
+    ? `${label} (${names.length}): ${names.slice(0, 4).join(', ')}, …`
+    : `${label}: ${names.join(', ')}`
+}
+
+/** Declared switches, each one line under its review label. */
+const SWITCHES = [
+  ['model', 'model'],
+  ['childAgents', 'childAgents'],
+  ['ui', 'ui'],
+  ['store', 'store'],
+  ['device', 'device'],
+  ['events', 'events'],
+  ['tools.invoke', 'invoke'],
+  ['network.publicRead', 'publicRead'],
+  ['artifacts', 'artifacts'],
+  ['subagent', 'subagent'],
+  ['sessionWork', 'sessionWork'],
+  ['autoTitle', 'autoTitle'],
+  ['wake', 'wake'],
+] as const satisfies readonly (readonly [keyof PluginCapabilities, string])[]
+
+/** Each capability a package declares, as one line of plain words. Every manifest capability has a
+ * line; long name lists are shortened here and listed in full under Technical details. */
 export function capabilityRequests(value: PluginCapabilities | undefined, t: Text): string[] {
-  return value
-    ? [
-        ...(['network', 'exec', 'secrets', 'credentials'] as const).flatMap((key) =>
-          (value[key] ?? []).map((scope) => `${t('capability.' + key)}: ${scope}`),
+  if (!value) return []
+  const label = (key: string) => t(`capability.${key}`)
+  const services = (profile: boolean) =>
+    (value.services ?? []).filter((service) => (service.scope === 'profile') === profile).map((s) => s.name)
+  return [
+    ...(['network', 'exec', 'secrets', 'credentials'] as const).flatMap((key) =>
+      (value[key] ?? []).map((scope) => `${label(key)}: ${scope}`),
+    ),
+    ...(['read', 'write'] as const).flatMap((key) =>
+      (value.filesystem?.[key] ?? []).map((scope) => `${label(key)}: ${scope}`),
+    ),
+    ...SWITCHES.filter(([key]) => value[key] === true).map(([, key]) => label(key)),
+    ...(value.tools
+      ? [
+          value.tools.names?.length
+            ? named(label('tools'), value.tools.names)
+            : `${label('tools')}: ${value.tools.prefix}*`,
+        ]
+      : []),
+    ...(['hooks', 'slots', 'resources', 'uiData'] as const)
+      .filter((key) => value[key]?.length)
+      .map((key) => named(label(key), value[key] ?? [])),
+    ...(services(true).length ? [named(label('profileServices'), services(true))] : []),
+    ...(services(false).length ? [named(label('services'), services(false))] : []),
+    ...(['projections', 'streams'] as const)
+      .filter((key) => value[key]?.length)
+      .map((key) =>
+        named(
+          label(key),
+          (value[key] ?? []).map((item) => item.name),
         ),
-        ...(['read', 'write'] as const).flatMap((key) =>
-          (value.filesystem?.[key] ?? []).map((scope) => `${t('capability.' + key)}: ${scope}`),
-        ),
-        ...(['model', 'childAgents', 'ui'] as const)
-          .filter((key) => value[key])
-          .map((key) => t('capability.' + key)),
-        ...(value.managedServices?.some((service) => service.sessions === true)
-          ? [t('capability.sessions')]
-          : []),
-        ...(value.managedServices?.some((service) => service.channelTargets === true)
-          ? [t('capability.channelTargets')]
-          : []),
-      ]
-    : []
+      ),
+    ...(value.managedServices ?? []).map((service) => `${label('managedService')}: ${service.id}`),
+    ...(value.managedServices?.some((service) => service.sessions === true)
+      ? [t('capability.sessions')]
+      : []),
+    ...(value.managedServices?.some((service) => service.channelTargets === true)
+      ? [t('capability.channelTargets')]
+      : []),
+  ]
 }
 
 export function CapabilityReview({
@@ -77,7 +123,16 @@ export function FailureHelp({ reason, t }: { reason: string; t: Text }) {
   )
 }
 
-export function ProvenanceReview({ value, t }: { value: PackageProvenance | undefined; t: Text }) {
+export function ProvenanceReview({
+  value,
+  bundled = false,
+  t,
+}: {
+  value: PackageProvenance | undefined
+  /** The Host proved this is the copy shipped with this AGH; shown apart from publisher evidence. */
+  bundled?: boolean
+  t: Text
+}) {
   const language = useDocumentLanguage()
   const local =
     ['local-folder', 'local-file', 'workspace'].includes(value?.sourceKind ?? '') ||
@@ -86,7 +141,16 @@ export function ProvenanceReview({ value, t }: { value: PackageProvenance | unde
   return (
     <section aria-label={t('provenance.title')}>
       <h3>{t('provenance.title')}</h3>
-      <p>{t(value?.signatureVerified ? 'provenance.verified' : 'provenance.unverified')}</p>
+      {bundled && <p data-testid="provenance-bundled">{t('provenance.bundled')}</p>}
+      <p>
+        {t(
+          value?.signatureVerified
+            ? 'provenance.verified'
+            : bundled
+              ? 'provenance.bundledSignature'
+              : 'provenance.unverified',
+        )}
+      </p>
       {value?.authoring && (
         <a
           data-testid="plugin-fact-chain"
