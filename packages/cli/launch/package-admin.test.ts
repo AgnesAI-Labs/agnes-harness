@@ -37,6 +37,9 @@ const mocks = vi.hoisted(() => {
   }))
   const clientModuleCallService = vi.fn(async () => ({ output: { ok: true } }))
   const clientModuleCallEffect = vi.fn(async () => ({ output: { changed: true } }))
+  const readOperation = vi.fn(async () => {
+    throw Object.assign(new Error('unknown operation'), { data: { code: 'CAPABILITY_DENIED' } })
+  })
   const surfaceMounts = vi.fn(async () => ({
     mounts: [
       {
@@ -75,6 +78,7 @@ const mocks = vi.hoisted(() => {
     clientModuleCallService,
     clientModuleCallEffect,
     surfaceMounts,
+    readOperation,
   }
 })
 
@@ -106,6 +110,7 @@ vi.mock('@agnes/sdk', () => ({
     },
     sessionSelection: mocks.sessionSelection,
     surfaces: { mounts: mocks.surfaceMounts },
+    extensions: { readOperation: mocks.readOperation },
     clientModules: {
       list: mocks.clientModuleList,
       callService: mocks.clientModuleCallService,
@@ -403,6 +408,21 @@ it('relays only a same-origin typed browser service request and strips page-supp
     const refusedDedicated = await sendChannel({ method: 'channels.configureDedicated', params: dedicated })
     expect(refusedDedicated.status).toBe(409)
     expect(await refusedDedicated.json()).toMatchObject({ error: { data: { code: 'CHANNEL_REFUSED' } } })
+    // An id that is already configured says so, so the page can point at the existing connection.
+    mocks.request.mockResolvedValueOnce({
+      providers: [
+        {
+          extension: dedicated.extension,
+          manifest: { credentials: { required: [], optional: ['appId'] } },
+        },
+      ],
+    } as never)
+    mocks.request.mockResolvedValueOnce({ output: { instances: [{ id: dedicated.instanceId }] } } as never)
+    const exists = await sendChannel({ method: 'channels.configureDedicated', params: dedicated })
+    expect(exists.status).toBe(409)
+    expect(await exists.json()).toMatchObject({
+      error: { data: { code: 'CHANNEL_REFUSED', reason: 'exists' } },
+    })
     for (const expectedVersion of [undefined, -1, 0.5, '0']) {
       expect(
         (

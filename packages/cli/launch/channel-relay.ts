@@ -81,10 +81,11 @@ export function channelRelay(input: {
         input.reply(response, 200, result)
       } catch (error) {
         // A deterministic dedicated-connection refusal is distinct from an unconfirmed outcome.
-        const refused = error instanceof ChannelRefusal
-        input.reply(response, refused ? 409 : 503, {
-          error: refused ? httpRpcError(409, 'CHANNEL_REFUSED') : httpRpcError(503, 'UNAVAILABLE'),
-        })
+        if (error instanceof ChannelRefusal) {
+          const refused = httpRpcError(409, 'CHANNEL_REFUSED')
+          const reason = error.reason ? { reason: error.reason } : {}
+          input.reply(response, 409, { error: { ...refused, data: { ...refused.data, ...reason } } })
+        } else input.reply(response, 503, { error: httpRpcError(503, 'UNAVAILABLE') })
       }
       return true
     }

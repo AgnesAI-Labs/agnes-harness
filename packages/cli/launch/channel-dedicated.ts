@@ -8,12 +8,13 @@ import type { Instance } from './channel-workbench.js'
 const DEDICATED_ID = /^d-[a-f0-9]{12}$/
 /** A deterministic refusal: the same request is refused again until the person changes or re-reads it. */
 export class ChannelRefusal extends Error {
-  constructor() {
+  /** `exists`: the connection id is already configured, for example by an earlier unconfirmed attempt. */
+  constructor(readonly reason?: 'exists') {
     super('Channel workbench request refused')
   }
 }
-function refuse(): never {
-  throw new ChannelRefusal()
+function refuse(reason?: 'exists'): never {
+  throw new ChannelRefusal(reason)
 }
 
 /**
@@ -75,7 +76,7 @@ export function dedicatedChannels(deps: {
       declared.required.some((key) => !credentialRefs[key])
     )
       refuse()
-    if (configuration.output.instances.some((instance) => instance.id === instanceId)) refuse()
+    if (configuration.output.instances.some((instance) => instance.id === instanceId)) refuse('exists')
     const workspace = (await workspaces()).find((item) => item.workspaceId === params.workspaceId)
     if (!workspace) refuse()
     const next: Instance = {

@@ -41,6 +41,10 @@ const NOTICES = {
     '无法按当前设置创建连接（例如工作区或凭据已变化），本次未保存。请核对后重试。',
     'This connection cannot be created with these settings (a workspace or credential may have changed). Nothing was saved; review and try again.',
   ],
+  maybeCreated: [
+    '这个连接可能已由之前未确认的尝试创建，请在连接列表中查看后再决定是否重新创建。',
+    'An earlier unconfirmed attempt may already have created this connection. Check the connection list before creating it again.',
+  ],
   lost: [
     '连接未确认。可继续重试同一次操作，或重新读取后重新开始。',
     'Connection unconfirmed. Continue to retry this operation, or start over with a fresh read.',
@@ -74,6 +78,8 @@ export function DedicatedSetup({
   const [created, setCreated] = useState(false)
   // The last attempt failed without a receipt: its outcome is unconfirmed, so starting over is offered.
   const [failed, setFailed] = useState(false)
+  // Started over after an unconfirmed attempt, which may have created the connection after all.
+  const [restarted, setRestarted] = useState(false)
   const [message, setMessage] = useState('')
   const alive = useRef(false)
   const say = (key: keyof typeof NOTICES) => setMessage(NOTICES[key][zh ? 0 : 1])
@@ -130,7 +136,7 @@ export function DedicatedSetup({
       } else if (receipt.state === 'refused' && receipt.code === 'REVISION_CONFLICT') {
         setPending(undefined)
         onRefresh()
-        say('conflict')
+        say(restarted ? 'maybeCreated' : 'conflict')
       } else if (['refused', 'cancelled'].includes(receipt.state)) {
         setPending(undefined)
         say('notCreated')
@@ -141,7 +147,7 @@ export function DedicatedSetup({
         // The launcher refuses these settings as they are; the same request would be refused again.
         setPending(undefined)
         onRefresh()
-        say('refused')
+        say((error as { reason?: unknown }).reason === 'exists' ? 'maybeCreated' : 'refused')
       } else {
         setFailed(true)
         say('lost')
@@ -218,6 +224,7 @@ export function DedicatedSetup({
               // The fixed instance id keeps a fresh attempt from creating a second connection.
               setPending(undefined)
               setFailed(false)
+              setRestarted(true)
               setMessage('')
               onRefresh()
             }}

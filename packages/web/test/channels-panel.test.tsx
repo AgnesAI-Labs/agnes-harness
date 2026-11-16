@@ -5,6 +5,7 @@ import { getByRole } from '@testing-library/dom'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
+import { callChannel } from '../src/pages/channel-api.js'
 import { ChannelDialogHost } from '../src/pages/channel-dialog.js'
 import { closeChannelDialog } from '../src/pages/channel-dialog-state.js'
 import { ChannelsPanel } from '../src/pages/channels.js'
@@ -102,7 +103,8 @@ it('creates a dedicated connection that binds no session and ends when it exists
       { sessionId: 'current', sessionTitle: 'Planning', targetId: 'peer', label: 'Team', state: 'active' },
     ],
   }
-  let outcome: 'approval-required' | 'completed' | 'conflict' | 'refused' | 'lost' = 'approval-required'
+  let outcome: 'approval-required' | 'completed' | 'conflict' | 'refused' | 'exists' | 'lost' =
+    'approval-required'
   const call = vi.fn(async (method: string, _params?: unknown) => {
     if (method === 'channels.overview')
       return {
@@ -118,6 +120,11 @@ it('creates a dedicated connection that binds no session and ends when it exists
       }
     if (method === 'channels.configureDedicated' && outcome === 'refused')
       throw Object.assign(new Error('Channel operation was not confirmed'), { code: 'CHANNEL_REFUSED' })
+    if (method === 'channels.configureDedicated' && outcome === 'exists')
+      throw Object.assign(new Error('Channel operation was not confirmed'), {
+        code: 'CHANNEL_REFUSED',
+        reason: 'exists',
+      })
     if (method === 'channels.configureDedicated' && outcome === 'lost') throw new Error('lost response')
     if (method === 'channels.configureDedicated')
       return {
@@ -219,6 +226,18 @@ it('creates a dedicated connection that binds no session and ends when it exists
     expect(button('Continue creating')).toBeTruthy()
     await act(async () => button('Start over')!.click())
     expect(button('Create connection')).toBeTruthy()
+    // The unconfirmed attempt may have created it: a later refusal says so instead of "nothing was saved".
+    for (const next of ['exists', 'conflict'] as const) {
+      outcome = next
+      const seen = reads()
+      await act(async () => button('Create connection')!.click())
+      await vi.waitFor(() =>
+        expect(document.body.textContent).toContain('may already have created this connection'),
+      )
+      expect(document.body.textContent).not.toContain('Nothing was saved')
+      expect(reads()).toBeGreaterThan(seen)
+      expect(button('Create connection')).toBeTruthy()
+    }
     outcome = 'completed'
     await act(async () => button('Create connection')!.click())
     await vi.waitFor(() => expect(document.body.textContent).toContain('Dedicated connection created'))
@@ -235,5 +254,29 @@ it('creates a dedicated connection that binds no session and ends when it exists
     document.documentElement.lang = language
     credentials.mockRestore()
     vi.restoreAllMocks()
+  }
+})
+
+it('passes the launcher refusal code and reason to the page', async () => {
+  const fetcher = vi.fn(async () =>
+    Response.json(
+      {
+        error: {
+          code: -32010,
+          message: 'SEMANTIC_REJECTED',
+          data: { code: 'CHANNEL_REFUSED', reason: 'exists' },
+        },
+      },
+      { status: 409 },
+    ),
+  )
+  vi.stubGlobal('fetch', fetcher)
+  try {
+    await expect(callChannel('channels.configureDedicated', {})).rejects.toMatchObject({
+      code: 'CHANNEL_REFUSED',
+      reason: 'exists',
+    })
+  } finally {
+    vi.unstubAllGlobals()
   }
 })
