@@ -186,7 +186,6 @@ it('ships the optional judgment payload with its callable plugin and release dig
     'LICENSE',
     'NOTICE',
     'README.md',
-    'THIRD-PARTY-NOTICES',
     'client-build.json',
     'index.mjs',
     'package.json',
