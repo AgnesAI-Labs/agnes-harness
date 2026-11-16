@@ -1,6 +1,6 @@
 import type { WorkspaceEntry } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
-import { createWorkspaceSync } from '../src/workspace-sync.js'
+import { createWorkspaceSync, UNKNOWN_WORKSPACE_RETRY_MS } from '../src/workspace-sync.js'
 
 const entry = (id: string): WorkspaceEntry => ({
   workspaceId: id.repeat(64),
@@ -14,12 +14,13 @@ const entry = (id: string): WorkspaceEntry => ({
 /** `unread` stands for a page that has not read the list yet. */
 function harness(server: WorkspaceEntry[], initial: WorkspaceEntry[] | 'unread' = [entry('a')]) {
   let rows = initial === 'unread' ? undefined : initial
+  const clock = { now: 0 }
   const read = vi.fn(async () => ({ items: [...server] }))
   const apply = vi.fn((page: { items: WorkspaceEntry[] }) => {
     rows = page.items
   })
-  const sync = createWorkspaceSync({ known: () => rows, read, apply })
-  return { sync, read, apply, rows: () => rows }
+  const sync = createWorkspaceSync({ known: () => rows, read, apply, now: () => clock.now })
+  return { sync, read, apply, rows: () => rows, clock, server }
 }
 
 describe('workspace sync', () => {
@@ -42,12 +43,22 @@ describe('workspace sync', () => {
     expect(read).not.toHaveBeenCalled()
   })
 
-  it('does not read again for a workspace the list still lacks, but does for one it failed to read', async () => {
-    const gone = entry('g').workspaceId
-    const { sync, read } = harness([entry('a')])
-    await sync.reconcile([{ workspaceId: gone }])
-    await sync.reconcile([{ workspaceId: gone }])
+  it('reads again for a workspace the list still lacks only after a while, and at once for one it failed to read', async () => {
+    const late = entry('l')
+    const { sync, read, rows, clock, server } = harness([entry('a')])
+    await sync.reconcile([{ workspaceId: late.workspaceId }])
+    clock.now = UNKNOWN_WORKSPACE_RETRY_MS - 1
+    await sync.reconcile([{ workspaceId: late.workspaceId }])
     expect(read).toHaveBeenCalledOnce()
+    // The workspace was registered meanwhile: after the wait the list is read for it again, and it is known.
+    server.push(late)
+    clock.now = UNKNOWN_WORKSPACE_RETRY_MS
+    await sync.reconcile([{ workspaceId: late.workspaceId }])
+    expect(read).toHaveBeenCalledTimes(2)
+    expect(rows()).toEqual([entry('a'), late])
+    clock.now = 10 * UNKNOWN_WORKSPACE_RETRY_MS
+    await sync.reconcile([{ workspaceId: late.workspaceId }])
+    expect(read).toHaveBeenCalledTimes(2)
     const failing = harness([entry('a'), entry('c')])
     failing.read.mockRejectedValueOnce(new Error('workspace list unavailable'))
     await failing.sync.reconcile([{ workspaceId: entry('c').workspaceId }])
