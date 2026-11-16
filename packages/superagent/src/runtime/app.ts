@@ -122,6 +122,11 @@ export interface AppDeps {
   roleModels?: RoleModels
   /** How the deployment is probed; by default the agent's `gh` as worker shells run it. */
   probe?: Probe
+  /**
+   * The deployment a check just resolved, with the same probe, from `github` (the GitHub Source's settings), if any. A
+   * configuration takes it in place of probing the agent's CLI again; undefined probes as usual.
+   */
+  resolved?(github: unknown): Deployment | undefined
   /** Variables Superagent's own commands run with, such as the agent's git configuration. */
   commandEnvironment?: Record<string, string>
   /** The AGH skill directory Superagent's skills are written to. */

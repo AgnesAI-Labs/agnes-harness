@@ -56,6 +56,17 @@ export function composeGeneration(input: GenerationInput): Generation {
   let lifecycle: Lifecycle | undefined
   /** The agent account the environment was last written for, which a changed list of blocked commands rewrites. */
   let written: EnvironmentPlan | undefined
+  /**
+   * What the lifecycle's environment check resolved for the start under way, and the GitHub Source settings it read.
+   * The app's start takes it once instead of probing the agent's CLI again (three CLI calls, slow while a restarted
+   * daemon restores its sessions), unless the settings changed in between.
+   */
+  let checked: { github: string; deployment: Deployment } | undefined
+  const resolved = (github: unknown): Deployment | undefined => {
+    const fresh = checked
+    checked = undefined
+    return fresh && fresh.github === JSON.stringify(github ?? null) ? fresh.deployment : undefined
+  }
   const ticketVariables = (ticket: Parameters<SuperagentApp['parts']['ticketEnvironment']>[0]) =>
     variables(app?.parts.ticketEnvironment(ticket) ?? [])
   const runtime = createRuntimeParts({
@@ -75,7 +86,8 @@ export function composeGeneration(input: GenerationInput): Generation {
     // The runtime parts carry the machine settings.
     ...runtime,
     log,
-    ...(input.probe ? { probe: input.probe } : {}),
+    // The check's probe is the app's default one; an app given its own probe checks with it.
+    ...(input.probe ? { probe: input.probe } : { resolved }),
     // The lifecycle re-dispatches what a restart interrupted, after it read each session's real state.
     reconciled: true,
     ticketEnded: (id) => {
@@ -103,11 +115,13 @@ export function composeGeneration(input: GenerationInput): Generation {
     refusingState: (reason) => built.stoppedState(reason),
     async environment(signal) {
       const settings = store.settings()
+      const github = settings.sources.github?.config
       const deployment: Deployment = await resolveDeployment(
         machine,
-        settings.sources.github?.config,
+        github,
         workerProbe(machine.stateDir, machine.stateDir, signal),
       )
+      checked = { github: JSON.stringify(github ?? null), deployment }
       written = {
         stateDir: machine.stateDir,
         account: {

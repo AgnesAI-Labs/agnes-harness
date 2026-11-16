@@ -41,7 +41,9 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
   }
   async function configure(): Promise<boolean> {
     try {
-      const deployment = await resolveDeployment(machine, store.settings().sources.github?.config, probe)
+      const github = store.settings().sources.github?.config
+      // A start right after the lifecycle's own check takes what that check resolved: the agent's CLI is probed once.
+      const deployment = deps.resolved?.(github) ?? (await resolveDeployment(machine, github, probe))
       if (closing()) return false
       state.deployment = deployment
       state.problem = undefined

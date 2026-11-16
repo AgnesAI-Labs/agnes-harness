@@ -2,6 +2,7 @@
 // disable; and a session the owner holds under the main session's key leaves Superagent waiting for setup.
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { type Deployment, machineOf } from '../../src/deployment.js'
 import { SettingsSchema } from '../../src/policy.js'
 import { createRuntimeParts, createSuperagentApp, type SuperagentApp } from '../../src/runtime/app.js'
 import { SessionRegistry } from '../../src/runtime/sessions.js'
@@ -15,8 +16,15 @@ beforeEach(() => {
 afterEach(() => temp.close())
 
 const GITHUB = { enabled: true, config: { repository: 'acme/app', cli: process.execPath } }
-/** A configured deployment whose GitHub checks pass, over a fake SDK client; `fresh` leaves the settings empty. */
-function setup(fresh = false, hold?: () => Promise<void> | undefined) {
+/**
+ * A configured deployment whose GitHub checks pass, over a fake SDK client; `fresh` leaves the settings empty. `probes`
+ * records each call of the agent's CLI; `resolved` is the deployment a check just resolved, if any.
+ */
+function setup(
+  fresh = false,
+  hold?: () => Promise<void> | undefined,
+  more: { probes?: string[][]; resolved?: (github: unknown) => Deployment | undefined } = {},
+) {
   if (!fresh) temp.store.saveSettings(SettingsSchema.parse({ sources: { github: GITHUB } }))
   const fake = fakeClient()
   const lifetime = new AbortController()
@@ -29,9 +37,11 @@ function setup(fresh = false, hold?: () => Promise<void> | undefined) {
     log: { warn: () => {} },
     skillsRoot: join(temp.dir, 'skills'),
     probe: async (argv) => {
+      more.probes?.push(argv)
       await hold?.()
       return argv.includes('user') ? '{"login":"agent-bot","id":42}' : '{"name":"acme/app","push":true}'
     },
+    ...(more.resolved ? { resolved: more.resolved } : {}),
   })
   return { app, fake, lifetime, runtime }
 }
@@ -55,6 +65,38 @@ function watchStarts(app: SuperagentApp) {
 }
 
 describe('the app', () => {
+  it("starts on the deployment a check just resolved without probing the agent's CLI again, and probes without one", async () => {
+    const deployment: Deployment = {
+      ...machineOf({ stateDir: join(temp.dir, 'state') }),
+      repository: 'acme/app',
+      github: { cli: process.execPath, login: 'agent-bot', noreply: '42+agent-bot@users.noreply.github.com' },
+    }
+    const seen: unknown[] = []
+    const probes: string[][] = []
+    const checked = setup(false, undefined, {
+      probes,
+      resolved: (github) => {
+        seen.push(github)
+        return deployment
+      },
+    })
+    await checked.app.start()
+    expect(checked.app.unavailable()).toBeUndefined()
+    expect(probes, 'no second probe').toEqual([])
+    expect(seen, "asked with the GitHub Source's settings").toEqual([GITHUB.config])
+    await checked.app.stop('disable')
+    // Without a resolved deployment the start probes as before.
+    const unchecked = setup(false, undefined, { probes, resolved: () => undefined })
+    await unchecked.app.start()
+    expect(unchecked.app.unavailable()).toBeUndefined()
+    expect(probes.map((argv) => argv.slice(1, 3).join(' '))).toEqual([
+      'api user',
+      'api repos/acme/app',
+      'api repos/acme/app/notifications?per_page=1',
+    ])
+    await unchecked.app.stop('disable')
+  })
+
   it('starts and becomes ready on a configured deployment', async () => {
     const { app, fake } = setup()
     const starts = watchStarts(app)
