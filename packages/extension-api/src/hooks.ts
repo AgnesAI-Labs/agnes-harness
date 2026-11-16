@@ -104,6 +104,7 @@ export interface HookPayloadMap {
     readonly credits: number
   }
   format_deviation: { readonly rule: string; readonly model: string; readonly sampleHash: string }
+  turn_end: Readonly<Wire.TurnEndPayload>
   shutdown: { readonly reason: 'close' | 'revoke' | 'reload' }
 }
 
@@ -146,6 +147,8 @@ export interface HookReturnMap {
   subagent_end: void
   // biome-ignore lint/suspicious/noConfusingVoidType: observe handler return type
   format_deviation: void
+  // biome-ignore lint/suspicious/noConfusingVoidType: observe handler return type
+  turn_end: void
   // biome-ignore lint/suspicious/noConfusingVoidType: observe handler return type
   shutdown: void
 }

@@ -171,6 +171,7 @@ export function createSessionHookPort(
     'beforeStep',
     'toolCall',
     'turnStopping',
+    'turnEnd',
     'context',
     'refreshContext',
     'toolResult',

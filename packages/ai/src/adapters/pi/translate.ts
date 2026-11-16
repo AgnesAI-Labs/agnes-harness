@@ -110,6 +110,7 @@ export function translateEvent(
 // that tells a reviewer which hop actually answered.
 const HEADER_VALUES = new Set([
   'x-request-id',
+  'x-oneapi-request-id',
   'request-id',
   'server',
   'via',

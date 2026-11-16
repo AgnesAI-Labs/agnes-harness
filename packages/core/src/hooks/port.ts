@@ -69,6 +69,19 @@ export class SessionHookPort implements HookPort {
       })
   }
 
+  async turnEnd(payload: HookPayloadMap['turn_end']): Promise<void> {
+    await this.engine.dispatch(
+      'turn_end',
+      () => payload,
+      {
+        ...this.inputs.context(),
+        signal: new AbortController().signal,
+        replayed: false,
+      },
+      { snapshot: this.snapshot() },
+    )
+  }
+
   async shutdown(): Promise<void> {
     // Session execution is already cancelled; cleanup receives its own bounded dispatch signal.
     try {

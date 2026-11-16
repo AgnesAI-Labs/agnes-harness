@@ -334,6 +334,8 @@ export type HookPort = {
   resources?(): ReadonlyArray<import('@agnes/extension-api').ResourceEntry>
   sessionStart?(p: { reason: 'new' | 'resume'; preset: string; cwd: string }): Promise<void>
   shutdown?(): Promise<void>
+  /** Passive notification after the terminal transaction; observers cannot change its outcome. */
+  turnEnd?(payload: HookPayloadMap['turn_end']): Promise<void>
   resetTurn?(): void
   toolCall(p: {
     toolUseId: string
@@ -1407,6 +1409,9 @@ export class SessionImpl {
       this.turn = null
       return result.seqs
     })
+    await this.hooks
+      .turnEnd?.({ turn: turnNumber, reason, endSeq: seqs[seqs.length - 1] as number })
+      .catch((error) => this.d.logger.warn('turn_end hook failed', { message: String(error) }))
     this.turnEndError = extra.error
     // Between turns: a proposed refinement is applied now, before any queued input opens a turn.
     if (this.d.refinement) await refinementAfterTurn(this)

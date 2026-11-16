@@ -31,10 +31,11 @@ const EXPECTED = {
   subagent_start: ['emit', 'observe', 'open', 200, false],
   subagent_end: ['emit', 'observe', 'open', 200, false],
   format_deviation: ['parallel', 'observe', 'open', 500, false],
+  turn_end: ['parallel', 'observe', 'open', 1000, false],
   shutdown: ['parallel', 'observe', 'open', 1000, false],
 } as const
 describe('generated author tables', () => {
-  it('pins all sixteen approved five-tuples independently of generation', () => {
+  it('pins all approved five-tuples independently of generation', () => {
     for (const name of HOOK_EVENTS) {
       const row = HOOK_TABLE[name]
       expect([row.mode, row.category, row.failPolicy, row.timeoutMs, row.replayOnResume], name).toEqual(

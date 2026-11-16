@@ -17,7 +17,7 @@ export type PluginProjectionDef<S extends JsonValue = JsonValue> = ProjectionDef
   Partial<Omit<ProjectionCapability, 'name'>>
 
 export interface PluginHooksPort {
-  /** Any of the 16 hook events. Observe-only events ignore the handler result. */
+  /** Any supported hook event. Observe-only events ignore the handler result. */
   register<E extends HookEvent>(event: E, handler: NoInfer<HookHandler<E>>): Disposer
 }
 export interface PluginProjectionsPort {

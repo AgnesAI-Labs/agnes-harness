@@ -185,7 +185,13 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
         if (!lease.allows('toolPrefix', copy.name)) refuse('tool outside lease scope')
         const execute = copy.execute.bind(copy)
         return input.attach('tool', copy.name, (ports) => {
-          const projections = projectionReader(ports.projections, meta, lease, alive, [])
+          const projections = projectionReader(
+            ports.projections,
+            meta,
+            lease,
+            alive,
+            input.declaredCapabilities?.projections?.map((projection) => projection.name) ?? [],
+          )
           const wrapped: ToolDef = {
             ...copy,
             execute: async (args, tctx) => {
@@ -315,7 +321,13 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
       registering()
       if (typeof handler !== 'function' || !isHookEvent(event)) return refuse('invalid hook registration')
       return input.attach('hook', event, (ports) => {
-        const projections = projectionReader(ports.projections, meta, lease, alive, [])
+        const projections = projectionReader(
+          ports.projections,
+          meta,
+          lease,
+          alive,
+          input.declaredCapabilities?.projections?.map((projection) => projection.name) ?? [],
+        )
         // Unlike `on` above, the handler's real return value reaches the kernel: this is what lets a
         // transform/intercept-category event actually chain or short-circuit, not just observe.
         const wrapped = (payload: Parameters<HookHandler<E>>[0], hctx: Parameters<HookHandler<E>>[1]) => {

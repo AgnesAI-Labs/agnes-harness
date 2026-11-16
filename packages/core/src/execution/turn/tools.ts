@@ -266,6 +266,7 @@ async function settleSyntheticDispatch(
           content: toLedgerContent(result.content),
           isError: true,
           code: input.code,
+          dispatchPhase: phase,
           ...(input.structured ? { structured: input.structured } : {}),
           ...(input.code === 'CANCELLED'
             ? { partial: input.partial ?? false, cancelledBy: input.cancelledBy ?? s.d.actor }
@@ -1542,6 +1543,7 @@ export async function approveAndExecute(
                   : {}
               })(),
               ...(recordedResult.structured !== undefined ? { structured: recordedResult.structured } : {}),
+              dispatchPhase: settledDispatchPhase,
               isError: cancelled || recordedResult.isError === true,
               ...(cancelled
                 ? { code: 'CANCELLED', partial: true, cancelledBy: stopRequestedBy(s) ?? s.d.actor }

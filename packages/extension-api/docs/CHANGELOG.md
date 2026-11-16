@@ -2,6 +2,19 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.15.0
+
+### Added
+
+- Observe-only `turn_end` hook with `turn`, `reason` and committed `endSeq`. It runs after the
+  terminal ledger transaction with a separate bounded cancellation signal. Failure cannot alter
+  execution or undo the committed end. Existing hooks and adapters remain compatible.
+- Installed hook/tool contexts can read their own declared projections. Reads still require the
+  reviewed name, owner-scoped lease and live row; undeclared or revoked reads are refused.
+- Optional ledger `tool/result.dispatchPhase` records `not_sent`, `may_have_sent` or `responded`.
+  It describes backend dispatch, independently of tool-provided result content, so consumers can
+  distinguish admitted attempts from pre-dispatch refusals without a second tool counter.
+
 ## 5.14.0
 
 ### Added

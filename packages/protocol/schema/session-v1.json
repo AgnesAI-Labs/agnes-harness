@@ -644,6 +644,7 @@
       "additionalProperties": false,
       "required": ["toolUseId", "content", "isError", "enforcement", "authz"],
       "properties": {
+        "dispatchPhase": { "enum": ["not_sent", "may_have_sent", "responded"] },
         "toolUseId": { "type": "string", "maxLength": 128 },
         "content": { "type": "array", "items": { "$ref": "#/$defs/ContentBlock" } },
         "structured": { "$ref": "#/$defs/JsonValue" },

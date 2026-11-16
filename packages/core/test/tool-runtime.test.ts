@@ -199,10 +199,18 @@ describe('tool providers', () => {
       writerRunId: 'writer',
       workspaceInvocation: testWorkspaceInvocation(),
     })
+    const committedEnds: number[] = []
+    session.hooks.turnEnd = async (payload) => {
+      const rows = await session.d.log.scan({ fromSeq: payload.endSeq, limit: 1 })
+      expect(rows[0]?.type).toBe('turn/end')
+      committedEnds.push(payload.endSeq)
+      throw Error('passive exporter failure')
+    }
     try {
       await session.setYolo(true, actor)
       await session.enqueue('next-turn', { actor, content: [{ type: 'text', text: 'work' }] })
       expect((await session.run({ until: 'turn-end', signal: signal() })).reason).toBe('completed')
+      expect(committedEnds).toHaveLength(1)
       const rows = await session.scan({ fromSeq: 1, limit: 200 })
       expect(
         rows.find(

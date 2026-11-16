@@ -8,7 +8,7 @@ A and B run the same complete standard Harness. A hosts the frontend and its bro
 
 ## Key and publication contract
 
-Cloud plugin **0.5.1** reads `AGH_CLOUD_KEY` at activation. Missing, empty or whitespace-only values fail activation and do not publish a port. The third-party sandbox operator injects the Key into B's daemon/Worker process environment. Setting it only on a launcher that reuses an existing daemon is insufficient. The plugin snapshots the value; restart B's processes to rotate it.
+Cloud plugin **0.6.0** reads `AGH_CLOUD_KEY` at activation. Missing, empty or whitespace-only values fail activation and do not publish a port. The third-party sandbox operator injects the Key into B's daemon/Worker process environment. Setting it only on a launcher that reuses an existing daemon is insufficient. The plugin snapshots the value; restart B's processes to rotate it.
 
 An installed, trusted, enabled plugin contributes the profile query `frontend.publish`, listed in its client descriptor. It takes `{}` and returns the structure below. `keySha256` must be the actual 64-character lowercase SHA-256 verifier; the original Key is never returned:
 
@@ -25,7 +25,7 @@ Browser storage contains only the origin and `secret://generic/...` reference. C
 3. B issues an eight-hour temporary bearer capability. A's browser receives only that capability and connects directly to B; conversation traffic does not pass through A's BFF.
 4. All HTTP APIs, plugin resources and WebSocket upgrades use `/_agnes/remote-access/<capability>/...`. Relative module imports retain the prefix. B validates then strips it before forwarding to fixed local endpoints. Bare API/resource/socket requests fail authentication. Expiry closes sockets and reconnect renews authorization. The temporary capability is also sensitive: avoid logging full resource URLs. Responses set `no-store` and `no-referrer`.
 
-`key-owner` grants this profile's full workbench authority, including workspaces, tools, settings and plugin administration. Standard execution policies and tool approvals remain. It does not provide per-user identities or tenant isolation. A matching caller can still disable/remove the cloud plugin; protection against that disconnection is not implemented. The server retains legacy `public-owner` compatibility for other declarations, but **A's updated cloud connection refuses an unauthenticated downgrade**. Plugin 0.5.1 always uses `key-owner`.
+`key-owner` grants this profile's full workbench authority, including workspaces, tools, settings and plugin administration. Standard execution policies and tool approvals remain. It does not provide per-user identities or tenant isolation. A matching caller can still disable/remove the cloud plugin; protection against that disconnection is not implemented. The server retains legacy `public-owner` compatibility for other declarations, but **A's updated cloud connection refuses an unauthenticated downgrade**. Plugin 0.6.0 always uses `key-owner`.
 
 `agh serve` owns the listener, reads the current ready installed roster and calls the declaration through a private connection. Missing, disabled, blocked, conflicting or failed declarations provide no cloud service. Each HTTP request/upgrade checks the declaration. The 500 ms reconciliation loop closes listeners and connections after revocation/configuration changes, plus any bounded Worker RPC timeout. Closing the launcher also stops publication; existing tasks are not implicitly cancelled. Default local Host/Origin checks and the separate multi-user authenticated remote WSS transport remain intact.
 
@@ -33,8 +33,8 @@ Optional `tls: {"certFile":"...","keyFile":"..."}` names B-local certificate/pri
 
 ## Two-computer setup
 
-1. Update and build the matching standard Harness on both A and B through the repository toolchain entry with `--filter @agnes/cli build:local`, then restart their daemons to load the new code. Update B to cloud plugin 0.5.1.
-2. Inject `AGH_CLOUD_KEY` on B. If its daemon already exists, stop/restart it through B's deployment procedure under the new environment so daemon and Worker inherit the value. Install `agh plugins add /absolute/path/to/agh-cloud-plugin-0.5.1.tgz`, review and trust it; keep `agh serve` running for that home/profile.
+1. Update and build the matching standard Harness on both A and B through the repository toolchain entry with `--filter @agnes/cli build:local`, then restart their daemons to load the new code. Update B to cloud plugin 0.6.0.
+2. Inject `AGH_CLOUD_KEY` on B. If its daemon already exists, stop/restart it through B's deployment procedure under the new environment so daemon and Worker inherit the value. Install `agh plugins add /absolute/path/to/agh-cloud-plugin-0.6.0.tgz`, review and trust it; keep `agh serve` running for that home/profile.
 3. The launcher prints `key-owner frontend: ...`. Configure host/port/TLS using normal plugin settings and permit the port in B's firewall. Do not put the Key in plugin configuration.
 4. Open A's own page, **Settings → Advanced → Cloud connection**. Enter B's reachable origin, such as `http://192.168.1.20:8443`, and select the local credential whose value matches B’s Key, then **Save and connect**. Do not use bind address `0.0.0.0` as a target.
 5. **Projects** shows expandable **Local sessions** and **Cloud sessions**. Once ready, the cloud plus creates a B session using B's workspace, tools and current model execution. B's bare cloud URL no longer opens an anonymous workbench; connect from A with the Key.
@@ -55,9 +55,9 @@ Journals, drafts and model/permission memory are separated by backend origin and
 
 Cloud-session workspace selection, input `@` file search and `$` skill references still read **B**. Execution uses B's plugins, MCP, skills and model credentials; changing A's management configuration does not replace them. Session search, creation and row actions still target their respective environment. Cloud connection preferences always belong to A's browser. Saving a connection keeps settings open to observe its status; then create or select a cloud session in its group. Cloud failure does not interrupt local conversations; reconnect once service recovers. Explicit disconnection or changing the cloud origin releases the previous cloud page context. Reconnection restores B's records, but unsubmitted drafts are not guaranteed across an explicit disconnect. Tasks already started on B follow B's backend lifecycle.
 
-This version requires updated standard Harness on A and B and cloud plugin 0.5.1 on B. It supports one local environment and one cloud connection.
+This version requires updated standard Harness on A and B and cloud plugin 0.6.0 on B. It supports one local environment and one cloud connection.
 
-Cloud plugin 0.5.1 reads two required deployment environment variables at startup. Model listing and inference share the same API base and deployment Key:
+Cloud plugin 0.6.0 reads two required deployment environment variables at startup. Model listing and inference share the same API base and deployment Key:
 
 ```sh
 export AGH_CLOUD_KEY='your-platform-key'
@@ -72,6 +72,26 @@ A's cloud frame uses the cloud model picker through `conversation.input.model.ca
 
 The model adapter reuses the Host-provided public `@agnes/ai/model-adapter` entry (`PiAdapter`, `isChatModelId`). Runtime `ModelAdapterDefinition.contributeRoutes(signal)` is optional: existing adapters are unchanged. Installed providers can return their own routes for assembly without modifying profile configuration; route API must equal their registration ID, and collisions with persisted/other contributed routes are refused. Routes follow registration/instance cleanup. When switching to a newly listed model, the worker refreshes its runtime model image, then runs the same strict selection validation. Streaming, tool round trips, cancellation, request capture and model errors use the standard Core/Worker path; no local-model fallback occurs after cloud failure.
 
-The upstream catalog has IDs, not complete capabilities or prices. This version exposes chat models as text-only with native tool calls and no reasoning controls, using deployment budgets of 32,768 context / 4,096 output tokens. Plugin settings `modelContextWindow` / `modelMaxTokens` override these budgets (output must be below context). Zero cost metadata means **unknown pricing**, not free service; third-party charging and usage reporting remain outside this iteration. Known Agnes image/video generation IDs are filtered by the existing chat-model predicate; unknown vendor IDs require operator verification. Verify vendor-specific capabilities before widening them.
+The upstream catalog has IDs, not complete capabilities or prices. This version exposes chat models as text-only with native tool calls and no reasoning controls, using deployment budgets of 32,768 context / 4,096 output tokens. Plugin settings `modelContextWindow` / `modelMaxTokens` override these budgets (output must be below context). Zero cost metadata means **unknown pricing**, not free service; tool charging follows the reporting contract below. Known Agnes image/video generation IDs are filtered by the existing chat-model predicate; unknown vendor IDs require operator verification. Verify vendor-specific capabilities before widening them.
 
 Catalog successes are cached for 60 seconds and manual Refresh forces a fetch. Requests have an eight-second timeout, no redirects and bounded JSON/model counts. Empty/rejected/unavailable/invalid states never expose upstream diagnostics or silently fall back to local models. Existing runtime snapshots remain immutable; runtime assembly refreshes the catalog for new selections. Changing Key or endpoint environments requires restarting B's daemon/Workers under the new environment. The installation and test instructions live in the independent plugin folder's README.
+
+## Tool usage reporting
+
+Requires matching standard Harness Extension API 5.15.0. Older hosts refuse this package. Upgrade/restart B's daemon before installing. Sessions pin their plugin generation: create a new session or migrate an eligible existing one through runtime settings.
+
+Cloud credentials accept `AGH_API_KEY` or the existing `AGH_CLOUD_KEY`; model bases accept `OPENAI_BASE_URL` or `AGH_CLOUD_API_BASE_URL`. Both aliases must agree when supplied. The plugin never mutates environment variables or native model credentials, and does not substitute a generic `OPENAI_API_KEY` for the cloud Key.
+
+```sh
+export LLMSG_TRACK_URL='https://api-llmsg-dev.agnes-dev.com/llmsg/api/track/tool_calls'
+```
+
+This is a complete report URL, without appending `/v1/`. If absent, the plugin uses the model gateway origin's `/llmsg/api/track/tool_calls`. POST uses the same Bearer Key as inference and sends only `request_id` and the `tool_calls` name/count map.
+
+Only tool calls produced by the cloud primary route are eligible. The pure projection reuses `request/sent`, `tool/call`, `effect/intent`, `tool/result` and `cost/ledger`, taking the ID from `X-Oneapi-Request-Id`, never the response-body ID or a generated ID. Admitted successful/failed dispatches count once; explicit not-sent results, approval refusals and unexecuted calls do not. Internal retries deduplicate by tool-use ID. A deferred job acknowledgement counts once; subsequent polling does not. Child sessions report independently without adding their counts to the parent.
+
+A committed turn end triggers enqueue, but each model request is reported separately and completely. Empty requests are skipped. Requests with unsettled calls wait rather than report a partial count. More than 50 tool names, names outside 1–64 characters, counts outside 1–1000, absent request IDs or mismatched Key identities remain blocked; never split, truncate or manufacture another ID.
+
+The current-profile managed resource uses the Host-owned persistent store. Projection folding has no I/O; completion hooks persist queue records/receipts only. Background HTTP has independent cancellation. Enqueued records recover automatically after restart. A crash between ledger commit and enqueue is recovered when that session is reopened; the plugin does not enumerate unopened historical sessions. Persist the plugin store across sandbox restarts; erased sandbox disks cannot be recovered.
+
+HTTP success (including duplicate acknowledgement) settles a record. Timeouts, 429 and 5xx retry the identical ID/body with bounded exponential backoff. Other statuses remain blocked. Old records cannot be sent with a rotated Key. Disabling stops delivery while preserving stored records and committed conversation outcomes. `cloudusage.check` exposes queued/blocked/sent counts, never credentials or upstream diagnostics. Stored records contain billing identifiers/counts, not raw Keys, arguments, conversation content or workspace files.
