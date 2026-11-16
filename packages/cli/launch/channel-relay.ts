@@ -52,68 +52,9 @@ export function channelRelay(input: {
       }
       return true
     }
-    if (
-      typeof body?.method === 'string' &&
-      ['channels.overview', 'channels.context', 'channels.configure', 'channels.remove'].includes(body.method)
-    ) {
-      const params = body.params
-      const record =
-        params && typeof params === 'object' && !Array.isArray(params)
-          ? (params as Record<string, unknown>)
-          : undefined
-      const fields =
-        body.method === 'channels.overview'
-          ? []
-          : body.method === 'channels.remove'
-            ? ['extension', 'instanceId', 'operationId', 'configurationRevision', 'expectedVersion']
-            : body.method === 'channels.context'
-              ? ['extension', 'sessionId', 'instanceId']
-              : [
-                  'extension',
-                  'sessionId',
-                  'instanceId',
-                  'replaceId',
-                  'credentialRefs',
-                  'config',
-                  'allowFrom',
-                  'requireMention',
-                  'operationId',
-                  'configurationRevision',
-                ]
-      const text = (key: string) =>
-        typeof record?.[key] === 'string' &&
-        (record[key] as string).length > 0 &&
-        (record[key] as string).length <= 512
-      const refs = record?.credentialRefs
-      if (
-        Object.keys(body).some((key) => !['method', 'params'].includes(key)) ||
-        !record ||
-        Object.keys(record).some((key) => !fields.includes(key)) ||
-        (body.method !== 'channels.overview' && !text('extension')) ||
-        (['channels.context', 'channels.configure'].includes(body.method) && !text('sessionId')) ||
-        (body.method === 'channels.remove' &&
-          (!text('instanceId') ||
-            !text('operationId') ||
-            !text('configurationRevision') ||
-            !Number.isSafeInteger(record.expectedVersion) ||
-            Number(record.expectedVersion) < 0)) ||
-        (body.method === 'channels.configure' &&
-          (!text('instanceId') ||
-            !text('operationId') ||
-            !text('configurationRevision') ||
-            !refs ||
-            typeof refs !== 'object' ||
-            Array.isArray(refs) ||
-            Object.keys(refs).length > 32 ||
-            Object.values(refs).some(
-              (ref) => typeof ref !== 'string' || !/^secret:\/\/[a-z0-9-]+\/[a-z0-9._-]+$/.test(ref),
-            ) ||
-            (record.allowFrom !== undefined &&
-              (!Array.isArray(record.allowFrom) ||
-                record.allowFrom.length > 1024 ||
-                record.allowFrom.some((id) => typeof id !== 'string' || id.length > 256))) ||
-            (record.requireMention !== undefined && typeof record.requireMention !== 'boolean')))
-      ) {
+    if (typeof body?.method === 'string' && Object.hasOwn(WORKBENCH_FIELDS, body.method)) {
+      const record = workbenchParams(body.method, body)
+      if (!record) {
         input.reply(response, 400, { error: httpRpcError(400, 'INVALID_REQUEST') })
         return true
       }
@@ -131,7 +72,11 @@ export function channelRelay(input: {
                 )
               : body.method === 'channels.remove'
                 ? await api.remove(record)
-                : await api.configure(record)
+                : body.method === 'channels.dedicatedContext'
+                  ? await api.dedicatedContext(String(record.extension))
+                  : body.method === 'channels.configureDedicated'
+                    ? await api.configureDedicated(record)
+                    : await api.configure(record)
         input.reply(response, 200, result)
       } catch {
         input.reply(response, 503, { error: httpRpcError(503, 'UNAVAILABLE') })
@@ -181,6 +126,76 @@ export function channelRelay(input: {
     }
     return true
   }
+}
+
+const CONNECTION_FIELDS = ['credentialRefs', 'config', 'allowFrom', 'requireMention', 'operationId']
+/** Workbench methods and the only fields each accepts. Identity, paths and agents are server-derived. */
+const WORKBENCH_FIELDS: Record<string, readonly string[]> = {
+  'channels.overview': [],
+  'channels.context': ['extension', 'sessionId', 'instanceId'],
+  'channels.configure': [
+    'extension',
+    'sessionId',
+    'instanceId',
+    'replaceId',
+    ...CONNECTION_FIELDS,
+    'configurationRevision',
+  ],
+  'channels.remove': ['extension', 'instanceId', 'operationId', 'configurationRevision', 'expectedVersion'],
+  'channels.dedicatedContext': ['extension'],
+  'channels.configureDedicated': [
+    'extension',
+    'workspaceId',
+    'instanceId',
+    ...CONNECTION_FIELDS,
+    'configurationRevision',
+  ],
+}
+
+function workbenchParams(method: string, body: Record<string, unknown>) {
+  const { params } = body
+  const record =
+    params && typeof params === 'object' && !Array.isArray(params)
+      ? (params as Record<string, unknown>)
+      : undefined
+  const text = (key: string) =>
+    typeof record?.[key] === 'string' &&
+    (record[key] as string).length > 0 &&
+    (record[key] as string).length <= 512
+  const refs = record?.credentialRefs
+  const connection = () =>
+    text('instanceId') &&
+    text('operationId') &&
+    text('configurationRevision') &&
+    !!refs &&
+    typeof refs === 'object' &&
+    !Array.isArray(refs) &&
+    Object.keys(refs).length <= 32 &&
+    Object.values(refs).every(
+      (ref) => typeof ref === 'string' && /^secret:\/\/[a-z0-9-]+\/[a-z0-9._-]+$/.test(ref),
+    ) &&
+    (record.allowFrom === undefined ||
+      (Array.isArray(record.allowFrom) &&
+        record.allowFrom.length <= 1024 &&
+        record.allowFrom.every((id) => typeof id === 'string' && id.length <= 256))) &&
+    (record.requireMention === undefined || typeof record.requireMention === 'boolean')
+  if (
+    Object.keys(body).some((key) => !['method', 'params'].includes(key)) ||
+    !record ||
+    Object.keys(record).some((key) => !WORKBENCH_FIELDS[method]?.includes(key)) ||
+    (method !== 'channels.overview' && !text('extension')) ||
+    (['channels.context', 'channels.configure'].includes(method) && !text('sessionId')) ||
+    (method === 'channels.remove' &&
+      (!text('instanceId') ||
+        !text('operationId') ||
+        !text('configurationRevision') ||
+        !Number.isSafeInteger(record.expectedVersion) ||
+        Number(record.expectedVersion) < 0)) ||
+    (method === 'channels.configure' && !connection()) ||
+    (method === 'channels.configureDedicated' && (!text('workspaceId') || !connection()))
+  )
+    return undefined
+  return record
 }
 
 /** The pairing controls: list targets, mint a code (behind a person's approval) and revoke a pairing. */

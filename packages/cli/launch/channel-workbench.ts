@@ -1,8 +1,15 @@
 import { createHash, randomBytes } from 'node:crypto'
-import type { ChannelManifest, JsonValue, ProfileServiceReceipt, SessionMeta } from '@agnes/protocol'
+import {
+  type ChannelManifest,
+  configurationRevision,
+  type JsonValue,
+  type ProfileServiceReceipt,
+  type SessionMeta,
+} from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
+import { dedicatedChannels } from './channel-dedicated.js'
 
-type Instance = {
+export type Instance = {
   id: string
   workspace: string
   agent: string
@@ -43,13 +50,34 @@ function refuse(): never {
 export function channelWorkbench(client: Client, profile: string) {
   const catalog = async () =>
     (await client.call<{ providers: Provider[] }>('_agnes/v1/channels.catalog', {})).providers
-  const scoped = async <T>(extension: string, service: string, input: unknown = {}, operationId?: string) =>
+  const scoped = async <T>(
+    extension: string,
+    service: string,
+    input: unknown = {},
+    operationId?: string,
+    expectedConfigurationRevision?: string,
+  ) =>
     client.call<T>('_agnes/v1/extension.callScoped', {
       extension,
       service: `channel.${service}`,
       input,
       ...(operationId ? { operationId } : {}),
+      ...(expectedConfigurationRevision ? { expectedConfigurationRevision } : {}),
     })
+  // A lost response must replay the same native receipt before checking today's configuration.
+  const replay = async (extension: string, operationId: string) => {
+    try {
+      const receipt = await client.extensions.readOperation({
+        extension,
+        service: 'channel.configure',
+        operationId,
+      })
+      return receipt.state === 'approval-required' ? undefined : receipt
+    } catch (error) {
+      if ((error as { data?: { code?: string } }).data?.code !== 'CAPABILITY_DENIED') throw error
+      return undefined
+    }
+  }
   const sessions = async () => {
     const items: SessionMeta[] = []
     let cursor: string | undefined
@@ -102,7 +130,7 @@ export function channelWorkbench(client: Client, profile: string) {
           ])
           return {
             provider,
-            configurationRevision: revision(configuration.output),
+            configurationRevision: configurationRevision(configuration.output),
             instances: configuration.output.instances.map((instance) => {
               const health = check?.output.instances.find((row) => row.id === instance.id)
               const bindings = health?.bindings ?? []
@@ -143,19 +171,10 @@ export function channelWorkbench(client: Client, profile: string) {
       !/^s-[a-f0-9]{12}-[a-f0-9]{6}$/.test(identity.instanceId)
     )
       refuse()
-    // A lost response must replay the same native receipt before checking today's configuration.
-    try {
-      const receipt = await client.extensions.readOperation({
-        extension,
-        service: 'channel.configure',
-        operationId,
-      })
-      if (receipt.state !== 'approval-required') return { receipt, instanceId: identity.instanceId }
-    } catch (error) {
-      if ((error as { data?: { code?: string } }).data?.code !== 'CAPABILITY_DENIED') throw error
-    }
+    const replayed = await replay(extension, operationId)
+    if (replayed) return { receipt: replayed, instanceId: identity.instanceId }
     const configuration = await scoped<{ output: { instances: Instance[] } }>(extension, 'configuration')
-    if (revision(configuration.output) !== params.configurationRevision)
+    if (configurationRevision(configuration.output) !== params.configurationRevision)
       throw new Error('Channel configuration changed; refresh before saving')
     const replaceId = typeof params.replaceId === 'string' ? params.replaceId : undefined
     const check = await scoped<{ output: { instances: Health[] } }>(extension, 'check')
@@ -190,18 +209,10 @@ export function channelWorkbench(client: Client, profile: string) {
       operationId = String(params.operationId)
     if (!(await catalog()).some((provider) => provider.extension === extension)) refuse()
     // Reconcile the original native operation even if the instance is already gone.
-    try {
-      const receipt = await client.extensions.readOperation({
-        extension,
-        service: 'channel.configure',
-        operationId,
-      })
-      if (receipt.state !== 'approval-required') return { receipt, instanceId }
-    } catch (error) {
-      if ((error as { data?: { code?: string } }).data?.code !== 'CAPABILITY_DENIED') throw error
-    }
+    const replayed = await replay(extension, operationId)
+    if (replayed) return { receipt: replayed, instanceId }
     const configuration = await scoped<{ output: { instances: Instance[] } }>(extension, 'configuration')
-    if (revision(configuration.output) !== params.configurationRevision)
+    if (configurationRevision(configuration.output) !== params.configurationRevision)
       throw new Error('Channel configuration changed; refresh before deleting')
     if (!configuration.output.instances.some((instance) => instance.id === instanceId)) refuse()
     const check = await scoped<{ output: { instances: Health[] } }>(extension, 'check')
@@ -227,5 +238,12 @@ export function channelWorkbench(client: Client, profile: string) {
   // Pairing decisions stay in the Host; this only forwards the fixed controls.
   const pairing = async (params: Record<string, unknown>) =>
     client.call<Record<string, unknown>>('_agnes/v1/channels.pairing', params)
-  return { overview, context, configure, remove, pairing }
+  return {
+    overview,
+    context,
+    configure,
+    remove,
+    pairing,
+    ...dedicatedChannels({ client, catalog, scoped, replay }),
+  }
 }

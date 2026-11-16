@@ -1,3 +1,4 @@
+import { CredentialCreate } from '@agnes/resource-control-web/credential-create'
 import { Field, Select, SettingsCheckbox, SettingsDetails, SettingsInput } from '@agnes/web-ui'
 import { useId, useState } from 'react'
 import { ChannelOptions } from './channel-options.js'
@@ -20,32 +21,40 @@ export function InstanceForm({
 }) {
   const prefix = useId()
   const [allowFromText, setAllowFromText] = useState(value.allowFrom.join(','))
+  // Metadata of credentials created here, shown until the shared list catches up.
+  const [created, setCreated] = useState<{ id: string; label: string }[]>([])
+  const choices = [...credentials, ...created.filter((item) => !credentials.some((c) => c.id === item.id))]
+  const select = (key: string, ref: string | undefined) => {
+    const refs = { ...value.credentialRefs }
+    if (ref) refs[key] = ref
+    else delete refs[key]
+    onChange({ ...value, credentialRefs: refs })
+  }
   const credential = (key: string, optional = false) => (
-    <Field
-      key={key}
-      label={key + (optional ? '' : ' *')}
-      optional={optional}
-      htmlFor={`${prefix}-credential-${key}`}
-    >
-      <Select
-        id={`${prefix}-credential-${key}`}
-        aria-label={key}
-        disabled={disabled}
-        allowClear
-        placeholder={zh ? '选择已保存的凭据' : 'Choose a saved credential'}
-        value={value.credentialRefs[key] ?? null}
-        options={credentials.map((item) => ({ value: item.id, label: item.label }))}
-        notFoundContent={
-          zh ? '暂无凭据，请先点击“管理凭据”添加' : 'No credentials. Add one using Manage credentials.'
-        }
-        onChange={(ref: string | undefined) => {
-          const refs = { ...value.credentialRefs }
-          if (ref) refs[key] = ref
-          else delete refs[key]
-          onChange({ ...value, credentialRefs: refs })
-        }}
-      />
-    </Field>
+    <div key={key} className="channel-credential-field">
+      <Field label={key + (optional ? '' : ' *')} optional={optional} htmlFor={`${prefix}-credential-${key}`}>
+        <Select
+          id={`${prefix}-credential-${key}`}
+          aria-label={key}
+          disabled={disabled}
+          allowClear
+          placeholder={zh ? '选择已保存的凭据' : 'Choose a saved credential'}
+          value={value.credentialRefs[key] ?? null}
+          options={choices.map((item) => ({ value: item.id, label: item.label }))}
+          notFoundContent={zh ? '暂无凭据，可点击“新建凭据”' : 'No credentials yet. Use New credential.'}
+          onChange={(ref: string | undefined) => select(key, ref)}
+        />
+      </Field>
+      {!disabled && (
+        <CredentialCreate
+          testId="channel-credential-create"
+          onCreated={(item) => {
+            setCreated((previous) => [...previous, { id: item.id, label: item.label }])
+            select(key, item.id)
+          }}
+        />
+      )}
+    </div>
   )
   return (
     <fieldset disabled={disabled} className="channel-instance channel-credential-form">
@@ -54,8 +63,8 @@ export function InstanceForm({
         <h5>{zh ? '连接凭据' : 'Connection credentials'}</h5>
         <p>
           {zh
-            ? '从已保存的凭据中选择，密钥不会显示在此页面。'
-            : 'Choose saved credentials. Secret values are never displayed here.'}
+            ? '选择已保存的凭据，或在字段旁新建；密钥只写入、不会显示在此页面。'
+            : 'Choose a saved credential or create one beside the field. Secret values are write-only.'}
         </p>
         <div className="channel-field-grid">
           {provider.manifest.credentials.required.map((key) => credential(key))}

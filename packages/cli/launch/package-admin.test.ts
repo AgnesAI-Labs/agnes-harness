@@ -362,6 +362,42 @@ it('relays only a same-origin typed browser service request and strips page-supp
         ).status,
       ).toBe(400)
     }
+    const dedicated = {
+      extension: channelCall.params.extension,
+      workspaceId: 'w-team',
+      instanceId: 'd-0123456789ab',
+      credentialRefs: { appId: 'secret://generic/app-id' },
+      operationId: 'dedicated',
+      configurationRevision: 'revision',
+    }
+    // The dedicated connection never names a session, another instance, a path or an agent.
+    for (const params of [
+      ...[
+        { sessionId: 'session-a' },
+        { replaceId: 'one' },
+        { workspace: '/work/team' },
+        { agent: 'default' },
+        { profile: 'foreign' },
+        { expectedConfigurationRevision: 'a'.repeat(64) },
+      ].map((forged) => ({ ...dedicated, ...forged })),
+      ...['operationId', 'configurationRevision', 'workspaceId', 'instanceId', 'credentialRefs'].map((key) =>
+        Object.fromEntries(Object.entries(dedicated).filter(([name]) => name !== key)),
+      ),
+      { ...dedicated, credentialRefs: { appId: 'plain-secret-value' } },
+    ])
+      expect((await sendChannel({ method: 'channels.configureDedicated', params })).status).toBe(400)
+    for (const params of [{}, { extension: dedicated.extension, sessionId: 'session-a' }])
+      expect((await sendChannel({ method: 'channels.dedicatedContext', params })).status).toBe(400)
+    // Well-formed requests reach the workbench; this mocked client has no workspace registry.
+    for (const [method, params] of [
+      ['channels.dedicatedContext', { extension: dedicated.extension }],
+      ['channels.configureDedicated', dedicated],
+    ] as const) {
+      mocks.request.mockClear()
+      const routed = await sendChannel({ method, params })
+      expect(routed.status).toBe(503)
+      expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/channels.catalog', {})
+    }
     for (const expectedVersion of [undefined, -1, 0.5, '0']) {
       expect(
         (
