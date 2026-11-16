@@ -68,17 +68,15 @@ describe('the prompt operation', () => {
       expect((await h.session.run({ until: 'turn-end', signal: new AbortController().signal })).reason).toBe(
         'completed',
       )
-      const line = provider.requests[0]?.system
-        .split('\n')
-        .find((line) => line.startsWith('- Make one logical') || line.startsWith('- Change one thing'))
-      if (enabled)
+      const lines = provider.requests[0]?.system.split('\n') ?? []
+      const line = lines.find((line) => line.startsWith('- Make one logical'))
+      if (enabled) {
         expect(line).toMatchInlineSnapshot(
           `"- Make one logical change at a time; it may span several edits or files. Verify the change as a unit before moving on. Prefer the smallest change that works. Independent reads, searches and checks can be issued together in one reply."`,
         )
-      else {
-        expect(line).toMatchInlineSnapshot(
-          `"- Change one thing at a time and verify it before moving on. Prefer the smallest edit that works."`,
-        )
+        expect(lines[lines.indexOf(line ?? '') - 1]).toBe('- Read the file before editing it.')
+      } else {
+        expect(line).toBeUndefined()
         const implicit = readPreset({}, 'trial')
         const ctx = ctxFor({})
         expect(createPromptOperation(deps).contribute?.({ ...ctx, preset })?.promptSections).toEqual(
