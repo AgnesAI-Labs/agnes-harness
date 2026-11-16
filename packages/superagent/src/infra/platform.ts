@@ -4,7 +4,7 @@
  * compare without case. Every function that differs takes the platform as a parameter, defaulting to this process's, so
  * tests cover both without changing this process's own.
  */
-import { posix, win32 } from 'node:path'
+import { basename, posix, win32 } from 'node:path'
 
 /** This process's platform, as Node names it (`win32`, `darwin`, `linux`). */
 export const HOST_PLATFORM: string = process.platform // guards-allow-platform: Superagent's shell, shims and process stops differ on Windows; code takes it as a parameter.
@@ -14,6 +14,14 @@ export const isWindows = (platform: string): boolean => platform === 'win32'
 export const pathsOf = (platform: string): typeof posix => (isWindows(platform) ? win32 : posix)
 /** The separator of PATH entries on `platform`. */
 export const pathDelimiter = (platform: string): string => pathsOf(platform).delimiter
+/** The extensions Windows runs a program file by (PATHEXT's usual ones), in any case. */
+const WINDOWS_PROGRAM_EXTENSION = /\.(cmd|exe|bat|com)$/i
+/**
+ * How a message names the program at `path`: its file name, on Windows without the extension it runs by (`gh.cmd` and
+ * `gh.EXE` are `gh`), so the text reads the same on every platform. Elsewhere the file name as it is.
+ */
+export const programName = (path: string, platform: string): string =>
+  isWindows(platform) ? win32.basename(path).replace(WINDOWS_PROGRAM_EXTENSION, '') : basename(path)
 /** Whether `path` is absolute on `platform`; on Windows only a path with its drive or a UNC path counts. */
 export const isAbsolutePath = (path: string, platform: string): boolean =>
   isWindows(platform) ? /^([A-Za-z]:[\\/]|[\\/]{2}[^\\/])/.test(path) : path.startsWith('/')
