@@ -154,6 +154,32 @@ const validOperation = (value: unknown): value is PackageOperation => {
 }
 const clone = <T>(value: T): T => structuredClone(value)
 
+/** The journal file without derived read-only facts. `bundledOrigin` is recomputed from the reviewed
+ * tree, never coordination state; an older release validates this file against its own closed schemas
+ * and would refuse the whole journal over it, so it stays in this process's memory only. A record read
+ * back from disk, after a restart or a failed write, omits it and shows the ordinary source review. */
+function withoutDerived<T extends { bundledOrigin?: unknown }>(value: T): T {
+  const { bundledOrigin: _, ...rest } = value
+  return rest as T
+}
+function persisted(journal: Journal): Journal {
+  return {
+    ...journal,
+    operations: journal.operations.map((entry) => {
+      const { preview, installed } = entry.operation
+      if (preview?.bundledOrigin === undefined && installed?.bundledOrigin === undefined) return entry
+      return {
+        ...entry,
+        operation: {
+          ...entry.operation,
+          ...(preview ? { preview: withoutDerived(preview) } : {}),
+          ...(installed ? { installed: withoutDerived(installed) } : {}),
+        },
+      }
+    }),
+  }
+}
+
 function validStoredOperation(value: unknown): value is StoredPackageOperation {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   const row = value as Record<string, unknown>
@@ -415,7 +441,7 @@ export class FilePackageOperationStore implements PackageOperationStore {
     const temporary = join(this.directory, `.operations-${randomUUID()}.tmp`)
     const handle = await open(temporary, 'wx', 0o600)
     try {
-      await handle.writeFile(JSON.stringify(journal), 'utf8')
+      await handle.writeFile(JSON.stringify(persisted(journal)), 'utf8')
       await handle.sync()
       await handle.close()
       await renameWriteThrough(temporary, file)

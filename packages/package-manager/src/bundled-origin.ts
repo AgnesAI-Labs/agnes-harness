@@ -8,7 +8,7 @@ import {
   OPTIONAL_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
 import { hashDirectory } from './directory-digest.js'
-import { HOST_CAPABILITY_GRANTS, type HostGrantDeclaration } from './host-grants.js'
+import { HOST_CAPABILITY_GRANTS, type HostGrantDeclaration, optionalRowGrant } from './host-grants.js'
 import { parseSource } from './sources.js'
 
 /** The release-table identity of one optional shipped plugin. */
@@ -80,8 +80,8 @@ export function matchesShippedRelease(
   )
 }
 
-/** Whether the release grants a row of this package the bundled-application runtime. Mirrors the Host
- * grant pin: only an in-process row the declaration names receives the package and row grants. */
+/** Whether the release grants a row of this package the bundled-application runtime, composed by
+ * the same rule the Host grant pin applies. */
 function grantsOwnerApplication(
   id: string,
   rows: readonly Readonly<{ id: string; runtime: string }>[],
@@ -89,11 +89,7 @@ function grantsOwnerApplication(
 ): boolean {
   const declaration = declarations.find((item) => item.packageId === id)
   return (
-    declaration !== undefined &&
-    rows.some((row) => {
-      const extension = row.runtime === 'in-process' ? declaration.extensions[row.id] : undefined
-      return extension !== undefined && { ...declaration.package, ...extension }.bundledApp === true
-    })
+    declaration !== undefined && rows.some((row) => optionalRowGrant(declaration, row)?.bundledApp === true)
   )
 }
 

@@ -49,13 +49,23 @@ export function PreviewFacts({
       {current ? (
         <UpdateDiff preview={preview} fromVersion={current.version} current={current} />
       ) : (
-        <CapabilityReview value={preview.declaredCapabilities} preflight={preview.preflight} t={t} />
+        <CapabilityReview
+          value={preview.declaredCapabilities}
+          preflight={preview.preflight}
+          ownerApplication={preview.bundledOrigin?.ownerApplication === true}
+          t={t}
+        />
       )}
       <ProvenanceReview value={preview.provenance} bundled={preview.bundledOrigin !== undefined} t={t} />
       {/* A blocker or warning is why the user is reading this: show it without a click. */}
       <Technical open={preview.blockers.length > 0 || preview.warnings.length > 0}>
         {current && (
-          <CapabilityReview value={preview.declaredCapabilities} preflight={preview.preflight} t={t} />
+          <CapabilityReview
+            value={preview.declaredCapabilities}
+            preflight={preview.preflight}
+            ownerApplication={preview.bundledOrigin?.ownerApplication === true}
+            t={t}
+          />
         )}
         {current && combined ? (
           <UpdateActivationFacts installed={current} preview={preview} />
@@ -86,7 +96,12 @@ export function PreviewTechnicalFacts({
     <>
       <ProvenanceReview value={preview.provenance} bundled={preview.bundledOrigin !== undefined} t={t} />
       {current && (
-        <CapabilityReview value={preview.declaredCapabilities} preflight={preview.preflight} t={t} />
+        <CapabilityReview
+          value={preview.declaredCapabilities}
+          preflight={preview.preflight}
+          ownerApplication={preview.bundledOrigin?.ownerApplication === true}
+          t={t}
+        />
       )}
       {current && combined ? (
         <UpdateActivationFacts installed={current} preview={preview} />
@@ -100,8 +115,12 @@ export function PreviewTechnicalFacts({
 export function EnableFacts({ item, t }: { item: PackageInstalledDescriptor; t: Text }) {
   return (
     <>
-      <CapabilityReview value={item.declaredCapabilities} t={t} />
-      <ProvenanceReview value={item.provenance} t={t} />
+      <CapabilityReview
+        value={item.declaredCapabilities}
+        ownerApplication={item.bundledOrigin?.ownerApplication === true}
+        t={t}
+      />
+      <ProvenanceReview value={item.provenance} bundled={item.bundledOrigin !== undefined} t={t} />
       {!item.trusted && (
         <Technical open={item.blockers.length > 0}>
           <TrustConfirmationFacts item={item} leadKey="lead.trust-enable" />

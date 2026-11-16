@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   type PackageBlocker,
+  type PackageBundledOrigin,
   type PackageContributionSummary,
   type PackagePresentation,
   validatePluginMetadata,
@@ -38,6 +39,8 @@ export type InstalledPackage = Readonly<{
   trusted: boolean
   enabled: boolean
   provides?: readonly AgnesPluginProvide[]
+  /** The installed tree is the optional plugin this AGH ships (see provenBundledOrigin). */
+  bundledOrigin?: PackageBundledOrigin
   contributions: readonly PackageContributionSummary[]
   blockers: readonly PackageBlocker[]
   verifiedRollbackTarget: Readonly<{
@@ -110,6 +113,7 @@ type VerifiedPackageDirectory = {
   capabilityHash: string
   blockers: readonly PackageBlocker[]
   provides?: readonly AgnesPluginProvide[]
+  bundledOrigin?: PackageBundledOrigin
 }
 export type InventoryVerificationCache = Map<string, VerifiedPackageDirectory>
 
@@ -233,6 +237,7 @@ export function verifyHashedPackageDirectory(
     capabilityHash: hash,
     blockers: checked.preview.blockers,
     ...(checked.preview.provides === undefined ? {} : { provides: checked.preview.provides }),
+    ...(checked.preview.bundledOrigin ? { bundledOrigin: checked.preview.bundledOrigin } : {}),
   })
   if (key && cache) {
     const oldest = cache.keys().next().value
@@ -340,6 +345,7 @@ function* inventoryReadSteps(
     let provenance = entry.provenance
     let hash = capabilityHash(entry)
     let provides: readonly AgnesPluginProvide[] | undefined
+    let bundledOrigin: PackageBundledOrigin | undefined
     if (entry.contributions === undefined || entry.treeIntegrity === undefined)
       blockers.push({ code: 'unknown-contribution', references: ['static-inventory-migration-required'] })
     else {
@@ -371,6 +377,7 @@ function* inventoryReadSteps(
       if (entry.trust !== 'builtin') enforceSourceConfiguration(sourceConfig, provenance)
       hash = verified.capabilityHash
       provides = verified.provides
+      bundledOrigin = verified.bundledOrigin
       blockers.push(
         ...verified.blockers.filter(
           (b) => !(entry.source.type === 'workspace' && b.references.includes('use-trust-workspace')),
@@ -414,6 +421,7 @@ function* inventoryReadSteps(
       trusted,
       enabled: entry.state.enabled,
       ...(provides === undefined ? {} : { provides }),
+      ...(bundledOrigin ? { bundledOrigin } : {}),
       contributions: entry.contributions ?? [],
       blockers,
       verifiedRollbackTarget: yield* verifiedRollbackTarget(id, entry, {

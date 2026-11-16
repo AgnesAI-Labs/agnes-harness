@@ -32,7 +32,7 @@ export const trustCatalog: LocaleCatalog = {
     'capability.profileServices': 'Provide profile-wide services',
     'capability.managedService': 'Run a managed background service',
     'capability.ownerApplication':
-      'Once trusted and enabled, this AGH gives it a private state directory, a local client that acts as the profile owner, and access to chat channels.',
+      'Once trusted and enabled, this AGH gives it a private state directory and a local client that acts as the profile owner, and it can use chat channels.',
     'provenance.bundled': 'Provided with this AGH: its contents match the copy shipped with this version.',
     'provenance.bundledSignature':
       'Publisher signature not separately verified. Being provided with AGH does not change trust; review what it gets.',
@@ -121,7 +121,7 @@ export const trustCatalog: LocaleCatalog = {
     'capability.profileServices': '提供配置档级服务',
     'capability.managedService': '运行托管后台服务',
     'capability.ownerApplication':
-      '信任并启用后，本 AGH 会给它私有的状态目录、以配置档主人身份操作的本地客户端，以及聊天渠道访问。',
+      '信任并启用后，本 AGH 会给它私有的状态目录和以配置档主人身份操作的本地客户端，它还可以使用聊天渠道。',
     'provenance.bundled': '随当前 AGH 提供：内容与本版本随附的副本一致。',
     'provenance.bundledSignature': '发布者签名未单独验证。随 AGH 提供不改变信任；请审阅它会获得的能力。',
 

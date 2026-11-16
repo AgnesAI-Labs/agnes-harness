@@ -9,6 +9,7 @@ import {
   type HostGrantDeclaration,
   matchesShippedRelease,
   OPTIONAL_BUNDLED_PACKAGES,
+  optionalRowGrant,
   parseAgnesPluginEntries,
   type RuntimePluginSnapshot,
   type ShippedBundledRelease,
@@ -95,8 +96,9 @@ export function pinOptionalBundledRowGrants(
     )
       return empty
     const row = proof.rows.find((r) => r.id === origin.rowId && r.export === origin.exportName)
-    if (!row || row.runtime !== 'in-process' || !declaration.extensions[row.id]) return empty
+    const grant = row && optionalRowGrant(declaration, row)
+    if (!grant) return empty
     bindings.set(pkg.id, identity)
-    return Object.freeze({ ...declaration.package, ...declaration.extensions[row.id] })
+    return Object.freeze(grant)
   }
 }

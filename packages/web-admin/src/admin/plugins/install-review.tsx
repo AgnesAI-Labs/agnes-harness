@@ -123,7 +123,7 @@ export function InstallReview({
             <SettingsItem
               icon="info"
               label={t('review.signature')}
-              description={t('provenance.bundledSignature')}
+              description={t('review.signatureBundled')}
             />
           )}
         </SettingsGroup>

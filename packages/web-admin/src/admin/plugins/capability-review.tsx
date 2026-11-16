@@ -9,9 +9,10 @@ import { PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog } from './local
 
 type Text = (key: string) => string
 
-/** A named list kept short enough for one review line: the first few names, then the count. */
-function named(label: string, names: readonly string[]): string {
-  return names.length > 4
+/** A named list on one review line. `short` keeps the first four names and the count; use it only for
+ * lists the review's technical details print in full. */
+function named(label: string, names: readonly string[], short = true): string {
+  return short && names.length > 4
     ? `${label} (${names.length}): ${names.slice(0, 4).join(', ')}, …`
     : `${label}: ${names.join(', ')}`
 }
@@ -34,7 +35,8 @@ const SWITCHES = [
 ] as const satisfies readonly (readonly [keyof PluginCapabilities, string])[]
 
 /** Each capability a package declares, as one line of plain words. Every manifest capability has a
- * line; long name lists are shortened here and listed in full under Technical details. */
+ * line. Long tool, hook, slot, resource, service and projection lists show four names and the count;
+ * the technical details list those in full. UI data and stream names are always listed in full. */
 export function capabilityRequests(value: PluginCapabilities | undefined, t: Text): string[] {
   if (!value) return []
   const label = (key: string) => t(`capability.${key}`)
@@ -57,7 +59,7 @@ export function capabilityRequests(value: PluginCapabilities | undefined, t: Tex
       : []),
     ...(['hooks', 'slots', 'resources', 'uiData'] as const)
       .filter((key) => value[key]?.length)
-      .map((key) => named(label(key), value[key] ?? [])),
+      .map((key) => named(label(key), value[key] ?? [], key !== 'uiData')),
     ...(services(true).length ? [named(label('profileServices'), services(true))] : []),
     ...(services(false).length ? [named(label('services'), services(false))] : []),
     ...(['projections', 'streams'] as const)
@@ -66,6 +68,7 @@ export function capabilityRequests(value: PluginCapabilities | undefined, t: Tex
         named(
           label(key),
           (value[key] ?? []).map((item) => item.name),
+          key === 'projections',
         ),
       ),
     ...(value.managedServices ?? []).map((service) => `${label('managedService')}: ${service.id}`),
@@ -81,14 +84,20 @@ export function capabilityRequests(value: PluginCapabilities | undefined, t: Tex
 export function CapabilityReview({
   value,
   preflight,
+  ownerApplication = false,
   t,
 }: {
   value: PluginCapabilities | undefined
   preflight?: PackagePreview['preflight']
+  /** The Host proved the shipped copy whose release grants the bundled-application runtime. */
+  ownerApplication?: boolean
   t: Text
 }) {
   useUiText(PLUGIN_ADMIN_LOCALE_NAMESPACE, pluginAdminLocaleCatalog)
-  const requests = capabilityRequests(value, t)
+  const requests = [
+    ...capabilityRequests(value, t),
+    ...(ownerApplication ? [t('capability.ownerApplication')] : []),
+  ]
   return (
     <section aria-label={t('capability.title')}>
       <h3>{t('capability.title')}</h3>

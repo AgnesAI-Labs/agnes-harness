@@ -110,20 +110,27 @@ it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
     const preview = await manager.inspect(profile, parseSource(helper.ref))
     expect(preview).toMatchObject({ id: helper.id, blockers: [] })
     // Only the optional release table carries the exact shipped-copy fact; it is never a signature.
-    expect(preview.bundledOrigin).toEqual(
-      OPTIONAL_BUNDLED_PACKAGES.includes(helper as (typeof OPTIONAL_BUNDLED_PACKAGES)[number])
-        ? helper.id === '@agnes/superagent'
-          ? { ownerApplication: true }
-          : {}
-        : undefined,
-    )
+    const fact = OPTIONAL_BUNDLED_PACKAGES.includes(helper as (typeof OPTIONAL_BUNDLED_PACKAGES)[number])
+      ? helper.id === '@agnes/superagent'
+        ? { ownerApplication: true }
+        : {}
+      : undefined
+    expect(preview.bundledOrigin).toEqual(fact)
     expect(preview.provenance.signatureVerified).toBe(false)
     const installed = await manager.add(profile, helper.ref)
     expect(installed.state).toMatchObject({ trusted: null, enabled: false })
     expect(
       readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[helper.id],
     ).toBeDefined()
+    // The daemon's install path proves the installed tree again from its own verified digest.
+    const other = offlineManager()
+    await other.manager.install(other.profile, parseSource(helper.ref), {
+      expectedIntegrity: preview.integrity,
+    })
+    const row = (await other.manager.inventory(other.profile)).packages.find((item) => item.id === helper.id)
+    expect(row?.bundledOrigin).toEqual(fact)
     expect(exec).not.toHaveBeenCalled()
+    expect(other.exec).not.toHaveBeenCalled()
   },
 )
 

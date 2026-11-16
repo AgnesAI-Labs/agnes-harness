@@ -169,7 +169,9 @@ it.each(['en', 'zh-CN'] as const)(
       expect(f.host.querySelector('[data-testid="install-review-unverified"]')).toBeNull()
       const source = f.host.querySelector('[data-testid="install-review-source"]')?.textContent
       expect(source).toContain(text(locale, 'review.bundled'))
-      expect(source).toContain(text(locale, 'provenance.bundledSignature'))
+      expect(source).toContain(
+        `${text(locale, 'review.signature')}${text(locale, 'review.signatureBundled')}`,
+      )
       // The full sentence sits behind the source row's info and in the technical source record.
       expect(f.host.querySelector('[data-testid="provenance-bundled"]')?.textContent).toBe(
         text(locale, 'provenance.bundled'),
@@ -248,4 +250,11 @@ it.each(['en', 'zh-CN'] as const)('summarizes every capability a manifest can de
       seen.add(line)
     }
   }
+  // Technical details print no UI data or stream names, so the summary never shortens those lists.
+  const names = ['a.one', 'a.two', 'a.three', 'a.four', 'a.five']
+  const full = capabilityRequests(
+    { uiData: names, streams: names.map((name) => ({ name })) } as PluginCapabilities,
+    (k) => text(locale, k),
+  )
+  for (const line of full) expect(line).toContain('a.five')
 })

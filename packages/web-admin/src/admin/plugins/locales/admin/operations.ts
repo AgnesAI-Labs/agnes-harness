@@ -81,6 +81,8 @@ export const operationsCatalog: LocaleCatalog = {
     'review.source': 'Source',
     'review.bundled': 'Provided with this AGH',
     'review.signature': 'Publisher signature',
+    'review.signatureBundled':
+      'Not separately verified. Being provided with AGH does not change trust; review what it gets.',
     'review.ownerApplication': 'Bundled app access',
     'review.cancel': 'Cancel',
     'review.retry': 'Retry',
@@ -270,6 +272,7 @@ export const operationsCatalog: LocaleCatalog = {
     'review.source': '来源',
     'review.bundled': '随当前 AGH 提供',
     'review.signature': '发布者签名',
+    'review.signatureBundled': '未单独验证。随 AGH 提供不改变信任；请审阅它会获得的能力。',
     'review.ownerApplication': '随包应用权限',
     'review.cancel': '取消',
     'review.retry': '重试',

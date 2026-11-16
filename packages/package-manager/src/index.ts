@@ -32,7 +32,12 @@ export * from './entry-path.js'
 export * from './error-message.js'
 export * from './errors.js'
 export * from './generation-equivalence.js'
-export { HOST_CAPABILITY_GRANTS, type HostCapabilityGrant, type HostGrantDeclaration } from './host-grants.js'
+export {
+  HOST_CAPABILITY_GRANTS,
+  type HostCapabilityGrant,
+  type HostGrantDeclaration,
+  optionalRowGrant,
+} from './host-grants.js'
 export {
   capabilityHash,
   type InstalledInventory,
