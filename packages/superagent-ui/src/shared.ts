@@ -251,6 +251,10 @@ export const SETUP_PROBLEMS = {
     'github',
     "The agent's GitHub token cannot read notifications; sign in with gh auth login or a classic token.",
   ],
+  agentTokenInKeychain: [
+    'github',
+    "The agent's GitHub token for @{account} is in the macOS keychain, which Superagent's sandboxed sessions cannot read; sign the agent GitHub CLI in again with auth login --insecure-storage.",
+  ],
 } as const satisfies Record<string, readonly [SetupPlace, string]>
 export type SetupCode = keyof typeof SETUP_PROBLEMS
 export interface SetupProblem {

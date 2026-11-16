@@ -78,6 +78,11 @@ panel's **Deployment** page names. Setting it explicitly before the service star
    /srv/superagent/bin/gh-agent api user --jq .login
    ```
 
+   On macOS, sign in with `gh-agent auth login --insecure-storage` (and a classic token with
+   `--with-token --insecure-storage`), so that the token stays in the wrapper's configuration directory. Ticket sessions
+   run inside the macOS sandbox, which cannot read the keychain where `gh` keeps a token otherwise; there the agent's
+   `gh` would act signed out. Setup reports a token it finds in the keychain.
+
    On Windows the wrapper is `gh-agent.cmd`. It runs `gh.exe` by its full path (`where.exe gh` prints it), so it never
    reaches Superagent's `gh` shim, and its own path is ASCII only: the shim names it, and `cmd.exe` misreads other
    characters in a batch file. So does the path of `gh.exe` written into it: one under your profile (a per-user install
@@ -332,6 +337,7 @@ again after you fixed something outside the panel.
 | `git would ask other credential helpers than the agent's for github.com` | A helper was added to `<stateDir>/worker-gitconfig`, which Superagent rewrites on its next start: select **Check again**. Otherwise the agent's git is older than 2.32 |
 | `The agent's GitHub token cannot read notifications; …` | The agent is signed in with a fine-grained token, which GitHub's notifications API refuses. Sign in again with `gh-agent auth login` through the browser, or with a classic token with the `repo` and `notifications` scopes, as in step 4 |
 | `gh acts as @…, not the agent account @…` | Sign in again with `gh-agent auth login`, as in step 4 |
+| `The agent's GitHub token for @… is in the macOS keychain, …`, or on macOS the agent's `gh` acts signed out in ticket sessions while `gh-agent auth status` shows `(keyring)` | Sessions run inside the macOS sandbox, which cannot read the keychain. Sign in again with `gh-agent auth login --insecure-storage` (a classic token: `--with-token --insecure-storage`), as in step 4 |
 | `The agent GitHub CLI was not found.` | Set the absolute path of the `gh-agent` wrapper on the GitHub Source, and make the `gh` it runs reachable on the unit's `PATH` |
 | `The agent GitHub CLI cannot read its account.` | The wrapper is not signed in: run `gh-agent auth login`, as in step 4 |
 | A file `… was not written by Superagent` | Move it out of `<stateDir>/worker-bin`, or move `<stateDir>/worker-gitconfig` away, or choose another state directory |

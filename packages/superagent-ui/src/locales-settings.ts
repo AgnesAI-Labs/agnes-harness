@@ -624,6 +624,10 @@ export const SETTINGS_TEXT = {
     '智能体的 GitHub 令牌读不到通知；请用 gh auth login 或经典令牌登录。',
     SETUP_PROBLEMS.agentTokenNoNotifications[1],
   ],
+  'setup.agentTokenInKeychain': [
+    '智能体 @{account} 的 GitHub 令牌存放在 macOS 钥匙串中，Superagent 受沙箱限制的会话读不到；请用 auth login --insecure-storage 重新登录智能体的 GitHub CLI。',
+    SETUP_PROBLEMS.agentTokenInKeychain[1],
+  ],
   'healthCode.setupPending': ['等待部署检查', HEALTH_TEXT.setupPending],
   'healthCode.sourceOff': ['已关闭', HEALTH_TEXT.sourceOff],
   'healthCode.feishuDedicatedBot': [
