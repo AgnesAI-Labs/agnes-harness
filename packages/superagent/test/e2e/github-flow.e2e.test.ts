@@ -22,7 +22,9 @@ import { startGitHttpRemote } from '../fixtures/git-http-remote.js'
 import { AGENT_CREDENTIAL } from '../fixtures/homes.js'
 import {
   defaultStateDir,
+  explicitStateDir,
   ownerCalls,
+  platformStateReady,
   readAll,
   type StoredTicket,
   ticketOf,
@@ -225,6 +227,7 @@ async function deploy(
   const calls = ownerCalls(() => daemon.client)
   const database = join(state, DATABASE_FILE)
   if (stateDir) {
+    await platformStateReady(aghHome)
     await calls.disable()
     await calls.configure({ stateDir })
   } else {
@@ -384,7 +387,7 @@ it('restart while busy: a comment waiting for a busy worker is taken once, withi
   let run: Awaited<ReturnType<typeof deploy>> | undefined
   try {
     // An explicit state directory.
-    run = await deploy(root, join(root, 'state'), model.respond, world)
+    run = await deploy(root, explicitStateDir(join(root, 'agh')), model.respond, world)
     const { daemon, database } = run
     const ticket = await until('the ticket', () => tickets(database)[0], POLL_MS)
     const workerId = `superagent:worker:${ticket.id}`

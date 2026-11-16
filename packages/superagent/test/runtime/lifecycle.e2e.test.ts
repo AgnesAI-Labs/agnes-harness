@@ -12,6 +12,7 @@ import { createLifecycle, sdkSessionControl, sessionsOnly } from '../../src/runt
 import { hostFloor, startDaemon, stopAllDaemons } from '../fixtures/daemon-harness.js'
 import { startGitHttpRemote } from '../fixtures/git-http-remote.js'
 import { AGENT_CREDENTIAL } from '../fixtures/homes.js'
+import { byShell } from '../fixtures/shell.js'
 import { prepareAgentEnvironment } from './agent-environment.js'
 import { fakeApp, ORCHESTRATOR, runningTicket, workerKey } from './lifecycle-fakes.js'
 
@@ -85,9 +86,24 @@ it('disable mid-turn stops the push, the job and the queue; enable reconciles by
   const ticketDir = join(root, 'exec', 'T-1')
   mkdirSync(ticketDir, { recursive: true })
   // The ticket's repository, cloned with the agent's credential (this also registers the ticket directory).
+  // Windows PowerShell, a session's shell there, has no `&&`: each git's exit code is checked instead.
   expect(
     await daemon.shell(
-      `git clone -q ${env.agentUrl} repo && cd repo && git checkout -q -b work && echo y > y.txt && git add y.txt && git commit -q -m y && echo cloned`,
+      byShell(
+        `git clone -q ${env.agentUrl} repo && cd repo && git checkout -q -b work && echo y > y.txt && git add y.txt && git commit -q -m y && echo cloned`,
+        [
+          `git clone -q ${env.agentUrl} repo`,
+          'if ($LASTEXITCODE) { exit $LASTEXITCODE }',
+          'cd repo',
+          'git checkout -q -b work',
+          'if ($LASTEXITCODE) { exit $LASTEXITCODE }',
+          "Set-Content y.txt 'y'",
+          'git add y.txt',
+          'git commit -q -m y',
+          'if ($LASTEXITCODE) { exit $LASTEXITCODE }',
+          'echo cloned',
+        ].join('\n'),
+      ),
       ticketDir,
     ),
   ).toContain('cloned')
@@ -210,7 +226,10 @@ it('disable mid-turn stops the push, the job and the queue; enable reconciles by
   // The same push from a session that was never stopped reaches the remote: the check above is not vacuous.
   expect(
     await daemon.shell(
-      'cd repo && git push origin work:refs/heads/agent/control 2>&1; echo exit=$?',
+      byShell(
+        'cd repo && git push origin work:refs/heads/agent/control 2>&1; echo exit=$?',
+        'cd repo; git push origin work:refs/heads/agent/control; echo "exit=$LASTEXITCODE"',
+      ),
       ticketDir,
     ),
   ).toContain('exit=0')

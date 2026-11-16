@@ -13,10 +13,12 @@ import { TICKET_INSTRUCTIONS_FILE } from '../../src/runtime/instructions.js'
 import { type DaemonHandle, startDaemon, stopAllDaemons } from '../fixtures/daemon-harness.js'
 import { byShell } from '../fixtures/shell.js'
 import {
+  explicitStateDir,
   kvOf,
   ownerCalls,
   PACKAGE,
   PROFILE,
+  platformStateReady,
   readAll,
   seedTicket,
   sleep,
@@ -40,12 +42,12 @@ it('runs a ticket end to end, stops its worker on a disable and resumes it on en
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-superagent-int-')))
   let handle: DaemonHandle | undefined
   try {
-    const stateDir = join(root, 'state')
+    const aghHome = join(root, 'agh')
+    const stateDir = explicitStateDir(aghHome)
     const home = join(root, 'operator-home')
     mkdirSync(home, { recursive: true })
     const shimsDir = join(stateDir, 'worker-bin')
     const cli = writeAgentCli(root)
-    const aghHome = join(root, 'agh')
     // The daemon runs as the deployment guide starts it: as usual, with the operator's HOME and PATH.
     const daemon = await startDaemon({
       aghHome,
@@ -94,6 +96,7 @@ it('runs a ticket end to end, stops its worker on a disable and resumes it on en
     }
 
     // Set the state directory, write the settings and a ticket there, and turn Superagent on.
+    await platformStateReady(aghHome)
     await calls.disable()
     await calls.configure({ stateDir })
     const ticketId = seedTicket(database, stateDir, cli)

@@ -2,14 +2,15 @@
 // one, the package operations, the panel services and the waits.
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { openStore } from '../../src/app/store.js'
 import { type Candidate, Engine, type Policy } from '../../src/core/index.js'
 import { SettingsSchema } from '../../src/policy.js'
 import { ticketExecution } from '../../src/runtime/assignment.js'
-import { SERVICE_ID } from '../../src/runtime/index.js'
+import { DATABASE_FILE, SERVICE_ID } from '../../src/runtime/index.js'
 import { fakeGhCommand } from '../fixtures/commands.js'
+import { byShell } from '../fixtures/shell.js'
 
 export const PROFILE = 'local-dev'
 export const PACKAGE = '@agnes/superagent'
@@ -25,6 +26,24 @@ export const defaultStateDir = (aghHome: string) =>
     'bundled-apps',
     createHash('sha256').update(`${PROFILE}\0${PACKAGE}\0${SERVICE_ID}`).digest('hex').slice(0, 32),
   )
+/**
+ * A state directory a test names in the plugin's configuration: `state` beside the AGH home on POSIX; on Windows, where
+ * Superagent keeps its state only inside the private directory the platform gives it and refuses any other, `state`
+ * inside that one.
+ */
+export const explicitStateDir = (aghHome: string): string =>
+  process.platform === 'win32' ? join(defaultStateDir(aghHome), 'state') : join(dirname(aghHome), 'state')
+/**
+ * On Windows, waits until the platform has started Superagent in the directory it gives it. The platform creates that
+ * directory private and refuses one it finds made otherwise, so a test makes nothing inside it (an `explicitStateDir`, a
+ * database there) before this. Nothing to wait for elsewhere.
+ */
+export async function platformStateReady(aghHome: string): Promise<void> {
+  if (process.platform === 'win32')
+    await until('the state directory the platform gives Superagent', () =>
+      existsSync(join(defaultStateDir(aghHome), DATABASE_FILE)),
+    )
+}
 export const AGENT_LOGIN = 'agent-bot'
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -77,7 +96,11 @@ export function seedTicket(database: string, stateDir: string, cli: string): str
       SettingsSchema.parse({
         sources: { github: { enabled: true, config: { repository: 'acme/app', cli } } },
         executor: {
-          prepare: 'git init -q repo && echo prepared > repo/PREPARED',
+          // Windows PowerShell, the prepare shell there, has no `&&`, and its `>` writes UTF-16.
+          prepare: byShell(
+            'git init -q repo && echo prepared > repo/PREPARED',
+            "git init -q repo; if ($LASTEXITCODE) { exit $LASTEXITCODE }; Set-Content repo/PREPARED 'prepared'",
+          ),
           directory: join(stateDir, 'work'),
         },
       }),

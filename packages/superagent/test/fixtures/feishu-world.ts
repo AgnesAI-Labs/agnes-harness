@@ -13,6 +13,7 @@ import { SERVICE_ID } from '../../src/runtime/index.js'
 import { writeChannelPlugin } from './channel-plugin.js'
 import { type DaemonHandle, startDaemon } from './daemon-harness.js'
 import { makeHomes } from './homes.js'
+import { byShell } from './shell.js'
 
 export const PROFILE = 'local-dev'
 const PACKAGE = '@agnes/superagent'
@@ -92,7 +93,11 @@ function configure(database: string, root: string, gh: string, feishu: Record<st
         },
         policy: { sources: { feishu: { allowed: [{ id: 'ou_alice', name: 'Alice' }] } } },
         executor: {
-          prepare: 'git init -q repo && echo prepared > repo/PREPARED',
+          // Windows PowerShell, the prepare shell there, has no `&&`, and its `>` writes UTF-16.
+          prepare: byShell(
+            'git init -q repo && echo prepared > repo/PREPARED',
+            "git init -q repo; if ($LASTEXITCODE) { exit $LASTEXITCODE }; Set-Content repo/PREPARED 'prepared'",
+          ),
           directory: join(root, 'work'),
         },
       }),
