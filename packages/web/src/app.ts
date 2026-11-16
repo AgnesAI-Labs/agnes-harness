@@ -124,6 +124,7 @@ import { readTraceFactChain } from './trace-facts.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
 import { requestWorkspacePicker } from './workspace-picker.js'
+import { createWorkspaceSync } from './workspace-sync.js'
 
 installBrowserLogCapture()
 const { hosts, config: shellConfig, dispose: unmountAppShell } = mountAppShell()
@@ -1257,6 +1258,12 @@ let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
 // The search panel's footer total follows the sidebar snapshot; the panel itself never reads pages.
 let refreshSearchTotal: (() => void) | undefined
+// A group can name a workspace another client registered after this page read the list.
+const workspaceSync = createWorkspaceSync({
+  known: () => (workspaceController.loaded ? workspaceRows : undefined),
+  read: () => client.workspace.list(),
+  apply: (page) => workspaceController.apply(page),
+})
 const sidebarPages = createSidebarPagination(
   client.session,
   () => {
@@ -1266,6 +1273,7 @@ const sidebarPages = createSidebarPagination(
       sessionRows.push(selected)
     updateSidebar()
     refreshSearchTotal?.()
+    void workspaceSync.reconcile(sidebarPages.snapshot().groups)
   },
   (error) => {
     const failure = error as { code?: number; data?: { code?: string }; message?: string }
