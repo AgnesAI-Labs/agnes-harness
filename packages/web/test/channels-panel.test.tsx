@@ -102,7 +102,7 @@ it('creates a dedicated connection that binds no session and ends when it exists
       { sessionId: 'current', sessionTitle: 'Planning', targetId: 'peer', label: 'Team', state: 'active' },
     ],
   }
-  let outcome: 'approval-required' | 'completed' | 'conflict' = 'approval-required'
+  let outcome: 'approval-required' | 'completed' | 'conflict' | 'refused' | 'lost' = 'approval-required'
   const call = vi.fn(async (method: string, _params?: unknown) => {
     if (method === 'channels.overview')
       return {
@@ -116,6 +116,9 @@ it('creates a dedicated connection that binds no session and ends when it exists
         agentTitle: { en: 'General assistant', 'zh-CN': '通用助手' },
         workspaces: [{ workspaceId: 'w-team', name: 'Team', path: '/work/team' }],
       }
+    if (method === 'channels.configureDedicated' && outcome === 'refused')
+      throw Object.assign(new Error('Channel operation was not confirmed'), { code: 'CHANNEL_REFUSED' })
+    if (method === 'channels.configureDedicated' && outcome === 'lost') throw new Error('lost response')
     if (method === 'channels.configureDedicated')
       return {
         receipt:
@@ -197,6 +200,32 @@ it('creates a dedicated connection that binds no session and ends when it exists
     expect(button('Create connection')).toBeTruthy()
     const retried = call.mock.calls.filter(([method]) => method === 'channels.configureDedicated')
     expect(retried).toHaveLength(3)
+
+    // A launcher refusal is shown and leaves the form usable with a fresh read, not stuck retrying.
+    outcome = 'refused'
+    const reads = () => call.mock.calls.filter(([method]) => method === 'channels.overview').length
+    const before = reads()
+    await act(async () => button('Create connection')!.click())
+    await vi.waitFor(() =>
+      expect(document.body.textContent).toContain('cannot be created with these settings'),
+    )
+    expect(button('Create connection')).toBeTruthy()
+    expect(reads()).toBeGreaterThan(before)
+
+    // An unconfirmed attempt can be continued, or started over as a new operation after a fresh read.
+    outcome = 'lost'
+    await act(async () => button('Create connection')!.click())
+    await vi.waitFor(() => expect(button('Start over')).toBeTruthy())
+    expect(button('Continue creating')).toBeTruthy()
+    await act(async () => button('Start over')!.click())
+    expect(button('Create connection')).toBeTruthy()
+    outcome = 'completed'
+    await act(async () => button('Create connection')!.click())
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Dedicated connection created'))
+    const attempts = call.mock.calls
+      .filter(([method]) => method === 'channels.configureDedicated')
+      .map(([, params]) => (params as { operationId: string }).operationId)
+    expect(attempts.at(-1)).not.toBe(attempts.at(-2))
   } finally {
     await act(async () => {
       closeChannelDialog()

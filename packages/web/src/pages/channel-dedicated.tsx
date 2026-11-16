@@ -17,6 +17,36 @@ const blank: Instance = {
   requireMention: true,
 }
 
+/** Fixed outcome notices: [zh-CN, en]. */
+const NOTICES = {
+  workspaces: ['无法读取工作区，请重新打开重试。', 'Unable to read workspaces. Reopen to retry.'],
+  credentials: ['请选择所有必需的凭据。', 'Choose every required credential.'],
+  approval: [
+    '请完成原生审批，再点击“继续创建”。',
+    'Confirm the native approval, then choose Continue creating.',
+  ],
+  conflict: [
+    '连接配置已在别处更改，本次未保存任何内容。请核对后重新创建。',
+    'Connections changed elsewhere. Nothing was saved; review and create again.',
+  ],
+  notCreated: [
+    '连接未创建，请检查配置及审批结果。',
+    'Connection was not created. Check settings and approval.',
+  ],
+  unconfirmed: [
+    '操作尚未确认，请继续核对同一次操作。',
+    'Operation unconfirmed. Continue to reconcile this operation.',
+  ],
+  refused: [
+    '无法按当前设置创建连接（例如工作区或凭据已变化），本次未保存。请核对后重试。',
+    'This connection cannot be created with these settings (a workspace or credential may have changed). Nothing was saved; review and try again.',
+  ],
+  lost: [
+    '连接未确认。可继续重试同一次操作，或重新读取后重新开始。',
+    'Connection unconfirmed. Continue to retry this operation, or start over with a fresh read.',
+  ],
+} as const
+
 /**
  * Creates one connection that no session is bound to, for an app that takes a whole connection. The
  * server picks its identity, workspace path and agent; the flow ends once the connection exists.
@@ -42,8 +72,11 @@ export function DedicatedSetup({
   const [pending, setPending] = useState<Record<string, unknown>>()
   const [busy, setBusy] = useState(false)
   const [created, setCreated] = useState(false)
+  // The last attempt failed without a receipt: its outcome is unconfirmed, so starting over is offered.
+  const [failed, setFailed] = useState(false)
   const [message, setMessage] = useState('')
   const alive = useRef(false)
+  const say = (key: keyof typeof NOTICES) => setMessage(NOTICES[key][zh ? 0 : 1])
   useEffect(() => {
     alive.current = true
     let current = true
@@ -54,8 +87,7 @@ export function DedicatedSetup({
         setWorkspaceId(result.workspaces[0]?.workspaceId)
       })
       .catch(() => {
-        if (current)
-          setMessage(zh ? '无法读取工作区，请重新打开重试。' : 'Unable to read workspaces. Reopen to retry.')
+        if (current) setMessage(NOTICES.workspaces[zh ? 0 : 1])
       })
     return () => {
       current = false
@@ -66,7 +98,7 @@ export function DedicatedSetup({
   const save = async () => {
     if (!context || !workspace || !group.configurationRevision) return
     if (!pending && group.provider.manifest.credentials.required.some((key) => !value.credentialRefs[key])) {
-      setMessage(zh ? '请选择所有必需的凭据。' : 'Choose every required credential.')
+      say('credentials')
       return
     }
     // A retry after approval resends the same operation; the server rechecks the reviewed revision.
@@ -83,6 +115,7 @@ export function DedicatedSetup({
     }
     setPending(input)
     setBusy(true)
+    setFailed(false)
     setMessage('')
     try {
       const { receipt } = await call<{ receipt: ProfileServiceReceipt }>('channels.configureDedicated', input)
@@ -93,35 +126,26 @@ export function DedicatedSetup({
         channelsChanged()
       } else if (receipt.state === 'approval-required') {
         data.requestProfileApproval?.(receipt)
-        setMessage(
-          zh
-            ? '请完成原生审批，再点击“继续创建”。'
-            : 'Confirm the native approval, then choose Continue creating.',
-        )
+        say('approval')
       } else if (receipt.state === 'refused' && receipt.code === 'REVISION_CONFLICT') {
         setPending(undefined)
         onRefresh()
-        setMessage(
-          zh
-            ? '连接配置已在别处更改，本次未保存任何内容。请核对后重新创建。'
-            : 'Connections changed elsewhere. Nothing was saved; review and create again.',
-        )
+        say('conflict')
       } else if (['refused', 'cancelled'].includes(receipt.state)) {
         setPending(undefined)
-        setMessage(
-          zh
-            ? '连接未创建，请检查配置及审批结果。'
-            : 'Connection was not created. Check settings and approval.',
-        )
-      } else
-        setMessage(
-          zh
-            ? '操作尚未确认，请继续核对同一次操作。'
-            : 'Operation unconfirmed. Continue to reconcile this operation.',
-        )
-    } catch {
-      if (alive.current)
-        setMessage(zh ? '连接未确认，可继续重试。' : 'Connection unconfirmed. Continue to retry.')
+        say('notCreated')
+      } else say('unconfirmed')
+    } catch (error) {
+      if (!alive.current) return
+      if ((error as { code?: unknown }).code === 'CHANNEL_REFUSED') {
+        // The launcher refuses these settings as they are; the same request would be refused again.
+        setPending(undefined)
+        onRefresh()
+        say('refused')
+      } else {
+        setFailed(true)
+        say('lost')
+      }
     } finally {
       if (alive.current) setBusy(false)
     }
@@ -187,6 +211,20 @@ export function DedicatedSetup({
         <Button appearance="ghost" onClick={() => data.openSettings('security')}>
           {zh ? '管理凭据' : 'Manage credentials'}
         </Button>
+        {pending && failed && !busy && (
+          <Button
+            appearance="ghost"
+            onClick={() => {
+              // The fixed instance id keeps a fresh attempt from creating a second connection.
+              setPending(undefined)
+              setFailed(false)
+              setMessage('')
+              onRefresh()
+            }}
+          >
+            {zh ? '重新开始' : 'Start over'}
+          </Button>
+        )}
         <Button
           appearance="primary"
           disabled={busy || !workspace || !!group.error}
