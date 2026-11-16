@@ -430,8 +430,9 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       app = started
       if (begun === started) await started.reconfigure?.()
       else {
-        begun = started
+        // Begun once its start succeeded: a start that failed is started again by the next attempt.
         await started.start()
+        begun = started
       }
       if (stopping) return
       // A start can end in setup without failing, such as when another session holds the main session's key.

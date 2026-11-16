@@ -67,6 +67,26 @@ describe('the app', () => {
     await app.stop('disable')
   })
 
+  it('starts again after a start that failed before its Sources started, and only then', async () => {
+    const { app, fake } = setup()
+    const starts = watchStarts(app)
+    // Right after a daemon restart its client may not reach the daemon yet: the main session cannot be opened.
+    const add = fake.client.workspace.add
+    fake.client.workspace.add = vi.fn(async () => {
+      throw new Error('daemon discovery owner identity is unavailable')
+    })
+    await expect(app.start()).rejects.toThrow('owner identity is unavailable')
+    expect(starts.sources, 'no Source started').not.toHaveBeenCalled()
+    fake.client.workspace.add = add
+    await app.start()
+    expect(app.unavailable()).toBeUndefined()
+    expect(starts.passes).toHaveBeenCalledOnce()
+    expect(fake.sessions.has('superagent:orchestrator')).toBe(true)
+    // A started app is not started a second time.
+    await expect(app.start()).rejects.toThrow('started already')
+    await app.stop('disable')
+  })
+
   it.each(['main session', 'resume'] as const)(
     'lets a stop during the start (at the %s) win: nothing starts after it, and drain waits for the start',
     async (step) => {

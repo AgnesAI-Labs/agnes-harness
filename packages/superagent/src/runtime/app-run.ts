@@ -25,6 +25,8 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
   // The GitHub kind is there from the start, as the Feishu kind is, so the owner can set the repository during setup.
   const github = registerGithub(parts.sourceHost)
   const stops: (() => Promise<void>)[] = []
+  /** Whether a start reached its Sources; one that failed before them can start again. */
+  let sourcesStarted = false
   const draining: Promise<unknown>[] = []
   /** Starts and reconfigurations that run, which `drain()` waits for. */
   const starting = new Set<Promise<void>>()
@@ -70,6 +72,7 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
       await settings.sync(id).catch(() => {})
       if (closing()) return
     }
+    sourcesStarted = true
     stops.push(github.run(), ...(deps.sources?.(parts.sourceHost) ?? []))
     await executor.resume(!deps.reconciled)
     if (closing()) return
@@ -118,7 +121,13 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
           else waitForSetup()
         })(),
       )
-      await state.started
+      try {
+        await state.started
+      } catch (error) {
+        // A start that failed before its Sources started left nothing running: the app can be started again.
+        if (state.phase === 'starting' && !sourcesStarted) state.phase = 'idle'
+        throw error
+      }
     },
     stopSignal(_reason: 'disable' | 'generation' | 'shutdown'): void {
       if (state.phase === 'stopping') return

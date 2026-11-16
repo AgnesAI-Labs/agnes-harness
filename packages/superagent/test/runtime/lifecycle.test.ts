@@ -376,6 +376,22 @@ describe('enable', () => {
     expect(log.filter((line) => line === 'app.start')).toHaveLength(1)
   })
 
+  it('starts the app again when its start failed, rather than taking it as begun', async () => {
+    const { lifecycle, app } = setup({ retryDelaysMs: [5] })
+    const start = app.start.bind(app)
+    let fails = 1
+    app.start = async () => {
+      if (fails-- > 0) {
+        log.push('app.start failed')
+        throw new Error('daemon discovery owner identity is unavailable')
+      }
+      await start()
+    }
+    await lifecycle.start()
+    await vi.waitFor(() => expect(lifecycle.status()).toEqual({ state: 'running' }), { timeout: 2_000 })
+    expect(log.filter((line) => line.startsWith('app.start'))).toEqual(['app.start failed', 'app.start'])
+  })
+
   it('leaves a setup problem to a recheck, and a stop cancels the next attempt of a failed start', async () => {
     const waitingForSetup = setup({
       retryDelaysMs: [5],
