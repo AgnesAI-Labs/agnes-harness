@@ -26,20 +26,21 @@ export const defaultStateDir = (aghHome: string) =>
     'bundled-apps',
     createHash('sha256').update(`${PROFILE}\0${PACKAGE}\0${SERVICE_ID}`).digest('hex').slice(0, 32),
   )
+const windows = process.platform === 'win32' // guards-allow-platform: test fixture; Superagent's state directory rules differ on Windows.
 /**
  * A state directory a test names in the plugin's configuration: `state` beside the AGH home on POSIX; on Windows, where
  * Superagent keeps its state only inside the private directory the platform gives it and refuses any other, `state`
  * inside that one.
  */
 export const explicitStateDir = (aghHome: string): string =>
-  process.platform === 'win32' ? join(defaultStateDir(aghHome), 'state') : join(dirname(aghHome), 'state')
+  windows ? join(defaultStateDir(aghHome), 'state') : join(dirname(aghHome), 'state')
 /**
  * On Windows, waits until the platform has started Superagent in the directory it gives it. The platform creates that
  * directory private and refuses one it finds made otherwise, so a test makes nothing inside it (an `explicitStateDir`, a
  * database there) before this. Nothing to wait for elsewhere.
  */
 export async function platformStateReady(aghHome: string): Promise<void> {
-  if (process.platform === 'win32')
+  if (windows)
     await until('the state directory the platform gives Superagent', () =>
       existsSync(join(defaultStateDir(aghHome), DATABASE_FILE)),
     )
