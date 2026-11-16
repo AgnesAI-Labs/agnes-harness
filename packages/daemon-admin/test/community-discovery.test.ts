@@ -5,6 +5,23 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { openCommunityDiscovery } from '../src/packages/community-discovery.js'
 import { COMMUNITY_INDEX_URL } from '../src/packages/community-index.js'
 
+/**
+ * Fake timers and the clock of `Date`, but not the monotonic clocks (`performance`, `hrtime`). On Windows a cache write
+ * the destination refuses retries for 100 ms by `performance.now()` (see `replacePublishedFileSync`); a faked one never
+ * advances while the write spins, so the 'storage' case below, whose cache path is a directory, would never return.
+ */
+const fakeTimers = () =>
+  vi.useFakeTimers({
+    toFake: [
+      'setTimeout',
+      'clearTimeout',
+      'setImmediate',
+      'clearImmediate',
+      'setInterval',
+      'clearInterval',
+      'Date',
+    ],
+  })
 const directories: string[] = []
 const owners: Awaited<ReturnType<typeof openCommunityDiscovery>>[] = []
 afterEach(async () => {
@@ -34,8 +51,15 @@ async function setup(fetcher: typeof fetch = async () => Response.json(index()))
   return { owner, directory, network }
 }
 
+it('fakes the timers these cases advance, but not the monotonic clock a bounded synchronous retry waits by', () => {
+  fakeTimers()
+  const start = performance.now()
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5)
+  expect(performance.now()).toBeGreaterThan(start)
+})
+
 it('serves clones without networking and refreshes independently, persisting the index across restart', async () => {
-  vi.useFakeTimers()
+  fakeTimers()
   const { owner, directory, network } = await setup()
   owner.read()
   expect(network).not.toHaveBeenCalled()
@@ -78,7 +102,7 @@ it('serves clones without networking and refreshes independently, persisting the
 })
 
 it('retains the previous complete snapshot on failure and respects server retry delay', async () => {
-  vi.useFakeTimers()
+  fakeTimers()
   let limited = false
   const { owner, network } = await setup(async () =>
     limited ? new Response('', { status: 429, headers: { 'retry-after': '3600' } }) : Response.json(index()),
@@ -113,7 +137,7 @@ it.each([
   'empty',
   'storage',
 ] as const)('handles %s without executing repository code', async (mode) => {
-  vi.useFakeTimers()
+  fakeTimers()
   const { owner: unused, directory } = await setup()
   await unused.close()
   const config =
@@ -160,7 +184,7 @@ it.each([
 it.each(['network', 'rate-limit', 'oversized', 'bad-json'] as const)(
   'fails closed without a cache when the index has a %s failure',
   async (failure) => {
-    vi.useFakeTimers()
+    fakeTimers()
     let limitedAt = 0
     const { owner } = await setup(async () => {
       if (failure === 'network') return new Response('', { status: 503 })
@@ -184,7 +208,7 @@ it.each(['network', 'rate-limit', 'oversized', 'bad-json'] as const)(
 )
 
 it('cancels an in-flight index response and never publishes after the owner closes', async () => {
-  vi.useFakeTimers()
+  fakeTimers()
   let cancelled = false
   const { owner, directory } = await setup(
     async (_url, init) =>
@@ -215,7 +239,7 @@ it.each([
   [300, 2000],
   [600, 2000],
 ])('retains all %i entries with %i-character summaries across refresh and restart', async (size, length) => {
-  vi.useFakeTimers()
+  fakeTimers()
   let listed = Array.from({ length: size }, (_, i) => ({
     ...entry(`https://github.com/example/plugin-${i}`, `@example/plugin-${i}`),
     ...(length ? { description: 'x'.repeat(length) } : {}),
@@ -271,7 +295,7 @@ it.each([
     },
   ]),
 ])('refuses malformed index data without publishing a partial list: %j', async (body) => {
-  vi.useFakeTimers()
+  fakeTimers()
   const { owner } = await setup(async () => Response.json(body))
   owner.start()
   await vi.advanceTimersByTimeAsync(10_000)
