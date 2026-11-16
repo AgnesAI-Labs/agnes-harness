@@ -1,13 +1,18 @@
 import { randomUUID } from 'node:crypto'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { MemoryStorage } from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
-import type {
-  PersistenceMetadataNamespace,
-  PersistenceMetadataPort,
-  ServiceContext,
-  ServiceDef,
+import {
+  defaultToolPolicy,
+  type PersistenceMetadataNamespace,
+  type PersistenceMetadataPort,
+  type ServiceContext,
+  type ServiceDef,
 } from '@agnes/extension-api'
+import { sqlitePersistenceProvider } from '@agnes/host-infrastructure/adapters/storage-provider'
 import {
   type Actor,
   type DecisionSnapshot,
@@ -686,9 +691,14 @@ describe('managed configuration compare-and-set', () => {
       },
     },
   }
-  async function configured() {
+  async function configured(
+    withPrepare = false,
+    stores?: { managed: PersistenceMetadataPort; writer: PersistenceMetadataPort },
+  ) {
     const f = fixture()
-    const store = ownedStore(f.meta.namespace(owner, 'managed:bot'), () => {}, true)
+    const store = ownedStore((stores?.managed ?? f.meta).namespace(owner, 'managed:bot'), () => {}, true)
+    // Another writer of the same configuration: the same store, or a second database connection.
+    const writer = stores ? ownedStore(stores.writer.namespace(owner, 'managed:bot'), () => {}, true) : store
     const started: JsonValue[] = []
     const managed = new ProfileManagedResources(
       `managed-configure-${randomUUID()}`,
@@ -730,7 +740,14 @@ describe('managed configuration compare-and-set', () => {
     })
     registerManagedServices(
       'bot',
-      { register: (def) => f.add(def.name, def) },
+      {
+        // A plugin preparation can never be attached to the Host's configure; if one were, it must not be skipped.
+        register: (def) =>
+          f.add(
+            def.name,
+            withPrepare ? { ...def, prepare: async (input) => ({ input, presentation: {} }) } : def,
+          ),
+      },
       handle,
       () => managed.settle(),
       configSchema,
@@ -759,7 +776,7 @@ describe('managed configuration compare-and-set', () => {
       ready: () => handle.get(),
       read,
       params,
-      concurrent: () => store.set('managed-config:bot', { instances: [entry('kept'), entry('other')] }),
+      concurrent: () => writer.set('managed-config:bot', { instances: [entry('kept'), entry('other')] }),
       close: async () => {
         await runtime.close()
         await managed.close().catch(() => undefined)
@@ -805,49 +822,152 @@ describe('managed configuration compare-and-set', () => {
     }
   })
 
-  it.each(['before-preparation', 'during-approval', 'after-dispatch'] as const)(
-    'refuses a configuration changed %s without writing or publishing',
+  const withdrawals = async (c: Awaited<ReturnType<typeof configured>>) =>
+    (await c.f.storage.scan('@profile/default', { limit: 500 }))
+      .filter((row) => row.type === 'decision/state')
+      .map((row) => row.data as DecisionSnapshot)
+      .filter(
+        (value) =>
+          (value.result && 'code' in value.result && value.result.code === 'configuration-changed') ||
+          value.invalidation?.code === 'configuration-changed',
+      )
+  it.each([
+    'before-preparation',
+    'while-waiting',
+    'read-while-waiting',
+    'after-approval',
+    'after-dispatch',
+  ] as const)(
+    'refuses a configuration changed %s without writing or publishing and settles its decision',
     async (moment) => {
       const c = await configured()
       try {
         const params = await c.params()
+        const { extension, service, operationId } = params
         if (moment === 'before-preparation') c.concurrent()
         let receipt = await c.runtime.call(params, 'granted')
         if (moment === 'before-preparation') expect(await c.runtime.listDecisions('human')).toEqual([])
         else {
           expect(receipt).toMatchObject({ state: 'approval-required' })
-          if (moment === 'during-approval') c.concurrent()
-          else {
-            const commit = c.f.storage.commit.bind(c.f.storage)
-            vi.spyOn(c.f.storage, 'commit').mockImplementation(async (key, tx) => {
-              const result = await commit(key, tx)
-              // Another writer lands after native dispatch intent, before the resource writes.
-              if (
-                tx.events.some(
-                  (event) =>
-                    event.type === 'x/host/profile-operation' &&
-                    (event.data as { receipt?: { state?: string } }).receipt?.state === 'running',
+          c.f.changes.mockClear()
+          if (moment === 'while-waiting' || moment === 'read-while-waiting') {
+            c.concurrent()
+            // The caller's own read settles it as well as the approvals list does.
+            if (moment === 'read-while-waiting') {
+              expect(await c.runtime.readOperation({ extension, service, operationId }, 'granted')).toEqual({
+                state: 'refused',
+                operationId: 'create',
+                code: 'REVISION_CONFLICT',
+              })
+              expect(await withdrawals(c)).toHaveLength(1)
+            }
+            // The pending decision is withdrawn and announced instead of staying listed or answerable.
+            expect(await c.runtime.listDecisions('human')).toEqual([])
+            expect(c.f.changes).toHaveBeenCalled()
+            expect(await withdrawals(c)).toMatchObject([{ result: { reason: 'unavailable' } }])
+            receipt = await c.runtime.readOperation({ extension, service, operationId }, 'granted')
+          } else {
+            await approve(c.runtime)
+            if (moment === 'after-approval') c.concurrent()
+            else {
+              const commit = c.f.storage.commit.bind(c.f.storage)
+              vi.spyOn(c.f.storage, 'commit').mockImplementation(async (key, tx) => {
+                const result = await commit(key, tx)
+                // Another writer lands after native dispatch intent, before the resource writes.
+                if (
+                  tx.events.some(
+                    (event) =>
+                      event.type === 'x/host/profile-operation' &&
+                      (event.data as { receipt?: { state?: string } }).receipt?.state === 'running',
+                  )
                 )
-              )
-                c.concurrent()
-              return result
-            })
+                  c.concurrent()
+                return result
+              })
+            }
+            receipt = await c.runtime.call(params, 'granted')
+            if (moment === 'after-approval')
+              expect(await withdrawals(c)).toMatchObject([
+                { invalidation: { code: 'configuration-changed' } },
+              ])
           }
-          await approve(c.runtime)
-          receipt = await c.runtime.call(params, 'granted')
         }
         expect(receipt).toEqual({ state: 'refused', operationId: 'create', code: 'REVISION_CONFLICT' })
         expect(await c.read()).toEqual({ instances: [entry('kept'), entry('other')] })
         await c.ready()
         expect(c.started).toHaveLength(1)
         expect(await c.runtime.call(params, 'granted')).toEqual(receipt)
-        const { extension, service, operationId } = params
         expect(await c.runtime.readOperation({ extension, service, operationId }, 'granted')).toEqual(receipt)
+        expect(await c.runtime.listDecisions('human')).toEqual([])
       } finally {
         await c.close()
       }
     },
   )
+  it('compares inside a real SQLite write transaction against a write from another connection', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'agnes-managed-cas-'))
+    const [first, second] = await Promise.all([
+      sqlitePersistenceProvider.open({ dataDir }),
+      sqlitePersistenceProvider.open({ dataDir }),
+    ])
+    const c = await configured(false, { managed: first.metadata!, writer: second.metadata! })
+    try {
+      const params = await c.params()
+      expect(await c.runtime.call(params, 'granted')).toMatchObject({ state: 'approval-required' })
+      await approve(c.runtime)
+      const commit = c.f.storage.commit.bind(c.f.storage)
+      vi.spyOn(c.f.storage, 'commit').mockImplementation(async (key, tx) => {
+        const result = await commit(key, tx)
+        if (
+          tx.events.some(
+            (event) =>
+              event.type === 'x/host/profile-operation' &&
+              (event.data as { receipt?: { state?: string } }).receipt?.state === 'running',
+          )
+        )
+          c.concurrent()
+        return result
+      })
+      expect(await c.runtime.call(params, 'granted')).toEqual({
+        state: 'refused',
+        operationId: 'create',
+        code: 'REVISION_CONFLICT',
+      })
+      expect(await c.read()).toEqual({ instances: [entry('kept'), entry('other')] })
+      await c.ready()
+      expect(c.started).toHaveLength(1)
+    } finally {
+      await c.close()
+      await Promise.all([first.close(), second.close()])
+      rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+  it('reports a policy refusal before a stale revision and never skips a plugin preparation', async () => {
+    const c = await configured()
+    try {
+      const params = await c.params()
+      c.concurrent()
+      const decide = vi
+        .spyOn(defaultToolPolicy, 'decide')
+        .mockResolvedValueOnce({ effect: 'deny', reason: 'fixture' } as never)
+      await expect(c.runtime.call(params, 'granted')).rejects.toMatchObject({
+        data: { code: 'CAPABILITY_DENIED' },
+      })
+      decide.mockRestore()
+      const { extension, service, operationId } = params
+      await expect(c.runtime.readOperation({ extension, service, operationId }, 'granted')).rejects.toThrow()
+    } finally {
+      await c.close()
+    }
+    const prepared = await configured(true)
+    try {
+      await expect(prepared.runtime.call(await prepared.params(), 'granted')).rejects.toMatchObject({
+        data: { code: 'INTERNAL_ERROR' },
+      })
+    } finally {
+      await prepared.close()
+    }
+  })
 })
 
 it.each([

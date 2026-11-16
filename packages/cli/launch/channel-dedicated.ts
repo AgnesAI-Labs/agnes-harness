@@ -1,18 +1,19 @@
 import { randomBytes } from 'node:crypto'
 import { isAbsolute } from 'node:path'
-import {
-  type ChannelManifest,
-  configurationRevision,
-  type JsonValue,
-  type ProfileServiceReceipt,
-} from '@agnes/protocol'
+import type { ChannelManifest, JsonValue, ProfileServiceReceipt } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import type { Instance } from './channel-workbench.js'
 
 /** A connection created on its own, not derived from a session and never bound by this flow. */
 const DEDICATED_ID = /^d-[a-f0-9]{12}$/
+/** A deterministic refusal: the same request is refused again until the person changes or re-reads it. */
+export class ChannelRefusal extends Error {
+  constructor() {
+    super('Channel workbench request refused')
+  }
+}
 function refuse(): never {
-  throw new Error('Channel workbench request refused')
+  throw new ChannelRefusal()
 }
 
 /**
@@ -62,6 +63,8 @@ export function dedicatedChannels(deps: {
       expected = String(params.configurationRevision)
     const declared = (await provider(extension)).manifest.credentials
     if (!DEDICATED_ID.test(instanceId)) refuse()
+    // Read before the replay: the Host settles a pending operation whose configuration moved since review.
+    const configuration = await scoped<{ output: { instances: Instance[] } }>(extension, 'configuration')
     const replayed = await replay(extension, operationId)
     if (replayed) return { receipt: replayed, instanceId }
     const credentialRefs = params.credentialRefs as Record<string, string>
@@ -72,12 +75,6 @@ export function dedicatedChannels(deps: {
       declared.required.some((key) => !credentialRefs[key])
     )
       refuse()
-    const configuration = await scoped<{ output: { instances: Instance[] } }>(extension, 'configuration')
-    // A stale form gets the same no-write refusal the Host records for any later change.
-    if (configurationRevision(configuration.output) !== expected) {
-      const receipt: ProfileServiceReceipt = { state: 'refused', operationId, code: 'REVISION_CONFLICT' }
-      return { receipt, instanceId }
-    }
     if (configuration.output.instances.some((instance) => instance.id === instanceId)) refuse()
     const workspace = (await workspaces()).find((item) => item.workspaceId === params.workspaceId)
     if (!workspace) refuse()
@@ -90,7 +87,8 @@ export function dedicatedChannels(deps: {
       allowFrom: (params.allowFrom ?? []) as string[],
       requireMention: params.requireMention !== false,
     }
-    // The Host compares the reviewed revision again before review and inside its write transaction.
+    // A stale form is still sent: the Host journals its no-write refusal under this operation id. It
+    // compares the reviewed revision before review and again inside its write transaction.
     const instances = [...configuration.output.instances, next]
     const receipt = await scoped<ProfileServiceReceipt>(
       extension,

@@ -22,7 +22,7 @@ import {
 } from '@agnes/extension-api'
 import type { Block, ChannelSurfaceBlock } from '@agnes/extension-api/channel-contract'
 import { initializeHome } from '@agnes/host'
-import { configurationRevision, type DecisionHandle, type PackageOperationReceipt } from '@agnes/protocol'
+import type { DecisionHandle, PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { startLoopProvider } from './fixtures/loop-provider.js'
@@ -68,6 +68,19 @@ const service = (id: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 })
 const empty = { type: 'object', properties: {}, additionalProperties: false } as const
+
+/** The part of the launcher's channel workbench this test drives. */
+type Workbench = {
+  overview(): Promise<{
+    channels: {
+      provider: { extension: string }
+      configurationRevision?: string
+      instances: { id: string; bindings: unknown[]; pairings: unknown[]; intendedSession?: unknown }[]
+    }[]
+  }>
+  dedicatedContext(extension: string): Promise<{ instanceId: string; workspaces: { workspaceId: string }[] }>
+  configureDedicated(params: Record<string, unknown>): Promise<{ receipt: { state: string } }>
+}
 
 async function bounded<T>(promise: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -831,64 +844,114 @@ it.skipIf(process.platform === 'win32')(
       }, 'reinstalled desk')
       expect(reinstalled.value, 'removing the package released its pairing').toBeNull()
 
-      // A dedicated connection is appended only to the configuration revision it was computed from.
-      const scoped = (service: string, params: Record<string, unknown> = {}) =>
-        client.request('_agnes/v1/extension.callScoped', {
-          extension,
-          service,
-          input: {},
-          ...params,
-        } as never) as Promise<{ state?: string; code?: string; output?: unknown }>
+      // The launcher's own dedicated-connection code runs against this daemon. It appends one unbound
+      // connection to the reviewed configuration; a change made meanwhile is refused and journaled.
+      const { channelWorkbench } = (await import(
+        new URL('../../cli/launch/channel-workbench.ts', import.meta.url).href
+      )) as { channelWorkbench(client: unknown, profile: string): Workbench }
+      const workbench = channelWorkbench(client, 'local-dev')
       type Configuration = { instances: { id: string }[] }
-      const stored = async () => (await scoped('channel.configuration')).output as Configuration
-      const append = (operationId: string, from: Configuration, id: string, stated = true) =>
-        scoped('channel.configure', {
+      const stored = async () =>
+        (
+          (await client.request('_agnes/v1/extension.callScoped', {
+            extension,
+            service: 'channel.configuration',
+            input: {},
+          } as never)) as { output: Configuration }
+        ).output
+      const legacy = async (operationId: string, id: string) => {
+        const base = await stored()
+        const params = {
+          extension,
+          service: 'channel.configure',
           operationId,
-          input: { instances: [...from.instances, { ...from.instances[0], id }] },
-          ...(stated ? { expectedConfigurationRevision: configurationRevision(from) } : {}),
-        })
-      const approveAll = async () => {
-        const { decisions } = (await client.request('_agnes/v1/profile.decisions.list', {})) as {
-          decisions: { handle: DecisionHandle; revision: number }[]
+          input: { instances: [...base.instances, { ...base.instances[0], id }] },
         }
-        for (const decision of decisions)
-          await client.request('_agnes/v1/profile.decisions.answer', {
-            handle: decision.handle,
-            revision: decision.revision,
-            commandId: randomUUID(),
-            response: { option: 'allowed-once', value: null },
-          })
+        return () =>
+          client.request('_agnes/v1/extension.callScoped', params as never) as Promise<{ state: string }>
       }
-      const base = await stored()
-      expect((await append('dedicated-1', base, 'd-0123456789ab')).state).toBe('approval-required')
-      // An existing caller without a stated revision changes the configuration while approval waits.
-      expect((await append('legacy-1', base, 'd-ba9876543210', false)).state).toBe('approval-required')
+      const pendingDecisions = async () =>
+        (
+          (await client.request('_agnes/v1/profile.decisions.list', {})) as {
+            decisions: { handle: DecisionHandle; revision: number; request: { operationId: string } }[]
+          }
+        ).decisions
+      const approveAll = async (operationId?: string) => {
+        for (const decision of await pendingDecisions())
+          if (!operationId || decision.request.operationId === operationId)
+            await client.request('_agnes/v1/profile.decisions.answer', {
+              handle: decision.handle,
+              revision: decision.revision,
+              commandId: randomUUID(),
+              response: { option: 'allowed-once', value: null },
+            })
+      }
+      const reviewed = async () =>
+        (await workbench.overview()).channels.find((row) => row.provider.extension === extension)
+          ?.configurationRevision ?? ''
+      const dedicated = await workbench.dedicatedContext(extension)
+      const workspaceId = dedicated.workspaces[0]?.workspaceId
+      expect(workspaceId, 'the registered workspace is offered').toBeTruthy()
+      const create = (operationId: string, configurationRevision: string) =>
+        workbench.configureDedicated({
+          extension,
+          workspaceId,
+          instanceId: dedicated.instanceId,
+          credentialRefs: {},
+          operationId,
+          configurationRevision,
+        })
+      const read = (operationId: string) =>
+        client.request('_agnes/v1/extension.readOperation', {
+          extension,
+          service: 'channel.configure',
+          operationId,
+        } as never)
+      const conflict = (operationId: string) => ({ state: 'refused', operationId, code: 'REVISION_CONFLICT' })
+
+      // Approved, then an existing caller (no stated revision) changes the configuration first.
+      const first = await reviewed()
+      expect((await create('dedicated-1', first)).receipt.state).toBe('approval-required')
+      const change = await legacy('legacy-1', 'd-ba9876543210')
+      expect((await change()).state).toBe('approval-required')
       await approveAll()
-      expect((await append('legacy-1', base, 'd-ba9876543210', false)).state).toBe('completed')
+      expect((await change()).state).toBe('completed')
       const changed = await stored()
-      const conflict = { state: 'refused', operationId: 'dedicated-1', code: 'REVISION_CONFLICT' }
-      expect(await append('dedicated-1', base, 'd-0123456789ab'), 'no overwrite after approval').toEqual(
-        conflict,
+      expect((await create('dedicated-1', first)).receipt, 'no overwrite after approval').toEqual(
+        conflict('dedicated-1'),
       )
-      expect(await append('dedicated-1', base, 'd-0123456789ab'), 'the refusal replays').toEqual(conflict)
+      expect(await read('dedicated-1'), 'the refusal is journaled').toEqual(conflict('dedicated-1'))
       expect(await stored()).toEqual(changed)
-      expect(changed.instances.map((row) => row.id)).toEqual(['desk-bot', 'd-ba9876543210'])
-      expect(await append('dedicated-stale', base, 'd-0123456789ab'), 'stale before review').toEqual({
-        ...conflict,
-        operationId: 'dedicated-stale',
-      })
-      expect(
-        ((await client.request('_agnes/v1/profile.decisions.list', {})) as { decisions: unknown[] })
-          .decisions,
-      ).toEqual([])
-      expect((await append('dedicated-2', changed, 'd-0123456789ab')).state).toBe('approval-required')
+      // A form read before that change is refused by the Host before review, with no decision asked.
+      expect((await create('dedicated-stale', first)).receipt).toEqual(conflict('dedicated-stale'))
+      expect(await read('dedicated-stale')).toEqual(conflict('dedicated-stale'))
+      expect(await pendingDecisions()).toEqual([])
+      // A change while a decision is still open withdraws that decision from the list.
+      expect((await create('dedicated-2', await reviewed())).receipt.state).toBe('approval-required')
+      const again = await legacy('legacy-2', 'd-0a0a0a0a0a0a')
+      expect((await again()).state).toBe('approval-required')
+      expect(await pendingDecisions()).toHaveLength(2)
+      await approveAll('legacy-2')
+      expect((await again()).state).toBe('completed')
+      expect(await pendingDecisions(), 'the stale decision is withdrawn').toEqual([])
+      expect(await read('dedicated-2')).toEqual(conflict('dedicated-2'))
+      // A current form creates the connection, unbound, and replays its receipt.
+      const current = await reviewed()
+      expect((await create('dedicated-3', current)).receipt.state).toBe('approval-required')
       await approveAll()
-      expect((await append('dedicated-2', changed, 'd-0123456789ab')).state).toBe('completed')
+      expect((await create('dedicated-3', current)).receipt.state).toBe('completed')
+      expect((await create('dedicated-3', current)).receipt.state).toBe('completed')
       expect((await stored()).instances.map((row) => row.id)).toEqual([
         'desk-bot',
         'd-ba9876543210',
-        'd-0123456789ab',
+        'd-0a0a0a0a0a0a',
+        dedicated.instanceId,
       ])
+      const row = (await workbench.overview()).channels
+        .find((group) => group.provider.extension === extension)
+        ?.instances.find((instance) => instance.id === dedicated.instanceId)
+      expect(row).toMatchObject({ bindings: [], pairings: [] })
+      expect(row?.intendedSession).toBeUndefined()
     } catch (error) {
       failures.push(
         new Error(`${String(error)}\nSource daemon stderr:\n${running.log.stderr}`, { cause: error }),

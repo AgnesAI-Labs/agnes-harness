@@ -47,7 +47,14 @@ import {
   hostOperation,
 } from './host-decisions.js'
 import { type DecisionsChanged, ProfileJournal, type ProfileOperation } from './journal.js'
-import { conflictReceipt, isConfigurationConflict } from './managed-configuration.js'
+import {
+  configurationPrecondition,
+  conflictReceipt,
+  failedEffectReceipt,
+  refuseStale,
+  settleStaleConfiguration,
+  withdrawStale,
+} from './managed-configuration.js'
 import { retainProfileJournal } from './shared-journal.js'
 
 export { HOST_DECISION_ACTIVATION, type HostDecisionOwner } from './host-decisions.js'
@@ -193,24 +200,19 @@ export function createProfileServiceRuntime(deps: {
     operationId,
     alive: id.alive,
   })
-  const storedRevision = (id: Identity) =>
-    deps.managed?.configurationRevision(id.entry.owner, id.entry.capability.name)
   const prepare = async (
     id: Identity,
     input: JsonValue,
     signal: AbortSignal,
     expectedRevision?: string,
   ): Promise<PreparedServiceEffect> => {
+    if (expectedRevision !== undefined) return hostPrepared(id.entry, input, expectedRevision)
     const reconciliation = deps.managed?.reconciliation(id.entry.owner, id.entry.capability.name)
-    // A stated configuration revision is bound into the operation and its review as the resource revision.
-    const value =
-      expectedRevision !== undefined
-        ? { input, presentation: { service: id.entry.capability.name }, resourceRevision: expectedRevision }
-        : reconciliation
-          ? await reconciliation.prepare()
-          : id.entry.prepare
-            ? await id.entry.prepare(input, context(id, signal, false))
-            : { input, presentation: { service: id.entry.capability.name } }
+    const value = reconciliation
+      ? await reconciliation.prepare()
+      : id.entry.prepare
+        ? await id.entry.prepare(input, context(id, signal, false))
+        : { input, presentation: { service: id.entry.capability.name } }
     const checked = inspectJsonData(value, 131072)
     if (!checked.ok || !checked.value || typeof checked.value !== 'object' || Array.isArray(checked.value))
       throw rpcError('INVALID_PARAMS')
@@ -237,6 +239,9 @@ export function createProfileServiceRuntime(deps: {
     if (!operation || operation.service !== params.service) throw rpcError('CAPABILITY_DENIED')
     if (operation.activationId !== id.activationId)
       return { operationId: params.operationId, state: 'refused', code: 'ACTIVATION_CHANGED' }
+    const withdraw = withdrawStale(log.decisions(id.actor), sourceFor(id, params.operationId))
+    const settled = await settleStaleConfiguration(log, deps.managed, operation, withdraw, id.alive)
+    if (settled) return settled
     if (operation.receipt.state === 'approval-required' && !operation.receipt.decision)
       return { operationId: params.operationId, state: 'running' }
     return structuredClone(operation.receipt)
@@ -264,7 +269,7 @@ export function createProfileServiceRuntime(deps: {
     alive()
     if (!id.entry.input(params.input)) throw rpcError('INVALID_PARAMS')
     const expected = params.expectedConfigurationRevision
-    if (expected !== undefined && storedRevision(id) === undefined) throw rpcError('INVALID_PARAMS')
+    const stale = configurationPrecondition(deps.managed, id.entry.owner, cap.name, expected)
     if (cap.kind === 'query') {
       if (params.operationId || id.principalPolicy !== 'allow') throw rpcError('CAPABILITY_DENIED')
       const output = await withTimeout(
@@ -328,8 +333,6 @@ export function createProfileServiceRuntime(deps: {
       })
       if (existing && existing.digest !== digest) throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT' })
       const base = { key, digest, requestDigest, input: params.input, prepared }
-      if (expected !== undefined && storedRevision(id) !== expected)
-        return refuseStale(log, operationRow(id, base, conflictReceipt(operationId)), alive)
       const policy = await defaultToolPolicy.decide(
         {
           sessionKey: '',
@@ -351,6 +354,11 @@ export function createProfileServiceRuntime(deps: {
       if (policy.effect === 'deny') throw rpcError('CAPABILITY_DENIED')
       const decisions = log.decisions(id.actor),
         source = sourceFor(id, operationId)
+      // A configuration changed since the caller's read is refused before review and never written.
+      if (stale()) {
+        const row = existing ?? operationRow(id, base, conflictReceipt(operationId))
+        return refuseStale(log, row, withdrawStale(decisions, source), alive)
+      }
       const decision = needsApproval
         ? await decisions.port(source).request({
             key,
@@ -462,12 +470,8 @@ export function createProfileServiceRuntime(deps: {
           throw rpcError('INTERNAL_ERROR')
         receipt = { state: 'completed', operationId, output, ...(control ? { controlGrant: control } : {}) }
       } catch (error) {
-        // Only the Host's own compare-and-set refusal proves that nothing was written.
-        const refused = expected !== undefined && isConfigurationConflict(error)
-        if (!refused) bestEffort(deps.log, 'profile-effect-execution')(error)
-        receipt = refused
-          ? conflictReceipt(operationId)
-          : { state: 'unknown', operationId, code: 'OUTCOME_UNKNOWN' }
+        const logged = bestEffort(deps.log, 'profile-effect-execution')
+        receipt = failedEffectReceipt(error, expected !== undefined, operationId, logged)
       }
       try {
         await log.locked(() => log.write({ ...(log.operations.get(key) ?? row), receipt }))
@@ -518,6 +522,8 @@ export function createProfileServiceRuntime(deps: {
       )
       if (!operation) continue
       const entry = deps.registry.resolve(operation.owner, operation.service)
+      const { owner, operationId, sourcePackage, packageVersion } = value.request
+      const source = { owner, operationId, sourcePackage, packageVersion, alive() {} }
       try {
         if (!entry) throw rpcError('CAPABILITY_DENIED')
         entry.assertAlive()
@@ -527,20 +533,14 @@ export function createProfileServiceRuntime(deps: {
           operation.activationId,
           entry.activationRevision,
         )
-        pending.push(value)
       } catch {
-        await decisions.withdraw(
-          value.handle,
-          {
-            owner: value.request.owner,
-            operationId: value.request.operationId,
-            sourcePackage: value.request.sourcePackage,
-            packageVersion: value.request.packageVersion,
-            alive() {},
-          },
-          'activation-revoked',
-        )
+        await decisions.withdraw(value.handle, source, 'activation-revoked')
+        continue
       }
+      // A configuration that moved since review is settled instead of listed for a decision.
+      const withdraw = withdrawStale(decisions, source)
+      if (!(await settleStaleConfiguration(log, deps.managed, operation, withdraw, () => undefined)))
+        pending.push(value)
     }
     return { principal: { id: actor.id, org: actor.org }, decisions: pending.slice(0, 1000) }
   }
@@ -720,13 +720,14 @@ function operationRow(
     receipt,
   }
 }
-/** A configuration changed since the caller's read is refused before review and never written. */
-function refuseStale(log: ProfileJournal, row: ProfileOperation, alive: () => void) {
-  return log.locked(async () => {
-    alive()
-    const current = log.operations.get(row.key)
-    if (current && current.receipt.state !== 'approval-required') return structuredClone(current.receipt)
-    await log.write(current ? { ...current, receipt: row.receipt } : row, [], alive)
-    return row.receipt
-  })
+/** A stated configuration revision is Host-prepared: bound as the resource revision, never plugin-prepared. */
+function hostPrepared(
+  entry: { prepare?: unknown; capability: { name: string } },
+  input: JsonValue,
+  revision: string,
+) {
+  // Only Host-registered managed configure effects reach here, and they have no preparation to skip.
+  if (entry.prepare) throw rpcError('INTERNAL_ERROR')
+  const prepared = { input, presentation: { service: entry.capability.name }, resourceRevision: revision }
+  return frozenJson(prepared) as unknown as PreparedServiceEffect
 }

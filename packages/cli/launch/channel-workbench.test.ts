@@ -1,6 +1,7 @@
 import { jcs, sha256Hex } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
+import { ChannelRefusal } from './channel-dedicated.js'
 import { channelWorkbench } from './channel-workbench.js'
 
 function fixture() {
@@ -9,6 +10,7 @@ function fixture() {
   let configuration = { instances: [] as Record<string, unknown>[] }
   let bindings: Record<string, unknown>[] = []
   const receipts = new Map<string, Record<string, unknown>>()
+  const expectations = new Map<string, string>()
   const hooks: { workspaces?: () => void } = {}
   const call = vi.fn(async (method: string, params: any) => {
     if (method === '_agnes/v1/channels.catalog')
@@ -44,6 +46,8 @@ function fixture() {
         ? { state: 'refused', operationId: params.operationId, code: 'REVISION_CONFLICT' }
         : { state: approved ? 'completed' : 'approval-required', operationId: params.operationId }
       receipts.set(params.operationId, receipt)
+      if (params.expectedConfigurationRevision)
+        expectations.set(params.operationId, params.expectedConfigurationRevision)
       return receipt
     }
     throw new Error('unexpected call')
@@ -74,6 +78,14 @@ function fixture() {
     },
     extensions: {
       readOperation: vi.fn(async ({ operationId }: { operationId: string }) => {
+        const expected = expectations.get(operationId)
+        // The Host settles a pending configuration whose stored revision moved since review.
+        if (
+          receipts.get(operationId)?.state === 'approval-required' &&
+          expected &&
+          sha256Hex(jcs(configuration)) !== expected
+        )
+          receipts.set(operationId, { state: 'refused', operationId, code: 'REVISION_CONFLICT' })
         const receipt = receipts.get(operationId)
         if (receipt) return receipt
         throw Object.assign(new Error('unknown operation'), { data: { code: 'CAPABILITY_DENIED' } })
@@ -352,9 +364,9 @@ it.each(['before-read', 'between-read-and-prepare', 'during-approval'] as const)
       instanceId: params.instanceId,
     })
     expect(f.configuration().instances).toEqual([bound, other])
-    expect(configures(f)).toHaveLength(
-      moment === 'between-read-and-prepare' ? 1 : moment === 'during-approval' ? 1 : 0,
-    )
+    // Every refusal is the Host's journaled receipt: a stale form is still sent, a pending one settled.
+    expect(configures(f)).toHaveLength(1)
+    expect(await f.client.extensions.readOperation(params as never)).toEqual(conflict)
   },
 )
 
@@ -374,6 +386,8 @@ it.each([
     instances: [structuredClone(bound), { ...structuredClone(bound), id: 'd-0123456789ab' }],
   })
   const configurationRevision = (await f.api.overview()).channels[0]!.configurationRevision!
-  await expect(f.api.configureDedicated({ ...params, configurationRevision, ...change })).rejects.toThrow()
+  await expect(
+    f.api.configureDedicated({ ...params, configurationRevision, ...change }),
+  ).rejects.toBeInstanceOf(ChannelRefusal)
   expect(configures(f)).toHaveLength(0)
 })

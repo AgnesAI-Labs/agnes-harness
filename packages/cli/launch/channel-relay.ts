@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { httpRpcError, validateMethod } from '@agnes/protocol'
 import type { Client } from '@agnes/sdk'
+import { ChannelRefusal } from './channel-dedicated.js'
 import { channelWorkbench } from './channel-workbench.js'
 
 const PAIRING_REFUSALS = [
@@ -78,8 +79,12 @@ export function channelRelay(input: {
                     ? await api.configureDedicated(record)
                     : await api.configure(record)
         input.reply(response, 200, result)
-      } catch {
-        input.reply(response, 503, { error: httpRpcError(503, 'UNAVAILABLE') })
+      } catch (error) {
+        // A deterministic dedicated-connection refusal is distinct from an unconfirmed outcome.
+        const refused = error instanceof ChannelRefusal
+        input.reply(response, refused ? 409 : 503, {
+          error: refused ? httpRpcError(409, 'CHANNEL_REFUSED') : httpRpcError(503, 'UNAVAILABLE'),
+        })
       }
       return true
     }

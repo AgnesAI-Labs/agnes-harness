@@ -398,6 +398,11 @@ it('relays only a same-origin typed browser service request and strips page-supp
       expect(routed.status).toBe(503)
       expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/channels.catalog', {})
     }
+    // A deterministic refusal (here: the channel is gone) is a 409 the page can act on, not "unconfirmed".
+    mocks.request.mockResolvedValueOnce({ providers: [] } as never)
+    const refusedDedicated = await sendChannel({ method: 'channels.configureDedicated', params: dedicated })
+    expect(refusedDedicated.status).toBe(409)
+    expect(await refusedDedicated.json()).toMatchObject({ error: { data: { code: 'CHANNEL_REFUSED' } } })
     for (const expectedVersion of [undefined, -1, 0.5, '0']) {
       expect(
         (
