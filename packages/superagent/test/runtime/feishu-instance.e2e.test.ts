@@ -232,6 +232,6 @@ it('claims instance A whole for group and direct messages, lists the instances, 
     throw new Error(`${String(error)}\n${(await world?.diagnostics()) ?? ''}`)
   } finally {
     await world?.stop()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 480_000)

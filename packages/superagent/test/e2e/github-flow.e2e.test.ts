@@ -373,7 +373,7 @@ it('routes a GitHub request to a ticket whose worker pushes and opens a PR, repl
     expect(world.unmatched().map((call) => call.argv.join(' '))).toEqual([])
   } finally {
     await run?.stop()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 600_000)
 
@@ -481,6 +481,6 @@ it('restart while busy: a comment waiting for a busy worker is taken once, withi
     expect(comments).toHaveLength(1)
   } finally {
     await run?.stop()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 480_000)

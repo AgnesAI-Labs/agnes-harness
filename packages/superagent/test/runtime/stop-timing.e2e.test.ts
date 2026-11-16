@@ -105,6 +105,6 @@ it(`stops ${SESSIONS} running sessions within the stop budget`, async () => {
   } finally {
     store.close()
     await handle?.stop()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 360_000)

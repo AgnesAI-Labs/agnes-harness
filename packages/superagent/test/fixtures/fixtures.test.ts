@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import type { ChannelAdapter, ChannelEvent, MessageEvent } from '@agnes/extension-api/channel-contract'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runCommand } from '../../src/app/subprocess.js'
-import { hostFloor } from './daemon-harness.js'
+import { hostFloor, socketDirectoryOf } from './daemon-harness.js'
 import { startGitHttpRemote } from './git-http-remote.js'
 import { AGENT_CREDENTIAL, makeHomes, OPERATOR_CREDENTIAL } from './homes.js'
 import { posixDescribe } from './posix.js'
@@ -111,6 +111,13 @@ describe('fake gh', () => {
     expect(await gh(root, script, 'api', 'repos/o/r/issues/12')).toMatchObject({ code: 0, stdout: '{}\n' })
     expect(await gh(root, script, 'api', 'repos/o/r/issues/12/comments')).toMatchObject({ code: 1 })
   })
+})
+
+it("removes a daemon's socket directory outside its home, and never a Windows named pipe's", () => {
+  expect(socketDirectoryOf('/tmp/agh-1a2b/agnesd.sock', '/srv/agent/.agh')).toBe('/tmp/agh-1a2b')
+  expect(socketDirectoryOf('/srv/agent/.agh/daemon/agnesd.sock', '/srv/agent/.agh')).toBeUndefined()
+  for (const pipe of ['\\\\.\\pipe\\agnes-1a2b', '//./pipe/agnes-1a2b', '\\\\?\\pipe\\agnes-1a2b'])
+    expect(socketDirectoryOf(pipe, 'C:\\agh'), pipe).toBeUndefined()
 })
 
 describe('homes', () => {

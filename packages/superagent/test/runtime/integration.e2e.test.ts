@@ -11,8 +11,8 @@ import type { Paused } from '../../src/kv.js'
 import { DATABASE_FILE } from '../../src/runtime/index.js'
 import { TICKET_INSTRUCTIONS_FILE } from '../../src/runtime/instructions.js'
 import { type DaemonHandle, startDaemon, stopAllDaemons } from '../fixtures/daemon-harness.js'
+import { byShell } from '../fixtures/shell.js'
 import {
-  byShell,
   kvOf,
   ownerCalls,
   PACKAGE,
@@ -259,6 +259,6 @@ it('runs a ticket end to end, stops its worker on a disable and resumes it on en
     expect(skill).toMatchObject({ desired: 'enabled', trust: 'trusted', actual: 'ready' })
   } finally {
     await handle?.stop()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 480_000)

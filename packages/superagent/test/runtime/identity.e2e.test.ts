@@ -172,6 +172,6 @@ it('a worker session commits and pushes as the agent through its CLI, never with
   } finally {
     await handle?.stop()
     await remote.close()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 400_000)

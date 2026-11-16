@@ -10,13 +10,13 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeHome } from '@agnes/host'
 import type { EventEnvelope, PackageOperationReceipt } from '@agnes/protocol'
 import { type Client, createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
-import { hostFloor } from '../fixtures/daemon-harness.js'
+import { hostFloor, socketDirectoryOf } from '../fixtures/daemon-harness.js'
 
 // The shipped payload on a real source daemon: the release grant reaches the managed service, and the plugin's hooks
 // leave the owner's own sessions alone.
@@ -120,7 +120,7 @@ it('the shipped payload starts its managed service with the bundled-app grant an
     writeProfile(root)
     writeFileSync(join(root, 'marker.txt'), `${MARKER}\n`)
   } catch (error) {
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     throw error
   }
   const daemon: ChildProcess = spawn(process.execPath, ['--import', 'tsx', sourceDaemon, root, root], {
@@ -143,7 +143,7 @@ it('the shipped payload starts its managed service with the bundled-app grant an
   try {
     await bounded(ready, 'source daemon boot')
     const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
-    socketDirectory = dirname(owner.socketPath)
+    socketDirectory = socketDirectoryOf(owner.socketPath, root)
     const client = createClient({
       journal: memoryJournal(),
       auth: { kind: 'local' },
@@ -265,8 +265,9 @@ it('the shipped payload starts its managed service with the bundled-app grant an
         }
       },
       () => {
-        rmSync(root, { recursive: true, force: true })
-        if (socketDirectory) rmSync(socketDirectory, { recursive: true, force: true })
+        rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+        if (socketDirectory)
+          rmSync(socketDirectory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
       },
     ]) {
       try {

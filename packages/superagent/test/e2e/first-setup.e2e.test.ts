@@ -103,6 +103,6 @@ it('lists the GitHub Source before setup, and saving its repository completes se
     expect(after.find((source) => source.id === 'github')?.state).not.toBe('setup')
   } finally {
     await handle?.stop()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 600_000)

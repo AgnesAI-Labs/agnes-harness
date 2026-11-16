@@ -41,12 +41,6 @@ export async function until<T>(
     await sleep(200)
   }
 }
-/**
- * A session's shell command for this platform: `posix` for `sh`, `powershell` for Windows PowerShell, which a session
- * runs on Windows (no `&&`, no `touch`, variables as `$env:NAME`).
- */
-export const byShell = (posix: string, powershell: string): string =>
-  process.platform === 'win32' ? powershell : posix // guards-allow-platform: a session's shell is PowerShell on Windows.
 /** A message that makes the scripted model call `name` with `args` once. */
 export const tool = (marker: string, name: string, args: unknown) =>
   `[[${marker} TOOL${JSON.stringify({ name, args })}ENDTOOL]]`

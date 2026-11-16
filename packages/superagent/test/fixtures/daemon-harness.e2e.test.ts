@@ -65,7 +65,7 @@ it.skipIf(process.platform === 'win32')(
   'starts a daemon whose session shell sees exactly the given HOME and PATH, with the agent identity, across a restart',
   async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-daemon-fixture-')))
-    cleanups.push(() => rmSync(root, { recursive: true, force: true }))
+    cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
     const homes = makeHomes(join(root, 'homes'))
     const remote = await startGitHttpRemote({
       users: {
@@ -138,7 +138,7 @@ const claim = () => {
 }
 function scratchRoot() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-daemon-fixture-')))
-  cleanups.push(() => rmSync(root, { recursive: true, force: true }))
+  cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
   return root
 }
 const options = (root: string) => ({

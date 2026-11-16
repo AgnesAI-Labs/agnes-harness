@@ -148,6 +148,6 @@ it('opens the main and worker sessions on a real daemon, backgrounds a slow comm
     expect(after, after).toContain('Ticket ended; new work needs a new authorized ticket')
   } finally {
     await handle?.stop()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 360_000)

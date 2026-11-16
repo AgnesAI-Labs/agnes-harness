@@ -101,7 +101,7 @@ it('waits for a missing channel instance while GitHub polls on, then takes a gro
     throw new Error(`${String(error)}\n${(await world?.diagnostics()) ?? ''}`)
   } finally {
     await world?.stop()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 420_000)
 
@@ -158,6 +158,6 @@ it('runs live on a channel without reads: says what it lacks, takes a request in
     throw new Error(`${String(error)}\n${(await world?.diagnostics()) ?? ''}`)
   } finally {
     await world?.stop()
-    rmSync(root, { recursive: true, force: true })
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }, 420_000)

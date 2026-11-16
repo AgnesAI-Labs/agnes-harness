@@ -68,7 +68,7 @@ function sdkAdapter(client: () => SdkClient): SessionAdapter {
 
 it('disable mid-turn stops the push, the job and the queue; enable reconciles by real state and resumes a queued input once after a restart', async () => {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'sa-lifecycle-')))
-  cleanups.push(() => rmSync(root, { recursive: true, force: true }))
+  cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
   const remote = await startGitHttpRemote({ users: { [AGENT_CREDENTIAL.user]: AGENT_CREDENTIAL.password } })
   cleanups.push(() => remote.close())
   const env = await prepareAgentEnvironment(root, remote.url)

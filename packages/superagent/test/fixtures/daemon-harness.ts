@@ -16,6 +16,15 @@ import { killTree, trackRoot } from './process-tree.js'
 const repository = fileURLToPath(new URL('../../../../', import.meta.url))
 
 /**
+ * The directory the daemon made for its socket outside its home, which a test removes when it stops: none for a
+ * socket inside `home`, and none on Windows, where the socket is a named pipe (`\\.\pipe\…`), not a file.
+ */
+export function socketDirectoryOf(socketPath: string, home: string): string | undefined {
+  if (/^[\\/]{2}[.?][\\/]pipe[\\/]/i.test(socketPath) || socketPath.startsWith(home)) return undefined
+  return dirname(socketPath)
+}
+
+/**
  * What a process needs on Windows to start (its system directory, shell and temporary directory) and to find its user
  * profile, which Windows programs read in place of HOME; `home` stands for the profile when given. Nothing elsewhere.
  */
@@ -375,7 +384,7 @@ export async function startDaemon(opts: {
       const owner = JSON.parse(readFileSync(join(opts.aghHome, 'daemon', 'owner.json'), 'utf8')) as {
         socketPath: string
       }
-      if (!owner.socketPath.startsWith(opts.aghHome)) socketDir = dirname(owner.socketPath)
+      socketDir = socketDirectoryOf(owner.socketPath, opts.aghHome)
       current = createClient({
         journal: memoryJournal(clientId),
         auth: { kind: 'local' },
@@ -455,7 +464,7 @@ export async function startDaemon(opts: {
       if (initializer) await killTree(initializer, 'SIGKILL', 5_000)
       initializer = undefined
       await model.close()
-      if (socketDir) rmSync(socketDir, { recursive: true, force: true })
+      if (socketDir) rmSync(socketDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     },
   }
   handles.add(handle)
