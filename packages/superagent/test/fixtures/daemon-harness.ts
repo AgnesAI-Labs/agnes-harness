@@ -469,21 +469,30 @@ export async function startDaemon(opts: {
       clientId: await client.clientId(),
       commandId: randomUUID(),
     })
-    const finished = async (receipt: { profile: string; operationId: string }) =>
-      until(
+    const finished = async (receipt: { profile: string; operationId: string }) => {
+      let last: unknown
+      return until(
         `package operation ${receipt.operationId}`,
         async () => {
           const result = await client.packages.operation.get({
             profile: receipt.profile,
             operationId: receipt.operationId,
           })
+          last = result
           if (['failed', 'cancelled', 'rolled-back'].includes(result.state))
             throw new Error(`package ${result.operation}: ${JSON.stringify(result.error)}`)
           return result.state === 'completed' ? result : undefined
         },
         STEP_MS,
         () => stopped,
-      )
+      ).catch((error: unknown) => {
+        // Where the operation stopped: its stage, state and packages, and what the daemon printed.
+        throw new Error(
+          `${String(error)}\nlast state: ${JSON.stringify(last)?.slice(0, 4000)}\ndaemon stderr: ${stderr.slice(-2000)}`,
+          { cause: error },
+        )
+      })
+    }
     for (const directory of opts.plugins) {
       const source = { type: 'file' as const, ref: `file:${directory}` }
       const preview = (await finished(await client.packages.inspect({ ...(await command()), source })))

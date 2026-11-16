@@ -153,13 +153,21 @@ it('the shipped payload starts its managed service with the bundled-app grant an
     sdk = client
     await bounded(client.initialize(), 'SDK initialize')
 
-    const operation = async (receipt: PackageOperationReceipt) =>
-      until(async () => {
+    const operation = async (receipt: PackageOperationReceipt) => {
+      let last: unknown
+      return until(async () => {
         const result = await client.packages.operation.get(receipt)
+        last = result
         if (['failed', 'cancelled', 'rolled-back'].includes(result.state))
           throw new Error(`package ${result.operation}: ${JSON.stringify(result.error)}`)
         return result.state === 'completed' ? result : undefined
-      }, `package ${receipt.operationId}`)
+      }, `package ${receipt.operationId}`).catch((error: unknown) => {
+        // Where the operation stopped: its stage, state and packages.
+        throw new Error(`${String(error)}\nlast state: ${JSON.stringify(last)?.slice(0, 4000)}`, {
+          cause: error,
+        })
+      })
+    }
     const common = async (step: string) => ({
       profile: PROFILE,
       clientId: await client.clientId(),
