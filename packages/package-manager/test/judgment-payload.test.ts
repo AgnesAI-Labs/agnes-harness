@@ -100,8 +100,15 @@ it('builds atomically and refreshes missing or stale payloads without rewriting 
       expect(statSync(file).mtimeMs).toBe(before)
       expect(readdirSync(temporary)).toEqual(['renamed-payload'])
     }
-    for (const match of first.matchAll(/\bfrom\s*["']([^"']+)["']/g))
-      expect(match[1]!.startsWith('node:') || match[1] === '@agnes/extension-api').toBe(true)
+    // Only module statements count: the bundled protocol schemas carry `"from"` property keys, which
+    // are text in the bundle, not imports. Every statement that does load a module must be a Node
+    // builtin or the host-provided extension API.
+    const imports = [...first.matchAll(/^(?:import|export)\b[^;'"]*?["']([^"']+)["']/gm)].map(
+      (match) => match[1]!,
+    )
+    expect(imports).toContain('@agnes/extension-api')
+    for (const specifier of imports)
+      expect(specifier.startsWith('node:') || specifier === '@agnes/extension-api', specifier).toBe(true)
   } finally {
     rmSync(temporary, { recursive: true, force: true })
   }

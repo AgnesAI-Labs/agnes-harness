@@ -326,8 +326,9 @@ it('pushes the review page when the check is done, with the hashes under collaps
   expect(page.querySelector('[data-testid="install-review-meta"]')?.textContent).toBe(
     '运行方式 · 1.0.0 · 示例',
   )
+  // A package that lists no extra scopes says so in one line, whether or not it declared capabilities.
   expect(page.querySelector('[data-testid="install-review-gets"]')?.textContent).toContain(
-    '未声明（运行中的未声明活动会被记录）',
+    '未列出额外权限范围',
   )
   expect(page.querySelector('[data-testid="install-review-gets"]')?.textContent).toContain('沿用当前策略')
   expect(page.querySelectorAll('[data-testid="install-review-unverified"]')).toHaveLength(1)

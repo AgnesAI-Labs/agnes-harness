@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  bundledPluginSource,
   createPackageManager,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   emptyLock,
@@ -28,7 +29,7 @@ it('lists judgment as an optional bundled package, not installed by default', as
     rmSync(root, { recursive: true, force: true })
   }
 })
-it('install review shows sideCall and conversation reading', async () => {
+it('install review discloses what judgment sends to remote providers', async () => {
   const root = mkdtempSync(join(tmpdir(), 'agnes-judgment-review-'))
   try {
     const profile = join(root, 'profiles', 'test')
@@ -43,20 +44,33 @@ it('install review shows sideCall and conversation reading', async () => {
         ]),
       ),
       policySnapshot: {
-        capabilityCeiling: ['hooks', 'events', 'projections'],
+        // Every category judgment declares, so the review previews without a ceiling blocker.
+        capabilityCeiling: [
+          ...['hooks', 'events', 'projections', 'tools', 'ui', 'services'],
+          ...['filesystem.read', 'sessionWork', 'autoTitle'],
+        ],
         workspacePackages: 'require-project-trust',
       },
     })
     const manager = createPackageManager({ dataDir: root, agnesVersion: '0.1.0', cwd: root })
     const preview = await manager.inspect(profile, parseSource('file:./bundled-plugins/judgment'))
     expect(preview.blockers).toEqual([])
-    expect(preview.metadata?.description).toContain('sideCall')
-    expect(preview.metadata?.description).toContain('conversation messages')
-    expect(preview.metadata?.description).toContain('2,000')
-    expect(preview.metadata?.description).toContain('8,000')
-    // Review scope union deliberately excludes hook/projection contracts; disclosure is metadata.
-    expect(preview.declaredCapabilities).toEqual({})
-    expect(preview.metadata?.locales?.['zh-CN']?.description).toContain('对话消息')
+    // The same data-use tokens the install review disclosure test pins.
+    for (const text of ['off by default', 'Remote providers receive', 'credential masking', '2,000', '8,000'])
+      expect(preview.metadata?.description).toContain(text)
+    // Review scope union excludes tool, hook and projection contracts; it lists the settings panel, the
+    // status service, workspace reads for find_relevant, background session work and title refresh.
+    const release = bundledPluginSource('file:./bundled-plugins/judgment')!
+    const manifest = JSON.parse(readFileSync(join(release.root, release.path, 'package.json'), 'utf8'))
+    expect(preview.declaredCapabilities).toEqual({
+      ui: true,
+      sessionWork: true,
+      autoTitle: true,
+      filesystem: { read: ['**'] },
+      services: manifest.agnes.plugins[0].capabilities.services,
+    })
+    for (const text of ['默认关闭', '远程服务会收到', '遮蔽凭据'])
+      expect(preview.metadata?.locales?.['zh-CN']?.description).toContain(text)
     expect(preview.presentation?.rows).toEqual([
       expect.objectContaining({ id: 'ext:agnes.judgment/main', settings: true }),
     ])
