@@ -1250,7 +1250,41 @@
       "properties": {
         "sessionId": { "type": "string", "maxLength": 512 },
         "cwd": { "type": "string", "maxLength": 32768 },
-        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "_meta": {
+          "description": "ai.agnes.harness.environment is the session's own environment, which only the bundled application's client may give; the daemon checks it as for session/new.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ai.agnes.harness": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "environment": {
+                  "description": "Checked in full by parseSessionEnvironment: absolute PATH directories, variables to set (never credential-shaped names) and variables to remove.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "pathPrepend": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+                    },
+                    "set": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string", "maxLength": 4096 }
+                    },
+                    "unset": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "SessionLoadingCancelParams": {

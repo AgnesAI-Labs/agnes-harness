@@ -30,6 +30,7 @@
     "./adapters/public-fetch/network": "./src/adapters/public-fetch/network.ts",
     "./adapters/remote-transport": "./src/adapters/remote-transport.ts",
     "./adapters/sandbox-local": "./src/adapters/sandbox-local.ts",
+    "./adapters/session-environment": "./src/adapters/session-environment.ts",
     "./adapters/secrets": "./src/adapters/secrets.ts",
     "./adapters/session-workspace": "./src/adapters/session-workspace.ts",
     "./adapters/sql-guard": "./src/adapters/sql-guard.ts",

@@ -101,6 +101,8 @@ type Slot = {
  * between strikes, matching the daemon spec's §5.2 crash policy.
  */
 export class WorkerPool {
+  /** The bundled application's proof key for this run, given to the shared session worker only (`AGNES_BUNDLED_APP_KEY`). */
+  readonly bundledAppKey = randomBytes(32).toString('hex')
   private readonly slots = new Map<string, Slot>()
   private readonly pendingByToken = new Map<string, (link: WorkerLink) => void>()
   private readonly crashes = new Map<string, number[]>()
@@ -535,10 +537,12 @@ export class WorkerPool {
               AGNES_SUPERVISOR_START_ID: supervisorStartId,
               AGNES_WORKER_KEY: workerKey,
               AGNES_WORKER_KIND: opts.kind ?? 'session',
+              AGNES_BUNDLED_APP_KEY: undefined,
               ...(workerKey === '@shared' && (opts.kind ?? 'session') === 'session'
                 ? (() => {
                     const boot = this.o.runtimeDelivery?.bootFor(generation)
-                    return boot ? { AGNES_RUNTIME_BOOT_SOURCE: boot.source } : {}
+                    const runtime = boot ? { AGNES_RUNTIME_BOOT_SOURCE: boot.source } : {}
+                    return { ...runtime, AGNES_BUNDLED_APP_KEY: this.bundledAppKey }
                   })()
                 : {}),
               ...resourceWorkerEnvironment(opts, this.o.resourceBootstrap),

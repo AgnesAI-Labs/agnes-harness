@@ -584,14 +584,6 @@ export const SETTINGS_TEXT = {
     '已有一个不是 Superagent 打开的会话 {session}；归档或删除它，然后重新检查设置。',
     SETUP_PROBLEMS.sessionTaken[1],
   ],
-  'setup.agentHomeMismatch': [
-    'daemon 以 HOME {actual} 运行，不是智能体的 home {home}；请把 HOME 设为智能体的 home 后启动这套 AGH。',
-    SETUP_PROBLEMS.agentHomeMismatch[1],
-  ],
-  'setup.agentGhNotShim': [
-    '会话运行的 gh 来自 {actual}，不是 {shims} 里的垫片；请把 {shims} 放在这套 AGH 启动时 PATH 的最前面。',
-    SETUP_PROBLEMS.agentGhNotShim[1],
-  ],
   'setup.agentCredentialMixed': [
     'git 访问 github.com 时会用到智能体以外的凭据工具：{helpers}。',
     SETUP_PROBLEMS.agentCredentialMixed[1],

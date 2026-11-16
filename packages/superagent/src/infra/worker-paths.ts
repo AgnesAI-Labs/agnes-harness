@@ -6,6 +6,8 @@ import { delimiter, join, resolve } from 'node:path'
 /** Commands workers need, which `blockedCommands` cannot block: the shims and git. */
 export const WORKER_COMMANDS: readonly string[] = ['gh', 'git']
 export const workerBin = (stateDir: string): string => join(stateDir, 'worker-bin')
+/** The git configuration Superagent's sessions and commands use in place of the operator's global and system ones. */
+export const workerGitConfig = (stateDir: string): string => join(stateDir, 'worker-gitconfig')
 
 export function sameDirectory(a: string, b: string): boolean {
   const real = (path: string): string => {

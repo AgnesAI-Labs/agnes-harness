@@ -95,17 +95,17 @@ describe('a generation', () => {
     const { call, holder, shutdown } = await start({
       lifecycle: {
         environment: async () => {
-          throw new SetupError('agentHomeMismatch', { actual: '/operator', home: '/state/home' })
+          throw new SetupError('agentCredentialMixed', { helpers: 'osxkeychain' })
         },
       },
     })
     // Wired at once: an action answers rather than saying that Superagent is not ready.
     expect(failure(await call('superagent.executor.pause', { paused: false }))).toBeUndefined()
-    await vi.waitFor(async () => expect(await setupOf(call)).toMatchObject({ code: 'agentHomeMismatch' }))
+    await vi.waitFor(async () => expect(await setupOf(call)).toMatchObject({ code: 'agentCredentialMixed' }))
     // Its sessions stay refused for that reason, each keeping its live note.
     const state = holder.get()
     expect(state.guardTool({ sessionId: WORKER, toolName: 'shell', input: {} })).toMatch(
-      /Superagent cannot start: The daemon runs with HOME/,
+      /Superagent cannot start: git would ask other credential helpers/,
     )
     expect(state.promptSections(WORKER).liveNote?.content).toBe('Ticket T-1 waits for a reply')
     await shutdown('disable')

@@ -265,7 +265,7 @@ export async function stopAllDaemons(): Promise<void> {
 
 /**
  * Starts the source daemon on `aghHome` with the process environment reduced to what is given: `HOME` and `PATH`
- * exactly as passed (plus `TMPDIR` and `AGH_HOME`), nothing else of the caller's environment. `plugins` are plugin
+ * exactly as passed (plus `TMPDIR`, `AGH_HOME` and `env`), nothing else of the caller's environment. `plugins` are plugin
  * source directories; each is installed, trusted and enabled once, before the first start returns.
  *
  * Stopping is possible from the first moment: `onHandle` receives a `stop()` before anything is spawned, so a
@@ -288,6 +288,8 @@ export async function startDaemon(opts: {
   startTimeoutMs?: number
   /** Answers the sessions' turns in place of the `[[...]]` script (see `Respond`). */
   respond?: Respond
+  /** More variables of the daemon's environment, such as a GitHub token the operator's shell exports. */
+  env?: Record<string, string>
 }) {
   const model = await startScriptedModel(opts.respond)
   const clientId = randomUUID()
@@ -307,7 +309,7 @@ export async function startDaemon(opts: {
     stderr = ''
     const spawned = spawn(process.execPath, ['--import', tsx, sourceDaemon, opts.aghHome, opts.aghHome], {
       cwd: repository,
-      env: { PATH: opts.path, HOME: opts.home, TMPDIR: tmpdir(), AGH_HOME: opts.aghHome },
+      env: { ...opts.env, PATH: opts.path, HOME: opts.home, TMPDIR: tmpdir(), AGH_HOME: opts.aghHome },
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     child = spawned

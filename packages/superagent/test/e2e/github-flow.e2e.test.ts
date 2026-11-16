@@ -11,7 +11,6 @@ import { afterAll, expect, it } from 'vitest'
 import { openStore } from '../../src/app/store.js'
 import { KV } from '../../src/kv.js'
 import { SettingsSchema } from '../../src/policy.js'
-import { agentPaths } from '../../src/runtime/environment.js'
 import { DATABASE_FILE } from '../../src/runtime/index.js'
 import {
   type DaemonHandle,
@@ -181,14 +180,15 @@ async function deploy(
 ) {
   const aghHome = join(root, 'agh')
   const state = stateDir ?? defaultStateDir(aghHome)
-  const { home, shimsDir } = agentPaths(state)
-  if (stateDir) mkdirSync(home, { recursive: true })
+  // The daemon starts as usual, with the operator's HOME and PATH.
+  const home = join(root, 'operator-home')
+  mkdirSync(home, { recursive: true })
   const remote = await startGitHttpRemote({ users: { [AGENT_CREDENTIAL.user]: AGENT_CREDENTIAL.password } })
   let handle: DaemonHandle | undefined
   const daemon = await startDaemon({
     aghHome,
     home,
-    path: `${shimsDir}:${process.env.PATH ?? ''}`,
+    path: process.env.PATH ?? '',
     plugins: ['./bundled-plugins/superagent'],
     respond,
     onHandle: (started) => {

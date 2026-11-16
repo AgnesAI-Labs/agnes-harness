@@ -120,54 +120,57 @@ steps, and the defaults. Ask for one confirmation.
    credentials of the agent account, and running commands on this machine. Finish the installation and enable the plugin
    (see [Plugins](../../../docs/guide/packages.md)). It reports a setup problem, because the agent's environment does
    not exist yet; that is expected.
-4. **Fix the state directory.** Superagent keeps the agent's identity under its state directory, the plugin setting
+4. **Fix the state directory.** Superagent writes the agent's environment into its state directory, the plugin setting
    `stateDir`. Either set `stateDir` to an absolute path of your choice on the plugin's settings page, or leave it unset
    and read the default from the **Deployment** page of the panel (it is under the AGH data directory, in
-   `bundled-apps/<hash>`). Use the same path in the next steps. Below, `<stateDir>` stands for it:
+   `bundled-apps/<hash>`). Below, `<stateDir>` stands for it:
 
    | Path | What it is |
    | --- | --- |
-   | `<stateDir>/home` | The agent's `HOME`: its git configuration and credential helper. Superagent writes it. |
-   | `<stateDir>/home/.config/gh` | The agent's GitHub CLI login. |
    | `<stateDir>/worker-bin` | Shims for `gh` and the commands the agent must not use. Superagent writes it. |
+   | `<stateDir>/worker-gitconfig` | The agent's git configuration: its identity and credential helper. Superagent writes it. |
 
-5. **Sign the agent in.** As the dedicated system user, with the agent's own configuration directory, never the
-   operator's:
+5. **Give the agent a GitHub CLI and sign it in.** As the dedicated system user, make a `gh-agent` wrapper that runs `gh`
+   with the agent's own configuration directory, never the operator's, and sign in with it:
 
    ```sh
-   GH_CONFIG_DIR="<stateDir>/home/.config/gh" gh auth login
-   GH_CONFIG_DIR="<stateDir>/home/.config/gh" gh api user --jq .login   # must print the agent account
+   mkdir -p ~/.local/bin
+   cat > ~/.local/bin/gh-agent <<'EOF'
+   #!/bin/sh
+   GH_CONFIG_DIR="$HOME/.config/gh-agent" exec gh "$@"
+   EOF
+   chmod +x ~/.local/bin/gh-agent
+   ~/.local/bin/gh-agent auth login
+   ~/.local/bin/gh-agent api user --jq .login   # prints the account the agent acts as
    ```
 
    Sign in through the browser, as the dedicated agent account, a collaborator with write access to this one
-   repository only. Superagent receives requests through the account's notifications, and GitHub's notifications API
+   repository only; for a trial, the operator's own account works too, and the agent then acts as the operator. Superagent receives requests through the account's notifications, and GitHub's notifications API
    accepts only a browser sign-in or a classic token. **Fine-grained personal access tokens are not supported**: the
    notifications API refuses them, and the setup check reports "The agent's GitHub token cannot read notifications". A
    classic personal access token (`gh auth login --with-token`) works with the `repo` and `notifications` scopes and
    reaches every repository the account can reach. Branch protection on the default branch, not the token, is what
    keeps the agent from pushing there or merging without approval; Superagent never reads it.
 
-6. **Restart the daemon with the agent's identity.** Stop the daemon you started in step 2, by its process id, and start
-   it again with `HOME` set to the proxy home and the shim directory first on `PATH`, so that the sessions it runs act as
-   the agent account and never as the operator, even when the operator is signed in on the same machine:
-
-   ```sh
-   HOME="<stateDir>/home" PATH="<stateDir>/worker-bin:$PATH" agh serve
-   ```
-
-   Superagent checks this environment when it starts and reports a setup problem, with its cause, if the daemon was
-   started without it. Select **Check again** on the overview.
+6. **Keep the daemon as it is.** It needs no `HOME` or `PATH` of the agent's: Superagent opens each of its sessions with
+   the agent's environment (the shims first on `PATH`, `<stateDir>/worker-gitconfig` as the git configuration, no
+   `GH_TOKEN` or `GITHUB_TOKEN`), so they act as the agent account and never as the operator, even when the operator is
+   signed in on the same machine. On every start it checks, in that environment, that git asks only the agent's CLI
+   for github.com credentials and that the CLI acts as the agent, and reports a setup problem with its cause otherwise;
+   select **Check again** on the overview after fixing it. An earlier setup whose daemon starts with
+   `HOME="<stateDir>/home"` and the shims on `PATH` keeps working; the deployment guide's
+   [Run as a service](../../../docs/guide/superagent.md#run-as-a-service) says how to move it to the wrapper.
 7. **Save the settings.** Open the **Superagent** entry on the home page and save from the **Settings** tab, or, for a
    setup agent, through the services in [Settings services](#settings-services). The agent's own tools cannot change the
    account or execution-environment fields, only the panel and these services can. In this order:
-   1. **Sources:** the GitHub Source (repository and the agent's GitHub CLI), then the Feishu Source if used: the
-      dedicated bot's instance, chosen from the list of running channel instances, claim **Whole instance**, the chats,
-      and whether direct messages and other chats are received. An instance where the owner paired a direct chat or
-      bound a session is marked and cannot be chosen to claim whole. A setup agent saving through the services takes
-      the value from `choices.instance` of the Feishu Source in `superagent.settings.get`; it has the form
-      `<channel row id>/<instance id>`, for example `ext:agnes.feishu/main/superagent-bot`, and is typed by hand only
-      when that list is empty. If the Source reports that the instance already serves the owner or another feature,
-      choose the dedicated instance instead; Superagent never takes over the owner's direct messages. An unused
+   1. **Sources:** the GitHub Source: the repository, and the absolute path of the `gh-agent` wrapper as its CLI; then
+      the Feishu Source if used: the dedicated bot's instance, chosen from the list of running channel instances, claim
+      **Whole instance**, the chats, and whether direct messages and other chats are received. An instance where the
+      owner paired a direct chat or bound a session is marked and cannot be chosen to claim whole. A setup agent saving
+      through the services takes the value from `choices.instance` of the Feishu Source in `superagent.settings.get`; it
+      has the form `<channel row id>/<instance id>`, for example `ext:agnes.feishu/main/superagent-bot`, and is typed by
+      hand only when that list is empty. If the Source reports that the instance already serves the owner or another
+      feature, choose the dedicated instance instead; Superagent never takes over the owner's direct messages. An unused
       pairing code for the instance holds it the same way until the code expires (within an hour).
    2. **Policy:** the allowed lists, and for Feishu the chat ids, chosen from the chats the channel lists.
    3. **Execution:** the ticket directory root and the prepare command from question 7, for example

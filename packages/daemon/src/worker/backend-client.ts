@@ -1,4 +1,6 @@
 import { join } from 'node:path'
+import { bundledAppProof } from '@agnes/daemon-foundation/local/bundled-app'
+import type { Auth } from '@agnes/protocol'
 import { createClient, fileJournal, unixTransport } from '@agnes/sdk'
 import { readDaemonDiscovery } from '../supervisor/discovery.js'
 import { resolveDaemonScope } from '../supervisor/scope.js'
@@ -15,14 +17,18 @@ export function backendClient(options: {
   signal: AbortSignal
   assertCurrent(): void
   unavailable: string
+  /** The daemon's bundled application key: the local credential then carries the proof for this client id. */
+  bundledAppKey?: string
 }) {
   const fence = () => {
     options.signal.throwIfAborted()
     options.assertCurrent()
   }
+  const key = options.bundledAppKey
   return createClient({
     transport: { kind: 'unix', path: 'host-discovery' },
     auth: { kind: 'local' },
+    ...(key ? { authProviders: { local: () => bundledAppAuth(key) } } : {}),
     journal: fileJournal(join(options.stateDirectory, 'sdk'), options.clientId),
     transportFactories: {
       unix: () => async (handlers) => {
@@ -54,4 +60,13 @@ export function backendClient(options: {
       },
     },
   })
+}
+
+/** The local credential with the bundled application's proof for the client id the handshake names. */
+function bundledAppAuth(key: string) {
+  return {
+    kind: 'local',
+    build: async ({ clientId }: { clientId: string }) =>
+      ({ kind: 'local', bundledApp: bundledAppProof(key, clientId) }) as unknown as Auth,
+  }
 }

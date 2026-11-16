@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { agentSessionEnvironment } from '../../src/runtime/environment.js'
 import {
   PrepareFailed,
   SessionArchived,
@@ -39,6 +40,22 @@ function setup(fields: Partial<SessionsDeps> = {}) {
 }
 
 posixDescribe('worker sessions', () => {
+  it("opens each session with the agent's environment, when it creates it and each time it loads it again", async () => {
+    const environment = agentSessionEnvironment('/state')
+    const { fake, sessions } = setup({ sessionEnvironment: environment })
+    const id = await sessions.ensureWorker(ticket('t9'), join(temp.dir, 'work', 'env'))
+    expect(fake.sessions.get(id)?.options).toMatchObject({ environment })
+    // A session that exists already, such as one created before the environment existed, gets it when loaded.
+    const again = setup({ sessionEnvironment: environment })
+    again.fake.make('superagent:orchestrator', {
+      cwd: join(temp.dir, 'state'),
+      sessionKey: 'superagent:orchestrator',
+    })
+    again.registry.intend({ kind: 'orchestrator' }, 'superagent:orchestrator')
+    await again.sessions.ensureOrchestrator()
+    expect(again.fake.loadOptions).toContainEqual({ history: 'none', environment })
+  })
+
   it('creates the ticket directory, runs prepare inside it, then opens the worker session there', async () => {
     const { fake, registry, sessions, models } = setup()
     const dir = join(temp.dir, 'work', 'fix-login')

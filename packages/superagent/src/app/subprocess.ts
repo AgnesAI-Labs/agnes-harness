@@ -30,7 +30,7 @@ const CREDENTIAL_NAME = /KEY|PASSWORD|SECRET|TOKEN/i
  * login the runtime's commands use: environment git configuration (a `GIT_CONFIG_COUNT` without its key even makes every
  * git fail), the repository a host started inside git names, the operator's commit identity, a `gh` configuration
  * directory or host, an XDG configuration directory (git and gh read the operator's from it), and askpass helpers. The
- * agent's identity comes from its HOME instead.
+ * agent's identity comes from the agent's variables instead (see `setAgentVariables`).
  */
 const AMBIENT = new RegExp(
   `^(GIT_CONFIG_(COUNT|PARAMETERS|GLOBAL|SYSTEM|NOSYSTEM|KEY_\\d+|VALUE_\\d+)|GIT_(AUTHOR|COMMITTER)_.*|${GIT_LOCATION.join('|')}|GH_CONFIG_DIR|GH_HOST|SSH_ASKPASS|XDG_CONFIG_HOME)$`,
@@ -43,10 +43,11 @@ const NO_PROMPT = { GIT_ASKPASS: '', GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYST
 let agent: Record<string, string> = {}
 
 /**
- * Sets the agent's `HOME` and `GH_CONFIG_DIR` for every command the runtime runs from now on, or clears them with
- * `undefined`. The runtime sets them once its environment check passed and clears them when it stops.
+ * Sets the agent's variables (its shims first on PATH and its git configuration, see `agentCommandVariables`) for every
+ * command the runtime runs from now on, or clears them with `undefined`. The runtime sets them once its environment
+ * check passed and clears them when it stops.
  */
-export function setAgentVariables(variables: { HOME: string; GH_CONFIG_DIR: string } | undefined): void {
+export function setAgentVariables(variables: Readonly<Record<string, string>> | undefined): void {
   agent = variables ? { ...variables } : {}
 }
 

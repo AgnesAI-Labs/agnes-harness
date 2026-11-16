@@ -38,9 +38,10 @@ service account.
 | --- | --- |
 | `/srv/superagent/agh` | `AGH_HOME`: the daemon's home, its model configuration, sessions and the Superagent skills it lists |
 | `/srv/superagent/state` | Superagent's state directory (the plugin setting `stateDir`): `superagent.sqlite`, the ticket directories in `work/` |
-| `/srv/superagent/state/home` | The agent's `HOME`: its `.gitconfig`, written by Superagent on every start |
-| `/srv/superagent/state/home/.config/gh` | The agent's GitHub CLI login |
-| `/srv/superagent/state/worker-bin` | Shims: `gh` runs the agent's GitHub CLI; blocked commands fail |
+| `/srv/superagent/state/worker-bin` | Shims, written by Superagent on every start: `gh` runs the agent's GitHub CLI; blocked commands fail |
+| `/srv/superagent/state/worker-gitconfig` | The agent's git configuration, written by Superagent on every start |
+| `/srv/superagent/bin/gh-agent` | The agent's GitHub CLI: a `gh` wrapper with its own configuration directory |
+| `/srv/superagent/gh-agent` | That configuration directory: the agent's GitHub CLI login |
 
 Without a `stateDir` setting Superagent uses a directory under the AGH data directory, `bundled-apps/<hash>`, which the
 panel's **Deployment** page names. Setting it explicitly before the service starts keeps the unit files below fixed.
@@ -60,17 +61,25 @@ panel's **Deployment** page names. Setting it explicitly before the service star
    [Troubleshooting](#troubleshooting)).
 3. On the plugin's settings page set `stateDir` to `/srv/superagent/state`. Superagent then reports a setup problem
    because the agent's environment is not in place yet; that is expected.
-4. Sign the agent account in, with its own configuration directory, never yours:
+4. Give the agent a GitHub CLI that uses only its own login, never yours: a `gh-agent` wrapper with its own
+   configuration directory. Then sign it in:
 
    ```sh
-   GH_CONFIG_DIR=/srv/superagent/state/home/.config/gh gh auth login
-   GH_CONFIG_DIR=/srv/superagent/state/home/.config/gh gh api user --jq .login
+   mkdir -p /srv/superagent/bin
+   cat > /srv/superagent/bin/gh-agent <<'EOF'
+   #!/bin/sh
+   GH_CONFIG_DIR=/srv/superagent/gh-agent exec gh "$@"
+   EOF
+   chmod +x /srv/superagent/bin/gh-agent
+   /srv/superagent/bin/gh-agent auth login
+   /srv/superagent/bin/gh-agent api user --jq .login
    ```
 
-   The second command must print the agent's login. Sign in through the browser, as the agent's own GitHub account:
-   a dedicated account, added as a collaborator with write access to this one repository and to nothing else, so that
-   whatever it signs in with reaches only that repository. Superagent receives requests through the account's
-   notifications, and GitHub's notifications API accepts only a browser sign-in or a classic token:
+   The last command prints the account the agent acts as; Superagent reads it the same way. Sign in through the
+   browser, as the agent's own GitHub account: a dedicated account, added as a collaborator with write access to this
+   one repository and to nothing else, so that whatever it signs in with reaches only that repository. You can sign in
+   with your own account instead, for a trial; the agent then acts as you. Superagent receives requests through the
+   account's notifications, and GitHub's notifications API accepts only a browser sign-in or a classic token:
 
    - **Fine-grained personal access tokens are not supported**: the notifications API refuses them. Superagent's setup
      check then reports "The agent's GitHub token cannot read notifications".
@@ -81,15 +90,23 @@ panel's **Deployment** page names. Setting it explicitly before the service star
    Branch protection on the default branch, not the token, is what keeps the agent from pushing there or merging
    without a person's approval. Superagent never reads that protection, and reading it needs admin rights on the
    repository, which the agent account should not have: check it with your own account.
-5. Stop that daemon and run it as a service with the agent's identity, as below.
+5. On the panel's **Sources** page, enter the repository (`owner/name`) and the CLI,
+   `/srv/superagent/bin/gh-agent`, on the GitHub card, and save. Setup checks the account and its push access.
+6. Stop that daemon and run it as a service, as below.
 
 ## Run as a service
 
-The daemon must start with `HOME` set to the agent home and the shims first on `PATH`; the sessions it runs inherit
-both, so their commits, pushes and `gh` calls act as the agent account even when the operator is signed in on the same
-machine. Superagent checks this when it starts and reports `agentHomeMismatch` or `agentGhNotShim` otherwise. Write the
-three variables out in full: a service manager does not expand `~` or read your shell profile, and `PATH` must still
-reach `node`, `git` and the real `gh`.
+The daemon starts as usual; it needs no `HOME` or `PATH` of the agent's. Superagent gives each session it opens the
+agent's environment: the shims first on `PATH`, its own git configuration in place of the user's global and system
+ones (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM`), no git prompts, and no `GH_TOKEN` or `GITHUB_TOKEN`. So the commits,
+pushes and `gh` calls of its sessions act as the agent account even when the operator is signed in on the same machine.
+Superagent's own git, `gh` and prepare commands run the same way. On every start it checks, in that environment, that
+git asks only the agent's GitHub CLI for github.com credentials and that the CLI acts as the agent. The environment is
+kept with each session, so it still applies after a restart, whoever opens the session. Only Superagent can give a
+session this environment: the platform refuses it from any other client or plugin.
+
+A service manager does not read your shell profile: write `PATH` out so that it reaches `node`, `git` and the `gh` the
+wrapper runs.
 
 ### macOS (launchd)
 
@@ -106,8 +123,7 @@ reach `node`, `git` and the real `gh`.
   <array><string>/opt/homebrew/bin/agh</string><string>serve</string></array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>HOME</key><string>/srv/superagent/state/home</string>
-    <key>PATH</key><string>/srv/superagent/state/worker-bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string>
     <key>AGH_HOME</key><string>/srv/superagent/agh</string>
   </dict>
   <key>WorkingDirectory</key><string>/srv/superagent</string>
@@ -132,8 +148,7 @@ Wants=network-online.target
 [Service]
 User=superagent
 WorkingDirectory=/srv/superagent
-Environment=HOME=/srv/superagent/state/home
-Environment=PATH=/srv/superagent/state/worker-bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=AGH_HOME=/srv/superagent/agh
 ExecStart=/usr/local/bin/agh serve
 Restart=on-failure
@@ -147,10 +162,17 @@ WantedBy=multi-user.target
 Stop the service through its manager (`launchctl bootout`, `systemctl stop`): the daemon then ends its sessions' turns
 cleanly. A restart is safe at any time: see [Restart and recovery](#restart-and-recovery).
 
+**Set up the earlier way.** An installation whose unit starts the daemon with `HOME=<stateDir>/home` and
+`<stateDir>/worker-bin` first on `PATH`, and whose GitHub card names `gh`, keeps working: that `gh` still reads the login
+in `<stateDir>/home/.config/gh`. To move to the setup above, make the `gh-agent` wrapper with
+`GH_CONFIG_DIR=<stateDir>/home/.config/gh`, which keeps that login, save it as the CLI on the GitHub card, then remove
+`HOME` and the shims from the unit and restart. Superagent gives its existing sessions the agent's environment the next
+time it opens them.
+
 ## Settings and first use
 
 Open the **Superagent** entry on the AGH home page and save, in order, the Sources (repository and the agent's GitHub
-CLI; the Feishu channel instance if used), the Policy (who may ask), the Execution settings (the ticket directory root and
+CLI, `/srv/superagent/bin/gh-agent`; the Feishu channel instance if used), the Policy (who may ask), the Execution settings (the ticket directory root and
 the prepare command, for example `git clone "https://github.com/<owner>/<name>.git" repo`) and the team prompt sections.
 The [setup guide](../../packages/superagent/docs/setup.md) explains each field. On a fresh install the overview reports
 that the GitHub Source names no repository: the **Source** settings list GitHub from the first start, and once its
@@ -174,7 +196,9 @@ Only the owner clears data, explicitly; disabling never does. To remove everythi
 
 1. Disable the plugin, then uninstall it under **Plugins**.
 2. Delete the state directory (`/srv/superagent/state`, or the `bundled-apps/<hash>` directory the panel named). This
-   removes the database, every ticket directory with any branch that was not pushed, and the agent's GitHub login.
+   removes the database and every ticket directory with any branch that was not pushed. The agent's GitHub login stays
+   in the wrapper's configuration directory (`/srv/superagent/gh-agent`); delete it and the wrapper too, or sign the
+   agent out with `gh-agent auth logout`.
 3. Delete the sessions you no longer want: the main session `superagent:orchestrator` and the ticket sessions
    `superagent:worker:<ticket id>`.
 4. Delete the skills Superagent wrote into the AGH home: the `dsh-superagent-*` directories under `<AGH_HOME>/skills`.
@@ -204,8 +228,8 @@ not hold against an allowed person or against text the main session reads. What 
 Ticket sessions run with full access. That means:
 
 - They can read the operator's home by absolute path, including the keys and the socket of the operator's everyday AGH
-  home. The separate `HOME` changes the identity, not what a session can reach; the protected `~/.ssh` is the agent
-  home's, and the operator's real `~/.ssh` is not on the protected list.
+  home, and the agent's own login in the wrapper's configuration directory. The agent's environment changes which
+  identity git and `gh` use, not what a session can reach.
 - In Superagent's AGH home, full access lifts the soft bans on the data directory: `tables`, `audit` and `sessions.db`
   can be read and written. Only `secrets` and the private state root under the data directory stay forbidden.
   Superagent's own SQLite database can be read and written by its sessions.
@@ -249,13 +273,12 @@ again after you fixed something outside the panel.
 | The panel says it cannot connect to Superagent, and its calls return `CAPABILITY_DENIED` | Install from the marketplace; a local-path install has no privileged grant. A folder path installs a `local-source` package, which never receives the bundled-app grant Superagent runs with; this is intended. Uninstall it, then install from **Plugins → Marketplace** or with `agh plugins add file:./bundled-plugins/superagent` |
 | `agh package add @agnes/superagent` is refused | A package name is not a source. Install from the marketplace, or with `agh plugins add file:./bundled-plugins/superagent` |
 | The first `agh serve` refuses the home with `E_HOME_VERSION` | Something was created under the fresh `AGH_HOME` before its first start, such as a log file. Remove it, start again, and write the log outside the home |
-| `The daemon runs with HOME …, not the agent home …` | Start the daemon with `HOME` set to `<stateDir>/home` (the unit's `HOME`) |
-| `Sessions run gh from …, not the shim in …` | Put `<stateDir>/worker-bin` first on the unit's `PATH` |
-| `git would ask other credential helpers than the agent's for github.com` | Remove the named helpers from the system git configuration, or run as a user without them |
-| `The agent's GitHub token cannot read notifications; …` | The agent is signed in with a fine-grained token, which GitHub's notifications API refuses. Sign in again with its `GH_CONFIG_DIR` through the browser, or with a classic token with the `repo` and `notifications` scopes, as in step 4 |
-| `gh acts as @…, not the agent account @…` | Sign in again with the agent's `GH_CONFIG_DIR`, as in step 4 |
-| `The agent GitHub CLI was not found.` | Make `gh` reachable on the unit's `PATH`, or set an absolute path on the GitHub Source |
-| A file `… was not written by Superagent` | Move it out of `<stateDir>/worker-bin` or `<stateDir>/home`, or choose another state directory |
+| `git would ask other credential helpers than the agent's for github.com` | A helper was added to `<stateDir>/worker-gitconfig`, which Superagent rewrites on its next start: select **Check again**. Otherwise the agent's git is older than 2.32 |
+| `The agent's GitHub token cannot read notifications; …` | The agent is signed in with a fine-grained token, which GitHub's notifications API refuses. Sign in again with `gh-agent auth login` through the browser, or with a classic token with the `repo` and `notifications` scopes, as in step 4 |
+| `gh acts as @…, not the agent account @…` | Sign in again with `gh-agent auth login`, as in step 4 |
+| `The agent GitHub CLI was not found.` | Set the absolute path of the `gh-agent` wrapper on the GitHub Source, and make the `gh` it runs reachable on the unit's `PATH` |
+| `The agent GitHub CLI cannot read its account.` | The wrapper is not signed in: run `gh-agent auth login`, as in step 4 |
+| A file `… was not written by Superagent` | Move it out of `<stateDir>/worker-bin`, or move `<stateDir>/worker-gitconfig` away, or choose another state directory |
 | `A session superagent:… exists that Superagent did not open` | Archive or remove that session, which is not Superagent's, then select **Check again** |
 | A ticket fails with the prepare command's output | Fix the command in Execution, then retry the ticket |
 | The `deliveries` health names a ticket | A relaunch keeps waiting to confirm whether a session got a message; check that the daemon answers, then retry the ticket |

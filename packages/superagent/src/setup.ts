@@ -18,14 +18,6 @@ export const SETUP_PROBLEMS = {
     'deployment',
     'A session {session} exists that Superagent did not open; archive or remove it, then check the setup again.',
   ],
-  agentHomeMismatch: [
-    'deployment',
-    'The daemon runs with HOME {actual}, not the agent home {home}; start this AGH with HOME set to the agent home.',
-  ],
-  agentGhNotShim: [
-    'deployment',
-    'Sessions run gh from {actual}, not the shim in {shims}; put {shims} first on the PATH this AGH starts with.',
-  ],
   agentCredentialMixed: [
     'deployment',
     "git would ask other credential helpers than the agent's for github.com: {helpers}.",

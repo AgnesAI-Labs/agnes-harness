@@ -504,6 +504,7 @@ export {
 } from '@agnes/host-providers/assemble/provider-selection'
 export * from '@agnes/host-providers/assemble/routes'
 export * from '@agnes/host-providers/profile/composition-state'
+export * from '@agnes/host-providers/profile/session-environment'
 export { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 export * from '@agnes/host-providers/runtime-target-publisher'
 export * from '@agnes/host-providers/runtime-target-report'

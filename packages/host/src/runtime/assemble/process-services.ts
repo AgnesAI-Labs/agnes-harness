@@ -15,6 +15,7 @@ import { createSessionGitWorktreeService } from '@agnes/host-infrastructure/git-
 import type { WindowsAclExecution } from '@agnes/host-infrastructure/windows-acl/execution'
 import { createWindowsAclExecution } from '@agnes/host-infrastructure/windows-acl/host-platform'
 import type { SandboxProviderSlot } from '@agnes/host-providers/adapters/sandbox-providers'
+import { SessionEnvironmentStore } from '@agnes/host-providers/profile/session-environment'
 import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import { type AdapterBundle, openAdapters } from '../adapters/index.js'
 import type { AssemblyContext } from './context.js'
@@ -89,6 +90,7 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
   const backend = deps.platform ? { platform: deps.platform } : {}
   const sandboxProviderSlot: SandboxProviderSlot = {}
   const skillReadRoots = { current: (_sessionKey?: string): readonly string[] => [] }
+  const sessionEnvironments = new SessionEnvironmentStore(deps.profileDir)
   const adapters = await openAdapters(ctx.profile, {
     dataDir,
     skillReadRoots: (sessionKey) => skillReadRoots.current(sessionKey),
@@ -99,6 +101,7 @@ export async function openProcessServices(ctx: AssemblyContext, pkgs: PackageSet
         secretsDir: ctx.profile.adapters.secrets.path,
       }),
     configHomes: () => ownHomes({ profileDir: deps.profileDir, dataDir }),
+    sessionEnvironment: (sessionKey) => sessionEnvironments.read(sessionKey),
     modules,
     signal: ctx.abort.signal,
     workspaceRoot,

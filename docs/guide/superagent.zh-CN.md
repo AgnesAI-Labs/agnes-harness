@@ -29,9 +29,10 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
 | --- | --- |
 | `/srv/superagent/agh` | `AGH_HOME`：daemon 的 home、模型配置、会话，以及它列出的 Superagent 技能 |
 | `/srv/superagent/state` | Superagent 的状态目录（插件设置 `stateDir`）：`superagent.sqlite`、`work/` 下的工单目录 |
-| `/srv/superagent/state/home` | 智能体的 `HOME`：它的 `.gitconfig`，Superagent 每次启动时重写 |
-| `/srv/superagent/state/home/.config/gh` | 智能体的 GitHub CLI 登录 |
-| `/srv/superagent/state/worker-bin` | 垫片：`gh` 运行智能体的 GitHub CLI，被禁用的命令直接失败 |
+| `/srv/superagent/state/worker-bin` | 垫片，Superagent 每次启动时重写：`gh` 运行智能体的 GitHub CLI，被禁用的命令直接失败 |
+| `/srv/superagent/state/worker-gitconfig` | 智能体的 git 配置，Superagent 每次启动时重写 |
+| `/srv/superagent/bin/gh-agent` | 智能体的 GitHub CLI：一个用自己配置目录的 `gh` 包装 |
+| `/srv/superagent/gh-agent` | 这个配置目录：智能体的 GitHub CLI 登录 |
 
 不设 `stateDir` 时，Superagent 使用 AGH 数据目录下的 `bundled-apps/<哈希>`，面板的 **Deployment** 页会写出它。
 在服务启动前显式设置，下面的单元文件就可以写死。
@@ -46,16 +47,22 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
    命令先给出审阅内容，你确认后安装、信任并启用 Superagent。只用这两种方式之一。包名（如 `agh package add @agnes/superagent`）不是来源，会被拒绝；
    用文件夹路径安装得到的是没有随包应用授权的本地副本（见[排错](#排错)）。
 3. 在插件设置页把 `stateDir` 设为 `/srv/superagent/state`。此时 Superagent 会报告一个设置问题，因为智能体的环境还没就绪，这是正常的。
-4. 用智能体自己的配置目录登录智能体账号，绝不要用你自己的：
+4. 给智能体一个只用它自己登录、绝不用你的登录的 GitHub CLI：一个带自己配置目录的 `gh-agent` 包装。然后用它登录：
 
    ```sh
-   GH_CONFIG_DIR=/srv/superagent/state/home/.config/gh gh auth login
-   GH_CONFIG_DIR=/srv/superagent/state/home/.config/gh gh api user --jq .login
+   mkdir -p /srv/superagent/bin
+   cat > /srv/superagent/bin/gh-agent <<'EOF'
+   #!/bin/sh
+   GH_CONFIG_DIR=/srv/superagent/gh-agent exec gh "$@"
+   EOF
+   chmod +x /srv/superagent/bin/gh-agent
+   /srv/superagent/bin/gh-agent auth login
+   /srv/superagent/bin/gh-agent api user --jq .login
    ```
 
-   第二条命令必须打印智能体的登录名。请以智能体自己的 GitHub 账号在浏览器里登录：这是一个专用账号，作为协作者只对这一个仓库有写权限、
-   别的都没有，这样它无论用什么方式登录都只能碰到这个仓库。Superagent 通过这个账号的通知接收请求，而 GitHub 的通知 API
-   只接受浏览器登录或经典令牌：
+   最后一条命令打印智能体以哪个账号行事；Superagent 也这样读取。请以智能体自己的 GitHub 账号在浏览器里登录：这是一个专用账号，
+   作为协作者只对这一个仓库有写权限、别的都没有，这样它无论用什么方式登录都只能碰到这个仓库。试用时也可以登录你自己的账号，
+   这时智能体以你的身份行事。Superagent 通过这个账号的通知接收请求，而 GitHub 的通知 API 只接受浏览器登录或经典令牌：
 
    - **不支持细粒度个人访问令牌**：通知 API 拒绝它们。这时 Superagent 的设置检查会报告“智能体的 GitHub 令牌读不到通知”。
    - **经典个人访问令牌**（用 `gh auth login --with-token` 给出）带上 `repo` 和 `notifications` 两个范围即可使用。它能碰到这个账号能碰到的
@@ -63,13 +70,18 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
 
    阻止智能体直接推送默认分支、或不经人批准就合并的，是默认分支上的分支保护，而不是令牌。Superagent 从不读取分支保护；
    读取它需要仓库的管理员权限，而智能体账号不应有这个权限，请用你自己的账号核对。
-5. 停掉这个 daemon，按下文以智能体身份作为服务运行。
+5. 在面板的 **来源** 页，GitHub 卡片上填仓库（`owner/name`）和 CLI `/srv/superagent/bin/gh-agent`，保存。设置检查会核对账号和它的推送权限。
+6. 停掉这个 daemon，按下文作为服务运行。
 
 ## 作为服务运行
 
-daemon 启动时必须把 `HOME` 设为智能体 home，并把垫片目录放在 `PATH` 最前面；它运行的会话会继承这两项，所以即使操作者在同一台机器上已登录，
-会话的提交、推送和 `gh` 调用也都以智能体账号进行。Superagent 启动时会检查这一点，不满足就报告 `agentHomeMismatch` 或 `agentGhNotShim`。
-三个变量都要写全：服务管理器不展开 `~`，也不读你的 shell 配置，而且 `PATH` 仍须能找到 `node`、`git` 和真正的 `gh`。
+daemon 照常启动，不需要智能体的 `HOME` 或 `PATH`。Superagent 给它开的每个会话设置智能体的环境：垫片目录放在 `PATH` 最前面，
+用它自己的 git 配置代替用户的全局与系统配置（`GIT_CONFIG_GLOBAL`、`GIT_CONFIG_NOSYSTEM`），git 不弹提示，也没有 `GH_TOKEN` 或 `GITHUB_TOKEN`。
+所以即使操作者在同一台机器上已登录，这些会话的提交、推送和 `gh` 调用也都以智能体账号进行。Superagent 自己运行的 git、`gh` 和 prepare 命令也一样。
+每次启动时它在这个环境下检查：git 访问 github.com 时只向智能体的 GitHub CLI 要凭据，而这个 CLI 以智能体账号行事。
+这个环境随会话保存，重启之后不论谁打开会话都仍然生效。只有 Superagent 能给会话设置这个环境：平台拒绝其他任何客户端或插件这样做。
+
+服务管理器不读你的 shell 配置：把 `PATH` 写全，让它能找到 `node`、`git` 和包装所运行的 `gh`。
 
 ### macOS（launchd）
 
@@ -86,8 +98,7 @@ daemon 启动时必须把 `HOME` 设为智能体 home，并把垫片目录放在
   <array><string>/opt/homebrew/bin/agh</string><string>serve</string></array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>HOME</key><string>/srv/superagent/state/home</string>
-    <key>PATH</key><string>/srv/superagent/state/worker-bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string>
     <key>AGH_HOME</key><string>/srv/superagent/agh</string>
   </dict>
   <key>WorkingDirectory</key><string>/srv/superagent</string>
@@ -112,8 +123,7 @@ Wants=network-online.target
 [Service]
 User=superagent
 WorkingDirectory=/srv/superagent
-Environment=HOME=/srv/superagent/state/home
-Environment=PATH=/srv/superagent/state/worker-bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
 Environment=AGH_HOME=/srv/superagent/agh
 ExecStart=/usr/local/bin/agh serve
 Restart=on-failure
@@ -126,9 +136,14 @@ WantedBy=multi-user.target
 
 通过服务管理器停止服务（`launchctl bootout`、`systemctl stop`），daemon 会干净地结束各会话的回合。任何时候重启都是安全的，见[重启与恢复](#重启与恢复)。
 
+**按早先方式配置的安装。** 单元以 `HOME=<stateDir>/home` 启动 daemon、把 `<stateDir>/worker-bin` 放在 `PATH` 最前面、GitHub 卡片填的是 `gh`
+的安装照常可用：那个 `gh` 仍读取 `<stateDir>/home/.config/gh` 里的登录。要改成上面的方式，用 `GH_CONFIG_DIR=<stateDir>/home/.config/gh`
+建 `gh-agent` 包装（沿用那份登录），把它作为 CLI 保存到 GitHub 卡片，再从单元里去掉 `HOME` 和垫片目录并重启。
+Superagent 下次打开已有会话时会给它们设置智能体的环境。
+
 ## 设置与首次使用
 
-打开 AGH 首页上的 **Superagent** 入口，依次保存：来源（仓库与智能体的 GitHub CLI；用飞书时选飞书渠道实例）、策略（谁可以提请求）、
+打开 AGH 首页上的 **Superagent** 入口，依次保存：来源（仓库与智能体的 GitHub CLI `/srv/superagent/bin/gh-agent`；用飞书时选飞书渠道实例）、策略（谁可以提请求）、
 执行设置（工单目录根与 prepare 命令，例如 `git clone "https://github.com/<owner>/<name>.git" repo`）以及团队提示段。
 各字段的含义见[设置指南](../../packages/superagent/docs/setup.md)。全新安装时总览会报告 GitHub 来源没有设置仓库：
 **来源** 设置从首次启动起就列出 GitHub，保存仓库与 CLI 后设置会自行继续，无需重启。然后用允许名单里的账号在某个 Issue 下评论 `@<智能体登录名> <请求>`，
@@ -148,8 +163,8 @@ WantedBy=multi-user.target
 清除数据只能由主人显式操作，停用从不清除。要全部删掉：
 
 1. 停用插件，再在 **插件** 里卸载它。
-2. 删除状态目录（`/srv/superagent/state`，或面板写出的 `bundled-apps/<哈希>` 目录）。这会删掉数据库、每个工单目录（包括尚未推送的分支）
-   以及智能体的 GitHub 登录。
+2. 删除状态目录（`/srv/superagent/state`，或面板写出的 `bundled-apps/<哈希>` 目录）。这会删掉数据库和每个工单目录（包括尚未推送的分支）。
+   智能体的 GitHub 登录留在包装的配置目录（`/srv/superagent/gh-agent`）里；把它和包装一起删掉，或用 `gh-agent auth logout` 让智能体退出登录。
 3. 删除不再需要的会话：主会话 `superagent:orchestrator` 与工单会话 `superagent:worker:<工单 id>`。
 4. 删除 Superagent 写进 AGH home 的技能：`<AGH_HOME>/skills` 下的 `dsh-superagent-*` 目录。
 
@@ -171,8 +186,8 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
 
 工单会话以完全访问运行。这意味着：
 
-- 会话能用绝对路径读取操作者的家目录，包括操作者日常 AGH home 里的密钥与 socket。单独的 `HOME` 改变的是身份，不是会话能碰到的范围；
-  受保护的 `~/.ssh` 是智能体 home 下的那个，操作者真正的 `~/.ssh` 不在保护列表里。
+- 会话能用绝对路径读取操作者的家目录，包括操作者日常 AGH home 里的密钥与 socket，以及包装配置目录里智能体自己的登录。
+  智能体的环境改变的是 git 与 `gh` 用哪个身份，不是会话能碰到的范围。
 - 在 Superagent 这套 AGH 里，完全访问会解除对数据目录的软禁止：`tables`、`audit` 与 `sessions.db` 可读可写；只有数据目录下的 `secrets`
   和私有状态根仍然禁止。Superagent 自己的 SQLite 数据库也能被它的会话读写。
 - 在同一个系统用户下，会话很可能能自行连上 daemon 的本地 socket，以主人的权限行事：本地认证只看 socket 归谁所有。
@@ -204,13 +219,12 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
 | 面板说连不上 Superagent，调用返回 `CAPABILITY_DENIED` | 请从市场安装；本地路径安装没有特权授权。用文件夹路径安装得到的是 `local-source` 包，它永远拿不到 Superagent 运行所需的随包应用授权，这是有意的。先卸载它，再从 **插件 → 市场** 或用 `agh plugins add file:./bundled-plugins/superagent` 安装 |
 | `agh package add @agnes/superagent` 被拒绝 | 包名不是来源。从市场安装，或用 `agh plugins add file:./bundled-plugins/superagent` |
 | 首次 `agh serve` 以 `E_HOME_VERSION` 拒绝 home | 全新的 `AGH_HOME` 在首次启动前被建了东西，比如日志文件。删掉它再启动，并把日志写到 home 之外 |
-| `The daemon runs with HOME …, not the agent home …` | 以 `HOME` 为 `<stateDir>/home` 启动 daemon（单元里的 `HOME`） |
-| `Sessions run gh from …, not the shim in …` | 把 `<stateDir>/worker-bin` 放在单元 `PATH` 的最前面 |
-| `git would ask other credential helpers than the agent's for github.com` | 从系统 git 配置里去掉列出的凭据助手，或换一个没有它们的用户运行 |
-| `The agent's GitHub token cannot read notifications; …` | 智能体用细粒度令牌登录，GitHub 的通知 API 拒绝它。用它的 `GH_CONFIG_DIR` 在浏览器里重新登录，或改用带 `repo` 与 `notifications` 范围的经典令牌，见第 4 步 |
-| `gh acts as @…, not the agent account @…` | 用智能体的 `GH_CONFIG_DIR` 重新登录，见第 4 步 |
-| `The agent GitHub CLI was not found.` | 让单元 `PATH` 能找到 `gh`，或在 GitHub 来源里写绝对路径 |
-| 某个文件 `… was not written by Superagent` | 把它移出 `<stateDir>/worker-bin` 或 `<stateDir>/home`，或换一个状态目录 |
+| `git would ask other credential helpers than the agent's for github.com` | 有凭据助手被加进了 `<stateDir>/worker-gitconfig`，Superagent 下次启动时会重写它：点 **Check again**。否则就是智能体用的 git 早于 2.32 |
+| `The agent's GitHub token cannot read notifications; …` | 智能体用细粒度令牌登录，GitHub 的通知 API 拒绝它。用 `gh-agent auth login` 在浏览器里重新登录，或改用带 `repo` 与 `notifications` 范围的经典令牌，见第 4 步 |
+| `gh acts as @…, not the agent account @…` | 用 `gh-agent auth login` 重新登录，见第 4 步 |
+| `The agent GitHub CLI was not found.` | 在 GitHub 来源里写 `gh-agent` 包装的绝对路径，并让单元 `PATH` 能找到它运行的 `gh` |
+| `The agent GitHub CLI cannot read its account.` | 包装还没登录：运行 `gh-agent auth login`，见第 4 步 |
+| 某个文件 `… was not written by Superagent` | 把它移出 `<stateDir>/worker-bin`，或把 `<stateDir>/worker-gitconfig` 挪走，或换一个状态目录 |
 | `A session superagent:… exists that Superagent did not open` | 归档或删除这个不属于 Superagent 的会话，再点 **Check again** |
 | 工单失败并带有 prepare 命令的输出 | 在执行设置里修好命令，再重试工单 |
 | `deliveries` 健康项点名某个工单 | 重新派工时一直无法确认会话是否收到某条消息；确认 daemon 有应答，再重试工单 |
