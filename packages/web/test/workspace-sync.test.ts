@@ -11,8 +11,9 @@ const entry = (id: string): WorkspaceEntry => ({
   available: true,
 })
 
-function harness(server: WorkspaceEntry[], initial: WorkspaceEntry[] | undefined = [entry('a')]) {
-  let rows = initial
+/** `unread` stands for a page that has not read the list yet. */
+function harness(server: WorkspaceEntry[], initial: WorkspaceEntry[] | 'unread' = [entry('a')]) {
+  let rows = initial === 'unread' ? undefined : initial
   const read = vi.fn(async () => ({ items: [...server] }))
   const apply = vi.fn((page: { items: WorkspaceEntry[] }) => {
     rows = page.items
@@ -36,7 +37,7 @@ describe('workspace sync', () => {
   })
 
   it('reads nothing before the page first read the list', async () => {
-    const { sync, read } = harness([entry('a')], undefined)
+    const { sync, read } = harness([entry('a')], 'unread')
     await sync.reconcile([{ workspaceId: entry('a').workspaceId }])
     expect(read).not.toHaveBeenCalled()
   })
