@@ -590,7 +590,7 @@ describe('Inbound', () => {
     expect(client.calls.some((call) => call.method === 'followUp')).toBe(false)
     expect(adapter.sent).toEqual([
       {
-        target: { chatId: 'chat-1', threadId: 'thread-1' },
+        target: { chatId: 'chat-1', accountId: 'account', threadId: 'thread-1' },
         msg: {
           blocks: [{ kind: 'text', markdown: '已取消当前任务' }],
           ephemeral: true,
