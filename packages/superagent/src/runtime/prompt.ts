@@ -102,7 +102,7 @@ export interface SkillFilesHealth {
 export interface SkillFilesOptions {
   platform?: string
   health?: SkillFilesHealth
-  /** Milliseconds since the epoch; `Date.now` by default. */
+  /** A monotonic clock in milliseconds; `performance.now` by default. */
   now?: () => number
 }
 /** The pause after a write another program held, before a request tries it again: doubling up to a minute. */
@@ -115,12 +115,13 @@ const HELD_LAST_MS = 60_000
  * mark is left alone. Writes run in the prompt hook of every request, so they never wait: a write fails the request, as
  * it always has, except on Windows when another program holds a file (an editor, an indexer, a virus scanner). Then the
  * failure is reported to `health` once, the request goes on with the skills as they were, and requests try the write
- * again only after a pause that doubles while the file stays held; until then a request costs one comparison.
+ * again only after a pause that doubles while the file stays held; until then a request costs one comparison. A new
+ * revision is tried at once.
  */
 export class SkillFiles {
   private written?: number
-  /** While a held file keeps failing the write: when a request may try again, and the pause before that. */
-  private held: { from: number; pause: number } | undefined
+  /** While a held file keeps failing the write of `revision`: when a request may try again, and the pause before that. */
+  private held: { revision: number; from: number; pause: number } | undefined
   constructor(
     private readonly prompts: Pick<Prompts, 'skills'>,
     private readonly root: string,
@@ -128,22 +129,23 @@ export class SkillFiles {
   ) {}
   write(version: PromptVersion): void {
     if (this.written === version.revision) return
-    const now = (this.options.now ?? Date.now)()
-    if (this.held && now < this.held.from) return
+    const now = (this.options.now ?? (() => performance.now()))()
+    if (this.held?.revision === version.revision && now < this.held.from) return
     const platform = this.options.platform ?? HOST_PLATFORM
     try {
       this.replace(version, platform)
     } catch (error) {
       const { health } = this.options
       if (!health || !isWindows(platform) || !busy(error, platform)) throw error
-      const pause = this.held ? Math.min(this.held.pause * 2, HELD_LAST_MS) : HELD_FIRST_MS
+      const pause =
+        this.held?.revision === version.revision ? Math.min(this.held.pause * 2, HELD_LAST_MS) : HELD_FIRST_MS
       if (!this.held)
         health.set({
           state: 'error',
           detail: `The skill files in ${this.root} could not be written, as another program holds one open or it is not permitted; retrying: ${String(error)}`,
-          at: new Date(now).toISOString(),
+          at: new Date().toISOString(),
         })
-      this.held = { from: now + pause, pause }
+      this.held = { revision: version.revision, from: now + pause, pause }
       return
     }
     if (this.held) this.options.health?.set({ state: 'ready', detail: 'The skill files are written' })
@@ -165,8 +167,7 @@ export class SkillFiles {
     }
     for (const entry of readdirSync(this.root, { withFileTypes: true })) {
       const dir = join(this.root, entry.name)
-      if (entry.isDirectory() && !wanted.has(entry.name) && existsSync(join(dir, MARK)))
-        rmSync(dir, { recursive: true, force: true })
+      if (entry.isDirectory() && !wanted.has(entry.name) && existsSync(join(dir, MARK))) removeMarked(dir)
     }
     for (const [name, text] of wanted) {
       const dir = join(this.root, name)
@@ -179,6 +180,16 @@ export class SkillFiles {
       replaceChanged(dir, MARK, `${version.revision}\n`)
     }
   }
+}
+
+/**
+ * Removes a skill directory Superagent wrote, its mark last: a file another program holds stops the removal with the
+ * directory still marked, so the next try removes the rest.
+ */
+function removeMarked(dir: string): void {
+  for (const name of readdirSync(dir))
+    if (name !== MARK) rmSync(join(dir, name), { recursive: true, force: true })
+  rmSync(dir, { recursive: true, force: true })
 }
 
 /**

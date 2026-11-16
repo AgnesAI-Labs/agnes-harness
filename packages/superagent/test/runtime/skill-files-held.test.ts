@@ -1,10 +1,14 @@
-import { mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-// A SKILL.md another program holds, as Windows refuses to replace it: the rename fails as told.
-const held = vi.hoisted(() => ({ code: undefined as string | undefined, renames: 0 }))
+// A SKILL.md another program holds, as Windows refuses to replace or remove it: the rename, or the removal, fails as told.
+const held = vi.hoisted(() => ({
+  code: undefined as string | undefined,
+  removing: undefined as string | undefined,
+  renames: 0,
+}))
 vi.mock('node:fs', async (importOriginal) => {
   const real = await importOriginal<typeof import('node:fs')>()
   return {
@@ -16,6 +20,11 @@ vi.mock('node:fs', async (importOriginal) => {
           throw Object.assign(new Error(`${held.code}: operation not permitted`), { code: held.code })
       }
       return real.renameSync(from, to)
+    },
+    rmSync: (path: string, options?: Parameters<typeof real.rmSync>[1]) => {
+      if (held.removing && path.endsWith('SKILL.md'))
+        throw Object.assign(new Error(`${held.removing}: resource busy`), { code: held.removing })
+      return real.rmSync(path, options)
     },
   }
 })
@@ -30,7 +39,7 @@ let root: string
 beforeEach(() => {
   temp = tempStore()
   root = join(mkdtempSync(join(tmpdir(), 'sa-skills-held-')), 'skills')
-  Object.assign(held, { code: undefined, renames: 0 })
+  Object.assign(held, { code: undefined, removing: undefined, renames: 0 })
 })
 afterEach(() => {
   temp.close()
@@ -98,4 +107,68 @@ it('fails the request on POSIX as it always has, and on Windows for an error tha
   held.code = 'ENOSPC'
   const windows = new SkillFiles(p, root, { platform: 'win32', health: { set: () => {} } })
   expect(() => windows.write(p.current())).toThrow('ENOSPC')
+})
+
+it('tries a new revision at once, and waits on a monotonic clock, not the wall clock', () => {
+  const p = prompts()
+  const reports: Health[] = []
+  const skills = new SkillFiles(p, root, {
+    platform: 'win32',
+    health: { set: (health) => reports.push(health) },
+  })
+  held.code = 'EPERM'
+  const version = p.current()
+  skills.write(version)
+  expect(held.renames).toBe(1)
+  // The wall clock jumps an hour: the pause still holds.
+  const wall = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 3_600_000)
+  try {
+    skills.write(version)
+  } finally {
+    wall.mockRestore()
+  }
+  expect(held.renames).toBe(1)
+  // A new revision is written at once, without waiting out the pause of the old one, and is not reported again.
+  skills.write({ ...version, revision: version.revision + 1 })
+  expect(held.renames).toBe(2)
+  expect(reports).toHaveLength(1)
+})
+
+it("starts a new revision's pause again from the first", () => {
+  const p = prompts()
+  let now = 0
+  const skills = new SkillFiles(p, root, { platform: 'win32', health: { set: () => {} }, now: () => now })
+  held.code = 'EPERM'
+  const first = p.current()
+  const second = { ...first, revision: first.revision + 1 }
+  skills.write(first)
+  now = 1_000
+  skills.write(first)
+  expect(held.renames).toBe(2)
+  // The first revision's pause is two seconds now; the second revision's first pause is one.
+  now = 1_500
+  skills.write(second)
+  expect(held.renames).toBe(3)
+  now = 2_500
+  skills.write(second)
+  expect(held.renames).toBe(4)
+})
+
+it('removes a skill directory that is no longer wanted with its mark last, so a held file leaves it marked', () => {
+  const p = prompts()
+  const old = join(root, 'dsh-superagent-retired')
+  mkdirSync(old, { recursive: true })
+  writeFileSync(join(old, '.superagent-revision'), '1\n')
+  writeFileSync(join(old, 'SKILL.md'), 'retired')
+  let now = 0
+  const skills = new SkillFiles(p, root, { platform: 'win32', health: { set: () => {} }, now: () => now })
+  held.removing = 'EBUSY'
+  skills.write(p.current())
+  // The removal stopped at the held file, and the directory is still Superagent's to remove.
+  expect(existsSync(join(old, '.superagent-revision'))).toBe(true)
+  held.removing = undefined
+  now += 1_000
+  skills.write(p.current())
+  expect(existsSync(old)).toBe(false)
+  expect(readdirSync(root)).toEqual(['dsh-superagent-github'])
 })

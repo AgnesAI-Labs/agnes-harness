@@ -112,7 +112,7 @@ it('writes .cmd shims on Windows that leave the shims and the tokens behind and 
       '@echo off',
       'rem # Written by Superagent on every start; edits are lost.',
       // Its changes stay in this cmd.exe and the CLI it starts, never in a caller's.
-      'setlocal',
+      'setlocal EnableExtensions DisableDelayedExpansion',
       // Its own directory as cmd.exe found it, so no path is written into the file.
       'set "SUPERAGENT_SHIMS=%~dp0"',
       'set "SUPERAGENT_SHIMS=%SUPERAGENT_SHIMS:~0,-1%"',
@@ -134,7 +134,7 @@ it('writes .cmd shims on Windows that leave the shims and the tokens behind and 
     [
       '@echo off',
       'rem # Written by Superagent on every start; edits are lost.',
-      'setlocal',
+      'setlocal EnableExtensions DisableDelayedExpansion',
       'echo curl is blocked in this installation; use gh, which acts as agent-bot. 1>&2',
       'exit /b 1',
       '',
@@ -150,12 +150,19 @@ it('writes .cmd shims on Windows that leave the shims and the tokens behind and 
 })
 
 it('refuses a Windows shims directory a batch PATH edit cannot match', async () => {
-  const odd = join(root, 'state=1')
   writeFileSync(join(root, 'bin', 'gh.exe'), '')
   const named = { ...config, cli: join(root, 'bin', 'gh.exe') }
-  await expect(writeEnvironment(odd, named, 'win32', { PATH: '' })).rejects.toMatchObject({
-    code: 'environmentFailed',
-  })
+  // `call` doubles a caret, and a caller's delayed expansion takes a `!`, before the edit compares the directory.
+  for (const name of ['state=1', 'state%1', 'state^1', 'state!1'])
+    await expect(
+      writeEnvironment(join(root, name), named, 'win32', { PATH: '' }),
+      name,
+    ).rejects.toMatchObject({
+      code: 'environmentFailed',
+    })
+  await expect(
+    writeEnvironment(join(root, 'state (1)'), named, 'win32', { PATH: '' }),
+  ).resolves.toBeUndefined()
 })
 
 it('writes Windows shims in ASCII under a state directory that is not, and refuses a CLI path it could not write', async () => {
