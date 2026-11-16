@@ -3234,6 +3234,7 @@
       "$ref": "session-v1.json#/$defs/BudgetState"
     },
     "SystemInput": { "$ref": "session-v1.json#/$defs/SystemInput" },
+    "InputDeliverer": { "$ref": "session-v1.json#/$defs/InputDeliverer" },
     "ArtifactRef": {
       "$ref": "session-v1.json#/$defs/ArtifactRef"
     },
@@ -3797,6 +3798,7 @@
             },
             "origin": { "enum": ["principal", "system"] },
             "system": { "$ref": "#/$defs/SystemInput" },
+            "deliveredBy": { "$ref": "#/$defs/InputDeliverer" },
             "actorLabel": {
               "type": "string",
               "maxLength": 128

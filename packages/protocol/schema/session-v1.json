@@ -513,6 +513,16 @@
         "presentation": { "$ref": "#/$defs/SystemInputPresentation" }
       }
     },
+    "InputDeliverer": {
+      "description": "Display only: the server-verified app that delivered this input in place of a person. Stamped by the backend, never accepted from a client and never an authorization fact; it changes neither trust, queueing nor what the model reads.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "appId"],
+      "properties": {
+        "kind": { "const": "bundled-app" },
+        "appId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
     "UserMessage": {
       "type": "object",
       "additionalProperties": false,
@@ -525,6 +535,7 @@
           "description": "Originating inbox command correlation. Presentation and deduplication only; never grants authority."
         },
         "system": { "$ref": "#/$defs/SystemInput" },
+        "deliveredBy": { "$ref": "#/$defs/InputDeliverer" },
         "content": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/ContentBlock" } },
         "kind": { "enum": ["prompt", "steer", "follow_up", "runtime_context"] },
         "titleLocale": { "enum": ["en", "zh-CN"] }
@@ -1894,6 +1905,7 @@
       "required": ["itemId", "target", "content", "actor", "enqueuedAt"],
       "properties": {
         "system": { "$ref": "#/$defs/SystemInput" },
+        "deliveredBy": { "$ref": "#/$defs/InputDeliverer" },
         "itemId": {
           "type": "string",
           "maxLength": 128

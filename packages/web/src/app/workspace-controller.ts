@@ -53,6 +53,8 @@ export function createWorkspaceController(
   host: HTMLElement,
 ) {
   let creating = false
+  /** Whether a list has been read: until then, the page knows no workspace to miss. */
+  let loaded = false
   let pickerReady: boolean | undefined
   let pickerBusy = false
   const dialog = mountNewSessionDialog(host, {
@@ -116,6 +118,7 @@ export function createWorkspaceController(
   }
 
   function apply(page: { items: WorkspaceEntry[] }): void {
+    loaded = true
     context.workspaceRows = page.items
     const selected = context.selectedWorkspace
     if (selected) context.selectedWorkspace = page.items.find((row) => row.path === selected.path)
@@ -192,6 +195,9 @@ export function createWorkspaceController(
     dialog,
     get creating() {
       return creating
+    },
+    get loaded() {
+      return loaded
     },
     resolveDraft,
     select,

@@ -184,7 +184,12 @@ export class SessionControls {
       }
       return commitSessionAttachments(this.s, content, undefined, async (content) => {
         const next = {
-          items: inbox.items.map((item) => (item.itemId === itemId ? { ...item, content } : item)),
+          items: inbox.items.map((item) => {
+            if (item.itemId !== itemId) return item
+            // Edited, the words are the person's: nothing shows them as an app's delivery any more.
+            const { deliveredBy: _deliveredBy, ...edited } = item
+            return { ...edited, content }
+          }),
         }
         if (new TextEncoder().encode(JSON.stringify(next)).byteLength > MAX_FRAME_BYTES - 4096)
           throw new CoreError('E_ENVELOPE', 'Queued input is too large')

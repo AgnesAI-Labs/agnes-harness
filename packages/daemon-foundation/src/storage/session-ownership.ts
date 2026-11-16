@@ -4,10 +4,21 @@ import type { TableHandle } from './table.js'
 const MAX_IDENTITY_LENGTH = 512
 
 export type ActiveSessionPrincipal = Readonly<{ active: true; principalId: string }>
+/**
+ * Who made a session's first reservation, when the server could prove it: `bundled-app` for the release-granted bundled
+ * application's verified connection. Absent for every other creator, and for any session reserved before this was kept.
+ */
+export type SessionCreator = 'bundled-app'
 
 /** Private server-owned binding. Both values come from authenticated server state, never payloads. */
 export interface SessionPrincipalOwnership {
-  bindNew(sessionId: string, principalId: string): boolean
+  /**
+   * Reserves a new session for `principalId`. `creator` is written with the first reservation only, in the same
+   * transaction; a replay of the reservation keeps whatever the first one recorded, and never adds a creator to it.
+   */
+  bindNew(sessionId: string, principalId: string, creator?: SessionCreator): boolean
+  /** The creator the session's first reservation recorded, whatever its state; undefined when none was. */
+  creator(sessionId: string): SessionCreator | undefined
   ownsNewReservation(sessionId: string, principalId: string): boolean
   activateNew(sessionId: string, principalId: string): boolean
   inherit(parentSessionId: string, childSessionId: string, principalId: string, boundarySeq: number): boolean
@@ -58,6 +69,8 @@ function unavailable(): Error {
   return new Error('session principal ownership unavailable')
 }
 
+const isCreator = (value: unknown): value is SessionCreator => value === 'bundled-app'
+
 /** Durable insert-only ownership. Existing rows can be read or inherited, never reassigned. */
 export class SessionPrincipalOwnershipIndex implements SessionPrincipalOwnership {
   private readonly table: TableHandle
@@ -87,13 +100,21 @@ export class SessionPrincipalOwnershipIndex implements SessionPrincipalOwnership
           boundary_seq INTEGER
         )`,
       )
+      // A side table, so a database written before creators were kept needs no migration: its sessions have none.
+      this.table.exec(
+        `CREATE TABLE IF NOT EXISTS session_principal_creator (
+          session_id TEXT PRIMARY KEY,
+          creator TEXT NOT NULL
+        )`,
+      )
     } catch {
       throw unavailable()
     }
   }
 
-  bindNew(sessionId: string, principalId: string): boolean {
+  bindNew(sessionId: string, principalId: string, creator?: SessionCreator): boolean {
     if (!validIdentity(sessionId) || !validIdentity(principalId)) return false
+    if (creator !== undefined && !isCreator(creator)) return false
     try {
       return this.table.transaction(() => {
         const current = this.read(sessionId)
@@ -104,8 +125,26 @@ export class SessionPrincipalOwnershipIndex implements SessionPrincipalOwnership
            VALUES (?, ?, 'new', 'pending', NULL, NULL)`,
           [sessionId, principalId],
         )
+        if (creator)
+          this.table.exec('INSERT INTO session_principal_creator (session_id, creator) VALUES (?, ?)', [
+            sessionId,
+            creator,
+          ])
         return true
       })
+    } catch {
+      throw unavailable()
+    }
+  }
+
+  creator(sessionId: string): SessionCreator | undefined {
+    if (!validIdentity(sessionId)) return undefined
+    try {
+      const row = this.table.get<{ creator: unknown }>(
+        'SELECT creator FROM session_principal_creator WHERE session_id = ?',
+        [sessionId],
+      )
+      return isCreator(row?.creator) ? row.creator : undefined
     } catch {
       throw unavailable()
     }
@@ -299,13 +338,20 @@ export class SessionPrincipalOwnershipIndex implements SessionPrincipalOwnership
 /** Embedded/local form with the same insert-only semantics. */
 export class MemorySessionPrincipalOwnership implements SessionPrincipalOwnership {
   private readonly owners = new Map<string, Reservation>()
+  private readonly creators = new Map<string, SessionCreator>()
 
-  bindNew(sessionId: string, principalId: string): boolean {
+  bindNew(sessionId: string, principalId: string, creator?: SessionCreator): boolean {
     if (!validIdentity(sessionId) || !validIdentity(principalId)) return false
+    if (creator !== undefined && !isCreator(creator)) return false
     const current = this.owners.get(sessionId)
     if (current !== undefined) return current.principalId === principalId && current.kind === 'new'
     this.owners.set(sessionId, { principalId, kind: 'new', state: 'pending' })
+    if (creator) this.creators.set(sessionId, creator)
     return true
+  }
+
+  creator(sessionId: string): SessionCreator | undefined {
+    return validIdentity(sessionId) ? this.creators.get(sessionId) : undefined
   }
 
   ownsNewReservation(sessionId: string, principalId: string): boolean {

@@ -85,7 +85,7 @@ describe('worker sessions', () => {
     expect(id).toBe('superagent:worker:t1')
     expect(registry.role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
     expect(new SessionRegistry(temp.store).role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
-    expect(fake.renamed).toEqual([[id, 'Fix login']])
+    expect(fake.renamed).toEqual([[id, 'Worker · Fix login']])
     expect(models).toEqual(['worker'])
   })
 
@@ -157,7 +157,8 @@ describe('worker sessions', () => {
     reopened.fake.sessions.set(first, fake.sessions.get(first)!)
     expect(await reopened.sessions.ensureWorker(ticket('t3', { title: 'Renamed' }), dir)).toBe(first)
     expect(reopened.fake.loads).toEqual([first])
-    expect(reopened.fake.renamed).toEqual([[first, 'Renamed']])
+    // A worker opened before its role showed in the title gets the role title on this ordinary open.
+    expect(reopened.fake.renamed).toEqual([[first, 'Worker · Renamed']])
   })
 
   it('opens a registered worker session its owner deleted again, under the same key', async () => {
@@ -216,7 +217,7 @@ describe('worker sessions', () => {
       ticket('t10', { title: `${'x'.repeat(100)}\nsecond line` }),
       join(temp.dir, 'w10'),
     )
-    expect(fake.renamed.at(-1)?.[1]).toBe('x'.repeat(80))
+    expect(fake.renamed.at(-1)?.[1]).toBe(`Worker · ${'x'.repeat(71)}`)
   })
 })
 
@@ -233,6 +234,8 @@ describe('main session and pending inputs', () => {
     })
     expect(registry.role(id)).toEqual({ kind: 'orchestrator' })
     expect(models).toEqual(['orchestrator'])
+    // The main session keeps its own name; only workers carry the role in theirs.
+    expect(fake.renamed).toEqual([[id, 'Superagent orchestrator']])
     expect(await sessions.ensureOrchestrator()).toBe(id)
   })
 

@@ -1,6 +1,6 @@
 import type { Seq } from '@agnes/core-common/types'
 import type { ArtifactJob, CostLedger, RepairDecision, TokenCounts } from '@agnes/extension-api/seams'
-import type { Actor, Billing, ContentBlock, SystemInput } from '@agnes/protocol'
+import type { Actor, Billing, ContentBlock, InputDeliverer, SystemInput } from '@agnes/protocol'
 
 // The payload shapes of the event types protocol validates by envelope only. They are declared here
 // so the reducer and its consumers agree on one reading of each row; the ledger itself still accepts
@@ -49,6 +49,8 @@ export type InboxItem = {
   // stamps the resulting user/message with it.
   trust?: 'trusted' | 'untrusted'
   origin?: 'principal' | 'system'
+  /** Display only: the verified app that delivered the input; no effect on trust, queueing or model input. */
+  deliveredBy?: InputDeliverer
 }
 export type Inbox = { items: InboxItem[] }
 

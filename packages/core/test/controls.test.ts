@@ -91,6 +91,20 @@ describe('human Loop controls', () => {
     await session.close()
   })
 
+  it("drops the app's delivery marker from a queued input a person edits, and keeps the others'", async () => {
+    const { session } = await openSession({ provider: fakeProvider([textTurn('answer')]) })
+    const deliveredBy = { kind: 'bundled-app' as const, appId: '@agnes/superagent/superagent' }
+    await session.enqueue('next-turn', { content: content('assignment'), actor, deliveredBy })
+    await session.enqueue('next-turn', { content: content('next'), actor, deliveredBy })
+    type Item = { itemId: string; content: unknown; deliveredBy?: unknown }
+    const inbox = () => (session.latest('inbox') as { items: Item[] }).items
+    expect(inbox().map((item) => item.deliveredBy)).toEqual([deliveredBy, deliveredBy])
+    await session.controls.edit(inbox()[0]?.itemId ?? '', content('my own words'), actor, 'edit')
+    expect(inbox().map((item) => item.deliveredBy)).toEqual([undefined, deliveredBy])
+    expect(inbox()[0]?.content).toEqual(content('my own words'))
+    await session.close()
+  })
+
   it.each(['active', 'completed'] as const)(
     'promotes one queue item atomically during %s, preserving content on failure',
     async (mode) => {
