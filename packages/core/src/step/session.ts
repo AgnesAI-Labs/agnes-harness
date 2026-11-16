@@ -1507,6 +1507,7 @@ export class SessionImpl {
           kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
           ...(system ? { system } : {}),
           ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
+          ...(msg.deliveredBy ? { deliveredBy: structuredClone(msg.deliveredBy) } : {}),
           trust: msg.origin === 'system' ? 'untrusted' : (msg.trust ?? 'trusted'),
           ...(msg.origin ? { origin: msg.origin } : {}),
         }

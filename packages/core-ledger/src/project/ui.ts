@@ -726,6 +726,7 @@ export class UIProjectionCell {
             ...(event.origin === 'system' && message.system
               ? { system: structuredClone(message.system) }
               : {}),
+            ...(message.deliveredBy ? { deliveredBy: structuredClone(message.deliveredBy) } : {}),
           })
         }
         changed.add(id)
