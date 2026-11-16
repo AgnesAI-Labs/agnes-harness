@@ -50,7 +50,7 @@ import { type ChangeResult, type ContainerHandle, changeResult, sessionBindingOf
 import { type GenerationFailure, generationError, generationFailure } from './failure.js'
 import { assertMigrationSettled } from './migration-state.js'
 import { createOpenedSessionsRelay } from './opened-sessions.js'
-import { generationPackages, sameCodeAuthorityChanged } from './packages.js'
+import { generationGrants, sameCodeAuthorityChanged } from './packages.js'
 import { GenerationReuseMode, openGenerationStore, trackRunningGenerations } from './process-liveness.js'
 import { createGenerationSkills, restoreGenerationRows } from './resources.js'
 import { describeColdSession, describeHostSession, readGenerationStatusAsync } from './runtime-descriptor.js'
@@ -106,6 +106,12 @@ export async function createRuntimeGenerationHost(
   })
   const developmentDirectories = new Map(options.developmentPluginDirectories)
   const basePackages = new Set<string>()
+  const onGenerationBasePackages = (ids: readonly string[]) => {
+    for (const id of ids) basePackages.add(id)
+    options.onGenerationBasePackages?.(ids)
+  }
+  // Optional host grants follow the generations each container serves, including in-place ones.
+  const grants = generationGrants(profile, live)
   const failures = new Map<string, GenerationFailure>()
   const failedSnapshots = new Map<string, PluginGenerationSnapshot>()
   const pendingRestart = new Set<string>()
@@ -119,11 +125,9 @@ export async function createRuntimeGenerationHost(
       ...(authoring.pluginManage ? { pluginManage: authoring.pluginManage } : {}),
       profileAuthorityPublication: 'retained',
       runtimePluginSources: runtimeSources,
+      generationPackage: grants.boot(profile.packages, () => initial),
       ...(options.skillResources ? { skillResources: initialSkills.input } : {}),
-      onGenerationBasePackages: (ids) => {
-        for (const id of ids) basePackages.add(id)
-        options.onGenerationBasePackages?.(ids)
-      },
+      onGenerationBasePackages,
       onGenerationSessionBinding: (key) => initialBinding?.(key),
       sessionGeneration: (key) => store.session(key)?.generationId ?? options.sessionGeneration?.(key),
     }).then(opened.watch)
@@ -248,16 +252,14 @@ export async function createRuntimeGenerationHost(
     }).target
     const generationSkills = createGenerationSkills(skills)
     const hasSkills = !!skills
-    const packages = generationPackages(profile, snapshot.sources)
-    const packageDirs = new Map(options.packageDirs)
-    for (const { snapshot: source } of snapshot.sources) packageDirs.set(source.packageId, source.directory)
+    const assembly = grants.container(snapshot, options.packageDirs)
     const { skillResources: _skills, ...generationOptions } = options
     const binding = { id: snapshot.id }
     const seams = Object.fromEntries(
       plan.seams.map((seam) => [seam.kind, seam.selection]),
     ) as ResolvedProfile['seams']
     const host = await factory(
-      { ...profile, packages, seams },
+      { ...profile, packages: assembly.packages, seams },
       {
         ...generationOptions,
         assemblyCause: { ...generationOptions.assemblyCause, reason: 'generation' },
@@ -265,12 +267,10 @@ export async function createRuntimeGenerationHost(
         profileAuthorityPublication: 'retained',
         generationBuiltinRows: targetRows(target).filter((row) => row.plugin.startsWith('builtin:')),
         ordinaryPluginLayers: pluginWorkspaceLayers(targetRows(target), options.ordinaryPluginLayers),
-        onGenerationBasePackages: (ids) => {
-          for (const id of ids) basePackages.add(id)
-          options.onGenerationBasePackages?.(ids)
-        },
+        onGenerationBasePackages,
         ...(hasSkills ? { skillResources: generationSkills.input } : {}),
-        packageDirs,
+        packageDirs: assembly.packageDirs,
+        generationPackage: assembly.generationPackage,
         runtimePluginSnapshots: snapshot.sources,
         // Target identities still pin imports; an unbound container may receive newer targets.
         runtimePluginSources: runtimeSources,
@@ -281,7 +281,7 @@ export async function createRuntimeGenerationHost(
         },
       },
     )
-    opened.watch(host)
+    opened.watch(assembly.adopt(host))
     try {
       const savedRows = snapshot.resources
         ? await restoreGenerationRows(snapshot.resources, options, rowsByGeneration.get(snapshot.id))
@@ -671,8 +671,10 @@ export async function createRuntimeGenerationHost(
       const neutral =
         !extensionCodeChanged && registryCodeRevision(oldTarget) === registryCodeRevision(target)
       if (!authorityChanged && (!bound || neutral)) {
-        if (extensionRows) await head.host.extensionRows.apply(extensionRows)
-        else await head.host.applyRuntimeTarget(target)
+        // The candidate's rows mount, and ask for grants, before it is published as served.
+        await grants.mounting(head.host, snapshot, async () =>
+          extensionRows ? head.host.extensionRows.apply(extensionRows) : head.host.applyRuntimeTarget(target),
+        )
         current = { snapshot, host: head.host }
         live.set(snapshot.id, current)
         const binding = bindings.get(head.host)

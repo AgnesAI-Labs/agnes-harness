@@ -1,7 +1,7 @@
 import type { KernelOptions, Provider, SandboxSeam } from '@agnes/core'
 import type { Logger } from '@agnes/extension-api'
 import type { TrajectoryAssemblyOptions } from '@agnes/host-artifacts/trajectory-contract'
-import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import type { ResolvedPackage, ResolvedProfile } from '@agnes/host-common/profile/types'
 import type { HostLockedPackageMutationOptions } from '@agnes/host-computer-use/computer-use/locked-package-mutation-runtime'
 import type { PackageLoader } from '@agnes/host-extensions/assemble/packages'
 import type { ExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
@@ -85,6 +85,12 @@ export type AssembleDeps = HostPaths &
     pluginSnapshots?: PackageSnapshotVerifier
     /** PackageManager-owned immutable snapshots selected for this Host generation. */
     runtimePluginSnapshots?: readonly Readonly<RuntimePluginSnapshot>[]
+    /**
+     * Generation-owned verified package entry for a selected snapshot, read when a row asks for an
+     * optional host grant. It follows in-place publications, so a package enabled or updated after
+     * this container was built is checked as a fresh container would check it. Absent: boot profile.
+     */
+    generationPackage?: (packageId: string, snapshotId: string) => ResolvedPackage | undefined
     /** Maximum simultaneous independent prepares, from 1 to 4. Does not parallelize activation. */
     runtimePrepareConcurrency?: number
     /**
