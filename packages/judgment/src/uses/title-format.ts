@@ -1,4 +1,4 @@
-// Adapted from oh-my-pi; see LICENSE.oh-my-pi.
+// See THIRD-PARTY-NOTICES.
 /** Enough prefix/suffix for any final 2000-character 2:1 split, including scaffolding. */
 export const TITLE_HEAD = 1334
 export const TITLE_TAIL = 667

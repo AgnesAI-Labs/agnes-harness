@@ -97,9 +97,10 @@ export async function copyBundledPlugins(outputDirectory: string, version = '0.0
     if (existsSync(join(source, 'README.zh-CN.md')))
       await cp(join(source, 'README.zh-CN.md'), join(destination, 'README.zh-CN.md'))
     if (existsSync(join(source, 'NOTICE'))) await cp(join(source, 'NOTICE'), join(destination, 'NOTICE'))
-    // Licenses of adapted third-party code (`LICENSE.<project>`) travel with the code they cover.
+    // Licenses of adapted third-party code (THIRD-PARTY-NOTICES, LICENSE.<name>) travel with the code they cover.
     for (const name of await readdir(source))
-      if (/^LICENSE\..+/.test(name)) await cp(join(source, name), join(destination, name))
+      if (/^(THIRD-PARTY-NOTICES|LICENSE\..+)$/.test(name))
+        await cp(join(source, name), join(destination, name))
     if (presentations.some((record) => record.name === helper)) {
       await cp(join(source, 'client-build.json'), join(destination, 'client-build.json'))
       await verifyPresentation(destination)

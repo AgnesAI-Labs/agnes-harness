@@ -1,4 +1,4 @@
-// Context selection adapted from oh-my-pi; see LICENSE.oh-my-pi.
+// See THIRD-PARTY-NOTICES.
 import type { PluginProjectionDef } from '@agnes/extension-api'
 import { object } from '../questions.js'
 import { formatTitleContext, section, TITLE_HEAD, TITLE_TAIL, type TitleTurn } from './title-format.js'

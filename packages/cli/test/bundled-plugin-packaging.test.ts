@@ -184,9 +184,9 @@ it('ships the optional judgment payload with its callable plugin and release dig
   const payload = join(root, 'bundled-plugins', 'judgment')
   expect((await readdir(payload)).sort()).toEqual([
     'LICENSE',
-    'LICENSE.oh-my-pi',
     'NOTICE',
     'README.md',
+    'THIRD-PARTY-NOTICES',
     'client-build.json',
     'index.mjs',
     'package.json',
