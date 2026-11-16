@@ -44,10 +44,12 @@ afterEach(() => {
 type Seen = { args: string[]; path: string; token: string | null }
 const seen = (stdout: string): Seen =>
   JSON.parse(stdout.slice(stdout.indexOf('{'), stdout.lastIndexOf('}') + 1))
+/** PATH's entries, as Windows compares them. */
+const entries = (path: string | undefined): string[] => (path ?? '').toLowerCase().split(';')
 const run = async (argv: string[], env: Record<string, string> = {}) =>
   runCommand(argv, { env, platform: 'win32', signal: new AbortController().signal, timeoutMs: 30_000 })
 
-/** Every character cmd.exe reads specially, a space and parentheses; a quote and a line break are refused. */
+/** Every character cmd.exe reads specially, a space and parentheses. */
 const ARGS = [
   'x&y',
   '100%',
@@ -66,10 +68,12 @@ const ARGS = [
 windowsIt(
   'passes every argument whole to a batch CLI, once escaped for cmd.exe and once for the %* it passes on',
   async () => {
-    const result = await run([cli, ...ARGS])
+    // Quotes too, alone and next to what cmd.exe acts on, as in the ETag a conditional read sends back.
+    const args = [...ARGS, 'a"b', 'If-None-Match: W/"abc"', 'a"b&c|d"e']
+    const result = await run([cli, ...args])
     expect(result.code, result.stderr).toBe(0)
-    expect(seen(result.stdout).args).toEqual(ARGS)
-    await expect(run([cli, 'a"b&c'])).rejects.toThrow('or a quote')
+    expect(seen(result.stdout).args).toEqual(args)
+    await expect(run([cli, 'one\ntwo'])).rejects.toThrow('line break')
   },
 )
 
@@ -81,7 +85,8 @@ windowsIt(
     expect(result.code, result.stderr).toBe(0)
     const probe = seen(result.stdout)
     expect(probe.args).toEqual(ARGS)
-    expect(probe.path.toLowerCase().split(';')).not.toContain(shims.toLowerCase())
+    // The shims are gone, and every other entry of PATH is there as it was, in its order.
+    expect(entries(probe.path)).toEqual(entries(process.env.PATH))
   },
 )
 
@@ -102,9 +107,11 @@ windowsIt("keeps its changes from a caller's cmd.exe, and ends with the exit cod
   for (const line of probes) {
     const probe = seen(line)
     expect(probe.token).toBeNull()
-    expect(probe.path.toLowerCase().split(';')).not.toContain(shims.toLowerCase())
+    expect(entries(probe.path)).toEqual(entries(process.env.PATH))
   }
   const callerPath = out.split(/\r?\n/).find((line) => /^path=/i.test(line)) ?? ''
-  expect(callerPath.toLowerCase().split(/[=;]/), 'the caller keeps the shims').toContain(shims.toLowerCase())
+  expect(entries(callerPath.slice(callerPath.indexOf('=') + 1)), 'the caller keeps its PATH').toEqual(
+    entries(`${shims};${process.env.PATH}`),
+  )
   expect(out).toContain('GH_TOKEN=leaked')
 })

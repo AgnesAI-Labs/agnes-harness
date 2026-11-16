@@ -2,9 +2,9 @@
  * How a program starts on Windows: found as a shell finds it (each PATH directory in turn, trying the PATHEXT
  * extensions), and a batch file (`.cmd`, `.bat`) run through `cmd.exe`, which Node does not start directly. The
  * arguments of a batch file are escaped for `cmd.exe` twice, once for its command line and once for the `%*` a wrapper
- * passes on, as cross-spawn does. A line break cannot pass through `cmd.exe` at all, and a quote survives only that
- * many passes: a wrapper that runs `gh` by name adds one more (the `gh` shim), where a quote would end the quoting and
- * expose what follows it. An argument with either is refused.
+ * passes on, as cross-spawn does; every character, quotes included, survives those two passes. A line break cannot
+ * pass through `cmd.exe` at all, so an argument with one is refused. `cmd.exe` runs with delayed expansion off, whatever
+ * the machine's default, so a `!` stays as it is.
  */
 import { statSync } from 'node:fs'
 import { isAbsolute, join, win32 } from 'node:path'
@@ -61,8 +61,8 @@ export function cmdArgument(arg: string, twice: boolean): string {
 }
 
 /**
- * How `name` with `args` starts on Windows under `env`. A batch file runs as `cmd.exe /d /s /c "<line>"`.
- * @throws Error when a batch file would receive an argument with a line break or a quote.
+ * How `name` with `args` starts on Windows under `env`. A batch file runs as `cmd.exe /d /v:off /s /c "<line>"`.
+ * @throws Error when a batch file would receive an argument with a line break.
  */
 export function windowsLaunch(
   name: string,
@@ -71,14 +71,14 @@ export function windowsLaunch(
 ): WindowsLaunch {
   const program = findWindowsProgram(name, env) ?? name
   if (!BATCH.test(program)) return { program, args: [...args], verbatim: false }
-  if (args.some((arg) => /[\r\n"]/.test(arg)))
+  if (args.some((arg) => /[\r\n]/.test(arg)))
     throw new Error(
-      `${win32.basename(program)} is a batch file, which cannot receive an argument with a line break or a quote`,
+      `${win32.basename(program)} is a batch file, which cannot receive an argument with a line break`,
     )
   const line = [program.replace(META, '^$1'), ...args.map((arg) => cmdArgument(arg, true))].join(' ')
   return {
     program: variable(env, 'ComSpec', 'win32') || 'cmd.exe',
-    args: ['/d', '/s', '/c', `"${line}"`],
+    args: ['/d', '/v:off', '/s', '/c', `"${line}"`],
     verbatim: true,
   }
 }

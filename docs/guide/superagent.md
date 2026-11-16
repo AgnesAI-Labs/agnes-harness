@@ -80,11 +80,14 @@ panel's **Deployment** page names. Setting it explicitly before the service star
 
    On Windows the wrapper is `gh-agent.cmd`. It runs `gh.exe` by its full path (`where.exe gh` prints it), so it never
    reaches Superagent's `gh` shim, and its own path is ASCII only: the shim names it, and `cmd.exe` misreads other
-   characters in a batch file. In PowerShell:
+   characters in a batch file. So does the path of `gh.exe` written into it: one under your profile (a per-user install
+   by winget or scoop) is written through `%LOCALAPPDATA%` or `%USERPROFILE%`, which `cmd.exe` expands when it runs;
+   any other path that is not ASCII stops the recipe, and `gh.exe` must move. In PowerShell:
 
    ```powershell
    New-Item -ItemType Directory -Force C:\Superagent\bin | Out-Null
-   $gh = (Get-Command gh.exe).Source
+   $gh = (Get-Command gh.exe).Source.Replace($env:LOCALAPPDATA, '%LOCALAPPDATA%').Replace($env:USERPROFILE, '%USERPROFILE%')
+   if ($gh -match '[^\x20-\x7e]') { throw "Move gh.exe to a path of ASCII characters: $gh" }
    Set-Content -Encoding ascii C:\Superagent\bin\gh-agent.cmd "@set `"GH_CONFIG_DIR=C:\Superagent\gh-agent`"`r`n@`"$gh`" %*"
    C:\Superagent\bin\gh-agent.cmd auth login
    C:\Superagent\bin\gh-agent.cmd api user --jq .login
@@ -287,8 +290,8 @@ Superagent's `gh.cmd` shim. `cmd.exe`, which runs a batch file, reads its argume
 break, and runs what follows a quote and `&` or `|` as a command, whatever the PowerShell quoting. A worker that copied
 an issue title or a comment onto `gh`'s command line could thus run a command written by whoever wrote that text. The
 Windows sessions are told to pass text from people to `gh` in a file or on standard input (`--body-file`, `-F
-title=@<file>`), and Superagent's own commands do so and refuse a quote or a line break in an argument to a batch file;
-the prompt is not a boundary. Blocked commands, too, cover only programs found on PATH: in Windows PowerShell 5.1,
+title=@<file>`). Superagent's own commands do so too: they escape every argument for `cmd.exe`, quotes included, and
+refuse a line break in an argument to a batch file. The prompt is not a boundary. Blocked commands, too, cover only programs found on PATH: in Windows PowerShell 5.1,
 `curl` and `wget` are aliases of `Invoke-WebRequest` and are not blocked.
 
 ## Restart and recovery

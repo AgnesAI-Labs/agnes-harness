@@ -43,6 +43,61 @@ function agentGh(dir: string, rules: unknown[]) {
   return { cli, calls }
 }
 
+/**
+ * The GitHub Source over the test's store, with the agent's `gh` (`cli`), a short command timeout and `config` on the
+ * Source; returns its context and what it reported.
+ */
+function githubSource(cli: string, config: Record<string, unknown> = {}) {
+  // The GitHub Source over the store, with the agent's `gh` and a short command timeout.
+  const { store } = temp
+  store.saveSettings(
+    SettingsSchema.parse({
+      policy: { sources: { github: { allowed: [{ id: 'alice' }] } } },
+      sources: { github: { enabled: true, config: { repository: 'acme/app', cli, ...config } } },
+    }),
+  )
+  const sources = new SourceRegistry(() => store.settings(), new HealthBoard())
+  sources.register(githubKind)
+  const engine = new Engine({
+    repo: store,
+    scope: sources,
+    policy: () => settingsPolicy(store.settings(), sources),
+    assessor: { request: () => {} },
+    executor: { start: () => {}, deliver: () => {}, stop: () => {} },
+    outbox: { send: () => {}, status: () => undefined, withdraw: () => {} },
+  })
+  const deployment = testDeployment({
+    repository: 'acme/app',
+    github: { cli, login: 'agent-bot', noreply: '7+agent-bot@users.noreply.github.com' },
+  })
+  const commands = new Commands(() => deployment, {}, new AbortController().signal, TIMEOUT_MS)
+  const reports: Record<string, { state: string; detail: string }> = {}
+  const ctx = {
+    ...sourceContextOf(
+      {
+        store,
+        engine,
+        outbox: { send: () => {} },
+        commands,
+        sources,
+        deployment,
+        ready: Promise.resolve(),
+        configured: () => true,
+        receive: async (trigger: Trigger) => {
+          const result = engine.receive(trigger)
+          engine.evaluateDue()
+          return result
+        },
+      },
+      { kind: 'github', health: ['github'] },
+    ),
+  }
+  ctx.report = (entry: string, value: { state: string; detail: string }) => {
+    reports[entry] = value
+  }
+  return { ctx, reports }
+}
+
 it('reads an Issue again on the next polls after its read timed out and after GitHub answered 404, until it succeeds', async () => {
   const since = new Date(Date.now() - 3600_000).toISOString()
   const created = new Date(Date.now() - 1800_000).toISOString()
@@ -76,53 +131,8 @@ it('reads an Issue again on the next polls after its read timed out and after Gi
     { pattern: issueRead, stdout: JSON.stringify(issue) },
     { pattern: '^api repos/acme/app/issues/12/comments', stdout: '[[]]' },
   ])
-  // The GitHub Source over the store, with the agent's `gh` and a short command timeout.
   const { store } = temp
-  store.saveSettings(
-    SettingsSchema.parse({
-      policy: { sources: { github: { allowed: [{ id: 'alice' }] } } },
-      sources: { github: { enabled: true, config: { repository: 'acme/app', cli: gh.cli } } },
-    }),
-  )
-  const sources = new SourceRegistry(() => store.settings(), new HealthBoard())
-  sources.register(githubKind)
-  const engine = new Engine({
-    repo: store,
-    scope: sources,
-    policy: () => settingsPolicy(store.settings(), sources),
-    assessor: { request: () => {} },
-    executor: { start: () => {}, deliver: () => {}, stop: () => {} },
-    outbox: { send: () => {}, status: () => undefined, withdraw: () => {} },
-  })
-  const deployment = testDeployment({
-    repository: 'acme/app',
-    github: { cli: gh.cli, login: 'agent-bot', noreply: '7+agent-bot@users.noreply.github.com' },
-  })
-  const commands = new Commands(() => deployment, {}, new AbortController().signal, TIMEOUT_MS)
-  const reports: Record<string, { state: string; detail: string }> = {}
-  const ctx = {
-    ...sourceContextOf(
-      {
-        store,
-        engine,
-        outbox: { send: () => {} },
-        commands,
-        sources,
-        deployment,
-        ready: Promise.resolve(),
-        configured: () => true,
-        receive: async (trigger: Trigger) => {
-          const result = engine.receive(trigger)
-          engine.evaluateDue()
-          return result
-        },
-      },
-      { kind: 'github', health: ['github'] },
-    ),
-  }
-  ctx.report = (entry: string, value: { state: string; detail: string }) => {
-    reports[entry] = value
-  }
+  const { ctx, reports } = githubSource(gh.cli)
   store.set(KV.github.since, since)
   const triggerId = key('github-issue', '12')
   const retries = () => store.get(KV.github.retries) ?? {}
@@ -149,6 +159,34 @@ it('reads an Issue again on the next polls after its read timed out and after Gi
       .filter((call) => /issues\/12$/.test(call.argv.join(' ')))
       .map((call) => call.exit),
   ).toEqual([1, 0])
+  expect(gh.calls().filter((call) => !call.matched)).toEqual([])
+})
+
+it("reads an observed stream again with GitHub's quoted ETag through the agent's own CLI, and takes 304 as no news", async () => {
+  // GitHub's ETags are quoted; on Windows the agent CLI is a batch file, which must receive the quotes whole.
+  const etag = 'W/"0d8f1c2e"'
+  const stream = '^api repos/acme/app/issues\\?state=all&sort=updated'
+  const gh = agentGh(join(temp.dir, 'gh'), [
+    {
+      pattern: '^api repos/acme/app/notifications\\?',
+      stdout: 'HTTP/2.0 200 OK\r\nX-Poll-Interval: 60\r\n\r\n[]',
+    },
+    // The repeated read with the ETag: nothing new.
+    { pattern: `${stream}.* --include -H If-None-Match: W/"0d8f1c2e"$`, stderr: 'gh: HTTP 304\n', exit: 1 },
+    { pattern: `${stream}.* --include$`, stdout: `HTTP/2.0 200 OK\r\nETag: ${etag}\r\n\r\n[]` },
+  ])
+  const { ctx } = githubSource(gh.cli, { observeIssues: true })
+  const reads = () => gh.calls().filter((call) => /^api repos\/acme\/app\/issues\?/.test(call.argv.join(' ')))
+  expect(await pollRound(ctx)).toBe(60)
+  expect(temp.store.get(KV.github.stream('issues'))).toMatchObject({ etag })
+  // The next round sends the ETag back, as one argument, and GitHub's 304 is no failure.
+  expect(await pollRound(ctx)).toBe(60)
+  expect(reads().map((call) => [call.argv.at(-1), call.exit])).toEqual([
+    ['--include', 0],
+    [`If-None-Match: ${etag}`, 1],
+  ])
+  expect(reads()[1]?.argv.at(-2)).toBe('-H')
+  expect(temp.store.get(KV.github.stream('issues'))).toMatchObject({ etag })
   expect(gh.calls().filter((call) => !call.matched)).toEqual([])
 })
 

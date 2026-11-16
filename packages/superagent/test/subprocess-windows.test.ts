@@ -138,6 +138,8 @@ it('runs a Windows batch file through cmd.exe with its arguments escaped twice, 
     program: 'C:\\Windows\\system32\\cmd.exe',
     args: [
       '/d',
+      // Delayed expansion off, whatever the machine's default, so a `!` stays as it is.
+      '/v:off',
       '/s',
       '/c',
       // The program's own special characters escaped once, each argument quoted and escaped twice.
@@ -163,9 +165,14 @@ it('runs a Windows batch file through cmd.exe with its arguments escaped twice, 
   expect(cmdArgument('a&b', true)).toBe('^^^"a^^^&b^^^"')
   expect(cmdArgument('say "hi"\\', false)).toBe('^"say^ \\^"hi\\^"\\\\^"')
   expect(() => windowsLaunch('gh-agent', ['api', '-f', 'body=one\ntwo'], env)).toThrow(
-    'gh-agent.cmd is a batch file, which cannot receive an argument with a line break or a quote',
+    'gh-agent.cmd is a batch file, which cannot receive an argument with a line break',
   )
-  expect(() => windowsLaunch('gh-agent', ['api', 'search?q="x"&y'], env)).toThrow('or a quote')
+  // A quote passes: GitHub's ETags are quoted, and the conditional reads of the Source send one back.
+  expect(
+    windowsLaunch('gh-agent', ['api', 'repos/a/b/issues', '-H', 'If-None-Match: W/"0d8f"'], env).args[4],
+  ).toBe(
+    `"${join(directory, 'bin^ ^(x86^)', 'gh-agent.cmd')} ^^^"api^^^" ^^^"repos/a/b/issues^^^" ^^^"-H^^^" ^^^"If-None-Match:^^^ W/\\^^^"0d8f\\^^^"^^^""`,
+  )
   // Any other program starts as itself, found on PATH, with its arguments as they are.
   writeFileSync(join(directory, 'git.exe'), '')
   expect(windowsLaunch('git', ['log', 'a\nb'], { PATH: directory, PATHEXT: '.exe' })).toEqual({

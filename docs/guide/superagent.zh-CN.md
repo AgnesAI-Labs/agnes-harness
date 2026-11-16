@@ -61,11 +61,14 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
    ```
 
    Windows 上包装是 `gh-agent.cmd`，它用完整路径运行 `gh.exe`（`where.exe gh` 会打印出来），从不经过 Superagent 的 `gh` 垫片；
-   它自己的路径只能含 ASCII 字符：垫片里写着这个路径，而 `cmd.exe` 读批处理文件时会读错其他字符。在 PowerShell 里：
+   它自己的路径只能含 ASCII 字符：垫片里写着这个路径，而 `cmd.exe` 读批处理文件时会读错其他字符。写进包装的 `gh.exe` 路径也一样：
+   装在你的配置文件目录下的（winget 或 scoop 按用户安装）改写成 `%LOCALAPPDATA%` 或 `%USERPROFILE%` 开头，由 `cmd.exe` 运行时展开；
+   其他含非 ASCII 字符的路径会让下面的命令停下，这时需要把 `gh.exe` 移到别处。在 PowerShell 里：
 
    ```powershell
    New-Item -ItemType Directory -Force C:\Superagent\bin | Out-Null
-   $gh = (Get-Command gh.exe).Source
+   $gh = (Get-Command gh.exe).Source.Replace($env:LOCALAPPDATA, '%LOCALAPPDATA%').Replace($env:USERPROFILE, '%USERPROFILE%')
+   if ($gh -match '[^\x20-\x7e]') { throw "Move gh.exe to a path of ASCII characters: $gh" }
    Set-Content -Encoding ascii C:\Superagent\bin\gh-agent.cmd "@set `"GH_CONFIG_DIR=C:\Superagent\gh-agent`"`r`n@`"$gh`" %*"
    C:\Superagent\bin\gh-agent.cmd auth login
    C:\Superagent\bin\gh-agent.cmd api user --jq .login
@@ -231,7 +234,7 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
 **Windows 上 `gh` 是批处理文件。** 会话的 shell 是 PowerShell，`gh` 经 Superagent 的 `gh.cmd` 垫片到达智能体的 CLI。运行批处理文件的
 `cmd.exe` 会再读一遍参数：在换行处截断参数，并把引号加 `&` 或 `|` 之后的内容当作命令执行，不管 PowerShell 怎么加引号。执行会话若把
 Issue 标题或评论放进 `gh` 的命令行，就可能执行写那段文字的人写的命令。Windows 上的会话被告知把来自人的文本经文件或标准输入交给 `gh`
-（`--body-file`、`-F title=@<文件>`），Superagent 自己的命令也这样做，并拒绝传给批处理文件的参数里有引号或换行；提示词不是安全边界。
+（`--body-file`、`-F title=@<文件>`），Superagent 自己的命令也这样做：它为 `cmd.exe` 转义每个参数（包括引号），并拒绝传给批处理文件的参数里有换行。提示词不是安全边界。
 被禁用的命令也只拦 PATH 上找到的程序：在 Windows PowerShell 5.1 里 `curl` 和 `wget` 是 `Invoke-WebRequest` 的别名，不会被拦。
 
 ## 重启与恢复
