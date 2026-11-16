@@ -221,10 +221,16 @@ import { readFileSync } from 'node:fs'
 import { createClient, memoryJournal } from '@agnes/sdk'
 
 const owner = JSON.parse(readFileSync(`${process.env.AGH_HOME}/daemon/owner.json`, 'utf8'))
+// On Windows the socket is a named pipe, which the SDK opens only with the identity of the daemon process serving it.
+const pipe = owner.socketPath.startsWith('\\\\.\\pipe\\')
 const client = createClient({
   journal: memoryJournal(),
   auth: { kind: 'local' },
-  transport: { kind: 'unix', path: owner.socketPath },
+  transport: {
+    kind: 'unix',
+    path: owner.socketPath,
+    ...(pipe ? { serverIdentity: { pid: owner.pid, processStartId: owner.processStartId } } : {}),
+  },
 })
 await client.initialize()
 // The extension id is derived from the plugin row id, `d1215cfcd1af03a1` for this plugin.
