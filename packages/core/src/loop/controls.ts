@@ -1,11 +1,13 @@
 import { withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
+import { inboxDeliveredByEvent } from '@agnes/core-ledger/log/delivery-marker'
 import { scanPages } from '@agnes/core-ledger/log/scan-pages'
 import type { Inbox } from '@agnes/core-ledger/reduce/shapes'
 import { type Actor, type ContentBlock, MAX_FRAME_BYTES } from '@agnes/protocol'
 import { commitSessionAttachments } from '../request/attachment-admission.js'
 import { validateUserMessageImages } from '../request/user-message-images.js'
-import { inboxEvent, inputMessageEvents } from '../step/inbox.js'
+import { claimedInputEvents, inboxDeliveredBy } from '../step/delivery-marker.js'
+import { inboxEvent } from '../step/inbox.js'
 import type { SessionImpl } from '../step/session.js'
 import { applyChildControl, controlledChildTree } from './child-controls.js'
 
@@ -152,7 +154,7 @@ export class SessionControls {
           inboxEvent(this.s.lane, this.s.d.actor, {
             items: inbox.items.filter((candidate) => candidate.itemId !== item.itemId),
           }),
-          ...inputMessageEvents(item, this.s.lane),
+          ...(await claimedInputEvents(this.s, item, this.s.lane)),
           // The full item lets a cold resume hand it back until a checkpoint confirms its consumption.
           this.fact('steer', 'delivered', item.actor, { itemId: item.itemId, item: structuredClone(item) }),
         ],
@@ -183,11 +185,13 @@ export class SessionControls {
         throw new CoreError('E_RELATION', 'queued input is no longer pending', { itemId })
       }
       return commitSessionAttachments(this.s, content, undefined, async (content) => {
+        // Edited, the words are the person's: nothing shows them as an app's delivery any more.
+        const target = inbox.items.find((item) => item.itemId === itemId)
+        const marked = target !== undefined && (await inboxDeliveredBy(this.s, target)) !== undefined
         const next = {
           items: inbox.items.map((item) => {
             if (item.itemId !== itemId) return item
-            // Edited, the words are the person's: nothing shows them as an app's delivery any more.
-            const { deliveredBy: _deliveredBy, ...edited } = item
+            const { deliveredBy: _inline, ...edited } = item
             return { ...edited, content }
           }),
         }
@@ -196,6 +200,7 @@ export class SessionControls {
         const result = await this.s.d.log.append([
           inboxEvent(this.s.lane, actor, next),
           this.fact('steer', 'edited', actor, { itemId, admissionId }),
+          ...(marked ? [inboxDeliveredByEvent(this.s.d.actor, itemId, undefined, this.s.lane)] : []),
         ])
         return result.firstSeq
       })

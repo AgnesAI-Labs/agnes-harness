@@ -32,6 +32,7 @@ import {
   validateSlotPayload,
 } from '@agnes/protocol'
 import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
+import { INPUT_DELIVERED_BY_EVENT, inlineDeliveredBy, markDelivered } from '../log/delivery-marker.js'
 import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState, MAINTENANCE_LANE } from '../reduce/state.js'
@@ -726,12 +727,15 @@ export class UIProjectionCell {
             ...(event.origin === 'system' && message.system
               ? { system: structuredClone(message.system) }
               : {}),
-            ...(message.deliveredBy ? { deliveredBy: structuredClone(message.deliveredBy) } : {}),
+            ...inlineDeliveredBy(event, message),
           })
         }
         changed.add(id)
         break
       }
+      case INPUT_DELIVERED_BY_EVENT:
+        for (const marked of markDelivered(this.nodes, this.nodeIndexes, event)) changed.add(marked)
+        break
       case 'effect/intent': {
         const intent = data as EffectIntent
         if (intent.kind === 'inference') this.activeInference = intent.effectId

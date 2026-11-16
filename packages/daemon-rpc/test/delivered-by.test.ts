@@ -17,12 +17,14 @@ const BY = { kind: 'bundled-app', appId: '@agnes/superagent/superagent' }
 
 type Endpoint = { handle(m: JsonRpcMessage): Promise<JsonRpcMessage | undefined>; close(): Promise<void> }
 type InboxItem = {
+  itemId: string
   commandId?: string
   origin?: string
   trust?: string
   system?: unknown
-  deliveredBy?: unknown
   content: unknown
+  /** The marker the session's own rows give the item (not a field of the item). */
+  marker?: unknown
 }
 let ids = 100
 
@@ -111,14 +113,38 @@ function ledger(h: Awaited<ReturnType<typeof openTestHost>>, sessionId: string) 
   return session
 }
 
-/** Every inbox item the session ever held, by command id: what each delivery was admitted as. */
+/**
+ * Every inbox item the session ever held, by command id: what each delivery was admitted as, with the marker its
+ * session's own inbox-delivered-by rows give it. No row an earlier release validates (an inbox item, a user message)
+ * may carry the marker itself.
+ */
 async function admitted(h: Awaited<ReturnType<typeof openTestHost>>, sessionId: string) {
   const session = ledger(h, sessionId)
-  const rows = await session.scan({ fromSeq: 1, toSeq: session.lastSeq, type: 'inbox' })
+  const rows = await session.scan({ fromSeq: 1, toSeq: session.lastSeq, type: ['inbox', 'user/message'] })
+  const markers = await session.scan({
+    fromSeq: 1,
+    toSeq: session.lastSeq,
+    type: 'x/core/inbox-delivered-by',
+  })
   const items = new Map<string, InboxItem>()
-  for (const row of rows)
-    for (const item of (row.data as { items: InboxItem[] }).items)
-      if (item.commandId && !items.has(item.commandId)) items.set(item.commandId, item)
+  for (const row of rows) {
+    if (row.type === 'user/message') {
+      expect(row.data).not.toHaveProperty('deliveredBy')
+      continue
+    }
+    for (const item of (row.data as { items: InboxItem[] }).items) {
+      expect(item).not.toHaveProperty('deliveredBy')
+      if (!item.commandId || items.has(item.commandId)) continue
+      const marker = markers
+        .filter(
+          (marker) =>
+            marker.origin === 'system' && (marker.data as { itemId?: string }).itemId === item.itemId,
+        )
+        .at(-1)
+      const deliveredBy = (marker?.data as { deliveredBy?: unknown } | undefined)?.deliveredBy
+      items.set(item.commandId, { ...item, ...(deliveredBy ? { marker: deliveredBy } : {}) })
+    }
+  }
   return items
 }
 
@@ -146,7 +172,7 @@ describe('what the bundled application delivers', () => {
     expect(await deliver(app, APP, marked, 'superagent:m1')).toMatchObject({ result: { replayed: false } })
     await vi.waitFor(() => expect(provider.calls).toHaveLength(1))
     const item = (await admitted(h, marked)).get('superagent:m1')
-    // The message in the history carries the marker for the reader.
+    // The message in the history is the owner's input as before; Core's own row names it as the app's for the reader.
     const session = ledger(h, marked)
     await vi.waitFor(async () =>
       expect(await session.scan({ fromSeq: 1, toSeq: session.lastSeq, type: 'user/message' })).toHaveLength(
@@ -157,7 +183,17 @@ describe('what the bundled application delivers', () => {
     expect(message).toMatchObject({
       origin: 'principal',
       trust: 'trusted',
-      data: { commandId: 'superagent:m1', deliveredBy: BY, content: [{ type: 'text', text: DISPATCH }] },
+      data: { commandId: 'superagent:m1', content: [{ type: 'text', text: DISPATCH }] },
+    })
+    const [named] = await session.scan({
+      fromSeq: 1,
+      toSeq: session.lastSeq,
+      type: 'x/core/input-delivered-by',
+    })
+    expect(named).toMatchObject({
+      origin: 'system',
+      trust: 'trusted',
+      data: { messageIds: [message?.id], deliveredBy: BY },
     })
     expect(
       (await session.projectUI()).nodes.find(
@@ -172,14 +208,14 @@ describe('what the bundled application delivers', () => {
     await vi.waitFor(() => expect(provider.calls).toHaveLength(2))
     const unmarked = (await admitted(h, plain)).get('superagent:m1')
     expect(item).toMatchObject({
-      deliveredBy: BY,
+      marker: BY,
       trust: 'trusted',
       content: [{ type: 'text', text: DISPATCH }],
     })
     expect(item?.origin).toBeUndefined()
     expect(item?.system).toBeUndefined()
     // Only the marker tells them apart: trust, kind, content and actor are those of the owner's own input.
-    const { deliveredBy: _by, ...rest } = admittedAs(item)
+    const { marker: _marker, ...rest } = admittedAs(item)
     expect(rest).toEqual(admittedAs(unmarked))
     // The model reads the same message either way.
     expect(dispatchMessage(provider, 0)).toBeDefined()
@@ -204,7 +240,7 @@ describe('what the bundled application delivers', () => {
     expect(pending).toEqual([
       { itemId: expect.any(String), preview: DISPATCH, commandId: 'superagent:queued' },
     ])
-    expect((await admitted(h, sessionId)).get('superagent:queued')).toMatchObject({ deliveredBy: BY })
+    expect((await admitted(h, sessionId)).get('superagent:queued')).toMatchObject({ marker: BY })
     await app.close()
     await h.close()
   })
@@ -232,7 +268,7 @@ describe('what the bundled application delivers', () => {
     })
     const items = await admitted(h, sessionId)
     for (const commandId of ['pasted', 'superagent:forged', 'pasted-steer']) {
-      expect(items.get(commandId)?.deliveredBy, commandId).toBeUndefined()
+      expect(items.get(commandId)?.marker, commandId).toBeUndefined()
       expect(items.get(commandId)).toMatchObject({
         trust: 'trusted',
         content: [{ type: 'text', text: DISPATCH }],
@@ -240,7 +276,7 @@ describe('what the bundled application delivers', () => {
     }
     // The application's own steer is marked, whatever its text.
     expect(items.get('superagent:m2')).toMatchObject({
-      deliveredBy: BY,
+      marker: BY,
       trust: 'trusted',
       content: [{ type: 'text', text: 'Note from the orchestrator' }],
     })
@@ -269,7 +305,7 @@ describe('what the bundled application delivers', () => {
         result: { replayed: false },
       })
       const item = (await admitted(h, sessionId)).get(`superagent:x${index}`)
-      expect(item?.deliveredBy, sessionId).toBeUndefined()
+      expect(item?.marker, sessionId).toBeUndefined()
       expect(item, sessionId).toMatchObject({ trust: 'trusted', content: [{ type: 'text', text: DISPATCH }] })
     }
     await app.close()
@@ -289,9 +325,9 @@ describe('what the bundled application delivers', () => {
     expect(await create(app, h.dataDir, 'superagent:worker:t5')).toBe(sessionId)
     expect(await deliver(app, APP, sessionId, 'superagent:m5')).toMatchObject({ result: { replayed: false } })
     const items = await admitted(h, sessionId)
-    expect(items.get('superagent:m5')).toMatchObject({ deliveredBy: BY })
+    expect(items.get('superagent:m5')).toMatchObject({ marker: BY })
     // An earlier input of the owner's is left as it was.
-    expect(items.get('earlier')?.deliveredBy).toBeUndefined()
+    expect(items.get('earlier')?.marker).toBeUndefined()
     await app.close()
     await h.close()
   })
@@ -322,7 +358,7 @@ describe('what the bundled application delivers', () => {
       new Set(held.filter((item) => item.commandId === 'superagent:m6').map((item) => JSON.stringify(item)))
         .size,
     ).toBe(1)
-    expect((await admitted(h, sessionId)).get('superagent:m6')).toMatchObject({ deliveredBy: BY })
+    expect((await admitted(h, sessionId)).get('superagent:m6')).toMatchObject({ marker: BY })
     await app.close()
     await h.close()
   })
