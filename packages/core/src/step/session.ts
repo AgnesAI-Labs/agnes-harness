@@ -175,12 +175,13 @@ import {
 } from './control.js'
 import { askApprovalAnswer } from './decision-delivery.js'
 import { DecisionCommands, type DecisionSource } from './decisions.js'
+import { claimedInputEvents } from './delivery-marker.js'
 import { assertCurrentDomainDecisions } from './domain-decision.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
 import { compactionSettingsFor, contextWindowFor } from './gate.js'
 import { createChildTraceCache, exportVerifiedRlaf } from './history.js'
-import { claimFrom, type EnqueueMsg, inboxEvent, inputMessageEvents, inputTainted, TRIGGER } from './inbox.js'
+import { claimFrom, type EnqueueMsg, inboxEvent, inputTainted, TRIGGER } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { LoopScope, stepWithinLoopDeadline } from './loop-deadline.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
@@ -1507,7 +1508,6 @@ export class SessionImpl {
           kind: msg.kind ?? (target === 'next-turn' ? 'prompt' : 'steer'),
           ...(system ? { system } : {}),
           ...(msg.titleLocale ? { titleLocale: msg.titleLocale } : {}),
-          ...(msg.deliveredBy ? { deliveredBy: structuredClone(msg.deliveredBy) } : {}),
           trust: msg.origin === 'system' ? 'untrusted' : (msg.trust ?? 'trusted'),
           ...(msg.origin ? { origin: msg.origin } : {}),
         }
@@ -1652,7 +1652,7 @@ export class SessionImpl {
       await this.d.log.append(
         [
           inboxEvent(this.lane, this.d.actor, rest),
-          ...inputMessageEvents(item, this.lane),
+          ...(await claimedInputEvents(this, item, this.lane)),
           {
             type: 'turn/start',
             origin: 'system',
