@@ -5,7 +5,14 @@ import { delimiter, isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { runCommand } from './app/subprocess.js'
 import { findWindowsProgram } from './app/windows-launch.js'
-import { HOST_PLATFORM, isAbsolutePath, isWindows, pathDelimiter, variable } from './infra/platform.js'
+import {
+  HOST_PLATFORM,
+  isAbsolutePath,
+  isWindows,
+  pathDelimiter,
+  programName,
+  variable,
+} from './infra/platform.js'
 import { sameDirectory, unquoted, withoutDirectory, workerBin } from './infra/worker-paths.js'
 import { LIMITS } from './limits.js'
 import { SetupError } from './setup.js'
@@ -185,7 +192,9 @@ export function workerProbe(
     })
     if (code === 0) return stdout
     const ended = code === -1 ? 'was stopped before it finished' : `exited with ${code}`
-    throw new Error(stderr.trim() || `${argv.join(' ')} ${ended}`)
+    // On Windows the program is named without its path and the extension it runs by, as `programName` names it.
+    const named = isWindows(platform) ? [programName(argv[0] ?? '', platform), ...argv.slice(1)] : argv
+    throw new Error(stderr.trim() || `${named.join(' ')} ${ended}`)
   }
 }
 

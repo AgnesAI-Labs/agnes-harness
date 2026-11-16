@@ -189,7 +189,8 @@ export function runCommand(argv: readonly string[], opts: RunOptions): Promise<R
     let killer: NodeJS.Timeout | undefined
     let drain: NodeJS.Timeout | undefined
     let settled = false
-    // A tree taskkill ended exits with code 1, not by a signal: a Windows command it stopped reads -1 all the same.
+    // A tree taskkill ended exits with code 1, not by a signal: a Windows command it stopped reads -1 all the same, and
+    // one that ended by itself while the stop was under way keeps any other code it gave.
     let ended = false
     const stop = (): void => {
       if (child.exitCode !== null || child.signalCode !== null) return
@@ -214,7 +215,7 @@ export function runCommand(argv: readonly string[], opts: RunOptions): Promise<R
       opts.signal.removeEventListener('abort', stop)
       child.stdout?.destroy()
       child.stderr?.destroy()
-      resolve({ code: ended ? -1 : code, stdout: out.text(), stderr: err.text() })
+      resolve({ code: ended && code === 1 ? -1 : code, stdout: out.text(), stderr: err.text() })
     }
     child.once('error', (error) => {
       if (settled) return

@@ -101,4 +101,8 @@ it("runs the setup checks on Windows with the shims off the daemon's Path, in an
   expect((await probe([process.execPath, '-e', 'process.stdout.write(process.env.PATH)'])).trim()).toBe(
     join(dir, 'bin'),
   )
+  // A check that fails without a word names its program as messages do there: no path, no extension.
+  await expect(probe([process.execPath, '-e', 'process.exit(2)'])).rejects.toThrow(
+    /^node -e process\.exit\(2\) exited with 2$/,
+  )
 })

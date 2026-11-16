@@ -77,6 +77,11 @@ it('stops a Windows command by ending its whole tree with taskkill, at once, and
   const own = windowsRun(4245)
   own.end(1)
   expect((await own.running).code).toBe(1)
+  // One that ends by itself, with a code of its own, while a stop is under way keeps that code.
+  const raced = windowsRun(4246)
+  raced.controller.abort()
+  raced.end(0)
+  expect((await raced.running).code).toBe(0)
 })
 
 it('ends the child itself when taskkill fails, or by the deadline when taskkill never returns', async () => {
