@@ -82,6 +82,8 @@ await client.extensions.wakes.enqueue({
 
 Host 将 `<id>.status`、`<id>.configuration`、`<id>.check`、`<id>.retry`、`<id>.reconcile`、`<id>.configure` 注册为普通 profile 服务，客户端须逐项列入 allowlist。状态只暴露公开监听地址；配置和重试保留原生批准。插件提供的 check 通过同一接口报告领域健康。
 
+`<id>.configure` 整份替换配置。基于某次 `<id>.configuration` 读取计算出新配置的调用方，应在 `extension.callScoped` 请求上（与 `operationId` 并列，不放进 `input`）用 `expectedConfigurationRevision` 声明该次读取。版本值是配置 RFC 8785 规范形式的 SHA-256（`@agnes/protocol` 的 `configurationRevision`）。Host 把它作为资源版本绑定进原生操作和审批，审批前遇到过期版本即拒绝，并在实际写入的存储事务里再次比较。配置已被改动时返回 `refused` 回执，代码为 `REVISION_CONFLICT`：没有写入、也没有重新发布；同一操作 ID 重放得到同一拒绝。请重新读取，并使用新的操作 ID。该字段不会传给资源，也不会写入配置；只有 Host 托管的 `<id>.configure` 效果接受它。未声明该字段的调用保持原有整份替换行为。
+
 流声明通过 `ctx.profileRuntime.streams.register(name, handler)` 注册。本地 launcher 将同源 stream gateway 经私有连接转接到共享 worker，分发前校验当前 roster、scope、输入 schema、actor 和原生控制 grant。浏览器不会获得 worker 私有端点及连接证明。通用传输实现位于 `@agnes/plugin-streams`，`@agnes/daemon-rpc/streams` 保留兼容入口。
 
 示例 facade 分开展示安装状态与受管理运行就绪状态。Stop 经插件管理禁用选中的已安装子示例；关系元数据仅筛选候选，不将父插件服务权限授予子插件。

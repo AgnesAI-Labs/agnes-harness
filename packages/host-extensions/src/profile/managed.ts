@@ -11,11 +11,12 @@ import type {
 } from '@agnes/extension-api'
 import { grantKey } from '@agnes/plugin-runtime/host'
 import type { JsonValue, ManagedServiceDescriptor } from '@agnes/protocol'
-import { rpcError } from '@agnes/protocol'
+import { configurationRevision, rpcError } from '@agnes/protocol'
 import { compileExtensionSchema } from '../ext-host/json-schema.js'
 import { pluginRowSource } from '../ext-host/row-extension-host.js'
 import { type BundledAppProvision, openBundledApp } from './bundled-app.js'
 import { type ChannelTargets, deniedChannelTargets } from './channel-targets.js'
+import { writeManagedConfiguration } from './managed-configuration.js'
 import {
   confirmManagedShutdown,
   handoverManagedMarker,
@@ -205,10 +206,17 @@ export class ProfileManagedResources {
           throw rpcError('CAPABILITY_DENIED')
         return this.restartSlot(input, r)
       },
-      configure: async (config: JsonValue) => {
+      configure: async (config: JsonValue, expectedRevision?: string) => {
         resource()
         if (!validate(config)) throw rpcError('INVALID_PARAMS')
-        input.store.set(configKey, config)
+        // A refused comparison throws before anything is written or published.
+        writeManagedConfiguration(
+          input.store,
+          configKey,
+          input.definition.defaultConfig,
+          config,
+          expectedRevision,
+        )
         await this.publish('upgrade', true)
         return null
       },
@@ -598,6 +606,15 @@ export class ProfileManagedResources {
     return this.retireAbsent(
       new Set(rows.filter((row) => !row.disabled).map((row) => pluginRowSource(row.id))),
     )
+  }
+  /** The stored configuration revision behind a Host-registered `<id>.configure` effect, if it is one. */
+  configurationRevision(owner: string, service: string): string | undefined {
+    const input = this.definitions.find(
+      (d) => d.owner === owner && service === `${d.definition.id}.configure`,
+    )
+    if (!input) return undefined
+    const stored = input.store.get(`managed-config:${input.definition.id}`)
+    return configurationRevision(stored ?? input.definition.defaultConfig)
   }
   /** Host-owned preparation; plugin presentation can never waive native admission. */
   reconciliation(owner: string, service: string) {

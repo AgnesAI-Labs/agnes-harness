@@ -22,7 +22,7 @@ import {
 } from '@agnes/extension-api'
 import type { Block, ChannelSurfaceBlock } from '@agnes/extension-api/channel-contract'
 import { initializeHome } from '@agnes/host'
-import type { DecisionHandle, PackageOperationReceipt } from '@agnes/protocol'
+import { configurationRevision, type DecisionHandle, type PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { startLoopProvider } from './fixtures/loop-provider.js'
@@ -830,6 +830,65 @@ it.skipIf(process.platform === 'win32')(
         return value.ok ? value : undefined
       }, 'reinstalled desk')
       expect(reinstalled.value, 'removing the package released its pairing').toBeNull()
+
+      // A dedicated connection is appended only to the configuration revision it was computed from.
+      const scoped = (service: string, params: Record<string, unknown> = {}) =>
+        client.request('_agnes/v1/extension.callScoped', {
+          extension,
+          service,
+          input: {},
+          ...params,
+        } as never) as Promise<{ state?: string; code?: string; output?: unknown }>
+      type Configuration = { instances: { id: string }[] }
+      const stored = async () => (await scoped('channel.configuration')).output as Configuration
+      const append = (operationId: string, from: Configuration, id: string, stated = true) =>
+        scoped('channel.configure', {
+          operationId,
+          input: { instances: [...from.instances, { ...from.instances[0], id }] },
+          ...(stated ? { expectedConfigurationRevision: configurationRevision(from) } : {}),
+        })
+      const approveAll = async () => {
+        const { decisions } = (await client.request('_agnes/v1/profile.decisions.list', {})) as {
+          decisions: { handle: DecisionHandle; revision: number }[]
+        }
+        for (const decision of decisions)
+          await client.request('_agnes/v1/profile.decisions.answer', {
+            handle: decision.handle,
+            revision: decision.revision,
+            commandId: randomUUID(),
+            response: { option: 'allowed-once', value: null },
+          })
+      }
+      const base = await stored()
+      expect((await append('dedicated-1', base, 'd-0123456789ab')).state).toBe('approval-required')
+      // An existing caller without a stated revision changes the configuration while approval waits.
+      expect((await append('legacy-1', base, 'd-ba9876543210', false)).state).toBe('approval-required')
+      await approveAll()
+      expect((await append('legacy-1', base, 'd-ba9876543210', false)).state).toBe('completed')
+      const changed = await stored()
+      const conflict = { state: 'refused', operationId: 'dedicated-1', code: 'REVISION_CONFLICT' }
+      expect(await append('dedicated-1', base, 'd-0123456789ab'), 'no overwrite after approval').toEqual(
+        conflict,
+      )
+      expect(await append('dedicated-1', base, 'd-0123456789ab'), 'the refusal replays').toEqual(conflict)
+      expect(await stored()).toEqual(changed)
+      expect(changed.instances.map((row) => row.id)).toEqual(['desk-bot', 'd-ba9876543210'])
+      expect(await append('dedicated-stale', base, 'd-0123456789ab'), 'stale before review').toEqual({
+        ...conflict,
+        operationId: 'dedicated-stale',
+      })
+      expect(
+        ((await client.request('_agnes/v1/profile.decisions.list', {})) as { decisions: unknown[] })
+          .decisions,
+      ).toEqual([])
+      expect((await append('dedicated-2', changed, 'd-0123456789ab')).state).toBe('approval-required')
+      await approveAll()
+      expect((await append('dedicated-2', changed, 'd-0123456789ab')).state).toBe('completed')
+      expect((await stored()).instances.map((row) => row.id)).toEqual([
+        'desk-bot',
+        'd-ba9876543210',
+        'd-0123456789ab',
+      ])
     } catch (error) {
       failures.push(
         new Error(`${String(error)}\nSource daemon stderr:\n${running.log.stderr}`, { cause: error }),

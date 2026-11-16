@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { MemoryStorage } from '@agnes/core'
 import { fakeSeams } from '@agnes/core/testkit'
@@ -7,12 +8,14 @@ import type {
   ServiceContext,
   ServiceDef,
 } from '@agnes/extension-api'
-import type {
-  Actor,
-  DecisionSnapshot,
-  JsonValue,
-  ProfileServiceReceipt,
-  ServiceEffectPolicy,
+import {
+  type Actor,
+  type DecisionSnapshot,
+  type JsonValue,
+  jcs,
+  type ProfileServiceReceipt,
+  type ServiceEffectPolicy,
+  sha256Hex,
 } from '@agnes/protocol'
 import { describe, expect, it, vi } from 'vitest'
 import { ServiceRegistry } from '../../src/ext-host/services.js'
@@ -162,6 +165,8 @@ function fixture(version = '1.0.0') {
               'notice.publish',
               'wake.enqueue',
               'server.reconcile',
+              'bot.configure',
+              'bot.configuration',
             ].map((name) => ({
               extension: credential === 'beta' ? 'plugin/fedcba9876543210' : owner,
               name,
@@ -661,6 +666,188 @@ describe('current profile authority', () => {
       await runtime.close()
     }
   })
+})
+
+describe('managed configuration compare-and-set', () => {
+  const entry = (id: string) => ({ id })
+  const configSchema: ServiceDef['inputSchema'] = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['instances'],
+    properties: {
+      instances: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id'],
+          properties: { id: { type: 'string' } },
+        },
+      },
+    },
+  }
+  async function configured() {
+    const f = fixture()
+    const store = ownedStore(f.meta.namespace(owner, 'managed:bot'), () => {}, true)
+    const started: JsonValue[] = []
+    const managed = new ProfileManagedResources(
+      `managed-configure-${randomUUID()}`,
+      () => {
+        throw new Error('unused')
+      },
+      () => true,
+    )
+    const handle = managed.register({
+      owner,
+      packageId: '@acme/bot',
+      integrity: 'snapshot-one',
+      revision: 'generation-one',
+      store,
+      assert() {},
+      descriptor: {
+        id: 'bot',
+        scope: 'profile',
+        artifact: { kind: 'in-process' },
+        apiVersion: '1.0.0',
+        healthPath: '/health',
+        listeners: [],
+        requires: [],
+        startupTimeoutMs: 1000,
+        shutdownTimeoutMs: 1000,
+      },
+      definition: {
+        id: 'bot',
+        configSchema,
+        defaultConfig: { instances: [entry('kept')] },
+        async start(init) {
+          // The resource only ever sees the stored configuration, never the caller's expectation.
+          started.push(init.config)
+          init.onShutdown(async () => ({ state: 'settled' }))
+          init.ready()
+          return null
+        },
+      },
+    })
+    registerManagedServices(
+      'bot',
+      { register: (def) => f.add(def.name, def) },
+      handle,
+      () => managed.settle(),
+      configSchema,
+    )
+    const runtime = f.make(undefined, managed)
+    await managed.publish()
+    await handle.get()
+    const read = async () =>
+      (
+        (await runtime.call({ extension: owner, service: 'bot.configuration', input: {} }, 'granted')) as {
+          output: JsonValue
+        }
+      ).output
+    const params = async (operationId = 'create') => ({
+      extension: owner,
+      service: 'bot.configure',
+      operationId,
+      input: { instances: [entry('kept'), entry('dedicated')] },
+      // The wire contract: SHA-256 over the RFC 8785 form of the configuration query's output.
+      expectedConfigurationRevision: sha256Hex(jcs(await read())),
+    })
+    return {
+      f,
+      runtime,
+      started,
+      ready: () => handle.get(),
+      read,
+      params,
+      concurrent: () => store.set('managed-config:bot', { instances: [entry('kept'), entry('other')] }),
+      close: async () => {
+        await runtime.close()
+        await managed.close().catch(() => undefined)
+      },
+    }
+  }
+
+  it('writes only the reviewed revision, binds it into the approval and replays the receipt', async () => {
+    const c = await configured()
+    try {
+      const params = await c.params()
+      expect(await c.runtime.call(params, 'granted')).toMatchObject({ state: 'approval-required' })
+      expect((await c.runtime.listDecisions('human'))[0]?.request.spec.subject).toMatchObject({
+        input: params.input,
+        resourceRevision: params.expectedConfigurationRevision,
+      })
+      await approve(c.runtime)
+      expect(await c.runtime.call(params, 'granted')).toMatchObject({
+        state: 'completed',
+        operationId: 'create',
+      })
+      // Nothing beyond the configuration is persisted or handed to the resource.
+      await c.ready()
+      expect(await c.read()).toEqual(params.input)
+      expect(c.started).toEqual([{ instances: [entry('kept')] }, params.input])
+      expect(await c.runtime.call(params, 'granted')).toMatchObject({ state: 'completed' })
+      expect(c.started).toHaveLength(2)
+      await expect(
+        c.runtime.call({ ...params, expectedConfigurationRevision: 'f'.repeat(64) }, 'granted'),
+      ).rejects.toMatchObject({ data: { code: 'ID_CONFLICT' } })
+      // Existing callers that do not state a revision keep whole-configuration replacement.
+      const { expectedConfigurationRevision: _omitted, ...legacy } = await c.params('legacy')
+      c.concurrent()
+      expect(await c.runtime.call(legacy, 'granted')).toMatchObject({ state: 'approval-required' })
+      await approve(c.runtime)
+      expect(await c.runtime.call(legacy, 'granted')).toMatchObject({ state: 'completed' })
+      // Only a Host-managed configuration effect accepts the precondition.
+      await expect(
+        c.runtime.call({ ...c.f.call, expectedConfigurationRevision: 'a'.repeat(64) }, 'granted'),
+      ).rejects.toMatchObject({ data: { code: 'INVALID_PARAMS' } })
+    } finally {
+      await c.close()
+    }
+  })
+
+  it.each(['before-preparation', 'during-approval', 'after-dispatch'] as const)(
+    'refuses a configuration changed %s without writing or publishing',
+    async (moment) => {
+      const c = await configured()
+      try {
+        const params = await c.params()
+        if (moment === 'before-preparation') c.concurrent()
+        let receipt = await c.runtime.call(params, 'granted')
+        if (moment === 'before-preparation') expect(await c.runtime.listDecisions('human')).toEqual([])
+        else {
+          expect(receipt).toMatchObject({ state: 'approval-required' })
+          if (moment === 'during-approval') c.concurrent()
+          else {
+            const commit = c.f.storage.commit.bind(c.f.storage)
+            vi.spyOn(c.f.storage, 'commit').mockImplementation(async (key, tx) => {
+              const result = await commit(key, tx)
+              // Another writer lands after native dispatch intent, before the resource writes.
+              if (
+                tx.events.some(
+                  (event) =>
+                    event.type === 'x/host/profile-operation' &&
+                    (event.data as { receipt?: { state?: string } }).receipt?.state === 'running',
+                )
+              )
+                c.concurrent()
+              return result
+            })
+          }
+          await approve(c.runtime)
+          receipt = await c.runtime.call(params, 'granted')
+        }
+        expect(receipt).toEqual({ state: 'refused', operationId: 'create', code: 'REVISION_CONFLICT' })
+        expect(await c.read()).toEqual({ instances: [entry('kept'), entry('other')] })
+        await c.ready()
+        expect(c.started).toHaveLength(1)
+        expect(await c.runtime.call(params, 'granted')).toEqual(receipt)
+        const { extension, service, operationId } = params
+        expect(await c.runtime.readOperation({ extension, service, operationId }, 'granted')).toEqual(receipt)
+      } finally {
+        await c.close()
+      }
+    },
+  )
 })
 
 it.each([
