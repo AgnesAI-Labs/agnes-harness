@@ -79,7 +79,10 @@ daemon 照常启动，不需要智能体的 `HOME` 或 `PATH`。Superagent 给�
 用它自己的 git 配置代替用户的全局与系统配置（`GIT_CONFIG_GLOBAL`、`GIT_CONFIG_NOSYSTEM`），git 不弹提示，也没有 `GH_TOKEN` 或 `GITHUB_TOKEN`。
 所以即使操作者在同一台机器上已登录，这些会话的提交、推送和 `gh` 调用也都以智能体账号进行。Superagent 自己运行的 git、`gh` 和 prepare 命令也一样。
 每次启动时它在这个环境下检查：git 访问 github.com 时只向智能体的 GitHub CLI 要凭据，而这个 CLI 以智能体账号行事。
-这个环境随会话保存，重启之后不论谁打开会话都仍然生效。只有 Superagent 能给会话设置这个环境：平台拒绝其他任何客户端或插件这样做。
+这个环境随会话保存，重启之后不论谁打开会话都仍然生效。只有 Superagent 能给会话设置这个环境，而且只能给它自己的会话：平台拒绝其他任何客户端或插件这样做。
+
+会话沿用 daemon 的 `HOME`，而 git 在询问任何凭据助手之前会先读 `~/.netrc`：其中的 `machine github.com` 或 `default` 项会让智能体以你的身份推送。
+只要有这样一项，Superagent 就不启动（`agentNetrc`）；删掉这一项，或换一个没有它的用户运行服务。
 
 服务管理器不读你的 shell 配置：把 `PATH` 写全，让它能找到 `node`、`git` 和包装所运行的 `gh`。
 
@@ -219,6 +222,8 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
 | 面板说连不上 Superagent，调用返回 `CAPABILITY_DENIED` | 请从市场安装；本地路径安装没有特权授权。用文件夹路径安装得到的是 `local-source` 包，它永远拿不到 Superagent 运行所需的随包应用授权，这是有意的。先卸载它，再从 **插件 → 市场** 或用 `agh plugins add file:./bundled-plugins/superagent` 安装 |
 | `agh package add @agnes/superagent` 被拒绝 | 包名不是来源。从市场安装，或用 `agh plugins add file:./bundled-plugins/superagent` |
 | 首次 `agh serve` 以 `E_HOME_VERSION` 拒绝 home | 全新的 `AGH_HOME` 在首次启动前被建了东西，比如日志文件。删掉它再启动，并把日志写到 home 之外 |
+| `git would sign in to github.com with …/.netrc, not with the agent's GitHub CLI` | 删掉该文件里 `machine github.com` 或 `default` 那一项，或换一个没有它的用户运行服务，再点 **Check again** |
+| `The agent GitHub CLI … is in …/worker-bin, which Superagent writes` | GitHub 卡片填的是 Superagent 自己写的垫片，而不是它要运行的 CLI。改填 `gh-agent` 包装 |
 | `git would ask other credential helpers than the agent's for github.com` | 有凭据助手被加进了 `<stateDir>/worker-gitconfig`，Superagent 下次启动时会重写它：点 **Check again**。否则就是智能体用的 git 早于 2.32 |
 | `The agent's GitHub token cannot read notifications; …` | 智能体用细粒度令牌登录，GitHub 的通知 API 拒绝它。用 `gh-agent auth login` 在浏览器里重新登录，或改用带 `repo` 与 `notifications` 范围的经典令牌，见第 4 步 |
 | `gh acts as @…, not the agent account @…` | 用 `gh-agent auth login` 重新登录，见第 4 步 |

@@ -10,7 +10,7 @@
  */
 import { existsSync, realpathSync } from 'node:fs'
 import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { basename, delimiter, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import type { SessionEnvironment } from '@agnes/protocol'
 import { runCommand } from '../app/subprocess.js'
 import { executable } from '../deployment.js'
@@ -52,6 +52,50 @@ const real = (path: string): string => {
   }
 }
 const samePath = (a: string, b: string): boolean => real(a) === real(b)
+const within = (path: string, directory: string): boolean => {
+  const rest = relative(real(directory), real(path))
+  return rest === '' || (!rest.startsWith('..') && !isAbsolute(rest))
+}
+
+/**
+ * The agent's GitHub CLI, resolved from `name` on `path` without the shims. A CLI inside the shims directory, such as
+ * the `gh` shim itself named by its path, would run itself forever, so it is refused.
+ * @throws SetupError `agentCliInShims` for such a CLI, `agentCliMissing` when it is not an executable.
+ */
+function agentCli(name: string, path: string, shimsDir: string): string {
+  if (isAbsolute(name) && within(name, shimsDir))
+    throw new SetupError('agentCliInShims', { cli: name, shims: shimsDir })
+  let cli: string
+  try {
+    cli = executable(name, path, shimsDir)
+  } catch (error) {
+    throw new SetupError('agentCliMissing', { output: reason(error) })
+  }
+  if (within(cli, shimsDir)) throw new SetupError('agentCliInShims', { cli: name, shims: shimsDir })
+  return cli
+}
+
+/**
+ * The `.netrc` (or `_netrc`) in `home` that holds a github.com or a default entry, if any. git's HTTP transport reads
+ * it before it asks any credential helper, so such an entry would sign the agent's pushes in as whoever wrote it.
+ */
+async function githubNetrc(home: string | undefined): Promise<string | undefined> {
+  if (!home) return undefined
+  for (const name of ['.netrc', '_netrc']) {
+    const file = join(home, name)
+    const text = await readFile(file, 'utf8').catch(() => undefined)
+    if (text === undefined) continue
+    const tokens = text.replace(/#.*$/gm, '').split(/\s+/)
+    if (
+      tokens.some(
+        (token, at) =>
+          token === 'default' || (token === 'machine' && tokens[at + 1]?.toLowerCase() === 'github.com'),
+      )
+    )
+      return file
+  }
+  return undefined
+}
 
 /**
  * The environment Superagent opens each of its sessions with, and its own commands run with: the shims first on PATH,
@@ -128,16 +172,12 @@ async function replace(file: string, text: string, mode: number): Promise<void> 
  * every credential helper before adding the agent's GitHub CLI for github.com only, rewrites SSH GitHub URLs to HTTPS,
  * turns askPass off and defines the LFS filters. Nothing is written when either place holds a file this program did
  * not write.
- * @throws SetupError `foreignFile` for such a file, `agentCliMissing` when the agent's GitHub CLI is not an executable.
+ * @throws SetupError `foreignFile` for such a file, `agentCliMissing` when the agent's GitHub CLI is not an executable,
+ * `agentCliInShims` when it is inside the shims directory.
  */
 export async function writeEnvironment(stateDir: string, cfg: EnvironmentConfig): Promise<void> {
   const shimsDir = workerBin(stateDir)
-  let cli: string
-  try {
-    cli = executable(cfg.cli ?? 'gh', process.env.PATH ?? '', shimsDir)
-  } catch (error) {
-    throw new SetupError('agentCliMissing', { output: reason(error) })
-  }
+  const cli = agentCli(cfg.cli ?? 'gh', process.env.PATH ?? '', shimsDir)
   await mkdir(shimsDir, { recursive: true })
   const before = await readdir(shimsDir)
   for (const name of before) {
@@ -234,8 +274,8 @@ function forGithub(key: string): boolean {
 /**
  * The setup self-check, as dsh-superagent makes it, in the environment Superagent's sessions get (the daemon's own,
  * `env`, reduced as the platform reduces it, then `agentSessionEnvironment`): git asks only the agent's GitHub CLI for
- * github.com credentials, from the agent's git configuration, and `gh` acts as `login`. The daemon's own HOME and PATH
- * do not matter. `signal` stops the checks, as when the runtime stops while it starts.
+ * github.com credentials, from the agent's git configuration, no `.netrc` in the sessions' HOME (the daemon's) signs in
+ * to github.com first, and `gh` acts as `login`. `signal` stops the checks, as when the runtime stops while it starts.
  * @throws SetupError naming the first check that failed.
  */
 export async function verifyEnvironment(
@@ -245,12 +285,7 @@ export async function verifyEnvironment(
   signal?: AbortSignal,
 ): Promise<void> {
   const session = agentSessionEnvironment(stateDir)
-  let cli: string
-  try {
-    cli = executable(cfg.cli ?? 'gh', env.PATH ?? '', workerBin(stateDir))
-  } catch (error) {
-    throw new SetupError('agentCliMissing', { output: reason(error) })
-  }
+  const cli = agentCli(cfg.cli ?? 'gh', env.PATH ?? '', workerBin(stateDir))
   // `-z` separates entries with NUL and never quotes paths: origin, then `key\nvalue`.
   const listed = await asSession(
     env,
@@ -282,6 +317,8 @@ export async function verifyEnvironment(
     throw new SetupError('agentCredentialMixed', {
       helpers: helpers.map((helper) => `${helper.origin} ${helper.value}`).join('; ') || '(none)',
     })
+  const netrc = await githubNetrc(env.HOME)
+  if (netrc) throw new SetupError('agentNetrc', { file: netrc })
 
   const user = await asSession(env, ['gh', 'api', 'user', '--jq', '.login'], stateDir, signal, session)
   if (user.code !== 0) throw new SetupError('agentCliSignedOut', { output: user.stderr.trim() })

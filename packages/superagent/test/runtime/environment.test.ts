@@ -8,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -240,6 +241,34 @@ posixDescribe('the shims directory', () => {
       writeEnvironment(stateDir, { ...config(), cli: join(root, 'missing', 'gh') }),
     ).rejects.toMatchObject({ code: 'agentCliMissing' })
   })
+
+  it('refuses an agent CLI inside the shims directory, whose gh shim would run itself forever', async () => {
+    await writeEnvironment(stateDir, config())
+    const shim = join(shims, 'gh')
+    // Named by its path, as pasted from `command -v gh` under the earlier PATH setup, or through a link to it.
+    const link = join(root, 'local-bin', 'gh-shim')
+    symlinkSync(shim, link)
+    for (const named of [shim, link])
+      await expect(writeEnvironment(stateDir, { ...config(), cli: named }), named).rejects.toMatchObject({
+        code: 'agentCliInShims',
+        values: { cli: named, shims },
+      })
+    // A command name that PATH resolves to a link into the shims is refused too.
+    await expect(
+      verifyEnvironment(
+        stateDir,
+        { login: LOGIN, cli: 'gh-shim' },
+        daemonEnv({ PATH: `${join(root, 'local-bin')}:${realBin}:/usr/bin:/bin` }),
+      ),
+    ).rejects.toMatchObject({ code: 'agentCliInShims', values: { cli: 'gh-shim' } })
+    // So is the shim's path before Superagent ever wrote it, on a fresh state directory.
+    const fresh = join(root, 'fresh-state')
+    await expect(
+      writeEnvironment(fresh, { ...config(), cli: join(fresh, 'worker-bin', 'gh') }),
+    ).rejects.toMatchObject({ code: 'agentCliInShims' })
+    // The shims the refused writes found are untouched: the gh shim still runs the agent CLI.
+    expect(readFileSync(shim, 'utf8')).toContain(cli)
+  })
 })
 
 posixDescribe('the setup self-check', () => {
@@ -286,6 +315,29 @@ posixDescribe('the setup self-check', () => {
       code: 'agentLoginMismatch',
       values: { account: LOGIN, login: 'someone-else' },
     })
+  })
+
+  it("fails when a .netrc in the sessions' HOME would sign git in to github.com before the agent CLI", async () => {
+    await writeEnvironment(stateDir, config())
+    // Another host's entry is not git's business here.
+    writeFileSync(join(operatorHome, '.netrc'), 'machine example.com login op password other-host\n')
+    await expect(check()).resolves.toBeUndefined()
+    for (const [name, text] of [
+      [
+        '.netrc',
+        '# the operator\nmachine example.com login op password x\nmachine GitHub.com login op password tok\n',
+      ],
+      ['.netrc', 'default login op password tok\n'],
+      ['_netrc', 'machine github.com\n  login op\n  password tok\n'],
+    ] as const) {
+      rmSync(join(operatorHome, '.netrc'), { force: true })
+      writeFileSync(join(operatorHome, name), text)
+      await expect(check(), text).rejects.toMatchObject({
+        code: 'agentNetrc',
+        values: { file: join(operatorHome, name) },
+      })
+      rmSync(join(operatorHome, name))
+    }
   })
 
   it('ignores GIT_CONFIG_* variables of its own process, which sessions do not get', async () => {

@@ -103,7 +103,11 @@ pushes and `gh` calls of its sessions act as the agent account even when the ope
 Superagent's own git, `gh` and prepare commands run the same way. On every start it checks, in that environment, that
 git asks only the agent's GitHub CLI for github.com credentials and that the CLI acts as the agent. The environment is
 kept with each session, so it still applies after a restart, whoever opens the session. Only Superagent can give a
-session this environment: the platform refuses it from any other client or plugin.
+session this environment, and only its own sessions: the platform refuses it from any other client or plugin.
+
+Sessions keep the daemon's `HOME`, and git reads `~/.netrc` before it asks any credential helper: a `machine github.com`
+or `default` entry there would sign the agent's pushes in as you. Superagent refuses to start while one exists
+(`agentNetrc`); remove the entry, or run the service as a user without one.
 
 A service manager does not read your shell profile: write `PATH` out so that it reaches `node`, `git` and the `gh` the
 wrapper runs.
@@ -273,6 +277,8 @@ again after you fixed something outside the panel.
 | The panel says it cannot connect to Superagent, and its calls return `CAPABILITY_DENIED` | Install from the marketplace; a local-path install has no privileged grant. A folder path installs a `local-source` package, which never receives the bundled-app grant Superagent runs with; this is intended. Uninstall it, then install from **Plugins → Marketplace** or with `agh plugins add file:./bundled-plugins/superagent` |
 | `agh package add @agnes/superagent` is refused | A package name is not a source. Install from the marketplace, or with `agh plugins add file:./bundled-plugins/superagent` |
 | The first `agh serve` refuses the home with `E_HOME_VERSION` | Something was created under the fresh `AGH_HOME` before its first start, such as a log file. Remove it, start again, and write the log outside the home |
+| `git would sign in to github.com with …/.netrc, not with the agent's GitHub CLI` | Remove the file's `machine github.com` or `default` entry, or run the service as a user without one; then select **Check again** |
+| `The agent GitHub CLI … is in …/worker-bin, which Superagent writes` | The GitHub card names the shim Superagent writes, not the CLI it runs. Name the `gh-agent` wrapper instead |
 | `git would ask other credential helpers than the agent's for github.com` | A helper was added to `<stateDir>/worker-gitconfig`, which Superagent rewrites on its next start: select **Check again**. Otherwise the agent's git is older than 2.32 |
 | `The agent's GitHub token cannot read notifications; …` | The agent is signed in with a fine-grained token, which GitHub's notifications API refuses. Sign in again with `gh-agent auth login` through the browser, or with a classic token with the `repo` and `notifications` scopes, as in step 4 |
 | `gh acts as @…, not the agent account @…` | Sign in again with `gh-agent auth login`, as in step 4 |

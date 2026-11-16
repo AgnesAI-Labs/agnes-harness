@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import { childEnvironment, runCommand, setAgentVariables } from '../src/app/subprocess.js'
+import { agentCommandVariables } from '../src/runtime/environment.js'
 import { posixIt } from './fixtures/posix.js'
 
 let directory: string
@@ -148,26 +149,34 @@ posixIt("reads neither the operator's XDG git configuration nor the system one",
 })
 
 posixIt(
-  "runs the runtime's commands with the agent HOME and gh configuration once they are set, and without after",
+  "runs the runtime's commands with the agent's shims and git configuration once they are set, and without after",
   async () => {
     const read = async () =>
       JSON.parse(
         (
           await run(
             node(
-              'process.stdout.write(JSON.stringify({ home: process.env.HOME, gh: process.env.GH_CONFIG_DIR ?? null }))',
+              'process.stdout.write(JSON.stringify({ path: process.env.PATH, global: process.env.GIT_CONFIG_GLOBAL ?? null }))',
             ),
           )
         ).stdout,
       )
-    setAgentVariables({ HOME: '/state/home', GH_CONFIG_DIR: '/state/home/.config/gh' })
+    const variables = agentCommandVariables('/state', process.env.PATH)
+    setAgentVariables(variables)
     try {
-      expect(await read()).toEqual({ home: '/state/home', gh: '/state/home/.config/gh' })
-      expect(childEnvironment({ HOME: '/passed' }).HOME, 'a caller may still pass its own').toBe('/passed')
+      expect(await read()).toEqual({
+        path: `/state/worker-bin:${process.env.PATH}`,
+        global: '/state/worker-gitconfig',
+      })
+      expect(
+        childEnvironment({ GIT_CONFIG_GLOBAL: '/passed' }).GIT_CONFIG_GLOBAL,
+        'a caller may still pass its own',
+      ).toBe('/passed')
+      expect(childEnvironment().HOME, "the daemon's HOME stays").toBe(process.env.HOME)
     } finally {
       setAgentVariables(undefined)
     }
-    expect(await read()).toEqual({ home: process.env.HOME, gh: null })
+    expect(await read()).toEqual({ path: process.env.PATH, global: null })
   },
 )
 

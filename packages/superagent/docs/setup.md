@@ -157,7 +157,8 @@ steps, and the defaults. Ask for one confirmation.
    `GH_TOKEN` or `GITHUB_TOKEN`), so they act as the agent account and never as the operator, even when the operator is
    signed in on the same machine. On every start it checks, in that environment, that git asks only the agent's CLI
    for github.com credentials and that the CLI acts as the agent, and reports a setup problem with its cause otherwise;
-   select **Check again** on the overview after fixing it. An earlier setup whose daemon starts with
+   select **Check again** on the overview after fixing it. Sessions keep the daemon's `HOME`, so a `machine github.com`
+   or `default` entry in its `~/.netrc` would sign git in before the agent's CLI; Superagent refuses one (`agentNetrc`). An earlier setup whose daemon starts with
    `HOME="<stateDir>/home"` and the shims on `PATH` keeps working; the deployment guide's
    [Run as a service](../../../docs/guide/superagent.md#run-as-a-service) says how to move it to the wrapper.
 7. **Save the settings.** Open the **Superagent** entry on the home page and save from the **Settings** tab, or, for a

@@ -588,12 +588,20 @@ export const SETTINGS_TEXT = {
     'git 访问 github.com 时会用到智能体以外的凭据工具：{helpers}。',
     SETUP_PROBLEMS.agentCredentialMixed[1],
   ],
+  'setup.agentNetrc': [
+    'git 会用 {file} 登录 github.com，而不是用智能体的 GitHub CLI；删掉其中 github.com 或 default 那一项，或换一个没有它的用户运行 Superagent。',
+    SETUP_PROBLEMS.agentNetrc[1],
+  ],
   'setup.agentLoginMismatch': [
     'gh 以 @{account} 身份运行，不是智能体账号 @{login}。',
     SETUP_PROBLEMS.agentLoginMismatch[1],
   ],
   'setup.agentCliUnset': ['没有设置智能体的 GitHub CLI。', SETUP_PROBLEMS.agentCliUnset[1]],
   'setup.agentCliMissing': ['找不到智能体的 GitHub CLI。', SETUP_PROBLEMS.agentCliMissing[1]],
+  'setup.agentCliInShims': [
+    '智能体的 GitHub CLI {cli} 在 Superagent 自己写的 {shims} 里；请填 CLI 本身，比如 gh-agent 包装。',
+    SETUP_PROBLEMS.agentCliInShims[1],
+  ],
   'setup.agentCliSignedOut': ['智能体的 GitHub CLI 读不到它的账号。', SETUP_PROBLEMS.agentCliSignedOut[1]],
   'setup.agentCliNoAccount': [
     '智能体的 GitHub CLI 没有报告 GitHub 账号。',
