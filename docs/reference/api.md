@@ -206,7 +206,7 @@ over IPC), and only for the bundled application's own sessions (keys starting `s
 page, the owner's own client, another SDK user or a plugin, and any other session key, is refused with
 `CAPABILITY_DENIED` and `data.code` `SESSION_ENVIRONMENT_DENIED`. `set` may name only `GIT_CONFIG_GLOBAL`,
 `GIT_CONFIG_NOSYSTEM`, `GIT_TERMINAL_PROMPT`, `GIT_ASKPASS` (empty only), `LANG` and `LC_*`; `unset` may not name
-`PATH`, `AGNES_*` or `AGH_*`. Any other name, a name in both lists, or a value past the bounds is refused with
+`PATH`, `SystemRoot`, `ComSpec`, `PATHEXT` (in any case), `AGNES_*` or `AGH_*`. Any other name, a name in both lists, or a value past the bounds is refused with
 `SEMANTIC_REJECTED` and `SESSION_ENVIRONMENT_INVALID`. On Windows, where variable names compare without case, the
 directories go first on the command's existing `Path` (one entry, in the spelling it had), a set variable replaces
 every spelling of its name, and a removed variable is absent from the started process in any spelling.

@@ -183,6 +183,10 @@ describe('session/new with an environment', () => {
       { set: { PATH: '/bin' } },
       { set: { AGNES_SECRET_X: 'x' } },
       { unset: ['PATH'] },
+      // What a Windows process needs to start, in any spelling.
+      { unset: ['SystemRoot'] },
+      { unset: ['comspec'] },
+      { unset: ['PATHEXT'] },
       { pathPrepend: ['relative/bin'] },
       { pathPrepend: ['/a:/b'] },
       { set: { LANG: 'C' }, unset: ['LANG'] },
