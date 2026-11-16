@@ -361,6 +361,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
   StepEnd: SessionGen.StepEnd,
   SystemInputPresentation: SessionGen.SystemInputPresentation,
   SystemInput: SessionGen.SystemInput,
+  InputDeliverer: SessionGen.InputDeliverer,
   UserMessage: SessionGen.UserMessage,
   AssistantMessage: SessionGen.AssistantMessage,
   ResolvedToolCallPolicy: SessionGen.ResolvedToolCallPolicy,
@@ -531,6 +532,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
 
   BudgetState: AgnesGen.BudgetState,
   SystemInput: AgnesGen.SystemInput,
+  InputDeliverer: AgnesGen.InputDeliverer,
   ArtifactRef: AgnesGen.ArtifactRef,
   ArtifactJob: AgnesGen.ArtifactJob,
   ArtifactReadParams: AgnesGen.ArtifactReadParams,
@@ -1468,6 +1470,17 @@ const SESSION_SAMPLES: Record<string, Sample> = {
       { source: 'owner', type: 'result', summary: 'Done', data: {}, actor: {} },
     ],
     note: 'One bounded platform notification owns machine data and presentation.',
+  },
+  InputDeliverer: {
+    valid: { kind: 'bundled-app', appId: '@agnes/superagent/superagent' },
+    invalid: [
+      { kind: 'bundled-app' },
+      { kind: 'person', appId: 'x' },
+      { kind: 'bundled-app', appId: '' },
+      { kind: 'bundled-app', appId: rep(257) },
+      { kind: 'bundled-app', appId: 'x', trusted: true },
+    ],
+    note: 'A display-only, closed and bounded fact the backend stamps; no other kind exists.',
   },
   UserMessage: {
     valid: userMessageOk,
@@ -2930,6 +2943,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
 
   BudgetState: SESSION_SAMPLES.BudgetState as Sample,
   SystemInput: SESSION_SAMPLES.SystemInput as Sample,
+  InputDeliverer: SESSION_SAMPLES.InputDeliverer as Sample,
   ArtifactRef: SESSION_SAMPLES.ArtifactRef as Sample,
   ArtifactJob: SESSION_SAMPLES.ArtifactJob as Sample,
   Credential: {
