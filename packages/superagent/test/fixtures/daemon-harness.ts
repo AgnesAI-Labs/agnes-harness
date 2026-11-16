@@ -24,6 +24,31 @@ export function socketDirectoryOf(socketPath: string, home: string): string | un
   return dirname(socketPath)
 }
 
+/** What the daemon records about itself in `<home>/daemon/owner.json`: where it listens and which process it is. */
+export interface DaemonOwner {
+  socketPath: string
+  pid: number
+  processStartId: string
+}
+/** The daemon's owner record under `home`. */
+export const readOwner = (home: string): DaemonOwner =>
+  JSON.parse(readFileSync(join(home, 'daemon', 'owner.json'), 'utf8')) as DaemonOwner
+
+/**
+ * The SDK transport to the daemon `owner` names. On Windows its socket is a named pipe, which the SDK connects to only
+ * with the identity of the process expected to serve it: the one the daemon recorded, as the other daemon harnesses
+ * and the worker's own backend client pass it. Elsewhere the socket path alone.
+ */
+export function daemonTransport(owner: DaemonOwner) {
+  return {
+    kind: 'unix' as const,
+    path: owner.socketPath,
+    ...(owner.socketPath.startsWith('\\\\.\\pipe\\')
+      ? { serverIdentity: { pid: owner.pid, processStartId: owner.processStartId } }
+      : {}),
+  }
+}
+
 /**
  * What a process needs on Windows to start (its system directory, shell and temporary directory) and to find its user
  * profile, which Windows programs read in place of HOME; `home` stands for the profile when given. Nothing elsewhere.
@@ -45,6 +70,28 @@ export function hostFloor(home?: string): Record<string, string> {
   )
 }
 const sourceDaemon = join(repository, 'packages/daemon/test/fixtures/source-loop-daemon.ts')
+const daemonControl = pathToFileURL(join(repository, 'packages/daemon/src/supervisor/control.ts')).href
+const windows = process.platform === 'win32'
+/**
+ * Asks the daemon on `home` to shut down the way `agh daemon stop` does, which on Windows, where there is no SIGTERM,
+ * is the stop request the daemon watches for, and waits until it has exited or the wait ran out. The control runs by
+ * path in a process of its own, as the daemon fixture does, so no module of another package is imported here.
+ */
+function requestStop(home: string, tsx: string): Promise<void> {
+  const script = [
+    `import { stopDaemon } from ${JSON.stringify(daemonControl)}`,
+    `await stopDaemon(${JSON.stringify(home)}, { waitMs: 30_000 })`,
+  ].join('\n')
+  return new Promise((resolve) => {
+    const control = execFile(
+      process.execPath,
+      ['--import', tsx, '--input-type=module', '--eval', script],
+      { cwd: repository, timeout: 45_000, windowsHide: true },
+      () => resolve(),
+    )
+    trackRoot(control)
+  })
+}
 const PROFILE = 'local-dev'
 const STEP_MS = 120_000
 /** The whole of `startDaemon`, kept below the test timeout the e2e files use (240 s). */
@@ -381,14 +428,12 @@ export async function startDaemon(opts: {
         if (spawnError) reject(spawnError)
       })
       if (stopped) throw new Error('stopped during daemon boot')
-      const owner = JSON.parse(readFileSync(join(opts.aghHome, 'daemon', 'owner.json'), 'utf8')) as {
-        socketPath: string
-      }
+      const owner = readOwner(opts.aghHome)
       socketDir = socketDirectoryOf(owner.socketPath, opts.aghHome)
       current = createClient({
         journal: memoryJournal(clientId),
         auth: { kind: 'local' },
-        transport: { kind: 'unix', path: owner.socketPath },
+        transport: daemonTransport(owner),
         timeouts: { request: STEP_MS },
       })
       await current.initialize()
@@ -398,7 +443,11 @@ export async function startDaemon(opts: {
     }
   }
 
-  /** The client first, then the daemon and everything below it by pid (SIGTERM, then SIGKILL). */
+  /**
+   * The client first, then the daemon and everything below it by pid (SIGTERM, then SIGKILL). Windows has no SIGTERM,
+   * and killing the tree there ends the daemon without its shutdown: it is asked to stop first, as `agh daemon stop`
+   * asks it, and what is still running after that is killed.
+   */
   const terminate = async () => {
     const process_ = child
     child = undefined
@@ -408,7 +457,10 @@ export async function startDaemon(opts: {
       /* the connection is going away with the daemon */
     }
     current = undefined
-    if (process_) await killTree(process_)
+    if (!process_) return
+    if (windows && process_.exitCode === null && process_.signalCode === null)
+      await requestStop(opts.aghHome, tsx)
+    await killTree(process_)
   }
 
   const installPlugins = async (client: DaemonClient) => {

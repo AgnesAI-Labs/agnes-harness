@@ -18,7 +18,7 @@ import { type Client, createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
 import { Store } from '../../src/app/store.js'
 import { SettingsSchema } from '../../src/policy.js'
-import { hostFloor, socketDirectoryOf } from '../fixtures/daemon-harness.js'
+import { daemonTransport, hostFloor, readOwner, socketDirectoryOf } from '../fixtures/daemon-harness.js'
 
 // The panel on a real source daemon: the shipped payload's browser module is rostered with its services, and the panel
 // services answer from the plugin's own database through the Host's query and effect paths.
@@ -212,12 +212,12 @@ it('the panel module is rostered and its services answer a seeded GitHub ticket 
   const failures: unknown[] = []
   try {
     await bounded(ready, 'source daemon boot')
-    const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
+    const owner = readOwner(root)
     socketDirectory = socketDirectoryOf(owner.socketPath, root)
     const client = createClient({
       journal: memoryJournal(),
       auth: { kind: 'local' },
-      transport: { kind: 'unix', path: owner.socketPath },
+      transport: daemonTransport(owner),
       timeouts: { request: STEP_MS },
     })
     sdk = client

@@ -16,7 +16,7 @@ import { initializeHome } from '@agnes/host'
 import type { EventEnvelope, PackageOperationReceipt } from '@agnes/protocol'
 import { type Client, createClient, memoryJournal } from '@agnes/sdk'
 import { expect, it } from 'vitest'
-import { hostFloor, socketDirectoryOf } from '../fixtures/daemon-harness.js'
+import { daemonTransport, hostFloor, readOwner, socketDirectoryOf } from '../fixtures/daemon-harness.js'
 
 // The shipped payload on a real source daemon: the release grant reaches the managed service, and the plugin's hooks
 // leave the owner's own sessions alone.
@@ -142,12 +142,12 @@ it('the shipped payload starts its managed service with the bundled-app grant an
   const failures: unknown[] = []
   try {
     await bounded(ready, 'source daemon boot')
-    const owner = JSON.parse(readFileSync(join(root, 'daemon', 'owner.json'), 'utf8'))
+    const owner = readOwner(root)
     socketDirectory = socketDirectoryOf(owner.socketPath, root)
     const client = createClient({
       journal: memoryJournal(),
       auth: { kind: 'local' },
-      transport: { kind: 'unix', path: owner.socketPath },
+      transport: daemonTransport(owner),
       timeouts: { request: STEP_MS },
     })
     sdk = client
