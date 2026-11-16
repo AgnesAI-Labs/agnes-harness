@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -60,13 +61,16 @@ it('runs the prepare command in PowerShell on Windows and in sh elsewhere', asyn
     'git clone x repo',
   ])
   expect(prepareArgv('git clone x repo', 'linux')).toEqual(['sh', '-c', 'git clone x repo'])
-  // On Windows PowerShell runs it and its exit code stands; elsewhere none exists, and the launch names the program.
+  // Where a `powershell` program exists (Windows, and hosted macOS runners) it runs the command and its
+  // exit code stands; where none exists, the launch fails and names the program.
+  const powershell =
+    spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', 'exit 0']).status === 0
   const failed = sessions({ platform: 'win32', prepareCommand: () => 'exit 3' }).ensureWorker(
     ticket('t1'),
     join(temp.dir, 'work', 't1'),
   )
   await expect(failed).rejects.toBeInstanceOf(PrepareFailed)
-  await expect(failed).rejects.toThrow(process.platform === 'win32' ? /exit 3/ : /powershell/)
+  await expect(failed).rejects.toThrow(powershell ? /exit 3/ : /powershell/)
 })
 
 it('moves a held ticket directory aside once the program lets go of it', async () => {

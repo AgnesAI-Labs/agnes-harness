@@ -1,4 +1,9 @@
-import { authoringGuidance, panelAuthoringGuidance, toolSafetyGuidance, verification } from './src/authoring.mjs'
+import {
+  authoringGuidance,
+  panelAuthoringGuidance,
+  toolSafetyGuidance,
+  verification,
+} from './src/authoring.mjs'
 import { panelFiles } from './src/panel.generated.mjs'
 import { array, enumeration, object, optional, string } from './src/schema.mjs'
 import { skinFiles, skinGuidance } from './src/skin.mjs'
