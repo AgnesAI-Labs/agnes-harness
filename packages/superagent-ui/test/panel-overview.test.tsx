@@ -185,6 +185,14 @@ it('names a failing part of Superagent itself by its label', async () => {
   expect(text()).toContain('spawn failed')
 })
 
+it('names skill files it cannot write by their label', async () => {
+  server.health = { skills: { state: 'error', detail: 'EPERM: operation not permitted' } }
+  await mount()
+  expect(all('.dt-cards .dt-att-what').map((item) => item.textContent)).toContain(
+    zh.problemRuntime.replace('{name}', zh['health.skills']),
+  )
+})
+
 it('words a refused retry in the interface language by its code', async () => {
   await mount()
   // Simulate another user retrying the ticket after the overview loaded.

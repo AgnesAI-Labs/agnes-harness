@@ -4,12 +4,10 @@
  * (`fake-gh.mjs`) as a real executable; each change of the world rewrites its script, which every call reads anew, and
  * every call is logged with its arguments. Calls nothing here scripts fail, as `gh` would on an unknown route.
  */
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fakeGhCommand } from '../fixtures/commands.js'
 
-const FAKE_GH = fileURLToPath(new URL('../fixtures/fake-gh.mjs', import.meta.url))
-const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 export const LOGIN = 'agent-bot'
 export const REPOSITORY = 'acme/app'
 export const ISSUE = 12
@@ -34,12 +32,7 @@ export function githubWorld(dir: string, opened: string) {
   mkdirSync(dir, { recursive: true })
   const script = join(dir, 'script.json')
   const log = join(dir, 'gh.log')
-  const cli = join(dir, 'gh')
-  writeFileSync(
-    cli,
-    `#!/bin/sh\nFAKE_GH_SCRIPT=${quote(script)} FAKE_GH_LOG=${quote(log)} exec ${quote(process.execPath)} ${quote(FAKE_GH)} "$@"\n`,
-  )
-  chmodSync(cli, 0o755)
+  const cli = fakeGhCommand(join(dir, 'gh'), { script, log })
   const issue = {
     id: 1012,
     number: ISSUE,

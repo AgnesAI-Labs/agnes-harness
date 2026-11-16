@@ -576,10 +576,6 @@ export const SETTINGS_TEXT = {
     SETUP_PROBLEMS.gitTooOld[1],
   ],
   'setup.environmentFailed': ['准备智能体的运行环境失败。', SETUP_PROBLEMS.environmentFailed[1]],
-  'setup.platformUnsupported': [
-    'Superagent 支持 macOS 与 Linux，不能在 {platform} 上运行。',
-    SETUP_PROBLEMS.platformUnsupported[1],
-  ],
   'setup.sessionTaken': [
     '已有一个不是 Superagent 打开的会话 {session}；归档或删除它，然后重新检查设置。',
     SETUP_PROBLEMS.sessionTaken[1],
@@ -601,6 +597,14 @@ export const SETTINGS_TEXT = {
   'setup.agentCliInShims': [
     '智能体的 GitHub CLI {cli} 在 Superagent 自己写的 {shims} 里；请填 CLI 本身，比如 gh-agent 包装。',
     SETUP_PROBLEMS.agentCliInShims[1],
+  ],
+  'setup.agentCliPathNotAscii': [
+    '智能体的 GitHub CLI 路径 {cli} 含有 ASCII 字母、数字和标点以外的字符，Windows 垫片无法写入；请把 CLI 放到这样的路径下，例如 C:\\Superagent\\bin。',
+    SETUP_PROBLEMS.agentCliPathNotAscii[1],
+  ],
+  'setup.shimsPathTooLong': [
+    '加上 Superagent 垫片后，会话的 PATH 有 {length} 个字符，超过 Windows 垫片能读的 {limit} 个；请缩短 daemon 启动时的 PATH。',
+    SETUP_PROBLEMS.shimsPathTooLong[1],
   ],
   'setup.agentCliSignedOut': ['智能体的 GitHub CLI 读不到它的账号。', SETUP_PROBLEMS.agentCliSignedOut[1]],
   'setup.agentCliNoAccount': [

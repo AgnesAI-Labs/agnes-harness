@@ -2,6 +2,7 @@
 /** Paths and process-environment names the worker environment shares with deployment and policy checks. */
 import { realpathSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
+import { HOST_PLATFORM, isWindows } from './platform.js'
 
 /** Commands workers need, which `blockedCommands` cannot block: the shims and git. */
 export const WORKER_COMMANDS: readonly string[] = ['gh', 'git']
@@ -9,7 +10,11 @@ export const workerBin = (stateDir: string): string => join(stateDir, 'worker-bi
 /** The git configuration Superagent's sessions and commands use in place of the operator's global and system ones. */
 export const workerGitConfig = (stateDir: string): string => join(stateDir, 'worker-gitconfig')
 
-export function sameDirectory(a: string, b: string): boolean {
+/** A PATH entry without the quotes Windows allows around it. */
+export const unquoted = (entry: string): string => entry.replace(/^"(.*)"$/, '$1')
+
+/** Whether `a` and `b` are one directory, following links; on Windows names compare without case. */
+export function sameDirectory(a: string, b: string, platform: string = HOST_PLATFORM): boolean {
   const real = (path: string): string => {
     try {
       return realpathSync(path)
@@ -17,13 +22,20 @@ export function sameDirectory(a: string, b: string): boolean {
       return resolve(path)
     }
   }
-  return real(a) === real(b)
+  return isWindows(platform)
+    ? real(unquoted(a)).toLowerCase() === real(unquoted(b)).toLowerCase()
+    : real(a) === real(b)
 }
-export function withoutDirectory(path: string, dir: string): string {
+export function withoutDirectory(
+  path: string,
+  dir: string,
+  separator: string = delimiter,
+  platform: string = HOST_PLATFORM,
+): string {
   return path
-    .split(delimiter)
-    .filter((entry) => !sameDirectory(entry, dir))
-    .join(delimiter)
+    .split(separator)
+    .filter((entry) => !sameDirectory(entry, dir, platform))
+    .join(separator)
 }
 
 /**

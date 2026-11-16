@@ -59,11 +59,13 @@ function writePlugin(directory: string, marker: string) {
   )
 }
 
+// Not on Windows: the probe plugin's tool runs `sh -c` in the session shell, which is PowerShell there; the identity
+// end-to-end test covers a Windows session's environment.
 it.skipIf(process.platform === 'win32')(
   'starts a daemon whose session shell sees exactly the given HOME and PATH, with the agent identity, across a restart',
   async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-daemon-fixture-')))
-    cleanups.push(() => rmSync(root, { recursive: true, force: true }))
+    cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
     const homes = makeHomes(join(root, 'homes'))
     const remote = await startGitHttpRemote({
       users: {
@@ -136,7 +138,7 @@ const claim = () => {
 }
 function scratchRoot() {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-daemon-fixture-')))
-  cleanups.push(() => rmSync(root, { recursive: true, force: true }))
+  cleanups.push(() => rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
   return root
 }
 const options = (root: string) => ({
@@ -146,6 +148,7 @@ const options = (root: string) => ({
   plugins: [],
 })
 
+// Not on Windows: it counts the start's processes from the process table `ps` prints, which Windows does not have.
 it.skipIf(process.platform === 'win32')(
   'caps the whole start, rejects with a clear error and kills every process the start created',
   async () => {
@@ -161,6 +164,7 @@ it.skipIf(process.platform === 'win32')(
   60_000,
 )
 
+// Not on Windows: it counts the start's processes from the process table `ps` prints, which Windows does not have.
 it.skipIf(process.platform === 'win32')(
   'lets the caller stop a start that is still running, before it returns',
   async () => {
@@ -179,6 +183,7 @@ it.skipIf(process.platform === 'win32')(
   60_000,
 )
 
+// Not on Windows: it counts the processes left from the process table `ps` prints, which Windows does not have.
 it.skipIf(process.platform === 'win32')(
   'a restart that fails leaves neither the old nor a new daemon running',
   async () => {

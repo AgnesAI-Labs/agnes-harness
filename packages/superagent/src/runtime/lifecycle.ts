@@ -12,8 +12,9 @@ import { archiveExpired, retiredTickets } from '../app/store-retention.js'
 import { setAgentVariables } from '../app/subprocess.js'
 import { interruptionRestarts } from '../core/assignments.js'
 import { liveTicket, runningAssignment, type Ticket } from '../core/index.js'
+import { HOST_PLATFORM } from '../infra/platform.js'
 import { KV, type Paused } from '../kv.js'
-import { assertSupportedPlatform, type SetupCode, SetupError, type SetupProblem } from '../setup.js'
+import { type SetupCode, SetupError, type SetupProblem } from '../setup.js'
 import type { SessionAdapter, SuperagentApp } from './contracts.js'
 import {
   agentCommandVariables,
@@ -105,7 +106,7 @@ export interface LifecycleDeps {
   ) => Promise<void>
   archive?: (store: Store, now: number) => { archived: number }
   now?: () => number
-  /** The operating system, this process's by default; Superagent refuses Windows with a setup problem. */
+  /** The operating system, this process's by default; the agent environment is written and checked for it. */
   platform?: string
   /**
    * How long a stop may take in all, below the Host's shutdown deadline: cancelling and killing come first, then the wait
@@ -397,15 +398,15 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
     await new Promise<void>((resolve) => setImmediate(resolve))
     try {
       if (stopping) return
-      assertSupportedPlatform(deps.platform ?? process.platform) // guards-allow-platform: POSIX-only plugin.
+      const platform = deps.platform ?? HOST_PLATFORM
       const plan = await deps.environment(signal)
       if (stopping) return
-      await (deps.writeEnvironment ?? writeEnvironment)(plan.stateDir, plan.account)
+      await (deps.writeEnvironment ?? writeEnvironment)(plan.stateDir, plan.account, platform)
       if (stopping) return
       const verify =
         deps.verifyEnvironment ??
         ((dir: string, cfg: { login: string; cli?: string }, s: AbortSignal) =>
-          verifyEnvironment(dir, cfg, process.env, s))
+          verifyEnvironment(dir, cfg, process.env, s, platform))
       await verify(
         plan.stateDir,
         { login: plan.account.login, ...(plan.account.cli ? { cli: plan.account.cli } : {}) },
@@ -413,7 +414,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       )
       if (stopping) return
       // The runtime's own git, gh and prepare commands act as the agent too.
-      setAgentVariables(agentCommandVariables(plan.stateDir))
+      setAgentVariables(agentCommandVariables(plan.stateDir, process.env.PATH ?? '', platform))
       // `stopping` is checked right before, and nothing awaits in between: a stop either sees this app or none.
       const started = deps.createApp(signal)
       app = started

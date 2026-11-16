@@ -4,6 +4,7 @@ import { basename } from 'node:path'
 import { z } from 'zod'
 import { runCommand } from '../app/subprocess.js'
 import type { Deployment } from '../deployment.js'
+import { HOST_PLATFORM, isWindows } from './platform.js'
 
 const TIMEOUT_MS = 90_000
 /** Output a command may print; `runCommand` keeps the first bytes, so reaching this size means output was lost. */
@@ -95,6 +96,8 @@ export class Commands {
     private readonly signal: AbortSignal,
     /** How long one command may run before it is stopped. */
     private readonly timeoutMs = TIMEOUT_MS,
+    /** The operating system the commands run on, this process's by default. */
+    private readonly platform: string = HOST_PLATFORM,
   ) {}
   get deployment(): Deployment {
     return this.resolved()
@@ -104,13 +107,22 @@ export class Commands {
   }
   withSignal(signal?: AbortSignal): Commands {
     return signal
-      ? new Commands(this.resolved, this.environment, AbortSignal.any([this.signal, signal]), this.timeoutMs)
+      ? new Commands(
+          this.resolved,
+          this.environment,
+          AbortSignal.any([this.signal, signal]),
+          this.timeoutMs,
+          this.platform,
+        )
       : this
   }
-  async run(program: string, args: string[], cwd?: string): Promise<string> {
+  /** Runs `program`; `input`, when given, is its standard input. */
+  async run(program: string, args: string[], cwd?: string, input?: string): Promise<string> {
     const started = Date.now()
     const result = await runCommand([program, ...args], {
       ...(cwd === undefined ? {} : { cwd }),
+      ...(input === undefined ? {} : { input }),
+      platform: this.platform,
       signal: this.signal,
       timeoutMs: this.timeoutMs,
       maxStdoutBytes: OUTPUT_LIMIT_BYTES,
@@ -151,6 +163,21 @@ export class Commands {
       return this.run(this.deployment.github.cli, ['api', this.path(schema), ...rest])
     const [path = '', ...flags] = rest
     return schema.parse(await this.gh(['api', this.path(path), ...flags]))
+  }
+  /**
+   * POSTs `text` as the string field `field` to a path within the configured repository and validates the answer. On
+   * Windows the text goes through standard input (`-F <field>=@-`): an agent CLI that is a batch file, such as a
+   * `gh-agent.cmd` wrapper, cannot receive a line break as an argument there.
+   */
+  async post<T>(schema: z.ZodType<T>, path: string, field: string, text: string): Promise<T> {
+    if (!isWindows(this.platform)) return this.api(schema, path, '--method', 'POST', '-f', `${field}=${text}`)
+    const out = await this.run(
+      this.deployment.github.cli,
+      ['api', this.path(path), '--method', 'POST', '-F', `${field}=@-`],
+      undefined,
+      text,
+    )
+    return schema.parse(JSON.parse(out))
   }
   /** Fetches all pages of a GitHub API list within the configured repository, skipping items that fail schema validation. */
   async pages<T>(item: z.ZodType<T>, path: string, tally?: Tally): Promise<T[]> {

@@ -236,3 +236,32 @@ it("lists the settings groups stages first, opens each stage's group from its st
     zh['promptPart.runtime/work'],
   )
 })
+
+it('reads the prepare command as PowerShell does when the daemon runs on Windows', async () => {
+  server.shell = 'powershell'
+  await mount()
+  await click(zh['tab.execution'])
+  await click(find(zh['tab.settings'], '.dt-status-head button'))
+  const prepare = field<HTMLTextAreaElement>(zh.prepareCommand)
+  // An empty field shows the Windows example; a variable picked from the list is inserted as `$env:NAME`.
+  expect(prepare.closest('.dt-field')?.querySelector('small')?.textContent).toBe(
+    '例如：git clone "https://github.com/$env:DSH_SUPERAGENT_GITHUB_REPOSITORY.git" repo',
+  )
+  await type(prepare, 'git worktree add ')
+  prepare.setSelectionRange(17, 17)
+  await click('可用的环境变量 3')
+  await click('DSH_SUPERAGENT_DIR')
+  expect(field<HTMLTextAreaElement>(zh.prepareCommand).value).toBe(
+    'git worktree add "$env:DSH_SUPERAGENT_DIR"',
+  )
+  // A ticket directory is a Windows path there.
+  const pattern = new RegExp(
+    `^(?:${field<HTMLInputElement>(zh.executionDirectory).getAttribute('pattern')})$`,
+    'v',
+  )
+  expect(['C:\\Superagent\\work', 'D:/work', '/srv/work'].map((path) => pattern.test(path))).toEqual([
+    true,
+    true,
+    false,
+  ])
+})

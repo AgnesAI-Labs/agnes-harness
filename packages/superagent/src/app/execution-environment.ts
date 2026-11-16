@@ -3,6 +3,7 @@
 import { join } from 'node:path'
 import type { Ticket, Trigger } from '../core/index.js'
 import type { Deployment } from '../deployment.js'
+import { HOST_PLATFORM, isWindows } from '../infra/platform.js'
 import type { Settings } from '../policy.js'
 import type { Localized, VariableSpec } from '../sources/kind.js'
 import type { SourceRegistry } from '../sources/registry.js'
@@ -116,3 +117,23 @@ export function environmentLines(variables: Variable[]): string {
     .map((variable) => `- ${variable.key} = ${JSON.stringify(variable.value)}: ${variable.description.en}.`)
     .join('\n')
 }
+
+/**
+ * How the prepare command runs: with `sh -c` on POSIX, as the original does, and on Windows with Windows PowerShell,
+ * as AGH's own shell runs there, where a variable is `$env:NAME`.
+ */
+export function prepareArgv(command: string, platform: string = HOST_PLATFORM): string[] {
+  return isWindows(platform)
+    ? ['powershell', '-NoProfile', '-NonInteractive', '-Command', command]
+    : ['sh', '-c', command]
+}
+/** A prepare command that checks the GitHub Source's repository out into `repo/`, written for each platform's shell. */
+export const PREPARE_TEMPLATES = {
+  posix: 'git clone "https://github.com/$DSH_SUPERAGENT_GITHUB_REPOSITORY.git" repo',
+  windows: 'git clone "https://github.com/$env:DSH_SUPERAGENT_GITHUB_REPOSITORY.git" repo',
+} as const
+export const prepareTemplate = (platform: string = HOST_PLATFORM): string =>
+  isWindows(platform) ? PREPARE_TEMPLATES.windows : PREPARE_TEMPLATES.posix
+/** How the panel's prepare command field reads: its shell, and a command for a new installation to start from. */
+export const prepareShell = (platform: string = HOST_PLATFORM) =>
+  ({ shell: isWindows(platform) ? 'powershell' : 'sh', example: prepareTemplate(platform) }) as const

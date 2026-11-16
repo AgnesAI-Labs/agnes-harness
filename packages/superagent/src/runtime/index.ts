@@ -15,6 +15,7 @@ import type {
 import type { JsonValue } from '@agnes/protocol'
 import { openStore, type Store } from '../app/store.js'
 import { type Machine, machineOf, type Probe } from '../deployment.js'
+import { HOST_PLATFORM, isWindows, pathsOf } from '../infra/platform.js'
 import type { createRuntimeParts, SuperagentApp } from './app.js'
 import { attachFeishu } from './feishu-read-tool.js'
 import { composeGeneration, type Generation } from './generation.js'
@@ -134,9 +135,23 @@ export interface ServiceOptions {
  * The plugin's machine settings, with the state directory the platform gave Superagent when the configuration names
  * none.
  */
-export function machineConfig(config: unknown, stateDirectory: string): Machine {
+export function machineConfig(
+  config: unknown,
+  stateDirectory: string,
+  platform: string = HOST_PLATFORM,
+): Machine {
   const given = config && typeof config === 'object' ? (config as Record<string, unknown>) : {}
-  return machineOf({ ...given, stateDir: given.stateDir ?? stateDirectory })
+  const machine = machineOf({ ...given, stateDir: given.stateDir ?? stateDirectory }, platform)
+  // On Windows only the platform's directory is private (its access list admits the current user alone, and what is
+  // created in it inherits that); Superagent does not set access lists itself.
+  const paths = pathsOf(platform)
+  const rest = paths.relative(stateDirectory, machine.stateDir)
+  const outside = rest === '..' || rest.startsWith(`..${paths.sep}`) || paths.isAbsolute(rest)
+  if (isWindows(platform) && outside)
+    throw new Error(
+      `On Windows Superagent keeps its state in the private directory the platform gives it, ${stateDirectory}; remove stateDir from its configuration, or name a directory inside that one`,
+    )
+  return machine
 }
 
 /**

@@ -6,12 +6,30 @@ import type { Readable } from 'node:stream'
 import { afterEach, describe, expect, it } from 'vitest'
 import { windowsEnvironmentNamesEqual, windowsProcessStartTimeSync } from '../src/index.js'
 import {
+  mergeEnvironmentLayers,
   mergeWindowsEnvironment,
   startWindowsJobProcess,
   type WindowsJobProcess,
 } from '../src/process-spawn.js'
 
 const roots: string[] = []
+const caseless = (left: string, right: string) => left.toUpperCase() === right.toUpperCase()
+it('removes a variable an undefined value names, in any spelling, unless a later layer sets it again', () => {
+  const floor = { Path: 'C:\\Windows', GH_TOKEN: 'daemon', TEMP: 'C:\\Temp', LANG: '' }
+  // Strict: a removed name is absent, not present with an undefined value the Job gate would refuse.
+  expect(mergeEnvironmentLayers(caseless, [floor, { gh_token: undefined, temp: undefined }])).toStrictEqual({
+    Path: 'C:\\Windows',
+    LANG: '',
+  })
+  expect(
+    mergeEnvironmentLayers(caseless, [floor, { GH_TOKEN: undefined }, { gh_token: 'again' }]),
+  ).toStrictEqual({
+    Path: 'C:\\Windows',
+    gh_token: 'again',
+    TEMP: 'C:\\Temp',
+    LANG: '',
+  })
+})
 it
   .runIf(process.platform === 'win32')
   .each(['\\agnes-missing-path', '/agnes-missing-path', 'C:agnes-missing-path'])(
@@ -83,6 +101,27 @@ describe.skipIf(process.platform !== 'win32')('Windows process start gate', () =
     child.stdin.end()
     expect(await child.completion).toMatchObject({ code: 0 })
     expect(JSON.parse(await output)).toEqual(['', 'new-accent', 'sharp', 'double', 'literal'])
+  })
+
+  it('starts the target without a variable an undefined layer removed', async () => {
+    const child = await start(
+      [
+        process.execPath,
+        '-e',
+        'process.stdout.write(JSON.stringify([process.env.AGNES_GONE ?? null, process.env.AGNES_KEPT]))',
+      ],
+      {
+        env: mergeWindowsEnvironment(
+          { ...options().env, Agnes_Gone: 'x', AGNES_KEPT: 'y' },
+          { AGNES_GONE: undefined },
+        ),
+      },
+    )
+    const output = collect(child.stdout)
+    child.stderr.resume()
+    child.stdin.end()
+    expect(await child.completion).toMatchObject({ code: 0 })
+    expect(JSON.parse(await output)).toEqual([null, 'y'])
   })
 
   it('preserves argv, Unicode, empty arguments, stdin, environment and target exit code', async () => {

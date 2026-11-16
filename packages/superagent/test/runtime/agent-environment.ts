@@ -6,16 +6,14 @@
  * it ran with. The daemon starts as usual: the operator's HOME and PATH.
  */
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { workerGitConfig } from '../../src/infra/worker-paths.js'
 import { credentialHelper, type EnvironmentConfig, writeEnvironment } from '../../src/runtime/environment.js'
+import { fakeGhCommand } from '../fixtures/commands.js'
 import { gitEnv } from '../fixtures/git.js'
 import { AGENT_CREDENTIAL, makeHomes } from '../fixtures/homes.js'
 
-const FAKE_GH = fileURLToPath(new URL('../fixtures/fake-gh.mjs', import.meta.url))
-const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 export const AGENT_LOGIN = 'agent-bot'
 export const AGENT_ID = 42
 export const AGENT_EMAIL = `${AGENT_ID}+${AGENT_LOGIN}@users.noreply.github.com`
@@ -49,19 +47,16 @@ export function writeGhAgent(root: string, repository = 'acme/app') {
       ],
     }),
   )
-  const cli = join(dir, 'gh-agent')
-  writeFileSync(
-    cli,
-    [
-      '#!/bin/sh',
-      `GH_CONFIG_DIR=${quote(configDir)}`,
-      'export GH_CONFIG_DIR',
-      `echo "$GH_CONFIG_DIR token=\${GH_TOKEN-unset}" >> ${quote(runsLog)}`,
-      `FAKE_GH_SCRIPT=${quote(script)} FAKE_GH_LOG=${quote(ghLog)} exec ${quote(process.execPath)} ${quote(FAKE_GH)} "$@"`,
-      '',
+  // Its own configuration directory, as in the guide, and a line per run with whether a GitHub token reached it.
+  const cli = fakeGhCommand(join(dir, 'gh-agent'), {
+    script,
+    log: ghLog,
+    before: [
+      "import { appendFileSync } from 'node:fs'",
+      `process.env.GH_CONFIG_DIR = ${JSON.stringify(configDir)}`,
+      `appendFileSync(${JSON.stringify(runsLog)}, \`\${process.env.GH_CONFIG_DIR} token=\${process.env.GH_TOKEN ?? 'unset'}\\n\`)`,
     ].join('\n'),
-  )
-  chmodSync(cli, 0o755)
+  })
   return {
     cli,
     configDir,

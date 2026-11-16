@@ -8,14 +8,17 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fakeGhCommand, printCommand } from './commands.js'
 
 export const OPERATOR_CREDENTIAL = { user: 'operator-user', password: 'operator-pass' } as const
 export const AGENT_CREDENTIAL = { user: 'agent-user', password: 'agent-pass' } as const
 
-const FAKE_GH = fileURLToPath(new URL('./fake-gh.mjs', import.meta.url))
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 
+/** A path git reads from its configuration on every platform: Git for Windows takes forward slashes. */
+const gitPath = (path: string) => path.replaceAll('\\', '/')
+
+/** A `#!/bin/sh` script git runs through its own shell, which Git for Windows brings too. */
 function executable(path: string, body: string): void {
   writeFileSync(path, body)
   chmodSync(path, 0o755)
@@ -59,18 +62,15 @@ export function makeHomes(root: string) {
   executable(agentHelper, helper('AGENT', AGENT_CREDENTIAL, markerFile))
   writeFileSync(
     join(operatorHome, '.gitconfig'),
-    `[user]\n\tname = OPERATOR\n\temail = operator@example.invalid\n[credential]\n\thelper =\n\thelper = ${operatorHelper}\n`,
+    `[user]\n\tname = OPERATOR\n\temail = operator@example.invalid\n[credential]\n\thelper =\n\thelper = ${gitPath(operatorHelper)}\n`,
   )
   writeFileSync(
     join(agentHome, '.gitconfig'),
     '[user]\n\tname = AGENT\n\temail = agent@example.invalid\n[credential]\n\thelper =\n[core]\n\taskPass =\n',
   )
-  executable(join(operatorBin, 'gh'), '#!/bin/sh\necho OPERATOR-GH\n')
+  printCommand(join(operatorBin, 'gh'), 'OPERATOR-GH')
   writeFileSync(ghScript, JSON.stringify({ login: 'agent-bot', banner: 'AGENT-GH', rules: [] }))
-  executable(
-    join(shimsDir, 'gh'),
-    `#!/bin/sh\nFAKE_GH_SCRIPT=${quote(ghScript)} FAKE_GH_LOG=${quote(ghLog)} exec ${quote(process.execPath)} ${quote(FAKE_GH)} "$@"\n`,
-  )
+  fakeGhCommand(join(shimsDir, 'gh'), { script: ghScript, log: ghLog })
 
   return {
     operatorHome,
@@ -83,7 +83,7 @@ export function makeHomes(root: string) {
     trustRemote(remoteUrl: string): void {
       appendFileSync(
         join(agentHome, '.gitconfig'),
-        `[credential "${new URL(remoteUrl).origin}"]\n\thelper = ${agentHelper}\n`,
+        `[credential "${new URL(remoteUrl).origin}"]\n\thelper = ${gitPath(agentHelper)}\n`,
       )
     },
     /** Replace the fake `gh` script (see `fake-gh.mjs`). */

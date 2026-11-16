@@ -53,6 +53,7 @@ const TEXT = {
   'health.reply': ['发往渠道的消息', 'Messages to Channels'],
   'health.worker': ['执行器事件处理', 'Executor event handling'],
   'health.evals': ['未完成的评估', 'Unavailable Evals'],
+  'health.skills': ['技能文件', 'Skill files'],
   none: ['暂无。', 'None.'],
   openSession: ['打开 Session', 'Open Session'],
   stop: ['停止', 'Stop'],
@@ -550,6 +551,11 @@ const TEXT = {
     '新工单的目录建好后，在这个目录里用 sh 运行一次，执行环境的变量是它的环境变量，例如把仓库克隆到子目录 repo/。留空就是空目录。失败时工单显示失败，并附上命令的输出。',
     "Runs once with sh inside a new Ticket's directory once it exists, with the execution environment's variables as its environment, for example to clone the repository into the subdirectory repo/. Leave it empty for an empty directory. A failure fails the Ticket with the command's output.",
   ],
+  prepareCommandHintPowerShell: [
+    '新工单的目录建好后，在这个目录里用 Windows PowerShell 运行一次，执行环境的变量是它的环境变量，以 $env:名字 引用，例如把仓库克隆到子目录 repo/。留空就是空目录。失败时工单显示失败，并附上命令的输出。',
+    "Runs once with Windows PowerShell inside a new Ticket's directory once it exists, with the execution environment's variables as its environment, read as $env:NAME, for example to clone the repository into the subdirectory repo/. Leave it empty for an empty directory. A failure fails the Ticket with the command's output.",
+  ],
+  prepareCommandExample: ['例如：{example}', 'For example: {example}'],
   prepareCommandEmpty: ['留空：空目录', 'Empty: an empty directory'],
   blockedCommands: ['禁止调用的命令', 'Blocked commands'],
   blockedCommandsHint: [

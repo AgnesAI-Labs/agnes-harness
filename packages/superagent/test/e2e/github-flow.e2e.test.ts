@@ -47,6 +47,31 @@ const textOf = (content: unknown): string =>
           .map((part) => (typeof part === 'string' ? part : ((part as { text?: string }).text ?? '')))
           .join('')
       : ''
+
+const windows = process.platform === 'win32'
+/** The worker's commands as Windows PowerShell runs them in a session there: the same steps as the `sh` ones. */
+const powershellWork = (followUp: boolean): string =>
+  followUp
+    ? [
+        'cd repo',
+        "Add-Content LOGIN.md 'logout'",
+        "git commit -qam 'Check the logout page'",
+        'git push -q origin HEAD',
+        'if ($LASTEXITCODE -eq 0) { echo pushed-again }',
+      ].join('\n')
+    : [
+        "$ErrorActionPreference = 'Stop'",
+        '$BRANCH = "agent/$(Split-Path -Leaf $PWD)"',
+        'cd repo',
+        'git checkout -q -b $BRANCH',
+        "Set-Content LOGIN.md 'fixed'",
+        'git add LOGIN.md',
+        "git commit -q -m 'Fix the login page'",
+        'git push -q origin $BRANCH',
+        "gh pr create --title 'Fix the login page' --body 'Fixes #12' --head $BRANCH",
+        'echo "BRANCH=$BRANCH"',
+      ].join('\n')
+
 /**
  * The turn the request continues: the messages people and Superagent sent it (the run of user messages before its first
  * tool call; hook context arrives as one of them), and the tool results since.
@@ -133,20 +158,22 @@ function scriptedSessions(world: ReturnType<typeof githubWorld>, opts: { busy?: 
         tool: {
           name: 'shell',
           args: {
-            command: followUp
-              ? 'cd repo && echo logout >> LOGIN.md && git commit -qam "Check the logout page" && git push -q origin HEAD 2>&1 && echo pushed-again'
-              : [
-                  'set -e',
-                  'BRANCH="agent/$(basename "$PWD")"',
-                  'cd repo',
-                  'git checkout -q -b "$BRANCH"',
-                  'echo fixed > LOGIN.md',
-                  'git add LOGIN.md',
-                  'git commit -q -m "Fix the login page"',
-                  'git push -q origin "$BRANCH" 2>&1',
-                  'gh pr create --title "Fix the login page" --body "Fixes #12" --head "$BRANCH"',
-                  'echo "BRANCH=$BRANCH"',
-                ].join('\n'),
+            command: windows
+              ? powershellWork(followUp)
+              : followUp
+                ? 'cd repo && echo logout >> LOGIN.md && git commit -qam "Check the logout page" && git push -q origin HEAD 2>&1 && echo pushed-again'
+                : [
+                    'set -e',
+                    'BRANCH="agent/$(basename "$PWD")"',
+                    'cd repo',
+                    'git checkout -q -b "$BRANCH"',
+                    'echo fixed > LOGIN.md',
+                    'git add LOGIN.md',
+                    'git commit -q -m "Fix the login page"',
+                    'git push -q origin "$BRANCH" 2>&1',
+                    'gh pr create --title "Fix the login page" --body "Fixes #12" --head "$BRANCH"',
+                    'echo "BRANCH=$BRANCH"',
+                  ].join('\n'),
           },
         },
       }
@@ -241,231 +268,219 @@ const tickets = (database: string) =>
       JSON.parse(row.value) as StoredTicket & { id: string; execution?: { name: string; directory: string } },
   )
 
-it.skipIf(process.platform === 'win32')(
-  'routes a GitHub request to a ticket whose worker pushes and opens a PR, replies, wakes on a follow-up and ends on the merge',
-  async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-superagent-flow-')))
-    const world = githubWorld(join(root, 'github'), new Date(Date.now() - 1800_000).toISOString())
-    const model = scriptedSessions(world)
-    let run: Awaited<ReturnType<typeof deploy>> | undefined
-    try {
-      // The default state directory the platform gives Superagent.
-      run = await deploy(root, undefined, model.respond, world)
-      const { daemon, database, remote } = run
-      const diagnose = async (error: unknown): Promise<never> => {
-        const lines = daemon
-          .stderr()
-          .split('\n')
-          .filter((line) => /superagent|error/i.test(line))
-        const state = await run!.calls
-          .service('superagent.state')
-          .then((answer) => JSON.stringify({ setup: answer.setup, health: answer.health }))
-          .catch((failure: unknown) => String(failure))
-        throw new Error(
-          [
-            String(error),
-            `gh calls: ${JSON.stringify(world.calls().map((call) => `${call.exit} ${call.argv.join(' ').slice(0, 160)}`))}`,
-            `state: ${state}`,
-            `triggers: ${JSON.stringify(readAll(database, 'SELECT id FROM trigger'))}`,
-            `tickets: ${JSON.stringify(tickets(database))}`,
-            `effects: ${JSON.stringify(readAll(database, 'SELECT kind, key, attempts, error FROM effect'))}`,
-            `main session: ${JSON.stringify(model.seen.main)}`,
-            `model: ${JSON.stringify(daemon.modelRequests().map((request) => `${request.main} ${request.lastRole} ${request.marker.slice(0, 80)}`))}`,
-            ...lines.slice(-30),
-          ].join('\n'),
-          { cause: error },
-        )
-      }
-      // The notification is admitted and routed: one ticket, acknowledged on the Issue.
-      // A setup problem would hold everything back: it fails the wait at once.
-      const ticket = await until(
-        'the ticket',
-        async () => {
-          const state = await run!.calls.service('superagent.state').catch(() => undefined)
-          const problem = (state?.setup as { problem?: { detail: string } } | undefined)?.problem
-          if (problem) throw new Error(`setup problem: ${problem.detail}`)
-          return tickets(database)[0]
-        },
-        POLL_MS,
-      ).catch(diagnose)
-      const workerId = `superagent:worker:${ticket.id}`
-      await until('the worker session', () => run!.calls.exists(workerId)).catch(diagnose)
-      // The worker commits in repo/, pushes its branch and opens a PR, then reports it ready with the PR.
-      const branch = `agent/${ticket.execution!.name}`
-      await until(
-        'the ready report',
-        () => ticketOf(database, ticket.id)?.assignments.at(-1)?.report?.state === 'ready',
-      ).catch(diagnose)
-      expect(await remote.refs()).toContain(`refs/heads/${branch}`)
-      const pushers = remote.authLog().filter((line) => /POST \S*git-receive-pack/.test(line))
-      expect(pushers.every((line) => line.startsWith(`${AGENT_CREDENTIAL.user} `))).toBe(true)
-      expect(pushers.length).toBeGreaterThan(0)
-      // The main session replies with the result on the Issue.
-      await until('the reply on the Issue', () => world.posted().some((body) => body.includes(RESULT))).catch(
-        diagnose,
-      )
-      expect(ticketOf(database, ticket.id)?.ended, 'the ticket waits for its PR').toBeUndefined()
-
-      // Alice follows up on the Issue: the same ticket's worker takes it, pushes again and reports.
-      const worker = await daemon.client.session.load(workerId, { history: 'none' })
-      await until('the worker idle', async () => (await worker.projectUI()).opState === null)
-      world.comment(501, FOLLOW_UP)
-      const followed = async () =>
-        (await worker.projectUI()).nodes.filter(
-          (node) =>
-            node.kind === 'user' &&
-            node.content.some((block) => block.type === 'text' && block.text.includes(FOLLOW_UP)),
-        ).length
-      await until('the follow-up in the worker session', async () => (await followed()) > 0, POLL_MS).catch(
-        diagnose,
-      )
-      await until('the follow-up pushed', () =>
-        model.seen.workerRequests.some((request) => request.text.includes('pushed-again')),
-      ).catch(diagnose)
-      await until(
-        'the worker idle after the follow-up',
-        async () => (await worker.projectUI()).opState === null,
-      )
-
-      // The PR is merged: the ticket ends.
-      world.pull(branch, true)
-      const ended = await until(
-        'the ended ticket',
-        () => ticketOf(database, ticket.id)?.ended,
-        POLL_MS,
-      ).catch(diagnose)
-      expect(ended).toMatchObject({ outcome: 'merged' })
-
-      // One ticket, one worker session, the follow-up taken once; GitHub saw one PR, one acknowledgement and one reply.
-      expect(tickets(database)).toHaveLength(1)
-      expect(ticketOf(database, ticket.id)?.assignments).toHaveLength(1)
-      expect(await followed()).toBe(1)
-      const created = world.calls().filter((call) => call.argv[0] === 'pr' && call.argv[1] === 'create')
-      expect(created).toHaveLength(1)
-      const posted = world.posted()
-      expect(posted.filter((body) => body.includes(RESULT))).toHaveLength(1)
-      expect(posted.filter((body) => body.includes(ACKNOWLEDGEMENT))).toHaveLength(1)
-      expect(posted).toHaveLength(2)
-      expect(model.seen.replies).toBe(1)
-      expect(world.unmatched().map((call) => call.argv.join(' '))).toEqual([])
-    } finally {
-      await run?.stop()
-      rmSync(root, { recursive: true, force: true })
-    }
-  },
-  600_000,
-)
-
-it.skipIf(process.platform === 'win32')(
-  'restart while busy: a comment waiting for a busy worker is taken once, within ten seconds of a daemon restart',
-  async () => {
-    const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-superagent-busy-')))
-    const world = githubWorld(join(root, 'github'), new Date(Date.now() - 1800_000).toISOString())
-    const model = scriptedSessions(world, { busy: true })
-    let run: Awaited<ReturnType<typeof deploy>> | undefined
-    try {
-      // An explicit state directory.
-      run = await deploy(root, join(root, 'state'), model.respond, world)
-      const { daemon, database } = run
-      const ticket = await until('the ticket', () => tickets(database)[0], POLL_MS)
-      const workerId = `superagent:worker:${ticket.id}`
-      await until('the worker session', () => run!.calls.exists(workerId))
-      const worker = () => daemon.client.session.load(workerId, { history: 'none' })
-      await until('the worker busy', async () => (await (await worker()).projectUI()).opState != null)
-      // Alice comments while the worker is busy: Superagent hands the comment to the session, where it waits.
-      world.comment(502, LATE)
-      const waiting = async () =>
-        ((await (await worker()).projectUI()).pendingInputs ?? []).filter((item) =>
-          item.commandId?.startsWith('superagent:'),
-        )
-      await until(
-        'the comment waiting in the worker session',
-        async () => {
-          const items = await waiting()
-          return items.some((item) => (item.preview ?? '').includes(LATE)) || undefined
-        },
-        POLL_MS,
-      )
-      await daemon.restart()
-      const restarted = Date.now()
-      // What happens after the restart, step by step, for the record.
-      const timeline: string[] = []
-      /** When Superagent's service answered again: the daemon publishes the plugin's service some seconds after it listens. */
-      let back: number | undefined
-      /** When the daemon let the owner load the worker's session again, after restoring its sessions. */
-      let sessionsBack: number | undefined
-      let watching = true
-      const watch = (async () => {
-        let last = ''
-        while (watching) {
-          const state = await run!.calls.service('superagent.state').catch(() => undefined)
-          if (state && back === undefined) back = Date.now()
-          const health = state?.health as Record<string, { state: string; detail: string }> | undefined
-          const stored = ticketOf(database, ticket.id) as
-            | { assignments: { state: string; startedAt?: string }[] }
-            | undefined
-          const pending = await worker()
-            .then(async (session) => (await session.projectUI()).pendingInputs?.length ?? 0)
-            .catch(() => -1)
-          if (pending >= 0 && sessionsBack === undefined) sessionsBack = Date.now()
-          const line = JSON.stringify({
-            runtime: health?.runtime?.state,
-            launch: health?.launch?.detail,
-            delivery: health?.delivery?.detail,
-            assignments: stored?.assignments.map(
-              (item) => `${item.state}${item.startedAt ? ' started' : ''}`,
-            ),
-            pending,
-          })
-          if (line !== last) timeline.push(`+${Date.now() - restarted} ms ${line}`)
-          last = line
-          await new Promise((resolve) => setTimeout(resolve, 250))
-        }
-      })()
-      // Superagent resumes it on its own, within ten seconds.
-      const taken = await until(
-        'the comment taken after the restart',
-        () =>
-          model.seen.workerRequests.find((request) => request.at >= restarted && request.text.includes(LATE)),
-        60_000,
-      ).finally(() => {
-        watching = false
-      })
-      await watch
-      console.info(
+it('routes a GitHub request to a ticket whose worker pushes and opens a PR, replies, wakes on a follow-up and ends on the merge', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-superagent-flow-')))
+  const world = githubWorld(join(root, 'github'), new Date(Date.now() - 1800_000).toISOString())
+  const model = scriptedSessions(world)
+  let run: Awaited<ReturnType<typeof deploy>> | undefined
+  try {
+    // The default state directory the platform gives Superagent.
+    run = await deploy(root, undefined, model.respond, world)
+    const { daemon, database, remote } = run
+    const diagnose = async (error: unknown): Promise<never> => {
+      const lines = daemon
+        .stderr()
+        .split('\n')
+        .filter((line) => /superagent|error/i.test(line))
+      const state = await run!.calls
+        .service('superagent.state')
+        .then((answer) => JSON.stringify({ setup: answer.setup, health: answer.health }))
+        .catch((failure: unknown) => String(failure))
+      throw new Error(
         [
-          `restart while busy: Superagent's service answered ${(back ?? Number.NaN) - restarted} ms after the restart, ` +
-            `the worker's session loaded again ${(sessionsBack ?? Number.NaN) - restarted} ms after it; ` +
-            `the comment reached the worker's model ${taken.at - restarted} ms after the restart`,
-          ...timeline,
+          String(error),
+          `gh calls: ${JSON.stringify(world.calls().map((call) => `${call.exit} ${call.argv.join(' ').slice(0, 160)}`))}`,
+          `state: ${state}`,
+          `triggers: ${JSON.stringify(readAll(database, 'SELECT id FROM trigger'))}`,
+          `tickets: ${JSON.stringify(tickets(database))}`,
+          `effects: ${JSON.stringify(readAll(database, 'SELECT kind, key, attempts, error FROM effect'))}`,
+          `main session: ${JSON.stringify(model.seen.main)}`,
+          `model: ${JSON.stringify(daemon.modelRequests().map((request) => `${request.main} ${request.lastRole} ${request.marker.slice(0, 80)}`))}`,
+          ...lines.slice(-30),
         ].join('\n'),
+        { cause: error },
       )
-      // Ten seconds from the moment the daemon serves Superagent and its sessions again: the time the daemon takes to start
-      // the plugin and restore the sessions is the platform's, and is logged above.
-      expect(back, "Superagent's service answered again").toBeDefined()
-      expect(sessionsBack, "the worker's session loaded again").toBeDefined()
-      expect(taken.at - Math.max(back!, sessionsBack!)).toBeLessThanOrEqual(10_000)
-      await until(
-        'the worker idle after the restart',
-        async () => (await (await worker()).projectUI()).opState === null,
-      )
-      const ui = await (await worker()).projectUI()
-      const copies = ui.nodes.filter(
+    }
+    // The notification is admitted and routed: one ticket, acknowledged on the Issue.
+    // A setup problem would hold everything back: it fails the wait at once.
+    const ticket = await until(
+      'the ticket',
+      async () => {
+        const state = await run!.calls.service('superagent.state').catch(() => undefined)
+        const problem = (state?.setup as { problem?: { detail: string } } | undefined)?.problem
+        if (problem) throw new Error(`setup problem: ${problem.detail}`)
+        return tickets(database)[0]
+      },
+      POLL_MS,
+    ).catch(diagnose)
+    const workerId = `superagent:worker:${ticket.id}`
+    await until('the worker session', () => run!.calls.exists(workerId)).catch(diagnose)
+    // The worker commits in repo/, pushes its branch and opens a PR, then reports it ready with the PR.
+    const branch = `agent/${ticket.execution!.name}`
+    await until(
+      'the ready report',
+      () => ticketOf(database, ticket.id)?.assignments.at(-1)?.report?.state === 'ready',
+    ).catch(diagnose)
+    expect(await remote.refs()).toContain(`refs/heads/${branch}`)
+    const pushers = remote.authLog().filter((line) => /POST \S*git-receive-pack/.test(line))
+    expect(pushers.every((line) => line.startsWith(`${AGENT_CREDENTIAL.user} `))).toBe(true)
+    expect(pushers.length).toBeGreaterThan(0)
+    // The main session replies with the result on the Issue.
+    await until('the reply on the Issue', () => world.posted().some((body) => body.includes(RESULT))).catch(
+      diagnose,
+    )
+    expect(ticketOf(database, ticket.id)?.ended, 'the ticket waits for its PR').toBeUndefined()
+
+    // Alice follows up on the Issue: the same ticket's worker takes it, pushes again and reports.
+    const worker = await daemon.client.session.load(workerId, { history: 'none' })
+    await until('the worker idle', async () => (await worker.projectUI()).opState === null)
+    world.comment(501, FOLLOW_UP)
+    const followed = async () =>
+      (await worker.projectUI()).nodes.filter(
         (node) =>
           node.kind === 'user' &&
-          node.content.some((block) => block.type === 'text' && block.text.includes(LATE)),
+          node.content.some((block) => block.type === 'text' && block.text.includes(FOLLOW_UP)),
+      ).length
+    await until('the follow-up in the worker session', async () => (await followed()) > 0, POLL_MS).catch(
+      diagnose,
+    )
+    await until('the follow-up pushed', () =>
+      model.seen.workerRequests.some((request) => request.text.includes('pushed-again')),
+    ).catch(diagnose)
+    await until(
+      'the worker idle after the follow-up',
+      async () => (await worker.projectUI()).opState === null,
+    )
+
+    // The PR is merged: the ticket ends.
+    world.pull(branch, true)
+    const ended = await until('the ended ticket', () => ticketOf(database, ticket.id)?.ended, POLL_MS).catch(
+      diagnose,
+    )
+    expect(ended).toMatchObject({ outcome: 'merged' })
+
+    // One ticket, one worker session, the follow-up taken once; GitHub saw one PR, one acknowledgement and one reply.
+    expect(tickets(database)).toHaveLength(1)
+    expect(ticketOf(database, ticket.id)?.assignments).toHaveLength(1)
+    expect(await followed()).toBe(1)
+    const created = world.calls().filter((call) => call.argv[0] === 'pr' && call.argv[1] === 'create')
+    expect(created).toHaveLength(1)
+    const posted = world.posted()
+    expect(posted.filter((body) => body.includes(RESULT))).toHaveLength(1)
+    expect(posted.filter((body) => body.includes(ACKNOWLEDGEMENT))).toHaveLength(1)
+    expect(posted).toHaveLength(2)
+    expect(model.seen.replies).toBe(1)
+    expect(world.unmatched().map((call) => call.argv.join(' '))).toEqual([])
+  } finally {
+    await run?.stop()
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  }
+}, 600_000)
+
+it('restart while busy: a comment waiting for a busy worker is taken once, within ten seconds of a daemon restart', async () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-superagent-busy-')))
+  const world = githubWorld(join(root, 'github'), new Date(Date.now() - 1800_000).toISOString())
+  const model = scriptedSessions(world, { busy: true })
+  let run: Awaited<ReturnType<typeof deploy>> | undefined
+  try {
+    // An explicit state directory.
+    run = await deploy(root, join(root, 'state'), model.respond, world)
+    const { daemon, database } = run
+    const ticket = await until('the ticket', () => tickets(database)[0], POLL_MS)
+    const workerId = `superagent:worker:${ticket.id}`
+    await until('the worker session', () => run!.calls.exists(workerId))
+    const worker = () => daemon.client.session.load(workerId, { history: 'none' })
+    await until('the worker busy', async () => (await (await worker()).projectUI()).opState != null)
+    // Alice comments while the worker is busy: Superagent hands the comment to the session, where it waits.
+    world.comment(502, LATE)
+    const waiting = async () =>
+      ((await (await worker()).projectUI()).pendingInputs ?? []).filter((item) =>
+        item.commandId?.startsWith('superagent:'),
       )
-      expect(copies).toHaveLength(1)
-      expect((ui.pendingInputs ?? []).filter((item) => (item.preview ?? '').includes(LATE))).toEqual([])
-      // One trigger for the comment, which the ticket received once.
-      const comments = (readAll(database, 'SELECT value FROM trigger') as { value: string }[]).filter((row) =>
-        row.value.includes(LATE),
-      )
-      expect(comments).toHaveLength(1)
-    } finally {
-      await run?.stop()
-      rmSync(root, { recursive: true, force: true })
-    }
-  },
-  480_000,
-)
+    await until(
+      'the comment waiting in the worker session',
+      async () => {
+        const items = await waiting()
+        return items.some((item) => (item.preview ?? '').includes(LATE)) || undefined
+      },
+      POLL_MS,
+    )
+    await daemon.restart()
+    const restarted = Date.now()
+    // What happens after the restart, step by step, for the record.
+    const timeline: string[] = []
+    /** When Superagent's service answered again: the daemon publishes the plugin's service some seconds after it listens. */
+    let back: number | undefined
+    /** When the daemon let the owner load the worker's session again, after restoring its sessions. */
+    let sessionsBack: number | undefined
+    let watching = true
+    const watch = (async () => {
+      let last = ''
+      while (watching) {
+        const state = await run!.calls.service('superagent.state').catch(() => undefined)
+        if (state && back === undefined) back = Date.now()
+        const health = state?.health as Record<string, { state: string; detail: string }> | undefined
+        const stored = ticketOf(database, ticket.id) as
+          | { assignments: { state: string; startedAt?: string }[] }
+          | undefined
+        const pending = await worker()
+          .then(async (session) => (await session.projectUI()).pendingInputs?.length ?? 0)
+          .catch(() => -1)
+        if (pending >= 0 && sessionsBack === undefined) sessionsBack = Date.now()
+        const line = JSON.stringify({
+          runtime: health?.runtime?.state,
+          launch: health?.launch?.detail,
+          delivery: health?.delivery?.detail,
+          assignments: stored?.assignments.map((item) => `${item.state}${item.startedAt ? ' started' : ''}`),
+          pending,
+        })
+        if (line !== last) timeline.push(`+${Date.now() - restarted} ms ${line}`)
+        last = line
+        await new Promise((resolve) => setTimeout(resolve, 250))
+      }
+    })()
+    // Superagent resumes it on its own, within ten seconds.
+    const taken = await until(
+      'the comment taken after the restart',
+      () =>
+        model.seen.workerRequests.find((request) => request.at >= restarted && request.text.includes(LATE)),
+      60_000,
+    ).finally(() => {
+      watching = false
+    })
+    await watch
+    console.info(
+      [
+        `restart while busy: Superagent's service answered ${(back ?? Number.NaN) - restarted} ms after the restart, ` +
+          `the worker's session loaded again ${(sessionsBack ?? Number.NaN) - restarted} ms after it; ` +
+          `the comment reached the worker's model ${taken.at - restarted} ms after the restart`,
+        ...timeline,
+      ].join('\n'),
+    )
+    // Ten seconds from the moment the daemon serves Superagent and its sessions again: the time the daemon takes to start
+    // the plugin and restore the sessions is the platform's, and is logged above.
+    expect(back, "Superagent's service answered again").toBeDefined()
+    expect(sessionsBack, "the worker's session loaded again").toBeDefined()
+    expect(taken.at - Math.max(back!, sessionsBack!)).toBeLessThanOrEqual(10_000)
+    await until(
+      'the worker idle after the restart',
+      async () => (await (await worker()).projectUI()).opState === null,
+    )
+    const ui = await (await worker()).projectUI()
+    const copies = ui.nodes.filter(
+      (node) =>
+        node.kind === 'user' &&
+        node.content.some((block) => block.type === 'text' && block.text.includes(LATE)),
+    )
+    expect(copies).toHaveLength(1)
+    expect((ui.pendingInputs ?? []).filter((item) => (item.preview ?? '').includes(LATE))).toEqual([])
+    // One trigger for the comment, which the ticket received once.
+    const comments = (readAll(database, 'SELECT value FROM trigger') as { value: string }[]).filter((row) =>
+      row.value.includes(LATE),
+    )
+    expect(comments).toHaveLength(1)
+  } finally {
+    await run?.stop()
+    rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+  }
+}, 480_000)

@@ -2,8 +2,8 @@
  * A session's own environment: directories put first on its commands' PATH, variables set, and variables removed. It is
  * applied after the platform has reduced a command's environment to its floor. It may set only the variables in
  * `SETTABLE_SESSION_VARIABLE`, which choose git's configuration file, turn git's prompts off and pick a locale; it may
- * remove any variable but PATH and the platform's own. Directories put first on PATH still decide which programs the
- * session's commands find. Only the bundled application's client may give one, for its own sessions (see the daemon's
+ * remove any variable but PATH, the platform's own and those a Windows process needs to start. Directories put first
+ * on PATH still decide which programs the session's commands find. Only the bundled application's client may give one, for its own sessions (see the daemon's
  * admission).
  */
 export type SessionEnvironment = Readonly<{
@@ -30,8 +30,11 @@ export const SESSION_ENVIRONMENT_LIMITS = Object.freeze({
 export const SETTABLE_SESSION_VARIABLE =
   /^(GIT_CONFIG_GLOBAL|GIT_CONFIG_NOSYSTEM|GIT_TERMINAL_PROMPT|GIT_ASKPASS|LANG|LC_[A-Z]+)$/
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
-/** Variables the platform owns: PATH changes only through `pathPrepend`, and the platform's own prefixes not at all. */
-const RESERVED = /^(PATH|AGNES_.*|AGH_.*)$/i
+/**
+ * Variables the platform owns: PATH changes only through `pathPrepend`; the platform's own prefixes and what a Windows
+ * process needs to start (`SystemRoot`, `ComSpec`, `PATHEXT`) not at all. Names compare without case, as on Windows.
+ */
+const RESERVED = /^(PATH|SYSTEMROOT|COMSPEC|PATHEXT|AGNES_.*|AGH_.*)$/i
 
 const invalid = (reason: string): never => {
   throw new TypeError(`session environment ${reason}`)

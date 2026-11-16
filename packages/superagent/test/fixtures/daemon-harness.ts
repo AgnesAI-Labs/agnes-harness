@@ -14,6 +14,36 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import { killTree, trackRoot } from './process-tree.js'
 
 const repository = fileURLToPath(new URL('../../../../', import.meta.url))
+
+/**
+ * The directory the daemon made for its socket outside its home, which a test removes when it stops: none for a
+ * socket inside `home`, and none on Windows, where the socket is a named pipe (`\\.\pipe\…`), not a file.
+ */
+export function socketDirectoryOf(socketPath: string, home: string): string | undefined {
+  if (/^[\\/]{2}[.?][\\/]pipe[\\/]/i.test(socketPath) || socketPath.startsWith(home)) return undefined
+  return dirname(socketPath)
+}
+
+/**
+ * What a process needs on Windows to start (its system directory, shell and temporary directory) and to find its user
+ * profile, which Windows programs read in place of HOME; `home` stands for the profile when given. Nothing elsewhere.
+ */
+export function hostFloor(home?: string): Record<string, string> {
+  if (process.platform !== 'win32') return {}
+  const floor: Record<string, string | undefined> = {
+    SystemRoot: process.env.SystemRoot,
+    ComSpec: process.env.ComSpec,
+    PATHEXT: process.env.PATHEXT,
+    TEMP: tmpdir(),
+    TMP: tmpdir(),
+    USERPROFILE: home ?? process.env.USERPROFILE,
+    APPDATA: home ? join(home, 'AppData', 'Roaming') : process.env.APPDATA,
+    LOCALAPPDATA: home ? join(home, 'AppData', 'Local') : process.env.LOCALAPPDATA,
+  }
+  return Object.fromEntries(
+    Object.entries(floor).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  )
+}
 const sourceDaemon = join(repository, 'packages/daemon/test/fixtures/source-loop-daemon.ts')
 const PROFILE = 'local-dev'
 const STEP_MS = 120_000
@@ -194,7 +224,7 @@ function initializeHome(aghHome: string, tsx: string, onSpawn: (child: ChildProc
       ],
       {
         cwd: join(repository, 'packages', 'daemon'),
-        env: { PATH: process.env.PATH ?? '', TMPDIR: tmpdir() },
+        env: { ...hostFloor(), PATH: process.env.PATH ?? '', TMPDIR: tmpdir() },
         timeout: STEP_MS,
         killSignal: 'SIGKILL',
       },
@@ -309,7 +339,14 @@ export async function startDaemon(opts: {
     stderr = ''
     const spawned = spawn(process.execPath, ['--import', tsx, sourceDaemon, opts.aghHome, opts.aghHome], {
       cwd: repository,
-      env: { ...opts.env, PATH: opts.path, HOME: opts.home, TMPDIR: tmpdir(), AGH_HOME: opts.aghHome },
+      env: {
+        ...hostFloor(opts.home),
+        ...opts.env,
+        PATH: opts.path,
+        HOME: opts.home,
+        TMPDIR: tmpdir(),
+        AGH_HOME: opts.aghHome,
+      },
       stdio: ['ignore', 'ignore', 'pipe'],
     })
     child = spawned
@@ -347,7 +384,7 @@ export async function startDaemon(opts: {
       const owner = JSON.parse(readFileSync(join(opts.aghHome, 'daemon', 'owner.json'), 'utf8')) as {
         socketPath: string
       }
-      if (!owner.socketPath.startsWith(opts.aghHome)) socketDir = dirname(owner.socketPath)
+      socketDir = socketDirectoryOf(owner.socketPath, opts.aghHome)
       current = createClient({
         journal: memoryJournal(clientId),
         auth: { kind: 'local' },
@@ -427,7 +464,7 @@ export async function startDaemon(opts: {
       if (initializer) await killTree(initializer, 'SIGKILL', 5_000)
       initializer = undefined
       await model.close()
-      if (socketDir) rmSync(socketDir, { recursive: true, force: true })
+      if (socketDir) rmSync(socketDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
     },
   }
   handles.add(handle)

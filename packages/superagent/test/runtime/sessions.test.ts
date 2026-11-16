@@ -10,7 +10,7 @@ import {
   type SessionsDeps,
   SessionTaken,
 } from '../../src/runtime/sessions.js'
-import { posixDescribe } from '../fixtures/posix.js'
+import { nodePrepare } from '../fixtures/commands.js'
 import { fakeClient } from './fake-sdk.js'
 import { tempStore, ticket } from './helpers.js'
 
@@ -20,6 +20,13 @@ beforeEach(() => {
 })
 afterEach(() => temp.close())
 
+/**
+ * A prepare command running `source` as a Node module, which `sh` and PowerShell (the prepare shell on Windows) both
+ * run the same way.
+ */
+const prepare = (name: string, source: string) => () =>
+  nodePrepare(join(temp.dir, `prepare-${name}`), `import fs from 'node:fs'\n${source}\n`)
+
 function setup(fields: Partial<SessionsDeps> = {}) {
   const fake = fakeClient()
   const registry = new SessionRegistry(temp.store)
@@ -28,7 +35,10 @@ function setup(fields: Partial<SessionsDeps> = {}) {
     client: fake.client,
     registry,
     orchestratorDir: () => join(temp.dir, 'state'),
-    prepareCommand: () => 'git init -q repo && echo "$SUPERAGENT_TICKET" > repo/ticket',
+    prepareCommand: prepare(
+      'init',
+      "import { execFileSync } from 'node:child_process'\nexecFileSync('git', ['init', '-q', 'repo'])\nfs.writeFileSync('repo/ticket', `${process.env.SUPERAGENT_TICKET}\\n`)",
+    ),
     environment: (item) => ({ SUPERAGENT_TICKET: item.id }),
     applyModel: async (role) => {
       models.push(role)
@@ -39,7 +49,7 @@ function setup(fields: Partial<SessionsDeps> = {}) {
   return { fake, registry, sessions, models }
 }
 
-posixDescribe('worker sessions', () => {
+describe('worker sessions', () => {
   it("opens each session with the agent's environment, when it creates it and each time it loads it again", async () => {
     const environment = agentSessionEnvironment('/state')
     const { fake, sessions } = setup({ sessionEnvironment: environment })
@@ -80,11 +90,16 @@ posixDescribe('worker sessions', () => {
   })
 
   it('fails the ticket without retrying when prepare fails, removing the directory it left empty', async () => {
-    const { fake, registry, sessions } = setup({ prepareCommand: () => 'echo no access >&2; exit 3' })
+    const { fake, registry, sessions } = setup({
+      prepareCommand: prepare('fail', "console.error('no access')\nprocess.exit(3)"),
+    })
     const dir = join(temp.dir, 'work', 'broken')
     const failed = sessions.ensureWorker(ticket('t2'), dir)
     await expect(failed).rejects.toBeInstanceOf(PrepareFailed)
-    await expect(failed).rejects.toThrow(/exit 3.*no access/s)
+    // PowerShell, the prepare shell on Windows, ends with 1 when its last command failed.
+    await expect(failed).rejects.toThrow(
+      process.platform === 'win32' ? /exit 1.*no access/s : /exit 3.*no access/s,
+    )
     expect(existsSync(dir)).toBe(false)
     expect(fake.workspaces).toEqual([])
     expect(registry.ids()).toEqual([])
@@ -94,7 +109,10 @@ posixDescribe('worker sessions', () => {
     const dir = join(temp.dir, 'work', 'stopped')
     const lifetime = new AbortController()
     const first = setup({
-      prepareCommand: () => 'mkdir repo && touch repo/half && sleep 5 && touch repo/done',
+      prepareCommand: prepare(
+        'slow',
+        "fs.mkdirSync('repo')\nfs.writeFileSync('repo/half', '')\nsetTimeout(() => fs.writeFileSync('repo/done', ''), 5000)",
+      ),
       lifetime: lifetime.signal,
     })
     const stopped = first.sessions.ensureWorker(ticket('t12'), dir)
@@ -105,7 +123,7 @@ posixDescribe('worker sessions', () => {
     // The next launch finds the half-prepared directory, moves it aside whole, and prepares the ticket again.
     const warnings: string[] = []
     const again = setup({
-      prepareCommand: () => 'mkdir repo && touch repo/done',
+      prepareCommand: prepare('done', "fs.mkdirSync('repo')\nfs.writeFileSync('repo/done', '')"),
       log: { warn: (message) => warnings.push(message) },
     })
     await again.sessions.ensureWorker(ticket('t12'), dir)
@@ -121,7 +139,7 @@ posixDescribe('worker sessions', () => {
     // A failed check of the prepared directory leaves it unprepared too.
     const checked = join(temp.dir, 'work', 'unchecked')
     const failing = setup({
-      prepareCommand: () => 'touch made',
+      prepareCommand: prepare('made', "fs.writeFileSync('made', '')"),
       verify: async () => {
         throw new Error('git config is wrong')
       },
@@ -134,7 +152,7 @@ posixDescribe('worker sessions', () => {
     const { fake, sessions } = setup()
     const dir = join(temp.dir, 'work', 'again')
     const first = await sessions.ensureWorker(ticket('t3'), dir)
-    const reopened = setup({ prepareCommand: () => 'exit 1' })
+    const reopened = setup({ prepareCommand: prepare('exit', 'process.exit(1)') })
     // A new process: the session exists in the daemon and the store, not in memory.
     reopened.fake.sessions.set(first, fake.sessions.get(first)!)
     expect(await reopened.sessions.ensureWorker(ticket('t3', { title: 'Renamed' }), dir)).toBe(first)

@@ -20,6 +20,7 @@ import {
   type Ticket,
   type Trigger,
 } from './core/index.js'
+import { HOST_PLATFORM, isAbsolutePath } from './infra/platform.js'
 import { sameName } from './infra/text.js'
 import { WORKER_COMMANDS } from './infra/worker-paths.js'
 import { LIMITS } from './limits.js'
@@ -197,7 +198,10 @@ export const ExecutorConfigSchema = z
     directory: z
       .string()
       .trim()
-      .refine((path) => path === '' || path.startsWith('/'), 'An absolute path, or empty for <stateDir>/work')
+      .refine(
+        (path) => path === '' || isAbsolutePath(path, HOST_PLATFORM),
+        'An absolute path, or empty for <stateDir>/work',
+      )
       .default(''),
     prepare: z.string().max(LIMITS.prepareCommand).default(''),
     blockedCommands: z.array(CommandNameSchema).default([]),

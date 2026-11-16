@@ -270,7 +270,7 @@ export function createSessionWorkspaceAdapterFactory(
       }
       const environment = input.sessionEnvironment
       const runner = environment
-        ? withSessionEnvironment(input.exec, () => environment(state.sessionKey))
+        ? withSessionEnvironment(input.exec, () => environment(state.sessionKey), state.semantics.flavor)
         : input.exec
       const exec = createPolicyExec(runner, execGate)
       const openProcess = createPolicyOpenProcess(runner, execGate)

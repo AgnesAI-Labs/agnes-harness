@@ -13,7 +13,6 @@ export const SETUP_PROBLEMS = {
     'git does not read the github.com credential configuration Superagent writes; Superagent needs git 2.32 or later.',
   ],
   environmentFailed: ['deployment', 'Preparing the agent environment failed.'],
-  platformUnsupported: ['deployment', 'Superagent supports macOS and Linux; it does not run on {platform}.'],
   sessionTaken: [
     'deployment',
     'A session {session} exists that Superagent did not open; archive or remove it, then check the setup again.',
@@ -34,6 +33,14 @@ export const SETUP_PROBLEMS = {
     'github',
     'The agent GitHub CLI {cli} is in {shims}, which Superagent writes; name the CLI itself, such as the gh-agent wrapper.',
   ],
+  agentCliPathNotAscii: [
+    'github',
+    "The agent GitHub CLI's path {cli} has characters other than ASCII letters, digits and punctuation, which a Windows shim cannot hold; move the CLI to such a path, such as C:\\Superagent\\bin.",
+  ],
+  shimsPathTooLong: [
+    'deployment',
+    "The sessions' PATH with Superagent's shims is {length} characters, longer than the {limit} a Windows shim can read; shorten the PATH the daemon starts with.",
+  ],
   agentCliSignedOut: ['github', 'The agent GitHub CLI cannot read its account.'],
   agentCliNoAccount: ['github', 'The agent GitHub CLI did not report a GitHub account.'],
   repositoryUnreadable: ['github', '@{account} cannot read {repository}.'],
@@ -50,14 +57,6 @@ export interface SetupProblem {
   code: SetupCode
   values: Record<string, string>
   detail: string
-}
-
-/**
- * Superagent's sessions and commands rely on POSIX tools (`sh`, `env`, process groups, executable shims), as the
- * original does: it runs on macOS and Linux. Refuses any other platform with a setup problem before anything is written.
- */
-export function assertSupportedPlatform(platform: string): void {
-  if (platform === 'win32') throw new SetupError('platformUnsupported', { platform: 'Windows' })
 }
 
 /**

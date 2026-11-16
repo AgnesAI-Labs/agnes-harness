@@ -7,13 +7,13 @@
 Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（也可以通过一个 AGH 飞书渠道实例关注飞书群），把允许名单里的人提出的请求变成工单，
 每个工单交给它自己的会话：该会话在工单目录里工作，推送自己的分支并开 PR；对人说话的是主会话。Superagent 默认不安装、不启用；不启用就没有任何变化。
 
-本页讲把它作为长期服务运行：账号与单独的 AGH home、launchd 或 systemd 单元、启用、停用、清除数据，以及它的会话能碰到什么、碰不到什么。
+本页讲把它作为长期服务运行：账号与单独的 AGH home、launchd 或 systemd 单元或 Windows 计划任务、启用、停用、清除数据，以及它的会话能碰到什么、碰不到什么。
 由编码智能体陪你逐步完成的设置（包括各项设置与面板）见插件自带的[设置指南](../../packages/superagent/docs/setup.md)（英文）。
 
 ## 开始之前
 
-- **macOS 或 Linux。** Superagent 只支持 macOS 与 Linux：它的工单会话和命令依赖 POSIX 工具（`sh`、可执行的 shim、进程组），与原版一致。
-  在 Windows 上它报告设置问题“Superagent 支持 macOS 与 Linux”，不做别的事。
+- **macOS、Linux 或 Windows。** Windows 上工单会话和准备命令在 Windows PowerShell 里运行，引用变量写 `$env:名字`；Superagent 的垫片是 `.cmd` 文件；
+  需要 Git for Windows，因为 git 用它自带的 shell 运行智能体的凭据助手。下面的路径是 POSIX 的写法，Windows 上用任意绝对路径，例如 `C:\Superagent\agh`。
 - **专用系统用户（强烈推荐）。** 每个工单会话都以运行 daemon 的用户身份完全访问本机。只有一个单独的、不含你自己文件、密钥和已登录工具的用户，
   才能限制出错或被操纵的会话能碰到的范围。见[安全边界](#安全边界)。
 - **智能体专用的 GitHub 账号**，只对这一个仓库有写权限；默认分支开启**分支保护**：合并需 PR 且有人批准，禁止强推和删除。
@@ -46,7 +46,7 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
    在终端里，用同一个 `AGH_HOME` 运行 `agh plugins add file:./bundled-plugins/superagent` 效果相同：这个引用是载荷的官方随包来源，也就是市场安装所用的来源；
    命令先给出审阅内容，你确认后安装、信任并启用 Superagent。只用这两种方式之一。包名（如 `agh package add @agnes/superagent`）不是来源，会被拒绝；
    用文件夹路径安装得到的是没有随包应用授权的本地副本（见[排错](#排错)）。
-3. 在插件设置页把 `stateDir` 设为 `/srv/superagent/state`。此时 Superagent 会报告一个设置问题，因为智能体的环境还没就绪，这是正常的。
+3. 在插件设置页把 `stateDir` 设为 `/srv/superagent/state`（Windows 上不要设，见 [Windows](#windows任务计划程序)）。此时 Superagent 会报告一个设置问题，因为智能体的环境还没就绪，这是正常的。
 4. 给智能体一个只用它自己登录、绝不用你的登录的 GitHub CLI：一个带自己配置目录的 `gh-agent` 包装。然后用它登录：
 
    ```sh
@@ -59,6 +59,22 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
    /srv/superagent/bin/gh-agent auth login
    /srv/superagent/bin/gh-agent api user --jq .login
    ```
+
+   Windows 上包装是 `gh-agent.cmd`，它用完整路径运行 `gh.exe`（`where.exe gh` 会打印出来），从不经过 Superagent 的 `gh` 垫片；
+   它自己的路径只能含 ASCII 字符：垫片里写着这个路径，而 `cmd.exe` 读批处理文件时会读错其他字符。写进包装的 `gh.exe` 路径也一样：
+   装在你的配置文件目录下的（winget 或 scoop 按用户安装）改写成 `%LOCALAPPDATA%` 或 `%USERPROFILE%` 开头，由 `cmd.exe` 运行时展开；
+   其他含非 ASCII 字符的路径会让下面的命令停下，这时需要把 `gh.exe` 移到别处。在 PowerShell 里：
+
+   ```powershell
+   New-Item -ItemType Directory -Force C:\Superagent\bin | Out-Null
+   $gh = (Get-Command gh.exe).Source.Replace($env:LOCALAPPDATA, '%LOCALAPPDATA%').Replace($env:USERPROFILE, '%USERPROFILE%')
+   if ($gh -match '[^\x20-\x7e]') { throw "Move gh.exe to a path of ASCII characters: $gh" }
+   Set-Content -Encoding ascii C:\Superagent\bin\gh-agent.cmd "@set `"GH_CONFIG_DIR=C:\Superagent\gh-agent`"`r`n@`"$gh`" %*"
+   C:\Superagent\bin\gh-agent.cmd auth login
+   C:\Superagent\bin\gh-agent.cmd api user --jq .login
+   ```
+
+   批处理文件不能把参数里的换行传下去。Superagent 经标准输入把评论正文交给它，并告诉 Windows 上的会话把多行文本放进文件交给 `gh`（`--body-file`）。
 
    最后一条命令打印智能体以哪个账号行事；Superagent 也这样读取。请以智能体自己的 GitHub 账号在浏览器里登录：这是一个专用账号，
    作为协作者只对这一个仓库有写权限、别的都没有，这样它无论用什么方式登录都只能碰到这个仓库。试用时也可以登录你自己的账号，
@@ -113,6 +129,23 @@ daemon 照常启动，不需要智能体的 `HOME` 或 `PATH`。Superagent 给�
 </plist>
 ```
 
+### Windows（任务计划程序）
+
+Windows 上 `agh serve` 没有服务单元：注册一个在服务用户登录时启动它的计划任务，下面在管理员 PowerShell 里执行。任务在该用户的会话里、
+用该用户的配置文件运行 daemon：
+
+```powershell
+$action = New-ScheduledTaskAction -Execute 'C:\Program Files\nodejs\agh.cmd' -Argument 'serve' -WorkingDirectory 'C:\Superagent'
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User 'superagent'
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName 'AGH Superagent' -Action $action -Trigger $trigger -Settings $settings -User 'superagent'
+[Environment]::SetEnvironmentVariable('AGH_HOME', 'C:\Superagent\agh', 'User')   # 以服务用户执行
+```
+
+`-Execute` 写你的安装提供的 `agh`。`AGH_HOME` 设为服务用户的用户变量（以该用户登录后执行最后一行），这样任务和该用户的每个终端都用同一个 home；
+该用户的 `Path` 要能找到 `node`、`git` 和 `gh`。在 Windows 上不要设 `stateDir`：Superagent 把状态放在平台给的目录里，只有当前用户能打开，
+它拒绝这个目录之外的 `stateDir`。以该用户运行 `agh daemon stop` 停止 daemon：结束任务（`Stop-ScheduledTask`）会直接杀掉进程，会话来不及结束回合。
+
 ### Linux（systemd）
 
 `/etc/systemd/system/superagent.service`，用 `systemctl enable --now superagent` 启动：
@@ -137,7 +170,7 @@ TimeoutStopSec=60
 WantedBy=multi-user.target
 ```
 
-通过服务管理器停止服务（`launchctl bootout`、`systemctl stop`），daemon 会干净地结束各会话的回合。任何时候重启都是安全的，见[重启与恢复](#重启与恢复)。
+通过服务管理器停止服务（`launchctl bootout`、`systemctl stop`），Windows 上用 `agh daemon stop`，daemon 会干净地结束各会话的回合。任何时候重启都是安全的，见[重启与恢复](#重启与恢复)。
 
 **按早先方式配置的安装。** 单元以 `HOME=<stateDir>/home` 启动 daemon、把 `<stateDir>/worker-bin` 放在 `PATH` 最前面、GitHub 卡片填的是 `gh`
 的安装照常可用：那个 `gh` 仍读取 `<stateDir>/home/.config/gh` 里的登录。要改成上面的方式，用 `GH_CONFIG_DIR=<stateDir>/home/.config/gh`
@@ -197,6 +230,12 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
   所以“不把主人级客户端交给会话”不是安全边界。
 
 以上各点只有用专用系统用户运行这套 AGH 才能解决；强烈推荐这样做，但不强制。
+
+**Windows 上 `gh` 是批处理文件。** 会话的 shell 是 PowerShell，`gh` 经 Superagent 的 `gh.cmd` 垫片到达智能体的 CLI。运行批处理文件的
+`cmd.exe` 会再读一遍参数：在换行处截断参数，并把引号加 `&` 或 `|` 之后的内容当作命令执行，不管 PowerShell 怎么加引号。执行会话若把
+Issue 标题或评论放进 `gh` 的命令行，就可能执行写那段文字的人写的命令。Windows 上的会话被告知把来自人的文本经文件或标准输入交给 `gh`
+（`--body-file`、`-F title=@<文件>`），Superagent 自己的命令也这样做：它为 `cmd.exe` 转义每个参数（包括引号），并拒绝传给批处理文件的参数里有换行。提示词不是安全边界。
+被禁用的命令也只拦 PATH 上找到的程序：在 Windows PowerShell 5.1 里 `curl` 和 `wget` 是 `Invoke-WebRequest` 的别名，不会被拦。
 
 ## 重启与恢复
 

@@ -6,9 +6,12 @@
 import { mkdir, readdir, rename, rmdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { SessionEnvironment } from '@agnes/protocol'
+import { prepareArgv } from '../app/execution-environment.js'
 import type { Store } from '../app/store.js'
 import { runCommand } from '../app/subprocess.js'
 import type { Ticket } from '../core/index.js'
+import { busy, retryBusy } from '../infra/busy.js'
+import { HOST_PLATFORM } from '../infra/platform.js'
 import { family } from '../kv.js'
 import type { SdkClient } from './sdk.js'
 
@@ -197,6 +200,10 @@ export interface SessionsDeps {
   readonly lifetime: AbortSignal
   /** Where a moved-aside ticket directory is reported. */
   readonly log?: { warn(message: string): void }
+  /** The operating system, this process's by default: it decides the prepare command's shell. */
+  readonly platform?: string
+  /** The pauses before each retry of a ticket directory move a held file stops (see `retryBusy`). */
+  readonly busyDelaysMs?: readonly number[]
 }
 export interface SessionJob {
   id: string
@@ -209,6 +216,9 @@ export interface SessionJob {
 export class Sessions implements SessionAdapter {
   private readonly handles = new Map<string, Promise<SessionHandle>>()
   constructor(private readonly deps: SessionsDeps) {}
+  private get platform(): string {
+    return this.deps.platform ?? HOST_PLATFORM
+  }
   get registry(): SessionRegistry {
     return this.deps.registry
   }
@@ -236,14 +246,16 @@ export class Sessions implements SessionAdapter {
     const command = this.deps.prepareCommand().trim()
     const signal = AbortSignal.any([this.deps.lifetime, AbortSignal.timeout(PREPARE_TIMEOUT_MS)])
     if (command) {
-      const result = await runCommand(['sh', '-c', command], {
+      const result = await runCommand(prepareArgv(command, this.platform), {
         cwd: dir,
         env: this.deps.environment(ticket),
+        platform: this.platform,
         signal,
         timeoutMs: PREPARE_TIMEOUT_MS,
       }).catch((error: unknown) => ({ code: -1, stdout: '', stderr: String(error) }))
       if (result.code !== 0) {
-        if (!(await readdir(dir).catch(() => ['?'])).length) await rmdir(dir).catch(() => {})
+        if (!(await readdir(dir).catch(() => ['?'])).length)
+          await retryBusy(() => rmdir(dir), this.platform, this.deps.busyDelaysMs).catch(() => {})
         const output = (result.stderr || result.stdout).trim().slice(-2000)
         throw new PrepareFailed(
           `The prepare command failed (${result.code === -1 ? 'stopped' : `exit ${result.code}`})${output ? `: ${output}` : ''}`,
@@ -263,7 +275,16 @@ export class Sessions implements SessionAdapter {
   private async moveAside(dir: string): Promise<void> {
     if (!(await exists(dir))) return
     const aside = `${dir}.interrupted-${new Date().toISOString().replace(/[:.]/g, '-')}`
-    await rename(dir, aside)
+    // A file a program still holds open, which Windows does not let move, gets a few retries; then the ticket fails
+    // with the reason rather than waiting on it. Windows reports a held file and a refused one alike.
+    await retryBusy(() => rename(dir, aside), this.platform, this.deps.busyDelaysMs).catch(
+      (error: unknown) => {
+        if (!busy(error, this.platform)) throw error
+        throw new PrepareFailed(
+          `The ticket directory ${dir} could not be moved aside to prepare it again: a file in it is held open by a program or not permitted (${String(error)})`,
+        )
+      },
+    )
     this.deps.log?.warn(
       `The ticket directory ${dir} was not marked prepared; it was moved to ${aside} and is prepared again`,
     )

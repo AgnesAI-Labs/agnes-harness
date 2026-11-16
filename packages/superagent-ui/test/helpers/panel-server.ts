@@ -83,6 +83,8 @@ export interface PanelServer {
   opened: string[]
   dropped: DroppedReply[]
   failing: Extract<Problem, { kind: 'outgoing' }>['outgoing'][]
+  /** The shell the prepare command runs in on the daemon's machine; `sh` unless a test says otherwise. */
+  shell?: 'sh' | 'powershell'
 }
 export let server: PanelServer
 
@@ -204,7 +206,12 @@ const settingsView = (): ApiResponse<'GET settings'> => ({
   },
   sources: sourceSettings(),
   environment: {
-    root: '/srv/superagent/work',
+    shell: server.shell ?? 'sh',
+    example:
+      server.shell === 'powershell'
+        ? 'git clone "https://github.com/$env:DSH_SUPERAGENT_GITHUB_REPOSITORY.git" repo'
+        : 'git clone "https://github.com/$DSH_SUPERAGENT_GITHUB_REPOSITORY.git" repo',
+    root: server.shell === 'powershell' ? 'C:\\Superagent\\work' : '/srv/superagent/work',
     variables: [
       {
         owner: 'executor',

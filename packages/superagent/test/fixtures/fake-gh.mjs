@@ -25,7 +25,9 @@ const rules = script.rules ?? []
 const usagePath = logPath ? `${logPath}.usage` : undefined
 const usage = usagePath && existsSync(usagePath) ? JSON.parse(readFileSync(usagePath, 'utf8')) : {}
 
-const stdin = !process.stdin.isTTY && argv.includes('--input') ? readFileSync(0, 'utf8') : undefined
+// `--input -` and a `-F <field>=@-` field read standard input.
+const reads = argv.includes('--input') || argv.some((arg) => arg.endsWith('=@-'))
+const stdin = !process.stdin.isTTY && reads ? readFileSync(0, 'utf8') : undefined
 
 function reply(entry) {
   if (logPath)
