@@ -1134,36 +1134,37 @@ it.each([
 )
 
 it.each([
-  [
-    'a JSON delivery',
-    { ticket_id: 't1', assignment: 'Repair the login form' },
-    '"assignment": "Repair the login form"',
-  ],
-  ['a text delivery', 'Note from the orchestrator\nsecond line', 'Note from the orchestrator\nsecond line'],
+  ['an app delivered', { kind: 'bundled-app', appId: '@agnes/superagent/superagent' }],
+  ['a person typed', undefined],
 ] as const)(
-  'shows %s from the bundled app as a fixed line, its raw content folded beneath',
-  async (_name, data, shown) => {
-    const summary = 'Message delivered automatically by the bundled app, not typed by a person.'
+  'shows the same text %s as such: an app delivery folded beneath a fixed line',
+  async (_name, by) => {
+    const text = '{"ticket_id":"t1","assignment":"Repair the login form"}'
     const node: UINode = {
       kind: 'user',
       id: 'delivery',
       seq: 1,
       commandId: 'superagent:m1',
-      content: [{ type: 'text', text: summary }],
-      origin: 'system',
-      system: { source: 'agnes/bundled-app', type: 'delivery', summary, data },
+      content: [{ type: 'text', text }],
+      origin: 'principal',
+      ...(by ? { deliveredBy: by } : {}),
     }
     const store = createConversationProjectionStore({ sessionId: 's', nodes: [node] })
     await act(async () => root.render(createElement(Harness, { store })))
+    if (!by) {
+      // A person's message is a message: no status line, nothing folded.
+      expect(host.querySelector('[data-node-kind="user"]')).not.toBeNull()
+      expect(host.querySelector('[role=status]')).toBeNull()
+      expect(host.querySelector('.system-input-trace')).toBeNull()
+      expect(host.textContent).toContain('Repair the login form')
+      return
+    }
     expect(host.querySelector('[role=status]')?.textContent).toBe('应用自动投递的消息')
     expect(host.querySelector('[data-node-kind="user"]')).toBeNull()
     expect(host.querySelector('[data-node-kind="system-input"]')).not.toBeNull()
     expect(host.querySelector('.system-input-trace')?.hasAttribute('open')).toBe(false)
-    expect(host.querySelector('.system-input-trace pre')?.textContent).toContain(shown)
-    const english = (key: string) => webUiLocaleCatalog.en[key] ?? key
-    expect(node.system ? systemInputText(node.system, english) : undefined).toBe(
-      'Message delivered automatically by an app',
-    )
+    expect(host.querySelector('.system-input-trace pre')?.textContent).toBe(text)
+    expect(webUiLocaleCatalog.en['timeline.appDelivery']).toBe('Message delivered automatically by an app')
   },
 )
 

@@ -260,13 +260,23 @@ export function UserMessage({
                 : 'tool.detail.expand',
             )}
           >
-            <pre className="system-input-data">
-              {typeof node.system.data === 'string'
-                ? node.system.data
-                : JSON.stringify(node.system.data, null, 2)}
-            </pre>
+            <pre className="system-input-data">{JSON.stringify(node.system.data, null, 2)}</pre>
           </Disclosure>
         )}
+      </div>
+    )
+  // What an app delivered: a fixed line, never the body, which stays folded beneath it as it was delivered.
+  if (node.deliveredBy)
+    return (
+      <div>
+        <div className="system-input-status" role="status">
+          {t('timeline.appDelivery')}
+        </div>
+        <Disclosure variant="plain" className="system-input-trace" summary={t('tool.detail.expand')}>
+          <pre className="system-input-data">{value}</pre>
+          <UserMessageImages node={node} t={t} />
+          <UserMessageFiles node={node} t={t} readAttachment={readAttachment} />
+        </Disclosure>
       </div>
     )
   return (

@@ -7,8 +7,6 @@ export function systemInputText(system: SystemInput | undefined, t: Translate): 
   // An instruction addressed to the loop, not to the reader: say what is happening instead.
   if (system.source === 'agnes/deferred-invocations' && system.type === 'invocation-queued')
     return t('timeline.deferredQueued')
-  // What an app delivered automatically: a fixed line, never the body, which stays in the trace.
-  if (system.source === 'agnes/bundled-app' && system.type === 'delivery') return t('timeline.appDelivery')
   const presentation = system.presentation
   if (!presentation) return system.summary
   if (presentation.kind === 'child-completed') {
