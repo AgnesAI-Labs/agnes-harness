@@ -153,6 +153,8 @@ export async function createSessionWithAdmission(
       canonicalRoot: workspace.path,
       extraRoots,
       hasSessionFact,
+      // Derived from the connection the auth gate verified, never from the request.
+      ...(c.conn.bundledApp === true ? { creator: 'bundled-app' as const } : {}),
     })
     reservedNew = reserved.reservedNew
     binding = reserved.envelope
