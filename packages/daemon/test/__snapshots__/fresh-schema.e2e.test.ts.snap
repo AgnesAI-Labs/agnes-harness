@@ -642,6 +642,12 @@ exports[`fresh data directory schema > creates every database at its final schem
         "type": "index",
       },
       {
+        "name": "sqlite_autoindex_session_principal_creator_1",
+        "sql": null,
+        "tbl_name": "session_principal_creator",
+        "type": "index",
+      },
+      {
         "name": "sqlite_autoindex_session_principal_ownership_1",
         "sql": null,
         "tbl_name": "session_principal_ownership",
@@ -934,6 +940,15 @@ exports[`fresh data directory schema > creates every database at its final schem
       bookmarks TEXT
     )",
         "tbl_name": "session_preferences",
+        "type": "table",
+      },
+      {
+        "name": "session_principal_creator",
+        "sql": "CREATE TABLE session_principal_creator (
+          session_id TEXT PRIMARY KEY,
+          creator TEXT NOT NULL
+        )",
+        "tbl_name": "session_principal_creator",
         "type": "table",
       },
       {
