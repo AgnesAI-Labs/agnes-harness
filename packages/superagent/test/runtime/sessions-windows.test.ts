@@ -60,11 +60,15 @@ it('runs the prepare command in PowerShell on Windows and in sh elsewhere', asyn
     'git clone x repo',
   ])
   expect(prepareArgv('git clone x repo', 'linux')).toEqual(['sh', '-c', 'git clone x repo'])
-  // On Windows PowerShell runs it and its exit code stands; elsewhere none exists, and the launch names the program.
-  const failed = sessions({ platform: 'win32', prepareCommand: () => 'exit 3' }).ensureWorker(
-    ticket('t1'),
-    join(temp.dir, 'work', 't1'),
-  )
+  // On Windows PowerShell runs it and its exit code stands; elsewhere the launch names the program it found nowhere.
+  // A POSIX machine may have a `powershell` of its own (a CI image ships PowerShell), so its PATH is an empty directory.
+  const nowhere = join(temp.dir, 'empty-bin')
+  mkdirSync(nowhere)
+  const failed = sessions({
+    platform: 'win32',
+    prepareCommand: () => 'exit 3',
+    environment: () => (process.platform === 'win32' ? {} : { PATH: nowhere }),
+  }).ensureWorker(ticket('t1'), join(temp.dir, 'work', 't1'))
   await expect(failed).rejects.toBeInstanceOf(PrepareFailed)
   await expect(failed).rejects.toThrow(process.platform === 'win32' ? /exit 3/ : /powershell/)
 })
