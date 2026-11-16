@@ -13,7 +13,13 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { bwrapConfine, seatbeltConfine, winConfine } from '../src/backends.js'
+import {
+  bwrapConfine,
+  SEATBELT_BACKEND,
+  SEATBELT_COMPAT_BACKEND,
+  seatbeltConfine,
+  winConfine,
+} from '../src/backends.js'
 
 const options = {
   cwd: '/work/proj',
@@ -122,6 +128,15 @@ describe('closed-network backend compilers', () => {
       expect(profile).toContain(`(allow file-read* (literal "/dev/${device}"))`)
     }
     expect(profile).not.toMatch(/\(allow [^\n]*\(subpath "\/dev(?:\/|"|\))/)
+  })
+
+  it('gives a session on an open network the certificate trust agent through either macOS backend', () => {
+    // A full-access session compiles `network: 'allow'`; HTTPS clients verify certificates through trustd.
+    const trust = '(allow mach-lookup (global-name "com.apple.trustd.agent"))'
+    for (const backend of [SEATBELT_BACKEND, SEATBELT_COMPAT_BACKEND]) {
+      expect(backend.confine(['true'], { ...options, network: 'allow' })[2]).toContain(trust)
+      expect(backend.confine(['true'], options)[2]).not.toContain('mach-lookup')
+    }
   })
 
   it('does not return raw argv for a Windows backend it cannot enforce', () => {

@@ -89,7 +89,13 @@ export function seatbeltDenyNetworkArgv(
     `(deny file-write* (regex #"^${LOOPBACK_GATE_PATH_PREFIX}[^/]*(/|$)"))`,
     '(deny file-write-unlink (literal "/") (literal "/private") (literal "/private/tmp"))',
     ...(policy.network === 'allow'
-      ? ['(allow network*)']
+      ? [
+          '(allow network*)',
+          // Go programs such as gh, and every Security.framework client, verify a server certificate
+          // through the trust agent; without it an allowed network cannot complete TLS. Grant only
+          // this service, and only with the network: certificate verification itself stays on.
+          '(allow mach-lookup (global-name "com.apple.trustd.agent"))',
+        ]
       : policy.loopbackServe
         ? [
             // Default deny still blocks outbound (including Unix peers), UDP and all binds.

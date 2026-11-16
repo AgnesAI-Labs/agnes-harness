@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest'
 import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 
+const TRUST_AGENT = '(allow mach-lookup (global-name "com.apple.trustd.agent"))'
+
 it.each(['relative', '/bad\npath', '/bad\0path', '/bad\x7fpath'])(
   'refuses invalid path %j without echo',
   (path) => {
@@ -42,8 +44,46 @@ it.each([{}, { network: 'allow' as const }, { loopbackServe: true }])(
     if ('network' in network) expect(args[2]).toContain('(allow network*)')
     else if ('loopbackServe' in network) expect(args[2]).toContain('(deny network-bind)')
     else expect(args[2]).toContain('(deny network*)')
+    // Only an open network reaches a Mach service: the certificate trust agent, nothing else.
+    if ('network' in network) expect(args[2]).toContain(TRUST_AGENT)
+    else expect(args[2]).not.toContain('mach-lookup')
   },
 )
+
+it('adds only the trust agent lookup to an open network and keeps every other rule of the profile', () => {
+  const policy = { allowPaths: ['/w'], denyPaths: ['/w/secret'], readPaths: ['/w'] }
+  const lines = (network: object) =>
+    (seatbeltDenyNetworkArgv(['true'], { ...policy, ...network })[2] ?? '').split('\n')
+  const shared = [
+    '(version 1)',
+    '(deny default)',
+    '(allow process*)',
+    '(allow sysctl-read)',
+    '(allow file-read* file-write* (literal "/dev/null"))',
+    '(allow file-read* (literal "/dev/zero"))',
+    '(allow file-read* (literal "/dev/random"))',
+    '(allow file-read* (literal "/dev/urandom"))',
+    '(allow file-ioctl (require-all (regex #"^/dev/tty(s[0-9]+)?$") (ioctl-command TIOCSPGRP)))',
+    '(allow file-read-metadata (literal "/"))',
+    '(allow file-read* (literal "/"))',
+    '(allow file-read* (subpath "/w"))',
+    '(allow file-write* (subpath "/w"))',
+    '(deny file-read* file-write* (subpath "/w/secret"))',
+    '(deny file-write-unlink (literal "/"))',
+    '(deny file-write-unlink (literal "/w"))',
+    '(deny file-write* (regex #"^/private/tmp/agh-loopback-[^/]*(/|$)"))',
+    '(deny file-write-unlink (literal "/") (literal "/private") (literal "/private/tmp"))',
+  ]
+  expect(lines({ network: 'allow' })).toEqual([...shared, '(allow network*)', TRUST_AGENT])
+  expect(lines({})).toEqual([...shared, '(deny network*)'])
+  expect(lines({ network: 'deny' })).toEqual([...shared, '(deny network*)'])
+  expect(lines({ loopbackServe: true })).toEqual([
+    ...shared,
+    '(allow network-inbound (local tcp "localhost:*"))',
+    '(allow network-inbound (local unix-socket))',
+    '(deny network-bind)',
+  ])
+})
 
 it('omits only the terminal job-control grant when asked, and keeps every other rule', () => {
   const policy = { allowPaths: ['/w'], denyPaths: ['/w/secret'] }

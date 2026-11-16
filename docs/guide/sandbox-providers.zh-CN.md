@@ -64,6 +64,10 @@ macOS Seatbelt 配置仅为精确路径 `/dev/null` 允许读写，并为精确�
 
 Linux bubblewrap 已通过 `--dev /dev` 提供隔离的最小设备树，不暴露宿主原始设备；其设备权限与 Seatbelt 的精确路径规则并不完全相同。目前 Landlock 仅用于 ABI 诊断，不是另一套命令隔离后端。Windows 尚无已实现的本机 L1 后端，Windows 编译器拒绝隔离请求。只读和可修改工作区的命令改用 [Windows 写限制](#windows-写限制)，完全访问则直接运行。本次 macOS 缺陷无需调整 Linux 或 Windows 的设备策略。
 
+## 开放网络下的证书校验
+
+macOS Seatbelt 配置允许网络时，还允许一项 Mach 查找：系统证书信任代理 `com.apple.trustd.agent`。`gh` 等 Go 程序以及其他通过 Security.framework 校验服务器证书的客户端需要它才能完成 TLS；缺少它时会报 `x509: OSStatus -26276` 或 TLS 错误。证书校验保持开启，不授予其他 Mach 服务；禁止网络和仅提供回环服务的配置不获得此查找。本机 stdio MCP 隔离复用同一编译器，因此其 `network` 配置具有相同授权。
+
 ## Windows 写限制
 
 Windows 上，`local` 对 `read-only` 和 `workspace-write` 会话的命令使用 Windows ACL 写限制：受限令牌、Low 完整性级别、NTFS ACL 授权，以及由 Host 持有的 Job Object。这是部分保护，只限制文件写入。它不是 macOS、Linux 那样完整的 L1 隔离，也不是严格的路径沙箱。需要 NTFS 工作区和可用的原生模块。

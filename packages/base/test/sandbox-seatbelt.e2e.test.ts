@@ -14,6 +14,7 @@ import {
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
 import { createExec } from '@agnes/host-infrastructure/adapters/exec'
 import { openLocalProcess } from '@agnes/host-infrastructure/adapters/process'
 import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
@@ -542,6 +543,34 @@ seatbelt('blocks a real loopback request whose unconfined control reaches the se
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
 })
+
+// nscurl ships with macOS and verifies server certificates with Security.framework, through the trust agent, as Go
+// programs such as gh do. It exits 0 either way and reports a failed load on stderr.
+it.runIf(existsSync('/usr/bin/sandbox-exec') && existsSync('/usr/bin/nscurl'))(
+  'verifies a real HTTPS certificate against the system trust store on an open network only',
+  async ({ skip }) => {
+    const url = 'https://api.github.com/zen'
+    const argv = ['/usr/bin/nscurl', '-o', '/dev/null', '-D', '-', url]
+    const fetch = async ([file, ...args]: string[]) => {
+      const { stdout, stderr } = await promisify(execFile)(file ?? '', args, { timeout: 30_000 })
+      return `${stdout}${stderr}`
+    }
+    const response = /^HTTP\/[\d.]+ \d{3}\b/
+    if (!response.test(await fetch(argv))) return skip(`${url} is unreachable here without a sandbox`)
+    const open = seatbeltDenyNetworkArgv(argv, { allowPaths: [], denyPaths: [], network: 'allow' })
+    expect(await fetch(open)).toMatch(response)
+    // The same profile without only the trust agent rule fails certificate verification, not the connection.
+    const rule = '\n(allow mach-lookup (global-name "com.apple.trustd.agent"))'
+    const untrusted = open.map((arg, index) => (index === 2 ? arg.replace(rule, '') : arg))
+    expect(untrusted[2]).not.toContain('mach-lookup')
+    expect(await fetch(untrusted)).toMatch(/NSURLErrorDomain Code=-12\d\d\b/)
+    // A closed network still fails, at the connection and before any certificate is seen.
+    const closed = await fetch(seatbeltDenyNetworkArgv(argv, { allowPaths: [], denyPaths: [] }))
+    expect(closed).toMatch(/NSURLErrorDomain Code=-10\d\d\b/)
+    expect(closed).not.toMatch(/Code=-12\d\d\b|^HTTP\//m)
+  },
+  60_000,
+)
 
 it.runIf(existsSync('/usr/bin/sandbox-exec') && existsSync('/bin/zsh'))(
   'preserves controlling-TTY job control in a confined interactive shell',
