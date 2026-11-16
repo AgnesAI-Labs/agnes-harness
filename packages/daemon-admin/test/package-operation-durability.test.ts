@@ -3,7 +3,8 @@ import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { jcs } from '@agnes/protocol'
+import { jcs, validateAgainst, validatePackageAdminData } from '@agnes/protocol'
+import { PackageOperation } from '@agnes/protocol/gen/package-admin'
 import * as systemNode from '@agnes/system-node'
 import { afterEach, expect, it, vi } from 'vitest'
 import { FilePackageOperationStore, withOperationState } from '../src/packages/operations.js'
@@ -177,4 +178,62 @@ it('refuses historical operation results without rewriting them', async () => {
     message: expect.stringMatching(/Retired.*clean home/),
   })
   expect(await readFile(file, 'utf8')).toBe(original)
+})
+
+/** The closed PackageOperation contract of a release before the bundled-origin fact: this schema minus
+ * that one optional property on the preview and installed descriptor and its definition, which is all
+ * the fact added. An older daemon refuses its whole journal when one record breaks this contract. */
+function contractBeforeBundledOrigin(): typeof PackageOperation {
+  const defs = { ...PackageOperation.$defs } as unknown as Record<
+    string,
+    { properties: Record<string, unknown> }
+  >
+  delete defs.PackageBundledOrigin
+  for (const name of ['PackagePreview', 'PackageInstalledDescriptor']) {
+    const { bundledOrigin: _, ...properties } = defs[name]?.properties ?? {}
+    defs[name] = { ...(defs[name] as object), properties } as (typeof defs)[string]
+  }
+  return { ...PackageOperation, $defs: defs } as unknown as typeof PackageOperation
+}
+
+it('keeps the derived bundled-origin fact out of the journal so an older daemon can still load it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-operation-derived-'))
+  roots.push(root)
+  const rows = (await readFile('packages/protocol/fixtures/package-admin/package-admin.jsonl', 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as { name: string; kind: string; target: string; payload: unknown })
+  const valid = (name: string) =>
+    structuredClone(rows.find((row) => row.target === 'config' && row.name === name && row.kind === 'valid'))
+      ?.payload as Record<string, unknown>
+  const fact = { ownerApplication: true as const }
+  const preview = { ...valid('PackagePreview'), bundledOrigin: fact }
+  const installed = { ...valid('PackageInstalledDescriptor'), bundledOrigin: fact }
+  const store = new FilePackageOperationStore(root)
+  const now = new Date().toISOString()
+  await store.admit(inspect('op-derived', now))
+  await store.update('op-derived', (current) =>
+    withOperationState(current, {
+      state: 'completed',
+      progress: 100,
+      now,
+      preview: preview as never,
+      installed: installed as never,
+    }),
+  )
+  // This process still answers with the fact it derived.
+  const live = await store.get('local-dev', 'op-derived')
+  expect(live?.operation.preview?.bundledOrigin).toEqual(fact)
+  expect(live?.operation.installed?.bundledOrigin).toEqual(fact)
+  expect(validatePackageAdminData('PackageOperation', live?.operation).ok).toBe(true)
+  const text = await readFile(join(root, 'operations.json'), 'utf8')
+  expect(text).not.toContain('bundledOrigin')
+  const before = contractBeforeBundledOrigin()
+  // The older contract is closed: the fact is exactly what it would refuse, and the stored record passes.
+  expect(validateAgainst(before, live?.operation).ok).toBe(false)
+  expect(validateAgainst(before, JSON.parse(text).operations[0].operation).ok).toBe(true)
+  // Read back after a restart, the record omits the fact: the ordinary source review.
+  const reread = await new FilePackageOperationStore(root).get('local-dev', 'op-derived')
+  expect(reread?.operation.preview).toEqual(valid('PackagePreview'))
+  expect(reread?.operation.installed).toEqual(valid('PackageInstalledDescriptor'))
 })

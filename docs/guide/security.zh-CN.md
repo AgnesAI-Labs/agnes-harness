@@ -244,7 +244,7 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 ## 包来源记录与来源策略
 
-新安装保存解析后的来源和版本、打包文件树 SHA256、可用的发布者证据、安装时间、安装者及信任决定。`agh plugins provenance <id> --json` 读取记录；App Server 的 `_agnes/v1/packages.provenance` 和 `_agnes/v1/packages.sourcePolicy` 是管理只读方法。审阅对话框和插件详情展示相同摘要。验证发布者不等于隔离插件代码：进程内插件仍需审阅其声明的权限。
+新安装保存解析后的来源和版本、打包文件树 SHA256、可用的发布者证据、安装时间、安装者及信任决定。`agh plugins provenance <id> --json` 读取记录；App Server 的 `_agnes/v1/packages.provenance` 和 `_agnes/v1/packages.sourcePolicy` 是管理只读方法。审阅对话框和插件详情展示相同摘要。验证发布者不等于隔离插件代码：进程内插件仍需审阅其声明的权限。随 AGH 提供的可选插件（如 Superagent）只有在来源是规范随包引用（`file:./bundled-plugins/<name>`），且文件树与已发随包载荷的标识、版本和摘要都一致时，审阅才显示「随当前 AGH 提供」；同名或同字节但来自其他来源的包按普通未验证来源审阅。这一事实不是发布者签名，也不改变信任、启用或能力判断。
 
 安装时验证下载内容；加载安装包和不可变代际快照时重新计算文件树摘要，但同一进程内，文件大小、修改时间和 inode 都没变的树直接复用之前的摘要。因此同大小且恢复修改时间的改写，在树被替换或进程重启之前不会被发现。摘要不一致拒绝加载（`E_PACKAGE_INTEGRITY`）；无效来源证据使用 `E_PACKAGE_PROVENANCE`。旧锁记录继续可读，但不会自动获得已验证发布者身份。npm 有 attestation 时通过 Sigstore 验证，并核对精确包名、版本及实际下载档案摘要；证据缺失显示未验证，证据无效则拒绝安装。
 

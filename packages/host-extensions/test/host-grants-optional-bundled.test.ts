@@ -126,6 +126,17 @@ it('rejects missing release source and present corrupt digest manifests', () => 
   writeFileSync(join(root, 'bundled-plugin-digests.json'), '{}')
   expect(pin(pkg, source, declarations, () => ({ root, path: 'payload' }))(origin)).toEqual({})
 })
+it('rejects a release that ships another version even when its digest manifest names this tree', () => {
+  const root = mkdtempSync(join(tmpdir(), 'agh-release-version-'))
+  temporary.push(root)
+  cpSync(directory, join(root, 'payload'), { recursive: true })
+  writeFileSync(join(root, 'bundled-plugin-digests.json'), JSON.stringify({ payload: digest }))
+  const release = () => ({ root, path: 'payload' })
+  expect(pin(pkg, source, declarations, release)(origin)).toEqual({ sideCall: true, hookTimeoutMs: 15000 })
+  const file = join(root, 'payload', 'package.json')
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), version: '9.9.9' }))
+  expect(pin(pkg, source, declarations, release)(origin)).toEqual({})
+})
 it('rejects isolated exports even with a release declaration and matching source', () => {
   const root = mkdtempSync(join(tmpdir(), 'agh-isolated-proof-'))
   temporary.push(root)
