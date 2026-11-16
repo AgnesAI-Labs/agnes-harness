@@ -1,5 +1,5 @@
 import type { ToolContext } from '@agnes/extension-api'
-import { AGH_DIR } from '@agnes/protocol'
+import { AGH_DIR } from '@agnes/protocol/layout'
 import { within } from '../deadline.js'
 
 export type FindFs = Pick<ToolContext['fs'], 'list' | 'stat' | 'read' | 'revision'>

@@ -8,7 +8,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { AGH_DIR } from '@agnes/protocol'
+import { AGH_DIR } from '@agnes/protocol/layout'
 import type { Variable } from '../app/execution-environment.js'
 import { type Prompts, type PromptVersion, SKILL_PREFIX } from '../app/prompts.js'
 import { bundledSkills } from '../app/skill-files.js'

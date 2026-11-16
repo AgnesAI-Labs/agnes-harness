@@ -241,7 +241,8 @@ describe('the Agnes home directory layout is reconstructed in exactly one place'
   it('packages/protocol/src/constants spells out the harness directory names exactly where expected', () => {
     // The same "exactly one place" pin as the paths.ts check above: excluding the owner from the scan
     // must not let the owner itself grow a second spelling unnoticed.
-    const text = readFileSync(`${NAMESPACE_MODULE_ABS}.ts`, 'utf8')
+    // The names are spelled in the dependency-free layout module that constants.ts re-exports.
+    const text = readFileSync(join(NAMESPACE_MODULE_ABS, 'layout.ts'), 'utf8')
     expect([...text.matchAll(HARNESS_DIR_LITERAL_RE)].map((m) => m[0])).toEqual(["'.agh'", "'.agh/secrets'"])
   })
 
