@@ -424,7 +424,14 @@ export class Sessions implements SessionAdapter {
       node.kind === 'assistant'
         ? [{ type: 'assistant' as const, text: node.text }]
         : node.kind === 'user'
-          ? [{ type: 'user' as const, text: userText(node) }]
+          ? [
+              {
+                type: 'user' as const,
+                text: node.content
+                  .map((block) => (block.type === 'text' ? block.text : `[${block.type}]`))
+                  .join(' '),
+              },
+            ]
           : [],
     )
   }
@@ -438,19 +445,6 @@ export async function sessionHead(
   session: Pick<SessionHandle, 'projectUIOpening'>,
 ): Promise<Pick<Awaited<ReturnType<SessionHandle['projectUI']>>, 'upto' | 'opState' | 'pendingInputs'>> {
   return (await session.projectUIOpening({ maxNodes: 1 })).timeline
-}
-
-type UserNode = Extract<Awaited<ReturnType<SessionHandle['projectUI']>>['nodes'][number], { kind: 'user' }>
-/**
- * A user message as the transcript reads it. A message of Superagent's that the platform took as machine input shows a
- * fixed line and keeps what was delivered as its data, which the transcript reads instead; any other reads as written.
- */
-function userText(node: UserNode): string {
-  if (node.origin === 'system' && node.system && node.commandId?.startsWith('superagent:')) {
-    const data = node.system.data
-    return typeof data === 'string' ? data : JSON.stringify(data)
-  }
-  return node.content.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join(' ')
 }
 
 async function exists(path: string): Promise<boolean> {

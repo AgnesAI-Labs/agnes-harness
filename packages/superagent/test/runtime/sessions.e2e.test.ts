@@ -100,18 +100,15 @@ it('opens the main and worker sessions on a real daemon, backgrounds a slow comm
       return ui.nodes.some((node) => node.kind === 'user' && node.commandId?.startsWith('superagent:'))
     })
     await until('the worker idle', async () => (await worker.projectUI()).opState === null)
-    // It came as machine input: a fixed line, with the delivery kept whole as its data for the model and the trace.
+    // The platform marks it as Superagent's delivery for the reader; it is the owner's input as before otherwise.
     const assignment = (await worker.projectUI()).nodes.find(
       (node) => node.kind === 'user' && node.commandId?.startsWith('superagent:'),
     )
     expect(assignment).toMatchObject({
-      origin: 'system',
-      system: {
-        source: 'agnes/bundled-app',
-        type: 'delivery',
-        data: { ticket_id: ticketId, title: 'Fix the login page' },
-      },
+      origin: 'principal',
+      deliveredBy: { kind: 'bundled-app', appId: '@agnes/superagent/superagent' },
     })
+    expect(JSON.stringify(assignment?.kind === 'user' ? assignment.content : [])).toContain(ticketId)
     // The worker is named for its role and ticket, and the daemon groups it under its ticket directory's workspace.
     const workspace = (await client().workspace.list()).items.find((entry) => entry.path === ticketDir[0])
     expect(workspace?.workspaceId).toBeDefined()
@@ -157,11 +154,14 @@ it('opens the main and worker sessions on a real daemon, backgrounds a slow comm
         (node) =>
           node.kind === 'user' &&
           node.commandId?.startsWith('superagent:') &&
-          JSON.stringify(node.system?.data ?? '').includes('E2E-REPORT done'),
+          node.content.some((block) => block.type === 'text' && block.text.includes('E2E-REPORT done')),
       ),
     )
-    // Relayed as machine input too: the main session shows it as Superagent's, not as a person's message.
-    expect(relay).toMatchObject({ origin: 'system', system: { source: 'agnes/bundled-app' } })
+    // Relayed as Superagent's delivery too, not shown as a person's message.
+    expect(relay).toMatchObject({
+      origin: 'principal',
+      deliveredBy: { kind: 'bundled-app', appId: '@agnes/superagent/superagent' },
+    })
     // The panel shows the ended ticket with the report.
     const detail = await calls.service('superagent.tickets.get', { id: ticketId })
     expect(detail).toMatchObject({ id: ticketId, ended: { outcome: 'completed' } })
