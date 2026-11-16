@@ -193,6 +193,13 @@ vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
     if (client && !('connectionState' in client)) client.connectionState = 'connected'
     // Session binding is mocked below; these doubles have no cached SDK session handles.
     if (client && !('sessions' in client)) client.sessions = new Map()
+    // The page reserves the owner-only methods on the client's own call/notify at boot; a double that
+    // stubs none of them refuses any call that reaches the transport.
+    for (const name of ['call', 'notify'] as const)
+      if (client && !(name in client))
+        client[name] = vi.fn(async (method: string) => {
+          throw new Error(`unstubbed client.${name}(${method})`)
+        })
     if (vi.isMockFunction(client?.on) && !client.on.getMockImplementation())
       client.on.mockImplementation(() => () => undefined)
     if (client?.session?.list && !client.session.groups)
