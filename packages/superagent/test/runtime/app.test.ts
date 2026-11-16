@@ -129,6 +129,34 @@ describe('the app', () => {
     await app.stop('disable')
   })
 
+  it('rolls a start that failed after its Sources started back, keeping its error, and starts again once the cause is gone', async () => {
+    const { app } = setup()
+    // A Source added like Feishu, which counts its starts and stops.
+    const begun = vi.fn()
+    const stopped = vi.fn(async () => {})
+    app.extend({
+      sources: () => {
+        begun()
+        return [stopped]
+      },
+    })
+    const resume = vi
+      .spyOn(app.executor, 'resume')
+      .mockRejectedValueOnce(new Error('ENOSPC: no space left on device'))
+    await expect(app.start()).rejects.toThrow('ENOSPC: no space left on device')
+    expect(begun).toHaveBeenCalledOnce()
+    expect(stopped, 'the Source the start began stops, so nothing polls').toHaveBeenCalledOnce()
+    expect(app.unavailable()).toBe('Superagent is starting')
+    // The cause is gone: the next start begins again, rather than refusing as started already.
+    await app.start()
+    expect(app.unavailable()).toBeUndefined()
+    expect(resume).toHaveBeenCalledTimes(2)
+    expect(begun).toHaveBeenCalledTimes(2)
+    expect(stopped).toHaveBeenCalledOnce()
+    await app.stop('disable')
+    expect(stopped).toHaveBeenCalledTimes(2)
+  })
+
   it('shows a failed start on the runtime health until it is taken back, never over a state the app set since', async () => {
     const { app } = setup()
     const failed = { detail: 'E_SANDBOX_WORKSPACE', retryAt: '2026-11-16T12:00:00.000Z' }
