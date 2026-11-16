@@ -60,6 +60,23 @@ export function githubWorld(dir: string, opened: string) {
     const rules = [
       { pattern: '^api user$', stdout: JSON.stringify({ login: LOGIN, id: 42 }) },
       {
+        // The macOS self-check asks where the token is: the agent signed in with --insecure-storage, so its token is in
+        // its own configuration directory, not the keychain sessions cannot read.
+        pattern: '^auth status --hostname github.com --json hosts$',
+        stdout: JSON.stringify({
+          hosts: {
+            'github.com': [
+              {
+                active: true,
+                host: 'github.com',
+                login: LOGIN,
+                tokenSource: '/srv/superagent/gh-agent/hosts.yml',
+              },
+            ],
+          },
+        }),
+      },
+      {
         // The setup check reads the repository through `--jq {name: .full_name, push: .permissions.push}`.
         pattern: `${API} --jq`,
         stdout: JSON.stringify({ name: REPOSITORY, push: true }),
