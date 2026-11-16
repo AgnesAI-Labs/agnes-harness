@@ -680,12 +680,9 @@ export async function createCompositionHost(
           container.draining = draining(target.tree.rows, container.tree, container.host)
           // A composition the change does not reach (say a plugin its sessions never enabled) runs the
           // same rows and resources as before; rebuilding its generation would change nothing.
-          const selected = new RuntimePluginCatalogue(sources).select(projected)
-          if (
-            container.applied?.target === effective &&
-            sameGenerationSourceIdentity(container.applied.sources, selected)
-          ) {
-            // Row equality cannot attest the current grant for the code already running here.
+          if (container.applied?.target === effective) {
+            // Row equality cannot attest the current grant for the code already running here: a
+            // revoked grant refuses before anything is rebuilt from the revoked sources.
             await assertGenerationTrust(
               container.applied.sources,
               options.profileDir,
@@ -693,14 +690,21 @@ export async function createCompositionHost(
               options.agnesVersion ?? '0.0.0',
               options.runtimePluginSources,
             )
-            return undefined
+            // The same code under a relocated source still needs a fresh authority assembly.
+            if (
+              sameGenerationSourceIdentity(
+                container.applied.sources,
+                new RuntimePluginCatalogue(sources).select(projected),
+              )
+            )
+              return undefined
           }
           delete container.applied
           const report = await container.host.applyRuntimeTarget(projected)
           if (report.ok)
             container.applied = {
               target: effective,
-              sources: structuredClone(selected),
+              sources: structuredClone(new RuntimePluginCatalogue(sources).select(projected)),
             }
           return report
         })

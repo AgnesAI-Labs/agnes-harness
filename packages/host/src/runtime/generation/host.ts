@@ -20,7 +20,6 @@ import {
   type RuntimePluginSnapshot,
   readDevelopmentPlugin,
   sameGenerationCodeAndSources,
-  sameGenerationSourceIdentity,
 } from '@agnes/package-manager'
 import {
   decodeRuntimeTargetArtifact,
@@ -51,7 +50,7 @@ import { type ChangeResult, type ContainerHandle, changeResult, sessionBindingOf
 import { type GenerationFailure, generationError, generationFailure } from './failure.js'
 import { assertMigrationSettled } from './migration-state.js'
 import { createOpenedSessionsRelay } from './opened-sessions.js'
-import { generationPackages } from './packages.js'
+import { generationPackages, sameCodeAuthorityChanged } from './packages.js'
 import { GenerationReuseMode, openGenerationStore, trackRunningGenerations } from './process-liveness.js'
 import { createGenerationSkills, restoreGenerationRows } from './resources.js'
 import { describeColdSession, describeHostSession, readGenerationStatusAsync } from './runtime-descriptor.js'
@@ -579,14 +578,15 @@ export async function createRuntimeGenerationHost(
           .filter((row) => !liveResourceRow(row))
           .map(codeRow),
       ) !== JSON.stringify(extensionRows.filter((row) => !liveResourceRow(row)).map(codeRow))
-    const sources = await sourcesFor(target)
-    const authorityChanged = !sameGenerationSourceIdentity(head.snapshot.sources, sources)
-    if (
-      !authorityChanged &&
+    // Identical rows can still select the same code under a relocated source or changed grant;
+    // that is an authority change, not an unchanged target.
+    const unchangedSources =
       !skills &&
       !extensionCodeChanged &&
       encodeRuntimeTargetArtifact(oldTarget).digest === encodeRuntimeTargetArtifact(target).digest
-    ) {
+        ? await sourcesFor(target)
+        : undefined
+    if (unchangedSources && !sameCodeAuthorityChanged(head.snapshot.sources, unchangedSources)) {
       lastChange = changeResult({ outcome: 'unchanged', generationId: head.snapshot.id })
       return head.host.ordinaryConvergence()
     }
@@ -600,6 +600,9 @@ export async function createRuntimeGenerationHost(
         )
           refuseRestart(row.id)
       }
+    // Resolve sources only after the restart guards: a refused backend row may name no snapshot.
+    const sources = unchangedSources ?? (await sourcesFor(target))
+    const authorityChanged = sameCodeAuthorityChanged(head.snapshot.sources, sources)
     for (const previous of head.snapshot.sources)
       if (requiresRestart(head.host, previous.snapshot.packageId)) {
         const next = sources.find((item) => item.snapshot.packageId === previous.snapshot.packageId)

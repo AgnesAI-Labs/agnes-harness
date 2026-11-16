@@ -1,5 +1,24 @@
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
-import type { RuntimePluginSnapshot } from '@agnes/package-manager'
+import { type RuntimePluginSnapshot, sameGenerationSourceIdentity } from '@agnes/package-manager'
+
+/**
+ * The same code snapshot is selected under a different verified authority: a relocated source,
+ * a changed grant or capability binding. Only a fresh assembly carries that authority. Packages
+ * added, removed or updated are code changes, which keep their own in-place or fork rules.
+ */
+export function sameCodeAuthorityChanged(
+  previous: readonly RuntimePluginSnapshot[],
+  next: readonly RuntimePluginSnapshot[],
+): boolean {
+  return previous.some((before) => {
+    const after = next.find(
+      ({ snapshot }) =>
+        snapshot.packageId === before.snapshot.packageId &&
+        snapshot.snapshotId === before.snapshot.snapshotId,
+    )
+    return after !== undefined && !sameGenerationSourceIdentity([before], [after])
+  })
+}
 
 /** A generation owns its verified provenance; current profile metadata cannot backfill an archive. */
 export function generationPackages(profile: ResolvedProfile, sources: readonly RuntimePluginSnapshot[]) {
