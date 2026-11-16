@@ -129,6 +129,23 @@ describe('the app', () => {
     await app.stop('disable')
   })
 
+  it('shows a failed start on the runtime health until it is taken back, never over a state the app set since', async () => {
+    const { app } = setup()
+    const failed = { detail: 'E_SANDBOX_WORKSPACE', retryAt: '2026-11-16T12:00:00.000Z' }
+    app.reportStart(failed)
+    expect(app.parts.health.runtime).toMatchObject({
+      state: 'error',
+      detail: 'Superagent could not start: E_SANDBOX_WORKSPACE. It tries again at 2026-11-16T12:00:00.000Z.',
+    })
+    app.reportStart(undefined)
+    expect(app.parts.health.runtime).toMatchObject({ state: 'starting', detail: '' })
+    app.reportStart(failed)
+    await app.start()
+    app.reportStart(undefined)
+    expect(app.parts.health.runtime).toMatchObject({ state: 'ready' })
+    await app.stop('disable')
+  })
+
   it.each(['main session', 'resume'] as const)(
     'lets a stop during the start (at the %s) win: nothing starts after it, and drain waits for the start',
     async (step) => {

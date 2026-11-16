@@ -134,6 +134,8 @@ export function composeGeneration(input: GenerationInput): Generation {
       return written
     },
     createApp: () => built,
+    // A failed start shows on the runtime health, with when it is tried again.
+    startProblem: (problem) => built.reportStart(problem),
     log,
     ...input.lifecycle,
   })

@@ -146,6 +146,45 @@ describe('a generation', () => {
     expect(argv.filter((line) => line === 'api user')).toHaveLength(2)
   })
 
+  it('shows a start that failed on the runtime health, with when it is tried again, until an attempt starts it', async () => {
+    let unreachable = true
+    const { call, shutdown } = await start(
+      {
+        probe: async (argv) =>
+          argv.includes('user') ? '{"login":"agent-bot","id":42}' : '{"name":"acme/app","push":true}',
+        lifecycle: {
+          retryDelaysMs: [300],
+          environment: async () => {
+            if (unreachable) throw new Error('daemon discovery owner identity is unavailable')
+            return { stateDir: '/state', account: { login: 'agent-bot', email: 'a@x', blocked: [] } }
+          },
+          writeEnvironment: async () => {},
+          verifyEnvironment: async () => {},
+        },
+      },
+      createHookStateHolder(),
+      (store) =>
+        store.saveSettings(
+          SettingsSchema.parse({
+            sources: { github: { enabled: true, config: { repository: 'acme/app', cli: process.execPath } } },
+          }),
+        ),
+    )
+    const runtime = async () =>
+      ((await call('superagent.state')).health as { runtime?: { state: string; detail: string } }).runtime
+    await vi.waitFor(async () =>
+      expect(await runtime()).toMatchObject({
+        state: 'error',
+        detail: expect.stringMatching(
+          /^Superagent could not start: daemon discovery owner identity is unavailable\. It tries again at \d{4}-\d\d-\d\dT/,
+        ),
+      }),
+    )
+    unreachable = false
+    await vi.waitFor(async () => expect((await runtime())?.state).toBe('ready'), { timeout: 10_000 })
+    await shutdown('disable')
+  })
+
   it('refuses the sessions of earlier runs, with their live notes, from the moment the service has started', async () => {
     const { holder, shutdown } = await start()
     // Nothing of the lifecycle ran yet: it begins after start() returned.
