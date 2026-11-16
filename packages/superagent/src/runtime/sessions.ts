@@ -167,6 +167,11 @@ export function sessionMissing(error: unknown): boolean {
   if (code === 'SESSION_NOT_FOUND' || code === 'E_SESSION_NOT_FOUND') return true
   return code === 'CAPABILITY_DENIED' && failure?.data?.reason === 'session owner unavailable'
 }
+/**
+ * What a worker session's title starts with, before its ticket's name, so a reader tells a worker from the main session,
+ * which keeps its own name. Set on each open, so a worker opened before it had the role in its title gets it then.
+ */
+const WORKER_TITLE_PREFIX = 'Worker · '
 /** A title the daemon accepts: one line of at most 80 characters. */
 function titleOf(title: string, key: string): string {
   const line = [
@@ -238,7 +243,8 @@ export class Sessions implements SessionAdapter {
   async ensureWorker(ticket: Ticket, dir: string): Promise<string> {
     if (!(await exists(join(dir, PREPARED_MARKER)))) await this.prepare(ticket, dir)
     await this.deps.instructions?.(ticket, dir)
-    return this.ensure({ kind: 'worker', ticketId: ticket.id }, dir, ticket.title, ticket)
+    const title = `${WORKER_TITLE_PREFIX}${titleOf(ticket.title, ticket.id)}`
+    return this.ensure({ kind: 'worker', ticketId: ticket.id }, dir, title, ticket)
   }
   private async prepare(ticket: Ticket, dir: string): Promise<void> {
     await this.moveAside(dir)

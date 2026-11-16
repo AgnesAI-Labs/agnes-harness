@@ -13,6 +13,7 @@ import {
   type SessionKey,
 } from '@agnes/core-common/types'
 import { describeValidationErrors, type ThinkingLevel, validateOpState } from '@agnes/protocol'
+import { DeliveryMarkerIndex, withoutInlineMarkers } from './delivery-marker.js'
 import { forkInto, verifiedRange } from './fork-log.js'
 import { type ForkBase, forkChecks, seededLogs } from './fork-seed.js'
 import {
@@ -21,7 +22,6 @@ import {
   verifyCheckpointPrefix,
   waitForVerification,
 } from './history-verification.js'
-
 import {
   type IntegrityState,
   LEDGER_INTEGRITY_ALGORITHM,
@@ -116,6 +116,8 @@ export class SessionLogImpl {
   }>()
   private readonly faultListeners = new Set<(e: CoreError) => void>()
   private faultCause: CoreError | undefined
+  /** Each queued item's delivery marker, so a claim reads it without a scan (see delivery-marker.ts). */
+  readonly deliveryMarkers = new DeliveryMarkerIndex((q) => this.scan(q))
 
   /**
    * Privileged post-commit observation; `'*'` observes every type. Copies isolate observers from the
@@ -706,7 +708,8 @@ export class SessionLogImpl {
           )
       } else await this.fullVerified()
     }
-    const events = prepareEvents(tx, {
+    // No closed row is written with a delivery marker inline; see delivery-marker.ts.
+    const events = prepareEvents(withoutInlineMarkers(tx), {
       ids: this.o.ids,
       clock: this.o.clock,
       refineCaller: opts.refineCaller === true,
@@ -784,6 +787,7 @@ export class SessionLogImpl {
             data: e.data,
           })
       }
+      this.deliveryMarkers.observe(stamped)
       this.lastSeqValue = committed.seqs[committed.seqs.length - 1] as Seq
       if (op) {
         this.registersCache.apply({

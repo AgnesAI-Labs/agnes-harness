@@ -414,6 +414,7 @@ describe('protocol src boundary', () => {
       'JsonValue',
       'ContentBlock',
       'SystemInput',
+      'InputDeliverer',
       'Actor',
       'SurfaceOp',
       'EventEnvelope',
