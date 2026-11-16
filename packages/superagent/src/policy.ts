@@ -190,23 +190,29 @@ const CommandNameSchema = z
   .regex(/^[A-Za-z0-9._-]+$/)
   .refine((name) => name !== '.' && name !== '..', 'Not a command name')
   .refine((name) => !WORKER_COMMANDS.includes(name), `${WORKER_COMMANDS.join(', ')} cannot be blocked`)
-/** Executor settings: worker model, concurrency, ticket directory root (empty defaults to `<stateDir>/work`), `prepare` command, and blocked commands. */
-export const ExecutorConfigSchema = z
-  .object({
-    model: RoleModelSchema.nullable().default(null),
-    maxWorkers: z.number().int().min(LIMITS.maxWorkers.min).max(LIMITS.maxWorkers.max).default(3),
-    directory: z
-      .string()
-      .trim()
-      .refine(
-        (path) => path === '' || isAbsolutePath(path, HOST_PLATFORM),
-        'An absolute path, or empty for <stateDir>/work',
-      )
-      .default(''),
-    prepare: z.string().max(LIMITS.prepareCommand).default(''),
-    blockedCommands: z.array(CommandNameSchema).default([]),
-  })
-  .strict()
+/**
+ * Executor settings as a daemon on `platform` reads them: worker model, concurrency, ticket directory root (absolute on
+ * that platform; empty defaults to `<stateDir>/work`), `prepare` command, and blocked commands.
+ */
+export const executorConfigSchema = (platform: string) =>
+  z
+    .object({
+      model: RoleModelSchema.nullable().default(null),
+      maxWorkers: z.number().int().min(LIMITS.maxWorkers.min).max(LIMITS.maxWorkers.max).default(3),
+      directory: z
+        .string()
+        .trim()
+        .refine(
+          (path) => path === '' || isAbsolutePath(path, platform),
+          'An absolute path, or empty for <stateDir>/work',
+        )
+        .default(''),
+      prepare: z.string().max(LIMITS.prepareCommand).default(''),
+      blockedCommands: z.array(CommandNameSchema).default([]),
+    })
+    .strict()
+/** Executor settings on this process's platform (see `executorConfigSchema`). */
+export const ExecutorConfigSchema = executorConfigSchema(HOST_PLATFORM)
 export const SourceInstanceSchema = z
   .object({ enabled: z.boolean().default(true), config: z.record(z.string(), z.unknown()).default({}) })
   .strict()

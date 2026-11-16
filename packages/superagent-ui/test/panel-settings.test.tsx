@@ -264,4 +264,11 @@ it('reads the prepare command as PowerShell does when the daemon runs on Windows
     true,
     false,
   ])
+  // And the daemon there saves one, whatever machine shows the panel.
+  await type(field<HTMLInputElement>(zh.executionDirectory), 'C:\\Superagent\\work')
+  await click(zh.save)
+  expect(server.settings.executor).toMatchObject({
+    directory: 'C:\\Superagent\\work',
+    prepare: 'git worktree add "$env:DSH_SUPERAGENT_DIR"',
+  })
 })
