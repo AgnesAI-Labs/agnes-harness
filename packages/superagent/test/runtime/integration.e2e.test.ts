@@ -3,7 +3,16 @@
 // a disable through the package manager while the worker runs a turn and a job kills both within two seconds;
 // enabling again reconciles and dispatches the interrupted assignment again; the worker's report ends the ticket, which
 // the panel service shows.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, expect, it } from 'vitest'
@@ -218,7 +227,17 @@ it('runs a ticket end to end, stops its worker on a disable and resumes it on en
     await until('the worker idle after the resume', async () => (await worker.projectUI()).opState === null)
     // The skills Superagent wrote into the AGH home when it started are readable by its sessions, once the platform
     // lists them ready (a read during a skills reload finds none).
-    await until('the skill listed ready', async () => (await listedSkill())?.actual === 'ready')
+    await until('the skill listed ready', async () => (await listedSkill())?.actual === 'ready').catch(
+      async (error: unknown) => {
+        // What the platform lists for the skill, and the skill files Superagent wrote.
+        const dir = join(aghHome, 'skills')
+        const files = existsSync(dir) ? readdirSync(dir, { recursive: true, encoding: 'utf8' }) : []
+        throw new Error(
+          `${String(error)}\nlisted: ${JSON.stringify(await listedSkill())}\nfiles: ${JSON.stringify(files)}`,
+          { cause: error },
+        )
+      },
+    )
     await worker.followUp(tool('w-skill', 'skill_read', { name: 'dsh-superagent-github' }))
     const skillText = (await answered('w-skill')).toolResult ?? ''
     console.info(`skill_read dsh-superagent-github: ${skillText.slice(0, 160).replace(/\s+/g, ' ')}`)
