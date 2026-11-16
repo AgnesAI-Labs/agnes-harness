@@ -85,7 +85,7 @@ export function inboxDeliveredByOf(
  */
 export class DeliveryMarkerIndex {
   private markers?: Map<string, InputDeliverer | null>
-  private building?: Promise<Map<string, InputDeliverer | null>>
+  private building: Promise<Map<string, InputDeliverer | null>> | undefined
   private pending: MarkerRow[] = []
 
   constructor(private readonly scan: (q: ScanQuery) => Promise<Event[]>) {}
@@ -93,7 +93,12 @@ export class DeliveryMarkerIndex {
   /** The marker the newest row Core wrote for the item gives it; `null` when one cleared it, undefined when none. */
   async get(itemId: string): Promise<InputDeliverer | null | undefined> {
     if (this.markers) return this.markers.get(itemId)
-    this.building ??= this.build()
+    // A failed pass is not kept: the next request scans again, so one read error fails one claim, not the session.
+    this.building ??= this.build().catch((error: unknown) => {
+      this.building = undefined
+      this.pending = []
+      throw error
+    })
     return (await this.building).get(itemId)
   }
 

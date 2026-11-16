@@ -136,3 +136,20 @@ describe('what the ledger writes', () => {
     expect(withoutInlineMarkers(batch)).toBe(batch)
   })
 })
+
+describe('DeliveryMarkerIndex', () => {
+  it('scans again after a failed first pass instead of keeping the failure', async () => {
+    const { DeliveryMarkerIndex } = await import('../../src/log/delivery-marker.js')
+    const marked = row(1, INBOX_DELIVERED_BY_EVENT, { itemId: 'item-1', deliveredBy }, { origin: 'system' })
+    let calls = 0
+    const index = new DeliveryMarkerIndex(async () => {
+      calls += 1
+      if (calls === 1) throw new Error('read failed once')
+      return calls === 2 ? [marked] : []
+    })
+    await expect(index.get('item-1')).rejects.toThrow('read failed once')
+    await expect(index.get('item-1')).resolves.toEqual(deliveredBy)
+    await expect(index.get('item-1')).resolves.toEqual(deliveredBy)
+    expect(calls).toBeLessThanOrEqual(3)
+  })
+})
