@@ -3,11 +3,10 @@
 // the GitHub Source; saving the repository there clears the setup problem and starts the GitHub Source, which polls the
 // agent's `gh`, without a restart.
 import { randomUUID } from 'node:crypto'
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, expect, it } from 'vitest'
-import { agentPaths } from '../../src/runtime/environment.js'
 import { type DaemonHandle, startDaemon, stopAllDaemons } from '../fixtures/daemon-harness.js'
 import { defaultStateDir, EXTENSION, ownerCalls, sleep, until } from '../runtime/integration-fixtures.js'
 import { githubWorld, REPOSITORY } from './github-world.js'
@@ -32,13 +31,15 @@ it.skipIf(process.platform === 'win32')(
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-superagent-first-')))
     const world = githubWorld(join(root, 'github'), new Date(Date.now() - 1800_000).toISOString())
     const aghHome = join(root, 'agh')
-    const { home, shimsDir } = agentPaths(defaultStateDir(aghHome))
+    // The daemon starts as usual, with the operator's HOME and PATH.
+    const home = join(root, 'operator-home')
+    mkdirSync(home)
     let handle: DaemonHandle | undefined
     try {
       const daemon = await startDaemon({
         aghHome,
         home,
-        path: `${shimsDir}:${process.env.PATH ?? ''}`,
+        path: process.env.PATH ?? '',
         plugins: [BUNDLED],
         onHandle: (started) => {
           handle = started

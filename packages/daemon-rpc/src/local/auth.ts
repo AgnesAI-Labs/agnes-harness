@@ -1,4 +1,5 @@
 import { createHash, createHmac, createPublicKey, verify as cryptoVerify, timingSafeEqual } from 'node:crypto'
+import { verifyBundledAppProof } from '@agnes/daemon-foundation/local/bundled-app'
 import type {
   CallContext,
   ConnectionState,
@@ -118,6 +119,11 @@ export type AuthConfig = {
   }>
   rotationGraceMs?: number
   portalSecret?: string
+  /**
+   * Server-only, never from RPC input: the per-run key the bundled application's owner client proves itself with
+   * (`local/bundled-app.ts` in daemon-foundation). Only the Unix listener sets it.
+   */
+  bundledAppKey?: string
 }
 
 // Distinct from `@agnes/protocol`'s `Credential` (the wire shape a client may present as
@@ -394,6 +400,17 @@ export function authGate(
     // verifyAuth accepts the local credential over WebSocket only on the local Web listener.
     if (r.authKind === 'local')
       conn.localListener = cx.config.transport === 'ws' && cx.config.localWeb === true ? 'web' : 'unix'
+    // A proof that does not verify fails the handshake rather than leaving an ordinary connection behind.
+    const proof = (meta.auth as { bundledApp?: unknown } | undefined)?.bundledApp
+    if (proof !== undefined) {
+      if (
+        r.authKind !== 'local' ||
+        cx.config.transport !== 'unix' ||
+        !verifyBundledAppProof(cx.config.bundledAppKey, clientId, proof)
+      )
+        throw rpcError('AUTH_INVALID', { reason: 'bundled app proof invalid' })
+      conn.bundledApp = true
+    }
     conn.clientId = clientId
     conn.authKind = r.authKind
     conn.credentialKind = r.credential.kind

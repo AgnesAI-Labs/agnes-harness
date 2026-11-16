@@ -55,6 +55,8 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
   const workspaces: string[] = []
   const renamed: [string, string][] = []
   const loads: string[] = []
+  /** The options of each `load`, in order. */
+  const loadOptions: unknown[] = []
   /** Keys held by another principal's sessions: the daemon denies loading or creating them. */
   const foreign = new Set<string>()
   let seq = 0
@@ -255,8 +257,9 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
         if (options.sessionKey && foreign.has(options.sessionKey)) throw denied(options.sessionKey)
         return make(options.sessionKey ?? `s-${++seq}`, options).handle
       },
-      load: async (id: string) => {
+      load: async (id: string, options?: unknown) => {
         loads.push(id)
+        loadOptions.push(options)
         const found = sessions.get(id)
         if (!found) throw denied(id)
         return found.handle
@@ -296,7 +299,7 @@ export function fakeClient(opts: { routes?: { route: string; models: string[]; e
     if (found) found.deleted = true
     sessions.delete(id)
   }
-  return { client, sessions, workspaces, renamed, loads, make, remove, foreign }
+  return { client, sessions, workspaces, renamed, loads, loadOptions, make, remove, foreign }
 }
 
 /**

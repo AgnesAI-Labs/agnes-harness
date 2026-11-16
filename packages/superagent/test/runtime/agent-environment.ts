@@ -1,44 +1,46 @@
 /**
- * An agent environment written by `writeEnvironment` next to an operator home with its own git identity, credential
- * helper and `gh`, for the real-daemon tests. The agent's real `gh` is the scripted fake: it answers `gh api user` with
- * the agent login and `gh auth git-credential get` with the agent's credential, and logs the configuration directory
- * it ran with.
+ * The agent's environment set up as the deployment guide does it, next to an operator home with its own git identity,
+ * credential helper and `gh`, for the real-daemon tests. The agent's GitHub CLI is a `gh-agent` wrapper with its own
+ * configuration directory; the `gh` it runs is the scripted fake, which answers the account and repository checks for
+ * the agent, answers `gh auth git-credential get` with the agent's credential, and logs the configuration directory
+ * it ran with. The daemon starts as usual: the operator's HOME and PATH.
  */
 import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import {
-  agentPaths,
-  credentialHelper,
-  type EnvironmentConfig,
-  writeEnvironment,
-} from '../../src/runtime/environment.js'
+import { workerGitConfig } from '../../src/infra/worker-paths.js'
+import { credentialHelper, type EnvironmentConfig, writeEnvironment } from '../../src/runtime/environment.js'
 import { gitEnv } from '../fixtures/git.js'
 import { AGENT_CREDENTIAL, makeHomes } from '../fixtures/homes.js'
 
 const FAKE_GH = fileURLToPath(new URL('../fixtures/fake-gh.mjs', import.meta.url))
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
 export const AGENT_LOGIN = 'agent-bot'
-export const AGENT_EMAIL = 'agent-bot@example.invalid'
+export const AGENT_ID = 42
+export const AGENT_EMAIL = `${AGENT_ID}+${AGENT_LOGIN}@users.noreply.github.com`
 
-export async function prepareAgentEnvironment(root: string, remoteUrl: string) {
-  const homes = makeHomes(join(root, 'homes'))
-  // The places a deployment uses: `<state directory>/home` and `<state directory>/worker-bin`.
-  const stateDir = join(root, 'state')
-  const { home: agentHome, shimsDir: shims, ghConfigDir } = agentPaths(stateDir)
-  const cliDir = join(root, 'agent-cli')
-  const ghLog = join(cliDir, 'fake-gh.log')
-  const configDirs = join(cliDir, 'config-dirs.log')
-  mkdirSync(agentHome, { recursive: true })
-  mkdirSync(cliDir, { recursive: true })
-  const script = join(cliDir, 'script.json')
+/**
+ * Writes the `gh-agent` wrapper under `root`: `GH_CONFIG_DIR` is its own directory, as in the guide, and the `gh` it
+ * runs is the scripted fake. `repository` is the one the account checks answer for.
+ */
+export function writeGhAgent(root: string, repository = 'acme/app') {
+  const dir = join(root, 'agent-cli')
+  const configDir = join(root, 'agent-config', 'gh-agent')
+  mkdirSync(dir, { recursive: true })
+  mkdirSync(configDir, { recursive: true })
+  const ghLog = join(dir, 'fake-gh.log')
+  const runsLog = join(dir, 'runs.log')
+  const script = join(dir, 'script.json')
   writeFileSync(
     script,
     JSON.stringify({
       login: AGENT_LOGIN,
       banner: 'AGENT-GH',
       rules: [
+        { args: ['api', 'user', '--jq', '.login'], stdout: `${AGENT_LOGIN}\n` },
+        { args: ['api', 'user'], stdout: `{"login":"${AGENT_LOGIN}","id":${AGENT_ID}}\n` },
+        { args: ['api', `repos/${repository}`], stdout: `{"name":"${repository}","push":true}\n` },
         {
           args: ['auth', 'git-credential', 'get'],
           stdout: `username=${AGENT_CREDENTIAL.user}\npassword=${AGENT_CREDENTIAL.password}\n`,
@@ -47,50 +49,22 @@ export async function prepareAgentEnvironment(root: string, remoteUrl: string) {
       ],
     }),
   )
-  const cli = join(cliDir, 'gh')
+  const cli = join(dir, 'gh-agent')
   writeFileSync(
     cli,
-    `#!/bin/sh\necho "$GH_CONFIG_DIR" >> ${quote(configDirs)}\nFAKE_GH_SCRIPT=${quote(script)} FAKE_GH_LOG=${quote(ghLog)} exec ${quote(process.execPath)} ${quote(FAKE_GH)} "$@"\n`,
+    [
+      '#!/bin/sh',
+      `GH_CONFIG_DIR=${quote(configDir)}`,
+      'export GH_CONFIG_DIR',
+      `echo "$GH_CONFIG_DIR token=\${GH_TOKEN-unset}" >> ${quote(runsLog)}`,
+      `FAKE_GH_SCRIPT=${quote(script)} FAKE_GH_LOG=${quote(ghLog)} exec ${quote(process.execPath)} ${quote(FAKE_GH)} "$@"`,
+      '',
+    ].join('\n'),
   )
   chmodSync(cli, 0o755)
-  const config: EnvironmentConfig = {
-    login: AGENT_LOGIN,
-    email: AGENT_EMAIL,
-    ghConfigDir,
-    blocked: ['curl'],
-    cli,
-  }
-  /**
-   * The test remote is not github.com, so its credential context gets the same agent helper `writeEnvironment` gives
-   * github.com. Appended after the written file; the next `writeEnvironment` replaces the file and this is applied again.
-   */
-  const trustRemote = () =>
-    execFileSync(
-      'git',
-      [
-        'config',
-        '--file',
-        join(agentHome, '.gitconfig'),
-        '--add',
-        `credential.${new URL(remoteUrl).origin}.helper`,
-        credentialHelper(shims),
-      ],
-      { env: gitEnv() as NodeJS.ProcessEnv },
-    )
-  const write = async (home = agentHome, dir = shims, cfg = config) => {
-    await writeEnvironment(home, dir, cfg)
-    trustRemote()
-  }
-  await write()
   return {
-    homes,
-    stateDir,
-    agentHome,
-    shims,
-    config,
-    write,
-    /** The PATH the daemon starts with: the shims first, then the operator's `gh`, then the rest. */
-    path: `${shims}:${homes.operatorBin}:${process.env.PATH ?? ''}`,
+    cli,
+    configDir,
     ghCalls: (): string[][] =>
       existsSync(ghLog)
         ? readFileSync(ghLog, 'utf8')
@@ -98,7 +72,60 @@ export async function prepareAgentEnvironment(root: string, remoteUrl: string) {
             .filter(Boolean)
             .map((line) => (JSON.parse(line) as { argv: string[] }).argv)
         : [],
-    configDirs: (): string[] =>
-      existsSync(configDirs) ? readFileSync(configDirs, 'utf8').split('\n').filter(Boolean) : [],
+    /** Each run of the wrapper: the configuration directory and whether a GitHub token reached it. */
+    runs: (): string[] =>
+      existsSync(runsLog) ? readFileSync(runsLog, 'utf8').split('\n').filter(Boolean) : [],
+  }
+}
+
+/**
+ * The test remote is not github.com, so its credential context gets the same agent helper the written configuration
+ * gives github.com, appended to it. The next `writeEnvironment` replaces the file; apply this again after it.
+ */
+export function trustRemote(stateDir: string, cli: string, remoteUrl: string): void {
+  execFileSync(
+    'git',
+    [
+      'config',
+      '--file',
+      workerGitConfig(stateDir),
+      '--add',
+      `credential.${new URL(remoteUrl).origin}.helper`,
+      credentialHelper(cli),
+    ],
+    { env: gitEnv() as NodeJS.ProcessEnv },
+  )
+}
+
+export async function prepareAgentEnvironment(root: string, remoteUrl: string) {
+  const homes = makeHomes(join(root, 'homes'))
+  const stateDir = join(root, 'state')
+  mkdirSync(stateDir, { recursive: true })
+  const agent = writeGhAgent(root)
+  const config: EnvironmentConfig = {
+    login: AGENT_LOGIN,
+    email: AGENT_EMAIL,
+    blocked: ['curl'],
+    cli: agent.cli,
+  }
+  const write = async (dir = stateDir, cfg = config) => {
+    await writeEnvironment(dir, cfg)
+    trustRemote(dir, agent.cli, remoteUrl)
+  }
+  await write()
+  const url = new URL(remoteUrl)
+  url.username = AGENT_CREDENTIAL.user
+  url.password = AGENT_CREDENTIAL.password
+  return {
+    homes,
+    stateDir,
+    config,
+    write,
+    agent,
+    /** The daemon's environment, started as usual: the operator's HOME, and a PATH that reaches the operator's `gh`. */
+    home: homes.operatorHome,
+    path: `${homes.operatorBin}:${process.env.PATH ?? ''}`,
+    /** The remote with the agent's credential in it, for a session that has no agent environment of its own. */
+    agentUrl: url.toString(),
   }
 }

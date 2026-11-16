@@ -1,5 +1,5 @@
 // The whole plugin on a real daemon, from the shipped payload, with an explicit state directory and the daemon started
-// with the agent's HOME and shims: a seeded request becomes a ticket whose worker session opens in its own directory;
+// as usual: a seeded request becomes a ticket whose worker session opens in its own directory;
 // a disable through the package manager while the worker runs a turn and a job kills both within two seconds;
 // enabling again reconciles and dispatches the interrupted assignment again; the worker's report ends the ticket, which
 // the panel service shows.
@@ -8,7 +8,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, expect, it } from 'vitest'
 import type { Paused } from '../../src/kv.js'
-import { agentPaths } from '../../src/runtime/environment.js'
 import { DATABASE_FILE } from '../../src/runtime/index.js'
 import { TICKET_INSTRUCTIONS_FILE } from '../../src/runtime/instructions.js'
 import { type DaemonHandle, startDaemon, stopAllDaemons } from '../fixtures/daemon-harness.js'
@@ -43,15 +42,16 @@ it.skipIf(process.platform === 'win32')(
     let handle: DaemonHandle | undefined
     try {
       const stateDir = join(root, 'state')
-      const { home, shimsDir } = agentPaths(stateDir)
+      const home = join(root, 'operator-home')
       mkdirSync(home, { recursive: true })
+      const shimsDir = join(stateDir, 'worker-bin')
       const cli = writeAgentCli(root)
       const aghHome = join(root, 'agh')
-      // The daemon runs as the deployment guide starts it: the agent's HOME, its shims first on PATH.
+      // The daemon runs as the deployment guide starts it: as usual, with the operator's HOME and PATH.
       const daemon = await startDaemon({
         aghHome,
         home,
-        path: `${shimsDir}:${process.env.PATH ?? ''}`,
+        path: process.env.PATH ?? '',
         plugins: ['./bundled-plugins/superagent'],
         onHandle: (started) => {
           handle = started
@@ -101,7 +101,7 @@ it.skipIf(process.platform === 'win32')(
       await calls.enable()
       const workerId = `superagent:worker:${ticketId}`
       await until('the worker session', () => calls.exists(workerId)).catch(diagnose)
-      expect(existsSync(join(stateDir, 'home', '.gitconfig')), 'the agent environment is written').toBe(true)
+      expect(existsSync(join(stateDir, 'worker-gitconfig')), 'the agent environment is written').toBe(true)
       const main = await client().session.load('superagent:orchestrator', { history: 'none' })
       expect((await main.tools()).capabilities).toMatchObject({ preset: 'superagent-router' })
       const worker = await client().session.load(workerId, { history: 'none' })
@@ -130,10 +130,12 @@ it.skipIf(process.platform === 'win32')(
             .find((request) => request.lastRole === 'tool' && request.marker.includes(marker)),
         )
       // The worker runs in the ticket directory, as the agent.
-      await worker.followUp(tool('w-where', 'shell', { command: 'pwd; echo "HOME=$HOME"; command -v gh' }))
+      await worker.followUp(
+        tool('w-where', 'shell', { command: 'pwd; echo "GLOBAL=$GIT_CONFIG_GLOBAL"; command -v gh' }),
+      )
       const where = (await answered('w-where')).toolResult ?? ''
       expect(where).toContain(directory)
-      expect(where).toContain(`HOME=${home}`)
+      expect(where).toContain(`GLOBAL=${join(stateDir, 'worker-gitconfig')}`)
       expect(where).toContain(join(shimsDir, 'gh'))
       await until('the worker idle again', async () => (await worker.projectUI()).opState === null)
 

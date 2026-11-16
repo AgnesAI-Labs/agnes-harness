@@ -24,6 +24,7 @@ import { buildEngine } from './app-engine.js'
 import { type AppRun, appRun } from './app-run.js'
 import { buildTools } from './app-tools.js'
 import { type Redelivery, SessionDelivery } from './delivery.js'
+import { agentSessionEnvironment } from './environment.js'
 import type { ExecutorSessions, SuperagentExecutor } from './executor.js'
 import { type HookState, stoppedHookState, withinSessions } from './hook-state.js'
 import { createHookState } from './hooks.js'
@@ -256,6 +257,7 @@ export function createRuntimeParts(input: {
     orchestratorDir: () => machine.stateDir,
     prepareCommand: () => store.settings().executor.prepare,
     environment: (ticket) => input.environment?.(ticket) ?? {},
+    sessionEnvironment: agentSessionEnvironment(machine.stateDir),
     ...(input.verify ? { verify: input.verify } : {}),
     ...(input.workerPrompt ? { workerPrompt: input.workerPrompt } : {}),
     ...(input.instructions ? { instructions: input.instructions } : {}),

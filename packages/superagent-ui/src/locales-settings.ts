@@ -584,17 +584,13 @@ export const SETTINGS_TEXT = {
     '已有一个不是 Superagent 打开的会话 {session}；归档或删除它，然后重新检查设置。',
     SETUP_PROBLEMS.sessionTaken[1],
   ],
-  'setup.agentHomeMismatch': [
-    'daemon 以 HOME {actual} 运行，不是智能体的 home {home}；请把 HOME 设为智能体的 home 后启动这套 AGH。',
-    SETUP_PROBLEMS.agentHomeMismatch[1],
-  ],
-  'setup.agentGhNotShim': [
-    '会话运行的 gh 来自 {actual}，不是 {shims} 里的垫片；请把 {shims} 放在这套 AGH 启动时 PATH 的最前面。',
-    SETUP_PROBLEMS.agentGhNotShim[1],
-  ],
   'setup.agentCredentialMixed': [
     'git 访问 github.com 时会用到智能体以外的凭据工具：{helpers}。',
     SETUP_PROBLEMS.agentCredentialMixed[1],
+  ],
+  'setup.agentNetrc': [
+    'git 会用 {file} 登录 github.com，而不是用智能体的 GitHub CLI；删掉其中 github.com 或 default 那一项，或换一个没有它的用户运行 Superagent。',
+    SETUP_PROBLEMS.agentNetrc[1],
   ],
   'setup.agentLoginMismatch': [
     'gh 以 @{account} 身份运行，不是智能体账号 @{login}。',
@@ -602,6 +598,10 @@ export const SETTINGS_TEXT = {
   ],
   'setup.agentCliUnset': ['没有设置智能体的 GitHub CLI。', SETUP_PROBLEMS.agentCliUnset[1]],
   'setup.agentCliMissing': ['找不到智能体的 GitHub CLI。', SETUP_PROBLEMS.agentCliMissing[1]],
+  'setup.agentCliInShims': [
+    '智能体的 GitHub CLI {cli} 在 Superagent 自己写的 {shims} 里；请填 CLI 本身，比如 gh-agent 包装。',
+    SETUP_PROBLEMS.agentCliInShims[1],
+  ],
   'setup.agentCliSignedOut': ['智能体的 GitHub CLI 读不到它的账号。', SETUP_PROBLEMS.agentCliSignedOut[1]],
   'setup.agentCliNoAccount': [
     '智能体的 GitHub CLI 没有报告 GitHub 账号。',

@@ -43,6 +43,7 @@ import {
 } from '@agnes/host'
 import { telemetrySnapshot } from '@agnes/observability'
 import { rpcError } from '@agnes/protocol'
+import { sessionEnvironmentAuthority } from '../superagent/sessions.js'
 import type { DispatchState } from './assembly-client-dispatch.js'
 import type { ClientsState } from './assembly-client-services.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
@@ -174,6 +175,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
         transport,
         ...(transport === 'ws' ? effectiveRemoteAuth : {}),
         ...(transport === 'ws' && o.config.localWeb ? { localWeb: true } : {}),
+        ...(transport === 'unix' ? { bundledAppKey: state.pool.bundledAppKey } : {}),
       },
       nonces,
       clock,
@@ -198,6 +200,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
           localPackageAdminAuthority(['packages.read'])(context),
         ),
       ),
+    sessionEnvironment: sessionEnvironmentAuthority(state.pool),
     limits: {
       subscribeBufferEvents: o.config.limits.subscribeBufferEvents,
       subscribeBufferBytes: o.config.limits.subscribeBufferBytes,

@@ -1,22 +1,26 @@
 // Adapted from dsh-superagent (MIT)
 /**
- * The agent's identity for execution sessions. A session's shell inherits only HOME and PATH (and the locale and temporary
- * directory) from the daemon, so the identity lives in the agent home this AGH starts with — its `.gitconfig` and the
- * agent's `gh` configuration — and in the shims directory first on its PATH. These are default-path guardrails, not
- * isolation: a full-access session runs as the operator's OS user.
+ * The agent's identity for Superagent's sessions, set up as dsh-superagent does. Superagent writes the shims directory
+ * (`<stateDir>/worker-bin`: a `gh` that runs the agent's GitHub CLI, and a failing shim per blocked command) and the
+ * agent's git configuration (`<stateDir>/worker-gitconfig`), and opens every session it runs with its own environment
+ * (`agentSessionEnvironment`): the shims first on PATH, that git configuration in place of the operator's global and
+ * system ones, no git prompts and no ambient GitHub tokens. The daemon starts as usual; the operator's own identity
+ * stays out of those sessions. These are default-path guardrails, not isolation: a full-access session runs as the
+ * operator's OS user.
  */
 import { existsSync, realpathSync } from 'node:fs'
 import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve } from 'node:path'
+import type { SessionEnvironment } from '@agnes/protocol'
 import { runCommand } from '../app/subprocess.js'
 import { executable } from '../deployment.js'
-import { workerBin } from '../infra/worker-paths.js'
+import { workerBin, workerGitConfig } from '../infra/worker-paths.js'
 import { SetupError } from '../setup.js'
 
 const MARKER = '# Written by Superagent on every start; edits are lost.'
 /** Commands sessions need, which the blocked commands cannot shadow. */
 const NEEDED: ReadonlySet<string> = new Set(['gh', 'git'])
-/** The variables the daemon passes to a session's shell; everything else of its environment stays behind. */
+/** The variables the platform passes to a session's commands before the session's own environment applies. */
 const SESSION_VARIABLES = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR'] as const
 /** Variables that would make `gh` act with a token instead of the agent's login. */
 const GH_TOKENS = ['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_HOST']
@@ -28,11 +32,12 @@ export interface EnvironmentConfig {
   login: string
   /** The agent's commit email. */
   email: string
-  /** The directory holding the agent's `gh` login; `gh` runs with it as `GH_CONFIG_DIR`. */
-  ghConfigDir: string
   /** Commands sessions must not run; each gets a shim that fails. */
   blocked: readonly string[]
-  /** The real `gh`: a command name resolved on PATH without the shims, or an absolute path. Defaults to `gh`. */
+  /**
+   * The agent's GitHub CLI, such as a `gh-agent` wrapper that runs `gh` with the agent's own configuration directory:
+   * a command name resolved on PATH without the shims, or an absolute path. Defaults to `gh`.
+   */
   cli?: string
 }
 
@@ -47,20 +52,97 @@ const real = (path: string): string => {
   }
 }
 const samePath = (a: string, b: string): boolean => real(a) === real(b)
-
-/**
- * Where the agent environment lives in the state directory. The daemon must start with `HOME` set to `home` and `shimsDir`
- * first on `PATH` (its launch command, or its launchd or systemd unit, sets both); the agent's `gh` login is kept under
- * that home.
- */
-export function agentPaths(stateDir: string): { home: string; shimsDir: string; ghConfigDir: string } {
-  const home = join(stateDir, 'home')
-  return { home, shimsDir: workerBin(stateDir), ghConfigDir: join(home, '.config', 'gh') }
+const within = (path: string, directory: string): boolean => {
+  const rest = relative(real(directory), real(path))
+  return rest === '' || (!rest.startsWith('..') && !isAbsolute(rest))
 }
 
-/** The credential helper git runs for github.com: the agent's `gh`, through its shim. */
-export const credentialHelper = (shimsDir: string): string =>
-  `!${shellQuote(join(shimsDir, 'gh'))} auth git-credential`
+/**
+ * The agent's GitHub CLI, resolved from `name` on `path` without the shims. A CLI inside the shims directory, such as
+ * the `gh` shim itself named by its path, would run itself forever, so it is refused.
+ * @throws SetupError `agentCliInShims` for such a CLI, `agentCliMissing` when it is not an executable.
+ */
+function agentCli(name: string, path: string, shimsDir: string): string {
+  if (isAbsolute(name) && within(name, shimsDir))
+    throw new SetupError('agentCliInShims', { cli: name, shims: shimsDir })
+  let cli: string
+  try {
+    cli = executable(name, path, shimsDir)
+  } catch (error) {
+    throw new SetupError('agentCliMissing', { output: reason(error) })
+  }
+  if (within(cli, shimsDir)) throw new SetupError('agentCliInShims', { cli: name, shims: shimsDir })
+  return cli
+}
+
+/**
+ * The `.netrc` (or `_netrc`) in `home` that holds a github.com or a default entry, if any. git's HTTP transport reads
+ * it before it asks any credential helper, so such an entry would sign the agent's pushes in as whoever wrote it.
+ */
+async function githubNetrc(home: string | undefined): Promise<string | undefined> {
+  if (!home) return undefined
+  for (const name of ['.netrc', '_netrc']) {
+    const file = join(home, name)
+    const text = await readFile(file, 'utf8').catch(() => undefined)
+    if (text === undefined) continue
+    const tokens = text.replace(/#.*$/gm, '').split(/\s+/)
+    if (
+      tokens.some(
+        (token, at) =>
+          token === 'default' || (token === 'machine' && tokens[at + 1]?.toLowerCase() === 'github.com'),
+      )
+    )
+      return file
+  }
+  return undefined
+}
+
+/**
+ * The environment Superagent opens each of its sessions with, and its own commands run with: the shims first on PATH,
+ * the agent's git configuration in place of the operator's global and system ones, git never prompting, and no ambient
+ * GitHub token. The platform applies it after its own reduction of the daemon's environment.
+ */
+export function agentSessionEnvironment(stateDir: string): SessionEnvironment {
+  return {
+    pathPrepend: [workerBin(stateDir)],
+    set: {
+      GIT_CONFIG_GLOBAL: workerGitConfig(stateDir),
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_TERMINAL_PROMPT: '0',
+      GIT_ASKPASS: '',
+    },
+    unset: ['GH_TOKEN', 'GITHUB_TOKEN'],
+  }
+}
+
+/** `environment` over `base`, as the platform applies a session's environment to a command's. */
+export function withEnvironment(
+  base: Readonly<Record<string, string | undefined>>,
+  environment: SessionEnvironment,
+): Record<string, string> {
+  const env: Record<string, string | undefined> = { ...base }
+  for (const name of environment.unset ?? []) delete env[name]
+  Object.assign(env, environment.set)
+  if (environment.pathPrepend?.length)
+    env.PATH = [...environment.pathPrepend, ...(env.PATH ? [env.PATH] : [])].join(delimiter)
+  return Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+  )
+}
+
+/**
+ * The variables Superagent's own commands (the prepare command, its git and `gh`) run with once the environment check
+ * passed: the shims first on PATH and the agent's git configuration, as in its sessions.
+ */
+export function agentCommandVariables(
+  stateDir: string,
+  path = process.env.PATH ?? '',
+): Record<string, string> {
+  return withEnvironment({ PATH: path }, agentSessionEnvironment(stateDir))
+}
+
+/** The credential helper git runs for github.com: the agent's GitHub CLI. */
+export const credentialHelper = (cli: string): string => `!${shellQuote(cli)} auth git-credential`
 
 /** True when `file` is a regular file with the marker in its first two lines; a link or directory never counts. */
 async function written(file: string): Promise<boolean> {
@@ -85,31 +167,24 @@ async function replace(file: string, text: string, mode: number): Promise<void> 
 }
 
 /**
- * Writes the agent's environment: in the shims directory a `gh` that runs the real `gh` with the agent's configuration
- * directory and without ambient tokens, and a failing shim per blocked command; in the agent home a `.gitconfig` that names
- * the agent, resets every credential helper (such as a system `osxkeychain`) before adding the agent's `gh` for github.com
- * only, rewrites SSH GitHub URLs to HTTPS and turns askPass off. Nothing is written when either place holds a file this
- * program did not write.
- * @throws SetupError `foreignFile` for such a file, `agentCliMissing` when the real `gh` is not an executable.
+ * Writes the agent's environment into the state directory: in `worker-bin` a `gh` that runs the agent's GitHub CLI
+ * without ambient tokens, and a failing shim per blocked command; and `worker-gitconfig`, which names the agent, resets
+ * every credential helper before adding the agent's GitHub CLI for github.com only, rewrites SSH GitHub URLs to HTTPS,
+ * turns askPass off and defines the LFS filters. Nothing is written when either place holds a file this program did
+ * not write.
+ * @throws SetupError `foreignFile` for such a file, `agentCliMissing` when the agent's GitHub CLI is not an executable,
+ * `agentCliInShims` when it is inside the shims directory.
  */
-export async function writeEnvironment(
-  home: string,
-  shimsDir: string,
-  cfg: EnvironmentConfig,
-): Promise<void> {
-  let cli: string
-  try {
-    cli = executable(cfg.cli ?? 'gh', process.env.PATH ?? '', shimsDir)
-  } catch (error) {
-    throw new SetupError('agentCliMissing', { output: reason(error) })
-  }
+export async function writeEnvironment(stateDir: string, cfg: EnvironmentConfig): Promise<void> {
+  const shimsDir = workerBin(stateDir)
+  const cli = agentCli(cfg.cli ?? 'gh', process.env.PATH ?? '', shimsDir)
   await mkdir(shimsDir, { recursive: true })
   const before = await readdir(shimsDir)
   for (const name of before) {
     const file = join(shimsDir, name)
     if (!(await written(file))) throw new SetupError('foreignFile', { file })
   }
-  const gitconfig = join(home, '.gitconfig')
+  const gitconfig = workerGitConfig(stateDir)
   await claim(gitconfig)
 
   const kept = new Set<string>()
@@ -129,34 +204,24 @@ export async function writeEnvironment(
     'PATH=$rest',
     'export PATH',
   ].join('\n')
-  await shim(
-    'gh',
-    [
-      withoutShims,
-      `unset ${GH_TOKENS.join(' ')}`,
-      `GH_CONFIG_DIR=${shellQuote(cfg.ghConfigDir)}`,
-      'export GH_CONFIG_DIR',
-      `exec ${shellQuote(cli)} "$@"`,
-    ].join('\n'),
-  )
+  await shim('gh', [withoutShims, `unset ${GH_TOKENS.join(' ')}`, `exec ${shellQuote(cli)} "$@"`].join('\n'))
   for (const name of new Set(cfg.blocked.filter((command) => !NEEDED.has(command)))) {
     const message = `${name} is blocked in this installation; use gh, which acts as ${cfg.login}.`
     await shim(name, `echo ${shellQuote(message)} >&2\nexit 1`)
   }
   for (const name of before) if (!kept.has(name)) await unlink(join(shimsDir, name))
 
-  await mkdir(cfg.ghConfigDir, { recursive: true, mode: 0o700 })
   const text = [
     MARKER,
     '[user]',
     `\tname = ${gitQuote(cfg.login)}`,
     `\temail = ${gitQuote(cfg.email)}`,
     '\tuseConfigOnly = true',
-    // The empty value drops every helper configured before this file, such as the system osxkeychain.
+    // The empty value drops every helper configured before this file.
     '[credential]',
     '\thelper =',
     '[credential "https://github.com"]',
-    `\thelper = ${gitQuote(credentialHelper(shimsDir))}`,
+    `\thelper = ${gitQuote(credentialHelper(cli))}`,
     '[url "https://github.com/"]',
     '\tinsteadOf = git@github.com:',
     '\tinsteadOf = ssh://git@github.com/',
@@ -173,9 +238,21 @@ export async function writeEnvironment(
   await replace(gitconfig, `${text}\n`, 0o644)
 }
 
-/** Runs `argv` with only the variables a session's shell inherits from `env`, so `GIT_CONFIG_*` and tokens stay out. */
-function asSession(env: NodeJS.ProcessEnv, argv: string[], cwd: string, signal?: AbortSignal) {
-  const pairs = SESSION_VARIABLES.flatMap((name) => (env[name] === undefined ? [] : [`${name}=${env[name]}`]))
+/**
+ * Runs `argv` with only what a session's command gets from `env`: the variables the platform passes, then `session`,
+ * the session's own environment, as the platform applies it. The daemon's `GIT_CONFIG_*` and tokens stay out.
+ */
+function asSession(
+  env: NodeJS.ProcessEnv,
+  argv: string[],
+  cwd: string,
+  signal?: AbortSignal,
+  session?: SessionEnvironment,
+) {
+  const floor = Object.fromEntries(SESSION_VARIABLES.map((name) => [name, env[name]]))
+  const pairs = Object.entries(session ? withEnvironment(floor, session) : floor).flatMap(([name, value]) =>
+    value === undefined ? [] : [`${name}=${value}`],
+  )
   return runCommand(['env', '-i', ...pairs, ...argv], {
     cwd,
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(CHECK_MS)]) : AbortSignal.timeout(CHECK_MS),
@@ -195,32 +272,27 @@ function forGithub(key: string): boolean {
 }
 
 /**
- * The setup self-check, in the environment sessions inherit (`env`, the daemon's own by default): HOME is the agent home,
- * `gh` resolves to the shim, git asks only the agent's helper for github.com credentials, and `gh` acts as `login`.
- * `signal` stops the checks, as when the runtime stops while it starts.
+ * The setup self-check, as dsh-superagent makes it, in the environment Superagent's sessions get (the daemon's own,
+ * `env`, reduced as the platform reduces it, then `agentSessionEnvironment`): git asks only the agent's GitHub CLI for
+ * github.com credentials, from the agent's git configuration, no `.netrc` in the sessions' HOME (the daemon's) signs in
+ * to github.com first, and `gh` acts as `login`. `signal` stops the checks, as when the runtime stops while it starts.
  * @throws SetupError naming the first check that failed.
  */
 export async function verifyEnvironment(
-  home: string,
-  shimsDir: string,
-  cfg: { login: string },
+  stateDir: string,
+  cfg: { login: string; cli?: string },
   env: NodeJS.ProcessEnv = process.env,
   signal?: AbortSignal,
 ): Promise<void> {
-  if (!env.HOME || !samePath(env.HOME, home))
-    throw new SetupError('agentHomeMismatch', { home, actual: env.HOME ?? '(unset)' })
-
-  const gh = await asSession(env, ['/bin/sh', '-c', 'command -v gh'], home, signal)
-  const actual = gh.stdout.trim()
-  if (gh.code !== 0 || !samePath(actual, join(shimsDir, 'gh')))
-    throw new SetupError('agentGhNotShim', { actual: actual || '(none)', shims: shimsDir })
-
+  const session = agentSessionEnvironment(stateDir)
+  const cli = agentCli(cfg.cli ?? 'gh', env.PATH ?? '', workerBin(stateDir))
   // `-z` separates entries with NUL and never quotes paths: origin, then `key\nvalue`.
   const listed = await asSession(
     env,
     ['git', 'config', '-z', '--show-origin', '--get-regexp', '^credential\\..*helper$'],
-    home,
+    stateDir,
     signal,
+    session,
   )
   if (listed.code !== 0 && listed.code !== 1)
     throw new SetupError('environmentFailed', { output: listed.stderr.trim() })
@@ -239,14 +311,16 @@ export async function verifyEnvironment(
   if (
     !own ||
     !own.origin.startsWith('file:') ||
-    !samePath(own.origin.slice('file:'.length), join(home, '.gitconfig')) ||
-    own.value !== credentialHelper(shimsDir)
+    !samePath(own.origin.slice('file:'.length), workerGitConfig(stateDir)) ||
+    own.value !== credentialHelper(cli)
   )
     throw new SetupError('agentCredentialMixed', {
       helpers: helpers.map((helper) => `${helper.origin} ${helper.value}`).join('; ') || '(none)',
     })
+  const netrc = await githubNetrc(env.HOME)
+  if (netrc) throw new SetupError('agentNetrc', { file: netrc })
 
-  const user = await asSession(env, ['gh', 'api', 'user', '--jq', '.login'], home, signal)
+  const user = await asSession(env, ['gh', 'api', 'user', '--jq', '.login'], stateDir, signal, session)
   if (user.code !== 0) throw new SetupError('agentCliSignedOut', { output: user.stderr.trim() })
   const account = user.stdout.trim()
   if (account !== cfg.login) throw new SetupError('agentLoginMismatch', { account, login: cfg.login })

@@ -18,22 +18,22 @@ export const SETUP_PROBLEMS = {
     'deployment',
     'A session {session} exists that Superagent did not open; archive or remove it, then check the setup again.',
   ],
-  agentHomeMismatch: [
-    'deployment',
-    'The daemon runs with HOME {actual}, not the agent home {home}; start this AGH with HOME set to the agent home.',
-  ],
-  agentGhNotShim: [
-    'deployment',
-    'Sessions run gh from {actual}, not the shim in {shims}; put {shims} first on the PATH this AGH starts with.',
-  ],
   agentCredentialMixed: [
     'deployment',
     "git would ask other credential helpers than the agent's for github.com: {helpers}.",
+  ],
+  agentNetrc: [
+    'deployment',
+    "git would sign in to github.com with {file}, not with the agent's GitHub CLI; remove its github.com or default entry, or run Superagent as a user without one.",
   ],
   agentLoginMismatch: ['github', 'gh acts as @{account}, not the agent account @{login}.'],
   repositoryUnset: ['github', 'The GitHub Source names no repository.'],
   agentCliUnset: ['github', 'The agent GitHub CLI is not set.'],
   agentCliMissing: ['github', 'The agent GitHub CLI was not found.'],
+  agentCliInShims: [
+    'github',
+    'The agent GitHub CLI {cli} is in {shims}, which Superagent writes; name the CLI itself, such as the gh-agent wrapper.',
+  ],
   agentCliSignedOut: ['github', 'The agent GitHub CLI cannot read its account.'],
   agentCliNoAccount: ['github', 'The agent GitHub CLI did not report a GitHub account.'],
   repositoryUnreadable: ['github', '@{account} cannot read {repository}.'],

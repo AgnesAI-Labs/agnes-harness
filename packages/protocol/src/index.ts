@@ -800,6 +800,7 @@ export {
   parseSystemPromptAppend,
   SYSTEM_PROMPT_APPEND_MAX,
 } from './session-composition.js'
+export * from './session-environment.js'
 export * from './session-integrity.js'
 export * from './session-runtime.js'
 export * from './session-tools.js'

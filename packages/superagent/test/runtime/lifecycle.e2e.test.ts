@@ -74,9 +74,11 @@ it.skipIf(process.platform === 'win32')(
     const remote = await startGitHttpRemote({ users: { [AGENT_CREDENTIAL.user]: AGENT_CREDENTIAL.password } })
     cleanups.push(() => remote.close())
     const env = await prepareAgentEnvironment(root, remote.url)
+    // The daemon starts as usual. These sessions are the test's own, without the agent's environment, so their git
+    // reaches the remote with the agent's credential in its URL.
     const daemon = await startDaemon({
       aghHome: join(root, 'agh'),
-      home: env.agentHome,
+      home: env.home,
       path: env.path,
       plugins: [],
       onHandle: (handle) => cleanups.push(() => handle.stop()),
@@ -87,7 +89,7 @@ it.skipIf(process.platform === 'win32')(
     // The ticket's repository, cloned with the agent's credential (this also registers the ticket directory).
     expect(
       await daemon.shell(
-        `git clone -q ${remote.url} repo && cd repo && git checkout -q -b work && echo y > y.txt && git add y.txt && git commit -q -m y && echo cloned`,
+        `git clone -q ${env.agentUrl} repo && cd repo && git checkout -q -b work && echo y > y.txt && git add y.txt && git commit -q -m y && echo cloned`,
         ticketDir,
       ),
     ).toContain('cloned')
@@ -120,9 +122,8 @@ it.skipIf(process.platform === 'win32')(
         hookState: sessionsOnly,
         environment: async () => ({ stateDir: env.stateDir, account: env.config }),
         createApp: () => app,
-        writeEnvironment: (home, shims, cfg) => env.write(home, shims, cfg),
-        verifyEnvironment: (home, shims, cfg) =>
-          verifyEnvironment(home, shims, cfg, { HOME: env.agentHome, PATH: env.path }),
+        writeEnvironment: (dir, cfg) => env.write(dir, cfg),
+        verifyEnvironment: (dir, cfg) => verifyEnvironment(dir, cfg, { HOME: env.home, PATH: env.path }),
       })
       return { app, hooks, lifecycle }
     }

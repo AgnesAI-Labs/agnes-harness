@@ -91,6 +91,8 @@ export type WorkerMethod =
   | 'boundWake.read'
   | 'boundWake.require'
   | 'profileManaged.status'
+  | 'sessionEnvironment.write'
+  | 'sessionEnvironment.release'
   | 'profileStreams.endpoint'
   | 'profileService.identity'
   | 'profileService.authorizeControl'

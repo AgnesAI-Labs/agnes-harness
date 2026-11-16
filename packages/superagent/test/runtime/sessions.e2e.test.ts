@@ -4,12 +4,11 @@
 // moves to the background after 5 seconds, and its orchestrator_report reaches the service through the tool's handle,
 // is relayed to the main session and shows on the panel.
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, expect, it } from 'vitest'
-import { agentPaths } from '../../src/runtime/environment.js'
 import { SERVICE_ID } from '../../src/runtime/index.js'
 import { type DaemonHandle, startDaemon, stopAllDaemons } from '../fixtures/daemon-harness.js'
 import {
@@ -42,14 +41,14 @@ it.skipIf(process.platform === 'win32')(
     try {
       const aghHome = join(root, 'agh')
       const stateDir = defaultStateDir(aghHome)
-      // The home is not created here: the AGH home must be empty when the daemon initializes it, and Superagent
-      // writes the agent's home when it starts.
-      const { home, shimsDir } = agentPaths(stateDir)
+      // The daemon starts as usual, with the operator's HOME and PATH; Superagent gives its sessions the agent's.
+      const home = join(root, 'operator-home')
+      mkdirSync(home)
       const cli = writeAgentCli(root)
       const daemon = await startDaemon({
         aghHome,
         home,
-        path: `${shimsDir}:${process.env.PATH ?? ''}`,
+        path: process.env.PATH ?? '',
         plugins: ['./bundled-plugins/superagent'],
         onHandle: (started) => {
           handle = started

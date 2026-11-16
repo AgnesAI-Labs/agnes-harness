@@ -9,7 +9,6 @@ import { expect } from 'vitest'
 import { openStore } from '../../src/app/store.js'
 import { key } from '../../src/core/index.js'
 import { SettingsSchema } from '../../src/policy.js'
-import { agentPaths } from '../../src/runtime/environment.js'
 import { SERVICE_ID } from '../../src/runtime/index.js'
 import { writeChannelPlugin } from './channel-plugin.js'
 import { type DaemonHandle, startDaemon } from './daemon-harness.js'
@@ -122,13 +121,11 @@ export async function bootstrap(
     ],
   })
   const aghHome = join(root, 'agh')
-  // The daemon runs as the deployment guide starts it: the agent's HOME and shims in the state directory the platform
-  // gives Superagent by default. The home is not created here; Superagent writes it when it starts.
-  const agent = agentPaths(defaultStateDir(aghHome))
+  // The daemon starts as the deployment guide starts it: as usual, with the operator's HOME and PATH.
   const daemon = await startDaemon({
     aghHome,
-    home: agent.home,
-    path: `${agent.shimsDir}:${process.env.PATH ?? ''}`,
+    home: homes.operatorHome,
+    path: process.env.PATH ?? '',
     plugins: ['./bundled-plugins/superagent'],
     onHandle: (started) => {
       handle = started

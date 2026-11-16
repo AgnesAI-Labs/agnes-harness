@@ -8,7 +8,7 @@ import type { Store } from '../app/store.js'
 import { UserError } from '../core/index.js'
 import { type Deployment, type Machine, type Probe, resolveDeployment, workerProbe } from '../deployment.js'
 import { createRuntimeParts, createSuperagentApp, type Log, type SuperagentApp } from './app.js'
-import { agentPaths, verifyDirectory, writeEnvironment } from './environment.js'
+import { verifyDirectory, writeEnvironment } from './environment.js'
 import { claimHookState, type HookStateCell, type HookStateHolder } from './hook-state.js'
 import { workerSystemPromptAppend, writeTicketInstructions } from './instructions.js'
 import {
@@ -84,9 +84,8 @@ export function composeGeneration(input: GenerationInput): Generation {
     restart: () => lifecycle?.recheck(),
     blockCommands: async (blocked) => {
       if (!written) return
-      const { home, shimsDir, ghConfigDir } = agentPaths(written.stateDir)
       written = { ...written, account: { ...written.account, blocked } }
-      await writeEnvironment(home, shimsDir, { ...written.account, ghConfigDir })
+      await writeEnvironment(written.stateDir, written.account)
     },
   })
   app = built

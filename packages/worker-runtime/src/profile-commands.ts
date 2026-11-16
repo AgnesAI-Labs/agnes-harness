@@ -1,5 +1,12 @@
-import { enqueueSystemInput, type Host, type HostSession } from '@agnes/host'
-import { type Actor, rpcError } from '@agnes/protocol'
+import { join } from 'node:path'
+import {
+  agnesHome,
+  enqueueSystemInput,
+  type Host,
+  type HostSession,
+  SessionEnvironmentStore,
+} from '@agnes/host'
+import { type Actor, parseSessionEnvironment, rpcError } from '@agnes/protocol'
 import type { WorkerCommandFrame } from './frames.js'
 import { profileStreamEndpoint } from './profile-stream-server.js'
 
@@ -56,6 +63,14 @@ export async function profileServiceCommand(
           .statuses(String(p.packageId))
           .map(({ id, state, code }) => ({ id, state, ...(code ? { code } : {}) })),
       }
+    }
+    case 'sessionEnvironment.write':
+    case 'sessionEnvironment.release': {
+      if (!host || typeof p.sessionKey !== 'string') throw rpcError('CAPABILITY_DENIED')
+      const store = new SessionEnvironmentStore(join(agnesHome(process.env), 'profiles', host.profile.name))
+      if (cmd.method === 'sessionEnvironment.release') store.release(p.sessionKey)
+      else store.write(p.sessionKey, parseSessionEnvironment(p.environment))
+      return {}
     }
     case 'profileStreams.endpoint':
       if (!host) throw rpcError('CAPABILITY_DENIED')
@@ -118,6 +133,11 @@ export async function profileServiceCommand(
 }
 
 export const isProfileCommand = (method: string) =>
-  ['channels.', 'profileManaged.', 'profileStreams.', 'profileService.', 'boundWake.'].some((prefix) =>
-    method.startsWith(prefix),
-  )
+  [
+    'channels.',
+    'profileManaged.',
+    'profileStreams.',
+    'profileService.',
+    'boundWake.',
+    'sessionEnvironment.',
+  ].some((prefix) => method.startsWith(prefix))

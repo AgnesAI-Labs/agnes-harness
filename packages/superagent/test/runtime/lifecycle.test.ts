@@ -101,11 +101,11 @@ function setup(overrides: { [K in keyof LifecycleDeps]?: LifecycleDeps[K] | unde
       log.push('createApp')
       return app
     },
-    writeEnvironment: async (home, shims, cfg) => {
-      log.push(`write ${home} ${shims} ${cfg.ghConfigDir}`)
+    writeEnvironment: async (stateDir, cfg) => {
+      log.push(`write ${stateDir} ${cfg.login}`)
     },
-    verifyEnvironment: async (home, shims, cfg) => {
-      log.push(`verify ${home} ${shims} ${cfg.login}`)
+    verifyEnvironment: async (stateDir, cfg) => {
+      log.push(`verify ${stateDir} ${cfg.login}`)
     },
     archive,
     now: () => Date.parse(AT),
@@ -137,9 +137,9 @@ describe('enable', () => {
     await lifecycle.settled()
     expect(log.slice(0, 5)).toEqual([
       'environment',
-      // The agent HOME and the shims sit where the daemon's launch environment names them.
-      'write /state/home /state/worker-bin /state/home/.config/gh',
-      'verify /state/home /state/worker-bin agent-bot',
+      // The shims and the agent's git configuration are written into the state directory and checked there.
+      'write /state agent-bot',
+      'verify /state agent-bot',
       'createApp',
       'app.start',
     ])
@@ -150,10 +150,17 @@ describe('enable', () => {
     )
     expect(hooks.get().isSuperagentSession('superagent:worker:owner-made')).toBe(false)
     expect(lifecycle.status()).toEqual({ state: 'running' })
-    // The runtime's own commands run with the agent HOME and gh configuration until it stops.
-    expect(childEnvironment()).toMatchObject({ HOME: '/state/home', GH_CONFIG_DIR: '/state/home/.config/gh' })
+    // The runtime's own commands run with the shims first on PATH and the agent's git configuration until it stops;
+    // the daemon's HOME stays.
+    expect(childEnvironment()).toMatchObject({
+      HOME: process.env.HOME,
+      PATH: `/state/worker-bin:${process.env.PATH}`,
+      GIT_CONFIG_GLOBAL: '/state/worker-gitconfig',
+      GIT_CONFIG_NOSYSTEM: '1',
+    })
     await lifecycle.stop('shutdown')
-    expect(childEnvironment().HOME).toBe(process.env.HOME)
+    expect(childEnvironment().PATH).toBe(process.env.PATH)
+    expect(childEnvironment().GIT_CONFIG_GLOBAL).toBeUndefined()
   })
 
   it('reconciles by the real session state: a running turn is left alone, an aborted one is re-dispatched once after its superseded inputs are dropped, a queued input resumes once', async () => {

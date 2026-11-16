@@ -5,6 +5,7 @@
  */
 import { mkdir, readdir, rename, rmdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { SessionEnvironment } from '@agnes/protocol'
 import type { Store } from '../app/store.js'
 import { runCommand } from '../app/subprocess.js'
 import type { Ticket } from '../core/index.js'
@@ -37,7 +38,10 @@ export interface SessionClient {
   readonly workspace: { add(path: string): Promise<unknown> }
   readonly session: {
     new: (options: NewSessionOptions) => Promise<SessionHandle>
-    load(id: string, options?: { history?: 'none' | 'full' }): Promise<SessionHandle>
+    load(
+      id: string,
+      options?: { history?: 'none' | 'full'; environment?: SessionEnvironment },
+    ): Promise<SessionHandle>
     rename(id: string, title: string): Promise<unknown>
   }
   readonly config: Pick<SdkClient['config'], 'get'>
@@ -177,6 +181,11 @@ export interface SessionsDeps {
   prepareCommand(): string
   /** Variables the prepare command runs with. */
   environment(ticket: Ticket): Record<string, string>
+  /**
+   * The environment every Superagent session is opened with, the agent's identity (see `agentSessionEnvironment`).
+   * Given again on every open, so a session opened before it existed gets it too.
+   */
+  sessionEnvironment?: SessionEnvironment
   /** Checks a prepared directory, such as its local git configuration; throws to fail the ticket. */
   verify?(dir: string, signal: AbortSignal): Promise<void>
   /** Text appended to a new worker session's system prompt. */
@@ -271,7 +280,7 @@ export class Sessions implements SessionAdapter {
     await client.workspace.add(dir)
     const known = registry.id(role)
     if (known) this.handles.delete(known)
-    const found = await (known ? this.handle(known) : client.session.load(key, { history: 'none' })).catch(
+    const found = await (known ? this.handle(known) : client.session.load(key, this.openOptions())).catch(
       (error: unknown) => {
         if (sessionMissing(error)) return undefined
         throw error
@@ -307,6 +316,7 @@ export class Sessions implements SessionAdapter {
         bundles: [bundle],
         preset,
         ...(prompt ? { systemPromptAppend: prompt } : {}),
+        ...(this.deps.sessionEnvironment ? { environment: this.deps.sessionEnvironment } : {}),
       })
       .catch((error: unknown) => {
         if (deleted)
@@ -321,6 +331,11 @@ export class Sessions implements SessionAdapter {
     await this.deps.applyModel?.(role.kind, created)
     return created
   }
+  /** How a session is opened: without its history, with the agent's environment. */
+  private openOptions(): { history: 'none'; environment?: SessionEnvironment } {
+    const environment = this.deps.sessionEnvironment
+    return { history: 'none', ...(environment ? { environment } : {}) }
+  }
   /** Forgets a session's handle, such as one to a session that was deleted, so the next use loads it again. */
   forget(sessionId: string): void {
     this.handles.delete(sessionId)
@@ -329,7 +344,7 @@ export class Sessions implements SessionAdapter {
   handle(sessionId: string): Promise<SessionHandle> {
     let handle = this.handles.get(sessionId)
     if (!handle) {
-      handle = this.deps.client.session.load(sessionId, { history: 'none' })
+      handle = this.deps.client.session.load(sessionId, this.openOptions())
       handle.catch(() => this.handles.delete(sessionId))
       this.handles.set(sessionId, handle)
     }

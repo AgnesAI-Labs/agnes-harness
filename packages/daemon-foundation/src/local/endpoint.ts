@@ -70,6 +70,12 @@ export type ConnectionState = {
    * `unix` for the Unix socket that any local program can open (the CLI, a bundled app's SDK client).
    */
   localListener?: 'web' | 'unix'
+  /**
+   * Set by authGate only when a local Unix connection presented the bundled application's proof (see
+   * `local/bundled-app.ts`): the connection is that application's owner client, the only one a session environment
+   * is accepted from.
+   */
+  bundledApp?: true
   credential?: { kind: string } & Record<string, unknown>
   surface?: Readonly<{
     sourceId: string

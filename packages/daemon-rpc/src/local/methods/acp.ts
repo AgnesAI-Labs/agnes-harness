@@ -72,6 +72,8 @@ export type LocalContext = {
   hasSessionFact?: (sessionId: string) => boolean
   /** The same read-only check `systemPrompt.save` makes; absent means it cannot be made. */
   configurationReadOnly?: (context: CallContext) => Promise<boolean>
+  /** Where session environments are kept; absent, every session environment is refused. */
+  sessionEnvironment?: import('./session-environment.js').SessionEnvironmentAuthority
   /**
    * Fired exactly around the window `session/prompt` below holds `entry.inflight` for one session -
    * started only by the connection that actually wins the SESSION_BUSY race (a concurrent second

@@ -15,7 +15,12 @@ import { liveTicket, runningAssignment, type Ticket } from '../core/index.js'
 import { KV, type Paused } from '../kv.js'
 import { assertSupportedPlatform, type SetupCode, SetupError, type SetupProblem } from '../setup.js'
 import type { SessionAdapter, SuperagentApp } from './contracts.js'
-import { agentPaths, type EnvironmentConfig, verifyEnvironment, writeEnvironment } from './environment.js'
+import {
+  agentCommandVariables,
+  type EnvironmentConfig,
+  verifyEnvironment,
+  writeEnvironment,
+} from './environment.js'
 import type { HookState, HookStateCell } from './hook-state.js'
 import type { SdkClient } from './sdk.js'
 
@@ -58,12 +63,12 @@ export interface SessionControl {
 }
 
 /**
- * The agent environment to write: the state directory, which fixes where it goes (see `agentPaths`), and the agent
- * account it is written for.
+ * The agent environment to write: the state directory, which fixes where it goes (`worker-bin` and `worker-gitconfig`
+ * in it), and the agent account it is written for.
  */
 export interface EnvironmentPlan {
   stateDir: string
-  account: Omit<EnvironmentConfig, 'ghConfigDir'>
+  account: EnvironmentConfig
 }
 
 export interface LifecycleDeps {
@@ -94,9 +99,8 @@ export interface LifecycleDeps {
   log?: { warn(message: string): void }
   writeEnvironment?: typeof writeEnvironment
   verifyEnvironment?: (
-    home: string,
-    shimsDir: string,
-    cfg: { login: string },
+    stateDir: string,
+    cfg: { login: string; cli?: string },
     signal: AbortSignal,
   ) => Promise<void>
   archive?: (store: Store, now: number) => { archived: number }
@@ -396,17 +400,20 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       assertSupportedPlatform(deps.platform ?? process.platform) // guards-allow-platform: POSIX-only plugin.
       const plan = await deps.environment(signal)
       if (stopping) return
-      const { home, shimsDir, ghConfigDir } = agentPaths(plan.stateDir)
-      await (deps.writeEnvironment ?? writeEnvironment)(home, shimsDir, { ...plan.account, ghConfigDir })
+      await (deps.writeEnvironment ?? writeEnvironment)(plan.stateDir, plan.account)
       if (stopping) return
       const verify =
         deps.verifyEnvironment ??
-        ((h: string, d: string, cfg: { login: string }, s: AbortSignal) =>
-          verifyEnvironment(h, d, cfg, process.env, s))
-      await verify(home, shimsDir, { login: plan.account.login }, signal)
+        ((dir: string, cfg: { login: string; cli?: string }, s: AbortSignal) =>
+          verifyEnvironment(dir, cfg, process.env, s))
+      await verify(
+        plan.stateDir,
+        { login: plan.account.login, ...(plan.account.cli ? { cli: plan.account.cli } : {}) },
+        signal,
+      )
       if (stopping) return
       // The runtime's own git, gh and prepare commands act as the agent too.
-      setAgentVariables({ HOME: home, GH_CONFIG_DIR: ghConfigDir })
+      setAgentVariables(agentCommandVariables(plan.stateDir))
       // `stopping` is checked right before, and nothing awaits in between: a stop either sees this app or none.
       const started = deps.createApp(signal)
       app = started

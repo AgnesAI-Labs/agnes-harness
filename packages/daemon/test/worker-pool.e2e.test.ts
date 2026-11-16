@@ -830,6 +830,55 @@ describe('WorkerPool', () => {
     expect(pool.isQuarantined('@shared')).toBe(false)
   })
 
+  it('sends the shared session worker the bundled-app key over IPC, never in any environment', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-key-'))
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify({ name: 'p', hash: 'h1' }))
+    const config: DaemonConfig = {
+      profileName: 'p',
+      dataDir: dir,
+      socketPath: join(dir, 'a.sock'),
+      workersSocketPath: workerSocket(dir),
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: REAL_WORKER_STARTUP_MS },
+    }
+    const environments: NodeJS.ProcessEnv[] = []
+    const pool = new WorkerPool({
+      config,
+      profile: { name: 'p', hash: 'h1' } as never,
+      profileFile,
+      execPath: process.execPath,
+      workerEntry: fakeWorker,
+      execArgv: ['--import', 'tsx'],
+      spawn: ((command: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv }) => {
+        environments.push({ ...options.env })
+        return nodeSpawn(command, args, options as never)
+      }) as unknown as typeof nodeSpawn,
+      clock: () => 0,
+      onEvent: () => undefined,
+      onRequest: async () => undefined,
+      notices: { emit() {} },
+    })
+    const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
+    try {
+      const link = await acquire(pool, 'agnes:t:a:x:dm:key', { cwd: dir })
+      const probe = link.command.bind(link) as unknown as (
+        method: string,
+        params: Record<string, unknown>,
+      ) => Promise<{ key: string | null; inEnvironment: boolean }>
+      expect(pool.bundledAppKey).toMatch(/^[0-9a-f]{64}$/)
+      expect(await probe('bundled-app-key', {})).toEqual({ key: pool.bundledAppKey, inEnvironment: false })
+      expect(environments.length).toBeGreaterThan(0)
+      for (const env of environments) {
+        expect(Object.values(env)).not.toContain(pool.bundledAppKey)
+        expect(Object.keys(env).filter((name) => /BUNDLED/i.test(name))).toEqual([])
+      }
+    } finally {
+      await pool.closeAll(1_000)
+      await server.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   it('multiplexes two sessions through one shared worker and closes them independently', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-pool-shared-'))
     const profileFile = join(dir, 'profile.json')
