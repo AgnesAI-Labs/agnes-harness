@@ -53,6 +53,7 @@ const TEXT = {
   'health.reply': ['发往渠道的消息', 'Messages to Channels'],
   'health.worker': ['执行器事件处理', 'Executor event handling'],
   'health.evals': ['未完成的评估', 'Unavailable Evals'],
+  'health.skills': ['技能文件', 'Skill files'],
   none: ['暂无。', 'None.'],
   openSession: ['打开 Session', 'Open Session'],
   stop: ['停止', 'Stop'],

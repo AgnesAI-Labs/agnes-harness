@@ -34,21 +34,3 @@ export async function retryBusy<T>(
     }
   }
 }
-
-/** `retryBusy` for a synchronous `operation`; it blocks this thread while it waits. */
-export function retryBusySync<T>(
-  operation: () => T,
-  platform: string,
-  delays: readonly number[] = BUSY_DELAYS_MS,
-  sleep: (ms: number) => void = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
-): T {
-  for (let attempt = 0; ; attempt++) {
-    try {
-      return operation()
-    } catch (error) {
-      const delay = delays[attempt]
-      if (delay === undefined || !busy(error, platform)) throw error
-      sleep(delay)
-    }
-  }
-}

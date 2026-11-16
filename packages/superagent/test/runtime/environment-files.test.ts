@@ -111,10 +111,16 @@ it('writes .cmd shims on Windows that leave the shims and the tokens behind and 
     [
       '@echo off',
       'rem # Written by Superagent on every start; edits are lost.',
+      // Its changes stay in this cmd.exe and the CLI it starts, never in a caller's.
+      'setlocal',
+      // Its own directory as cmd.exe found it, so no path is written into the file.
+      'set "SUPERAGENT_SHIMS=%~dp0"',
+      'set "SUPERAGENT_SHIMS=%SUPERAGENT_SHIMS:~0,-1%"',
       'set "PATH=;%PATH%;"',
-      `set "PATH=%PATH:;${shims};=;%"`,
-      `set "PATH=%PATH:;${shims};=;%"`,
+      'call set "PATH=%%PATH:;%SUPERAGENT_SHIMS%;=;%%"',
+      'call set "PATH=%%PATH:;%SUPERAGENT_SHIMS%;=;%%"',
       'set "PATH=%PATH:~1,-1%"',
+      'set "SUPERAGENT_SHIMS="',
       'set "GH_TOKEN="',
       'set "GITHUB_TOKEN="',
       'set "GH_ENTERPRISE_TOKEN="',
@@ -128,6 +134,7 @@ it('writes .cmd shims on Windows that leave the shims and the tokens behind and 
     [
       '@echo off',
       'rem # Written by Superagent on every start; edits are lost.',
+      'setlocal',
       'echo curl is blocked in this installation; use gh, which acts as agent-bot. 1>&2',
       'exit /b 1',
       '',
@@ -148,5 +155,40 @@ it('refuses a Windows shims directory a batch PATH edit cannot match', async () 
   const named = { ...config, cli: join(root, 'bin', 'gh.exe') }
   await expect(writeEnvironment(odd, named, 'win32', { PATH: '' })).rejects.toMatchObject({
     code: 'environmentFailed',
+  })
+})
+
+it('writes Windows shims in ASCII under a state directory that is not, and refuses a CLI path it could not write', async () => {
+  // A user profile whose name is not ASCII holds the default state directory; cmd.exe would misread it in a batch file.
+  const profile = join(root, '张三 (x86)')
+  const state = join(profile, 'state')
+  writeFileSync(join(root, 'bin', 'gh.exe'), '')
+  await writeEnvironment(state, { ...config, cli: join(root, 'bin', 'gh.exe') }, 'win32', { PATH: '' })
+  const shim = readFileSync(join(state, 'worker-bin', 'gh.cmd'), 'utf8')
+  expect([...shim].filter((char) => char.charCodeAt(0) > 0x7f)).toEqual([])
+  expect(shim).not.toContain(profile)
+  // The CLI's own path is written as it is, so one that is not ASCII is refused, with its own setup problem.
+  mkdirSync(join(profile, 'bin'))
+  writeFileSync(join(profile, 'bin', 'gh-agent.cmd'), '')
+  const cli = join(profile, 'bin', 'gh-agent.cmd')
+  await expect(
+    writeEnvironment(join(root, 'other'), { ...config, cli }, 'win32', { PATH: '' }),
+  ).rejects.toMatchObject({
+    code: 'agentCliPathNotAscii',
+    place: 'github',
+    values: { cli },
+  })
+})
+
+it('refuses a Windows PATH longer than the line a shim reads it into', async () => {
+  writeFileSync(join(root, 'bin', 'gh.exe'), '')
+  const named = { ...config, cli: join(root, 'bin', 'gh.exe') }
+  const shims = join(stateDir, 'worker-bin')
+  // The sessions' PATH is the shims, a separator and the daemon's PATH; the shim adds 32 characters around it.
+  const fits = 'x'.repeat(8191 - 32 - shims.length - 1)
+  await expect(writeEnvironment(stateDir, named, 'win32', { PATH: fits })).resolves.toBeUndefined()
+  await expect(writeEnvironment(stateDir, named, 'win32', { PATH: `${fits}x` })).rejects.toMatchObject({
+    code: 'shimsPathTooLong',
+    values: { length: '8192', limit: '8191' },
   })
 })

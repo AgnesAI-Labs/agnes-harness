@@ -147,18 +147,21 @@ steps, and the defaults. Ask for one confirmation.
    ```
 
    On Windows the wrapper is a `gh-agent.cmd` file. Have it run `gh.exe` by its full path (`where.exe gh` prints it),
-   so it never reaches Superagent's `gh` shim; in PowerShell:
+   so it never reaches Superagent's `gh` shim, and keep it in a path of ASCII characters only, such as
+   `C:\Superagent\bin`: the shim names it, and `cmd.exe` misreads other characters in a batch file (Superagent refuses
+   such a path with `agentCliPathNotAscii`). In PowerShell:
 
    ```powershell
-   New-Item -ItemType Directory -Force "$env:USERPROFILE\bin" | Out-Null
+   New-Item -ItemType Directory -Force C:\Superagent\bin | Out-Null
    $gh = (Get-Command gh.exe).Source
-   Set-Content -Encoding ascii "$env:USERPROFILE\bin\gh-agent.cmd" "@set `"GH_CONFIG_DIR=%USERPROFILE%\.config\gh-agent`"`r`n@`"$gh`" %*"
-   & "$env:USERPROFILE\bin\gh-agent.cmd" auth login
-   & "$env:USERPROFILE\bin\gh-agent.cmd" api user --jq .login
+   Set-Content -Encoding ascii C:\Superagent\bin\gh-agent.cmd "@set `"GH_CONFIG_DIR=%USERPROFILE%\.config\gh-agent`"`r`n@`"$gh`" %*"
+   C:\Superagent\bin\gh-agent.cmd auth login
+   C:\Superagent\bin\gh-agent.cmd api user --jq .login
    ```
 
-   A batch file cannot pass a line break on in an argument: Superagent sends a comment's text to it on standard input,
-   and tells the Windows sessions to give multi-line text to `gh` in a file (`--body-file`).
+   A batch file cannot pass a line break on in an argument, and `cmd.exe` runs what follows a quote and `&` or `|` in
+   one: Superagent sends a comment's text to it on standard input and refuses such an argument, and tells the Windows
+   sessions to give text from people to `gh` in a file or on standard input (`--body-file`), never on its command line.
 
    Sign in through the browser, as the dedicated agent account, a collaborator with write access to this one
    repository only; for a trial, the operator's own account works too, and the agent then acts as the operator. Superagent receives requests through the account's notifications, and GitHub's notifications API

@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
@@ -74,10 +74,13 @@ it('writes the texts for PowerShell on Windows: no POSIX variable or assignment 
   )
   expect(worker).toContain('set `$base = git merge-base HEAD origin/<base branch>`')
   expect(worker).toContain(
-    '`$env:FILTER_BRANCH_SQUELCH_WARNING = \'1\'; git filter-branch -f --msg-filter "git interpret-trailers --if-exists addIfDifferent --trailer \'<trailer>\'" "$base..HEAD"`',
+    "`$env:FILTER_BRANCH_SQUELCH_WARNING = '1'; git filter-branch -f --msg-filter 'git interpret-trailers --if-exists addIfDifferent --trailer ''<trailer>''' \"$base..HEAD\"`",
   )
   expect(worker).toContain('`git push "--force-with-lease=<head branch>:$old"`')
   expect(worker, 'a Windows worker learns its gh cannot take a line break').toContain('--body-file <file>')
+  expect(worker, "people's text never reaches the batch file's command line").toContain(
+    'text from people (titles, bodies, comments), and any multi-line text, goes to gh in a file or on standard input, never on its command line',
+  )
   expect(orchestrator).not.toContain('--body-file <file>')
   new SkillFiles(h.prompts, join(dir, 'skills'), { platform: 'win32' }).write(version)
   const skill = readFileSync(join(dir, 'skills', 'dsh-superagent-github', 'SKILL.md'), 'utf8')
@@ -87,20 +90,4 @@ it('writes the texts for PowerShell on Windows: no POSIX variable or assignment 
   expect(readFileSync(join(dir, 'SUPERAGENT.md'), 'utf8')).toContain(
     "in a PowerShell command, set it first, for example `$env:DSH_SUPERAGENT_NAME = '<value>'; ...`.",
   )
-})
-
-it('reports skill files it cannot write to the panel and goes on, then reports them written', () => {
-  const h = host()
-  const reports: { state: string; detail: string }[] = []
-  const root = join(dir, 'skills')
-  // A file where the skills directory belongs: every write fails, as a held file does once its retries are spent.
-  writeFileSync(root, '')
-  const skills = new SkillFiles(h.prompts, root, { health: { set: (health) => reports.push(health) } })
-  const version = h.prompts.current()
-  expect(() => skills.write(version)).not.toThrow()
-  expect(reports).toMatchObject([{ state: 'error', detail: expect.stringContaining(root) }])
-  rmSync(root)
-  skills.write(version)
-  expect(reports.at(-1)).toMatchObject({ state: 'ready' })
-  expect(readdirSync(root)).toEqual(['dsh-superagent-github'])
 })

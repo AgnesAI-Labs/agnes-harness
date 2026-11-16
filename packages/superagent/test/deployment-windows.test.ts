@@ -1,9 +1,10 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, expect, it } from 'vitest'
-import { executable, machineOf } from '../src/deployment.js'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { executable, machineOf, workerProbe } from '../src/deployment.js'
 import { isAbsolutePath } from '../src/infra/platform.js'
+import { withoutDirectory } from '../src/infra/worker-paths.js'
 import { agentSessionEnvironment, credentialHelper, withEnvironment } from '../src/runtime/environment.js'
 import { machineConfig } from '../src/runtime/index.js'
 
@@ -14,6 +15,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
+  vi.unstubAllEnvs()
 })
 
 it('resolves the agent CLI on Windows by PATHEXT, skipping the shims directory, as a shell would', () => {
@@ -31,6 +33,17 @@ it('resolves the agent CLI on Windows by PATHEXT, skipping the shims directory, 
   expect(() => executable('bin\\gh-agent', bin, shims, 'win32', env)).toThrow(
     'must be a command name or an absolute path',
   )
+  // A quoted entry is the directory inside the quotes; the shims compare without case, as Windows names do.
+  expect(executable('gh-agent', `"${shims}";"${bin}"`, shims, 'win32', env)).toBe(join(bin, 'gh-agent.cmd'))
+  expect(executable('gh-agent', `${shims.toUpperCase()};${bin}`, shims, 'win32', env)).toBe(
+    join(bin, 'gh-agent.cmd'),
+  )
+  expect(withoutDirectory(`${shims.toUpperCase()};${bin}`, shims, ';', 'win32')).toBe(bin)
+  // POSIX names keep their case (checked where the file system would not fold it for us).
+  if (process.platform !== 'win32')
+    expect(withoutDirectory(`${shims.toUpperCase()}:${bin}`, shims, ':', 'linux')).toBe(
+      `${shims.toUpperCase()}:${bin}`,
+    )
 })
 
 it('takes a Windows state directory with its drive, and keeps it inside the private one the platform gives', () => {
@@ -50,6 +63,9 @@ it('takes a Windows state directory with its drive, and keeps it inside the priv
   expect(machineConfig({ stateDir: `${granted}\\inner` }, granted, 'win32').stateDir).toBe(
     `${granted}\\inner`,
   )
+  // A directory inside whose name starts with two dots is inside too.
+  expect(machineConfig({ stateDir: `${granted}\\..x` }, granted, 'win32').stateDir).toBe(`${granted}\\..x`)
+  expect(() => machineConfig({ stateDir: `${granted}\\..` }, granted, 'win32')).toThrow('private directory')
   expect(() => machineConfig({ stateDir: 'D:\\elsewhere' }, granted, 'win32')).toThrow(
     'On Windows Superagent keeps its state in the private directory the platform gives it',
   )
@@ -74,5 +90,15 @@ it("writes the agent's environment over a Windows one: the shims first on its Pa
   )
   expect(credentialHelper('/usr/local/bin/gh-agent', 'linux')).toBe(
     "!'/usr/local/bin/gh-agent' auth git-credential",
+  )
+})
+
+it("runs the setup checks on Windows with the shims off the daemon's Path, in any case", async () => {
+  const state = join(dir, 'state')
+  const shims = join(state, 'worker-bin')
+  vi.stubEnv('PATH', `${shims.toUpperCase()};${join(dir, 'bin')}`)
+  const probe = workerProbe(state, dir, new AbortController().signal, 'win32')
+  expect((await probe([process.execPath, '-e', 'process.stdout.write(process.env.PATH)'])).trim()).toBe(
+    join(dir, 'bin'),
   )
 })

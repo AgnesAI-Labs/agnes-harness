@@ -6,7 +6,7 @@ import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { childEnvironment, type Processes, runCommand, setAgentVariables } from '../src/app/subprocess.js'
 import { cmdArgument, findWindowsProgram, windowsLaunch } from '../src/app/windows-launch.js'
-import { busy, retryBusy, retryBusySync } from '../src/infra/busy.js'
+import { busy, retryBusy } from '../src/infra/busy.js'
 
 // The Windows paths of the runner, with the platform given and the process start replaced: no Windows machine runs
 // these, so they pin what Superagent asks Windows for.
@@ -39,11 +39,14 @@ function fakeChild(pid: number) {
   return { child, end }
 }
 
-it('stops a Windows command by ending its whole tree with taskkill, at once, and never as a process group', async () => {
-  const { child, end } = fakeChild(4242)
+const TASKKILL = 'C:\\Windows\\System32\\taskkill.exe'
+/** A runner over a fake child and a fake taskkill, on Windows with its system directory at C:\\Windows. */
+function windowsRun(pid: number) {
+  vi.stubEnv('SystemRoot', 'C:\\Windows')
+  const { child, end } = fakeChild(pid)
   const taskkill = new EventEmitter()
   const spawn = vi.fn((program: string, _args: string[], _options: object) =>
-    program === 'taskkill' ? taskkill : child,
+    program === TASKKILL ? taskkill : child,
   )
   const kill = vi.fn()
   const controller = new AbortController()
@@ -53,9 +56,15 @@ it('stops a Windows command by ending its whole tree with taskkill, at once, and
     timeoutMs: 60_000,
     processes: { spawn: spawn as unknown as Processes['spawn'], kill },
   })
+  return { child, end, taskkill, spawn, kill, controller, running }
+}
+
+it('stops a Windows command by ending its whole tree with taskkill, at once, and never as a process group', async () => {
+  const { end, spawn, kill, controller, running } = windowsRun(4242)
   expect(spawn.mock.calls[0]?.[2]).toMatchObject({ detached: false, windowsHide: true })
   controller.abort()
-  expect(spawn).toHaveBeenLastCalledWith('taskkill', ['/PID', '4242', '/T', '/F'], {
+  // Windows' own taskkill, by its full path: never one found on PATH or in the working directory.
+  expect(spawn).toHaveBeenLastCalledWith(TASKKILL, ['/PID', '4242', '/T', '/F'], {
     stdio: 'ignore',
     windowsHide: true,
   })
@@ -63,6 +72,27 @@ it('stops a Windows command by ending its whole tree with taskkill, at once, and
   end(1)
   expect((await running).code).toBe(1)
   expect(spawn).toHaveBeenCalledTimes(2)
+})
+
+it('ends the child itself when taskkill fails, or by the deadline when taskkill never returns', async () => {
+  const failed = windowsRun(4343)
+  failed.controller.abort()
+  failed.taskkill.emit('exit', 128)
+  expect(failed.child.kill).toHaveBeenCalledWith('SIGKILL')
+  failed.end(1)
+  await failed.running
+  vi.useFakeTimers()
+  try {
+    const hung = windowsRun(4444)
+    hung.controller.abort()
+    expect(hung.child.kill).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(2_000)
+    expect(hung.child.kill).toHaveBeenCalledWith('SIGKILL')
+    hung.end(1)
+    await hung.running
+  } finally {
+    vi.useRealTimers()
+  }
 })
 
 it('stops a POSIX command through its process group, as before', async () => {
@@ -98,32 +128,44 @@ it('finds a Windows program as a shell does: each PATH directory in turn, with t
 })
 
 it('runs a Windows batch file through cmd.exe with its arguments escaped twice, and refuses a line break', () => {
-  writeFileSync(join(directory, 'gh-agent.cmd'), '')
-  const env = { PATH: directory, PATHEXT: '.cmd', ComSpec: 'C:\\Windows\\system32\\cmd.exe' }
-  const launch = windowsLaunch('gh-agent', ['api', 'repos/a/b?per_page=1&page=2', 'a "quoted" 100%'], env)
+  // A directory with a space and parentheses, as under C:\Program Files (x86).
+  const bin = join(directory, 'bin (x86)')
+  mkdirSync(bin)
+  writeFileSync(join(bin, 'gh-agent.cmd'), '')
+  const env = { PATH: bin, PATHEXT: '.cmd', ComSpec: 'C:\\Windows\\system32\\cmd.exe' }
+  const launch = windowsLaunch('gh-agent', ['api', 'repos/a/b?per_page=1&page=2', 'a \\ 100%'], env)
   expect(launch).toEqual({
     program: 'C:\\Windows\\system32\\cmd.exe',
     args: [
       '/d',
       '/s',
       '/c',
-      `"${join(directory, 'gh-agent.cmd').replace(/([()\][%!^"`<>&|;, *?])/g, '^$1')} ${[
-        'api',
-        'repos/a/b?per_page=1&page=2',
-        'a "quoted" 100%',
-      ]
-        .map((arg) => cmdArgument(arg, true))
-        .join(' ')}"`,
+      // The program's own special characters escaped once, each argument quoted and escaped twice.
+      `"${join(directory, 'bin^ ^(x86^)', 'gh-agent.cmd')} ^^^"api^^^" ^^^"repos/a/b^^^?per_page=1^^^&page=2^^^" ^^^"a^^^ \\^^^ 100^^^%^^^""`,
     ],
     verbatim: true,
   })
+  // Every character cmd.exe reads specially is escaped.
+  expect(
+    ['1%', 'e!f', 'c^d', 'g|h', '<i>', '(x)', 'a;b,c', 'w*?'].map((arg) => cmdArgument(arg, false)),
+  ).toEqual([
+    '^"1^%^"',
+    '^"e^!f^"',
+    '^"c^^d^"',
+    '^"g^|h^"',
+    '^"^<i^>^"',
+    '^"^(x^)^"',
+    '^"a^;b^,c^"',
+    '^"w^*^?^"',
+  ])
   // Quoted for the program, then each special character escaped once per cmd.exe pass.
   expect(cmdArgument('a&b', false)).toBe('^"a^&b^"')
   expect(cmdArgument('a&b', true)).toBe('^^^"a^^^&b^^^"')
   expect(cmdArgument('say "hi"\\', false)).toBe('^"say^ \\^"hi\\^"\\\\^"')
   expect(() => windowsLaunch('gh-agent', ['api', '-f', 'body=one\ntwo'], env)).toThrow(
-    'gh-agent.cmd is a batch file, which cannot receive an argument with a line break',
+    'gh-agent.cmd is a batch file, which cannot receive an argument with a line break or a quote',
   )
+  expect(() => windowsLaunch('gh-agent', ['api', 'search?q="x"&y'], env)).toThrow('or a quote')
   // Any other program starts as itself, found on PATH, with its arguments as they are.
   writeFileSync(join(directory, 'git.exe'), '')
   expect(windowsLaunch('git', ['log', 'a\nb'], { PATH: directory, PATHEXT: '.exe' })).toEqual({
@@ -182,17 +224,4 @@ it('retries a file another program holds, then gives up with its error; other er
     held,
   )
   expect(calls, 'EPERM is not a held file on POSIX').toBe(1)
-  calls = 0
-  expect(() =>
-    retryBusySync(
-      () => {
-        calls++
-        throw held
-      },
-      'win32',
-      [0, 0],
-      () => {},
-    ),
-  ).toThrow(held)
-  expect(calls).toBe(3)
 })

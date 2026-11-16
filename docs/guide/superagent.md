@@ -79,7 +79,8 @@ panel's **Deployment** page names. Setting it explicitly before the service star
    ```
 
    On Windows the wrapper is `gh-agent.cmd`. It runs `gh.exe` by its full path (`where.exe gh` prints it), so it never
-   reaches Superagent's `gh` shim. In PowerShell:
+   reaches Superagent's `gh` shim, and its own path is ASCII only: the shim names it, and `cmd.exe` misreads other
+   characters in a batch file. In PowerShell:
 
    ```powershell
    New-Item -ItemType Directory -Force C:\Superagent\bin | Out-Null
@@ -280,6 +281,15 @@ Ticket sessions run with full access. That means:
 
 All of these are addressed only by running this AGH as a dedicated operating-system user, which is strongly recommended
 and not enforced.
+
+**On Windows, `gh` is a batch file.** The sessions' shell is PowerShell, and `gh` reaches the agent's CLI through
+Superagent's `gh.cmd` shim. `cmd.exe`, which runs a batch file, reads its arguments again: it cuts an argument at a line
+break, and runs what follows a quote and `&` or `|` as a command, whatever the PowerShell quoting. A worker that copied
+an issue title or a comment onto `gh`'s command line could thus run a command written by whoever wrote that text. The
+Windows sessions are told to pass text from people to `gh` in a file or on standard input (`--body-file`, `-F
+title=@<file>`), and Superagent's own commands do so and refuse a quote or a line break in an argument to a batch file;
+the prompt is not a boundary. Blocked commands, too, cover only programs found on PATH: in Windows PowerShell 5.1,
+`curl` and `wget` are aliases of `Invoke-WebRequest` and are not blocked.
 
 ## Restart and recovery
 

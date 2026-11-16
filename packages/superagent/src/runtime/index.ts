@@ -144,8 +144,10 @@ export function machineConfig(
   const machine = machineOf({ ...given, stateDir: given.stateDir ?? stateDirectory }, platform)
   // On Windows only the platform's directory is private (its access list admits the current user alone, and what is
   // created in it inherits that); Superagent does not set access lists itself.
-  const rest = pathsOf(platform).relative(stateDirectory, machine.stateDir)
-  if (isWindows(platform) && (rest.startsWith('..') || pathsOf(platform).isAbsolute(rest)))
+  const paths = pathsOf(platform)
+  const rest = paths.relative(stateDirectory, machine.stateDir)
+  const outside = rest === '..' || rest.startsWith(`..${paths.sep}`) || paths.isAbsolute(rest)
+  if (isWindows(platform) && outside)
     throw new Error(
       `On Windows Superagent keeps its state in the private directory the platform gives it, ${stateDirectory}; remove stateDir from its configuration, or name a directory inside that one`,
     )

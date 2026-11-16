@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { runCommand } from './app/subprocess.js'
 import { findWindowsProgram } from './app/windows-launch.js'
 import { HOST_PLATFORM, isAbsolutePath, isWindows, pathDelimiter, variable } from './infra/platform.js'
-import { sameDirectory, withoutDirectory, workerBin } from './infra/worker-paths.js'
+import { sameDirectory, unquoted, withoutDirectory, workerBin } from './infra/worker-paths.js'
 import { LIMITS } from './limits.js'
 import { SetupError } from './setup.js'
 
@@ -145,7 +145,11 @@ function windowsExecutable(
 ): string {
   const named = /[\\/]/.test(name)
   if (named && !isAbsolute(name)) throw new Error(`${name} must be a command name or an absolute path`)
-  const dirs = path.split(';').filter((dir) => isAbsolute(dir) && !(exclude && sameDirectory(dir, exclude)))
+  // Windows allows a PATH entry in quotes, as a shell reads it.
+  const dirs = path
+    .split(';')
+    .map(unquoted)
+    .filter((dir) => isAbsolute(dir) && !(exclude && sameDirectory(dir, exclude, 'win32')))
   const found = findWindowsProgram(name, {
     PATH: named ? '' : dirs.join(';'),
     PATHEXT: variable(env, 'PATHEXT', 'win32'),
@@ -169,6 +173,7 @@ export function workerProbe(
     variable(process.env, 'PATH', platform) ?? '',
     workerBin(stateDir),
     pathDelimiter(platform),
+    platform,
   )
   return async (argv) => {
     const { code, stdout, stderr } = await runCommand(argv, {

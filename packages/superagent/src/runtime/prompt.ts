@@ -14,7 +14,7 @@ import { type Prompts, type PromptVersion, SKILL_PREFIX } from '../app/prompts.j
 import { bundledSkills } from '../app/skill-files.js'
 import type { Store } from '../app/store.js'
 import type { Ticket } from '../core/index.js'
-import { BUSY_DELAYS_MS, retryBusySync } from '../infra/busy.js'
+import { busy } from '../infra/busy.js'
 import { HOST_PLATFORM, isWindows } from '../infra/platform.js'
 import { KV } from '../kv.js'
 import type { Health } from '../sources/host.js'
@@ -98,23 +98,29 @@ const MARK = '.superagent-revision'
 export interface SkillFilesHealth {
   set(health: Health): void
 }
-/** The options of `SkillFiles`: the sessions' platform, where it reports, and the pauses of its retries. */
+/** The options of `SkillFiles`: the sessions' platform, where it reports, and its clock. */
 export interface SkillFilesOptions {
   platform?: string
   health?: SkillFilesHealth
-  busyDelaysMs?: readonly number[]
+  /** Milliseconds since the epoch; `Date.now` by default. */
+  now?: () => number
 }
+/** The pause after a write another program held, before a request tries it again: doubling up to a minute. */
+const HELD_FIRST_MS = 1_000
+const HELD_LAST_MS = 60_000
 
 /**
  * Superagent's skills as files in `<AGH home>/skills/dsh-superagent-<name>/SKILL.md`, in the text the sessions' shell
  * reads (see `forShell`). A revision's skills replace the previous revision's; a skill directory without Superagent's
- * mark is left alone. A file another program holds (as Windows reports while it is open) is retried a few times; if it
- * stays held, the failure is reported to `health` and the write is tried again at the next request, which goes on with
- * the skills as they were.
+ * mark is left alone. Writes run in the prompt hook of every request, so they never wait: a write fails the request, as
+ * it always has, except on Windows when another program holds a file (an editor, an indexer, a virus scanner). Then the
+ * failure is reported to `health` once, the request goes on with the skills as they were, and requests try the write
+ * again only after a pause that doubles while the file stays held; until then a request costs one comparison.
  */
 export class SkillFiles {
   private written?: number
-  private failing = false
+  /** While a held file keeps failing the write: when a request may try again, and the pause before that. */
+  private held: { from: number; pause: number } | undefined
   constructor(
     private readonly prompts: Pick<Prompts, 'skills'>,
     private readonly root: string,
@@ -122,25 +128,29 @@ export class SkillFiles {
   ) {}
   write(version: PromptVersion): void {
     if (this.written === version.revision) return
+    const now = (this.options.now ?? Date.now)()
+    if (this.held && now < this.held.from) return
     const platform = this.options.platform ?? HOST_PLATFORM
     try {
       this.replace(version, platform)
     } catch (error) {
-      if (!this.options.health) throw error
-      this.failing = true
-      this.options.health.set({
-        state: 'error',
-        detail: `The skill files in ${this.root} could not be written; retrying at the next request: ${String(error)}`,
-        at: new Date().toISOString(),
-      })
+      const { health } = this.options
+      if (!health || !isWindows(platform) || !busy(error, platform)) throw error
+      const pause = this.held ? Math.min(this.held.pause * 2, HELD_LAST_MS) : HELD_FIRST_MS
+      if (!this.held)
+        health.set({
+          state: 'error',
+          detail: `The skill files in ${this.root} could not be written, as another program holds one open or it is not permitted; retrying: ${String(error)}`,
+          at: new Date(now).toISOString(),
+        })
+      this.held = { from: now + pause, pause }
       return
     }
-    if (this.failing) this.options.health?.set({ state: 'ready', detail: 'The skill files are written' })
-    this.failing = false
+    if (this.held) this.options.health?.set({ state: 'ready', detail: 'The skill files are written' })
+    this.held = undefined
     this.written = version.revision
   }
   private replace(version: PromptVersion, platform: string): void {
-    const delays = this.options.busyDelaysMs ?? BUSY_DELAYS_MS
     mkdirSync(this.root, { recursive: true })
     const wanted = new Map<string, string>()
     for (const [name, content] of this.prompts.skills(version.config)) {
@@ -156,14 +166,17 @@ export class SkillFiles {
     for (const entry of readdirSync(this.root, { withFileTypes: true })) {
       const dir = join(this.root, entry.name)
       if (entry.isDirectory() && !wanted.has(entry.name) && existsSync(join(dir, MARK)))
-        retryBusySync(() => rmSync(dir, { recursive: true, force: true }), platform, delays)
+        rmSync(dir, { recursive: true, force: true })
     }
     for (const [name, text] of wanted) {
       const dir = join(this.root, name)
       if (existsSync(dir) && !existsSync(join(dir, MARK))) continue
+      // A new directory is marked first, so a write that fails part way leaves it Superagent's to write again.
+      const fresh = !existsSync(dir)
       mkdirSync(dir, { recursive: true })
-      retryBusySync(() => replaceChanged(dir, 'SKILL.md', text), platform, delays)
-      retryBusySync(() => replaceChanged(dir, MARK, `${version.revision}\n`), platform, delays)
+      if (fresh) replaceChanged(dir, MARK, `${version.revision}\n`)
+      replaceChanged(dir, 'SKILL.md', text)
+      replaceChanged(dir, MARK, `${version.revision}\n`)
     }
   }
 }

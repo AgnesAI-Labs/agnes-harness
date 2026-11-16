@@ -84,6 +84,7 @@ it('fails the ticket with the reason when the directory stays held, rather than 
   const failed = sessions({ platform: 'win32' }).ensureWorker(ticket('t3'), dir)
   await expect(failed).rejects.toBeInstanceOf(PrepareFailed)
   await expect(failed).rejects.toThrow(`The ticket directory ${dir} could not be moved aside`)
+  await expect(failed).rejects.toThrow('a file in it is held open by a program or not permitted')
   expect(held.calls).toBe(4)
   expect(existsSync(join(dir, 'half')), 'nothing is deleted').toBe(true)
 })

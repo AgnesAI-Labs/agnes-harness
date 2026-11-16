@@ -276,12 +276,12 @@ export class Sessions implements SessionAdapter {
     if (!(await exists(dir))) return
     const aside = `${dir}.interrupted-${new Date().toISOString().replace(/[:.]/g, '-')}`
     // A file a program still holds open, which Windows does not let move, gets a few retries; then the ticket fails
-    // with the reason rather than waiting on it.
+    // with the reason rather than waiting on it. Windows reports a held file and a refused one alike.
     await retryBusy(() => rename(dir, aside), this.platform, this.deps.busyDelaysMs).catch(
       (error: unknown) => {
         if (!busy(error, this.platform)) throw error
         throw new PrepareFailed(
-          `The ticket directory ${dir} could not be moved aside to prepare it again, as a program holds a file in it open: ${String(error)}`,
+          `The ticket directory ${dir} could not be moved aside to prepare it again: a file in it is held open by a program or not permitted (${String(error)})`,
         )
       },
     )

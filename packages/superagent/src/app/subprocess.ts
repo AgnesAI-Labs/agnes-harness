@@ -4,7 +4,8 @@
  * variables.
  */
 import { type ChildProcess, spawn } from 'node:child_process'
-import { HOST_PLATFORM, isWindows, mergeVariables } from '../infra/platform.js'
+import { win32 } from 'node:path'
+import { HOST_PLATFORM, isWindows, mergeVariables, variable } from '../infra/platform.js'
 import { GIT_LOCATION } from '../infra/worker-paths.js'
 import { windowsLaunch } from './windows-launch.js'
 
@@ -114,19 +115,28 @@ function signalGroup(child: ChildProcess, signal: NodeJS.Signals, processes: Pro
     child.kill(signal)
   }
 }
+/** Windows' own `taskkill`, from its system directory, never one found on PATH or in the working directory. */
+const taskkillPath = (): string => {
+  const systemRoot = variable(process.env, 'SystemRoot', 'win32')
+  return systemRoot ? win32.join(systemRoot, 'System32', 'taskkill.exe') : 'taskkill.exe'
+}
 /**
  * Ends the child's whole process tree on Windows with `taskkill /T /F`, which has no graceful stage: Windows has no
- * process groups to signal, and a tree a shell started would otherwise outlive it.
+ * process groups to signal, and a tree a shell started would otherwise outlive it. When taskkill cannot run, or fails
+ * while the child still runs, the child alone is ended.
  */
 function killTree(child: ChildProcess, processes: Processes): void {
   if (child.pid === undefined) return
+  const running = () => child.exitCode === null && child.signalCode === null
   try {
-    const taskkill = processes.spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
+    const taskkill = processes.spawn(taskkillPath(), ['/PID', String(child.pid), '/T', '/F'], {
       stdio: 'ignore',
       windowsHide: true,
     })
-    // When taskkill itself cannot run, the child alone is ended.
     taskkill.once('error', () => child.kill('SIGKILL'))
+    taskkill.once('exit', (code) => {
+      if (code !== 0 && running()) child.kill('SIGKILL')
+    })
   } catch {
     child.kill('SIGKILL')
   }
@@ -183,6 +193,8 @@ export function runCommand(argv: readonly string[], opts: RunOptions): Promise<R
       if (child.exitCode !== null || child.signalCode !== null) return
       if (windows) {
         killTree(child, processes)
+        // Should taskkill hang, the child is still ended by its deadline.
+        killer = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS)
         return
       }
       signalGroup(child, 'SIGTERM', processes)

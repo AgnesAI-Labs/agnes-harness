@@ -18,7 +18,7 @@ import { retryBusy } from '../infra/busy.js'
 import { HOST_PLATFORM, isWindows, mergeVariables, pathDelimiter, variable } from '../infra/platform.js'
 import { workerBin, workerGitConfig } from '../infra/worker-paths.js'
 import { SetupError } from '../setup.js'
-import { windowsBlockedShim, windowsGhShim } from './windows-shims.js'
+import { checkWindowsShim, windowsBlockedShim, windowsGhShim } from './windows-shims.js'
 
 const MARKER = '# Written by Superagent on every start; edits are lost.'
 /** The marker of a Windows shim, a batch comment. */
@@ -221,6 +221,8 @@ export async function writeEnvironment(
   const shimsDir = workerBin(stateDir)
   const windows = isWindows(platform)
   const cli = agentCli(cfg.cli ?? 'gh', env, shimsDir, platform)
+  // The sessions' PATH: the shims first on the daemon's.
+  if (windows) checkWindowsShim(shimsDir, cli, `${shimsDir};${variable(env, 'PATH', platform) ?? ''}`)
   await mkdir(shimsDir, { recursive: true })
   const before = await readdir(shimsDir)
   for (const name of before) {
@@ -238,7 +240,7 @@ export async function writeEnvironment(
       await replace(join(shimsDir, `${name}.cmd`), text, 0o755, platform)
       kept.add(`${name}.cmd`)
     }
-    await shim('gh', windowsGhShim(WINDOWS_SHIM_MARKER, shimsDir, cli, GH_TOKENS))
+    await shim('gh', windowsGhShim(WINDOWS_SHIM_MARKER, cli, GH_TOKENS))
     // File names compare without case on Windows: `GH` would be the gh shim's file.
     const names = new Set(cfg.blocked.map((command) => command.toLowerCase()))
     for (const name of [...names].filter((command) => !NEEDED.has(command))) {
