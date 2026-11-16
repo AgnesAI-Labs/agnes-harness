@@ -1,5 +1,6 @@
 /** Settings tab shell routing between stage settings (Sources, Eval, Execution), Prompts, and Deployment. */
 import type { StateView } from './api.js'
+import { Select } from './controls.js'
 import { DeploymentPage } from './deployment.js'
 import { EvalSettings } from './eval.js'
 import { ExecutionSettings } from './execution.js'
@@ -46,6 +47,7 @@ export function SettingsPage({
         return <DeploymentPage setup={state.setup} />
     }
   })()
+  const open = (value: SettingsGroup) => navigate(settingsRoute(value), true)
   return (
     <div className="dt-settings">
       <nav className="dt-settings-nav" aria-label={t('tab.settings')}>
@@ -56,12 +58,25 @@ export function SettingsPage({
             className="dt-settings-link"
             data-stage={STAGE_GROUPS.includes(value) || undefined}
             aria-current={value === group ? 'page' : undefined}
-            onClick={() => navigate(settingsRoute(value), true)}
+            onClick={() => open(value)}
           >
             {t(`settingsGroup.${value}`)}
           </button>
         ))}
       </nav>
+      {/* A narrow panel has no room for the side list: the same groups as one picker above the page. */}
+      <Select
+        className="dt-settings-picker"
+        aria-label={t('tab.settings')}
+        value={group}
+        onChange={(event) => open(event.target.value as SettingsGroup)}
+      >
+        {SETTINGS_GROUPS.map((value) => (
+          <option key={value} value={value}>
+            {t(`settingsGroup.${value}`)}
+          </option>
+        ))}
+      </Select>
       <div className="dt-settings-body">
         <h2 className="dt-settings-title">{t(`settingsGroup.${group}`)}</h2>
         {content}

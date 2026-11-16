@@ -1,20 +1,19 @@
 /**
- * Context-free UI primitives styled with `--dsw-alias-*` tokens.
- * Mirrors DSH ui-primitives markup and keyboard behavior without coupling to its internal package API.
+ * The panel's UI primitives. Where AGH has the control (button, switch, segmented control, tabs, field, select,
+ * dialog, help tooltip) these are thin adapters over `@agnes/web-ui`, keeping the props the panel's views use; the
+ * rest (icons, status dots, tags, disclosure rows) are local and styled with AGH tokens in `superagent.css`.
  */
 import {
-  type ButtonHTMLAttributes,
-  type InputHTMLAttributes,
-  type KeyboardEvent,
-  type ReactNode,
-  type SelectHTMLAttributes,
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from 'react'
-import { createPortal } from 'react-dom'
+  SettingsInput,
+  SettingsSelect,
+  Tabs,
+  Tooltip,
+  Button as UiButton,
+  type ButtonProps as UiButtonProps,
+  Icon as UiIcon,
+  Switch as UiSwitch,
+} from '@agnes/web-ui'
+import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react'
 
 const cx = (...names: (string | false | undefined)[]) => names.filter(Boolean).join(' ')
 
@@ -76,12 +75,14 @@ export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
   )
 }
 
+const APPEARANCE = { primary: 'primary', ghost: 'ghost', outline: 'secondary' } as const
 type ButtonProps = {
   variant?: 'primary' | 'ghost' | 'outline'
   size?: 'md' | 'sm'
   icon?: ReactNode
   className?: string | undefined
-} & ButtonHTMLAttributes<HTMLButtonElement>
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'color'>
+/** The shared AGH button; `variant` and `size` keep the panel's names. */
 export function Button({
   variant = 'ghost',
   size = 'md',
@@ -92,10 +93,40 @@ export function Button({
   ...rest
 }: ButtonProps) {
   return (
-    <button type={type} className={cx('dt-btn', `dt-btn-${variant}`, `dt-btn-${size}`, className)} {...rest}>
-      {icon !== undefined && <span className="dt-btn-icon">{icon}</span>}
+    <UiButton
+      {...(rest as UiButtonProps)}
+      appearance={APPEARANCE[variant]}
+      size={size === 'sm' ? 'small' : 'middle'}
+      htmlType={type}
+      icon={icon}
+      className={cx('dt-btn', className)}
+    >
       {children}
-    </button>
+    </UiButton>
+  )
+}
+/** A link that looks like a secondary button, for an address outside the panel. */
+export function LinkButton({
+  href,
+  icon,
+  children,
+}: {
+  href: string
+  icon?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <UiButton
+      appearance="secondary"
+      size="small"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      icon={icon}
+      className="dt-btn"
+    >
+      {children}
+    </UiButton>
   )
 }
 
@@ -137,177 +168,58 @@ export function Pill({
   )
 }
 
-function walk<V extends string>(
-  event: KeyboardEvent,
-  values: readonly V[],
-  value: V,
-  onChange: (next: V) => void,
-) {
-  const index = values.indexOf(value)
-  const steps: Record<string, number> = {
-    ArrowRight: index + 1,
-    ArrowLeft: index - 1,
-    Home: 0,
-    End: values.length - 1,
-  }
-  const next = steps[event.key]
-  if (next === undefined) return
-  event.preventDefault()
-  const target = values[(next + values.length) % values.length]!
-  if (target !== value) onChange(target)
-  const list = event.currentTarget as HTMLElement
-  requestAnimationFrame(() => list.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus())
-}
-interface TabItem<V extends string> {
-  value: V
-  label: string
-  id: string
-  panelId: string
-}
-/** Page-level tab bar that re-emits `onChange` when clicking the active tab so callers can reset to the tab root. */
+/** The page's tab bar: the shared AGH tabs. Clicking the active tab emits `onChange` again, so callers can reset to the tab root. */
 export function SegmentedTabs<V extends string>({
   items,
   value,
   onChange,
   label,
+  id,
   className,
 }: {
-  items: readonly TabItem<V>[]
+  items: readonly { value: V; label: string }[]
   value: V
   onChange: (next: V) => void
   label: string
+  /** Tab `t` gets the id `${id}-tab-${t}`. */
+  id: string
   className?: string
 }) {
-  const list = useRef<HTMLDivElement>(null)
-  const [more, setMore] = useState<'start' | 'end' | 'both'>()
-  const measure = useCallback(() => {
-    const element = list.current
-    if (!element) return
-    const start = element.scrollLeft > 1,
-      end = element.scrollLeft + element.clientWidth < element.scrollWidth - 1
-    setMore(start && end ? 'both' : start ? 'start' : end ? 'end' : undefined)
-  }, [])
-  // Observe both the tablist container (pane resize) and individual tabs (locale label changes).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: observe the tabs again whenever their number changes
-  useEffect(() => {
-    measure()
-    if (!list.current || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measure)
-    observer.observe(list.current)
-    for (const tab of list.current.children) observer.observe(tab)
-    return () => {
-      observer.disconnect()
-    }
-  }, [measure, items.length])
   return (
-    <div
-      ref={list}
-      role="tablist"
+    <Tabs
+      id={id}
       aria-label={label}
       className={cx('dt-tabs', className)}
-      data-more={more}
-      onScroll={measure}
-      style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}
-      onKeyDown={(event) =>
-        walk(
-          event,
-          items.map((item) => item.value),
-          value,
-          onChange,
-        )
-      }
-    >
-      {items.map((item) => (
-        <button
-          key={item.value}
-          type="button"
-          role="tab"
-          id={item.id}
-          aria-controls={item.panelId}
-          aria-selected={item.value === value}
-          tabIndex={item.value === value ? 0 : -1}
-          className="dt-tab"
-          onClick={() => onChange(item.value)}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
+      activeKey={value}
+      onTabClick={(key) => onChange(key as V)}
+      items={items.map((item) => ({ key: item.value, label: item.label }))}
+    />
   )
 }
-export function SegmentedControl<V extends string>({
-  options,
-  value,
-  onChange,
-  label,
-  disabled,
-  className,
-}: {
-  options: readonly { value: V; label: string; title?: string }[]
-  value: V
-  onChange: (next: V) => void
-  label: string
-  disabled?: boolean
-  className?: string
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label={label}
-      className={cx('dt-segmented', className)}
-      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
-      onKeyDown={(event) => {
-        if (!disabled)
-          walk(
-            event,
-            options.map((option) => option.value),
-            value,
-            onChange,
-          )
-      }}
-    >
-      {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="tab"
-          aria-selected={option.value === value}
-          tabIndex={option.value === value ? 0 : -1}
-          title={option.title}
-          disabled={disabled}
-          className="dt-segment"
-          onClick={() => {
-            if (option.value !== value) onChange(option.value)
-          }}
-        >
-          {option.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
+/** The shared AGH text field, with an optional leading icon. */
 export function Input({
   icon,
   className,
   ...rest
 }: { icon?: ReactNode; className?: string | undefined } & InputHTMLAttributes<HTMLInputElement>) {
+  if (icon === undefined) return <SettingsInput {...rest} className={cx('dt-input', className)} />
   return (
-    <span className={cx('dt-input', className)}>
-      {icon !== undefined && <span className="dt-input-icon">{icon}</span>}
-      <input {...rest} />
+    <span className={cx('dt-input-icon-wrap', className)}>
+      <span className="dt-input-icon">{icon}</span>
+      <SettingsInput {...rest} className="dt-input" />
     </span>
   )
 }
 
-/** A native select in the panel's style; the one place a raw `<select>` is written. */
+/** The shared AGH select (a native select, so forms keep their semantics). */
 export function Select({
   className,
   ...rest
 }: { className?: string | undefined } & SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={cx('dt-select', className)} {...rest} />
+  return <SettingsSelect {...rest} className={cx('dt-select', className)} />
 }
 
+/** The shared AGH switch. */
 export function Switch({
   checked,
   onChange,
@@ -320,16 +232,13 @@ export function Switch({
   className?: string
 }) {
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
+    <UiSwitch
+      size="small"
+      checked={checked}
       aria-label={label}
       className={cx('dt-switch', className)}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="dt-switch-thumb" />
-    </button>
+      onChange={(next) => onChange(next)}
+    />
   )
 }
 
@@ -382,19 +291,12 @@ export function DisclosureRow({
 }) {
   return (
     <div className="dt-disclosure" data-open={open || undefined}>
-      <div
+      <button
+        type="button"
         className="dt-disclosure-row"
-        role="button"
-        tabIndex={0}
         aria-expanded={open}
         data-disclosure-row
         onClick={onToggle}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            onToggle()
-          }
-        }}
       >
         <span className="dt-disclosure-lead">
           <span className="dt-disclosure-icon">{icon}</span>
@@ -404,164 +306,25 @@ export function DisclosureRow({
         </span>
         <span className="dt-disclosure-title">{title}</span>
         {!open && collapsedContent}
-      </div>
+      </button>
       {open && children}
     </div>
   )
 }
 
-const FOCUSABLE =
-  'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
-function trapTab(event: globalThis.KeyboardEvent, dialog: HTMLElement) {
-  // Query `*` and filter so elements stay in document order across all DOM implementations.
-  const items = [...dialog.querySelectorAll<HTMLElement>('*')].filter((element) => element.matches(FOCUSABLE))
-  const first = items[0],
-    last = items.at(-1),
-    active = document.activeElement
-  const target = event.shiftKey ? last : first
-  if (
-    !target ||
-    !dialog.contains(active) ||
-    active === dialog ||
-    active === (event.shiftKey ? first : last)
-  ) {
-    event.preventDefault()
-    target?.focus()
-  }
-}
-/** Accessible modal dialog with focus trapping, Escape/backdrop dismissal, and focus restoration. */
-export function Modal({
-  open,
-  onClose,
-  title,
-  closeLabel,
-  description,
-  footer,
-  className,
-  children,
-}: {
-  open: boolean
-  onClose: () => void
-  title: string
-  closeLabel: string
-  description?: string
-  footer?: ReactNode
-  className?: string
-  children?: ReactNode
-}) {
-  const dialog = useRef<HTMLDivElement>(null)
-  // Keep `onClose` in a ref so parent re-renders (e.g., background polls) do not re-run the effect and reset focus.
-  const close = useRef(onClose)
-  close.current = onClose
-  useEffect(() => {
-    if (!open) return
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
-    dialog.current?.focus()
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') close.current()
-      else if (event.key === 'Tab' && dialog.current) trapTab(event, dialog.current)
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      opener?.focus()
-    }
-  }, [open])
-  if (!open) return null
-  return createPortal(
-    <div className="dt-modal-root" role="presentation">
-      <div className="dt-modal-mask" aria-hidden="true" onClick={onClose} />
-      <div
-        ref={dialog}
-        className={cx('dt-modal', className)}
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        tabIndex={-1}
-      >
-        <div className="dt-modal-header">
-          <h2>{title}</h2>
-          <button type="button" className="dt-modal-close" aria-label={closeLabel} onClick={onClose}>
-            <Icon name="close" size={14} />
-          </button>
-        </div>
-        {description && <p className="dt-modal-description">{description}</p>}
-        {children !== undefined && <div className="dt-modal-body">{children}</div>}
-        {footer !== undefined && <div className="dt-modal-footer">{footer}</div>}
-      </div>
-    </div>,
-    document.body,
-  )
-}
-
-/** Portaled tooltip trigger supporting hover, keyboard focus, and touch toggle. */
-export function InfoTip({
-  text,
-  icon = 'question',
-  warn,
-}: {
-  text: string
-  icon?: IconName
-  warn?: boolean
-}) {
-  const anchor = useRef<HTMLButtonElement>(null)
-  const bubble = useRef<HTMLSpanElement>(null)
-  const [open, setOpen] = useState(false)
-  useLayoutEffect(() => {
-    const target = anchor.current,
-      element = bubble.current
-    if (!open || !target || !element) return
-    const margin = 12,
-      gap = 8
-    const a = target.getBoundingClientRect(),
-      b = element.getBoundingClientRect()
-    const above = a.top - gap - b.height >= margin
-    element.style.left = `${Math.max(margin, Math.min(a.left + a.width / 2 - b.width / 2, window.innerWidth - margin - b.width))}px`
-    element.style.top = `${above ? a.top - gap - b.height : a.bottom + gap}px`
-    element.style.visibility = 'visible'
-  }, [open])
-  useEffect(() => {
-    if (!open) return
-    const close = () => setOpen(false)
-    window.addEventListener('scroll', close, true)
-    window.addEventListener('resize', close)
-    return () => {
-      window.removeEventListener('scroll', close, true)
-      window.removeEventListener('resize', close)
-    }
-  }, [open])
+/** The AGH help affordance: an ⓘ beside a name that shows the explanation on hover or keyboard focus. */
+export function InfoTip({ text, warn }: { text: string; warn?: boolean }) {
   return (
-    <>
-      <button
-        ref={anchor}
-        type="button"
-        className={warn ? 'dt-info dt-info-warn' : 'dt-info'}
+    <Tooltip title={text}>
+      <span
+        className={cx('dt-info', 'agnes-settings-info', warn && 'dt-info-warn')}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: keyboard users reach the explanation by focus.
+        tabIndex={0}
+        role="note"
         aria-label={text}
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => setOpen(false)}
-        onBlur={() => setOpen(false)}
-        onFocus={(event) => {
-          if (event.currentTarget.matches(':focus-visible')) setOpen(true)
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') setOpen(false)
-        }}
-        onPointerUp={(event) => {
-          if (event.pointerType === 'touch') setOpen(!open)
-        }}
-        onClick={(event) => {
-          if (event.detail > 0 && (event.nativeEvent as PointerEvent).pointerType !== 'touch') setOpen(false)
-        }}
       >
-        <Icon name={icon} size={14} />
-      </button>
-      {open &&
-        createPortal(
-          <span ref={bubble} role="tooltip" className="dt-tooltip" style={{ visibility: 'hidden' }}>
-            {text}
-          </span>,
-          document.body,
-        )}
-    </>
+        <UiIcon name={warn ? 'triangle-alert' : 'info'} />
+      </span>
+    </Tooltip>
   )
 }

@@ -1,7 +1,8 @@
 /** Prompts settings group: section/skill editor, full composed prompt preview with diffing, and revision history. */
+import { Segmented } from '@agnes/web-ui'
 import { type FormEvent, Fragment, type ReactNode, useCallback, useEffect, useState } from 'react'
 import type { ApiResponse, PromptConfig, PromptsView } from './api.js'
-import { Button, Icon, Input, SegmentedControl, Select } from './controls.js'
+import { Button, Icon, Input, Select } from './controls.js'
 import { type DraftWords, SaveBar, useDraft } from './draft.js'
 import {
   type BuiltInPart,
@@ -525,16 +526,23 @@ function FullPrompt({
             state: dirty ? t('promptPreviewDraft') : t('promptPreviewSaved', { revision }),
           })}
         </Hint>
-        <SegmentedControl
-          className="dt-segmented dt-compare"
-          label={t('promptCompare')}
-          value={shown}
-          options={[
-            ...(dirty ? [{ value: 'saved' as const, label: t('promptCompareSaved') }] : []),
-            { value: 'default' as const, label: t('promptCompareDefault') },
-          ]}
-          onChange={setCompare}
-        />
+        {/* Only a draft has a saved version to compare with; without one the defaults are the comparison. */}
+        {dirty ? (
+          <Segmented
+            className="dt-segmented dt-compare"
+            label={t('promptCompare')}
+            value={shown}
+            options={[
+              { value: 'saved' as const, label: t('promptCompareSaved') },
+              { value: 'default' as const, label: t('promptCompareDefault') },
+            ]}
+            onChange={(next) => {
+              if (next !== shown) setCompare(next)
+            }}
+          />
+        ) : (
+          <span className="dt-compare dt-hint">{t('promptCompareDefault')}</span>
+        )}
         <Button
           variant="outline"
           size="sm"

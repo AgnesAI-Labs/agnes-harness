@@ -2,6 +2,7 @@
   "client": {
     "id": "superagent",
     "entry": "./client.js",
+    "styles": ["./superagent.css"],
     "lifetime": "profile",
     "slotCatalogVersion": "dsh-client-slots/v1",
     "slots": [],

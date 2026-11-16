@@ -70,7 +70,8 @@ export async function remount(dictionary: Record<string, string> = zh) {
 }
 
 export const all = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)]
-const CONTROLS = 'button, [role="button"], [role="tab"], [role="switch"], a'
+/** Clickable controls; a segmented choice is its option's label, which checks the radio inside. */
+const CONTROLS = 'button, [role="button"], [role="tab"], [role="switch"], a, .agh-segmented-option'
 export function find(name: string, selector = CONTROLS): HTMLElement {
   const match = all(selector).find(
     (element) => element.textContent?.trim() === name || element.getAttribute('aria-label') === name,
@@ -78,7 +79,18 @@ export function find(name: string, selector = CONTROLS): HTMLElement {
   if (!match) throw new Error(`No ${selector} named ${name}`)
   return match
 }
-export const tab = (name: string) => find(name, '[role="tab"]')
+/** A page tab by its label; the shared tabs add a live region ("Tab 5 of 6") inside the tab that has focus. */
+export function tab(name: string): HTMLElement {
+  const label = (element: HTMLElement) =>
+    [...element.childNodes]
+      .filter((node) => !(node instanceof HTMLElement && node.hasAttribute('aria-live')))
+      .map((node) => node.textContent)
+      .join('')
+      .trim()
+  const match = all('[role="tab"]').find((element) => label(element) === name)
+  if (!match) throw new Error(`No tab named ${name}`)
+  return match
+}
 export async function click(target: string | HTMLElement) {
   const element = typeof target === 'string' ? find(target) : target
   await act(async () => {

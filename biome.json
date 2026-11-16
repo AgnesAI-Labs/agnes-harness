@@ -64,16 +64,6 @@
       }
     },
     {
-      "includes": ["packages/superagent-ui/**"],
-      "linter": {
-        "rules": {
-          "a11y": {
-            "useSemanticElements": "off"
-          }
-        }
-      }
-    },
-    {
       "includes": ["packages/superagent-ui/src/**"],
       "linter": {
         "rules": {

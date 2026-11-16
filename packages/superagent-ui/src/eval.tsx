@@ -1,4 +1,5 @@
 /** Eval status view (Decision log) and Eval settings group (Policy rules, per-Source admission, and assessor settings). */
+import { Segmented } from '@agnes/web-ui'
 import { useState } from 'react'
 import {
   DECISION_FILTERS,
@@ -8,17 +9,7 @@ import {
   type SourceView,
   usePoll,
 } from './api.js'
-import {
-  Button,
-  DisclosureRow,
-  Icon,
-  InfoTip,
-  Input,
-  Pill,
-  SegmentedControl,
-  Select,
-  Switch,
-} from './controls.js'
+import { Button, DisclosureRow, Icon, InfoTip, Input, Pill, Select, Switch } from './controls.js'
 import { SaveBar } from './draft.js'
 import { useAction, usePanel } from './provider.js'
 import { DecisionLine } from './rows.js'
@@ -296,7 +287,7 @@ function AdmissionTable({
           </Select>
           <span className="dt-admission-slot">
             {cell === 'unlistedAddressed' && value === 'explicit' && (
-              <InfoTip text={t('admissionAnyoneWarning')} icon="alert" warn />
+              <InfoTip text={t('admissionAnyoneWarning')} warn />
             )}
           </span>
         </span>
@@ -495,15 +486,16 @@ function EvalBlock() {
           <InfoTip text={t('evalIntro')} />
         </h2>
         <Section title={t('acceptMode')} hint={t(`modeOption.${value.mode}`)}>
-          <SegmentedControl
+          <Segmented
             className="dt-segmented"
             label={t('acceptMode')}
             value={value.mode}
-            onChange={(mode) => edit({ mode })}
+            onChange={(mode) => {
+              if (mode !== value.mode) edit({ mode })
+            }}
             options={(['off', 'observe', 'auto'] as const).map((mode) => ({
               value: mode,
-              label: valueLabel(t, 'mode', mode),
-              title: t(`modeOption.${mode}`),
+              label: <span title={t(`modeOption.${mode}`)}>{valueLabel(t, 'mode', mode)}</span>,
             }))}
           />
         </Section>

@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { expect, it } from 'vitest'
 import { en, zh } from '../src/locales.js'
-import { all, click, field, installPanel, mount, remount, settle, text, type } from './helpers/panel.js'
+import { all, click, field, find, installPanel, mount, remount, settle, text, type } from './helpers/panel.js'
 import { found, server } from './helpers/panel-server.js'
 
 installPanel()
@@ -92,6 +92,17 @@ it('shows domain terms in the interface language only and lists both languages i
     [...dialog.querySelectorAll('tr')].find((item) => item.textContent?.startsWith('Main Session'))!
       .textContent,
   ).toContain('prompts call it the orchestrator')
+  // The shared dialog closes on Escape and on its named close button (it starts its leave motion, which a DOM
+  // without layout never finishes).
+  const leaving = () => !!document.querySelector('[role="dialog"].ant-zoom-leave')
+  await act(async () => {
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+  expect(leaving()).toBe(true)
+  await click('Glossary')
+  expect(leaving()).toBe(false)
+  await click(find('Close', '[role="dialog"] button[aria-label="Close"]'))
+  expect(leaving()).toBe(true)
 })
 
 it('says Superagent is not answering when its routes are gone, as while it restarts', async () => {

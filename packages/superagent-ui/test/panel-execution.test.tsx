@@ -174,15 +174,22 @@ it('links a question to its Channel, folds consecutive automated messages among 
   await click(find(zh['tab.settings'], '.dt-status-head button'))
   expect(text()).not.toContain('到期后记为未完成')
   const tip = field(zh.evalTimeout).closest('.dt-field')!.querySelector<HTMLElement>('.dt-info')!
+  // The shared tooltip opens after its hover delay and describes the ⓘ while it shows; leaving closes it.
+  const described = () => {
+    const id = tip.getAttribute('aria-describedby')
+    return id ? document.getElementById(id)?.textContent : undefined
+  }
   await act(async () => {
     tip.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 700))
   })
-  expect(document.querySelector('[role="tooltip"]')?.textContent).toContain('到期后记为未完成')
+  expect(described()).toContain('到期后记为未完成')
   expect(tip.closest('.dt-field')!.textContent).not.toContain('到期后记为未完成')
   await act(async () => {
     tip.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 300))
   })
-  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  expect(described()).toBeUndefined()
 })
 
 it('offers a Ticket awaiting review its review place and Session in the page head', async () => {

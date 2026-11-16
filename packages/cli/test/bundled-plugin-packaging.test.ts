@@ -216,8 +216,12 @@ it('ships the optional Superagent payload with its resource folders, callable pl
     'skills',
     'src',
   ])
-  // The panel ships as built bytes with its descriptor, and the build record matches them.
-  expect((await readdir(join(superagent, 'src'))).sort()).toEqual(['agnes.client.json', 'client.js'])
+  // The panel ships as built bytes with its descriptor and stylesheet, and the build record matches them.
+  expect((await readdir(join(superagent, 'src'))).sort()).toEqual([
+    'agnes.client.json',
+    'client.js',
+    'superagent.css',
+  ])
   await verifyPresentation(superagent)
   expect(JSON.parse(await readFile(join(superagent, 'package.json'), 'utf8')).agnes.plugins[0]).toMatchObject(
     {

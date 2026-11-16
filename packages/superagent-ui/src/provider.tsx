@@ -20,7 +20,6 @@ import {
   usePoll,
 } from './api.js'
 import type { Route } from './route.js'
-import { STYLES } from './styles.js'
 import { errorText, setupText, type T, valueLabel } from './text.js'
 
 export interface PanelContext {
@@ -167,7 +166,6 @@ export function PanelProvider({
   return (
     <Panel.Provider value={context}>
       <PanelState.Provider value={data}>
-        <style>{STYLES}</style>
         {children}
         {toast && <Toast key={toast.id} text={toast.text} onDone={() => setToast(undefined)} />}
       </PanelState.Provider>

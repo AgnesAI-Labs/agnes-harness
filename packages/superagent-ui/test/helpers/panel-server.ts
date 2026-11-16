@@ -606,11 +606,13 @@ export const services = {
   }),
 }
 
+/** A fresh fake: the initial settings, Tickets, Threads and setup, with no recorded calls. */
+export function resetPanelServer() {
+  sessionStorage.clear()
+  server = initial()
+}
 export function usePanelServer(cleanup: () => void) {
-  beforeEach(() => {
-    sessionStorage.clear()
-    server = initial()
-  })
+  beforeEach(resetPanelServer)
   afterEach(() => {
     try {
       expect(server.misuse).toEqual([])

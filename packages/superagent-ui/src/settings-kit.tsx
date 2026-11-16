@@ -13,7 +13,7 @@ import {
 } from 'react'
 import type { ApiResponse } from './api.js'
 import { type HistoryView, type Settings, type SettingsView, type SourceView, usePoll } from './api.js'
-import { Button, DisclosureRow, Icon, InfoTip, Input, SegmentedControl, Select, Switch } from './controls.js'
+import { Button, DisclosureRow, Icon, InfoTip, Input, Select, Switch } from './controls.js'
 import { useDraft } from './draft.js'
 import { useAction, usePanel, usePanelData } from './provider.js'
 import { settingsRoute } from './route.js'
@@ -554,16 +554,16 @@ export function SourceField({
     case 'select':
       return (
         <Field label={label} hint={hint}>
-          <SegmentedControl
-            className="dt-segmented dt-field-segmented"
-            label={label}
+          <Select
             value={String(value ?? field.options[0]!.value)}
-            options={field.options.map((option) => ({
-              value: option.value,
-              label: localized(t, option.label),
-            }))}
-            onChange={onChange}
-          />
+            onChange={(event) => onChange(event.target.value)}
+          >
+            {field.options.map((option) => (
+              <option key={option.value} value={option.value}>
+                {localized(t, option.label)}
+              </option>
+            ))}
+          </Select>
         </Field>
       )
     case 'number':

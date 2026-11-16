@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { act, useState } from 'react'
+import { act, type ReactNode, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it } from 'vitest'
-import { Modal, SegmentedTabs } from '../src/controls.js'
+import { SegmentedTabs } from '../src/controls.js'
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean
@@ -54,126 +54,53 @@ it('describes the services in a module the panel can type against, which imports
   expect([...source.matchAll(/^import (type )?/gm)].every((match) => match[1])).toBe(true)
 })
 
-it('closes the dialog on Escape and returns focus to the opener', async () => {
-  function Harness() {
-    const [open, setOpen] = useState(false)
-    return (
-      <>
-        <button type="button" onClick={() => setOpen(true)}>
-          open
-        </button>
-        <Modal open={open} onClose={() => setOpen(false)} title="Title" closeLabel="Close">
-          body
-        </Modal>
-      </>
-    )
-  }
+async function render(node: ReactNode) {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
   await act(async () => {
-    root.render(<Harness />)
+    root.render(node)
   })
-  const opener = container.querySelector('button')!
-  opener.focus()
-  await act(async () => {
-    opener.click()
-  })
-  expect(document.activeElement?.getAttribute('role')).toBe('dialog')
-  await act(async () => {
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-  })
-  expect(document.querySelector('[role="dialog"]')).toBeNull()
-  expect(document.activeElement).toBe(opener)
-  act(() => {
-    root.unmount()
-  })
-})
-
-it('keeps the focus inside the dialog when its parent re-renders, and Tab and Shift+Tab wrap within it', async () => {
-  let rerender = () => {}
-  function Harness() {
-    const [, setCount] = useState(0)
-    rerender = () => setCount((count) => count + 1)
-    // Pass a new inline onClose on each render (as polling parents do) to verify the effect does not reset focus.
-    return (
-      <Modal
-        open
-        onClose={() => {}}
-        title="Title"
-        closeLabel="Close"
-        footer={<button type="button">last</button>}
-      >
-        <input aria-label="first field" />
-      </Modal>
-    )
+  return {
+    container,
+    unmount: () =>
+      act(() => {
+        root.unmount()
+        container.remove()
+      }),
   }
-  const container = document.createElement('div')
-  document.body.append(container)
-  const root = createRoot(container)
-  await act(async () => {
-    root.render(<Harness />)
-  })
-  const field = document.querySelector<HTMLInputElement>('[aria-label="first field"]')!
-  field.focus()
-  await act(async () => {
-    rerender()
-  })
-  expect(document.activeElement).toBe(field)
-  const [close, , last] = [
-    ...document.querySelectorAll<HTMLElement>('[role="dialog"] button, [role="dialog"] input'),
-  ]
-  const tab = (shiftKey = false) =>
-    act(async () => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey, cancelable: true }))
-    })
-  last!.focus()
-  await tab()
-  expect(document.activeElement).toBe(close)
-  await tab(true)
-  expect(document.activeElement).toBe(last)
-  act(() => {
-    root.unmount()
-  })
-})
+}
 
-it('moves the tab selection with arrow keys and wraps at the ends', async () => {
+it('emits the active tab again on a click, so a detail page can return to its list', async () => {
   const seen: string[] = []
   function Harness() {
-    const [value, setValue] = useState<'a' | 'b' | 'c'>('a')
+    const [value, setValue] = useState<'a' | 'b'>('a')
     return (
       <SegmentedTabs
+        id="t"
         label="pages"
         value={value}
         onChange={(next) => {
           seen.push(next)
           setValue(next)
         }}
-        items={(['a', 'b', 'c'] as const).map((item) => ({
-          value: item,
-          label: item,
-          id: `t-${item}`,
-          panelId: 'p',
-        }))}
+        items={(['a', 'b'] as const).map((item) => ({ value: item, label: item }))}
       />
     )
   }
-  const container = document.createElement('div')
-  document.body.append(container)
-  const root = createRoot(container)
+  const view = await render(<Harness />)
+  const tab = (name: string) => {
+    const element = view.container.querySelector<HTMLElement>(`#t-tab-${name}`)
+    if (!element) throw new Error(`No tab ${name}`)
+    return element
+  }
   await act(async () => {
-    root.render(<Harness />)
-  })
-  const list = container.querySelector('[role="tablist"]')!
-  await act(async () => {
-    list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    tab('b').click()
   })
   await act(async () => {
-    list.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    tab('b').click()
   })
-  expect(seen).toEqual(['c', 'a'])
-  expect(container.querySelector('[aria-selected="true"]')?.textContent).toBe('a')
-  act(() => {
-    root.unmount()
-  })
+  expect(seen).toEqual(['b', 'b'])
+  expect(tab('b').getAttribute('aria-selected')).toBe('true')
+  view.unmount()
 })
