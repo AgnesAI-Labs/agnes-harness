@@ -1,7 +1,8 @@
 // Adapted from dsh-superagent (MIT)
 /**
- * Starting and stopping one app: `start()` resolves the deployment, opens the main session, starts the GitHub Source and
- * the queues, and re-dispatches what a restart interrupted; `stopSignal()` stops polling, sending and dispatch at once,
+ * Starting and stopping one app: the GitHub Source kind registers when the app is built, so its settings can be saved
+ * during setup; `start()` resolves the deployment, opens the main session, starts the GitHub Source's polling and the
+ * queues, and re-dispatches what a restart interrupted; `stopSignal()` stops polling, sending and dispatch at once,
  * and `drain()` waits for what was in flight, a start included. A stop wins over a start that awaits: the start looks
  * at the phase after every step and starts nothing once the app stops. Sessions, turns and jobs are left to the
  * lifecycle that owns cancelling them.
@@ -9,7 +10,7 @@
 import { mkdir } from 'node:fs/promises'
 import { resolveDeployment } from '../deployment.js'
 import { SetupError } from '../setup.js'
-import { startGithub } from '../sources/github.js'
+import { registerGithub } from '../sources/github.js'
 import { health as sourceHealth } from '../sources/host.js'
 import type { AppDeps } from './app.js'
 import { type AppState, type Core, now } from './app-core.js'
@@ -21,6 +22,8 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
   const { store, sessions } = deps
   const { machine, probe, runtimeHealth, closing } = core
   const { settings, executor, passes, assessor } = parts
+  // The GitHub kind is there from the start, as the Feishu kind is, so the owner can set the repository during setup.
+  const github = registerGithub(parts.sourceHost)
   const stops: (() => Promise<void>)[] = []
   const draining: Promise<unknown>[] = []
   /** Starts and reconfigurations that run, which `drain()` waits for. */
@@ -67,7 +70,7 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
       await settings.sync(id).catch(() => {})
       if (closing()) return
     }
-    stops.push(startGithub(parts.sourceHost), ...(deps.sources?.(parts.sourceHost) ?? []))
+    stops.push(github.run(), ...(deps.sources?.(parts.sourceHost) ?? []))
     await executor.resume(!deps.reconciled)
     if (closing()) return
     passes.start()
@@ -75,10 +78,30 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
     state.phase = 'ready'
     runtimeHealth.set({ state: 'ready', detail: 'Superagent is ready', at: now() })
   }
-  async function reconfigure(): Promise<void> {
+  async function reconfigureOnce(): Promise<void> {
     if (state.phase !== 'setup' && state.phase !== 'ready') return
     const was = state.deployment !== undefined
     if ((await configure()) && !was && state.phase === 'setup') await track(begin())
+  }
+  /** The reconfiguration that runs; one asked for meanwhile runs once after it, so only one ever opens the app. */
+  let reconfiguring: Promise<void> | undefined
+  let again = false
+  function reconfigure(): Promise<void> {
+    if (reconfiguring) {
+      again = true
+      return reconfiguring
+    }
+    reconfiguring = (async () => {
+      try {
+        do {
+          again = false
+          await reconfigureOnce()
+        } while (again)
+      } finally {
+        reconfiguring = undefined
+      }
+    })()
+    return reconfiguring
   }
   return {
     reconfigure,

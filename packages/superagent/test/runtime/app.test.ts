@@ -14,13 +14,10 @@ beforeEach(() => {
 })
 afterEach(() => temp.close())
 
-/** A configured deployment whose GitHub checks pass, over a fake SDK client. */
-function setup() {
-  temp.store.saveSettings(
-    SettingsSchema.parse({
-      sources: { github: { enabled: true, config: { repository: 'acme/app', cli: process.execPath } } },
-    }),
-  )
+const GITHUB = { enabled: true, config: { repository: 'acme/app', cli: process.execPath } }
+/** A configured deployment whose GitHub checks pass, over a fake SDK client; `fresh` leaves the settings empty. */
+function setup(fresh = false, hold?: () => Promise<void> | undefined) {
+  if (!fresh) temp.store.saveSettings(SettingsSchema.parse({ sources: { github: GITHUB } }))
   const fake = fakeClient()
   const lifetime = new AbortController()
   const grant = { stateDirectory: join(temp.dir, 'state'), client: fake.client }
@@ -31,8 +28,10 @@ function setup() {
     ...runtime,
     log: { warn: () => {} },
     skillsRoot: join(temp.dir, 'skills'),
-    probe: async (argv) =>
-      argv.includes('user') ? '{"login":"agent-bot","id":42}' : '{"name":"acme/app","push":true}',
+    probe: async (argv) => {
+      await hold?.()
+      return argv.includes('user') ? '{"login":"agent-bot","id":42}' : '{"name":"acme/app","push":true}'
+    },
   })
   return { app, fake, lifetime, runtime }
 }
@@ -50,7 +49,8 @@ function watchStarts(app: SuperagentApp) {
   return {
     passes: vi.spyOn(app.parts.passes, 'start'),
     effects: vi.spyOn(app.parts.effects, 'start'),
-    sources: vi.spyOn(app.parts.sources, 'register'),
+    // A Source's polling begins by taking its context; its kind registers when the app is built.
+    sources: vi.spyOn(app.parts.sourceHost, 'context'),
   }
 }
 
@@ -119,6 +119,54 @@ describe('the app', () => {
     expect(app.parts.setupProblem()).toMatchObject({ code: 'sessionTaken' })
     expect(app.unavailable()).toMatch(/waiting for setup: .*superagent:orchestrator/)
     expect(starts.passes).not.toHaveBeenCalled()
+    await app.stop('disable')
+  })
+
+  it('lists the GitHub Source on a fresh start, saves its repository during setup and then starts it', async () => {
+    const { app } = setup(true)
+    const starts = watchStarts(app)
+    await app.start()
+    expect(app.parts.setupProblem()).toMatchObject({ code: 'repositoryUnset' })
+    expect(app.parts.sources.instances().map((instance) => instance.id)).toContain('github')
+    expect(starts.sources).not.toHaveBeenCalled()
+    const saved = await app.parts.settings.save('source:github', GITHUB, 0, 'panel')
+    expect(saved).toMatchObject({ saved: true, restarting: true })
+    await vi.waitFor(() => expect(app.unavailable()).toBeUndefined())
+    expect(app.parts.setupProblem()).toBeUndefined()
+    expect(starts.sources).toHaveBeenCalledWith(expect.objectContaining({ kind: 'github' }))
+    expect(starts.passes).toHaveBeenCalledOnce()
+    await app.stop('disable')
+  })
+})
+
+describe('the app in setup', () => {
+  it('starts the GitHub Source once when two saves complete the setup at once', async () => {
+    // Once both saves are in, the setup checks they schedule wait at the account check until the test opens it.
+    let held: ReturnType<typeof gate> | undefined
+    let waiting = 0
+    const { app } = setup(true, () => {
+      if (!held) return undefined
+      waiting += 1
+      return held.opened
+    })
+    const starts = watchStarts(app)
+    await app.start()
+    await app.parts.settings.save('source:github', GITHUB, 0, 'panel')
+    await app.parts.settings.save(
+      'source:github',
+      { ...GITHUB, config: { ...GITHUB.config, pollSeconds: 120 } },
+      1,
+      'panel',
+    )
+    held = gate()
+    await vi.waitFor(() => expect(waiting).toBeGreaterThan(0))
+    // Both scheduled checks have run by now: without serializing, both wait at the account check.
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    held.open()
+    await vi.waitFor(() => expect(app.unavailable()).toBeUndefined())
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(starts.sources.mock.calls.filter(([kind]) => kind.kind === 'github')).toHaveLength(1)
+    expect(starts.passes).toHaveBeenCalledOnce()
     await app.stop('disable')
   })
 })

@@ -139,6 +139,14 @@ steps, and the defaults. Ask for one confirmation.
    GH_CONFIG_DIR="<stateDir>/home/.config/gh" gh api user --jq .login   # must print the agent account
    ```
 
+   Sign in through the browser, as the dedicated agent account, a collaborator with write access to this one
+   repository only. Superagent receives requests through the account's notifications, and GitHub's notifications API
+   accepts only a browser sign-in or a classic token. **Fine-grained personal access tokens are not supported**: the
+   notifications API refuses them, and the setup check reports "The agent's GitHub token cannot read notifications". A
+   classic personal access token (`gh auth login --with-token`) works with the `repo` and `notifications` scopes and
+   reaches every repository the account can reach. Branch protection on the default branch, not the token, is what
+   keeps the agent from pushing there or merging without approval; Superagent never reads it.
+
 6. **Restart the daemon with the agent's identity.** Stop the daemon you started in step 2, by its process id, and start
    it again with `HOME` set to the proxy home and the shim directory first on `PATH`, so that the sessions it runs act as
    the agent account and never as the operator, even when the operator is signed in on the same machine:

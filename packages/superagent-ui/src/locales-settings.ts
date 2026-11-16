@@ -616,6 +616,10 @@ export const SETTINGS_TEXT = {
     '@{account} 没有 {repository} 的推送权限。',
     SETUP_PROBLEMS.repositoryReadOnly[1],
   ],
+  'setup.agentTokenNoNotifications': [
+    '智能体的 GitHub 令牌读不到通知；请用 gh auth login 或经典令牌登录。',
+    SETUP_PROBLEMS.agentTokenNoNotifications[1],
+  ],
   'healthCode.setupPending': ['等待部署检查', HEALTH_TEXT.setupPending],
   'healthCode.sourceOff': ['已关闭', HEALTH_TEXT.sourceOff],
   'healthCode.feishuDedicatedBot': [

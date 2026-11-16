@@ -39,7 +39,12 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
 ## 安装与启用
 
 1. 以服务用户、`AGH_HOME=/srv/superagent/agh` 先启动一次 daemon（`agh serve`），按[安装](install.zh-CN.md)配好模型。
+   全新的 home 在首次启动之前不要在 `AGH_HOME` 下创建任何文件：那里有文件（比如把 daemon 输出重定向到其中的日志）时，启动器会以
+   `E_HOME_VERSION` 拒绝这个 home。日志请写到 home 之外，例如 `/srv/superagent/agh.log`。
 2. 打开 **插件 → 市场**，安装 **Superagent**，审阅它申请的权限（模型与会话访问、在本机运行命令），然后启用（见[插件](packages.zh-CN.md)）。
+   在终端里，用同一个 `AGH_HOME` 运行 `agh plugins add file:./bundled-plugins/superagent` 效果相同：这个引用是载荷的官方随包来源，也就是市场安装所用的来源；
+   命令先给出审阅内容，你确认后安装、信任并启用 Superagent。只用这两种方式之一。包名（如 `agh package add @agnes/superagent`）不是来源，会被拒绝；
+   用文件夹路径安装得到的是没有随包应用授权的本地副本（见[排错](#排错)）。
 3. 在插件设置页把 `stateDir` 设为 `/srv/superagent/state`。此时 Superagent 会报告一个设置问题，因为智能体的环境还没就绪，这是正常的。
 4. 用智能体自己的配置目录登录智能体账号，绝不要用你自己的：
 
@@ -48,7 +53,16 @@ Superagent 是随 AGH 发布的可选插件。它关注一个 GitHub 仓库（�
    GH_CONFIG_DIR=/srv/superagent/state/home/.config/gh gh api user --jq .login
    ```
 
-   第二条命令必须打印智能体的登录名。
+   第二条命令必须打印智能体的登录名。请以智能体自己的 GitHub 账号在浏览器里登录：这是一个专用账号，作为协作者只对这一个仓库有写权限、
+   别的都没有，这样它无论用什么方式登录都只能碰到这个仓库。Superagent 通过这个账号的通知接收请求，而 GitHub 的通知 API
+   只接受浏览器登录或经典令牌：
+
+   - **不支持细粒度个人访问令牌**：通知 API 拒绝它们。这时 Superagent 的设置检查会报告“智能体的 GitHub 令牌读不到通知”。
+   - **经典个人访问令牌**（用 `gh auth login --with-token` 给出）带上 `repo` 和 `notifications` 两个范围即可使用。它能碰到这个账号能碰到的
+     所有仓库，这也是只让该账号访问这一个仓库的又一个理由。
+
+   阻止智能体直接推送默认分支、或不经人批准就合并的，是默认分支上的分支保护，而不是令牌。Superagent 从不读取分支保护；
+   读取它需要仓库的管理员权限，而智能体账号不应有这个权限，请用你自己的账号核对。
 5. 停掉这个 daemon，按下文以智能体身份作为服务运行。
 
 ## 作为服务运行
@@ -116,7 +130,8 @@ WantedBy=multi-user.target
 
 打开 AGH 首页上的 **Superagent** 入口，依次保存：来源（仓库与智能体的 GitHub CLI；用飞书时选飞书渠道实例）、策略（谁可以提请求）、
 执行设置（工单目录根与 prepare 命令，例如 `git clone "https://github.com/<owner>/<name>.git" repo`）以及团队提示段。
-各字段的含义见[设置指南](../../packages/superagent/docs/setup.md)。然后用允许名单里的账号在某个 Issue 下评论 `@<智能体登录名> <请求>`，
+各字段的含义见[设置指南](../../packages/superagent/docs/setup.md)。全新安装时总览会报告 GitHub 来源没有设置仓库：
+**来源** 设置从首次启动起就列出 GitHub，保存仓库与 CLI 后设置会自行继续，无需重启。然后用允许名单里的账号在某个 Issue 下评论 `@<智能体登录名> <请求>`，
 大约一分钟内总览里就会出现工单。
 
 ## 停用
@@ -185,9 +200,14 @@ Superagent 保留它原有的边界：允许名单与每个工单的授权书（
 
 | 问题 | 处理 |
 | --- | --- |
+| `The GitHub Source names no repository.` | 打开 **设置 → 来源**，在 GitHub 卡片上填写仓库（`owner/name`）和智能体的 GitHub CLI 并保存；设置随即继续，无需重启 |
+| 面板说连不上 Superagent，调用返回 `CAPABILITY_DENIED` | 请从市场安装；本地路径安装没有特权授权。用文件夹路径安装得到的是 `local-source` 包，它永远拿不到 Superagent 运行所需的随包应用授权，这是有意的。先卸载它，再从 **插件 → 市场** 或用 `agh plugins add file:./bundled-plugins/superagent` 安装 |
+| `agh package add @agnes/superagent` 被拒绝 | 包名不是来源。从市场安装，或用 `agh plugins add file:./bundled-plugins/superagent` |
+| 首次 `agh serve` 以 `E_HOME_VERSION` 拒绝 home | 全新的 `AGH_HOME` 在首次启动前被建了东西，比如日志文件。删掉它再启动，并把日志写到 home 之外 |
 | `The daemon runs with HOME …, not the agent home …` | 以 `HOME` 为 `<stateDir>/home` 启动 daemon（单元里的 `HOME`） |
 | `Sessions run gh from …, not the shim in …` | 把 `<stateDir>/worker-bin` 放在单元 `PATH` 的最前面 |
 | `git would ask other credential helpers than the agent's for github.com` | 从系统 git 配置里去掉列出的凭据助手，或换一个没有它们的用户运行 |
+| `The agent's GitHub token cannot read notifications; …` | 智能体用细粒度令牌登录，GitHub 的通知 API 拒绝它。用它的 `GH_CONFIG_DIR` 在浏览器里重新登录，或改用带 `repo` 与 `notifications` 范围的经典令牌，见第 4 步 |
 | `gh acts as @…, not the agent account @…` | 用智能体的 `GH_CONFIG_DIR` 重新登录，见第 4 步 |
 | `The agent GitHub CLI was not found.` | 让单元 `PATH` 能找到 `gh`，或在 GitHub 来源里写绝对路径 |
 | 某个文件 `… was not written by Superagent` | 把它移出 `<stateDir>/worker-bin` 或 `<stateDir>/home`，或换一个状态目录 |

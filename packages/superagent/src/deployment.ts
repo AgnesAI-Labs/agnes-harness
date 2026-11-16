@@ -193,6 +193,14 @@ export async function resolveDeployment(
   if (!access) throw new SetupError('repositoryUnreported', { repository: remote })
   const repository = access.name
   if (access.push !== true) throw new SetupError('repositoryReadOnly', { account: agent.login, repository })
+  // The GitHub Source receives requests through the agent's notifications, which GitHub refuses to a fine-grained
+  // token (401 or 403); any other failure, such as a network error, is left to the Source's polling to report.
+  await probe([cli, 'api', `repos/${repository}/notifications?per_page=1`, '--silent']).catch(
+    (error: unknown) => {
+      if (/\bHTTP 40[13]\b/.test(reason(error)))
+        throw new SetupError('agentTokenNoNotifications', { account: agent.login, output: reason(error) })
+    },
+  )
   return {
     ...machine,
     repository,
