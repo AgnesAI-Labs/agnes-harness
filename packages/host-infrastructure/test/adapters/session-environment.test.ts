@@ -18,6 +18,27 @@ const AGENT: SessionEnvironment = {
   unset: ['GH_TOKEN', 'GITHUB_TOKEN', 'LANG'],
 }
 const roots: string[] = []
+const policyFor = (root: string, digest: string): FsPolicy =>
+  Object.freeze({
+    workspaceRoot: root,
+    rules: Object.freeze([
+      Object.freeze({ effect: 'allow' as const, path: root, source: 'workspace' as const, hard: false }),
+      Object.freeze({
+        effect: 'deny' as const,
+        path: join(root, '.git'),
+        source: 'host-integrity' as const,
+        hard: true,
+      }),
+      Object.freeze({
+        effect: 'deny' as const,
+        path: join(root, '.agh', 'secrets'),
+        source: 'host-integrity' as const,
+        hard: true,
+      }),
+    ]),
+    networkAllow: Object.freeze([]),
+    digest,
+  })
 afterEach(async () => {
   vi.unstubAllEnvs()
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
@@ -105,27 +126,7 @@ describe("a session's own environment", () => {
     const fenceFor = async (root: string, key: string, digest: string) => {
       const handle = await factory.openWorkspace(new CliWorkspaceAuthority(root).bind(key))
       const fence = await factory.openFence(handle)
-      const policy: FsPolicy = Object.freeze({
-        workspaceRoot: root,
-        rules: Object.freeze([
-          Object.freeze({ effect: 'allow' as const, path: root, source: 'workspace' as const, hard: false }),
-          Object.freeze({
-            effect: 'deny' as const,
-            path: join(root, '.git'),
-            source: 'host-integrity' as const,
-            hard: true,
-          }),
-          Object.freeze({
-            effect: 'deny' as const,
-            path: join(root, '.agh', 'secrets'),
-            source: 'host-integrity' as const,
-            hard: true,
-          }),
-        ]),
-        networkAllow: Object.freeze([]),
-        digest,
-      })
-      fence.bind(policy)
+      fence.bind(policyFor(root, digest))
       fence.activateGate({ backend: 'none', onUnavailable: 'allow' })
       return { fence, handle }
     }
@@ -152,4 +153,37 @@ describe("a session's own environment", () => {
       await handle.close()
     }
   })
+
+  // guards-allow-platform: a real Windows Job command through a Windows workspace's fence.
+  it.runIf(process.platform === 'win32')(
+    "reaches a Windows workspace's commands with one prepended Path and without the removed variables",
+    async () => {
+      vi.stubEnv('GH_TOKEN', 'daemon-token')
+      const root = await realpath(await mkdtemp(join(tmpdir(), 'agnes-env-w-')))
+      roots.push(root)
+      const factory = createSessionWorkspaceAdapterFactory({
+        platform: createPlatform(),
+        exec: createExec({ windowsNodeExecutable: process.execPath }),
+        sessionEnvironment: () => ({ ...AGENT, pathPrepend: [join(root, 'worker-bin')] }),
+      })
+      const handle = await factory.openWorkspace(new CliWorkspaceAuthority(root).bind('agent'))
+      const fence = await factory.openFence(handle)
+      fence.bind(policyFor(root, 'c'.repeat(64)))
+      fence.activateGate({ backend: 'none', onUnavailable: 'allow' })
+      const script =
+        'const e=process.env;process.stdout.write(JSON.stringify([Object.keys(e).filter(k=>k.toUpperCase()==="PATH").length,e.PATH,e.GH_TOKEN??null,e.GIT_CONFIG_GLOBAL]))'
+      const ran = await fence.exec([process.execPath, '-e', script], {
+        cwd: root,
+        env: { Gh_Token: 'caller' },
+        sandbox: { policyDigest: 'c'.repeat(64), backend: 'none' },
+      })
+      const [paths, path, token, global] = JSON.parse(ran.stdout) as [number, string, string | null, string]
+      expect(paths).toBe(1)
+      expect(path.startsWith(`${join(root, 'worker-bin')};`)).toBe(true)
+      expect(token).toBeNull()
+      expect(global).toBe('/state/worker-gitconfig')
+      await fence.close()
+      await handle.close()
+    },
+  )
 })

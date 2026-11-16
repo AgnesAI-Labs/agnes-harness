@@ -42,18 +42,29 @@ type Options = {
 const error = (code: string, message: string): Error => Object.assign(new Error(message), { code })
 const validPid = (value: unknown): boolean => Number.isSafeInteger(value) && Number(value) > 0
 
-/** Windows names are case-insensitive; later layers (including empty values) override earlier ones. */
+/**
+ * Windows names are case-insensitive; later layers (including empty values) override earlier ones. An `undefined` value
+ * removes the variable, in whatever case an earlier layer spelled it, unless a later layer sets it again.
+ */
 export function mergeWindowsEnvironment(
-  ...layers: Array<Readonly<Record<string, string>> | undefined>
+  ...layers: Array<Readonly<Record<string, string | undefined>> | undefined>
 ): Record<string, string> {
-  const entries: Array<[string, string]> = []
+  return mergeEnvironmentLayers(windowsEnvironmentNamesEqual, layers)
+}
+
+/** `mergeWindowsEnvironment` with the name comparison given, so its layering can be tested on any platform. */
+export function mergeEnvironmentLayers(
+  equal: (left: string, right: string) => boolean,
+  layers: ReadonlyArray<Readonly<Record<string, string | undefined>> | undefined>,
+): Record<string, string> {
+  const entries: Array<[string, string | undefined]> = []
   for (const layer of layers)
     for (const entry of Object.entries(layer ?? {})) {
-      const existing = entries.findIndex(([name]) => windowsEnvironmentNamesEqual(name, entry[0]))
+      const existing = entries.findIndex(([name]) => equal(name, entry[0]))
       if (existing < 0) entries.push(entry)
       else entries[existing] = entry
     }
-  return Object.fromEntries(entries)
+  return Object.fromEntries(entries.filter((entry): entry is [string, string] => entry[1] !== undefined))
 }
 
 /** Owned finite command only. Shared daemons require a separate lifetime and must not use this gate. */
