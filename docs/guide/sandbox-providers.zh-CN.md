@@ -66,7 +66,7 @@ Linux bubblewrap 已通过 `--dev /dev` 提供隔离的最小设备树，不暴�
 
 ## 开放网络下的证书校验
 
-macOS Seatbelt 配置允许网络时，还允许一项 Mach 查找：系统证书信任代理 `com.apple.trustd.agent`。`gh` 等 Go 程序以及其他通过 Security.framework 校验服务器证书的客户端需要它才能完成 TLS；缺少它时会报 `x509: OSStatus -26276` 或 TLS 错误。证书校验保持开启，不授予其他 Mach 服务；禁止网络和仅提供回环服务的配置不获得此查找。本机 stdio MCP 隔离复用同一编译器，因此其 `network` 配置具有相同授权。
+macOS Seatbelt 配置允许网络时，还允许查找系统证书信任服务 `com.apple.trustd.agent` 和 `com.apple.trustd`。`gh` 等 Go 程序以及其他通过 Security.framework 校验服务器证书的客户端需要它们才能完成 TLS；缺少时会报 `x509: OSStatus -26276` 或 TLS 错误。登录会话中的命令查询信任代理，LaunchDaemon 下的命令查询系统信任守护进程，因此两个名称都予以授权。证书校验保持开启，不授予其他 Mach 服务。trustd 会在配置的网络规则之外，为所校验的证书下载中间证书和吊销数据，因此只有完全开放网络时才授予此查找；禁止网络和仅提供回环服务的配置不获得任何 Mach 查找。
 
 ## Windows 写限制
 

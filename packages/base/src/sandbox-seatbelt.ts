@@ -92,9 +92,14 @@ export function seatbeltDenyNetworkArgv(
       ? [
           '(allow network*)',
           // Go programs such as gh, and every Security.framework client, verify a server certificate
-          // through the trust agent; without it an allowed network cannot complete TLS. Grant only
-          // this service, and only with the network: certificate verification itself stays on.
-          '(allow mach-lookup (global-name "com.apple.trustd.agent"))',
+          // through trustd; without it an allowed network cannot complete TLS. A login session's
+          // commands ask the trust agent, and a LaunchDaemon's (root, or the System launchd session)
+          // ask the system trust daemon, with no fallback, so both names are granted and nothing else.
+          // Certificate verification itself stays on. trustd fetches AIA intermediates and OCSP/CRL
+          // responses for the certificates it is given, outside this profile's network rules, so the
+          // lookup is an egress channel: it must stay with a fully open network, never with a closed,
+          // loopback-only or host-filtered one.
+          '(allow mach-lookup (global-name "com.apple.trustd.agent") (global-name "com.apple.trustd"))',
         ]
       : policy.loopbackServe
         ? [

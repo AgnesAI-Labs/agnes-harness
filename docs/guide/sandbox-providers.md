@@ -76,7 +76,7 @@ Linux bubblewrap already supplies an isolated minimal device tree through `--dev
 
 ## Certificate verification with an open network
 
-When the macOS Seatbelt profile allows the network, it also permits one Mach lookup: the system certificate trust agent, `com.apple.trustd.agent`. Go programs such as `gh`, and other clients that verify server certificates with Security.framework, need it to complete TLS; without it they fail with `x509: OSStatus -26276` or a TLS error. Certificate verification stays on, no other Mach service is granted, and closed-network and loopback-serving profiles receive no lookup. Local stdio MCP isolation uses the same compiler, so its `network` profile has the same grant.
+When the macOS Seatbelt profile allows the network, it also permits looking up the system certificate trust services `com.apple.trustd.agent` and `com.apple.trustd`. Go programs such as `gh`, and other clients that verify server certificates with Security.framework, need them to complete TLS; without them they fail with `x509: OSStatus -26276` or a TLS error. Commands in a login session ask the trust agent and commands under a LaunchDaemon ask the system trust daemon, so both names are granted. Certificate verification stays on and no other Mach service is granted. trustd downloads intermediate certificates and revocation data for the certificates it checks, outside the profile's network rules, so the lookup comes only with a fully open network: closed-network and loopback-serving profiles receive no Mach lookup.
 
 ## Windows write restriction
 

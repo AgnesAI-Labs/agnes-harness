@@ -1,7 +1,9 @@
 import { expect, it } from 'vitest'
 import { seatbeltDenyNetworkArgv } from '../src/sandbox-seatbelt.js'
 
-const TRUST_AGENT = '(allow mach-lookup (global-name "com.apple.trustd.agent"))'
+// The trust agent serves a login session; a LaunchDaemon's commands ask the system trust daemon instead.
+const TRUST_LOOKUP =
+  '(allow mach-lookup (global-name "com.apple.trustd.agent") (global-name "com.apple.trustd"))'
 
 it.each(['relative', '/bad\npath', '/bad\0path', '/bad\x7fpath'])(
   'refuses invalid path %j without echo',
@@ -44,13 +46,13 @@ it.each([{}, { network: 'allow' as const }, { loopbackServe: true }])(
     if ('network' in network) expect(args[2]).toContain('(allow network*)')
     else if ('loopbackServe' in network) expect(args[2]).toContain('(deny network-bind)')
     else expect(args[2]).toContain('(deny network*)')
-    // Only an open network reaches a Mach service: the certificate trust agent, nothing else.
-    if ('network' in network) expect(args[2]).toContain(TRUST_AGENT)
+    // Only an open network reaches a Mach service: the certificate trust services, nothing else.
+    if ('network' in network) expect(args[2]).toContain(TRUST_LOOKUP)
     else expect(args[2]).not.toContain('mach-lookup')
   },
 )
 
-it('adds only the trust agent lookup to an open network and keeps every other rule of the profile', () => {
+it('adds only the trust service lookup to an open network and keeps every other rule of the profile', () => {
   const policy = { allowPaths: ['/w'], denyPaths: ['/w/secret'], readPaths: ['/w'] }
   const lines = (network: object) =>
     (seatbeltDenyNetworkArgv(['true'], { ...policy, ...network })[2] ?? '').split('\n')
@@ -74,7 +76,7 @@ it('adds only the trust agent lookup to an open network and keeps every other ru
     '(deny file-write* (regex #"^/private/tmp/agh-loopback-[^/]*(/|$)"))',
     '(deny file-write-unlink (literal "/") (literal "/private") (literal "/private/tmp"))',
   ]
-  expect(lines({ network: 'allow' })).toEqual([...shared, '(allow network*)', TRUST_AGENT])
+  expect(lines({ network: 'allow' })).toEqual([...shared, '(allow network*)', TRUST_LOOKUP])
   expect(lines({})).toEqual([...shared, '(deny network*)'])
   expect(lines({ network: 'deny' })).toEqual([...shared, '(deny network*)'])
   expect(lines({ loopbackServe: true })).toEqual([

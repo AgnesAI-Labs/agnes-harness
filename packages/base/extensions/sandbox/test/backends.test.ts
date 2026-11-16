@@ -130,9 +130,10 @@ describe('closed-network backend compilers', () => {
     expect(profile).not.toMatch(/\(allow [^\n]*\(subpath "\/dev(?:\/|"|\))/)
   })
 
-  it('gives a session on an open network the certificate trust agent through either macOS backend', () => {
+  it('gives a session on an open network the certificate trust services through either macOS backend', () => {
     // A full-access session compiles `network: 'allow'`; HTTPS clients verify certificates through trustd.
-    const trust = '(allow mach-lookup (global-name "com.apple.trustd.agent"))'
+    const trust =
+      '(allow mach-lookup (global-name "com.apple.trustd.agent") (global-name "com.apple.trustd"))'
     for (const backend of [SEATBELT_BACKEND, SEATBELT_COMPAT_BACKEND]) {
       expect(backend.confine(['true'], { ...options, network: 'allow' })[2]).toContain(trust)
       expect(backend.confine(['true'], options)[2]).not.toContain('mach-lookup')
