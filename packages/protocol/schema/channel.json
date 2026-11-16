@@ -362,6 +362,11 @@
       "properties": {
         "kind": {
           "const": "local"
+        },
+        "bundledApp": {
+          "description": "The bundled application's proof for this connection's client id, keyed by the daemon; accepted on the Unix socket only.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
         }
       },
       "x-secret": true

@@ -1,12 +1,15 @@
+import { receiveBundledAppKey } from '@agnes/daemon-foundation/local/bundled-app'
 import type { HostOptions } from '@agnes/host'
 import { backendClient } from '../worker/backend-client.js'
 
 /**
- * The bundled application key the daemon gave this worker, taken out of the process environment when this module
- * loads, before any plugin code runs in the worker; only the grant's client below uses it.
+ * The bundled application key, which the daemon sends the shared session worker over IPC once its hello is verified.
+ * Listened for from the moment this module loads, before the worker says hello; other worker kinds get none.
  */
-const bundledAppKey = process.env.AGNES_BUNDLED_APP_KEY
-delete process.env.AGNES_BUNDLED_APP_KEY
+const bundledAppKey: Promise<string | undefined> =
+  process.env.AGNES_WORKER_KIND === 'session' && process.env.AGNES_WORKER_KEY === '@shared'
+    ? receiveBundledAppKey()
+    : Promise.resolve(undefined)
 
 /**
  * Owner-level local client for a release-granted bundled application. The Host chooses the state
@@ -21,7 +24,7 @@ export const bundledAppClient: NonNullable<HostOptions['bundledAppClient']> = (c
     signal: context.signal,
     assertCurrent: context.assertCurrent,
     unavailable: 'Bundled application backend is unavailable',
-    ...(bundledAppKey ? { bundledAppKey } : {}),
+    bundledAppKey,
   })
   return { client, close: () => client.close() }
 }

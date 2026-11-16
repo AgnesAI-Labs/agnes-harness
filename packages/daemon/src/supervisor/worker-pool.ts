@@ -1,6 +1,7 @@
 import { type ChildProcess, spawn as nodeSpawn } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import type { Duplex, Writable } from 'node:stream'
+import { bundledAppKeyMessage } from '@agnes/daemon-foundation/local/bundled-app'
 import type { PreviewUpdate } from '@agnes/daemon-foundation/registry'
 import {
   assertWorkspaceBindingEnvelope,
@@ -101,7 +102,7 @@ type Slot = {
  * between strikes, matching the daemon spec's §5.2 crash policy.
  */
 export class WorkerPool {
-  /** The bundled application's proof key for this run, given to the shared session worker only (`AGNES_BUNDLED_APP_KEY`). */
+  /** The bundled application's proof key for this run, sent over IPC to the shared session worker only. */
   readonly bundledAppKey = randomBytes(32).toString('hex')
   private readonly slots = new Map<string, Slot>()
   private readonly pendingByToken = new Map<string, (link: WorkerLink) => void>()
@@ -449,6 +450,9 @@ export class WorkerPool {
           }
           // A verified hello ends the pre-hello failure streak, even if admission later fails.
           this.bootFailures.succeeded(workerKey)
+          // The bundled-app key goes over IPC to the verified shared session worker, never into an environment.
+          if (workerKey === '@shared' && (opts.kind ?? 'session') === 'session')
+            child?.send?.(bundledAppKeyMessage(this.bundledAppKey), () => undefined)
           try {
             await this.initializeLink?.({ sessionKey: workerKey, generation: slot.generation, link })
           } catch (error) {
@@ -537,12 +541,10 @@ export class WorkerPool {
               AGNES_SUPERVISOR_START_ID: supervisorStartId,
               AGNES_WORKER_KEY: workerKey,
               AGNES_WORKER_KIND: opts.kind ?? 'session',
-              AGNES_BUNDLED_APP_KEY: undefined,
               ...(workerKey === '@shared' && (opts.kind ?? 'session') === 'session'
                 ? (() => {
                     const boot = this.o.runtimeDelivery?.bootFor(generation)
-                    const runtime = boot ? { AGNES_RUNTIME_BOOT_SOURCE: boot.source } : {}
-                    return { ...runtime, AGNES_BUNDLED_APP_KEY: this.bundledAppKey }
+                    return boot ? { AGNES_RUNTIME_BOOT_SOURCE: boot.source } : {}
                   })()
                 : {}),
               ...resourceWorkerEnvironment(opts, this.o.resourceBootstrap),

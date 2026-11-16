@@ -151,7 +151,7 @@ export const AgnesV1 = Type.Module({
   "JwtCredential": Type.Object({ "kind": Type.Literal('jwt'), "token": Type.String({ maxLength: 8192 }) }, { additionalProperties: false }),
   "SourceAuthCredential": Type.Object({ "kind": Type.Literal('source-auth'), "timestamp": Type.Integer(), "signature": Type.String({ pattern: "^v0=[0-9a-f]{64}$" }), "nonce": Type.String({ pattern: "^[0-9a-f]{32}$" }) }, { additionalProperties: false }),
   "PortalIdentityCredential": Type.Object({ "kind": Type.Literal('portal-identity'), "token": Type.String({ maxLength: 8192 }) }, { additionalProperties: false }),
-  "LocalCredential": Type.Object({ "kind": Type.Literal('local') }, { additionalProperties: false }),
+  "LocalCredential": Type.Object({ "kind": Type.Literal('local'), "bundledApp": Type.Optional(Type.String({ pattern: "^[0-9a-f]{64}$" })) }, { additionalProperties: false }),
   "SurfaceAuthCredential": Type.Object({ "kind": Type.Literal('surface'), "sourceId": Type.String({ minLength: 1, maxLength: 64, pattern: "^[a-z][a-z0-9-]{0,63}$" }), "source": Type.Ref('SourceAuthCredential'), "subject": Type.Union([Type.Ref('JwtCredential'), Type.Ref('PortalIdentityCredential')]) }, { additionalProperties: false }),
   "SlotName": Type.Union([Type.Literal('primary'), Type.Literal('escalation'), Type.Literal('fast'), Type.Literal('compaction'), Type.Literal('verifier'), Type.Literal('image'), Type.Literal('video')]),
   "SessionForkParams": Type.Object({ "sessionId": Type.String(), "at": Type.Integer({ minimum: 1 }), "childKey": Type.Optional(Type.String({ maxLength: 512 })), "additionalDirectories": Type.Optional(Type.Array(Type.String({ minLength: 1 }), { maxItems: 8 })) }, { additionalProperties: false }),
