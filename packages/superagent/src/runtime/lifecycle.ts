@@ -113,9 +113,16 @@ export interface LifecycleDeps {
    * for an aborted start, the app's drain and anything else get what is left.
    */
   stopBudgetMs?: number
+  /**
+   * The pauses before each new attempt of a start that failed for a reason other than its setup, such as its daemon
+   * client not yet reaching a daemon that has just restarted; the last pause repeats. A setup problem waits for a recheck.
+   */
+  retryDelaysMs?: readonly number[]
 }
 
 const ARCHIVE_EVERY_MS = 24 * 3600_000
+/** A failed start is tried again after these pauses, then every 30 s while it keeps failing. */
+const RETRY_DELAYS_MS: readonly number[] = [1_000, 2_000, 5_000, 10_000, 30_000]
 /** Below the 5 s shutdown deadline the manifest declares, with room for the Host's own steps. */
 const STOP_BUDGET_MS = 4_000
 /** The pause between passes over one Session in a stop. */
@@ -354,6 +361,9 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
   let timer: ReturnType<typeof setInterval> | undefined
   let stopping = false
   let aborter: AbortController | undefined
+  /** The next attempt of a failed start, and how many attempts in a row have failed. */
+  let retry: ReturnType<typeof setTimeout> | undefined
+  let failures = 0
 
   const { upkeep, retire } = upkeepOf(deps, now, warn)
   const reconcile = (running: SuperagentApp, sessionId: string, state: SessionState) =>
@@ -454,6 +464,7 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       timer = setInterval(() => void upkeep(), ARCHIVE_EVERY_MS)
       timer.unref?.()
       status = { state: 'running' }
+      failures = 0
     } catch (error) {
       if (stopping) return
       if (error instanceof SetupError) {
@@ -463,33 +474,54 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       } else {
         status = { state: 'failed', detail: message(error) }
         refuse(`Superagent cannot start: ${message(error)}`)
+        retryLater()
       }
     }
+  }
+  /**
+   * Tries a start that failed for a reason other than its setup again after the next pause, as a recheck does: right
+   * after a daemon restart its client may not reach the daemon yet, and nothing else would start Superagent again.
+   */
+  function retryLater(): void {
+    const delays = deps.retryDelaysMs ?? RETRY_DELAYS_MS
+    const delay = delays[Math.min(failures, delays.length - 1)] ?? 30_000
+    failures++
+    clearTimeout(retry)
+    retry = setTimeout(() => {
+      retry = undefined
+      recheck()
+    }, delay)
+    retry.unref?.()
+  }
+  function recheck(): void {
+    if (!work || stopping || !aborter) return
+    if (status.state === 'running') {
+      void app?.reconfigure?.().catch((error: unknown) => {
+        warn(`Superagent could not check its setup again: ${message(error)}`)
+      })
+      return
+    }
+    if (status.state !== 'setupRequired' && status.state !== 'setupFailed' && status.state !== 'failed')
+      return
+    // This attempt replaces a pending one.
+    clearTimeout(retry)
+    retry = undefined
+    status = { state: 'starting' }
+    holdWhileStarting()
+    work = open(aborter.signal)
   }
 
   return {
     async start() {
       if (work) return
       stopping = false
+      failures = 0
       status = { state: 'starting' }
       holdWhileStarting()
       aborter = new AbortController()
       work = open(aborter.signal)
     },
-    recheck() {
-      if (!work || stopping || !aborter) return
-      if (status.state === 'running') {
-        void app?.reconfigure?.().catch((error: unknown) => {
-          warn(`Superagent could not check its setup again: ${message(error)}`)
-        })
-        return
-      }
-      if (status.state !== 'setupRequired' && status.state !== 'setupFailed' && status.state !== 'failed')
-        return
-      status = { state: 'starting' }
-      holdWhileStarting()
-      work = open(aborter.signal)
-    },
+    recheck,
     /**
      * Within `stopBudgetMs`: abort a start in progress, stop polling and sending at once, then cancel, kill and empty
      * every Session in parallel — the part that keeps a worker from acting after a disable — and only then wait for an
@@ -502,6 +534,8 @@ export function createLifecycle(deps: LifecycleDeps): Lifecycle {
       aborter?.abort()
       if (timer) clearInterval(timer)
       timer = undefined
+      clearTimeout(retry)
+      retry = undefined
       setAgentVariables(undefined)
       // A start past `createApp` already holds the app; an earlier one opens nothing more once it sees `stopping`.
       const starting = work
