@@ -206,13 +206,15 @@ export function createProfileServiceRuntime(deps: {
     signal: AbortSignal,
     expectedRevision?: string,
   ): Promise<PreparedServiceEffect> => {
-    if (expectedRevision !== undefined) return hostPrepared(id.entry, input, expectedRevision)
     const reconciliation = deps.managed?.reconciliation(id.entry.owner, id.entry.capability.name)
-    const value = reconciliation
-      ? await reconciliation.prepare()
-      : id.entry.prepare
-        ? await id.entry.prepare(input, context(id, signal, false))
-        : { input, presentation: { service: id.entry.capability.name } }
+    // Every preparation, the Host's own included, passes the same size and shape checks below.
+    const value =
+      hostPrepared(id.entry, input, expectedRevision) ??
+      (reconciliation
+        ? await reconciliation.prepare()
+        : id.entry.prepare
+          ? await id.entry.prepare(input, context(id, signal, false))
+          : { input, presentation: { service: id.entry.capability.name } })
     const checked = inspectJsonData(value, 131072)
     if (!checked.ok || !checked.value || typeof checked.value !== 'object' || Array.isArray(checked.value))
       throw rpcError('INVALID_PARAMS')
@@ -724,10 +726,10 @@ function operationRow(
 function hostPrepared(
   entry: { prepare?: unknown; capability: { name: string } },
   input: JsonValue,
-  revision: string,
+  revision: string | undefined,
 ) {
+  if (revision === undefined) return undefined
   // Only Host-registered managed configure effects reach here, and they have no preparation to skip.
   if (entry.prepare) throw rpcError('INTERNAL_ERROR')
-  const prepared = { input, presentation: { service: entry.capability.name }, resourceRevision: revision }
-  return frozenJson(prepared) as unknown as PreparedServiceEffect
+  return { input, presentation: { service: entry.capability.name }, resourceRevision: revision }
 }

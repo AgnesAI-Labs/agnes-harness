@@ -942,6 +942,28 @@ describe('managed configuration compare-and-set', () => {
       rmSync(dataDir, { recursive: true, force: true })
     }
   })
+  it('bounds a Host-prepared value like any other preparation, before journaling anything', async () => {
+    const c = await configured()
+    try {
+      const params = await c.params()
+      // 140 KB of input fits the request but not the 128 KiB prepared-value bound.
+      const oversized = { ...params, input: { instances: [entry('x'.repeat(140_000))] } }
+      for (const stale of [false, true]) {
+        if (stale) c.concurrent()
+        await expect(c.runtime.call(oversized, 'granted')).rejects.toMatchObject({
+          data: { code: 'INVALID_PARAMS' },
+        })
+        const { extension, service, operationId } = oversized
+        await expect(
+          c.runtime.readOperation({ extension, service, operationId }, 'granted'),
+        ).rejects.toThrow()
+      }
+      expect(await c.read()).toEqual({ instances: [entry('kept'), entry('other')] })
+      expect(await c.runtime.listDecisions('human')).toEqual([])
+    } finally {
+      await c.close()
+    }
+  })
   it('reports a policy refusal before a stale revision and never skips a plugin preparation', async () => {
     const c = await configured()
     try {
