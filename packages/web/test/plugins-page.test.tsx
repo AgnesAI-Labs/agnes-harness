@@ -431,7 +431,9 @@ it('creates a write-only credential next to the field it fills and keeps failure
     )
     // The entry sits beside the field it fills, not only behind Manage credentials.
     await vi.waitFor(() => expect(createFor('appId')?.disabled).toBe(false))
-    expect(createFor('appSecret')).toBeTruthy()
+    expect(createFor('appSecret')?.disabled).toBe(false)
+    // One permission lookup serves every credential field of the form.
+    expect(context).toHaveBeenCalledTimes(1)
     await act(async () => createFor('appId')!.click())
     await fill('credential-label', 'Feishu app id')
     await fill('credential-value', canary)
@@ -447,8 +449,16 @@ it('creates a write-only credential next to the field it fills and keeps failure
     await fill('credential-value', `${canary}-2`)
     await act(async () => byTestId('credential-save')!.click())
     await vi.waitFor(() => expect(byTestId('credential-error')?.textContent).toContain('permission'))
+    // The refused value is gone at once; only the name stays, and nothing resubmits a kept secret.
+    expect(clean()).toBe(true)
+    expect((byTestId('credential-value') as HTMLInputElement).value).toBe('')
+    expect((byTestId('credential-value') as HTMLInputElement).type).toBe('password')
+    expect(byTestId('credential-error')?.textContent).toContain('enter it again')
+    expect(byTestId('credential-error')?.querySelector('button')).toBeNull()
     expect(byTestId('credential-editor')).toBeTruthy()
     expect((byTestId('credential-label') as HTMLInputElement).disabled).toBe(false)
+    expect((byTestId('credential-label') as HTMLInputElement).value).toBe('Feishu app secret')
+    expect(create).toHaveBeenCalledTimes(2)
     expect(field('appSecret')?.textContent).not.toContain('Feishu app secret')
     await act(async () => byTestId('credential-cancel')!.click())
     await vi.waitFor(() => expect(byTestId('credential-editor')).toBeNull())

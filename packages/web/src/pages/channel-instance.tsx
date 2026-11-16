@@ -1,4 +1,4 @@
-import { CredentialCreate } from '@agnes/resource-control-web/credential-create'
+import { CredentialCreate, useCredentialWrite } from '@agnes/resource-control-web/credential-create'
 import { Field, Select, SettingsCheckbox, SettingsDetails, SettingsInput } from '@agnes/web-ui'
 import { useId, useState } from 'react'
 import { ChannelOptions } from './channel-options.js'
@@ -21,6 +21,7 @@ export function InstanceForm({
 }) {
   const prefix = useId()
   const [allowFromText, setAllowFromText] = useState(value.allowFrom.join(','))
+  const write = useCredentialWrite()
   // Metadata of credentials created here, shown until the shared list catches up.
   const [created, setCreated] = useState<{ id: string; label: string }[]>([])
   const choices = [...credentials, ...created.filter((item) => !credentials.some((c) => c.id === item.id))]
@@ -45,15 +46,15 @@ export function InstanceForm({
           onChange={(ref: string | undefined) => select(key, ref)}
         />
       </Field>
-      {!disabled && (
-        <CredentialCreate
-          testId="channel-credential-create"
-          onCreated={(item) => {
-            setCreated((previous) => [...previous, { id: item.id, label: item.label }])
-            select(key, item.id)
-          }}
-        />
-      )}
+      <CredentialCreate
+        testId="channel-credential-create"
+        write={write}
+        disabled={disabled}
+        onCreated={(item) => {
+          setCreated((previous) => [...previous, { id: item.id, label: item.label }])
+          select(key, item.id)
+        }}
+      />
     </div>
   )
   return (
