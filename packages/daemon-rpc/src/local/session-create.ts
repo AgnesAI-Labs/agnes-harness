@@ -139,7 +139,7 @@ export async function createSessionWithAdmission(
     context: c,
     configurationReadOnly: cx.configurationReadOnly,
   })
-  const environment = admitSessionEnvironment(h.environment, c.conn, cx.sessionEnvironment)
+  const environment = admitSessionEnvironment(h.environment, c.conn, cx.sessionEnvironment, requestedKey)
   const ownership = cx.sessionOwnership
   if (!ownership) return denyOwnership('session/new', requestedKey)
   let reservedNew = false
@@ -163,7 +163,7 @@ export async function createSessionWithAdmission(
   try {
     c.signal.throwIfAborted()
     // Kept before the session opens, so its very first command already runs with it; the Host reads it on each command.
-    if (environment) cx.sessionEnvironment?.write(requestedKey, environment)
+    if (environment) await cx.sessionEnvironment?.write(requestedKey, environment)
     if (origin) {
       origin.afterBind(requestedKey)
       binding = await cx.workspaces.restoreBinding(requestedKey)
@@ -187,7 +187,7 @@ export async function createSessionWithAdmission(
       denyOwnership('session/new', requestedKey)
   } catch (error) {
     // A session that never came to be keeps no environment for the next one to open under this key.
-    if (environment && reservedNew) cx.sessionEnvironment?.release(requestedKey)
+    if (environment && reservedNew) await cx.sessionEnvironment?.release(requestedKey).catch(() => undefined)
     throwSessionOpenRpcError(error, requestedKey)
   }
   return { sessionId: entry.key }

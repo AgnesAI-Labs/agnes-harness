@@ -41,6 +41,7 @@ export function registerSessionLoading(
         meta?.['ai.agnes.harness']?.environment,
         call.conn,
         cx.sessionEnvironment,
+        p.sessionId,
       )
       let recoverScheduledOwner = false
       try {
@@ -74,7 +75,7 @@ export function registerSessionLoading(
               code: 'SESSION_ENVIRONMENT_DENIED',
               reason: 'session owner unavailable',
             })
-          cx.sessionEnvironment?.write(p.sessionId, environment)
+          await cx.sessionEnvironment?.write(p.sessionId, environment)
         }
         let entry = cx.registry.get(p.sessionId)
         const wasOpen = entry !== undefined

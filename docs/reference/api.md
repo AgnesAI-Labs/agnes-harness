@@ -201,11 +201,13 @@ The SDK accepts `client.session.new({ cwd, agent: '@acme/kit#review' })`; embedd
 directories put first on `PATH` (`pathPrepend`), at most 32 variables to set (`set`) and 32 to remove (`unset`). It is
 kept with the session in the profile and applied to every command, job and process the session runs, after the
 platform has reduced the daemon's environment to its floor; it holds across a reload and a daemon restart. Only the
-bundled application's own client may give it, for the sessions it opens (that client proves itself with a key the daemon
-gives the shared worker); any other caller, the Web page, the owner's own client, another SDK user or a plugin, is
-refused with `CAPABILITY_DENIED` and `data.code` `SESSION_ENVIRONMENT_DENIED`. A value that sets a credential-shaped name
-(`KEY`, `PASSWORD`, `SECRET`, `TOKEN`), `PATH`, `AGNES_*` or `AGH_*`, removes `PATH`, names a variable in both lists or
-passes the bounds is refused with `SEMANTIC_REJECTED` and `SESSION_ENVIRONMENT_INVALID`.
+bundled application's own client may give it (that client proves itself with a key the daemon sends the shared worker
+over IPC), and only for the bundled application's own sessions (keys starting `superagent:`). Any other caller, the Web
+page, the owner's own client, another SDK user or a plugin, and any other session key, is refused with
+`CAPABILITY_DENIED` and `data.code` `SESSION_ENVIRONMENT_DENIED`. `set` may name only `GIT_CONFIG_GLOBAL`,
+`GIT_CONFIG_NOSYSTEM`, `GIT_TERMINAL_PROMPT`, `GIT_ASKPASS` (empty only), `LANG` and `LC_*`; `unset` may not name
+`PATH`, `AGNES_*` or `AGH_*`. Any other name, a name in both lists, or a value past the bounds is refused with
+`SEMANTIC_REJECTED` and `SESSION_ENVIRONMENT_INVALID`.
 
 The host launch facade uses prepare → review → start(ticket, operationId). Start returns only a session ID and an optional reviewed draft. The user's edited draft goes through ordinary submit with its own commandId; retrying start never sends text. Failed or uncertain operations are not redispatched. Ordinary launches grant no install, trust or removal authority; example management remains restricted by a dependency-version-validated `exampleOf` relation.
 

@@ -150,7 +150,7 @@ describe('protocol src boundary', () => {
         'SYSTEM_PROMPT_APPEND_MAX',
         'parseSessionEnvironment',
         'SESSION_ENVIRONMENT_LIMITS',
-        'CREDENTIAL_VARIABLE',
+        'SETTABLE_SESSION_VARIABLE',
         'parseAgentRef',
         'AgentPlan',
         'AgentResolveParams',

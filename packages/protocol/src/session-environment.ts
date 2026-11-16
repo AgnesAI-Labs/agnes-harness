@@ -1,8 +1,10 @@
 /**
  * A session's own environment: directories put first on its commands' PATH, variables set, and variables removed. It is
- * applied after the platform has reduced a command's environment to its floor, so it can add to that floor but never
- * bring back what the platform leaves out: a variable whose name looks like a credential can be removed, never set.
- * Only the bundled application's client may give a session one (see the daemon's admission).
+ * applied after the platform has reduced a command's environment to its floor. It may set only the variables in
+ * `SETTABLE_SESSION_VARIABLE`, which choose git's configuration file, turn git's prompts off and pick a locale; it may
+ * remove any variable but PATH and the platform's own. Directories put first on PATH still decide which programs the
+ * session's commands find. Only the bundled application's client may give one, for its own sessions (see the daemon's
+ * admission).
  */
 export type SessionEnvironment = Readonly<{
   pathPrepend?: readonly string[]
@@ -19,8 +21,14 @@ export const SESSION_ENVIRONMENT_LIMITS = Object.freeze({
   totalLength: 16384,
 })
 
-/** The names a session environment may never set: credentials, which the platform keeps out of every command. */
-export const CREDENTIAL_VARIABLE = /KEY|PASSWORD|SECRET|TOKEN/i
+/**
+ * The variables a session environment may set: git's configuration file and system configuration switch, git's prompts
+ * off, and the locale. Every other name is refused, among them credentials and the variables that load code into a
+ * program (`NODE_OPTIONS`, `LD_PRELOAD`, `DYLD_*`, `BASH_ENV`, `GIT_SSH_COMMAND`) or move its configuration (`HOME`,
+ * `GH_CONFIG_DIR`). `GIT_ASKPASS` may only be set empty, since a value names a program for git to run.
+ */
+export const SETTABLE_SESSION_VARIABLE =
+  /^(GIT_CONFIG_GLOBAL|GIT_CONFIG_NOSYSTEM|GIT_TERMINAL_PROMPT|GIT_ASKPASS|LANG|LC_[A-Z]+)$/
 const NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
 /** Variables the platform owns: PATH changes only through `pathPrepend`, and the platform's own prefixes not at all. */
 const RESERVED = /^(PATH|AGNES_.*|AGH_.*)$/i
@@ -48,9 +56,8 @@ function names(value: unknown, field: string): string[] {
 /**
  * Checks and copies a session environment: at most 8 absolute PATH directories (without a PATH separator), at most 32
  * variables to set and 32 to remove, each name a shell variable name of at most 128 characters, each value at most 4096
- * characters without NUL or line breaks, and 16384 characters in all. PATH, `AGNES_*` and `AGH_*` are refused in both
- * lists, a credential-shaped name (KEY, PASSWORD, SECRET, TOKEN) is refused in `set`, and no name may be both set and
- * removed.
+ * characters without NUL or line breaks, and 16384 characters in all. `set` names only `SETTABLE_SESSION_VARIABLE`
+ * variables; PATH, `AGNES_*` and `AGH_*` are refused in `unset`; and no name may be both set and removed.
  * @throws TypeError naming what is wrong.
  */
 export function parseSessionEnvironment(value: unknown): SessionEnvironment {
@@ -83,7 +90,9 @@ export function parseSessionEnvironment(value: unknown): SessionEnvironment {
       'set',
     )
     for (const [name, entry] of entries) {
-      if (CREDENTIAL_VARIABLE.test(name)) invalid(`set names ${name}, which looks like a credential`)
+      if (!SETTABLE_SESSION_VARIABLE.test(name))
+        invalid(`set names ${name}, which a session environment cannot set`)
+      if (name === 'GIT_ASKPASS' && entry !== '') invalid('set may only give GIT_ASKPASS an empty value')
       if (typeof entry !== 'string' || entry.length > SESSION_ENVIRONMENT_LIMITS.valueLength || !text(entry))
         invalid(`set gives ${name} an invalid value`)
     }
