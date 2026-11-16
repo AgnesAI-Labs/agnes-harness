@@ -75,7 +75,9 @@ export const isAbsolute = (path) => path.startsWith('/')
 export const join = (...parts) => parts.join('/').replace(/\\/+/g, '/').split('/').reduce((out, part) => (part === '..' ? out.slice(0, -1) : part === '.' ? out : [...out, part]), []).join('/') || '/'
 export const dirname = (path) => path.replace(/\\/[^/]*$/, '') || '/'
 export const basename = (path) => path.replace(/^.*\\//, '')
-export const resolve = (...parts) => join(...parts)`,
+export const resolve = (...parts) => join(...parts)
+export const posix = { delimiter, isAbsolute, join, dirname, basename, resolve }
+export const win32 = { ...posix, delimiter: ';' }`,
   // Ids only need to be stable within the page, not cryptographic.
   'node:crypto': `export const randomUUID = () => crypto.randomUUID()
 export const createHash = () => {
@@ -128,6 +130,8 @@ export function panelBundle(): Promise<string> {
     platform: 'browser',
     jsx: 'automatic',
     loader: { '.css': 'empty' },
+    // The fake services read the host's platform from `process`, which a page lacks: the page plays a Linux host.
+    banner: { js: "globalThis.process = { env: {}, platform: 'linux' };" },
     define: {
       'process.env.NODE_ENV': '"production"',
       // The fake services find the packaged folders from the module's own address.

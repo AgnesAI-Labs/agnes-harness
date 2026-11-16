@@ -8,6 +8,7 @@ import { parseArgs } from '../src/args.js'
 import { reportCommandFailure } from '../src/command-failure.js'
 import { runPackageCommand } from '../src/commands/package.js'
 import { runPluginDevelopmentCommand } from '../src/commands/plugins.js'
+import { formatPreview } from '../src/tui/package-admin.js'
 
 const profile = 'local-dev'
 const source = { type: 'npm' as const, ref: 'npm:example@1.0.0' }
@@ -685,4 +686,16 @@ describe('a package named instead of a source', () => {
     expect(stderr).toContain('Use a git HTTPS URL, folder/archive path, or npm:package@version')
     expect(stderr).toContain('marketplace')
   })
+})
+
+it('names the shipped copy and its app access only when the Host proved them', () => {
+  const plain = formatPreview(preview)
+  expect(plain).not.toContain('provided with this AGH')
+  expect(plain).not.toContain('bundled app access')
+  const shipped = formatPreview({ ...preview, bundledOrigin: { ownerApplication: true } })
+  expect(shipped).toContain(
+    'source provided with this AGH: contents match the shipped copy; publisher signature not separately verified',
+  )
+  expect(shipped).toContain('bundled app access once trusted and enabled')
+  expect(formatPreview({ ...preview, bundledOrigin: {} })).not.toContain('bundled app access')
 })

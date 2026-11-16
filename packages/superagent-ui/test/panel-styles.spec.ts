@@ -71,6 +71,75 @@ for (const theme of ['light', 'dark'] as const)
     expect(help.width).toBeLessThanOrEqual(20)
   })
 
+/** The size AGH's own settings switch takes from its tokens: track width and height, and the knob. */
+const switchTokens = (page: Page) =>
+  page.evaluate(() => {
+    const px = (token: string) => {
+      const probe = document.createElement('div')
+      probe.style.width = `var(${token})`
+      document.body.append(probe)
+      const width = probe.getBoundingClientRect().width
+      probe.remove()
+      return width
+    }
+    return { width: px('--switch-width'), height: px('--switch-height'), knob: px('--switch-knob') }
+  })
+const switchGeometry = (page: Page) =>
+  page.locator('.dt-switch[role="switch"]').evaluateAll((nodes) =>
+    nodes.map((node) => {
+      const track = node.getBoundingClientRect()
+      const knob = (node.querySelector('.ant-switch-handle') ?? node).getBoundingClientRect()
+      const checked = node.getAttribute('aria-checked') === 'true'
+      return {
+        label: node.getAttribute('aria-label'),
+        checked,
+        width: track.width,
+        height: track.height,
+        knob: { width: knob.width, height: knob.height },
+        // From the knob's centre to the track's, and from the knob to the end it rests against.
+        offCentre: knob.top + knob.height / 2 - (track.top + track.height / 2),
+        inset: checked ? track.right - knob.right : knob.left - track.left,
+      }
+    }),
+  )
+
+for (const theme of ['light', 'dark'] as const)
+  test(`every panel switch is AGH's 38×22 switch with its 18px knob centred, and the antd tooltip is styled (${theme})`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    const opened = await openPanel(page, feishuSettings, { theme })
+    await expect(page.locator('#dt-source-feishu [role="switch"]').first()).toBeVisible()
+    const size = await switchTokens(page)
+    expect(size).toEqual({ width: 38, height: 22, knob: 18 })
+    const switches = await switchGeometry(page)
+    expect(switches.length).toBeGreaterThanOrEqual(2)
+    expect(switches.some((item) => item.checked)).toBe(true)
+    for (const item of switches) {
+      expect(item.width, `${item.label} track width`).toBeCloseTo(size.width, 0)
+      expect(item.height, `${item.label} track height`).toBeCloseTo(size.height, 0)
+      expect(item.knob, `${item.label} knob`).toEqual({ width: size.knob, height: size.knob })
+      expect(Math.abs(item.offCentre), `${item.label} knob is vertically centred`).toBeLessThanOrEqual(0.5)
+      expect(item.inset, `${item.label} knob rests at its end`).toBeCloseTo((size.height - size.knob) / 2, 0)
+    }
+    // Another antd control in the panel gets antd's styles too: the help tooltip is a positioned, filled bubble.
+    await page.locator('#dt-source-feishu .dt-info').first().hover()
+    const tooltip = page.locator('.ant-tooltip:not(.ant-tooltip-hidden)')
+    await expect(tooltip).toBeVisible()
+    const bubble = await tooltip.evaluate((node) => {
+      const container = node.querySelector('.ant-tooltip-container') ?? node
+      return {
+        position: getComputedStyle(node).position,
+        background: getComputedStyle(container).backgroundColor,
+        radius: Number.parseFloat(getComputedStyle(container).borderTopLeftRadius),
+      }
+    })
+    expect(bubble.position).toBe('absolute')
+    expect(bubble.background).not.toBe('rgba(0, 0, 0, 0)')
+    expect(bubble.radius).toBeGreaterThan(0)
+    expect(opened.violations).toEqual([])
+  })
+
 test('a narrow panel replaces the settings side list with one picker', async ({ page }) => {
   await page.setViewportSize({ width: 400, height: 900 })
   const opened = await openPanel(page, feishuSettings)

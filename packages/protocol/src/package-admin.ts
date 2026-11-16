@@ -673,6 +673,7 @@ export type PackageAdminDataName =
   | 'PackageContributionSummary'
   | 'PackageCapabilityDiff'
   | 'PackageBlocker'
+  | 'PackageBundledOrigin'
   | 'PackageWarning'
   | 'PackageProvenanceParams'
   | 'PackageSourcePolicy'
@@ -770,6 +771,7 @@ const DATA_SCHEMAS: Record<PackageAdminDataName, TSchema> = {
   PackageContributionSummary: P.PackageContributionSummary,
   PackageCapabilityDiff: P.PackageCapabilityDiff,
   PackageBlocker: P.PackageBlocker,
+  PackageBundledOrigin: P.PackageBundledOrigin,
   PackageWarning: P.PackageWarning,
   PackageProvenanceParams: P.PackageProvenanceParams,
   PackageSourcePolicy: P.PackageSourcePolicy,

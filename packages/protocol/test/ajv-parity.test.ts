@@ -8916,6 +8916,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageContributionSummary: PackageAdminGen.PackageContributionSummary,
     PackageCapabilityDiff: PackageAdminGen.PackageCapabilityDiff,
     PackageBlocker: PackageAdminGen.PackageBlocker,
+    PackageBundledOrigin: PackageAdminGen.PackageBundledOrigin,
     PackageWarning: PackageAdminGen.PackageWarning,
     PackageProvenance: PackageAdminGen.PackageProvenance,
     PackageProvenanceParams: PackageAdminGen.PackageProvenanceParams,
