@@ -157,6 +157,22 @@ describe('the app', () => {
     expect(stopped).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps a stop that comes while a failed start rolls back', async () => {
+    const { app } = setup()
+    let release = () => {}
+    const stopping = vi.fn(() => new Promise<void>((resolve) => (release = resolve)))
+    app.extend({ sources: () => [stopping] })
+    vi.spyOn(app.executor, 'resume').mockRejectedValueOnce(new Error('ENOSPC: no space left on device'))
+    const start = app.start()
+    await vi.waitFor(() => expect(stopping).toHaveBeenCalledOnce())
+    app.stopSignal('disable')
+    release()
+    await expect(start).rejects.toThrow('ENOSPC')
+    expect(app.unavailable()).toBe('Superagent is stopping')
+    await expect(app.start()).rejects.toThrow('started already')
+    await app.stop('disable')
+  })
+
   it('shows a failed start on the runtime health until it is taken back, never over a state the app set since', async () => {
     const { app } = setup()
     const failed = { detail: 'E_SANDBOX_WORKSPACE', retryAt: '2026-11-16T12:00:00.000Z' }

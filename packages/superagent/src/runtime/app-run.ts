@@ -129,7 +129,8 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
         // the app can be started again. The error stays the start's own.
         if (state.phase === 'starting') {
           await Promise.allSettled(stops.splice(0).map((stop) => stop()))
-          state.phase = 'idle'
+          // A stop that came while the Sources stopped keeps the app stopping.
+          if (state.phase === 'starting') state.phase = 'idle'
         }
         throw error
       }
