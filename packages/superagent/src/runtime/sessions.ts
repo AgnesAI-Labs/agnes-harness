@@ -167,6 +167,11 @@ export function sessionMissing(error: unknown): boolean {
   if (code === 'SESSION_NOT_FOUND' || code === 'E_SESSION_NOT_FOUND') return true
   return code === 'CAPABILITY_DENIED' && failure?.data?.reason === 'session owner unavailable'
 }
+/**
+ * What a worker session's title starts with, before its ticket's name, so a reader tells a worker from the main session,
+ * which keeps its own name. Set on each open, so a worker opened before it had the role in its title gets it then.
+ */
+const WORKER_TITLE_PREFIX = 'Worker · '
 /** A title the daemon accepts: one line of at most 80 characters. */
 function titleOf(title: string, key: string): string {
   const line = [
@@ -238,7 +243,8 @@ export class Sessions implements SessionAdapter {
   async ensureWorker(ticket: Ticket, dir: string): Promise<string> {
     if (!(await exists(join(dir, PREPARED_MARKER)))) await this.prepare(ticket, dir)
     await this.deps.instructions?.(ticket, dir)
-    return this.ensure({ kind: 'worker', ticketId: ticket.id }, dir, ticket.title, ticket)
+    const title = `${WORKER_TITLE_PREFIX}${titleOf(ticket.title, ticket.id)}`
+    return this.ensure({ kind: 'worker', ticketId: ticket.id }, dir, title, ticket)
   }
   private async prepare(ticket: Ticket, dir: string): Promise<void> {
     await this.moveAside(dir)
@@ -418,14 +424,7 @@ export class Sessions implements SessionAdapter {
       node.kind === 'assistant'
         ? [{ type: 'assistant' as const, text: node.text }]
         : node.kind === 'user'
-          ? [
-              {
-                type: 'user' as const,
-                text: node.content
-                  .map((block) => (block.type === 'text' ? block.text : `[${block.type}]`))
-                  .join(' '),
-              },
-            ]
+          ? [{ type: 'user' as const, text: userText(node) }]
           : [],
     )
   }
@@ -439,6 +438,19 @@ export async function sessionHead(
   session: Pick<SessionHandle, 'projectUIOpening'>,
 ): Promise<Pick<Awaited<ReturnType<SessionHandle['projectUI']>>, 'upto' | 'opState' | 'pendingInputs'>> {
   return (await session.projectUIOpening({ maxNodes: 1 })).timeline
+}
+
+type UserNode = Extract<Awaited<ReturnType<SessionHandle['projectUI']>>['nodes'][number], { kind: 'user' }>
+/**
+ * A user message as the transcript reads it. A message of Superagent's that the platform took as machine input shows a
+ * fixed line and keeps what was delivered as its data, which the transcript reads instead; any other reads as written.
+ */
+function userText(node: UserNode): string {
+  if (node.origin === 'system' && node.system && node.commandId?.startsWith('superagent:')) {
+    const data = node.system.data
+    return typeof data === 'string' ? data : JSON.stringify(data)
+  }
+  return node.content.map((block) => (block.type === 'text' ? block.text : `[${block.type}]`)).join(' ')
 }
 
 async function exists(path: string): Promise<boolean> {

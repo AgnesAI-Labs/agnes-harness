@@ -85,7 +85,7 @@ describe('worker sessions', () => {
     expect(id).toBe('superagent:worker:t1')
     expect(registry.role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
     expect(new SessionRegistry(temp.store).role(id)).toEqual({ kind: 'worker', ticketId: 't1' })
-    expect(fake.renamed).toEqual([[id, 'Fix login']])
+    expect(fake.renamed).toEqual([[id, 'Worker · Fix login']])
     expect(models).toEqual(['worker'])
   })
 
@@ -157,7 +157,8 @@ describe('worker sessions', () => {
     reopened.fake.sessions.set(first, fake.sessions.get(first)!)
     expect(await reopened.sessions.ensureWorker(ticket('t3', { title: 'Renamed' }), dir)).toBe(first)
     expect(reopened.fake.loads).toEqual([first])
-    expect(reopened.fake.renamed).toEqual([[first, 'Renamed']])
+    // A worker opened before its role showed in the title gets the role title on this ordinary open.
+    expect(reopened.fake.renamed).toEqual([[first, 'Worker · Renamed']])
   })
 
   it('opens a registered worker session its owner deleted again, under the same key', async () => {
@@ -216,7 +217,7 @@ describe('worker sessions', () => {
       ticket('t10', { title: `${'x'.repeat(100)}\nsecond line` }),
       join(temp.dir, 'w10'),
     )
-    expect(fake.renamed.at(-1)?.[1]).toBe('x'.repeat(80))
+    expect(fake.renamed.at(-1)?.[1]).toBe(`Worker · ${'x'.repeat(71)}`)
   })
 })
 
@@ -233,6 +234,8 @@ describe('main session and pending inputs', () => {
     })
     expect(registry.role(id)).toEqual({ kind: 'orchestrator' })
     expect(models).toEqual(['orchestrator'])
+    // The main session keeps its own name; only workers carry the role in theirs.
+    expect(fake.renamed).toEqual([[id, 'Superagent orchestrator']])
     expect(await sessions.ensureOrchestrator()).toBe(id)
   })
 
@@ -267,5 +270,39 @@ describe('main session and pending inputs', () => {
     })
     expect(registry.owner('superagent:worker:t7')).toBeUndefined()
     expect(registry.owner('superagent:owner-made/01HX')).toBeUndefined()
+  })
+
+  it('reads its own machine-input messages by what it delivered, and every other message as written', async () => {
+    const { fake, sessions } = setup()
+    const id = await sessions.ensureOrchestrator()
+    const summary = 'Message delivered automatically by the bundled app, not typed by a person.'
+    const machine = (commandId: string, data: unknown) => ({
+      kind: 'user',
+      commandId,
+      origin: 'system',
+      content: [{ type: 'text', text: summary }],
+      system: { source: 'agnes/bundled-app', type: 'delivery', summary, data },
+    })
+    const handle = fake.sessions.get(id)?.handle as { projectUI: unknown }
+    handle.projectUI = async () => ({
+      nodes: [
+        machine('superagent:assignment:t1', { ticket_id: 't1', assignment: 'Repair the login form' }),
+        machine('superagent:note:1', 'Note from the orchestrator'),
+        // A platform notice of another source keeps its own line.
+        {
+          ...machine('job:1', 'raw'),
+          system: { source: 'agnes/jobs', type: 'done', summary: 'Job done', data: 'raw' },
+        },
+        { kind: 'user', commandId: 'web:1', content: [{ type: 'text', text: 'status?' }] },
+        { kind: 'assistant', text: 'Working on it' },
+      ],
+    })
+    expect(await sessions.transcript(id)).toEqual([
+      { type: 'user', text: '{"ticket_id":"t1","assignment":"Repair the login form"}' },
+      { type: 'user', text: 'Note from the orchestrator' },
+      { type: 'user', text: summary },
+      { type: 'user', text: 'status?' },
+      { type: 'assistant', text: 'Working on it' },
+    ])
   })
 })

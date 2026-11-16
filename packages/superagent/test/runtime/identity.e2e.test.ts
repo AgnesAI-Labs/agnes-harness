@@ -147,6 +147,22 @@ it('a worker session commits and pushes as the agent through its CLI, never with
     expect(again).toContain(`gh=${join(stateDir, 'worker-bin', 'gh')}`)
     expect(again).toContain('token=unset/unset')
     expect(again).toContain(`global=${join(stateDir, 'worker-gitconfig')}`)
+    // The creator kept with the main session's first reservation outlived the restart: the worker's report, which
+    // Superagent relays into the main session now, is machine input, not a message a person typed.
+    await call('id-report', 'orchestrator_report', { state: 'ready', summary: 'IDENTITY-REPORT done' })
+    const main = await daemon.client.session.load('superagent:orchestrator', { history: 'none' })
+    const relay = await until('the relay after the restart', async () =>
+      (await main.projectUI()).nodes.find(
+        (node) =>
+          node.kind === 'user' &&
+          node.commandId?.startsWith('superagent:') &&
+          JSON.stringify(node.system?.data ?? node.content).includes('IDENTITY-REPORT done'),
+      ),
+    )
+    expect(relay).toMatchObject({
+      origin: 'system',
+      system: { source: 'agnes/bundled-app', type: 'delivery' },
+    })
     // A session the owner opens itself has none of it.
     const own = join(root, 'own')
     mkdirSync(own)
