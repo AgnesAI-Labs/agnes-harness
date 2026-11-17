@@ -211,6 +211,8 @@ it.each([
       return
     }
     await vi.waitFor(() => expect(sourceSubmit().disabled).toBe(false))
+    expect(inspectCalls(fetcher)).toHaveLength(0)
+    expect(sourceDialog().open).toBe(true)
     expect(sourceRef().value).toBe('/path/to/my-plugin.tgz')
     if (method === 'button') sourceSubmit().click()
     else sourceRef().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
