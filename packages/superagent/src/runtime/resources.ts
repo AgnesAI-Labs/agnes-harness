@@ -34,7 +34,7 @@ import {
   UserError,
 } from '../core/index.js'
 import type { Commands } from '../infra/commands.js'
-import type { FeishuIo } from '../sources/feishu-io.js'
+import { type FeishuIo, requireIdentity } from '../sources/feishu-io.js'
 import { feishuRead, feishuReferences } from '../sources/feishu-read.js'
 import { feishuRef, feishuTriggerId } from '../sources/feishu-trigger.js'
 import { readGithub } from '../sources/github-read.js'
@@ -410,8 +410,11 @@ const ROUTES: readonly Route[] = [
       const source = trigger(read.host, read.rest.split('/')[0]!, read.ticketId)
       const ref = feishuRef(source)
       if (!ref) throw new Error('A Feishu source trigger is required')
+      // Later offsets skip sourcePage's fetch callback, so validate before entering the cache too.
+      const reader = read.host.feishu(read.signal)
+      requireIdentity(reader, source.meta.botIdentity)
       return sourcePage(read, 'feishu', () =>
-        feishuRead(read.host.feishu(read.signal), ref, read.resource, read.host.feishuPageSize()),
+        feishuRead(reader, ref, read.resource, read.host.feishuPageSize()),
       )
     },
   ],

@@ -1,9 +1,10 @@
-// The worker tool orchestrator_feishu_read: it reads messages of its own ticket's chats by id and its own ticket's
-// topics, through the scoped bot CLI, and refuses anything else with isError.
+// Worker Feishu reads through orchestrator_feishu_read and orchestrator_read stay scoped to their ticket and bot,
+// including character offsets served from cached resource snapshots.
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
+import { TextCache } from '../../src/app/cache.js'
 import { Store } from '../../src/app/store.js'
 import type { Ticket } from '../../src/core/index.js'
 import { feishuReadTool, ticketChats } from '../../src/runtime/feishu-read-tool.js'
@@ -76,7 +77,14 @@ function setup(fake = defaultChannels()) {
     registry: { owner: () => ({ role: { kind: 'worker', ticketId: 't1' }, child: false }) as never },
     store,
     main: undefined as never,
-    executor: undefined as never,
+    executor: {
+      resources: {
+        store,
+        pages: new TextCache(100000),
+        feishu: (signal?: AbortSignal) => ({ ...fake.io, signal }),
+        feishuPageSize: () => 1,
+      },
+    } as unknown as ToolsHost['executor'],
     unavailable: () => undefined,
     extra: (current) => (current.id === 't1' ? [tool] : []),
   }
@@ -87,7 +95,14 @@ function setup(fake = defaultChannels()) {
       input,
       signal: new AbortController().signal,
     })
-  return { store, t1, fake, call }
+  const read = (resource: string, offset = 0) =>
+    handleTool(host, {
+      sessionId: 'superagent:worker:t1',
+      toolName: 'orchestrator_read',
+      input: { resource, offset, limit: 20 },
+      signal: new AbortController().signal,
+    })
+  return { store, t1, fake, call, read }
 }
 function defaultChannels() {
   return fakeCli({
@@ -149,14 +164,53 @@ it("refuses another ticket's chat or topic, a topic it does not follow, and a re
   expect(fake.calls.filter((args) => args[1] === '+threads-messages-list')).toEqual([])
 })
 
-it('refuses old or different bot work before invoking the CLI', async () => {
-  const { call, store, t1, fake } = setup()
-  const trigger = store.triggers.get(t1.origin.triggerId)!
-  trigger.meta.botIdentity = 'feishu:cli_other:ou_other'
-  store.triggers.save(trigger)
-  expect((await call({ chat_id: 'oc_team', message_ids: ['om_q'] })).isError).toBe(true)
-  expect(fake.calls).toEqual([])
-})
+it.each(['different', 'unstamped'])(
+  'refuses %s bot work before CLI reads or cached generic resource pages',
+  async (mode) => {
+    const { call, read, store, t1, fake } = setup()
+    const trigger = store.triggers.get(t1.origin.triggerId)!
+    trigger.meta.parentId = 'om_q'
+    store.triggers.save(trigger)
+    const cached = []
+    for (const part of ['message', 'root', 'parent', 'thread', 'thread/1', 'around']) {
+      const resource = `feishu/${trigger.id}/${part}`
+      const first = await read(resource)
+      expect(first.isError).toBeUndefined()
+      const offset = json(first).next_offset as number
+      expect(offset).toBeGreaterThan(0)
+      const next = await read(resource, offset)
+      expect(next.isError).toBeUndefined()
+      expect(json(next)).toMatchObject({ offset, total_chars: json(first).total_chars })
+      cached.push({ resource, offset })
+    }
+    const originalBot = fake.io.bot
+    if (mode === 'different')
+      fake.io = { ...fake.io, bot: { ...originalBot, appId: 'cli_other', botId: 'ou_other' } }
+    else {
+      delete trigger.meta.botIdentity
+      store.triggers.save(trigger)
+    }
+    fake.calls.length = 0
+    expect((await call({ chat_id: 'oc_team', message_ids: ['om_q'] })).isError).toBe(true)
+    const answers = []
+    for (const { resource, offset } of cached)
+      for (const requestedOffset of [0, offset]) {
+        const answer = await read(resource, requestedOffset)
+        answers.push({ resource, offset: requestedOffset, refused: answer.isError === true })
+      }
+    expect({ answers, cliReads: fake.calls }).toEqual({
+      answers: cached.flatMap(({ resource, offset }) =>
+        [0, offset].map((offset) => ({ resource, offset, refused: true })),
+      ),
+      cliReads: [],
+    })
+    // Restoring the original bot and stamp also restores access to its existing cached snapshots.
+    fake.io = { ...fake.io, bot: originalBot }
+    store.triggers.save(bound(trigger))
+    for (const { resource, offset } of cached) expect((await read(resource, offset)).isError).toBeUndefined()
+    expect(fake.calls).toEqual([])
+  },
+)
 
 it('declares the real input schema to the model, and only the tool of a ticket runs it', () => {
   const declared = toolCatalog().find((tool) => tool.name === 'orchestrator_feishu_read')!

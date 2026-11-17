@@ -34,7 +34,7 @@ same managed configuration service. The standard plugin settings UI and `agh plu
 commands can supply the initial value.
 
 One plugin can run several instances, each with its own platform app. A bundled app with channel
-access (Superagent) can claim one instance whole: that instance's group and direct messages then
+access can claim one instance whole: that instance's group and direct messages then
 go only to the bundled app, never to session bindings or [pairings](channel-targets.md), until it
 stops. An instance already bound to a session or paired cannot be claimed, so give the bundled app
 an instance of its own; the other instances are not affected.
