@@ -1,6 +1,6 @@
 {
   "name": "@agnes/superagent",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "A proactive agent for one GitHub repository, installed and enabled by default, waiting for configuration.",
   "type": "module",
   "license": "Apache-2.0",
