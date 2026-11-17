@@ -47,6 +47,7 @@ const CURRENT_KINDS = [
   'worker.stderr',
   'session.interrupted',
   'plugin.tree.reverted',
+  'owner-input.trace',
   'host.assembling',
   'host.ready',
   'host.closed',

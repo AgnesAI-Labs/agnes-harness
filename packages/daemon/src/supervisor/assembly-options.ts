@@ -109,6 +109,8 @@ export type StartSupervisorOptions = {
   idleSignal?: IdleSignal
   /** Test fixtures only: crash points inside owner input admission. Production never passes it. */
   ownerInputFaults?: import('./managed-input-admission.js').OwnerInputEngineDeps['faults']
+  /** Test fixtures and embedders: also handed every owner input trace entry. */
+  ownerInputTrace?: import('./managed-input-admission.js').OwnerInputEngineDeps['trace']
   /** runAgnesd's boot read boundary; startup closes it before the client socket listens. */
   bootVerification?: BootVerification
   /** PackageAdmin is composed once and registered on every matching transport endpoint. */

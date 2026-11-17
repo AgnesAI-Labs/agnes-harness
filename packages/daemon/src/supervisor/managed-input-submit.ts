@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto'
 import type { ManagedInputResult } from '@agnes/extension-api'
 import { rpcError } from '@agnes/protocol'
 import type { OwnerInputEngineDeps } from './managed-input-admission.js'
+import type { GateReport } from './managed-input-gates.js'
 import type { OwnerInputNotes } from './managed-input-notes.js'
+import type { OwnerInputTracer, OwnerInputTrigger } from './managed-input-trace.js'
 import type { ManagedInputChange, ManagedInputRow } from './managed-session-inputs.js'
 import { detached, type ManagedSessionRecord } from './managed-session-records.js'
 
@@ -47,7 +49,12 @@ const archivedSession = (deps: OwnerInputEngineDeps, record: ManagedSessionRecor
   record.archived || deps.ports.sessions.archived(record.sessionId)
 
 /** The checks every submit runs that do not depend on the row, read once per pass and only when needed. */
-function checksFor(deps: OwnerInputEngineDeps, notes: OwnerInputNotes, record: ManagedSessionRecord) {
+function checksFor(
+  deps: OwnerInputEngineDeps,
+  notes: OwnerInputNotes,
+  trace: OwnerInputTracer,
+  record: ManagedSessionRecord,
+) {
   const enabled = (owner: string) => deps.enabled?.(owner).catch(() => false) ?? Promise.resolve(true)
   let verdict: Promise<'pass' | 'paused' | ManagedInputChange> | undefined
   return () =>
@@ -61,25 +68,35 @@ function checksFor(deps: OwnerInputEngineDeps, notes: OwnerInputNotes, record: M
         return deps.ports.records.granted(record.owner, record.workspace)
           ? ('paused' as const)
           : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
-      // Gates that cannot be read hold the inputs unchanged, like a paused package, until a later pass;
-      // the owner sees them held, and the operator is told.
+      // Gates that cannot be read, or cannot answer yet (a sandbox probe that has not run), hold the
+      // inputs unchanged, like a paused package, until a later pass; the owner sees them held, and the
+      // operator is told. Only a refusal takes them back.
       const sessionId = record.sessionId
-      const pass = await deps.gatesPass(record).then(
-        (value) => {
-          notes.readable(sessionId)
-          return value
-        },
-        (error: unknown) => {
-          const open = [...deps.inputs.held(sessionId), ...deps.inputs.inFlight(sessionId)]
-          notes.unreadable(
-            open.filter((row) => row.state !== 'queued'),
-            error,
-          )
-          return undefined
-        },
+      const open = () =>
+        [...deps.inputs.held(sessionId), ...deps.inputs.inFlight(sessionId)].filter(
+          (row) => row.state !== 'queued',
+        )
+      const pass = trace.current(sessionId)
+      const hold = (gate: GateReport, why: unknown) => {
+        const rows = open()
+        notes.unreadable(rows, why)
+        for (const row of rows) trace.held(row, gate)
+        return 'paused' as const
+      }
+      const read = await deps.gates(record).then(
+        (report) => ({ report }),
+        (error: unknown) => ({ error }),
       )
-      if (pass === undefined) return 'paused' as const
-      return pass ? ('pass' as const) : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
+      // A read that failed says nothing about the gates; no gate is named.
+      if ('error' in read) return hold({ verdict: 'pending', code: 'gates-unreadable' }, read.error)
+      const report = read.report
+      if (pass) pass.gate = report
+      if (report.verdict === 'pending')
+        return hold(report, `${report.gate} cannot answer yet (${report.code})`)
+      notes.readable(sessionId)
+      return report.verdict === 'pass'
+        ? ('pass' as const)
+        : ({ state: 'needsOwner', reason: 'grantRevoked' } as const)
     })())
 }
 
@@ -88,12 +105,14 @@ function checksFor(deps: OwnerInputEngineDeps, notes: OwnerInputNotes, record: M
  * submitted one, take inputs back on revoke, and apply the owner's decision. Callers hold the
  * session's lane (`sessionLane`) around every `*Now` function.
  */
-export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes) {
+export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes, trace: OwnerInputTracer) {
   const { ports, inputs } = deps
-  const move = (row: ManagedInputRow, next: ManagedInputChange, by: 'platform' | 'owner' = 'platform') =>
-    FINAL.has(row.state)
-      ? undefined
-      : inputs.transition(row.owner, row.sessionId, row.key, row.version, next, by)
+  const move = (row: ManagedInputRow, next: ManagedInputChange, by: 'platform' | 'owner' = 'platform') => {
+    if (FINAL.has(row.state)) return undefined
+    const moved = inputs.transition(row.owner, row.sessionId, row.key, row.version, next, by)
+    if (moved) trace.transition(row, moved)
+    return moved
+  }
   const busy = async (sessionId: string) =>
     (await ports.sessions.activity()).some(
       (item) => item.sessionId === sessionId && (item.state === 'running' || item.state === 'waiting'),
@@ -102,7 +121,14 @@ export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes
   const questionOpen = async (sessionId: string) =>
     (await ports.sessions.openQuestion?.(sessionId).catch(() => true)) === true
   const archived = (record: ManagedSessionRecord) => archivedSession(deps, record)
-  const sessionChecks = (record: ManagedSessionRecord) => checksFor(deps, notes, record)
+  const sessionChecks = (record: ManagedSessionRecord) => checksFor(deps, notes, trace, record)
+  /** A withdrawal from the core inbox, noted on the pass for the transition that follows. */
+  const withdrawItem = async (sessionId: string, commandId: string) => {
+    const outcome = await ports.sessions.withdraw(sessionId, commandId)
+    const pass = trace.current(sessionId)
+    if (pass) pass.inbox = outcome
+    return outcome
+  }
 
   /** The turn that took a submitted input; the scan starts at the seq the submission returned. */
   const settle = async (row: ManagedInputRow): Promise<ManagedInputRow> => {
@@ -180,7 +206,7 @@ export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes
       if (mode !== 'sweep') return true
       const settled = await settle(row)
       if (settled.state !== 'enqueued') return false
-      if ((await ports.sessions.withdraw(sessionId, commandId)) === 'taken')
+      if ((await withdrawItem(sessionId, commandId)) === 'taken')
         return (await settle(settled)).state === 'enqueued'
       move(settled, { state: 'enqueued', reason: 'eligible', submittedSeq: null })
       return false
@@ -192,7 +218,7 @@ export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes
       const verdict = await checks()
       // Queued, but no longer allowed to run (revoked, archived, released): taken back before a turn can.
       if (verdict !== 'pass' && verdict !== 'paused') {
-        if ((await ports.sessions.withdraw(sessionId, commandId)) === 'taken')
+        if ((await withdrawItem(sessionId, commandId)) === 'taken')
           return (await settle(settled)).state === 'enqueued'
         move(settled, { ...verdict, submittedSeq: null })
         return false
@@ -219,7 +245,12 @@ export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes
    * inputs a restart left queued. An idle report also comes when a runner stops without a turn, so it
    * never resubmits anything.
    */
-  const advanceNow = async (sessionId: string, mode: AdvanceMode = 'idle'): Promise<void> => {
+  const advanceNow = (
+    sessionId: string,
+    mode: AdvanceMode = 'idle',
+    trigger: OwnerInputTrigger = mode === 'result' ? 'inputResult' : mode,
+  ): Promise<void> => trace.within(sessionId, trigger, () => advanceIn(sessionId, mode))
+  const advanceIn = async (sessionId: string, mode: AdvanceMode): Promise<void> => {
     const flying = inputs.inFlight(sessionId)
     if (flying.length === 0 && inputs.held(sessionId).length === 0) return
     const record = ports.records.get(sessionId)
@@ -259,12 +290,14 @@ export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes
   }
 
   /** Revoke and uninstall: nothing held runs; an input still in the core inbox is taken back first. */
-  const withdrawNow = async (owner: string, sessionId: string, key: string): Promise<void> => {
+  const withdrawNow = (owner: string, sessionId: string, key: string): Promise<void> =>
+    trace.within(sessionId, 'withdraw', () => withdrawIn(owner, sessionId, key))
+  const withdrawIn = async (owner: string, sessionId: string, key: string): Promise<void> => {
     const row = inputs.get(owner, sessionId, key)
     if (!row || (row.state !== 'queued' && row.state !== 'enqueued' && row.state !== 'waitingQuestion'))
       return
     if (row.itemCommandId !== null && row.submittedSeq !== null) {
-      const outcome = await ports.sessions.withdraw(sessionId, row.itemCommandId)
+      const outcome = await withdrawItem(sessionId, row.itemCommandId)
       if (outcome === 'taken') {
         await settle(row)
         return
@@ -273,7 +306,9 @@ export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes
     move(row, { state: 'needsOwner', reason: 'grantRevoked', submittedSeq: null })
   }
 
-  const decideNow = async (
+  const decideNow = (...args: Parameters<typeof decideIn>) =>
+    trace.within(args[0].sessionId, 'decide', () => decideIn(...args))
+  const decideIn = async (
     record: ManagedSessionRecord,
     key: string,
     decision: 'deliver' | 'retain' | 'discard',
@@ -288,7 +323,7 @@ export function inputProgress(deps: OwnerInputEngineDeps, notes: OwnerInputNotes
     if (row.submittedSeq !== null && row.itemCommandId !== null) {
       if (decision === 'deliver') throw rejected('OWNER_INPUT_SUBMITTED')
       // Taken back before it is kept; a turn that already took it is reported as it happened.
-      if ((await ports.sessions.withdraw(sessionId, row.itemCommandId)) === 'taken') {
+      if ((await withdrawItem(sessionId, row.itemCommandId)) === 'taken') {
         const settled = await settle(row)
         if (settled.state === 'consumed') return projectInput(settled)
         throw rejected('OWNER_INPUT_STALE')

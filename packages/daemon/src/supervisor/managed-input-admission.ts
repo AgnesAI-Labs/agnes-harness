@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto'
 import { commandBinding } from '@agnes/daemon-rpc/local/command-binding'
 import type { ManagedInputResult, ManagedInputTarget } from '@agnes/extension-api'
 import { type Actor, type JsonValue, rpcError } from '@agnes/protocol'
+import type { GateReport } from './managed-input-gates.js'
 import { type OwnerInputAttention, ownerInputAttention, ownerInputNotes } from './managed-input-notes.js'
 import { inputProgress, projectInput, sessionLane } from './managed-input-submit.js'
+import { type OwnerInputTrace, ownerInputTracer } from './managed-input-trace.js'
 import {
   MANAGED_INPUT_TEXT_LIMIT,
   type ManagedInputChange,
@@ -62,7 +64,8 @@ export interface OwnerInputEngine {
   result(ctx: AdmitContext, input: unknown): Promise<ManagedInputResult>
   /** `result` also takes back a queued input whose checks now fail; an idle report never reads the inbox. */
   advance(sessionId: string, mode?: 'idle' | 'result'): Promise<void>
-  sweep(): Promise<void>
+  /** `startup`: the sweep after the daemon opens its socket; otherwise the slow sweep. */
+  sweep(trigger?: 'startup' | 'interval'): Promise<void>
   /** Shutdown started: `advance` and `sweep` do nothing from now on, and a sweep under way stops at its next session. */
   close(): void
   /** After an archive: held inputs are kept and a queued one is taken back; a failure is reported and left to the sweep. */
@@ -85,18 +88,23 @@ export interface OwnerInputEngineDeps {
   /** The lane `send` uses, `session\0<id>`, so an input and a send never interleave. */
   serial: <T>(key: string, work: () => Promise<T>) => Promise<T>
   /**
-   * The start gates and the running gate: false when one refuses. Rejects when a gate cannot be read; an
-   * admission then fails with its key left `queued`, and held inputs stay as they are until a later pass.
+   * The start gates and the running gate: `refused` when one refuses, `pending` when one cannot answer
+   * yet (the sandbox probe has not run). Rejects when a gate cannot be read; an admission then fails
+   * with its key left `queued`. Held inputs stay as they are on both, until a later pass.
    */
-  gatesPass(record: ManagedSessionRecord): Promise<boolean>
+  gates(record: ManagedSessionRecord): Promise<GateReport>
   /** The identity a submitted input carries: `managedSessionActor`. */
   actor(actorOwner: string, record: ManagedSessionRecord): Actor
   /** Whether the owner's package is installed and enabled. A disabled one keeps its inputs held. Absent: always. */
   enabled?(owner: string): Promise<boolean>
   /** Test fixtures only: throw to stand in for a crash between two writes. */
   faults?: { afterReserve?(): void; afterSubmit?(): void }
-  /** Where swallowed failures and inputs held by unreadable gates are reported; `console.warn` when absent. */
+  /** Where swallowed failures, inputs held by unreadable gates and parked inputs are reported; `console.warn` when absent. */
   warn?(message: string): void
+  /** Where the other trace lines go; dropped when absent. */
+  debug?(message: string): void
+  /** Also handed every trace entry (test fixtures, embedders). */
+  trace?(entry: OwnerInputTrace): void
   clock?(): number
 }
 
@@ -196,8 +204,10 @@ function prepare(request: Admission, resolution: HostInputResolution | undefined
 
 export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEngine {
   const { ports, inputs } = deps
-  const notes = ownerInputNotes(deps.warn ?? ((message) => console.warn(message)), deps.clock ?? Date.now)
-  const progress = inputProgress(deps, notes)
+  const warn = deps.warn ?? ((message: string) => console.warn(message))
+  const notes = ownerInputNotes(warn, deps.clock ?? Date.now)
+  const trace = ownerInputTracer({ ...deps, warn })
+  const progress = inputProgress(deps, notes, trace)
 
   /**
    * A bound session must match. A session opened before bindings existed is bound here, once, by its
@@ -265,7 +275,12 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     const sessionId = record.sessionId
     const input = request.input
     let next: ManagedInputChange
-    if (!(await deps.gatesPass(record))) next = { state: 'needsOwner', reason: 'grantRevoked' }
+    // A gate that cannot answer yet holds the input like a busy session: every submit reads the gates
+    // again first, so it runs only once they pass.
+    const gates = await deps.gates(record)
+    const pass = trace.current(sessionId)
+    if (pass) pass.gate = gates
+    if (gates.verdict === 'refused') next = { state: 'needsOwner', reason: 'grantRevoked' }
     else if (input.kind === 'ownerMessage' && row.text === null)
       next = {
         state: 'needsOwner',
@@ -284,35 +299,37 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
   const admit = async (ctx: AdmitContext, raw: unknown, resolution: HostInputResolution | undefined) => {
     const request = parseAdmission(raw)
     const sessionId = ctx.record.sessionId
-    return deps.serial(sessionLane(sessionId), async () => {
-      const record = ports.records.get(sessionId) ?? ctx.record
-      // The daemon's archive state counts, so an owner archiving the session in the Web refuses too.
-      if (record.archived || ports.sessions.archived(sessionId)) throw refuse('SESSION_ARCHIVED')
-      const bindingDigest = commandBinding('managedInput', sessionId, request.target.taskGeneration, {
-        owner: ctx.owner,
-        service: ctx.caller.service,
-        ...request.target,
-        key: request.key,
-        input: request.input,
-      }).digest
-      const prepared = prepare(request, resolution)
-      let row = inputs.get(ctx.owner, sessionId, request.key)
-      if (row && row.bindingDigest !== bindingDigest) throw refuse('OWNER_INPUT_KEY_REUSED')
-      if (!row) {
-        bindTarget(record, ctx.owner, request.target)
-        reserve(ctx, request, prepared, bindingDigest)
-        deps.faults?.afterReserve?.()
-        row = inputs.get(ctx.owner, sessionId, request.key) as ManagedInputRow
-      }
-      if (row.state === 'queued')
-        await complete(row, record, request, prepared).catch((error: unknown) => {
-          notes.failed('admission', sessionId)(error)
-          throw error
-        })
-      // The input is recorded; a failed submit is retried by the sweep, so the caller still gets it.
-      await progress.advanceNow(sessionId, 'result').catch(notes.failed('submit', sessionId))
-      return projectInput(inputs.get(ctx.owner, sessionId, request.key) ?? row)
-    })
+    return deps.serial(sessionLane(sessionId), () =>
+      trace.within(sessionId, 'admit', async () => {
+        const record = ports.records.get(sessionId) ?? ctx.record
+        // The daemon's archive state counts, so an owner archiving the session in the Web refuses too.
+        if (record.archived || ports.sessions.archived(sessionId)) throw refuse('SESSION_ARCHIVED')
+        const bindingDigest = commandBinding('managedInput', sessionId, request.target.taskGeneration, {
+          owner: ctx.owner,
+          service: ctx.caller.service,
+          ...request.target,
+          key: request.key,
+          input: request.input,
+        }).digest
+        const prepared = prepare(request, resolution)
+        let row = inputs.get(ctx.owner, sessionId, request.key)
+        if (row && row.bindingDigest !== bindingDigest) throw refuse('OWNER_INPUT_KEY_REUSED')
+        if (!row) {
+          bindTarget(record, ctx.owner, request.target)
+          reserve(ctx, request, prepared, bindingDigest)
+          deps.faults?.afterReserve?.()
+          row = inputs.get(ctx.owner, sessionId, request.key) as ManagedInputRow
+        }
+        if (row.state === 'queued')
+          await complete(row, record, request, prepared).catch((error: unknown) => {
+            notes.failed('admission', sessionId)(error)
+            throw error
+          })
+        // The input is recorded; a failed submit is retried by the sweep, so the caller still gets it.
+        await progress.advanceNow(sessionId, 'result').catch(notes.failed('submit', sessionId))
+        return projectInput(inputs.get(ctx.owner, sessionId, request.key) ?? row)
+      }),
+    )
   }
 
   const result = async (ctx: AdmitContext, raw: unknown): Promise<ManagedInputResult> => {
@@ -356,19 +373,27 @@ export function createOwnerInputEngine(deps: OwnerInputEngineDeps): OwnerInputEn
     },
     attention: (limit) => ownerInputAttention(inputs, notes, (deps.clock ?? Date.now)(), limit),
     async retainArchived(sessionId) {
-      await this.advance(sessionId, 'result').catch(notes.failed('archive', sessionId))
+      if (closed || (inputs.held(sessionId).length === 0 && inputs.inFlight(sessionId).length === 0)) return
+      await deps
+        .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, 'result', 'archive'))
+        .catch(notes.failed('archive', sessionId))
     },
-    async sweep() {
+    async sweep(trigger = 'interval') {
+      const label = trigger === 'startup' ? 'startup-sweep' : 'sweep'
       for (const sessionId of inputs.sessionsWithWork())
         if (!closed)
           await deps
-            .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, 'sweep'))
+            .serial(sessionLane(sessionId), () => progress.advanceNow(sessionId, 'sweep', label))
             .catch(notes.failed('sweep', sessionId))
     },
     async withdraw(owner, workspace) {
       let failure: unknown
-      for (const row of inputs.byOwner(owner)) {
-        if (workspace !== undefined && ports.records.get(row.sessionId)?.workspace !== workspace) continue
+      const rows = inputs.byOwner(owner)
+      const matched = rows.filter(
+        (row) => workspace === undefined || ports.records.get(row.sessionId)?.workspace === workspace,
+      )
+      trace.withdrawal(rows, matched, workspace !== undefined)
+      for (const row of matched) {
         await deps
           .serial(sessionLane(row.sessionId), () => progress.withdrawNow(row.owner, row.sessionId, row.key))
           .catch((error: unknown) => {

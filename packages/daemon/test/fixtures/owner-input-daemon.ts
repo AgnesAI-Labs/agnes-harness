@@ -1,12 +1,13 @@
-import { existsSync, rmSync } from 'node:fs'
+import { appendFileSync, existsSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { runAgnesd, startProductionSupervisor } from '../../src/launch.js'
 
 // The source daemon of `source-loop-daemon.ts` with the local Web listener on, so a test can act as the
 // owner's Web page, and with crash points inside owner input admission: when `<faults>/<point>` exists
-// at that point, the file is removed and the daemon kills itself with SIGKILL, mid-request.
+// at that point, the file is removed and the daemon kills itself with SIGKILL, mid-request. Every owner
+// input trace entry is appended to `owner-input-trace.jsonl` beside the faults directory.
 const home = process.argv[2]
 const workspace = process.argv[3]
 const faults = process.argv[4]
@@ -31,6 +32,8 @@ await runAgnesd(
         {
           ...options,
           ownerInputFaults: { afterReserve: crashAt('afterReserve'), afterSubmit: crashAt('afterSubmit') },
+          ownerInputTrace: (entry) =>
+            appendFileSync(join(dirname(faults), 'owner-input-trace.jsonl'), `${JSON.stringify(entry)}\n`),
         },
         deps,
       ),

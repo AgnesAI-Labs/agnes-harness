@@ -62,19 +62,23 @@ export function createIdleSignal(): IdleSignal {
  */
 export function driveOwnerInputs(
   idle: Pick<IdleSignal, 'onIdle' | 'onStartup'>,
-  engine: { advance(sessionId: string): Promise<void>; sweep(): Promise<void>; close?(): void },
+  engine: {
+    advance(sessionId: string): Promise<void>
+    sweep(trigger?: 'startup' | 'interval'): Promise<void>
+    close?(): void
+  },
   intervalMs: number,
 ): { stop(): void; dispose(): void } {
   let sweeping: Promise<void> | undefined
-  const sweep = () => {
-    sweeping ??= engine.sweep().finally(() => {
+  const sweep = (trigger: 'startup' | 'interval') => {
+    sweeping ??= engine.sweep(trigger).finally(() => {
       sweeping = undefined
     })
     return sweeping
   }
   const offIdle = idle.onIdle((sessionId) => engine.advance(sessionId))
-  const offStartup = idle.onStartup(sweep)
-  const timer = setInterval(() => void sweep().catch(report), intervalMs)
+  const offStartup = idle.onStartup(() => sweep('startup'))
+  const timer = setInterval(() => void sweep('interval').catch(report), intervalMs)
   timer.unref?.()
   const stop = () => {
     offIdle()

@@ -1663,7 +1663,7 @@ describe('submitting to a real session', () => {
         commandQueue,
         continueTurn: (queued) => continueTurn(queued as never),
         opensWithCommandRules: true,
-        osBoundary: async () => false,
+        sandboxL1: async () => 'unavailable',
         preferences: { get: () => ({ archived: false }) },
         idle: { onIdle: () => () => undefined },
       })

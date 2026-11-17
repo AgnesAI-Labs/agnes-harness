@@ -19,6 +19,7 @@ import {
   type HostInputResolution,
   type OwnerInputEngineDeps,
 } from './managed-input-admission.js'
+import * as held from './managed-input-gates.js'
 import type { ManagedInputSessionPorts } from './managed-input-ports.js'
 import { newBinding, parseTaskBinding, startBindingMatches } from './managed-input-resolution.js'
 import type { ManagedSessionRecord, ManagedSessionRecords } from './managed-session-records.js'
@@ -51,9 +52,9 @@ export interface ManagedSessionPorts {
   /**
    * What the daemon knows before a session exists; there is no tool policy to read yet. Whether its
    * opener turns outward command rules on for managed sessions, and whether the platform's sandbox
-   * probe reports a full OS boundary.
+   * probe reports a full OS boundary, with its L1 level (`unprobed` before a workspace binds).
    */
-  fullAccess(): Promise<{ outwardCheckpoint: boolean; osBoundary: boolean }>
+  fullAccess(): Promise<{ outwardCheckpoint: boolean; osBoundary: boolean; l1?: string }>
   sessions: ManagedInputSessionPorts & {
     create(input: { sessionKey: string; cwd: string; agent: string }): Promise<string>
     setModel(sessionId: string, model: { route: string; model: string }): Promise<void>
@@ -63,9 +64,7 @@ export interface ManagedSessionPorts {
      * grant it without a request), its sandbox enforcement, and whether the policy deciding its
      * next call holds outward calls for a person.
      */
-    policy(
-      sessionId: string,
-    ): Promise<{ fullAccess: boolean; osBoundary: boolean; outwardCheckpoint: boolean }>
+    policy(sessionId: string): Promise<held.LivePolicy>
     /** Queues only into an empty inbox and runs the turn; a repeated `commandId` is not queued again. */
     submit(
       sessionId: string,
@@ -337,26 +336,29 @@ function ownedRecord(
   return record
 }
 
-/** The checks a start's input names; run again on every start, a resumed one included, and every send. */
+/** The checks a start's input names; run again on every start, a resumed one included, and every send. With `seen`, a held input's. */
 async function startGates(
   ports: ManagedSessionPorts,
   owner: string,
   input: Pick<ManagedSessionStartInput, 'workspace' | 'model' | 'permission' | 'bundle'>,
+  seen?: held.GateSeen,
 ): Promise<string> {
   let root: string
   try {
     root = await ports.workspaceRoot(input.workspace)
-  } catch {
-    throw refuse('WORKSPACE_NOT_AUTHORIZED')
+  } catch (error) {
+    throw held.pendingWorkspace(seen, error) ?? refuse('WORKSPACE_NOT_AUTHORIZED')
   }
   if (!ports.records.granted(owner, root)) throw refuse('WORKSPACE_NOT_AUTHORIZED')
   const model = input.model
   if (model && !(await ports.models()).some((m) => m.route === model.route && m.model === model.model))
     throw refuse('MODEL_ROUTE_MISSING')
+  let pending: held.GatePending | undefined
   if (input.permission === 'full-access') {
     const gates = await ports.fullAccess()
+    pending = held.pendingFullAccess(seen, gates)
     if (!gates.outwardCheckpoint) throw refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'outward-checkpoint' })
-    if (!gates.osBoundary) throw refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'os-boundary' })
+    if (!gates.osBoundary && !pending) throw refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'os-boundary' })
   }
   if (await ports.autoReview()) throw refuse('AUTO_REVIEW')
   try {
@@ -365,6 +367,7 @@ async function startGates(
     // A worker that cannot answer is no answer about the bundle; the caller tries again later.
     throw gateRefused(error) ? refuse('BUNDLE_UNAVAILABLE') : error
   }
+  if (pending) throw pending // only once every other start gate answered, so a reopen never precedes them
   return root
 }
 
@@ -433,8 +436,9 @@ async function managedStatus(
  * The refusal for a session that may not run a turn: every managed session needs the outward
  * checkpoint on its live policy, and effective full access also needs a full OS boundary.
  */
-async function runningGateMissing(ports: ManagedSessionPorts, sessionId: string) {
+async function runningGateMissing(ports: ManagedSessionPorts, sessionId: string, seen?: held.GateSeen) {
   const effective = await ports.sessions.policy(sessionId)
+  held.observeLive(seen, effective)
   if (!effective.outwardCheckpoint)
     return effective.fullAccess
       ? refuse('FULL_ACCESS_UNAVAILABLE', { missing: 'outward-checkpoint' })
@@ -445,35 +449,33 @@ async function runningGateMissing(ports: ManagedSessionPorts, sessionId: string)
 }
 
 /** A revoked grant or a lost gate refuses a new turn; a running turn is left to finish. */
-async function sessionGates(ports: ManagedSessionPorts, record: ManagedSessionRecord) {
+async function sessionGates(ports: ManagedSessionPorts, record: ManagedSessionRecord, seen?: held.GateSeen) {
   const chosen = storedModel(record.model)
-  await startGates(ports, record.owner, {
-    workspace: record.workspace,
-    bundle: record.bundle,
-    permission: record.permission,
-    ...(chosen ? { model: { route: chosen.route, model: chosen.model } } : {}),
-  })
-  const missing = await runningGateMissing(ports, record.sessionId)
+  await startGates(
+    ports,
+    record.owner,
+    {
+      workspace: record.workspace,
+      bundle: record.bundle,
+      permission: record.permission,
+      ...(chosen ? { model: { route: chosen.route, model: chosen.model } } : {}),
+    },
+    seen,
+  )
+  const missing = await runningGateMissing(ports, record.sessionId, seen)
   if (missing) throw missing
 }
 
-/**
- * False when a gate refuses; a gate that cannot be read (a port failing, the daemon shutting down) rejects,
- * because a read failure says nothing about the grant.
- */
-const gatesPass = (ports: ManagedSessionPorts, record: ManagedSessionRecord) =>
-  sessionGates(ports, record).then(
-    () => true,
-    (error: unknown) => {
-      if ((error as { data?: { code?: unknown } } | null)?.data?.code === 'CAPABILITY_DENIED') return false
-      throw error
-    },
+const heldGates = (ports: ManagedSessionPorts, record: ManagedSessionRecord) =>
+  held.heldInputGates(
+    (seen) => sessionGates(ports, record, seen),
+    () => ports.sessions.policy(record.sessionId),
   )
 
 /** Without `inputs` the sessions have no owner-input engine, and `admitInput` / `inputResult` refuse. */
 export function createManagedSessions(
   ports: ManagedSessionPorts,
-  deps?: Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults' | 'warn' | 'clock'>,
+  deps?: Pick<OwnerInputEngineDeps, 'inputs' | 'enabled' | 'faults' | 'warn' | 'debug' | 'trace' | 'clock'>,
 ) {
   const chains = new Map<string, Promise<unknown>>()
   const serial = <T>(key: string, work: () => Promise<T>): Promise<T> => {
@@ -495,7 +497,7 @@ export function createManagedSessions(
       ...deps,
       ports,
       serial,
-      gatesPass: (record) => gatesPass(ports, record),
+      gates: (record) => heldGates(ports, record),
       actor: managedSessionActor,
     })
   const archive = async (record: ManagedSessionRecord) => {

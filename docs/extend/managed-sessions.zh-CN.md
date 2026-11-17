@@ -140,6 +140,18 @@ const again = await init.sessions.inputResult(sessionId, { key: 'task-42:owner:1
 
 被拒绝的调用以一个普通对象 reject，含 JSON-RPC `code`（例如 `CAPABILITY_DENIED` 为 `-32006`）、与错误名相同的 `message` 和 `data`。`data.code` 是错误名。`data.reason` 给出拒绝原因，例如 `WORKSPACE_NOT_AUTHORIZED`、`FULL_ACCESS_UNAVAILABLE`、`OUTWARD_CHECKPOINT_UNAVAILABLE`、`START_KEY_REUSED` 或 `PLUGIN_ROW_AMBIGUOUS`。`FULL_ACCESS_UNAVAILABLE` 还带 `data.missing`，取值 `outward-checkpoint` 或 `os-boundary`。读取 `error.data.reason`，即可暂停任务并告诉所有者该授权什么。守护进程错误的其他字段不会到达插件：没有消息文本、路径和堆栈。不属于拒绝的失败以 `code: 'E_REQUEST'` reject，不带原因。
 
+## 排查
+
+要查看主人输入为什么变了状态、为什么还在等，读守护进程所在机器上的 `<dataDir>/audit/owner-input.jsonl`（满 2 MiB 轮转，上一份保留为 `owner-input.jsonl.1`）。每次状态变化、每次因开会话检查暂时无法给出答案而让输入保持持有的检查轮次、每次撤权、清理或卸载，守护进程各写一行 JSON：
+
+- `trigger`：`startup-sweep`、`sweep`、`idle`、`admit`、`inputResult`、`decide`、`archive` 或 `withdraw`；`pass` 是同一轮各行共用的短 ID；`at` 是时间。
+- `session`：会话 ID 去掉 `managed-` 后的前 12 位十六进制；`input`：`<sessionId>` + NUL + `<key>` 的 SHA-256 前 12 位十六进制。
+- `from` 与 `to`（`state/reason` 形式）、`version`、`submittedSeq`，输入从会话收件箱撤回时另有 `inbox`。
+- `gate`：`verdict`（`pass`、`refused` 或 `pending`）、关卡（`workspace`、`model`、`full-access`、`auto-review`、`bundle`、`live-policy`）、在归为 `grantRevoked` 之前的拒绝 `code` 与 `missing`、完全访问检查读到的沙箱 `l1` 等级、已打开会话的 `live` 布尔值，以及为让沙箱探测运行而打开会话时的 `reopenedAfter`。
+- 撤回时另有 `scoped`、`rows` 与 `matched`。
+
+文件里不会有输入原文、回执、凭据或路径。`pending` 不是拒绝：重启后，工作区绑定之前沙箱探测尚未运行，平台会打开会话再查一次；仍无法给出答案的输入保持持有，等下一次空闲通知、`inputResult` 或巡检（最多一分钟）。
+
 ## 信任边界
 
 托管服务和其他进程内插件一起运行在共享会话 worker 里，经这个 worker 的私有通道访问后端。后端只受理来自共享会话 worker、走 profile 范围服务所用 profile 通道的托管会话请求。来自其他 worker 或会话自身工作的请求以 `CAPABILITY_DENIED` 拒绝，原因是 `MANAGED_SESSION_LANE`。
