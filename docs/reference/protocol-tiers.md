@@ -166,6 +166,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 
 ### Other administration
 
+- `_agnes/v1/superagent.sessions.upgrade`
 - `_agnes/v1/admin.bundles.get`
 - `_agnes/v1/admin.bundles.save`
 - `_agnes/v1/admin.composition.get`
