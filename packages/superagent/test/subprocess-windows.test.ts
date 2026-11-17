@@ -69,9 +69,19 @@ it('stops a Windows command by ending its whole tree with taskkill, at once, and
     windowsHide: true,
   })
   expect(kill, 'no process group signal').not.toHaveBeenCalled()
+  // taskkill ends the tree with exit code 1; a stopped command reads -1, as one a signal ended does elsewhere.
   end(1)
-  expect((await running).code).toBe(1)
+  expect((await running).code).toBe(-1)
   expect(spawn).toHaveBeenCalledTimes(2)
+  // A Windows command that ends by itself keeps its own exit code, 1 included.
+  const own = windowsRun(4245)
+  own.end(1)
+  expect((await own.running).code).toBe(1)
+  // One that ends by itself, with a code of its own, while a stop is under way keeps that code.
+  const raced = windowsRun(4246)
+  raced.controller.abort()
+  raced.end(0)
+  expect((await raced.running).code).toBe(0)
 })
 
 it('ends the child itself when taskkill fails, or by the deadline when taskkill never returns', async () => {
@@ -80,7 +90,7 @@ it('ends the child itself when taskkill fails, or by the deadline when taskkill 
   failed.taskkill.emit('exit', 128)
   expect(failed.child.kill).toHaveBeenCalledWith('SIGKILL')
   failed.end(1)
-  await failed.running
+  expect((await failed.running).code).toBe(-1)
   vi.useFakeTimers()
   try {
     const hung = windowsRun(4444)
@@ -89,7 +99,7 @@ it('ends the child itself when taskkill fails, or by the deadline when taskkill 
     vi.advanceTimersByTime(2_000)
     expect(hung.child.kill).toHaveBeenCalledWith('SIGKILL')
     hung.end(1)
-    await hung.running
+    expect((await hung.running).code).toBe(-1)
   } finally {
     vi.useRealTimers()
   }
@@ -109,8 +119,9 @@ it('stops a POSIX command through its process group, as before', async () => {
   expect(spawn.mock.calls[0]?.[2]).toMatchObject({ detached: true })
   controller.abort()
   expect(kill).toHaveBeenCalledWith(-4343, 'SIGTERM')
+  // A POSIX command that handles SIGTERM and exits by itself keeps its exit code, as before.
   end(0)
-  await running
+  expect((await running).code).toBe(0)
 })
 
 it('finds a Windows program as a shell does: each PATH directory in turn, with the PATHEXT extensions', () => {

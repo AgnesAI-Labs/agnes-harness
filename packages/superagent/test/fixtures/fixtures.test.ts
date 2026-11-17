@@ -4,9 +4,10 @@ import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { ChannelAdapter, ChannelEvent, MessageEvent } from '@agnes/extension-api/channel-contract'
+import { createClient, memoryJournal } from '@agnes/sdk'
 import { afterEach, describe, expect, it } from 'vitest'
 import { runCommand } from '../../src/app/subprocess.js'
-import { hostFloor, socketDirectoryOf } from './daemon-harness.js'
+import { daemonTransport, hostFloor, socketDirectoryOf } from './daemon-harness.js'
 import { startGitHttpRemote } from './git-http-remote.js'
 import { AGENT_CREDENTIAL, makeHomes, OPERATOR_CREDENTIAL } from './homes.js'
 import { posixDescribe } from './posix.js'
@@ -118,6 +119,27 @@ it("removes a daemon's socket directory outside its home, and never a Windows na
   expect(socketDirectoryOf('/srv/agent/.agh/daemon/agnesd.sock', '/srv/agent/.agh')).toBeUndefined()
   for (const pipe of ['\\\\.\\pipe\\agnes-1a2b', '//./pipe/agnes-1a2b', '\\\\?\\pipe\\agnes-1a2b'])
     expect(socketDirectoryOf(pipe, 'C:\\agh'), pipe).toBeUndefined()
+})
+
+it("connects to a daemon's Windows pipe with the identity it recorded, which the SDK requires there", () => {
+  const owner = { socketPath: '\\\\.\\pipe\\agnes-1a2b', pid: 4242, processStartId: 'win32:4242:133' }
+  const client = (transport: Parameters<typeof createClient>[0]['transport']) =>
+    createClient({ journal: memoryJournal(), auth: { kind: 'local' }, transport })
+  // The SDK refuses a pipe without a verified server identity, on every platform.
+  expect(() => client({ kind: 'unix', path: owner.socketPath })).toThrow(
+    'Windows pipe requires a verified server identity',
+  )
+  expect(daemonTransport(owner)).toEqual({
+    kind: 'unix',
+    path: owner.socketPath,
+    serverIdentity: { pid: 4242, processStartId: 'win32:4242:133' },
+  })
+  expect(() => client(daemonTransport(owner))).not.toThrow()
+  // A POSIX socket is its path alone.
+  expect(daemonTransport({ ...owner, socketPath: '/tmp/agh-1a2b/agnesd.sock' })).toEqual({
+    kind: 'unix',
+    path: '/tmp/agh-1a2b/agnesd.sock',
+  })
 })
 
 describe('homes', () => {

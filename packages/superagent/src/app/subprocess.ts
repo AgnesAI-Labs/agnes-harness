@@ -148,7 +148,7 @@ function killTree(child: ChildProcess, processes: Processes): void {
  * period; the result then has `code` -1. A grandchild that keeps the output pipes open cannot hold the call: once the
  * process has exited, the pipes get a short grace period to drain and are then closed. On Windows the program is found
  * as a shell finds it (PATH with PATHEXT), a batch file runs through `cmd.exe`, and a stop ends the whole process tree
- * with `taskkill` at once.
+ * with `taskkill` at once; the result has `code` -1 there too.
  */
 export function runCommand(argv: readonly string[], opts: RunOptions): Promise<RunResult> {
   const [name, ...rest] = argv
@@ -189,9 +189,13 @@ export function runCommand(argv: readonly string[], opts: RunOptions): Promise<R
     let killer: NodeJS.Timeout | undefined
     let drain: NodeJS.Timeout | undefined
     let settled = false
+    // A tree taskkill ended exits with code 1, not by a signal: a Windows command it stopped reads -1 all the same, and
+    // one that ended by itself while the stop was under way keeps any other code it gave.
+    let ended = false
     const stop = (): void => {
       if (child.exitCode !== null || child.signalCode !== null) return
       if (windows) {
+        ended = true
         killTree(child, processes)
         // Should taskkill hang, the child is still ended by its deadline.
         killer = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS)
@@ -211,7 +215,7 @@ export function runCommand(argv: readonly string[], opts: RunOptions): Promise<R
       opts.signal.removeEventListener('abort', stop)
       child.stdout?.destroy()
       child.stderr?.destroy()
-      resolve({ code, stdout: out.text(), stderr: err.text() })
+      resolve({ code: ended && code === 1 ? -1 : code, stdout: out.text(), stderr: err.text() })
     }
     child.once('error', (error) => {
       if (settled) return

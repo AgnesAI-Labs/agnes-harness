@@ -1,7 +1,7 @@
 /** The packaged prompts, skills and locale files the package reads when it loads. */
 import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, relative } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 import {
   bundledSkills,
@@ -25,12 +25,13 @@ afterEach(() => {
   rmSync(copy, { recursive: true, force: true })
 })
 
+/** The files of the three folders, relative to `root` with `/` between names, as the package declares them everywhere. */
 const listed = (root: string): string[] =>
   ['prompts', 'skills', 'locale']
     .flatMap((folder) =>
       readdirSync(join(root, folder), { recursive: true, withFileTypes: true })
         .filter((entry) => entry.isFile())
-        .map((entry) => relative(root, join(entry.parentPath, entry.name))),
+        .map((entry) => relative(root, join(entry.parentPath, entry.name)).split(sep).join('/')),
     )
     .sort()
 

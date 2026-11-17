@@ -14,7 +14,7 @@ import {
 import { SETUP_FIELDS } from '../../../superagent/src/deployment.js'
 import {
   EvalConfigSchema,
-  ExecutorConfigSchema,
+  executorConfigSchema,
   PolicyConfigSchema,
   SettingsSchema,
 } from '../../../superagent/src/policy.js'
@@ -439,9 +439,11 @@ const ROUTES: { [K in keyof Api]: Route<K> } = {
       let restarting = false
       if (block === 'policy')
         server.settings = { ...server.settings, policy: PolicyConfigSchema.parse(body.value) }
-      else if (block === 'executor')
-        server.settings = { ...server.settings, executor: ExecutorConfigSchema.parse(body.value) }
-      else if (block === 'eval')
+      else if (block === 'executor') {
+        // Read as the daemon's machine reads it, whatever machine runs the test: Windows with PowerShell, else POSIX.
+        const platform = server.shell === 'powershell' ? 'win32' : 'linux'
+        server.settings = { ...server.settings, executor: executorConfigSchema(platform).parse(body.value) }
+      } else if (block === 'eval')
         server.settings = { ...server.settings, eval: EvalConfigSchema.parse(body.value) }
       else if (source) {
         const { enabled, config: value } = SourceSave.parse(body.value)

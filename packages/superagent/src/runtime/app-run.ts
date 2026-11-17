@@ -39,7 +39,9 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
   }
   async function configure(): Promise<boolean> {
     try {
-      const deployment = await resolveDeployment(machine, store.settings().sources.github?.config, probe)
+      const github = store.settings().sources.github?.config
+      // A start right after the lifecycle's own check takes what that check resolved: the agent's CLI is probed once.
+      const deployment = deps.resolved?.(github) ?? (await resolveDeployment(machine, github, probe))
       if (closing()) return false
       state.deployment = deployment
       state.problem = undefined
@@ -70,7 +72,9 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
       await settings.sync(id).catch(() => {})
       if (closing()) return
     }
-    stops.push(github.run(), ...(deps.sources?.(parts.sourceHost) ?? []))
+    // One by one, so a start that fails at a later Source still stops the earlier ones.
+    stops.push(github.run())
+    stops.push(...(deps.sources?.(parts.sourceHost) ?? []))
     await executor.resume(!deps.reconciled)
     if (closing()) return
     passes.start()
@@ -118,7 +122,18 @@ export function appRun(deps: AppDeps, state: AppState, core: Core, parts: Engine
           else waitForSetup()
         })(),
       )
-      await state.started
+      try {
+        await state.started
+      } catch (error) {
+        // A start that failed is rolled back, unless a stop took over: the Sources it began stop, so nothing polls, and
+        // the app can be started again. The error stays the start's own.
+        if (state.phase === 'starting') {
+          await Promise.allSettled(stops.splice(0).map((stop) => stop()))
+          // A stop that came while the Sources stopped keeps the app stopping.
+          if (state.phase === 'starting') state.phase = 'idle'
+        }
+        throw error
+      }
     },
     stopSignal(_reason: 'disable' | 'generation' | 'shutdown'): void {
       if (state.phase === 'stopping') return

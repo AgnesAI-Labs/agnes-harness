@@ -130,13 +130,27 @@ it("reads neither the operator's XDG git configuration nor the system one", asyn
       env: { XDG_CONFIG_HOME: xdg },
     })
     expect(operator.stdout).toContain('operator.example.invalid')
-    const listed = await run(['git', 'config', '--list', '--show-origin'], { cwd: repo })
+    const listed = await run(['git', 'config', '--list', '--show-scope', '--show-origin'], { cwd: repo })
     expect(listed.code).toBe(0)
     expect(listed.stdout).not.toContain('operator')
-    // The system's file: under /etc, /Library or /usr, or Git for Windows' own under its drive.
-    expect(listed.stdout, 'no system configuration either').not.toMatch(
-      /^file:(\/(etc|Library|usr)|[A-Za-z]:\/)[^\n]*(gitconfig|Git\/config)/m,
+    // No value of the system scope, as git itself names it: a credential helper there (Git for Windows' credential
+    // manager, Homebrew's osxkeychain) would serve the agent's repositories.
+    expect(listed.stdout, 'no system configuration either').not.toMatch(/^system\t/m)
+    // Nor a file the system's configuration lives in, Apple's git naming no scope for its own: under /etc, /Library or
+    // /usr, or Git for Windows' own, under its installation or ProgramData. The operator's global ~/.gitconfig, under
+    // /home, /Users or C:/Users, is read here; the runtime's commands read the agent's once its variables are set.
+    expect(listed.stdout, 'no system configuration file').not.toMatch(
+      /\tfile:(\/(etc|Library|usr)|[A-Za-z]:\/(Program Files|ProgramData)\/)[^\n]*(gitconfig|Git\/config)/m,
     )
+    if (process.platform === 'win32') {
+      // Git for Windows always has a system configuration, the one naming its credential manager: without the mask
+      // git reads it, so the checks above decide that it is masked.
+      const unmasked = await run(['git', 'config', '--list', '--show-scope', '--show-origin'], {
+        cwd: repo,
+        env: { GIT_CONFIG_NOSYSTEM: '0' },
+      })
+      expect(unmasked.stdout).toMatch(/^system\t/m)
+    }
     expect(childEnvironment()).toMatchObject({ GIT_CONFIG_NOSYSTEM: '1' })
     expect(childEnvironment()).not.toHaveProperty('XDG_CONFIG_HOME')
   })
@@ -226,10 +240,14 @@ const gone = async (pid: number): Promise<boolean> => {
   }
   return false
 }
-/** A process that starts a grandchild holding its output, prints the grandchild's id, and waits (or, `exits`, not). */
+/**
+ * A process that starts a grandchild holding its output, prints the grandchild's id, and waits (or, `exits`, not). On
+ * Windows Node ends the children it did not start detached when it exits (they share its job object), so there a
+ * grandchild that outlives its parent is started detached.
+ */
 const startsGrandchild = (exits = false) =>
   node(
-    `const child = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'inherit'] }); console.log(child.pid); ${exits ? 'child.unref()' : 'setInterval(() => {}, 1000)'}`,
+    `const child = require('node:child_process').spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: ['ignore', 'inherit', 'inherit']${exits && process.platform === 'win32' ? ', detached: true' : ''} }); console.log(child.pid); ${exits ? 'child.unref()' : 'setInterval(() => {}, 1000)'}`,
   )
 // A process that starts a grandchild, prints its id, and waits for it.
 const withGrandchild = startsGrandchild()
@@ -262,7 +280,8 @@ it('returns once the process has exited even if a grandchild it left behind keep
   try {
     expect(result.code).toBe(0)
     expect(Date.now() - started).toBeLessThan(5000)
+    expect(alive(grandchild), 'the grandchild outlived its parent').toBe(true)
   } finally {
-    process.kill(grandchild, 'SIGKILL')
+    if (alive(grandchild)) process.kill(grandchild, 'SIGKILL')
   }
 })

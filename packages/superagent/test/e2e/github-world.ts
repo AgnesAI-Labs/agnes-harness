@@ -24,6 +24,8 @@ type Comment = {
 }
 export interface GhCall {
   argv: string[]
+  /** What the call read on its standard input, when it read any. */
+  stdin?: string
   matched: boolean
   exit: number
 }
@@ -167,14 +169,20 @@ export function githubWorld(dir: string, opened: string) {
       }
       write()
     },
-    /** The comments Superagent posted on the Issue, by their body. */
+    /**
+     * The comments Superagent posted on the Issue, as `body=<text>`: the field's argument, or on Windows, where the
+     * text goes through standard input (`-F body=@-`), what the call read there.
+     */
     posted: () =>
       calls()
         .filter(
           (call) =>
             call.argv.includes('POST') && call.argv[1] === `repos/${REPOSITORY}/issues/${ISSUE}/comments`,
         )
-        .map((call) => call.argv.find((arg) => arg.startsWith('body=')) ?? ''),
+        .map((call) => {
+          const field = call.argv.find((arg) => arg.startsWith('body=')) ?? ''
+          return field === 'body=@-' ? `body=${call.stdin ?? ''}` : field
+        }),
     unmatched: () => calls().filter((call) => !call.matched),
   }
 }

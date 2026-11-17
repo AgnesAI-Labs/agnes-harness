@@ -15,7 +15,14 @@ import { ENV_PROBE_TOOL, INJECTED_TOKEN, writeEnvProbePlugin } from '../fixtures
 import { startGitHttpRemote } from '../fixtures/git-http-remote.js'
 import { AGENT_CREDENTIAL, makeHomes, OPERATOR_CREDENTIAL } from '../fixtures/homes.js'
 import { AGENT_EMAIL, AGENT_LOGIN, trustRemote, writeGhAgent } from './agent-environment.js'
-import { ownerCalls, seedTicket, tool, until } from './integration-fixtures.js'
+import {
+  explicitStateDir,
+  ownerCalls,
+  platformStateReady,
+  seedTicket,
+  tool,
+  until,
+} from './integration-fixtures.js'
 
 afterAll(stopAllDaemons)
 
@@ -31,8 +38,7 @@ it('a worker session commits and pushes as the agent through its CLI, never with
   try {
     const homes = makeHomes(join(root, 'homes'))
     const agent = writeGhAgent(root)
-    const stateDir = join(root, 'state')
-    mkdirSync(stateDir)
+    const stateDir = explicitStateDir(join(root, 'agh'))
     // Started as usual: no HOME or PATH of the agent's, and the operator's GitHub token exported.
     const daemon = await startDaemon({
       aghHome: join(root, 'agh'),
@@ -45,6 +51,8 @@ it('a worker session commits and pushes as the agent through its CLI, never with
       },
     })
     const calls = ownerCalls(() => daemon.client)
+    await platformStateReady(join(root, 'agh'))
+    mkdirSync(stateDir, { recursive: true })
     await calls.disable()
     await calls.configure({ stateDir })
     const ticketId = seedTicket(join(stateDir, DATABASE_FILE), stateDir, agent.cli)

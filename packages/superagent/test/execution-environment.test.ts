@@ -1,4 +1,5 @@
 /** The variables a ticket's prepare command and worker session read, and the account-free names they are listed under. */
+import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import {
   declaredVariables,
@@ -87,7 +88,8 @@ it("takes a ticket's directory and name as the ticket recorded them, and leaves 
 
 it('roots the ticket directories in the state directory unless the settings name another, and words each variable for the prompt', () => {
   const settings = settingsOf({ enabled: true })
-  expect(executionRoot(settings, '/state')).toBe('/state/work')
+  // A path of the daemon's machine, joined as its paths join.
+  expect(executionRoot(settings, '/state')).toBe(join('/state', 'work'))
   expect(
     executionRoot({ ...settings, executor: { ...settings.executor, directory: '/elsewhere' } }, '/state'),
   ).toBe('/elsewhere')

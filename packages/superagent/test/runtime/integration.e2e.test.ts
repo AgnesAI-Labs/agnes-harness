@@ -3,7 +3,16 @@
 // a disable through the package manager while the worker runs a turn and a job kills both within two seconds;
 // enabling again reconciles and dispatches the interrupted assignment again; the worker's report ends the ticket, which
 // the panel service shows.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, expect, it } from 'vitest'
@@ -13,10 +22,12 @@ import { TICKET_INSTRUCTIONS_FILE } from '../../src/runtime/instructions.js'
 import { type DaemonHandle, startDaemon, stopAllDaemons } from '../fixtures/daemon-harness.js'
 import { byShell } from '../fixtures/shell.js'
 import {
+  explicitStateDir,
   kvOf,
   ownerCalls,
   PACKAGE,
   PROFILE,
+  platformStateReady,
   readAll,
   seedTicket,
   sleep,
@@ -40,12 +51,12 @@ it('runs a ticket end to end, stops its worker on a disable and resumes it on en
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'agh-superagent-int-')))
   let handle: DaemonHandle | undefined
   try {
-    const stateDir = join(root, 'state')
+    const aghHome = join(root, 'agh')
+    const stateDir = explicitStateDir(aghHome)
     const home = join(root, 'operator-home')
     mkdirSync(home, { recursive: true })
     const shimsDir = join(stateDir, 'worker-bin')
     const cli = writeAgentCli(root)
-    const aghHome = join(root, 'agh')
     // The daemon runs as the deployment guide starts it: as usual, with the operator's HOME and PATH.
     const daemon = await startDaemon({
       aghHome,
@@ -94,6 +105,7 @@ it('runs a ticket end to end, stops its worker on a disable and resumes it on en
     }
 
     // Set the state directory, write the settings and a ticket there, and turn Superagent on.
+    await platformStateReady(aghHome)
     await calls.disable()
     await calls.configure({ stateDir })
     const ticketId = seedTicket(database, stateDir, cli)
@@ -215,7 +227,17 @@ it('runs a ticket end to end, stops its worker on a disable and resumes it on en
     await until('the worker idle after the resume', async () => (await worker.projectUI()).opState === null)
     // The skills Superagent wrote into the AGH home when it started are readable by its sessions, once the platform
     // lists them ready (a read during a skills reload finds none).
-    await until('the skill listed ready', async () => (await listedSkill())?.actual === 'ready')
+    await until('the skill listed ready', async () => (await listedSkill())?.actual === 'ready').catch(
+      async (error: unknown) => {
+        // What the platform lists for the skill, and the skill files Superagent wrote.
+        const dir = join(aghHome, 'skills')
+        const files = existsSync(dir) ? readdirSync(dir, { recursive: true, encoding: 'utf8' }) : []
+        throw new Error(
+          `${String(error)}\nlisted: ${JSON.stringify(await listedSkill())}\nfiles: ${JSON.stringify(files)}`,
+          { cause: error },
+        )
+      },
+    )
     await worker.followUp(tool('w-skill', 'skill_read', { name: 'dsh-superagent-github' }))
     const skillText = (await answered('w-skill')).toolResult ?? ''
     console.info(`skill_read dsh-superagent-github: ${skillText.slice(0, 160).replace(/\s+/g, ' ')}`)

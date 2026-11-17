@@ -4,6 +4,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
+import { hostFloor } from './daemon-harness.js'
 import { gitEnv } from './git.js'
 
 const run = promisify(execFile)
@@ -70,6 +71,8 @@ export async function startGitHttpRemote(opts: { users: Record<string, string> }
       log.push(`${user} ${request.method} ${target.pathname}${target.search}`)
       const child = spawn(backend, [], {
         env: {
+          // What a Windows program needs to start (its system directory, temporary directory); nothing elsewhere.
+          ...hostFloor(),
           PATH: process.env.PATH ?? '',
           HOME: root,
           GIT_CONFIG_NOSYSTEM: '1',

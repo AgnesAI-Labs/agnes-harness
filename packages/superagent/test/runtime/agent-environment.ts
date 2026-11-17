@@ -7,7 +7,7 @@
  */
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { workerGitConfig } from '../../src/infra/worker-paths.js'
 import { credentialHelper, type EnvironmentConfig, writeEnvironment } from '../../src/runtime/environment.js'
 import { fakeGhCommand } from '../fixtures/commands.js'
@@ -119,7 +119,7 @@ export async function prepareAgentEnvironment(root: string, remoteUrl: string) {
     agent,
     /** The daemon's environment, started as usual: the operator's HOME, and a PATH that reaches the operator's `gh`. */
     home: homes.operatorHome,
-    path: `${homes.operatorBin}:${process.env.PATH ?? ''}`,
+    path: `${homes.operatorBin}${delimiter}${process.env.PATH ?? ''}`,
     /** The remote with the agent's credential in it, for a session that has no agent environment of its own. */
     agentUrl: url.toString(),
   }

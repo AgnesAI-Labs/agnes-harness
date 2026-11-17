@@ -1,10 +1,9 @@
 // Adapted from dsh-superagent (MIT)
 /** Subprocess wrapper for running gh and git commands under the deployment's configured accounts. */
-import { basename } from 'node:path'
 import { z } from 'zod'
 import { runCommand } from '../app/subprocess.js'
 import type { Deployment } from '../deployment.js'
-import { HOST_PLATFORM, isWindows } from './platform.js'
+import { HOST_PLATFORM, isWindows, programName } from './platform.js'
 
 const TIMEOUT_MS = 90_000
 /** Output a command may print; `runCommand` keeps the first bytes, so reaching this size means output was lost. */
@@ -25,9 +24,14 @@ export class CliError extends Error {
 /**
  * Extracts a sanitized error from a failed subprocess without echoing argv, which may contain message text. `error` is
  * shaped like the failure of `child_process.execFile`: `stderr`, a numeric exit `code` or a string error code, `killed`
- * and `signal`.
+ * and `signal`. The program is named as `programName` names it on `platform`.
  */
-export function commandError(error: unknown, program = 'command', timeoutMs = TIMEOUT_MS): Error {
+export function commandError(
+  error: unknown,
+  program = 'command',
+  timeoutMs = TIMEOUT_MS,
+  platform: string = HOST_PLATFORM,
+): Error {
   if (error instanceof Error && error.name === 'AbortError') return error
   const exitCode =
     error && typeof error === 'object' && 'code' in error && typeof error.code === 'number'
@@ -52,7 +56,7 @@ export function commandError(error: unknown, program = 'command', timeoutMs = TI
         exitCode,
       )
   }
-  return new CliError(`${basename(program)} ${ended(error, timeoutMs)}`, undefined, exitCode)
+  return new CliError(`${programName(program, platform)} ${ended(error, timeoutMs)}`, undefined, exitCode)
 }
 function ended(error: unknown, timeoutMs: number): string {
   const { killed, signal, code } = (error ?? {}) as {
@@ -131,7 +135,7 @@ export class Commands {
         GH_PROMPT_DISABLED: '1',
       },
     }).catch((error: unknown) => {
-      throw commandError(error, program, this.timeoutMs)
+      throw commandError(error, program, this.timeoutMs, this.platform)
     })
     // A command stopped by the abort signal is not a failure of the command.
     if (this.signal.aborted) throw new DOMException('The command was aborted', 'AbortError')
@@ -141,10 +145,17 @@ export class Commands {
         Date.now() - started >= this.timeoutMs ? { killed: true, signal: 'SIGTERM' } : { code: 'stopped' },
         program,
         this.timeoutMs,
+        this.platform,
       )
-    if (result.code !== 0) throw commandError({ stderr: result.stderr, code: result.code }, program)
+    if (result.code !== 0)
+      throw commandError({ stderr: result.stderr, code: result.code }, program, this.timeoutMs, this.platform)
     if (Buffer.byteLength(result.stdout) >= OUTPUT_LIMIT_BYTES)
-      throw commandError({ code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' }, program, this.timeoutMs)
+      throw commandError(
+        { code: 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' },
+        program,
+        this.timeoutMs,
+        this.platform,
+      )
     return result.stdout
   }
   /** Runs the agent's GitHub CLI and parses its JSON output; callers should prefer `api`, which is restricted to the configured repository and validates output. */

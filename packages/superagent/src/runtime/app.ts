@@ -19,7 +19,7 @@ import { type Deployment, type Machine, machineOf, type Probe } from '../deploym
 import type { SetupProblem } from '../setup.js'
 import type { SourceHost } from '../sources/host.js'
 import type { SourceRegistry } from '../sources/registry.js'
-import { appState, buildCore, unavailableOf } from './app-core.js'
+import { appState, buildCore, now, unavailableOf } from './app-core.js'
 import { buildEngine } from './app-engine.js'
 import { type AppRun, appRun } from './app-run.js'
 import { buildTools } from './app-tools.js'
@@ -77,6 +77,11 @@ export interface SuperagentApp {
   reconfigure(): Promise<void>
   /** Why the started app waits for setup; undefined when it does not. */
   setupProblem(): SetupProblem | undefined
+  /**
+   * Shows on the runtime health, which the panel lists, why a start failed and when it is tried again; undefined takes
+   * that back, unless the app has reported its own state since.
+   */
+  reportStart(problem: { detail: string; retryAt: string } | undefined): void
   /** What the panel services and other parts read and drive. */
   readonly parts: AppParts
   /**
@@ -122,6 +127,11 @@ export interface AppDeps {
   roleModels?: RoleModels
   /** How the deployment is probed; by default the agent's `gh` as worker shells run it. */
   probe?: Probe
+  /**
+   * The deployment a check just resolved, with the same probe, from `github` (the GitHub Source's settings), if any. A
+   * configuration takes it in place of probing the agent's CLI again; undefined probes as usual.
+   */
+  resolved?(github: unknown): Deployment | undefined
   /** Variables Superagent's own commands run with, such as the agent's git configuration. */
   commandEnvironment?: Record<string, string>
   /** The AGH skill directory Superagent's skills are written to. */
@@ -174,6 +184,8 @@ export function createSuperagentApp(given: AppDeps): SuperagentApp {
   const tools = buildTools(deps, state, core, parts, unavailable)
   const running = appRun(deps, state, core, parts, tools)
   run = running
+  /** Whether the runtime health shows a failed start the lifecycle reported. */
+  let startReported = false
   return {
     executor: parts.executor,
     engine: parts.engine,
@@ -202,6 +214,21 @@ export function createSuperagentApp(given: AppDeps): SuperagentApp {
     unavailable,
     reconfigure: () => running.reconfigure(),
     setupProblem: () => state.problem,
+    reportStart(problem) {
+      if (problem) {
+        core.runtimeHealth.set({
+          state: 'error',
+          detail: `Superagent could not start: ${problem.detail}. It tries again at ${problem.retryAt}.`,
+          at: now(),
+        })
+        startReported = true
+        return
+      }
+      // A start that ran or waits for setup set the runtime health itself; one that failed earlier did not.
+      if (startReported && core.runtimeHealth.get()?.state === 'error')
+        core.runtimeHealth.set({ state: 'starting', detail: '', at: now() })
+      startReported = false
+    },
     start: () => running.start(),
     stopSignal: (reason) => running.stopSignal(reason),
     drain: () => running.drain(),
