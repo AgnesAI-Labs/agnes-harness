@@ -389,16 +389,19 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       expect(host.kernel.tools.resolve('shell')?.name).toBe('shell')
       expect(host.kernel.tools.resolve('read')?.source).toEqual({
         source: 'agnes/tools-core',
+        pluginRowId: 'ext:agnes/tools-core',
         trust: 'builtin',
       })
       // grep/find/ls moved to the sibling `tools-search` extension; they still reach the kernel
       // registry the same way, just credited to a different source.
       expect(host.kernel.tools.resolve('grep')?.source).toEqual({
         source: 'agnes/tools-search',
+        pluginRowId: 'ext:agnes/tools-search',
         trust: 'builtin',
       })
       expect(host.kernel.tools.resolve('compact')?.source).toEqual({
         source: 'agnes/compaction',
+        pluginRowId: 'ext:agnes/compaction',
         trust: 'builtin',
       })
       // agnes/refine registers its tools whatever the switch says; Core offers them only to sessions
@@ -406,10 +409,12 @@ describe('a host assembled from a profile naming @agnes/base', () => {
       for (const name of ['harness_propose', 'harness_refine', 'harness_inspect'])
         expect(host.kernel.tools.resolve(name)?.source, name).toEqual({
           source: 'agnes/refine',
+          pluginRowId: 'ext:agnes/refine',
           trust: 'builtin',
         })
       expect(host.kernel.tools.resolve('subagent_spawn')?.source).toEqual({
         source: 'agnes/subagent',
+        pluginRowId: 'ext:agnes/subagent',
         trust: 'builtin',
       })
       const status = host.extensions()

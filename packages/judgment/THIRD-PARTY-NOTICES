@@ -1,6 +1,5 @@
-Title preprocessing, context selection, formatting, low-signal filtering and
-title-fit question adapted from oh-my-pi:
-https://github.com/can1357/oh-my-pi/tree/80ad1d6b2eb3dd916d863841dcae79f4f96c5612
+Portions of the session title code (preprocessing, context selection, formatting,
+low-signal filtering and the title-fit question) are covered by the following license:
 
 MIT License
 

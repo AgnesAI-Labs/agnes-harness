@@ -186,11 +186,14 @@ it('ships the optional judgment payload with its callable plugin and release dig
     'LICENSE',
     'NOTICE',
     'README.md',
+    'THIRD-PARTY-NOTICES',
+    'client-build.json',
     'index.mjs',
     'package.json',
+    'src',
   ])
   const manifest = JSON.parse(await readFile(join(payload, 'package.json'), 'utf8'))
-  expect(manifest.agnes.plugins[0]).toMatchObject({ export: 'judgmentPlugin', apiRange: '^5.17.0' })
+  expect(manifest.agnes.plugins[0]).toMatchObject({ export: 'judgmentPlugin', apiRange: '^5.20.0' })
   expect(bundledPluginDigest({ root, path: 'bundled-plugins/judgment' })).toBe(hashDirectory(payload))
   const bundle = await readFile(join(payload, 'index.mjs'), 'utf8')
   expect(bundle).toMatch(/^export \{[^}]*\bjudgmentPlugin\b[^}]*\}/m)

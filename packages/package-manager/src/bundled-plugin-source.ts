@@ -23,7 +23,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.43',
+    version: '0.2.44',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
@@ -84,7 +84,7 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
   {
     name: 'judgment',
     id: '@agnes/judgment',
-    version: '0.1.0',
+    version: '0.1.1',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/judgment',
     sourcePath: 'package-manager/bundled-plugins/judgment',

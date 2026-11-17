@@ -1,6 +1,6 @@
 {
   "name": "@agnes/judgment",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Optional detection of replies that promise to act but end early.",
   "type": "module",
   "license": "Apache-2.0",
@@ -12,7 +12,7 @@
     "NOTICE",
     "src",
     "client-build.json",
-    "LICENSE.oh-my-pi"
+    "THIRD-PARTY-NOTICES"
   ],
   "engines": {
     "node": ">=24.10"

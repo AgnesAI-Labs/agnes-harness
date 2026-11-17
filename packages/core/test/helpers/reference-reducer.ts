@@ -56,6 +56,8 @@ export type LedgerState = {
   // and the relation check numbers the next step from lastStep, which openStep can no longer answer
   // once step/end has closed it — reading openStep there numbers every second step back to 1.
   lastTurn: Map<string, number>
+  // Successful turn boundaries keyed by their turn/end seq, which replay checks detached effect provenance against.
+  completedTurns: Map<number, { lane: string; turn: number; startSeq: number; lastAssistantSeq: number }>
   lastStep: Map<string, number>
   pendingEffects: Map<string, Omit<EffectNode, 'children'>>
   resumedRequests: Set<string>
@@ -93,6 +95,7 @@ function cloneMaps(s: LedgerState): LedgerState {
     openTurn: new Map(s.openTurn),
     openStep: new Map(s.openStep),
     lastTurn: new Map(s.lastTurn),
+    completedTurns: new Map(s.completedTurns),
     lastStep: new Map(s.lastStep),
     pendingEffects: new Map(s.pendingEffects),
     resumedRequests: new Set(s.resumedRequests),
@@ -191,6 +194,7 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
   }
   switch (e.type) {
     case 'session/start': {
+      s.completedTurns.clear()
       const start = d as unknown as SessionStart
       if (start.parent) {
         s.registers.budgetState.clear()
@@ -231,11 +235,26 @@ export function reduce(prev: LedgerState, raw: Event): LedgerState {
       s.taint.set(lane, false)
       break
     }
-    case 'turn/end':
+    case 'turn/end': {
+      const source = s.openTurn.get(lane)
+      if (
+        source &&
+        e.origin === 'system' &&
+        e.trust === 'trusted' &&
+        d?.reason === 'completed' &&
+        typeof d.lastAssistantSeq === 'number'
+      )
+        s.completedTurns.set(e.seq, {
+          lane,
+          turn: source.turn,
+          startSeq: source.startSeq,
+          lastAssistantSeq: d.lastAssistantSeq,
+        })
       s.openTurn.delete(lane)
       s.openStep.delete(lane)
       s.lastStep.delete(lane)
       break
+    }
     case 'step/start':
       s.openStep.set(lane, { turn: Number(d?.turn), step: Number(d?.step), startSeq: e.seq })
       s.lastStep.set(lane, Number(d?.step))
@@ -400,6 +419,7 @@ export function initialState(): LedgerState {
     openTurn: new Map(),
     openStep: new Map(),
     lastTurn: new Map(),
+    completedTurns: new Map(),
     lastStep: new Map(),
     pendingEffects: new Map(),
     resumedRequests: new Set(),

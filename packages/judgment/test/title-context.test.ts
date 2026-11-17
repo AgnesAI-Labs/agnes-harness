@@ -139,7 +139,7 @@ it('cleans ANSI, paired wrappers, SHA and fences without erasing code-only tasks
 })
 
 it('matches full reference formatting after compaction, including Unicode and omission counts', () => {
-  // Reference formatter/truncation from oh-my-pi; see LICENSE.oh-my-pi.
+  // Reference formatter/truncation; see THIRD-PARTY-NOTICES.
   const full = (turns: { role: string; text: string; thinking?: string }[]) => {
     const formatted = turns.map(
       (turn) =>

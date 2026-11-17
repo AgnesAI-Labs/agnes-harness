@@ -37,7 +37,11 @@ describe('a third-party row registers through its facets', () => {
     expect(rowState(h, ROW)).toBe('active')
     expect(toolNames(h)).toContain('plugin_echo')
     const registered = h.host.kernel.tools.resolve('plugin_echo')
-    expect(registered?.source).toEqual({ source: SOURCE, trust: 'trusted' })
+    expect(registered?.source).toEqual({
+      source: SOURCE,
+      pluginRowId: 'ext:acme/plugin-tools',
+      trust: 'trusted',
+    })
     expect(registered?.packageIdentity).toBe('@acme/plugin-tools')
     expect(registered?.packageVersion).toBe('2.3.4')
     expect(registered?.executionDomain).toBe('workspace')

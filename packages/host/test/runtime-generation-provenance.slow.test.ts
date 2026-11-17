@@ -60,7 +60,16 @@ async function fixture(ref: string | undefined) {
       },
     },
   }
-  let host = (await createTestHost(options)).host
+  // An unbound container takes a code change in place and keeps its boot assembly. A session bound
+  // to the boot generation makes the first plugin publication build its assembly from that
+  // generation's own sources, so every assertion below observes an assembly the sources produced.
+  let boots = 0
+  const open = async () => {
+    const opened = (await createTestHost(options)).host
+    await (await opened.createSession({ key: `boot-${++boots}`, cwd: root })).close()
+    return opened
+  }
+  let host = await open()
   const base = host.runtimeTargetSnapshot!()
   const target = buildCompleteRuntimeTarget({
     rows: [
@@ -91,7 +100,7 @@ async function fixture(ref: string | undefined) {
     },
     async reopen() {
       await host.close()
-      host = (await createTestHost(options)).host
+      host = await open()
     },
     async close() {
       await host.close()

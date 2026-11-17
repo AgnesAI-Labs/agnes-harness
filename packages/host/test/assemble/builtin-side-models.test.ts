@@ -189,7 +189,8 @@ it('notifies an installed row that applied before provider readiness and closes 
       extensionLoader: {
         import: async () => ({
           judgmentPlugin: {
-            inject: ['hooks', 'projections', 'eventLog', 'sideCall', 'self'],
+            // An export that repeats its inject list must say what its manifest row says.
+            inject: manifest.agnes.plugins[0].inject,
             apply(plugin: PluginContextFacets) {
               self = plugin.self
               port = self.sideModels

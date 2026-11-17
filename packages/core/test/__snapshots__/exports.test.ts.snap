@@ -95,6 +95,7 @@ exports[`keeps the public runtime export surface stable 1`] = `
   "createChildEventQueue",
   "createEnvelopeCache",
   "createSessionFileReader",
+  "createSessionWorkSideCall",
   "createWorkspaceInvocationPort",
   "decideCheckpoint",
   "decideFsPath",

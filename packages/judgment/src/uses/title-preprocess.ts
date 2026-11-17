@@ -1,5 +1,4 @@
-// Adapted from oh-my-pi 80ad1d6b2eb3dd916d863841dcae79f4f96c5612.
-// See LICENSE.oh-my-pi for the MIT license and copyright notices.
+// See THIRD-PARTY-NOTICES.
 import { redactedRanges } from './redacted-range.js'
 
 export const RAW_EDGE = 262144

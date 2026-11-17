@@ -178,7 +178,8 @@ it('admits the real optional judgment release only with its matching source dige
   const digest = hashDirectory(directory)
   const pkg = {
     id: '@agnes/judgment',
-    version: '0.1.0',
+    version: (JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as { version: string })
+      .version,
     source: 'file:./bundled-plugins/judgment',
     integrity: digest,
     trust: 'trusted' as const,

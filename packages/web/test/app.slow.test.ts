@@ -35,15 +35,19 @@ async function renderUI(work: () => void | Promise<void>): Promise<void> {
 }
 
 async function bootApp(): Promise<void> {
-  // Reload hints are independent of each case's admin/upload HTTP fixtures.
+  // Reload hints and the composer's channel overview are independent of each case's admin/upload
+  // HTTP fixtures, whose catch-all body is not a channel overview.
   const fetcher = globalThis.fetch
   vi.stubGlobal(
     'fetch',
-    vi.fn<typeof fetch>((input, init) =>
-      new URL(String(input), location.href).pathname === '/plugins/changes'
-        ? Promise.resolve(Response.json({ epoch: 'fixture', cursor: 0, reset: false, events: [] }))
-        : fetcher(input, init),
-    ),
+    vi.fn<typeof fetch>((input, init) => {
+      const path = new URL(String(input), location.href).pathname
+      if (path === '/plugins/changes')
+        return Promise.resolve(Response.json({ epoch: 'fixture', cursor: 0, reset: false, events: [] }))
+      // No channel plugin is installed: the launcher's overview lists no channels.
+      if (path === '/api/channels') return Promise.resolve(Response.json({ channels: [], sessions: [] }))
+      return fetcher(input, init)
+    }),
   )
   await renderUI(async () => {
     await import('../src/app.js')
@@ -193,6 +197,13 @@ vi.mock('@agnes/sdk/browser', async (importOriginal) => ({
     if (client && !('connectionState' in client)) client.connectionState = 'connected'
     // Session binding is mocked below; these doubles have no cached SDK session handles.
     if (client && !('sessions' in client)) client.sessions = new Map()
+    // The page reserves the owner-only methods on the client's own call/notify at boot; a double that
+    // stubs none of them refuses any call that reaches the transport.
+    for (const name of ['call', 'notify'] as const)
+      if (client && !(name in client))
+        client[name] = vi.fn(async (method: string) => {
+          throw new Error(`unstubbed client.${name}(${method})`)
+        })
     if (vi.isMockFunction(client?.on) && !client.on.getMockImplementation())
       client.on.mockImplementation(() => () => undefined)
     if (client?.session?.list && !client.session.groups)
@@ -2323,6 +2334,9 @@ describe('web session selection', () => {
         await pickerReady
         return new Response(JSON.stringify({ available: true }), { status: 200 })
       }
+      // Only the picker's own requests are picker answers; the page's other POSTs (the automation
+      // attention read of /api/triggers) must not take the first, cancelled one.
+      if (_input !== '/api/workspace-picker') return new Response(null, { status: 404 })
       pickerCalls++
       return new Response(
         JSON.stringify(

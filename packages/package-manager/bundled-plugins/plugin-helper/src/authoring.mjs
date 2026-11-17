@@ -43,3 +43,17 @@ export function verification(value) {
     published: value.state === 'published' ? 'verified' : 'not-verified',
   }
 }
+
+/**
+ * The panel guide's model-visible JSON must stay within the default 32 KiB tool output budget. Its
+ * text leaves the skin token and region lists, the last section of the author reference, to the skin
+ * guide; the structured receipt keeps the full guidance.
+ */
+const skinReferenceAt = authorReference.indexOf('\n\nSkin tokens / ')
+export const panelAuthoringGuidance =
+  skinReferenceAt < 0
+    ? authoringGuidance
+    : authoringGuidance.replace(
+        authorReference,
+        `${authorReference.slice(0, skinReferenceAt)}\n\nSkin tokens and region selectors: call plugin_helper_guide(kind: skin). / 皮肤 token 与区域选择器见 plugin_helper_guide(kind: skin)。`,
+      )
