@@ -1,6 +1,7 @@
-import { CredentialsApi } from '@agnes/resource-control-web/credentials-api'
+import { CREDENTIALS_CHANGED, CredentialsApi } from '@agnes/resource-control-web/credentials-api'
 import { Button, ChannelIcon, Dialog, Field, Select, useDocumentLanguage } from '@agnes/web-ui'
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { DedicatedSetup } from './channel-dedicated.js'
 import { type ChannelDialogRequest, channelDialogState, closeChannelDialog } from './channel-dialog-state.js'
 import { useChannelOverview } from './channel-model.js'
 import { channelName } from './channel-name.js'
@@ -34,16 +35,20 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
     }
     load()
     window.addEventListener('focus', load)
+    window.addEventListener(CREDENTIALS_CHANGED, load)
     const timer = setInterval(load, 5000)
     return () => {
       alive = false
       clearInterval(timer)
       window.removeEventListener('focus', load)
+      window.removeEventListener(CREDENTIALS_CHANGED, load)
     }
   }, [api])
-  const group = overview?.channels.find(
-    (item) => item.provider.extension === extension && item.provider.bindingAvailable && !item.error,
-  )
+  // A dedicated connection is only configured, never bound, so it needs no session binding service.
+  const dedicated = request.dedicated === true
+  const usable = (item: { provider: { bindingAvailable: boolean }; error?: boolean }) =>
+    (dedicated || item.provider.bindingAvailable) && !item.error
+  const group = overview?.channels.find((item) => item.provider.extension === extension && usable(item))
   const session = overview?.sessions.find((item) => item.sessionId === sessionId)
   const existing = group?.instances.find((item) => item.id === request.instanceId)
   const pinned = useRef<ManagedInstance>()
@@ -56,7 +61,17 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
       size="md"
       className="channel-dialog"
       title={
-        editing ? (zh ? '编辑渠道连接' : 'Edit channel connection') : zh ? '连接渠道' : 'Connect a channel'
+        dedicated
+          ? zh
+            ? '新建专用连接'
+            : 'Create a dedicated connection'
+          : editing
+            ? zh
+              ? '编辑渠道连接'
+              : 'Edit channel connection'
+            : zh
+              ? '连接渠道'
+              : 'Connect a channel'
       }
       footer={null}
       onCancel={closeChannelDialog}
@@ -64,15 +79,18 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
     >
       <div className="channel-dialog-body">
         {!editing && (
-          <ol className="channel-steps" aria-label={zh ? '绑定步骤' : 'Binding steps'}>
-            {[zh ? '选择渠道' : 'Channel', zh ? '连接机器人' : 'Connection', zh ? '绑定会话' : 'Session'].map(
-              (label, index) => (
+          <ol
+            className="channel-steps"
+            aria-label={dedicated ? (zh ? '创建步骤' : 'Creation steps') : zh ? '绑定步骤' : 'Binding steps'}
+          >
+            {[zh ? '选择渠道' : 'Channel', zh ? '连接机器人' : 'Connection', zh ? '绑定会话' : 'Session']
+              .slice(0, dedicated ? 2 : 3)
+              .map((label, index) => (
                 <li key={label} data-active={index === (!group ? 0 : step)}>
                   <span>{index + 1}</span>
                   {label}
                 </li>
-              ),
-            )}
+              ))}
           </ol>
         )}
         {error && (
@@ -85,14 +103,20 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
         {overview && !group && !editing && (
           <>
             <p className="channel-muted">
-              {zh ? '将当前会话连接到你使用的聊天工具。' : 'Continue this session in your chat app.'}
+              {dedicated
+                ? zh
+                  ? '选择要新建专用连接的渠道。'
+                  : 'Choose the channel for the dedicated connection.'
+                : zh
+                  ? '将当前会话连接到你使用的聊天工具。'
+                  : 'Continue this session in your chat app.'}
             </p>
             <div className="channel-picker">
               {overview.channels.map((item) => (
                 <Button
                   key={item.provider.extension}
                   className="channel-choice"
-                  disabled={!item.provider.bindingAvailable || !!item.error}
+                  disabled={!usable(item)}
                   onClick={() => setExtension(item.provider.extension)}
                 >
                   <ChannelIcon className="channel-glyph" icon={item.provider.manifest.icon} />
@@ -142,7 +166,17 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
                 </Button>
               )}
             </div>
-            {(!request.sessionId || request.rebind) && (
+            {dedicated && (
+              <DedicatedSetup
+                key={group.provider.extension}
+                data={data}
+                group={error ? { ...group, error: true } : group}
+                credentials={credentials}
+                zh={zh}
+                onRefresh={() => void refresh()}
+              />
+            )}
+            {!dedicated && (!request.sessionId || request.rebind) && (
               <Field label={zh ? '绑定到会话' : 'Session'}>
                 <Select
                   aria-label={zh ? '绑定到会话' : 'Session'}
@@ -155,19 +189,19 @@ function ChannelDialog({ data, request }: { data: HomePageData; request: Channel
                 />
               </Field>
             )}
-            {request.sessionId && !session && (
+            {!dedicated && request.sessionId && !session && (
               <p role="alert">
                 {zh ? '当前会话不可用，请先发送消息创建会话。' : 'Send a message to create a session first.'}
               </p>
             )}
-            {!sessionId && (
+            {!dedicated && !sessionId && (
               <p className="channel-muted">
                 {zh
                   ? '选择一个已有会话，或先返回聊天发送第一条消息。'
                   : 'Choose an existing session, or send your first message in chat.'}
               </p>
             )}
-            {session && (
+            {!dedicated && session && (
               <ChannelSetup
                 key={`${group.provider.extension}:${sessionId}:${request.instanceId ?? ''}`}
                 data={data}

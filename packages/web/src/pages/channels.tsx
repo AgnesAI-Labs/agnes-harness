@@ -55,9 +55,14 @@ export function ChannelsPanel({ data }: { data: HomePageData }) {
               : 'See where each bot connects and what is being shared.'}
           </p>
         </div>
-        <Button appearance="primary" onClick={() => openChannelDialog({ sessionId: data.sessionId() })}>
-          {zh ? '新增连接' : 'Add connection'}
-        </Button>
+        <div className="channel-page-actions">
+          <Button appearance="ghost" onClick={() => openChannelDialog({ dedicated: true })}>
+            {zh ? '新建专用连接' : 'Add dedicated connection'}
+          </Button>
+          <Button appearance="primary" onClick={() => openChannelDialog({ sessionId: data.sessionId() })}>
+            {zh ? '新增连接' : 'Add connection'}
+          </Button>
+        </div>
       </header>
       <div className="channel-metrics">
         <span>

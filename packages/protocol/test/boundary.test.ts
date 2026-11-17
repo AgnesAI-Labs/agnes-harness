@@ -272,6 +272,7 @@ describe('protocol src boundary', () => {
         'DSH_WEB_CLIENT_SLOT_CATALOG_VERSION',
         'inspectJsonData',
         'isWorkerGeneration',
+        'configurationRevision',
         'jcs',
         'jcsChunks',
         'jcsWrite',

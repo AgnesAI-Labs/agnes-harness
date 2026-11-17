@@ -3,6 +3,8 @@ export type ChannelDialogRequest = {
   extension?: string
   instanceId?: string
   rebind?: boolean
+  /** Create a connection that binds no session; the flow ends once it exists. */
+  dedicated?: boolean
 }
 // Composer and home pages can live in separate lazily bundled modules. The shell event joins them.
 const eventName = 'agnes-channel-dialog'

@@ -1,7 +1,7 @@
 /** @vitest-environment happy-dom */
 
 import type { PackageCatalogDescriptor, PackageCatalogPage, SkillImportResult } from '@agnes/protocol'
-import { CredentialsApi } from '@agnes/resource-control-web/credentials-api'
+import { CredentialError, CredentialsApi } from '@agnes/resource-control-web/credentials-api'
 import {
   ComputerUseCapability,
   type SettingsComputerUseView,
@@ -237,6 +237,7 @@ it.each([false, true])('shows connection names and reconciles unbind (recovery=%
 
 it('discovers installed channels and configures inside a dialog using immutable session context and native approval', async () => {
   const credentials = vi.spyOn(CredentialsApi.prototype, 'list').mockResolvedValue([])
+  const writeAccess = vi.spyOn(CredentialsApi.prototype, 'context').mockRejectedValue(new Error('offline'))
   const host = document.body.appendChild(document.createElement('div')),
     root = createRoot(host)
   const provider = {
@@ -344,9 +345,156 @@ it('discovers installed channels and configures inside a dialog using immutable 
     root.unmount()
   })
   credentials.mockRestore()
+  writeAccess.mockRestore()
+})
+
+it('creates a write-only credential next to the field it fills and keeps failures editable', async () => {
+  const canary = 'SYNTHETIC_CHANNEL_SECRET_51873'
+  const writable: Awaited<ReturnType<CredentialsApi['context']>> = {
+    profile: 'local-dev',
+    clientId: 'test',
+    permissions: ['packages.read', 'packages.activate', 'credentials.read', 'credentials.write'],
+    readOnly: false,
+  }
+  const context = vi.spyOn(CredentialsApi.prototype, 'context').mockResolvedValue(writable)
+  const list = vi.spyOn(CredentialsApi.prototype, 'list').mockResolvedValue([])
+  const create = vi
+    .spyOn(CredentialsApi.prototype, 'create')
+    .mockResolvedValueOnce({
+      id: 'secret://generic/feishu-app-id',
+      label: 'Feishu app id',
+      kind: 'api-key',
+      createdAt: '2026-11-16T00:00:00Z',
+      references: [],
+    })
+    .mockRejectedValueOnce(new CredentialError('denied'))
+  const host = document.body.appendChild(document.createElement('div')),
+    root = createRoot(host)
+  const provider = {
+    extension: 'plugin/feishu',
+    bindingAvailable: true,
+    configSchema: { type: 'object', properties: {} },
+    manifest: {
+      id: 'feishu',
+      displayName: 'Feishu',
+      credentials: { required: ['appId', 'appSecret'], optional: [] },
+    },
+  }
+  const call = vi.fn(async (method: string) => {
+    if (method === 'channels.overview')
+      return {
+        sessions: [{ sessionId: 'current', title: 'Release planning', cwd: 'D:/session' }],
+        channels: [{ provider, configurationRevision: 'revision', instances: [] }],
+      }
+    if (method === 'channels.context')
+      return {
+        sessionId: 'current',
+        title: 'Release planning',
+        workspace: 'D:/session',
+        agent: 'default',
+        agentTitle: { en: 'General assistant', 'zh-CN': '通用助手' },
+        instanceId: 's-123456abcdef-123456',
+      }
+    return { receipt: { state: 'approval-required' }, instanceId: 's-123456abcdef-123456' }
+  })
+  const data = {
+    call,
+    requestProfileApproval: vi.fn(),
+    sessionId: () => 'current',
+    openSettings: vi.fn(),
+  } as unknown as HomePageData
+  const byTestId = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)
+  const fill = async (id: string, value: string) =>
+    act(async () => {
+      const input = byTestId(id) as HTMLInputElement
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  const field = (key: string) =>
+    document.querySelector(`[aria-label="${key}"]`)?.closest<HTMLElement>('.channel-credential-field')
+  const createFor = (key: string) =>
+    field(key)?.querySelector<HTMLButtonElement>('[data-testid="channel-credential-create"]')
+  const clean = () =>
+    !document.body.innerHTML.includes(canary) &&
+    ![...document.querySelectorAll<HTMLInputElement>('input')].some((input) =>
+      input.value.includes(canary),
+    ) &&
+    !JSON.stringify(call.mock.calls).includes(canary)
+  try {
+    await act(async () => root.render(createElement(ChannelDialogHost, { data })))
+    await act(async () =>
+      window.dispatchEvent(new CustomEvent('agnes-channel-dialog', { detail: { sessionId: 'current' } })),
+    )
+    await vi.waitFor(() => expect(host.textContent).toContain('Feishu'))
+    await act(async () =>
+      [...host.querySelectorAll('button')].find((button) => button.textContent?.includes('Feishu'))!.click(),
+    )
+    // The entry sits beside the field it fills, not only behind Manage credentials.
+    await vi.waitFor(() => expect(createFor('appId')?.disabled).toBe(false))
+    expect(createFor('appSecret')?.disabled).toBe(false)
+    // One permission lookup serves every credential field of the form.
+    expect(context).toHaveBeenCalledTimes(1)
+    await act(async () => createFor('appId')!.click())
+    await fill('credential-label', 'Feishu app id')
+    await fill('credential-value', canary)
+    await act(async () => byTestId('credential-save')!.click())
+    await vi.waitFor(() => expect(byTestId('credential-editor')).toBeNull())
+    expect(create).toHaveBeenCalledWith('Feishu app id', canary)
+    expect(field('appId')?.textContent).toContain('Feishu app id')
+    expect(clean()).toBe(true)
+
+    // A refused save keeps the editor and the connection form usable, with a safe reason only.
+    await act(async () => createFor('appSecret')!.click())
+    await fill('credential-label', 'Feishu app secret')
+    await fill('credential-value', `${canary}-2`)
+    await act(async () => byTestId('credential-save')!.click())
+    await vi.waitFor(() => expect(byTestId('credential-error')?.textContent).toContain('permission'))
+    // The refused value is gone at once; only the name stays, and nothing resubmits a kept secret.
+    expect(clean()).toBe(true)
+    expect((byTestId('credential-value') as HTMLInputElement).value).toBe('')
+    expect((byTestId('credential-value') as HTMLInputElement).type).toBe('password')
+    expect(byTestId('credential-error')?.textContent).toContain('enter it again')
+    expect(byTestId('credential-error')?.querySelector('button')).toBeNull()
+    expect(byTestId('credential-editor')).toBeTruthy()
+    expect((byTestId('credential-label') as HTMLInputElement).disabled).toBe(false)
+    expect((byTestId('credential-label') as HTMLInputElement).value).toBe('Feishu app secret')
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(field('appSecret')?.textContent).not.toContain('Feishu app secret')
+    await act(async () => byTestId('credential-cancel')!.click())
+    await vi.waitFor(() => expect(byTestId('credential-editor')).toBeNull())
+    expect(clean()).toBe(true)
+
+    await act(async () =>
+      [...host.querySelectorAll('button')]
+        .find((button) => button.textContent === 'Connect and continue')!
+        .click(),
+    )
+    // The required secret is still missing, so nothing is configured with a partial reference set.
+    expect(call.mock.calls.some(([method]) => method === 'channels.configure')).toBe(false)
+    expect(list).toHaveBeenCalled()
+
+    // Without write permission the entry is offered but disabled with the reason.
+    await act(async () => closeChannelDialog())
+    context.mockResolvedValue({ ...writable, permissions: ['credentials.read'] })
+    await act(async () =>
+      window.dispatchEvent(
+        new CustomEvent('agnes-channel-dialog', {
+          detail: { sessionId: 'current', extension: 'plugin/feishu' },
+        }),
+      ),
+    )
+    await vi.waitFor(() => expect(createFor('appId')?.disabled).toBe(true))
+  } finally {
+    await act(async () => {
+      closeChannelDialog()
+      root.unmount()
+    })
+    vi.restoreAllMocks()
+  }
 })
 
 it('shows this session’s channel states and opens the exact existing connection for editing', async () => {
+  const writeAccess = vi.spyOn(CredentialsApi.prototype, 'context').mockRejectedValue(new Error('offline'))
   const credentials = vi.spyOn(CredentialsApi.prototype, 'list').mockResolvedValue([
     {
       id: 'secret://generic/token',
@@ -486,6 +634,7 @@ it('shows this session’s channel states and opens the exact existing connectio
     root.unmount()
   })
   credentials.mockRestore()
+  writeAccess.mockRestore()
 })
 
 it.each(['failed', 'skipped'] as const)('shows persisted partial capability results (%s)', (status) => {

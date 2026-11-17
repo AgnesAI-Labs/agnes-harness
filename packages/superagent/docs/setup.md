@@ -99,9 +99,11 @@ steps, and the defaults. Ask for one confirmation.
    agent GitHub account and add it to the repository with write access; accept the invitation as the agent account; and
    turn on the branch protection above. For Feishu, give Superagent a bot of its own:
    1. Create a second Feishu app (bot) on the Feishu open platform, besides the one the team already uses with AGH.
-   2. Add it as another instance of the AGH Feishu channel, on the Channels page. Do not pair any direct chat of this
-      instance with a plugin service, and do not bind its chats to a session: Superagent claims the whole instance,
-      and an instance already in use is refused.
+   2. Add it as another instance of the AGH Feishu channel: on the Channels page choose **Add dedicated connection**,
+      pick Feishu and enter the new app's credentials (**New credential** beside each field saves a value write-only).
+      This creates an instance that no session is bound to. Do not pair any direct chat of this instance with a plugin
+      service, and do not bind its chats to a session: Superagent claims the whole instance, and an instance already in
+      use is refused.
    3. Note the new instance's id. Superagent's settings list the running channel instances by plugin name and
       instance id, so the instance is chosen there.
 
