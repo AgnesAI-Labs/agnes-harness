@@ -3,7 +3,7 @@ import { Fragment, forwardRef } from 'react'
 import type { Translate } from '../locales/index.js'
 import { Disclosure } from '../ui/disclosure.js'
 import { Icon } from '../ui/icon.js'
-import { compact, costDetails } from './cost-format.js'
+import { compact, costDetails, isJudgmentCall } from './cost-format.js'
 
 type Call = UITurn['usage']['calls'][number]
 
@@ -120,9 +120,11 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
                 <span className="turn-usage-calls-title">
                   {chevron}
                   <span>
-                    {calls[0].purpose === 'title'
-                      ? t('turnactions.usage.backgroundTitleAria')
-                      : t('turnactions.usage.callDetails')}
+                    {isJudgmentCall(calls[0])
+                      ? t('cost.purpose.judgment')
+                      : calls[0].purpose === 'title'
+                        ? t('turnactions.usage.backgroundTitleAria')
+                        : t('turnactions.usage.callDetails')}
                   </span>
                 </span>
               }
@@ -170,9 +172,11 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
                       <span className="turn-call-row">
                         <span className="turn-call-n">
                           {chevron}
-                          {call.purpose === 'title'
-                            ? t('turnactions.usage.backgroundTitle')
-                            : calls.slice(0, index + 1).filter((entry) => entry.purpose !== 'title').length}
+                          {isJudgmentCall(call)
+                            ? t('cost.purpose.judgment')
+                            : call.purpose === 'title'
+                              ? t('turnactions.usage.backgroundTitle')
+                              : calls.slice(0, index + 1).filter((entry) => entry.purpose !== 'title').length}
                         </span>
                         <span>{call.tokens ? compact(call.tokens.input) : '—'}</span>
                         <span>{call.tokens ? compact(call.tokens.output) : '—'}</span>
@@ -195,8 +199,9 @@ export const TurnUsagePanel = forwardRef<HTMLDivElement, TurnUsagePanelProps>(fu
                       </span>
                     }
                     summaryProps={{
-                      'aria-label':
-                        call.purpose === 'title'
+                      'aria-label': isJudgmentCall(call)
+                        ? t('cost.purpose.judgment')
+                        : call.purpose === 'title'
                           ? t('turnactions.usage.backgroundTitleAria')
                           : t('turnactions.usage.callAria', {
                               index: calls.slice(0, index + 1).filter((entry) => entry.purpose !== 'title')

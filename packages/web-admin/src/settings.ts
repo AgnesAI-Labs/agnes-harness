@@ -21,8 +21,11 @@ import { oauthControls } from './oauth-controls.js'
 import { createAccountPickers } from './provider-picker.js'
 import { catalogueErrorText, compatibleModelsPanel } from './settings/account-compatible.js'
 import { accountForm, endpointHost, fieldError } from './settings/account-form.js'
+import { accountModelInputs } from './settings/account-model-inputs.js'
 import { accountNetworkFields } from './settings/account-network.js'
 import { bindAccountPage, linkedAccountRestorer, showAccountDiscard } from './settings/account-page.js'
+import { providerValue, renderAccountProviders } from './settings/account-provider-options.js'
+import { applySaveState, modelChoiceLabel } from './settings/account-save.js'
 import {
   accountWelcome,
   COMPATIBLE_PROVIDER,
@@ -135,6 +138,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       ui.thinking?.value,
       ui.contextWindow?.value,
       isCompatible() ? compatible.models().map((model) => model.id) : [],
+      modelInputs.signature(),
     ])
   let editingId: string | undefined
   let removingId: string | undefined
@@ -157,6 +161,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       : configuration?.provider
   }
   let providers: ConfigProvider[] = []
+  const modelInputs = accountModelInputs(optionalElement('config-model-inputs', 'div'), () => {
+    revision += 1
+    renderModelSettings()
+    updateButtons()
+  })
   const modelDrafts = new Map<string, ModelSettings>()
   let tested: ConfigTestResult | undefined
   let testPending = false
@@ -179,6 +188,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     },
     () => void test(),
   )
+  // A saved account has already been connected, so its models count as known even before a re-listing.
+  const catalogueKnown = (): boolean =>
+    isCompatible() && (compatible.hasListed() || !!selectedAccount()?.models.length)
   const canUseSavedModels = (): boolean => {
     const account = selectedAccount()
     return (
@@ -190,9 +202,6 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       !ui.apiKey.value
     )
   }
-  const authMethods = (provider: ConfigProvider) => provider.authMethods ?? [provider.authType ?? 'api-key']
-  const providerValue = (provider: ConfigProvider, auth: string) =>
-    auth === 'oauth' && authMethods(provider).includes('api-key') ? `${provider.id}:oauth` : provider.id
   const isOAuth = () => ui.authMethod.value === 'oauth'
   const hasUnverifiedSavedChanges = (): boolean => {
     const account = selectedAccount()
@@ -308,12 +317,15 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     ui.models.disabled = !connected || busy || !tested?.models.length || (!oauthSelected && !tested.verified)
     if (ui.thinking) ui.thinking.disabled = ui.models.disabled
     if (ui.contextWindow) ui.contextWindow.disabled = ui.models.disabled
-    ui.save.disabled =
-      !connected ||
-      busy ||
-      !providerId() ||
-      loadPhase === 'error' ||
-      (accountStep === 'connection' && oauthSelected && (!modelReadyForSave() || !ui.models.value))
+    modelInputs.render(chosenModel(), !connected || busy || !!oauth.operation())
+    applySaveState(ui.save, {
+      unavailable: !connected || busy || !providerId() || loadPhase === 'error',
+      step: accountStep,
+      oauth: oauthSelected,
+      oauthReady: modelReadyForSave(),
+      tested,
+      model: ui.models.value,
+    })
     ui.save.textContent = tr(accountStep === 'provider' ? 'accounts.continue' : 'accounts.save')
     form.sync({
       step: accountStep,
@@ -322,6 +334,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
       provider: providers.find((row) => row.id === providerId()),
       oauth: oauthSelected,
       tested,
+      catalogue: catalogueKnown(),
       timeouts: networkFields.values(),
     })
     ui.save.setAttribute('aria-busy', String(busy))
@@ -338,8 +351,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const renderModels = (models: readonly ConfigModel[] = tested?.models ?? []): void => {
     const previousModel = ui.models.value
     setSettingsSelectOptions(ui.models, [
-      option(models.length ? tr('settings.model.chooseSaved') : tr('settings.model.testFirst'), ''),
-      ...models.map((model) => option(`${model.name} · ${model.id}`, model.id)),
+      option(modelChoiceLabel(models.length, catalogueKnown()), ''),
+      ...models.map((model) => option(model.name.trim() || model.id, model.id)),
     ])
     const savedModel = models.some((model) => model.id === previousModel)
       ? previousModel
@@ -351,7 +364,8 @@ export function createSettingsController(options: SettingsControllerOptions): Se
 
   const chosenModel = () => tested?.models.find((entry) => entry.id === ui.models.value)
   const readModelSettings = (): ModelSettings => form.readModelSettings(chosenModel())
-  const renderModelSettings = (): void =>
+  const renderModelSettings = (): void => {
+    modelInputs.render(chosenModel(), !connected || testPending || savePending || !!oauth.operation())
     form.renderModelSettings(
       chosenModel(),
       modelDrafts.get(ui.models.value) ??
@@ -359,33 +373,13 @@ export function createSettingsController(options: SettingsControllerOptions): Se
         chosenModel()?.defaultSettings ??
         {},
     )
+  }
 
   const renderKeyHint = (): void =>
     renderAccountKeyHint(ui, savedProvider(), providerId(), connected, isOAuth())
 
   const renderProviders = (): void => {
-    const savedProviderId = savedProvider()?.id
-    const groups = (['api-key', 'oauth'] as const).map((method) => ({
-      label: method === 'oauth' ? tr('settings.provider.subscriptionLogin') : 'API Key',
-      options: providers
-        .filter((provider) => authMethods(provider).includes(method))
-        .map((provider) =>
-          option(
-            method === 'oauth'
-              ? `${provider.label.replace(/\s*subscription$/i, '')}${tr('settings.provider.subscriptionLoginSuffix')}`
-              : provider.label,
-            providerValue(provider, method),
-          ),
-        ),
-    }))
-    setSettingsSelectOptions(
-      ui.provider,
-      [option(providers.length ? tr('settings.provider.choose') : tr('settings.provider.none'), '')],
-      groups,
-    )
-    if (savedProviderId && providers.some((provider) => provider.id === savedProviderId))
-      ui.provider.value = savedProviderId
-    else if (providers[0]) ui.provider.value = providers[0].id
+    renderAccountProviders(ui, providers, savedProvider()?.id)
     const selected = providers.find((provider) => provider.id === providerId())
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
     setSettingsSelectOptions(
@@ -656,7 +650,11 @@ export function createSettingsController(options: SettingsControllerOptions): Se
           ...(accountName && editingId ? { label: accountName.value.trim() } : {}),
           model: modelId,
           networkTimeouts,
-          ...(isCompatible() ? { models: compatible.models(modelDrafts) } : {}),
+          ...(isCompatible()
+            ? { models: modelInputs.models(compatible.models(modelDrafts)) }
+            : modelInputs.declarations(tested?.models ?? []).length
+              ? { models: modelInputs.declarations(tested?.models ?? []) }
+              : {}),
           ...(defaultSettings === undefined ? {} : { defaultSettings }),
           ...(configuration ? { expectedRevision: configuration.revision } : {}),
         }))
@@ -738,6 +736,7 @@ export function createSettingsController(options: SettingsControllerOptions): Se
   const editAccount = (id?: string): void => {
     if (savePending || testPending) return
     modelDrafts.clear()
+    modelInputs.reset()
     editingId = id ?? `acct-${crypto.randomUUID()}`
     suggestedAccountLabel = undefined
     removingId = undefined
@@ -924,10 +923,9 @@ export function createSettingsController(options: SettingsControllerOptions): Se
     suggestLabel(selected?.label ?? '')
     // A compatible endpoint's registry address is a stand-in; the person gives the real one.
     ui.baseUrl.value = isCompatible() ? '' : (selected?.baseUrl ?? '')
-    // Its address is the first thing it needs, so the section holding it opens.
-    if (isCompatible() && advanced) setDisclosureOpen(advanced, true)
     ui.apiKey.value = ''
     compatible.reset([])
+    modelInputs.reset()
     const methods = selected?.authMethods ?? [selected?.authType ?? 'api-key']
     setSettingsSelectOptions(
       ui.authMethod,

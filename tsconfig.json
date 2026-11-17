@@ -330,6 +330,24 @@
     },
     {
       "path": "packages/distribution"
+    },
+    {
+      "path": "packages/judgment"
+    },
+    {
+      "path": "packages/judgment/tsconfig.test.json"
+    },
+    {
+      "path": "packages/judgment-ui"
+    },
+    {
+      "path": "packages/superagent"
+    },
+    {
+      "path": "packages/superagent-ui"
+    },
+    {
+      "path": "packages/superagent/tsconfig.test.json"
     }
   ]
 }

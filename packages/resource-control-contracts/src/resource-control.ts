@@ -242,6 +242,15 @@ export const RESOURCE_CONTROL_METHODS = Object.freeze({
     'effect',
     'mcp.reconnect',
   ),
+  // Signing out drops the server's live connection without starting a candidate, unlike reconnect,
+  // and records the sign-in as pending. It changes the server's configuration surface, so it sits
+  // behind 'mcp.manage' like create/update/remove and oauth.status.set.
+  '_agnes/v1/mcp.servers.oauth.signOut': contract(
+    R.McpServerReconnectParams,
+    R.ResourceOperationReceipt,
+    'effect',
+    'mcp.manage',
+  ),
   // Pure durable-journal read: mirrors '_agnes/v1/mcp.servers.status' exactly (same params type,
   // same 'read'/'mcp.read' pairing) - it is the same kind of operation, just projecting a narrower
   // slice (authorizationStatus/lastSafeError) of the same descriptor mcp.servers.get already

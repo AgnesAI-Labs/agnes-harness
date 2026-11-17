@@ -30,7 +30,7 @@ const setRefinement = (dataDir: string, enabled: boolean): void => {
   const store = new RefinementSettingsStore(dataDir, 'local-dev')
   store.save({ enabled, mode: 'manual' }, store.read().revision)
 }
-/** A data directory whose default profile has refinement switched on, so agnes/refine registers its tools. */
+/** A data directory whose default profile has refinement switched on. */
 const refinementOn = (): string => {
   const dataDir = scratch()
   setRefinement(dataDir, true)
@@ -45,8 +45,9 @@ const SUPPLIED: Record<string, string[]> = {
   'agnes/tools-search': ['tool:grep', 'tool:find', 'tool:ls'],
   'agnes/tools-web': ['tool:web_fetch', 'tool:web_search'],
   'agnes/compaction': ['tool:compact'],
-  // Refinement is off by default: the extension loads and registers nothing.
-  'agnes/refine': [],
+  // Registered whatever the switch says (off by default): Core offers them only to sessions opened
+  // while it is on (test/refinement/switch.slow.test.ts).
+  'agnes/refine': ['tool:harness_propose', 'tool:harness_refine', 'tool:harness_inspect'],
   'agnes/subagent': [
     'tool:subagent_fork',
     'tool:subagent_spawn',
@@ -408,9 +409,9 @@ describe('a third party replaces a migrated builtin and gives way', () => {
     await h.host.close()
   })
 
-  // A running container keeps the tool set it was assembled with: a toggle saved later must not
-  // reach it when the refine row is mounted again (here: handed to a plugin row and back), or a
-  // running session would see its deferred-tool list change.
+  // The refine row registers the same tool set whatever the switch says, also when it is mounted
+  // again (here: handed to a plugin row and back), so a running session's tool list never changes;
+  // which sessions are offered the tools is decided per session in Core.
   for (const [from, to] of [
     [false, true],
     [true, false],
@@ -422,8 +423,7 @@ describe('a third party replaces a migrated builtin and gives way', () => {
       const h = await pluginHost(pluginSource(`ctx.tools.register(tool('harness_propose'))`, 'plugin', row), {
         dataDir,
       })
-      const assembled = from ? REFINE_ON : []
-      expect(h.host.kernel.registrations('agnes/refine')).toEqual(assembled)
+      expect(h.host.kernel.registrations('agnes/refine')).toEqual(REFINE_ON)
       setRefinement(dataDir, to)
       for (const disabled of [false, true]) {
         const report = await h.host.applyRuntimeTarget(targetOf([pluginRow(row, 'plugin', disabled)]))
@@ -431,7 +431,7 @@ describe('a third party replaces a migrated builtin and gives way', () => {
         expect(report.ok).toBe(true)
       }
       expect(listed(h, 'agnes/refine')?.loaded).toBe(true)
-      expect(h.host.kernel.registrations('agnes/refine')).toEqual(assembled)
+      expect(h.host.kernel.registrations('agnes/refine')).toEqual(REFINE_ON)
       await h.host.close()
     })
 

@@ -132,3 +132,34 @@ describe('WorkspaceBinding authority', () => {
     expect(() => extendsWorkspaceBinding(parent, envelope() as never, 'child')).toThrow('Host authority')
   })
 })
+
+it('binds authenticated legacy document grants to the exact session, workspace and root', () => {
+  const authority = new WorkspaceBindingAuthority()
+  const grant = {
+    sessionKey: 'session-a',
+    workspaceId: 'a'.repeat(64),
+    root: '/work/a',
+    directoryIdentity: '12:34',
+    source: 'existing' as const,
+  }
+  const accepted = authority.accept(envelope({ legacyChatReadGrant: grant }), 'session-a')
+  expect(accepted).toHaveProperty('legacyChatReadGrant', grant)
+  for (const changed of [
+    { sessionKey: 'other' },
+    { workspaceId: 'b'.repeat(64) },
+    { root: '/work/b' },
+    { source: 'browser' },
+    { directoryIdentity: 'forged' },
+    { directoryIdentity: 42 },
+  ]) {
+    expect(() =>
+      authority.accept(envelope({ legacyChatReadGrant: { ...grant, ...changed } }), 'session-a'),
+    ).toThrow('E_WORKSPACE_UNTRUSTED')
+  }
+  expect(inheritWorkspaceBinding(accepted, 'child')).toHaveProperty('legacyChatReadGrant', {
+    ...grant,
+    sessionKey: 'child',
+    source: 'derived',
+  })
+  expect(sameWorkspaceBindingAuthority(accepted, authority.accept(envelope(), 'session-a'))).toBe(false)
+})

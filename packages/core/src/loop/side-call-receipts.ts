@@ -7,7 +7,7 @@ import { sessionIdentity } from './scope.js'
 const SETTLE_MS = 5_000
 
 /** A side call between its claim and its settlement, and how to cut it short. */
-type Running = Readonly<{ turn: number; settled: Promise<void>; abort: () => void }>
+type Running = Readonly<{ turn: number; caller?: string; settled: Promise<void>; abort: () => void }>
 
 /** Side calls running in this process, by session and effect id. */
 const running = new WeakMap<object, Map<string, Running>>()
@@ -21,7 +21,12 @@ export const inFlight = () =>
   new CoreError('E_RELATION', 'Side call invocation is already running', { reason: 'invocation-in-flight' })
 
 /** Whether a side call of this session is between its claim and its settlement. */
-export function sideCallInFlight(s: SessionImpl): boolean {
+export function sideCallInFlight(s: SessionImpl, caller?: string): boolean {
+  return [...(running.get(sessionIdentity(s))?.values() ?? [])].some((call) => call.caller === caller)
+}
+
+/** Terminal turn cleanup includes every caller, unlike the loop's completion guard. */
+export function anySideCallInFlight(s: SessionImpl): boolean {
   return (running.get(sessionIdentity(s))?.size ?? 0) > 0
 }
 
@@ -30,7 +35,7 @@ export function sideCallInFlight(s: SessionImpl): boolean {
  * turn ends under the call, and `release` reports the call settled. Refused while the id is already
  * running, and once the turn has begun to end.
  */
-export function claimSideCall(s: SessionImpl, effectId: string, turn: number) {
+export function claimSideCall(s: SessionImpl, effectId: string, turn: number, caller?: string) {
   if (s.closingOrClosed) throw new CoreError('E_CLOSED', 'session closed')
   const owner = sessionIdentity(s)
   const mark = closing.get(owner)
@@ -43,7 +48,12 @@ export function claimSideCall(s: SessionImpl, effectId: string, turn: number) {
   const settled = new Promise<void>((resolve) => {
     release = resolve
   })
-  calls.set(effectId, { turn, settled, abort: () => controller.abort() })
+  calls.set(effectId, {
+    turn,
+    ...(caller === undefined ? {} : { caller }),
+    settled,
+    abort: () => controller.abort(),
+  })
   running.set(owner, calls)
   return {
     signal: controller.signal,
@@ -69,8 +79,9 @@ export async function settleSideCalls(s: SessionImpl, opSeq: Seq | null): Promis
   const owner = sessionIdentity(s)
   const turn = s.op()?.meta.turn
   const calls = [...(running.get(owner) ?? [])].filter(([, call]) => call.turn === turn)
-  if (!calls.length || opSeq === null) return
+  if (opSeq === null) return
   closing.set(owner, opSeq)
+  if (!calls.length) return
   for (const [, call] of calls) call.abort()
   const bound = Math.min(SETTLE_MS, s.d.closeDrainMs ?? SETTLE_MS)
   if (await settlesWithin(Promise.all(calls.map(([, call]) => call.settled)), bound)) return

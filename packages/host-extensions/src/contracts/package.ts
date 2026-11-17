@@ -3,6 +3,7 @@ import type {
   CompactionPlan,
   DirectProposal,
   Enforcement,
+  HostSpawnSandboxWorkspaceBackend,
   InspectOutcome,
   InspectRequest,
   Operation,
@@ -30,7 +31,6 @@ import type { PrivacyTrajectoryCapability } from '@agnes/host-artifacts/trajecto
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import type { ComputerUseBackendProvider } from '@agnes/host-computer-use/computer-use/windows-driver-backend'
-import type { RefinementSettingsPort } from '@agnes/host-infrastructure/refinement-settings'
 import type { AgnesPluginManifestEntry, RuntimePluginSnapshot } from '@agnes/package-manager'
 import type { PackageSnapshotCandidateRef, VerifiedRowEntry } from '@agnes/plugin-runtime/host'
 import type { JsonValue } from '@agnes/protocol'
@@ -137,11 +137,10 @@ export type SeamInitContext = {
   }>
   /** Available to ecosystem extensions after the seam phase, never a raw exec substitute. */
   sandbox?: SandboxSeam
-  /** Read-only refinement switch of this profile, supplied only where the release grants it. */
-  refinementSettings?: RefinementSettingsPort
   /**
-   * Connects the refinement tools to Core's managed refinement, supplied with the switch: the plugin
-   * hands over its planner and gets each session's runs, found by session key and lane.
+   * Connects the refinement tools to Core's managed refinement, supplied only where the release
+   * grants it: the plugin hands over its planner and gets each session's runs, found by session key
+   * and lane. Core offers the tools only to sessions that run task experience.
    */
   refinementRuns?: (planner: RefinementPlanner) => RefinementRunsPort
   /**
@@ -222,15 +221,18 @@ export type SandboxWorkspaceProbeFactory = (input: {
   }>
   log: Logger
   signal?: AbortSignal
+  /** The Host's own Windows write-restriction offer; the probe never rewrites argv for it. */
+  hostSpawn?: HostSpawnSandboxWorkspaceBackend
 }) => Promise<
   SandboxWorkspaceBackend &
     Readonly<{
-      name: 'none' | 'bwrap' | 'seatbelt'
+      name: 'none' | 'bwrap' | 'seatbelt' | 'windows-acl'
       execBackend: SandboxExecBackend
       enforcement: Enforcement
       degraded: boolean
       implementation?: 'implemented' | 'unimplemented' | 'unknown'
       probeState?: 'ready' | 'failed' | 'unprobed'
+      hostSpawn?: HostSpawnSandboxWorkspaceBackend
     }>
 >
 
@@ -256,6 +258,11 @@ export type IsolatedEcosystemPreparation = {
   ): Promise<unknown>
 }
 export type IsolatedEcosystemFactory = (ctx: SeamInitContext) => Promise<IsolatedEcosystemPreparation>
+
+/** Release-owned descriptor kept outside the public ExtensionManifest protocol. */
+export type BuiltinPluginDeclaration = Readonly<
+  Pick<AgnesPluginManifestEntry, 'id' | 'export' | 'inject' | 'runtime'>
+>
 
 export type PackageModule = {
   /**
@@ -287,7 +294,7 @@ export type PackageModule = {
   /** Session store published by this package. Host reads it when adapters open, not from `apply()`. */
   persistenceProvider?: PersistenceProvider
   /** Release-embedded manifests. Only a loader owned by the executable can populate these. */
-  embeddedExtensions?: readonly ExtensionManifest[]
+  embeddedExtensions?: readonly (ExtensionManifest & { readonly hostPlugin?: BuiltinPluginDeclaration })[]
   extensionEntry?: string
 }
 export interface PackageLoader {

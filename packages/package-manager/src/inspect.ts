@@ -14,6 +14,7 @@ import {
 import { readApplicationAssets } from './application-assets.js'
 import { parseApplicationContract } from './application-contract.js'
 import { parsePackageBundleContract, preflightPackageBundles } from './bundle-contract.js'
+import { provenBundledOrigin } from './bundled-origin.js'
 import { normalizeClientContribution, resolveClientAssets } from './client-assets.js'
 import { containedEntry } from './entry-path.js'
 import { PackageError } from './errors.js'
@@ -121,6 +122,34 @@ function diff(
       compare(canonical(a), canonical(b)),
     ),
   }
+}
+
+function previewWarnings(
+  fetched: FetchedSource,
+  license: unknown,
+  capabilityDiff: PackageCapabilityDiff,
+  updating: boolean,
+): PackagePreview['warnings'] {
+  const warnings: PackagePreview['warnings'] = fetched.provenance?.signatureVerified
+    ? []
+    : [{ code: 'unverified-provenance', safeMessage: 'Package signature has not been verified.' }]
+  if (!license || license === 'UNLICENSED')
+    warnings.push({ code: 'unlicensed', safeMessage: 'No package license was declared.' })
+  if (capabilityDiff.added.length)
+    warnings.push({ code: 'capability-change', safeMessage: 'Capabilities require a new trust decision.' })
+  if (capabilityDiff.runtimeSupportRemoved.length)
+    warnings.push({
+      code: 'runtime-support-change',
+      safeMessage: 'Previously declared runtime support was removed.',
+    })
+  if (updating && capabilityDiff.dependenciesAdded.length)
+    warnings.push({ code: 'dependency-change', safeMessage: 'Package dependencies were added or changed.' })
+  if (capabilityDiff.serviceGrantsAdded.length)
+    warnings.push({
+      code: 'service-grant-change',
+      safeMessage: 'Surface service requirements were added or changed.',
+    })
+  return warnings
 }
 
 /** Reads only data files from an already acquired staging tree. No module loader is involved. */
@@ -452,25 +481,10 @@ export function inspectVerifiedTree(
     previousAtoms = new Set(capabilityAtoms(input.previous?.declaredCapabilities))
   capabilityDiff.added.push(...difference(currentAtoms, previousAtoms))
   capabilityDiff.removed.push(...difference(previousAtoms, currentAtoms))
-  const warnings: PackagePreview['warnings'] = fetched.provenance?.signatureVerified
-    ? []
-    : [{ code: 'unverified-provenance', safeMessage: 'Package signature has not been verified.' }]
-  if (!pkg.license || pkg.license === 'UNLICENSED')
-    warnings.push({ code: 'unlicensed', safeMessage: 'No package license was declared.' })
-  if (capabilityDiff.added.length)
-    warnings.push({ code: 'capability-change', safeMessage: 'Capabilities require a new trust decision.' })
-  if (capabilityDiff.runtimeSupportRemoved.length)
-    warnings.push({
-      code: 'runtime-support-change',
-      safeMessage: 'Previously declared runtime support was removed.',
-    })
-  if (input.previous && capabilityDiff.dependenciesAdded.length)
-    warnings.push({ code: 'dependency-change', safeMessage: 'Package dependencies were added or changed.' })
-  if (capabilityDiff.serviceGrantsAdded.length)
-    warnings.push({
-      code: 'service-grant-change',
-      safeMessage: 'Surface service requirements were added or changed.',
-    })
+  const warnings = previewWarnings(fetched, pkg.license, capabilityDiff, input.previous !== undefined)
+  // Content-bound, never a signature: the shipped copy under its canonical source, or nothing.
+  const identity = { id: String(pkg.name), version: String(pkg.version), source: input.source }
+  const bundledOrigin = provenBundledOrigin({ ...identity, treeIntegrity, rows: plugins })
   const preview = {
     id: pkg.name,
     version: pkg.version,
@@ -496,6 +510,7 @@ export function inspectVerifiedTree(
     }),
     ...(displayMetadata?.ok ? { metadata: displayMetadata.value } : {}),
     ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
+    ...(bundledOrigin ? { bundledOrigin } : {}),
     ...(provides === undefined ? {} : { provides }),
     dependencies,
     capabilityDiff,

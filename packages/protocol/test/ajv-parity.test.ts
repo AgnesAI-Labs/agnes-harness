@@ -108,11 +108,38 @@ import {
 import { SessionIntegrityParams, SessionIntegrityStatus } from '../src/session-integrity.js'
 import { SessionRuntimeDescriptor, SessionRuntimeParams } from '../src/session-runtime.js'
 import { SessionToolsParams, SessionToolsResult } from '../src/session-tools.js'
+import { SuperagentSessionUpgradeParams, SuperagentSessionUpgradeResult } from '../src/superagent.js'
 import { intelligentUiSamples } from './parity-intelligent-ui-samples.js'
 
 type Json = Record<string, unknown>
 type FixtureRow = { id: string; payload: unknown }
 type Sample = { valid: unknown; invalid: unknown[]; note: string }
+
+const SUPERAGENT_ID = 'https://agnes.ai/schema/superagent.json'
+const SUPERAGENT_SAMPLES: Record<string, Sample> = {
+  params: {
+    valid: { integrity: 'sha256-payload', incarnation: 'current-service' },
+    invalid: [
+      {},
+      { integrity: 'sha256-payload' },
+      { integrity: '', incarnation: 'service' },
+      { integrity: 'a'.repeat(257), incarnation: 'service' },
+      { integrity: 'payload', incarnation: 'a'.repeat(129) },
+      { integrity: 'payload', incarnation: 'service', sessionIds: ['claimed'] },
+    ],
+    note: 'private Superagent upgrade carries service identity and no caller roster',
+  },
+  result: {
+    valid: { sessionIds: ['registered'] },
+    invalid: [
+      {},
+      { sessionIds: ['duplicate', 'duplicate'] },
+      { sessionIds: [''] },
+      { sessionIds: ['a'.repeat(1025)] },
+    ],
+    note: 'upgrade returns the service-owned roster only',
+  },
+}
 
 const pkgRoot = fileURLToPath(new URL('..', import.meta.url))
 
@@ -256,6 +283,10 @@ ajv.addSchema({
   },
 })
 ajv.addSchema({ $id: SESSION_INTEGRITY_ID, $defs: { SessionIntegrityParams, SessionIntegrityStatus } })
+ajv.addSchema({
+  $id: SUPERAGENT_ID,
+  $defs: { SuperagentSessionUpgradeParams, SuperagentSessionUpgradeResult },
+})
 ajv.addSchema({ $id: SESSION_TOOLS_ID, $defs: { SessionToolsParams, SessionToolsResult } })
 ajv.addSchema({ $id: AGENTS_ID, $defs: { AgentResolveParams, AgentPlan } })
 ajv.addSchema({ $id: SESSION_RUNTIME_ID, $defs: { SessionRuntimeParams, SessionRuntimeDescriptor } })
@@ -361,6 +392,7 @@ const SESSION_DEFS: Record<string, TSchema> = {
   StepEnd: SessionGen.StepEnd,
   SystemInputPresentation: SessionGen.SystemInputPresentation,
   SystemInput: SessionGen.SystemInput,
+  InputDeliverer: SessionGen.InputDeliverer,
   UserMessage: SessionGen.UserMessage,
   AssistantMessage: SessionGen.AssistantMessage,
   ResolvedToolCallPolicy: SessionGen.ResolvedToolCallPolicy,
@@ -425,6 +457,12 @@ const AGNES_DEFS: Record<string, TSchema> = {
   FactChainEdge: AgnesGen.FactChainEdge,
   FactChainGap: AgnesGen.FactChainGap,
   FactChainResult: AgnesGen.FactChainResult,
+  ManagedInputListParams: AgnesGen.ManagedInputListParams,
+  ManagedInputListResult: AgnesGen.ManagedInputListResult,
+  ManagedInputGetParams: AgnesGen.ManagedInputGetParams,
+  ManagedInputGetResult: AgnesGen.ManagedInputGetResult,
+  ManagedInputDecideParams: AgnesGen.ManagedInputDecideParams,
+  ManagedInputDecideResult: AgnesGen.ManagedInputDecideResult,
 
   AuthoringFile: AgnesGen.AuthoringFile,
   AuthoringOrigin: AgnesGen.AuthoringOrigin,
@@ -525,6 +563,7 @@ const AGNES_DEFS: Record<string, TSchema> = {
 
   BudgetState: AgnesGen.BudgetState,
   SystemInput: AgnesGen.SystemInput,
+  InputDeliverer: AgnesGen.InputDeliverer,
   ArtifactRef: AgnesGen.ArtifactRef,
   ArtifactJob: AgnesGen.ArtifactJob,
   ArtifactReadParams: AgnesGen.ArtifactReadParams,
@@ -1463,6 +1502,17 @@ const SESSION_SAMPLES: Record<string, Sample> = {
     ],
     note: 'One bounded platform notification owns machine data and presentation.',
   },
+  InputDeliverer: {
+    valid: { kind: 'bundled-app', appId: '@agnes/superagent/superagent' },
+    invalid: [
+      { kind: 'bundled-app' },
+      { kind: 'person', appId: 'x' },
+      { kind: 'bundled-app', appId: '' },
+      { kind: 'bundled-app', appId: rep(257) },
+      { kind: 'bundled-app', appId: 'x', trusted: true },
+    ],
+    note: 'A display-only, closed and bounded fact the backend stamps; no other kind exists.',
+  },
   UserMessage: {
     valid: userMessageOk,
     invalid: [
@@ -2395,6 +2445,153 @@ const AGNES_SAMPLES: Record<string, Sample> = {
     note: 'bounded immutable read watermark',
   },
 
+  ManagedInputListParams: {
+    valid: {},
+    invalid: [{ sessionId: 'owned' }, { owner: 'plugin' }],
+    note: 'owner input list: no session, no key, no caller-chosen owner',
+  },
+  ManagedInputListResult: {
+    valid: {
+      inputs: [
+        {
+          sessionId: 's1',
+          key: 'k1',
+          kind: 'ownerMessage',
+          state: 'needsOwner',
+          reason: 'receiptUnknown',
+          version: 2,
+          at: '2026-11-14T00:00:00Z',
+        },
+        {
+          sessionId: 's1',
+          key: 'k2',
+          kind: 'ownerMessage',
+          state: 'enqueued',
+          reason: 'busy',
+          version: 2,
+          at: '2026-11-14T00:00:00Z',
+          held: 'gatesUnreadable',
+        },
+      ],
+      parkedReceipts: [
+        {
+          sessionId: null,
+          receiptId: 'r1',
+          service: 'companion',
+          kind: 'message',
+          text: 'hi',
+          at: '',
+          attempts: 5,
+        },
+      ],
+    },
+    invalid: [
+      { inputs: [] },
+      {
+        inputs: [
+          {
+            sessionId: 's1',
+            key: 'k1',
+            kind: 'ownerMessage',
+            state: 'needsOwner',
+            reason: 'x',
+            version: 1,
+            at: '',
+            held: 'stuck',
+          },
+        ],
+        parkedReceipts: [],
+      },
+      {
+        inputs: [],
+        parkedReceipts: [{ receiptId: 'r1', service: 's', kind: 'message', text: '', at: '', attempts: 5 }],
+      },
+    ],
+    note: 'every input waiting on the owner or held without progress, and every parked receipt, across sessions',
+  },
+  ManagedInputGetParams: {
+    valid: { sessionId: 'owned', key: 'k1' },
+    invalid: [
+      { sessionId: 'owned', key: '' },
+      { sessionId: 'owned', key: 'k'.repeat(257) },
+      { sessionId: 'owned' },
+    ],
+    note: 'owner input review read: one session, one admission key',
+  },
+  ManagedInputGetResult: {
+    valid: {
+      input: {
+        key: 'k1',
+        kind: 'legacyOwnerMessage',
+        state: 'consumed',
+        reason: 'eligible',
+        version: 2,
+        text: null,
+        source: { kind: 'legacy' },
+        binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
+        turn: 3,
+        seq: 9,
+        history: [
+          { version: 1, state: 'queued', reason: 'eligible', at: '2026-11-14T00:00:00Z', by: 'platform' },
+        ],
+      },
+      parkedReceipts: [
+        { receiptId: 'r1', service: 'companion', kind: 'action', text: '', at: '', attempts: 5 },
+      ],
+    },
+    invalid: [
+      { input: null },
+      { input: {}, parkedReceipts: [] },
+      {
+        input: null,
+        parkedReceipts: [{ receiptId: 'r1', service: 's', kind: 'reply', text: '', at: '', attempts: 5 }],
+      },
+      {
+        input: {
+          key: 'k1',
+          kind: 'ownerMessage',
+          state: 'absent',
+          reason: 'eligible',
+          version: 1,
+          text: 'x',
+          source: null,
+          binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
+          history: [],
+        },
+        parkedReceipts: [],
+      },
+      {
+        input: {
+          key: 'k1',
+          kind: 'ownerMessage',
+          state: 'queued',
+          reason: 'eligible',
+          version: 1,
+          text: 'x',
+          source: null,
+          binding: { taskId: 'T-1', taskGeneration: 0, startKey: 'start' },
+          history: [{ version: 1, state: 'queued', reason: 'eligible', at: '', by: 'plugin' }],
+        },
+        parkedReceipts: [],
+      },
+    ],
+    note: 'the owner-only review projection of one input, or null, beside the parked receipts',
+  },
+  ManagedInputDecideParams: {
+    valid: { sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'deliver', version: 2 } },
+    invalid: [
+      { sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'deliver' } },
+      { sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'redeliver', version: 2 } },
+      { sessionId: 'owned', target: { kind: 'receipt', receiptId: 'r1', decision: 'retain' } },
+    ],
+    note: 'owner decision on one input at a shown version, or on one parked receipt',
+  },
+  ManagedInputDecideResult: {
+    valid: { receipt: 'pending' },
+    invalid: [{ receipt: 'acked' }, { state: 'retained', version: 0 }],
+    note: 'the new input state and version, or the receipt outcome',
+  },
+
   SystemPromptConfig: {
     note: 'prompt and local request snapshot boundary',
     valid: { personaPrefix: 'hello' },
@@ -2777,6 +2974,7 @@ const AGNES_SAMPLES: Record<string, Sample> = {
 
   BudgetState: SESSION_SAMPLES.BudgetState as Sample,
   SystemInput: SESSION_SAMPLES.SystemInput as Sample,
+  InputDeliverer: SESSION_SAMPLES.InputDeliverer as Sample,
   ArtifactRef: SESSION_SAMPLES.ArtifactRef as Sample,
   ArtifactJob: SESSION_SAMPLES.ArtifactJob as Sample,
   Credential: {
@@ -4588,8 +4786,17 @@ const AGNES_SAMPLES: Record<string, Sample> = {
       sessionCount: 2,
       available: true,
       kind: 'chats',
+      managedRole: 'current',
     },
     invalid: [
+      {
+        path: '/project',
+        name: 'project',
+        lastUsedAt: null,
+        sessionCount: 0,
+        available: true,
+        managedRole: 'legacy',
+      },
       { path: '', name: 'project', lastUsedAt: null, sessionCount: 0, available: true },
       {
         path: '/workspace/project',
@@ -7754,6 +7961,7 @@ function resourceControlSamples(): Record<ResourceControlSampleName, Sample> {
     McpHttpSecretBinding: ok(httpBinding, [stdioBinding]),
     McpOAuthSecretBinding: ok(oauthBinding, [
       { kind: 'oauth', staticClientId: 'test-oauth-client', extraField: 'nope' },
+      { kind: 'oauth', staticClientId: 'test-oauth-client', clientSecretRef: 'plain-secret' },
     ]),
     McpToolPolicy: ok({ allow: ['search'] }),
     McpToolDisclosure: ok('on-demand', ['lazy']),
@@ -7867,6 +8075,35 @@ const webhookRuleSample = {
 }
 const webhookConfigSample = { enabled: false, path: '/hooks/events', maxPayloadBytes: 262144 }
 const AppSamples: Record<string, Sample> = {
+  ManagedWorkspaceGrantsListParams: {
+    note: 'Owner workspace grants, optionally for one package.',
+    valid: { packageId: '@example/companion' },
+    invalid: [{ packageId: '' }, { owner: 'plugin/0123456789abcdef' }],
+  },
+  ManagedWorkspaceGrantParams: {
+    note: 'Owner workspace grant names a package and a workspace path.',
+    valid: { packageId: '@example/companion', workspace: '/work/repo' },
+    invalid: [
+      { packageId: '@example/companion' },
+      { packageId: '', workspace: '/work/repo' },
+      { packageId: 'p', workspace: '/w', owner: 'plugin/0123456789abcdef' },
+    ],
+  },
+  ManagedWorkspaceGrant: {
+    note: 'A grant by package name and canonical root.',
+    valid: { packageId: '@example/companion', workspace: '/work/repo' },
+    invalid: [{ owner: 'plugin/0123456789abcdef', workspace: '/work/repo' }],
+  },
+  ManagedWorkspaceGrantsList: {
+    note: 'Grants by package name, never by plugin row.',
+    valid: { items: [{ packageId: '@example/companion', workspace: '/work/repo' }] },
+    invalid: [{ items: [{ owner: 'plugin/0123456789abcdef', workspace: '/work/repo' }] }],
+  },
+  ManagedWorkspaceGrantChange: {
+    note: 'Grant change by package name and canonical root.',
+    valid: { packageId: '@example/companion', workspace: '/work/repo', changed: true },
+    invalid: [{ packageId: '@example/companion', workspace: '/work/repo' }],
+  },
   AdminCredentialDelete: {
     valid: { id: 'secret://generic/11111111-1111-4111-8111-111111111111', force: true, confirm: true },
     invalid: [{ id: 'secret://generic/11111111-1111-4111-8111-111111111111', actor: 'forged' }],
@@ -8063,32 +8300,183 @@ const AppSamples: Record<string, Sample> = {
     ],
     note: 'safe aggregate with no paths or secrets',
   },
-  AdminMcpOAuthSave: {
+  AdminMcpOAuthGet: {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', extra: 1 },
+    ],
+    note: 'sign-in summary lookup',
+  },
+  AdminMcpOAuthSummary: {
     valid: {
-      serverId: 'github',
-      credential: {
-        provider: 'fixture',
-        accessToken: 'fixture-token',
-        refreshToken: 'synthetic-refresh',
-        expiresAt: 0,
+      epoch: 0,
+      signedIn: true,
+      refreshable: true,
+      expiresAt: 1,
+      scope: ['read'],
+      requiredScope: [],
+      client: { clientId: 'client-1', redirectUri: 'http://127.0.0.1:4177/oauth/github/callback' },
+    },
+    invalid: [
+      { epoch: 0, signedIn: true, refreshable: true, scope: [], requiredScope: [], accessToken: 'leak' },
+      { epoch: -1, signedIn: false, refreshable: false, scope: [], requiredScope: [] },
+      { epoch: 0, signedIn: false, refreshable: false, scope: ['a b'], requiredScope: [] },
+      {
+        epoch: 0,
+        signedIn: false,
+        refreshable: false,
         scope: [],
-        grantId: 'fixture-grant',
+        requiredScope: [],
+        client: { clientId: 'c', redirectUri: 'r', clientSecret: 'leak' },
+      },
+    ],
+    note: 'sign-in summary never carries tokens or secrets',
+  },
+  AdminMcpOAuthComplete: {
+    valid: {
+      profile: 'local-dev',
+      serverId: 'github',
+      expectedEpoch: 0,
+      code: 'code-1',
+      codeVerifier: 'v'.repeat(43),
+      redirectUri: 'http://127.0.0.1:4177/oauth/github/callback',
+      client: {
+        clientId: 'client-1',
+        clientSecret: 'dcr-secret',
+        tokenEndpointAuthMethod: 'client_secret_post',
+      },
+      requestedScope: ['read', 'offline_access'],
+      authorization: {
+        tokenEndpoint: 'https://as.example/token',
+        issuer: 'https://as.example',
+        resource: 'https://mcp.example/mcp',
       },
     },
     invalid: [
       {
-        serverId: '../other',
-        credential: {
-          provider: 'fixture',
-          accessToken: 'fixture-token',
-          refreshToken: 'synthetic-refresh',
-          expiresAt: 0,
-          scope: [],
-          grantId: 'fixture-grant',
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+        extra: 1,
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(42),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: -1,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1', accessToken: 'x' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          resource: 'https://mcp.example/mcp',
+          clientSecret: 'x',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: { tokenEndpoint: '', resource: 'https://mcp.example/mcp' },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: `https://as.example/${'t'.repeat(2030)}`,
+          resource: 'https://mcp.example/mcp',
         },
       },
     ],
-    note: 'daemon-only OAuth credential persistence',
+    note: 'daemon exchanges the authorization code',
+  },
+  AdminMcpOAuthRefreshResult: {
+    valid: { signedIn: false },
+    invalid: [{}, { signedIn: 'yes' }, { signedIn: true, accessToken: 'leak' }],
+    note: 'refresh answers only whether a browser sign-in is still needed',
+  },
+  AdminMcpOAuthLogoutResult: {
+    valid: { epoch: 0 },
+    invalid: [{}, { epoch: -1 }, { epoch: 1.5 }, { epoch: 1, extra: 1 }],
+    note: 'sign-out returns the new epoch only',
   },
   JsonValue: { valid: { nested: [null, false, 3] }, invalid: [undefined], note: 'App Server boundary shape' },
   AppServerErrorCause: {
@@ -8120,6 +8508,21 @@ const AppSamples: Record<string, Sample> = {
     note: 'App Server boundary shape',
   },
   AdminEmpty: { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
+  ChannelCatalogResult: {
+    valid: { providers: [] },
+    invalid: [{}, { providers: 'invalid' }],
+    note: 'Read-only active channel descriptors',
+  },
+  ChannelPairingParams: {
+    valid: { action: 'revoke', pairingId: 'a'.repeat(32) },
+    invalid: [{ action: 'unknown' }, { action: 'revoke', pairingId: 'A'.repeat(32) }],
+    note: 'Channel pairing administration',
+  },
+  ChannelPairingResult: {
+    valid: { targets: [] },
+    invalid: [[], 'invalid'],
+    note: 'Channel pairing result',
+  },
   AdminBundlesSave: {
     valid: { revision: 0, bundles: [] },
     invalid: [null],
@@ -8408,6 +8811,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     SchedulesUpsertResult,
   },
   [SESSION_INTEGRITY_ID]: { SessionIntegrityParams, SessionIntegrityStatus },
+  [SUPERAGENT_ID]: { SuperagentSessionUpgradeParams, SuperagentSessionUpgradeResult },
   [SESSION_TOOLS_ID]: { SessionToolsParams, SessionToolsResult },
   [AGENTS_ID]: { AgentResolveParams, AgentPlan },
   [SESSION_RUNTIME_ID]: { SessionRuntimeParams, SessionRuntimeDescriptor },
@@ -8535,6 +8939,8 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageAdminContext: PackageAdminGen.PackageAdminContext,
     SkillImportParams: PackageAdminGen.SkillImportParams,
     SkillImportResult: PackageAdminGen.SkillImportResult,
+    McpImportPreview: PackageAdminGen.McpImportPreview,
+    ExternalPackageDescriptor: PackageAdminGen.ExternalPackageDescriptor,
     SkillEnvironmentRequirement: PackageAdminGen.SkillEnvironmentRequirement,
     PackageSource: PackageAdminGen.PackageSource,
     PluginCapabilities: PackageAdminGen.PluginCapabilities,
@@ -8542,6 +8948,7 @@ const DEFS_BY_FILE: Record<string, Record<string, TSchema>> = {
     PackageContributionSummary: PackageAdminGen.PackageContributionSummary,
     PackageCapabilityDiff: PackageAdminGen.PackageCapabilityDiff,
     PackageBlocker: PackageAdminGen.PackageBlocker,
+    PackageBundledOrigin: PackageAdminGen.PackageBundledOrigin,
     PackageWarning: PackageAdminGen.PackageWarning,
     PackageProvenance: PackageAdminGen.PackageProvenance,
     PackageProvenanceParams: PackageAdminGen.PackageProvenanceParams,
@@ -8671,12 +9078,10 @@ for (const [file, , id, samples] of SELF_OWNED_DOCS)
 runParity('acp', ACP_ID, fromSchemaDefs(ACP_ID, ACP_DEFS), ACP_SAMPLES)
 runParity('format-checkers', FORMATS_ID, fromFormatDefs(), FORMAT_SAMPLES)
 
-// mcp-oauth-authorization plan, Task 1: the 'oauth' secretBinding kind is not yet a branch of
-// McpHttpSecretBinding's oneOf. These pin the exact shape the new McpOAuthSecretBinding $def must
-// accept once added — staticClientId is optional, and additionalProperties:false must still reject
-// unknown fields — and were written and watched red before the schema change landed (see
-// task-1-brief.md Step 2/3).
-describe('McpHttpSecretBinding: oauth secretBinding kind (mcp-oauth-authorization Task 1)', () => {
+// The 'oauth' secretBinding kind is a branch of McpHttpSecretBinding's oneOf. These pin the exact
+// shape the McpOAuthSecretBinding $def accepts — staticClientId is optional, and
+// additionalProperties:false still rejects unknown fields.
+describe('McpHttpSecretBinding: oauth secretBinding kind', () => {
   const check = ajvDef('https://agnes.ai/schema/resource-control.json', 'McpHttpSecretBinding')
   it('accepts kind "oauth" with staticClientId', () => {
     const sample = { kind: 'oauth', staticClientId: 'test-oauth-client' }
@@ -8693,13 +9098,37 @@ describe('McpHttpSecretBinding: oauth secretBinding kind (mcp-oauth-authorizatio
     expect(check(sample)).toBe(false)
     expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, sample)).toBe(false)
   })
+  it('accepts a client secret only as a secret reference', () => {
+    const reference = {
+      kind: 'oauth',
+      staticClientId: 'test-oauth-client',
+      clientSecretRef: 'secret://mcp/x',
+    }
+    expect(check(reference)).toBe(true)
+    expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, reference)).toBe(true)
+    const raw = { kind: 'oauth', staticClientId: 'test-oauth-client', clientSecretRef: 'raw-value' }
+    expect(check(raw)).toBe(false)
+    expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, raw)).toBe(false)
+  })
+  it('accepts a sign-in callback port only as a whole number from 1024 to 65535', () => {
+    for (const callbackPort of [1024, 8765, 65535]) {
+      const sample = { kind: 'oauth', staticClientId: 'test-oauth-client', callbackPort }
+      expect(check(sample)).toBe(true)
+      expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, sample)).toBe(true)
+    }
+    for (const callbackPort of [80, 1023, 65536, 8765.5, '8765']) {
+      const sample = { kind: 'oauth', callbackPort }
+      expect(check(sample)).toBe(false)
+      expect(Value.Check(ResourceControlGen.McpHttpSecretBinding, sample)).toBe(false)
+    }
+  })
 })
 
-// mcp-oauth-authorization plan, Task 1: McpServerDescriptor.authorizationStatus is optional (a
+// McpServerDescriptor.authorizationStatus is optional (a
 // non-oauth binding omits it or sets it null) and, when present, constrained to the four states.
 // Exercised on a fully composed oauth-bound http descriptor rather than just the bare field, for the
 // same reason as the McpServerDefinitionInput composed check above.
-describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorization Task 1)', () => {
+describe('McpServerDescriptor: authorizationStatus field', () => {
   const check = ajvDef('https://agnes.ai/schema/resource-control.json', 'McpServerDescriptor')
   const descriptor = {
     kind: 'mcp',
@@ -8749,6 +9178,16 @@ describe('McpServerDescriptor: authorizationStatus field (mcp-oauth-authorizatio
 type MethodDefRef = { fileId: string; params: string; result?: string }
 
 const METHOD_DEF: Record<MethodName, MethodDefRef> = {
+  '_agnes/v1/channels.catalog': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminEmpty',
+    result: 'ChannelCatalogResult',
+  },
+  '_agnes/v1/channels.pairing': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'ChannelPairingParams',
+    result: 'ChannelPairingResult',
+  },
   '_agnes/v1/packages.skillImport': {
     fileId: 'https://agnes.ai/schema/package-admin.json',
     params: 'SkillImportParams',
@@ -8872,6 +9311,21 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'WebhookRequest',
     result: 'WebhookResult',
   },
+  '_agnes/v1/admin.managedWorkspaces.list': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'ManagedWorkspaceGrantsListParams',
+    result: 'ManagedWorkspaceGrantsList',
+  },
+  '_agnes/v1/admin.managedWorkspaces.grant': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'ManagedWorkspaceGrantParams',
+    result: 'ManagedWorkspaceGrantChange',
+  },
+  '_agnes/v1/admin.managedWorkspaces.revoke': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'ManagedWorkspaceGrantParams',
+    result: 'ManagedWorkspaceGrantChange',
+  },
   '_agnes/v1/session.fileUpload': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'FileUploadParams',
@@ -8908,6 +9362,21 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'PluginConfigSaveResult',
   },
 
+  '_agnes/v1/managedInput.list': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'ManagedInputListParams',
+    result: 'ManagedInputListResult',
+  },
+  '_agnes/v1/managedInput.get': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'ManagedInputGetParams',
+    result: 'ManagedInputGetResult',
+  },
+  '_agnes/v1/managedInput.decide': {
+    fileId: 'https://agnes.ai/schema/agnes-v1.json',
+    params: 'ManagedInputDecideParams',
+    result: 'ManagedInputDecideResult',
+  },
   '_agnes/v1/session.factChain': {
     fileId: 'https://agnes.ai/schema/agnes-v1.json',
     params: 'FactChainParams',
@@ -8969,10 +9438,25 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'PackageListParams',
     result: 'PackageSourcePolicy',
   },
-  '_agnes/v1/admin.mcp.oauth.save': {
+  '_agnes/v1/admin.mcp.oauth.get': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
-    params: 'AdminMcpOAuthSave',
+    params: 'AdminMcpOAuthGet',
+    result: 'AdminMcpOAuthSummary',
+  },
+  '_agnes/v1/admin.mcp.oauth.complete': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthComplete',
     result: 'AdminEmpty',
+  },
+  '_agnes/v1/admin.mcp.oauth.refresh': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthGet',
+    result: 'AdminMcpOAuthRefreshResult',
+  },
+  '_agnes/v1/admin.mcp.oauth.logout': {
+    fileId: 'https://agnes.ai/schema/app-server-v1',
+    params: 'AdminMcpOAuthGet',
+    result: 'AdminMcpOAuthLogoutResult',
   },
   '_agnes/v1/admin.bundles.get': {
     fileId: 'https://agnes.ai/schema/app-server-v1',
@@ -9215,6 +9699,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     result: 'ResourceOperationReceipt',
   },
   '_agnes/v1/mcp.servers.reconnect': {
+    fileId: 'https://agnes.ai/schema/resource-control.json',
+    params: 'McpServerReconnectParams',
+    result: 'ResourceOperationReceipt',
+  },
+  '_agnes/v1/mcp.servers.oauth.signOut': {
     fileId: 'https://agnes.ai/schema/resource-control.json',
     params: 'McpServerReconnectParams',
     result: 'ResourceOperationReceipt',
@@ -9679,6 +10168,11 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
     params: 'PluginRuntimeStatusParams',
     result: 'PluginRuntimeStatusResult',
   },
+  '_agnes/v1/superagent.sessions.upgrade': {
+    fileId: SUPERAGENT_ID,
+    params: 'SuperagentSessionUpgradeParams',
+    result: 'SuperagentSessionUpgradeResult',
+  },
   '_agnes/v1/pluginStreams.endpoint': {
     fileId: AGNES_ID,
     params: 'PluginStreamsEndpointParams',
@@ -9771,6 +10265,22 @@ const METHOD_DEF: Record<MethodName, MethodDefRef> = {
 }
 
 const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
+  '_agnes/v1/channels.catalog': {
+    valid: {},
+    invalid: [{ unexpected: true }],
+    note: 'Local channel metadata catalog',
+  },
+  '_agnes/v1/channels.pairing': {
+    valid: {
+      action: 'mint',
+      extension: 'plugin/0a1b',
+      instanceId: 'desk',
+      target: { owner: '@acme/desk#plugin/0a1b', service: 'desk' },
+      operationId: 'op-1',
+    },
+    invalid: [{ action: 'mint' }, { action: 'revoke', pairingId: 'x' }, { action: 'targets', extra: true }],
+    note: 'Channel pairing administration',
+  },
   '_agnes/v1/packages.skillImport': {
     valid: {
       profile: 'local-dev',
@@ -9956,6 +10466,9 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     valid: { action: 'list' },
     invalid: [{ action: 'unknown' }, { action: 'upsert', rule: { secretRef: 'plain-text-secret' } }],
   },
+  '_agnes/v1/admin.managedWorkspaces.list': AppSamples.ManagedWorkspaceGrantsListParams!,
+  '_agnes/v1/admin.managedWorkspaces.grant': AppSamples.ManagedWorkspaceGrantParams!,
+  '_agnes/v1/admin.managedWorkspaces.revoke': AppSamples.ManagedWorkspaceGrantParams!,
   '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadParams as Sample,
   '_agnes/v1/session.references.search': {
     note: 'Reference locators and bounded search results',
@@ -10000,6 +10513,21 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{}, { profile: 'default' }],
   },
 
+  '_agnes/v1/managedInput.list': {
+    valid: {},
+    invalid: [{ owner: 'plugin' }],
+    note: 'no caller-chosen owner: the owner page and the session owner gate decide',
+  },
+  '_agnes/v1/managedInput.get': {
+    valid: { sessionId: 'owned', key: 'k1' },
+    invalid: [{ sessionId: 'owned' }, { sessionId: 'owned', key: 'k1', owner: 'plugin' }],
+    note: 'no caller-chosen owner: the session owner gate decides',
+  },
+  '_agnes/v1/managedInput.decide': {
+    valid: { sessionId: 'owned', target: { kind: 'receipt', receiptId: 'r1', decision: 'discard' } },
+    invalid: [{ sessionId: 'owned', target: { kind: 'input', key: 'k1', decision: 'deliver', version: 0 } }],
+    note: 'a decision names the version it was shown',
+  },
   '_agnes/v1/session.factChain': {
     valid: { sessionId: 'owned', laneId: 'main', anchor: { kind: 'tool', toolUseId: 'tool-1' } },
     invalid: [
@@ -10193,32 +10721,164 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
     invalid: [{ profile: '../escape' }],
     note: 'profile boundary',
   },
-  '_agnes/v1/admin.mcp.oauth.save': {
+  '_agnes/v1/admin.mcp.oauth.get': {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', extra: 1 },
+    ],
+    note: 'sign-in summary lookup',
+  },
+  '_agnes/v1/admin.mcp.oauth.complete': {
     valid: {
+      profile: 'local-dev',
       serverId: 'github',
-      credential: {
-        provider: 'fixture',
-        accessToken: 'fixture-token',
-        refreshToken: 'synthetic-refresh',
-        expiresAt: 0,
-        scope: [],
-        grantId: 'fixture-grant',
+      expectedEpoch: 0,
+      code: 'code-1',
+      codeVerifier: 'v'.repeat(43),
+      redirectUri: 'http://127.0.0.1:4177/oauth/github/callback',
+      client: {
+        clientId: 'client-1',
+        clientSecret: 'dcr-secret',
+        tokenEndpointAuthMethod: 'client_secret_post',
+      },
+      requestedScope: ['read', 'offline_access'],
+      authorization: {
+        tokenEndpoint: 'https://as.example/token',
+        issuer: 'https://as.example',
+        resource: 'https://mcp.example/mcp',
       },
     },
     invalid: [
       {
-        serverId: '../other',
-        credential: {
-          provider: 'fixture',
-          accessToken: 'fixture-token',
-          refreshToken: 'synthetic-refresh',
-          expiresAt: 0,
-          scope: [],
-          grantId: 'fixture-grant',
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+        extra: 1,
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(42),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: -1,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1', accessToken: 'x' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          issuer: 'https://as.example',
+          resource: 'https://mcp.example/mcp',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: 'https://as.example/token',
+          resource: 'https://mcp.example/mcp',
+          clientSecret: 'x',
+        },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: { tokenEndpoint: '', resource: 'https://mcp.example/mcp' },
+      },
+      {
+        profile: 'local-dev',
+        serverId: 'github',
+        expectedEpoch: 0,
+        code: 'code-1',
+        codeVerifier: 'v'.repeat(43),
+        redirectUri: 'http://127.0.0.1:4177/cb',
+        client: { clientId: 'client-1' },
+        requestedScope: [],
+        authorization: {
+          tokenEndpoint: `https://as.example/${'t'.repeat(2030)}`,
+          resource: 'https://mcp.example/mcp',
         },
       },
     ],
-    note: 'daemon-only OAuth credential persistence',
+    note: 'daemon exchanges the authorization code',
+  },
+  '_agnes/v1/admin.mcp.oauth.refresh': {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', refreshToken: 'x' },
+    ],
+    note: 'refresh names the server only',
+  },
+  '_agnes/v1/admin.mcp.oauth.logout': {
+    valid: { profile: 'local-dev', serverId: 'github' },
+    invalid: [
+      { profile: 'local-dev', serverId: '../other' },
+      { profile: 'local-dev', serverId: 'github', epoch: 1 },
+    ],
+    note: 'sign-out names the server only',
   },
   '_agnes/v1/admin.bundles.get': { valid: {}, invalid: [{ extra: 1 }], note: 'App Server boundary shape' },
   '_agnes/v1/admin.bundles.save': {
@@ -10326,6 +10986,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/mcp.servers.enable': ResourceControlSamples.McpServerEnableParams,
   '_agnes/v1/mcp.servers.disable': ResourceControlSamples.McpServerDisableParams,
   '_agnes/v1/mcp.servers.reconnect': ResourceControlSamples.McpServerReconnectParams,
+  '_agnes/v1/mcp.servers.oauth.signOut': ResourceControlSamples.McpServerReconnectParams,
   '_agnes/v1/mcp.servers.oauth.status': ResourceControlSamples.McpServerGetParams,
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusSetParams,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogListParams as Sample,
@@ -10556,6 +11217,7 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
   '_agnes/v1/workspace.reveal': AGNES_SAMPLES.WorkspaceRevealParams as Sample,
   '_agnes/v1/workspace.remove': AGNES_SAMPLES.WorkspaceRemoveParams as Sample,
   '_agnes/v1/pluginRuntime.status': AGNES_SAMPLES.PluginRuntimeStatusParams as Sample,
+  '_agnes/v1/superagent.sessions.upgrade': SUPERAGENT_SAMPLES.params as Sample,
   '_agnes/v1/pluginStreams.endpoint': AGNES_SAMPLES.PluginStreamsEndpointParams as Sample,
   '_agnes/v1/surfaces.mounts': AGNES_SAMPLES.SurfacesMountsParams as Sample,
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.SessionSetPresetParams as Sample,
@@ -10655,6 +11317,16 @@ const METHOD_PARAMS_SAMPLE: Record<MethodName, Sample> = {
 }
 
 const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
+  '_agnes/v1/channels.catalog': {
+    valid: { providers: [] },
+    invalid: [{}, { providers: 'invalid' }],
+    note: 'Channel catalog result',
+  },
+  '_agnes/v1/channels.pairing': {
+    valid: { targets: [] },
+    invalid: [[], 'invalid'],
+    note: 'Channel pairing result',
+  },
   '_agnes/v1/packages.skillImport': {
     valid: { state: 'selection_required', candidates: ['archify'] },
     invalid: [{ state: 'executed' }, { state: 'prepared', actor: 'forged' }],
@@ -10778,6 +11450,9 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   },
   '_agnes/v1/admin.feedback': AppSamples.AdminFeedbackResult!,
   '_agnes/v1/admin.triggers': AppSamples.WebhookResult!,
+  '_agnes/v1/admin.managedWorkspaces.list': AppSamples.ManagedWorkspaceGrantsList!,
+  '_agnes/v1/admin.managedWorkspaces.grant': AppSamples.ManagedWorkspaceGrantChange!,
+  '_agnes/v1/admin.managedWorkspaces.revoke': AppSamples.ManagedWorkspaceGrantChange!,
   '_agnes/v1/plugins.config.get': PackageAdminSamples.PluginConfigSnapshot!,
   '_agnes/v1/plugins.config.validate': PackageAdminSamples.PluginConfigValidation!,
   '_agnes/v1/plugins.config.save': PackageAdminSamples.PluginConfigSaveResult!,
@@ -10886,6 +11561,9 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/session.controls': AGNES_SAMPLES.SessionControlStateResult as Sample,
   '_agnes/v1/session.fileUpload': AGNES_SAMPLES.FileUploadResultSchema as Sample,
   '_agnes/v1/session.factChain': AGNES_SAMPLES.FactChainResult!,
+  '_agnes/v1/managedInput.list': AGNES_SAMPLES.ManagedInputListResult!,
+  '_agnes/v1/managedInput.get': AGNES_SAMPLES.ManagedInputGetResult!,
+  '_agnes/v1/managedInput.decide': AGNES_SAMPLES.ManagedInputDecideResult!,
   '_agnes/v1/doctor.run': AppSamples.DoctorResult!,
   '_agnes/v1/plugins.candidates.reject': PackageAdminSamples.AuthoringCandidate as Sample,
   '_agnes/v1/plugins.candidates.approve': PackageAdminSamples.AuthoringCandidate as Sample,
@@ -10897,10 +11575,45 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/plugins.candidates.list': PackageAdminSamples.AuthoringCandidateList as Sample,
   '_agnes/v1/packages.provenance': PackageAdminSamples.PackageProvenance as Sample,
   '_agnes/v1/packages.sourcePolicy': PackageAdminSamples.PackageSourcePolicy as Sample,
-  '_agnes/v1/admin.mcp.oauth.save': {
+  '_agnes/v1/admin.mcp.oauth.get': {
+    valid: {
+      epoch: 0,
+      signedIn: true,
+      refreshable: true,
+      expiresAt: 1,
+      scope: ['read'],
+      requiredScope: [],
+      client: { clientId: 'client-1', redirectUri: 'http://127.0.0.1:4177/oauth/github/callback' },
+    },
+    invalid: [
+      { epoch: 0, signedIn: true, refreshable: true, scope: [], requiredScope: [], accessToken: 'leak' },
+      { epoch: -1, signedIn: false, refreshable: false, scope: [], requiredScope: [] },
+      { epoch: 0, signedIn: false, refreshable: false, scope: ['a b'], requiredScope: [] },
+      {
+        epoch: 0,
+        signedIn: false,
+        refreshable: false,
+        scope: [],
+        requiredScope: [],
+        client: { clientId: 'c', redirectUri: 'r', clientSecret: 'leak' },
+      },
+    ],
+    note: 'sign-in summary never carries tokens or secrets',
+  },
+  '_agnes/v1/admin.mcp.oauth.complete': {
     valid: {},
     invalid: [{ extra: 1 }],
-    note: 'write acknowledges without returning a credential',
+    note: 'completion acknowledges without returning a credential',
+  },
+  '_agnes/v1/admin.mcp.oauth.refresh': {
+    valid: { signedIn: true },
+    invalid: [{ signedIn: true, accessToken: 'leak' }, {}],
+    note: 'refresh never returns a credential',
+  },
+  '_agnes/v1/admin.mcp.oauth.logout': {
+    valid: { epoch: 2 },
+    invalid: [{ epoch: -1 }, { epoch: 2, extra: 1 }],
+    note: 'sign-out returns the new epoch only',
   },
   '_agnes/v1/admin.bundles.get': {
     valid: { revision: 0, bundles: [], effect: 'restart-required' },
@@ -11116,6 +11829,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/mcp.servers.enable': ResourceControlSamples.ResourceOperationReceipt,
   '_agnes/v1/mcp.servers.disable': ResourceControlSamples.ResourceOperationReceipt,
   '_agnes/v1/mcp.servers.reconnect': ResourceControlSamples.ResourceOperationReceipt,
+  '_agnes/v1/mcp.servers.oauth.signOut': ResourceControlSamples.ResourceOperationReceipt,
   '_agnes/v1/mcp.servers.oauth.status': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/mcp.servers.oauth.status.set': ResourceControlSamples.McpOAuthStatusResult,
   '_agnes/v1/packages.catalog.list': PackageAdminSamples.PackageCatalogPage as Sample,
@@ -11254,6 +11968,7 @@ const METHOD_RESULT_SAMPLE: Partial<Record<MethodName, Sample>> = {
   '_agnes/v1/workspace.reveal': AGNES_SAMPLES.WorkspaceRevealResult as Sample,
   '_agnes/v1/workspace.remove': AGNES_SAMPLES.WorkspaceRemoveResult as Sample,
   '_agnes/v1/pluginRuntime.status': AGNES_SAMPLES.PluginRuntimeStatusResult as Sample,
+  '_agnes/v1/superagent.sessions.upgrade': SUPERAGENT_SAMPLES.result as Sample,
   '_agnes/v1/pluginStreams.endpoint': AGNES_SAMPLES.PluginStreamsEndpointResult as Sample,
   '_agnes/v1/surfaces.mounts': AGNES_SAMPLES.SurfacesMountsResult as Sample,
   '_agnes/v1/session.setPreset': AGNES_SAMPLES.EffectiveFromResult as Sample,

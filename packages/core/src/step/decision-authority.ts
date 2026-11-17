@@ -1,4 +1,5 @@
-import type { DecisionSpec } from '@agnes/extension-api'
+import { outwardApprover } from '@agnes/core-effects/effects/approval-answer'
+import { type DecisionSpec, isOutwardCheckpoint } from '@agnes/extension-api'
 import { automaticPermissionDecision, isPermissionPurpose, validateActor } from '@agnes/protocol'
 import type { DecisionAnswerContext, DecisionAuthority, DecisionSource } from './decisions.js'
 
@@ -16,6 +17,10 @@ export function coreToolPermission(
   )
 }
 
+/** An outward checkpoint: only a person answers it, and only by approving or rejecting this one call. */
+const outward = (spec: DecisionSpec) =>
+  isOutwardCheckpoint((spec.subject as { approval?: unknown } | null)?.approval)
+
 /** The automatic full-access answer, if any: open to a main session, and to a declaring role for core tool gates only. */
 export function automaticAnswer(
   s: DecisionAuthority,
@@ -23,6 +28,7 @@ export function automaticAnswer(
   permission: boolean,
   origin: { readonly owner: string; readonly sourcePackage: string },
 ) {
+  if (outward(spec)) return undefined
   if (s.refuseApprovals && !(s.delegatedFullAccess === true && coreToolPermission(permission, origin, spec)))
     return undefined
   return automaticPermissionDecision(
@@ -47,11 +53,16 @@ export function delegatedDecisionRefused(
   )
 }
 
-export function humanDecisionActorAllowed(s: DecisionAuthority, context: DecisionAnswerContext): boolean {
+export function humanDecisionActorAllowed(
+  s: DecisionAuthority,
+  context: DecisionAnswerContext,
+  spec: DecisionSpec,
+): boolean {
   return (
     validateActor(context.actor).ok &&
     context.category === 'human' &&
     context.actor.role !== 'agent' &&
-    !(s.refuseApprovals && context.actor.role === 'system')
+    !(s.refuseApprovals && context.actor.role === 'system') &&
+    (!outward(spec) || outwardApprover(context.actor))
   )
 }

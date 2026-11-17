@@ -1,6 +1,7 @@
 import { createMcpPreset } from '@agnes/resource-control-contracts/mcp-presets'
 import { describe, expect, it } from 'vitest'
 import { deriveMcpName, formatMcpCommand, parseMcpCommand } from '../src/mcp-command.js'
+import { oauthSecretBinding } from '../src/mcp-form.js'
 import { MCP_FORM_LIMITS, type McpFormFieldSnapshot, mcpFormIssues } from '../src/mcp-form-validation.js'
 import { localScriptWorkspace, workspaceContains } from '../src/mcp-workspace.js'
 
@@ -206,5 +207,70 @@ describe('an OAuth sign-in needs no saved secret', () => {
     const remote = { ...http('https://mcp.example.com/mcp'), secretKind: 'oauth' }
     expect(messages(remote, submit)).toEqual([])
     expect(messages({ ...remote, secretText: 'client-123' }, submit)).toEqual([])
+  })
+})
+
+describe('MCP form OAuth client fields', () => {
+  const oauth = (
+    secretText: string,
+    oauthSecretRef: string,
+    oauthCallbackPort = '',
+  ): McpFormFieldSnapshot => ({
+    ...http('https://example.com/mcp'),
+    secretKind: 'oauth',
+    secretText,
+    oauthSecretRef,
+    oauthCallbackPort,
+  })
+
+  it('oauth secret ref goes into clientSecretRef', () => {
+    expect(oauthSecretBinding('c', 'secret://x/y')).toEqual({
+      kind: 'oauth',
+      staticClientId: 'c',
+      clientSecretRef: 'secret://x/y',
+    })
+    expect(oauthSecretBinding('c', '')).toEqual({ kind: 'oauth', staticClientId: 'c' })
+    expect(oauthSecretBinding('', '')).toEqual({ kind: 'oauth' })
+  })
+
+  it('a callback port goes into callbackPort, as a number', () => {
+    expect(oauthSecretBinding('c', '', '8765')).toEqual({
+      kind: 'oauth',
+      staticClientId: 'c',
+      callbackPort: 8765,
+    })
+    expect(oauthSecretBinding('', '', '1024')).toEqual({ kind: 'oauth', callbackPort: 1024 })
+    expect(oauthSecretBinding('', '', '')).toEqual({ kind: 'oauth' })
+  })
+
+  it('the callback port range is the protocol schema range', () => {
+    expect(MCP_FORM_LIMITS.oauthCallbackPortMin).toBe(1024)
+    expect(MCP_FORM_LIMITS.oauthCallbackPortMax).toBe(65535)
+  })
+
+  it('a callback port must be a whole number in that range', () => {
+    expect(mcpFormIssues(oauth('', '', '8765'), submit)).toEqual([])
+    expect(mcpFormIssues(oauth('c', '', '65535'), submit)).toEqual([])
+    for (const port of ['80', '1023', '65536', '87.5', 'abc', '08765'])
+      expect(mcpFormIssues(oauth('c', '', port), live)).toEqual([
+        { field: 'mcp-oauth-port', message: 'Use a whole number from 1024 to 65535 for the callback port.' },
+      ])
+    // Only an OAuth sign-in has a callback port.
+    expect(mcpFormIssues({ ...oauth('', '', 'abc'), secretKind: 'none' }, live)).toEqual([])
+  })
+
+  it('the client ID limit is the protocol schema limit', () => {
+    expect(MCP_FORM_LIMITS.oauthClientIdMaxLength).toBe(512)
+  })
+
+  it('a client secret must be a reference and needs its client ID', () => {
+    expect(mcpFormIssues(oauth('c', 'secret://x/y'), submit)).toEqual([])
+    expect(mcpFormIssues(oauth('', ''), submit)).toEqual([])
+    expect(mcpFormIssues(oauth('c', 'plain-secret'), live).map((issue) => issue.field)).toEqual([
+      'mcp-oauth-secret',
+    ])
+    expect(mcpFormIssues(oauth('', 'secret://x/y'), live).map((issue) => issue.field)).toEqual([
+      'mcp-oauth-secret',
+    ])
   })
 })

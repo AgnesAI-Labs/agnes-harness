@@ -1,6 +1,11 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
-import type { LoopSideCallPort, PreparedSideCall, SideCallResult, SideCallUsage } from '@agnes/extension-api'
-import { estimateTokens } from './compile.js'
+import {
+  estimateTokens,
+  type LoopSideCallPort,
+  type PreparedSideCall,
+  type SideCallResult,
+  type SideCallUsage,
+} from '@agnes/extension-api'
 import type { JsonObject, JsonValue } from './types.js'
 import { clip, digest16, errorCode } from './util.js'
 
@@ -154,8 +159,8 @@ function decideEvent(attempt: number, id: string, call: Call, result: SideCallRe
     },
     request: {
       headIds: Object.keys(questions),
-      stateTokensEst: estimateTokens(state),
-      requestTokensEst: estimateTokens({ state, questions }),
+      stateTokensEst: estimateTokens(JSON.stringify(state)),
+      requestTokensEst: estimateTokens(JSON.stringify({ state, questions })),
       preparedInputTokens: call.prepared.estimate.inputTokens,
       stateDigest: digest16(state),
       questionsDigest: digest16(questions),

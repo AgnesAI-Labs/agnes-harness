@@ -19,6 +19,8 @@ export const resourceFailureCatalog = {
       'The MCP connection timed out. Check the service, network and proxy settings.',
     'resource.error.mcpAuth':
       'The service rejected authentication. Check the saved credential and its binding.',
+    'resource.error.mcpSignIn':
+      'This server needs sign-in. Sign in from the MCP page in the web UI, then try again.',
     'resource.error.mcpSandbox':
       'The local MCP sandbox is unavailable. Configure a working sandbox before retrying.',
     'resource.error.removeBlocked':
@@ -46,6 +48,7 @@ export const resourceFailureCatalog = {
       '本地程序在 MCP 握手完成前退出。请检查命令、执行环境安装、凭据环境变量名和沙箱配置。',
     'resource.error.mcpTimeout': 'MCP 连接超时。请检查服务、网络和代理配置。',
     'resource.error.mcpAuth': '服务拒绝了身份验证。请检查已保存的凭据及其绑定方式。',
+    'resource.error.mcpSignIn': '这个服务需要登录。请在网页的 MCP 页登录后重试。',
     'resource.error.mcpSandbox': '本地 MCP 沙箱不可用。请配置可用的沙箱后重试。',
     'resource.error.removeBlocked': '它仍处于启用状态，或还有未完成的操作。请先停用并等待操作结束，再移除。',
     'resource.error.operation': '资源操作失败。请检查当前状态后重试。',
@@ -65,6 +68,8 @@ export function resourceFailureKey(code: string): string {
     MCP_STDIO_CLOSED: 'resource.error.mcpClosed',
     MCP_CONNECT_TIMEOUT: 'resource.error.mcpTimeout',
     MCP_AUTH_FAILED: 'resource.error.mcpAuth',
+    MCP_OAUTH_NEEDS_RECONNECT: 'resource.error.mcpSignIn',
+    MCP_AUTH_REQUIRED: 'resource.error.mcpSignIn',
     E_MCP_SANDBOX_UNAVAILABLE: 'resource.error.mcpSandbox',
   }
   if (Object.hasOwn(mcp, code)) return mcp[code] ?? 'resource.error.connection'

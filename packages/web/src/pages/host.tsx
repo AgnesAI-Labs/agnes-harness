@@ -5,9 +5,11 @@ import {
   type LocaleService,
   resolveHomeEntry,
   type UiExtensionContext,
+  withoutOwnerOnly,
 } from '@agnes/web-client'
 import {
   createDocumentLocaleSource,
+  createRegionHost,
   createRegionRenderer,
   preserveRouteParams,
   RegionErrorBoundary,
@@ -15,6 +17,8 @@ import {
   type UiLocaleSource,
 } from '@agnes/web-ui'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { ChannelDialogHost } from './channel-dialog.js'
+import { isBuiltinHomeEntry } from './entries.js'
 import { useWorkLaunchQuiet, workLaunch } from './work-launch.js'
 
 /**
@@ -26,6 +30,8 @@ export type HomePageData = Readonly<{
   call<T = unknown>(method: string, params: unknown): Promise<T>
   /** The selected session, for panels scoped to it. */
   sessionId(): string | undefined
+  requestProfileApproval?(result: unknown): void
+  channelCall?<T = unknown>(method: string, params: unknown): Promise<T>
   /** Open the settings dialog at one of its sections. */
   openSettings(section: string): void
   /** The selected workspace's path when it is available; agent launches start there instead of the launcher's. */
@@ -38,6 +44,23 @@ export type HomePageData = Readonly<{
     workspaceId?(): string | undefined
   }
 }>
+
+const pluginData = new WeakMap<HomePageData, HomePageData>()
+/** What a plugin's page gets as `data`: the same, with the owner-only methods refused on its calls. */
+export function pluginPageData(data: HomePageData): HomePageData {
+  let view = pluginData.get(data)
+  if (!view) {
+    view = Object.freeze({
+      ...data,
+      call: withoutOwnerOnly(data.call) as HomePageData['call'],
+      ...(data.channelCall
+        ? { channelCall: withoutOwnerOnly(data.channelCall) as HomePageData['call'] }
+        : {}),
+    })
+    pluginData.set(data, view)
+  }
+  return view
+}
 
 /** The entry the user asked for and that is still registered, showing or not. */
 function requestedHomeEntry() {
@@ -86,7 +109,7 @@ export function HomePageHost({
   const Page = entry.component
   const context: UiExtensionContext = {
     t: (key, vars) => locale.t(key, vars),
-    data,
+    data: isBuiltinHomeEntry(entry) ? data : pluginPageData(data),
     ...(requested?.selection === undefined ? {} : { selection: requested.selection }),
   }
   return (
@@ -115,6 +138,13 @@ export function mountHomePages(
   }
   const root = createRegionRenderer(container)
   const documentLocale = createDocumentLocaleSource({})
+  const dialogContainer = createRegionHost(document.body, 'div')
+  const dialogRoot = createRegionRenderer(dialogContainer)
+  dialogRoot.render(
+    <UiLocaleProvider source={documentLocale.source}>
+      <ChannelDialogHost data={options.data} />
+    </UiLocaleProvider>,
+  )
   const render = () =>
     root.render(
       <HomePageHost
@@ -128,6 +158,8 @@ export function mountHomePages(
   const stopLocale = options.locale.subscribe(render)
   return {
     dispose() {
+      dialogRoot.unmount()
+      dialogContainer.remove()
       stopLocale()
       documentLocale.dispose()
       root.unmount()

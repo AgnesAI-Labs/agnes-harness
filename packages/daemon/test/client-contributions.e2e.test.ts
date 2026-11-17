@@ -1,15 +1,16 @@
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initializeHome } from '@agnes/host'
 import type { PackageOperationReceipt } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { createPrivateDirectorySync } from '@agnes/system-node'
 import { expect, it } from 'vitest'
-import { localSdkTransport } from './local-socket-path.js'
+import { stopDaemon } from '../src/supervisor/control.js'
+import { childDaemonTransport } from './child-daemon-transport.js'
 
 async function deadline<T>(promise: Promise<T>, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -59,8 +60,9 @@ it('enables single and multiple client contributions and retains their roster af
     })
     const close = async () => {
       if (child.exitCode !== null || child.signalCode !== null) return
-      child.kill('SIGTERM')
       try {
+        if (process.platform === 'win32') expect(await stopDaemon(home, { waitMs: 90_000 })).toBe('stopped')
+        else child.kill('SIGTERM')
         expect(await deadline(exited, 'daemon shutdown')).toBe(0)
       } catch (error) {
         child.kill('SIGKILL')
@@ -70,10 +72,7 @@ it('enables single and multiple client contributions and retains their roster af
     }
     try {
       await deadline(ready, 'daemon startup')
-      const owner = JSON.parse(await readFile(join(home, 'daemon/owner.json'), 'utf8')) as {
-        socketPath: string
-      }
-      return { socketPath: owner.socketPath, close }
+      return { transport: await childDaemonTransport(home, child.pid), close }
     } catch (error) {
       await close()
       throw error
@@ -86,7 +85,7 @@ it('enables single and multiple client contributions and retains their roster af
     const connected = createClient({
       journal: memoryJournal(),
       auth: { kind: 'local' },
-      transport: localSdkTransport(daemon.socketPath),
+      transport: daemon.transport,
       timeouts: { request: 90_000 },
     })
     await connected.initialize()
@@ -119,7 +118,7 @@ it('enables single and multiple client contributions and retains their roster af
     }
     for (const count of [1, 2]) {
       const name = `@acme/client-${count}`
-      const directory = join(root, `client-${count}`)
+      const directory = join(root, `client-${count} #%中文`)
       await mkdir(directory)
       const plugins = Array.from({ length: count }, (_, index) => ({
         apiRange: '^5.0.0',
@@ -159,7 +158,7 @@ it('enables single and multiple client contributions and retains their roster af
           }),
         )
       }
-      const source = { type: 'file' as const, ref: `file:${directory}` }
+      const source = { type: 'file' as const, ref: `file:${directory.split(sep).join('/')}` }
       const preview = (await complete(await admin.inspect({ ...(await command()), source }))).preview
       if (!preview) throw new Error('preview missing')
       if (!preview.capabilityHash) throw new Error('capability hash missing')

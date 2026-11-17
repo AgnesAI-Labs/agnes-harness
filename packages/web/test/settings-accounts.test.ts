@@ -346,10 +346,12 @@ it('creates a distinct same-provider account and manages defaults with revision 
   expect(h.input('config-model').value).toBe('m')
   expect(h.input('config-save').disabled).toBe(false)
   expect(h.input('config-model-trigger').disabled).toBe(false)
+  expect(h.input('config-model-trigger').textContent).toBe('Model')
   await h.click('#config-model-trigger')
   await h.click('#config-model-listbox-0')
+  // An empty choice is not a default model to save, so the button says so.
   expect(h.input('config-model').value).toBe('')
-  expect(h.input('config-save').disabled).toBe(false)
+  expect(h.input('config-save').disabled).toBe(true)
   await h.click('#config-model-trigger')
   await h.click('#config-model-listbox-1')
   expect(h.input('config-model').value).toBe('m')
@@ -404,11 +406,7 @@ it('names the provider, explains the locked model group and tells each error und
     [...h.doc.querySelectorAll('#config-account-advanced-meta .agnes-settings-tag')].map(
       (tag) => tag.textContent,
     ),
-  ).toEqual([
-    zhT('accounts.summaryName', { name: 'personal' }),
-    zhT('accounts.summaryCustomUrl'),
-    zhT('accounts.summaryTimeouts'),
-  ])
+  ).toEqual([zhT('accounts.summaryName', { name: 'personal' }), zhT('accounts.summaryTimeouts')])
   // A budget over the model's capacity is told under the budget, outside advanced options.
   h.input('config-context-window').value = '1M'
   change('config-context-window')
@@ -449,13 +447,15 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
   const h = await setup(undefined, [OPENAI, compatible])
   await h.click('#config-add-account')
   await h.click('[data-provider="preset:siliconflow"]')
-  // The preset fills the address and the name; the address section opens; the key may stay empty.
+  // The preset fills the address and the name; the address sits in the connection step, so nothing unfolds.
   expect(h.input('config-provider').value).toBe('openai-compatible')
   expect(h.input('config-base-url').value).toBe('https://api.siliconflow.cn/v1')
   expect(h.input('config-account-name').value).toBe(zhT('accounts.preset.siliconflow'))
-  expect(h.doc.getElementById('config-account-advanced')?.getAttribute('data-open')).toBe('true')
+  expect(h.doc.getElementById('config-account-advanced')?.getAttribute('data-open')).toBe('false')
+  expect(h.doc.getElementById('config-base-url')?.closest('.account-connection')).not.toBeNull()
   expect(h.input('config-api-key').placeholder).toBe(zhT('accounts.keyOptional'))
-  expect(h.doc.getElementById('config-key-hint')?.textContent).toBe(zhT('settings.key.optionalHint'))
+  // The placeholder already says the key is optional; the line under it stays empty.
+  expect(h.doc.getElementById('config-key-hint')?.textContent).toBe('')
   expect(h.doc.getElementById('config-provider-host')?.textContent).toBe('api.siliconflow.cn/v1')
   const panel = h.doc.getElementById('config-compatible-models') as HTMLElement | null
   expect(panel?.hidden).toBe(false)
@@ -487,17 +487,33 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
     baseUrl: 'https://api.siliconflow.cn/v1',
   })
   expect(h.doc.getElementById('config-error')?.textContent).toBe('')
-  // Listed models are picked by hand; the default model comes from the picked ones.
+  // The first listed model joins the draft and becomes the default, so saving needs no second pick.
   const listed = (id: string) => ({ id, name: id, contextWindow: 32768, maxTokens: 8192 })
-  h.config.test.mockResolvedValueOnce({ models: [listed('Qwen/Qwen3-32B'), listed('other')], verified: true })
+  h.config.test.mockResolvedValue({ models: [listed('Qwen/Qwen3-32B'), listed('other')], verified: true })
   fetchModels()
   await vi.waitFor(() => expect(panel?.textContent).toContain('Qwen/Qwen3-32B'))
   expect(panel?.textContent).not.toContain(zhT('accounts.compatible.error.http404'))
+  await vi.waitFor(() => expect(h.input('config-model').value).toBe('Qwen/Qwen3-32B'))
+  expect(h.input('config-save').disabled).toBe(false)
+  // Dropping the only chosen model locks the group again and names the missing choice.
   const chip = [...(panel?.querySelectorAll<HTMLButtonElement>('button[aria-pressed]') ?? [])].find(
     (button) => button.textContent === 'Qwen/Qwen3-32B',
   )
   chip?.click()
+  await vi.waitFor(() => expect(h.input('config-model').value).toBe(''))
+  expect(h.doc.getElementById('config-model-lock')?.hasAttribute('hidden')).toBe(false)
+  expect(h.doc.getElementById('config-model-lock-text')?.textContent).toBe(zhT('accounts.modelLockedChoose'))
+  expect(h.input('config-save').disabled).toBe(true)
+  // The greyed button explains itself on hover instead of only sitting there.
+  expect(h.input('config-save').getAttribute('data-disabled-reason')).toBe(zhT('accounts.saveNeedsModel'))
+  expect(h.input('config-save').closest('.agh-tooltip-anchor')?.getAttribute('aria-label')).toBe(
+    zhT('accounts.saveNeedsModel'),
+  )
+  expect(h.doc.getElementById('config-model')?.textContent).toContain(zhT('settings.model.chooseAbove'))
+  chip?.click()
   await vi.waitFor(() => expect(h.input('config-model').value).toBe('Qwen/Qwen3-32B'))
+  expect(h.doc.getElementById('config-model-lock')?.hasAttribute('hidden')).toBe(true)
+  expect(h.input('config-save').hasAttribute('data-disabled-reason')).toBe(false)
   await h.click('#config-save')
   await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
   const saved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]
@@ -509,7 +525,7 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
     models: [listed('Qwen/Qwen3-32B')],
   })
   expect(saved[0]).not.toHaveProperty('apiKey')
-  // Choosing it from the provider list (as the first-run guide does) opens the address too.
+  // Choosing it from the provider list (as the first-run guide does) asks for the address in place.
   await h.click('#config-add-account')
   await h.click('[data-provider="openai"]')
   const advancedOpen = () => h.doc.getElementById('config-account-advanced')?.getAttribute('data-open')
@@ -518,7 +534,8 @@ it('connects a relay through the OpenAI-compatible form: listed or typed models,
   h.input('config-provider').dispatchEvent(
     new (window as Window).Event('change', { bubbles: true }) as unknown as Event,
   )
-  expect(advancedOpen()).toBe('true')
+  expect(advancedOpen()).toBe('false')
+  expect(h.input('config-base-url').value).toBe('')
   expect(h.input('config-base-url').value).toBe('')
   h.controller.close()
 })
@@ -572,7 +589,7 @@ it('edits a saved OpenAI-compatible account: its models are part of the draft, a
     new (window as Window).Event('input', { bubbles: true }) as unknown as Event,
   )
   await vi.waitFor(() => expect(h.input('config-model').value).toBe('a'))
-  expect(h.doc.getElementById('config-key-hint')?.textContent).toBe(zhT('settings.key.optionalHint'))
+  expect(h.doc.getElementById('config-key-hint')?.textContent).toBe('')
   await h.click('#config-save')
   await vi.waitFor(() => expect(h.config.save).toHaveBeenCalledTimes(2))
   const moved = h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>]
@@ -704,4 +721,38 @@ it('reports a close once per open dialog, however it was closed', async () => {
   await h.controller.open()
   dialog.dispatchEvent(new (window as Window).Event('cancel', { cancelable: true }) as unknown as Event)
   expect(h.onClose).toHaveBeenCalledTimes(2)
+})
+
+it('shows discovered image input, keeps an edited choice when relisting, and saves it per relay model', async () => {
+  const models = [
+    { id: 'a', name: 'A', input: ['text', 'image'] as ('text' | 'image')[] },
+    { id: 'b', name: 'B' },
+  ]
+  const h = await setup(
+    [{ ...account('relay'), providerId: 'openai-compatible', model: 'a', models }],
+    [{ ...OPENAI, id: 'openai-compatible' }],
+  )
+  await h.click('button[aria-label="编辑 relay"]')
+  const image = () =>
+    h.doc.querySelector('#config-model-inputs input[value="image"]') as unknown as HTMLInputElement | null
+  const text = () =>
+    h.doc.querySelector('#config-model-inputs input[value="text"]') as unknown as HTMLInputElement | null
+  await vi.waitFor(() => expect(image()?.checked).toBe(true))
+  image()!.click()
+  await vi.waitFor(() => expect(image()?.checked).toBe(false))
+  expect(text()?.disabled).toBe(true)
+  h.config.test.mockResolvedValueOnce({ verified: true, models })
+  const fetch = [...h.doc.querySelectorAll('#config-compatible-models button')].find(
+    (b) => b.textContent === zhT('accounts.compatible.fetch'),
+  )!
+  ;(fetch as unknown as HTMLButtonElement).click()
+  await vi.waitFor(() => expect(h.config.test).toHaveBeenCalled())
+  await settle()
+  expect(image()?.checked).toBe(false)
+  await h.click('#config-save')
+  await vi.waitFor(() => expect(h.config.save).toHaveBeenCalled())
+  expect((h.config.save.mock.calls.at(-1) as unknown as [Record<string, unknown>])[0]).toMatchObject({
+    models: [{ id: 'a', input: ['text'] }, { id: 'b' }],
+  })
+  h.controller.close()
 })

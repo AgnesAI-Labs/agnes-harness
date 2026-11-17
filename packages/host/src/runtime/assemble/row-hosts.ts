@@ -1,11 +1,17 @@
-import { API_VERSION } from '@agnes/extension-api'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { API_VERSION, type SideModelEntry } from '@agnes/extension-api'
+import { pinOptionalBundledRowGrants } from '@agnes/host-extensions/assemble/host-grants'
 import { ExtensionOwners } from '@agnes/host-extensions/ext-host/extension-owners'
 import { createExtensionOrder } from '@agnes/host-extensions/ext-host/extension-status-book'
-import { createRowExtensionHost } from '@agnes/host-extensions/ext-host/row-extension-host'
+import { createRowExtensionHost, pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 import { createRowServiceHost } from '@agnes/host-extensions/ext-host/row-services'
+import { BundledAppChannelHub } from '@agnes/host-extensions/profile/bundled-app-channels'
 import { ownedStore } from '@agnes/host-extensions/profile/owned-store'
 import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
-import { readPluginCapabilities } from '@agnes/package-manager'
+import { parseAgnesPluginEntries, readPluginCapabilities } from '@agnes/package-manager'
+import { createSessionWorkAuthority } from '../sessions/session-work-authority.js'
+import { channelState } from './channel-state.js'
 import type { AssemblyContext } from './context.js'
 import type { PackageSet } from './packages.js'
 import type { ProcessServices } from './process-services.js'
@@ -25,7 +31,27 @@ export function createRowHosts(
   const { deps, say } = ctx
   const { activeRuntimeSources } = pkgs
   const bootCatalogue = deps.runtimePluginCatalogue ?? activeRuntimeSources
+  const channels = channelState(proc.adapters.storage.metadata, ctx.profile.name)
+  channels.rememberSources(bootCatalogue)
   const pluginCatalogue = new RuntimePluginCatalogue(bootCatalogue)
+  let sideModels: () => readonly SideModelEntry[] = () => []
+  const modelListeners = new Set<() => void>()
+  const subscribeSideModels = (listener: () => void) => {
+    modelListeners.add(listener)
+    return () => {
+      modelListeners.delete(listener)
+    }
+  }
+  let pendingModels = false
+  const notifySideModels = () => {
+    if (pendingModels) return
+    pendingModels = true
+    queueMicrotask(() => {
+      pendingModels = false
+      for (const listener of modelListeners) listener()
+    })
+  }
+  const hostGrants = optionalRowGrants(ctx, pluginCatalogue)
   const extensionInfo = {
     agnesVersion: deps.agnesVersion ?? '0.0.0',
     apiVersion: API_VERSION,
@@ -38,6 +64,21 @@ export function createRowHosts(
   // first tree so that tree can hand rows the service; it stays dormant until the kernel is up.
   const requestSkillInstall = deps.skillInstall
   const rowExtensions = createRowExtensionHost({
+    hostGrants,
+    sessionWorkAuthority: (origin, integrity) =>
+      createSessionWorkAuthority({
+        activations: proc.profileActivations,
+        owner: pluginRowSource(origin.rowId),
+        packageId: origin.packageId,
+        integrity,
+        mountIdentity: origin.mountIdentity ?? '',
+        profileDir: deps.profileDir,
+        profile: ctx.profile.name,
+        agnesVersion: deps.agnesVersion ?? '0.0.0',
+      }),
+    sideModels: () => sideModels(),
+    subscribeSideModels,
+    projectionNames: (origin) => rowServices.projectionNames(origin),
     store: ({ owner, integrity, revision, alive }) =>
       ownedStore(
         proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}`),
@@ -98,15 +139,29 @@ export function createRowHosts(
     audit: say,
     order: extensionOrder,
     owners: extensionOwners,
-    describePackage: (packageId, snapshotId, exportName) => {
+    describePackage: (packageId, snapshotId, exportName, rowId) => {
       const description = pluginCatalogue.describe(packageId, snapshotId)
       const source = pluginCatalogue.get(packageId, snapshotId)
       const declaredCapabilities = source
         ? readPluginCapabilities(source.snapshot.directory, exportName)
         : undefined
+      const row = source
+        ? parseAgnesPluginEntries(
+            packageId,
+            JSON.parse(readFileSync(join(source.snapshot.directory, 'package.json'), 'utf8')).agnes?.plugins,
+          ).find((entry) => entry.id === rowId && entry.export === exportName)
+        : undefined
       return (
         description && {
           ...description,
+          ...(row?.inject?.includes('sessionWork') &&
+          row.runtime === 'in-process' &&
+          declaredCapabilities?.sessionWork === true
+            ? { sessionWorkDeclared: true }
+            : {}),
+          ...(row?.inject?.includes('sideCall') && row.runtime === 'in-process'
+            ? { sideCallDeclared: true }
+            : {}),
           ...(declaredCapabilities === undefined ? {} : { declaredCapabilities }),
         }
       )
@@ -120,9 +175,23 @@ export function createRowHosts(
       : undefined
     return description && { ...description, ...(declaredCapabilities ? { declaredCapabilities } : {}) }
   }
+  const scope = backendScope(ctx)
   const rowServices = createRowServiceHost(describeServices, {
+    ...(deps.channelInteractions ? { channelInteractions: deps.channelInteractions } : {}),
+    ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
+    channelStateDirectory: join(deps.dataDir, 'channels'),
+    channelScope: scope,
+    resolveSecret: proc.secrets,
+    channelLog: deps.log,
+    channelDirectory: proc.channelDirectory,
+    channelRemember: channels.remember,
+    channelTargets: proc.channelTargets,
+    channelCurrent: (owner, integrity, revision) =>
+      proc.profileActivations.require(owner, integrity, undefined, revision),
     managed: proc.profileManaged,
     streams: proc.profileStreams,
+    hostGrants,
+    ...bundledAppBackend(ctx, scope),
     namespace: (owner, name) =>
       proc.adapters.storage.metadata.namespace(owner, `profile:${ctx.profile.name}:${name}`),
     describe: describeServices,
@@ -137,9 +206,17 @@ export function createRowHosts(
     for (const source of await deps.runtimePluginSources()) {
       sources.set(`${source.snapshot.packageId}\0${source.snapshot.snapshotId}`, source)
     }
-    pluginCatalogue.replace([...sources.values()])
+    const refreshed = [...sources.values()]
+    channels.rememberSources(refreshed)
+    pluginCatalogue.replace(refreshed)
   }
   return {
+    sideModels: () => sideModels(),
+    subscribeSideModels,
+    setSideModels(read: () => readonly SideModelEntry[]) {
+      sideModels = read
+      notifySideModels()
+    },
     bootCatalogue,
     pluginCatalogue,
     extensionInfo,
@@ -149,6 +226,41 @@ export function createRowHosts(
     rowServices,
     refreshPluginCatalogue,
   }
+}
+
+/**
+ * Optional host grants for installed rows. The package list this container was built with misses
+ * a package that an in-place publication enabled or updated later, so a generation host supplies
+ * the verified entry of the generation that selected the row's snapshot, as a fresh container has.
+ */
+function optionalRowGrants(ctx: AssemblyContext, catalogue: RuntimePluginCatalogue) {
+  const { generationPackage } = ctx.deps
+  return pinOptionalBundledRowGrants(
+    generationPackage
+      ? (origin) => generationPackage(origin.packageId, origin.snapshotId)
+      : ctx.profile.packages,
+    (packageId, snapshotId) => catalogue.get(packageId, snapshotId),
+  )
+}
+
+/** Where row backends keep their state; channel rows and the bundled app's grant share it. */
+function backendScope(ctx: AssemblyContext) {
+  const { deps } = ctx
+  return {
+    home: dirname(dirname(deps.profileDir)),
+    profile: ctx.profile.name,
+    dataDir: deps.dataDir,
+    workspace: deps.workspaceRoot,
+  }
+}
+
+/** The bundled app's grant inputs, present only when the daemon wired an owner client. */
+function bundledAppBackend(ctx: AssemblyContext, scope: ReturnType<typeof backendScope>) {
+  const client = ctx.deps.bundledAppClient
+  if (!client) return {}
+  // One hub per assembly: its channel rows attach here and the bundled app's grant reads it.
+  const channels = new BundledAppChannelHub()
+  return { bundledApp: { stateRoot: join(ctx.deps.dataDir, 'bundled-apps'), scope, client, channels } }
 }
 
 export type RowHosts = ReturnType<typeof createRowHosts>

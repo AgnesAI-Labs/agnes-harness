@@ -7,8 +7,8 @@ export type ButtonProps = AntButtonProps & {
   appearance?: ButtonAppearance
   /** Only for the confirming action in a destructive dialog. */
   dangerFilled?: boolean
-  /** Explain a disabled action; rendered through the shared tooltip. */
-  disabledReason?: string
+  /** Explain a disabled action; rendered through the shared tooltip. A function is read when it opens. */
+  disabledReason?: string | (() => string)
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -45,7 +45,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       autoInsertSpace={false}
       {...props}
       aria-busy={busy || props['aria-busy']}
-      title={props.disabled ? (disabledReason ?? props.title) : props.title}
+      title={props.disabled && typeof disabledReason === 'string' ? disabledReason : props.title}
       className={classes}
     >
       {children}

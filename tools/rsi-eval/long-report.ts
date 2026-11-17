@@ -413,3 +413,100 @@ export const forgettingMarkdown = (f: NonNullable<ReturnType<typeof forgettingRe
   lines.push('')
   return lines
 }
+
+// ------------------------------------------------------------------ saved lessons in context
+
+/**
+ * Whether the sessions after the first of `on` runs began with a saved lesson in the model's context: the
+ * first task-experience snapshot of the session carried at least one entry saved to workspace or user
+ * memory. Next to it, the trap hits per later session, per arm. The frozen arm gets its lessons as
+ * hand-written memory, not through the snapshot, so it does not enter the count.
+ */
+export const lessonsReport = (records: RunRecord[]) => {
+  const later = records
+    .filter((r) => r.setting === 'on' && r.category !== 'workflow')
+    .flatMap((r) =>
+      (r.experienceAtStart ?? [])
+        .filter((e) => e.session > 0)
+        .map((e) => ({
+          run: runName(r),
+          session: e.session,
+          snapshot: e.snapshot,
+          saved: e.saved,
+          savedIncluded: e.savedIncluded,
+          hits: r.trapEvents?.find((t) => t.session === e.session)?.hits.length ?? 0,
+        })),
+    )
+  if (later.length === 0) return undefined
+  const hitsPerLaterSession = Object.fromEntries(
+    ARM_ORDER.flatMap((arm) => {
+      const sessions = records
+        .filter((r) => r.setting === arm && r.category !== 'workflow')
+        .flatMap((r) => (r.trapEvents ?? []).filter((t) => t.session > 0))
+      return sessions.length === 0
+        ? []
+        : [[arm, { sessions: sessions.length, mean: mean(sessions.map((t) => t.hits.length)) }]]
+    }),
+  )
+  return {
+    laterSessions: later.length,
+    withSnapshot: later.filter((s) => s.snapshot).length,
+    withSaved: later.filter((s) => s.saved > 0).length,
+    savedInContext: later.filter((s) => s.savedIncluded > 0).length,
+    hitsPerLaterSession,
+    sessions: later,
+  }
+}
+
+export const lessonsMarkdown = (l: NonNullable<ReturnType<typeof lessonsReport>>): string[] => [
+  '### Saved lessons in context at the start of a later session',
+  '',
+  `A later session of an on run begins with a saved lesson in context when its first task-experience snapshot carries at least one entry saved to workspace or user memory: ${l.savedInContext} of ${l.laterSessions} later sessions of on runs (${l.withSnapshot} had a snapshot, ${l.withSaved} had saved entries to choose from). The frozen arm gets its lessons as hand-written memory, not through the snapshot, and is not counted here.`,
+  '',
+  `Trap hits per later session: ${Object.entries(l.hitsPerLaterSession)
+    .map(([arm, h]) => `${arm} ${num(h.mean)} over ${h.sessions} sessions`)
+    .join('; ')}.`,
+  '',
+  '| run | session | saved lesson in context | saved entries to choose from | trap hits |',
+  '| --- | --- | --- | --- | --- |',
+  ...l.sessions.map(
+    (s) =>
+      `| ${s.run} | session ${s.session + 1} | ${s.savedIncluded > 0 ? 'yes' : s.snapshot ? 'no' : 'no snapshot'} | ${s.saved} | ${s.hits} |`,
+  ),
+  '',
+]
+
+// ------------------------------------------------------------------ the long sections together
+
+/** The sections for long tasks, capped runs, the frozen arm, saved lessons in context and rule forgetting; each only when it has data. */
+export const longSections = (records: RunRecord[], options: Options = {}) => {
+  const milestones = milestonesReport(records)
+  const capped = cappedReport(records)
+  const frozen = frozenReport(records, options)
+  const forgetting = forgettingReport(records)
+  const lessons = lessonsReport(records)
+  const on = records.filter((r) => r.setting === 'on')
+  const triggers = on.filter((r) => r.onProtocol === 'triggers').length
+  return {
+    ...(triggers > 0 ? { onProtocol: { reviews: on.length - triggers, triggers } } : {}),
+    ...(capped ? { capped } : {}),
+    ...(milestones ? { milestones } : {}),
+    ...(frozen ? { frozen } : {}),
+    ...(forgetting ? { ruleForgetting: forgetting } : {}),
+    ...(lessons ? { lessonsInContext: lessons } : {}),
+  }
+}
+
+export const longMarkdown = (r: ReturnType<typeof longSections>): string[] => [
+  ...(r.onProtocol
+    ? [
+        `On runs: ${r.onProtocol.reviews} with a manual review after every prompt, ${r.onProtocol.triggers} with refinement's own triggers only (no manual reviews; liveness checked once per session). Do not pool the two in one comparison.`,
+        '',
+      ]
+    : []),
+  ...(r.capped ? cappedMarkdown(r.capped) : []),
+  ...(r.milestones ? milestonesMarkdown(r.milestones) : []),
+  ...(r.frozen ? frozenMarkdown(r.frozen) : []),
+  ...(r.lessonsInContext ? lessonsMarkdown(r.lessonsInContext) : []),
+  ...(r.ruleForgetting ? forgettingMarkdown(r.ruleForgetting) : []),
+]

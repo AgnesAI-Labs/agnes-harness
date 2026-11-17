@@ -32,9 +32,14 @@ test('forking a recovered conversation preserves earlier file deliveries', async
   const bytes = Buffer.from([0, 1, 2, 255])
   await writeFile(resolve(runtime.workspace, 'fork-evidence.bin'), bytes)
   await prompt(parent, 'call present {"files":[{"path":"fork-evidence.bin"}]}')
-  expect((await toolResult(parent, 'present'))?.artifactRefs).toHaveLength(1)
+  const artifactRefs = (await toolResult(parent, 'present'))?.artifactRefs
+  expect(artifactRefs).toHaveLength(1)
   await prompt(parent, 'Continue with a plain text reply')
   await runtime.restart()
+  // Recover the source before testing the fork; runtime.spec owns cold browser recovery.
+  const recovered = await (await runtime.connect()).session.open(parent.id, { cwd: runtime.workspace })
+  expect(recovered.id).toBe(parent.id)
+  expect((await toolResult(recovered, 'present'))?.artifactRefs).toEqual(artifactRefs)
   await preferences(page)
   await page.goto(`${runtime.url}/?session=${encodeURIComponent(parent.id)}`)
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()

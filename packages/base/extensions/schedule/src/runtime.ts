@@ -10,6 +10,7 @@ export type {
   ScheduleSelector,
   ScheduleTarget,
   ScheduleTargetCheck,
+  ScheduleTargetPolicy,
   ScheduleView,
   ScheduleWrite,
 } from './catalog.js'

@@ -125,7 +125,6 @@ describe('dynamic ext: rows (stage 2b, D107)', () => {
         'privacyTrajectory',
         'provideTaskScope',
         'provideWorkflowRuns',
-        'refinementSettings',
         'refinementRuns',
         'computerUseBackendProvider',
         'privateArtifactStore',

@@ -534,4 +534,9 @@ it('retains pi image input limits in the public model catalogue', () => {
   expect(validateModelRecord(record).ok).toBe(true)
   inputLimits.images.maxPerMessage = 9
   expect(record.inputLimits?.images?.maxPerMessage).toBe(2)
+  const sparse = modelRecord(
+    { id: 'gw', api: source.api, baseUrl: source.baseUrl },
+    { ...source, inputLimits: { maxRequestBytes: undefined, images: { maxPerRequest: 3 } } },
+  )
+  expect(sparse.inputLimits).toStrictEqual({ images: { maxPerRequest: 3 } })
 })

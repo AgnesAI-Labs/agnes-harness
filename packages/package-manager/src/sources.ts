@@ -18,6 +18,7 @@ import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import {
   bundledExampleSource,
   bundledPluginSource,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from './bundled-plugin-source.js'
 import { copyPackageTreeSync } from './copy-tree.js'
@@ -378,7 +379,9 @@ export function assertSkillSourceLocation(
 
 /** A bundled package whose entry is generated says how to build it when a checkout has not yet. */
 export function requireGeneratedEntry(ref: string, directory: string): void {
-  const build = OPTIONAL_BUNDLED_PACKAGES.find((item) => item.ref === ref)?.build
+  const build = [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].find(
+    (item) => item.ref === ref,
+  )?.build
   if (!build) return
   let entry: unknown
   try {
@@ -435,7 +438,7 @@ export async function fetchSource(
     npmProvenance?: typeof fetchNpmProvenance
     extract?: (tarball: string, into: string, signal?: AbortSignal) => Promise<void>
     signal?: AbortSignal
-    /** Static Skill acquisition; never enters npm installation or package activation. */
+    /** Static external-content acquisition; never enters npm installation or package activation. */
     contentOnly?: boolean
   },
 ): Promise<FetchedSource> {
@@ -537,6 +540,7 @@ export async function fetchSource(
           const archiveRealpath = nativeRealpathSync(tarball)
           if (!archiveStat.isFile() || !contained(nativeRealpathSync(packDir), archiveRealpath))
             throw new Error('unsafe archive')
+          if (archiveStat.size > 256 * 1024 * 1024) throw new Error('archive too large')
           bytes = readFileSync(tarball)
         } catch {
           throw sourceError('npm pack did not produce its declared archive', 'npm-pack-archive')
@@ -567,7 +571,9 @@ export async function fetchSource(
         pkg = opts.contentOnly
           ? { name: 'skill-source', version: '0.0.0', dependencies: {} }
           : metadata(payload)
-        integrity = hashDirectory(payload)
+        integrity = opts.contentOnly
+          ? await hashDirectoryAsync(payload, opts.signal ? { signal: opts.signal } : {})
+          : hashDirectory(payload)
         break
       }
       case 'url': {
@@ -590,7 +596,9 @@ export async function fetchSource(
         pkg = opts.contentOnly
           ? { name: 'skill-source', version: '0.0.0', dependencies: {} }
           : metadata(payload)
-        integrity = hashDirectory(payload)
+        integrity = opts.contentOnly
+          ? await hashDirectoryAsync(payload, opts.signal ? { signal: opts.signal } : {})
+          : hashDirectory(payload)
         break
       }
       case 'local':

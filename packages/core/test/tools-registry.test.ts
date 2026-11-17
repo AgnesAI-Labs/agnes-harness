@@ -2,9 +2,10 @@ import { CoreError } from '@agnes/core-common/types'
 import type { ToolDef } from '@agnes/extension-api'
 import { Type } from '@sinclair/typebox'
 import { describe, expect, it } from 'vitest'
-import { ToolRegistryView } from '../src/registry/tool-allow.js'
+import { ToolRegistryView, WithoutToolsView } from '../src/registry/tool-allow.js'
 import { ToolRegistry } from '../src/registry/tools.js'
 import { modelToolSchema } from '../src/request/tool-schema.js'
+import { filteredTools } from '../src/step/tool-filter.js'
 
 const meta = {
   isReadOnly: true,
@@ -408,4 +409,46 @@ describe('ToolRegistry', () => {
     r.add({ ...def('fits'), description: 'd'.repeat(4096) }, { source: 's', trust: 'trusted' })
     expect(r.resolve('fits')).toBeDefined()
   })
+
+  it('a view without named tools answers as the view by allowed names, and reuses its snapshot until the tools change', () => {
+    const r = new ToolRegistry()
+    for (const name of ['read', 'hidden', 'write']) r.add(def(name), { source: 's', trust: 'trusted' })
+    const without = new WithoutToolsView(r, new Set(['hidden']))
+    const allowed = new ToolRegistryView(r, ['read', 'write'])
+    expect(without.resolve('hidden')).toBeUndefined()
+    expect(without.resolve('read')).toBe(r.resolve('read'))
+    expect(without.list().map((t) => t.name)).toEqual(allowed.list().map((t) => t.name))
+    expect(without.size).toBe(2)
+    const first = without.snapshot(3)
+    const reference = allowed.snapshot(3)
+    expect(first.defs).toEqual(reference.defs)
+    expect([...first.byName.keys()]).toEqual([...reference.byName.keys()])
+    expect(first.hash).toBe(reference.hash)
+    expect(first.takenAtSeq).toBe(3)
+    // Same tools, a later seq: the list and hash computed before are reused.
+    const later = without.snapshot(9)
+    expect(later.defs).toBe(first.defs)
+    expect(later.takenAtSeq).toBe(9)
+    // A change of the tools is seen at once.
+    const off = r.add(def('late'), { source: 's', trust: 'trusted' })
+    expect(without.snapshot(10).defs.map((t) => t.name)).toEqual(['late', 'read', 'write'])
+    off()
+    expect(without.snapshot(11).hash).toBe(reference.hash)
+    // Nothing hidden is registered: the source snapshot is handed back as it is.
+    const plain = new ToolRegistry()
+    plain.add(def('read'), { source: 's', trust: 'trusted' })
+    expect(new WithoutToolsView(plain, new Set(['hidden'])).snapshot(1).hash).toBe(plain.snapshot(1).hash)
+  })
+})
+
+it('onChange fires on add, dispose and through a filtered view', () => {
+  const registry = new ToolRegistry()
+  let n = 0
+  const view = filteredTools(registry, () => ({}))
+  const off = view.onChange(() => n++)
+  const dispose = registry.add(def('t1'), { source: 'agnes/tools-core', trust: 'builtin' })
+  dispose()
+  off()
+  registry.add(def('t2'), { source: 'agnes/tools-core', trust: 'builtin' })
+  expect(n).toBe(2)
 })

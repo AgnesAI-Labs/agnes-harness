@@ -65,7 +65,10 @@ export function modelVisibleSkill(
 }
 
 const encoder = new TextEncoder()
-/** Protocol ceiling for PromptSection.text. The catalog uses that limit and does not add a second one. */
+/**
+ * The catalog's own limit, 64 KiB of UTF-8. The protocol caps PromptSection.text at 65536 characters
+ * (UTF-16 units); a text within this byte limit is always within that, since a unit is at least a byte.
+ */
 const CATALOG_MAX_BYTES = 65536
 /** Per-entry catalog cap in UTF-16 code units, ellipsis included. Descriptors keep the full text. */
 const CATALOG_DESCRIPTION_MAX = 250

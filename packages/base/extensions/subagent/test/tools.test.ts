@@ -360,6 +360,122 @@ describe('subagent_spawn', () => {
     expect(calls.spawn).toHaveLength(attempted)
   })
 
+  it.each(['spawn', 'fork'] as const)(
+    'refuses a %s on a model the backend cannot start, naming the model and the reason',
+    async (kind) => {
+      const refusals = [
+        {
+          error: new CoreError('E_MODEL_UNKNOWN', 'model claude-x is not available to child agents', {
+            model: 'claude-x',
+            route: 'anthropic',
+            reason: 'no-credential',
+          }),
+          text: 'Model "claude-x" cannot run a child here: its route anthropic has no credentials. Call list_subagent_models for the models that can.',
+        },
+        {
+          error: new CoreError('E_MODEL_UNKNOWN', 'default child factory cannot resolve model claude-x', {
+            model: 'claude-x',
+          }),
+          text: 'Unknown model "claude-x" for a child. Call list_subagent_models for the models that can run one.',
+        },
+      ]
+      for (const refusal of refusals) {
+        const wt = worktrees()
+        const d = deps({ worktrees: wt.manager })
+        const { ctx } = context({
+          spawn: async () => {
+            throw refusal.error
+          },
+        })
+        ctx.tools.availability = (name) => ({
+          status: name === 'list_subagent_models' ? 'offered' : 'unavailable',
+          message: 'Request tool selection.',
+        })
+        // The hint names a tool only when the parent can call it.
+        const unlisted = context({
+          spawn: async () => {
+            throw refusal.error
+          },
+        })
+        const bare = await subagentSpawnTool(deps()).execute({ task: 't', model: 'claude-x' }, unlisted.ctx)
+        expect(bare.isError).toBe(true)
+        expect(bare.content).toEqual([
+          { type: 'text', text: refusal.text.slice(0, refusal.text.indexOf(' Call ')) },
+        ])
+        const result =
+          kind === 'fork'
+            ? await subagentForkToolWithDeps(d).execute({ question: 'q', model: 'claude-x' }, ctx)
+            : await subagentSpawnTool(d).execute({ task: 't', model: 'claude-x' }, ctx)
+        expect(result.isError).toBe(true)
+        expect(result.content).toEqual([{ type: 'text', text: refusal.text }])
+        expect(result.details).toEqual({ code: 'E_MODEL_UNKNOWN' })
+        // Nothing was created, so the prepared worktree is removed and the capacity is free again.
+        expect(wt.calls.finish).toHaveLength(1)
+        expect((await subagentSpawnTool(d).execute({ task: 'next' }, context().ctx)).isError).toBeUndefined()
+      }
+    },
+  )
+
+  it('tells the parent why a waited child failed, and marks the result as an error', async () => {
+    const error = { code: 'AUTH', message: 'route=google' }
+    const failed = context({
+      spawn: async () => ({ childKey: 'c-failed' }),
+      collect: async (childKey) => ({ childKey, status: 'failed', error }),
+    })
+    const result = await subagentSpawnTool(deps()).execute({ task: 't', wait: true }, failed.ctx)
+    expect(result.isError).toBe(true)
+    expect(result.content).toEqual([
+      { type: 'text', text: 'Delegated task failed: AUTH (route=google).\nNo findings returned.' },
+    ])
+    expect(result.details).toMatchObject({ childKey: 'c-failed', error })
+
+    // A child that wrote something before it failed keeps its text under the reason.
+    const partial = context({
+      spawn: async () => ({ childKey: 'c-partial' }),
+      collect: async (childKey) => ({ childKey, status: 'failed', text: 'half done', error }),
+    })
+    const kept = await subagentSpawnTool(deps()).execute({ task: 't', wait: true }, partial.ctx)
+    expect(kept.isError).toBe(true)
+    expect(kept.content).toEqual([
+      { type: 'text', text: 'Delegated task failed: AUTH (route=google).\nhalf done' },
+    ])
+
+    // A failure with no recorded reason is still an error result.
+    const bare = context({
+      spawn: async () => ({ childKey: 'c-bare' }),
+      collect: async (childKey) => ({ childKey, status: 'failed' }),
+    })
+    const plain = await subagentSpawnTool(deps()).execute({ task: 't', wait: true }, bare.ctx)
+    expect(plain.isError).toBe(true)
+    expect(plain.content).toEqual([{ type: 'text', text: 'Delegated task failed.\nNo findings returned.' }])
+    expect(plain.details).not.toHaveProperty('error')
+
+    // A cap names itself; a cancelled child is not an error and reads cancelled.
+    const capped = context({
+      spawn: async () => ({ childKey: 'c-capped' }),
+      collect: async (childKey) => ({ childKey, status: 'failed', stopReason: 'max_steps' }),
+    })
+    const stopped = await subagentSpawnTool(deps()).execute({ task: 't', wait: true }, capped.ctx)
+    expect(stopped.isError).toBe(true)
+    expect(stopped.content).toEqual([
+      { type: 'text', text: 'Delegated task failed: stopped at its step limit.\nNo findings returned.' },
+    ])
+    expect(stopped.details).toMatchObject({ stopReason: 'max_steps' })
+    const cancelled = context({
+      spawn: async () => ({ childKey: 'c-cancelled' }),
+      collect: async (childKey) => ({ childKey, status: 'cancelled' }),
+    })
+    const halted = await subagentSpawnTool(deps()).execute({ task: 't', wait: true }, cancelled.ctx)
+    expect(halted.isError).toBeUndefined()
+    expect(halted.content).toEqual([
+      { type: 'text', text: 'Delegated task cancelled.\nNo findings returned.' },
+    ])
+
+    // A completed child is not an error.
+    const done = await subagentSpawnTool(deps()).execute({ task: 't', wait: true }, context().ctx)
+    expect(done.isError).toBeUndefined()
+  })
+
   it('enforces depth before worktree or child creation', async () => {
     const wt = worktrees()
     const d = deps({ maxDepth: 1, worktrees: wt.manager })
@@ -522,6 +638,53 @@ describe('subagent_collect', () => {
     await subagentCollectTool(d).execute({ childKey: 'c1' }, c.ctx)
     expect(wt.calls.finish).toEqual([])
     expect((await subagentSpawnTool(d).execute({ task: 'two' }, c.ctx)).isError).toBeUndefined()
+  })
+})
+
+describe('subagent_collect on a failed child', () => {
+  it('reports the failure code and message as an error result', async () => {
+    const error = { code: 'AUTH', message: 'route=anthropic' }
+    const failed = context({ collect: async (childKey) => ({ childKey, status: 'failed', error }) })
+    const result = await subagentCollectTool(deps()).execute({ childKey: 'c1' }, failed.ctx)
+    expect(result.isError).toBe(true)
+    expect(result.content).toEqual([{ type: 'text', text: 'child c1: failed: AUTH (route=anthropic).' }])
+    expect(result.details).toEqual({ childKey: 'c1', status: 'failed', error })
+
+    const partial = context({
+      collect: async (childKey) => ({ childKey, status: 'failed', text: 'half done', error }),
+    })
+    const kept = await subagentCollectTool(deps()).execute({ childKey: 'c2' }, partial.ctx)
+    expect(kept.isError).toBe(true)
+    expect(kept.content).toEqual([
+      { type: 'text', text: 'child c2: failed: AUTH (route=anthropic).\nhalf done' },
+    ])
+
+    const bare = context({ collect: async (childKey) => ({ childKey, status: 'failed' }) })
+    const plain = await subagentCollectTool(deps()).execute({ childKey: 'c3' }, bare.ctx)
+    expect(plain.isError).toBe(true)
+    expect(plain.content).toEqual([{ type: 'text', text: 'child c3: failed' }])
+
+    const capped = context({
+      collect: async (childKey) => ({ childKey, status: 'failed', stopReason: 'budget', text: 'so far' }),
+    })
+    const stopped = await subagentCollectTool(deps()).execute({ childKey: 'c4' }, capped.ctx)
+    expect(stopped.isError).toBe(true)
+    expect(stopped.content).toEqual([
+      { type: 'text', text: 'child c4: failed: stopped at its budget.\nso far' },
+    ])
+    expect(stopped.details).toEqual({ childKey: 'c4', status: 'failed', stopReason: 'budget' })
+
+    // A cancelled child is not an error, and its result says cancelled ahead of anything it wrote.
+    for (const text of [undefined, 'half done']) {
+      const cancelled = context({
+        collect: async (childKey) => ({ childKey, status: 'cancelled', ...(text ? { text } : {}) }),
+      })
+      const result5 = await subagentCollectTool(deps()).execute({ childKey: 'c5' }, cancelled.ctx)
+      expect(result5.isError).toBeUndefined()
+      expect(result5.content).toEqual([
+        { type: 'text', text: text ? `child c5: cancelled\n${text}` : 'child c5: cancelled' },
+      ])
+    }
   })
 })
 

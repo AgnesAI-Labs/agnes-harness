@@ -294,6 +294,33 @@ it('distinguishes native local execution from OS isolation without changing perm
   await view.close()
 })
 
+it('names the Windows partial contract instead of calling it no OS isolation', async () => {
+  const boundary = {
+    contract: 'windows-write-restricted-v1',
+    fileWrite: 'acl-partial',
+    fileRead: 'unrestricted',
+    network: 'unrestricted',
+    processTree: 'job-object',
+  } as const
+  const runtime = descriptor('gen-1', {
+    policy: {
+      toolPolicy: 'default',
+      toolRuntime: 'default',
+      readOnly: false,
+      sandbox: {
+        provider: 'local',
+        onUnavailable: 'allow-if-unimplemented',
+        enforcement: { level: 'partial', scope: ['file'], boundary },
+      },
+    },
+  })
+  const view = await mount(createElement(RuntimeInfo, { runtime, t: enT }))
+  expect(view.host.textContent).toContain(enT('session.runtime.windowsAclIsolation'))
+  expect(view.host.textContent).toContain(enT('session.runtime.windowsAclIsolationHelp'))
+  expect(view.host.textContent).not.toContain(enT('session.runtime.noOsIsolation'))
+  await view.close()
+})
+
 it('puts session allowances before standing ones and drops revoked grants', () => {
   const result = orderGrants([
     grant('write', { lifetime: 'always', createdAt: '2026-10-14T03:00:00.000Z' }),

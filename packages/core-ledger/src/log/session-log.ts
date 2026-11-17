@@ -1,3 +1,5 @@
+export { createBackgroundAppendAuthority } from './background-authority.js'
+
 import {
   type Clock,
   CoreError,
@@ -11,6 +13,7 @@ import {
   type SessionKey,
 } from '@agnes/core-common/types'
 import { describeValidationErrors, type ThinkingLevel, validateOpState } from '@agnes/protocol'
+import { DeliveryMarkerIndex, withoutInlineMarkers } from './delivery-marker.js'
 import { forkInto, verifiedRange } from './fork-log.js'
 import { type ForkBase, forkChecks, seededLogs } from './fork-seed.js'
 import {
@@ -19,7 +22,6 @@ import {
   verifyCheckpointPrefix,
   waitForVerification,
 } from './history-verification.js'
-
 import {
   type IntegrityState,
   LEDGER_INTEGRITY_ALGORITHM,
@@ -42,6 +44,8 @@ import { makeVerifiedHead } from './verified-head.js'
 export type { FullVerifyReport } from './history-verification.js'
 
 export type AppendOptions = {
+  /** Internal per-invocation writer claim, never serialized or exposed to extensions. */
+  backgroundAuthority?: object
   /** Backend command authority recheck after queued writes, immediately before storage commit. */
   beforeCommit?: () => void | Promise<void>
   /** Synchronous authority fence after async rechecks, with no await before commit admission. */
@@ -78,7 +82,12 @@ export type OpenLogOptions = {
   clock: Clock
   timers?: Timers
   /** `op` is the program-counter cell the batch will write, when it writes one. */
-  relationCheck?: (events: PreparedEvent[], log: SessionLogImpl, op: OpWrite | undefined) => void
+  relationCheck?: (
+    events: PreparedEvent[],
+    log: SessionLogImpl,
+    op: OpWrite | undefined,
+    backgroundAuthority?: object,
+  ) => void
   onAppended?: (events: Event[], extra: AppendedExtra) => void
   /** Folds open-time checked pages in order; the prefix remains provisional until fullVerified(). */
   verification?: import('./integrity.js').VerificationOptions
@@ -107,6 +116,8 @@ export class SessionLogImpl {
   }>()
   private readonly faultListeners = new Set<(e: CoreError) => void>()
   private faultCause: CoreError | undefined
+  /** Each queued item's delivery marker, so a claim reads it without a scan (see delivery-marker.ts). */
+  readonly deliveryMarkers = new DeliveryMarkerIndex((q) => this.scan(q))
 
   /**
    * Privileged post-commit observation; `'*'` observes every type. Copies isolate observers from the
@@ -645,7 +656,9 @@ export class SessionLogImpl {
   }
 
   // Renewal runs on a self-rescheduling one-shot timer at a third of the TTL, so two missed ticks
-  // still leave a margin before the lease lapses.
+  // still leave a margin before the lease lapses. It carries the same claim a write does: a machine
+  // that slept through the term wakes to a lapsed lease, which is taken back while no other writer
+  // has the session and nothing was written since, instead of failing the turn that is still running.
   private scheduleRenew(): void {
     const handle: unknown = this.timers().setTimeout(
       () => {
@@ -653,8 +666,9 @@ export class SessionLogImpl {
         if (this.timer !== handle) return
         this.timer = undefined
         if (this.closed || this.faultedValue) return
+        const claim = { ttlMs: this.o.ttlMs, expectedLastSeq: this.lastSeqValue }
         void this.o.storage
-          .renew(this.o.key, this.o.writerRunId)
+          .renew(this.o.key, this.o.writerRunId, claim)
           .then(() => {
             this.leaseRenewedAt = this.o.clock()
           })
@@ -694,7 +708,8 @@ export class SessionLogImpl {
           )
       } else await this.fullVerified()
     }
-    const events = prepareEvents(tx, {
+    // No closed row is written with a delivery marker inline; see delivery-marker.ts.
+    const events = prepareEvents(withoutInlineMarkers(tx), {
       ids: this.o.ids,
       clock: this.o.clock,
       refineCaller: opts.refineCaller === true,
@@ -707,7 +722,7 @@ export class SessionLogImpl {
           errors: checked.errors,
         })
     }
-    this.o.relationCheck?.(events, this, op)
+    this.o.relationCheck?.(events, this, op, opts.backgroundAuthority)
     let release!: () => void
     const gate = new Promise<void>((res) => {
       release = res
@@ -720,9 +735,9 @@ export class SessionLogImpl {
       // one must not reach storage if that earlier batch sealed the session while this one waited.
       // `closed` is deliberately not re-checked, because close() promises to drain what it admitted.
       this.sealCheck()
-      this.o.relationCheck?.(events, this, op)
+      this.o.relationCheck?.(events, this, op, opts.backgroundAuthority)
       if (opts.beforeCommit) await opts.beforeCommit()
-      this.o.relationCheck?.(events, this, op)
+      this.o.relationCheck?.(events, this, op, opts.backgroundAuthority)
       this.sealCheck()
       if (events.some(attestsHistory) && !this.historyVerified)
         throw new CoreError(
@@ -772,6 +787,7 @@ export class SessionLogImpl {
             data: e.data,
           })
       }
+      this.deliveryMarkers.observe(stamped)
       this.lastSeqValue = committed.seqs[committed.seqs.length - 1] as Seq
       if (op) {
         this.registersCache.apply({

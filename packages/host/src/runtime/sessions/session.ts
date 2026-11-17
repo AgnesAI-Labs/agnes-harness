@@ -57,6 +57,11 @@ type PinnedSeamKind = (typeof PINNED_SEAM_KINDS)[number]
 export type CreateSessionOptions = {
   /** Backend-only role admission; never part of session.new JSON. */
   roleDelegation?: import('@agnes/core').RoleDelegation
+  /**
+   * Backend-only, never part of session.new JSON: outward command rules on for this session (see
+   * core's `SessionOptions.outwardCommandRules`). Not persisted, so the opener sets it on every open.
+   */
+  outwardCommandRules?: true
   delegation?: import('@agnes/core').SessionOptions['delegation']
   agent?: string
   agentDigest?: string
@@ -527,6 +532,7 @@ export async function createSession(
           toolFilter: { allow: roleAuthority(opts.roleDelegation).tools.ids },
         }
       : {}),
+    ...(opts.outwardCommandRules ? { outwardCommandRules: true as const } : {}),
     ...(opts.delegation ? { delegation: opts.delegation } : {}),
     ...(a.systemPromptProvider
       ? {

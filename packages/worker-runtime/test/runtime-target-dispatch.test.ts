@@ -57,6 +57,7 @@ function deferred<T = void>() {
 async function fixture(
   applyRuntimeTarget: WorkerHostLike['applyRuntimeTarget'],
   env: Record<string, string> = {},
+  extra: Record<string, unknown> = {},
 ) {
   const root = await mkdtemp(join(tmpdir(), 'agnes-runtime-target-dispatch-'))
   roots.push(root)
@@ -86,6 +87,7 @@ async function fixture(
     close: vi.fn(async () => undefined),
     createSession: vi.fn(),
     acceptWorkspaceBinding: vi.fn(),
+    ...extra,
   } as unknown as WorkerHostLike
   await runWorker(
     {
@@ -106,6 +108,26 @@ async function fixture(
 }
 
 describe('runWorker runtime.stale production dispatch', () => {
+  it("stops the bundled apps whose rows a target drops before the Host builds that target's generation", async () => {
+    const order: string[] = []
+    const retireDropped = vi.fn(async (rows: readonly { id: string }[]) => {
+      order.push(`retire ${rows.length}`)
+    })
+    const applyRuntimeTarget = vi.fn(async (target: RuntimeTarget) => {
+      order.push('apply')
+      return report(target)
+    })
+    const { link } = await fixture(
+      applyRuntimeTarget,
+      {},
+      { profileServices: { managed: { retireDropped } } },
+    )
+    const a = artifact('a')
+    link.push(Buffer.from(encodeFrame(stale(a))))
+    await expect.poll(() => order).toEqual(['retire 0', 'apply'])
+    expect(retireDropped.mock.calls[0]?.[0]).toEqual(applyRuntimeTarget.mock.calls[0]?.[0].tree.rows)
+  })
+
   it('verifies complete frames and applies only the latest queued target through one Host slot', async () => {
     const first = deferred<void>()
     const calls: RuntimeTarget[] = []

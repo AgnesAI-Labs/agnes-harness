@@ -36,10 +36,17 @@ import {
 import type { AssemblyLifetime } from './assembly-lifetime.js'
 import type { AssemblyBase, StartSupervisorOptions } from './assembly-options.js'
 import { startJwksCache } from './jwks-cache.js'
+import type { OwnerInputEngine } from './managed-input-admission.js'
+import { ManagedSessionInputs } from './managed-session-inputs.js'
+import { ManagedSessionRecords } from './managed-session-records.js'
 import { acquireDaemonMutationLock } from './mutation-lock.js'
 import { canonicalPath } from './scope.js'
 import { persistResolvedProfile } from './storage-adapters.js'
-import { openWorkspaceCatalog } from './workspace-catalog.js'
+import {
+  managedChatPrivateRoots,
+  openWorkspaceCatalog,
+  readLegacyChatSchedules,
+} from './workspace-catalog.js'
 
 export type Conn = { ep: LocalEndpoint; conn: ConnectionState }
 
@@ -67,12 +74,30 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
   const sessionOwnership = jobTables
     ? new SessionPrincipalOwnershipIndex(jobTables.table('session_principal_ownership'))
     : new MemorySessionPrincipalOwnership()
+  // Read by the session opener from its first open, so it exists before any worker does.
+  const managedSessionTable = jobTables?.table('managed_sessions')
+  const managedSessionRecords = managedSessionTable
+    ? new ManagedSessionRecords(managedSessionTable)
+    : undefined
+  // Same table handle: `releasePackage` deletes owner inputs in the records' transaction.
+  const managedSessionInputs = managedSessionTable ? new ManagedSessionInputs(managedSessionTable) : undefined
+  /** Set once client services build the engine; package removal and grant pruning start earlier. */
+  const ownerInputHolder: { engine?: OwnerInputEngine } = {}
   const workspaceCatalog = await openWorkspaceCatalog({
     dataDir: o.config.dataDir,
+    ownerHome,
+    privateRoots: managedChatPrivateRoots({
+      ownerHome,
+      dataDir: o.config.dataDir,
+      profileDir: o.profileDir,
+      profileFile: o.profileFile,
+      ...(o.profile.adapters?.secrets.path ? { secretsDirectory: o.profile.adapters.secrets.path } : {}),
+    }),
     tables: jobTables,
     sessions: workspaces,
     clock,
     workspaceRoot: o.workspaceRoot,
+    legacySchedules: readLegacyChatSchedules(jobTables),
   })
   const resourceControlDirectory = resourceControlPath(o.config.dataDir)
   // Global MCP/user/package resource workers use a server-owned data root when this daemon was
@@ -226,6 +251,9 @@ export async function openStores(state: AssemblyBase, lifetime: AssemblyLifetime
     tickets,
     workspaces,
     sessionOwnership,
+    managedSessionRecords,
+    managedSessionInputs,
+    ownerInputHolder,
     workspaceCatalog,
     resourceControlDirectory,
     resourceWorkerRoot,

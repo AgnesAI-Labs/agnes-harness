@@ -28,6 +28,17 @@ export function shellGuidance(ctx: ToolContext, command: string, stopped = 0): s
   return notes
 }
 
+/**
+ * apt's own error line for a package name it does not know. On a machine whose package lists were
+ * never downloaded (a fresh container image ships without them) every name is unknown, so the note
+ * names the step that usually fixes it.
+ */
+export function packageListsNote(stdout: string, stderr: string): string | undefined {
+  return /^E: Unable to locate package /m.test(`${stdout}\n${stderr}`)
+    ? '[apt found no such package; a fresh container often has no package lists yet. Run `apt-get update`, then retry the install.]'
+    : undefined
+}
+
 export function timeoutGuidance(ctx: ToolContext, command: string, cwd: string, empty: boolean): string {
   const key = JSON.stringify([ctx.session.key, ctx.session.lane, cwd, command])
   const count = (timeouts.get(key) ?? 0) + 1
@@ -93,13 +104,15 @@ export const DEADLINE_ADVICE =
   'Use the time left for short steps: leave the work in its best checked state and end with a short summary.'
 
 /**
- * The legacy cap on one foreground observation of a process that may continue in the background.
+ * The cap on one foreground observation of a process that may continue in the background.
  * An opt-in preset tools.shell_observation_ms supplies a shorter window without changing lifetime.
- * Two minutes is the default command timeout, so a call that asks for nothing is unchanged, and
- * most installs and builds finish inside it; a longer request no longer parks a whole turn (a 600 s
- * apt-get held ten minutes of a 40-minute one), while each extra poll costs the model a request.
+ * A call that asks for nothing still waits the default command timeout (two minutes). A longer
+ * request waits up to five minutes, the same bound as one job_output wait: a 600 s apt-get no longer
+ * parks a whole turn (it held ten minutes of a 40-minute one), and a `sleep 150; tail log` poll keeps
+ * its tail instead of being moved to the background at two minutes and costing a second step.
+ * In a turn with a time limit, `deadlineWait` still ends the wait well before the deadline.
  */
-export const FOREGROUND_WAIT_MAX_MS = 120_000
+export const FOREGROUND_WAIT_MAX_MS = 300_000
 
 const JOB_TOOLS = ['job_output', 'job_list', 'job_kill'] as const
 

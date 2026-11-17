@@ -111,8 +111,8 @@ describe('supported API subset boundary cases', () => {
 })
 
 describe('5.x major API', () => {
-  it('admits ^5 ranges and refuses every ^4 range at the 5.4.0 API', () => {
-    expect(API_VERSION).toBe('5.4.0')
+  it('admits ^5 ranges and refuses every ^4 range at the 5.22.0 API', () => {
+    expect(API_VERSION).toBe('5.22.0')
     for (const range of ['^5.0.0', '^5.0', '>=5.0.0 <6.0.0', '5.*'])
       expect(satisfiesApiRange(range), range).toBe(true)
     for (const range of ['^4.0.0', '^4.0', '4.*']) expect(satisfiesApiRange(range), range).toBe(false)
@@ -168,6 +168,11 @@ describe('5.x major API', () => {
     expect(ranges.length).toBeGreaterThan(60)
     const refused = ranges.filter(([, range]) => range === undefined || !satisfiesApiRange(range))
     expect(refused).toEqual([])
-    expect(ranges.filter(([, range]) => range !== '^5.0.0')).toEqual([])
+    expect(ranges.filter(([, range]) => range !== '^5.0.0')).toEqual([
+      ['package-manager/bundled-plugins/judgment/ ext:agnes.judgment/main', '^5.20.0'],
+      ['package-manager/bundled-plugins/judgment/ hostProvidedExternals', '^5.20.0'],
+      ['package-manager/bundled-plugins/superagent/ ext:agnes.superagent/main', '^5.22.0'],
+      ['package-manager/bundled-plugins/superagent/ hostProvidedExternals', '^5.22.0'],
+    ])
   })
 })

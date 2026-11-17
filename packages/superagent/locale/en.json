@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Superagent",
+    "description": "Watch one GitHub repository, turn authorized requests into Tickets, and execute each in its own Agnes session."
+  }
+}

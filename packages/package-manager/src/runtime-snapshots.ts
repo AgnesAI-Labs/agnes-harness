@@ -218,6 +218,7 @@ function* verifyRecordSteps(
   )
   return freezeData({
     snapshotId: checkedRecord.snapshotId,
+    source: structuredClone(source),
     profile: s.profile,
     packageId: checkedRecord.packageId,
     version: checkedRecord.packageVersion,

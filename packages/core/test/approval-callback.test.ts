@@ -124,6 +124,54 @@ describe('durable tool decisions', () => {
       await h.session.close()
     }
   })
+  it('rejects a memory candidate without asking when the opening input turned memory writes off', async () => {
+    let asked = 0
+    const h = await openSession({
+      provider: fakeProvider([textTurn('ok')]),
+      seams: fakeSeams({
+        approval: {
+          ask: async (request) => {
+            asked++
+            return { ticket: 'memory', expiresAt: request.deadline }
+          },
+        },
+      }),
+    })
+    try {
+      await h.session.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'work' }],
+        actor: {
+          id: 'plugin:p',
+          org: 'plugin',
+          role: 'trigger',
+          deptPath: [],
+          attrs: { memoryWrites: 'off' },
+        },
+        origin: 'system',
+      })
+      await h.session.run({ until: 'turn-end', signal: new AbortController().signal })
+      const tool: { name: string; meta: ToolMeta } = shellTool()
+      expect(
+        await approveMemoryFile(
+          h.session,
+          {
+            path: 'MEMORY.md',
+            baseHash: 'a'.repeat(64),
+            newHash: 'b'.repeat(64),
+            diff: 'synthetic change',
+            source: { sessionKey: h.session.key, turn: 1, toolUseId: 'write-memory' },
+          },
+          { name: tool.name, meta: tool.meta },
+          0,
+          new AbortController().signal,
+        ),
+      ).toEqual({ status: 'rejected' })
+      expect(asked).toBe(0)
+      expect(await h.session.decisions.list()).toEqual([])
+    } finally {
+      await h.session.close()
+    }
+  })
   it('persists before delivery, re-offers the original ID/deadline, and never makes no-handler an answer', async () => {
     const h = await parked()
     try {

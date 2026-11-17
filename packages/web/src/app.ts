@@ -2,7 +2,7 @@ import { defaultLoop, defaultModelAdapter } from '@agnes/protocol'
 import type { SessionControlStateResult } from '@agnes/protocol/gen/agnes-v1'
 import type { StartedSession } from '@agnes/web-admin/agents'
 import { createFirstRunController, needsFirstRun } from '@agnes/web-admin/first-run'
-import { factChainLinks } from '@agnes/web-client'
+import { factChainLinks, reserveOwnerOnly } from '@agnes/web-client'
 import {
   appServerErrorMessage,
   bindDialogSheets,
@@ -85,8 +85,10 @@ import {
   loopIdentity,
   type NewSessionCatalog,
 } from './loop-picker.js'
+import { namedModels } from './model-picker/state.js'
 import type { ModelPickerOption } from './model-picker.js'
 import { businessAgentSuggestions } from './pages/business-agents.js'
+import { callChannel } from './pages/channel-api.js'
 import { registerBuiltinHomeEntries } from './pages/entries.js'
 import { activeHomeEntry, bindHomeRouting, mountHomePages, watchActiveHomeEntry } from './pages/host.js'
 import { bootstrapProbe, createReconnectController, type ReconnectPhase } from './reconnect.js'
@@ -117,10 +119,12 @@ import {
   rewriteMovedSettingsLink,
 } from './settings-redirects.js'
 import { createSidebarPagination } from './sidebar-pagination.js'
+import { openStartupAnchors } from './startup-anchors.js'
 import { readTraceFactChain } from './trace-facts.js'
 import type { RunReceipt, WebView } from './view.js'
 import { unmountWorkbench } from './workbench/dock.js'
 import { requestWorkspacePicker } from './workspace-picker.js'
+import { createWorkspaceSync } from './workspace-sync.js'
 
 installBrowserLogCapture()
 const { hosts, config: shellConfig, dispose: unmountAppShell } = mountAppShell()
@@ -679,6 +683,8 @@ const client = createClient({
   auth: { kind: 'local' },
   journal: localStorageJournal(sessionStorage, `agnes-web-commands:${wsUrl ?? location.origin}`),
 })
+// Before any plugin code can reach the client: owner-only methods go out only through ownerCall.
+const ownerCall = reserveOwnerOnly(client)
 onPageHide(
   bindJobsClient({
     client,
@@ -740,7 +746,7 @@ const claimSlotCard: ClaimResolver = (entry, extId) =>
   entry.owner !== undefined && (moduleExtIds.get(entry.owner)?.includes(extId) ?? false)
 const references = composerReferences(prepareComposerSession, renderControls)
 // Reserve host entries before installed modules can register their reviewed declarations.
-const removeHomeEntries = registerBuiltinHomeEntries()
+const removeHomeEntries = registerBuiltinHomeEntries(ownerCall)
 homeEntries.subscribe(openApplicationHome)
 const clientModules = await startClientModules({
   agnes: client,
@@ -1024,6 +1030,8 @@ const homePages = mountHomePages(hosts.homePage, {
   data: {
     call: (method, params) => client.call(method, params),
     sessionId: () => sessionBinding.session?.id,
+    requestProfileApproval: clientModules.requestProfileApproval,
+    channelCall: callChannel,
     selectedWorkspace: () => (selectedWorkspace?.available ? selectedWorkspace.path : undefined),
     openSettings: openSettingsSection,
     startDraft: (prompt) =>
@@ -1110,7 +1118,7 @@ let sessionPending = new URLSearchParams(location.search).get('new') === '1'
 let stopAfterSeq = 0
 let approvalBusy = false
 let runtimeModels: ModelPickerOption[] = []
-let accountLabels = new Map<string, string>()
+let configuredAccounts: ConfigSnapshot['accounts'] = []
 let accountProvider: { route?: string; id?: string; model?: string } | null = null
 let knownSessionModel: KnownSessionModel | undefined
 let initialModelPending: KnownSessionModel | undefined
@@ -1125,7 +1133,7 @@ let draftPreset: string | undefined
 // The level chosen in this draft's permission control; the recipe in `draftPreset` is independent.
 let draftPermission: PermissionMode | undefined
 let draftBundles: string[] = []
-let sessionIsolation: { sessionId: string; disabled: boolean } | undefined
+let sessionIsolation: import('./app/isolation-note.js').SessionIsolation | undefined
 let runtimeCatalog: import('@agnes/protocol').RuntimeAdminSnapshot | undefined
 const startupRequest = new URLSearchParams(location.search)
 // Settings and nested pages keep their address across reload and history traversal.
@@ -1250,6 +1258,12 @@ let sessionRows: PageSessionMeta['items'] = []
 let workspaceRows: WorkspaceEntry[] = []
 // The search panel's footer total follows the sidebar snapshot; the panel itself never reads pages.
 let refreshSearchTotal: (() => void) | undefined
+// A group can name a workspace another client registered after this page read the list.
+const workspaceSync = createWorkspaceSync({
+  known: () => (workspaceController.loaded ? workspaceRows : undefined),
+  read: () => client.workspace.list(),
+  apply: (page) => workspaceController.apply(page),
+})
 const sidebarPages = createSidebarPagination(
   client.session,
   () => {
@@ -1259,6 +1273,7 @@ const sidebarPages = createSidebarPagination(
       sessionRows.push(selected)
     updateSidebar()
     refreshSearchTotal?.()
+    void workspaceSync.reconcile(sidebarPages.snapshot().groups)
   },
   (error) => {
     const failure = error as { code?: number; data?: { code?: string }; message?: string }
@@ -1861,10 +1876,7 @@ async function refreshModels(catalogReady?: Promise<void>): Promise<ModelPickerO
   const apis = await client.apis()
   // Start the model read immediately; defaults and labels must settle before selection is applied.
   await catalogReady
-  const models = (apis.profile.models ?? []).map((model) => ({
-    ...model,
-    ...(accountLabels.has(model.route) ? { label: accountLabels.get(model.route) as string } : {}),
-  }))
+  const models = namedModels(apis.profile.models ?? [], configuredAccounts ?? [])
   if (generation > modelAppliedGeneration) {
     modelAppliedGeneration = generation
     runtimeModels = models
@@ -2082,7 +2094,7 @@ async function savedConfiguration(saved: ConfigSnapshot): Promise<void> {
   firstRun.updated(saved)
   notice.setKind('')
   accountProvider = saved.provider
-  accountLabels = new Map((saved.accounts ?? []).map((row) => [row.route, row.label]))
+  configuredAccounts = saved.accounts
   await modelRefresh.request()
   const savedModels = runtimeModels
   const published = savedModels.some(
@@ -2253,7 +2265,7 @@ onHistoryNavigation(() => {
 async function refreshModelConfiguration(): Promise<void> {
   const snapshot = await client.config.get()
   accountProvider = snapshot.provider
-  accountLabels = new Map((snapshot.accounts ?? []).map((row) => [row.route, row.label]))
+  configuredAccounts = snapshot.accounts
   const catalogReady = refreshSessionCatalog()
   await Promise.all([catalogReady, refreshModels(catalogReady)])
 }
@@ -2335,7 +2347,7 @@ run(async () => {
   void skinGroup.refresh()
   // A session selection reads its own roster. Defer the profile-only read until we know there
   // is no session to open, so startup never verifies and imports the same modules twice.
-  accountLabels = new Map((snapshot.accounts ?? []).map((row) => [row.route, row.label]))
+  configuredAccounts = snapshot.accounts
   // Existing conversations do not need a model catalog to open. Keep its read in flight while
   // the session and workspace lists resolve; only new-draft defaults depend on its result.
   const models = refreshModels().then(
@@ -2488,21 +2500,8 @@ run(async () => {
   const modelSelection = sessionBinding.capture()
   await awaitModels()
   if (!sessionBinding.isCurrent(modelSelection)) return
-  const factCandidate = startupRequest.get('factCandidate')
-  if (
-    selected &&
-    sessionBinding.session?.id === selected &&
-    factCandidate &&
-    /^candidate-[a-f0-9]{32}$/.test(factCandidate)
-  ) {
-    requestAnimationFrame(() =>
-      factChainLinks.open({
-        sessionId: selected,
-        laneId: 'main',
-        anchor: { kind: 'authoring', candidateId: factCandidate },
-      }),
-    )
-  }
+  const anchored = sessionBinding.session?.id === selected ? selected : undefined
+  openStartupAnchors(startupRequest, anchored, ownerCall)
   const shown = await firstRun.initialize(
     snapshot,
     !empty || Boolean(startupSection || startupTerminal || startupMoved || homeNavigation.getSnapshot()),

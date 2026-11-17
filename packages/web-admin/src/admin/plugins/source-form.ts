@@ -1,11 +1,54 @@
-import type { PackageSource } from '@agnes/protocol'
+import type { PackageOperation, PackageSource } from '@agnes/protocol'
 import { createCatalogTranslator, type LocaleTranslator } from '@agnes/web-ui'
+import type { PreviewMode } from './admin/operation-storage.js'
 import { pluginAdminLocaleCatalog } from './locales/admin.js'
+import type { AdminError } from './types.js'
+
+/** The manual form and the exact source whose native check is in flight. */
+export class SourceFormState {
+  mode: PreviewMode = 'install'
+  packageId: string | undefined
+  trigger: HTMLElement | undefined
+  busy = false
+  type = 'npm'
+  ref = ''
+  error: AdminError | undefined
+  problem: { type: string; ref: string } | undefined
+  placeholder = SOURCE_FORMATS.npm.example
+  checkSource: PackageSource | undefined
+
+  resolve(t: LocaleTranslator): PackageSource | undefined {
+    const ref = this.ref.trim()
+    const problem = sourceProblem(this.type, ref, t)
+    const source = problem ? undefined : sourceFromForm(this.type, ref)
+    this.problem = source ? undefined : { type: this.type, ref }
+    return source
+  }
+
+  compatibleSource(
+    operation: PackageOperation,
+    features: readonly string[] | undefined,
+  ): PackageSource | undefined {
+    const source = this.checkSource
+    this.checkSource = undefined
+    return operation.state === 'failed' &&
+      this.mode === 'install' &&
+      source &&
+      ['git', 'path', 'file', 'url'].includes(source.type) &&
+      operation.error?.code === 'E_PACKAGE_SOURCE' &&
+      ['not-plugin', 'manifest-missing'].includes(operation.error.sourceFailure ?? '') &&
+      features?.includes('packages.skill-import.v1')
+      ? source
+      : undefined
+  }
+}
 
 const sourceText = createCatalogTranslator(pluginAdminLocaleCatalog, 'en')
 
 export function sourceFromForm(type: string, ref: string): PackageSource | undefined {
   if (!ref) return undefined
+  // Native file paths enter the portable source contract at the client boundary.
+  if (type === 'file' || type === 'path') ref = ref.replaceAll('\\', '/')
   if (type === 'npm' || type === 'workspace') return { type, ref }
   if (type === 'file' || type === 'path' || type === 'git' || type === 'url')
     return { type, ref: ref.startsWith(type + ':') ? ref : type + ':' + ref }

@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, test } from 'vitest'
+import { childOutput } from './child-output.js'
 
 // The heavy tier starts the built distribution and Chromium. The same browser flow is
 // offline by default; only the explicit opt-in permits credential setup and paid inference.
@@ -12,17 +13,19 @@ test(
   async () => {
     await access(resolve('packages/cli/dist/local/agnes.mjs'))
     const require = createRequire(import.meta.url)
-    const result = await promisify(execFile)(
-      process.execPath,
-      [
-        require.resolve('@playwright/test/cli'),
-        'test',
-        '--config',
-        'tools/e2e-web/playwright.config.mjs',
-        'agent-sweep.spec.ts',
-        '--workers=1',
-      ],
-      { timeout: 100 * 60_000, maxBuffer: 4 * 1024 * 1024 },
+    const result = await childOutput(
+      promisify(execFile)(
+        process.execPath,
+        [
+          require.resolve('@playwright/test/cli'),
+          'test',
+          '--config',
+          'tools/e2e-web/playwright.config.mjs',
+          'agent-sweep.spec.ts',
+          '--workers=1',
+        ],
+        { timeout: 100 * 60_000, maxBuffer: 4 * 1024 * 1024 },
+      ),
     )
     expect(result.stdout).toMatch(/\d+ passed/)
   },

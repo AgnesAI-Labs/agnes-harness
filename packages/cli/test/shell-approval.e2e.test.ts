@@ -134,7 +134,8 @@ describe('shell approvals through the real stack', () => {
     60_000,
   )
 
-  it('stops asking for commands that start with an approved prefix', async () => {
+  it('honours POSIX prefixes while PowerShell keeps approval per command', async () => {
+    const windows = process.platform === 'win32'
     const home = mkdtempSync(join(tmpdir(), 'agnes-prefix-'))
     const createHostImpl = stack(home, (open) =>
       open === 0
@@ -152,38 +153,88 @@ describe('shell approvals through the real stack', () => {
         (value) => value.request.owner === 'core/tool-permission' && !value.result,
       )
       expect(pending?.request.spec.options).not.toContain('allow_prefix_session')
-      expect(pending?.request.spec.subject).toMatchObject({ prefixGrant: { tokens: ['git', 'status'] } })
+      if (windows) expect(pending?.request.spec.subject).not.toHaveProperty('prefixGrant')
+      else expect(pending?.request.spec.subject).toMatchObject({ prefixGrant: { tokens: ['git', 'status'] } })
       await first.close()
       first = undefined
 
       second = await bootLocal(parseArgs(['--resume', sessionId]), testDeps(home, { createHostImpl }))
       const session = await second.client.session.load(sessionId, { cwd: home })
+      if (windows) {
+        await expect(
+          second.client.approval.decide({
+            sessionId,
+            id: pending?.handle.id as string,
+            revision: pending?.revision as number,
+            commandId: 'unoffered-prefix-1',
+            response: { option: 'allow_prefix_session', value: null },
+          }),
+        ).rejects.toMatchObject({
+          code: -32009,
+          data: { code: 'APPROVAL_REJECTED', cause: { code: 'E_RELATION' } },
+        })
+        expect((await second.client.approval.sessionGrants(sessionId)).grants).toEqual([])
+      }
       await second.client.approval.decide({
         sessionId,
         id: pending?.handle.id as string,
         revision: pending?.revision as number,
         commandId: 'prefix-1',
-        response: { option: 'allow_prefix_session', value: null },
+        response: { option: windows ? 'allowed-once' : 'allow_prefix_session', value: null },
       })
       await vi.waitFor(async () =>
         expect(JSON.stringify((await session.projectUI(undefined, { surface: 'tui' })).nodes)).toContain(
           'first done',
         ),
       )
-      // The second command begins with the approved prefix: it runs and nothing is left pending.
+      // POSIX honours the prefix; PowerShell must ask again even for the same command words.
       // The continuation may still be finishing its turn; a busy session is retried until idle.
       const next = await vi.waitFor(() => session.prompt([{ type: 'text', text: 'again' }]), {
         timeout: 15_000,
         interval: 100,
       })
-      expect(next.reason).toBe('completed')
+      expect(next.reason).toBe(windows ? 'parked' : 'completed')
+      if (windows) {
+        const again = (await second.client.approval.list(sessionId)).decisions.find(
+          (value) => value.request.owner === 'core/tool-permission' && !value.result && !value.invalidation,
+        )
+        expect(again?.handle.id).toEqual(expect.any(String))
+        expect(again?.handle.id).not.toBe(pending?.handle.id)
+        expect(again?.request.spec.subject).not.toHaveProperty('prefixGrant')
+        await expect(
+          second.client.approval.decide({
+            sessionId,
+            id: again?.handle.id as string,
+            revision: again?.revision as number,
+            commandId: 'unoffered-prefix-2',
+            response: { option: 'allow_prefix_session', value: null },
+          }),
+        ).rejects.toMatchObject({
+          code: -32009,
+          data: { code: 'APPROVAL_REJECTED', cause: { code: 'E_RELATION' } },
+        })
+        await second.client.approval.decide({
+          sessionId,
+          id: again?.handle.id as string,
+          revision: again?.revision as number,
+          commandId: 'once-2',
+          response: { option: 'allowed-once', value: null },
+        })
+        await vi.waitFor(async () =>
+          expect(JSON.stringify((await session.projectUI(undefined, { surface: 'tui' })).nodes)).toContain(
+            'second done',
+          ),
+        )
+      }
       const decisions = (await second.client.approval.list(sessionId)).decisions
       expect(JSON.stringify((await session.projectUI(undefined, { surface: 'tui' })).nodes)).toContain(
         'second done',
       )
       expect(decisions.filter((value) => !value.result && !value.invalidation)).toEqual([])
       const grants = await second.client.approval.sessionGrants(sessionId)
-      expect(grants.grants.map((grant) => grant.scope)).toEqual(['shell:prefix:["git","status"]'])
+      expect(grants.grants.map((grant) => grant.scope)).toEqual(
+        windows ? [] : ['shell:prefix:["git","status"]'],
+      )
     } finally {
       await second?.close()
       await first?.close()

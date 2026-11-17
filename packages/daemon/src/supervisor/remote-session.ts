@@ -310,8 +310,23 @@ export class RemoteSession {
     return this.link.command('deliverSystemInput', params) as Promise<number>
   }
 
-  enqueue(target: 'next-turn' | 'next-step', msg: unknown): Promise<number> {
-    return this.link.command('enqueue', { target, msg }) as Promise<number>
+  /** Whether the session's live policy holds outward calls for a person (see `outwardCheckpointEnforced`). */
+  async outwardCheckpoint(): Promise<boolean> {
+    return (
+      ((await this.link.command('outwardCheckpoint', {})) as { enforced?: unknown } | null)?.enforced === true
+    )
+  }
+
+  enqueue(
+    target: 'next-turn' | 'next-step',
+    msg: unknown,
+    options?: { dedupeByCommandId?: boolean },
+  ): Promise<number> {
+    return this.link.command('enqueue', {
+      target,
+      msg,
+      ...(options?.dedupeByCommandId ? { dedupeByCommandId: true } : {}),
+    }) as Promise<number>
   }
 
   removeQueuedInput(itemId: string, actor: Actor, admissionId: string): Promise<number> {

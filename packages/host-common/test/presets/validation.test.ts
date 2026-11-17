@@ -68,6 +68,26 @@ describe('merged preset production validation', () => {
   })
 })
 
+describe('sandbox.windows_mode', () => {
+  it.each(['write-restricted', 'require-full'])('accepts %s', (windows_mode) => {
+    expect(resolve({ name: 'custom', sandbox: { level: 'L1', windows_mode } }).doc.sandbox).toEqual({
+      level: 'L1',
+      windows_mode,
+    })
+  })
+  it.each(['full', 'Write-Restricted', '', true, null, 1, ['write-restricted']])(
+    'rejects the value %j',
+    (windows_mode) => {
+      expect(() => resolve({ name: 'custom', sandbox: { windows_mode } })).toThrow(/E_PRESET_UNSUPPORTED/)
+    },
+  )
+  it('still rejects sibling keys it does not know', () => {
+    expect(() => resolve({ name: 'custom', sandbox: { windows: 'write-restricted' } })).toThrow(
+      /E_PRESET_UNSUPPORTED/,
+    )
+  })
+})
+
 it('validates inheritance links before merge removes them and keeps minimal-rl standalone', () => {
   expect(() => resolve({ name: 'custom', extends: '' })).toThrow(/invalid extends/)
   expect(() =>

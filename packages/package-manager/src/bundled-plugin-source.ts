@@ -23,7 +23,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   {
     name: 'plugin-helper',
     id: '@agnes/plugin-helper',
-    version: '0.2.27',
+    version: '0.2.44',
     license: 'Apache-2.0',
     ref: 'file:./bundled-plugins/plugin-helper',
   },
@@ -60,8 +60,7 @@ export const BUNDLED_HELPERS = Object.freeze([
   },
 ])
 
-/** Shipped discovery choices; never auto-installed or enabled in profiles. */
-export const OPTIONAL_BUNDLED_PACKAGES: readonly {
+type BundledPackage = {
   name: string
   id: string
   version: string
@@ -70,7 +69,10 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
   sourcePath: string
   /** Set when the entry is generated: the command that builds it in a development checkout. */
   build?: string
-}[] = Object.freeze([
+}
+
+/** Shipped discovery choices; never auto-installed or enabled in profiles. */
+export const OPTIONAL_BUNDLED_PACKAGES: readonly BundledPackage[] = Object.freeze([
   {
     name: 'jev-loop',
     id: '@agnes/jev-loop',
@@ -81,16 +83,44 @@ export const OPTIONAL_BUNDLED_PACKAGES: readonly {
     sourcePath: 'package-manager/bundled-plugins/jev-loop',
     build: 'pnpm --filter @agnes/package-manager build:jev-payload',
   },
+  {
+    name: 'judgment',
+    id: '@agnes/judgment',
+    version: '0.1.3',
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/judgment',
+    sourcePath: 'package-manager/bundled-plugins/judgment',
+    build: 'pnpm --filter @agnes/package-manager build:judgment-payload',
+  },
 ])
 
 /** Release-owned defaults; freshOnly additions never backfill an existing profile. */
-export const DEFAULT_ENABLED_BUNDLED_PACKAGES = Object.freeze([
+export const DEFAULT_ENABLED_BUNDLED_PACKAGES: readonly (BundledPackage & {
+  freshOnly: boolean
+  optionalUnderCeiling: boolean
+  removable: boolean
+})[] = Object.freeze([
   ...BUNDLED_HELPERS.map((helper) => ({
     optionalUnderCeiling: false,
+    removable: false,
     ...helper,
     sourcePath: `package-manager/bundled-plugins/${helper.name}`,
     freshOnly: false,
   })),
+  {
+    name: 'superagent',
+    id: '@agnes/superagent',
+    version: '0.2.4',
+    // The payload is Apache-2.0; its NOTICE carries the MIT license of the ported code and of zod.
+    license: 'Apache-2.0',
+    ref: 'file:./bundled-plugins/superagent',
+    // index.mjs and the prompts, skills and locale folders are generated from packages/superagent.
+    sourcePath: 'package-manager/bundled-plugins/superagent',
+    build: 'pnpm --filter @agnes/package-manager build:superagent-payload',
+    freshOnly: false,
+    optionalUnderCeiling: true,
+    removable: true,
+  },
 ])
 
 /** Resolve reserved release payloads independently of the caller's workspace. */
@@ -128,7 +158,9 @@ export function bundledPluginDigest(source: { root: string; path: string }): str
 
 /** Only this reserved identity is runtime-owned; ordinary file sources keep workspace semantics. */
 export function bundledPluginSourceRoot(ref: string): string | undefined {
-  if (![...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES].some((helper) => helper.ref === ref))
+  if (
+    ![...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES].some((helper) => helper.ref === ref)
+  )
     return undefined
   if (process.getBuiltinModule('node:sea').isSea()) return dirname(process.execPath)
   const moduleDir = dirname(fileURLToPath(import.meta.url))

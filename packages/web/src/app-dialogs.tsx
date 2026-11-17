@@ -150,7 +150,20 @@ function McpDialogScaffold() {
           <p className="form-hint">{t('wizard.oauthHelp')}</p>
           <label id="mcp-oauth-client-row" className="form-field" hidden htmlFor="mcp-oauth-client">
             <span>{t('wizard.oauthClient')}</span>
-            <SettingsInput id="mcp-oauth-client" maxLength={256} autoComplete="off" />
+            <SettingsInput id="mcp-oauth-client" maxLength={512} autoComplete="off" />
+          </label>
+          <label id="mcp-oauth-secret-row" className="form-field" hidden htmlFor="mcp-oauth-secret">
+            <span>{t('wizard.oauthSecret')}</span>
+            <SettingsInput
+              id="mcp-oauth-secret"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="secret://namespace/name"
+            />
+          </label>
+          <label id="mcp-oauth-port-row" className="form-field" hidden htmlFor="mcp-oauth-port">
+            <span>{t('wizard.oauthPort')}</span>
+            <SettingsInput id="mcp-oauth-port" inputMode="numeric" autoComplete="off" placeholder="8765" />
           </label>
         </div>
         <label className="form-field" htmlFor="mcp-credential">

@@ -122,6 +122,10 @@ const LAYER: Record<string, number> = {
   '@agnes/core-effects': 1.4,
   '@agnes/core': 2,
   '@agnes/loop-default': 2, // First-party loop plugin consumes the author API.
+  '@agnes/judgment': 2,
+  '@agnes/judgment-ui': 5,
+  '@agnes/superagent': 4, // Bundled app plugin: consumes the public author contracts and the SDK client.
+  '@agnes/superagent-ui': 5, // Browser panel of the plugin: types of the plugin and the web client.
   '@agnes/loop-jev': 2, // First-party Jev loop plugin consumes the author API.
 
   '@agnes/ai': 3,
@@ -147,8 +151,8 @@ const LAYER: Record<string, number> = {
   '@agnes/daemon-admin': 8.3,
   '@agnes/daemon-rpc': 8.4,
   '@agnes/daemon': 9,
-  // Channel's outer client launcher consumes the daemon's public discovery reader, like other clients.
-  '@agnes/channels': 10,
+  // Generic channel forwarding consumes SDK; daemon composes discovery and owns its lifecycle.
+  '@agnes/channels': 3.5,
   '@agnes/bridges': 9,
   '@agnes/web-foundation': 9.1,
   '@agnes/web-admin': 9.2,
@@ -358,6 +362,8 @@ it('keeps every command module outside core and extension-api', () => {
 // error-sanitization.
 describe('browser packages do not depend on backend capability packages', () => {
   const BROWSER_PACKAGES = new Set([
+    '@agnes/judgment-ui',
+    '@agnes/superagent-ui',
     '@agnes/web-client',
     '@agnes/web-ui',
     '@agnes/web-units',

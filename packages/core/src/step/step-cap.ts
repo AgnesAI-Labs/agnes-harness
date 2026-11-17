@@ -1,5 +1,6 @@
 import type { OpStateObj } from '@agnes/core-common/step/op-state'
 import { CoreError, type EventInput, type Seq } from '@agnes/core-common/types'
+import { deliverer, inboxDeliveredByEvent } from '@agnes/core-ledger/log/delivery-marker'
 import { SCAN_PAGE_MAX } from '@agnes/core-ledger/log/storage'
 import type { Actor } from '@agnes/protocol'
 import {
@@ -134,14 +135,20 @@ export function validateTurnOverrides(
   }
 }
 
-/** `now` is when the item is queued: a time limit's deadline is counted from there, as the client's is. */
+/**
+ * The rows written beside a queued item for what it carries apart from its content. `now` is when the item is queued:
+ * a time limit's deadline is counted from there, as the client's is. An app's delivery marker goes here too, never on
+ * the item (see delivery-marker.ts).
+ */
 export function inboxOverrideEvents(
   actor: Actor,
   itemId: string,
-  msg: Pick<EnqueueMsg, 'budget' | 'hardBudget' | 'maxSteps' | 'timeLimitMs'>,
+  msg: Pick<EnqueueMsg, 'budget' | 'hardBudget' | 'maxSteps' | 'timeLimitMs' | 'deliveredBy'>,
   now: number,
 ): EventInput[] {
+  const deliveredBy = deliverer(msg.deliveredBy)
   return [
+    ...(deliveredBy ? [inboxDeliveredByEvent(actor, itemId, deliveredBy)] : []),
     ...(msg.budget === undefined
       ? []
       : [

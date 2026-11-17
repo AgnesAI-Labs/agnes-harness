@@ -293,6 +293,32 @@ describe('Kernel (I1 assembly)', () => {
     await k.close()
   })
 
+  it('reports session open, settings changes and close', async () => {
+    const provider = fakeProvider([])
+    Object.assign(provider, { models: () => [modelRecord('r', 'm')] })
+    const k = base({ provider })
+    k.tools.add(readTool(), { source: 'agnes/tools-core', trust: 'builtin' })
+    const opened: string[] = []
+    const off = k.onSessionOpened((s) => opened.push(s.key))
+    const session = await k.session('k1', sessionOpts)
+    expect(opened).toEqual(['k1'])
+    let settings = 0
+    let closed = 0
+    session.onSettingsChanged(() => settings++)
+    session.onClosed(() => closed++)
+    await session.setToolFilter({ deny: ['read'] })
+    await session.setModel({ slot: 'primary', route: 'r', model: 'm' })
+    await expect(session.setToolFilter({ deny: ['no-such-tool'] })).rejects.toThrow()
+    expect(settings).toBe(2)
+    await session.setPreset({ ...presetDefaults(), name: 'code' })
+    expect(settings).toBe(3)
+    await session.close()
+    await session.close()
+    expect(closed).toBe(1)
+    off()
+    await k.close()
+  })
+
   it('delegates session workspace close once and shares the same close promise', async () => {
     const k = base()
     let workspaceCloses = 0

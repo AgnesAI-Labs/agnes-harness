@@ -36,12 +36,14 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
     )
     const advanced = host.querySelector<HTMLElement>('#config-account-advanced')!
     expect(advanced.dataset.open).toBe('false')
-    // Advanced options hold only the account's name, its address and its timeouts.
-    for (const id of ['config-account-name', 'config-base-url', 'config-account-network'])
+    // Advanced options hold only the account's name and its timeouts; the address is asked for in place.
+    for (const id of ['config-account-name', 'config-account-network'])
       expect(advanced.querySelector(`#${id}`)).not.toBeNull()
-    // The provider, how it connects, the key and its result, and the default model group with its
-    // context budget are the main area.
+    expect(advanced.querySelector('#config-base-url')).toBeNull()
+    // The address, the provider, how it connects, the key and its result, and the default model group
+    // with its context budget are the main area.
     const main = [
+      'config-base-url',
       'config-provider-card',
       'config-auth-method',
       'config-api-key',
@@ -60,11 +62,12 @@ it('uses the injected catalog for provider, base URL and API key field labels', 
     // Reading order: the provider, how it connects, the key, its result, then what it unlocks.
     const order = [
       ...host.querySelectorAll(
-        '#config-provider-card, #config-auth-method, #config-api-key, #config-state, #config-model, #config-context-window, #config-account-advanced',
+        '#config-provider-card, #config-base-url, #config-auth-method, #config-api-key, #config-state, #config-model, #config-context-window, #config-account-advanced',
       ),
     ].map((element) => element.id)
     expect(order).toEqual([
       'config-provider-card',
+      'config-base-url',
       'config-auth-method',
       'config-api-key',
       'config-state',

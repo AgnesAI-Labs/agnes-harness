@@ -37,7 +37,7 @@
 | 包治理 | [package-manager](../../packages/package-manager/src)、[package-isolation](../../packages/package-isolation/src) | [package-manager tests](../../packages/package-manager/test) |
 | 资源治理 | [resource-control-store](../../packages/resource-control-store/src)、[resource-control-runtime](../../packages/resource-control-runtime/src)、[resource-control-worker](../../packages/resource-control-worker/src) | [Skills Cordis](../../packages/resource-control-runtime/test/skills-cordis.test.ts) |
 | 资源 CLI/Web | [resource-control-cli](../../packages/resource-control-cli/src)、[resource-control-web](../../packages/resource-control-web/src) | [资源 CLI 测试](../../packages/resource-control-cli/test) |
-| 外部渠道/格式转换 | [channels](../../packages/channels/src)、[bridges](../../packages/bridges/src) | [channels tests](../../packages/channels/test)、[bridges tests](../../packages/bridges/test) |
+| 外部渠道/格式转换 | [通用 channels](../../packages/channels/README.md)、[bridges](../../packages/bridges/src)；IM 平台适配器通过独立插件安装 | [channels tests](../../packages/channels/test)、[bridges tests](../../packages/bridges/test) |
 | 工程约束 | [guards](../../tools/guards) | [scope 有效行报告（不阻断增长）](../../tools/guards/scope-line-count.json) |
 
 包公开出口以各自 package.json 的 `exports` 为准。上表深链接用于读代码，应用和插件不应据此深导入其他包私有 src。Python runtime 与 Python thin client 尚不作为可用公开路线。
@@ -83,3 +83,5 @@ Windows 文件系统仅在同一次 read/list/stat 授权内复用已完成的�
 终端输入层仅在查询期间缓存有界的光标回复片段，超时后释放未完成的输入。[原件导出](../../packages/cli/src/commands/native-bundle.ts)在各平台复用已有私有目录创建方法，建立暂存和原件目录。[旧凭据迁移](../../packages/host-infrastructure/src/adapters/file-secrets-dir.ts)同样用它创建新的目标目录，读取时不修补权限。[安全状态汇总](../../packages/host/src/runtime/lifecycle/admin-security-status.ts)不展示配方解析器明确拒绝的权限档位；会话授权和其他错误仍按原有规则处理。插件指南限制文本预览大小，结构化结果仍保留完整的标准模板。
 
 会话展示按职责拆为 [Web controllers](../../packages/web/src/app)、[区域挂载](../../packages/web/src/regions)、[时间线节点宿主](../../packages/web/src/timeline-node-host.tsx)、[composer](../../packages/web-units/src/composer)、[消息与回合](../../packages/web-ui/src/conversation/messages) 和 [客户端对账](../../packages/web/src/client-modules/reconcile)。原入口保留现有导出。
+
+渠道插件桥接: [渠道插件](channel-plugins.zh-CN.md)；extension-api 持有公开合同，daemon 装配发现与通用渠道 runner。

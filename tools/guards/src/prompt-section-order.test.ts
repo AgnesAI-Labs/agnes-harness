@@ -40,7 +40,7 @@ const root = repoRoot()
 const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   id: string
   order: number
-  owner: 'code' | 'base' | 'core'
+  owner: 'code' | 'base' | 'core' | 'superagent'
 }> = [
   // packages/core/src/request/envelope.ts's UNTRUSTED_RULE_SECTION. Prepended ahead of every sorted
   // section rather than sorted in with them, but it still occupies order 0 in the same numbering
@@ -61,6 +61,8 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   // packages/core/src/execution/turn/inference.ts: the unattended-run live note, delivered at the
   // tail after the turn-limits note.
   { id: 'core:unattended-run', order: 116, owner: 'core' },
+  // The jobs extension's live note naming background jobs that ended since the model was told.
+  { id: 'jobs:completed', order: 117, owner: 'base' },
   { id: 'memory:index', order: 131, owner: 'core' },
   { id: 'agents-md', order: 120, owner: 'base' },
   { id: 'coding-doctrine', order: 130, owner: 'code' },
@@ -73,6 +75,9 @@ const CANONICAL_PROMPT_SECTIONS: ReadonlyArray<{
   { id: 'session-query', order: 168, owner: 'base' },
   { id: 'channel-style', order: 170, owner: 'code' },
   // packages/core/src/loop/request-options.ts: a loop's own system text, after everything else.
+  // packages/superagent's context hook: its prompt section after channel style, and its one live note right after it.
+  { id: 'superagent:policy', order: 180, owner: 'superagent' },
+  { id: 'superagent-notices', order: 181, owner: 'superagent' },
   { id: 'loop:system', order: 1000, owner: 'core' },
   // A context hook's additionalContext travels as a tail note, not a section.
 ]
@@ -130,6 +135,27 @@ describe('prompt section order table has one claimant per order, across both con
     // Every official base context contributor must fill its canonical section.
     for (const s of CANONICAL_PROMPT_SECTIONS)
       if (s.owner === 'base') expect(seenBaseIds.has(s.id), s.id).toBe(true)
+  })
+
+  it('packages/superagent registers its context-hook sections at the orders the table gives them', () => {
+    const byId = new Map(CANONICAL_PROMPT_SECTIONS.map((s) => [s.id, s]))
+    const seen = new Set<string>()
+    for (const f of listSourceFiles(join(root, 'packages/superagent/src'))) {
+      if (isTestFile(f)) continue
+      const text = readFileSync(f, 'utf8')
+      if (!/hooks\.register\(\s*['"]context['"]/.test(text)) continue
+      for (const { id, order } of extract(HOOK_SECTION_RE, text)) {
+        const row = byId.get(id)
+        expect(
+          row?.owner,
+          `${relative(root, f)} writes section '${id}' that the table does not give it`,
+        ).toBe('superagent')
+        expect(order, `${relative(root, f)} writes '${id}' at order ${order}`).toBe(row?.order)
+        seen.add(id)
+      }
+    }
+    for (const s of CANONICAL_PROMPT_SECTIONS)
+      if (s.owner === 'superagent') expect(seen.has(s.id), s.id).toBe(true)
   })
 
   it('every literal section in packages/core/src claims its canonical row', () => {

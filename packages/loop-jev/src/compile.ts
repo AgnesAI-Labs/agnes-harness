@@ -1,17 +1,17 @@
 // Portions adapted from JevLoop (https://github.com/parkavenue9639/jevloop, 61e7994), Apache-2.0; modified.
+import { estimateTokens } from '@agnes/extension-api'
 import {
   ANSWER,
   type Candidate,
   type CompiledQuestions,
   DEFAULT_ARGUMENTS,
   type JsonObject,
-  type JsonValue,
   LLM_PARAMETERS,
   PHASE_ORDER,
   type Phase,
   type ResolvedTool,
 } from './types.js'
-import { clip, pyJson, utf8Bytes } from './util.js'
+import { clip, pyJson } from './util.js'
 
 export const CORE_ANSWER =
   'Deliver the final answer/summary the goal asked for, from the gathered material (written by the text helper). Terminal: the run ends with it.'
@@ -283,11 +283,6 @@ export function decisionSurface(c: CompiledQuestions): JsonObject {
   return { phases, targets }
 }
 
-/** ceil(UTF-8 bytes of the JSON text / 3): over-counts ASCII, close to one token per CJK character. */
-export function estimateTokens(value: JsonValue): number {
-  return Math.ceil(utf8Bytes(JSON.stringify(value)) / 3)
-}
-
 export type Budget = { stateTokens: number; requestTokens: number }
 
 export const MAX_SHRINK_LEVEL = 7
@@ -317,11 +312,14 @@ export function fitBudget(
 } | null {
   for (let level = Math.max(0, fromLevel); level <= MAX_SHRINK_LEVEL; level++) {
     const { questions } = typeof c === 'function' ? c(level) : c
-    const longest = Math.max(0, ...Object.values(questions).map((question) => estimateTokens(question)))
+    const longest = Math.max(
+      0,
+      ...Object.values(questions).map((question) => estimateTokens(JSON.stringify(question))),
+    )
     const state = stateAt(level)
-    const stateTokens = estimateTokens(state)
+    const stateTokens = estimateTokens(JSON.stringify(state))
     if (stateTokens + longest > budget.stateTokens) continue
-    const requestTokens = estimateTokens({ state, questions })
+    const requestTokens = estimateTokens(JSON.stringify({ state, questions }))
     if (requestTokens <= budget.requestTokens) return { state, questions, level, stateTokens, requestTokens }
   }
   return null

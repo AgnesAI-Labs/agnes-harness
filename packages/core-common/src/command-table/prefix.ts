@@ -1,3 +1,4 @@
+import { isOutwardCheckpoint } from '@agnes/extension-api'
 import { hardBlockedCommand } from './hard-block.js'
 import { splitShellCommand } from './split.js'
 
@@ -296,4 +297,18 @@ export function acceptedOptions(spec: {
     JSON.stringify(tokens) === JSON.stringify(offered?.tokens)
     ? [...spec.options, PREFIX_OPTION]
     : spec.options
+}
+
+/**
+ * The response a decision records. At an outward checkpoint an answer the decision does not accept
+ * (an allowance for the session, say) is recorded as a rejection, never as an approval.
+ */
+export function asRecorded<R extends { option: string; value: unknown }>(
+  spec: { purpose: string; subject: unknown; options: readonly string[] },
+  response: R,
+): R | { option: 'rejected'; value: null } {
+  return isOutwardCheckpoint((spec.subject as { approval?: unknown } | null)?.approval) &&
+    !acceptedOptions(spec).includes(response.option)
+    ? { option: 'rejected', value: null }
+    : response
 }

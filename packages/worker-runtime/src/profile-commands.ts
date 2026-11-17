@@ -1,5 +1,12 @@
-import { enqueueSystemInput, type Host, type HostSession } from '@agnes/host'
-import { type Actor, rpcError } from '@agnes/protocol'
+import { join } from 'node:path'
+import {
+  agnesHome,
+  enqueueSystemInput,
+  type Host,
+  type HostSession,
+  SessionEnvironmentStore,
+} from '@agnes/host'
+import { type Actor, parseSessionEnvironment, rpcError, sha256Hex } from '@agnes/protocol'
 import type { WorkerCommandFrame } from './frames.js'
 import { profileStreamEndpoint } from './profile-stream-server.js'
 
@@ -32,6 +39,21 @@ export async function profileServiceCommand(
 ): Promise<unknown> {
   const p = cmd.params
   switch (cmd.method) {
+    case 'channels.clear':
+      if (!host?.clearChannelState || typeof p.packageId !== 'string') throw rpcError('CAPABILITY_DENIED')
+      host.clearChannelState(p.packageId)
+      return {}
+    case 'channels.catalog':
+      if (!host?.channelCatalog) throw rpcError('CAPABILITY_DENIED')
+      return host.channelCatalog()
+    case 'channels.pairing':
+      if (!host?.channelPairing) throw rpcError('CAPABILITY_DENIED')
+      return host.channelPairing(
+        p as unknown as import('@agnes/protocol').AppServerMethods['_agnes/v1/channels.pairing']['params'],
+      )
+    case 'channels.receipts':
+      if (!host?.channelReceipts) throw rpcError('CAPABILITY_DENIED')
+      return host.channelReceipts(p)
     case 'profileManaged.status': {
       const manager = host?.profileServices?.managed
       if (!manager) throw rpcError('CAPABILITY_DENIED')
@@ -41,6 +63,30 @@ export async function profileServiceCommand(
           .statuses(String(p.packageId))
           .map(({ id, state, code }) => ({ id, state, ...(code ? { code } : {}) })),
       }
+    }
+    case 'profileManaged.superagentUpgradeSessions': {
+      if (
+        !host?.profileServices?.managed ||
+        typeof p.integrity !== 'string' ||
+        typeof p.incarnation !== 'string'
+      )
+        throw rpcError('CAPABILITY_DENIED')
+      // This fixed release service supplies the roster; a caller cannot claim sessions by prefix.
+      const service = await host.profileServices.managed.currentValue<{ upgradeSessionIds(): string[] }>(
+        `plugin/${sha256Hex('ext:agnes.superagent/main').slice(0, 16)}`,
+        'superagent',
+        p.integrity,
+        p.incarnation,
+      )
+      return service.upgradeSessionIds()
+    }
+    case 'sessionEnvironment.write':
+    case 'sessionEnvironment.release': {
+      if (!host || typeof p.sessionKey !== 'string') throw rpcError('CAPABILITY_DENIED')
+      const store = new SessionEnvironmentStore(join(agnesHome(process.env), 'profiles', host.profile.name))
+      if (cmd.method === 'sessionEnvironment.release') store.release(p.sessionKey)
+      else store.write(p.sessionKey, parseSessionEnvironment(p.environment))
+      return {}
     }
     case 'profileStreams.endpoint':
       if (!host) throw rpcError('CAPABILITY_DENIED')
@@ -103,6 +149,11 @@ export async function profileServiceCommand(
 }
 
 export const isProfileCommand = (method: string) =>
-  ['profileManaged.', 'profileStreams.', 'profileService.', 'boundWake.'].some((prefix) =>
-    method.startsWith(prefix),
-  )
+  [
+    'channels.',
+    'profileManaged.',
+    'profileStreams.',
+    'profileService.',
+    'boundWake.',
+    'sessionEnvironment.',
+  ].some((prefix) => method.startsWith(prefix))

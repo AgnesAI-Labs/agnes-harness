@@ -1,3 +1,6 @@
+import type { HostSpawnSandboxWorkspaceBackend, SandboxExecBackend } from '@agnes/core'
+import type { WindowsWriteBoundary } from '@agnes/extension-api'
+
 export type SandboxReadinessKey = Readonly<{
   backendId: string
   canonicalRoot: string
@@ -20,12 +23,15 @@ export type SandboxWorkspaceBackend = Readonly<{
 export type ProbedSandboxWorkspaceBackend = SandboxWorkspaceBackend &
   Readonly<{
     /** Host-private posture; never copied onto the public backend wrapper. */
-    name?: 'none' | 'bwrap' | 'seatbelt' | 'remote'
-    execBackend?: 'none' | 'l1' | 'remote'
+    name?: 'none' | 'bwrap' | 'seatbelt' | 'remote' | 'windows-acl'
+    execBackend?: SandboxExecBackend
     enforcement?: Readonly<{
       level: 'full' | 'partial' | 'none'
       scope: readonly ('file' | 'network' | 'process')[]
+      boundary?: WindowsWriteBoundary
     }>
+    /** Set only by the Host-started Windows branch, together with `execBackend: 'windows-acl'`. */
+    hostSpawn?: HostSpawnSandboxWorkspaceBackend
     close?(): Promise<void> | void
   }>
 

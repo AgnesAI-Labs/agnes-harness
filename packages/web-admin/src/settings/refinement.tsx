@@ -136,29 +136,18 @@ function RefinementFields(props: {
   const [stored, setStored] = useState(snapshot.settings)
   // Read when a save is sent, so a save queued behind another one uses the revision the first returned.
   const revision = useRef(snapshot.revision)
-  // Turning the switch on is saved at once but reaches the tools only after a restart: say so until
-  // the section is left, rather than let the saved switch suggest it is already working.
-  const turnedOn = useRef(false)
-  const [restart, setRestart] = useState(false)
   const autosave = useAutosave<RefinementSettings>({
     stored,
     equal: sameSettings,
     onSaved: () => {
       props.onSaved()
-      reportSuccess(
-        'settings:refinement',
-        fallbackT('ui.settingsSaved'),
-        turnedOn.current ? { kind: 'restart-required', message: t('refinement.restart') } : undefined,
-      )
+      reportSuccess('settings:refinement', fallbackT('ui.settingsSaved'))
     },
     save: async (next) => {
       try {
         const saved = await api.save(next, revision.current)
         revision.current = saved.revision
         setStored(next)
-        const raised = next.enabled && !stored.enabled
-        turnedOn.current = next.enabled && (turnedOn.current || raised)
-        setRestart(turnedOn.current)
       } catch (error) {
         // The conflict error names no current state: read it again and show it. The edit that lost is
         // dropped, and the save ends as a failure, not a success: a success would clear the banner
@@ -179,7 +168,11 @@ function RefinementFields(props: {
         failed={autosave.failed}
         onRetry={autosave.retry}
       >
-        <SettingsItem label={t('refinement.enabled')} description={t('refinement.enabled.hint')}>
+        <SettingsItem
+          label={t('refinement.enabled')}
+          description={t('refinement.enabled.hint')}
+          info={t('refinement.enabled.info')}
+        >
           <StateSwitch
             id="refinement-enabled"
             testId="refinement-enabled"
@@ -189,11 +182,6 @@ function RefinementFields(props: {
             onToggle={(next) => change({ enabled: next })}
           />
         </SettingsItem>
-        {restart && settings.enabled && (
-          <Banner tone="info" data-testid="refinement-restart">
-            {t('refinement.restart')}
-          </Banner>
-        )}
         <SettingsItem label={t('refinement.mode')} description={t('refinement.mode.hint')}>
           <SettingsSelect
             id="refinement-mode"

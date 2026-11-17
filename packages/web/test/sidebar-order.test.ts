@@ -23,7 +23,7 @@ afterEach(() => {
 
 describe('section order', () => {
   it('is fixed: 置顶 → 项目 → 临时会话, and the store offers no way to move a section', () => {
-    expect(SIDEBAR_SECTION_ORDER).toEqual(['pinned', 'workspaces', 'chats'])
+    expect(SIDEBAR_SECTION_ORDER).toEqual(['pinned', 'workspaces', 'chats', 'legacy-chats'])
     expect(Object.keys(sidebarOrder).filter((key) => /section/i.test(key))).toEqual([])
   })
 })

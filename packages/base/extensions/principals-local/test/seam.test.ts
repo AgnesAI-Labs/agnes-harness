@@ -24,11 +24,23 @@ describe('principals-local', () => {
   it('gives every surface and every credential the same owner id', async () => {
     const seam = await principalsLocal(fakeSeamInit())
     const cli = await seam.resolve({ kind: 'jwt', token: 'x' }, 'cli')
-    const im = await seam.resolve(null, 'dingtalk')
+    const im = await seam.resolve(null, 'example-im')
     expect(im.id).toBe(cli.id)
     // The one thing about the credential that survives the flattening is where it arrived.
     expect(cli.attrs).toEqual({ surface: 'cli' })
-    expect(im.attrs).toEqual({ surface: 'dingtalk' })
+    expect(im.attrs).toEqual({ surface: 'example-im' })
+    const channel = await seam.resolve(
+      { kind: 'channel', channel: 'feishu', accountId: 'app', userId: 'human', chatId: 'dm' },
+      'approval',
+    )
+    expect(channel.id).toBe(cli.id)
+    expect(channel.attrs).toEqual({
+      surface: 'approval',
+      channel: 'feishu',
+      accountId: 'app',
+      userId: 'human',
+      chatId: 'dm',
+    })
   })
 
   it('never hands out an empty id, which the session schema forbids', async () => {

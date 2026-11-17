@@ -15,7 +15,7 @@ import { decodeArtifactMediaResponse } from './artifact-media-response.js'
 import { bestEffort } from './best-effort.js'
 import { reportWorkerBootFailure } from './boot-failure.js'
 import { requestPluginManage } from './plugin-manage.js'
-import { profileWakeProducer } from './profile-wake-producer.js'
+import { profileSessionPorts } from './profile-session-producer.js'
 import { generationExtensionRestorer } from './runtime-generation-restore.js'
 import { scanWorkspaceSkillRequest } from './skill-scan.js'
 import { runtimeSkillView } from './skill-view.js'
@@ -27,14 +27,13 @@ export { decodeArtifactMediaResponse } from './artifact-media-response.js'
 
 import {
   agnesHome,
-  assertHostPublication,
   composeProductionRequestMedia,
   composeSecrets,
-  createCredentialStore,
   createExtensionActivationBarrier,
   createHost,
   createJitiPackageLoader,
   createLoader,
+  createMcpOAuthStore,
   createSecretsEnv,
   createSecretsFile,
   DEFAULT_COMPUTER_USE,
@@ -51,7 +50,7 @@ import {
   resolveFileSecretsDirectory,
 } from '@agnes/host'
 import { createPackageManager } from '@agnes/package-manager'
-import { LocalGate, type RuntimeConvergenceReport } from '@agnes/plugin-runtime/host'
+import { LocalGate } from '@agnes/plugin-runtime/host'
 import {
   workerGeneration as parseWorkerGeneration,
   type RpcError,
@@ -59,6 +58,8 @@ import {
   type SkillDescriptor,
   validateResourceControlData,
 } from '@agnes/protocol'
+import { trimNativeHeap } from '@agnes/system-node'
+import { autoTitlePolicy } from './auto-title-policy.js'
 import {
   admitWorkerCommand,
   applyMcpRowChange,
@@ -89,10 +90,11 @@ import {
   sessionScopedKey,
 } from './hosted-sessions.js'
 import { createMcpRowRuntime } from './mcp-row-runtime.js'
+import { signOutMcpRow } from './mcp-sign-out.js'
 import { frameFailure, installWorkerProcessGuards, sessionFailure } from './process-guards.js'
 import {
   createRuntimeTargetSlot,
-  type RuntimeTargetApplyPort,
+  hostRuntimeTargetPort,
   runtimeTargetFailureMessage,
 } from './runtime-target-slot.js'
 import { createWorkerServiceAuthority } from './service-authority.js'
@@ -106,6 +108,8 @@ export type WorkerHostLike = Host
 
 /** Host assembly uses the verified filesystem loader by default; tests may inject a loader. */
 export type WorkerHostDeps = {
+  channelRuntime?: HostOptions['channelRuntime']
+  bundledAppClient?: HostOptions['bundledAppClient']
   loader?: PackageLoader
   extensionLoader?: { import(file: string): Promise<Record<string, unknown>> }
   hostRoot?: string
@@ -188,7 +192,7 @@ export async function runWorker(
       signal,
     )
   }
-  const boundWakes = profileWakeProducer(sharedChannel)
+  const profilePorts = profileSessionPorts(sharedChannel)
   const skillInstall: NonNullable<HostOptions['skillInstall']> = async (input, signal) => {
     if (input.sessionKey !== sharedChannel.currentSessionKey())
       throw new Error('Skill install session mismatch')
@@ -260,14 +264,10 @@ export async function runWorker(
         environment,
       )
     },
-    // Mirrors createSecrets above, for secretBinding.kind === 'oauth' (spec §1.6/§3.2/§3.5). Same
-    // root `createConfigurationService` uses for its own `createCredentialStore` call
-    // (packages/host-infrastructure/src/configuration.ts:565) -- both this worker process and the daemon-owned
-    // config service read/write the same `~/.agh`-shaped credential store, by design (the
-    // callback route that writes the initial token exchange runs in yet a third process --
-    // `agnes serve`'s launcher -- see oauth-http-handler.ts's module header; all three agree on the
-    // same on-disk root, not a shared in-memory handle).
-    createOAuthCredentialStore: () => createCredentialStore({ root: agnesHome(env) }),
+    // Mirrors createSecrets above, for secretBinding.kind === 'oauth'. The same root the daemon
+    // writes each sign-in under: every process shares those files and their per-server lock, and
+    // each OAuth request reads the record there, so a refresh or sign-out elsewhere is seen at once.
+    createMcpOAuthStore: () => createMcpOAuthStore({ root: agnesHome(env) }),
     // The shared session worker supplies MCP as Host rows, one per server, each owning its own
     // connection; its resource generation connects nothing itself. The
     // resource-control service workers keep the manager path.
@@ -396,12 +396,15 @@ export async function runWorker(
     ? Promise.resolve(undefined)
     : deps.buildHost
       ? deps.buildHost(profile, prompter, {
+          ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
+          ...(deps.bundledAppClient ? { bundledAppClient: deps.bundledAppClient } : {}),
           decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
           restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
-          boundWakes,
+          ...profilePorts,
           scheduling,
           skillInstall,
           refinementSave,
+          ...autoTitlePolicy(sharedChannel, (key) => !!host?.kernel.sessions.get(key)),
           mcpManage,
           pluginManage,
           requestMedia,
@@ -430,6 +433,8 @@ export async function runWorker(
                 }
               : createLoader({ cacheDir: profile.cacheDir, hostRoot, agnesVersion: '0.0.0' }))
           return createHost(profile, {
+            ...(deps.channelRuntime ? { channelRuntime: deps.channelRuntime } : {}),
+            ...(deps.bundledAppClient ? { bundledAppClient: deps.bundledAppClient } : {}),
             decisionsChanged: (detail) => send({ kind: 'decisionsChanged', detail }),
             restoreGenerationExtension: generationExtensionRestorer(workerResourcesInput, sharedMcpOpener),
             dataDir: profile.dataDir,
@@ -439,10 +444,11 @@ export async function runWorker(
             allowUnresolvedProvider: true,
             log: deps.log ?? sessionLog,
             prompter,
-            boundWakes,
+            ...profilePorts,
             scheduling,
             skillInstall,
             refinementSave,
+            ...autoTitlePolicy(sharedChannel, (key) => !!host?.kernel.sessions.get(key)),
             mcpManage,
             pluginManage,
             requestMedia,
@@ -507,33 +513,17 @@ export async function runWorker(
     if (!host) throw new Error('session worker has no Host')
     return host
   }
-  const requireRuntimeTargetPort = (): RuntimeTargetApplyPort<RuntimeConvergenceReport> => {
-    const candidate = requireHost()
-    if (typeof candidate.applyRuntimeTarget !== 'function') {
-      throw new Error('E_RUNTIME_TARGET_UNAVAILABLE: Host has no runtime target publisher')
-    }
-    return Object.freeze({
-      async applyRuntimeTarget(target) {
-        const scope = {}
-        applying = scope
-        let report: Awaited<ReturnType<typeof candidate.applyRuntimeTarget>>
-        try {
-          report = await candidate.applyRuntimeTarget(target)
-        } finally {
-          if (applying === scope) applying = undefined
-        }
-        assertHostPublication(report.publication)
-        // Host-local per-composition diagnostics must not extend the closed wire report schema.
-        return { hash: report.hash, ok: report.ok, rows: report.rows }
-      },
-      ...(candidate.runtimeTargetSnapshot
-        ? { runtimeTargetSnapshot: candidate.runtimeTargetSnapshot.bind(candidate) }
-        : {}),
-      ...(candidate.pluginGenerationStatus
-        ? { pluginGenerationStatus: candidate.pluginGenerationStatus.bind(candidate) }
-        : {}),
+  // One target application at a time shares its verified package read (see `applying`).
+  const requireRuntimeTargetPort = () =>
+    hostRuntimeTargetPort(requireHost(), async (apply) => {
+      const scope = {}
+      applying = scope
+      try {
+        return await apply()
+      } finally {
+        if (applying === scope) applying = undefined
+      }
     })
-  }
   const bootSource =
     env.AGNES_RUNTIME_BOOT_SOURCE === 'lastGood' || env.AGNES_RUNTIME_BOOT_SOURCE === 'bootstrap'
       ? env.AGNES_RUNTIME_BOOT_SOURCE
@@ -549,6 +539,8 @@ export async function runWorker(
       resources: resourceSlot,
       // Read once: a process-static limit, like every other `worker.` key.
       idleCloseMs: sessionIdleCloseMs(requireHost().profile?.limits),
+      // A finished turn leaves its request and tool buffers freed; hand that memory back.
+      onTurnEnd: () => void trimNativeHeap(),
     })
   if (workerKind === 'session' && !bootSource) hostedSessions = openHostedSessions()
 
@@ -721,6 +713,11 @@ export async function runWorker(
             if (!status) throw new Error(`MCP server ${p.serverId} is not part of the current snapshot`)
             return status
           }
+          if (command.method === 'resourceMcpSignOut')
+            return signOutMcpRow(
+              { host: requireHost(), resources: resourceSlot, workerResourcesInput },
+              p.serverId,
+            )
           if (command.method === 'resourceMcpTools') {
             if (typeof p.serverId !== 'string' || typeof p.expectedRevision !== 'string')
               throw new TypeError('invalid MCP tools request')

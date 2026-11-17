@@ -119,3 +119,13 @@ it.each([execution, isolated])('refuses damaged records and publication failures
   writeFileSync(directory, 'not a directory')
   expect(() => store.verify('s', execution, false)).toThrow()
 })
+it('keeps writing the version 1 record byte for byte and refuses any other version', () => {
+  const { profileDir, store } = setup()
+  store.verify('s', isolated, false)
+  const path = join(profileDir, '.session-sandbox', createHash('sha256').update('s').digest('hex') + '.json')
+  expect(readFileSync(path, 'utf8')).toBe(
+    JSON.stringify({ version: 1, sessionKey: 's', execution: isolated }),
+  )
+  writeFileSync(path, JSON.stringify({ version: 2, sessionKey: 's', execution: isolated }))
+  expect(() => store.verify('s', isolated, true)).toThrow('create a new session')
+})

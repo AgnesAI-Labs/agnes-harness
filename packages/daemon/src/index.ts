@@ -1,4 +1,5 @@
 export { runtimeDoctor } from '@agnes/daemon-rpc/local/methods/doctor'
+export { channelPipeTransport, createChannelClient } from './channels/client.js'
 export * from './packages/index.js'
 export * from './resources/index.js'
 export type {

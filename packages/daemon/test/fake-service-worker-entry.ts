@@ -27,7 +27,7 @@ void runWorker(
     gate,
   },
   {
-    buildHost: async (profile) => {
+    buildHost: async (profile, _prompter, resources) => {
       const packageDirectory = `${profile.dataDir}/service-package`
       const source: RuntimePluginSnapshot = {
         snapshot: {
@@ -88,6 +88,16 @@ void runWorker(
           compositeRevision: '0'.repeat(64),
         }),
       )
+      if (env.AGNES_FAKE_MANAGED_SESSION_PROBE === '1')
+        void resources
+          .managedSessions?.({
+            owner: 'plugin/0123456789abcdef',
+            packageId: servicePackageId,
+            integrity: serviceSnapshotId,
+            service: 'engine',
+          })
+          .list()
+          .catch(() => undefined)
       return host
     },
   },

@@ -13,6 +13,7 @@ import {
 } from '@agnes/package-manager'
 import { build } from 'esbuild'
 import { afterEach, expect, it } from 'vitest'
+import { verifyPresentation } from '../../../tools/presentation-build.mjs'
 import { copyBundledExamples, copyBundledPlugins } from '../tools/build-local.js'
 import { copyExamplePayload } from '../tools/example-payload.js'
 
@@ -30,7 +31,7 @@ it.each([
   roots.push(root)
   const output = join(root, 'runtime')
   await copyBundledPlugins(output)
-  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop'])
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((pkg) => pkg.name)).toEqual(['jev-loop', 'judgment'])
   // The release digest is the same formula boot would otherwise compute over the final payload.
   const payload = { root: output, path: `bundled-plugins/${helper.name}` }
   expect(bundledPluginDigest(payload)).toBe(hashDirectory(join(output, payload.path)))
@@ -174,4 +175,73 @@ it('packages a declared TypeScript entry and public Markdown without a family pr
   expect(await readFile(join(output, 'DEMO.md'), 'utf8')).toBe('DEMO.md')
   expect(await readFile(join(output, 'DOMAIN-NOTES.md'), 'utf8')).toBe('DOMAIN-NOTES.md')
   expect(await readdir(output)).not.toEqual(expect.arrayContaining(['src', 'unpublished.md']))
+})
+
+it('ships the optional judgment payload with its callable plugin and release digest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-judgment-delivery-'))
+  roots.push(root)
+  await copyBundledPlugins(root)
+  const payload = join(root, 'bundled-plugins', 'judgment')
+  expect((await readdir(payload)).sort()).toEqual([
+    'LICENSE',
+    'NOTICE',
+    'README.md',
+    'THIRD-PARTY-NOTICES',
+    'client-build.json',
+    'index.mjs',
+    'package.json',
+    'src',
+  ])
+  const manifest = JSON.parse(await readFile(join(payload, 'package.json'), 'utf8'))
+  expect(manifest.files).toContain('THIRD-PARTY-NOTICES')
+  const notice = await readFile(join(payload, 'THIRD-PARTY-NOTICES'), 'utf8')
+  expect(notice).toBe(await readFile(new URL('../../judgment/THIRD-PARTY-NOTICES', import.meta.url), 'utf8'))
+  expect(notice).toContain('title-fit question')
+  expect(notice).toContain('MIT License')
+  expect(notice).toContain('Copyright (c) 2025 Mario Zechner')
+  expect(notice).toContain('Copyright (c) 2025-2026 Can Bölük')
+  expect(notice).toContain('Copyright (c) 2026 Stencil Labs, Inc.')
+  expect(manifest.agnes.plugins[0]).toMatchObject({ export: 'judgmentPlugin', apiRange: '^5.20.0' })
+  expect(bundledPluginDigest({ root, path: 'bundled-plugins/judgment' })).toBe(hashDirectory(payload))
+  const bundle = await readFile(join(payload, 'index.mjs'), 'utf8')
+  expect(bundle).toMatch(/^export \{[^}]*\bjudgmentPlugin\b[^}]*\}/m)
+  expect(bundle).toContain('from "@agnes/extension-api"')
+  expect(bundle).not.toContain('from "@agnes/core"')
+})
+
+it('ships the default Superagent payload with its resource folders, callable plugin and release digest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'agnes-superagent-delivery-'))
+  roots.push(root)
+  await copyBundledPlugins(root)
+  // Superagent reads its generated prompts, skills and locale folders next to its entry.
+  const superagent = join(root, 'bundled-plugins', 'superagent')
+  expect((await readdir(superagent)).sort()).toEqual([
+    'LICENSE',
+    'NOTICE',
+    'README.md',
+    'client-build.json',
+    'index.mjs',
+    'locale',
+    'package.json',
+    'prompts',
+    'skills',
+    'src',
+  ])
+  // The panel ships as built bytes with its descriptor and stylesheet, and the build record matches them.
+  expect((await readdir(join(superagent, 'src'))).sort()).toEqual([
+    'agnes.client.json',
+    'client.js',
+    'superagent.css',
+  ])
+  await verifyPresentation(superagent)
+  expect(JSON.parse(await readFile(join(superagent, 'package.json'), 'utf8')).agnes.plugins[0]).toMatchObject(
+    {
+      export: 'superagentPlugin',
+      apiRange: '^5.22.0',
+    },
+  )
+  expect(bundledPluginDigest({ root, path: 'bundled-plugins/superagent' })).toBe(hashDirectory(superagent))
+  const superagentBundle = await readFile(join(superagent, 'index.mjs'), 'utf8')
+  expect(superagentBundle).toMatch(/^export \{[^}]*\bsuperagentPlugin\b[^}]*\}/m)
+  expect(superagentBundle).not.toMatch(/from "@agnes\/(?:core|daemon|host|worker-runtime)/)
 })

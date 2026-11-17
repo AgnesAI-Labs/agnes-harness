@@ -1,9 +1,9 @@
 import type { RefinementPlanner } from '@agnes/core'
+import { estimateTokens } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import { type ParseContext, parsePlannerOutput } from '../src/planner/parse.js'
 import {
   buildPlannerPrompt,
-  estimateTokens,
   type PlannerEntry,
   type PlannerEvidence,
   type PlannerGuidance,
@@ -606,6 +606,20 @@ describe('entries saved to the workspace', () => {
     { ref: 'workspace-memory/p2', title: 'Tests need the build', summary: 'Run pnpm build first.' },
   ]
   const withSaved: PlannerGuidance = { ...guidance, workspace: saved }
+
+  it('saved entries offered in full say an upsert rewrites the saved text and a delete is refused', () => {
+    const prompt = buildPlannerPrompt(
+      { items: [evidence('e1', 'notes live in docs')], omitted: 0 },
+      [entry('memory', 'ws.r0000000001', 'The notes live in docs/notes.txt.')],
+      guidance,
+    )
+    const body = prompt.messages[0]?.content[0]?.text ?? ''
+    const heading = body.slice(body.indexOf('Entries you may rewrite'))
+    expect(heading.slice(0, heading.indexOf('\n'))).toContain(
+      'an id starting with ws. or user. is saved for later sessions: an upsert under that id rewrites the saved text, a delete is refused',
+    )
+    expect(prompt.fullEntries).toEqual([{ kind: 'memory', id: 'ws.r0000000001' }])
+  })
 
   it('workspace references are shown as confirm-only', () => {
     const prompt = buildPlannerPrompt(

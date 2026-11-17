@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
 import { beforeEach, expect, it, vi } from 'vitest'
@@ -99,4 +100,41 @@ it.each([
 ])('refuses unsupported intent before starting a process', async (request) => {
   await expect(openWindowsProcess(request, options)).rejects.toThrow(/unavailable|PTY/)
   expect(mocks.start).not.toHaveBeenCalled()
+})
+
+it('delivers actual stdin EOF for finite commands and keeps interactive input open', async () => {
+  const children: ReturnType<typeof spawn>[] = []
+  const completions: Promise<{ code: number | null; signal: NodeJS.Signals | null }>[] = []
+  mocks.start.mockImplementation(async () => {
+    const child = spawn(
+      process.execPath,
+      ['-e', "process.stdin.resume(); process.stdin.once('end',()=>{console.log('EOF');process.exit(7)})"],
+      { stdio: 'pipe' },
+    )
+    children.push(child)
+    const completion = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) =>
+      child.once('exit', (code, signal) => resolve({ code, signal })),
+    )
+    completions.push(completion)
+    return {
+      stdin: child.stdin,
+      stdout: child.stdout,
+      stderr: child.stderr,
+      completion,
+      terminate: () => child.kill('SIGKILL'),
+    }
+  })
+  try {
+    const finite = await openWindowsProcess({ argv: ['command'], cwd: 'C:\\work', stdin: '' }, options)
+    expect(children[0]?.stdin?.writableEnded).toBe(true)
+    await expect(finite.exited).resolves.toMatchObject({ code: 7 })
+    const interactive = await openWindowsProcess({ argv: ['interactive'], cwd: 'C:\\work' }, options)
+    expect(children[1]?.stdin?.writableEnded).toBe(false)
+    children[1]?.stdin?.end()
+    await expect(interactive.exited).resolves.toMatchObject({ code: 7 })
+  } finally {
+    for (const child of children)
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    await Promise.all(completions)
+  }
 })

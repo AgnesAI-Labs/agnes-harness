@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs'
 import { HostError } from '@agnes/host-common/errors'
+import { RuntimePluginCatalogue } from '@agnes/host-providers/runtime-plugin-catalogue'
 import { capabilityHash, lockPath, type RuntimePluginSnapshot, readLock } from '@agnes/package-manager'
 import type { HostOptions } from '../lifecycle/host.js'
 
@@ -53,6 +54,25 @@ export async function assertGenerationTrust(
         { detail: { packageId: snapshot.packageId, generationRestore: true } },
       )
   }
+}
+
+/** The catalogue a runtime target selects its plugin snapshots from: provided sources and development reloads. */
+export async function generationSourceCatalogue(
+  options: Pick<HostOptions, 'runtimePluginSources' | 'runtimePluginCatalogue' | 'runtimePluginSnapshots'>,
+  development: ReadonlyMap<string, RuntimePluginSnapshot>,
+): Promise<RuntimePluginCatalogue> {
+  const sources =
+    (await options.runtimePluginSources?.()) ??
+    options.runtimePluginSnapshots ??
+    options.runtimePluginCatalogue ??
+    []
+  const catalogue = new Map(
+    [...(options.runtimePluginSnapshots ?? []), ...sources, ...development.values()].map((source) => [
+      `${source.snapshot.packageId}@${source.snapshot.snapshotId}`,
+      source,
+    ]),
+  )
+  return new RuntimePluginCatalogue([...catalogue.values()])
 }
 
 /** Let each publisher resolve explicit development reloads as well as installed source identities. */

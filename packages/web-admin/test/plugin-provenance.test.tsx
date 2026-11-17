@@ -1,9 +1,12 @@
 /** @vitest-environment happy-dom */
-import type { PackageProvenance } from '@agnes/protocol'
+import { readFileSync } from 'node:fs'
+import type { PackageInstalledDescriptor, PackageProvenance } from '@agnes/protocol'
 import { createRegionRenderer } from '@agnes/web-ui'
 import { act } from 'react'
 import { afterEach, expect, it } from 'vitest'
+import { EnableFacts } from '../src/admin/plugins/admin/confirms.js'
 import { ProvenanceReview } from '../src/admin/plugins/capability-review.js'
+import { pluginAdminLocaleCatalog } from '../src/admin/plugins/locales/admin.js'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
@@ -43,3 +46,47 @@ it.each(['en', 'zh-CN'])(
     )
   },
 )
+
+it('shows the proven shipped copy and its app access when an installed plugin is enabled later', async () => {
+  const rows = readFileSync('packages/protocol/fixtures/package-admin/package-admin.jsonl', 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as { name: string; kind: string; target: string; payload: unknown })
+  const fixture = rows.find(
+    (row) => row.target === 'config' && row.name === 'PackageInstalledDescriptor' && row.kind === 'valid',
+  )?.payload as PackageInstalledDescriptor
+  const superagent = JSON.parse(
+    readFileSync('packages/package-manager/bundled-plugins/superagent/package.json', 'utf8'),
+  )
+  const installed: PackageInstalledDescriptor = {
+    ...fixture,
+    trusted: true,
+    declaredCapabilities: superagent.agnes.plugins[0].capabilities,
+    provenance: {
+      source: { type: 'file', ref: 'file:./bundled-plugins/superagent' },
+      integrity: fixture.integrity,
+      signatureVerified: false,
+    },
+  }
+  const text = (key: string) => pluginAdminLocaleCatalog.en[key] ?? key
+  for (const item of [{ ...installed, bundledOrigin: { ownerApplication: true as const } }, installed]) {
+    const root = createRegionRenderer(document.body)
+    await act(async () => root.render(<EnableFacts item={item} t={text} />))
+    const page = document.body.textContent ?? ''
+    expect(page).toContain(text('capability.store'))
+    if (item.bundledOrigin) {
+      expect(document.querySelector('[data-testid="provenance-bundled"]')?.textContent).toBe(
+        text('provenance.bundled'),
+      )
+      expect(page).toContain(text('provenance.bundledSignature'))
+      expect(page).toContain(text('capability.ownerApplication'))
+      expect(page).not.toContain(text('provenance.unverified'))
+    } else {
+      expect(document.querySelector('[data-testid="provenance-bundled"]')).toBeNull()
+      expect(page).not.toContain(text('capability.ownerApplication'))
+      expect(page).toContain(text('provenance.unverified'))
+    }
+    await act(async () => root.unmount())
+    document.body.replaceChildren()
+  }
+})

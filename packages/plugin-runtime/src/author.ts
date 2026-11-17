@@ -14,6 +14,7 @@ export function defineAgnesPlugin<P extends Plugin>(plugin: P): P {
 }
 
 export {
+  channelKind,
   childAgentKind,
   compactionKind,
   type DecisionHandle,

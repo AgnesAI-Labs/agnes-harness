@@ -28,6 +28,13 @@ import { publishProbedRuntimeTarget } from './runtime-target-publisher.js'
 
 export type CompositeTargetActivationOptions = Readonly<{
   store: CompositeTargetStore
+  /** Drops state keyed by plugin rows no installed package declares; runs after every reconcile, and must not throw. */
+  pruneGrants?(): Promise<void>
+  /**
+   * Revokes the package's managed workspace grants and detaches its managed session records. Throws to
+   * refuse the removal: a package installed later under the same id must inherit neither.
+   */
+  releaseManagedSessions?(packageId: string): void | Promise<void>
   workerGeneration?: () => number | undefined
   /** Read-only observation of an admitted shared-worker startup, never starts a worker. */
   workerStarting?: () => boolean
@@ -62,6 +69,7 @@ export type CompositeTargetActivationOptions = Readonly<{
   migrateSession?: PackageActivationAdapter['migrateSession']
   revokePackage?(packageId: string): Promise<void>
   releaseRetiring?(packageId: string): Promise<void>
+  clearChannels?(packageId: string): Promise<void>
   deliver?(artifact: RuntimeTargetArtifact): Promise<void>
   /**
    * Make an operation wait for what became of its own target, and for an earlier one to be settled
@@ -256,7 +264,7 @@ const unavailable: PackageAdminError = Object.freeze({
 export function createCompositeTargetActivation(
   options: CompositeTargetActivationOptions,
 ): PackageActivationAdapter {
-  return Object.freeze({
+  const adapter: PackageActivationAdapter = {
     ...(options.generationStatus ? { generations: options.generationStatus } : {}),
     ...(options.publicationStatus ? { publicationStatus: options.publicationStatus } : {}),
     ...(options.migrateSession ? { migrateSession: options.migrateSession } : {}),
@@ -280,6 +288,13 @@ export function createCompositeTargetActivation(
       await options.releaseRetiring?.(packageId)
       await options.collectPins?.()
       await options.collectGenerations?.()
+      try {
+        await options.releaseManagedSessions?.(packageId)
+      } catch (error) {
+        throw new Error('E_PACKAGE_STATE: managed session grants and records could not be released', {
+          cause: error,
+        })
+      }
     },
     async actual(_profile, packageId) {
       return observation(options, packageId, true)
@@ -290,6 +305,11 @@ export function createCompositeTargetActivation(
     async reconcile(input) {
       await input.admission?.verify()
       input.admission?.assertActive()
+      if (input.operation === 'remove') {
+        if (!packageStopped(options.store, options.workerGeneration?.(), input.packageId))
+          throw new Error('E_PACKAGE_STATE: package is still running')
+        await options.clearChannels?.(input.packageId)
+      }
       const probe = options.probe
       if (!probe) return { actual: 'failed', error: unavailable }
       const wait = options.settle && {
@@ -379,6 +399,17 @@ export function createCompositeTargetActivation(
       if (packageStopped(options.store, options.workerGeneration?.(), input.packageId))
         await options.collectPins?.()
       return observation(options, input.packageId)
+    },
+  }
+  // Install, update, rollback and removal each end here, after the lockfile and the files changed.
+  return Object.freeze({
+    ...adapter,
+    async reconcile(input) {
+      try {
+        return await adapter.reconcile(input)
+      } finally {
+        await options.pruneGrants?.()
+      }
     },
   })
 }

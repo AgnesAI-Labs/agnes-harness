@@ -41,6 +41,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'nav.newSessionInWorkspace': 'New session in “{name}”',
     'session.uncategorized': 'Unassigned',
     'nav.chats': 'Chats',
+    'nav.legacyChats': 'Previous chats',
     'nav.pinned': 'Pinned',
     'session.menu.pin': 'Pin',
     'session.menu.unpin': 'Unpin',
@@ -94,6 +95,9 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.permission.view': 'Read only',
     'session.runtime.noOsIsolation': 'OS sandbox off',
     'session.runtime.platformNoCommandIsolation': 'Commands are not isolated on this platform',
+    'session.runtime.windowsAclIsolation': 'Windows write restriction only: reads and network are open',
+    'session.runtime.windowsAclIsolationHelp':
+      'Commands can write only where the file ACL grant allows (nowhere in read only); this is not strict path isolation, and reads and network are not isolated.',
     'session.runtime.noOsIsolationHelp':
       'Application permissions still apply. Approved commands run with your system account’s access; approval does not isolate files or network.',
     'session.runtime.permission.workspace': 'Edit workspace',
@@ -215,6 +219,7 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'nav.newSessionInWorkspace': '在“{name}”中新建会话',
     'session.uncategorized': '未分类',
     'nav.chats': '临时会话',
+    'nav.legacyChats': '旧临时会话',
     'nav.pinned': '置顶',
     'session.menu.pin': '置顶',
     'session.menu.unpin': '取消置顶',
@@ -267,6 +272,9 @@ export const sessionLocaleCatalog: LocaleCatalog = {
     'session.runtime.permission.view': '只读',
     'session.runtime.noOsIsolation': '系统沙箱未启用',
     'session.runtime.platformNoCommandIsolation': '此平台命令未隔离',
+    'session.runtime.windowsAclIsolation': 'Windows 仅限制写入：读取与网络未隔离',
+    'session.runtime.windowsAclIsolationHelp':
+      '命令只能写入文件 ACL 授权的位置（只读时不可写），非严格路径隔离；读取与网络未隔离。',
     'session.runtime.noOsIsolationHelp':
       '应用权限仍按所选模式执行。获准命令使用当前系统账户权限；审批不能隔离文件和网络。',
     'session.runtime.permission.workspace': '可修改工作区',

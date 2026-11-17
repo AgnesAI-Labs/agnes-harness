@@ -8,6 +8,7 @@ import {
   DEADLINE_ADVICE,
   deadlineStop,
   deadlineWait,
+  packageListsNote,
   shellGuidance,
   timeoutGuidance,
 } from '../shell-guidance.js'
@@ -27,9 +28,9 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
   return defineTool({
     name: 'shell',
     description:
-      'Run a command line in the session shell (the runtime context tells you which shell dialect is active). Output is captured; long output is stored as an artifact. timeoutMs sets how long the call may run: without it a default applies, a longer value is granted up to a maximum the deployment sets, and a larger request is capped there. background starts a session-owned job. A foreground wait ends at the timeout or after 2 minutes, whichever is first, and the same process then continues as a background job unless timeoutToBackground is false (then it is killed at the timeout). Processes the command starts with & or nohup keep running as its job after the command ends; any other process it leaves behind is stopped with it. Use job_output, job_list and job_kill to monitor or stop jobs. Set persistent to preserve cwd/env/variables across calls; choose a supported interpreter. sessionId selects an existing persistent shell. A busy shell refuses another command until the previous job finishes. Killing a persistent command closes its shell.'.replace(
-        'after 2 minutes',
-        observationMs === undefined ? 'after 2 minutes' : `after ${observationMs}ms`,
+      'Run a command line in the session shell (the runtime context tells you which shell dialect is active). Output is captured; long output is stored as an artifact. timeoutMs sets how long the call may run: without it a default applies, a longer value is granted up to a maximum the deployment sets, and a larger request is capped there. background starts a session-owned job. A foreground wait ends at the timeout or after 5 minutes, whichever is first, and the same process then continues as a background job unless timeoutToBackground is false (then it is killed at the timeout). Processes the command starts with & or nohup keep running as its job after the command ends; any other process it leaves behind is stopped with it. Use job_output, job_list and job_kill to monitor or stop jobs. You are told when a background job finishes, so do not sleep and poll for it; call job_output (it can wait up to 5 minutes) only when you are blocked on the result. Set persistent to preserve cwd/env/variables across calls; choose a supported interpreter. sessionId selects an existing persistent shell. A busy shell refuses another command until the previous job finishes. Killing a persistent command closes its shell.'.replace(
+        'after 5 minutes',
+        observationMs === undefined ? 'after 5 minutes' : `after ${observationMs}ms`,
       ),
     parameters: ShellParams,
     meta: {
@@ -99,6 +100,8 @@ export function createShellTool(jobs?: ShellJobs, observationMs?: number) {
       const parts: string[] = shellGuidance(ctx, args.command, r.stoppedProcesses)
       if (r.stdout) parts.push(r.stdout.replace(/\n$/, ''))
       if (r.stderr) parts.push(`[stderr]\n${r.stderr.replace(/\n$/, '')}`)
+      const packageLists = packageListsNote(r.stdout, r.stderr)
+      if (packageLists) parts.push(packageLists)
       // An executor that reports nothing (a third-party seam) still has the kernel's cut-off behind it,
       // so only then is a killed-looking result that took the whole limit read as the timeout it was.
       const timedOut = r.timedOut ?? (r.code < 0 && Date.now() - startedAt >= timeoutMs)

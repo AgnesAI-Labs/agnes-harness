@@ -4,7 +4,7 @@ import { constants, enableCompileCache } from 'node:module'
 import { homedir } from 'node:os'
 import { isAbsolute, join, parse, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createPrivateDirectorySync, hasPrivateDaclSync } from '@agnes/system-node'
+import { createPrivateDirectorySync, hasPrivateDaclSync, trimNativeHeap } from '@agnes/system-node'
 import { timingMark } from '../src/timing.js'
 import { versionLine } from '../src/version-line.js'
 
@@ -83,5 +83,7 @@ if (typeof AGNES_BOOTSTRAP_MAIN === 'string') {
     // The bundles keep their own main-module guards, which compare argv[1] with their own file.
     process.argv[1] = main
     await import(pathToFileURL(main).href)
+    // The bundle is parsed and compiled: hand the memory V8 freed doing that back to the OS.
+    void trimNativeHeap()
   }
 }

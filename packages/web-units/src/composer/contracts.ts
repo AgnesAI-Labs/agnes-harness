@@ -18,6 +18,7 @@ import type { ComposerSkill, ComposerSkills } from '../skill-picker.js'
 export type ModelPickerOption = {
   id: string
   route: string
+  name?: string
   label?: string
   contextWindow?: number
   /** Model-declared effort-to-provider-value mapping; absence accepts any valid effort level. */
@@ -244,6 +245,8 @@ export interface ComposerSlots {
   dock?: ReactNode
   left?: ReactNode
   model?: ReactNode
+  /** Host session actions, shown only for a loaded, connected and editable session. */
+  sessionControls?: ReactNode
   overlay?: ReactNode
   permission?: ReactNode
   plan?: ReactNode

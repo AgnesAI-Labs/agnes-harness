@@ -389,6 +389,27 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
 
   const timeline = await projectUI(events, { sessionKey: 'approval-chain', lane: 'main' })
   expect(kind(timeline.nodes, 'approval')[0]?.options).toEqual(['allow_once', 'allow_always', 'reject_once'])
+  // The node keeps the position it first appeared at; `decidedSeq` is where it ended, after the turn
+  // had already parked, and a node that has not ended carries none.
+  expect(kind(timeline.nodes, 'approval')[0]).toMatchObject({ seq: 4, state: 'decided', decidedSeq: 7 })
+  const parked = await projectUI(events.slice(0, 5), { sessionKey: 'approval-chain', lane: 'main' })
+  expect(kind(parked.nodes, 'approval')[0]).toMatchObject({ seq: 4, state: 'pending' })
+  expect(kind(parked.nodes, 'approval')[0]).not.toHaveProperty('decidedSeq')
+  const expiredRow = (rowSeq: number, revision: number) =>
+    ({
+      ...events[6]!,
+      seq: rowSeq,
+      data: {
+        ...pendingDecision('approval-1', { operationId: 'tool-1' }),
+        revision,
+        result: { reason: 'expired', at: '2026-09-13T00:10:00.000Z', code: 'deadline' },
+      },
+    }) as Event
+  const expired = await projectUI([...events.slice(0, 5), expiredRow(6, 2)], {
+    sessionKey: 'approval-chain',
+    lane: 'main',
+  })
+  expect(kind(expired.nodes, 'approval')[0]).toMatchObject({ seq: 4, state: 'expired', decidedSeq: 6 })
   expect(timeline.turns).toHaveLength(1)
   expect(timeline.turns?.[0]?.error).toBeUndefined()
   expect(timeline.turns[0]).toMatchObject({
@@ -408,6 +429,41 @@ it('groups approval continuation into one lane-isolated turn with measured cost 
       reasoningComplete: true,
       billingComplete: true,
     },
+  })
+})
+
+it('marks a full-access allow as ended at its own position', async () => {
+  let seq = 0
+  const event = (type: string, data: Event['data']): Event => ({
+    seq: ++seq,
+    ts: new Date(Date.UTC(2026, 8, 13, 2, 0, seq)).toISOString(),
+    id: `01K0000000000000000002${String(seq).padStart(4, '0')}`,
+    type,
+    data,
+    actor,
+    origin: 'system',
+    trust: 'trusted',
+  })
+  const timeline = await projectUI(
+    [
+      event('user/message', { content: [{ type: 'text', text: 'go' }] }),
+      event('turn/start', { turn: 1, trigger: 'prompt' }),
+      event('tool/call', { toolUseId: 'tool-1', name: 'shell', args: {}, ordinal: 0 }),
+      event('x/core/permission-auto-allowed', {
+        requestId: 'r1',
+        toolUseId: 'tool-1',
+        summary: 'run it',
+        reason: 'full-access',
+        answeredBy: actor,
+      }),
+    ],
+    { sessionKey: 'auto-allow' },
+  )
+  expect(kind(timeline.nodes, 'approval')[0]).toMatchObject({
+    seq: 4,
+    state: 'decided',
+    decidedSeq: 4,
+    decision: { via: 'full-access' },
   })
 })
 
@@ -1497,7 +1553,11 @@ describe('runtime-context user/message projection', () => {
       ts: '2026-09-14T00:00:00.000Z',
       id: '01K000000000000000000005',
       type: 'user/message',
-      data: { content: [{ type: 'text', text: 'hello again' }], kind: 'prompt' },
+      data: {
+        content: [{ type: 'text', text: 'hello again' }],
+        kind: 'prompt',
+        commandId: 'channel:projected-input',
+      },
       actor: { id: 'operator', org: 'local', role: 'user', deptPath: [], attrs: {} },
       origin: 'principal',
       trust: 'trusted',
@@ -1514,6 +1574,7 @@ describe('runtime-context user/message projection', () => {
       content: [{ type: 'text', text: 'hello again' }],
       actorLabel: 'operator',
       origin: 'principal',
+      commandId: 'channel:projected-input',
     })
     expect(kind(nodes, 'context')).toHaveLength(0)
   })
@@ -1590,11 +1651,30 @@ it('reconstructs role attribution from persisted delegation results', async () =
   expect(
     kind((await projectUI(legacy, { sessionKey: 'roles' })).nodes, 'tool')[0]?.delegatedTask,
   ).toMatchObject({ childKey: 'child', status: 'running' })
+  // A waited role child that failed is an error result, and it did create a child: the card stays.
   const failed = structuredClone(events)
-  ;(failed[1]!.data as { isError: boolean }).isError = true
-  expect(
-    kind((await projectUI(failed, { sessionKey: 'roles' })).nodes, 'tool')[0]?.delegatedRole,
-  ).toBeUndefined()
+  Object.assign(failed[1]!.data as object, {
+    isError: true,
+    structured: { childKey: 'child', role: delegatedRole, task: 'Read the evidence', status: 'failed' },
+  })
+  const failedNode = kind((await projectUI(failed, { sessionKey: 'roles' })).nodes, 'tool')[0]
+  expect(failedNode).toMatchObject({ status: 'failed', delegatedRole })
+  expect(failedNode?.delegatedTask).toEqual({
+    childKey: 'child',
+    task: 'Read the evidence',
+    status: 'failed',
+  })
+  // A spawn refused before a child existed names no child, with or without structured data: no card.
+  for (const structured of [undefined, { role: delegatedRole }, { childKey: '', role: delegatedRole }]) {
+    const refused = structuredClone(events)
+    const data = refused[1]!.data as { isError: boolean; structured?: unknown }
+    data.isError = true
+    if (structured) data.structured = structured
+    else delete data.structured
+    const node = kind((await projectUI(refused, { sessionKey: 'roles' })).nodes, 'tool')[0]
+    expect(node?.delegatedRole).toBeUndefined()
+    expect(node?.delegatedTask).toBeUndefined()
+  }
 })
 
 describe('approval card facts', () => {
@@ -1627,4 +1707,128 @@ describe('approval card facts', () => {
   ])('reads $name from the recorded subject', ({ subject, expected }) => {
     expect(approvalFactsOf(subject)).toEqual(expected)
   })
+})
+it('derives side-call caller and purpose labels from committed audits through replay and late rows', async () => {
+  let seq = 0
+  const event = (type: string, data: unknown, extra = {}) =>
+    ({
+      ...row(type, data as any),
+      sessionKey: 'cost-labels',
+      lane: 'main',
+      seq: ++seq,
+      ts: new Date(0).toISOString(),
+      id: `label-${seq}`,
+      ...extra,
+    }) as Event
+  const caller = 'ext:agnes.judgment/main'
+  const cost = (effectId: string, extra = {}) => ({
+    effectId,
+    purpose: 'side-call',
+    caller,
+    model: 'j',
+    tokens: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
+    credits: 2,
+    creditSource: 'gateway',
+    billing: { usdMicros: 5, source: 'gateway', subscription: false },
+    ...extra,
+  })
+  const audit = (effectId: string, label = 'judgment.rules', extra = {}) =>
+    event(
+      'x/core/side-call-intent',
+      { version: 1, binding: { effectId }, bindingHash: 'a'.repeat(64), audit: { caller, label } },
+      extra,
+    )
+  const events = [
+    event('turn/start', { turn: 1, trigger: 'prompt' }),
+    event('effect/intent', { effectId: 'side:r', kind: 'side-call', replay: 'never' }),
+    event('cost/ledger', cost('side:r', { label: 'forged-label' })),
+    audit('side:r'),
+    audit('side:late', 'judgment.batch'),
+    event('effect/intent', { effectId: 'side:late', kind: 'side-call', replay: 'never' }),
+    event('turn/end', { turn: 1, reason: 'completed' }),
+    event('cost/ledger', cost('side:late')),
+    audit('side:forged', 'judgment.stop', { origin: 'ext:other', trust: 'untrusted' }),
+    event('cost/ledger', cost('side:forged')),
+    event('cost/ledger', cost('side:old', { caller: undefined })),
+    event('cost/ledger', cost('side:adj', { adjustment: { of: 3, delta: -1, usdMicrosDelta: -2 } })),
+  ]
+  const timeline = await projectUI(events, { sessionKey: 'cost-labels' })
+  const costs = kind(timeline.nodes, 'cost')
+  expect(costs[0]).toMatchObject({ caller, label: 'judgment.rules', credits: 2, billing: { usdMicros: 5 } })
+  expect(costs[1]).toMatchObject({ caller, label: 'judgment.batch' })
+  expect(costs[2]?.label).toBeUndefined()
+  expect(costs[3]?.caller).toBeUndefined()
+  expect(timeline.turns?.[0]?.usage.calls.slice(0, 2)).toMatchObject([
+    { caller, label: 'judgment.rules' },
+    { caller, label: 'judgment.batch' },
+  ])
+  expect(timeline.turns?.[0]?.usage.credits?.amount).toBe(3)
+  expect(timeline.turns?.[0]?.usage.cost?.usdMicros).toBe(8)
+  expect(await projectUI(JSON.parse(JSON.stringify(events)), { sessionKey: 'cost-labels' })).toEqual(timeline)
+})
+it('keeps side-call label evidence within its committed lane', async () => {
+  let seq = 0
+  const event = (type: string, data: unknown, lane = 'main') =>
+    ({
+      ...row(type, data as any),
+      seq: ++seq,
+      id: `lane-label-${seq}`,
+      ts: new Date(0).toISOString(),
+      lane,
+    }) as Event
+  const caller = 'ext:agnes.judgment/main'
+  const timeline = await projectUI(
+    [
+      event(
+        'x/core/side-call-intent',
+        { version: 1, binding: { effectId: 'side:same' }, audit: { caller, label: 'judgment.rules' } },
+        'other',
+      ),
+      event('cost/ledger', {
+        effectId: 'side:same',
+        purpose: 'side-call',
+        caller,
+        model: 'j',
+        tokens: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      }),
+    ],
+    { sessionKey: 'lane-labels' },
+  )
+  expect(kind(timeline.nodes, 'cost')[0]?.label).toBeUndefined()
+})
+it('updates late audit labels without assigning an earlier cost node to the next turn', async () => {
+  let seq = 0
+  const event = (type: string, data: unknown) =>
+    ({
+      ...row(type, data as any),
+      seq: ++seq,
+      id: `late-label-${seq}`,
+      ts: new Date(0).toISOString(),
+      lane: 'main',
+    }) as Event
+  const caller = 'ext:agnes.judgment/main'
+  const timeline = await projectUI(
+    [
+      event('turn/start', { turn: 1, trigger: 'prompt' }),
+      event('cost/ledger', {
+        effectId: 'side:old',
+        purpose: 'side-call',
+        caller,
+        model: 'j',
+        tokens: { input: 1, output: 0, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      }),
+      event('turn/end', { turn: 1, reason: 'completed' }),
+      event('turn/start', { turn: 2, trigger: 'prompt' }),
+      event('x/core/side-call-intent', {
+        version: 1,
+        binding: { effectId: 'side:old' },
+        audit: { caller, label: 'judgment.rules' },
+      }),
+    ],
+    { sessionKey: 'late-labels' },
+  )
+  expect(timeline.turns?.[0]?.usage.calls[0]?.label).toBe('judgment.rules')
+  expect(timeline.turns?.[1]?.nodeIds).not.toContain('late-label-2')
 })

@@ -1,6 +1,6 @@
 import { tmpdir } from 'node:os'
 import { validateMethod } from '@agnes/protocol'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
 import { createShellTool } from '../../tools-core/src/tools/shell.js'
 import { createJobTools } from '../src/index.js'
@@ -14,6 +14,70 @@ const context = (sessionKey = 'jobs') => {
   return ctx
 }
 describe.skipIf(process.platform === 'win32')('session shell jobs', () => {
+  it.each(['SIGKILL', 'SIGTERM'] as const)(
+    'does not revisit a process group missing at %s when its pending exit event arrives',
+    async (name) => {
+      const handle = await legacyProcess(context(), ['sh', '-c', 'exit 0'], tmpdir())
+      const gone = Object.assign(new Error('group already gone'), { code: 'ESRCH' })
+      const signal = vi
+        .spyOn(process, 'kill')
+        .mockImplementationOnce(() => {
+          throw gone
+        })
+        .mockImplementation(() => {
+          throw Object.assign(new Error('would signal a reused group'), { code: 'EPERM' })
+        })
+      try {
+        if (name === 'SIGKILL') await expect(handle.close()).resolves.toBeUndefined()
+        else {
+          await expect(handle.signal(name)).rejects.toBe(gone)
+          await expect(handle.exited).resolves.toEqual({ code: 0 })
+        }
+        await expect(handle.close()).resolves.toBeUndefined()
+        expect(signal).toHaveBeenCalledTimes(1)
+        await expect(handle.close()).resolves.toBeUndefined()
+        expect(signal).toHaveBeenCalledTimes(1)
+      } finally {
+        signal.mockRestore()
+        await handle.close().catch(() => undefined)
+      }
+    },
+  )
+  it('keeps the first process-group permission denial visible and allows a later cleanup retry', async () => {
+    const handle = await legacyProcess(context(), ['sh', '-c', 'sleep 30'], tmpdir())
+    const denied = Object.assign(new Error('permission denied'), { code: 'EPERM' })
+    const signal = vi.spyOn(process, 'kill').mockImplementationOnce(() => {
+      throw denied
+    })
+    try {
+      await expect(handle.close()).rejects.toBe(denied)
+    } finally {
+      signal.mockRestore()
+      await handle.close()
+    }
+  })
+  it('does not signal a process group again after successfully killing it', async () => {
+    const ctx = context()
+    const handle = await legacyProcess(ctx, ['sh', '-c', 'sleep 30'], tmpdir())
+    const original = process.kill.bind(process)
+    const killed = new Set<number>()
+    const signal = vi.spyOn(process, 'kill').mockImplementation((pid, name) => {
+      if (pid < 0 && name === 'SIGKILL') {
+        if (killed.has(pid)) throw Object.assign(new Error('group already killed'), { code: 'EPERM' })
+        killed.add(pid)
+      }
+      return original(pid, name)
+    })
+    try {
+      await expect(handle.close()).resolves.toBeUndefined()
+      expect(signal).toHaveBeenCalledTimes(1)
+      await expect(handle.close()).resolves.toBeUndefined()
+      expect(signal).toHaveBeenCalledTimes(1)
+    } finally {
+      signal.mockRestore()
+      await handle.close().catch(() => undefined)
+    }
+  })
   it.each([undefined, 0, 2])(
     'keeps a real job beyond the timeout and projects cleanup receipt %s',
     async (stoppedProcesses) => {

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -8,11 +8,14 @@ import {
 } from '@agnes/host-infrastructure/refinement-registry'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  enforceSkillCap,
+  RSI_SKILL_CAP,
   recordSkillRevocation,
   renewSkillForUser,
   reviewSkills,
   rollbackSkillForUser,
 } from '../../src/runtime/refinement/skill-review.js'
+import { registryOf, skillDoc, skillWorkspace } from './skill-fixtures.js'
 
 const DAY = 86_400_000
 const T0 = 1_800_000_000_000
@@ -60,8 +63,8 @@ function setup() {
   const calls: unknown[][] = []
   const changedByPerson = new Set<string>()
   const installer = {
-    async disable(name: string, expected: { revision: string; reviewAfter?: number }) {
-      calls.push(['disable', name, expected])
+    async disable(name: string, expected: { revision: string; reviewAfter?: number }, reason?: 'capacity') {
+      calls.push(['disable', name, expected, ...(reason === undefined ? [] : [reason])])
       if (changedByPerson.has(name)) throw Object.assign(new Error('x'), { code: 'SKILL_CHANGED_SINCE' })
       const r = registry()
       r.update((draft) => {
@@ -70,6 +73,7 @@ function setup() {
         if (expected.reviewAfter !== undefined && found.reviewAfter !== expected.reviewAfter)
           throw Object.assign(new Error('x'), { code: 'SKILL_REVIEW_RENEWED' })
         found.state = 'review-disabled'
+        if (reason === 'capacity') found.disabledFor = 'capacity'
       }, r.read().revision)
     },
     async rollback(name: string, toRevision: string) {
@@ -284,5 +288,155 @@ describe('what the user took back', () => {
       }),
     ).rejects.toMatchObject({ code: 'SKILL_CHANGED_SINCE' })
     expect(s.registry().read().revocations).toEqual([])
+  })
+})
+
+describe('the cap on saved skills in force in a workspace', () => {
+  const names = (count: number, from = 0) =>
+    Array.from({ length: count }, (_, i) => `skill-${String(from + i).padStart(2, '0')}`)
+
+  it('installing the 21st RSI skill disables the one with the earliest review date', async () => {
+    const dirs: string[] = []
+    try {
+      const s = skillWorkspace(dirs)
+      const source = (name: string) => ({
+        sessionKey: 'session-a',
+        kind: 'skill' as const,
+        entryId: name,
+        contentHash: 'b'.repeat(64),
+        initiator: 'auto' as const,
+      })
+      const draft = (name: string) => ({
+        name,
+        class: 'instructions' as const,
+        files: [{ path: 'SKILL.md', content: skillDoc(name, 'Saved skill', `Steps for ${name}.`) }],
+      })
+      // A person's own skill in the same folder is never counted or touched.
+      mkdirSync(s.skillDir('mine'), { recursive: true })
+      writeFileSync(join(s.skillDir('mine'), 'SKILL.md'), skillDoc('mine', 'My skill', 'Mine.'))
+      for (const name of names(RSI_SKILL_CAP))
+        await s.installer.install(draft(name), {
+          workspaceRoot: s.workspace,
+          receiptId: name,
+          source: source(name),
+        })
+      const registry = registryOf(s.dataDir, s.workspace)
+      // Review dates in a known order, all before the next install's: skill-07 is the one least
+      // recently confirmed.
+      const base = Date.now()
+      registry.update((records) => {
+        records.skills.forEach((skill, i) => {
+          skill.reviewAfter = base + (skill.name === 'skill-07' ? 0 : i + 1) * DAY
+        })
+      }, registry.read().revision)
+      await enforceSkillCap(registry, s.installer, base)
+      expect(registry.read().skills.filter((skill) => skill.state === 'active')).toHaveLength(RSI_SKILL_CAP)
+      const [last] = names(1, RSI_SKILL_CAP)
+      await s.installer.install(draft(last as string), {
+        workspaceRoot: s.workspace,
+        receiptId: last as string,
+        source: source(last as string),
+      })
+      const before = registry.read().receipts.length
+      await enforceSkillCap(registry, s.installer, Date.now())
+      const after = registry.read()
+      const off = after.skills.find((skill) => skill.name === 'skill-07')
+      expect(off).toMatchObject({ state: 'review-disabled', disabledFor: 'capacity' })
+      expect(after.skills.filter((skill) => skill.state === 'active')).toHaveLength(RSI_SKILL_CAP)
+      expect(existsSync(join(s.skillDir('skill-07'), 'SKILL.md'))).toBe(true)
+      expect(s.fake.entries.get(off?.resourceId as string)).toMatchObject({ desired: 'disabled' })
+      expect(existsSync(join(s.skillDir('mine'), 'SKILL.md'))).toBe(true)
+      expect(after.skills.some((skill) => skill.name === 'mine')).toBe(false)
+      // Each capacity disable leaves a receipt in the registry; no revocation.
+      expect(after.receipts.slice(before)).toEqual([
+        expect.objectContaining({
+          outcome: 'refused',
+          target: expect.objectContaining({ kind: 'skill', name: 'skill-07' }),
+        }),
+      ])
+      expect(after.revocations).toEqual([])
+    } finally {
+      for (const dir of dirs) rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
+  it('a workspace with 25 active RSI skills keeps 20 after a session opens', async () => {
+    const s = setup()
+    s.seed(
+      ...names(25).map((name, i) => s.skill(name, { reviewAfter: T0 + REVIEW_AFTER_MS + (25 - i) * DAY })),
+    )
+    await reviewSkills(s.registry(), s.installer, T0)
+    const read = s.registry().read().skills
+    expect(read.filter((skill) => skill.state === 'active')).toHaveLength(RSI_SKILL_CAP)
+    // The five confirmed longest ago, the last five seeded, are switched off for capacity.
+    expect(
+      read
+        .filter((skill) => skill.disabledFor === 'capacity')
+        .map((skill) => skill.name)
+        .sort(),
+    ).toEqual(names(5, 20))
+    expect(s.calls.every((call) => call[3] === 'capacity')).toBe(true)
+    // Nothing more to do the next time.
+    await reviewSkills(s.registry(), s.installer, T0)
+    expect(s.calls).toHaveLength(5)
+  })
+
+  it('a skill a person re-enabled is never disabled for capacity, so the count may exceed 20', async () => {
+    const s = setup()
+    s.seed(
+      ...names(RSI_SKILL_CAP).map((name) => s.skill(name, { reviewAfter: T0 + 100 * DAY })),
+      s.skill('kept', { state: 'review-disabled', disabledFor: 'capacity', reviewAfter: T0 }),
+    )
+    const kept = s.record('kept') as RegistrySkill
+    expect(renewSkillForUser(s.registry(), kept.resourceId, REV(1), T0)).toBe(true)
+    expect(s.record('kept')).toMatchObject({ state: 'active', enabledBy: 'person' })
+    expect(s.record('kept')).not.toHaveProperty('disabledFor')
+    // Its review date is now the earliest of all, and still it is not the one switched off.
+    await enforceSkillCap(s.registry(), s.installer, T0)
+    expect(s.calls).toEqual([])
+    s.seed(s.skill('one-more', { reviewAfter: T0 + 200 * DAY }))
+    await enforceSkillCap(s.registry(), s.installer, T0)
+    expect(s.calls.map((call) => call[1])).toEqual(['skill-00'])
+    expect(s.record('kept')?.state).toBe('active')
+    expect(
+      s
+        .registry()
+        .read()
+        .skills.filter((skill) => skill.state === 'active'),
+    ).toHaveLength(RSI_SKILL_CAP + 1)
+  })
+
+  it('a confirmation does not re-enable a capacity-disabled skill', async () => {
+    const s = setup()
+    s.seed(s.skill('tidy-notes', { state: 'review-disabled', disabledFor: 'capacity' }))
+    s.at(T0 + DAY)
+    s.registry().renew({ skillName: 'tidy-notes' })
+    expect(s.record('tidy-notes')).toMatchObject({
+      state: 'review-disabled',
+      disabledFor: 'capacity',
+      reviewAfter: T0 + DAY + REVIEW_AFTER_MS,
+    })
+    await enforceSkillCap(s.registry(), s.installer, T0 + DAY)
+    await reviewSkills(s.registry(), s.installer, T0 + DAY)
+    expect(s.record('tidy-notes')?.state).toBe('review-disabled')
+  })
+
+  it('a skill a person changed is passed over and the next one is switched off instead', async () => {
+    const s = setup()
+    s.seed(...names(RSI_SKILL_CAP + 1).map((name, i) => s.skill(name, { reviewAfter: T0 + (i + 1) * DAY })))
+    s.changedByPerson.add('skill-00')
+    await enforceSkillCap(s.registry(), s.installer, T0)
+    expect(s.record('skill-00')?.state).toBe('active')
+    expect(s.record('skill-01')).toMatchObject({ state: 'review-disabled', disabledFor: 'capacity' })
+  })
+
+  it('does nothing when the registry cannot be read', async () => {
+    const s = setup()
+    s.seed(...names(RSI_SKILL_CAP + 1).map((name) => s.skill(name)))
+    const file = join(s.dataDir, 'refinement', 'workspaces')
+    const [name] = readdirSync(file)
+    writeFileSync(join(file, String(name)), '{broken')
+    await enforceSkillCap(s.registry(), s.installer, T0)
+    expect(s.calls).toEqual([])
   })
 })

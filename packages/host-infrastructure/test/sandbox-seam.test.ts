@@ -1,6 +1,6 @@
 import type { SeamWorkspace } from '@agnes/core'
 import { testFsPolicy } from '@agnes/core/testkit'
-import { SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
+import { SHELL_SENTINEL, SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
 import { describe, expect, it, vi } from 'vitest'
 import { createSandboxSeam } from '../src/sandbox-seam.js'
 
@@ -193,4 +193,111 @@ describe('Host-bound sandbox seam over a remote workspace', () => {
       code: 'E_SANDBOX_WORKSPACE',
     })
   })
+})
+
+describe('Host-started Windows write restriction', () => {
+  const boundary = {
+    contract: 'windows-write-restricted-v1',
+    fileWrite: 'acl-partial',
+    fileRead: 'unrestricted',
+    network: 'unrestricted',
+    processTree: 'job-object',
+  } as const
+  const windows = (overrides: Record<string, unknown> = {}) => {
+    const ws = workspace({ shell: 'powershell', execBackend: 'windows-acl' })
+    const hostSpawn = {
+      enforcementLocation: 'host-spawn' as const,
+      boundary,
+      owner: 'local',
+      policyDigest: ws.value.policy.digest,
+    }
+    Object.assign(ws.value, {
+      enforcement: { level: 'partial', scope: ['file'], boundary },
+      hostSpawn,
+      openProcess: vi.fn(async () => ({ enforcement: ws.value.enforcement })),
+      ...overrides,
+    })
+    return { ...ws, hostSpawn }
+  }
+
+  it('hands the raw argv to the Host with the exact offer, and never confines it', async () => {
+    const ws = windows()
+    const seam = await createSandboxSeam().forWorkspace(ws.value)
+    await seam.exec(['node', '-v'], { cwd: '/work/proj' })
+    await seam.openProcess!({ argv: [SHELL_STDIN_SENTINEL] })
+    expect(ws.confine).not.toHaveBeenCalled()
+    const sandbox = {
+      policyDigest: ws.value.policy.digest,
+      backend: 'windows-acl',
+      hostSpawn: ws.hostSpawn,
+      enforcement: { level: 'partial', scope: ['file'], boundary },
+    }
+    expect(ws.exec).toHaveBeenCalledWith(['node', '-v'], {
+      cwd: '/work/proj',
+      sandbox: expect.objectContaining(sandbox),
+    })
+    expect(ws.value.openProcess).toHaveBeenCalledWith([SHELL_STDIN_SENTINEL], {
+      cwd: '/work/proj',
+      sandbox: expect.objectContaining(sandbox),
+    })
+    await expect(seam.confine(['node'])).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
+    expect(seam.enforcement()).toEqual({ level: 'partial', scope: ['file'], boundary })
+  })
+
+  it('refuses a Windows binding that is not exact', async () => {
+    const ws = windows()
+    const cases: Record<string, unknown>[] = [
+      { hostSpawn: undefined },
+      { hostSpawn: { ...ws.hostSpawn, policyDigest: 'e'.repeat(64) } },
+      { hostSpawn: { ...ws.hostSpawn, boundary: { ...boundary, network: 'acl-partial' } as never } },
+      { enforcement: { level: 'full', scope: ['file', 'network', 'process'] } },
+      { providerId: 'remote-box' },
+      { execBackend: 'none' },
+    ]
+    for (const overrides of cases)
+      await expect(createSandboxSeam().forWorkspace(windows(overrides).value)).rejects.toMatchObject({
+        code: 'E_SANDBOX_WORKSPACE',
+      })
+  })
+
+  it.each([
+    ['another provider', { providerId: 'docker' }],
+    ['an unconfined local workspace', { execBackend: 'none' }],
+    ['a full local backend', { execBackend: 'l1' }],
+    ['a remote workspace', { execBackend: 'remote' }],
+  ] as const)('refuses the Windows boundary on %s, where nothing applies it', async (_name, overrides) => {
+    const ws = workspace({
+      ...overrides,
+      enforcement: { level: 'partial', scope: ['file'], boundary },
+    })
+    await expect(createSandboxSeam().forWorkspace(ws.value)).rejects.toMatchObject({
+      code: 'E_SANDBOX_WORKSPACE',
+    })
+    expect(ws.ready).not.toHaveBeenCalled()
+  })
+})
+
+it('ends configured one-shot shell input without closing a persistent stdin shell', async () => {
+  const handle = {
+    enforcement: { level: 'none' as const, scope: [] },
+    exited: Promise.resolve({ code: 0 }),
+    onOutput: () => () => {},
+    write: async () => {},
+    resize: async () => {},
+    signal: async () => {},
+    close: async () => {},
+  }
+  const openProcess = vi.fn(async (_argv: readonly string[], _opts: unknown) => handle)
+  const ws = workspace({
+    shell: 'powershell',
+    shellCommand: (command) => ['powershell', '-Command', command],
+    openProcess,
+  })
+  const seam = await createSandboxSeam().forWorkspace(ws.value)
+  await seam.openProcess!({ argv: [SHELL_SENTINEL, 'exit 7'] })
+  expect(openProcess).toHaveBeenLastCalledWith(expect.any(Array), expect.objectContaining({ stdin: '' }))
+  await seam.openProcess!({ argv: [SHELL_STDIN_SENTINEL] })
+  expect(openProcess.mock.calls.at(-1)?.[1]).not.toHaveProperty('stdin')
+  await seam.openProcess!({ argv: [SHELL_SENTINEL, 'interactive'], pty: { columns: 80, rows: 24 } })
+  expect(openProcess.mock.calls.at(-1)?.[1]).not.toHaveProperty('stdin')
 })

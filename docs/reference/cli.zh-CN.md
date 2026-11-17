@@ -81,7 +81,7 @@ Print 输出用 `--mode text|json|stream-json` 选择；等待审批是配置项
 
 包：`package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel|source-policy`（最后一个显示允许的包来源）；`install SOURCE` 是 add 别名；`packages pins inspect|release` 管理保留引用。更新走 Web、TUI `/package update ID SOURCE INTEGRITY` 或 SDK；TUI update 直接提交所指定摘要，先 inspect，不声称它有额外 preview/confirm 向导。
 
-资源：`resources list|get|operation|cancel|enable|disable`；`skills refresh|trust`；`mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools`。变更操作通常要求 expected revision 与交互确认，详见[Skills](../guide/skills.zh-CN.md)、[MCP](../guide/mcp.zh-CN.md)。
+资源：`resources list|get|operation|cancel|enable|disable`；`skills refresh|trust`；`mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools|login|logout`（`mcp login|logout <id>` 用 OAuth 登录或登出 HTTP 服务）。变更操作通常要求 expected revision 与交互确认，详见[Skills](../guide/skills.zh-CN.md)、[MCP](../guide/mcp.zh-CN.md)。
 
 当前源码包含的 Skills 永久删除/优先级动作使用 Web 或 Node SDK；shell/TUI 的 Skills 语法仍是 refresh/trust 等既有命令，不能执行猜测的 `skills remove` 或 `skills priority`。见[Skills 指南](../guide/skills.zh-CN.md)。
 
@@ -108,6 +108,7 @@ Computer Use：`status`、`install [--upgrade]`、`restart`、`operation [ID]`�
 | `agh plugins tree apply --file ARTIFACT.json\|- [--yes]` / `tree rollback [--yes]` | 应用一个插件树 artifact/回滚到上一个；不带 `--yes` 只打印将要做什么，不发请求 |
 | `agh plugins provenance ID [--json]` | 读取安装来源及信任证据 |
 | `agh plugins publication-status [--json]` | 查看每个容器的发布收敛结果 |
+| `agh plugins grants [list [PACKAGE]]` / `grants grant\|revoke PACKAGE WORKSPACE [--json]` | 列出/授权/撤销插件[托管会话](../extend/managed-sessions.zh-CN.md#授权工作区)可以使用的已登记工作区；只有主人能改，插件不能 |
 | `agh sessions migrate KEY [--json]` | 显式迁移已关闭且兼容的会话，拒绝打开中的会话 |
 | `agh app show [--json]` / `app preview 插件#应用` | 显示当前应用与候选/采纳前的同意预览 |
 | `agh app adopt 插件#应用 [--yes]` | 采纳应用；不带 `--yes` 只打印预览，不发请求 |

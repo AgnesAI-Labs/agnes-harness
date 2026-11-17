@@ -17,8 +17,16 @@ type CompatibleEntry = Readonly<{
   baseUrl: string
   capabilities?: Readonly<{ declaredModels?: boolean }>
 }>
+/** What the injected known-model table says about an id; the table itself lives in the AI package. */
+type KnownLimits = Readonly<{ contextWindow: number; maxTokens: number; thinkingReplay: 'native' }>
+type KnownModels = (id: string) => KnownLimits | undefined
 type Listing =
-  | Readonly<{ ids: readonly string[]; contextWindows?: Readonly<Record<string, number>> }>
+  | Readonly<{
+      ids: readonly string[]
+      contextWindows?: Readonly<Record<string, number>>
+      maxTokens?: Readonly<Record<string, number>>
+      inputs?: Readonly<Record<string, readonly ModelRecord['input'][number][]>>
+    }>
   | Readonly<{ failure: NonNullable<ConfigTestResult['catalogueError']> }>
 
 /**
@@ -47,12 +55,15 @@ const CONTEXT_WINDOW = 128_000
 const MAX_TOKENS = 8_192
 const MAX_MODELS = 4096
 
-const declared = (id: string): ConfigModel => ({
-  id,
-  name: id,
-  contextWindow: CONTEXT_WINDOW,
-  maxTokens: MAX_TOKENS,
-})
+const declared = (id: string, knownModel: KnownModels): ConfigModel => {
+  const known = knownModel(id)
+  return {
+    id,
+    name: id,
+    contextWindow: known?.contextWindow ?? CONTEXT_WINDOW,
+    maxTokens: known?.maxTokens ?? MAX_TOKENS,
+  }
+}
 
 /** The registry's stand-in address is not an address: an account has to give one. */
 function requireAddress(entry: CompatibleEntry, baseUrl: string): void {
@@ -61,14 +72,15 @@ function requireAddress(entry: CompatibleEntry, baseUrl: string): void {
 }
 
 /**
- * The models a save declares. Capability fields are not offered for these models, so a row that
- * carries one is refused; a missing capacity takes the default.
+ * Declared models may specify input types and limits. Reasoning and audio capabilities remain
+ * adapter-owned; missing limits take their defaults.
  */
 function compatibleModels(
   entry: CompatibleEntry,
   baseUrl: string,
   value: unknown,
   chatModelAllowed: (id: string) => boolean,
+  knownModel: KnownModels,
   selection?: Pick<ConfigSaveInput, 'model' | 'defaultSettings'>,
 ): ConfigModel[] {
   requireAddress(entry, baseUrl)
@@ -95,7 +107,7 @@ function compatibleModels(
     )
       throw new ConfigurationError('CONFIG_INVALID_INPUT')
     if (!chatModelAllowed(model.id)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')
-    return { ...declared(model.id), ...model }
+    return { ...declared(model.id, knownModel), ...model }
   })
   if (new Set(models.map((model) => model.id)).size !== models.length)
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
@@ -116,6 +128,8 @@ async function testCompatibleAccount(
   },
   deps: {
     chatModelAllowed: (id: string) => boolean
+    knownModel: KnownModels
+    catalogInputs?: (api: string, baseUrl: string) => Promise<ReadonlyMap<string, ModelRecord['input']>>
     list: (api: string, baseUrl: string, credential: string | undefined) => Promise<Listing>
     readCredential: (ref: string) => Promise<{ kind: string; provider: string; value?: string } | null>
   },
@@ -130,24 +144,40 @@ async function testCompatibleAccount(
   const listing = await deps.list(entry.api, args.baseUrl, args.apiKey ?? saved)
   if ('failure' in listing) return { models: [], verified: false, catalogueError: listing.failure }
   const contexts = new Map(Object.entries(listing.contextWindows ?? {}))
+  const outputs = new Map(Object.entries(listing.maxTokens ?? {}))
+  const inputs = new Map(Object.entries(listing.inputs ?? {}))
+  const catalog = (await deps.catalogInputs?.(entry.api, args.baseUrl)) ?? new Map()
   return {
     models: listing.ids.filter(deps.chatModelAllowed).map((id) => {
       const contextWindow = contexts.get(id)
+      const maxTokens = outputs.get(id)
+      const input = row?.models.find((m) => m.id === id)?.input ?? inputs.get(id) ?? catalog.get(id)
       return {
-        ...(structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id)),
+        ...(structuredClone(row?.models.find((m) => m.id === id)) ?? declared(id, deps.knownModel)),
         ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(maxTokens === undefined ? {} : { maxTokens }),
+        ...(input === undefined ? {} : { input: [...input] }),
       }
     }),
     verified: true,
   }
 }
 
-/** A declared model as a chat record: text in, native tool calls, no reasoning to replay. */
+/**
+ * A declared model as a chat record: declared input or text fallback, native tool calls. A model the known-model table
+ * describes (DeepSeek V4) replays its reasoning signature and takes the table's limits unless the
+ * person gave their own; any other model has the default capacity and drops reasoning. Reasoning
+ * stays false for every record: a declared model has no thinking-level map, so with
+ * `reasoning: true` pi-ai would send thinking as disabled on DeepSeek's API and switch the system
+ * prompt to the `developer` role on unknown gateways. Replay needs neither.
+ */
 function compatibleModelRecord(
   account: Readonly<{ route: string; baseUrl: string }>,
   api: string,
   model: ConfigModel,
+  knownModel: KnownModels,
 ): ModelRecord {
+  const known = knownModel(model.id)
   const record: ModelRecord = {
     id: model.id,
     name: model.name,
@@ -157,10 +187,10 @@ function compatibleModelRecord(
     reasoning: false,
     input: ['text'],
     cost: model.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: model.contextWindow ?? CONTEXT_WINDOW,
-    maxTokens: model.maxTokens ?? MAX_TOKENS,
+    contextWindow: model.contextWindow ?? known?.contextWindow ?? CONTEXT_WINDOW,
+    maxTokens: model.maxTokens ?? known?.maxTokens ?? MAX_TOKENS,
     toolCallFormats: ['native'],
-    thinkingReplay: 'drop',
+    thinkingReplay: known?.thinkingReplay ?? 'drop',
     contract_id: null,
   }
   return applyModelConfiguration(record, model)
@@ -178,11 +208,12 @@ function compatibleRoute(
   }>,
   api: string,
   chatModelAllowed: (id: string) => boolean,
+  knownModel: KnownModels,
 ): RouteDecl & { models: ModelRecord[] } {
   if (!chatModelAllowed(account.model)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')
   const models = account.models
     .filter((model) => chatModelAllowed(model.id))
-    .map((model) => compatibleModelRecord(account, api, model))
+    .map((model) => compatibleModelRecord(account, api, model, knownModel))
   models.sort((a, b) => (a.id === account.model ? -1 : b.id === account.model ? 1 : 0))
   return {
     route: account.route,
@@ -195,17 +226,27 @@ function compatibleRoute(
   }
 }
 
+/** Missing declarations inherit catalogue facts without rewriting saved accounts. */
+function inputDefaults(model: ConfigModel, inputs: ReadonlyMap<string, ModelRecord['input']>): ConfigModel {
+  const input = model.input ?? inputs.get(model.id)
+  return { ...structuredClone(model), ...(input === undefined ? {} : { input: [...input] }) }
+}
+
 /** Bind the adapter-owned conversation policy at the existing configuration assembly boundary. */
-export function chatModelPolicy(chatModelAllowed: (id: string) => boolean) {
+export function chatModelPolicy(chatModelAllowed: (id: string) => boolean, knownModel: KnownModels) {
   const requireModel = (id: string, payloadOnly = false): void => {
     if (!payloadOnly && !chatModelAllowed(id)) throw new ConfigurationError('CONFIG_CHAT_MODEL_REQUIRED')
   }
   return {
     requireModel,
-    models: (models: readonly ConfigModel[], payloadOnly: boolean): ConfigModel[] =>
+    models: (
+      models: readonly ConfigModel[],
+      payloadOnly: boolean,
+      inputs: ReadonlyMap<string, ModelRecord['input']> = new Map(),
+    ): ConfigModel[] =>
       models
         .filter((model) => payloadOnly || chatModelAllowed(model.id))
-        .map((model) => structuredClone(model)),
+        .map((model) => inputDefaults(model, inputs)),
     requireSlots(slots: AuxiliaryModelSlots): void {
       for (const slot of Object.values(slots)) if (slot) requireModel(slot.model)
     },
@@ -218,12 +259,21 @@ export function chatModelPolicy(chatModelAllowed: (id: string) => boolean) {
       baseUrl: string,
       value: unknown,
       selection?: Pick<ConfigSaveInput, 'model' | 'defaultSettings'>,
-    ) => compatibleModels(entry, baseUrl, value, chatModelAllowed, selection),
+    ) => compatibleModels(entry, baseUrl, value, chatModelAllowed, knownModel, selection),
     testCompatibleAccount: (
       args: Parameters<typeof testCompatibleAccount>[0],
-      deps: Omit<Parameters<typeof testCompatibleAccount>[1], 'chatModelAllowed'>,
-    ) => testCompatibleAccount(args, { ...deps, chatModelAllowed }),
-    compatibleRoute: (account: Parameters<typeof compatibleRoute>[0], api: string) =>
-      compatibleRoute(account, api, chatModelAllowed),
+      deps: Omit<Parameters<typeof testCompatibleAccount>[1], 'chatModelAllowed' | 'knownModel'>,
+    ) => testCompatibleAccount(args, { ...deps, chatModelAllowed, knownModel }),
+    compatibleRoute: (
+      account: Parameters<typeof compatibleRoute>[0],
+      api: string,
+      inputs: ReadonlyMap<string, ModelRecord['input']> = new Map(),
+    ) =>
+      compatibleRoute(
+        { ...account, models: account.models.map((model) => inputDefaults(model, inputs)) },
+        api,
+        chatModelAllowed,
+        knownModel,
+      ),
   }
 }

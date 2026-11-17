@@ -12,7 +12,7 @@ import {
 } from '@agnes/host-extensions/ext-host/hooks-isolation-client'
 import { createPlatform } from '@agnes/host-infrastructure/adapters/platform'
 import type { InferenceEvent } from '@agnes/protocol'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { createTestHost, runOnce, type TestHost } from '../../testkit/index.js'
 
 // What the spec pins, sorted the way Object.keys(...).sort() will hand it back (spec §6.1).
@@ -35,6 +35,22 @@ type Probe = {
 }
 const probes = (): Probe[] => (Reflect.get(globalThis, '__agnesSeamExposure') as Probe[] | undefined) ?? []
 
+let runnerDirectory: string | undefined
+let runnerEntry: string
+beforeAll(async () => {
+  runnerDirectory = mkdtempSync(join(tmpdir(), 'agnes-seam-runner-'))
+  const output = join(runnerDirectory, 'isolation')
+  // Exercise the release runner; source-loader startup is not part of the seam contract.
+  const { buildHooksIsolationRunner } = await import(
+    new URL('../../../base/tools/build-isolation-runner.ts', import.meta.url).href
+  )
+  await buildHooksIsolationRunner(output)
+  runnerEntry = join(output, 'hooks-runner.mjs')
+})
+afterAll(() => {
+  if (runnerDirectory) rmSync(runnerDirectory, { recursive: true, force: true })
+})
+const isolatedRoots = new Set<string>()
 const held: { root: string; host: TestHost['host'] }[] = []
 const running: { child: ReturnType<typeof spawn>; runner?: IsolatedHooksRunner }[] = []
 afterEach(async () => {
@@ -46,6 +62,8 @@ afterEach(async () => {
     await item.runner?.close().catch(() => undefined)
     item.child.kill('SIGKILL')
   }
+  for (const root of isolatedRoots) rmSync(root, { recursive: true, force: true })
+  isolatedRoots.clear()
   Reflect.deleteProperty(globalThis, '__agnesSeamExposure')
 })
 
@@ -160,6 +178,7 @@ describe('seam exposure: what a third-party extension can reach at each moment (
 
   it('carries the same facts into an isolated extension: factory ctx and hook ctx across the JSON boundary', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agnes-seam-exposure-isolated-'))
+    isolatedRoots.add(root)
     const ext = join(root, 'isolated')
     mkdirSync(ext, { recursive: true })
     const manifestFile = join(ext, 'package.json')
@@ -193,8 +212,7 @@ export default { inject: ['tools', 'hooks', 'eventLog', 'self'], apply: (ctx) =>
     const nonce = randomUUID(),
       packageDigest = 'package-sha256',
       manifestDigest = digest(manifestFile)
-    const runnerEntry = resolve(import.meta.dirname, '../../../base/src/hooks-isolation-runner.ts')
-    const child = spawn(process.execPath, ['--import', 'tsx', runnerEntry], {
+    const child = spawn(process.execPath, [runnerEntry], {
       cwd: resolve(import.meta.dirname, '../../..'),
       env: {
         ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
@@ -205,6 +223,8 @@ export default { inject: ['tools', 'hooks', 'eventLog', 'self'], apply: (ctx) =>
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    const runningChild: (typeof running)[number] = { child }
+    running.push(runningChild)
     const lease: LeaseView = {
       expiresAt: '2099-01-01T00:00:00.000Z',
       scope: { events: true },
@@ -244,7 +264,7 @@ export default { inject: ['tools', 'hooks', 'eventLog', 'self'], apply: (ctx) =>
         throw new Error('no capability in this test')
       },
     )
-    running.push({ child, runner })
+    runningChild.runner = runner
     try {
       // A `kind: 'extension'` bootstrap (unlike the fixed hooks-runner adapter) keys its handlers by
       // the generated registration id from the 'ready' message, not by the bare event name, so the
@@ -269,6 +289,7 @@ export default { inject: ['tools', 'hooks', 'eventLog', 'self'], apply: (ctx) =>
       expect(seen.hookKeys).toEqual(HOOK_KEYS)
     } finally {
       rmSync(root, { recursive: true, force: true })
+      isolatedRoots.delete(root)
     }
   })
 })

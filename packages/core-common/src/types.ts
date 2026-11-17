@@ -37,6 +37,7 @@ export type CoreErrorCode =
   | 'E_SEAM_MISSING'
   | 'E_FS_UNENFORCED'
   | 'E_FS_POLICY_INVALID'
+  | 'E_REQUEST'
   | 'E_REQUEST_FROZEN'
   | 'E_RELATION'
   | 'E_CAS'

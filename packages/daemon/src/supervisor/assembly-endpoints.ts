@@ -42,7 +42,10 @@ import {
   VoiceSettingsStore,
 } from '@agnes/host'
 import { telemetrySnapshot } from '@agnes/observability'
+import { RuntimeGenerationSnapshotStore } from '@agnes/package-manager'
 import { rpcError } from '@agnes/protocol'
+import { sessionEnvironmentAuthority } from '../superagent/sessions.js'
+import { registerSuperagentUpgrade } from '../superagent/upgrade.js'
 import type { DispatchState } from './assembly-client-dispatch.js'
 import type { ClientsState } from './assembly-client-services.js'
 import type { AssemblyLifetime } from './assembly-lifetime.js'
@@ -53,6 +56,8 @@ import type { Conn, StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
 import { daemonDoctor } from './doctor.js'
 import { feedbackPorts } from './feedback-ports.js'
+import { registerOwnerInputReview } from './managed-input-review.js'
+import { registerManagedWorkspaceGrants } from './managed-workspace-grants.js'
 import { registerPluginRuntimeIngress } from './plugin-runtime-ingress.js'
 import { activateForkOwnership } from './registry-facade.js'
 import { registerSessionMethods } from './session-methods.js'
@@ -70,6 +75,7 @@ type EndpointInput = AssemblyBase &
 
 export function createEndpoints(state: EndpointInput, _lifetime: AssemblyLifetime) {
   const { o, clock, pool, conns } = state
+  const generations = new RuntimeGenerationSnapshotStore(o.profileDir)
   const endpoint = (transport: 'unix' | 'ws'): { ep: LocalEndpoint; onClose: () => void } => {
     const ep = new LocalEndpoint({
       clock,
@@ -78,6 +84,20 @@ export function createEndpoints(state: EndpointInput, _lifetime: AssemblyLifetim
       ...(o.audit ? { audit: o.audit } : {}),
     })
     registerPluginRuntimeIngress(ep, pool, transport)
+    registerSuperagentUpgrade(ep, transport, pool, state.registry, state.sessionOwnership, generations)
+    ep.register('_agnes/v1/channels.catalog', async (_params, call) => {
+      if (call.conn.authKind !== 'local' || call.conn.credentialKind !== 'local')
+        throw rpcError('CAPABILITY_DENIED')
+      const link = await pool.acquireSharedWorker()
+      return link.command('channels.catalog', {})
+    })
+    // Minting a pairing code also requires a person's approval, which the Host asks for.
+    ep.register('_agnes/v1/channels.pairing', async (params, call) => {
+      if (call.conn.authKind !== 'local' || call.conn.credentialKind !== 'local')
+        throw rpcError('CAPABILITY_DENIED')
+      const link = await pool.acquireSharedWorker()
+      return link.command('channels.pairing', params as Record<string, unknown>)
+    })
     const context = createEndpointContext(state, transport, ep)
     registerSessionEndpoints(state, transport, ep, context)
     registerEvidenceEndpoints(state, transport, ep, context)
@@ -128,6 +148,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     resolveActor,
     resolveNewSessionActor,
     effectivePackageAdmin,
+    idle,
   } = state
   const feeds = new Map<string, Feed>()
   const attached = new Map<string, AttachedFeed>()
@@ -158,6 +179,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
         transport,
         ...(transport === 'ws' ? effectiveRemoteAuth : {}),
         ...(transport === 'ws' && o.config.localWeb ? { localWeb: true } : {}),
+        ...(transport === 'unix' ? { bundledAppKey: state.pool.bundledAppKey } : {}),
       },
       nonces,
       clock,
@@ -182,6 +204,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
           localPackageAdminAuthority(['packages.read'])(context),
         ),
       ),
+    sessionEnvironment: sessionEnvironmentAuthority(state.pool),
     limits: {
       subscribeBufferEvents: o.config.limits.subscribeBufferEvents,
       subscribeBufferBytes: o.config.limits.subscribeBufferBytes,
@@ -218,7 +241,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
         denyFork()
       }
       try {
-        const parentBinding = await workspaceCatalog.restoreBinding(sessionId)
+        const parentBinding = await workspaceCatalog.restoreDerivedBinding(sessionId, ownedChildKey)
         const childBinding = await workspaceCatalog.authorizeAndBind(
           ownedChildKey,
           parentBinding.canonicalRoot,
@@ -251,6 +274,7 @@ function createEndpointContext(state: EndpointInput, transport: 'unix' | 'ws', e
     onPromptEnd: (sessionId) => {
       inflightConn.delete(sessionId)
       registry.retireAtTurnBoundary(sessionId)
+      idle.notify(sessionId)
     },
   }
 
@@ -318,6 +342,12 @@ function registerSessionEndpoints(
     skills: (params, actor) => state.savedSkills.manage(params, actor),
   })
   registerSessionRefine(ep, cx, requireSessionOwner(cx))
+  registerOwnerInputReview(ep, {
+    engine: state.ownerInputs,
+    records: state.managedSessionRecords,
+    requireOwner: requireSessionOwner(cx),
+    worker: () => pool.acquireSharedWorker(),
+  })
   registerDoctor(ep, {
     home: o.config.home ?? dirname(dirname(o.profileDir)),
     profile: o.profile.name,
@@ -609,6 +639,13 @@ function registerAdminEndpoints(
       : (resourceControl.webAuthority ?? denyResourceAuthority),
   )
   registerProfileServices(ep, profilePorts.services, boundWakes, activationBarrier, requireSessionOwner(cx))
+  registerManagedWorkspaceGrants(
+    ep,
+    transport === 'unix'
+      ? (effectivePackageAdmin?.unixAuthority ?? localPackageAdminAuthority())
+      : denyPackageAdminAuthority,
+    state.workspaceGrants,
+  )
 }
 
 function registerExtensionEndpoints(
@@ -636,13 +673,15 @@ function registerExtensionEndpoints(
     resolveServiceSession: async (sessionId, call) => {
       const userId = call.conn.credential?.userId
       const subjectPrincipal =
-        typeof userId === 'string' && userId.length > 0
-          ? call.conn.credentialKind === 'jwt'
-            ? `jwt:${userId}`
-            : call.conn.credentialKind === 'sso'
-              ? `portal:${userId}`
-              : undefined
-          : undefined
+        call.conn.authKind === 'local' && call.conn.credentialKind === 'local'
+          ? call.conn.principalId
+          : typeof userId === 'string' && userId.length > 0
+            ? call.conn.credentialKind === 'jwt'
+              ? `jwt:${userId}`
+              : call.conn.credentialKind === 'sso'
+                ? `portal:${userId}`
+                : undefined
+            : undefined
       let owner: ReturnType<typeof sessionOwnership.resolve>
       try {
         owner = sessionOwnership.resolve(sessionId)

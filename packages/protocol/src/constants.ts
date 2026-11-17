@@ -45,15 +45,9 @@ export function isEventType(s: string): boolean {
   return (EVENT_TYPES as readonly string[]).includes(s) || EXT_EVENT_PATTERN.test(s)
 }
 
-/**
- * The harness's own directory name: `<os home>/.agh` by default, and `<workspace>/.agh` in every
- * workspace. It is not `.agnes` because another product already owns that name on the same machines.
- */
-export const AGH_DIR = '.agh'
-/**
- * AGH-owned workspace-relative directories every file tool and sandbox hard-denies.
- */
-export const WORKSPACE_SECRET_DIRS = ['.agh/secrets'] as const
+// The directory layout constants live in a dependency-free module that plugins import as
+// `@agnes/protocol/layout`, so a bundled plugin does not pull in the generated schemas with them.
+export { AGH_DIR, WORKSPACE_SECRET_DIRS } from './constants/layout.js'
 
 export const META_KEY = 'ai.agnes.harness' as const
 export const AGNES_NS = '_agnes/v1' as const

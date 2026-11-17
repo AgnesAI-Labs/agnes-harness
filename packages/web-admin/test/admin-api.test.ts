@@ -612,3 +612,31 @@ it('reads an agent start receipt through the same fixed launch facade', async ()
   })
   expect(body).toEqual({ request: { action: 'read', operationId: 'original-operation' } })
 })
+
+it.each([undefined, 'packages.community-discovery.v1', 'packages.community-discovery.v2'])(
+  'negotiates the index response only with %s',
+  async (feature) => {
+    const snapshot = {
+      state: 'ready',
+      lastSuccessAt: null,
+      nextAttemptAt: null,
+      error: null,
+      totalReported: 0,
+      items: [],
+    }
+    const fetcher = vi.fn<typeof fetch>(async (_url, init) => {
+      const body = JSON.parse(String(init?.body))
+      if (feature === 'packages.community-discovery.v2') {
+        expect(body).toMatchObject({ communityVersion: 2 })
+        expect(body).not.toHaveProperty('includeCommunity')
+        return Response.json({ items: [], nextCursor: null, communityIndex: snapshot })
+      }
+      expect(body).not.toHaveProperty('communityVersion')
+      expect(body.includeCommunity).toBe(feature ? true : undefined)
+      return Response.json({ items: [], nextCursor: null, ...(feature ? { community: snapshot } : {}) })
+    })
+    const api = new PluginAdminApi({ ...context, features: feature ? [feature] : [] }, fetcher)
+    const page = await api.catalog()
+    expect(page.community).toEqual(feature ? snapshot : undefined)
+  },
+)

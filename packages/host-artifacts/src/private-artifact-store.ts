@@ -142,9 +142,11 @@ export async function beginImmediateWithBackoff(
   database: DatabaseSync,
   timeoutMs: number,
   timeoutMessage: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   const startedAt = performance.now()
   for (;;) {
+    signal?.throwIfAborted()
     try {
       database.exec('BEGIN IMMEDIATE')
       return

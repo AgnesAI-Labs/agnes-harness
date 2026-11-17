@@ -589,3 +589,18 @@ describe('retry of a failed turn', () => {
     expect(prompt).not.toHaveBeenCalled()
   })
 })
+
+it.each(['prepareComposerSession', 'prepareAttachmentSession'] as const)(
+  'refuses legacy draft creation through %s before calling session.new',
+  async (method) => {
+    const create = vi.fn()
+    const context = {
+      draftingNew: true,
+      selectedWorkspace: { path: '/old/chats', available: true, kind: 'chats', managedRole: 'legacy' },
+      client: { session: { new: create } },
+      t: (key: string) => key,
+    } as unknown as Parameters<typeof createSubmissionController>[0]
+    await expect(createSubmissionController(context)[method]()).rejects.toThrow('app.session.createFailed')
+    expect(create).not.toHaveBeenCalled()
+  },
+)

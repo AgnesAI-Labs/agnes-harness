@@ -633,6 +633,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
                     {view.hint.action.label}
                   </Button>
                 )}
+                {!view.loading &&
+                  !view.readOnly &&
+                  view.connected &&
+                  view.hasSession &&
+                  slots?.sessionControls && (
+                    <span className="composer-session-controls">{slots.sessionControls}</span>
+                  )}
                 {slots?.model}
                 {/* Context use sits with the model it measures: a ring and a share, details on hover. */}
                 <section id="session-usage" aria-label={t('composer.usage.label')} hidden={!showUsage}>

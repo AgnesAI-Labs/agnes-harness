@@ -47,7 +47,7 @@ async function listSessions(options: CreateClientOptions) {
 
 新会话为 `client.session.new({ cwd, preset?, sessionKey? })`，恢复用 `client.session.load(id, { cwd? })`；执行是 `session.prompt(text)`，取消是 `session.cancel()`。`session.prompt(input, { creditLimit?, maxSteps?, timeLimitMs? })` 可调低这一轮的额度上限和模型步数上限，并告诉模型墙钟时间上限（到期仍由调用方取消）；每一项都需要服务端声明对应能力，否则被拒绝（见[应用服务器](app-server.zh-CN.md)）。业务使用前按当前服务端要求登记工作区、处理权限请求。关闭 client 是连接清理，不等价于取消后台任务。
 
-从 UI 投影的 `pendingInputs` 读取待执行消息。`session.removeQueued(itemId, { commandId? })` 通过 `_agnes/v1/submit` 的 `removeQueued` 类型删除一条待执行消息，返回已提交的事件序号；`session.sendNow(itemId, { commandId? })` 停止当前轮并优先执行该条排队消息。两者都校验会话所有权；消息已开始执行或已不存在时返回 `QUEUED_INPUT_GONE`。删除保留其他消息，不会启动或停止执行。结果未知时，重试应复用同一个 command ID。
+从 UI 投影的 `pendingInputs` 读取待执行消息；投递时带了 `commandId` 的消息会附带该值。`session.removeQueued(itemId, { commandId? })` 通过 `_agnes/v1/submit` 的 `removeQueued` 类型删除一条待执行消息，返回已提交的事件序号；`session.sendNow(itemId, { commandId? })` 停止当前轮并优先执行该条排队消息。两者都校验会话所有权；消息已开始执行或已不存在时返回 `QUEUED_INPUT_GONE`。删除保留其他消息，不会启动或停止执行。结果未知时，重试应复用同一个 command ID。
 
 传输支持 Node 的 unix/stdio/ws 等入口，生产连接的认证、命名管道进程身份、TLS/Origin 由部署合同决定。建议用户先从 CLI/Web 入口走自动发现；嵌入者不能跳过握手和服务端身份校验。可运行的连接与包管理示例见[文档 smoke](../../tools/public-docs/smoke.mjs)，其凭据与模型由本地夹具产生。另有[共享本地验收](../../tools/acceptance/shared-local-delivery.e2e.test.ts)覆盖分发迁移等流程。复现步骤与检查范围见[验证记录](../maintainers/verification.zh-CN.md)。
 
@@ -181,6 +181,8 @@ Node SDK 与服务端提供以下管理接口；调用者必须持有对应控�
 SDK 支持 `client.session.new({ cwd, agent: '@acme/kit#review' })`，调用方无需了解 Bundle 组合。`client.agents.resolve(ref)`（RPC `_agnes/v1/agents.resolve`）返回精确选择、模型、权限摘要、来源身份和最终有效配置摘要；审阅过的调用可传 `agentDigest`，发生漂移即拒绝。不能同时传入 `loop`、`bundles` 或 `preset`。会话/工作区授权仍走普通创建链路；普通会话保留已有模型 fallback。
 
 `session/new` 接受 `_meta['ai.agnes.harness'].systemPromptAppend`（SDK：`client.session.new({ cwd, systemPromptAppend })`），即只给这一个新会话的系统提示词追加所有者文本。长度 1 到 8192 个字符，不能含 NUL，只追加不替换：它被并入收尾指令 `personaSuffix`（原有内容、一个空行、再接追加内容），因此出现在 `session/start` 行的 `systemPrompt.config` 与 hash 中，随 resume 和 fork 保留，不新增 ledger 事件。以下情况会拒绝（`SEMANTIC_REJECTED`，不创建会话）：与 `agent` 同用、会话已存在、包管理控制面报告配置只读（`E_ADMIN_READ_ONLY`，与 `systemPrompt.save` 同一检查；内嵌 endpoint 没有可锁定的控制面）、部署使用 `fullOverride`、合并后的 `personaSuffix` 超过 8192 个字符。不认识该字段的旧 daemon 会静默忽略，所以需要这段文本的客户端应在发第一条提示前，用新的 `sessionId` 读 `_agnes/v1/systemPrompt.get` 并检查各段。
+
+`session/new`、`session/load` 和 `_agnes/v1/session.open` 还接受 `_meta['ai.agnes.harness'].environment`（SDK：`client.session.new` 与 `client.session.load` 的 `environment`），即会话自己的环境：最多 8 个放在 `PATH` 最前面的绝对目录（`pathPrepend`）、最多 32 个要设置的变量（`set`）和 32 个要去掉的变量（`unset`）。它随会话保存在 profile 里，在平台把 daemon 的环境缩减到基础变量之后，作用于会话运行的每条命令、每个作业和进程；会话重新加载、daemon 重启后仍然有效。只有随包应用自己的客户端能设置（这个客户端用 daemon 经 IPC 发给共享 worker 的密钥证明身份），而且只能为随包应用自己的会话（键以 `superagent:` 开头）设置；其他调用方，即 Web 页面、所有者自己的客户端、别的 SDK 使用者或插件，以及其他会话键，都会以 `CAPABILITY_DENIED`、`data.code` 为 `SESSION_ENVIRONMENT_DENIED` 被拒绝。`set` 只能写 `GIT_CONFIG_GLOBAL`、`GIT_CONFIG_NOSYSTEM`、`GIT_TERMINAL_PROMPT`、`GIT_ASKPASS`（只能为空）、`LANG` 和 `LC_*`；`unset` 不能写 `PATH`、`SystemRoot`、`ComSpec`、`PATHEXT`（不分大小写）、`AGNES_*` 或 `AGH_*`。其他名字、同一个名字同时出现在两个列表里，或超出上限，都会以 `SEMANTIC_REJECTED`、`SESSION_ENVIRONMENT_INVALID` 被拒绝。Windows 上环境变量名不分大小写：目录放到命令已有的 `Path` 最前面（只有一项，保留原来的写法），设置的变量替换该名字的所有写法，去掉的变量在启动的进程里不以任何写法出现。
 
 宿主启动 facade 使用 prepare → review → start(ticket, operationId)。start 只返回会话 ID 和可选的已审阅草稿。草稿编辑后通过普通 submit、使用独立 commandId 提交；重试 start 不发送任何提示词。不确定或失败的 operation 不会重新派发。普通启动没有安装、信任或移除权限；示例管理仍受经依赖版本校验的 `exampleOf` 限制。
 

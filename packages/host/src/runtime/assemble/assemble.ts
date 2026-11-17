@@ -15,6 +15,7 @@ import type { AssembleDeps } from './assembly-deps.js'
 import { buildBootRows } from './boot-rows.js'
 import { createBundledExtensions } from './bundled-extensions.js'
 import { createCapabilities } from './capabilities.js'
+import { channelControls } from './channel-state.js'
 import { childAgentCatalog } from './child-agents.js'
 import { type AssemblyContext, createAssemblyContext, failAssembly } from './context.js'
 import { createEcosystemContexts } from './ecosystem-context.js'
@@ -128,7 +129,7 @@ type Tree = Awaited<ReturnType<typeof mountTree>>
 async function startCore(ctx: AssemblyContext, f: Foundation, t: Tree) {
   const { pkgs, proc, presets } = f
   ctx.done('provider')
-  const providerStage = await assembleProvider(ctx, proc, presets, t.runtimeTarget.pluginTree)
+  const providerStage = await assembleProvider(ctx, proc, presets, t)
   ctx.done('operations')
   const { operations, runtimes } = buildOperations(ctx, pkgs, proc, t.seamContexts)
   ctx.done('kernel')
@@ -234,7 +235,7 @@ function publish(
       rowExtensions.replacedBy,
     )
   ctx.say('host.ready', { hash: ctx.profile.hash, extensions: extensionStatus().length, ...timing })
-  const { servicesInvocation, sessionConfiguration, profileServices } = createHostServices(ctx, {
+  const { servicesInvocation, sessionConfiguration, profileServices, pairing } = createHostServices(ctx, {
     proc: f.proc,
     kernel: c.kernelStage.kernel,
     host: e.host,
@@ -248,6 +249,7 @@ function publish(
     activationBarrier: ctx.activationBarrier,
     approvalGrants: t.approvalGrantControl.management,
     profileServices,
+    ...channelControls(f.proc, ctx.profile.name, pairing, ctx.deps.log),
     serviceBinding: (names) => e.host.services.binding(names),
     callService: servicesInvocation.call,
     inspectService: servicesInvocation.inspect,

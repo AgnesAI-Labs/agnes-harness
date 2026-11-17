@@ -64,6 +64,7 @@ export type FakeClient = Pick<Client, 'initialize' | 'apis' | 'on' | 'close'> & 
   session: {
     new: (options: SessionNewOptions) => Promise<FakeSession>
     attach(id: string, options?: SessionAttachOptions): Promise<FakeSession>
+    load(id: string, options?: Parameters<Client['session']['load']>[1]): Promise<FakeSession>
   }
   approval: Pick<Client['approval'], 'decide'>
 
@@ -166,7 +167,13 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
       },
       async uiRead(input) {
         record('uiRead', input)
-        return surfaces.get(id) ?? { sessionId: id, lastSeq: 0, surfaces: [], actions: [] }
+        const page = surfaces.get(id) ?? { sessionId: id, lastSeq: 0, surfaces: [], actions: [] }
+        return {
+          ...page,
+          surfaces: page.surfaces.filter((record) =>
+            input?.surfaceId ? record.surface.id === input.surfaceId : record.status === 'open',
+          ),
+        }
       },
       cursor() {
         return { fromSeq: 0, generation: 1 }
@@ -208,6 +215,10 @@ export function createFakeClient(script: FakeScript = {}): FakeClient {
       async new(options) {
         record('session.new', options)
         return makeSession(options.sessionKey ?? `s${sessions.size + 1}`)
+      },
+      async load(id, options) {
+        record('session.load', id, options)
+        return makeSession(id)
       },
       async attach(id, options) {
         record('session.attach', id, options)

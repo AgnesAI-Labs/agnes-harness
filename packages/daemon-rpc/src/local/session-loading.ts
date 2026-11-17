@@ -4,6 +4,7 @@ import { notify } from '@agnes/daemon-foundation/rpc'
 import { type EventEnvelope, rpcError } from '@agnes/protocol'
 import { waitForHistoryOpen } from './history-open.js'
 import type { Feed, LocalContext } from './methods/acp.js'
+import { admitSessionEnvironment } from './methods/session-environment.js'
 import type { SessionEntry } from './sessions.js'
 
 /** ACP replay and window-based clients share exactly one execution admission path. */
@@ -34,7 +35,31 @@ export function registerSessionLoading(
         additionalDirectories?: string[]
         requestId?: string
       }
-      requireOwner(replay ? 'session/load' : 'session.open', p.sessionId)
+      const method = replay ? 'session/load' : 'session.open'
+      const meta = (params as { _meta?: Record<string, Record<string, unknown> | undefined> })._meta
+      const environment = admitSessionEnvironment(
+        meta?.['ai.agnes.harness']?.environment,
+        call.conn,
+        cx.sessionEnvironment,
+        p.sessionId,
+      )
+      let recoverScheduledOwner = false
+      try {
+        requireOwner(method, p.sessionId)
+      } catch (error) {
+        // A committed scheduled source may outlive the daemon that reserved its owner. Only that
+        // authenticated principal can finish admission; no missing/uncommitted source is adopted.
+        const ownership = cx.sessionOwnership
+        if (
+          !ownership ||
+          ownership.resolve(p.sessionId) ||
+          !ownership.ownsNewReservation(p.sessionId, call.conn.principalId)
+        )
+          throw error
+        const grant = await cx.workspaces.managedChatAuthority?.authorizeExisting(p.sessionId)
+        if (grant?.source !== 'schedule') throw error
+        recoverScheduledOwner = true
+      }
       const controller = new AbortController()
       if (p.requestId !== undefined) loadingIds.set(controller, p.requestId)
       const signal = AbortSignal.any([call.signal, controller.signal])
@@ -43,6 +68,15 @@ export function registerSessionLoading(
       loading.set(p.sessionId, pending)
       try {
         signal.throwIfAborted()
+        // Only for a session the caller owns already; a live session reads it from its next command on.
+        if (environment) {
+          if (recoverScheduledOwner)
+            throw rpcError('CAPABILITY_DENIED', {
+              code: 'SESSION_ENVIRONMENT_DENIED',
+              reason: 'session owner unavailable',
+            })
+          await cx.sessionEnvironment?.write(p.sessionId, environment)
+        }
         let entry = cx.registry.get(p.sessionId)
         const wasOpen = entry !== undefined
         try {
@@ -101,6 +135,22 @@ export function registerSessionLoading(
           throwSessionOpenRpcError(error, p.sessionId)
         }
         signal.throwIfAborted()
+        if (recoverScheduledOwner) {
+          // Opening and verifying above retain the same Host/bundle/history admission as every load.
+          // Failed or cancelled opens leave the reservation pending and never enqueue a prompt.
+          const grant = await cx.workspaces.managedChatAuthority?.authorizeExisting(p.sessionId)
+          if (
+            grant?.source !== 'schedule' ||
+            !cx.sessionOwnership?.ownsNewReservation(p.sessionId, call.conn.principalId) ||
+            !cx.sessionOwnership.activateNew(p.sessionId, call.conn.principalId)
+          )
+            throw rpcError('CAPABILITY_DENIED', {
+              method,
+              sessionId: p.sessionId,
+              reason: 'session owner unavailable',
+            })
+          requireOwner(method, p.sessionId)
+        }
         const feed = feedFor(entry, replay)
         if (!replay) return {}
         // Paged and bounded: core refuses an unbounded scan (E_SCAN_UNBOUNDED), and a single page would

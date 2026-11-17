@@ -29,6 +29,14 @@ export function writeMcpDefinition(definition: McpServerDefinitionInput): void {
         : definition.secretBinding.kind === 'oauth'
           ? (definition.secretBinding.staticClientId ?? '')
           : definition.secretBinding.credentialRef
+  const oauthSecret = document.getElementById('mcp-oauth-secret') as HTMLInputElement | null
+  if (oauthSecret)
+    oauthSecret.value =
+      definition.secretBinding.kind === 'oauth' ? (definition.secretBinding.clientSecretRef ?? '') : ''
+  const oauthPort = document.getElementById('mcp-oauth-port') as HTMLInputElement | null
+  if (oauthPort)
+    oauthPort.value =
+      definition.secretBinding.kind === 'oauth' ? String(definition.secretBinding.callbackPort ?? '') : ''
   if (definition.secretBinding.kind === 'http-header')
     $('mcp-header-name', 'select').value = definition.secretBinding.headerName
   $('mcp-tools', 'textarea').value = definition.toolPolicy?.allow?.join('\n') ?? ''

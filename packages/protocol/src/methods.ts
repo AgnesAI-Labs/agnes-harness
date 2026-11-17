@@ -50,6 +50,7 @@ import { validateExtensionCall } from './services.js'
 import { SessionIntegrityParams, SessionIntegrityStatus } from './session-integrity.js'
 import { SessionRuntimeDescriptor, SessionRuntimeParams } from './session-runtime.js'
 import { SessionToolsParams, SessionToolsResult } from './session-tools.js'
+import { SuperagentSessionUpgradeParams, SuperagentSessionUpgradeResult } from './superagent.js'
 import { type ValidationResult, validateAgainst } from './validate.js'
 
 export type MethodSpec = {
@@ -107,6 +108,9 @@ export type MethodName =
   | '_agnes/v1/systemPrompt.get'
   | '_agnes/v1/systemPrompt.save'
   | '_agnes/v1/session.factChain'
+  | '_agnes/v1/managedInput.list'
+  | '_agnes/v1/managedInput.get'
+  | '_agnes/v1/managedInput.decide'
   | '_agnes/v1/trace.request'
   | '_agnes/v1/trace.clear'
   | '_agnes/v1/config.get'
@@ -214,6 +218,7 @@ export type MethodName =
   | '_agnes/v1/submit'
   | '_agnes/v1/submit.ack'
   | '_agnes/v1/pluginRuntime.status'
+  | '_agnes/v1/superagent.sessions.upgrade'
   | '_agnes/v1/pluginStreams.endpoint'
   | '_agnes/v1/surfaces.mounts'
   | 'authenticate'
@@ -273,6 +278,9 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   '_agnes/v1/systemPrompt.save': clientRequest(A.SystemPromptSaveParams, A.SystemPromptSnapshot),
   '_agnes/v1/trace.clear': clientRequest(A.ModelRequestClearParams, A.ModelRequestClearResult),
   '_agnes/v1/session.factChain': clientRequest(A.FactChainParams, A.FactChainResult),
+  '_agnes/v1/managedInput.list': clientRequest(A.ManagedInputListParams, A.ManagedInputListResult),
+  '_agnes/v1/managedInput.get': clientRequest(A.ManagedInputGetParams, A.ManagedInputGetResult),
+  '_agnes/v1/managedInput.decide': clientRequest(A.ManagedInputDecideParams, A.ManagedInputDecideResult),
   '_agnes/v1/trace.request': clientRequest(A.ModelRequestParams, A.ModelRequestResult),
   '_agnes/v1/config.get': clientRequest(A.ConfigEmptyParams, A.ConfigSnapshot),
   '_agnes/v1/config.oauth': clientRequest(A.ConfigOAuthInput, A.ConfigOAuthResult),
@@ -529,6 +537,10 @@ export const METHODS: Record<MethodName, MethodSpec> = {
   // packages/daemon/src/local/methods/surfaces.ts and packages/cli/launch/web-command.ts). No
   // authKind restriction beyond LocalEndpoint's own initialize gate, same as workspace.list/add.
   '_agnes/v1/pluginRuntime.status': clientRequest(A.PluginRuntimeStatusParams, A.PluginRuntimeStatusResult),
+  '_agnes/v1/superagent.sessions.upgrade': clientRequest(
+    SuperagentSessionUpgradeParams,
+    SuperagentSessionUpgradeResult,
+  ),
   '_agnes/v1/pluginStreams.endpoint': clientRequest(
     A.PluginStreamsEndpointParams,
     A.PluginStreamsEndpointResult,

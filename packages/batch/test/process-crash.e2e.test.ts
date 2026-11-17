@@ -7,6 +7,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { initializeHome } from '@agnes/host'
 import { createOwnedStore } from '@agnes/sdk'
 import { expect, it, vi } from 'vitest'
+import { sourceTranspileCache } from '../../daemon/test/source-transpile-cache.js'
 import { Repository } from '../src/index.js'
 import { id } from './fakes.js'
 import { daemonEntry, daemonSocket, descendants, driverEntry, kill, launch } from './process-harness.js'
@@ -62,6 +63,7 @@ it
         join(home, 'profiles/local-dev/profile.yaml'),
         JSON.stringify({
           name: 'local-dev',
+          cacheDir: sourceTranspileCache(),
           computerUse: { enabled: false },
           adapters: { secrets: { kind: 'file', path: secretDir } },
           provider: {

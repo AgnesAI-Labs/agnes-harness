@@ -178,12 +178,12 @@ function truncateUtf8(text: string, maxBytes: number): string {
  * Enforce the result budget on a value that has not been validated, cloned, hooked or persisted yet:
  * total UTF-8 text bytes (`outputMaxBytes`), block count, and the encoded size and depth of
  * `structured`/`details`. An over-budget result keeps what fits and gains one text marker saying what was
- * dropped (at most 256 bytes beyond the budget, and the block count still includes it). The cut is lossy:
- * dropped blocks and refs are gone, and a replaced `structured`/`details` becomes `{ truncated: true }`,
- * so a result that must stay whole belongs behind an artifact ref. A value that is not result-shaped is
- * returned untouched for validation to refuse.
+ * dropped (a few hundred bytes beyond the budget, and the block count still includes it). The cut itself is
+ * lossy: dropped blocks and refs are gone, and a replaced `structured`/`details` becomes `{ truncated: true }`.
+ * `kept` says where the dispatch stored the whole content first (see `boundAndKeep`). A value that is not
+ * result-shaped is returned untouched for validation to refuse.
  */
-export function boundToolResult<T>(value: T, outputMaxBytes: number): T {
+export function boundToolResult<T>(value: T, outputMaxBytes: number, kept?: string): T {
   if (!isRecord(value) || !Array.isArray(value.content)) return value
   const omitted: string[] = []
   const limit = Number.isFinite(outputMaxBytes)
@@ -213,6 +213,7 @@ export function boundToolResult<T>(value: T, outputMaxBytes: number): T {
     }
   }
   if (droppedText) omitted.push(`${droppedText} text bytes over the ${limit}-byte limit`)
+  if (kept && (tooMany || droppedText)) omitted.push(kept)
   const json: Record<string, unknown> = {}
   for (const key of ['details', 'structured'] as const) {
     if (value[key] !== undefined && boundedJsonSize(value[key]) === undefined) {
@@ -279,9 +280,45 @@ function invalidObservation(reason: string): HostDispatchObservation {
   }
 }
 
-function boundObservation(value: unknown, outputMaxBytes: number): unknown {
+/** Whether the bound would drop content blocks or text, the parts of a result the model reads. */
+function cutsContent(value: unknown, outputMaxBytes: number): value is { content: unknown[] } {
+  if (!isRecord(value) || !Array.isArray(value.content)) return false
+  if (value.content.length > TOOL_RESULT_LIMITS.maxBlocks) return true
+  let bytes = 0
+  for (const block of value.content)
+    if (isRecord(block) && block.type === 'text' && typeof block.text === 'string') {
+      bytes += Buffer.byteLength(block.text, 'utf8')
+      if (bytes > outputMaxBytes) return true
+    }
+  return false
+}
+
+type BoundContext = Readonly<{ outputMaxBytes: number; artifacts?: Pick<ToolContext['artifacts'], 'put'> }>
+
+/**
+ * The bound, with the whole content kept first: a tool that does not guard its own output loses only the
+ * inline view, and the marker says where the rest is, in the form `read` and `grep` accept. A store failure
+ * still cuts, and says so; without a store the cut is as before.
+ */
+async function boundAndKeep(value: unknown, context: BoundContext): Promise<unknown> {
+  const max = context.outputMaxBytes
+  if (!context.artifacts || !cutsContent(value, max)) return boundToolResult(value, max)
+  let kept: string
+  try {
+    const ref = await context.artifacts.put(new TextEncoder().encode(JSON.stringify(value.content)), {
+      mime: 'application/json',
+    })
+    kept = `full set stored at artifact://${ref.sha256}?size=${ref.size}. To read it, call read with that full path, ?size= included, and an offset/limit, or grep that full path to search it; it is a JSON array with one entry per content block`
+  } catch (error) {
+    const reason = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, ' ').slice(0, 160)
+    kept = `full set could not be stored: ${reason}`
+  }
+  return boundToolResult(value, max, kept)
+}
+
+async function boundObservation(value: unknown, context: BoundContext): Promise<unknown> {
   return isRecord(value) && value.phase === 'responded'
-    ? { ...value, result: boundToolResult(value.result, outputMaxBytes) }
+    ? { ...value, result: await boundAndKeep(value.result, context) }
     : value
 }
 
@@ -372,7 +409,7 @@ export async function dispatchTool(input: DispatchInput): Promise<HostDispatchOb
   }
   if (input.executionDomain === 'workspace') {
     try {
-      const result = boundToolResult(await input.invoke(), input.context.outputMaxBytes)
+      const result = await boundAndKeep(await input.invoke(), input.context)
       return isToolResult(result)
         ? { phase: 'responded', result }
         : invalidObservation('workspace tool returned an invalid ToolResult')
@@ -400,7 +437,7 @@ export async function dispatchTool(input: DispatchInput): Promise<HostDispatchOb
       attempt: input.attempt,
       invoke,
     })
-    return validateObservation(boundObservation(value, input.context.outputMaxBytes), invoked)
+    return validateObservation(await boundObservation(value, input.context), invoked)
   } catch (error) {
     return { phase: 'may_have_sent', error }
   }

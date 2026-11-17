@@ -38,6 +38,8 @@ type HibernatedStub = {
   preset: string
   /** Kept so a woken session reopens under the level it slept with, not the legacy default. */
   permission?: string
+  /** Not persisted with the session: a woken session gets it back from here. */
+  outwardCommandRules?: true
   lastSeq: number
   /** The ledger head read from storage: another writer may append while the session sleeps. */
   head(): Promise<number>
@@ -110,6 +112,8 @@ export class HostedSessions {
       /** A session idle this long is hibernated; 0 or absent never hibernates. */
       idleCloseMs?: number
       clock?: () => number
+      /** Called after a tailed session's `turn/end` row has been forwarded. */
+      onTurnEnd?: () => void
     },
   ) {
     this.clock = options.clock ?? (() => Date.now())
@@ -155,20 +159,21 @@ export class HostedSessions {
     }
     try {
       controller.signal.throwIfAborted()
+      const rules = frame.params.outwardCommandRules === true
       if (this.dormant(frame.sessionKey)) {
         const woken = await this.acquire(frame.sessionKey, history)
-        this.assertAuthority(woken.session, binding, parent)
+        this.assertAuthority(woken.session, binding, parent, rules)
         return this.describe(woken.session)
       }
       const existing = this.sessions.get(frame.sessionKey)
       if (existing) {
-        this.assertAuthority(existing.session, binding, parent)
+        this.assertAuthority(existing.session, binding, parent, rules)
         return this.describe(existing.session)
       }
       const pending = this.opening.get(frame.sessionKey)
       if (pending) {
         const hosted = await pending
-        this.assertAuthority(hosted.session, binding, parent)
+        this.assertAuthority(hosted.session, binding, parent, rules)
         return this.describe(hosted.session)
       }
       const opening = this.options.channel.run(frame.sessionKey, async () => {
@@ -191,6 +196,7 @@ export class HostedSessions {
               : {}),
             ...(frame.params.loop ? { loop: frame.params.loop } : {}),
             ...(parent ? { parent } : {}),
+            ...(rules ? { outwardCommandRules: true as const } : {}),
           })
           .catch((error: unknown) => {
             if ((error as { code?: string })?.code === 'E_LOOP_MISSING')
@@ -256,6 +262,7 @@ export class HostedSessions {
             seq: event.seq,
             event,
           } satisfies EventFrame)
+        if (events.some((event) => event.type === 'turn/end')) this.options.onTurnEnd?.()
       },
       onError: (error) => {
         this.options.send({
@@ -394,6 +401,7 @@ export class HostedSessions {
       ...(session.d.log.parent ? { parent: session.d.log.parent } : {}),
       preset: session.preset.name,
       ...(session.preset.permission ? { permission: session.preset.permission } : {}),
+      ...(session.d.outwardCommandRules ? { outwardCommandRules: true as const } : {}),
       lastSeq,
       head: this.headReader(key, lastSeq),
       ...(delivered !== undefined ? { tailFrom: delivered + 1 } : {}),
@@ -468,6 +476,7 @@ export class HostedSessions {
         binding: stub.binding,
         preset: stub.preset,
         ...(stub.permission ? { permission: stub.permission } : {}),
+        ...(stub.outwardCommandRules ? { outwardCommandRules: true as const } : {}),
         ...history,
       })
       if (stub.pluginGenerationId && session.pluginGenerationId !== stub.pluginGenerationId) {
@@ -564,7 +573,12 @@ export class HostedSessions {
     session: HostSession,
     binding: WorkspaceBinding,
     parent: { key: string; boundarySeq: number } | undefined,
+    outwardCommandRules = false,
   ): void {
+    // Asking for command rules must not hand back a session running without them (core's own check
+    // runs only when a session is created, and these sessions are already open).
+    if (outwardCommandRules && session.d.outwardCommandRules !== true)
+      throw rpcError('CAPABILITY_DENIED', { reason: 'OUTWARD_COMMAND_RULES_OFF', sessionId: session.key })
     const actualBinding = session.d.workspaceIdentity as WorkspaceBinding | undefined
     const actualParent = session.d.log.parent
     if (

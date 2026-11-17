@@ -8,6 +8,9 @@ import { createTestHost } from '@agnes/host/testkit'
 import { main } from '../../src/bin.js'
 import { slowProvider, TEST_LOCK } from '../boot-host.js'
 
+// The cleanup control starts its ACP reply budget after this source-only fixture's imports.
+process.stderr.write('dbh: fixture imports ready\n')
+
 const dataDir = process.env.AGNES_ACP_FIXTURE_DIR
 if (!dataDir) throw new Error('AGNES_ACP_FIXTURE_DIR is required')
 const turnMs = Number(process.env.DBH_TURN_MS ?? 60_000)

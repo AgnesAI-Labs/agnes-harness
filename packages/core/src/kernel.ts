@@ -46,9 +46,11 @@ import { KernelChildren } from './child/factory.js'
 import { readRoleDelegation } from './child/role-snapshot.js'
 import { type ChildRolePort, ROLE_DELEGATION, type RoleDelegation } from './child/roles.js'
 import { bindChildFactory } from './child/sessions.js'
-import { bindChildSessionToolFilter, ChildToolRegistry } from './child/tool-filter.js'
+import { bindChildSessionToolFilter, narrowedRuntime, sessionToolView } from './child/tool-filter.js'
 import { type DispatchContext, HookEngine } from './hooks/engine.js'
 import { LoopEventRegistry } from './loop/events.js'
+import { hookSideCallFactory } from './loop/scoped-side-call.js'
+import { bindRefinement, captureRefinement } from './refinement/capture.js'
 import type { RefinementDeps } from './refinement/scheduler.js'
 import type { RefinementTriggerSink } from './refinement/triggers.js'
 import { HookRegistry } from './registry/hooks.js'
@@ -58,6 +60,7 @@ import { ToolRegistry } from './registry/tools.js'
 import type { ContractRef } from './request/derive.js'
 import { APPEND_REFUSED, appendToSystemPromptConfig } from './request/system-prompt.js'
 import type { CurrentRuntimeLookup, RuntimePromptPreloader } from './runtime/current.js'
+import { opensAsChild } from './step/child-session.js'
 import { CORE_OPS, type CoreOpName, replacementFor, validateReplacements } from './step/reentry.js'
 import {
   type CompactionPort,
@@ -147,7 +150,9 @@ export type KernelOptions = {
   /**
    * Whether the refinement experience (fixed guidance, entry snapshot, update notes) is delivered on
    * the next primary request. Read before each request; omitted or false sends none of it and writes
-   * no row for it, so requests are exactly what they were without refinement.
+   * no row for it, so requests are exactly what they were without refinement. Also read as each
+   * session opens: a session opened while it is false keeps running without refinement and is never
+   * offered the refinement tools, even after it turns true (`refinement/capture.ts`).
    */
   refinementEnabled?: () => boolean
   /** Takes automatic refinement candidates; read only while `refinementEnabled` is true. */
@@ -169,6 +174,8 @@ export type KernelOptions = {
   memoryFor?: (input: {
     key: string
     workspaceRoot: string
+    /** A child session (delegated, role or fork): it gets no task-experience notes of its own. */
+    child?: boolean
   }) => import('@agnes/extension-api').MemorySession | undefined
   /** Trusted Host classification for file paths with independently enforced domain gates. */
   commandPathScopeFor?: (input: {
@@ -201,6 +208,13 @@ export type KernelOptions = {
 export type { RuntimePromptPreload } from './runtime/current.js'
 export type SessionOptions = {
   roleDelegation?: RoleDelegation
+  /**
+   * Hold calls whose shell text trips an outward command rule for a person, and refuse terminals and
+   * persistent shells. Best effort, not a boundary. Set by the Host as it opens the session, on every
+   * open: it is not persisted. Children and forks of an open parent that has it inherit it, and an
+   * open session cannot turn it off.
+   */
+  outwardCommandRules?: true
   systemPrompt?: {
     config: () => Promise<import('@agnes/protocol').SystemPromptConfig>
     resolve(selection?: { id: string; version: string }): import('@agnes/extension-api').SystemPromptProvider
@@ -326,6 +340,7 @@ export class Kernel {
   readonly loops: LoopRegistryPort
   readonly tools = new ToolRegistry()
   readonly sessions = new Map<SessionKey, SessionImpl>()
+  private readonly sessionOpenedListeners = new Set<(session: SessionImpl) => void>()
   readonly clock: Clock
   readonly ids: IdMinter
   // Computed once from the fitted seam at construction; every session's hook engine reuses it.
@@ -359,15 +374,14 @@ export class Kernel {
   }
 
   /** Scheduling and quota are per session; only immutable registration ownership is shared. */
-  private createHookEngine(logger: Logger, preset: PresetView): HookEngine {
+  private createHookEngine(logger: Logger, preset: PresetView, session?: SessionImpl): HookEngine {
     return new HookEngine(
       {
         onFailure: (failure) => logger.warn('hook failed', failure as never),
-        diag: (name, data) => {
-          logger.warn(`x/core/${name}`, data as never)
-        },
+        diag: (name, data) => logger.warn(`x/core/${name}`, data as never),
         eventsPerTurn: preset.ext.eventsPerTurn,
         platform: this.platform,
+        ...(session ? { sideCallFor: hookSideCallFactory(session) } : {}),
         toolResultMaxBytes: preset.tools.outputMaxBytes,
         ...(this.o.hookLeaseFor ? { leaseFor: this.o.hookLeaseFor } : {}),
         ...(this.o.retainSessionRefIdentity
@@ -400,6 +414,22 @@ export class Kernel {
     for (const session of this.sessions.values()) session.d.runtime.invalidate()
   }
 
+  /** Called right after a session enters the `sessions` table, whether created or resumed. */
+  onSessionOpened(listener: (session: SessionImpl) => void): () => void {
+    this.sessionOpenedListeners.add(listener)
+    return () => void this.sessionOpenedListeners.delete(listener)
+  }
+
+  private notifySessionOpened(session: SessionImpl): void {
+    for (const listener of [...this.sessionOpenedListeners]) {
+      try {
+        listener(session)
+      } catch {
+        // A listener must not disturb session creation.
+      }
+    }
+  }
+
   /** All Core-owned registrations, for complete owner cleanup verification. */
   registrations(source: string): string[] {
     return [
@@ -414,6 +444,9 @@ export class Kernel {
   private readonly construction = new AbortController()
   private readonly creating = new Set<Promise<SessionImpl>>()
   private closing?: Promise<void>
+
+  private readonly commandRules = (o: SessionOptions) =>
+    o.outwardCommandRules === true || (o.parent && this.get(o.parent.key))?.d.outwardCommandRules === true
 
   session(key: SessionKey, so: SessionOptions): Promise<SessionImpl> {
     if (isProfileDecisionJournal(key))
@@ -485,6 +518,12 @@ export class Kernel {
       // once and a second caller's overrides would simply not be fitted.
       if (so.seams && Object.keys(so.seams).length > 0)
         throw new CoreError('E_LANE_BUSY', `session ${key} is already open; seams cannot be refitted`)
+      // Asking for command rules must not hand back a session running without them; an open session
+      // that has them keeps them for a caller that does not ask.
+      if (this.commandRules(so) && !existing.d.outwardCommandRules)
+        throw new CoreError('E_LANE_BUSY', `session ${key} is already open without outward command rules`, {
+          field: 'outwardCommandRules',
+        })
       if (so.parent) await existing.inheritAutomaticPermissions(this.sessions.get(so.parent.key))
       return existing
     }
@@ -646,9 +685,20 @@ export class Kernel {
       const capturedRole = await readRoleDelegation(this.o.storage, key)
       if (capturedRole) so = { ...so, actor: capturedRole.actor, roleDelegation: capturedRole }
       const children = this.o.children ?? new KernelChildren(this, () => session)
-      const toolFilter = so.toolFilter
+      // Whether this session runs task experience, decided once as it opens (refinement/capture.ts).
+      const refinement = await captureRefinement(this.o, {
+        parent: so.parent ? this.sessions.get(so.parent.key) : undefined,
+        child: opensAsChild(log, tracker.state, so.roleDelegation),
+        reopened: !forked && Boolean(tracker.state.session),
+        scan: (q) => log.scan(q),
+      })
+      const sessionTools = sessionToolView(so.toolFilter, refinement.hiddenTools)
       const workspaceRoot = workspaceIdentity?.canonicalRoot ?? so.cwd
-      memory = this.o.memoryFor?.({ key, workspaceRoot })
+      memory = this.o.memoryFor?.({
+        key,
+        workspaceRoot,
+        child: opensAsChild(log, tracker.state, so.roleDelegation),
+      })
       session = new SessionImpl({
         ...(this.o.commandPathScopeFor
           ? {
@@ -661,6 +711,7 @@ export class Kernel {
           : {}),
         ...(memory ? { memory } : {}),
         ...(so.roleDelegation ? { roleDelegation: so.roleDelegation } : {}),
+        ...(this.commandRules(so) ? { outwardCommandRules: true as const } : {}),
         ...(so.delegation ? { delegation: so.delegation } : {}),
         ...(this.o.childRoles ? { childRoles: this.o.childRoles } : {}),
         log,
@@ -688,19 +739,12 @@ export class Kernel {
         loopEvents: this.loopEvents,
         loopResume: !forked && Boolean(tracker.state.session),
         ...(this.o.withModelSnapshot ? { withModelSnapshot: this.o.withModelSnapshot } : {}),
-        registry: so.toolFilter ? new ChildToolRegistry(this.tools, so.toolFilter) : this.tools,
+        registry: sessionTools ? sessionTools(this.tools) : this.tools,
         resources: this.resources,
         ...(this.o.currentRuntime
           ? {
-              currentRuntime: so.toolFilter
-                ? {
-                    current: (key: string) => {
-                      const current = this.o.currentRuntime?.current(key)
-                      return current && toolFilter
-                        ? { ...current, tools: new ChildToolRegistry(current.tools, toolFilter) }
-                        : undefined
-                    },
-                  }
+              currentRuntime: sessionTools
+                ? narrowedRuntime(this.o.currentRuntime, sessionTools)
                 : this.o.currentRuntime,
             }
           : {}),
@@ -750,16 +794,15 @@ export class Kernel {
         ...(this.o.hooks ? { hooks: this.o.hooks } : {}),
         ...(this.o.compaction ? { compaction: this.o.compaction } : {}),
         ...(this.o.runtimePromptPreloader ? { runtimePromptPreloader: this.o.runtimePromptPreloader } : {}),
-        ...(this.o.refinementEnabled ? { refinementEnabled: this.o.refinementEnabled } : {}),
-        ...(this.o.refinementTriggers ? { refinementTriggers: this.o.refinementTriggers } : {}),
-        ...(this.o.refinement ? { refinement: this.o.refinement } : {}),
+        ...refinement.deps,
         ...(this.o.quiet ? { quiet: this.o.quiet } : {}),
         ...(this.o.quiet ? { quietGroup } : {}),
         agnesVersion: this.o.agnesVersion ?? '0.0.0',
       })
+      bindRefinement(session, refinement)
       await this.bindSessionScope(session, so)
       if (children instanceof KernelChildren) bindChildFactory(session.key, children)
-      const sessionHooks = this.createHookEngine(logger, preset)
+      const sessionHooks = this.createHookEngine(logger, preset, session)
       let resumed = false
       const creationSignal = AbortSignal.any([
         this.construction.signal,
@@ -823,6 +866,7 @@ export class Kernel {
         }
         forkChecks.get(log)?.()
         this.sessions.set(key, session)
+        this.notifySessionOpened(session)
         creationSignal.throwIfAborted()
         if (resumed) await recoverChildCompletions(session)
         creationSignal.throwIfAborted()

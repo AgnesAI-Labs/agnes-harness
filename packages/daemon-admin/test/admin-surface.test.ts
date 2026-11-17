@@ -197,7 +197,7 @@ describe('local package admin surface trust boundary', () => {
       features: [],
     })
     expect(context.authScope).toMatch(/^auth\.[a-f0-9]{32}$/)
-    let features = ['packages.community-discovery.v1']
+    let features = ['packages.community-discovery.v2']
     const dynamic = await server(undefined, undefined, { backendFeatures: async () => features })
     expect((await (await dynamic.request('context')).json()).features).toEqual(features)
     features = []

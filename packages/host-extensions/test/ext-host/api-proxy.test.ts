@@ -46,6 +46,8 @@ function setup(
     packageVersion: string
     trust: 'builtin' | 'trusted'
     hostGrants?: import('@agnes/package-manager').HostCapabilityGrant
+    sideCallDeclared?: boolean
+    sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
   } = { packageIdentity: '@fixture/package', packageVersion: m.version, trust: 'trusted' },
   serviceProviders?: KernelPorts['serviceProviders'],
 ) {
@@ -620,4 +622,22 @@ it('forwards the manifest owner and loader package, and rechecks the lease on bi
   h.expire()
   expect(() => recheck?.()).toThrow('E_LEASE_EXPIRED')
   await dispose()
+})
+
+it('fits a sanitized catalogue only for a granted declared builtin facade', async () => {
+  const provenance = {
+    packageIdentity: '@agnes/fixture',
+    packageVersion: '1.0.0',
+    trust: 'builtin' as const,
+    hostGrants: { sideCall: true as const },
+    sideCallDeclared: true,
+    sideModels: () => [
+      { route: 'chat', model: 'small', api: 'responses', endpoint: 'private', credential: 'secret' },
+    ],
+  }
+  const f = setup(manifest(), undefined, provenance)
+  expect(await f.api.ctx.sideModels?.list()).toEqual([{ route: 'chat', model: 'small', api: 'responses' }])
+  expect(
+    setup(manifest(), undefined, { ...provenance, sideCallDeclared: false }).api.ctx.sideModels,
+  ).toBeUndefined()
 })

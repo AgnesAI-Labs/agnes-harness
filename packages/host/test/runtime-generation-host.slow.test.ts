@@ -4,8 +4,9 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { defaultLoopPlugin, memoryPlugin } from '@agnes/base'
-import { defaultIds, type EventInput, hasChildControl, SessionLogImpl } from '@agnes/core'
+import { defaultIds, type EventInput, hasChildControl, MemoryStorage, SessionLogImpl } from '@agnes/core'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import { CompositionSessionStore } from '@agnes/host-providers/profile/composition-state'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 import {
   capabilityHash,
@@ -27,6 +28,7 @@ import {
 } from '@agnes/resource-control-runtime'
 import { expect, it, vi } from 'vitest'
 import { answeredDecision, pendingDecision } from '../../core-ledger/testkit/decision.js'
+import { assertMigrationSettled } from '../src/runtime/generation/migration-state.js'
 import { createGenerationSkills } from '../src/runtime/generation/resources.js'
 import { pinnedBindings } from '../src/runtime/generation/seam-pins.js'
 import { hostInspectionSource } from '../src/runtime/lifecycle/host-facade.js'
@@ -424,6 +426,11 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       openSessions: 1,
       live: true,
     })
+    // A second session in a's composition keeps that container open, so only a's generation is collected.
+    const compositions = new CompositionSessionStore(profileDir)
+    compositions.pin({ ...required(compositions.read(a.key)), sessionKey: 'session-a-peer' })
+    const peer = await host.createSession({ key: 'session-a-peer', cwd: root })
+    expect(peer.pluginGenerationId).not.toBe(firstId)
     await a.close()
     // Automatic idle collection releases memory while the durable archive and the other session survive.
     await vi.waitFor(() =>
@@ -461,6 +468,7 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       structured: { limit: 10 },
     })
     await collectedResume.close()
+    await peer.close()
     await host.close()
     // Installed packages and the publisher's process cache disappear; only immutable snapshots remain.
     sources.splice(0)
@@ -700,6 +708,414 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       })
       expect(store.session(key)).toEqual(before)
       expect(await storage.scan(key, { toSeq: log.lastSeq })).toEqual(beforeFacts)
+      await required(host.releaseSessionGeneration)(key)
+    }
+    // A cancelled read-only wait is terminal when its durable policy and effect agree.
+    for (const mode of [
+      'safe',
+      'write',
+      'bad-hash',
+      'missing-policy',
+      'unsafe-replay',
+      'unknown',
+      'state-match',
+      'state-policy',
+      'state-effect',
+      'state-name',
+      'state-args',
+      'state-pending',
+      'state-other',
+      'state-compaction',
+      'other-unknown',
+    ]) {
+      const key = `migration-cancel-${mode}`
+      const storage = host.kernel.o.storage
+      const log = await SessionLogImpl.open({
+        storage,
+        key,
+        writerRunId: key,
+        ttlMs: 30000,
+        ids: defaultIds(),
+        clock: Date.now,
+      })
+      const policy = {
+        isReadOnly: mode !== 'write',
+        isDestructive: mode === 'write',
+        isPresentational: false,
+        isConcurrencySafe: true,
+        isOpenWorld: false,
+        replay: 'safe',
+        requiresApproval: 'never',
+        approvalScopes: [],
+        policyVersion: 'static-v1',
+      }
+      const facts: (Pick<EventInput, 'type' | 'data'> & Partial<EventInput>)[] = [
+        { type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        { type: 'step/start', data: { turn: 1, step: 1 } },
+        {
+          type: 'tool/call',
+          origin: 'model',
+          data: {
+            toolUseId: 'wait',
+            name: 'fixture_wait',
+            args: {},
+            ordinal: 0,
+            ...(mode === 'missing-policy'
+              ? {}
+              : {
+                  resolvedPolicy: policy,
+                  policyHash:
+                    mode === 'bad-hash'
+                      ? '0'.repeat(64)
+                      : mode === 'write'
+                        ? '4104122519da7ec356772c65b4e7574f15725ec2ea1152c2c259cf7d842d2f18'
+                        : '98eae655d46b0b7f23316813965df674f18e235e396fc26d8a864c2bb3a5e4d8',
+                  definitionFingerprint: '1'.repeat(64),
+                  executionDomain: 'workspace',
+                }),
+          },
+        },
+        {
+          type: 'effect/intent',
+          data: {
+            effectId: 'wait-effect',
+            kind: 'tool',
+            replay: mode === 'unsafe-replay' ? 'never' : 'safe',
+            argsSeq: 3,
+            tool: { toolUseId: 'wait', name: 'fixture_wait' },
+          },
+        },
+        {
+          type: 'tool/result',
+          data: {
+            toolUseId: 'wait',
+            code: mode === 'unknown' ? 'TOOL_OUTCOME_UNKNOWN' : 'CANCELLED',
+            isError: true,
+            partial: true,
+            content: [],
+            enforcement: { level: 'none', scope: [] },
+            authz: { decisionId: 'fixture' },
+          },
+        },
+        {
+          type: 'effect/settled',
+          data: { effectId: 'wait-effect', outcome: mode === 'unknown' ? 'unknown' : 'aborted' },
+        },
+        ...(mode === 'other-unknown'
+          ? [
+              {
+                type: 'tool/call',
+                origin: 'model',
+                data: { toolUseId: 'other', name: 'fixture_write', args: {}, ordinal: 1 },
+              },
+              {
+                type: 'effect/intent',
+                data: {
+                  effectId: 'other-effect',
+                  kind: 'tool',
+                  replay: 'never',
+                  argsSeq: 7,
+                  tool: { toolUseId: 'other', name: 'fixture_write' },
+                },
+              },
+              {
+                type: 'tool/result',
+                data: {
+                  toolUseId: 'other',
+                  code: 'TOOL_OUTCOME_UNKNOWN',
+                  isError: true,
+                  content: [],
+                  enforcement: { level: 'none', scope: [] },
+                  authz: { decisionId: 'fixture' },
+                },
+              },
+              { type: 'effect/settled', data: { effectId: 'other-effect', outcome: 'unknown' } },
+            ]
+          : []),
+        { type: 'step/end', data: { turn: 1, step: 1 } },
+      ]
+      await log.append(
+        facts.map((fact) => ({
+          actor: resumed.d.actor,
+          origin: 'system',
+          trust: 'trusted',
+          lane: 'main',
+          ignorable: true,
+          ...fact,
+        })),
+      )
+      await log.close()
+      const rows = await storage.scan(key, { order: 'asc', toSeq: log.lastSeq })
+      const stateCall = {
+        ordinal: 0,
+        toolUseId: mode === 'state-other' ? 'other' : 'wait',
+        name: mode === 'state-name' ? 'other' : 'fixture_wait',
+        argsSeq: mode === 'state-args' ? 2 : 3,
+        status: mode === 'state-pending' ? 'dispatched' : 'completed',
+        effectId: mode === 'state-effect' || mode === 'state-compaction' ? 'other-effect' : 'wait-effect',
+        replay: 'safe',
+        resolvedPolicy: policy,
+        policyHash: '98eae655d46b0b7f23316813965df674f18e235e396fc26d8a864c2bb3a5e4d8',
+        definitionFingerprint: (mode === 'state-policy' ? '2' : '1').repeat(64),
+        executionDomain: 'workspace',
+      }
+      const fixtureStorage = mode.startsWith('state-')
+        ? MemoryStorage.fromEvents(key, rows, {
+            opCells: [
+              {
+                register: 'op.state',
+                key: 'main',
+                seq: rows.length,
+                data: {
+                  meta: {
+                    turn: 1,
+                    lane: 'main',
+                    acceptedAt: '2026-09-16T00:00:00Z',
+                    triggerSeq: 1,
+                    presetName: 'default',
+                    profileHash: null,
+                    depthLimit: 3,
+                  },
+                  control: { status: 'running' },
+                  step: 1,
+                  latestAssistantSeq: null,
+                  taint: false,
+                  phase:
+                    mode === 'state-compaction'
+                      ? {
+                          kind: 'compaction',
+                          reason: 'requested',
+                          resumeAfter: { kind: 'tools', batch: { assistantSeq: 1, calls: [stateCall] } },
+                        }
+                      : { kind: 'tools', batch: { assistantSeq: 1, calls: [stateCall] } },
+                },
+              } as never,
+            ],
+          })
+        : storage
+      const settled = assertMigrationSettled(fixtureStorage, key, 'fixture-generation')
+      if (mode === 'safe' || mode === 'state-match' || mode === 'state-other')
+        await expect(settled).resolves.toBeUndefined()
+      else
+        await expect(settled).rejects.toMatchObject({
+          code: 'E_GENERATION_EXECUTION_UNSETTLED',
+          ...(mode === 'other-unknown'
+            ? {
+                detail: {
+                  reasons: expect.arrayContaining([
+                    expect.objectContaining({ kind: 'unknown-external-outcome', id: 'other-effect' }),
+                    expect.objectContaining({ kind: 'unknown-external-outcome', id: 'tool:other' }),
+                  ]),
+                },
+              }
+            : {}),
+        })
+    }
+    // A formal, consumed human reconciliation acknowledges one exact unknown call, without
+    // rewriting history or clearing a different effect merely because it has the same tool name.
+    for (const mode of [
+      'allowed',
+      'rejected',
+      'unanswered',
+      'unconsumed',
+      'checkpoint-missing',
+      'checkpoint-other',
+      'wrong-owner',
+      'wrong-package',
+      'wrong-purpose',
+      'wrong-session',
+      'wrong-operation',
+      'wrong-subject',
+      'wrong-lane',
+      'automatic',
+      'system-answer',
+      'agent-answer',
+      'invalidated',
+      'other-effect',
+      'bad-digest',
+      'bad-receipt',
+      'expired',
+      'untrusted',
+    ]) {
+      const key = `migration-reconciliation-${mode}`
+      store.pin(key, required(firstId), pinnedBindings(host.seamBindings()))
+      const storage = host.kernel.o.storage
+      const log = await SessionLogImpl.open({
+        storage,
+        key,
+        writerRunId: key,
+        ttlMs: 30000,
+        ids: defaultIds(),
+        clock: Date.now,
+      })
+      const pending = pendingDecision('unknown-decision', {
+        sessionId: mode === 'wrong-session' ? 'another-session' : key,
+        operationId: mode === 'wrong-operation' ? 'another-call' : 'unknown-call',
+        owner: mode === 'wrong-owner' ? 'extension/unknown-outcome' : 'core/unknown-outcome',
+        lane: mode === 'wrong-lane' ? 'another-lane' : 'main',
+        subject: {
+          toolUseId: 'unknown-call',
+          name: 'orchestrator_report',
+          turn: 1,
+          step: mode === 'wrong-subject' ? 2 : 1,
+        },
+      })
+      pending.request.spec = {
+        ...pending.request.spec,
+        key: pending.request.operationId,
+        purpose: mode === 'wrong-purpose' ? 'tool.permission' : 'unknown-outcome',
+      }
+      if (mode === 'wrong-package') pending.request.sourcePackage = '@acme/other'
+      if (mode === 'bad-digest') pending.request.subjectDigest = '0'.repeat(64)
+      const facts: (Pick<EventInput, 'type' | 'data'> & Partial<EventInput>)[] = [
+        { type: 'turn/start', data: { turn: 1, trigger: 'prompt' } },
+        { type: 'step/start', data: { turn: 1, step: 1 } },
+        {
+          type: 'tool/call',
+          data: { toolUseId: 'unknown-call', name: 'orchestrator_report', args: {}, ordinal: 0 },
+        },
+        {
+          type: 'effect/intent',
+          data: {
+            effectId: 'unknown-effect',
+            kind: 'tool',
+            replay: 'never',
+            tool: { toolUseId: 'unknown-call', name: 'orchestrator_report' },
+          },
+        },
+        {
+          type: 'tool/result',
+          data: {
+            toolUseId: 'unknown-call',
+            code: 'TOOL_OUTCOME_UNKNOWN',
+            isError: true,
+            content: [],
+            enforcement: { level: 'none', scope: [] },
+            authz: { decisionId: 'fixture' },
+          },
+        },
+        { type: 'effect/settled', data: { effectId: 'unknown-effect', outcome: 'unknown' } },
+      ]
+      const decision = (value: DecisionSnapshot) =>
+        facts.push({
+          type: 'decision/state',
+          register: 'decision/state',
+          data: value,
+          lane: value.request.lane,
+          ...(mode === 'untrusted' ? { origin: 'ext:fixture', trust: 'untrusted' as const } : {}),
+        })
+      let answered = answeredDecision(pending, 8, mode === 'rejected' ? 'rejected' : 'allowed-once')
+      if ((mode === 'system-answer' || mode === 'agent-answer') && answered.result?.reason === 'answered')
+        answered.result.answeredBy = {
+          ...answered.result.answeredBy,
+          role: mode === 'system-answer' ? 'system' : 'agent',
+        }
+      if (mode === 'automatic') {
+        answered = {
+          ...answered,
+          revision: 1,
+          answerCommand: null,
+          result: {
+            ...(answered.result as Extract<DecisionSnapshot['result'], { reason: 'answered' }>),
+            code: 'full-access',
+            answeredBy: {
+              ...pending.request.requestedBy,
+              role: 'system',
+              attrs: { permissionPolicy: 'full-access' },
+            },
+          },
+        }
+      } else decision(pending)
+      if (mode !== 'unanswered') {
+        if (mode === 'bad-receipt') answered.answerCommand = { ...answered.answerCommand!, seq: 1 }
+        if (mode === 'expired' && answered.result) answered.result.at = '2027-01-01T00:00:00.000Z'
+        decision(answered)
+        if (mode === 'invalidated')
+          decision({
+            ...answered,
+            revision: 3,
+            invalidation: { code: 'withdrawn', at: '2025-09-07T00:00:00.002Z' },
+          })
+        else if (mode !== 'unconsumed') {
+          decision({
+            ...answered,
+            revision: answered.revision + 1,
+            consumption: {
+              operationId: pending.request.operationId,
+              effectId: null,
+              at: '2025-09-07T00:00:00.002Z',
+            },
+          })
+          if (mode !== 'checkpoint-missing')
+            facts.push({
+              type: 'x/core/decision-checkpoint',
+              lane: pending.request.lane,
+              data: {
+                handle: pending.handle,
+                operationId: mode === 'checkpoint-other' ? 'another-call' : pending.request.operationId,
+              },
+            })
+        }
+      }
+      if (mode === 'other-effect')
+        facts.push(
+          {
+            type: 'tool/call',
+            data: { toolUseId: 'other-call', name: 'orchestrator_report', args: {}, ordinal: 1 },
+          },
+          {
+            type: 'effect/intent',
+            data: {
+              effectId: 'other-effect',
+              kind: 'tool',
+              replay: 'never',
+              tool: { toolUseId: 'other-call', name: 'orchestrator_report' },
+            },
+          },
+          {
+            type: 'tool/result',
+            data: {
+              toolUseId: 'other-call',
+              code: 'TOOL_OUTCOME_UNKNOWN',
+              isError: true,
+              content: [],
+              enforcement: { level: 'none', scope: [] },
+              authz: { decisionId: 'fixture' },
+            },
+          },
+          { type: 'effect/settled', data: { effectId: 'other-effect', outcome: 'unknown' } },
+        )
+      facts.push({ type: 'step/end', data: { turn: 1, step: 1 } })
+      const append = log.append(
+        facts.map((fact) => ({
+          actor: resumed.d.actor,
+          origin: 'system',
+          trust: 'trusted',
+          lane: 'main',
+          ignorable: true,
+          ...fact,
+        })),
+      )
+      if (mode === 'untrusted') {
+        await expect(append).rejects.toThrow('decision/state is a Core-owned register')
+        expect(store.session(key)?.generationId).toBe(firstId)
+        await log.close()
+        await required(host.releaseSessionGeneration)(key)
+        continue
+      }
+      await append
+      await log.close()
+      const beforeFacts = await storage.scan(key, { toSeq: log.lastSeq })
+      const beforePin = store.session(key)
+      const migration = required(host.migrateSessionGeneration)(key)
+      if (mode === 'allowed' || mode === 'rejected')
+        await expect(migration).resolves.toMatchObject({ changed: true })
+      else {
+        await expect(migration).rejects.toThrow()
+        expect(store.session(key)).toEqual(beforePin)
+      }
+      expect(await storage.scan(key, { toSeq: log.lastSeq })).toEqual(beforeFacts)
+      expect((await storage.scan(key, { order: 'desc', limit: 1 }))[0]?.seq).toBe(log.lastSeq)
       await required(host.releaseSessionGeneration)(key)
     }
     // A durable open chat turn with no tool/effect binding does not fence migration.

@@ -156,10 +156,18 @@ const neverAborted = new AbortController().signal
 /** A signal whose `aborted` flag is read once per chunk; the callback runs on every read. */
 function chunkProbe(onRead: (read: number) => boolean): AbortSignal {
   let reads = 0
+  const controller = new AbortController()
   return {
     get aborted() {
       reads += 1
-      return onRead(reads)
+      if (onRead(reads)) controller.abort()
+      return controller.signal.aborted
+    },
+    get reason() {
+      return controller.signal.reason
+    },
+    throwIfAborted() {
+      controller.signal.throwIfAborted()
     },
   } as AbortSignal
 }

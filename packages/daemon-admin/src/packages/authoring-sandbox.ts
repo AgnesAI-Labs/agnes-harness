@@ -1,4 +1,3 @@
-import { realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { detectBackend } from '@agnes/base/sandbox'
 import {
@@ -12,6 +11,7 @@ import {
   sandboxReadPaths,
 } from '@agnes/host'
 import { runIsolatedCommand } from '@agnes/package-isolation'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 
 /** Supplied only by Host/daemon composition, never by tool arguments or RPC parameters. */
 export type AuthoringSandboxContext = {
@@ -29,7 +29,7 @@ export async function authoringSandbox(
   signal.throwIfAborted()
   if (context.session?.local === false) throw new Error('Local candidate tests require a local sandbox')
   const platform = createPlatform()
-  const root = realpathSync(directory)
+  const root = nativeRealpathSync(directory)
   if (platform.os === 'linux') await prepareSandboxWorkspaceAncestor(root)
   const fs = createFs(() => ({
     policy: { workspaceRoot: root, rules: [], networkAllow: [], digest: '0'.repeat(64) },

@@ -1237,3 +1237,36 @@ it.each(['saved', 'failed'] as const)(
     expect(feedbackResults).toHaveLength(before)
   },
 )
+
+it('excludes legacy chats on creation and retains only the unchanged legacy edit target', async () => {
+  const daemon = api([{ ...report, target: { kind: 'new-session', cwd: '/old' } }], {
+    workspaces: async () => ({
+      items: [
+        { path: '/old', name: 'Previous chats', available: true, kind: 'chats', managedRole: 'legacy' },
+        { path: '/current', name: 'Chats', available: true, kind: 'chats', managedRole: 'current' },
+        { path: '/project', name: 'Project', available: true },
+      ],
+    }),
+  })
+  const host = await mount(createElement(SchedulesPage, { api: daemon, t }))
+  await vi.waitFor(() => expect(host.querySelector('[data-testid="schedules-edit"]')).not.toBeNull())
+  await click('schedules-edit', host)
+  const choices = () =>
+    [...document.querySelectorAll<HTMLOptionElement>('[data-testid="schedules-workspace"] option')].map(
+      (option) => option.value,
+    )
+  await vi.waitFor(() => expect(choices()).toContain('/old'))
+  expect((document.querySelector('[data-testid="schedules-workspace"]') as HTMLSelectElement).value).toBe(
+    '/old',
+  )
+  await act(async () => fill('schedules-workspace', '/project'))
+  await vi.waitFor(() => expect(choices()).not.toContain('/old'))
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent === t('schedulesCancel'))
+      ?.click(),
+  )
+  await click('schedules-new', host)
+  await vi.waitFor(() => expect(choices()).toContain('/current'))
+  expect(choices()).not.toContain('/old')
+})

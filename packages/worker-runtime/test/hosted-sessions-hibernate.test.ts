@@ -382,6 +382,60 @@ describe('HostedSessions hibernates idle sessions and wakes them on demand', () 
     expect(created).toMatchObject({ preset: session.preset.name, permission: 'read-only' })
   })
 
+  it('keeps outward command rules on every reopen: wake, fork child, and a caller that asks again', async () => {
+    const t = await setup()
+    const checkpoint = (key: string) => t.hosted.dispatch(t.command(key, 'outwardCheckpoint'))
+    let created: Parameters<Host['createSession']>[0] | undefined
+    t.onCreate((options) => {
+      created = { ...options }
+    })
+    await t.hosted.open(t.openFrame('managed', { outwardCommandRules: true }))
+    expect(created).toMatchObject({ outwardCommandRules: true })
+    await expect(checkpoint('managed')).resolves.toEqual({ enforced: true })
+    // A caller that does not ask gets the open session, rules still on.
+    await t.hosted.open(t.openFrame('managed'))
+    await expect(checkpoint('managed')).resolves.toEqual({ enforced: true })
+
+    await t.prompt('managed', 'establish a boundary')
+    await t.run('managed')
+    const [boundary] = await t.live('managed').scan({ type: 'turn/end', order: 'desc', limit: 1 })
+    if (!boundary) throw new Error('missing boundary')
+    await t.hosted.dispatch(
+      t.command('managed', 'fork', {
+        at: boundary.seq,
+        childKey: 'managed-fork',
+        credential: undefined,
+        binding: t.binding('managed-fork'),
+      }),
+    )
+    await expect(checkpoint('managed-fork')).resolves.toEqual({ enforced: true })
+
+    await t.idle()
+    await t.idle()
+    expect(t.hibernated('managed-fork')).toBe(true)
+    expect(t.hibernated('managed')).toBe(true)
+    created = undefined
+    // Woken by a command, with no frame to carry the switch: the stub keeps it.
+    await expect(checkpoint('managed-fork')).resolves.toEqual({ enforced: true })
+    expect(created).toMatchObject({ outwardCommandRules: true })
+    await expect(checkpoint('managed')).resolves.toEqual({ enforced: true })
+
+    await t.hosted.open(t.openFrame('ordinary'))
+    await expect(checkpoint('ordinary')).resolves.toEqual({ enforced: false })
+    await expect(t.hosted.open(t.openFrame('ordinary', { outwardCommandRules: true }))).rejects.toMatchObject(
+      {
+        data: { code: 'CAPABILITY_DENIED', reason: 'OUTWARD_COMMAND_RULES_OFF' },
+      },
+    )
+    await t.idle()
+    expect(t.hibernated('ordinary')).toBe(true)
+    await expect(t.hosted.open(t.openFrame('ordinary', { outwardCommandRules: true }))).rejects.toMatchObject(
+      {
+        data: { code: 'CAPABILITY_DENIED', reason: 'OUTWARD_COMMAND_RULES_OFF' },
+      },
+    )
+  })
+
   it('hibernates a fork child before its parent, and wakes the child on its own', async () => {
     const t = await setup()
     const parent = await t.open('parent')

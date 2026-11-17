@@ -37,7 +37,13 @@ function findToolName(req: RequestBody, toolUseId: string): string {
   return 'unknown'
 }
 
-function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): Message {
+function toMessage(
+  m: RequestMessage,
+  req: RequestBody,
+  dropThinking: boolean,
+  provider: string,
+  replaySignature: boolean,
+): Message {
   switch (m.role) {
     case 'user':
       return { role: 'user', content: contentOf(m.content), timestamp: 0 } satisfies UserMessage
@@ -45,7 +51,15 @@ function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): 
       const content: AssistantMessage['content'] = m.content
         .filter((c) => !dropThinking || c.type !== 'thinking')
         .map((c) =>
-          c.type === 'thinking' ? { type: 'thinking', thinking: c.text } : { type: 'text', text: c.text },
+          c.type === 'thinking'
+            ? {
+                type: 'thinking',
+                thinking: c.text,
+                // The wire library writes the reasoning back under this field name, and only when the
+                // block carries it; a turn stored before signatures existed has none and replays as before.
+                ...(replaySignature && c.signature ? { thinkingSignature: c.signature } : {}),
+              }
+            : { type: 'text', text: c.text },
         )
       for (const tc of m.toolCalls ?? [])
         content.push({
@@ -57,8 +71,17 @@ function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): 
       return {
         role: 'assistant',
         content,
+        // The wire library keeps a replayed thinking block only when provider, api and model all match
+        // the request model, so the provider must be the one the caller gives the request model. The api
+        // label stays as it is, and the signature is attached only for an openai-completions request
+        // (`replaySignature`): a message's reasoning is merged into one block here, and a merged
+        // encrypted signature would be refused by the provider. Not every wire protocol filters the
+        // history through the api check (pi-messages posts the context as it is), so the other protocols
+        // are kept from receiving a signature here rather than left to that check. Every message is
+        // labelled with the request model, so that check cannot catch reasoning another model wrote:
+        // Core sends a stored signature only back to the route and model that produced it.
         api: 'openai-completions',
-        provider: req.route,
+        provider,
         model: req.model,
         stopReason: m.toolCalls?.length ? 'toolUse' : 'stop',
         // History carries no usage of its own: what a past turn cost is recorded in the ledger, and
@@ -89,10 +112,12 @@ function toMessage(m: RequestMessage, req: RequestBody, dropThinking: boolean): 
 /**
  * The request, as the wire library expects to receive it. Message content is neither summarised,
  * reordered nor dropped. Tool schemas inline local root references for provider compatibility.
+ * `provider` labels replayed assistant messages and defaults to the route. `replaySignature` writes
+ * the stored reasoning signature back, and is off unless the caller says the request is openai-completions.
  */
 export function toContext(
   req: RequestBody,
-  opts: { dropThinking?: boolean } = {},
+  opts: { dropThinking?: boolean; provider?: string; replaySignature?: boolean } = {},
 ): { context: Context; tools: Tool[] } {
   const tools: Tool[] = req.tools.map((t) => ({
     name: t.name,
@@ -102,7 +127,15 @@ export function toContext(
   return {
     context: {
       systemPrompt: req.system,
-      messages: req.messages.map((m) => toMessage(m, req, opts.dropThinking === true)),
+      messages: req.messages.map((m) =>
+        toMessage(
+          m,
+          req,
+          opts.dropThinking === true,
+          opts.provider ?? req.route,
+          opts.replaySignature === true,
+        ),
+      ),
       tools,
     },
     tools,

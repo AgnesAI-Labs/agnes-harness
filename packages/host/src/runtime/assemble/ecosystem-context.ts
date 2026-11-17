@@ -43,18 +43,14 @@ export function createEcosystemContexts(
           updateWorkspace: storage.updateWorkspace.bind(storage),
         })
       : undefined
-  // The profile's refinement switch (the file the settings RPC writes), read once per container
-  // assembly and fixed for the container's life: a factory runs again on every row load, and a
-  // value read then would let a running session gain or lose tools mid-conversation. A new process,
-  // worker or generation assembles again and reads it fresh. This view decides tool registration
-  // only; what Core reads is live as well (see createRefinementHost).
+  // The profile's refinement switch (the file the settings RPC writes), read live; Core decides per
+  // session, as it opens, whether it runs task experience (see createRefinementHost).
   const refinement = createRefinementHost(ctx.dataDir, ctx.profile.name, ctx.clock, {
     // The home memory is opened with (kernel-stage): user memory and its registry live there.
     home: dirname(dirname(deps.profileDir)),
     skills: () => skillState.discovery,
     ...(deps.refinementSave ? { refinementSave: deps.refinementSave } : {}),
   })
-  const refinementView: SeamInitContext['refinementSettings'] = refinement.view
   const hookCommands =
     adapters.platform.os === 'win32'
       ? trustedHookCommands(ctx.profile.commandHooks, workspaceRoot, adapters.platform.fs())
@@ -79,9 +75,7 @@ export function createEcosystemContexts(
       ...(grant.trustedHookCommands && hookCommands ? { trustedHookCommands: hookCommands } : {}),
       ...(liveResources?.includes('skills') && skills ? { skillResources: skills } : {}),
       ...(grant.skillDiscovery ? { skillDiscovery: skillState.discovery } : {}),
-      ...(grant.refinementSettings
-        ? { refinementSettings: refinementView, refinementRuns: (planner) => refinement.connect(planner) }
-        : {}),
+      ...(grant.refinementSettings ? { refinementRuns: (planner) => refinement.connect(planner) } : {}),
       ...(grant.taskScope
         ? { provideTaskScope: (source) => refinement.provideTaskScope(extensionId, source) }
         : {}),

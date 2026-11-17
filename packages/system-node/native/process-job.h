@@ -28,11 +28,11 @@ static bool jobOpen(napi_env env, ProcessJob* job) {
   if (job->handle) return true;
   napi_throw_error(env, "E_JOB_CLOSED", "Windows process job is closed"); return false;
 }
-static napi_value jobAssign(napi_env env, napi_callback_info info) {
-  napi_value args[2]; auto* job = jobReceiver(env, info, 2, args);
-  if (!jobOpen(env, job)) return nullptr;
+// Opens another live process by ID, proving it is still the one created at `expected` time.
+static bool jobProcess(napi_env env, ProcessJob* job, napi_value* args, DWORD access, Handle& process) {
+  if (!jobOpen(env, job)) return false;
   if (job->terminated) {
-    napi_throw_error(env, "E_JOB_TERMINATED", "Windows process job has been terminated"); return nullptr;
+    napi_throw_error(env, "E_JOB_TERMINATED", "Windows process job has been terminated"); return false;
   }
   double pid = 0; size_t length = 0; char expected[21] = {};
   if (napi_get_value_double(env, args[0], &pid) != napi_ok || !std::isfinite(pid) ||
@@ -41,27 +41,44 @@ static napi_value jobAssign(napi_env env, napi_callback_info info) {
       napi_get_value_string_utf8(env, args[1], nullptr, 0, &length) != napi_ok ||
       length == 0 || length > 20 ||
       napi_get_value_string_utf8(env, args[1], expected, sizeof(expected), &length) != napi_ok) {
-    napi_throw_type_error(env, "EINVAL", "Expected another process ID and creation time"); return nullptr;
+    napi_throw_type_error(env, "EINVAL", "Expected another process ID and creation time"); return false;
   }
-  Handle process(OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE |
-                             PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
-                             FALSE, static_cast<DWORD>(pid)));
-  if (!process.value) return failure(env, "OpenProcess for job", GetLastError());
+  process.value = OpenProcess(access, FALSE, static_cast<DWORD>(pid));
+  if (!process.value) { failure(env, "OpenProcess for job", GetLastError()); return false; }
   FILETIME created, exited, kernel, user;
-  if (!GetProcessTimes(process.value, &created, &exited, &kernel, &user))
-    return failure(env, "GetProcessTimes for job", GetLastError());
+  if (!GetProcessTimes(process.value, &created, &exited, &kernel, &user)) {
+    failure(env, "GetProcessTimes for job", GetLastError()); return false;
+  }
   ULARGE_INTEGER time; time.HighPart = created.dwHighDateTime; time.LowPart = created.dwLowDateTime;
   if (std::to_string(time.QuadPart) != std::string(expected, length)) {
-    napi_throw_error(env, "E_PROCESS_IDENTITY_MISMATCH", "Windows process identity changed"); return nullptr;
+    napi_throw_error(env, "E_PROCESS_IDENTITY_MISMATCH", "Windows process identity changed"); return false;
   }
   const DWORD state = WaitForSingleObject(process.value, 0);
   if (state == WAIT_OBJECT_0) {
-    napi_throw_error(env, "E_PROCESS_EXITED", "Windows process already exited"); return nullptr;
+    napi_throw_error(env, "E_PROCESS_EXITED", "Windows process already exited"); return false;
   }
-  if (state != WAIT_TIMEOUT) return failure(env, "WaitForSingleObject for job", GetLastError());
+  if (state != WAIT_TIMEOUT) { failure(env, "WaitForSingleObject for job", GetLastError()); return false; }
+  return true;
+}
+static napi_value jobAssign(napi_env env, napi_callback_info info) {
+  napi_value args[2]; auto* job = jobReceiver(env, info, 2, args);
+  Handle process(nullptr);
+  if (!jobProcess(env, job, args, PROCESS_SET_QUOTA | PROCESS_TERMINATE |
+                  PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, process)) return nullptr;
   if (!AssignProcessToJobObject(job->handle, process.value))
     return failure(env, "AssignProcessToJobObject", GetLastError());
   napi_value result; napi_get_undefined(env, &result); return result;
+}
+// Proof that a process created elsewhere, such as a restricted target still suspended by the
+// broker, is a member of this Job before anything lets it run.
+static napi_value jobContains(napi_env env, napi_callback_info info) {
+  napi_value args[2]; auto* job = jobReceiver(env, info, 2, args);
+  Handle process(nullptr);
+  if (!jobProcess(env, job, args, PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, process)) return nullptr;
+  BOOL member = FALSE;
+  if (injectedFault(L"job") || !IsProcessInJob(process.value, job->handle, &member))
+    return failure(env, "IsProcessInJob", GetLastError());
+  napi_value result; napi_get_boolean(env, member != FALSE, &result); return result;
 }
 static napi_value jobTerminate(napi_env env, napi_callback_info info) {
   auto* job = jobReceiver(env, info, 0, nullptr);
@@ -161,6 +178,7 @@ static napi_value createProcessJob(napi_env env, napi_callback_info) {
     {"activeProcessCount", nullptr, guarded<jobActiveCount>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"terminationComplete", nullptr, guarded<jobTerminationComplete>, nullptr, nullptr, nullptr, napi_default, nullptr},
     {"close", nullptr, guarded<jobClose>, nullptr, nullptr, nullptr, napi_default, nullptr},
+    {"contains", nullptr, guarded<jobContains>, nullptr, nullptr, nullptr, napi_default, nullptr},
   };
   if (napi_define_properties(env, result, sizeof(methods) / sizeof(methods[0]), methods) != napi_ok ||
       napi_wrap(env, result, job.get(), finalizeJob, nullptr, nullptr) != napi_ok) {

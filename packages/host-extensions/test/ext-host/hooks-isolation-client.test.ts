@@ -19,7 +19,7 @@ import type {
 } from '@agnes/extension-api'
 import { bundledPackageJson, unavailableProjections } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   connectIsolatedHooksRunner,
   type HooksRunnerBootstrap,
@@ -33,10 +33,22 @@ const usesPackagedRuntime = Boolean(packagedNodeRoot && packagedArtifact)
 const runnerExecutable = usesPackagedRuntime
   ? resolve(packagedNodeRoot as string, 'bin/node')
   : process.execPath
-const runnerEntry = usesPackagedRuntime
-  ? resolve(packagedArtifact as string, 'hooks-runner.mjs')
-  : resolve(import.meta.dirname, '../../../base/src/hooks-isolation-runner.ts')
-const runnerArguments = usesPackagedRuntime ? [runnerEntry] : ['--import', 'tsx', runnerEntry]
+const runnerArguments = usesPackagedRuntime ? [resolve(packagedArtifact as string, 'hooks-runner.mjs')] : []
+let ownedRunnerDirectory: string | undefined
+beforeAll(async () => {
+  if (usesPackagedRuntime) return
+  ownedRunnerDirectory = mkdtempSync(join(tmpdir(), 'agnes-hooks-runner-fixture-'))
+  const output = join(ownedRunnerDirectory, 'isolation')
+  // This build tool is outside the referenced production project; load its existing file export.
+  const { buildHooksIsolationRunner } = await import(
+    new URL('../../../base/tools/build-isolation-runner.ts', import.meta.url).href
+  )
+  await buildHooksIsolationRunner(output)
+  runnerArguments.push(join(output, 'hooks-runner.mjs'))
+})
+afterAll(() => {
+  if (ownedRunnerDirectory) rmSync(ownedRunnerDirectory, { recursive: true, force: true })
+})
 const testNodeEnvironment =
   !usesPackagedRuntime && process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}
 const lease: LeaseView = {

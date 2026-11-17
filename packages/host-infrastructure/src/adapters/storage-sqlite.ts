@@ -225,21 +225,31 @@ export function ownerFile(owner: string): string {
   return out
 }
 
-// SQLite checks stored size before transferring data to JS. A giant original or request is
-// represented by a small placeholder; raw scans and integrity scans always read the original.
+// SQLite checks stored size before transferring data to JS, so a preview replaces the payload it
+// would otherwise carry whole. Only display payload is replaced: the three model-visible types keep
+// their envelope fields, and an ignorable extension row becomes the omission marker. A row that
+// carries ledger state is read byte for byte, because the projection folds it and a placeholder is
+// either rejected (decision/state is schema- and digest-checked) or silently replaces that state:
+//   - any row that materializes a register, whatever its type, and
+//   - any built-in type. `isEventType` is EVENT_TYPES or the `x/<name>/<rest>` extension pattern
+//     (`packages/protocol/src/constants.ts`), so a valid row outside that namespace is a built-in
+//     ledger row, and a type added to EVENT_TYPES later is preserved without touching this SQL.
+// Raw scans and integrity scans always read the original.
 const PREVIEW_CONTENT = '[{"type":"text","text":"[Large stored event omitted from unverified preview]"}]'
 const LEAN_COLUMNS = `session_key, seq, ts, id,
-  CASE WHEN octet_length(data) > 16384 AND type NOT IN ('user/message', 'assistant/message', 'tool/result')
+  CASE WHEN octet_length(data) > 16384 AND register IS NULL AND type LIKE 'x/%' AND ignorable = 1
     THEN 'x/agnes/preview-omitted' ELSE type END AS type,
   lane, v, actor, origin, trust, register, ignorable, surface_op, source_event_seqs,
   CASE WHEN octet_length(data) <= 16384 THEN data
+    WHEN register IS NOT NULL THEN data
     WHEN type = 'user/message' THEN json_object('content', json('${PREVIEW_CONTENT}'), 'kind', json_extract(data, '$.kind'))
     WHEN type = 'assistant/message' THEN json_object('content', json('${PREVIEW_CONTENT}'), 'stopReason', json_extract(data, '$.stopReason'))
     WHEN type = 'tool/result' THEN json_object(
       'toolUseId', json_extract(data, '$.toolUseId'), 'content', json('${PREVIEW_CONTENT}'),
       'isError', json_extract(data, '$.isError'), 'code', json_extract(data, '$.code'),
       'cancelledBy', json_extract(data, '$.cancelledBy'), 'enforcement', json_extract(data, '$.enforcement'))
-    ELSE '{"content":${PREVIEW_CONTENT}}' END AS data`
+    WHEN type LIKE 'x/%' AND ignorable = 1 THEN '{"content":${PREVIEW_CONTENT}}'
+    ELSE data END AS data`
 
 function rowToEvent(r: Row): Event {
   return {

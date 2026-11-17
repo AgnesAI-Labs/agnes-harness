@@ -20,6 +20,11 @@ export type RegistryOptions = Readonly<{
   workspaces?: Pick<SessionWorkspacePort, 'refresh'>
   /** Consumers of ledger rows; an open feeds each the history rows of the types it lists. */
   history?: readonly HistoryConsumer[]
+  /**
+   * Whether a session must run with outward command rules on (a plugin-managed session and its
+   * lineage). The switch is not persisted, so every open of such a key asks the worker for it.
+   */
+  outwardCommandRules?: (key: string) => boolean
 }>
 
 export type ArtifactAuthorityLifecycle = Readonly<{
@@ -60,6 +65,8 @@ export type RemoteEntry = {
   ac: AbortController
   recover: boolean
   reopen: RemoteOpen
+  /** The worker was asked to open this session with outward command rules on. */
+  outwardCommandRules: boolean
 }
 
 type PreviewSubscriber = { preview: (p: PreviewUpdate) => void; gap: (() => void) | undefined }
@@ -122,6 +129,45 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   /** Fences a worker that began opening against a snapshot that has since been superseded. */
   private resourceEpoch = 0
   private readonly generationMigrations = new Set<string>()
+
+  /** Bundled-app coordinator only. Freeze the verified roster through close and migration replies.
+   * On a broken worker link, WorkerPool additionally gates admission on child exit and recovery. */
+  async upgradeIdleSessions<T>(
+    keys: readonly string[],
+    principalId: string,
+    ownership: Pick<SessionPrincipalOwnership, 'resolve'>,
+    upgrade: () => Promise<T>,
+  ): Promise<T> {
+    for (const key of keys) {
+      let owner: ReturnType<SessionPrincipalOwnership['resolve']>
+      try {
+        owner = ownership.resolve(key)
+      } catch {
+        /* fail closed */
+      }
+      if (owner?.principalId !== principalId)
+        throw rpcError('CAPABILITY_DENIED', { reason: 'session owner unavailable' })
+      const entry = this.entries.get(key)
+      if (
+        this.closingAll ||
+        this.opening.has(key) ||
+        this.generationMigrations.has(key) ||
+        entry?.inflight ||
+        entry?.session.running
+      )
+        throw new Error('E_GENERATION_SESSION_OPEN: session is busy or opening')
+    }
+    for (const key of keys) this.generationMigrations.add(key)
+    try {
+      // close() forgets each entry synchronously before awaiting its worker. New requests cannot
+      // use get/require/open while the fence is held, including between close and migration.
+      const closed = await Promise.allSettled(keys.map((key) => this.close(key)))
+      for (const result of closed) if (result.status === 'rejected') throw result.reason
+      return await upgrade()
+    } finally {
+      for (const key of keys) this.generationMigrations.delete(key)
+    }
+  }
 
   /** Refuse live/opening sessions and fence all admissions for this key until pin migration settles. */
   async migrateGeneration<T>(
@@ -334,8 +380,10 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     const authorized: RemoteOpen = { ...o, binding: o.binding }
     const key = o.key ?? `agnes:local:default:daemon:dm:${Math.random().toString(36).slice(2)}`
     const epoch = this.sessionEpochs.get(key) ?? 0
+    const rules = this.commandRules(key)
     const existing = this.entries.get(key)
     if (existing) {
+      this.assertCommandRules(existing, rules)
       if (
         o.agent !== undefined &&
         (o.agent !== existing.reopen.agent || o.agentDigest !== existing.reopen.agentDigest)
@@ -350,6 +398,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     const pending = this.opening.get(key)
     if (pending?.epoch === epoch) {
       const entry = await pending.promise
+      this.assertCommandRules(entry, rules)
       if (
         o.agent !== undefined &&
         (o.agent !== entry.reopen.agent || o.agentDigest !== entry.reopen.agentDigest)
@@ -359,7 +408,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         throw rpcError('SEMANTIC_REJECTED', { code: 'ID_CONFLICT', sessionId: key })
       return entry
     }
-    const opening = this.openFresh(key, authorized, epoch)
+    const opening = this.openFresh(key, authorized, epoch, rules)
     const record = { epoch, promise: opening }
     this.opening.set(key, record)
     try {
@@ -434,7 +483,27 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
     }
   }
 
-  private async openFresh(key: string, o: RemoteOpen, sessionEpoch: number): Promise<RemoteEntry> {
+  /** Fails closed: a predicate that throws (lineage it cannot read) asks for the rules. */
+  private commandRules(key: string): boolean {
+    try {
+      return this.options.outwardCommandRules?.(key) === true
+    } catch {
+      return true
+    }
+  }
+
+  private assertCommandRules(entry: RemoteEntry, rules: boolean): void {
+    if (rules && !entry.outwardCommandRules)
+      throw rpcError('CAPABILITY_DENIED', { reason: 'OUTWARD_COMMAND_RULES_OFF', sessionId: entry.key })
+  }
+
+  private async openFresh(
+    key: string,
+    o: RemoteOpen,
+    sessionEpoch: number,
+    rules: boolean,
+    created = false,
+  ): Promise<RemoteEntry> {
     const isCurrent = (): boolean => !this.closingAll && (this.sessionEpochs.get(key) ?? 0) === sessionEpoch
     if (!isCurrent()) throw new Error(`session ${key} was closed while opening`)
     const existing = this.entries.get(key)
@@ -456,9 +525,12 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       ...(o.agent !== undefined ? { agent: o.agent } : {}),
       ...(o.agentDigest !== undefined ? { agentDigest: o.agentDigest } : {}),
       ...(o.bundles !== undefined ? { bundles: o.bundles } : {}),
-      ...(o.systemPromptAppend !== undefined ? { systemPromptAppend: o.systemPromptAppend } : {}),
+      // Once an earlier attempt created the session, its append is pinned there; sending it again would be
+      // an append to an existing session, which the kernel refuses.
+      ...(o.systemPromptAppend !== undefined && !created ? { systemPromptAppend: o.systemPromptAppend } : {}),
       ...(o.loop ? { loop: o.loop } : {}),
       ...(o.parent && o.forkAt !== undefined ? { parent: { key: o.parent, boundarySeq: o.forkAt } } : {}),
+      ...(rules ? { outwardCommandRules: true as const } : {}),
     })
     if (!isCurrent()) {
       await link.closeSession('session closed while opening').catch(() => undefined)
@@ -500,6 +572,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
       ac: new AbortController(),
       recover: true,
       reopen: withoutOpeningObservers(o),
+      outwardCommandRules: rules,
     }
     this.entries.set(key, entry)
     link.onExit(() =>
@@ -539,7 +612,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
         // and that failure would retire the replacement channel opened next.
         await link.closeSession('resource-snapshot-reload').catch(() => undefined)
         this.artifactReplayBuffers.delete(key)
-        return this.openFresh(key, o, sessionEpoch)
+        // The discarded worker said hello, so the session it opened exists: the replacement reopens it.
+        return this.openFresh(key, o, sessionEpoch, rules, true)
       }
       const replayBuffer = this.artifactReplayBuffers.get(key)
       if (!replayBuffer) throw new Error('session history replay is unavailable')
@@ -741,6 +815,7 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   }
 
   get(key: string): RemoteEntry | undefined {
+    if (this.generationMigrations.has(key)) return undefined
     return this.entries.get(key)
   }
 
@@ -753,6 +828,8 @@ export class WorkerRegistry implements Registry<RemoteEntry> {
   }
 
   require(key: string): RemoteEntry {
+    if (this.generationMigrations.has(key))
+      throw new Error('E_GENERATION_SESSION_OPEN: session migration is in progress')
     const e = this.entries.get(key)
     if (!e) throw rpcError('SESSION_NOT_FOUND', { sessionId: key })
     return e

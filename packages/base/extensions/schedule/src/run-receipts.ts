@@ -46,10 +46,11 @@ export function openRunReceipts(db: ScheduleDb) {
       rid: number,
       scheduleId: string,
       snapshot: Pick<ScheduleView, 'title' | 'prompt' | 'selector' | 'target'>,
+      runId?: string,
     ) {
       db.exec(
-        "INSERT INTO schedule_run_receipts (run_rowid, id, snapshot, schedule_id) VALUES (?, 'run_' || lower(hex(randomblob(16))), ?, ?)",
-        [rid, JSON.stringify(snapshot), scheduleId],
+        "INSERT INTO schedule_run_receipts (run_rowid, id, snapshot, schedule_id) VALUES (?, COALESCE(?, 'run_' || lower(hex(randomblob(16)))), ?, ?)",
+        [rid, runId ?? null, JSON.stringify(snapshot), scheduleId],
       )
     },
     summary(rid: number, event: EventEnvelope) {

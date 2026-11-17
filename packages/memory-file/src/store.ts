@@ -17,7 +17,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { MemoryEffectAdmission, MemoryFile, MemorySettings, MemorySource } from '@agnes/extension-api'
 import { renameWriteThroughSync } from '@agnes/system-node'
-import { defaults, fault, file, settings, validateContent } from './content.js'
+import { defaults, fault, file, settings, storedSettings, validateContent } from './content.js'
 import { missing, name, safe } from './paths.js'
 
 export class MemoryStore {
@@ -56,7 +56,7 @@ export class MemoryStore {
     safe(this.protectedRoot, path)
     try {
       if (statSync(path).size > 4096) throw fault('MEMORY_INVALID_SETTINGS')
-      return settings(JSON.parse(readFileSync(path, 'utf8')))
+      return storedSettings(JSON.parse(readFileSync(path, 'utf8')))
     } catch (error) {
       if (missing(error)) return defaults
       throw fault('MEMORY_INVALID_SETTINGS')

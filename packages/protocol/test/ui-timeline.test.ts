@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { SessionProjectUIParams, UINode, UITimeline } from '../gen/ts/agnes-v1.js'
 
 const nodes = [
-  { kind: 'user', id: 'u', seq: 1, content: [{ type: 'text', text: 'hi' }] },
+  { kind: 'user', id: 'u', seq: 1, commandId: 'web-input', content: [{ type: 'text', text: 'hi' }] },
   { kind: 'assistant', id: 'a', seq: 2, text: 'answer', thinking: 'thought', streaming: false },
   {
     kind: 'tool',

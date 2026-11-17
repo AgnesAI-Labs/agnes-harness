@@ -176,6 +176,8 @@ it('opens the memory files subpage with MEMORY.md, saves with the version it rea
     expect(host.querySelector('[data-testid="memory-root"]')?.textContent).toBe('/data/agh/memory/WorkLLM')
     expect(host.querySelector('[data-testid="memory-writer"]')?.textContent).toBe('shoe-portal · 4')
     expect(host.querySelector('[data-testid="memory-size"]')?.textContent).toContain('200')
+    // The injection limit is bytes, shown in KB.
+    expect(host.querySelector('[data-testid="memory-inject-limit"]')?.textContent).toBe('2.0 KB')
   } finally {
     await unmount()
   }

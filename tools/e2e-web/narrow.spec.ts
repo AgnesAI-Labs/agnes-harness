@@ -21,18 +21,16 @@ const phone = { width: 375, height: 812 }
 const tablet = { width: 768, height: 1024 }
 const allViewports = [phone, { width: 390, height: 844 }, tablet]
 /**
- * AGH_NARROW_WIDTHS selects widths for the per-PR pass (`375,768`: the phone and tablet widths that
- * carry every screenshot). Unset, every width runs; the nightly workflow runs them all.
+ * Each width owns a complete audit and a fresh runtime, so CI can partition the phone and tablet
+ * without dropping checks. AGH_NARROW_WIDTHS selects widths; unset, the nightly matrix runs them all.
  */
 const viewports = (() => {
   const selected = process.env.AGH_NARROW_WIDTHS?.trim()
   if (!selected) return allViewports
   const widths = selected.split(',').map((width) => Number(width.trim()))
   const unknown = widths.filter((width) => !allViewports.some((viewport) => viewport.width === width))
-  if (unknown.length || !widths.includes(phone.width) || !widths.includes(tablet.width))
-    throw new Error(
-      `AGH_NARROW_WIDTHS must list ${allViewports.map((v) => v.width).join('/')} and include 375 and 768`,
-    )
+  if (unknown.length)
+    throw new Error(`AGH_NARROW_WIDTHS must list widths from ${allViewports.map((v) => v.width).join('/')}`)
   return allViewports.filter((viewport) => widths.includes(viewport.width))
 })()
 const sections = [
@@ -163,18 +161,24 @@ async function usable(page: Page, info: TestInfo, name: string) {
   await accessible(page, info, name)
 }
 
-for (const locale of ['en', 'zh-CN'])
-  for (const theme of ['light', 'dark'])
-    test(`narrow screens ${locale}/${theme}`, async ({ page, runtime }, info) => {
-      // This flow performs the full wizard, workbench and settings audit at three widths.
-      // Give the complete audit room to finish; individual action/assertion deadlines stay unchanged.
+for (const [locale, theme] of [
+  ['en', 'light'],
+  ['en', 'dark'],
+  ['zh-CN', 'light'],
+  ['zh-CN', 'dark'],
+])
+  for (const auditViewport of viewports)
+    test(`narrow screens ${auditViewport.width} ${locale}/${theme}`, async ({ page, runtime }, info) => {
+      // Retain the full audit and its deadlines; each CI partition owns one width.
       test.setTimeout(600_000)
       const en = locale === 'en'
       const name = (english: string, chinese: string) => (en ? english : chinese)
+      const expectedShots = auditViewport.width === 375 ? 7 : auditViewport.width === 768 ? 5 : 0
       let shots = 0
       const capture = async (surface: string, width: number) => {
-        if (width === 390) return // Additional behavioural coverage keeps the existing screenshot set.
-        expect(++shots).toBeLessThanOrEqual(12)
+        // The 390px pass retains behavioural coverage; the phone/tablet retain all twelve captures.
+        if (width !== auditViewport.width || width === 390) return
+        expect(++shots).toBeLessThanOrEqual(expectedShots)
         const key = `narrow-${surface}-${locale}-${theme}-${width}`
         if (surface === 'settings' && width === 768)
           await page.getByTestId('memory-content').scrollIntoViewIfNeeded()
@@ -206,13 +210,9 @@ for (const locale of ['en', 'zh-CN'])
           await copyFile(info.outputPath(`${key}.png`), join(process.env.AGH_NARROW_REPORT, `${key}.png`))
         }
       }
-      const inspect = async (surface: string, both = true) => {
-        const size = page.viewportSize()
-        if (!size) throw new Error('The narrow matrix requires a viewport')
-        for (const viewport of both ? viewports : [size]) {
-          await page.setViewportSize(viewport)
-          await usable(page, info, `${surface}-${viewport.width}`)
-        }
+      const inspect = async (surface: string) => {
+        await page.setViewportSize(auditViewport)
+        await usable(page, info, `${surface}-${auditViewport.width}`)
       }
       await preferences(page, locale, theme)
       await page.setViewportSize(phone)
@@ -315,7 +315,7 @@ for (const locale of ['en', 'zh-CN'])
         await advanced(page)
         await closeSettings(page, locale)
         await inspect('selected-workspace')
-        for (const viewport of viewports) {
+        for (const viewport of [auditViewport]) {
           await page.setViewportSize(viewport)
           await usable(page, info, `home-${viewport.width}`)
           await capture('home', viewport.width)
@@ -368,7 +368,7 @@ for (const locale of ['en', 'zh-CN'])
           .getByRole('button', { name: name('Close this dock', '关闭此停靠面板'), exact: true })
           .click()
         await expect(page.getByTestId('workbench-right-toggle')).toHaveAttribute('aria-expanded', 'false')
-        for (const viewport of viewports) {
+        for (const viewport of [auditViewport]) {
           await page.setViewportSize(viewport)
           await expect(page.locator('#model')).toContainText(model)
           await expect(page.locator('#model')).toBeEnabled()
@@ -637,7 +637,7 @@ for (const locale of ['en', 'zh-CN'])
             await page.setViewportSize(tablet)
           }
         }
-        expect(shots).toBe(12)
+        expect(shots).toBe(expectedShots)
       } finally {
         await provider.close()
       }

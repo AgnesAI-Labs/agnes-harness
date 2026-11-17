@@ -1,5 +1,6 @@
 export * from './admin-bff.js'
 export * from './execution.js'
+export { mcpNeedsSignIn } from './mcp-sign-in.js'
 export * from './resources.js'
 export * from './tui.js'
 export * from './tui-controller.js'

@@ -482,3 +482,22 @@ describe('WorkspaceCatalog extra directories', () => {
     await tables.close()
   })
 })
+
+it('classifies current and legacy separately and refuses ordinary legacy creation', async () => {
+  const catalog = new WorkspaceCatalog(
+    new MemoryWorkspaceStore(),
+    new MemorySessionWorkspaces(),
+    resolver(new Set(['/new', '/old'])),
+    () => 0,
+    new MemoryWorkspaceBindings(),
+    { current: '/new', legacy: '/old' },
+  )
+  const current = await catalog.add('/new')
+  const legacy = await catalog.add('/old')
+  expect(current).toMatchObject({ kind: 'chats', managedRole: 'current' })
+  expect(legacy).toMatchObject({ kind: 'chats', managedRole: 'legacy' })
+  await expect(catalog.authorizeAndBind('new-old', '/old')).rejects.toThrow()
+  expect(() =>
+    catalog.remove(legacy.workspaceId!, undefined, { running: () => false, archive: () => {} }),
+  ).toThrow()
+})

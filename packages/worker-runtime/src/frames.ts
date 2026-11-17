@@ -23,6 +23,7 @@ export type SessionMethod =
   | 'abort'
   | 'verifyHistory'
   | 'integrityStatus'
+  | 'outwardCheckpoint'
   | 'auditHistory'
   | 'requireVerifiedHistory'
   | 'scan'
@@ -69,6 +70,10 @@ export type SessionMethod =
 
 /** Process-wide methods available before runtime-target delivery exists. */
 export type WorkerMethod =
+  | 'channels.catalog'
+  | 'channels.clear'
+  | 'channels.pairing'
+  | 'channels.receipts'
   | 'ping'
   | 'pluginGenerations.status'
   | 'pluginGenerations.publicationStatus'
@@ -86,6 +91,9 @@ export type WorkerMethod =
   | 'boundWake.read'
   | 'boundWake.require'
   | 'profileManaged.status'
+  | 'profileManaged.superagentUpgradeSessions'
+  | 'sessionEnvironment.write'
+  | 'sessionEnvironment.release'
   | 'profileStreams.endpoint'
   | 'profileService.identity'
   | 'profileService.authorizeControl'
@@ -111,6 +119,7 @@ export type WorkerMethod =
   | 'resourceMcpTools'
   | 'resourceMcpApply'
   | 'resourceMcpReconnect'
+  | 'resourceMcpSignOut'
   | 'resource.stale'
 
 export type WorkerHello = {
@@ -150,6 +159,13 @@ export type SessionOpenResult = {
 
 /** Authenticated daemon-to-worker workspace authority. This type is never part of public RPC. */
 export type WorkspaceBindingFrame = Readonly<{
+  legacyChatReadGrant?: Readonly<{
+    sessionKey: string
+    workspaceId: string
+    root: string
+    directoryIdentity?: string
+    source: 'existing' | 'derived' | 'schedule'
+  }>
   version: 1
   sessionKey: string
   workspaceId: string
@@ -227,6 +243,8 @@ export type RequestFrame = {
   method:
     | 'scheduling'
     | 'bound-wake'
+    | 'managed-session'
+    | 'channel-interaction'
     | 'permission'
     | 'permission-abort'
     | 'permission-revoke'
@@ -239,6 +257,7 @@ export type RequestFrame = {
     | 'mcp-manage'
     | 'mcp-manage-abort'
     | 'refinement-save'
+    | 'auto-title-eligible'
   params: unknown
 }
 export type WorkerCommandFrame = {
@@ -262,6 +281,8 @@ export type SessionOpenFrame = {
     loop?: LoopSelection
     resume?: boolean
     parent?: { key: string; boundarySeq: number }
+    /** Open with outward command rules on; never part of session.new JSON (see core's SessionOptions). */
+    outwardCommandRules?: true
   }
 }
 export type SessionCommandFrame = {

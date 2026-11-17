@@ -19,7 +19,21 @@ import {
 } from '@agnes/core'
 
 const CHILD_CONTROL_FORMAT = 4
-const ACTIVE = new Set(['creating', 'ready', 'running', 'waiting_approval', 'recovery_pending', 'cancelling'])
+/** Active states a live child may sit in without writing: they take a fan-out slot regardless. */
+const UNLEASED = ['creating', 'ready'] as const
+/**
+ * Active states that take a fan-out slot only while the child's own session or the session running
+ * it holds a live writer lease: an open turn renews the child's lease, and an idle child whose lease
+ * lapsed runs under its owner. With neither, the process that ran it has exited.
+ */
+const LEASED: readonly string[] = ['running', 'waiting_approval', 'recovery_pending', 'cancelling']
+const ACTIVE = new Set<string>([...UNLEASED, ...LEASED])
+const sqlList = (states: readonly string[]) => states.map((state) => `'${state}'`).join(', ')
+/** A fan-out slot; both parameters are the store clock's now. */
+const SLOT = `(t.state IN (${sqlList(UNLEASED)}) OR (t.state IN (${sqlList(LEASED)}) AND (w.until >= ? OR o.until >= ?)))`
+const SLOT_FROM =
+  'FROM child_tasks t LEFT JOIN writer_claims w ON w.session_key = t.child_key ' +
+  'LEFT JOIN writer_claims o ON o.session_key = t.runtime_owner'
 type ReservationRecord = {
   permitId: string
   rootTaskId: string
@@ -164,6 +178,13 @@ export function sqliteChildControl(
     byCreation: db.prepare(`${TASK_SELECT} WHERE t.creation_id = ?`),
     byParent: db.prepare(`${TASK_SELECT} WHERE t.parent_key = ?`),
     byRoot: db.prepare(`${TASK_SELECT} WHERE t.root_task_id = ?`),
+    slotsByParent: db.prepare(`SELECT COUNT(*) AS n ${SLOT_FROM} WHERE t.parent_key = ? AND ${SLOT}`),
+    slotsByRoot: db.prepare(`SELECT COUNT(*) AS n ${SLOT_FROM} WHERE t.root_task_id = ? AND ${SLOT}`),
+    liveWriter: db.prepare('SELECT 1 AS live FROM writer_claims WHERE session_key = ? AND until >= ?'),
+    lost: db.prepare(
+      `${TASK_SELECT} WHERE t.parent_key = ? AND t.creation_phase = 'committed' AND t.state IN (${sqlList(['ready', ...LEASED])})
+       AND NOT EXISTS (SELECT 1 FROM writer_claims w WHERE w.session_key = t.child_key AND w.until >= ?)`,
+    ),
     creating: db.prepare(`${TASK_SELECT} WHERE t.creation_phase = 'creating'`),
     insertTask: db.prepare(
       `INSERT INTO child_tasks (child_key, creation_id, parent_key, root_task_id, runtime_owner, kind,
@@ -282,6 +303,15 @@ export function sqliteChildControl(
       requestHash: String(row.request_hash),
       writerGeneration: Number(row.writer_generation),
       status: row.status as ReservationRecord['status'],
+    }
+  }
+
+  // Counted in SQL over the parent/root indexes: no task row is read back or parsed.
+  const slots = (parentKey: string, rootTaskId: string) => {
+    const now = clock()
+    return {
+      parent: Number((q.slotsByParent.get(parentKey, now, now) as { n: number }).n),
+      root: Number((q.slotsByRoot.get(rootTaskId, now, now) as { n: number }).n),
     }
   }
 
@@ -414,21 +444,31 @@ export function sqliteChildControl(
         if (!canTransitionChildState(String(row.state) as ChildTaskRecord['state'], next)) return false
         if (!isActive(String(row.state)) && isActive(next) && next !== 'cancelling') {
           if (!admission) return false
-          const parentActive = (
-            q.byParent.all(String(row.parent_key)) as Array<Record<string, unknown>>
-          ).filter((task) => isActive(String(task.state))).length
-          const rootActive = (
-            q.byRoot.all(String(row.root_task_id)) as Array<Record<string, unknown>>
-          ).filter((task) => isActive(String(task.state))).length
+          const used = slots(String(row.parent_key), String(row.root_task_id))
           if (
             !Number.isSafeInteger(admission.maxFanOut) ||
             admission.maxFanOut < 0 ||
-            parentActive >= admission.maxFanOut ||
-            rootActive >= admission.maxFanOut
+            used.parent >= admission.maxFanOut ||
+            used.root >= admission.maxFanOut
           )
             throw new CoreError('E_CHILD_LIMIT', `fan-out limit ${admission.maxFanOut} reached`)
         }
         return q.cas.run(next, childKey, expectedRevision).changes === 1
+      })
+    },
+    async listLostChildren(parentKey) {
+      return (q.lost.all(parentKey, clock()) as Array<Record<string, unknown>>).map(parseTask)
+    },
+    async settleLostChild(childKey, expectedRevision) {
+      return tx(() => {
+        const row = q.task.get(childKey) as Record<string, unknown> | undefined
+        if (!row || Number(row.state_revision) !== expectedRevision || row.creation_phase !== 'committed')
+          return null
+        const state = String(row.state)
+        if (state !== 'ready' && !LEASED.includes(state)) return null
+        if (q.liveWriter.get(childKey, clock())) return null
+        const next = state === 'cancelling' ? ('cancelled' as const) : ('failed' as const)
+        return q.cas.run(next, childKey, expectedRevision).changes === 1 ? next : null
       })
     },
     async nextOrdinal(parentKey, effectId) {
@@ -461,13 +501,8 @@ export function sqliteChildControl(
           const record = parseTask(existingRow)
           return { status: record.inputHash === input.inputHash ? 'existing' : 'conflict', record }
         }
-        const parentActive = (q.byParent.all(input.parentKey) as Array<Record<string, unknown>>)
-          .map(parseTask)
-          .filter((row) => isActive(row.state)).length
-        const rootActive = (q.byRoot.all(input.rootTaskId) as Array<Record<string, unknown>>)
-          .map(parseTask)
-          .filter((row) => isActive(row.state)).length
-        if (parentActive >= input.maxFanOut || rootActive >= input.maxFanOut)
+        const used = slots(input.parentKey, input.rootTaskId)
+        if (used.parent >= input.maxFanOut || used.root >= input.maxFanOut)
           return {
             status: 'refused',
             reason: 'fan_out',

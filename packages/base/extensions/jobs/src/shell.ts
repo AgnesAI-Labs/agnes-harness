@@ -8,6 +8,7 @@ import {
   deadlineYield,
   FOREGROUND_WAIT_MAX_MS,
   jobToolsHint,
+  packageListsNote,
   shellGuidance,
   signalNote,
   timeoutGuidance,
@@ -58,6 +59,7 @@ export async function runShellJob(
     if (job.status === 'running' && job.foregroundCode === undefined) {
       if (!args.background && args.timeoutToBackground === false) {
         await jobs.kill(ctx, id)
+        jobs.acknowledge(ctx, id)
         const text = capped
           ? `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n${notes.join('\n')}\n[${deadlineStop(ctx, waitMs)}; job ${id} and its process group were killed. ${DEADLINE_ADVICE}]`
           : `${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}\n${notes.join('\n')}\n${timeoutGuidance(ctx, args.command, args.cwd ?? ctx.cwd, !job.stdout && !job.stderr)}\n[timed out after ${waitMs}ms; job ${id} and its process group were killed]`
@@ -84,11 +86,14 @@ export async function runShellJob(
     }
     // The command has ended. Its code is the job's, or its own while what it backgrounded still runs.
     const code = job.status === 'running' ? (job.foregroundCode as number) : job.code
+    // This result tells the model how the job ended; a completion notice would only repeat it.
+    if (job.status !== 'running') jobs.acknowledge(ctx, id)
     const ended = job.status === 'failed' && job.signal ? `\n${signalNote(args.command, job.signal)}` : ''
     const kept =
       job.status === 'running'
         ? `\n[processes this command started in the background (with & or nohup) keep running as background job ${id}; ${hint}]`
         : ''
+    const packageLists = packageListsNote(job.stdout, job.stderr)
     return {
       structured: { jobId: id, status: job.status },
       ...(await guardedCommandResult(
@@ -97,7 +102,7 @@ export async function runShellJob(
           .map((note) => `${note}\n`)
           .join(
             '',
-          )}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}${ended}${kept}${code === 0 ? '' : '\nCommand failed; inspect job_output and current state, correct the command/arguments before retrying.'}\n[exit ${code}]${job.truncated ? ' [capture limit reached]' : ''}`,
+          )}${job.stdout}${job.stderr ? `\n[stderr]\n${job.stderr}` : ''}${packageLists ? `\n${packageLists}` : ''}${ended}${kept}${code === 0 ? '' : '\nCommand failed; inspect job_output and current state, correct the command/arguments before retrying.'}\n[exit ${code}]${job.truncated ? ' [capture limit reached]' : ''}`,
       )),
       ...(code === 0 ? {} : { isError: true }),
       details: {

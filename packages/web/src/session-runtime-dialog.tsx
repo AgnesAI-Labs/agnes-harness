@@ -121,8 +121,16 @@ export function RuntimeInfo({
           label={t('session.runtime.policy')}
           description={[permission, policy?.permission?.principal].filter(Boolean).join(' · ')}
         />
+        {policy?.sandbox.provider === 'local' && policy.sandbox.enforcement?.boundary && (
+          <SettingsItem
+            icon="shield"
+            label={t('session.runtime.windowsAclIsolation')}
+            description={t('session.runtime.windowsAclIsolationHelp')}
+          />
+        )}
         {policy?.sandbox.provider === 'local' &&
           policy.sandbox.enforcement &&
+          !policy.sandbox.enforcement.boundary &&
           policy.sandbox.enforcement.level !== 'full' &&
           !policy.sandbox.enforcement.scope.includes('process') && (
             <SettingsItem

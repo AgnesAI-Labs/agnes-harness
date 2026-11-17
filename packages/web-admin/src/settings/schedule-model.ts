@@ -97,7 +97,13 @@ export function rowsOf(value: unknown): ScheduleRow[] {
 }
 
 /** What a list or session picker needs to name a session or a workspace. */
-export type Workspace = { path: string; name: string; available: boolean }
+export type Workspace = {
+  path: string
+  name: string
+  available: boolean
+  kind?: 'chats'
+  managedRole?: 'current' | 'legacy'
+}
 export type SessionInfo = { id: string; title: string; cwd: string; createdAt: string; archived: boolean }
 
 export function workspacesOf(value: unknown): Workspace[] {
@@ -106,7 +112,17 @@ export function workspacesOf(value: unknown): Workspace[] {
     ? items.flatMap((item) => {
         const entry = item as Workspace
         return typeof entry?.path === 'string' && typeof entry.name === 'string'
-          ? [{ path: entry.path, name: entry.name, available: entry.available !== false }]
+          ? [
+              {
+                path: entry.path,
+                name: entry.name,
+                available: entry.available !== false,
+                ...(entry.kind === 'chats' ? { kind: 'chats' as const } : {}),
+                ...(entry.managedRole === 'current' || entry.managedRole === 'legacy'
+                  ? { managedRole: entry.managedRole }
+                  : {}),
+              },
+            ]
           : []
       })
     : []

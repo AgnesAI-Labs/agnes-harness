@@ -1,6 +1,7 @@
 import type { Conflict, ContextBreakdownDiag } from '@agnes/core-common/context-diagnostics'
 import { canonicalJson } from '@agnes/core-common/request/hash'
 import { CoreError, type Event, type Seq } from '@agnes/core-common/types'
+import { estimateTokens } from '@agnes/extension-api'
 import {
   type ArtifactJob,
   type AssistantMessage,
@@ -31,6 +32,7 @@ import {
   validateSlotPayload,
 } from '@agnes/protocol'
 import { SlotFillView as SlotFillSchema } from '@agnes/protocol/gen/agnes-v1'
+import { INPUT_DELIVERED_BY_EVENT, inlineDeliveredBy, markDelivered } from '../log/delivery-marker.js'
 import { contextAnchorOf } from '../reduce/anchor.js'
 import { reduce } from '../reduce/reducer.js'
 import { initialState, type LedgerState, MAINTENANCE_LANE } from '../reduce/state.js'
@@ -49,8 +51,9 @@ import {
   cacheHealthView,
   initialCacheHealthState,
 } from './cache-health.js'
-import { callTiming } from './call-timing.js'
 import { clipUtf16 as clip } from './clip.js'
+import { pendingCommandId } from './pending-command-id.js'
+import { createCostNode, SideCallDisplay } from './side-call-display.js'
 import { SurfaceCache } from './surface.js'
 import { initialToolNode } from './tool-node.js'
 import { TurnProjection, turnsForNodes } from './turns.js'
@@ -208,7 +211,7 @@ const emptyTotals = (): UsageView['totals'] => ({
 })
 const estimatedContentTokens = (event: Event): number => {
   const blocks = (event.data as { content?: Array<{ text?: string }> } | null)?.content ?? []
-  return blocks.reduce((total, block) => total + Math.ceil((block.text ?? '').length / 4), 0)
+  return blocks.reduce((total, block) => total + estimateTokens(block.text ?? ''), 0)
 }
 
 let markIncompleteImpl: (cell: UIProjectionCell) => void
@@ -271,6 +274,7 @@ export class UIProjectionCell {
   private contextBase: { seq: Seq; total: number } | undefined
   private contextTokensValue = 0
   private readonly turnsProjection = new TurnProjection()
+  private readonly sideCallDisplay = new SideCallDisplay()
   private cacheHealth: CacheHealthState = initialCacheHealthState()
 
   private recording = false
@@ -578,7 +582,11 @@ export class UIProjectionCell {
     const changed = this.applyNode(event)
     for (const node of this.refinement.apply(event, nextState, this.lane))
       changed.add(placeNode(this.nodes, this.nodeIndexes, node))
-    for (const id of this.turnsProjection.associate(event, changed, turnUpdate.owner))
+    for (const id of this.turnsProjection.associate(
+      event,
+      event.type === 'x/core/side-call-intent' ? [] : changed,
+      turnUpdate.owner,
+    ))
       turnUpdate.changed.add(id)
     this.state = nextState
     this.applied += 1
@@ -663,7 +671,7 @@ export class UIProjectionCell {
   }
 
   private applyNode(event: Event): Set<string> {
-    const changed = new Set<string>()
+    const changed = new Set<string>(this.sideCallDisplay.observe(event))
     if ((event.lane ?? 'main') !== this.lane) return changed
     const { id, seq } = event
     const data = event.data
@@ -713,16 +721,21 @@ export class UIProjectionCell {
             id,
             seq,
             content: structuredClone(message.content),
+            ...(message.commandId ? { commandId: message.commandId } : {}),
             actorLabel: clip(event.actor.id, 128),
             origin: event.origin === 'system' ? 'system' : 'principal',
             ...(event.origin === 'system' && message.system
               ? { system: structuredClone(message.system) }
               : {}),
+            ...inlineDeliveredBy(event, message),
           })
         }
         changed.add(id)
         break
       }
+      case INPUT_DELIVERED_BY_EVENT:
+        for (const marked of markDelivered(this.nodes, this.nodeIndexes, event)) changed.add(marked)
+        break
       case 'effect/intent': {
         const intent = data as EffectIntent
         if (intent.kind === 'inference') this.activeInference = intent.effectId
@@ -857,6 +870,7 @@ export class UIProjectionCell {
           state: 'decided',
           ...approvalToolReference(tool),
           summary: clip(evidence.summary ?? '', 4096),
+          decidedSeq: seq,
           risk: 'always',
           options: [],
           decision: {
@@ -877,12 +891,8 @@ export class UIProjectionCell {
         const value = data as unknown as import('@agnes/protocol').DecisionSnapshot
         // Historical verifier gates are system failures, including before Core retires them.
         if (value.request.owner === 'core/gate' && value.request.sourcePackage === '@agnes/core') break
-        if (
-          !value.request.spec.options.every((option) =>
-            ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected'].includes(option),
-          )
-        )
-          break
+        const known = ['allowed-once', 'allowed-session', 'allowed-permanent', 'rejected']
+        if (!value.request.spec.options.every((option) => known.includes(option))) break
         if (value.handle.sessionId === null) break
         const old = this.approvals.get(value.handle.id)
         const result = value.result
@@ -898,6 +908,7 @@ export class UIProjectionCell {
               : result
                 ? 'decided'
                 : 'pending',
+          ...(result || value.invalidation ? { decidedSeq: old?.decidedSeq ?? seq } : {}),
           summary: clip(value.request.spec.prompt, 4096),
           ...(value.request.spec.presentation ? { presentation: value.request.spec.presentation } : {}),
           ...approvalSubject(value.request.spec.subject),
@@ -969,19 +980,9 @@ export class UIProjectionCell {
       }
       case 'cost/ledger': {
         const cost = data as CostLedger
-        this.pushNode({
-          kind: 'cost',
-          id,
-          seq,
-          source: cost.creditSource,
-          purpose: cost.purpose,
-          ...(!cost.adjustment ? { tokens: structuredClone(cost.tokens) } : {}),
-          ...(cost.billing ? { billing: structuredClone(cost.billing) } : {}),
-          model: cost.model,
-          ...(cost.interrupted !== undefined ? { interrupted: cost.interrupted } : {}),
-          ...(cost.timing ? { timing: callTiming(cost.timing) } : {}),
-          ...(cost.credits !== undefined ? { credits: cost.credits } : {}),
-        })
+        const node = createCostNode(event, cost)
+        this.sideCallDisplay.attach(cost, node, id, event.lane ?? 'main')
+        this.pushNode(node)
         changed.add(id)
         break
       }
@@ -1130,6 +1131,7 @@ export class UIProjectionCell {
       .map((item) => ({
         itemId: item.itemId,
         preview: clip(text(item.content), 2000),
+        ...pendingCommandId(item),
       }))
   }
 

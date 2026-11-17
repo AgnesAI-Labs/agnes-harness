@@ -41,6 +41,7 @@ import { createClient, memoryJournal } from '@agnes/sdk'
 import type { PluginRebuiltEvent } from '@agnes/web/server'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
+import { channelRelay } from './channel-relay.js'
 import { localClientExamples } from './client-examples.js'
 import { contextAdmin } from './context-admin.js'
 import { doctorAdmin } from './doctor-admin.js'
@@ -544,6 +545,17 @@ export function localPackageAdmin(
       body: jsonBody,
     }),
     async handleClientService(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
+      if (
+        await channelRelay({
+          client,
+          origin,
+          profile: backend.scope.profile,
+          initialize,
+          body: jsonBody,
+          reply: serviceReply,
+        })(request, response)
+      )
+        return true
       if (
         await profileServiceRelay({
           client,

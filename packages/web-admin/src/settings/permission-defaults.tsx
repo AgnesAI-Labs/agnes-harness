@@ -206,7 +206,10 @@ export function PermissionDefaults({
     if (level === 'full-access') return ['warning', t('notIsolated')]
     if (!security) return ['neutral', t('isolationUnknown')]
     const policies = security.permissionPolicies ?? security.presetPolicies
-    if (policies.find((policy) => policy.id === level)?.level === 'L0') return ['warning', t('notIsolated')]
+    const policy = policies.find((item) => item.id === level)
+    if (policy?.level === 'L0') return ['warning', t('notIsolated')]
+    // On Windows this level runs under the partial ACL contract, not the unavailable full isolation.
+    if (policy?.boundary) return ['warning', `${t('commandIsolation')} · ${t('state.partial')}`]
     const state = security.platform.l1.level
     return [isolationTone[state], `${t('commandIsolation')} · ${t(`state.${state}`)}`]
   }

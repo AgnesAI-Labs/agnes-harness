@@ -35,9 +35,13 @@ const EXT_VALUE_ALLOWED = new Set([
   'mcpStablePrefix', // authority-free MCP namespace binding shared with role delegation
   'defaultToolPolicy', // authority-free default risk decision shared with Base
   'APPROVAL_DEFAULTS', // single public configuration defaults, shared with Core
+  'isOutwardCheckpoint', // authority-free reading of the outward checkpoint marker, shared with Effects
   'unavailableDecisions', // registration and unconfigured test scopes refuse session access
+  'redactSecrets', // authority-free credential masking, shared with plugins (moved out of Core with the plugin redaction contract)
+  'sanitize', // the request-text sanitizer that redaction builds on, moved out of Core with it
   'unavailableProjections', // authority-free default; Host supplies the scoped invocation reader
   'isWorkflowRunId', // the one rule for a well-formed workflow run id, shared with the planner parser
+  'estimateTokens', // the one token estimator, shared with every token budget outside Core
 ])
 
 function moduleSpecifiers(text: string): string[] {

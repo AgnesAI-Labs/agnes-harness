@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   type ChannelCapabilities,
   type EventEnvelope,
@@ -43,12 +46,15 @@ function timeline(nodes: UITimeline['nodes'], upto = 1, generation = 1): UITimel
 
 async function setup(
   options: {
+    refsPath?: string
+    nativeInteractions?: boolean
     caps?: Partial<ChannelCapabilities>
     textChars?: number
     debounceMs?: number
     stopSettleMs?: number
     sessionPerSec?: number
     maxDetachedWork?: number
+    reconcileMs?: number
     noticeRetry?: { attempts?: number; baseMs?: number; maxMs?: number; jitter?: () => number }
     onHistoryRefused?: (key: string, error: unknown) => Promise<boolean>
   } = {},
@@ -62,9 +68,10 @@ async function setup(
     manifest,
     ...(options.caps === undefined ? {} : { caps: options.caps }),
   })
+  if (options.nativeInteractions) Object.assign(adapter, { onSurfaceAction: () => null })
   const cache = new SessionCache(client, { cwd: '/workspace', preset: 'channel' })
   const { session } = await cache.get('k')
-  const refs = new RefStore(':memory:')
+  const refs = new RefStore(options.refsPath ?? ':memory:')
   const outbound = new Outbound({
     adapter,
     refs,
@@ -74,6 +81,8 @@ async function setup(
     limits: manifest.limits,
     log,
     debounceMs: options.debounceMs ?? 5,
+    ...(options.nativeInteractions ? { nativeInteractions: true } : {}),
+    ...(options.reconcileMs === undefined ? {} : { reconcileMs: options.reconcileMs }),
     rates: {
       sessionPerSec: options.sessionPerSec ?? 10_000,
     },
@@ -88,14 +97,14 @@ async function setup(
 
 it('publishes recovered surfaces through the existing outbound dedupe without creating a channel action', async () => {
   const { adapter, client, session, outbound } = await setup()
-  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
+  const { choiceSurface } = await import('../testkit/choice-surface.js')
   client.setSurfaces(session.id, {
     sessionId: session.id,
     lastSeq: 1,
     actions: [],
     surfaces: [
       {
-        surface: questionSurface('q', [{ id: 'pick', question: 'Pick', options: ['A', 'B'] }]),
+        surface: choiceSurface('q'),
         status: 'open',
         owner: 'agnes/intelligent-ui',
         lane: 'main',
@@ -118,6 +127,73 @@ it('publishes recovered surfaces through the existing outbound dedupe without cr
 })
 
 describe('Outbound', () => {
+  it('forwards bound AGH input once, suppresses channel input across recovery, and keeps the history floor', async () => {
+    vi.useFakeTimers()
+    try {
+      const { adapter, client, outbound, refs, session, cache } = await setup({ reconcileMs: 20 })
+      outbound.detach('k')
+      outbound.attach('k', session, { chatId: 'chat-1' }, 5)
+      client.setTimeline(
+        'k',
+        timeline(
+          [
+            { kind: 'user', id: 'old', seq: 4, content: [{ type: 'text', text: 'private history' }] },
+            {
+              kind: 'user',
+              id: 'legacy-after-binding',
+              seq: 6,
+              content: [{ type: 'text', text: 'private legacy input after binding' }],
+            },
+            {
+              kind: 'user',
+              id: 'incoming',
+              seq: 7,
+              commandId: `channel:${'a'.repeat(64)}`,
+              content: [{ type: 'text', text: 'same text' }],
+            },
+            {
+              kind: 'user',
+              id: 'web',
+              seq: 8,
+              commandId: 'web-7',
+              content: [{ type: 'text', text: 'same text' }],
+            },
+            { kind: 'assistant', id: 'answer', seq: 9, text: 'answer' },
+          ],
+          9,
+        ),
+      )
+      // No live events arrive: the bound-session reconciliation must still deliver both nodes.
+      await vi.advanceTimersByTimeAsync(25)
+      expect(adapter.sent).toHaveLength(2)
+      expect(adapter.sent.map((row) => row.msg.blocks)).toEqual([
+        [{ kind: 'text', markdown: '来自 AGH 的用户消息：\n\nsame text' }],
+        [{ kind: 'text', markdown: 'answer' }],
+      ])
+      await outbound.stop()
+      const recovered = new Outbound({
+        adapter,
+        refs,
+        cache,
+        cfg: { outbound: { costLine: true } },
+        caps: adapter.capabilities(),
+        limits: adapter.manifest.limits,
+        log,
+        rates: { sessionPerSec: 10000 },
+      })
+      try {
+        recovered.attach('k', session, { chatId: 'chat-1' }, 5)
+        await recovered.flush('k')
+        expect(adapter.sent).toHaveLength(2)
+      } finally {
+        await recovered.stop()
+        refs.close()
+      }
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('publishes the complete durable plan before its approval card, including markup and the tail', async () => {
     const { adapter, client, session, outbound } = await setup({ textChars: 256 })
     const plan = 'review正文\n'.repeat(1000) + '<script>EXACT-TAIL</script>'
@@ -187,6 +263,50 @@ describe('Outbound', () => {
       outbound.sendNotice('k', { blocks: [{ kind: 'text', markdown: 'maintenance' }] }, 'stable-notice'),
     ).rejects.toThrow('permanent')
     expect(adapter.send).toHaveBeenCalledTimes(3)
+  })
+
+  it('sends one direct message per call, degrades a card on a text-only channel and cancels a queued one on stop', async () => {
+    const card = {
+      kind: 'card' as const,
+      title: 'Pick',
+      body: 'which?',
+      actions: [
+        { id: 'pick:1', label: 'One' },
+        { id: 'pick:2', label: 'Two' },
+      ],
+    }
+    const plain = await setup({ caps: { card: false }, sessionPerSec: 100 })
+    await plain.outbound.sendDirect({ chatId: 'owner-chat' }, card, 'card-1')
+    expect(plain.adapter.sent.at(-1)?.msg.blocks).toEqual([
+      { kind: 'text', markdown: '【Pick】\nwhich?\n1. One\n2. Two\n回复 1 / 2 选择' },
+    ])
+    await plain.outbound.stop()
+
+    const { adapter, outbound } = await setup({ sessionPerSec: 1 })
+    await outbound.sendDirect({ chatId: 'card-chat' }, card, 'card-2')
+    expect(adapter.sent.at(-1)?.msg.blocks, 'a card-capable channel keeps the card').toEqual([card])
+    const ref = await outbound.sendDirect(
+      { chatId: 'owner-chat' },
+      { kind: 'text', markdown: 'reminder' },
+      'direct-1',
+    )
+    expect(adapter.sent.at(-1)).toMatchObject({
+      target: { chatId: 'owner-chat', deliveryKey: 'direct-1' },
+      msg: { blocks: [{ kind: 'text', markdown: 'reminder' }] },
+      ref,
+    })
+    // One message per second per chat, as on a session lane: the second waits and stop cancels it.
+    const queued = outbound.sendDirect(
+      { chatId: 'owner-chat' },
+      { kind: 'text', markdown: 'second' },
+      'direct-2',
+    )
+    await outbound.stop()
+    await expect(queued).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(
+      outbound.sendDirect({ chatId: 'owner-chat' }, { kind: 'text', markdown: 'late' }, 'direct-3'),
+    ).rejects.toThrow('stopped')
+    expect(adapter.sent.map((row) => row.target.deliveryKey)).not.toContain('direct-2')
   })
 
   it('cancels a notice retry backoff on stop', async () => {
@@ -455,6 +575,82 @@ describe('Outbound', () => {
       for (const block of msg.blocks) {
         if (block.kind === 'text') expect(block.markdown).not.toMatch(/[\uD800-\uDFFF]/)
       }
+    }
+  })
+
+  it('replays the original send intent after restart before applying newer state', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'channel-intent-'))
+    const path = join(dir, 'refs.sqlite')
+    const { adapter, client, cache, session, outbound, refs } = await setup({
+      refsPath: path,
+      nativeInteractions: true,
+    })
+    const send = adapter.send.bind(adapter)
+    let first:
+      | {
+          target: Parameters<typeof adapter.send>[0]
+          message: Parameters<typeof adapter.send>[1]
+          ref: MessageRef
+        }
+      | undefined
+    adapter.send = vi.fn(async (target, message) => {
+      if (!first) {
+        const ref = await send(target, message)
+        first = { target, message, ref }
+        throw new Error('crash after remote send')
+      }
+      expect(target.deliveryKey).toBe(first.target.deliveryKey)
+      expect(message).toEqual(first.message)
+      return first.ref
+    })
+    const { choiceSurface } = await import('../testkit/choice-surface.js')
+    const record = {
+      surface: choiceSurface('q'),
+      status: 'open' as const,
+      owner: 'agnes/intelligent-ui',
+      lane: 'main',
+      taskId: 'task',
+      createdSeq: 1,
+      updatedSeq: 1,
+    }
+    client.setSurfaces(session.id, { sessionId: session.id, lastSeq: 1, actions: [], surfaces: [record] })
+    await expect(outbound.flush('k')).rejects.toThrow('crash after remote send')
+    await outbound.stop()
+    refs.close()
+    client.setSurfaces(session.id, {
+      sessionId: session.id,
+      lastSeq: 2,
+      actions: [],
+      surfaces: [{ ...record, status: 'closed', updatedSeq: 2 }],
+    })
+    const recoveredRefs = new RefStore(path)
+    const recovered = new Outbound({
+      adapter,
+      refs: recoveredRefs,
+      cache,
+      cfg: { outbound: { costLine: true } },
+      caps: adapter.capabilities(),
+      limits: FAKE_MANIFEST.limits,
+      log,
+      nativeInteractions: true,
+      rates: { sessionPerSec: 10_000 },
+    })
+    recovered.attach('k', session, { chatId: 'chat-1' })
+    try {
+      await recovered.flush('k')
+      expect(adapter.sent).toHaveLength(1)
+      expect(adapter.updates).toHaveLength(1)
+      expect(adapter.updates[0]?.ref).toEqual(first?.ref)
+      expect(adapter.updates[0]?.msg.blocks[0]).toMatchObject({ kind: 'surface', form: { state: 'closed' } })
+      expect(recoveredRefs.intents('k', session.id)).toHaveLength(0)
+      await recovered.flush('k')
+      client.setSurfaces(session.id, { sessionId: session.id, lastSeq: 3, actions: [], surfaces: [] })
+      await recovered.flush('k')
+      expect(adapter.updates).toHaveLength(1)
+    } finally {
+      await recovered.stop()
+      recoveredRefs.close()
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 

@@ -28,6 +28,9 @@ export function workerDomainFailure(error: unknown) {
   const code = typeof raw === 'string' && raw.length > 0 ? raw : 'E_WORKER'
   if (code === 'E_SCAN_TRUNCATED' && typeof message === 'string' && scanDiagnostic.test(message))
     return { code, message }
+  // The kernel's refusal of an append to an existing session: answered as the daemon answers it in-process.
+  if (code === 'E_ENVELOPE' && appendRefused(error))
+    return rpcError('SEMANTIC_REJECTED', { reason: 'systemPromptAppend refused' })
   const reason = publicErrorReason(error)
   if (code === 'E_PRESET_UNSUPPORTED') {
     if (reason === 'bundle-unavailable')
@@ -48,5 +51,15 @@ export function workerDomainFailure(error: unknown) {
     message: contract ? publicErrorCopy(code, reason).en.reason : 'Worker operation failed.',
     ...(reason ? { reason } : {}),
     ...file,
+  }
+}
+
+/** The refusal's fixed reason identifier only; nothing else of the error is read. */
+function appendRefused(error: unknown): boolean {
+  try {
+    const value = error as { reason?: unknown; detail?: { reason?: unknown } }
+    return (value.detail?.reason ?? value.reason) === 'system-prompt-append'
+  } catch {
+    return false
   }
 }

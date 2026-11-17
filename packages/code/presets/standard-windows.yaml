@@ -5,7 +5,7 @@ name: standard-windows
 extends: standard
 # Windows keeps its own command table, so this recipe states the rest of its permission itself
 # instead of taking an overlay: the same sandbox and isolation `standard` ran under before the split.
-sandbox: { level: L1, on_unavailable: allow-if-unimplemented }
+sandbox: { level: L1, on_unavailable: allow-if-unimplemented, windows_mode: write-restricted }
 subagent: { isolation: worktree }
 approval:
   command_policy:

@@ -152,6 +152,7 @@ export class ToolCard implements Component {
   private readonly stepRows: string[] = []
   /** Rail contents, laid out for the width inside the rail. */
   private readonly rail: Array<(width: number) => string[]> = []
+  private headline: { left: string; right: string; width: number; row: string } | undefined
   private collapsedState: boolean
   private readonly actions: Array<{ id: string; label: string }> = []
   private readonly onAction: (actionId: string) => void
@@ -378,6 +379,14 @@ export class ToolCard implements Component {
     this.onAction(action.id)
     return true
   }
+  private headRow(left: string, right: string, width: number): string {
+    // Read live facts before this boundary; only identical painted text can reuse its layout.
+    const previous = this.headline
+    if (previous?.left === left && previous.right === right && previous.width === width) return previous.row
+    const row = spread(left, right, width)
+    this.headline = { left, right, width, row }
+    return row
+  }
   render(width: number): string[] {
     width = columns(width)
     const look = this.look()
@@ -385,7 +394,7 @@ export class ToolCard implements Component {
     if (this.collapsedState) {
       const hidden = this.stepRows.length - COLLAPSED_STEPS
       return [
-        spread(`${head}${this.stats()}${this.summary}`, this.right(false), width),
+        this.headRow(`${head}${this.stats()}${this.summary}`, this.right(false), width),
         ...this.preview(width),
         ...this.stepRows.slice(0, COLLAPSED_STEPS).map((row) => fitLine(`    ${row}`, width)),
         ...(hidden > 0 ? [this.fold(this.more, width)] : []),
@@ -396,7 +405,7 @@ export class ToolCard implements Component {
     const inner = Math.max(1, width - (raw ? 0 : 3))
     const rail = look.paint('│')
     return [
-      spread(`${head}${this.stats()}`, this.right(true), width),
+      this.headRow(`${head}${this.stats()}`, this.right(true), width),
       ...this.rail
         .flatMap((rows) => rows(inner))
         .map((line) => fitLine(raw ? line : ` ${rail} ${line}`, width)),

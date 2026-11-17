@@ -42,6 +42,7 @@ async function runtime(
     hooks?: unknown
     services?: unknown
     seam?: import('@agnes/core').SandboxSeam
+    closeSandbox?: () => Promise<void> | void
   }> = {},
 ) {
   let digest: string | null = null
@@ -93,6 +94,7 @@ async function runtime(
         caseSensitive: true,
       }),
     ...(options.seam ? { fitSandbox: async () => options.seam! } : {}),
+    ...(options.closeSandbox ? { closeSandbox: options.closeSandbox } : {}),
     openHooks: async () => {
       events.push('hooks-open')
       return options.hooks ?? 'hooks'
@@ -652,6 +654,128 @@ describe('SessionWorkspaceRuntimeTable', () => {
     expect(table.peek('child')).toBeUndefined()
     expect(table.peek('pending-child')).toBeUndefined()
     await built.readiness.revoke()
+  })
+})
+
+describe('sandbox resources of a runtime', () => {
+  it('are released only when the runtime owner is really released, after hooks and services', async () => {
+    const events: string[] = []
+    const built = await runtime('owner', events, { closeSandbox: () => void events.push('sandbox') })
+    const table = new SessionWorkspaceRuntimeTable()
+    await table.open(built.value.binding, async () => built.value)
+    // A finished call (a reply completing) returns its invocation lease and keeps the runtime.
+    await table.invocation('owner').run(async () => undefined)
+    // A child sharing the runtime closes without touching the owner's sandbox resources.
+    const child = await table.reserve('owner', 'owner-child')
+    expect(child.commit()).toBe(true)
+    await child.close()
+    expect(events).not.toContain('sandbox')
+    await table.close('owner')
+    expect(events).toEqual([
+      'hooks-open',
+      'services-open',
+      'services',
+      'hooks',
+      'sandbox',
+      'fence',
+      'workspace',
+    ])
+    await built.readiness.revoke()
+  })
+
+  it('reports the actual enforcement with its Windows boundary, per session', async () => {
+    const boundary = {
+      contract: 'windows-write-restricted-v1',
+      fileWrite: 'acl-partial',
+      fileRead: 'unrestricted',
+      network: 'unrestricted',
+      processTree: 'job-object',
+    } as const
+    const seam = (enforcement: import('@agnes/core').Enforcement): import('@agnes/core').SandboxSeam => ({
+      enforcement: () => enforcement,
+      forWorkspace: async () => {
+        throw new Error('not used')
+      },
+      confine: async (argv) => argv,
+      exec: async () => ({ code: 0, stdout: '', stderr: '', truncated: false }),
+      fsPolicy: () => policy(),
+    })
+    const acl = await runtime('acl', [], { seam: seam({ level: 'partial', scope: ['file'], boundary }) })
+    const open = await runtime('open', [], { seam: seam({ level: 'none', scope: [] }) })
+    const table = new SessionWorkspaceRuntimeTable()
+    await table.open(acl.value.binding, async () => acl.value)
+    await table.open(open.value.binding, async () => open.value)
+    expect(table.securityStatus('acl')?.enforcement).toEqual({ level: 'partial', scope: ['file'], boundary })
+    expect(table.securityStatus('open')?.enforcement).toEqual({ level: 'none', scope: [] })
+    await table.closeAll()
+    await Promise.all([acl.readiness.revoke(), open.readiness.revoke()])
+  })
+
+  it('keeps another session resources when one session is released', async () => {
+    const events: string[] = []
+    const a = await runtime('session-a', [], { closeSandbox: () => void events.push('a') })
+    const b = await runtime('session-b', [], { closeSandbox: () => void events.push('b') })
+    const table = new SessionWorkspaceRuntimeTable()
+    await table.open(a.value.binding, async () => a.value)
+    await table.open(b.value.binding, async () => b.value)
+    await table.close('session-a')
+    expect(events).toEqual(['a'])
+    await table.invocation('session-b').run(async () => undefined)
+    await table.closeAll()
+    expect(events).toEqual(['a', 'b'])
+    await Promise.all([a.readiness.revoke(), b.readiness.revoke()])
+  })
+
+  it('are released when a later construction step fails', async () => {
+    const events: string[] = []
+    const manager = new SandboxReadinessManager(async () => ({ confine: ({ argv }) => argv }))
+    let digest: string | null = null
+    await expect(
+      createSessionWorkspaceRuntime({
+        binding: binding('session-a'),
+        openWorkspace: async () => ({
+          kind: 'local',
+          root: '/work',
+          close: () => void events.push('workspace'),
+        }),
+        openFence: async () => ({
+          root: '/work',
+          fs,
+          bind: (next) => {
+            digest = next.digest
+          },
+          policyDigest: () => digest,
+          close: () => void events.push('fence'),
+        }),
+        compilePolicy: async () => ({
+          policy: policy(),
+          staticConfig: {
+            level: 'L0',
+            required: false,
+            onUnavailable: 'deny',
+            extraPaths: [],
+            denyPaths: [],
+            networkAllow: [],
+          },
+          staticConfigHash: 'c'.repeat(64),
+          semantics: { flavor: 'posix', caseSensitive: true },
+          backendOptions: { cwd: '/work', allowPaths: ['/work'], denyPaths: [], networkAllow: [] },
+        }),
+        bindReadiness: () =>
+          manager.bind({
+            backendId: 'test',
+            canonicalRoot: '/work',
+            staticConfigHash: 'c'.repeat(64),
+            caseSensitive: true,
+          }),
+        closeSandbox: () => void events.push('sandbox'),
+        openHooks: async () => {
+          throw new Error('hooks failed')
+        },
+      }),
+    ).rejects.toThrow('hooks failed')
+    expect(events).toEqual(['sandbox', 'fence', 'workspace'])
+    await manager.revoke()
   })
 })
 

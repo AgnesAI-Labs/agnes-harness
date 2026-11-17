@@ -2,7 +2,8 @@
 # third-party tools. Merged after a recipe; it writes permission-axis fields only.
 name: permission-read-only
 approval: { command_policy: [] }
-sandbox: { level: L1, on_unavailable: allow-if-unimplemented }
+# On Windows, windows_mode accepts the ACL-based partial write restriction (reads and network stay open).
+sandbox: { level: L1, on_unavailable: allow-if-unimplemented, windows_mode: write-restricted }
 subagent: { isolation: shared }
 providers:
   tool-policy: { provider: read-only }

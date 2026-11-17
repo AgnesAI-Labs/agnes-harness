@@ -65,13 +65,30 @@ export function translateEvent(
       // A deferred answer is not a finish this package can express yet; it reads as a stop, which is
       // the closest honest reading until the deferred path exists.
       const reason = ev.reason === 'length' ? 'length' : ev.reason === 'toolUse' ? 'toolUse' : 'stop'
-      return [usage, { type: 'done', reason }]
+      // One signature per message, because Core keeps one thinking string per message: the first
+      // reasoning block that has one. The provider's own marker for where the reasoning lives
+      // (e.g. `reasoning_content`) is what a later request needs to put it back in the same place.
+      // Only an openai-completions stream records one, because only an openai-completions request
+      // writes one back (the adapter's `replaySignature`): what the other wire protocols keep there,
+      // a whole encrypted reasoning item or a redacted block's payload, would be stored and counted
+      // on every step and never sent.
+      const signature =
+        model.api === 'openai-completions'
+          ? ev.message.content.find(
+              (b) =>
+                b.type === 'thinking' &&
+                typeof b.thinkingSignature === 'string' &&
+                b.thinkingSignature !== '',
+            )
+          : undefined
+      const thinkingSignature = signature?.type === 'thinking' ? signature.thinkingSignature : undefined
+      return [usage, { type: 'done', reason, ...(thinkingSignature ? { thinkingSignature } : {}) }]
     }
     case 'error': {
       // The window comes from the model this request actually went to. Passing nothing here left one
       // arm of the classification with a single supplier - a test - and unreachable for a user: an
       // overflow the provider did not spell out is only visible against the declared window.
-      const c = classifyPiError(ev.error, model.contextWindow)
+      const c = classifyPiError(ev.error, model.contextWindow, wire.status)
       return [
         {
           type: 'error',

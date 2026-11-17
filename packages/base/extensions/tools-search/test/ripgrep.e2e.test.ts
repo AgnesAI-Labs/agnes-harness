@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
 import { fakeToolContext } from '../../../testkit/tool-context.js'
@@ -69,6 +69,8 @@ describe('bundled ripgrep', () => {
 
       // A backend can hand back an oversized listing even when individual matches are bounded.
       // Both the row spill and the ordinary output-guard path must refuse unreadable artifacts.
+      // An equivalent cwd spelling must still identify the root directory, as on Windows.
+      Object.assign(ctx, { cwd: `${cwd}/.` })
       const stored = [...ctx.calls.artifacts]
       ctx.exec = async () => ({
         code: 0,
@@ -76,7 +78,11 @@ describe('bundled ripgrep', () => {
         stderr: '',
         truncated: false,
       })
-      ctx.fs.stat = async (path) => ({ kind: path === ctx.cwd ? 'dir' : 'file', size: 0, mtimeMs: 0 })
+      ctx.fs.stat = async (path) => ({
+        kind: resolve(path) === resolve(ctx.cwd) ? 'dir' : 'file',
+        size: 0,
+        mtimeMs: 0,
+      })
       for (const limit of [1, 1000]) {
         const oversized = await ripgrepFindTool.execute({ pattern: '*', limit }, ctx)
         expect(oversized).toMatchObject({

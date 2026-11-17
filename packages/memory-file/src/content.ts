@@ -7,8 +7,10 @@ export const defaults: MemorySettings = Object.freeze({
   indexMaxLines: 200,
   topicMaxBytes: 32 * 1024,
   totalMaxBytes: 256 * 1024,
-  tokenBudget: 2048,
-  userTokenBudget: 512,
+  // Injection limits in UTF-8 bytes (the field names are kept for compatibility): what the agent is shown
+  // of workspace and user memory, the fixed header aside.
+  tokenBudget: 8192,
+  userTokenBudget: 2048,
   userEnabled: false,
 })
 
@@ -75,16 +77,72 @@ export function diff(before: string, after: string): string {
   ].join('\n')
 }
 
-/** A UTF-8 byte is a conservative upper bound for tokenizer token count. */
-export function fit(content: string, tokens: number): { content: string; used: number; omitted: boolean } {
-  const bytes = Buffer.byteLength(content)
-  if (bytes <= tokens) return { content, used: bytes, omitted: false }
-  const marker = '\n[Memory omitted: token budget exceeded; read topic files on demand.]'
-  if (tokens < Buffer.byteLength(marker)) return { content: '', used: 0, omitted: true }
-  let result = ''
-  for (const character of content) {
-    if (Buffer.byteLength(result + character + marker) > tokens) break
-    result += character
+/** The injection limits stored before 8 KiB / 2 KiB became the defaults; read as not set. */
+const OLD_DEFAULTS = { tokenBudget: 2048, userTokenBudget: 512 } as const
+
+/**
+ * Stored settings as they apply now. Every settings change writes the whole set, so a workspace that ever
+ * had memory switched on stores the old default limits; those two together read as the new defaults.
+ */
+export function storedSettings(input: Partial<MemorySettings>): MemorySettings {
+  const old =
+    input.tokenBudget === OLD_DEFAULTS.tokenBudget && input.userTokenBudget === OLD_DEFAULTS.userTokenBudget
+  return settings(
+    old ? { ...input, tokenBudget: defaults.tokenBudget, userTokenBudget: defaults.userTokenBudget } : input,
+  )
+}
+
+/** Paragraphs (runs of non-blank lines) in a text. */
+export function omissionLine(count: number): string {
+  return `[${count} task-experience paragraphs omitted: expired or unverifiable]`
+}
+
+const OMISSION_LINE = /^\[\d+ task-experience paragraphs omitted: expired or unverifiable\]$/u
+
+// Paragraphs of text left out, not counting a line that only says paragraphs were left out.
+const paragraphsIn = (text: string) =>
+  text.split(/\n\s*\n/u).filter((part) => part.trim() && !OMISSION_LINE.test(part.trim())).length
+
+/**
+ * `content` cut to at most `maxBytes` UTF-8 bytes at a whole line, with a closing line that says how much
+ * was left out: paragraphs and about how many KB, and, given `at`, from which line of which file, so the
+ * agent can read the rest. A line that alone does not fit is left out whole; a character is never split.
+ */
+export function fitBytes(
+  content: string,
+  maxBytes: number,
+  notice: (left: { paragraphs: number; kb: string; offset: number }) => string,
+  brief = '[Memory truncated at the size limit.]',
+): { content: string; omitted: boolean } {
+  if (Buffer.byteLength(content) <= maxBytes) return { content, omitted: false }
+  const closing = (offset: number) => {
+    const left = content.slice(offset)
+    return notice({
+      paragraphs: Math.max(1, paragraphsIn(left)),
+      kb: (Buffer.byteLength(left) / 1024).toFixed(1),
+      offset,
+    })
   }
-  return { content: result + marker, used: Buffer.byteLength(result + marker), omitted: true }
+  // Room is kept for the longest the closing line can be, so the lines are fitted in one pass and
+  // the line is written once, for where the cut falls.
+  const room =
+    maxBytes -
+    Buffer.byteLength(
+      notice({
+        paragraphs: Math.max(1, paragraphsIn(content)),
+        kb: (Buffer.byteLength(content) / 1024).toFixed(1),
+        offset: content.length,
+      }),
+    )
+  let used = 0
+  let offset = 0
+  for (const line of content.split('\n')) {
+    const next = used + Buffer.byteLength(line) + 1
+    if (next > room) break
+    used = next
+    offset += line.length + 1
+  }
+  const text = `${content.slice(0, offset)}${closing(offset)}`
+  // A limit too small for the full notice still gets one that fits.
+  return { content: Buffer.byteLength(text) <= maxBytes ? text : brief, omitted: true }
 }

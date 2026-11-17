@@ -209,7 +209,7 @@ describe('plugins.tree RPC', () => {
 
   describe('the last confirmed target after a package operation', () => {
     const pkg = 'acme/pkg'
-    const packageArtifact = (snapshot: string | undefined) =>
+    const packageArtifact = (snapshot: string | undefined, disabled = false) =>
       encodeRuntimeTargetArtifact(
         buildRuntimeTarget({
           rows:
@@ -224,6 +224,7 @@ describe('plugins.tree RPC', () => {
                     entryRevision: snapshot,
                     extrasRevision: 'none',
                     mountRevision: 'host-ordinary-row:v1',
+                    disabled,
                   }),
                 ],
           resources: { mcp: [], skills: {} },
@@ -237,7 +238,8 @@ describe('plugins.tree RPC', () => {
     ) => {
       const tables = sqliteTables()
       const store = new CompositeTargetStore(tables.table('composite'), profile)
-      const before = packageArtifact('sha256-old')
+      // Removal follows disable/drain; the last-good target still loads the soon-deleted snapshot.
+      const before = packageArtifact('sha256-old', operation === 'remove')
       store.publishDesired(before)
       store.qualifyConverged(1, before, { hash: before.identity.treeHash, ok: true, rows: [] } as never)
       const adapter = createCompositeTargetActivation({

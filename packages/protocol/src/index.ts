@@ -1,5 +1,5 @@
 export type { ApplicationWorkbenchText } from '../gen/ts/extension-manifest.js'
-export type { DecisionPresentation, ToolPresentation } from '../gen/ts/session-v1.js'
+export type { DecisionPresentation, InputDeliverer, ToolPresentation } from '../gen/ts/session-v1.js'
 // jcs is the shared strict RFC 8785 serializer for SDK/daemon signature bytes; it does not replace core request hashing.
 export { type ValidatedRequestMedia, validateRequestMedia } from './request-media.js'
 export { readSessionTitle, SESSION_TITLE_EVENT, SessionTitleRecord } from './session-title.js'
@@ -312,7 +312,12 @@ export type {
 export type { DeployManifest } from '../gen/ts/deploy-manifest.js'
 export type {
   AgentRef,
+  ApplicationAsset,
+  ApplicationBrand,
+  ApplicationPageRef,
   ApplicationPanelTab,
+  ApplicationPresentation,
+  ApplicationRoleTarget,
   ApplicationTemplate,
   ApplicationWorkAction,
   ApplicationWorkbench,
@@ -327,6 +332,7 @@ export type {
   PluginMetadata,
   PluginMetadataLocale,
   PluginProvide,
+  PresentationRole,
   SkinContribution,
   SkinTokenValue,
   UiComponentDeclaration,
@@ -335,14 +341,6 @@ export type { ServiceCapability } from '../gen/ts/extension-service.js'
 /** The one capabilities shape every plugin declares, bundled or installed. */
 export type PluginCapabilities = import('../gen/ts/extension-manifest.js').Capabilities
 
-export type {
-  ApplicationAsset,
-  ApplicationBrand,
-  ApplicationPageRef,
-  ApplicationPresentation,
-  ApplicationRoleTarget,
-  PresentationRole,
-} from '../gen/ts/extension-manifest.js'
 export type {
   BoundWakeEnqueueParams,
   BoundWakeReadParams,
@@ -439,12 +437,15 @@ export type {
   ClientModuleRosterRow,
   ClientModuleServiceCallParams,
   ContributionBinding,
+  ExternalPackageDescriptor,
+  McpImportPreview,
   PackageActivationRequest,
   PackageActivationTrust,
   PackageAdminContext,
   PackageAdminError,
   PackageAdminPermission,
   PackageBlocker,
+  PackageBundledOrigin,
   PackageCapabilityDiff,
   PackageCatalogDescriptor,
   PackageCatalogGetParams,
@@ -731,9 +732,10 @@ export { errorMessageKey, httpRpcError, normalizeRpcError } from './error-envelo
 export * from './errors.js'
 export * from './file-upload.js'
 export * from './hooks.js'
-export { JcsByteLimitError, jcs, jcsChunks, jcsWrite } from './jcs.js'
+export { configurationRevision, JcsByteLimitError, jcs, jcsChunks, jcsWrite } from './jcs.js'
 export { DEFAULT_JSON_DATA_MAX_BYTES, inspectJsonData } from './json-data.js'
 export * from './loop-selection.js'
+export type * from './managed-input.js'
 export * from './meta.js'
 export * from './method-tiers.js'
 export * from './methods.js'
@@ -797,6 +799,7 @@ export {
   parseSystemPromptAppend,
   SYSTEM_PROMPT_APPEND_MAX,
 } from './session-composition.js'
+export * from './session-environment.js'
 export * from './session-integrity.js'
 export * from './session-runtime.js'
 export * from './session-tools.js'

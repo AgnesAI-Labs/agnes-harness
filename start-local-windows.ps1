@@ -54,16 +54,18 @@ function Test-LocalAgnesProcess($ProcessInfo, [string]$Kind) {
     $tokens = @([regex]::Matches($command, '"([^"]*)"|([^\s"]+)') | ForEach-Object {
         if ($_.Groups[1].Success) { $_.Groups[1].Value } else { $_.Groups[2].Value }
     })
-    if ($tokens.Count -lt 3) { return $false }
+    # The CLI starts the daemon with its Node memory flag ahead of the entry (@agnes/system-node/node-flags).
+    $first = if ($Kind -ne 'web' -and $tokens.Count -gt 1 -and $tokens[1] -ceq '--max-semi-space-size=2') { 2 } else { 1 }
+    if ($tokens.Count -lt $first + 2) { return $false }
     try {
-        $buildEntry = [IO.Path]::GetFullPath($tokens[1])
+        $buildEntry = [IO.Path]::GetFullPath($tokens[$first])
         $distRoot = [IO.Path]::GetFullPath((Join-Path $repoDir 'packages\cli\dist')) + '\'
-        if (-not [IO.Path]::IsPathRooted($tokens[1]) -or
+        if (-not [IO.Path]::IsPathRooted($tokens[$first]) -or
             -not $buildEntry.StartsWith($distRoot, [StringComparison]::OrdinalIgnoreCase)) { return $false }
-        $index = 2
+        $index = $first + 1
         if ($Kind -eq 'web') {
-            if ([IO.Path]::GetFileName($buildEntry) -ne 'agnes.mjs' -or $tokens[2] -ne 'serve') { return $false }
-            $index = 3
+            if ([IO.Path]::GetFileName($buildEntry) -ne 'agnes.mjs' -or $tokens[$first + 1] -ne 'serve') { return $false }
+            $index = $first + 2
         } else {
             if ([IO.Path]::GetFileName($buildEntry) -ne 'daemon.mjs') { return $false }
         }

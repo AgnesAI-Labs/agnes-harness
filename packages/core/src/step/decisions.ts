@@ -1,4 +1,4 @@
-import { acceptedOptions, SESSION_GRANT_OPTIONS } from '@agnes/core-common/command-table/prefix'
+import { acceptedOptions, asRecorded, SESSION_GRANT_OPTIONS } from '@agnes/core-common/command-table/prefix'
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import type { Seq } from '@agnes/core-common/types'
 import { CoreError, type EventInput } from '@agnes/core-common/types'
@@ -641,7 +641,7 @@ export class DecisionCommands {
       this.live()
       const original = this.read(command.handle)
       await context.authorize(detached(original))
-      if (!humanDecisionActorAllowed(this.s, context)) fail('HUMAN_REQUIRED')
+      if (!humanDecisionActorAllowed(this.s, context, original.request.spec)) fail('HUMAN_REQUIRED')
       if (original.answerCommand?.commandId === command.commandId) {
         if (original.answerCommand.digest !== digest) fail('COMMAND_CONFLICT')
         return detached(original.answerCommand)
@@ -650,10 +650,11 @@ export class DecisionCommands {
       if (!value.result && !value.invalidation) this.execution(value.handle.id)
       if (this.s.cancelled || value.result || value.invalidation || value.consumption) fail('NOT_PENDING')
       if (value.revision !== command.revision) throw new CoreError('E_CAS', 'Decision revision changed')
-      if (!acceptedOptions(value.request.spec).includes(command.response.option)) fail('UNOFFERED_ANSWER')
+      const response = asRecorded(value.request.spec, command.response)
+      if (!acceptedOptions(value.request.spec).includes(response.option)) fail('UNOFFERED_ANSWER')
       if (
         value.request.spec.responseSchema &&
-        compilePluginConfig(value.request.spec.responseSchema)(command.response.value).length
+        compilePluginConfig(value.request.spec.responseSchema)(response.value).length
       )
         fail('RESPONSE_SCHEMA')
       const receipt = {
@@ -670,7 +671,7 @@ export class DecisionCommands {
           result: {
             reason: 'answered',
             at: new Date(this.s.clock()).toISOString(),
-            response: command.response,
+            response,
             answeredBy: detached(context.actor),
           },
         },

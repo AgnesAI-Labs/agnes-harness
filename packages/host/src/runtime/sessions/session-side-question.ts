@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { applyBeforeRequestPatches, deriveRequest, scanAll, toProviderRequest } from '@agnes/core'
+import { estimateTokens } from '@agnes/extension-api'
 import { type RequestBody, rpcError } from '@agnes/protocol'
 import type { HostSession } from '../lifecycle/host.js'
 import { abortable, accountedSideCall, type SideCallRun } from './session-side-call.js'
@@ -165,6 +166,8 @@ async function ask(
       derivedHash: derived.header.derived_hash,
     })
 
+    // A budget hold, not an estimate: one token per UTF-8 byte of the wire is never short of the real
+    // input, so a settled cost cannot overrun the reservation.
     const tokens = new TextEncoder().encode(JSON.stringify(wire)).byteLength + maxTokens
     // An auxiliary review honours the open turn's budget override exactly like `generate` does.
     let cap = s.preset.budget.perRequestCap
@@ -192,7 +195,7 @@ async function ask(
         start,
         estimatedTokens: (answer) => ({
           input: tokens,
-          output: Math.ceil(answer.length / 4),
+          output: estimateTokens(answer),
           cacheRead: 0,
           cacheWrite: 0,
         }),

@@ -2,8 +2,10 @@ import type { EventInput, Seq } from '@agnes/core-common/types'
 import type { SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { HarnessEntry } from '@agnes/core-ledger/reduce/shapes'
 import { estimateTokens } from '../execution/model-tokens.js'
+import { refinementMarker } from '../refinement/capture.js'
 import { deliveredReferences } from '../refinement/references.js'
 import { handedOffRefs, validEntries } from '../refinement/validity.js'
+import { isSavedRef, type SavedEntry, savedEntriesOf, savedRevisionOf } from '../refinement/workspace-refs.js'
 import { isChildSession } from '../step/child-session.js'
 import type { SessionImpl } from '../step/session.js'
 import {
@@ -14,7 +16,12 @@ import {
   heldLine,
   surfaceRefs,
 } from './experience-control.js'
-import { EXPERIENCE_PREFIX, REFINEMENT_GUIDANCE, SNAPSHOT_FORMAT_LINE } from './experience-guidance.js'
+import {
+  EXPERIENCE_PREFIX,
+  REFINEMENT_GUIDANCE,
+  SNAPSHOT_FORMAT_LINE,
+  SNAPSHOT_FORMAT_LINES,
+} from './experience-guidance.js'
 import { rankEntries } from './rank-entries.js'
 
 export { CONTROL_FORMAT_LINE, EXPERIENCE_OFF_NOTICE, EXPERIENCE_RESET_NOTICE } from './experience-control.js'
@@ -63,6 +70,8 @@ const HEADING: Record<HarnessEntry['kind'], string> = {
 }
 /** How many skill and subagent entries of each kind a snapshot lists by relevance. */
 const METADATA_TOP = 3
+/** How many prompt and memory entries of each kind a snapshot gives in full, by relevance; the token budget still applies. */
+const FULL_TEXT_TOP = 3
 /** Characters of a skill or subagent line after its reference. */
 const METADATA_CHARS = 200
 /** Recent conversation read for relevance: this many messages, at most this many characters. */
@@ -87,14 +96,20 @@ const usable = (item: EffectiveEntry): boolean => {
   )
 }
 const reference = (e: HarnessEntry) => `[${e.kind}/${e.id} v${e.version}]`
+/** The `source` of an entry saved in an earlier session, as the snapshot carries it. */
+const SAVED_SOURCE = 'saved:'
+const isSaved = (e: HarnessEntry) => typeof e.source === 'string' && e.source.startsWith(SAVED_SOURCE)
+/** Marks a line as an entry saved in an earlier session; it follows the reference, so parsing is unchanged. */
+const SAVED_MARK = ' (saved)'
 function clip(text: string, max: number): string {
   const chars = [...text]
   return chars.length <= max ? text : `${chars.slice(0, max - 1).join('')}…`
 }
 function line(e: HarnessEntry): string {
-  if (isFullText(e.kind)) return `- ${reference(e)} ${e.title}: ${e.content}`
+  const mark = isSaved(e) ? SAVED_MARK : ''
+  if (isFullText(e.kind)) return `- ${reference(e)}${mark} ${e.title}: ${e.content}`
   const summary = `${e.title}: ${e.content.split('\n', 1)[0] ?? ''}`.replace(/\s+/g, ' ').trim()
-  return `- ${reference(e)} ${clip(summary, METADATA_CHARS)}`
+  return `- ${reference(e)}${mark} ${clip(summary, METADATA_CHARS)}`
 }
 
 type Candidate = { entry: HarnessEntry; text: string; tokens: number }
@@ -142,7 +157,7 @@ function layout(
     if (rows.length) lines.push(HEADING[kind], ...rows.map((row) => row.text))
     if (extra)
       counts.push(
-        `${extra} more ${kind} ${extra === 1 ? 'entry is' : 'entries are'} saved; use harness_inspect to list them.`,
+        `${extra} more ${kind} ${extra === 1 ? 'entry is' : 'entries are'} not shown here (including any saved from earlier sessions); use harness_inspect to list them.`,
       )
   }
   const omitted = a.left + b.left + unusable
@@ -160,9 +175,9 @@ function renderControl(control: readonly string[] | undefined, budget: number): 
 }
 
 /**
- * A snapshot: the fixed guidance, then every prompt and memory entry in full and, for skills and
- * subagents, the `METADATA_TOP` most relevant of each kind as one line of metadata with a count of the
- * rest. Relevance is term overlap with the recent conversation (and the goal, once one is supplied);
+ * A snapshot: the fixed guidance, then the `FULL_TEXT_TOP` most relevant prompt and memory entries of
+ * each kind in full and, for skills and subagents, the `METADATA_TOP` most relevant of each kind as one
+ * line of metadata, each kind with a count of the rest. Relevance is term overlap with the recent conversation (and the goal, once one is supplied);
  * it is computed here once and frozen into the text. With no entry the snapshot is the guidance
  * alone. Budgets are estimated with `estimateTokens`; the guidance is outside them. `body` is the
  * trusted header (guidance and counts); `data` is the entry lines, untrusted, '' when there are none.
@@ -172,17 +187,26 @@ export function renderExperience(
   ctx: { goalText?: string; recentText: string; budgets: ExperienceBudgets },
 ): { control: string; body: string; data: string; omitted: number } {
   const query = [ctx.goalText, ctx.recentText].filter(Boolean).join('\n')
+  const emphasis = ctx.goalText ?? ''
   const entries = view.entries.filter(usable)
-  const full = rankEntries(
-    entries.filter((item) => isFullText(item.entry.kind)),
-    query,
-  ).map((item) => candidate(item.entry))
-  const metadata: Candidate[] = []
   const more: Partial<Record<HarnessEntry['kind'], number>> = {}
+  const chosen: EffectiveEntry[] = []
+  for (const kind of ['prompt', 'memory'] as const) {
+    const ranked = rankEntries(
+      entries.filter((item) => item.entry.kind === kind),
+      query,
+      emphasis,
+    )
+    chosen.push(...ranked.slice(0, FULL_TEXT_TOP))
+    if (ranked.length > FULL_TEXT_TOP) more[kind] = ranked.length - FULL_TEXT_TOP
+  }
+  const full = rankEntries(chosen, query, emphasis).map((item) => candidate(item.entry))
+  const metadata: Candidate[] = []
   for (const kind of ['skill', 'subagent'] as const) {
     const ranked = rankEntries(
       entries.filter((item) => item.entry.kind === kind),
       query,
+      emphasis,
     )
     metadata.push(...ranked.slice(0, METADATA_TOP).map((item) => candidate(item.entry)))
     if (ranked.length > METADATA_TOP) more[kind] = ranked.length - METADATA_TOP
@@ -255,9 +279,15 @@ export function visibleExperience(surface: readonly SurfaceNode[]): {
   snapshot: boolean
   voided: boolean
   lastSeq: Seq
+  /** The newest visible snapshot is format 1, written before saved entries joined the snapshot. */
+  legacy: boolean
+  /** A visible snapshot or update carries an entry saved in an earlier session. */
+  saved: boolean
 } {
   let snapshot = false
   let voided = false
+  let legacy = false
+  let saved = false
   let lastSeq: Seq = 0
   for (const node of surface) {
     if (node.kind !== 'user' || node.event.type !== 'user/message') continue
@@ -278,9 +308,13 @@ export function visibleExperience(surface: readonly SurfaceNode[]): {
       continue
     }
     lastSeq = Math.max(lastSeq, node.seq)
-    if (first === SNAPSHOT_FORMAT_LINE) snapshot = true
+    if (SNAPSHOT_FORMAT_LINES.includes(first ?? '')) {
+      snapshot = true
+      legacy = first !== SNAPSHOT_FORMAT_LINE
+    }
+    if (text.includes(`]${SAVED_MARK} `)) saved = true
   }
-  return { snapshot, voided, lastSeq }
+  return { snapshot, voided, lastSeq, legacy, saved }
 }
 
 /** The text of the most recent user and assistant messages, for ranking; notes are skipped. */
@@ -296,6 +330,101 @@ export function recentConversationText(surface: readonly SurfaceNode[]): string 
   }
   return parts.reverse().join('\n').slice(-RECENT_CHARS)
 }
+
+/** The newest user message that is not a note: the current request, weighed again when ranking. */
+function currentRequestText(surface: readonly SurfaceNode[]): string {
+  for (let i = surface.length - 1; i >= 0; i--) {
+    const node = surface[i]
+    if (!node || node.kind !== 'user') continue
+    const data = node.event.data as { kind?: unknown; content?: unknown }
+    if (data.kind === 'runtime_context') continue
+    const text = messageText(data.content)
+    if (text) return text.slice(-RECENT_CHARS)
+  }
+  return ''
+}
+
+/** Sessions whose last snapshot went without saved entries because the host could not list them. */
+const savedOwed = new WeakSet<SessionImpl>()
+/** Sessions that already looked for saved entries for a format 1 snapshot. */
+const legacyLooked = new WeakSet<SessionImpl>()
+
+/** The saved entries last listed for a session, at the host revision they were listed at. */
+const savedCache = new WeakMap<SessionImpl, { revision: string; entries: readonly SavedEntry[] }>()
+
+/**
+ * The entries saved in earlier sessions that are in force for this session, listed again only when the
+ * host's revision moved. `failed` when the host could not answer and nothing was listed before: then no
+ * saved entry the model was given may be withdrawn on that account.
+ */
+async function savedFor(
+  s: SessionImpl,
+  fresh: boolean,
+): Promise<{ entries: readonly SavedEntry[]; failed: boolean }> {
+  const revision = savedRevisionOf(s)
+  const cached = savedCache.get(s)
+  // A snapshot always reads afresh: the revision does not follow a hand edit of the file.
+  if (!fresh && cached && revision && cached.revision === revision)
+    return { entries: cached.entries, failed: false }
+  const listed = await savedEntriesOf(s)
+  if (!listed) return { entries: cached?.entries ?? [], failed: !cached }
+  savedCache.set(s, { revision, entries: listed })
+  return { entries: listed, failed: false }
+}
+
+const normalized = (text: string) => text.replace(/\s+/g, ' ').trim()
+
+/**
+ * Saved entries as snapshot entries, without the ones this session already holds: the same id (a
+ * rewrite), the same source entry, or the same text. Their seqs are negative, oldest lowest, so on a tie
+ * a session entry comes first and then the most recently saved.
+ */
+function savedAsEntries(
+  s: SessionImpl,
+  saved: readonly SavedEntry[],
+  session: readonly EffectiveEntry[],
+): EffectiveEntry[] {
+  const ids = new Set(session.map(({ entry }) => entry.id))
+  const texts = new Set(session.map(({ entry }) => normalized(`${entry.title}\n${entry.content}`)))
+  const kept = saved
+    .filter(
+      (e) =>
+        !ids.has(e.ref) &&
+        !(e.source?.sessionKey === s.key && ids.has(e.source.entryId)) &&
+        !texts.has(normalized(`${e.title}\n${e.content}`)),
+    )
+    .sort((a, b) => a.savedAt - b.savedAt)
+  return kept.map((e, i) => ({
+    entry: {
+      kind: e.kind,
+      id: e.ref,
+      title: e.title,
+      content: e.content,
+      scope: 'local',
+      version: 1,
+      source: `${SAVED_SOURCE}${e.ref}`,
+    } as HarnessEntry,
+    seq: (i - kept.length) as Seq,
+  }))
+}
+
+/**
+ * The entries `harness_inspect` reads: this session's in force, then the ones saved in earlier sessions
+ * that it does not hold already. A host that cannot answer adds none.
+ */
+export async function inspectableEntries(
+  s: SessionImpl,
+  valid: readonly EffectiveEntry[],
+): Promise<EffectiveEntry[]> {
+  const saved = await savedEntriesOf(s)
+  return [...valid, ...savedAsEntries(s, saved ?? [], valid)]
+}
+
+/** What the last snapshot built for a session chose from, for its `refinement-prefix-change` row. */
+const snapshotChoices = new WeakMap<
+  SessionImpl,
+  { candidates: Record<HarnessEntry['kind'], number>; saved: number; included: string[] }
+>()
 
 /** `text` is the trusted header; `data`, the entry lines, rides an untrusted block when present. */
 export type ExperienceNote = {
@@ -399,6 +528,23 @@ export async function deriveExperienceNotes(
   const valid = await deliveredReferences(s, inForce)
   const entries: EffectiveEntry[] = valid.map(({ entry, seq }) => ({ entry, seq }))
   const present = new Set([...valid, ...expired, ...held].map(({ entry }) => `${entry.kind}/${entry.id}`))
+  // Entries saved in earlier sessions are listed at a cold boundary, for a format 1 snapshot that never
+  // carried them, and whenever the model was given one, so that one gone since is withdrawn.
+  const isSavedKey = (ref: string) => isSavedRef(ref.slice(ref.indexOf('/') + 1))
+  const givenSaved = [...refs.delivered.keys()].filter(isSavedKey)
+  const withdrawnSaved = [...refs.withdrawn].filter(isSavedKey)
+  // A format 1 snapshot never carried saved entries: they are looked for once. A snapshot sent while the
+  // host could not list them owes them until a listing succeeds.
+  const legacy = seen.snapshot && seen.legacy && !seen.saved && !legacyLooked.has(s)
+  const owedBefore = seen.snapshot && savedOwed.has(s)
+  const cold = !seen.snapshot || legacy || savedOwed.has(s)
+  const saved =
+    cold || givenSaved.length || withdrawnSaved.length
+      ? await savedFor(s, cold)
+      : { entries: [], failed: false }
+  for (const e of saved.entries) present.add(`${e.kind}/${e.ref}`)
+  // A host that cannot answer withdraws nothing: what it said before still stands.
+  if (saved.failed) for (const ref of givenSaved) present.add(ref)
   const control = controlLines(refs.delivered, expired, present, handedOffRefs(s.state))
   // Held entries the model was not given at their version are named in the note, so that once their
   // task can be read they are owed, however many notes were written meanwhile.
@@ -408,11 +554,29 @@ export async function deriveExperienceNotes(
     .sort()
   const named = heldLine(heldBack)
   const withHeld = (text: string) => (named ? `${text}\n${named}` : text)
-  if (!seen.snapshot) {
+  // A format 1 snapshot never carried saved entries: with some in force, a new snapshot gives them once.
+  if (legacy) legacyLooked.add(s)
+  if (cold) {
+    if (saved.failed) savedOwed.add(s)
+    else savedOwed.delete(s)
+  }
+  if (!seen.snapshot || ((legacy || owedBefore) && !saved.failed && saved.entries.length > 0)) {
+    const all = [...entries, ...savedAsEntries(s, saved.entries, entries)]
     const out = renderExperience(
-      { entries, control },
-      { recentText: recentConversationText(surface), budgets: EXPERIENCE_BUDGETS },
+      { entries: all, control },
+      {
+        goalText: currentRequestText(surface),
+        recentText: recentConversationText(surface),
+        budgets: EXPERIENCE_BUDGETS,
+      },
     )
+    const candidates = { prompt: 0, memory: 0, skill: 0, subagent: 0 }
+    for (const { entry } of all) if (entry.kind in candidates) candidates[entry.kind]++
+    snapshotChoices.set(s, {
+      candidates,
+      saved: all.length - entries.length,
+      included: [...out.data.matchAll(/^- \[([a-z]+\/[A-Za-z0-9._-]+) v\d+\]/gmu)].map((m) => m[1] as string),
+    })
     const notes: ExperienceNote[] = []
     if (out.control) notes.push(controlNote(out.control))
     notes.push({
@@ -446,10 +610,16 @@ export async function deriveExperienceNotes(
       (refs.heldMore && meta?.applicability === 'task' && refs.delivered.get(ref) !== entry.version)
     )
   }
+  // A saved entry the model was told is withdrawn, and in force again (renewed by a person), is owed too.
+  const back = savedAsEntries(
+    s,
+    saved.entries.filter((e) => refs.withdrawn.has(`${e.kind}/${e.ref}`)),
+    entries,
+  )
   const fresh =
     notice === EXPERIENCE_RESET_NOTICE
-      ? entries
-      : valid.filter(owed).map(({ entry, seq }) => ({ entry, seq }))
+      ? [...entries, ...savedAsEntries(s, saved.entries, entries)]
+      : [...valid.filter(owed).map(({ entry, seq }) => ({ entry, seq })), ...back]
   if (fresh.length) {
     const { body, data } = renderExperienceUpdate(fresh, EXPERIENCE_BUDGETS)
     // An entry owed from before the last note that still does not fit is not announced again and
@@ -466,24 +636,37 @@ export async function deriveExperienceNotes(
 }
 
 /**
- * A rebuilt snapshot is an expected change of what the request carries, recorded as a
- * `refinement-prefix-change` row. It joins the request's written rows -- the dispatch transaction
- * that also commits the note and the request header, on the stepper and the loop path alike -- and
- * only when derive really produced the snapshot note, so a request prepared and never sent records
- * nothing.
+ * The rows task experience adds to a request's written rows -- the dispatch transaction that also
+ * commits the notes and the request header, on the stepper and the loop path alike -- so a request
+ * prepared and never sent records nothing. A rebuilt snapshot is an expected change of what the
+ * request carries, recorded as a `refinement-prefix-change` row, only when derive really produced
+ * the snapshot note. The first request of a session that runs task experience also records that it
+ * does (`refinementMarker`).
  */
-export function withExperienceDiag<T extends { notes: EventInput[] }>(s: SessionImpl, out: T): T {
+export function withExperienceRows<T extends { notes: EventInput[] }>(s: SessionImpl, out: T): T {
+  const marker = refinementMarker(s)
   const prefix = `${EXPERIENCE_PREFIX}${SNAPSHOT_FORMAT_LINE}`
   const snapshot = out.notes
     .map((event) =>
       event.type === 'user/message' ? messageText((event.data as { content?: unknown }).content) : '',
     )
     .find((text) => text.startsWith(prefix))
-  if (snapshot === undefined) return out
-  const data = {
-    reason: 'experience-snapshot',
-    entries: s.state.registers.harnessEntries.size,
-    tokens: estimateTokens(snapshot.slice(EXPERIENCE_PREFIX.length)),
-  }
-  return { ...out, notes: [...out.notes, s.ev('x/core/refinement-prefix-change', data, { ignorable: true })] }
+  const rows = [
+    ...(marker ? [marker] : []),
+    ...(snapshot === undefined
+      ? []
+      : [
+          s.ev(
+            'x/core/refinement-prefix-change',
+            {
+              reason: 'experience-snapshot',
+              entries: s.state.registers.harnessEntries.size,
+              tokens: estimateTokens(snapshot.slice(EXPERIENCE_PREFIX.length)),
+              ...(snapshotChoices.get(s) ?? {}),
+            },
+            { ignorable: true },
+          ),
+        ]),
+  ]
+  return rows.length === 0 ? out : { ...out, notes: [...out.notes, ...rows] }
 }

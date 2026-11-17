@@ -166,6 +166,7 @@ Package administration, resource control, configuration, scheduling, diagnostics
 
 ### Other administration
 
+- `_agnes/v1/superagent.sessions.upgrade`
 - `_agnes/v1/admin.bundles.get`
 - `_agnes/v1/admin.bundles.save`
 - `_agnes/v1/admin.composition.get`
@@ -175,10 +176,19 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/admin.context`
 - `_agnes/v1/admin.history.search`
 - `_agnes/v1/admin.plan`
-- `_agnes/v1/admin.mcp.oauth.save`
+- `_agnes/v1/admin.mcp.oauth.get`
+- `_agnes/v1/admin.mcp.oauth.complete`
+- `_agnes/v1/admin.mcp.oauth.refresh`
+- `_agnes/v1/admin.mcp.oauth.logout`
 - `_agnes/v1/admin.memory`
 - `_agnes/v1/admin.triggers`
+- `_agnes/v1/admin.managedWorkspaces.list`
+- `_agnes/v1/admin.managedWorkspaces.grant`
+- `_agnes/v1/admin.managedWorkspaces.revoke`
 - `_agnes/v1/sessions.migrate`
+- `_agnes/v1/managedInput.list`
+- `_agnes/v1/managedInput.get`
+- `_agnes/v1/managedInput.decide`
 
 ### Plugin trees, configuration and candidates
 
@@ -267,11 +277,14 @@ Package administration, resource control, configuration, scheduling, diagnostics
 - `_agnes/v1/mcp.servers.reconnect`
 - `_agnes/v1/mcp.servers.oauth.status`
 - `_agnes/v1/mcp.servers.oauth.status.set`
+- `_agnes/v1/mcp.servers.oauth.signOut`
 
 ### Extension calls and surfaces
 
 - `_agnes/v1/extension.ack`
 - `_agnes/v1/extension.call`
+- `_agnes/v1/channels.catalog`
+- `_agnes/v1/channels.pairing`
 - `_agnes/v1/directory.upsert`
 - `_agnes/v1/apis.list`
 - `_agnes/v1/pluginRuntime.status`

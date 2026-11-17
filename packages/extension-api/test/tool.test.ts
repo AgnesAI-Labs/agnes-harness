@@ -41,6 +41,12 @@ describe('checkToolMeta (explicit safety keys, optional hints)', () => {
     expect(checkToolMeta({ ...fullMeta, requiresImageInput: 'yes' }).ok).toBe(false)
     expect(checkToolMeta({ ...fullMeta, commandArg: 'command' }).ok).toBe(true)
     for (const commandArg of ['', 'a.b', 1]) expect(checkToolMeta({ ...fullMeta, commandArg }).ok).toBe(false)
+    const outward = { ...fullMeta, isOpenWorld: true, requiresApproval: 'always', outward: true }
+    expect(checkToolMeta(outward)).toEqual({ ok: true })
+    expect(checkToolMeta({ ...outward, outward: 'yes' }).ok).toBe(false)
+    // An outward tool says it reaches the network and that each call needs approval.
+    expect(checkToolMeta({ ...outward, isOpenWorld: false }).ok).toBe(false)
+    expect(checkToolMeta({ ...outward, requiresApproval: undefined }).ok).toBe(false)
     expect(
       checkToolMeta({
         ...fullMeta,

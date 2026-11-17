@@ -105,7 +105,13 @@ function operation(
 
 type Outcome = 'completed' | 'failed' | 'running'
 /** A ready backend with one catalog entry; each case decides how its check and install end. */
-function backend(options: { inspect?: Outcome; install?: Outcome } = {}) {
+function backend(
+  options: {
+    inspect?: Outcome
+    install?: Outcome
+    declaredCapabilities?: PackagePreview['declaredCapabilities']
+  } = {},
+) {
   const outcome = { inspect: options.inspect ?? 'completed', install: options.install ?? 'completed' }
   let installed: PackageInstalledDescriptor[] = []
   const calls: string[] = []
@@ -149,7 +155,11 @@ function backend(options: { inspect?: Outcome; install?: Outcome } = {}) {
         return Response.json(
           outcome.inspect === 'failed'
             ? operation('inspect-1', 'inspect', failure('The source folder could not be read.'))
-            : operation('inspect-1', 'inspect', { preview }),
+            : operation('inspect-1', 'inspect', {
+                preview: options.declaredCapabilities
+                  ? { ...preview, declaredCapabilities: options.declaredCapabilities }
+                  : preview,
+              }),
         )
       }
       if (outcome.install === 'running')
@@ -270,6 +280,36 @@ it('checks in place on the card: the button is busy, nothing navigates and no no
   expectNoDialog()
 }, 60_000)
 
+const managedService = {
+  id: 'engine',
+  scope: 'profile',
+  artifact: { kind: 'node', entry: './dist/server.mjs' },
+  healthPath: '/health',
+  listeners: [],
+  startupTimeoutMs: 1000,
+  shutdownTimeoutMs: 1000,
+  apiVersion: '1.0.0',
+  requires: [],
+}
+
+it('says on the review card that a plugin can open sessions and reach a paired chat, in plain words', async () => {
+  const kit = backend({
+    declaredCapabilities: {
+      ui: true,
+      managedServices: [{ ...managedService, sessions: true, channelTargets: true }],
+    } as PackagePreview['declaredCapabilities'],
+  })
+  await mountMarket(kit.fetcher)
+  await click('[data-testid="market-install"]')
+  await vi.waitFor(() => expect(review()).not.toBeNull(), { timeout: 5000 })
+  const gets = review()?.querySelector('[data-testid="install-review-gets"]')?.textContent
+  expect(gets).toContain('界面')
+  expect(gets).toContain('能替你开会话并运行')
+  expect(gets).toContain('通过该渠道给你发文字提醒')
+  expect(gets).not.toContain('managedSessions')
+  expect(gets).not.toContain('channelTargets')
+}, 60_000)
+
 it('pushes the review page when the check is done, with the hashes under collapsed 技术详情', async () => {
   const kit = backend()
   await mountMarket(kit.fetcher)
@@ -286,8 +326,9 @@ it('pushes the review page when the check is done, with the hashes under collaps
   expect(page.querySelector('[data-testid="install-review-meta"]')?.textContent).toBe(
     '运行方式 · 1.0.0 · 示例',
   )
+  // A package that lists no extra scopes says so in one line, whether or not it declared capabilities.
   expect(page.querySelector('[data-testid="install-review-gets"]')?.textContent).toContain(
-    '未声明（运行中的未声明活动会被记录）',
+    '未列出额外权限范围',
   )
   expect(page.querySelector('[data-testid="install-review-gets"]')?.textContent).toContain('沿用当前策略')
   expect(page.querySelectorAll('[data-testid="install-review-unverified"]')).toHaveLength(1)

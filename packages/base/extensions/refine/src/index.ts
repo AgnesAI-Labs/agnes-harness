@@ -24,14 +24,7 @@ export type {
   SessionProposal,
 } from './port.js'
 
-/** The profile's refinement master switch, as the host read it for this container. */
-export type RefinementSwitch = {
-  current(): { settings: { enabled: boolean; mode: 'manual' | 'auto' } }
-}
-
 export type RefineExtensionDeps = {
-  /** Absent means off: nothing but the switch can turn the tools on. */
-  settings?: RefinementSwitch
   /** The host's managed refinement: given this plugin's planner, it answers for each session. */
   runs?: ConnectRefinement
   /** Where the tools hand their input; overrides `runs` (tests). */
@@ -39,17 +32,16 @@ export type RefineExtensionDeps = {
 }
 
 /**
- * The refinement tools, registered only while the profile switch is on and the host runs refinement.
- * Connecting hands the host this plugin's planner. The host hands over the switch value it read when
- * it assembled the container, so every apply in that container (including a row
- * remount) registers the same set and a running session's tools never change; a new assembly reads
- * the switch again.
+ * The refinement tools, registered whenever the host runs refinement, whatever the profile switch
+ * says: every apply (including a row remount) registers the same set. Which sessions are offered
+ * them is Core's decision, made once per session as it opens, so a running session's tools never
+ * change and a session opened while the switch is off never sees them. Connecting hands the host
+ * this plugin's planner.
  */
 export function createRefineExtension(deps: RefineExtensionDeps = {}) {
   return defineAgnesPlugin({
     inject: ['tools'],
     apply(ctx: Context) {
-      if (deps.settings?.current().settings.enabled !== true) return
       // With nothing to run them, the tools would only ever fail: none are registered.
       const port = deps.port ?? (deps.runs ? connectedToolPort(deps.runs(REFINEMENT_PLANNER)) : undefined)
       if (!port) return

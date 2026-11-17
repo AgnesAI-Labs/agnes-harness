@@ -69,4 +69,22 @@ export interface PlatformView extends PlatformFacts {
 export type SandboxEnforcement = Readonly<{
   level: 'full' | 'partial' | 'none'
   scope: readonly ('file' | 'network' | 'process')[]
+  /**
+   * Names the exact partial contract behind `level: 'partial'`; absent for every other enforcement.
+   * Only the Host's own local provider applies this contract. A provider registration may carry a
+   * well-formed one, but the Host drops it from any other provider's report.
+   */
+  boundary?: WindowsWriteBoundary
+}>
+
+/**
+ * The closed Windows contract: writes are limited by file ACLs, reads and network are not isolated,
+ * and the process tree is owned by a job object. Any other shape is not this contract.
+ */
+export type WindowsWriteBoundary = Readonly<{
+  contract: 'windows-write-restricted-v1'
+  fileWrite: 'acl-partial'
+  fileRead: 'unrestricted'
+  network: 'unrestricted'
+  processTree: 'job-object'
 }>

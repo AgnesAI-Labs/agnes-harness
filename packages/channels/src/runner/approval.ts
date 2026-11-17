@@ -74,7 +74,7 @@ const aborted = (signal: AbortSignal): PermissionOutcome => ({
   unanswered: signal.reason === 'stopped' || signal.reason === 'deadline' ? signal.reason : 'detached',
 })
 const APPROVAL_TEXT = /^(同意|拒绝)\s+(\S{6,128})$/
-const MAX_CALLBACK_CHARS = 512
+export const MAX_CALLBACK_CHARS = 512
 const MAX_ACTION_CHARS = 512
 const ACTION_TTL_MS = 5 * 60_000
 const MAX_RECENT_ACTIONS = 4_096
@@ -547,6 +547,8 @@ function sameChat(left: ChatTarget, right: ChatTarget): boolean {
 function chatOf(event: ChannelEvent): ChatTarget {
   return {
     chatId: event.chat.id,
+    accountId: event.accountId,
+    ...(event.chat.type !== 'thread' ? { chatType: event.chat.type } : {}),
     ...(event.chat.threadId === undefined ? {} : { threadId: event.chat.threadId }),
   }
 }

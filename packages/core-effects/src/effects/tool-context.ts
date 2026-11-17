@@ -30,11 +30,25 @@ export type ChildStatus = {
   state: 'running' | 'done' | 'error'
   lastSeq: Seq
   text?: string
+  /** Why a failed child's last turn ended in error; the message is clipped adapter text. */
+  error?: NonNullable<ChildResult['error']>
+  /** The cap a failed child's last turn stopped at. */
+  stopReason?: NonNullable<ChildResult['stopReason']>
+  /** `state` is `error` because the child was cancelled, not because it failed. */
+  cancelled?: true
   idle?: boolean
   /** Backend-only identity of the completed result returned by this snapshot. */
   completionId?: string
   completionSeq?: Seq
   receipt?: ChildResult['receipt']
+}
+/** Why a failed child ended, as a collected result carries it; nothing for any other outcome. */
+function failureOf(status: ChildStatus): Pick<ChildResult, 'error' | 'stopReason'> {
+  if (status.state !== 'error' || status.cancelled) return {}
+  return {
+    ...(status.error ? { error: status.error } : {}),
+    ...(status.stopReason ? { stopReason: status.stopReason } : {}),
+  }
 }
 export type ChildHandle = {
   key: string
@@ -178,6 +192,8 @@ export function buildToolContext(
   call: {
     toolUseId: string
     name: string
+    /** Host-granted port fitted before binding; only invoke starts an effect. */
+    sideCall?: ToolContext['sideCall']
     signal: AbortSignal
     timeoutMs: number
     defaultTimeoutMs?: number
@@ -339,7 +355,12 @@ export function buildToolContext(
         const e = d.workspace
           ? d.runtime.enforcement(d.workspace.sandbox)
           : { level: 'none' as const, scope: [] }
-        return Object.freeze({ level: e.level, scope: Object.freeze([...e.scope]) })
+        return Object.freeze({
+          level: e.level,
+          scope: Object.freeze([...e.scope]),
+          // Names the partial Windows contract; without it the same level reads as a degraded one.
+          ...(e.boundary ? { boundary: Object.freeze({ ...e.boundary }) } : {}),
+        })
       },
     },
     // Facts read at call time, probe passed through; no manifest gate.
@@ -453,9 +474,12 @@ export function buildToolContext(
                 : status.state === 'done'
                   ? 'completed'
                   : status.state === 'error'
-                    ? 'failed'
+                    ? status.cancelled
+                      ? 'cancelled'
+                      : 'failed'
                     : 'running') as 'running' | 'idle' | 'completed' | 'failed' | 'cancelled',
               ...(status.text !== undefined ? { text: status.text } : {}),
+              ...(status.idle ? {} : failureOf(status)),
               ...(status.receipt === undefined ? {} : { receipt: status.receipt }),
             }
           }
@@ -465,12 +489,15 @@ export function buildToolContext(
             await d.children.collected?.(childKey, snap.completionId, snap.completionSeq ?? 0)
           return {
             childKey,
-            status: (snap.state === 'done' ? 'completed' : snap.state === 'error' ? 'failed' : 'running') as
-              | 'running'
-              | 'completed'
-              | 'failed'
-              | 'cancelled',
+            status: (snap.state === 'done'
+              ? 'completed'
+              : snap.state === 'error'
+                ? snap.cancelled
+                  ? 'cancelled'
+                  : 'failed'
+                : 'running') as 'running' | 'completed' | 'failed' | 'cancelled',
             ...(snap.text !== undefined ? { text: snap.text } : {}),
+            ...failureOf(snap),
             ...(snap.receipt === undefined ? {} : { receipt: snap.receipt }),
           }
         }
@@ -500,7 +527,13 @@ export function buildToolContext(
         if (!snap) throw new CoreError('E_CHILD_NOT_FOUND', `unknown child ${childKey}`, { childKey })
         return {
           childKey,
-          status: snap.state === 'done' ? 'completed' : snap.state === 'error' ? 'failed' : 'cancelled',
+          // A child that ended before the cancel keeps its own outcome.
+          status:
+            snap.state === 'done'
+              ? 'completed'
+              : snap.state === 'error' && !snap.cancelled
+                ? 'failed'
+                : 'cancelled',
           ...(snap.text !== undefined ? { text: snap.text } : {}),
         }
       },
@@ -543,6 +576,7 @@ export function buildToolContext(
     log: d.log,
   }
   return effects.bind({
+    ...(call.sideCall ? { sideCall: effects.guard(call.sideCall, ['invoke']) } : {}),
     ...effects.guard(context, ['exec', 'requestCompaction']),
     fs: {
       read: (path, options) => files.read(path, options),

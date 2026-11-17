@@ -63,8 +63,11 @@ export function workspaceMemory(input: {
 
   return {
     registry,
-    /** The view memory is opened with; with a session key, a change of its answers is reported for it. */
-    validity: (workspaceRoot: string, sessionKey?: string): MemoryValidityView =>
+    /**
+     * The view memory is opened with; with a session key, a change of its answers is reported for it.
+     * A child session gets no task-experience notes, so it sees saved paragraphs in its memory note.
+     */
+    validity: (workspaceRoot: string, sessionKey?: string, child = false): MemoryValidityView =>
       registryView(
         registry(workspaceRoot),
         input.clock,
@@ -73,6 +76,7 @@ export function workspaceMemory(input: {
           : (change) => {
               if (enabled()) input.viewChanged?.(sessionKey, change)
             },
+        child ? 'valid' : 'delivered',
       ),
     /** The memory selection sessions use; bound once the kernel stage has it. */
     bindMemory(open: MemoryOpener): void {

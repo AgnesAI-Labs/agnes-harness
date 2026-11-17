@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { type RunAgnesdArgs, runAgnesd } from '@agnes/daemon'
 import { homeVersionMessage } from '@agnes/host'
+import { trimNativeHeap } from '@agnes/system-node'
 import { publishStartupDiagnostic } from '../src/boot/startup-diagnostic.js'
 import { startupFailure } from '../src/commands/first-run-locales.js'
 
@@ -67,6 +68,8 @@ export async function runDaemonEntry(argv: readonly string[] = process.argv.slic
       ...(workerEntry.endsWith('.ts') ? { workerExecArgv: ['--import', 'tsx'] } : {}),
       ...(parsed.localWeb ? { localWeb: parsed.localWeb } : {}),
     })
+    // The daemon is listening; give back what start-up freed (profile, catalogue, listeners).
+    void trimNativeHeap()
   } catch (error) {
     if (!homeVersionMessage(error, process.env.AGNES_LOCALE))
       publishStartupDiagnostic(error, process.env.AGH_HOME)

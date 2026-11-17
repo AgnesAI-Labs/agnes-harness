@@ -24,6 +24,7 @@ describe('prompt section order table', () => {
       ['environment', 110],
       ['workflow:receipts', 113],
       ['tools-available', 115],
+      ['jobs:completed', 117],
       ['agents-md', 120],
       ['coding-doctrine', 130],
       ['code-doctrine', 140],
@@ -51,6 +52,7 @@ describe('prompt section order table', () => {
     const byOwner = (owner: string) => PROMPT_SECTIONS.filter((s) => s.owner === owner).map((s) => s.id)
     expect(byOwner('base')).toEqual([
       'workflow:receipts',
+      'jobs:completed',
       'agents-md',
       'skills',
       'plan-mode',
@@ -145,16 +147,9 @@ const PROMPT_TEXT: Record<string, string> = {
   'coding-doctrine': [
     'When working with code or repository files:',
     '',
-    '- Read the file before editing it. Never guess a path, an import name, or an API shape.',
+    '- Read the file before editing it.',
+    '- Check the exit status of every shell result; investigate failures before moving on.',
     '- Create generated files, including Markdown and HTML, in the current workspace by default. Use paths relative to the cwd in the latest runtime context, such as `result.md` or `result.html`. A leading `/` is an absolute operating-system path, not a workspace prefix. Use a different destination only when the user explicitly requests it.',
-    '- Change one thing at a time and verify it before moving on. Prefer the smallest edit that works.',
-    '- Decide up front what "done" means for the request: the result it asks for and the check that shows it works. Once that check passes, stop and report. Do not build or test behaviour the request did not ask for.',
-    '- If several attempts have not moved your measure of progress, step back to the most direct approach instead of building more tooling around the problem.',
-    '- When a helper script you wrote disagrees with a direct check, trust the direct check and fix or drop the helper.',
-    '- Build large generated files, including HTML and SVG, across multiple tool calls. Write a small valid scaffold with unique section markers first, then replace one marker per edit call with a complete section. Aim for at most 8 KiB of new content per call, and retain a unique marker for each remaining section. Never attempt the entire large file in one tool call.',
-    "- Run the project's own test or build command to check your work. If none exists, say so instead of inventing one.",
-    '- Keep output short. Report what changed, what you verified, and what is still open.',
-    '- Leave the workspace consistent: no half-applied edits, no stray files.',
   ].join('\n'),
   'environment-powershell':
     "Run shell commands directly in the Host-selected PowerShell interpreter. Do not wrap them in another powershell/pwsh -Command. Use curl.exe when you need native curl, and PowerShell here-strings for multiline text. Use -Encoding utf8 for text file reads and writes. Follow the measured interpreter version: Windows PowerShell 5.1 does not support && or ||. Python commands receive UTF-8 and unbuffered output defaults. A timeout alone does not identify its cause; inspect captured output and current state before retrying. Never print a secret's value; check only whether it is set.",
@@ -178,7 +173,6 @@ const PROMPT_TEXT: Record<string, string> = {
     '',
     "Understand the user's goal and inspect relevant information before acting. Before an operation that may irreversibly change a supplied input (database journal/WAL writes, git history rewrites, or overwriting its only copy), copy it first. Distinguish plans from actions you have actually taken, and explain results clearly. Describe material limitations in ordinary language; keep incidental runtime diagnostics in the execution record.",
     "For questions about the workspace or a named local file, read the actual file relative to the session's working directory. Use that file as the source for calculations and conclusions. State the source and do not substitute example data or a requested target for observed values.",
-    'You do not claim a task is done until the evidence for it exists in this session.',
     'When you cannot do something, you say so plainly and stop; you never simulate a result.',
     '',
     'Deliverable files contain only the requested content; put caveats in the reply.',
@@ -223,18 +217,15 @@ describe('prompt text', () => {
       expect(t, needle).toContain(needle)
   })
 
-  it('coding-doctrine carries the disciplines of editing a repository directly', () => {
+  it('coding-doctrine keeps three rules for editing a repository directly', () => {
     const t = loadPrompt('coding-doctrine')
     for (const needle of [
       'Read the file before editing it',
-      'Change one thing at a time',
-      "Run the project's own test or build command",
-      'Keep output short',
-      'Once that check passes, stop and report',
-      'step back to the most direct approach',
-      'trust the direct check',
+      'Check the exit status of every shell result',
+      'in the current workspace by default',
     ])
       expect(t, needle).toContain(needle)
+    expect(t.split('\n').filter((line) => line.startsWith('- '))).toHaveLength(3)
   })
 
   it('environment.md is a template with the documented placeholders', () => {

@@ -3,9 +3,23 @@ import type { PersistenceMetadataNamespace } from '@agnes/extension-api'
 import { rpcError } from '@agnes/protocol'
 
 type Activation = { integrity: string; revision: string; activationId: string; active: boolean }
+const listeners = new Map<object | string, Set<() => void>>()
+
 /** Durable epochs: disabling and enabling the same code never revives an old grant. */
 export class ProfileActivations {
-  constructor(private readonly store: PersistenceMetadataNamespace) {}
+  constructor(
+    private readonly store: PersistenceMetadataNamespace,
+    private readonly scope: object | string = store,
+  ) {}
+  subscribe(listener: () => void): () => void {
+    const set = listeners.get(this.scope) ?? new Set<() => void>()
+    set.add(listener)
+    listeners.set(this.scope, set)
+    return () => {
+      set.delete(listener)
+      if (!set.size) listeners.delete(this.scope)
+    }
+  }
   publish(rows: readonly { owner: string; revision: string; integrity?: string }[]): void {
     this.store.transaction(() => {
       const next = new Map(rows.map((row) => [row.owner, row]))
@@ -25,6 +39,7 @@ export class ProfileActivations {
           })
       }
     })
+    for (const listener of [...(listeners.get(this.scope) ?? [])]) listener()
   }
   require(owner: string, integrity: string, expected?: string, revision?: string): string {
     const row = this.store.get(owner) as Activation | undefined

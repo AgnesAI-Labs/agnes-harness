@@ -271,9 +271,10 @@ export const probesNeedPython = (suite) =>
   suite.scenarios.some((s) => s.turns.some((t) => (t.bash ?? []).some((p) => PYTHON_WORD.test(p.command))))
 
 /** Writes a `python` that runs the resolved interpreter, for prepending to the probes' PATH. */
-export function writePythonShim(dir, interpreter) {
+export function writePythonShim(dir, interpreter, platform = process.platform) {
   mkdirSync(dir, { recursive: true })
-  const quoted = `'${interpreter.replaceAll("'", `'\\''`)}'`
+  const path = platform === 'win32' ? interpreter.replaceAll('\\', '/') : interpreter
+  const quoted = `'${path.replaceAll("'", `'\\''`)}'`
   writeFileSync(join(dir, 'python'), `#!/bin/sh\nexec ${quoted} "$@"\n`, { mode: 0o755 })
   return dir
 }

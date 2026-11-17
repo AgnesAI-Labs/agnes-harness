@@ -1,0 +1,510 @@
+{
+  "schema": 1,
+  "macos": {
+    "batches": [
+      {
+        "id": "main-1",
+        "args": ["fact-chain.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-24",
+        "args": ["diagnostics.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-2",
+        "args": ["first-run.spec.ts", "--grep", "first-run en|first run Demo"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-3",
+        "args": ["first-run.spec.ts", "--grep", "first-run zh-CN"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-4",
+        "args": ["memory.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-5",
+        "args": ["prompt-trace.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-6",
+        "args": [
+          "runtime.spec.ts",
+          "--grep",
+          "consented role takeover|session admission keeps|bundled deliverables survive|streaming follows the bottom|fresh first run, keyless demo"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-20",
+        "args": [
+          "runtime.spec.ts",
+          "--grep-invert",
+          "consented role takeover|session admission keeps|bundled deliverables survive|streaming follows the bottom|fresh first run, keyless demo"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-7",
+        "args": ["ui-flows.spec.ts", "--grep", "UI first run|UI MCP stdio|UI ask, plan|UI background jobs"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-13",
+        "args": [
+          "ui-flows.spec.ts",
+          "--grep",
+          "UI folder install|Playwright MCP preset|Checking a source with no plugin manifest"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-21",
+        "args": [
+          "ui-flows.spec.ts",
+          "--grep-invert",
+          "UI first run|UI MCP stdio|UI ask, plan|UI background jobs|UI folder install|Playwright MCP preset|Checking a source with no plugin manifest"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-8",
+        "args": ["ui-gate.spec.ts", "--grep", " en/light$"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-25",
+        "args": ["ui-gate.spec.ts", "--grep", " en/dark$"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-14",
+        "args": ["ui-gate.spec.ts", "--grep", "zh-CN/light$|live language switching"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-19",
+        "args": ["ui-gate.spec.ts", "--grep", "zh-CN/dark$"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-9",
+        "args": ["workbench.spec.ts", "--grep", "workspace dock|file tabs open|session terminal"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-15",
+        "args": ["workbench.spec.ts", "--grep-invert", "workspace dock|file tabs open|session terminal"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-10",
+        "args": [
+          "human-controls.spec.ts",
+          "references.spec.ts",
+          "intelligent-ui.spec.ts",
+          "question-surfaces.spec.ts",
+          "large-upload.spec.ts",
+          "credentials.spec.ts",
+          "observability.spec.ts"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-11",
+        "args": ["auto-review.spec.ts", "webhooks.spec.ts", "business-agents.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-22",
+        "args": ["feedback.spec.ts", "plugin-purpose.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-16",
+        "args": [
+          "v3-actions.spec.ts",
+          "--grep",
+          "forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-23",
+        "args": ["plugin-config.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-17",
+        "args": [
+          "v3-actions.spec.ts",
+          "--grep-invert",
+          "forking a recovered|v3 account dialog|v3 plugin tabs|v3 local package|v3 MCP two-step|v3 MCP method cards"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-12",
+        "args": [
+          "v3-navigation.spec.ts",
+          "--grep",
+          "permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-18",
+        "args": [
+          "v3-navigation.spec.ts",
+          "--grep-invert",
+          "permissions never flash|v3 home entries|v3 command-K|v3 archive filter|smoke en/"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-26",
+        "args": [
+          "agent-sweep.spec.ts",
+          "answer-tables.spec.ts",
+          "--grep",
+          "operations#desk|data-report#|finance-reconcile#|builtin:general|knowledge-qa#|Answer tables"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-27",
+        "args": [
+          "agent-sweep.spec.ts",
+          "base-conversation.spec.ts",
+          "mcp-management.spec.ts",
+          "mcp-oauth.spec.ts",
+          "browser.spec.ts",
+          "browser-layout.spec.ts",
+          "--grep-invert",
+          "operations#desk|data-report#|finance-reconcile#|builtin:general|knowledge-qa#"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-28",
+        "args": ["session-activity.spec.ts", "session-create.spec.ts", "tool-recovery.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "candidate-review",
+        "args": ["candidate-review.spec.ts", "--grep", "refuses edited approval"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "candidate-review-2",
+        "args": ["candidate-review.spec.ts", "--grep-invert", "refuses edited approval"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "narrow-phone",
+        "args": ["narrow.spec.ts", "--grep", "375 en/light$"],
+        "widths": "375",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "narrow-tablet",
+        "args": ["narrow.spec.ts", "--grep", "768 en/light$"],
+        "widths": "768",
+        "timeoutMinutes": 10
+      }
+    ],
+    "groups": [
+      {
+        "id": "batch-1",
+        "batches": ["main-9", "main-24"]
+      },
+      {
+        "id": "batch-2",
+        "batches": ["main-16", "main-3"]
+      },
+      {
+        "id": "batch-3",
+        "batches": ["main-1", "main-21"]
+      },
+      {
+        "id": "batch-4",
+        "batches": ["main-12", "main-26"]
+      },
+      {
+        "id": "batch-5",
+        "batches": ["main-18", "main-23"]
+      },
+      {
+        "id": "batch-6",
+        "batches": ["main-20", "main-2"]
+      },
+      {
+        "id": "batch-7",
+        "batches": ["main-27", "main-8"]
+      },
+      {
+        "id": "batch-8",
+        "batches": ["main-14", "candidate-review"]
+      },
+      {
+        "id": "batch-9",
+        "batches": ["main-10", "main-25"]
+      },
+      {
+        "id": "batch-10",
+        "batches": ["main-15", "main-13"]
+      },
+      {
+        "id": "batch-11",
+        "batches": ["narrow-tablet", "main-19"]
+      },
+      {
+        "id": "batch-12",
+        "batches": ["main-22", "main-6"]
+      },
+      {
+        "id": "batch-13",
+        "batches": ["candidate-review-2", "main-11"]
+      },
+      {
+        "id": "batch-14",
+        "batches": ["main-4", "main-5"]
+      },
+      {
+        "id": "batch-15",
+        "batches": ["main-28", "main-17"]
+      },
+      {
+        "id": "batch-16",
+        "batches": ["narrow-phone", "main-7"]
+      }
+    ]
+  },
+  "linux": {
+    "batches": [
+      {
+        "id": "main-1",
+        "args": [
+          "agent-sweep.spec.ts",
+          "answer-tables.spec.ts",
+          "auto-review.spec.ts",
+          "base-conversation.spec.ts",
+          "browser-layout.spec.ts",
+          "browser.spec.ts",
+          "business-agents.spec.ts"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-2",
+        "args": ["candidate-review.spec.ts", "credentials.spec.ts", "diagnostics.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-3",
+        "args": [
+          "fact-chain.spec.ts",
+          "feedback.spec.ts",
+          "human-controls.spec.ts",
+          "intelligent-ui.spec.ts",
+          "large-upload.spec.ts",
+          "question-surfaces.spec.ts",
+          "references.spec.ts"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-4",
+        "args": [
+          "first-run.spec.ts",
+          "mcp-management.spec.ts",
+          "mcp-oauth.spec.ts",
+          "observability.spec.ts",
+          "webhooks.spec.ts",
+          "tool-recovery.spec.ts"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-5",
+        "args": ["memory.spec.ts", "plugin-config.spec.ts", "session-create.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-6",
+        "args": ["plugin-purpose.spec.ts", "prompt-trace.spec.ts", "session-activity.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-7",
+        "args": ["runtime.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-8",
+        "args": ["ui-flows.spec.ts", "--grep", "UI first run|UI MCP stdio|UI ask, plan|UI background jobs"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-9",
+        "args": [
+          "ui-flows.spec.ts",
+          "--grep-invert",
+          "UI first run|UI MCP stdio|UI ask, plan|UI background jobs"
+        ],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-10",
+        "args": ["ui-gate.spec.ts", "--grep", " en/(light|dark)$"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-11",
+        "args": ["ui-gate.spec.ts", "--grep", "zh-CN/light$|live language switching"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-16",
+        "args": ["ui-gate.spec.ts", "--grep", "zh-CN/dark$"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-12",
+        "args": ["v3-actions.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-13",
+        "args": ["v3-navigation.spec.ts"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-14",
+        "args": ["workbench.spec.ts", "--grep", "workspace dock|file tabs open|session terminal"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "main-15",
+        "args": ["workbench.spec.ts", "--grep-invert", "workspace dock|file tabs open|session terminal"],
+        "widths": "",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "narrow-phone",
+        "args": ["narrow.spec.ts", "--grep", "375 en/light$"],
+        "widths": "375",
+        "timeoutMinutes": 10
+      },
+      {
+        "id": "narrow-tablet",
+        "args": ["narrow.spec.ts", "--grep", "768 en/light$"],
+        "widths": "768",
+        "timeoutMinutes": 10
+      }
+    ],
+    "groups": [
+      {
+        "id": "batch-1",
+        "batches": ["main-1", "main-14", "main-8"]
+      },
+      {
+        "id": "batch-2",
+        "batches": ["main-13", "main-10", "main-16"]
+      },
+      {
+        "id": "batch-3",
+        "batches": ["main-3", "main-9", "main-11"]
+      },
+      {
+        "id": "batch-4",
+        "batches": ["main-2", "main-12", "narrow-phone"]
+      },
+      {
+        "id": "batch-5",
+        "batches": ["main-4", "main-5", "main-15"]
+      },
+      {
+        "id": "batch-6",
+        "batches": ["main-6", "main-7", "narrow-tablet"]
+      }
+    ]
+  },
+  "nightly": [
+    {
+      "id": "narrow-en-light",
+      "args": ["narrow.spec.ts", "--grep", "en/light$"],
+      "widths": "",
+      "timeoutMinutes": 20
+    },
+    {
+      "id": "narrow-en-dark",
+      "args": ["narrow.spec.ts", "--grep", "en/dark$"],
+      "widths": "",
+      "timeoutMinutes": 20
+    },
+    {
+      "id": "narrow-zh-CN-light",
+      "args": ["narrow.spec.ts", "--grep", "zh-CN/light$"],
+      "widths": "",
+      "timeoutMinutes": 20
+    },
+    {
+      "id": "narrow-zh-CN-dark",
+      "args": ["narrow.spec.ts", "--grep", "zh-CN/dark$"],
+      "widths": "",
+      "timeoutMinutes": 20
+    }
+  ]
+}

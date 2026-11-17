@@ -1,6 +1,7 @@
 import { appendFileSync, createReadStream, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { dirname, join } from 'node:path'
+import { receiveBundledAppKey } from '@agnes/daemon-foundation/local/bundled-app'
 import type { SupervisorToWorker } from '../src/supervisor/frames.js'
 import { encodeFrame, JsonlDecoder } from '../src/supervisor/framing.js'
 
@@ -31,6 +32,14 @@ const saveDurableSeq = (): void => {
   if (durableFile) writeFileSync(durableFile, JSON.stringify(Object.fromEntries(durableSeq)))
 }
 let delayedExit = false
+// As the real worker's grant does: listen for the bundled-app key from the start; give up after a while.
+const bundledAppKey = Promise.race([
+  receiveBundledAppKey(),
+  new Promise<undefined>((resolve) => {
+    ;(setTimeout(resolve, 5_000) as unknown as { unref(): void }).unref()
+  }),
+])
+const commandRules = new Set<string>()
 if (!socketPath || !token || !workerKey || !Number.isSafeInteger(generation) || generation < 1)
   throw new Error('fake-worker missing required AGNES_* env vars')
 
@@ -87,6 +96,9 @@ socket.once('connect', () => {
       }
       if (f.kind === 'session.open') {
         if (f.sessionKey.endsWith(':delayed-exit')) delayedExit = true
+        // What a real worker would build the session's floor with, answered by `outwardCheckpoint`.
+        if (f.params.outwardCommandRules === true) commandRules.add(f.sessionKey)
+        else commandRules.delete(f.sessionKey)
         socket.write(
           encodeFrame({
             kind: 'reply',
@@ -113,6 +125,38 @@ socket.once('connect', () => {
       // 'crash' - cast through `string` since this test's whole point is sending a method outside
       // that union (see the file header comment).
       if ((f.method as string) === 'crash') process.exit(1)
+      if ((f.method as string) === 'bundled-app-key') {
+        const requestId = f.requestId
+        const scope = 'sessionKey' in f ? { sessionKey: f.sessionKey } : {}
+        void bundledAppKey.then((key) => {
+          // The environment this process started with: Linux shows it in /proc, elsewhere Node's copy is it.
+          const environ = existsSync('/proc/self/environ')
+            ? readFileSync('/proc/self/environ', 'latin1')
+            : Object.entries(process.env)
+                .map(([name, value]) => `${name}=${value}`)
+                .join('\0')
+          socket.write(
+            encodeFrame({
+              kind: 'reply',
+              requestId,
+              ...scope,
+              result: { key: key ?? null, inEnvironment: !!key && environ.includes(key) },
+            }),
+          )
+        })
+        continue
+      }
+      if (f.method === 'outwardCheckpoint' && 'sessionKey' in f) {
+        socket.write(
+          encodeFrame({
+            kind: 'reply',
+            requestId: f.requestId,
+            sessionKey: f.sessionKey,
+            result: { enforced: commandRules.has(f.sessionKey) },
+          }),
+        )
+        continue
+      }
       if ((f.method as string) === 'emit-test-event' && 'sessionKey' in f) {
         const seq = Number((f.params as { seq?: unknown }).seq)
         durableSeq.set(f.sessionKey, seq)

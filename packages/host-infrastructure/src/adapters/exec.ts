@@ -1,10 +1,15 @@
 import { type ChildProcess, spawn } from 'node:child_process'
+import type { HostSpawnSandboxWorkspaceBackend, SandboxExecBackend } from '@agnes/core'
 import type {
   SandboxEnforcement,
+  SandboxExecutionLease,
   SandboxExecutionPolicy,
   SandboxProcess,
   SandboxProcessRequest,
 } from '@agnes/extension-api'
+import { type WindowsAclGate, windowsAclBinding } from '../windows-acl/execution.js'
+import { abandonWindowsLaunch } from '../windows-acl/launch.js'
+import type { WindowsAclLaunchPermit } from '../windows-acl/leases.js'
 import { attachProcessBridge } from './exec-bridge.js'
 import { createExecOutput } from './exec-output.js'
 import { createWindowsExec } from './exec-win32.js'
@@ -31,20 +36,26 @@ export type ExecResult = {
  */
 export type SandboxExecBinding = {
   policyDigest: string
-  backend: 'none' | 'l1' | 'remote'
+  backend: SandboxExecBackend
   /** Set when a startup-selected provider, other than the local host sandbox, owns the process. */
   provider?: string
+  /** The Host-started boundary a `windows-acl` request was bound with. */
+  hostSpawn?: HostSpawnSandboxWorkspaceBackend
   policy?: SandboxExecutionPolicy
   enforcement?: SandboxEnforcement
+  /** The session's Windows execution lease; only the gate sets it, never the request. */
+  lease?: SandboxExecutionLease
 }
 
 /** The process-isolation posture the sandbox seam declared at init. Host-owned once declared. */
 export type ExecGateState = {
-  backend: 'none' | 'l1' | 'remote'
+  backend: SandboxExecBackend
   onUnavailable: 'deny' | 'allow'
   access?: 'read-only' | 'workspace-write' | 'full-access'
   /** Mediated private stores must never become accessible through degraded raw execution. */
   requiredFileIsolation?: boolean
+  /** Present exactly when `backend` is `windows-acl`. */
+  windowsAcl?: WindowsAclGate
 }
 
 export type ExecAdapter = {
@@ -67,6 +78,8 @@ export type ExecAdapter = {
       loopbackFd?: number
       /** Host-private resource revocation, before stdio inherited by descendants can delay close. */
       onExit?: () => void
+      /** Host-private Windows launch permit; a runner that cannot apply it refuses the launch. */
+      windowsAcl?: WindowsAclLaunchPermit
     },
   ): Promise<ExecResult>
   killAll(): Promise<void>
@@ -149,13 +162,14 @@ export function createExec(
     })
     return {
       ...windows,
-      openProcess: async (argv, options) => {
+      openProcess: async (argv, { windowsAcl, ...options }) => {
         const handle = await openWindowsProcess(
           { ...options, argv },
           {
             nodeExecutable: opts.windowsNodeExecutable!,
             baseEnv: base,
             ...(opts.windowsPowerShell ? { powerShell: opts.windowsPowerShell } : {}),
+            ...(windowsAcl ? { windowsAcl } : {}),
           },
         )
         interactive.add(handle)
@@ -196,6 +210,10 @@ export function createExec(
 
   return {
     async openProcess(argv, options) {
+      if (options.windowsAcl) {
+        abandonWindowsLaunch(options.windowsAcl)
+        throw unavailable('this runner cannot start a Windows write-restricted process')
+      }
       const handle = await openLocalProcess({ ...options, argv })
       interactive.add(handle)
       void handle.exited.then(() => interactive.delete(handle))
@@ -204,6 +222,12 @@ export function createExec(
     run(argv, o) {
       return new Promise<ExecResult>((resolve, reject) => {
         const [cmd, ...args] = argv
+        if (o.windowsAcl) {
+          // Never a raw fallback for a restricted launch.
+          abandonWindowsLaunch(o.windowsAcl)
+          reject(unavailable('this runner cannot start a Windows write-restricted process'))
+          return
+        }
         if (!cmd) {
           reject(new Error('exec: empty argv'))
           return
@@ -339,7 +363,7 @@ export function createPolicyOperation<T>(
   argv: string[],
   opts: Parameters<ExecAdapter['run']>[1] & { pty?: NonNullable<SandboxProcessRequest['pty']> },
 ) => Promise<T> {
-  return async (argv, opts) => {
+  return async (argv, { windowsAcl: _callerPermit, ...opts }) => {
     const bound = gate.boundDigest()
     const request = opts.sandbox
     // Only the sandbox seam can attest that it compiled/wrapped this argv under the active
@@ -353,6 +377,16 @@ export function createPolicyOperation<T>(
     if (bound === null) throw unavailable('no sandbox policy is bound')
     const cwd = await gate.authorizeCwd(opts.cwd)
     const state = gate.state()
+    if (state.backend === 'windows-acl') {
+      const policy = gate.policy?.()
+      if (!policy || !state.windowsAcl)
+        throw unavailable('the Windows write restriction is not bound to this workspace')
+      return invoke(argv, {
+        ...opts,
+        cwd,
+        sandbox: await windowsAclBinding(request, state.windowsAcl, policy, bound),
+      })
+    }
     // Only 'none' means "there is no backend". A remote posture has one - it is simply not this
     // machine, so the preset's unconfined-execution allowance has nothing to say about it. A dead
     // connection surfaces as an error from the remote runner, never as a fallback to local exec.

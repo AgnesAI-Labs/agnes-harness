@@ -1,5 +1,6 @@
 import type { Enforcement, SandboxSeam, SeamWorkspace } from '@agnes/core'
 import { type SandboxExecutionPolicy, SHELL_SENTINEL, SHELL_STDIN_SENTINEL } from '@agnes/extension-api'
+import { isWindowsWriteBoundary } from './windows-acl/policy.js'
 
 const fault = (code: string, message: string): Error & { code: string } =>
   Object.assign(new Error(`${code}: ${message}`), { code })
@@ -44,11 +45,37 @@ function assertWorkspace(workspace: SeamWorkspace): void {
     typeof workspace.binding !== 'function' ||
     (workspace.execBackend !== 'none' &&
       workspace.execBackend !== 'l1' &&
-      workspace.execBackend !== 'remote') ||
+      workspace.execBackend !== 'remote' &&
+      workspace.execBackend !== 'windows-acl') ||
     (workspace.shell !== 'posix' && workspace.shell !== 'powershell') ||
-    (workspace.providerId !== undefined && !/^[a-z][a-z0-9-]{0,63}$/.test(workspace.providerId))
+    (workspace.providerId !== undefined && !/^[a-z][a-z0-9-]{0,63}$/.test(workspace.providerId)) ||
+    (workspace.execBackend === 'windows-acl') !== (workspace.hostSpawn !== undefined) ||
+    // Only the Host-started Windows backend applies the Windows boundary; nothing else may name it.
+    (workspace.execBackend === 'windows-acl') !== (workspace.enforcement?.boundary !== undefined)
   )
     throw fault('E_SANDBOX_WORKSPACE', 'Host supplied an invalid bound workspace')
+  if (workspace.execBackend !== 'windows-acl') return
+  // The Host-started branch is closed: the exact contract, the local owner and this policy's digest.
+  const offer = workspace.hostSpawn
+  if (
+    !offer ||
+    workspace.providerId !== undefined ||
+    offer.enforcementLocation !== 'host-spawn' ||
+    !isWindowsWriteBoundary(offer.boundary) ||
+    offer.policyDigest !== workspace.policy.digest ||
+    workspace.enforcement.level !== 'partial' ||
+    !isWindowsWriteBoundary(workspace.enforcement.boundary)
+  )
+    throw fault('E_SANDBOX_WORKSPACE', 'Host supplied an invalid Windows write restriction')
+}
+
+/** Copies an enforcement, keeping the exact partial contract it names. */
+function copyEnforcement(enforcement: Enforcement): Enforcement {
+  return {
+    level: enforcement.level,
+    scope: [...enforcement.scope],
+    ...(enforcement.boundary ? { boundary: { ...enforcement.boundary } } : {}),
+  }
 }
 
 /**
@@ -85,6 +112,13 @@ async function bindRemote(workspace: SeamWorkspace): Promise<SandboxSeam> {
   return Object.freeze(bound)
 }
 
+/** What a local call carries: the probed boundary for `l1` and `windows-acl`, nothing otherwise. */
+function localEnforcement(workspace: SeamWorkspace): Enforcement {
+  return workspace.execBackend === 'l1' || workspace.execBackend === 'windows-acl'
+    ? copyEnforcement(workspace.enforcement)
+    : { level: 'none', scope: [] }
+}
+
 async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
   const backend = await workspace.readiness.ready(workspace.signal)
   const policy = workspace.policy
@@ -92,6 +126,8 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
   // An external provider owns the process; wrapping the argv in the host OS sandbox and then
   // handing it to the provider would fake both.
   const external = providerId !== undefined && providerId !== 'local'
+  // The Host starts these processes itself; argv is never rewritten, and nothing falls back to it.
+  const hostSpawn = workspace.execBackend === 'windows-acl' ? workspace.hostSpawn : undefined
   const deny = Object.freeze(policy.rules.filter((rule) => rule.effect === 'deny').map((rule) => rule.path))
   // The Host supplies the authoritative write domain after binding the selected preset.
   const executionPolicy: SandboxExecutionPolicy = Object.freeze({
@@ -132,9 +168,11 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
       const raw = stdinShell
         ? [SHELL_STDIN_SENTINEL]
         : expandShell([...request.argv], workspace.shell, workspace.shellCommand)
-      const argv = external ? raw : [...(await backend.confine({ argv: raw, cwd }))]
+      const argv = external || hostSpawn ? raw : [...(await backend.confine({ argv: raw, cwd }))]
       return workspace.openProcess(argv, {
         cwd,
+        // Configured one-shot commands never consume caller input; persistent shells keep it open.
+        ...(!request.pty && request.argv[0] === SHELL_SENTINEL ? { stdin: '' } : {}),
         ...(request.signal ? { signal: request.signal } : {}),
         ...(request.env ? { env: { ...request.env } } : {}),
         ...(request.pty ? { pty: request.pty } : {}),
@@ -142,13 +180,9 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
           policyDigest: policy.digest,
           backend: workspace.execBackend,
           ...(external && providerId ? { provider: providerId } : {}),
+          ...(hostSpawn ? { hostSpawn } : {}),
           policy: executionPolicy,
-          ...(external
-            ? {}
-            : {
-                enforcement:
-                  workspace.execBackend === 'l1' ? workspace.enforcement : { level: 'none', scope: [] },
-              }),
+          ...(external ? {} : { enforcement: localEnforcement(workspace) }),
         },
       })
     },
@@ -165,14 +199,15 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
           },
         })
       }
-      const argv = await backend.confine({ argv: raw, cwd: opts.cwd })
+      const argv = hostSpawn ? raw : await backend.confine({ argv: raw, cwd: opts.cwd })
       return workspace.exec([...argv], {
         ...opts,
         sandbox: {
           policyDigest: policy.digest,
           backend: workspace.execBackend,
+          ...(hostSpawn ? { hostSpawn } : {}),
           policy: executionPolicy,
-          enforcement: workspace.execBackend === 'l1' ? workspace.enforcement : { level: 'none', scope: [] },
+          enforcement: localEnforcement(workspace),
         },
       })
     },
@@ -181,13 +216,18 @@ async function bindLocal(workspace: SeamWorkspace): Promise<SandboxSeam> {
         throw fault('SANDBOX_UNAVAILABLE', 'protected files require OS isolation; unconfined argv is refused')
       if (external)
         throw fault('SANDBOX_UNAVAILABLE', 'the selected sandbox provider does not rewrite host argv')
+      if (hostSpawn)
+        throw fault(
+          'SANDBOX_UNAVAILABLE',
+          'the Windows write restriction is applied when the Host starts a process; argv cannot carry it',
+        )
       return [...(await backend.confine({ argv, cwd: workspace.root }))]
     },
     fsPolicy: () => policy,
     enforcement(): Enforcement {
       if (workspace.binding().policyDigest !== policy.digest) return { level: 'none', scope: [] }
       if (external) return workspace.enforcement
-      return { level: workspace.enforcement.level, scope: [...workspace.enforcement.scope] }
+      return copyEnforcement(workspace.enforcement)
     },
   }
   return Object.freeze(bound)

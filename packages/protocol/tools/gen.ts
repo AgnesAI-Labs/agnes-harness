@@ -234,6 +234,7 @@ const TARGETS: Array<{
           'BudgetState',
           'SystemInput',
           'SystemInputPresentation',
+          'InputDeliverer',
           'ArtifactRef',
           'ArtifactJob',
           'Billing',

@@ -1,0 +1,11 @@
+{
+  "client": {
+    "id": "judgment",
+    "entry": "./client.js",
+    "lifetime": "profile",
+    "slotCatalogVersion": "dsh-client-slots/v1",
+    "slots": [],
+    "services": ["judgment.status"],
+    "requiresBackendRows": ["ext:agnes.judgment/main"]
+  }
+}

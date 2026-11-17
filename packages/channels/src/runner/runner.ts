@@ -1,14 +1,24 @@
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import type { DaemonNotice, UINode } from '@agnes/protocol'
-import type { Client } from '@agnes/sdk'
-import { type ChannelAdapter, type ChannelEvent, sessionKeyFor } from '../adapter.js'
+import { AGNES_ERRORS, type DaemonNotice, type UINode } from '@agnes/protocol'
+import { type Client, JsonRpcError } from '@agnes/sdk'
+import {
+  type Block,
+  type ChannelAdapter,
+  type ChannelEvent,
+  type ChannelMessage,
+  type ChatTarget,
+  type MessageRef,
+  sessionKeyFor,
+} from '../adapter.js'
+import { fromBot } from '../builtin-subscriptions.js'
 import { ChannelError } from '../errors.js'
 import { Approval } from './approval.js'
 import { backoffDelays } from './backoff.js'
 import type { RunnerConfig } from './config.js'
 import { type HealthzHandle, startHealthz } from './health.js'
 import { Inbound } from './inbound.js'
+import { handleInteraction, type InteractionAdmission } from './interactions.js'
 import { noticeText } from './notices.js'
 import { Outbound } from './outbound.js'
 import { RefStore } from './ref-store.js'
@@ -24,7 +34,9 @@ type RunnerClient = {
   initialize: Client['initialize']
   apis: Client['apis']
   on: Client['on']
-  session: ConstructorParameters<typeof SessionCache>[0]['session']
+  session: ConstructorParameters<typeof SessionCache>[0]['session'] & {
+    load(id: string, options?: Parameters<Client['session']['load']>[1]): Promise<unknown>
+  }
   claim: Pick<Client['claim'], 'once'>
   approval: Pick<Client['approval'], 'decide'>
   call?: Client['call']
@@ -43,6 +55,16 @@ export type RunnerDeps = {
   refGcIntervalMs?: number
   maxTrackedSessions?: number
   inboundSettleMs?: number
+  /** Managed resources must not confirm shutdown when external cleanup is uncertain. */
+  strictShutdown?: boolean
+  bindings?: {
+    resolve(key: string): { sessionId: string; afterSeq: number } | undefined
+    restore?(): Promise<void>
+    observe(event: ChannelEvent): void
+    /** True when the event was routed elsewhere (a pairing code or a paired chat) and must stop here. */
+    intercept?(event: ChannelEvent): boolean
+  }
+  interactions?: InteractionAdmission
   now?: () => number
 }
 
@@ -63,20 +85,45 @@ export type Runner = {
   readonly inbound: Inbound
   directorySupported: boolean
   onEvent(handler: (event: ChannelEvent) => void): void
+  unlink(key: string): Promise<void>
+  baseline(sessionId: string): Promise<number>
+  activate(key: string, target: ChatTarget): Promise<void>
+  watchManaged(
+    key: string,
+    sessionId: string,
+    target: ChatTarget,
+    assertCurrent: () => Promise<void>,
+  ): Promise<() => void>
+  handleInteraction(event: ChannelEvent, keys: readonly string[]): Promise<boolean>
+  updateDirect(ref: MessageRef, block: Block): Promise<void>
+  sendDirect(chat: ChatTarget, block: Block, deliveryKey: string): Promise<MessageRef>
+  /** A whole message to a chat outside any session, chunked and throttled as a session reply. */
+  sendMessage(chat: ChatTarget, message: ChannelMessage, deliveryKey?: string): Promise<MessageRef>
+  /** At most once per event across processes, as for session-bound events; false when already claimed. */
+  claim(event: ChannelEvent): Promise<boolean>
 }
 
 export function createRunner(dependencies: RunnerDeps): Runner {
   const abort = new AbortController()
-  const sessionConfig = { cwd: dependencies.cfg.workspace, preset: 'channel' }
+  const sessionConfig = {
+    cwd: dependencies.cfg.workspace,
+    preset: 'channel',
+    ...(dependencies.cfg.launchAgent ? { agent: dependencies.cfg.launchAgent } : {}),
+  }
   const maxTrackedSessions = Math.max(1, dependencies.maxTrackedSessions ?? 1_024)
   let removeSession: ((key: string) => void) | undefined
   const cache = new SessionCache(dependencies.client, sessionConfig, {
     maxPendingKeys: maxTrackedSessions,
     onRemove: (key) => removeSession?.(key),
+    ...(dependencies.bindings
+      ? { resolve: (key: string) => dependencies.bindings?.resolve(key)?.sessionId }
+      : {}),
   })
   if (dependencies.refsPath !== undefined && dependencies.refsPath !== ':memory:') {
     mkdirSync(dirname(dependencies.refsPath), { recursive: true })
   }
+  const managed = new Map<string, BoundSession>()
+  const managedActivations = new Map<string, Promise<BoundSession>>()
   const refs = new RefStore(
     dependencies.refsPath ?? ':memory:',
     dependencies.now === undefined ? {} : { clock: dependencies.now },
@@ -86,6 +133,7 @@ export function createRunner(dependencies: RunnerDeps): Runner {
   refs.gc(now() - refMaxAgeMs)
   const outbound = new Outbound({
     adapter: dependencies.adapter,
+    nativeInteractions: !!dependencies.interactions,
     refs,
     cache,
     cfg: dependencies.cfg,
@@ -148,10 +196,10 @@ export function createRunner(dependencies: RunnerDeps): Runner {
   const inbound = new Inbound({
     adapter: dependencies.adapter,
     claim: dependencies.client.claim,
-    joinParticipant: async (sessionKey, credential) => {
+    joinParticipant: async (sessionId, credential) => {
       if (!participantSupported || dependencies.client.call === undefined) return
       await dependencies.client.call('_agnes/v1/participant.join', {
-        sessionId: sessionKey,
+        sessionId,
         credential,
       })
     },
@@ -185,8 +233,8 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       requesters.set(key, requesterUserId)
       targets.delete(key)
       targets.set(key, target)
-      outbound.attach(key, session, target)
-      watchApproval(key, session, target)
+      outbound.attach(key, session, target, dependencies.bindings?.resolve(key)?.afterSeq)
+      if (!dependencies.bindings) watchApproval(key, session, target)
       trimTracked()
     },
   })
@@ -217,9 +265,110 @@ export function createRunner(dependencies: RunnerDeps): Runner {
     cache,
     inbound,
     directorySupported: false,
+    async unlink(key) {
+      await inbound.pause(key)
+      await outbound.detachAndWait(key)
+      await cache.evict(key)
+    },
+    async baseline(sessionId) {
+      const session = await dependencies.client.session.attach(sessionId, { filter: { acpUpdates: false } })
+      try {
+        const timeline = await session.projectUI(undefined, { surface: 'channel' })
+        // The caller commits the returned floor before allowing inbound routing.
+        return timeline.upto
+      } finally {
+        await session.detach()
+      }
+    },
+    async activate(key, target) {
+      const { session } = await cache.get(key)
+      targets.set(key, target)
+      outbound.attach(key, session, target, dependencies.bindings?.resolve(key)?.afterSeq)
+      inbound.resume(key)
+      await outbound.flush(key)
+    },
 
+    async watchManaged(key, sessionId, target, assertCurrent) {
+      const pending = managedActivations.get(key)
+      if (pending) {
+        await pending
+        return () => {}
+      }
+      if (managed.has(key)) return () => {}
+      const activation = Promise.resolve().then(async () => {
+        let session: BoundSession
+        try {
+          session = await dependencies.client.session.attach(sessionId, { filter: { acpUpdates: false } })
+        } catch (error) {
+          if (!(error instanceof JsonRpcError) || error.code !== AGNES_ERRORS.SESSION_NOT_FOUND) throw error
+          // A task session may be closed after a daemon restart while its native question stays open
+          // in the ledger. The attach feed only serves loaded sessions, so open it once before retrying.
+          await dependencies.client.session.load(sessionId, { history: 'none' })
+          session = await dependencies.client.session.attach(sessionId, { filter: { acpUpdates: false } })
+        }
+        if (abort.signal.aborted) {
+          await session.detach()
+          throw new Error('channel stopped')
+        }
+        managed.set(key, session)
+        outbound.attach(key, session, target, undefined, true, assertCurrent)
+        try {
+          await outbound.flush(key)
+        } catch (error) {
+          if (managed.get(key) === session) {
+            managed.delete(key)
+            outbound.detach(key)
+            await session.detach().catch(() => {})
+          }
+          throw error
+        }
+        if (managed.get(key) !== session) throw new Error('channel stopped')
+        return session
+      })
+      managedActivations.set(key, activation)
+      let session: BoundSession
+      try {
+        session = await activation
+      } finally {
+        if (managedActivations.get(key) === activation) managedActivations.delete(key)
+      }
+      return () => {
+        if (managed.get(key) !== session) return
+        managed.delete(key)
+        outbound.detach(key)
+        void session.detach().catch(() => {})
+      }
+    },
+    async handleInteraction(event, keys) {
+      if (!dependencies.interactions) return false
+      await Promise.all(keys.map((key) => outbound.flush(key)))
+      return handleInteraction({
+        event,
+        adapter: dependencies.adapter,
+        refs,
+        admission: dependencies.interactions,
+        routes: keys.flatMap((key) => {
+          const session = managed.get(key) ?? cache.current(key)
+          return session ? [{ key, sessionId: session.id }] : []
+        }),
+        allowFrom: dependencies.cfg.allowFrom,
+        flush: (key) => outbound.flush(key),
+      })
+    },
+    updateDirect: (ref, block) => outbound.updateDirect(ref, block),
     onEvent(handler) {
       subscribers.push(handler)
+    },
+    sendDirect: (chat, block, deliveryKey) => outbound.sendDirect(chat, block, deliveryKey),
+    sendMessage: (chat, message, deliveryKey) => outbound.sendMessage(chat, message, deliveryKey),
+    async claim(event) {
+      const key = `${dependencies.adapter.manifest.id}:${event.accountId}:${event.eventId}`
+      try {
+        return await dependencies.client.claim.once('channel-event', key)
+      } catch {
+        safeWarn('channel event claim unavailable; treating event as already processed')
+        return false
+      }
     },
 
     start() {
@@ -256,6 +405,27 @@ export function createRunner(dependencies: RunnerDeps): Runner {
 
   const receive = (event: ChannelEvent): void => {
     if (!intake || abort.signal.aborted) return
+    dependencies.bindings?.observe(event)
+    if (dependencies.bindings?.intercept?.(event)) {
+      lastEventAt = new Date().toISOString()
+      return
+    }
+    // A bot sender may reach a subscriber or paired service above, but never a session.
+    if (fromBot(event)) return
+    if (dependencies.bindings) {
+      const key =
+        dependencies.adapter.toSession(event, {
+          tenant: dependencies.cfg.tenant,
+          agent: dependencies.cfg.agent,
+        })?.sessionKey ??
+        sessionKeyFor({
+          tenant: dependencies.cfg.tenant,
+          agent: dependencies.cfg.agent,
+          channel: dependencies.adapter.manifest.id,
+          chat: event.chat,
+        })
+      if (!dependencies.bindings.resolve(key)) return
+    }
     lastEventAt = new Date().toISOString()
     if (pendingInbound.size >= maxTrackedSessions) {
       safeWarn('channel inbound task capacity reached; dropping event', { eventId: event.eventId })
@@ -265,6 +435,18 @@ export function createRunner(dependencies: RunnerDeps): Runner {
     let task: Promise<void>
     task = Promise.resolve()
       .then(async () => {
+        const routeKey =
+          dependencies.adapter.toSession(event, {
+            tenant: dependencies.cfg.tenant,
+            agent: dependencies.cfg.agent,
+          })?.sessionKey ??
+          sessionKeyFor({
+            tenant: dependencies.cfg.tenant,
+            agent: dependencies.cfg.agent,
+            channel: dependencies.adapter.manifest.id,
+            chat: event.chat,
+          })
+        if (await runner.handleInteraction(event, [routeKey])) return
         if (await approval.handleAction(event)) return
         if (event.kind === 'cardAction') {
           const sessionKey = sessionKeyFor({
@@ -409,6 +591,7 @@ export function createRunner(dependencies: RunnerDeps): Runner {
           await dependencies.adapter.disconnect().catch(() => undefined)
           throw cancelled()
         }
+        await dependencies.bindings?.restore?.()
         channelState = 'connected'
         return
       } catch {
@@ -471,11 +654,20 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       }
       abort.abort()
       const outboundStop = outbound.stop()
-      const cacheStop = cache.stop()
+      const cacheStop = Promise.all([
+        cache.stop(),
+        ...[...managed.values()].map((session) => session.detach()),
+      ])
+      managed.clear()
       const resourcesStopped = await settlePromises([cacheStop, outboundStop], remaining(workDeadline))
       if (!resourcesStopped) safeWarn('channel runner resource drain timed out; forcing disconnect')
-      const disconnect = dependencies.adapter.disconnect().catch(() => undefined)
-      const clientClose = dependencies.client.close().catch(() => undefined)
+      let cleanupFailed = false
+      const disconnect = dependencies.adapter.disconnect().catch(() => {
+        cleanupFailed = true
+      })
+      const clientClose = dependencies.client.close().catch(() => {
+        cleanupFailed = true
+      })
       const transportsClosed = await settlePromises([disconnect, clientClose], remaining(deadline))
       if (!transportsClosed) safeWarn('channel transport close timed out')
       try {
@@ -485,6 +677,11 @@ export function createRunner(dependencies: RunnerDeps): Runner {
       }
       daemonState = 'closed'
       phase = 'stopped'
+      if (
+        dependencies.strictShutdown &&
+        (cleanupFailed || !inboundDrained || !outboundDrained || !resourcesStopped || !transportsClosed)
+      )
+        throw new ChannelError('E_CONNECT_FAILED', 'channel shutdown could not be confirmed')
     })()
     return shutdownPromise
   }

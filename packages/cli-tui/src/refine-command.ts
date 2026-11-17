@@ -69,7 +69,7 @@ export async function refineSlash(app: TuiApp, line: string): Promise<SlashResul
     const data = refusal(error)
     if ((error as { code?: unknown }).code === -32601) return { text: tt('refine.unsupported', locale) }
     if (data?.code !== 'SEMANTIC_REJECTED' || typeof data.reason !== 'string') throw error
-    // Off, switched on after this host started, or not connected to this session: one hint covers them.
+    // Off, switched on after this session opened, or not connected to this session: one hint covers them.
     if (data.reason === 'refinement-off' || data.reason === 'unavailable')
       return { text: tt('refine.off', locale) }
     if (data.reason === 'unpriced') return { text: tt('refine.unpriced', locale) }

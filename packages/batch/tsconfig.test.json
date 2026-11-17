@@ -7,6 +7,9 @@
   "include": ["test/**/*.ts"],
   "references": [
     {
+      "path": "../daemon/tsconfig.test.json"
+    },
+    {
       "path": "../sdk"
     },
     {

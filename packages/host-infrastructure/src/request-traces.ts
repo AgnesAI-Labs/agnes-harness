@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type {
-  ModelAdapterAttemptObservation,
-  ModelRequestTrace,
-  ModelRequestTraceHandle,
+import {
+  estimateTokens,
+  type ModelAdapterAttemptObservation,
+  type ModelRequestTrace,
+  type ModelRequestTraceHandle,
 } from '@agnes/extension-api'
 import { withConfigurationLock } from '@agnes/host-common/configuration-lock'
 import type { JsonValue, ModelRequestAttempt, ModelRequestSnapshot, RequestBody } from '@agnes/protocol'
@@ -428,7 +429,7 @@ export class RequestTraceStore implements ModelRequestTrace {
             wireUnavailable: 'adapter-no-tap',
             tokens: {
               providerActual: null,
-              estimated: { input: Math.ceil(captureBytes / 4), method: 'serialized-utf8-bytes/4' },
+              estimated: { input: estimateTokens(initialText), method: 'estimateTokens' },
             },
             attempts: [makeAttempt({ attemptId: fallbackId, index: 0, adapter, status: 'unknown' })],
             createdAt: new Date(this.clock()).toISOString(),
@@ -521,7 +522,8 @@ export class RequestTraceStore implements ModelRequestTrace {
       wire: async (body, attemptId) => {
         if (!row) return
         const safeBody = redactRequest(body)
-        const wireBytes = Buffer.byteLength(JSON.stringify(safeBody))
+        const wireText = JSON.stringify(safeBody)
+        const wireBytes = Buffer.byteLength(wireText)
         if (captureBytes + capturedWireBytes + wireBytes + 64 * 1024 > this.limits.callBytes) {
           row.incomplete = true
           row.wireUnavailable = 'capture-limit'
@@ -568,7 +570,7 @@ export class RequestTraceStore implements ModelRequestTrace {
             current.wireRefs = [...refs]
             current.status = 'sent'
             capturedWireBytes += wireBytes
-            current.estimatedTokens = { input: Math.ceil(wireBytes / 4), method: 'serialized-utf8-bytes/4' }
+            current.estimatedTokens = { input: estimateTokens(wireText), method: 'estimateTokens' }
             current.wireUnavailable = null
             const object =
               safeBody && typeof safeBody === 'object' && !Array.isArray(safeBody) ? safeBody : {}

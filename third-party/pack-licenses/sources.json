@@ -15,17 +15,27 @@
   },
   {
     "name": "@earendil-works/pi-ai",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "declaredLicense": "MIT",
-    "source": "https://raw.githubusercontent.com/earendil-works/pi/4a080252f06caf63a525d7873c5d94d3c23887e0/LICENSE",
+    "source": "https://raw.githubusercontent.com/earendil-works/pi/f9a26365568127461c47a07a37dcb42c140a3ac5/LICENSE",
     "file": "earendil-works-pi-ai.txt"
   },
   {
     "name": "@earendil-works/pi-telemetry",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "declaredLicense": "MIT",
-    "source": "https://raw.githubusercontent.com/earendil-works/pi/4a080252f06caf63a525d7873c5d94d3c23887e0/LICENSE",
+    "source": "https://raw.githubusercontent.com/earendil-works/pi/f9a26365568127461c47a07a37dcb42c140a3ac5/LICENSE",
     "file": "earendil-works-pi-telemetry.txt"
+  },
+  {
+    "name": "@earendil-works/pi-schema",
+    "version": "1.5.0",
+    "declaredLicense": "MIT",
+    "source": [
+      "https://raw.githubusercontent.com/earendil-works/pi/f9a26365568127461c47a07a37dcb42c140a3ac5/LICENSE",
+      "https://raw.githubusercontent.com/earendil-works/pi/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/schema/LICENSES/typebox-LICENSE"
+    ],
+    "file": "earendil-works-pi-schema.txt"
   },
   {
     "name": "clean-git-ref",

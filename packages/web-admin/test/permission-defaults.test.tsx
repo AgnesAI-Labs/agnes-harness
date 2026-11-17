@@ -299,6 +299,47 @@ it.each([
   await unmount()
 })
 
+it('names the Windows partial contract under the edit card instead of the unavailable full isolation', async () => {
+  const boundary = {
+    contract: 'windows-write-restricted-v1',
+    fileWrite: 'acl-partial',
+    fileRead: 'unrestricted',
+    network: 'unrestricted',
+    processTree: 'job-object',
+  } as const
+  const policy = (id: string, level: 'L0' | 'L1', acl: boolean) => ({
+    id,
+    level,
+    required: false,
+    onUnavailable: 'allow-if-unimplemented' as const,
+    approvalPolicy: 'default',
+    networkMode: 'unrestricted' as const,
+    ...(acl ? { boundary } : {}),
+  })
+  const security = {
+    platform: { os: 'win32', l1: { level: 'unavailable' as const, scope: [] } },
+    presetPolicies: [],
+    permissionPolicies: [
+      policy('read-only', 'L1', true),
+      policy('workspace-write', 'L1', true),
+      policy('full-access', 'L0', false),
+    ],
+    workspaces: [],
+  }
+  const fetcher = vi.fn<typeof fetch>(async (url) =>
+    String(url).endsWith('/context')
+      ? context()
+      : String(url).endsWith('/composition')
+        ? Response.json({})
+        : Response.json({ revision: 1, defaults: { permission: 'workspace-write' } }),
+  )
+  const { host, unmount } = await render({ presets: recipes, permissions: levels, fetcher, security })
+  const foot = (id: string) => host.querySelector(`[data-testid="security-${id}-isolation"]`)?.textContent
+  expect(foot('workspace-write')).toBe('Command isolation · Partly in effect')
+  expect(foot('full-access')).toBe('Commands not isolated')
+  await unmount()
+})
+
 it('returns to the stored value when a save fails, names both, and retries the same choice', async () => {
   const writes: string[] = []
   let fail = true

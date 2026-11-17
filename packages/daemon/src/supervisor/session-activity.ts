@@ -31,6 +31,8 @@ export function createSessionActivity(o: {
   ownership: Pick<SessionPrincipalOwnership, 'resolve'>
   notices: Pick<NoticeSink, 'emit'>
   profile: string
+  /** A live session stopped running and has nothing open: an idle point, owned or not. */
+  onIdle?: () => void
 }) {
   const sessions = new Map<string, Tracked>()
   const view = (key: string, s: Tracked): SessionActivity => {
@@ -49,6 +51,7 @@ export function createSessionActivity(o: {
    */
   const observe = (key: string, event: EventEnvelope, live = true): void => {
     if (!SESSION_ACTIVITY_EVENT_TYPES.includes(event.type)) return
+    const busy = sessions.has(key)
     const s: Tracked = sessions.get(key) ?? { running: false, pending: new Map() }
     if (event.type === 'turn/start') {
       s.running = true
@@ -71,6 +74,7 @@ export function createSessionActivity(o: {
     // An idle session with nothing open needs no memory; its last state was already announced.
     if (!s.running && s.pending.size === 0) sessions.delete(key)
     else sessions.set(key, s)
+    if (live && busy && !sessions.has(key)) o.onIdle?.()
     if (!live || !changed) return
     const owner = o.ownership.resolve(key)
     if (!owner) return

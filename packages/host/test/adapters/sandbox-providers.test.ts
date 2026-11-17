@@ -6,8 +6,11 @@ import { loadPreset } from '@agnes/code'
 import { Context } from '@agnes/cordis'
 import {
   LOCAL_SANDBOX_PROVIDER_ID,
+  type SandboxEnforcement,
+  type SandboxExecutionLease,
   type SandboxExecutionPolicy,
   type SandboxProvider,
+  type SandboxProviderConfig,
   sandboxKind,
   sandboxUnavailable,
 } from '@agnes/extension-api'
@@ -15,6 +18,10 @@ import { createExec, createPolicyExec } from '@agnes/host-infrastructure/adapter
 import { createLocalSandboxProvider } from '@agnes/host-infrastructure/adapters/sandbox-local'
 import { createAdminSessionSelection } from '@agnes/host-infrastructure/admin-session-selection'
 import { createConfigurationService } from '@agnes/host-infrastructure/configuration'
+import {
+  WINDOWS_ACL_ENFORCEMENT,
+  windowsPartialPolicy,
+} from '@agnes/host-infrastructure/windows-acl/execution'
 import {
   bindStartupSandboxProvider,
   createSandboxDispatchExec,
@@ -90,6 +97,38 @@ describe('sandbox providers', () => {
     )
     expect(() => readSandboxStartupConfig({ image: 'alpine' })).toThrow(/sandbox\.image/)
     expect(() => readSandboxStartupConfig({ provider: 'Docker' })).toThrow(/provider id/)
+  })
+
+  it('freezes a copy of the Windows write boundary and refuses an altered one', () => {
+    const boundary = {
+      contract: 'windows-write-restricted-v1',
+      fileWrite: 'acl-partial',
+      fileRead: 'unrestricted',
+      network: 'unrestricted',
+      processTree: 'job-object',
+    } as const
+    const withBoundary = (id: string, value: unknown): SandboxProvider => {
+      const base = box(id)
+      const capabilities = {
+        ...base.capabilities,
+        platform: ['win32'],
+        enforcement: { level: 'partial', scope: ['process'], boundary: value },
+      } as SandboxProvider['capabilities']
+      return { ...base, capabilities, probe: () => capabilities }
+    }
+    const root = new Context()
+    const registry = installSandboxProviders(root)
+    root.providers.registerHost(sandboxKind, '@agnes/host', withBoundary('boxed', { ...boundary }))
+    const entry = registry.catalog().find((one) => one.id === 'boxed')
+    expect(entry?.capabilities.enforcement).toEqual({ level: 'partial', scope: ['process'], boundary })
+    expect(Object.isFrozen(entry?.capabilities.enforcement?.boundary)).toBe(true)
+    expect(() =>
+      root.providers.registerHost(
+        sandboxKind,
+        '@agnes/host',
+        withBoundary('forged', { ...boundary, fileRead: 'denied' }),
+      ),
+    ).toThrow(/invalid sandbox provider/)
   })
 
   it('catalogs the local provider and refuses a second id until restart', async () => {
@@ -580,4 +619,200 @@ describe('sandbox providers', () => {
     await run(['echo'], { cwd, sandbox: { policyDigest: digest, backend: 'none', provider: 'box' } })
     expect(calls).toEqual([['echo']])
   })
+})
+
+describe('Windows write-restricted dispatch', () => {
+  const lease = (id: string): SandboxExecutionLease => ({
+    id,
+    contract: 'windows-write-restricted-v1',
+    policyDigest: policy.digest,
+    rootIdentity: { volumeId: 'v', fileId: 'f' },
+    mode: 'workspace-write',
+    tempRoot: join(cwd, 'temp'),
+  })
+  /** A stand-in for the local provider that records instance configs and every execution. */
+  function recordingLocal(
+    reported: (request: { enforcement?: SandboxEnforcement }) => SandboxEnforcement | undefined,
+  ) {
+    const configs: SandboxProviderConfig[] = []
+    const runs: unknown[] = []
+    const disposed: Array<string | null> = []
+    const provider: SandboxProvider = {
+      ...box(LOCAL_SANDBOX_PROVIDER_ID),
+      create: (config) => {
+        configs.push(config)
+        return {
+          id: LOCAL_SANDBOX_PROVIDER_ID,
+          capabilities: box(LOCAL_SANDBOX_PROVIDER_ID).capabilities,
+          exec: async (request) => {
+            runs.push(request)
+            const enforcement = reported(request)
+            return {
+              code: 0,
+              stdout: '',
+              stderr: '',
+              truncated: false,
+              timedOut: false,
+              ...(enforcement ? { enforcement } : {}),
+            } as never
+          },
+          dispose() {
+            disposed.push(config.executionLease?.id ?? null)
+          },
+        }
+      },
+    }
+    return { provider, configs, runs, disposed }
+  }
+  async function dispatchWithRegistry(provider: SandboxProvider, id = LOCAL_SANDBOX_PROVIDER_ID) {
+    const root = new Context()
+    const registry = installSandboxProviders(root)
+    root.providers.registerHost(sandboxKind, '@agnes/host', provider)
+    const slot: SandboxProviderSlot = { registry }
+    slot.selected = await registry.select(id, { workspaceRoot: cwd })
+    return {
+      registry,
+      dispatch: createSandboxDispatchExec({ run: async () => ({}) as never, killAll: async () => {} }, slot),
+    }
+  }
+  const dispatchFor = async (provider: SandboxProvider, id = LOCAL_SANDBOX_PROVIDER_ID) =>
+    (await dispatchWithRegistry(provider, id)).dispatch
+  const windowsBinding = (value: SandboxExecutionLease | undefined, extra: object = {}) => ({
+    policyDigest: policy.digest,
+    backend: 'windows-acl' as const,
+    policy: windowsPartialPolicy(cwd, policy.digest, value ?? lease('none')),
+    enforcement: WINDOWS_ACL_ENFORCEMENT,
+    ...(value ? { lease: value } : {}),
+    ...extra,
+  })
+
+  it('runs each lease on its own local instance', async () => {
+    const local = recordingLocal((request) => request.enforcement)
+    const dispatch = await dispatchFor(local.provider)
+    const [a, b] = [lease('lease-a'), lease('lease-b')]
+    await dispatch.run(['node'], { cwd, sandbox: windowsBinding(a) })
+    await dispatch.run(['node'], { cwd, sandbox: windowsBinding(a) })
+    await dispatch.run(['node'], { cwd, sandbox: windowsBinding(b) })
+    await dispatch.run(['node'], {
+      cwd,
+      sandbox: windowsBinding({ ...a, rootIdentity: { volumeId: 'v', fileId: 'g' } }),
+    })
+    expect(local.configs.map((config) => config.executionLease?.id ?? null)).toEqual([
+      null,
+      'lease-a',
+      'lease-b',
+      'lease-a',
+    ])
+    expect(local.runs).toHaveLength(4)
+  })
+
+  it('disposes only the instance of a released lease, and never one twice', async () => {
+    const local = recordingLocal((request) => request.enforcement)
+    const { registry, dispatch } = await dispatchWithRegistry(local.provider)
+    const [a, b] = [lease('lease-a'), lease('lease-b')]
+    await dispatch.run(['node'], { cwd, sandbox: windowsBinding(a) })
+    await dispatch.run(['node'], { cwd, sandbox: windowsBinding(b) })
+    await expect(registry.releaseLease('lease-a')).resolves.toBe(true)
+    expect(local.disposed).toEqual(['lease-a'])
+    await expect(registry.releaseLease('lease-a')).resolves.toBe(false)
+    await expect(registry.releaseLease('never-used')).resolves.toBe(false)
+    // B keeps its instance; a command under A again would need a new instance, not the disposed one.
+    await dispatch.run(['node'], { cwd, sandbox: windowsBinding(b) })
+    expect(local.configs.filter((config) => config.executionLease?.id === 'lease-b')).toHaveLength(1)
+    expect(local.disposed).toEqual(['lease-a'])
+  })
+
+  it('refuses a missing lease, a named provider and a result without the exact boundary', async () => {
+    const local = recordingLocal(() => ({ level: 'partial', scope: ['file'] }))
+    const dispatch = await dispatchFor(local.provider)
+    await expect(dispatch.run(['node'], { cwd, sandbox: windowsBinding(undefined) })).rejects.toMatchObject({
+      code: 'SANDBOX_UNAVAILABLE',
+    })
+    await expect(
+      dispatch.run(['node'], { cwd, sandbox: windowsBinding(lease('a'), { provider: 'box' }) }),
+    ).rejects.toMatchObject({ code: 'SANDBOX_UNAVAILABLE' })
+    expect(local.runs).toHaveLength(0)
+    await expect(dispatch.run(['node'], { cwd, sandbox: windowsBinding(lease('a')) })).rejects.toThrow(
+      /did not report the required enforcement/,
+    )
+  })
+
+  it('never takes the local ACL path for another provider', async () => {
+    let ran = false
+    const remote = box('box')
+    // Even a provider that claims the exact boundary is not the Host's own local provider.
+    const capabilities = { ...remote.capabilities, enforcement: WINDOWS_ACL_ENFORCEMENT }
+    const provider: SandboxProvider = {
+      ...remote,
+      capabilities,
+      probe: () => capabilities,
+      create: (config, signal) => {
+        const instance = remote.create(config, signal) as Awaited<ReturnType<SandboxProvider['create']>>
+        return {
+          ...instance,
+          capabilities,
+          exec: async (request) => {
+            ran = true
+            return instance.exec(request)
+          },
+        }
+      },
+    }
+    const dispatch = await dispatchFor(provider, 'box')
+    await expect(dispatch.run(['node'], { cwd, sandbox: windowsBinding(lease('a')) })).rejects.toMatchObject({
+      code: 'SANDBOX_UNAVAILABLE',
+    })
+    expect(ran).toBe(false)
+  })
+
+  it('keeps refusing the partial contract to a call that requires full enforcement', async () => {
+    const local = recordingLocal((request) => request.enforcement)
+    const dispatch = await dispatchFor(local.provider)
+    const full = {
+      ...windowsBinding(lease('a')),
+      policy: {
+        ...windowsPartialPolicy(cwd, policy.digest, lease('a')),
+        requiredEnforcement: { level: 'full' as const, scope: ['file', 'network', 'process'] as const },
+      },
+    }
+    await expect(dispatch.run(['node'], { cwd, sandbox: full as never })).rejects.toThrow(
+      /cannot supply the required enforcement/,
+    )
+    expect(local.runs).toHaveLength(0)
+  })
+})
+
+it('preserves explicit finite stdin across provider dispatch and the local instance', async () => {
+  const seen: unknown[] = []
+  const provider = createLocalSandboxProvider(
+    {
+      run: async () => {
+        throw new Error('unexpected finite exec')
+      },
+      killAll: async () => {},
+      openProcess: async (_argv, opts) => {
+        seen.push(opts)
+        return {
+          enforcement,
+          exited: Promise.resolve({ code: 0 }),
+          onOutput: () => () => {},
+          write: async () => {},
+          resize: async () => {},
+          signal: async () => {},
+          close: async () => {},
+        }
+      },
+    },
+    process.platform,
+  )
+  const instance = await provider.create({ workspaceRoot: cwd })
+  const dispatch = createSandboxDispatchExec(createExec(), { selected: instance })
+  try {
+    await dispatch.openProcess!(['finite'], { cwd, sandbox: binding, stdin: '' })
+    expect(seen[0]).toMatchObject({ stdin: '' })
+    await dispatch.openProcess!(['interactive'], { cwd, sandbox: binding })
+    expect(seen[1]).not.toHaveProperty('stdin')
+  } finally {
+    await instance.dispose()
+  }
 })

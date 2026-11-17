@@ -109,7 +109,10 @@ function spawnAcp(turnMs: number, extraEnv: Record<string, string> = {}, mode: s
 describe('DBH M-06: --ephemeral home after a signalled exit', () => {
   it('control: a completed exchange closed by stdin EOF exits 0 and leaves no ephemeral home', async () => {
     const c = spawnAcp(1)
+    // Retain the whole control's original hard bound, including cold source imports and cleanup.
+    const hardBound = setTimeout(() => c.child.kill('SIGKILL'), 60_000)
     try {
+      await c.until(() => c.stderr().includes('dbh: fixture imports ready\n'), 60_000, 'fixture imports')
       const sessionId = await c.handshake()
       c.send({
         id: 3,
@@ -121,7 +124,11 @@ describe('DBH M-06: --ephemeral home after a signalled exit', () => {
       const exit = await c.waitExit(15_000)
       expect({ code: exit.code, leaked: c.ephemeral() }).toEqual({ code: 0, leaked: [] })
     } finally {
-      await c.dispose()
+      try {
+        await c.dispose()
+      } finally {
+        clearTimeout(hardBound)
+      }
     }
   }, 60_000)
 

@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto'
 import { closeSync, fstatSync, readSync } from 'node:fs'
 import { lstat, realpath, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, join, relative, sep } from 'node:path'
 import type { HostSession } from '@agnes/host'
-import { AGH_DIR, type RpcError, rpcError, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+import { type RpcError, rpcError, WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
 import { listCanonicalDirectorySync, openCanonicalFileSync } from '@agnes/system-node'
+
+import { assertDocumentPath, type DocumentReadScope } from './workspace-document-access.js'
 
 import { type GitMark, type GitStatus, readGitStatus } from './workspace-git.js'
 
@@ -40,7 +41,7 @@ export type WorkspaceRead = {
 
 type IgnoreRule = { negate: boolean; dirOnly: boolean; anchored: boolean; segments: string[] }
 type IgnoreFile = { base: string; rules: IgnoreRule[] }
-export type WorkspaceAuthority = { stat(path: string): Promise<unknown> }
+export type WorkspaceAuthority = { stat(path: string): Promise<unknown>; readScope?: DocumentReadScope }
 const revision = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
 const denied = (): RpcError =>
@@ -93,7 +94,7 @@ async function canonicalRoot(cwd: string): Promise<string> {
 async function resolveInside(root: string, rel: string, authority: WorkspaceAuthority): Promise<string> {
   const abs = rel === '' ? root : join(root, ...rel.split('/'))
   try {
-    await assertPublicPath(abs)
+    await assertDocumentPath(authority.readScope, abs)
     let current = root
     for (const part of rel.split('/').filter(Boolean)) {
       current = join(current, part)
@@ -101,7 +102,7 @@ async function resolveInside(root: string, rel: string, authority: WorkspaceAuth
     }
     const real = await realpath(abs)
     if (!inside(root, real)) throw denied()
-    await assertPublicPath(real)
+    await assertDocumentPath(authority.readScope, real)
     await authority.stat(real)
     return real
   } catch (error) {
@@ -114,17 +115,6 @@ async function resolveInside(root: string, rel: string, authority: WorkspaceAuth
 /** Historical review receipts also require current root authority, even for an empty result. */
 export async function assertWorkspacePublicRoot(cwd: string, authority: WorkspaceAuthority): Promise<void> {
   await resolveInside(await canonicalRoot(cwd), '', authority)
-}
-
-/** The installation home is never a workbench document source, even inside an admitted workspace. */
-async function assertPublicPath(abs: string): Promise<void> {
-  if (process.env.AGNES_HOME?.trim())
-    throw new Error(
-      'AGNES_HOME is no longer supported; unset it and select a new, empty AGH_HOME (clean home).',
-    )
-  const home = resolve(process.env.AGH_HOME || join(process.env.HOME || homedir(), AGH_DIR))
-  const canonical = await realpath(home).catch(() => home)
-  if (inside(home, abs) || inside(canonical, abs)) throw denied()
 }
 
 function compileLine(line: string): IgnoreRule | undefined {
@@ -204,6 +194,7 @@ function relativeToBase(base: string, rel: string): string | undefined {
 export function ignoredBy(rel: string, isDir: boolean, files: readonly IgnoreFile[]): boolean {
   if (
     rel.split('/').includes('.git') ||
+    rel.split('/').includes('.agh-managed-root.json') ||
     WORKSPACE_SECRET_DIRS.some((path) => rel === path || rel.startsWith(`${path}/`))
   )
     return true
@@ -317,7 +308,7 @@ async function classify(dirAbs: string, name: string, authority: WorkspaceAuthor
   const abs = join(dirAbs, name)
   try {
     const info = await lstat(abs)
-    await assertPublicPath(abs)
+    await assertDocumentPath(authority.readScope, abs)
     await authority.stat(abs)
     if (info.isSymbolicLink()) return 'other'
     if (info.isDirectory()) return 'directory'
@@ -355,7 +346,7 @@ export async function listWorkspace(
   for (const name of names.slice(0, MAX_SCAN_ENTRIES)) {
     const child = rel === '' ? name : `${rel}/${name}`
     try {
-      await assertPublicPath(join(dirAbs, name))
+      await assertDocumentPath(authority.readScope, join(dirAbs, name))
     } catch {
       continue
     }
@@ -522,7 +513,7 @@ export async function sessionWorkspaceFiles(
   const port = session.d.workspaceInvocation
   if (!port) throw denied()
   const invoke = async (view: Parameters<Parameters<typeof port.run>[0]>[0]) => {
-    const authority = view.fs()
+    const authority = { stat: view.fs().stat, readScope: view.documentReadScope() }
     try {
       return operation === 'list'
         ? await listWorkspace(view.root, path, authority, !browse, browse)

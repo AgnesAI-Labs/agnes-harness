@@ -163,6 +163,19 @@ describe('confirming a workspace entry', () => {
     await t.session.close()
   })
 
+  it('a session opened with memory writes off renews nothing', async () => {
+    const w = workspace([paragraph()])
+    const t = await open({
+      workspaceRefs: w.port,
+      attrs: { memoryWrites: 'off' },
+      answers: [() => confirmBy(['e1'], QUOTE)],
+    })
+    expect(await t.say(REQUEST)).toMatchObject({ reason: 'completed' })
+    expect(await t.refine()).toMatchObject({ state: 'applied' })
+    expect(await settled(w, 0)).toEqual([])
+    await t.session.close()
+  })
+
   it('the same evidence confirms a workspace reference once', async () => {
     const w = workspace([paragraph()])
     const t = await open({

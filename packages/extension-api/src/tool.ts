@@ -113,6 +113,13 @@ export interface ToolMeta {
    */
   commandArg?: string
   /**
+   * The tool sends content to someone other than the owner or changes remote state: it pushes,
+   * opens a pull request, posts, publishes. Every call stops for a person, once, in every session and
+   * permission mode; full access, automatic review, command-table rules, grants and hooks cannot
+   * approve it. Requires `isOpenWorld: true` and `requiresApproval: 'always'`. Default false.
+   */
+  outward?: boolean
+  /**
    * The effect only publishes display state to the user and has no external side effect.
    * Optional, like `paths`: omitting it means the tool is not presentational. It cannot be
    * combined with `isDestructive` or `isOpenWorld`.
@@ -192,6 +199,13 @@ export type ChildStatus = {
   childKey: string
   status: 'running' | 'idle' | 'interrupted' | 'completed' | 'failed' | 'cancelled'
   text?: string
+  /**
+   * Why a `failed` child's last turn ended in error, as its ledger recorded it. `message` is clipped
+   * provider or adapter text: untrusted data to show, never an instruction.
+   */
+  error?: { code: string; message: string }
+  /** The cap a `failed` child's last turn stopped at, when it did not end in error. */
+  stopReason?: 'budget' | 'max_steps'
   credits?: number
   waitTimedOut?: boolean
   /** Backend ledger facts; child prose is not evidence of tool execution or workspace integration. */
@@ -259,6 +273,8 @@ export type ToolRequestAvailability = Readonly<{
 }>
 
 export interface ToolContext {
+  /** Invocation-scoped side calls, present only with Host authorization. */
+  readonly sideCall?: import('./side-call.js').SideCallPort
   /** Read-only session resource access. Each operation acquires a fresh workspace invocation;
    * unlike fs, this may serve delayed browser resources after this call settles. Session close
    * and current filesystem policy revoke access. Never retain the ordinary invocation fs. */
@@ -555,6 +571,10 @@ export function checkToolMeta(meta: unknown): CheckResult {
       problems.push(`${key}: expected boolean | undefined`)
   if (m.commandArg !== undefined && (typeof m.commandArg !== 'string' || !COMMAND_ARG.test(m.commandArg)))
     problems.push('commandArg: expected a top-level argument name | undefined')
+  if (m.outward !== undefined && typeof m.outward !== 'boolean')
+    problems.push('outward: expected boolean | undefined')
+  if (m.outward === true && (m.isOpenWorld !== true || m.requiresApproval !== 'always'))
+    problems.push("outward: requires isOpenWorld true and requiresApproval 'always'")
   if (
     m.invalidArgumentLimit !== undefined &&
     (!Number.isInteger(m.invalidArgumentLimit) ||

@@ -3,6 +3,56 @@
   "$id": "https://agnes.ai/schema/app-server-v1",
   "title": "AGH App Server v1",
   "$defs": {
+    "ChannelCatalogResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providers"],
+      "properties": { "providers": { "type": "array", "items": { "$ref": "#/$defs/JsonValue" } } }
+    },
+    "ChannelPairingParams": {
+      "description": "Channel pairing administration. Minting a pairing code requires a person's approval: the first call returns an approval-required receipt and the call repeated with the same operationId after approval returns the code once.",
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action"],
+          "properties": { "action": { "const": "targets" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "extension", "instanceId", "target", "operationId"],
+          "properties": {
+            "action": { "const": "mint" },
+            "extension": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "instanceId": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,47}$" },
+            "target": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["owner", "service"],
+              "properties": {
+                "owner": { "type": "string", "minLength": 1, "maxLength": 512 },
+                "service": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,63}$" }
+              }
+            },
+            "operationId": { "type": "string", "minLength": 1, "maxLength": 128 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["action", "pairingId"],
+          "properties": {
+            "action": { "const": "revoke" },
+            "pairingId": { "type": "string", "pattern": "^[a-f0-9]{32}$" }
+          }
+        }
+      ]
+    },
+    "ChannelPairingResult": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/JsonValue" }
+    },
     "JsonValue": {
       "anyOf": [
         {
@@ -2718,52 +2768,211 @@
       "required": ["active", "text"],
       "additionalProperties": false
     },
-    "AdminMcpOAuthSave": {
+    "AdminMcpOAuthGet": {
       "type": "object",
       "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+        },
+        "serverId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+        }
+      },
+      "required": ["profile", "serverId"],
+      "additionalProperties": false
+    },
+    "AdminMcpOAuthSummary": {
+      "type": "object",
+      "properties": {
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "signedIn": {
+          "type": "boolean"
+        },
+        "refreshable": {
+          "type": "boolean"
+        },
+        "expiresAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "scope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+          },
+          "maxItems": 128
+        },
+        "requiredScope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+          },
+          "maxItems": 128
+        },
+        "client": {
+          "type": "object",
+          "properties": {
+            "clientId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "redirectUri": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          },
+          "required": ["clientId", "redirectUri"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["epoch", "signedIn", "refreshable", "scope", "requiredScope"],
+      "additionalProperties": false
+    },
+    "AdminMcpOAuthComplete": {
+      "type": "object",
+      "properties": {
+        "profile": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+        },
         "serverId": {
           "type": "string",
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[a-z][a-z0-9._-]{0,127}$"
         },
-        "credential": {
+        "expectedEpoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "codeVerifier": {
+          "type": "string",
+          "minLength": 43,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._~-]+$"
+        },
+        "redirectUri": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "client": {
           "type": "object",
           "properties": {
-            "provider": {
+            "clientId": {
               "type": "string",
-              "maxLength": 4096
-            },
-            "accessToken": {
-              "type": "string",
-              "maxLength": 65536
-            },
-            "refreshToken": {
-              "type": "string",
-              "maxLength": 65536
-            },
-            "expiresAt": {
-              "type": "number",
-              "minimum": 0
-            },
-            "scope": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "maxLength": 1024
-              },
-              "maxItems": 128
-            },
-            "grantId": {
-              "type": "string",
+              "minLength": 1,
               "maxLength": 512
+            },
+            "clientSecret": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 65536
+            },
+            "tokenEndpointAuthMethod": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
             }
           },
-          "required": ["provider", "accessToken", "refreshToken", "expiresAt", "scope", "grantId"],
+          "required": ["clientId"],
+          "additionalProperties": false
+        },
+        "requestedScope": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+          },
+          "maxItems": 128
+        },
+        "authorization": {
+          "type": "object",
+          "properties": {
+            "tokenEndpoint": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "issuer": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            },
+            "resource": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          },
+          "required": ["tokenEndpoint", "resource"],
           "additionalProperties": false
         }
       },
-      "required": ["serverId", "credential"],
+      "required": [
+        "profile",
+        "serverId",
+        "expectedEpoch",
+        "code",
+        "codeVerifier",
+        "redirectUri",
+        "client",
+        "requestedScope",
+        "authorization"
+      ],
+      "additionalProperties": false
+    },
+    "AdminMcpOAuthRefreshResult": {
+      "type": "object",
+      "properties": {
+        "signedIn": {
+          "type": "boolean",
+          "description": "True when the stored refresh token gave a new access token; false means a browser sign-in is needed."
+        }
+      },
+      "required": ["signedIn"],
+      "additionalProperties": false
+    },
+    "AdminMcpOAuthLogoutResult": {
+      "type": "object",
+      "properties": {
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "The sign-out count after this call. It always grows, also when nothing was stored, so a sign-in started earlier cannot complete."
+        }
+      },
+      "required": ["epoch"],
       "additionalProperties": false
     },
     "DoctorParams": {
@@ -2880,11 +3089,13 @@
         },
         "tokenBudget": {
           "type": "integer",
+          "description": "Workspace memory injection limit in UTF-8 bytes (the name is kept for compatibility); the fixed header is not counted.",
           "minimum": 128,
           "maximum": 1048576
         },
         "userTokenBudget": {
           "type": "integer",
+          "description": "User memory injection limit in UTF-8 bytes (the name is kept for compatibility).",
           "minimum": 128,
           "maximum": 1048576
         },
@@ -2932,11 +3143,13 @@
         },
         "tokenBudget": {
           "type": "integer",
+          "description": "Workspace memory injection limit in UTF-8 bytes (the name is kept for compatibility); the fixed header is not counted.",
           "minimum": 128,
           "maximum": 1048576
         },
         "userTokenBudget": {
           "type": "integer",
+          "description": "User memory injection limit in UTF-8 bytes (the name is kept for compatibility).",
           "minimum": 128,
           "maximum": 1048576
         },
@@ -3753,6 +3966,81 @@
         "version"
       ]
     },
+    "ManagedWorkspaceGrantsListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 214
+        }
+      }
+    },
+    "ManagedWorkspaceGrantParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 214
+        },
+        "workspace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "required": ["packageId", "workspace"]
+    },
+    "ManagedWorkspaceGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "maxLength": 214
+        },
+        "workspace": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      },
+      "required": ["packageId", "workspace"]
+    },
+    "ManagedWorkspaceGrantsList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ManagedWorkspaceGrant"
+          },
+          "maxItems": 4096
+        }
+      },
+      "required": ["items"]
+    },
+    "ManagedWorkspaceGrantChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "packageId": {
+          "type": "string",
+          "maxLength": 214
+        },
+        "workspace": {
+          "type": "string",
+          "maxLength": 4096
+        },
+        "changed": {
+          "type": "boolean"
+        }
+      },
+      "required": ["packageId", "workspace", "changed"]
+    },
     "AdminFeedbackParams": {
       "type": "object",
       "additionalProperties": false,
@@ -3884,6 +4172,8 @@
       "params": "AdminCompositionParams",
       "result": "AdminCompositionResult"
     },
+    "_agnes/v1/channels.catalog": { "params": "AdminEmpty", "result": "ChannelCatalogResult" },
+    "_agnes/v1/channels.pairing": { "params": "ChannelPairingParams", "result": "ChannelPairingResult" },
     "_agnes/v1/admin.search.get": {
       "params": "AdminEmpty",
       "result": "AdminSearchResult"
@@ -3908,9 +4198,21 @@
       "params": "AdminPlanParams",
       "result": "AdminPlanResult"
     },
-    "_agnes/v1/admin.mcp.oauth.save": {
-      "params": "AdminMcpOAuthSave",
+    "_agnes/v1/admin.mcp.oauth.get": {
+      "params": "AdminMcpOAuthGet",
+      "result": "AdminMcpOAuthSummary"
+    },
+    "_agnes/v1/admin.mcp.oauth.complete": {
+      "params": "AdminMcpOAuthComplete",
       "result": "AdminEmpty"
+    },
+    "_agnes/v1/admin.mcp.oauth.refresh": {
+      "params": "AdminMcpOAuthGet",
+      "result": "AdminMcpOAuthRefreshResult"
+    },
+    "_agnes/v1/admin.mcp.oauth.logout": {
+      "params": "AdminMcpOAuthGet",
+      "result": "AdminMcpOAuthLogoutResult"
     },
     "_agnes/v1/doctor.run": {
       "params": "DoctorParams",
@@ -3927,6 +4229,18 @@
     "_agnes/v1/admin.triggers": {
       "params": "WebhookRequest",
       "result": "WebhookResult"
+    },
+    "_agnes/v1/admin.managedWorkspaces.list": {
+      "params": "ManagedWorkspaceGrantsListParams",
+      "result": "ManagedWorkspaceGrantsList"
+    },
+    "_agnes/v1/admin.managedWorkspaces.grant": {
+      "params": "ManagedWorkspaceGrantParams",
+      "result": "ManagedWorkspaceGrantChange"
+    },
+    "_agnes/v1/admin.managedWorkspaces.revoke": {
+      "params": "ManagedWorkspaceGrantParams",
+      "result": "ManagedWorkspaceGrantChange"
     }
   },
   "x-public-error-copy": {

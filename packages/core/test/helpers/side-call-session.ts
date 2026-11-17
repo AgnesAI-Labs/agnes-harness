@@ -6,7 +6,6 @@ import { InvariantRegistry } from '@agnes/core-ledger/invariants/registry'
 import { foldEvents } from '@agnes/core-ledger/reduce/reducer'
 import type { LoopContext, LoopSideCallPort, SideCallOptions } from '@agnes/extension-api'
 import type { InferenceEvent, ModelRecord, Provider, RequestBody } from '@agnes/protocol'
-import { expect } from 'vitest'
 import { createLoopContext } from '../../src/loop/ports.js'
 import { sentFor } from './fake-provider.js'
 import { fakeSeams } from './fake-seams.js'
@@ -171,7 +170,7 @@ export async function withSession<T>(setup: Setup, body: (t: Harness) => Promise
   })
   try {
     await f.session.enqueue('next-turn', { content: [{ type: 'text', text: 'decide' }], actor })
-    expect(await f.session.acceptInput()).toBe(true)
+    if (!(await f.session.acceptInput())) throw new Error('Expected test input acceptance')
     const ctx = await createLoopContext(f.session)
     const port = ctx.sideCall as LoopSideCallPort
     return await body({

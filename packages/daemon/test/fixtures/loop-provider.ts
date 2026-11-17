@@ -1,11 +1,15 @@
 import { createServer } from 'node:http'
 
-/** Scripted loopback responses only; no model or remote fallback. */
-export async function startLoopProvider() {
+/** Scripted loopback responses only; no model or remote fallback. A `toolProbes` marker in a user
+ * message makes the scripted model call that tool once, until a tool result follows the marker. */
+export async function startLoopProvider(
+  options: { toolProbes?: Record<string, { name: string; arguments: unknown }> } = {},
+) {
   let blocking = false
   let entered: (() => void) | undefined
   let disconnected: (() => void) | undefined
   const requests: string[] = []
+  let held: { entered: () => void; gate: Promise<void> } | undefined
   const attempts: {
     requestIndex: number
     enteredAt: number
@@ -27,6 +31,23 @@ export async function startLoopProvider() {
     }
     const messages = JSON.stringify(body.messages)
     requests.push(messages)
+    // Hold and fail read only what follows the last reply, so a later turn of the session is unaffected.
+    const newest = messages.includes('summarizing a chat')
+      ? ''
+      : JSON.stringify(
+          body.messages.slice(body.messages.findLastIndex((message) => message.role === 'assistant') + 1),
+        )
+    if (newest.includes('FAIL_THIS_TURN')) {
+      response.writeHead(500, { 'Content-Type': 'application/json' })
+      response.end(JSON.stringify({ error: { message: 'scripted server failure', type: 'server_error' } }))
+      return
+    }
+    if (held && newest.includes('HOLD_THIS_TURN')) {
+      const release = held
+      held = undefined
+      release.entered()
+      await release.gate
+    }
     response.writeHead(200, { 'Content-Type': 'text/event-stream' })
     response.flushHeaders()
     if (blocking && messages.includes('Cancel this blocked turn')) {
@@ -60,6 +81,78 @@ export async function startLoopProvider() {
       const event = { id: 'write-fixture', object: 'chat.completion.chunk', created: 0, model: 'loop-script' }
       response.write(
         `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'bundle-write', type: 'function', function: { name: 'write', arguments: JSON.stringify({ path: 'bundle-must-not-write.txt', content: 'forbidden' }) } }] }, finish_reason: null }] })}\n\n`,
+      )
+      response.end(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
+      )
+      return
+    }
+    if (
+      (messages.includes('CHANNEL_APPROVAL_ALLOW') || messages.includes('CHANNEL_APPROVAL_DENY')) &&
+      !body.messages.some((message) => message.role === 'tool')
+    ) {
+      const allow = messages.includes('CHANNEL_APPROVAL_ALLOW')
+      const event = {
+        id: 'approval-fixture',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'loop-script',
+      }
+      const args = { command: `printf completed > approval-${allow ? 'allow' : 'deny'}.txt` }
+      response.write(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'approval-shell', type: 'function', function: { name: 'shell', arguments: JSON.stringify(args) } }] }, finish_reason: null }] })}\n\n`,
+      )
+      response.end(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
+      )
+      return
+    }
+    if (
+      messages.includes('CHANNEL_QUESTION_PROBE') &&
+      !body.messages.some((message) => message.role === 'tool')
+    ) {
+      const event = {
+        id: 'question-fixture',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'loop-script',
+      }
+      const args = {
+        questions: [
+          { id: 'single', question: 'Pick one', options: ['A', 'B'] },
+          { id: 'multi', question: 'Pick several', options: ['A', 'B'], multiple: true },
+          { id: 'text', question: 'Explain' },
+        ],
+      }
+      response.write(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: 'native-question', type: 'function', function: { name: 'ask_user_question', arguments: JSON.stringify(args) } }] }, finish_reason: null }] })}\n\n`,
+      )
+      response.end(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
+      )
+      return
+    }
+    const probe = Object.entries(options.toolProbes ?? {}).find(([marker]) => {
+      const asked = body.messages.findLastIndex(
+        (message) => message.role === 'user' && JSON.stringify(message.content).includes(marker),
+      )
+      return asked >= 0 && !body.messages.slice(asked).some((message) => message.role === 'tool')
+    })
+    if (probe) {
+      const [, call] = probe
+      const event = { id: 'tool-probe', object: 'chat.completion.chunk', created: 0, model: 'loop-script' }
+      const delta = {
+        tool_calls: [
+          {
+            index: 0,
+            id: `probe-${requests.length}`,
+            type: 'function',
+            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+          },
+        ],
+      }
+      response.write(
+        `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`,
       )
       response.end(
         `data: ${JSON.stringify({ ...event, choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\ndata: [DONE]\n\n`,
@@ -107,6 +200,16 @@ export async function startLoopProvider() {
     },
     unblock() {
       blocking = false
+    },
+    /** Holds the next request whose newest message says HOLD_THIS_TURN until `release`, then answers. */
+    hold() {
+      let entered!: () => void
+      let release!: () => void
+      const reached = new Promise<void>((resolve) => {
+        entered = resolve
+      })
+      held = { entered, gate: new Promise<void>((resolve) => (release = resolve)) }
+      return { entered: reached, release }
     },
     close: () =>
       new Promise<void>((resolve, reject) => {

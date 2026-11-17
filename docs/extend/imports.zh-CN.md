@@ -36,9 +36,12 @@ profile 页面从 `react` 导入 React，通过 `ctx.profile.services.query/effe
 
 ## Kind token
 
+IM 适配器作者使用 `@agnes/plugin-runtime/channel-contract` 和底座持有的
+`profileRuntime.registerChannel` 桥接，参见[渠道插件](channel-plugins.zh-CN.md)。
+
 kind 是用 `defineKind` 创建的同一种 token，自己声明支持 `ctx.providers.register`、`ctx.providers.bindOwn` 还是两者都支持（带 `bind` 选项即可绑定）。`ctx.providers.register(kind, provider)` 与 `ctx.providers.bindOwn(kind)` 接受同一种 token 类型，Host 会拒绝 kind 未声明的操作。
 
-Host 安装的 provider kind 由 `@agnes/extension-api` 导出（`@agnes/plugin-runtime` 同样再导出）：`loopKind`、`modelAdapterKind`、`compactionKind`、`persistenceKind`、`sandboxKind`、`toolRuntimeKind`、`toolPolicyKind`、`childAgentKind`、`referenceResolverKind`、`memoryKind`、`systemPromptKind`、`webhookTriggerKind`；七个 seam kind（`approvalKind`、`principalsKind`、`billingKind`、`checkpointKind`、`artifactsKind`、`verifierKind`、`repairKind`）来自 `@agnes/extension-api/seams`。
+Host 安装的 provider kind 由 `@agnes/extension-api` 导出（`@agnes/plugin-runtime` 同样再导出）：`loopKind`、`modelAdapterKind`、`compactionKind`、`persistenceKind`、`sandboxKind`、`toolRuntimeKind`、`toolPolicyKind`、`childAgentKind`、`referenceResolverKind`、`memoryKind`、`systemPromptKind`、`webhookTriggerKind`、`channelKind`；七个 seam kind（`approvalKind`、`principalsKind`、`billingKind`、`checkpointKind`、`artifactsKind`、`verifierKind`、`repairKind`）来自 `@agnes/extension-api/seams`。
 
 Host 提供的公开作者命名空间共有以下六个可绑定 kind。请从准确的所属路径导入，以保留重载时的 token 身份；不要复制 token 或用 `defineKind` 重建它。
 

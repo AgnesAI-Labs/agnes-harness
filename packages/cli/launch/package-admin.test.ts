@@ -37,6 +37,9 @@ const mocks = vi.hoisted(() => {
   }))
   const clientModuleCallService = vi.fn(async () => ({ output: { ok: true } }))
   const clientModuleCallEffect = vi.fn(async () => ({ output: { changed: true } }))
+  const readOperation = vi.fn(async () => {
+    throw Object.assign(new Error('unknown operation'), { data: { code: 'CAPABILITY_DENIED' } })
+  })
   const surfaceMounts = vi.fn(async () => ({
     mounts: [
       {
@@ -75,10 +78,12 @@ const mocks = vi.hoisted(() => {
     clientModuleCallService,
     clientModuleCallEffect,
     surfaceMounts,
+    readOperation,
   }
 })
 
 vi.mock('@agnes/sdk', () => ({
+  unixTransport: vi.fn(),
   memoryJournal: vi.fn(() => ({})),
   createClient: vi.fn(() => ({
     request: mocks.request,
@@ -105,6 +110,7 @@ vi.mock('@agnes/sdk', () => ({
     },
     sessionSelection: mocks.sessionSelection,
     surfaces: { mounts: mocks.surfaceMounts },
+    extensions: { readOperation: mocks.readOperation },
     clientModules: {
       list: mocks.clientModuleList,
       callService: mocks.clientModuleCallService,
@@ -300,6 +306,164 @@ it('relays only a same-origin typed browser service request and strips page-supp
       input: { text: 'hello', nested: { keep: 1 } },
     })
     const profileCall = { rowId: 'web:acme/panel', service: 'panel.report', input: {} }
+    const channelCall = {
+      method: '_agnes/v1/extension.call',
+      params: {
+        sessionId: 'session-a',
+        extension: 'plugin/0123456789abcdef',
+        service: 'channel.bind',
+        commandId: 'channel-bind-1',
+        input: { instanceId: 'one', targetId: 'a'.repeat(32), expectedVersion: 0 },
+      },
+    }
+    const sendChannel = (body: unknown, from = origin) =>
+      fetch(`${origin}/api/channels`, {
+        method: 'POST',
+        headers: { Origin: from, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    mocks.request.mockResolvedValueOnce({
+      providers: [{ extension: 'plugin/0123456789abcdef', bindingAvailable: true }],
+    } as never)
+    mocks.request.mockResolvedValueOnce({ output: { bound: true } } as never)
+    const bound = await sendChannel(channelCall)
+    expect(bound.status).toBe(200)
+    expect(await bound.json()).toEqual({ output: { bound: true } })
+    expect(mocks.request).toHaveBeenCalledWith(channelCall.method, channelCall.params)
+    expect((await sendChannel(channelCall, 'http://attacker.invalid')).status).toBe(403)
+    expect((await sendChannel({ ...channelCall, method: '_agnes/v1/packages.remove' })).status).toBe(400)
+    expect(
+      (await sendChannel({ ...channelCall, params: { ...channelCall.params, actor: 'owner' } })).status,
+    ).toBe(400)
+    mocks.request.mockResolvedValueOnce({ providers: [] } as never)
+    expect((await sendChannel(channelCall)).status).toBe(403)
+    for (const forged of [
+      { actor: 'owner' },
+      { profile: 'foreign' },
+      { workspace: 'D:/foreign' },
+      { agent: 'default' },
+    ]) {
+      expect(
+        (
+          await sendChannel({
+            method: 'channels.context',
+            params: { extension: channelCall.params.extension, sessionId: 'session-a', ...forged },
+          })
+        ).status,
+      ).toBe(400)
+      expect(
+        (
+          await sendChannel({
+            method: 'channels.remove',
+            params: {
+              extension: channelCall.params.extension,
+              instanceId: 'one',
+              operationId: 'remove',
+              configurationRevision: 'revision',
+              expectedVersion: 0,
+              ...forged,
+            },
+          })
+        ).status,
+      ).toBe(400)
+    }
+    const dedicated = {
+      extension: channelCall.params.extension,
+      workspaceId: 'w-team',
+      instanceId: 'd-0123456789ab',
+      credentialRefs: { appId: 'secret://generic/app-id' },
+      operationId: 'dedicated',
+      configurationRevision: 'revision',
+    }
+    // The dedicated connection never names a session, another instance, a path or an agent.
+    for (const params of [
+      ...[
+        { sessionId: 'session-a' },
+        { replaceId: 'one' },
+        { workspace: '/work/team' },
+        { agent: 'default' },
+        { profile: 'foreign' },
+        { expectedConfigurationRevision: 'a'.repeat(64) },
+      ].map((forged) => ({ ...dedicated, ...forged })),
+      ...['operationId', 'configurationRevision', 'workspaceId', 'instanceId', 'credentialRefs'].map((key) =>
+        Object.fromEntries(Object.entries(dedicated).filter(([name]) => name !== key)),
+      ),
+      { ...dedicated, credentialRefs: { appId: 'plain-secret-value' } },
+    ])
+      expect((await sendChannel({ method: 'channels.configureDedicated', params })).status).toBe(400)
+    for (const params of [{}, { extension: dedicated.extension, sessionId: 'session-a' }])
+      expect((await sendChannel({ method: 'channels.dedicatedContext', params })).status).toBe(400)
+    // Well-formed requests reach the workbench; this mocked client has no workspace registry.
+    for (const [method, params] of [
+      ['channels.dedicatedContext', { extension: dedicated.extension }],
+      ['channels.configureDedicated', dedicated],
+    ] as const) {
+      mocks.request.mockClear()
+      const routed = await sendChannel({ method, params })
+      expect(routed.status).toBe(503)
+      expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/channels.catalog', {})
+    }
+    // A deterministic refusal (here: the channel is gone) is a 409 the page can act on, not "unconfirmed".
+    mocks.request.mockResolvedValueOnce({ providers: [] } as never)
+    const refusedDedicated = await sendChannel({ method: 'channels.configureDedicated', params: dedicated })
+    expect(refusedDedicated.status).toBe(409)
+    expect(await refusedDedicated.json()).toMatchObject({ error: { data: { code: 'CHANNEL_REFUSED' } } })
+    // An id that is already configured says so, so the page can point at the existing connection.
+    mocks.request.mockResolvedValueOnce({
+      providers: [
+        {
+          extension: dedicated.extension,
+          manifest: { credentials: { required: [], optional: ['appId'] } },
+        },
+      ],
+    } as never)
+    mocks.request.mockResolvedValueOnce({ output: { instances: [{ id: dedicated.instanceId }] } } as never)
+    const exists = await sendChannel({ method: 'channels.configureDedicated', params: dedicated })
+    expect(exists.status).toBe(409)
+    expect(await exists.json()).toMatchObject({
+      error: { data: { code: 'CHANNEL_REFUSED', reason: 'exists' } },
+    })
+    for (const expectedVersion of [undefined, -1, 0.5, '0']) {
+      expect(
+        (
+          await sendChannel({
+            method: 'channels.remove',
+            params: {
+              extension: channelCall.params.extension,
+              instanceId: 'one',
+              operationId: 'remove',
+              configurationRevision: 'revision',
+              expectedVersion,
+            },
+          })
+        ).status,
+      ).toBe(400)
+    }
+    const revoke = { action: 'revoke', pairingId: 'a'.repeat(32) }
+    mocks.request.mockResolvedValueOnce({} as never)
+    expect((await sendChannel({ method: 'channels.pairing', params: revoke })).status).toBe(200)
+    expect(mocks.request).toHaveBeenCalledWith('_agnes/v1/channels.pairing', revoke)
+    for (const params of [
+      { ...revoke, actor: 'owner' },
+      { action: 'revoke', pairingId: 'not-a-pairing' },
+      { action: 'mint', extension: channelCall.params.extension, instanceId: 'one', operationId: 'mint' },
+    ])
+      expect((await sendChannel({ method: 'channels.pairing', params })).status).toBe(400)
+    mocks.request.mockRejectedValueOnce(
+      Object.assign(new Error('internal detail'), { data: { code: 'TARGET_PAIRED' } }) as never,
+    )
+    const refused = await sendChannel({
+      method: 'channels.pairing',
+      params: {
+        action: 'mint',
+        extension: channelCall.params.extension,
+        instanceId: 'one',
+        target: { owner: '@acme/desk#ext:acme/desk/main', service: 'desk' },
+        operationId: 'mint',
+      },
+    })
+    expect(refused.status).toBe(409)
+    expect(JSON.stringify(await refused.json())).not.toContain('internal detail')
     const profile = await fetch(`${origin}/api/client-modules/profile`, {
       method: 'POST',
       headers: { Origin: origin, 'Content-Type': 'application/json' },

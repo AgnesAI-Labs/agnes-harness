@@ -32,6 +32,7 @@ import type { AssemblyContext } from './context.js'
 import type { PresetCatalog } from './presets.js'
 import type { ProcessServices } from './process-services.js'
 import { retainedModelView } from './retained-model.js'
+import type { RowHosts } from './row-hosts.js'
 
 /**
  * Step `provider` - route table first, environment second, credentials third. The route table,
@@ -42,9 +43,10 @@ export async function assembleProvider(
   ctx: AssemblyContext,
   proc: ProcessServices,
   presets: PresetCatalog,
-  pluginTree: HostPluginTreeBase,
+  tree: { runtimeTarget: { pluginTree: HostPluginTreeBase }; rowHosts: Pick<RowHosts, 'setSideModels'> },
 ) {
   const { deps, rollback, clock, env, say, providerSelections } = ctx
+  const { pluginTree } = tree.runtimeTarget
   const { hotPolicy } = ctx.gates
   const { secrets } = proc
   // Validate explicit kind selections before fitting operation instances.
@@ -84,6 +86,7 @@ export async function assembleProvider(
     provider,
     contractStore,
     preconfiguredRoutes,
+    uncredentialedRoutes,
     dispose: disposeProvider,
   } = routes
     ? await buildProvider(ctx.profile, routes, {
@@ -113,10 +116,14 @@ export async function assembleProvider(
     say('provider.dispose_failed', { message: error instanceof Error ? error.message : String(error) })
   })
   disposeProvider = () => models.dispose()
+  tree.rowHosts.setSideModels(() =>
+    models.provider.models().map(({ route, id, api }) => ({ route, model: id, api })),
+  )
   limitChildModels(
     models.provider,
     () => pluginTree.root.modelAdapters.catalog(),
     () => ctx.profile,
+    () => uncredentialedRoutes,
   )
   const applyModelProfile = async (next: ResolvedProfile): Promise<void> => {
     next = applyProviderSelections(next)
@@ -166,9 +173,13 @@ export async function assembleProvider(
     models.publish({ provider: built.provider, contractForModel: nextContracts, dispose: built.dispose })
     provider = built.provider
     preconfiguredRoutes = built.preconfiguredRoutes
+    uncredentialedRoutes = built.uncredentialedRoutes
     routes = nextRoutes
     providerFingerprint = built.provider.registry?.fingerprint() ?? null
     ctx.profile = next
+    tree.rowHosts.setSideModels(() =>
+      models.provider.models().map(({ route, id, api }) => ({ route, model: id, api })),
+    )
   }
   const named = routes ? Object.entries(routes).map(([k, v]) => [k, `${v.route}/${v.model}`]) : []
   // The credit rate goes on the audit row, null included. An assembly that priced nothing is the

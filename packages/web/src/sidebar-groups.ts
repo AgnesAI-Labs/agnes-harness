@@ -103,17 +103,21 @@ export function groupInventoryRows(
  * sessions in the order the activity sort gave them.
  */
 export function flatLeadingRows(rows: readonly Row[], workspaces: readonly WorkspaceEntry[]): Row[] {
-  const chats = chatsPathOf(workspaces)
+  const chats = new Set(
+    workspaces.filter((workspace) => workspace.kind === 'chats').map((workspace) => workspace.path),
+  )
   return [
     ...rows.filter(isPinned).sort(byPinnedAt),
-    ...rows.filter((row) => !isPinned(row) && !!chats && row.cwd === chats),
+    ...rows.filter((row) => !isPinned(row) && chats.has(row.cwd ?? '')),
   ]
 }
 
 /** Flat rows under the heading: everything that is neither pinned nor in the chats workspace. */
 export function flatMainRows(rows: readonly Row[], workspaces: readonly WorkspaceEntry[]): Row[] {
-  const chats = chatsPathOf(workspaces)
-  return rows.filter((row) => !isPinned(row) && !(chats && row.cwd === chats))
+  const chats = new Set(
+    workspaces.filter((workspace) => workspace.kind === 'chats').map((workspace) => workspace.path),
+  )
+  return rows.filter((row) => !isPinned(row) && !chats.has(row.cwd ?? ''))
 }
 
 /** One group in the sidebar: a paged group, a local bucket, or the synthesized pinned group. */
@@ -181,7 +185,8 @@ export function sessionGroupViews(options: SidebarNavigationOptions): SessionGro
 /** The name a group goes by, shared by the heading and the move announcement. */
 export function groupName(view: SessionGroupView, t: Translate): string {
   if (view.kind === 'pinned') return t('nav.pinned')
-  if (view.kind === 'chats') return t('nav.chats')
+  if (view.kind === 'chats')
+    return t(view.workspace?.managedRole === 'legacy' ? 'nav.legacyChats' : 'nav.chats')
   if (view.kind === 'unassigned') return t('session.uncategorized')
   return view.workspace ? workspaceLabel(view.workspace) : t('session.uncategorized')
 }

@@ -8,6 +8,8 @@
 
 AGH 可以执行工具、写文件和连接外部系统。模型文本、网页、MCP 结果、Skill 与插件配置都不是用户授权本身。先选择工作目录和可接受的能力，再批准具体操作。
 
+受管临时会话目录不增加文件或命令权限。旧临时会话只有通过已验证的会话绑定（含可信分叉和兼容定时执行）才能访问原目录文档；文件与引用仍检查当前会话权限，拒绝路径穿越和链接，安装私有状态继续受保护。新旧目录文件不互通，二进制文件仍只展示元信息。
+
 ## 三类不同的信任
 
 | 边界 | 含义 | 不代表什么 |
@@ -56,9 +58,9 @@ Web「工作区内修改」将文件访问限制在所选工作区内，执行�
 
 ## 平台与进程
 
-在 `workspace-write`、`read-only` 权限下，随附的预设请求 L1，使用 `required: false` 和 `on_unavailable: allow-if-unimplemented`。可信本机后端声明系统隔离是否已实现。macOS/Linux 已实现，必须实际通过 Seatbelt/bubblewrap 探测；缺少程序、namespace 禁用或策略拒绝仍以 `E_SANDBOX_WORKSPACE` 拒绝初始化，不能当作“未实现”。Windows 本机后端声明尚未实现，所以允许原生命令，不探测 POSIX 后端。未知能力、远程目标不能借此自动放行。`required: true` 始终要求真正隔离。
+在 `workspace-write`、`read-only` 权限下，随附的预设请求 L1，使用 `required: false` 和 `on_unavailable: allow-if-unimplemented`。可信本机后端声明系统隔离是否已实现。macOS/Linux 已实现，必须实际通过 Seatbelt/bubblewrap 探测；缺少程序、namespace 禁用或策略拒绝仍以 `E_SANDBOX_WORKSPACE` 拒绝初始化，不能当作“未实现”。Windows 本机后端声明 L1 尚未实现，也不探测 POSIX 后端；使用随附预设时，这些权限改用部分的 Windows ACL 写限制运行命令，无法建立时会话拒绝执行命令。未选择写限制的自定义配方沿用自己的 `on_unavailable` 策略：`allow-if-unimplemented` 时命令直接运行。未知能力、远程目标不能借此自动放行。`required: true` 始终要求真正隔离。
 
-Windows 保留工具审批、只读限制、文件工具的工作区与保护路径检查，以及用户明确设置的审批模式。获准命令使用当前系统账户执行，应用检查不能隔离任意 shell 的文件或网络操作。设置页、会话运行信息和输入框分别显示权限与实际隔离状态。
+Windows 保留工具审批、只读限制、文件工具的工作区与保护路径检查，以及用户明确设置的审批模式。写限制只限制命令能写入的位置；文件读取和网络仍不受限，应用检查依然不能隔离任意 shell 的读取或网络操作。完全访问以当前系统账户直接运行命令。见 [Windows 写限制](sandbox-providers.zh-CN.md#windows-写限制)。设置页、会话运行信息和输入框分别显示权限与实际隔离状态。
 
 <a id="permissions-and-presets"></a>
 
@@ -68,8 +70,8 @@ Windows 保留工具审批、只读限制、文件工具的工作区与保护路
 
 | 权限 | 文件范围 | 普通审批 | 持久能力 | OS 隔离 |
 | --- | --- | --- | --- | --- |
-| **只读**（`read-only`） | 查看允许范围的文件和公开网页 | 修改与命令执行会被拒绝 | Agent 不写入；管理信任独立 | macOS/Linux 需通过 L1 探测；Windows 此平台命令未隔离 |
-| **可修改工作区**（`workspace-write`，默认） | 文件工具可改工作区和明确授权的额外目录；官方记忆经受控提供方访问 | 命令需审批；范围内文件修改预批准，仍服从明确拒绝 | 记忆 off 拒绝，ask 精确 diff 确认，auto 保留归属、大小和 CAS 校验；其他工作区及用户记忆对 Agent 只读 | 命令隔离取决于平台：macOS/Linux 实测 L1；Windows 此平台命令未隔离 |
+| **只读**（`read-only`） | 查看允许范围的文件和公开网页 | 修改与命令执行会被拒绝 | Agent 不写入；管理信任独立 | macOS/Linux 需通过 L1 探测；Windows 命令不能写入（部分写限制，读取与网络不受限） |
+| **可修改工作区**（`workspace-write`，默认） | 文件工具可改工作区和明确授权的额外目录；官方记忆经受控提供方访问 | 命令需审批；范围内文件修改预批准，仍服从明确拒绝 | 记忆 off 拒绝，ask 精确 diff 确认，auto 保留归属、大小和 CAS 校验；其他工作区及用户记忆对 Agent 只读 | 命令隔离取决于平台：macOS/Linux 实测 L1；Windows 只向工作区和私有临时目录授予命令写权限（部分隔离：硬链接和其他 Low 完整性程序是例外；读取与网络不受限） |
 | **完全访问**（`full-access`） | 工作区内外普通文件；保护目录仍拒绝 | 权限裁决自动允许 | 候选发布与询问模式记忆保留精确授权及硬拒绝，见[例外](#full-access-exceptions) | 配置 L0；macOS/Linux 注册记忆提供方时，有 L1 就用它拒绝记忆树，否则命令不经隔离执行；Windows 无 OS 隔离 |
 
 | 预设 | 设定内容 |
@@ -99,7 +101,7 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 
 沿用现有 pending TTL。过期后本次为“失败 / 需要处理”，不能显示“已运行”；下次仍可执行，并保留“上次审批已过期”的需处理提示，即使本次成功也可见。上次仍待审批时，下次会在历史明确标记，不静默堆积新的停等会话。每个计划任务/触发器也可选择 **直接拒绝**：无人回答时以 `unattended-refused` 结束该步骤，不伪造人为拒绝或授权；这类运行的轮次也按无人值守处理，不提供需要等待在场用户的工具（见[无人值守的轮次](headless.zh-CN.md#无人值守的轮次)）。缺失 handler、断线都不代表允许执行。
 
-完全访问会话在无人值守交接策略之前自动允许权限裁决，不会因审批停为 `waiting_approval`；其他会话继续遵循转人工或拒绝策略。
+完全访问会话在无人值守交接策略之前自动允许权限裁决，不会因审批停为 `waiting_approval`（[对外检查点](#outward-checkpoint)除外，它等人回答）；其他会话继续遵循转人工或拒绝策略。
 
 ### 完全相同的后续调用规则
 
@@ -118,19 +120,67 @@ permissions: { default: workspace-write, allowed: [read-only, workspace-write, f
 
 命令前的 `sudo`、`env`、`command`、`exec`、`nohup`、`timeout`、`nice` 会被穿透；`&&`、`||`、`;`、`|` 连接的每一段都会检查；`bash|sh|zsh -c` 的载荷最多递归检查三层。无法解析的命令不会仅因解析失败被拒绝：会对整串文本和能抽出的字面片段做匹配，其余照常走审批。这是命令文本策略，不是解释器，也不是沙箱，足够混淆的命令可以绕过；真正的边界仍是沙箱和路径硬拒绝。
 
+<a id="outward-checkpoint"></a>
+
+### 对外检查点
+
+对外操作指把内容发给你以外的人，或改动远端状态。声明了 `ToolMeta.outward` 的工具（见[工具运行时](../extend/tool-runtime.zh-CN.md)）在任何会话、任何权限模式下（包括完全访问、`/yolo` 和 `approvals.mode: off`）每次调用都停下等人批准一次。这是保证：它跟着工具的声明走，不看参数文字。
+
+审批只给 **允许一次** 和 **拒绝**。完全访问、自动审查、放行的所选策略、命令表 `allow` 规则、会话授权、长期授权、前缀授权、`Approval` 替换和工具调用 hook 都不能代批。不会沿用以前的回答：每次调用单独发起一条请求。只有人能回答，即角色在允许清单上的执行者：`owner` 是已认证连接背后的人（daemon 给本机用户的角色），`user` 是嵌入方惯常给人的角色。其他角色（例如 `system`、`agent`、`extension`、`trigger`）一律拒绝，标记为自动回答的也拒绝。人给出的其他回答（例如“本会话都允许”）一律记为拒绝。要中止，停止本轮即可。所选策略或命令表的拒绝仍直接拒绝，不再询问。没有人能回答时，该调用保持待批，直到有人回答、请求过期（按拒绝处理）或本轮被停止；计划任务的运行显示为 `waiting_approval`。绝不自行执行。会写入的 MCP 工具只有在其包声明对外时才算对外。
+
+<a id="outward-command-rules"></a>
+
+#### 对外命令规则（尽力拦截，按会话开启）
+
+会话还可以让命令文字命中内置对外规则的 shell 调用也停在同一个检查点。这一项默认关闭：普通会话、计划任务和 Webhook 会话执行 shell 命令的方式与没有检查点之前完全一样。由 Host 在每次打开会话时开启（`outwardCommandRules`），它不随会话保存。插件打开的[托管会话](../extend/managed-sessions.zh-CN.md)不论从哪条路径打开都带着它，托管会话的完全访问也以它为前提。以 AGH 会话运行的子代理和分叉从已打开的父会话继承；以外部智能体进程运行的子代理（Claude Code、Codex、ACP 或 SDK 智能体）用自己的 shell，不在覆盖范围内。已开启的会话不能被插件、模型或工具调用关掉。规则和硬封锁一样写在代码里，预设、插件和模型都不能删除或放宽。
+
+命令规则是尽力拦截，不是边界。匹配文字看不到一个词展开后是什么。会话实际能触达什么，由沙箱和你交给会话的凭据决定。
+
+| 规则 | 停下等人 |
+| --- | --- |
+| `git-push` | `git push`、`git send-email`、`git-push`、`git subtree push`、`git lfs push`；用 `git -c alias.*` 或 `git config alias.*` 定义 git 别名。紧跟在程序名、操作数或不带值的短选项组之后且未被再次关闭的试运行（`git push --dry-run` 或 `-n`、`git send-email --dry-run`）除外。其后任何从 `--no-d` 起的 `--no-dry-run` 前缀都会关闭试运行，因为 git 和 npm 会把 `--no-dry` 读成它 |
+| `gh-write` | 不属于其命令组已列只读操作的 `gh` 命令（例如 `gh pr list`、`gh release download`、`gh secret list`；另有 `gh search` 和 `gh auth status`），未知的命令组或操作也算；带任一写方法、方法覆盖请求头或 `-f`/`-F`/`--input` 的 `gh api` |
+| `package-publish` | 位于子命令位置的：`npm publish`、`unpublish`、`deprecate`、`undeprecate`、`dist-tag`、`owner`、`access`（含 npm 认可的无歧义前缀和别名，例如 `npm pub`），`pnpm`/`yarn`/`bun publish`，`cargo publish`/`yank`/`owner`，`twine upload`，`gem push`，`uv publish`，`poetry publish`，`docker`/`podman`/`nerdctl push`，`docker`/`podman build --push` 或 `--output`/`-o`/`--set` 的值写明 `type=registry` 或 `push=true`，`docker buildx imagetools create`，`compose push`（`docker compose`、`docker-compose`、`podman compose`、`podman-compose`、`nerdctl compose`）。紧跟在程序名或操作数之后、且没有被 `--dry-run false` 这类值关闭的 `publish` 试运行除外；其他动作没有试运行，总是询问 |
+| `http-write` | 带任一写方法 `-X`/`--request`、数据或上传选项、方法覆盖请求头或 `-K`/`--config` 的 `curl`；带写方法 `--method`、`--post-*`/`--body-*` 或方法覆盖请求头的 `wget`。长选项的前缀按该选项计（`wget --post-d`、`curl --reque`），即使工具本身会拒绝它。所有 URL 都是 `localhost`、`127.x.x.x` 或 `[::1]`，且没有代理、`--resolve`、`--connect-to` 或配置选项改道时除外 |
+| `remote-shell` | 连到主机的 `ssh` 或 `sftp`；带远端操作数（`host:path`、`rsync://`）的 `scp` 或 `rsync`。`ssh -V`、本地复制，以及紧跟在程序名、操作数或不带值的短选项组之后的 `rsync` 试运行除外 |
+| `nesting` | 嵌套超过三层、规则不再往下读的 shell 文字 |
+
+规则会反复剥掉包装器和启动器，直到词不再变化：`sudo`、`doas`、`env`（含 `-S`）、`command`、`exec`、`nohup`、`timeout`、`nice`、`time`、`setsid`、`stdbuf`、`flock`、`xcrun`、`watch`、`parallel`、`script`、`su -c`、`xargs`、`find -exec`、`busybox`、`rtk`、`npx`、`bunx`、`uvx`、`mise exec`、`pnpm exec`/`dlx`、`yarn exec`/`dlx`、`bun x`、`npm exec`/`npm x`、`uv run`、`poetry run`、`bundle exec`、`direnv exec` 和 `op run`。会读取 `eval` 的载荷，`bash`、`sh`、`zsh`、`dash`、`ksh`、`fish` 等 POSIX shell 带 `-c` 的载荷（以及 fish 的 `-C` 初始化文字），`pwsh -c` 和 `cmd /c` 的载荷，以及 `git submodule foreach` 和 `git rebase --exec` 要运行的命令。`&&`、`||`、`;`、`|` 连接的每一段都会检查，并越过开头的关键字（`if`、`then`、`do`、`else`、`while`、`!`、`{`）、`builtin`、`coproc`、`noglob`、`nocorrect` 和重定向。选项列表并不完整，所以紧跟在未知选项后的词也会被当作该选项的值再试一次：`cargo --config x=1 publish` 会命中。规则认识的长选项的前缀（`sudo --us root`、`git rebase --exe`）按该选项读取，其后的词两种读法都试。
+
+开启命令规则的会话拒绝终端（`pty_open`、`pty_send`）和持久 shell（`persistent` 或 `sessionId`）：后一次调用可以从 shell 历史里重放或补全前一次的命令，而它自己的文字里没有规则词。在任何会话里，`run_code` 的源码都是程序代码，不按对外命令规则读取。
+
+已知缺口。下面这些输入按设计不会被匹配：
+
+- 变量间接：`x=push; git $x`、`G=git; $G push`
+- 命令替换：`git $(printf push)`、`bash -c "$(echo git push)"`
+- ANSI-C 引用：`git $'push'`
+- 函数定义：`f() { git "$@"; }; f push`
+- 管道进 shell：`echo git push | sh`、`sh <<< 'git push'`
+- 来自环境变量的配置：`GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=alias.p GIT_CONFIG_VALUE_0=push git p`
+- 前一次调用定义、后一次调用使用的别名：`git ship`
+- 来自环境变量的代理：`http_proxy=http://relay.test curl -d a=1 http://localhost/x`
+- 编码过的载荷：`pwsh -EncodedCommand ZwBpAHQAIABwAHUAcwBoAA==`
+- 脚本和语言运行时：`node scripts/release.js`、`python -c "import urllib.request"`、`make release`
+- 规则不认识为包装器的前置程序（`caffeinate`、`ionice`、`strace` 等）：`caffeinate git push`
+- 值恰好是常见子命令的未知选项：`npm --heading test publish`
+- 写在配置文件里的推送：`docker buildx bake`
+- 以外部智能体进程运行的子代理，以及重开时没有带 `outwardCommandRules` 的会话（后端拒绝以这种方式打开托管会话）
+
+未命中规则的命令在完全访问下照常不经询问执行。
+
 ### 命令前缀审批
 
-shell 命令需要审批时，审批卡可以多给一个选择：本会话内，以所给词开头的命令不再询问（例如「以 `git push` 开头的命令」）。前缀由 daemon 计算，客户端原样展示，自己不会拼前缀。只有当命令的每个部分（按 `&&`、`||`、`;`、`|` 切分）在授予后都会被覆盖、前缀词能放进 256 字符的授权范围、且前缀本身允许时才会提供。前缀按白名单提供。只凭程序名提供的，仅限参数无法运行或写入任何东西的只读命令（`ls`、`cat`、`head`、`tail`、`wc`、`grep`、`pwd`、`echo`、`which`、`stat`、`du`、`df`、`date`）。程序加子命令只提供以下组合：`git` 的 `status`、`diff`、`log`、`show`、`branch`、`fetch`、`add`、`commit`、`push`、`pull`、`switch`、`checkout`、`restore`、`blame`、`tag`、`remote`、`rev-parse`、`ls-files`；`npm`/`pnpm` 的 `test`、`ls`、`outdated`；`yarn`/`bun` 的 `test`；`cargo` 的 `build`、`test`、`check`、`clippy`、`fmt`、`doc`、`tree`；`go` 的 `build`、`test`、`vet`、`fmt`、`list`；`uv` 的 `sync`、`lock`；`pip` 的 `list`、`show`、`freeze`。程序必须直接写名字，不能带路径。组合后面的选项同样按每个组合各自的白名单（例如 `git status -s`、`git commit -m`、`git push -u`、`cargo test -p`、`go test -run`）：被覆盖的命令带有其他选项、缩写或合并的选项、或 `--` 之后的选项时照常询问；`git fetch`、`git pull`、`git push` 的 refspec 含 `+` 或 `:`（强制更新或删除）时总是询问。看起来像凭据的词永远不进前缀。授权命令从项目本身运行的内容（测试脚本、git hooks）属于授权范围。
+shell 命令需要审批时，审批卡可以多给一个选择：本会话内，以所给词开头的命令不再询问（例如「以 `git commit` 开头的命令」）。前缀由 daemon 计算，客户端原样展示，自己不会拼前缀。只有当命令的每个部分（按 `&&`、`||`、`;`、`|` 切分）在授予后都会被覆盖、前缀词能放进 256 字符的授权范围、且前缀本身允许时才会提供。前缀按白名单提供。只凭程序名提供的，仅限参数无法运行或写入任何东西的只读命令（`ls`、`cat`、`head`、`tail`、`wc`、`grep`、`pwd`、`echo`、`which`、`stat`、`du`、`df`、`date`）。程序加子命令只提供以下组合：`git` 的 `status`、`diff`、`log`、`show`、`branch`、`fetch`、`add`、`commit`、`push`、`pull`、`switch`、`checkout`、`restore`、`blame`、`tag`、`remote`、`rev-parse`、`ls-files`；`npm`/`pnpm` 的 `test`、`ls`、`outdated`；`yarn`/`bun` 的 `test`；`cargo` 的 `build`、`test`、`check`、`clippy`、`fmt`、`doc`、`tree`；`go` 的 `build`、`test`、`vet`、`fmt`、`list`；`uv` 的 `sync`、`lock`；`pip` 的 `list`、`show`、`freeze`。程序必须直接写名字，不能带路径。组合后面的选项同样按每个组合各自的白名单（例如 `git status -s`、`git commit -m`、`git push -u`、`cargo test -p`、`go test -run`）：被覆盖的命令带有其他选项、缩写或合并的选项、或 `--` 之后的选项时照常询问；`git fetch`、`git pull`、`git push` 的 refspec 含 `+` 或 `:`（强制更新或删除）时总是询问。看起来像凭据的词永远不进前缀。授权命令从项目本身运行的内容（测试脚本、git hooks）属于授权范围。
 
 对于能运行项目代码的前缀，TUI 和 Web 审批卡会明确说明授权也涵盖项目脚本、git hooks 和构建代码；`agh approvals suggest` 显示同样的提示。
 
-前缀授权只在本会话有效，按整词比较而不是文本前缀：`git status` 覆盖 `git status -s`，不覆盖 `git statusx`。只有检查器完全理解的命令才会被覆盖：重定向、替换、变量、通配符、分组、后台 `&`、注释、行首的 `NAME=value` 或保留字、换行都会让命令变成不透明，不透明命令照常询问。前缀审批只适用于普通的一次性 POSIX shell 调用：后台或持久 shell、已有 shell 会话、PowerShell 等其他解释器（即 Windows 上的所有 shell 调用）、含非 ASCII 字符的命令、工作区之外的工作目录，都不会提供或认可前缀授权。前缀授权不会越过「始终要求审批」的工具、污染上下文、要求审批或拒绝的规则以及硬封锁。`agh approvals grants` 与 `/grants` 把它显示为 `prefix: git push`，`agh approvals revoke` 可撤销。不认识前缀审批的客户端仍然看到并回答原有选项。
+前缀授权只在本会话有效，按整词比较而不是文本前缀：`git status` 覆盖 `git status -s`，不覆盖 `git statusx`。只有检查器完全理解的命令才会被覆盖：重定向、替换、变量、通配符、分组、后台 `&`、注释、行首的 `NAME=value` 或保留字、换行都会让命令变成不透明，不透明命令照常询问。前缀审批只适用于普通的一次性 POSIX shell 调用：后台或持久 shell、已有 shell 会话、PowerShell 等其他解释器（即 Windows 上的所有 shell 调用）、含非 ASCII 字符的命令、工作区之外的工作目录，都不会提供或认可前缀授权。前缀授权不会越过「始终要求审批」的工具、污染上下文、要求审批或拒绝的规则以及硬封锁。`agh approvals grants` 与 `/grants` 把它显示为 `prefix: git push`，`agh approvals revoke` 可撤销。在开启了[对外命令规则](#outward-command-rules)的会话里，`git push` 这类命中规则的命令永远不会被提供或沿用前缀授权，只能逐次批准。不认识前缀审批的客户端仍然看到并回答原有选项。
 
 <a id="full-access-exceptions"></a>
 
 ### 完全访问不改变什么
 
-会话已解析的权限为 `full-access` 时，全部权限裁决在所有平台自动允许，不再弹出审批。包括候选测试与发布（安装、信任、启用及能力变更）、Skill 导入、MCP 注册／启动、询问模式的记忆写入、工具请求的凭据管理、主体审批。每项决定保留执行者、精确操作绑定和 `full-access` 原因；Trace 与执行证据显示 **自动允许（完全访问）**。其他权限级别保持原有人工审阅流程。预算超额报价属于权限裁决；配置中的预算硬拒绝仍会阻止请求。Skill 安装在整个后台任务期间保留精确、可撤销的授权及取消信号，在回执持久化后、原子发布文件前及每项资源操作前重新校验。MCP 注册、信任、本地启动批准及启用分别重新核对已消费、绑定精确配置的授权与有效期。收窄权限、关闭会话、取消、过期或执行者改变会阻止剩余操作。 Skill 资源日志在排队写入、发现刷新与状态协调期间携带同一私有租约，在取得队列中的当前状态及文件刷盘后、原子发布前重新核验当前授权与期限。尚未完成的自动操作在重启后需要新的授权才能继续；人工管理保留原有恢复路径。
+会话已解析的权限为 `full-access` 时，除[对外检查点](#outward-checkpoint)外，全部权限裁决在所有平台自动允许，不再弹出审批。包括候选测试与发布（安装、信任、启用及能力变更）、Skill 导入、MCP 注册／启动、询问模式的记忆写入、工具请求的凭据管理、主体审批。每项决定保留执行者、精确操作绑定和 `full-access` 原因；Trace 与执行证据显示 **自动允许（完全访问）**。其他权限级别保持原有人工审阅流程。预算超额报价属于权限裁决；配置中的预算硬拒绝仍会阻止请求。Skill 安装在整个后台任务期间保留精确、可撤销的授权及取消信号，在回执持久化后、原子发布文件前及每项资源操作前重新校验。MCP 注册、信任、本地启动批准及启用分别重新核对已消费、绑定精确配置的授权与有效期。收窄权限、关闭会话、取消、过期或执行者改变会阻止剩余操作。 Skill 资源日志在排队写入、发现刷新与状态协调期间携带同一私有租约，在取得队列中的当前状态及文件刷盘后、原子发布前重新核验当前授权与期限。尚未完成的自动操作在重启后需要新的授权才能继续；人工管理保留原有恢复路径。
 
 插件安装、更新、信任和启用将同一私有授权租约传入 profile 锁事务，在获得锁和异步工作后、临时文件刷盘后及原子发布前复核。运行时目标发布在串行队列和持久事务内复核；运行时应用后发生拒绝时恢复上一运行时。询问模式记忆写入将已消费的精确决定传入 SQLite 提交锁，在文件 rename 前再次检查当前会话 epoch 和期限。拒绝时清除未发布的临时文件；人工管理保持原有路径。
 
@@ -140,14 +190,13 @@ shell 命令需要审批时，审批卡可以多给一个选择：本会话内�
 
 由 App Server 持有的效果，其自动权限租约还会在最终提交时同步检查 supervisor 持有的 epoch 撤权屏障。full-access 和 preset 切换会先等待撤权确认，再记录切换；会话关闭在报告成功前等待确认，包含继承的子会话授权。请求返回后，后台任务仍受该屏障约束。延迟到达的 worker 快照或取消通知不能恢复已撤销的租约。运行中会话的工作区隔离策略保持固定；更改策略需要关闭旧会话并新建会话。仅有异步快照验证器不能签发自动效果租约。
 
-
 候选作者测试在 macOS/Linux 保留 Host OS 沙箱，只运行独立候选副本；POSIX 沙箱缺失时仍拒绝执行。Windows 仍无隔离。完全访问下所有平台自动允许精确哈希的测试决定；`workspace-write` 权限 仍展示包名、哈希、执行方式、风险和范围，要求一次确认。哈希变化后拒绝旧授权。决定保存在 `candidate-test-audit.jsonl`；测试本身不发布。完全访问下提交通过测试的候选，会自动完成现有安装、信任、启用和运行时激活事务。
 
 受监管电子签名属于业务行为，独立于工具权限。示范应用通过公开决策端口以 `business.confirm` 请求质量记录、GMP 放行、MRB 处置、技术状态更改、规则启用与归零关闭签名，绑定审阅参数、修订与签名含义。完全访问包含这些业务确认：宿主代表选择该权限的会话真人提交声明的精确 `presentation.responseValue`，明确记录 **完全访问下自动确认**，不得冒充人工点击或模型／系统签名。Core 授权日志（`decision/state`）、业务回执、审计与放行证书／关闭记录均保留该身份、模式及原决策绑定。只有明确的单次 `allowed-once`／`rejected` 合同及声明的签名值可自动确认（优先 en，其余语言键按码点排序）；缺失、歧义或不符合响应 schema 的合同保留人工请求并记录原因。其他权限仍须真人回答。单次消费和私有写入凭证在事务提交前保留原 sessionId、epoch、取消及有效期校验，提交前收窄权限会阻止写入。嵌套业务写入会把全部准入凭证保留到最外层事务，真实提交前逐一复核，包括已成功返回的内层调用凭证。拒绝、取消、过期及旧修订仍不能签署。
 
 `ask_user` 等用户问题、用户明确选择的计划／只读模式、对 AGH 私有 `secrets/`、`auth/`、`profiles/` 的普通文件工具硬拒绝，以及 edit/write 的先读后改和过期读取检查保持有效。选择完全访问本身可以保留一次授权确认。未知外部效果的事实核对不是权限授权，不能自动断言已经发生。
 
-需要允许工作区外文件时，显式使用 `agh --permission full-access`。macOS/Linux 没有可用 L1 时，命令不经隔离执行，已安装的记忆 provider 保持启用；记忆文件在 provider 之外被改动时，下一轮会显示提示。Windows 使用可信本机后端的“未实现”例外，保留记忆 API 权限。可在 profile 中设为新会话默认：
+需要允许工作区外文件时，显式使用 `agh --permission full-access`。macOS/Linux 没有可用 L1 时，命令不经隔离执行，已安装的记忆 provider 保持启用；记忆文件在 provider 之外被改动时，下一轮会显示提示。模型会在运行时上下文中得知这一点：运行框架不限制命令，安装软件无需审批。检查自己的成果时若缺少解释器、编译器或库，模型会先安装再运行检查；只有安装失败时，才把成果报告为未验证。Windows 使用可信本机后端的“未实现”例外，保留记忆 API 权限。可在 profile 中设为新会话默认：
 
 ```yaml
 permissions:
@@ -157,7 +206,7 @@ permissions:
 
 若要保留审批，可在自定义配方明确覆盖 `sandbox: { level: L0, required: false, on_unavailable: allow }`，这样的配方固定自己的权限设置；没有已安装 provider 要求私有文件隔离，或可信 Windows 本机后端声明未实现时，才可执行未隔离命令。L0 不允许搭配新条件值。仅修改 `on_unavailable` 不会覆盖 `required: true`。Web「完全权限」和 `/yolo` 不会取消所选预设的 OS 沙箱。当前 L1 后端拒绝非空命令网络主机白名单；`web_fetch` 使用独立的公网访问策略。Profile 可以在启动时选择另一个沙箱提供者，见[沙箱提供者](sandbox-providers.zh-CN.md)。当前进程会保持这个选择，直到再次启动。
 
-经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅本机 macOS Seatbelt 提供此能力。在其他宿主或后端（Windows、Linux、远程传输、外部沙箱 provider）上，会话仍可打开，只是没有该能力：命令网络保持完全关闭，不提供 `AGH_LOOPBACK_FD` 与 `AGH_LOOPBACK_URL`，也不授予或放宽其他任何权限。尝试提供服务的命令会监听失败，智能体应如实说明此系统无法提供本机服务。命令批准后，Host 独占绑定到数值地址 `127.0.0.1` 的 TCP listener，将连接转发至通过继承的文件描述符交给命令的私有 Unix listener。应用获得 `AGH_LOOPBACK_FD` 与真实的 `AGH_LOOPBACK_URL`。Node 应使用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 并在监听后打印该 URL；无 socket activation 的部署仍走原有端口分支。不支持继承 listener 的程序不能使用此能力。应使用普通前台或后台 shell 命令；持久 shell 会话和 PTY 的进程寿命超出单条已批准命令，因此明确拒绝。沙箱拒绝一切新建 IP 监听（含回环和通配地址）、UDP 和主动连接。Seatbelt 的 `localhost` 过滤也覆盖本机其他地址，不能用它证明仅回环绑定，因此由 Host 预先提供已经绑定的 socket。该描述符是私有传输，公开地址必须使用 `AGH_LOOPBACK_URL`，不要从 `server.address()` 推导。已批准的命令结束、取消、超时或沙箱实例释放时，Host 关闭公开 listener 和所有转发连接。即使后代进程复制该描述符并脱离进程组或转为 daemon，也无法保留公开服务能力。Unix 主动连接与新建 Unix bind 仍被拒绝。所有受限 macOS 命令 profile 都保护保留的 `/private/tmp/agh-loopback-*` 传输命名空间及其祖先，阻止路径替换；没有回环服务授权的命令和允许网络访问的 profile 也适用。普通已授权临时文件写入保持可用。Host 固定传输目录及 socket 的 device/inode；路径缺失或被替换时拒绝转发，并在连接建立后、转发任何字节前再次核验。
+经审阅的自定义 preset 可声明 `sandbox: { level: L1, on_unavailable: deny, loopback_serve: true }` 来运行本地网页。目前仅本机 macOS Seatbelt 提供此能力。Windows 上选择写限制的策略会被拒绝，因为写限制不限制命令网络。在其他宿主或后端（未选择写限制的 Windows、Linux、远程传输、外部沙箱 provider）上，会话仍可打开，只是没有该能力：命令网络保持完全关闭，不提供 `AGH_LOOPBACK_FD` 与 `AGH_LOOPBACK_URL`，也不授予或放宽其他任何权限。尝试提供服务的命令会监听失败，智能体应如实说明此系统无法提供本机服务。命令批准后，Host 独占绑定到数值地址 `127.0.0.1` 的 TCP listener，将连接转发至通过继承的文件描述符交给命令的私有 Unix listener。应用获得 `AGH_LOOPBACK_FD` 与真实的 `AGH_LOOPBACK_URL`。Node 应使用 `server.listen({ fd: Number(process.env.AGH_LOOPBACK_FD) })` 并在监听后打印该 URL；无 socket activation 的部署仍走原有端口分支。不支持继承 listener 的程序不能使用此能力。应使用普通前台或后台 shell 命令；持久 shell 会话和 PTY 的进程寿命超出单条已批准命令，因此明确拒绝。沙箱拒绝一切新建 IP 监听（含回环和通配地址）、UDP 和主动连接。Seatbelt 的 `localhost` 过滤也覆盖本机其他地址，不能用它证明仅回环绑定，因此由 Host 预先提供已经绑定的 socket。该描述符是私有传输，公开地址必须使用 `AGH_LOOPBACK_URL`，不要从 `server.address()` 推导。已批准的命令结束、取消、超时或沙箱实例释放时，Host 关闭公开 listener 和所有转发连接。即使后代进程复制该描述符并脱离进程组或转为 daemon，也无法保留公开服务能力。Unix 主动连接与新建 Unix bind 仍被拒绝。所有受限 macOS 命令 profile 都保护保留的 `/private/tmp/agh-loopback-*` 传输命名空间及其祖先，阻止路径替换；没有回环服务授权的命令和允许网络访问的 profile 也适用。普通已授权临时文件写入保持可用。Host 固定传输目录及 socket 的 device/inode；路径缺失或被替换时拒绝转发，并在连接建立后、转发任何字节前再次核验。
 
 此声明不能与 `network_allow`、完全访问或无沙箱降级组合。Linux、Windows、远端和外部 provider 明确拒绝；macOS native helper 缺失或过旧也会拒绝。preset 的命令策略仍应要求每条 shell 命令人审；批准仅授权在此边界内运行命令，不开放出站网络。沙箱外浏览器可打开真实监听地址，沙箱内 `curl` 无法主动连接自己的服务。Host 在调用期间保留撤权入口，启动失败也会回收入口。job 取消和工作区释放会先撤销服务能力，再等待进程清理。
 
@@ -195,7 +244,7 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 ## 包来源记录与来源策略
 
-新安装保存解析后的来源和版本、打包文件树 SHA256、可用的发布者证据、安装时间、安装者及信任决定。`agh plugins provenance <id> --json` 读取记录；App Server 的 `_agnes/v1/packages.provenance` 和 `_agnes/v1/packages.sourcePolicy` 是管理只读方法。审阅对话框和插件详情展示相同摘要。验证发布者不等于隔离插件代码：进程内插件仍需审阅其声明的权限。
+新安装保存解析后的来源和版本、打包文件树 SHA256、可用的发布者证据、安装时间、安装者及信任决定。`agh plugins provenance <id> --json` 读取记录；App Server 的 `_agnes/v1/packages.provenance` 和 `_agnes/v1/packages.sourcePolicy` 是管理只读方法。审阅对话框和插件详情展示相同摘要。验证发布者不等于隔离插件代码：进程内插件仍需审阅其声明的权限。随 AGH 提供的可选插件（如 Superagent）只有在来源是规范随包引用（`file:./bundled-plugins/<name>`），且文件树与已发随包载荷的标识、版本和摘要都一致时，审阅才显示「随当前 AGH 提供」；同名或同字节但来自其他来源的包按普通未验证来源审阅。这一事实不是发布者签名，也不改变信任、启用或能力判断。
 
 安装时验证下载内容；加载安装包和不可变代际快照时重新计算文件树摘要，但同一进程内，文件大小、修改时间和 inode 都没变的树直接复用之前的摘要。因此同大小且恢复修改时间的改写，在树被替换或进程重启之前不会被发现。摘要不一致拒绝加载（`E_PACKAGE_INTEGRITY`）；无效来源证据使用 `E_PACKAGE_PROVENANCE`。旧锁记录继续可读，但不会自动获得已验证发布者身份。npm 有 attestation 时通过 Sigstore 验证，并核对精确包名、版本及实际下载档案摘要；证据缺失显示未验证，证据无效则拒绝安装。
 
@@ -217,4 +266,4 @@ Provider 密钥经配置服务存入凭据后端；公开配置只保留 `secret
 
 Windows 使用 PowerShell 时，没有进程隔离的命令 Hook 还须取得 `commandHooks.trustedUnconfined` 授权，精确匹配配置来源、内容摘要和规范化工作区。Hook 使用当前工作区绑定的 Host 执行接口，由 Host 判断能否执行，包括 `allow-if-unimplemented`、显式拒绝和 `required: true`；授权按每次调用的规范化工作区核对，覆盖其他工作区中的会话。Hook 信任不能覆盖这项判断。未受信任的工作区 Hook 不会进入本次调用；受信任但执行被拒的 Hook 仍按对应事件原有的失败规则处理。macOS/Linux 的隔离要求、工具审批，以及前述 Windows 记忆保护限制均不改变。
 
-完全访问会话会在无人值守策略交接前自动允许权限决定，因此不会因等待审批进入 `waiting_approval`；其他会话继续遵循交接或拒绝设置。
+完全访问会话会在无人值守策略交接前自动允许权限决定，因此不会因等待审批进入 `waiting_approval`（[对外检查点](#outward-checkpoint)除外）；其他会话继续遵循交接或拒绝设置。

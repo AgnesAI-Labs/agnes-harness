@@ -54,6 +54,7 @@ export async function openDelegatedSession(
     opts.resolvedRole?.open ?? ((key: string, options: SessionOptions) => kernel.session(key, options))
   const child = await open(record.childKey, {
     ...(filter ? { toolFilter: filter } : {}),
+    ...(parent.d.outwardCommandRules ? { outwardCommandRules: true } : {}),
     actor: parent.d.actor,
     resolvedProfileHash: parent.d.resolvedProfileHash,
     ...(!modelTarget && parent.d.resolvedPresetHash

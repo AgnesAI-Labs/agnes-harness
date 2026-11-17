@@ -71,7 +71,11 @@ export function CredentialEditor({
       window.dispatchEvent(new Event(CREDENTIALS_CHANGED))
       onSaved(result)
     } catch (cause) {
-      if (active.current) setError(credentialFailure(cause))
+      // A refused value is not kept for a retry: it is cleared at once and entered again.
+      if (input) input.value = ''
+      if (!active.current) return
+      setVisible(false)
+      setError(credentialFailure(cause))
     } finally {
       submitting.current = false
       if (active.current) setBusy(false)
@@ -110,9 +114,10 @@ export function CredentialEditor({
         <StatusMessage
           kind="error"
           data-testid="credential-error"
-          action={{ label: t('retry'), onSelect: () => void save(), busy }}
+          {...(mode === 'rename' ? { action: { label: t('retry'), onSelect: () => void save(), busy } } : {})}
         >
           {t(`error.${error}`)}
+          {mode !== 'rename' && ` ${t('reenter')}`}
         </StatusMessage>
       )}
       {mode !== 'replace' && (

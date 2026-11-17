@@ -1,0 +1,951 @@
+{
+  "name": "@agnes/superagent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./panel-api": "./src/runtime/panel-api.ts"
+  },
+  "dependencies": {
+    "@agnes/extension-api": "workspace:*",
+    "@agnes/protocol": "workspace:*",
+    "@agnes/sdk": "workspace:*",
+    "zod": "4.5.4"
+  },
+  "license": "Apache-2.0 AND MIT",
+  "agnes": {
+    "provides": [
+      "tool",
+      "service",
+      "bundle"
+    ],
+    "plugins": [
+      {
+        "export": "superagentPlugin",
+        "id": "ext:agnes.superagent/main",
+        "runtime": "in-process",
+        "apiRange": "^5.22.0",
+        "inject": [
+          "hooks",
+          "tools",
+          "services",
+          "self",
+          "profileRuntime"
+        ],
+        "configSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Machine settings. Accounts, Sources, policy, prompts and the execution environment are saved in the Superagent panel.",
+          "x-locales": {
+            "zh-CN": {
+              "description": "本机设置。账号、来源、策略、提示与执行环境在 Superagent 面板中保存。"
+            }
+          },
+          "properties": {
+            "stateDir": {
+              "type": "string",
+              "minLength": 2,
+              "maxLength": 4096,
+              "pattern": "^(/|[A-Za-z]:[\\\\/])",
+              "description": "Directory for the database, locks, worker shims, the agent's git configuration and, by default, the ticket directories. Absolute path. Defaults to the private directory the platform gives Superagent."
+            },
+            "promptMaxChars": {
+              "type": "integer",
+              "minimum": 1000,
+              "maximum": 1000000,
+              "default": 100000,
+              "description": "Largest saved prompt configuration, in characters."
+            },
+            "admissionContextMaxPages": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 10,
+              "description": "Pages of thread context one assessment may read."
+            },
+            "admissionContextTimeoutMs": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 90000,
+              "default": 15000,
+              "description": "Time limit of one context read during an assessment, in milliseconds."
+            }
+          }
+        },
+        "metadata": {
+          "displayName": "Superagent",
+          "summary": "A proactive agent for one GitHub repository: it assesses requests, opens tickets and works each in its own session.",
+          "description": "Installed and enabled by default, waiting for configuration before any source, task or model runs. Once configured, Superagent watches one GitHub repository (and optionally Feishu chats through a configured bot lark-cli wrapper), assesses requests under its policy and turns authorized ones into tickets. Each ticket gets its own directory and a full-access session that commits as the configured agent account and pushes branches named agent/<short name>-<ticket id prefix>; it never merges. It runs with the profile owner's local client, keeps its database in a private platform directory and sends repository and chat content to the configured models.",
+          "locales": {
+            "zh-CN": {
+              "displayName": "Superagent",
+              "summary": "面向单个 GitHub 仓库的主动智能体：研判请求、开工单，并在各自会话中完成。",
+              "description": "默认安装并启用，未配置时等待设置，不监听来源、不启动任务、不调用模型。配置后，Superagent 监听一个 GitHub 仓库（可选通过已配置的机器人 lark-cli 包装程序监听飞书群），按策略研判请求，把获授权的请求转为工单。每张工单有自己的目录和一个完全访问的会话，以配置的智能体账号提交并推送名为 agent/<短名>-<工单 id 前缀> 的分支，从不合并。它以 profile 主人的本地客户端运行，数据库放在平台给的私有目录，并把仓库与聊天内容发给所配置的模型。"
+            }
+          }
+        },
+        "capabilities": {
+          "store": true,
+          "hooks": [
+            "context",
+            "tool_call"
+          ],
+          "tools": {
+            "prefix": "orchestrator_",
+            "names": [
+              "orchestrator_ack",
+              "orchestrator_eval",
+              "orchestrator_eval_decide",
+              "orchestrator_eval_read",
+              "orchestrator_feishu_read",
+              "orchestrator_policy_sync",
+              "orchestrator_prompts_save",
+              "orchestrator_read",
+              "orchestrator_reply",
+              "orchestrator_report",
+              "orchestrator_route",
+              "orchestrator_settings_save",
+              "orchestrator_thread_follow",
+              "orchestrator_thread_unrelated",
+              "orchestrator_thread_unsubscribe",
+              "orchestrator_ticket_note",
+              "orchestrator_ticket_request_status",
+              "orchestrator_ticket_retry",
+              "orchestrator_trigger_handback",
+              "orchestrator_trigger_requeue"
+            ]
+          },
+          "managedServices": [
+            {
+              "id": "superagent",
+              "scope": "profile",
+              "artifact": {
+                "kind": "in-process"
+              },
+              "healthPath": "/health",
+              "listeners": [],
+              "startupTimeoutMs": 30000,
+              "shutdownTimeoutMs": 5000,
+              "apiVersion": "1.0.0",
+              "requires": []
+            }
+          ],
+          "services": [
+            {
+              "name": "superagent.status",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "superagent.configuration",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "superagent.check",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "query"
+            },
+            {
+              "name": "superagent.retry",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.reconcile",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.configure",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 65536,
+              "kind": "effect",
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "always",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.state",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.overview",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.search",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "q": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.sources.list",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.sources.refreshlabels",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.settings.get",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.settings.save",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "block": {
+                    "type": "string",
+                    "pattern": "^(policy|eval|executor|source:[a-z][a-z0-9-]*)$",
+                    "maxLength": 128
+                  },
+                  "value": {},
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "block",
+                  "value",
+                  "revision"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.threads.list",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "filter": {
+                    "enum": [
+                      "subscribed",
+                      "evaluating",
+                      "recent",
+                      "all"
+                    ]
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.threads.get",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "before": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "around": {
+                    "type": "string",
+                    "maxLength": 1024
+                  }
+                },
+                "required": [
+                  "key"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.threads.unsubscribe",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1024
+                  }
+                },
+                "required": [
+                  "key"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.triggers.requeue",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.decisions.list",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "window": {
+                    "const": "24h"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.decisions.dismiss",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.tickets.list",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "state": {
+                    "enum": [
+                      "open",
+                      "person",
+                      "working",
+                      "idle",
+                      "ended"
+                    ]
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.tickets.get",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.tickets.retry",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.tickets.stop",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": true,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.executor.pause",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "paused": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "paused"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.policy.history",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.policy.sync",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.setup.check",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": true,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.models.list",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.prompts.get",
+              "kind": "query",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "revision": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576
+            },
+            {
+              "name": "superagent.prompts.save",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "config": {},
+                  "baseRevision": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "config",
+                  "baseRevision"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            },
+            {
+              "name": "superagent.prompts.preview",
+              "kind": "effect",
+              "scope": "profile",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "config": {}
+                },
+                "required": [
+                  "config"
+                ],
+                "additionalProperties": false
+              },
+              "outputSchema": {},
+              "timeoutMs": 30000,
+              "maxResultBytes": 1048576,
+              "effectPolicy": {
+                "isDestructive": false,
+                "isOpenWorld": false,
+                "replay": "never",
+                "requiresApproval": "never",
+                "approvalScopes": []
+              }
+            }
+          ]
+        },
+        "default": false
+      }
+    ],
+    "metadata": {
+      "displayName": "Superagent",
+      "summary": "A proactive agent for one GitHub repository: it assesses requests, opens tickets and works each in its own session.",
+      "description": "Installed and enabled by default, waiting for configuration before any source, task or model runs. Once configured, Superagent watches one GitHub repository (and optionally Feishu chats through a configured bot lark-cli wrapper), assesses requests under its policy and turns authorized ones into tickets. Each ticket gets its own directory and a full-access session that commits as the configured agent account and pushes branches named agent/<short name>-<ticket id prefix>; it never merges. It runs with the profile owner's local client, keeps its database in a private platform directory and sends repository and chat content to the configured models.",
+      "locales": {
+        "zh-CN": {
+          "displayName": "Superagent",
+          "summary": "面向单个 GitHub 仓库的主动智能体：研判请求、开工单，并在各自会话中完成。",
+          "description": "默认安装并启用，未配置时等待设置，不监听来源、不启动任务、不调用模型。配置后，Superagent 监听一个 GitHub 仓库（可选通过已配置的机器人 lark-cli 包装程序监听飞书群），按策略研判请求，把获授权的请求转为工单。每张工单有自己的目录和一个完全访问的会话，以配置的智能体账号提交并推送名为 agent/<短名>-<工单 id 前缀> 的分支，从不合并。它以 profile 主人的本地客户端运行，数据库放在平台给的私有目录，并把仓库与聊天内容发给所配置的模型。"
+        }
+      }
+    },
+    "bundles": {
+      "router": {
+        "profile": {
+          "tools": [
+            "skill_read",
+            "skill_read_file",
+            "shell",
+            "read",
+            "job_output",
+            "job_list",
+            "job_kill",
+            "orchestrator_route",
+            "orchestrator_ticket_retry",
+            "orchestrator_ticket_request_status",
+            "orchestrator_ticket_note",
+            "orchestrator_trigger_requeue",
+            "orchestrator_eval",
+            "orchestrator_eval_read",
+            "orchestrator_eval_decide",
+            "orchestrator_reply",
+            "orchestrator_thread_unsubscribe",
+            "orchestrator_settings_save",
+            "orchestrator_policy_sync",
+            "orchestrator_prompts_save",
+            "orchestrator_read"
+          ]
+        },
+        "presets": {
+          "superagent-router": {
+            "name": "superagent-router",
+            "extends": "standard",
+            "tools": {
+              "shell_observation_ms": 5000
+            }
+          }
+        }
+      },
+      "worker": {
+        "profile": {
+          "tools": [
+            "read",
+            "write",
+            "edit",
+            "find",
+            "grep",
+            "shell",
+            "job_output",
+            "job_list",
+            "job_kill",
+            "web_search",
+            "skill_read",
+            "skill_read_file",
+            "todo",
+            "subagent_spawn",
+            "subagent_collect",
+            "subagent_cancel",
+            "subagent_list",
+            "subagent_send_message",
+            "subagent_interrupt",
+            "list_subagent_models",
+            "orchestrator_ack",
+            "orchestrator_thread_unrelated",
+            "orchestrator_thread_follow",
+            "orchestrator_trigger_handback",
+            "orchestrator_report",
+            "orchestrator_read",
+            "orchestrator_feishu_read"
+          ]
+        },
+        "presets": {
+          "superagent-worker": {
+            "name": "superagent-worker",
+            "extends": "standard",
+            "tools": {
+              "shell_observation_ms": 5000
+            }
+          }
+        }
+      }
+    },
+    "clientDescriptors": [
+      {
+        "rowId": "ext:agnes.superagent/main",
+        "path": "./src/agnes.client.json"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@agnes/host": "workspace:*"
+  }
+}

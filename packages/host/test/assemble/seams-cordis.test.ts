@@ -36,40 +36,43 @@ function builtinRow(config?: unknown) {
 }
 
 describe('ordinary Cordis tree base', () => {
-  it('mounts Host-private builtin claims and returns immutable row snapshots', async () => {
-    const applied = vi.fn()
-    const disposed = vi.fn()
-    const row = builtinRow()
-    const entry = normalizePluginExport((ctx: Context) => {
-      applied()
-      ctx.effect(() => disposed)
-    })
-    const inputRows = [row]
+  it.each([undefined, 'live', 'next-session'] as const)(
+    'preserves immutable builder row identities (configReload=%s)',
+    async (configReload) => {
+      const applied = vi.fn()
+      const disposed = vi.fn()
+      const row = Object.freeze({ ...builtinRow(), ...(configReload ? { configReload } : {}) })
+      const entry = normalizePluginExport((ctx: Context) => {
+        applied()
+        ctx.effect(() => disposed)
+      })
+      const inputRows = [row]
 
-    const assembled = await assembleOrdinaryPluginTree(
-      {},
-      { bootRows: inputRows, builtinClaims: [{ row, entry }] },
-    )
-    try {
-      expect(applied).toHaveBeenCalledOnce()
-      expect(assembled.pluginTree.bootRows).toEqual([row])
-      expect(assembled.pluginTree.bootRows).not.toBe(inputRows)
-      expect(Object.isFrozen(assembled.pluginTree.bootRows)).toBe(true)
-      expect(Object.isFrozen(assembled.pluginTree.bootRows[0])).toBe(true)
+      const assembled = await assembleOrdinaryPluginTree(
+        {},
+        { bootRows: inputRows, builtinClaims: [{ row, entry }] },
+      )
+      try {
+        expect(applied).toHaveBeenCalledOnce()
+        expect(assembled.pluginTree.bootRows).toEqual([row])
+        expect(assembled.pluginTree.bootRows).not.toBe(inputRows)
+        expect(Object.isFrozen(assembled.pluginTree.bootRows)).toBe(true)
+        expect(Object.isFrozen(assembled.pluginTree.bootRows[0])).toBe(true)
 
-      const first = assembled.pluginTree.currentRows()
-      const second = assembled.pluginTree.currentRows()
-      expect(first).toEqual([row])
-      expect(first).not.toBe(second)
-      expect(Object.isFrozen(first)).toBe(true)
-      expect(Object.isFrozen(first[0])).toBe(true)
-      await assembled.pluginTree.applyRows(first)
-      expect(applied).toHaveBeenCalledOnce()
-    } finally {
-      await assembled.close()
-    }
-    expect(disposed).toHaveBeenCalledOnce()
-  })
+        const first = assembled.pluginTree.currentRows()
+        const second = assembled.pluginTree.currentRows()
+        expect(first).toEqual([row])
+        expect(first).not.toBe(second)
+        expect(Object.isFrozen(first)).toBe(true)
+        expect(Object.isFrozen(first[0])).toBe(true)
+        await assembled.pluginTree.applyRows(first)
+        expect(applied).toHaveBeenCalledOnce()
+      } finally {
+        await assembled.close()
+      }
+      expect(disposed).toHaveBeenCalledOnce()
+    },
+  )
 
   it('registers an optional builtin claim without booting it and mounts it when later enabled', async () => {
     const applied = vi.fn()

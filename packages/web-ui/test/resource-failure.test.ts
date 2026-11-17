@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { resourceDetailLocaleCatalog } from '../src/locales/resource-detail.js'
 import { resourceFailureCatalog, resourceFailureKey } from '../src/resource-failure.js'
 
 describe('resourceFailureKey', () => {
@@ -11,6 +12,8 @@ describe('resourceFailureKey', () => {
     ['MCP_STDIO_CLOSED', 'resource.error.mcpClosed'],
     ['MCP_CONNECT_TIMEOUT', 'resource.error.mcpTimeout'],
     ['MCP_AUTH_FAILED', 'resource.error.mcpAuth'],
+    ['MCP_OAUTH_NEEDS_RECONNECT', 'resource.error.mcpSignIn'],
+    ['MCP_AUTH_REQUIRED', 'resource.error.mcpSignIn'],
     ['E_MCP_SANDBOX_UNAVAILABLE', 'resource.error.mcpSandbox'],
   ])('names the actionable cause for %s', (code, expected) => {
     const key = resourceFailureKey(code)
@@ -21,4 +24,15 @@ describe('resourceFailureKey', () => {
   it('keeps unknown codes on the generic failure', () => {
     expect(resourceFailureKey('SOMETHING_ELSE')).toBe('resource.error.operation')
   })
+})
+
+describe('MCP sign-in wording', () => {
+  it.each(['en', 'zh-CN'] as const)(
+    'shows one "sign-in needed" label for unauthorized and expired in %s',
+    (locale) => {
+      const catalog = resourceDetailLocaleCatalog[locale] as Record<string, string>
+      expect(catalog['mcp.oauth.pending']).toBe(catalog['mcp.oauth.needs-reconnect'])
+      expect(catalog['mcp.oauth.pending']).toBe(locale === 'en' ? 'Sign-in needed' : '需要登录')
+    },
+  )
 })

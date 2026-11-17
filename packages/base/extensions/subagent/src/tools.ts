@@ -2,6 +2,7 @@ import {
   assertChildAgentAllowed,
   CoreError,
   childAgentAllowlist,
+  childFailureSuffix,
   externalChild,
   externalChildren,
   IN_PROCESS_CHILD_PROVIDER_ID,
@@ -10,6 +11,7 @@ import type {
   ChildAgentAllowlistConfig,
   ChildAgentListing,
   ChildAgentToolFilter,
+  ChildStatus,
   ToolContext,
   ToolDef,
   ToolResult,
@@ -98,6 +100,28 @@ function active(state: SessionState): number {
 
 function fail(text: string): ToolResult {
   return { content: [{ type: 'text', text }], isError: true }
+}
+
+/** The model argument Core refused before creating a child, said so the model can pick another. */
+function modelRefusal(error: unknown, ctx: ToolContext): ToolResult | undefined {
+  if (!(error instanceof CoreError) || error.code !== 'E_MODEL_UNKNOWN') return undefined
+  const { model, route, reason } = error.detail ?? {}
+  const named = typeof model === 'string' ? ` "${model}"` : ''
+  const listed = ctx.tools.availability?.('list_subagent_models').status === 'offered'
+  const text =
+    typeof reason === 'string' && typeof route === 'string'
+      ? `Model${named} cannot run a child here: its route ${route} ${reason === 'no-credential' ? 'has no credentials' : `is excluded (${reason})`}.${listed ? ' Call list_subagent_models for the models that can.' : ''}`
+      : `Unknown model${named} for a child.${listed ? ' Call list_subagent_models for the models that can run one.' : ''}`
+  return { ...fail(text), details: { code: error.code } }
+}
+
+/** Why a failed child ended, for `details`; nothing for any other outcome. */
+function failureDetails(status: ChildStatus): Record<string, JsonValue> {
+  if (status.status !== 'failed') return {}
+  return {
+    ...(status.error ? { error: status.error } : {}),
+    ...(status.stopReason ? { stopReason: status.stopReason } : {}),
+  }
 }
 
 function allowChild(ctx: ToolContext, model?: string): ToolResult | undefined {
@@ -338,6 +362,7 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
           isolation: worktree ? 'worktree' : 'shared',
         }
         if (worktree) details.worktree = worktree
+        if (collected) Object.assign(details, failureDetails(collected))
         const followUp =
           ctx.tools.availability?.('subagent_list').status === 'offered'
             ? 'Use subagent_list for the handle if follow-up is needed'
@@ -349,12 +374,13 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
               text:
                 (sharedNonGit ? 'Child ran in the shared folder because it is not a git repository.\n' : '') +
                 (collected
-                  ? `Delegated task ${collected.status}.\n${collected.text ?? 'No findings returned.'}`
+                  ? `Delegated task ${collected.status}${collected.status === 'failed' ? childFailureSuffix(collected) : ''}.\n${collected.text ?? 'No findings returned.'}`
                   : `Task delegated in the background. A completion notice will carry the findings. ${followUp}; do not repeat internal handles to the user.`),
             },
           ],
           details,
           ...(spawned.role ? { structured: details } : {}),
+          ...(collected?.status === 'failed' ? { isError: true } : {}),
         }
       } catch (error) {
         if (childKey) await ctx.subagent.cancel(childKey)
@@ -362,6 +388,9 @@ export function subagentSpawnTool(deps: SubagentDeps, fork = false): ToolDef<typ
         // Core's admission limit refuses creation; failures after a child handle remain uncertain.
         if (!childKey && error instanceof CoreError && error.code === 'E_CHILD_LIMIT')
           return { ...fail(error.message), details: { code: error.code } }
+        // Core refuses an unusable model before it creates anything.
+        const refusedModel = childKey ? undefined : modelRefusal(error, ctx)
+        if (refusedModel) return refusedModel
         if (args.role && error instanceof Error) return fail(error.message)
         throw error
       } finally {
@@ -452,6 +481,7 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
       const details: Record<string, JsonValue> = {
         childKey: result.childKey,
         status: result.status,
+        ...failureDetails(result),
         ...(result.credits === undefined ? {} : { credits: result.credits }),
       }
 
@@ -461,9 +491,17 @@ export function subagentCollectTool(deps: SubagentDeps): ToolDef<typeof collectP
         if (state) prune(runtime, sessionKey, state)
       }
 
+      // A failed or cancelled child says so ahead of anything it wrote; other results are the text.
+      const reason = result.status === 'failed' ? childFailureSuffix(result) : ''
+      const status = `child ${args.childKey}: ${result.status}${reason}${reason ? '.' : ''}`
+      const text =
+        reason || result.status === 'cancelled'
+          ? [status, result.text].filter(Boolean).join('\n')
+          : (result.text ?? status)
       return {
-        content: [{ type: 'text', text: result.text ?? `child ${args.childKey}: ${result.status}` }],
+        content: [{ type: 'text', text }],
         details,
+        ...(result.status === 'failed' ? { isError: true } : {}),
       }
     },
   }

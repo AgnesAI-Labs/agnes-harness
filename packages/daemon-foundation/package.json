@@ -15,6 +15,7 @@
     "./lease/lease": "./src/lease/lease.ts",
     "./lease/reclaim": "./src/lease/reclaim.ts",
     "./local/attached": "./src/local/attached.ts",
+    "./local/bundled-app": "./src/local/bundled-app.ts",
     "./local/endpoint": "./src/local/endpoint.ts",
     "./local/meta": "./src/local/meta.ts",
     "./local/notice": "./src/local/notice.ts",
@@ -35,7 +36,8 @@
     "./storage/table": "./src/storage/table.ts",
     "./storage/workspaces": "./src/storage/workspaces.ts",
     "./workspace-binding": "./src/workspace-binding.ts",
-    "./jobs/bound-wakes": "./src/jobs/bound-wakes.ts"
+    "./jobs/bound-wakes": "./src/jobs/bound-wakes.ts",
+    "./storage/managed-chat-authority": "./src/storage/managed-chat-authority.ts"
   },
   "scripts": {
     "typecheck": "tsc -b",

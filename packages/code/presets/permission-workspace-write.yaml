@@ -51,8 +51,9 @@ approval:
     - tool: 'edit|write'
       argv: '^//(?!(?:[\s\S]*/)?\.\.(?:/|$))[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/(?:[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+/)*[^/\\:\x00-\x1F\x7F\u0080-\u009F\u2028\u2029]+$'
       action: allow
-# Use OS confinement when implemented; failed probes never permit unconfined execution.
-sandbox: { level: L1, on_unavailable: allow-if-unimplemented }
+# Use OS confinement when implemented; failed probes never permit unconfined execution. On Windows,
+# windows_mode accepts the ACL-based partial write restriction (reads and network stay open).
+sandbox: { level: L1, on_unavailable: allow-if-unimplemented, windows_mode: write-restricted }
 subagent: { isolation: worktree }
 providers:
   tool-policy: { provider: default }

@@ -4,6 +4,7 @@ import type { Host } from './host.js'
 /** Every new Host member needs an ownership decision before it can be exposed by a facade. */
 export const HOST_MEMBER_SCOPES = {
   systemPromptPreview: 'deployment',
+  bindAutoTitleEligibility: 'deployment',
   securityStatus: 'deployment',
   compositionSessions: 'deployment',
   resolveAgent: 'deployment',
@@ -30,6 +31,10 @@ export const HOST_MEMBER_SCOPES = {
   activationBarrier: 'deployment',
   approvalGrants: 'deployment',
   profileServices: 'deployment',
+  channelCatalog: 'deployment',
+  clearChannelState: 'deployment',
+  channelPairing: 'deployment',
+  channelReceipts: 'deployment',
   resolveService: 'session',
   callService: 'session',
   inspectService: 'session',
@@ -89,6 +94,7 @@ const KERNEL_MEMBER_SCOPES = {
   get: 'session',
   session: 'session',
   invalidateSeams: 'deployment',
+  onSessionOpened: 'deployment',
   registrations: 'deployment',
   close: 'deployment',
 } as const satisfies Record<keyof Kernel, 'session' | 'deployment'>
@@ -111,12 +117,15 @@ export function createKernelFacade(
   current: () => Kernel,
   owner: (key: string, coldRead?: boolean) => Kernel,
   sessions: Kernel['sessions'],
+  /** Owners that span several kernels announce opened sessions from all of them. */
+  onSessionOpened?: Kernel['onSessionOpened'],
 ): Kernel {
   return new Proxy(base, {
     get(_target, property) {
       const scope = memberScope(KERNEL_MEMBER_SCOPES, property, base, current())
       if (!scope) return undefined
       if (property === 'sessions') return sessions
+      if (property === 'onSessionOpened' && onSessionOpened) return onSessionOpened
       const target = current(),
         value = Reflect.get(target, property, target),
         baseValue = target === base ? value : Reflect.get(base, property, base)

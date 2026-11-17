@@ -403,6 +403,72 @@ describe('installation errors across worker frames', () => {
   })
 })
 
+describe('managed-session refusals across worker frames', () => {
+  it.each([
+    [
+      rpcError('CAPABILITY_DENIED', { reason: 'WORKSPACE_NOT_AUTHORIZED', path: '/private/root' }),
+      { code: -32006, data: { code: 'CAPABILITY_DENIED', reason: 'WORKSPACE_NOT_AUTHORIZED' } },
+    ],
+    [
+      rpcError('CAPABILITY_DENIED', {
+        reason: 'FULL_ACCESS_UNAVAILABLE',
+        missing: 'os-boundary',
+        path: '/private/root',
+      }),
+      {
+        code: -32006,
+        data: { code: 'CAPABILITY_DENIED', reason: 'FULL_ACCESS_UNAVAILABLE', missing: 'os-boundary' },
+      },
+    ],
+    [
+      rpcError('CAPABILITY_DENIED', { reason: 'private detail', missing: 'private detail' }),
+      { code: -32006, data: { code: 'CAPABILITY_DENIED' } },
+    ],
+  ])('keeps the refusal reason for the plugin and nothing else', async (failure, expected) => {
+    const socket = new FakeSocket()
+    const link = new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {
+        throw failure
+      },
+    })
+    const channel = new SharedSessionChannel((frame) => socket.emit('data', encodeFrame(frame)))
+    const pending = channel.run('@profile', () =>
+      channel.request('managed-session', {}, new AbortController().signal),
+    )
+    const rejected = expect(pending).rejects.toMatchObject(expected)
+    await vi.waitFor(() => expect(socket.writes.length).toBe(1))
+    const bytes = socket.writes[0]
+    if (!bytes) throw new Error('missing reply')
+    const reply = JSON.parse(bytes.toString())
+    expect(JSON.stringify(reply)).not.toMatch(/private/)
+    channel.settle(reply)
+    await rejected
+    socket.emit('close')
+    expect(link.alive).toBe(false)
+  })
+
+  it('keeps a generic reply for an unknown failure', async () => {
+    const socket = new FakeSocket()
+    new WorkerLink(socket as unknown as Socket, {
+      onEvent() {},
+      async onRequest() {
+        throw new Error('boom')
+      },
+    })
+    const channel = new SharedSessionChannel((frame) => socket.emit('data', encodeFrame(frame)))
+    const pending = channel.run('@profile', () =>
+      channel.request('managed-session', {}, new AbortController().signal),
+    )
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'E_REQUEST' })
+    await vi.waitFor(() => expect(socket.writes.length).toBe(1))
+    const bytes = socket.writes[0]
+    if (!bytes) throw new Error('missing reply')
+    channel.settle(JSON.parse(bytes.toString()))
+    await rejected
+  })
+})
+
 describe('WorkerLink preview frames', () => {
   it('hands a preview frame to onPreview after the events before it, without its kind or key', async () => {
     const socket = new FakeSocket()

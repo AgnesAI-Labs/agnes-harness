@@ -1250,7 +1250,41 @@
       "properties": {
         "sessionId": { "type": "string", "maxLength": 512 },
         "cwd": { "type": "string", "maxLength": 32768 },
-        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 }
+        "requestId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "_meta": {
+          "description": "ai.agnes.harness.environment is the session's own environment, which only the bundled application's client may give; the daemon checks it as for session/new.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ai.agnes.harness": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "environment": {
+                  "description": "Checked in full by parseSessionEnvironment: absolute PATH directories, variables to set (never credential-shaped names) and variables to remove.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "pathPrepend": {
+                      "type": "array",
+                      "maxItems": 8,
+                      "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+                    },
+                    "set": {
+                      "type": "object",
+                      "additionalProperties": { "type": "string", "maxLength": 4096 }
+                    },
+                    "unset": {
+                      "type": "array",
+                      "maxItems": 32,
+                      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "SessionLoadingCancelParams": {
@@ -3200,6 +3234,7 @@
       "$ref": "session-v1.json#/$defs/BudgetState"
     },
     "SystemInput": { "$ref": "session-v1.json#/$defs/SystemInput" },
+    "InputDeliverer": { "$ref": "session-v1.json#/$defs/InputDeliverer" },
     "ArtifactRef": {
       "$ref": "session-v1.json#/$defs/ArtifactRef"
     },
@@ -3755,8 +3790,15 @@
                 "$ref": "#/$defs/ContentBlock"
               }
             },
+            "commandId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "description": "Originating inbox command correlation; not an authorization fact."
+            },
             "origin": { "enum": ["principal", "system"] },
             "system": { "$ref": "#/$defs/SystemInput" },
+            "deliveredBy": { "$ref": "#/$defs/InputDeliverer" },
             "actorLabel": {
               "type": "string",
               "maxLength": 128
@@ -3891,6 +3933,18 @@
                   "items": {
                     "enum": ["file", "network", "process"]
                   }
+                },
+                "boundary": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["contract", "fileWrite", "fileRead", "network", "processTree"],
+                  "properties": {
+                    "contract": { "const": "windows-write-restricted-v1" },
+                    "fileWrite": { "const": "acl-partial" },
+                    "fileRead": { "const": "unrestricted" },
+                    "network": { "const": "unrestricted" },
+                    "processTree": { "const": "job-object" }
+                  }
                 }
               }
             },
@@ -4023,6 +4077,10 @@
             "requestSeq": {
               "type": "integer"
             },
+            "decidedSeq": {
+              "type": "integer",
+              "description": "The ledger seq of the event that made this approval decided or expired. Absent while pending. Unlike seq, which keeps the position the approval first appeared at, this moves forward when the approval ends."
+            },
             "decision": {
               "type": "object",
               "additionalProperties": false,
@@ -4088,6 +4146,8 @@
             "source": {
               "enum": ["gateway", "estimated"]
             },
+            "caller": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "label": { "type": "string", "minLength": 1, "maxLength": 64 },
             "purpose": {
               "type": "string"
             },
@@ -4493,6 +4553,8 @@
           "type": "integer",
           "minimum": 1
         },
+        "caller": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 64 },
         "purpose": {
           "enum": [
             "inference",
@@ -5022,7 +5084,8 @@
       "required": ["itemId", "preview"],
       "properties": {
         "itemId": { "type": "string" },
-        "preview": { "type": "string", "maxLength": 2000 }
+        "preview": { "type": "string", "maxLength": 2000 },
+        "commandId": { "type": "string", "minLength": 1, "maxLength": 128 }
       }
     },
     "UITimeline": {
@@ -5770,7 +5833,7 @@
       }
     },
     "RefinementSavedSkill": {
-      "description": "A skill refinement installed in the workspace: `active` (on), `review-disabled` (switched off by the 30-day review: awaiting review; switching it on again renews it). `previous` are the earlier revisions it can be rolled back to, newest last. `initiator` is who asked for the save it holds now.",
+      "description": "A skill refinement installed in the workspace: `active` (on), `review-disabled` (switched off by the 30-day review, or by the cap on saved skills in force when `disabledFor` says `capacity`; switching it on again renews it). `previous` are the earlier revisions it can be rolled back to, newest last. `initiator` is who asked for the save it holds now.",
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "resourceId", "revision", "state", "reviewAfter", "initiator", "previous"],
@@ -5784,6 +5847,10 @@
         "workflow": {
           "description": "The skill was generated from a finished `workflow` run and carries its definition.",
           "const": true
+        },
+        "disabledFor": {
+          "description": "Why a `review-disabled` skill is off when it was not the 30-day review: `capacity`, the workspace already had 20 saved skills in force. Only a person switches it back on; a confirmation or an update does not.",
+          "const": "capacity"
         },
         "previous": {
           "type": "array",
@@ -5899,43 +5966,92 @@
       }
     },
     "WorkspaceEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["path", "name", "lastUsedAt", "sessionCount", "available"],
-      "properties": {
-        "path": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "name", "lastUsedAt", "sessionCount", "available"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "lastUsedAt": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            },
+            "sessionCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "kind": {
+              "enum": ["chats"]
+            },
+            "managedRole": {
+              "not": {}
+            }
+          }
         },
-        "name": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "lastUsedAt": {
-          "type": ["string", "null"],
-          "format": "date-time"
-        },
-        "sessionCount": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "available": {
-          "type": "boolean"
-        },
-        "workspaceId": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{64}$"
-        },
-        "revision": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "kind": {
-          "enum": ["chats"]
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "name", "lastUsedAt", "sessionCount", "available", "kind"],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "lastUsedAt": {
+              "type": ["string", "null"],
+              "format": "date-time"
+            },
+            "sessionCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "available": {
+              "type": "boolean"
+            },
+            "workspaceId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "kind": {
+              "enum": ["chats"]
+            },
+            "managedRole": {
+              "enum": ["current", "legacy"]
+            }
+          }
         }
-      }
+      ]
     },
     "WorkspaceListParams": {
       "type": "object",
@@ -6936,6 +7052,13 @@
       "additionalProperties": false,
       "required": ["id", "name"],
       "properties": {
+        "input": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["text", "image"] },
+          "description": "Explicit accepted input types; omission inherits the model catalogue or text fallback."
+        },
         "reasoning": { "type": "boolean" },
         "thinkingLevelMap": { "type": "object", "additionalProperties": { "type": "string" } },
         "contextWindow": { "type": "integer", "minimum": 1 },
@@ -9584,6 +9707,231 @@
           }
         }
       }
+    },
+    "ManagedInputGetParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "key"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "key": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "ManagedInputGetResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "parkedReceipts"],
+      "properties": {
+        "input": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "key",
+                "kind",
+                "state",
+                "reason",
+                "version",
+                "text",
+                "source",
+                "binding",
+                "history"
+              ],
+              "properties": {
+                "key": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "kind": { "enum": ["ownerMessage", "recoveryContinuation", "legacyOwnerMessage"] },
+                "state": {
+                  "enum": [
+                    "queued",
+                    "enqueued",
+                    "consumed",
+                    "retained",
+                    "needsOwner",
+                    "waitingQuestion",
+                    "recoveryUnknown"
+                  ]
+                },
+                "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+                "version": { "type": "integer", "minimum": 1 },
+                "text": { "anyOf": [{ "type": "string", "maxLength": 65536 }, { "type": "null" }] },
+                "source": { "$ref": "#/$defs/JsonValue" },
+                "binding": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["taskId", "taskGeneration", "startKey"],
+                  "properties": {
+                    "taskId": { "type": "string", "maxLength": 1024 },
+                    "taskGeneration": { "type": "integer", "minimum": 0 },
+                    "startKey": { "type": "string", "maxLength": 1024 }
+                  }
+                },
+                "turn": { "type": "integer", "minimum": 0 },
+                "seq": { "type": "integer", "minimum": 0 },
+                "history": {
+                  "type": "array",
+                  "maxItems": 256,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["version", "state", "reason", "at", "by"],
+                    "properties": {
+                      "version": { "type": "integer", "minimum": 1 },
+                      "state": {
+                        "enum": [
+                          "queued",
+                          "enqueued",
+                          "consumed",
+                          "retained",
+                          "needsOwner",
+                          "waitingQuestion",
+                          "recoveryUnknown"
+                        ]
+                      },
+                      "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+                      "at": { "type": "string", "maxLength": 64 },
+                      "by": { "enum": ["platform", "owner"] }
+                    }
+                  }
+                }
+              }
+            },
+            { "type": "null" }
+          ]
+        },
+        "parkedReceipts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["receiptId", "service", "kind", "text", "at", "attempts"],
+            "properties": {
+              "receiptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "service": { "type": "string", "maxLength": 256 },
+              "kind": { "enum": ["message", "action"] },
+              "text": { "type": "string", "maxLength": 65536 },
+              "at": { "type": "string", "maxLength": 64 },
+              "attempts": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "ManagedInputListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "ManagedInputListResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputs", "parkedReceipts"],
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sessionId", "key", "kind", "state", "reason", "version", "at"],
+            "properties": {
+              "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "key": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "kind": { "enum": ["ownerMessage", "recoveryContinuation", "legacyOwnerMessage"] },
+              "state": {
+                "enum": [
+                  "queued",
+                  "enqueued",
+                  "consumed",
+                  "retained",
+                  "needsOwner",
+                  "waitingQuestion",
+                  "recoveryUnknown"
+                ]
+              },
+              "reason": { "type": "string", "minLength": 1, "maxLength": 64 },
+              "version": { "type": "integer", "minimum": 1 },
+              "at": { "type": "string", "maxLength": 64 },
+              "held": { "enum": ["gatesUnreadable", "admissionIncomplete"] }
+            }
+          }
+        },
+        "parkedReceipts": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sessionId", "receiptId", "service", "kind", "text", "at", "attempts"],
+            "properties": {
+              "sessionId": {
+                "anyOf": [{ "type": "string", "minLength": 1, "maxLength": 512 }, { "type": "null" }]
+              },
+              "receiptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+              "service": { "type": "string", "maxLength": 256 },
+              "kind": { "enum": ["message", "action"] },
+              "text": { "type": "string", "maxLength": 65536 },
+              "at": { "type": "string", "maxLength": 64 },
+              "attempts": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "ManagedInputDecideParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sessionId", "target"],
+      "properties": {
+        "sessionId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "target": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "key", "decision", "version"],
+              "properties": {
+                "kind": { "const": "input" },
+                "key": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "decision": { "enum": ["deliver", "retain", "discard"] },
+                "version": { "type": "integer", "minimum": 1 }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "receiptId", "decision"],
+              "properties": {
+                "kind": { "const": "receipt" },
+                "receiptId": { "type": "string", "minLength": 1, "maxLength": 256 },
+                "decision": { "enum": ["redeliver", "discard"] }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ManagedInputDecideResult": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["state", "version"],
+          "properties": {
+            "state": { "type": "string", "minLength": 1, "maxLength": 64 },
+            "version": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["receipt"],
+          "properties": {
+            "receipt": { "enum": ["pending", "discarded"] }
+          }
+        }
+      ]
     },
     "SessionReferenceSearchParams": {
       "type": "object",

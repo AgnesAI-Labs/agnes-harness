@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { stampFor } from '@agnes/ai/testkit'
 import { BASE_SEAM_PROVIDERS } from '@agnes/base'
 import { fakeSeamInit } from '@agnes/base/testkit'
-import { type BillingSeam, contextTokens } from '@agnes/core'
+import { type BillingSeam, contextTokens, hasChildControl } from '@agnes/core'
 import { sqlitePersistenceProvider } from '@agnes/host-infrastructure/adapters/storage-provider'
 import {
   type InferenceEvent,
@@ -59,6 +59,8 @@ const usage = (title: boolean): InferenceEvent => ({
 async function fixture(
   options: {
     waitTitle?: Promise<void>
+    waitSide?: Promise<void>
+    sideEntered?: () => void
     title?: string
     rawTitle?: string
     root?: string
@@ -136,6 +138,10 @@ async function fixture(
           }
           yield { type: 'done', reason: 'toolUse' }
           return
+        }
+        if (req.system === 'background-test') {
+          options.sideEntered?.()
+          await options.waitSide
         }
         if (title && options.waitTitle) await options.waitTitle
         if (!title && options.failTurn) {
@@ -461,6 +467,7 @@ it('ignores forged and mismatched cost rows across pages when recovering title u
   let pages = 0
   const scan = vi.spyOn(f.session, 'scan').mockImplementation(async (query) => {
     if (query.type !== 'cost/ledger') return originalScan(query)
+    if ((query.fromSeq ?? 0) > cost.seq + 101) return []
     pages++
     return pages === 1 ? forged.slice(0, 100) : [...forged.slice(100), { ...cost, seq: cost.seq + 101 }]
   })
@@ -709,3 +716,300 @@ it('reads trusted metadata across pages of later untrusted events and after reop
   await run(reopened.session)
   expect(reopened.calls.every((call) => !call.sessionKey.startsWith('title:'))).toBe(true)
 })
+
+it('refreshes only the accepted revision and keeps the accepted title visible while pending or failed', async () => {
+  const options: Parameters<typeof fixture>[0] = { title: 'Original topic' }
+  const f = await fixture(options)
+  await run(f.session)
+  await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+  const { createTitleRefresh } = await import('../src/runtime/sessions/title-refresh.js')
+  const end = (await f.session.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]!
+  const start = (await f.session.scan({ type: 'turn/start', order: 'desc', limit: 1 }))[0]!
+  const source = {
+    turn: 1,
+    startSeq: start.seq,
+    endSeq: end.seq,
+    lastAssistantSeq: (end.data as { lastAssistantSeq: number }).lastAssistantSeq,
+    budgetCap: null,
+    treeBudgetCap: null,
+    hard: false,
+  }
+  let release!: () => void
+  options.waitTitle = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  options.title = 'New topic'
+  const refresh = createTitleRefresh(f.session, {
+    source,
+    signal: new AbortController().signal,
+    eligible: async () => true,
+  })
+  const inspected = await refresh.inspect()
+  expect(inspected.eligible).toBe(true)
+  if (!inspected.eligible) throw new Error('missing title')
+  const pending = refresh.refresh({ expectedRevision: inspected.revision, context: 'A different user task' })
+  await vi.waitFor(() =>
+    expect(f.calls.filter((call) => call.sessionKey.startsWith('title:'))).toHaveLength(2),
+  )
+  expect(await titleRecord(f.session)).toMatchObject({ title: 'Original topic' })
+  release()
+  expect(await pending).toEqual({ status: 'applied' })
+  expect(await titleRecord(f.session)).toMatchObject({ title: 'New topic' })
+  expect(await refresh.refresh({ expectedRevision: inspected.revision, context: 'older' })).toEqual({
+    status: 'stale',
+  })
+})
+
+it.each(['next-input', 'host-close'] as const)(
+  'keeps fresh background work separate from foreground lifecycle: %s',
+  async (mode) => {
+    let release!: () => void
+    let entered!: () => void
+    const reached = new Promise<void>((resolve) => {
+      entered = resolve
+    })
+    const f = await fixture({
+      waitSide: new Promise<void>((resolve) => {
+        release = resolve
+      }),
+      sideEntered: entered,
+    })
+    await run(f.session)
+    await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+    const { sessionWorkFor } = await import('../src/runtime/sessions/session-work.js')
+    let context: import('@agnes/extension-api').SessionWorkContext | undefined
+    let completed = false
+    const observations: import('@agnes/extension-api').SessionWorkObservation[] = []
+    const observer = await sessionWorkFor(f.host.kernel).start(f.session, async () => true)
+    const off = sessionWorkFor(f.host.kernel).register(
+      {
+        name: 'test',
+        observe: (event) => {
+          observations.push(event)
+        },
+        async run(ctx) {
+          context = ctx
+          expect(f.session.isRunning).toBe(false)
+          expect(f.session.op()).toBeNull()
+          await ctx.sideCall.invoke(
+            await ctx.sideCall.prepare({
+              label: 'test.title',
+              target: { route: 'gw', model: 'm1' },
+              system: 'background-test',
+            }),
+            ctx.signal,
+          )
+          completed = true
+        },
+      },
+      { source: 'plugin/test', pluginRowId: 'ext:test/title', trust: 'trusted' },
+    )
+    try {
+      expect((await run(f.session, 'Second task')).reason).toBe('completed')
+      await reached
+      expect(completed).toBe(false)
+      expect(context!.boundary.turn).toBe(2)
+      if (mode === 'next-input') {
+        expect((await run(f.session, 'Third task')).reason).toBe('completed')
+        expect(context!.signal.aborted).toBe(false)
+      } else {
+        await observer.close()
+        await f.host.close()
+        expect(context!.signal.aborted).toBe(true)
+      }
+      expect(completed).toBe(false)
+      release()
+      await vi.waitFor(() => expect(completed).toBe(true))
+      await expect(
+        context!.sideCall.prepare({ label: 'late', target: { route: 'gw', model: 'm1' } }),
+      ).rejects.toMatchObject({ code: 'E_CLOSED' })
+      expect(
+        observations.filter((event) => event.kind === 'message' && event.message.attribution === 'operator'),
+      ).toHaveLength(mode === 'next-input' ? 2 : 1)
+    } finally {
+      release()
+      off()
+      await observer.close()
+    }
+  },
+)
+
+it.each(['before', 'during', 'failure', 'hard-budget', 'authority-unavailable', 'source-revoked'] as const)(
+  'preserves the accepted title when refresh is denied: %s',
+  async (mode) => {
+    const options: Parameters<typeof fixture>[0] = { title: 'Accepted title' }
+    const f = await fixture(options)
+    await run(f.session)
+    await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+    const { createTitleRefresh } = await import('../src/runtime/sessions/title-refresh.js')
+    const start = (await f.session.scan({ type: 'turn/start', order: 'desc', limit: 1 }))[0]!
+    const end = (await f.session.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]!
+    const { ProfileActivations } = await import('@agnes/host-extensions/profile/activation')
+    const { createSessionWorkAuthority } = await import('../src/runtime/sessions/session-work-authority.js')
+    const activations = new ProfileActivations(fakeSeamInit().adapters.storage.namespace('refresh-authority'))
+    activations.publish([{ owner: 'session-work:plugin/test', revision: 'code', integrity: 'integrity' }])
+    const authority = createSessionWorkAuthority({
+      activations,
+      owner: 'plugin/test',
+      packageId: 'test',
+      integrity: 'integrity',
+      mountIdentity: 'code',
+      profileDir: f.root,
+      profile: 'local-dev',
+      agnesVersion: '0.1.0',
+    })
+    let explicit = mode === 'before'
+    let release!: () => void
+    if (mode === 'during' || mode === 'source-revoked')
+      options.waitTitle = new Promise<void>((resolve) => {
+        release = resolve
+      })
+    if (mode === 'failure') options.rawTitle = 'invalid title JSON'
+    else options.title = 'Rejected late title'
+    const refresh = createTitleRefresh(f.session, {
+      source: {
+        turn: 1,
+        startSeq: start.seq,
+        endSeq: end.seq,
+        lastAssistantSeq: (end.data as { lastAssistantSeq: number }).lastAssistantSeq,
+        budgetCap: null,
+        treeBudgetCap: null,
+        hard: mode === 'hard-budget',
+      },
+      signal: new AbortController().signal,
+      current: authority.check,
+      eligible: async () => {
+        if (mode === 'authority-unavailable') throw new Error('owner offline')
+        return !explicit
+      },
+    })
+    const title = (await f.session.scan({ type: SESSION_TITLE_EVENT, order: 'desc', limit: 1 }))[0]!
+    const pending = refresh.refresh({ expectedRevision: title.seq, context: 'Different topic now' })
+    if (mode === 'during' || mode === 'source-revoked') {
+      await vi.waitFor(() =>
+        expect(f.calls.filter((request) => request.sessionKey.startsWith('title:'))).toHaveLength(2),
+      )
+      if (mode === 'source-revoked') {
+        activations.publish([])
+        expect(authority.signal.aborted).toBe(true)
+      } else explicit = true
+      release()
+    }
+    expect(await pending).toEqual({ status: mode === 'failure' ? 'unavailable' : 'ineligible' })
+    expect(await titleRecord(f.session)).toMatchObject({ status: 'generated', title: 'Accepted title' })
+    expect(f.calls.filter((request) => request.sessionKey.startsWith('title:'))).toHaveLength(
+      mode === 'during' || mode === 'failure' || mode === 'source-revoked' ? 2 : 1,
+    )
+    authority.dispose()
+  },
+)
+
+it.each(['accepted', 'failed', 'stale'] as const)(
+  'recovers all original title costs and reservations after a %s refresh without redispatch',
+  async (mode) => {
+    const records = new Map<string, Parameters<BillingSeam['record']>[0]>()
+    const ledgerInit = fakeSeamInit()
+    const durableLedger = await BASE_SEAM_PROVIDERS.billing.create(ledgerInit, new AbortController().signal)
+    const durableRows = () =>
+      ledgerInit.adapters.storage
+        .namespace('usage_ledger')
+        .entries()
+        .filter(({ key }) => key.startsWith('row:'))
+    let successfulWrites = 0
+    let healthy = false
+    const ledger: BillingSeam = {
+      projected: async () => ({ credits: 1, creditSource: 'estimated' }),
+      record: async (row) => {
+        if (row.purpose !== 'title') return
+        if (!healthy) throw new Error('billing unavailable')
+        await durableLedger.record(row)
+        successfulWrites++
+        records.set(row.effectId, row)
+      },
+    }
+    const options: Parameters<typeof fixture>[0] = { title: 'Initial title', ledger, treeBudgetCredits: 100 }
+    const f = await fixture(options)
+    await run(f.session)
+    await vi.waitFor(async () => expect(await titleRecord(f.session)).toMatchObject({ status: 'generated' }))
+    await run(f.session, 'Second source task')
+    const start = (await f.session.scan({ type: 'turn/start', order: 'desc', limit: 1 }))[0]
+    const end = (await f.session.scan({ type: 'turn/end', order: 'desc', limit: 1 }))[0]
+    const accepted = (await f.session.scan({ type: SESSION_TITLE_EVENT, order: 'desc', limit: 1 }))[0]
+    if (!start || !end || !accepted) throw new Error('missing title source')
+    const storage = f.session.d.log.storage
+    if (!hasChildControl(storage)) throw new Error('missing budget storage')
+    const settle = vi.spyOn(storage, 'settleOrigin').mockRejectedValue(new Error('settlement unavailable'))
+    options.title = 'Refreshed title'
+    if (mode === 'failed') options.rawTitle = 'invalid JSON'
+    let release: (() => void) | undefined
+    if (mode === 'stale')
+      options.waitTitle = new Promise<void>((resolve) => {
+        release = resolve
+      })
+    const { createTitleRefresh } = await import('../src/runtime/sessions/title-refresh.js')
+    const refresh = createTitleRefresh(f.session, {
+      source: {
+        turn: 2,
+        startSeq: start.seq,
+        endSeq: end.seq,
+        lastAssistantSeq: (end.data as { lastAssistantSeq: number }).lastAssistantSeq,
+        budgetCap: null,
+        treeBudgetCap: 100,
+        hard: false,
+      },
+      signal: new AbortController().signal,
+      eligible: async () => true,
+    })
+    const pending = refresh.refresh({ expectedRevision: accepted.seq, context: 'A different task' })
+    if (mode === 'stale') {
+      await vi.waitFor(() =>
+        expect(f.calls.filter((call) => call.sessionKey.startsWith('title:'))).toHaveLength(2),
+      )
+      const original = readSessionTitle(accepted)
+      if (!original || original.status !== 'generated') throw new Error('missing accepted title')
+      await f.session.append([
+        f.session.ev(
+          SESSION_TITLE_EVENT,
+          { ...original, title: 'Newer accepted title' },
+          { ignorable: true },
+        ),
+      ])
+      release?.()
+    }
+    expect(await pending).toEqual({ status: 'unavailable' })
+    expect(settle).toHaveBeenCalledOnce()
+    const failedSettlement = settle.mock.calls[0]?.[0]
+    if (!failedSettlement) throw new Error('missing original reservation')
+    const costs = (await f.session.scan({ type: 'cost/ledger', toSeq: f.session.lastSeq })).filter(
+      (row) => (row.data as { purpose?: string }).purpose === 'title',
+    )
+    expect(costs).toHaveLength(2)
+    expect(records.size).toBe(0)
+    settle.mockRestore()
+    await f.host.close()
+    healthy = true
+    const reopened = await fixture({ root: f.root, ledger, treeBudgetCredits: 100 })
+    await vi.waitFor(() => expect(records.size).toBe(2))
+    expect([...records.keys()].sort()).toEqual(
+      costs.map((row) => (row.data as { effectId: string }).effectId).sort(),
+    )
+    expect([...records.values()].map((row) => row.turn).sort()).toEqual([1, 2])
+    const reopenedStorage = reopened.session.d.log.storage
+    if (!hasChildControl(reopenedStorage) || !reopenedStorage.peekReservation)
+      throw new Error('missing durable reservation lookup')
+    expect(await reopenedStorage.peekReservation(failedSettlement.permitId)).toMatchObject({
+      status: 'settled',
+    })
+    expect(reopened.calls).toHaveLength(0)
+    const stored = durableRows()
+    expect(stored).toHaveLength(2)
+    await reopened.host.close()
+    const twice = await fixture({ root: f.root, ledger, treeBudgetCredits: 100 })
+    await vi.waitFor(() => expect(successfulWrites).toBe(4))
+    expect(durableRows()).toEqual(stored)
+    await twice.host.close()
+    expect(records.size).toBe(2)
+    expect(twice.calls).toHaveLength(0)
+  },
+  30_000,
+)

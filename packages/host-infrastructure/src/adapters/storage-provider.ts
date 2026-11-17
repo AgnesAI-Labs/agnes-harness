@@ -167,7 +167,10 @@ function bridge(
 ): HostPersistence {
   requireCapabilities(provider, store)
   const childControl = store.childControl
+  const settleLostChild = childControl.settleLostChild?.bind(childControl)
+  const listLostChildren = childControl.listLostChildren?.bind(childControl)
   const children: ChildControlStore = {
+    ...(settleLostChild && listLostChildren ? { settleLostChild, listLostChildren } : {}),
     childControlFormat: (...args) => childControl.childControlFormat(...args),
     assertWritableFormat: (...args) => childControl.assertWritableFormat(...args),
     createDelegatedChild: (...args) => childControl.createDelegatedChild(...args),

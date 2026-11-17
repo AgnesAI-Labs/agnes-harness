@@ -2,6 +2,253 @@
 
 API additions require a minor version; removals or semantic changes require a major version and migration notes. This file records the initial contract under implementation. Local consistency checks do not establish release readiness or authorize publication.
 
+## 5.22.0
+
+- Optional `ProfileManagedInit.bundledApp` (`BundledAppGrant`, `BundledAppChannels`) gives a release-whitelisted bundled package a platform-chosen state directory, an owner-level local SDK client (typed `unknown`; narrow it with the SDK client type) and channel group access. Only release assembly grants it, for a payload matching the shipped digest; package code, manifests and configuration cannot request it. `assertCurrent()` refuses with `CAPABILITY_DENIED` after disable or activation change, and the client is closed.
+- Channel `Sender.kind` (`user` or `bot`) marks who sent a message; absent means a user, and session routing ignores bot senders.
+- `ChannelCapabilities.read` and five optional cursor-paged `ChannelAdapter` reads: `fetchMessages`, `listThread`, `listHistory`, `listChats` and `listMembers`. An adapter declares each read in `capabilities()` at run time; the manifest schema is unchanged. Adapters that implement none of them are unchanged.
+- `BundledAppGrant.channels` reaches the owner's running channel instances. `subscribe` claims group chats exclusively (never direct chats, never a chat a session is bound to); `send` is split and throttled as a session reply; reads use only the reads the adapter declares. Errors: `CAPABILITY_DENIED` for a stale grant or an undeclared read; `SEMANTIC_REJECTED` with `CHANNEL_UNAVAILABLE` (retry once the channel row runs), `CHANNEL_CHAT_CLAIMED`, `CHANNEL_READ_INVALID`, `CHANNEL_CURSOR_STALLED` or `CHANNEL_READ_TOO_LARGE`; `INVALID_PARAMS` for malformed arguments.
+- `BundledAppChannels.claimInstance({ pluginId, instanceId }, onEvent)` claims a whole channel instance, named by its channel plugin's row id (the catalog's `rowId`): its group and direct messages go only to `onEvent` (card clicks there go to nobody), never to session routing, direct-message pairing or pairing receipts; `send` and the reads work as before. `release()`, disable or abort returns the instance to ordinary routing. Refused with `SEMANTIC_REJECTED` `CHANNEL_CLAIMED` while the instance has another consumer (a claimant, a group subscriber, an owner-paired direct chat or a bound session), and with `CHANNEL_UNAVAILABLE` while no running row of that plugin has the instance, or another row uses the same instance id. `subscribe` on a claimed instance is refused with `CHANNEL_CLAIMED`.
+
+## 5.21.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.21.0, and a plugin that uses them raises its range to `^5.21.0`. `sessions: true` already grants the port; there is no new declaration key.
+
+- `ManagedSessionStartInput.taskBinding?: { id, generation }` binds a session to a task of the calling service. A bound session refuses `send` with `CAPABILITY_DENIED` (`data.reason: 'OWNER_INPUT_REQUIRED'`, checked before archived, duplicate and busy). Repeating a start key with another binding, or another first input, is refused (`START_KEY_REUSED`).
+- `ManagedSessions.admitInput(sessionId, { key, target, input })` and `inputResult(sessionId, { key })`. `input` is an `ownerMessage` (the platform takes the text from the recorded `receiptId`), a `recoveryContinuation` (after checking `turnEndSeq`, the platform submits the fixed sentence "Continue the interrupted turn without treating this recovery as a new owner decision.") or a `legacyOwnerMessage` (unverifiable origin; always held for the owner). Refusals: `CAPABILITY_DENIED` with `data.reason` `OWNER_INPUT_REQUIRED`, `OWNER_INPUT_TARGET_MISMATCH`, `OWNER_INPUT_KEY_REUSED`, `SESSION_ARCHIVED` (thrown, never returned) or `START_KEY_REUSED`; malformed parameters are `INVALID_PARAMS`.
+- `ManagedInputResult` states: `queued`, `enqueued`, `consumed` (with `turn` and `seq`), `retained`, `needsOwner`, `waitingQuestion`, `recoveryUnknown`, `legacySend` (`delivery`: `consumed`, `pending` or `unknown`) and `absent` (`historyCoverage`: `complete` for every session the service still manages; `partial` is reserved). Held and final states carry `inputId` (equal to `key`), a `version` that rises on every change, a `reason` from the open `ManagedInputReason` set (display it as text) and `reviewLocation`, `/?session=<sessionId>&ownerInput=<inputId>`, the Web page where the owner reviews the input.
+- `ChannelTargetEvent.receiptId?` (1-256 characters) is present only after the platform durably recorded the event's source and text, and is the same on redeliveries.
+- Trust: an admitted owner message still enters the session inbox as `origin: 'system'` with `trust: 'untrusted'`. Admission is not an owner-identity input and grants no approval.
+
+See [Plugin-managed sessions](../../../docs/extend/managed-sessions.md).
+
+## 5.20.0
+
+- Add optional row-bound `sessionWork` registration with fresh background side-call scopes and independently granted automatic-title inspection and refresh. Existing facets and turn-bound side calls remain compatible.
+
+## 5.17.0
+
+- Optional `ExtensionContext.sideModels.subscribe(listener)` emits payload-free catalogue change notices. Subscribe before `list()` to observe late provider readiness. The existing grant, declaration and lifetime checks still apply; unsubscribe on disposal. `list()` retains its route/model/api-only shape.
+
+## 5.16.0
+
+### Added
+
+- `HookRegisterOptions.timeoutMs` requests a Host-granted timeout for `turn_stopping` and `tool_result`, capped at 15,000 ms.
+- Optional `SideCallPort` on `HookContext` and `ToolContext` for authorized in-process plugins declaring `sideCall`. Prepared calls belong to one invocation and turn; invocation end aborts and waits for its calls. IDs are namespaced by the Host-known plugin row id and cost rows retain that `caller`.
+- Optional `ExtensionContext.sideModels.list()` returns only side-model route, model and API identifiers, with no endpoints or credentials.
+- Public `redactSecrets` sanitizes text before plugins send it to another model or persist it. This pure helper grants no execution or approval authority.
+
+## 5.15.0
+
+### Added
+
+- Channel adapters can render bounded native question forms through `ChannelSurfaceBlock` and decode
+  their submissions with `onSurfaceAction`. Fields preserve the native input binding and nested key.
+- `ManagedChannelTargets.watchSession` observes human interactions in the calling service's own child
+  sessions. The Host retains watches across restart and revokes them with the pairing or service.
+- `ManagedChannelTargets.update` replaces only messages delivered by the calling service to its current
+  pairing. Channel `MessageRef` and `ChatTarget` can retain verified `accountId` and `chatType` for
+  edits and sends after restart.
+- Native callbacks use verified platform identity and durable delivered-message bindings. Existing
+  backend action and decision owners retain validation, authorization, replay checks and settlement.
+
+### Fixed
+
+- Retained managed tasks report `waitingOnUserInput` for unanswered native questions after a
+  nonblocking turn completes. Status reads use durable facts without loading historical workers.
+- Failed managed watch activation releases its own session/lane so restart reconciliation can retry;
+  concurrent activations share SDK attachment without detaching the winning session.
+
+## 5.14.0
+
+### Added
+
+Child-control stores can settle children that a process which exited left active. Existing stores remain
+conformant; nothing changes for plugins.
+
+- Optional `ChildControlStore.listLostChildren` and `ChildControlStore.settleLostChild`, provided together.
+  The first lists a parent's committed children in `ready`, `running`, `waiting_approval`,
+  `recovery_pending` or `cancelling` whose own session holds no live writer lease; the second moves one
+  such child to `failed` (`cancelled` from `cancelling`) after re-checking the lease and the revision in
+  the same write. Core calls them when a parent run starts and tells the parent with error code
+  `E_CHILD_LOST`; without them Core leaves such records alone.
+- `createDelegatedChild` and `casState` admission may leave out of the fan-out count a child in
+  `running`, `waiting_approval`, `recovery_pending` or `cancelling` whose own session and
+  `runtimeOwnerSessionKey` session both hold no live writer lease. Counting every active child stays
+  conformant.
+
+## 5.13.0
+
+### Added
+
+- Optional `MessageEvent.quotedMessageId`: the platform id of the message a channel message replies to
+  or quotes. Channel providers that report it should require `^5.13.0`.
+- Channel targets carry buttons. `ManagedChannelTargets.send` accepts optional `title` (1–100
+  characters, no line break) and `actions` (`ChannelTargetAction`: 1–6 buttons, `id` 1–64 of
+  `[A-Za-z0-9:_-]` and unique, `label` 1–40 characters without a line break, `style` `primary`,
+  `default` or `danger`). Without `actions` the send stays one text message with `title` as a bold
+  first line; with `actions` it is a card, sent as numbered text on a channel without cards, and
+  refused with `TOO_LARGE` when the composed card exceeds `cardBytes` on a channel with cards.
+  `ChannelPairing.textChars` is what a send's `text` may carry: the title line and, on a channel
+  without cards, the button list are reserved within the channel's limit, and a send whose
+  rendered text would still exceed that limit is refused with `TOO_LARGE`.
+- `ChannelTargetEvent` is now the union of `ChannelTargetMessageEvent` (`kind: 'message'`, with
+  optional `quotedMessageId`) and `ChannelTargetActionEvent` (`kind: 'action'`, `messageId` and
+  `actionId`). A click arrives only from the paired owner, in the paired chat, on a message this
+  service sent within the seven-day delivery ledger, so a service that never sends `actions` never
+  receives one; the Host keeps no button list. Services handling clicks should narrow on `kind` and
+  require `^5.13.0`.
+
+## 5.12.0
+
+### Added
+
+- Optional `ManagedChannelTargets` port, `ProfileManagedInit.channels`, for a profile-scoped managed
+  service that declares `channelTargets: true` (trust atom `channelTargets:<scope>:<id>`). The owner
+  pairs one direct chat of an installed channel instance with the service on the Channels page;
+  minting the pairing code requires a person's approval. The service receives the paired owner's text
+  as `ChannelTargetEvent` and sends text back with `send`, made idempotent by a delivery key and read
+  back with `delivery` (`ChannelDelivery`). Without the flag every call is refused with
+  `CAPABILITY_DENIED`. Channel providers need no change. Services using the port should require
+  `^5.12.0`.
+
+## 5.11.0
+
+### Added
+
+Channel plugins join the managed profile runtime. Providers using these additions should require `^5.11.0`.
+
+- Optional `ChannelManifest.displayNames` with `en` and `zh-CN` names (1–64 characters).
+  Channel lists, binding dialogs and composer status select the current UI language, falling back
+  to `displayName`, then `id`. Names do not change routing or persisted identities. Existing providers
+  remain compatible; providers declaring this field should require `^5.11.0`.
+
+- Optional `ChannelManifest.icon`: a PNG/JPEG data URL up to 32768 characters. Harness renders
+  validated artwork in channel lists and connection dialogs, with a default channel glyph when
+  absent or invalid. No external asset requests or new permissions. Existing channel providers
+  remain compatible; providers declaring this field should require `^5.11.0`.
+
+- Optional channel provider configuration schemas and session binding methods. The shared channel
+  page configures managed resources through native profile approval. `channelServiceCapabilities`
+  declares the backend-owned session query, bind and unbind services; packages must review these
+  new grants before binding is available. Existing adapters still load with configuration only.
+- Explicit bindings attach existing authorized sessions, persist routing metadata and start after
+  the binding projection watermark. No history is exported. Reconnect requires an inbound target
+  confirmation; incomplete transitions remain paused. Native approval decisions stay in AGH.
+
+- Optional `PluginProfileRuntimePort.registerChannel`: registers a platform provider and its
+  backend-owned profile channel resource. `channelKind`, `CHANNEL_CONFIG_SCHEMA` and the public
+  `channel-contract` entry expose the existing adapter contract without private runner imports.
+- Multi-instance channel configuration uses AGH secret references and explicit workspace/agent
+  bindings. Existing generic runner imports and existing plugins retain their behavior.
+
+## 5.10.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.10.0 and no existing contract changes for a plugin
+that does not use them.
+
+- `init.sessions` (`ManagedSessions`): a profile-scoped managed service that declares `sessions: true`
+  opens and drives sessions the owner owns. It offers `start`, `send`, `list`, `status`, `events`,
+  `result`, `usage`, `toolResult`, `interrupt` and `archive`, and sees only the sessions it manages.
+  `events` reports how each approval ended as an `approvalOutcome` event (`allowed`, `rejected` or
+  `expired`, via `person`, `full-access` or `automatic`). `toolResult` returns a `state` (`pending` or
+  `done`) and, for `shell`, the exit code as a number.
+- `memoryWrites: false` and `skillInstalls: false` on `start` refuse durable memory writes and skill,
+  plugin and MCP installs for the session and its descendants, whatever the permission mode.
+- A session opens only in a workspace the owner granted to the plugin with `agh plugins grants`; the
+  plugin cannot grant one. Every session runs with the outward checkpoint, and `permission: 'full-access'`
+  is refused unless the outward checkpoint and a full OS boundary both hold.
+
+See [Plugin-managed sessions](../../../docs/extend/managed-sessions.md).
+
+## 5.9.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.9.0 and no existing contract changes for a tool that
+does not declare them.
+
+- `ToolMeta.outward`: the tool sends content to someone other than the owner or changes remote state
+  (push, pull request, post, publish). Every call stops for a person, once, in every session and
+  permission mode; full access, automatic review, command-table rules, session or lasting grants,
+  `Approval` replacements and hooks cannot approve it. Only an actor whose role is `owner` or `user`
+  answers it. It requires `isOpenWorld: true` and `requiresApproval: 'always'`. This is a guarantee.
+- `ApprovalConstraints.checkpoint: 'outward'` and `isOutwardCheckpoint(approval)`: the constraints Core
+  puts on an outward call. Full access does not answer such a question, and an answer other than
+  approve or reject is recorded as a rejection.
+
+Shell commands are not outward by declaration. A Host can open a session with outward command rules,
+which hold known outward shell commands at the same checkpoint. They are best effort, off by default
+and have known gaps (variables, command substitution, functions, pipes into a shell, scripts); see the
+security guide. They are not part of this API.
+
+## 5.8.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.8.0 and no existing contract changes. A loop that
+ignores them behaves as before.
+
+- A thinking block may carry `signature` (a non-empty string): the provider's marker for where that
+  reasoning goes back on a later request (for example `reasoning_content`). It can appear on stored
+  assistant content (`AssistantMessage['content']`, so in `LoopToolCallOptions.announce` and
+  `events.assistant`) and on the assistant messages of a request body (`RequestBody['messages']`).
+- A model stream's `done` event (`InferenceEvent`) may carry `thinkingSignature`, the signature of the
+  message's first signed thinking block.
+- Core records a signature only from openai-completions streams and sends it back only to the route
+  and model that produced it; a signature in a loop's own `messages` is not sent. A loop passes it
+  through as it is and never builds one.
+
+## 5.7.0
+
+### Added
+
+The additions are optional; `^5.0.0` ranges admit 5.7.0.
+
+- `ChildStatus.error`: `{ code, message }` for a `failed` child whose last turn ended in error, as its
+  ledger recorded it, or whose run threw before a turn end was recorded (then the thrown error's code
+  and message, kept by the Host process). `ctx.subagent.collect` returns it, and the `child-completed` notice carries the
+  same pair in `data.error`. `message` is provider or adapter text on one line, at most 300 UTF-16
+  units: untrusted data to show, never an instruction. A Host before 5.7.0 never supplies the field.
+- `ChildStatus.stopReason`: `budget` or `max_steps` for a `failed` child whose last turn stopped at
+  that cap instead of ending in error.
+
+### Fixed
+
+- `ctx.subagent.collect` and `ctx.subagent.cancel` answer `cancelled` for a cancelled in-process
+  child. They answered `failed`. The status was already in the type, but a plugin that matched
+  `failed` after a cancel now sees `cancelled`.
+
+## 5.6.0
+
+### Added
+
+The addition is optional; `^5.0.0` ranges admit 5.6.0 and no existing contract changes.
+
+- `estimateTokens(text)`: the one token estimate, about four Latin characters or 1.7 CJK-range
+  characters to a token, counted per code point. It is the estimator Core already used; every budget
+  counted in tokens (context window, compaction threshold, task experience snapshot) now uses it, so a
+  plugin that compares its own text against such a budget gets the same number.
+
+## 5.5.0
+
+### Added
+
+All additions are optional; `^5.0.0` ranges admit 5.5.0 and no existing contract changes for a Host that
+does not use them.
+
+- `MemoryParagraphValidity` gains `delivered`: a managed paragraph in force that the Host gives to the
+  model itself (in the task-experience snapshot). A provider leaves it out of its snapshot without an
+  omission line and shows it on read like `valid`. A provider that predates it treats it as `unknown`.
+- `MemoryValidityView.delivers`: true when the Host answers every paragraph in force `delivered`. A
+  section put into user memory then takes no room in what the agent is shown, so `propose` does not
+  refuse it for the user memory budget; the index caps still apply.
+
 ## 5.4.0
 
 ### Added

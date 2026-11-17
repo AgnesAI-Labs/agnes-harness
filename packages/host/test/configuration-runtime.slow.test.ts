@@ -14,7 +14,7 @@ it('binds real model calls to account credentials and preserves a running Host a
   if (!model) throw new Error('model unavailable')
   const calls: string[] = []
   const server = createServer(async (req, res) => {
-    if (req.url === '/v1/models') {
+    if (new URL(req.url ?? '/', 'http://fixture').pathname === '/v1/models') {
       res.setHeader('content-type', 'application/json')
       res.end(JSON.stringify({ data: [{ id: model }] }))
       return

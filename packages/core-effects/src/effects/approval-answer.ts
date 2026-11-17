@@ -1,3 +1,4 @@
+import { isOutwardCheckpoint } from '@agnes/extension-api'
 import { APPROVAL_REASONS, validateAgainst } from '@agnes/protocol'
 import { Actor } from '@agnes/protocol/gen/session-v1'
 import type { ApprovalAnswer, ApprovalReason, ApprovalRequest, Pending, Verdict } from './seams.js'
@@ -22,6 +23,28 @@ export const isPending = (value: unknown): value is Pending =>
   typeof value === 'object' && value !== null && typeof (value as Pending).ticket === 'string'
 
 /**
+ * The actor roles that are a person, for an outward checkpoint. The list allows; anything not on it
+ * is refused. `owner` is the role the daemon gives the person behind an authenticated connection
+ * (`connActor`, the local actor resolver); `user` is the role an embedding host conventionally
+ * gives a person. Not on it: `system` (automatic answers), `agent`, `extension`, `trigger`,
+ * `importer`, and any role a deployment invents.
+ */
+export const PERSON_ROLES: readonly string[] = ['owner', 'user']
+
+/**
+ * Whether `actor` may answer an outward checkpoint: a person's role, and no mark of an automatic
+ * answer (full access signs with `permissionPolicy`, a business auto-confirmation with
+ * `confirmationMode`, whatever role it keeps).
+ */
+export function outwardApprover<A extends { role?: unknown; attrs?: unknown }>(
+  actor: A | undefined,
+): actor is A {
+  if (!actor || typeof actor.role !== 'string' || !PERSON_ROLES.includes(actor.role)) return false
+  const attrs = (actor.attrs ?? {}) as Record<string, unknown>
+  return attrs.permissionPolicy === undefined && attrs.confirmationMode === undefined
+}
+
+/**
  * One shape for what the kernel acts on. A bare verdict carries no reason; a reason outside the
  * known set is dropped rather than written, because the ledger records the facts the kernel knows.
  */
@@ -30,8 +53,14 @@ export function normalizeApproval(
   request?: ApprovalRequest,
 ): ApprovalAnswer | Pending | null {
   if (isPending(value)) return value
-  const answer = typeof value === 'string' ? { verdict: value } : value
+  let answer = typeof value === 'string' ? { verdict: value } : value
   if (!answer || typeof answer !== 'object' || !VERDICTS.has(answer.verdict as string)) return null
+  if (isOutwardCheckpoint(request?.approval) && answer.verdict.startsWith('allowed')) {
+    const by = (answer as ApprovalAnswer).answeredBy
+    // Only a person answers an outward checkpoint; a person's other allowance is a rejection.
+    if (!outwardApprover(by)) return { verdict: 'unavailable', reason: 'invalid-answer' }
+    if (answer.verdict !== 'allowed-once') answer = { verdict: 'rejected', answeredBy: by }
+  }
   // Cancellation/unavailability are not choices. Every actual choice must be offered.
   if (
     request &&

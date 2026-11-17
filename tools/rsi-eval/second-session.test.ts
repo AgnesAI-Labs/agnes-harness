@@ -288,8 +288,14 @@ describe('the second-session section of the report', () => {
       { resamples: 200 },
     ).json as { systems: { agh: object } }
     const strip = (r: object) => {
-      // The two sections that report the oracle arm of their own.
-      const { secondSession: _s, firstSessionTrap: _t, ...rest } = r as Record<string, unknown>
+      // The two sections that report the oracle arm of their own, and the pass criterion, which is the
+      // capture rate of the second-session section.
+      const {
+        secondSession: _s,
+        firstSessionTrap: _t,
+        criterion1: _c,
+        ...rest
+      } = r as Record<string, unknown>
       return rest
     }
     expect(strip(withOracle.systems.agh)).toEqual(strip(without.systems.agh))
@@ -304,5 +310,38 @@ describe('the second-session section of the report', () => {
     expect(() =>
       assertSeparateRuns([at('2026-11-05T10:00:00.000Z')], [at('2026-11-04T09:00:00.000Z')]),
     ).not.toThrow()
+  })
+})
+
+describe('pass criterion (1): the capture rate of requests after the first session', () => {
+  const tasksOf = (on: number[]) =>
+    ['cross-a', 'cross-b'].flatMap((id) => [
+      ...arm(id, 'off', [24, 26, 25]),
+      ...arm(id, 'on', on),
+      ...arm(id, 'oracle', [14, 16, 15]),
+    ])
+  const verdict = (records: RunRecord[]) => {
+    const { json, markdown } = buildReport(records, { resamples: 300 })
+    const agh = (json as { systems: { agh: { criterion1: { pass: boolean }; previousCriterion1: object } } })
+      .systems.agh
+    return { agh, markdown }
+  }
+
+  it('passes when the rate is above 0 and its interval excludes 0', () => {
+    const { agh, markdown } = verdict(tasksOf([19, 21, 20]))
+    expect(agh.criterion1).toMatchObject({
+      pass: true,
+      evaluable: true,
+      metric: 'secondSession.requests.captureRate',
+    })
+    expect(markdown).toContain('Verdict: PASS')
+  })
+
+  it('fails when on saves nothing, and still shows the old rule next to it', () => {
+    const { agh, markdown } = verdict(tasksOf([24, 26, 25]))
+    expect(agh.criterion1).toMatchObject({ pass: false, evaluable: true })
+    expect(markdown).toContain('Verdict: FAIL')
+    expect(agh.previousCriterion1).toMatchObject({ metric: 'repeatErrorDrop' })
+    expect(markdown).toContain('Old rule, for comparison only')
   })
 })

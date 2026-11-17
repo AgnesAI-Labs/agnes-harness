@@ -37,6 +37,22 @@ type Failure = Extract<InferenceEvent, { type: 'error' }>
 /** A cost row as a model execution writes it, with the response metadata it copies from usage. */
 type Spend = CostLedger & { response?: Readonly<{ id?: unknown; model?: unknown }> }
 
+/** Immutable completed-source budget and accounting identity. Never reconstructed from a later turn. */
+export type SideCallExecutionSource = Readonly<{
+  turn: number
+  startSeq: number
+  endSeq: number
+  lastAssistantSeq: number
+  budgetCap: number | null
+  treeBudgetCap: number | null
+  hard: boolean
+}>
+export type IndependentSideCallExecution = {
+  source: SideCallExecutionSource
+  ledgerFailed: boolean
+  retainTransport?: (work: Promise<void>) => void
+}
+
 /** One prepared side call: what the loop holds, the frozen request, and its ledger identity. */
 export type SideCallPlan = Readonly<{
   prepared: PreparedSideCall
@@ -244,21 +260,33 @@ export async function executeSideCall(
   effects: SideCallEffectPort,
   plan: SideCallPlan,
   signal: AbortSignal,
+  independent?: IndependentSideCallExecution,
 ): Promise<SideCallResult> {
   const { prepared, binding, audit } = plan
   const { invocationId, estimate } = prepared
   const projected = estimate.projectedCredits
-  if (s.turn?.ledgerFailed) return refused(invocationId, 'usage-unrecorded')
-  const cap = s.turnBudgetCap()
+  if (independent ? independent.ledgerFailed : s.turn?.ledgerFailed)
+    return refused(invocationId, 'usage-unrecorded')
+  if (independent?.source.hard) return refused(invocationId, 'budget')
+  const cap = independent ? independent.source.budgetCap : s.turnBudgetCap()
   // An unpriced estimate cannot be shown to fit a cap, so it is refused when one is set.
   if (cap !== null && (projected === null || projected > cap)) return refused(invocationId, 'budget')
-  const reserved = await reserveTreeBudgetHandle(
-    s,
-    projected ?? Number.POSITIVE_INFINITY,
-    prepared.target,
-    { effectId: binding.effectId, requestHash: binding.auditBindingHash },
-    estimate.inputTokens,
-  )
+  const reserved =
+    independent?.source.treeBudgetCap === null
+      ? { status: 'unreserved' as const }
+      : await reserveTreeBudgetHandle(
+          s,
+          projected ?? Number.POSITIVE_INFINITY,
+          prepared.target,
+          { effectId: binding.effectId, requestHash: binding.auditBindingHash },
+          estimate.inputTokens,
+          independent
+            ? {
+                rootTaskId: `${s.key}:${s.lane}:${independent.source.startSeq}`,
+                rootCredits: independent.source.treeBudgetCap ?? undefined,
+              }
+            : {},
+        )
   if (reserved.status === 'blocked' || reserved.status === 'terminal') return refused(invocationId, 'budget')
   const hold = reserved.status === 'reserved' ? reserved.handle : undefined
   if (signal.aborted || s.ac.signal.aborted) {
@@ -272,7 +300,7 @@ export async function executeSideCall(
     if (hold) await releaseTreeReservationHandle(s, hold)
     throw error
   }
-  return dispatch(s, effects, plan, signal, intentSeq, hold)
+  return dispatch(s, effects, plan, signal, intentSeq, hold, independent)
 }
 
 async function dispatch(
@@ -282,6 +310,7 @@ async function dispatch(
   signal: AbortSignal,
   intentSeq: Seq,
   hold: TreeReservationHandle | undefined,
+  independent?: IndependentSideCallExecution,
 ): Promise<SideCallResult> {
   const { prepared, binding, audit } = plan
   // Latency is Core's own measure from dispatch, whenever the adapter's first event arrives.
@@ -291,6 +320,7 @@ async function dispatch(
   const adapter = prepared.adapter
   const seen: Observed = { text: '', done: false }
   const audited = {
+    ...(audit.caller === undefined ? {} : { caller: audit.caller }),
     route: binding.route,
     ...(adapter
       ? { adapter: { id: adapter.id, ...(adapter.version === null ? {} : { version: adapter.version }) } }
@@ -320,9 +350,17 @@ async function dispatch(
     effect,
     intentSeq,
     signal,
-    turnId: s.op()?.meta.turn ?? 0,
-    step: s.state.openStep.get(s.lane)?.step ?? 0,
-    memory: s.turn,
+    turnId: independent?.source.turn ?? s.op()?.meta.turn ?? 0,
+    step: independent ? 0 : (s.state.openStep.get(s.lane)?.step ?? 0),
+    memory: independent ? null : s.turn,
+    ...(independent
+      ? {
+          sourceTurn: independent.source.turn,
+          onBillingFailure: () => {
+            independent.ledgerFailed = true
+          },
+        }
+      : {}),
     purpose: 'side-call',
     unobserved: { inputTokens: audit.inputTokens, ...(projected === null ? {} : { credits: projected }) },
     settleTreeBudget: async (credits, costSeq) => {
@@ -363,6 +401,7 @@ async function dispatch(
     const credits = sent ? projected : 0
     const cost = s.ev('cost/ledger', {
       purpose: 'side-call',
+      ...(independent ? { sourceTurn: independent.source.turn } : {}),
       effectId: binding.effectId,
       model: binding.model,
       tokens: { input: sent ? audit.inputTokens : 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -381,14 +420,18 @@ async function dispatch(
    */
   function recordable(batch: EventInput[]): void {
     const terminalRow = batch[batch.length - 1] as EventInput
-    checkSideCallSettlement(batch, binding, (terminalRow.data as { bindingHash: string }).bindingHash)
+    checkSideCallSettlement(
+      batch,
+      { ...binding, caller: audit.caller },
+      (terminalRow.data as { bindingHash: string }).bindingHash,
+    )
     for (const row of batch)
       if (!validateEvent({ lane: s.lane, v: 1, ...row, ts: PROBE_TS, id: PROBE_ID, seq: 1 }).ok)
         throw new CoreError('E_ENVELOPE', 'side-call settlement row does not match its schema')
   }
 
   async function settle(): Promise<SideCallResult> {
-    const stopping = s.op()?.control.status === 'cancel_requested'
+    const stopping = independent ? s.ac.signal.aborted : s.op()?.control.status === 'cancel_requested'
     let batch: EventInput[]
     let terminal: SideCallEffectTerminal
     try {
@@ -441,7 +484,11 @@ async function dispatch(
     }
   } finally {
     disarm()
-    result = await settle()
+    try {
+      result = await settle()
+    } finally {
+      independent?.retainTransport?.(execution.transportSettled())
+    }
   }
   return result
 }

@@ -10,6 +10,11 @@ vi.mock('@agnes/daemon', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@agnes/daemon')>()),
   runAgnesd,
 }))
+const trimNativeHeap = vi.hoisted(() => vi.fn(async () => undefined))
+vi.mock('@agnes/system-node', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@agnes/system-node')>()),
+  trimNativeHeap,
+}))
 
 import {
   readStartupDiagnostic,
@@ -21,6 +26,16 @@ import { runDaemonEntry } from './daemon-entry.js'
 afterEach(() => {
   vi.unstubAllEnvs()
   runAgnesd.mockClear()
+  trimNativeHeap.mockClear()
+})
+
+it('hands freed memory back once the daemon has started', async () => {
+  vi.stubEnv('AGH_HOME', '/tmp/agnes-inherited-home')
+  runAgnesd.mockImplementationOnce(async () => {
+    expect(trimNativeHeap).not.toHaveBeenCalled()
+  })
+  await runDaemonEntry(['start'])
+  expect(trimNativeHeap).toHaveBeenCalledOnce()
 })
 
 // Under the legacy name, `--home` would lose to any AGH_HOME already in the environment and make

@@ -381,7 +381,26 @@ describe('voice handle', () => {
   })
 
   it('renders beforeSend immediately before send and hides it when read-only', () => {
-    const { host, handle } = mount({ slots: { beforeSend: createElement('span', { id: 'voice-slot' }) } })
+    const { host, handle } = mount({
+      slots: {
+        beforeSend: createElement('span', { id: 'voice-slot' }),
+        sessionControls: createElement('span', { id: 'session-action-slot' }),
+        model: createElement('span', { id: 'model-extension-slot' }),
+      },
+    })
+    expect(host.querySelector('#session-action-slot')).toBeTruthy()
+    for (const state of [
+      { loading: true },
+      { readOnly: true },
+      { connected: false },
+      { hasSession: false },
+    ]) {
+      act(() => handle.render({ ...view, ...state }))
+      expect(host.querySelector('#session-action-slot')).toBeNull()
+      expect(host.querySelector('#model-extension-slot')).toBeTruthy()
+    }
+    act(() => handle.render(view))
+    expect(host.querySelector('#session-action-slot')).toBeTruthy()
     expect(host.querySelector('#send')?.previousElementSibling?.id).toBe('voice-slot')
     act(() => handle.render({ ...view, readOnly: true }))
     expect(host.querySelector('#voice-slot')).toBeNull()

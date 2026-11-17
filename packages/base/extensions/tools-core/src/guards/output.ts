@@ -15,21 +15,19 @@ import { collapseRepeatedLines } from './repeated-output.js'
 // for every script -- a CJK character costs three bytes and an ASCII one costs one, so counting
 // units let a Chinese result through at roughly three times the payload an English one got. Bytes
 // are also the closer stand-in for what this is really protecting, which is tokens: characters per
-// token swings widely by script while bytes per token barely moves. Every other content budget in
-// this repository is already in bytes.
+// token swings widely by script while bytes per token barely moves. The limit on one piece of
+// content is in bytes, like the other single-item limits (memory, project rules, the skill catalog);
+// totals such as the context window and the compaction threshold are counted in estimated tokens.
 //
 // The byte limit is a deployment setting (preset `tools.output_max_bytes`, handed to a tool as
-// `ctx.outputMaxBytes`). The head and tail kept when a result is cut follow it in the proportions the
-// limit has always had, half and an eighth, so one number moves all three together.
+// `ctx.outputMaxBytes`). The head and tail kept when a result is cut follow it, so one number moves all
+// three together: a cut keeps five eighths of the limit, split evenly, because a command's error or a
+// test run's summary is usually at the end of its output.
 export type OutputLimits = { maxBytes: number; maxLines: number; headBytes: number; tailBytes: number }
 
 export function outputLimits(maxBytes: number): OutputLimits {
-  return {
-    maxBytes,
-    maxLines: 2000,
-    headBytes: Math.floor(maxBytes / 2),
-    tailBytes: Math.floor(maxBytes / 8),
-  }
+  const kept = Math.floor((maxBytes * 5) / 16)
+  return { maxBytes, maxLines: 2000, headBytes: kept, tailBytes: kept }
 }
 
 /** The limits of a deployment that set nothing. */
@@ -219,12 +217,12 @@ export function refBlock(ref: ArtifactRef, mime?: string): { type: 'ref'; ref: A
 }
 
 // The total one tool call may put into the model's context across every content block it returns,
-// once each block has already passed its own single-block guard above: four single-block limits, so
-// roughly four blocks at full size fit before the call itself gets cut off, a similar ratio to
-// claude-code's 200 KB whole-message cap over its 50 KB single-item limit. Nothing here has been
-// tuned against real MCP traffic yet; this is where a later pass would plug in.
-export const callOutputLimitBytes = (ctx: Pick<ToolContext, 'outputMaxBytes'>): number =>
-  4 * ctx.outputMaxBytes
+// once each block has already passed its own single-block guard above. It is the same one
+// `output_max_bytes`, because Core cuts every tool result at exactly that total: a larger limit
+// here let blocks through that Core then cut with no note and no stored copy. At this limit the
+// tool's own omission note and stored full set take effect, provided the note is paid for out of
+// the same limit (the MCP adapter reserves room for it before admitting any block).
+export const callOutputLimitBytes = (ctx: Pick<ToolContext, 'outputMaxBytes'>): number => ctx.outputMaxBytes
 
 // One block of a tool call's result, described so guardOutputSet can charge it against the call's
 // shared budget. A `text` block still gets guardOutput's own head/tail guard below, and it is the

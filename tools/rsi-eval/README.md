@@ -116,6 +116,13 @@ request's catalogue.
   (the interval includes 0, or the lesson costs more) are listed as no headroom and counted; tasks with
   fewer than two off or oracle runs cannot be judged and are listed too. The exclusion looks at
   `off - oracle` only, never at `on`. With no task left there is no rate, which is not a pass.
+- Pass criterion (1) is this rate for model requests (every lane): above 0 with a 95% interval that
+  excludes 0. The earlier rule, a repeat-error drop above 0 with an interval excluding 0, is still
+  computed and printed next to it as the old rule, for comparison only (`previousCriterion1`).
+- "Saved lessons in context at the start of a later session" (`lessonsInContext`) counts the later
+  sessions of `on` runs whose first task-experience snapshot (the `x/core/refinement-prefix-change` row
+  with reason `experience-snapshot`) carried at least one entry saved to workspace or user memory, with
+  the trap hits per later session of each arm next to it.
 - The refinement runs of the `on` arm review after every prompt, as the Prime runs do, which is more often
   than real use, so the `on` column costs more than real use would. Compare against Prime on the same terms.
 
@@ -331,7 +338,9 @@ before the start, as before.
 
 - The paragraphs are written as hand-written memory text, without their markers: a saved paragraph is shown
   to the agent only while the host's registry vouches for it, and the fresh run's registry knows nothing of
-  another run's saves.
+  another run's saves. So the frozen arm reaches the model through the memory note, while an `on` run's
+  saved lessons reach it through the task-experience snapshot: the same text by a different path, under
+  the memory note's byte limit rather than the snapshot's entry and token limits.
 - The skills are copied into the workspace's skills folder before the host starts, where the `on` run left
   them, and the host offers them from the first request.
 - The runner records which throwaway workspace each fixture used (`workspaces` in the outcome), so a later

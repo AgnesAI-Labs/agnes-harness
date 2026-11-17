@@ -1,4 +1,5 @@
 import { type Static, Type } from '@sinclair/typebox'
+import { windowsWriteBoundary } from './windows-boundary.js'
 
 const text = Type.String({ minLength: 1, maxLength: 1024 })
 const strings = Type.Array(text, { maxItems: 4096 })
@@ -28,6 +29,8 @@ const enforcement = Type.Object(
   {
     level: Type.Union([Type.Literal('none'), Type.Literal('partial'), Type.Literal('full')]),
     scope: strings,
+    /** The exact partial contract behind `level: 'partial'` on a local Windows Host. */
+    boundary: Type.Optional(windowsWriteBoundary),
   },
   { additionalProperties: false },
 )
@@ -48,6 +51,8 @@ const securityPolicy = Type.Object(
       Type.Literal('loopback-serve'),
       Type.Literal('unrestricted'),
     ]),
+    /** Present when this Host runs the level under the Windows partial contract instead of full L1. */
+    boundary: Type.Optional(windowsWriteBoundary),
   },
   { additionalProperties: false },
 )
@@ -83,6 +88,14 @@ export const RuntimeSecurityStatus = Type.Object(
           path: text,
           preset: text,
           permission: Type.Optional(text),
+          /** What the session's commands may change; the actual boundary is `enforcement`. */
+          access: Type.Optional(
+            Type.Union([
+              Type.Literal('read-only'),
+              Type.Literal('workspace-write'),
+              Type.Literal('full-access'),
+            ]),
+          ),
           provider: text,
           state: Type.Union([Type.Literal('ready'), Type.Literal('closing'), Type.Literal('unavailable')]),
           policyDigest: Type.Optional(text),

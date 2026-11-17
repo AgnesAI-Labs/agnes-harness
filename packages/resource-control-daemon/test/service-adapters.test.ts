@@ -273,6 +273,38 @@ describe('installResourceServiceAdapters — MCP over the shared session worker'
     expect(result.error).toEqual({ code: 'MCP_UNTRUSTED_REVISION', message: 'trust is untrusted' })
   })
 
+  it('signOut sends resourceMcpSignOut and returns the status the worker left, with no error', async () => {
+    const { store, capturedAdapters } = fakeStoreWith()
+    const calls: Array<{ method: string; params: unknown }> = []
+    const acquireSharedWorker = vi.fn(async () => ({
+      hello: Promise.resolve({}),
+      command: async (method: string, params: unknown) => {
+        calls.push({ method, params })
+        return fakeMcpStatus('srv', 'unavailable')
+      },
+      close: () => undefined,
+      alive: true,
+    }))
+    installResourceServiceAdapters({
+      store,
+      pool: { acquire: vi.fn(), acquireSharedWorker } as unknown as FakePool,
+      profile: { name: 'local-dev', hash: 'a'.repeat(64) },
+      refreshPackageSkills: async () => undefined,
+    })
+    const signOut = capturedAdapters().mcp.signOut
+    if (!signOut) throw new Error('the shared worker adapter has no signOut')
+
+    const result = await signOut({
+      profile: 'local-dev',
+      serverId: 'srv',
+      definition: {} as Parameters<McpLifecycleAdapter['reconnect']>[0]['definition'],
+      signal: new AbortController().signal,
+    })
+
+    expect(calls).toEqual([{ method: 'resourceMcpSignOut', params: { serverId: 'srv' } }])
+    expect(result).toEqual({ status: fakeMcpStatus('srv', 'unavailable') })
+  })
+
   it('tools reads the journal’s own observedRevision and pages the shared worker’s catalog for exactly that revision', async () => {
     const observedStatus = vi.fn(async () => fakeMcpStatus('srv', 'ready'))
     const { store, capturedAdapters } = fakeStoreWith({ observedStatus })

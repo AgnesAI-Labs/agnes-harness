@@ -504,9 +504,13 @@ function snapshotBuilderRow(row: Readonly<EntryRow>): Readonly<EntryRow> {
     provides: Object.freeze([...row.provides]),
     runtime: row.runtime,
     mountIdentity: row.mountIdentity,
+    ...(row.codeMountIdentity === undefined ? {} : { codeMountIdentity: row.codeMountIdentity }),
     mountRevision: row.mountRevision,
     entryRevision: row.entryRevision,
     extrasRevision: row.extrasRevision,
+    ...(row.configReload === undefined ? {} : { configReload: row.configReload }),
+    ...(row.liveResources === undefined ? {} : { liveResources: Object.freeze([...row.liveResources]) }),
+    ...(row.liveResourceRevision === undefined ? {} : { liveResourceRevision: row.liveResourceRevision }),
     ...(row.config === undefined ? {} : { config: immutableConfig(row.config) }),
   })
 }

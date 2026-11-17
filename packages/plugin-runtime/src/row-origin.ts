@@ -5,6 +5,8 @@ export interface RowOrigin {
   readonly packageId: string
   readonly snapshotId: string
   readonly rowRevision?: string
+  /** Executable mount identity, excluding next-session configuration. */
+  readonly mountIdentity?: string
   readonly configDigest?: string
   readonly rowId: string
   readonly exportName: string
@@ -33,6 +35,16 @@ export class RowOriginRegistry implements RowOriginLookup {
       if (!active) return
       active = false
       this.#origins.delete(fiber)
+    }
+  }
+
+  /** A live configuration reload keeps the fiber, so its origin must move to the new row identity. */
+  replace(fiber: Fiber, origin: Readonly<RowOrigin>): () => void {
+    const previous = this.#origins.get(fiber)
+    if (!previous) throw new Error('row origin is not bound')
+    this.#origins.set(fiber, origin)
+    return () => {
+      if (this.#origins.get(fiber) === origin) this.#origins.set(fiber, previous)
     }
   }
 }

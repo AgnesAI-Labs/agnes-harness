@@ -35,6 +35,11 @@ export type RoleDelegation = {
   /** Retained ancestor floors for nested roles; each table keeps its own decision order. */
   policyCeilings?: Array<{ policy: string; commandTable?: PresetView['approval']['commandTable'] }>
   sandboxRequired: boolean
+  /**
+   * The parent's commands ran under the Windows write restriction. The child's own workspace must
+   * run under at least that restriction; it is never a reason to require full isolation.
+   */
+  windowsWriteRestricted?: true
   /** Opaque seam snapshot: Core persists it; the Host filesystem enforces it. */
   filesystem: ReturnType<SandboxSeam['fsPolicy']>
 }

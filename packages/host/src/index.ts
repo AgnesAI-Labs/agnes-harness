@@ -12,6 +12,8 @@ export {
   ToolFilterError,
   toolFilterRejection,
 } from '@agnes/core'
+// Whether a session's policy holds outward commands for a person; the worker answers it for the daemon.
+export { outwardCheckpointEnforced } from '@agnes/core/command-table'
 export {
   ARTIFACT_RECLAIMED_FAILURE,
   createLocalArtifactReadStore,
@@ -333,6 +335,7 @@ export {
   type ToolAuthority,
   type ToolPort,
 } from '@agnes/host-extensions/ext-host/index'
+export { pluginRowSource } from '@agnes/host-extensions/ext-host/row-extension-host'
 export {
   isServicePreDispatchFailure,
   type ServiceAuthority,
@@ -395,6 +398,18 @@ export { createExec, type ExecAdapter, type ExecResult } from '@agnes/host-infra
 export { resolveFileSecretsDirectory } from '@agnes/host-infrastructure/adapters/file-secrets-dir'
 export { createFs, type HostFs } from '@agnes/host-infrastructure/adapters/fs'
 export {
+  type CreateMcpOAuthStoreOptions,
+  createMcpOAuthStore,
+  type McpOAuthClient,
+  type McpOAuthNext,
+  type McpOAuthRead,
+  type McpOAuthRecord,
+  type McpOAuthServer,
+  type McpOAuthStore,
+  type McpOAuthTokens,
+  type McpOAuthUpdateOptions,
+} from '@agnes/host-infrastructure/adapters/mcp-oauth-store'
+export {
   CAPABILITY_IDS,
   type CapabilityId,
   type CapabilityLevel,
@@ -447,6 +462,7 @@ export {
   type SessionDefaultsConfigurationService,
 } from '@agnes/host-infrastructure/configuration'
 export { type DoctorOptions, type DoctorProbe, runDoctor } from '@agnes/host-infrastructure/doctor'
+export { resolveDocumentsDirectory } from '@agnes/host-infrastructure/documents-directory'
 export { REVIEW_AFTER_MS, RefinementRegistry } from '@agnes/host-infrastructure/refinement-registry'
 export {
   type RefinementSettingsPort,
@@ -488,6 +504,7 @@ export {
 } from '@agnes/host-providers/assemble/provider-selection'
 export * from '@agnes/host-providers/assemble/routes'
 export * from '@agnes/host-providers/profile/composition-state'
+export * from '@agnes/host-providers/profile/session-environment'
 export { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
 export * from '@agnes/host-providers/runtime-target-publisher'
 export * from '@agnes/host-providers/runtime-target-report'
@@ -556,6 +573,12 @@ export {
 } from './runtime/lifecycle/host-facade.js'
 export { closeHost, Rollback } from './runtime/lifecycle/lifecycle.js'
 export { sessionPermissionCatalog } from './runtime/lifecycle/permission-catalog.js'
+export {
+  openWindowsAclMaintenance,
+  type WindowsAclMaintenance,
+  type WindowsAclRepairRequest,
+  type WindowsAclReport,
+} from './runtime/lifecycle/windows-acl-maintenance.js'
 export { manageMemory } from './runtime/memory/admin.js'
 export * from './runtime/profile/bundle-selection.js'
 export {
@@ -570,6 +593,8 @@ export {
 export * from './runtime/profile/session-capabilities.js'
 export { createSkillDraftStore } from './runtime/refinement/skill-drafts.js'
 export {
+  enforceSkillCap,
+  RSI_SKILL_CAP,
   recordSkillRevocation,
   renewSkillForUser,
   reviewSkills,

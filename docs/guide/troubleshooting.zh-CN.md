@@ -51,12 +51,12 @@ Web 诊断 ZIP 勾选日志后，`logs/daemon-runtime.jsonl` 包含当前及上�
 | 找不到 Skills 删除或优先级操作 | 使用 Web 管理页或 Node SDK；shell/TUI 没有对应命令。若管理页也缺少入口，核对前端与后台是否来自同一份完整构建 |
 | Skill 优先级已保存却不可用 | 检查 winner 的自身 trust/desired；数值改变不授予权限，保存冲突需刷新 revision 与 expectedPriority |
 | Skill 删除失败/不能重新启用 | 检查 operation 与 SKILL_REMOVAL_PENDING；可能已有部分文件删除，排除占用后显式重试，不能靠重启/刷新当作撤销 |
-| MCP 目录为空或不能调用 | 检查定义 revision、信任、期望启用、连接状态、tool allow-list 与可执行程序策略；当前逐服务器会话路径跳过 OAuth 绑定，管理面测试成功不能证明会话可调用 |
+| MCP 目录为空或不能调用 | 检查定义 revision、信任、期望启用、连接状态、tool allow-list 与可执行程序策略；OAuth 服务没有可用的登录时报 `MCP_OAUTH_NEEDS_RECONNECT`，用 `agh mcp login ID` 或在网页 MCP 页登录 |
 | 工具报 E_LEASE_EXPIRED | 检查当前行是否已卸载、撤权或被新版本替换，并核对运行产物版本；旧版本曾有默认 24 小时到期问题，详见[支持范围](../reference/limitations.zh-CN.md)。保留会话与错误，按实际状态重新加载 |
 | 浏览器断线/停止后仍运行 | 关闭客户端与取消/停止后台不同；根据后台历史确认最终状态 |
 | 导入失败 | 保留输入和错误，用脱敏最小夹具复现；不要直接改数据库 |
 
-目录中的输出容量与单次请求的输出额度不同。[DeepSeek Chat Completions API](https://api-docs.deepseek.com/api/create-chat-completion/) 在非思考模式省略 `max_tokens` 时默认 8K。因此 AGH 为 DeepSeek 直连路由（根路径、`/v1` 或 `/beta`）显式发送默认 32768 tokens，并受模型目录容量约束。preset 的明确 `model.max_tokens`、request hook、tree permit 或压缩请求额度仍然优先。此变更不提高目录容量、子任务保守预算持有额或压缩预留。其他额度应在 [preset 定义](../reference/configuration.zh-CN.md)中明确设置，并须在服务商支持范围内。
+目录中的输出容量与单次请求的输出额度不同。[DeepSeek Chat Completions API](https://api-docs.deepseek.com/api/create-chat-completion/) 在非思考模式省略 `max_tokens` 时默认 8K。因此 AGH 为 DeepSeek 直连路由（根路径、`/v1` 或 `/beta`）显式发送默认 32768 tokens，并受模型目录容量约束。AGH 已知模型表中的模型（DeepSeek V4 flash 和 pro，以及 `deepseek-v4.1-flash-1017` 这类 V4.1 flash 版本）经其他 OpenAI 兼容端点提供时，会发送表中的输出上限 256,000 tokens（DeepSeek 公布的最大输出为 384K），同样受目录容量约束，字段为 `max_tokens`，除非模型的 `compat.maxTokensField` 指定了其他字段：网关收到不带额度的请求时会套用自己的默认值，并且可能忽略 `max_completion_tokens`。preset 的明确 `model.max_tokens`、request hook、tree permit 或压缩请求额度仍然优先。此变更不提高目录容量、子任务保守预算持有额或压缩预留。其他额度应在 [preset 定义](../reference/configuration.zh-CN.md)中明确设置，并须在服务商支持范围内。
 
 macOS daemon identity 使用内核 boot-session UUID、PID 和进程保存的启动时间；calendar clock 校时不会改变该 identity。旧 owner/discovery 记录仍可读取。旧 identity 精确匹配时，系统写入私有、绑定 boot 的迁移证明，不改写仍在运行的旧 daemon 的记录。完成验证后，status 和 stop 可跨校时继续工作。若旧记录在首次验证前已经漂移，则无法确认所属 boot：status 保守报告 running，discovery/stop 拒绝 unknown identity。不使用 PID-only 匹配、时间容差或锁绕过。
 

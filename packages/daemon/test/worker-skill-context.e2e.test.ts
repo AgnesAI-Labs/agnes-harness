@@ -26,7 +26,8 @@ const roots: string[] = []
 // Authoring guidance now distinguishes initial templates, hash tests and install/browser verification.
 // Includes candidate merge/remove edits and bounded shell waits with retained background children.
 // Tool schemas now carry standard #/$defs refs and no $id (8db85dc27).
-const EXPECTED_SKILL_TOOL_SCHEMA_HASH = '5458f89d98091d6fe33c9a8db7ffc35ad3efb228b2d0df6f754c4aeaaeadbe9c'
+// Background job tools (job_kill, job_list, job_output) are loaded up front.
+const EXPECTED_SKILL_TOOL_SCHEMA_HASH = 'ec46c5d4aacf0897d4f8d5009b1ea1fe9a3bc5b6df996ed6181a69f45389905d'
 const expectedToolNames = [
   'ask_user_question',
   'compact',
@@ -34,6 +35,9 @@ const expectedToolNames = [
   'exit_plan_mode',
   'find',
   'grep',
+  'job_kill',
+  'job_list',
+  'job_output',
   'ls',
   'present',
   'read',

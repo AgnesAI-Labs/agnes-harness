@@ -109,9 +109,10 @@ describe('artifact-backed input admission', () => {
   it('persists references in inbox and messages, reads exact originals and never exposes raw files in the prompt', async () => {
     const f = fixture()
     const { session, log } = await openSession(f)
-    await session.enqueue('next-turn', { actor, content: [inline('private-original')] })
+    const media: ContentBlock = { type: 'file', name: 'clip.mp4', mimeType: 'video/mp4', data: 'AAECAw==' }
+    await session.enqueue('next-turn', { actor, content: [inline('private-original'), media] })
     const content = queued(session)
-    expect(content).toHaveLength(1)
+    expect(content).toHaveLength(2)
     expect(storedAttachment(content[0]!)).toBe(true)
     expect(JSON.stringify(content)).not.toContain(btoa('private-original'))
     expect(f.pending.size).toBe(0)
@@ -123,6 +124,16 @@ describe('artifact-backed input admission', () => {
       new AbortController().signal,
     )
     expect(new TextDecoder().decode(original?.bytes)).toBe('private-original')
+    const clip = await readSessionAttachment(
+      session,
+      { path: `session-file://${row!.seq}/2` },
+      new AbortController().signal,
+    )
+    expect(clip).toMatchObject({
+      name: 'clip.mp4',
+      mimeType: 'video/mp4',
+      bytes: new Uint8Array([0, 1, 2, 3]),
+    })
     await expect(
       readSessionAttachment(
         session,

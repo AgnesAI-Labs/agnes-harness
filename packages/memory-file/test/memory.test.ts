@@ -291,8 +291,11 @@ describe('file memory contract', () => {
     await f.files(2).write(f.index, 'stable convention '.repeat(40))
     const context = await f.session.snapshot(3)
     expect(context?.omitted).toBe(true)
-    expect(context?.content).toContain('Memory omitted')
-    expect(Buffer.byteLength(context?.content ?? '')).toBeLessThanOrEqual(128)
+    expect(context?.content).toContain('Memory truncated at the size limit')
+    // The limit is the workspace layer's; the fixed header lines are not counted.
+    expect(
+      Buffer.byteLength((context?.content ?? '').split('\n\n').slice(3).join('\n\n')),
+    ).toBeLessThanOrEqual(128)
     expect((await f.session.readFile('MEMORY.md')).content).toBe('stable convention '.repeat(40))
   })
 
@@ -366,7 +369,7 @@ describe('file memory contract', () => {
     expect(bounded?.content).toContain('Workspace convention: focused changes.')
     const userLayer = bounded?.content.split('User memory (read-only for the agent):\n')[1] ?? ''
     expect(Buffer.byteLength(userLayer)).toBeLessThanOrEqual(128)
-    expect(userLayer).toContain('Memory omitted')
+    expect(userLayer).toContain('memory truncated at the size limit')
   })
 })
 
@@ -497,3 +500,59 @@ it.each(['revocation', 'abort', 'expiry', 'epoch', 'stale-proof'])(
     )
   },
 )
+
+describe('the injection limits, in bytes', () => {
+  const layer = (content: string | undefined) => (content ?? '').split('\n\n').slice(3).join('\n\n')
+
+  it('default to 8 KiB and 2 KiB; stored old defaults read as the new ones, other values are kept', async () => {
+    const f = await fixture()
+    expect((await f.session.inspect()).settings).toMatchObject({ tokenBudget: 8192, userTokenBudget: 2048 })
+    await f.session.configure({ mode: 'auto' })
+    await writeFile(
+      join(f.session.root, 'settings.json'),
+      JSON.stringify({ mode: 'auto', tokenBudget: 2048, userTokenBudget: 512 }),
+    )
+    expect((await f.session.inspect()).settings).toMatchObject({ tokenBudget: 8192, userTokenBudget: 2048 })
+    await writeFile(
+      join(f.session.root, 'settings.json'),
+      JSON.stringify({ mode: 'auto', tokenBudget: 3000, userTokenBudget: 512 }),
+    )
+    expect((await f.session.inspect()).settings).toMatchObject({ tokenBudget: 3000, userTokenBudget: 512 })
+  })
+
+  it('the fixed header does not count toward the workspace limit', async () => {
+    const f = await fixture()
+    await f.session.configure({ mode: 'auto', tokenBudget: 256 })
+    const text = `${'x'.repeat(250)}\n`
+    await f.files(1).write(f.index, text)
+    const snapshot = await f.session.snapshot(2)
+    expect(snapshot?.omitted).toBe(false)
+    expect(snapshot?.content).toContain(text.trimEnd())
+  })
+
+  it('cuts at a whole line and says how much is left, from which line of which file', async () => {
+    const f = await fixture()
+    await f.session.configure({ mode: 'auto', tokenBudget: 600 })
+    const lines = Array.from({ length: 40 }, (_, i) => `- 第 ${i + 1} 条：中文约定写在这里，一条一行。`)
+    const text = `${lines.slice(0, 20).join('\n')}\n\n${lines.slice(20).join('\n')}\n`
+    await f.files(1).write(f.index, text)
+    const content = layer((await f.session.snapshot(2))?.content)
+    const notice =
+      /\[Memory truncated at the size limit: (\d+) more paragraphs \(about ([\d.]+) KB\) not shown, from line (\d+) of (.+)\. Read them with the read tool when they may matter\.\]$/u.exec(
+        content,
+      )
+    expect(notice).not.toBeNull()
+    const [, , kb, line, path] = notice as RegExpExecArray
+    expect(path).toBe(f.index)
+    const shown = content.slice(0, notice?.index).replace(/\n$/u, '')
+    // Whole lines only, and never half a character.
+    for (const row of shown.split('\n')) expect(row === '' || lines.includes(row)).toBe(true)
+    expect(Buffer.byteLength(content)).toBeLessThanOrEqual(600)
+    // Reading from that line gives the first line that was left out.
+    const all = text.split('\n')
+    expect(text.startsWith(shown)).toBe(true)
+    expect(Number(line)).toBe(shown.split('\n').length + 1)
+    expect(all.slice(Number(line) - 1).join('\n')).toBe(text.slice(shown.length + 1))
+    expect(Number(kb)).toBeGreaterThan(0)
+  })
+})

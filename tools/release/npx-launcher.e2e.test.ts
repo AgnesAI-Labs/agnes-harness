@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { expect, it } from 'vitest'
+import { NODE_MEMORY_FLAGS } from '../../packages/system-node/runtime/node-flags.mjs'
 
 const execute = promisify(execFile)
 
@@ -25,16 +26,19 @@ it.each([false, true])(
       }
       await writeFile(
         join(root, 'dist/agnes.mjs'),
-        withVendor
-          ? 'import { value } from "@fixture/runtime"; console.log(value)'
-          : 'console.log("launcher-ready")',
+        `${
+          withVendor
+            ? 'import { value } from "@fixture/runtime"; console.log(value)'
+            : 'console.log("launcher-ready")'
+        }; console.log(JSON.stringify(process.execArgv))`,
       )
       const { stdout } = await execute(process.execPath, [join(root, 'bin/agh'), '--version'], {
         cwd: root,
         env: { PATH: process.env.PATH, HOME: root, AGH_HOME: join(root, 'agh') },
         timeout: 10_000,
       })
-      expect(stdout).toBe('launcher-ready\n')
+      // The CLI runs with the same Node memory flags as the SEA executable.
+      expect(stdout).toBe(`launcher-ready\n${JSON.stringify(NODE_MEMORY_FLAGS)}\n`)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

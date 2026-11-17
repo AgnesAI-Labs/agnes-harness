@@ -221,6 +221,8 @@ export async function openAdapters(
     fullAccessReadOnlyRoots?: () => readonly string[]
     /** The installation homes whose files are agh configuration: never offered a lasting approval. */
     configHomes?: () => readonly string[]
+    /** A session's own environment, applied to each of its commands. */
+    sessionEnvironment?: (sessionKey: string) => import('@agnes/protocol').SessionEnvironment | undefined
     /** Selects the session store. Omitted means the built-in `sqlite` provider. A change applies on the next start. */
     persistence?: { provider?: string }
     /** Providers already loaded, in addition to package exports named `persistenceProvider`. */
@@ -443,6 +445,7 @@ export async function openAdapters(
         ? {}
         : { fullAccessReadOnlyRoots: opts.fullAccessReadOnlyRoots }),
       ...(transport || !opts.configHomes ? {} : { configHomes: opts.configHomes }),
+      ...(opts.sessionEnvironment ? { sessionEnvironment: opts.sessionEnvironment } : {}),
     })
 
     return {

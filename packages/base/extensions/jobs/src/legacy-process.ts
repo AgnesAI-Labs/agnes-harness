@@ -17,10 +17,22 @@ export async function legacyProcess(
     if (process.env[key] !== undefined) env[key] = process.env[key]!
   const child = spawn(argv[0]!, argv.slice(1), { cwd, env, detached: true, stdio: ['pipe', 'pipe', 'pipe'] })
   let ended = false,
+    killed = false,
     cleanupError: Error | undefined
+  const signalGroup = (signal: NodeJS.Signals) => {
+    if (!child.pid || killed) return
+    try {
+      process.kill(-child.pid, signal)
+    } catch (error) {
+      // Once absent, this identity must never be signalled again after a delayed exit event.
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') killed = true
+      throw error
+    }
+    if (signal === 'SIGKILL') killed = true
+  }
   child.once('exit', () => {
     try {
-      if (child.pid) process.kill(-child.pid, 'SIGKILL')
+      signalGroup('SIGKILL')
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ESRCH') cleanupError = error as Error
     }
@@ -60,11 +72,11 @@ export async function legacyProcess(
     },
     signal: async (signal) => {
       if (ended) return
-      if (child.pid) process.kill(-child.pid, signal)
+      signalGroup(signal)
     },
     close: async () => {
       try {
-        if (!ended && child.pid) process.kill(-child.pid, 'SIGKILL')
+        if (!ended) signalGroup('SIGKILL')
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
       }

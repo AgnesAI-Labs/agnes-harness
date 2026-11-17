@@ -277,6 +277,32 @@ describe('live-composition status publication', () => {
     }
   })
 
+  it('writeFragments produces the same file as write and skips unchanged content', async () => {
+    const profile = home(),
+      writer = await createLiveCompositionWriter(profile)
+    try {
+      const a = { ...session(), sessionKey: 'a' },
+        b = { ...session(), sessionKey: 'b' },
+        fragments = [JSON.stringify(a), JSON.stringify(b)]
+      writer.write([a, b])
+      const file = statusFile(profile),
+        expected = readFileSync(file, 'utf8')
+      writer.write([])
+      writer.writeFragments(fragments)
+      expect(readFileSync(file, 'utf8')).toBe(expected)
+      age(file, HOUR)
+      const before = statSync(file, { bigint: true })
+      writer.writeFragments(fragments)
+      const after = statSync(file, { bigint: true })
+      expect(after.ino).toBe(before.ino)
+      expect(after.mtimeNs).toBe(before.mtimeNs)
+      writer.writeFragments([])
+      expect(JSON.parse(readFileSync(file, 'utf8')).sessions).toEqual([])
+    } finally {
+      writer.close()
+    }
+  })
+
   it('republishes unchanged status when its file has been removed', async () => {
     const profile = home(),
       writer = await createLiveCompositionWriter(profile)

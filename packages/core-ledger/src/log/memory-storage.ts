@@ -14,7 +14,6 @@ import {
   type CreateDelegatedChildResult,
   type DeferCreatingChildInput,
   type DeferredChildFact,
-  isActiveChildState,
   type PlannedWorkspace,
   type ReservationRecord,
   type ReserveRequest,
@@ -23,7 +22,7 @@ import {
   type TreeUsage,
 } from '@agnes/core-child-control/child/types'
 import { type Clock, CoreError, type Event, type Seq, type SessionKey } from '@agnes/core-common/types'
-import { transitionMemoryChild } from './memory-child-state.js'
+import { lostChildPort, transitionMemoryChild } from './memory-child-state.js'
 import { MemoryStorageBase } from './memory-storage-base.js'
 import {
   type CommitReceipt,
@@ -513,8 +512,14 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
     next: ChildTaskRecord['state'],
     admission?: { maxFanOut: number },
   ): Promise<boolean> {
-    return transitionMemoryChild(this.childTasks, childKey, expectedRevision, next, admission)
+    return transitionMemoryChild(this.childTasks, childKey, expectedRevision, next, admission, this.slot)
   }
+
+  private readonly writerLive = (key: SessionKey) => (this.books.get(key)?.lease?.until ?? -1) >= this.clock()
+  private readonly lost = lostChildPort(this.childTasks, this.writerLive)
+  readonly listLostChildren = this.lost.listLostChildren
+  readonly settleLostChild = this.lost.settleLostChild
+  private readonly slot = this.lost.takesSlot
 
   async nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number> {
     const key = `${parentKey}\0${effectId}`
@@ -562,10 +567,10 @@ export class MemoryStorage extends MemoryStorageBase implements StorageAdapter, 
       return { status: record.inputHash === input.inputHash ? 'existing' : 'conflict', record }
     }
     const parentActive = [...this.childTasks.values()].filter(
-      (row) => row.parentKey === input.parentKey && isActiveChildState(row.state),
+      (row) => row.parentKey === input.parentKey && this.slot(row),
     ).length
     const rootActive = [...this.childTasks.values()].filter(
-      (row) => row.rootTaskId === input.rootTaskId && isActiveChildState(row.state),
+      (row) => row.rootTaskId === input.rootTaskId && this.slot(row),
     ).length
     const fan = admitFanOut(parentActive, rootActive, input.maxFanOut)
     if (!fan.ok) return { status: 'refused', reason: 'fan_out', message: fan.message }

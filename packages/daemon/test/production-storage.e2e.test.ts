@@ -6,7 +6,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -27,7 +26,7 @@ import {
 } from '@agnes/host'
 import { telemetrySnapshot } from '@agnes/observability'
 import { hasPrivateDaclSync } from '@agnes/system-node'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { MemoryTickets } from '../src/storage/lister.js'
 import { buildConfig, type DaemonConfig, DEFAULT_LIMITS } from '../src/supervisor/config.js'
@@ -37,13 +36,29 @@ import {
   type StartSupervisorOptions,
   startProductionSupervisor,
 } from '../src/supervisor/supervisor.js'
+import { fixtureDocumentsDirectory } from './managed-documents-fixture.js'
+import { mcpPreparationDiagnostics } from './mcp-preparation-diagnostics.js'
 import { sourceTranspileCache } from './source-transpile-cache.js'
+
+vi.mock('@agnes/host-infrastructure/documents-directory', async (original) => ({
+  ...(await original<typeof import('@agnes/host-infrastructure/documents-directory')>()),
+  resolveDocumentsDirectory: (await import('./managed-documents-fixture.js')).fixtureDocumentsDirectory,
+}))
 
 // These workers assemble the production package graph from TypeScript source before they say
 // hello. Cold assembly exceeded 90 s in the Windows regression run; a 180 s diagnostic window
 // completed the same startup and Skill assertions. Keep this source-only test budget separate
 // from the production startup limit, and leave room for assertions and cleanup below.
 const SOURCE_WORKER_STARTUP_MS = 180_000
+const runtimeObserver = new URL('./fixtures/mcp-runtime-observer.mjs', import.meta.url)
+const { readExecFileObservations } = (await import(runtimeObserver.href)) as {
+  readExecFileObservations(file: string): unknown
+}
+function observedWorkerArguments(output: string): string[] {
+  const preload = new URL(runtimeObserver)
+  preload.searchParams.set('output', output)
+  return ['--import', preload.href, '--import', 'tsx']
+}
 
 function profile(dataDir: string): ResolvedProfile {
   const body = {
@@ -193,9 +208,8 @@ describe('production supervisor storage', () => {
     })
     await seeded.release(productionSession, 'fact-fixture')
     await seeded.close()
-    // Every start keeps exactly one private managed workspace for chats under the data directory.
-    const chats = join(realpathSync(dir), 'chats')
-    const chatsOnly = { items: [{ path: chats, kind: 'chats', revision: 1 }] }
+    // Fresh installs keep one stable current root in Documents and never create a legacy data/chats.
+    let chats: string | undefined
     const supervisor = await startProductionSupervisor(o)
     const rpc = await client(supervisor.socketPath)
     try {
@@ -205,6 +219,27 @@ describe('production supervisor storage', () => {
         protocolVersion: 1,
         clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
       })
+      const listed = (await rpc.call(4, '_agnes/v1/workspace.list', {})) as {
+        items: Array<{
+          path: string
+          kind: string
+          managedRole?: string
+          revision: number
+          available: boolean
+        }>
+      }
+      expect(listed.items).toHaveLength(1)
+      const current = listed.items[0]
+      if (!current) throw new Error('current managed chats root missing')
+      expect(current).toMatchObject({
+        kind: 'chats',
+        managedRole: 'current',
+        revision: 1,
+        available: true,
+      })
+      chats = current.path
+      expect(chats.startsWith(join(await fixtureDocumentsDirectory(), 'Agnes Harness', 'chats-'))).toBe(true)
+      expect(existsSync(join(dir, 'chats'))).toBe(false)
       await expect(
         rpc.call(2, '_agnes/v1/jobs.enqueue', {
           idempotencyKey: 'production-job',
@@ -218,7 +253,6 @@ describe('production supervisor storage', () => {
       ).resolves.toEqual({ granted: true })
       if (createPlatform().snapshot().os === 'win32') expect(hasPrivateDaclSync(chats)).toBe(true)
       else expect(statSync(chats).mode & 0o777).toBe(0o700)
-      await expect(rpc.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject(chatsOnly)
     } finally {
       rpc.close()
       await supervisor.close()
@@ -234,7 +268,10 @@ describe('production supervisor storage', () => {
       await expect(
         retry.call(2, '_agnes/v1/auth.claim', { kind: 'production-restart', value: 'same-event' }),
       ).resolves.toEqual({ granted: false })
-      await expect(retry.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject(chatsOnly)
+      await expect(retry.call(4, '_agnes/v1/workspace.list', {})).resolves.toMatchObject({
+        items: [{ path: chats, kind: 'chats', managedRole: 'current', revision: 1, available: true }],
+      })
+      expect(existsSync(join(dir, 'chats'))).toBe(false)
       await expect(
         retry.call(3, '_agnes/v1/session.factChain', {
           sessionId: productionSession,
@@ -475,6 +512,7 @@ describe('production supervisor storage', () => {
   it('projects a killed stdio MCP generation without degrading an unrelated active server', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-mcp-health-'))
     const server = join(dir, 'mcp-health-server.mjs')
+    const runtimeObservation = join(dir, 'daemon', 'mcp-runtime-observer.jsonl')
     const previousAllowlist = process.env.AGNES_MCP_STDIO_ALLOWLIST
     const previousPath = process.env.PATH
     let supervisor: Awaited<ReturnType<typeof startProductionSupervisor>> | undefined
@@ -519,7 +557,7 @@ describe('production supervisor storage', () => {
         processIdentity: async (pid) =>
           pid === process.pid ? { state: 'alive', startId: 'mcp-health-test' } : { state: 'dead' },
         workerExecPath: process.execPath,
-        workerExecArgv: ['--import', 'tsx'],
+        workerExecArgv: observedWorkerArguments(runtimeObservation),
         workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
       })
       const connection = await client(supervisor.socketPath)
@@ -607,7 +645,36 @@ describe('production supervisor storage', () => {
           clientId: 'mcp-health-test',
           commandId: `${serverId}-enable`,
         })) as { operationId: string }
-        expect((await wait(enabled.operationId)).state).toBe('succeeded')
+        const operation = await wait(enabled.operationId)
+        const actualRuntimeInspection = readExecFileObservations(runtimeObservation)
+        if (operation.state !== 'succeeded')
+          console.error(
+            'MCP_FAILURE_DIAGNOSTICS',
+            JSON.stringify({
+              entryReached: existsSync(pidFile),
+              actualWorkerRuntimeInspection: actualRuntimeInspection,
+              separatePreparationProbe: await mcpPreparationDiagnostics(
+                {
+                  id: serverId,
+                  transport: 'stdio',
+                  defer: false,
+                  cmd: [executable, server, pidFile],
+                  sandboxProfile: windows ? 'off-with-warning' : 'workspace-write',
+                  workspacePath: dir,
+                },
+                {
+                  home: dir,
+                  dataDir: dir,
+                  profileDir: join(dir, 'profiles', 'local-dev'),
+                  ...(process.env.PATH ? { path: process.env.PATH } : {}),
+                },
+              ),
+            }),
+          )
+        expect(operation, JSON.stringify(operation)).toMatchObject({ state: 'succeeded' })
+        expect(actualRuntimeInspection).toEqual(
+          expect.arrayContaining([expect.objectContaining({ event: 'observer-ready' })]),
+        )
         return { revision: descriptor.revision, pidFile }
       }
       const a = await activate('a')
@@ -670,6 +737,7 @@ describe('production supervisor storage', () => {
     async () => {
       const dir = mkdtempSync(join(tmpdir(), 'agnes-resource-secret-'))
       const server = join(dir, 'mcp-secret-server.mjs')
+      const runtimeObservation = join(dir, 'daemon', 'mcp-runtime-observer.jsonl')
       const observation = join(dir, 'mcp-observation.json')
       const sentinel = ['resource', 'credential', 'audit', 'marker'].join('-')
       const expectedHash = createHash('sha256').update(sentinel, 'utf8').digest('hex')
@@ -717,7 +785,7 @@ describe('production supervisor storage', () => {
               ? { state: 'alive' as const, startId: 'resource-secret-test' }
               : { state: 'dead' as const },
           workerExecPath: process.execPath,
-          workerExecArgv: ['--import', 'tsx'],
+          workerExecArgv: observedWorkerArguments(runtimeObservation),
           workerEntry: fileURLToPath(new URL('../src/worker/main.ts', import.meta.url)),
         }
         supervisor = await startProductionSupervisor(startOptions)
@@ -787,10 +855,39 @@ describe('production supervisor storage', () => {
           clientId: 'resource-secret-test',
           commandId: 'resource-secret-test',
         })) as { operationId: string }
-        await expect(wait(tested.operationId)).resolves.toMatchObject({
+        const testOperation = await wait(tested.operationId)
+        const actualRuntimeInspection = readExecFileObservations(runtimeObservation)
+        if (testOperation.state !== 'succeeded')
+          console.error(
+            'MCP_FAILURE_DIAGNOSTICS',
+            JSON.stringify({
+              entryReached: existsSync(observation),
+              actualWorkerRuntimeInspection: actualRuntimeInspection,
+              separatePreparationProbe: await mcpPreparationDiagnostics(
+                {
+                  id: 'secret-audit',
+                  transport: 'stdio',
+                  defer: false,
+                  cmd: [process.execPath, server, expectedHash, observation],
+                  sandboxProfile: process.platform === 'win32' ? 'off-with-warning' : 'workspace-write',
+                  workspacePath: dir,
+                },
+                {
+                  home: dir,
+                  dataDir: dir,
+                  profileDir: join(dir, 'profiles', 'local-dev'),
+                  ...(process.env.PATH ? { path: process.env.PATH } : {}),
+                },
+              ),
+            }),
+          )
+        expect(testOperation, JSON.stringify(testOperation)).toMatchObject({
           state: 'succeeded',
           result: { toolCount: 1 },
         })
+        expect(actualRuntimeInspection).toEqual(
+          expect.arrayContaining([expect.objectContaining({ event: 'observer-ready' })]),
+        )
         const enabled = (await call('_agnes/v1/mcp.servers.enable', {
           profile: 'local-dev',
           serverId: 'secret-audit',

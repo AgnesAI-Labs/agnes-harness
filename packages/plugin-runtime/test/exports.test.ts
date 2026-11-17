@@ -17,6 +17,7 @@ describe('plugin-runtime exports', () => {
       './provided-externals': './src/provided-externals.ts',
       './bundled': './src/bundled.ts',
       './deferred-contract': './src/deferred-contract.ts',
+      './channel-contract': './src/channel-contract.ts',
     })
   })
 

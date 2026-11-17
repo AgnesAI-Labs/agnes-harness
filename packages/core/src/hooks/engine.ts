@@ -22,7 +22,7 @@ export const HOOK_UNHANDLED: unique symbol = Symbol('agnes.hook-unhandled')
 
 // The engine fills platform itself (assembly-time facts handed in at construction), so a dispatch
 // caller never supplies it - one source, one snapshot, identical for every hook of the kernel.
-export type DispatchContext = Omit<HookContext, 'lease' | 'projections' | 'platform'> & {
+export type DispatchContext = Omit<HookContext, 'lease' | 'projections' | 'platform' | 'sideCall'> & {
   lease?: HookContext['lease']
   workspaceHooks?: HookInvocationSnapshot
   workspaceSandbox?: WorkspaceHookSandbox
@@ -33,6 +33,7 @@ type EngineOptions = ConstructorParameters<typeof HookDispatch>[0] & {
   retainSessionRefIdentity?: (session: HookContext['session']) => boolean
   /** Read-only facts every hook context carries (spec 2026-09-15 §4 row 9). Required: no default platform. */
   platform: PlatformFacts
+  sideCallFor?: (caller: string) => import('../loop/scoped-side-call.js').ScopedSideCallPort
   /** Text budget a `tool_result` return is cut to before it is validated or cloned. */
   toolResultMaxBytes?: number
 }
@@ -136,40 +137,53 @@ export class HookEngine {
     })
     return this.dispatcher.run(
       event,
-      entries.map((registration) => ({
-        source: registration.meta.source,
-        contextBlocking: registration.meta.trust === 'builtin' && registration.meta.contextBlocking === true,
-        invoke: async ({ signal, replayed }) => {
-          const lease = this.options.leaseFor ? this.options.leaseFor(registration.meta.source) : legacyLease
-          if (!lease) throw new CoreError('E_ENVELOPE', 'hook source lease unavailable')
-          const payload = payloadSnapshot(readPayload())
-          const handlerContext: HookContext = Object.freeze({
-            ...identity,
-            projections: unavailableProjections,
-            platform: this.options.platform,
-            lease: freeze(structuredClone(lease)),
-            log,
-            signal,
-            replayed,
-            ...(context.unattended ? { unattended: true } : {}),
-            ...(context.workspaceHooks
-              ? { workspaceHooks: freeze(structuredClone(context.workspaceHooks)) }
-              : {}),
-            ...(context.workspaceSandbox ? { [WORKSPACE_HOOK_SANDBOX]: context.workspaceSandbox } : {}),
-          })
-          const handler = registration.handler as HookHandler<E>
-          const invoke = async () => {
-            const value = await handler(payload, handlerContext)
-            return value === (HOOK_UNHANDLED as unknown)
-              ? (value as never)
-              : authorHookReturn(event, value, this.options.toolResultMaxBytes)
-          }
-          // Emit dispatches and timeout arbitration may stop awaiting a handler before its raw
-          // promise settles. When a Host-fitted workspace sandbox is present, register that raw
-          // promise with the invocation scope so its lease cannot be released underneath it.
-          return context.workspaceSandbox?.track ? context.workspaceSandbox.track(() => invoke()) : invoke()
-        },
-      })),
+      entries.map((registration) => {
+        let sideCall: import('../loop/scoped-side-call.js').ScopedSideCallPort | undefined
+        return {
+          source: registration.meta.source,
+          ...(registration.meta.hookTimeoutMs === undefined
+            ? {}
+            : { timeoutMs: registration.meta.hookTimeoutMs }),
+          contextBlocking:
+            registration.meta.trust === 'builtin' && registration.meta.contextBlocking === true,
+          invoke: async ({ signal, replayed }) => {
+            const lease = this.options.leaseFor
+              ? this.options.leaseFor(registration.meta.source)
+              : legacyLease
+            if (!lease) throw new CoreError('E_ENVELOPE', 'hook source lease unavailable')
+            const payload = payloadSnapshot(readPayload())
+            if (registration.meta.sideCall && registration.meta.pluginRowId)
+              sideCall = this.options.sideCallFor?.(registration.meta.pluginRowId)
+            const handlerContext: HookContext = Object.freeze({
+              ...identity,
+              ...(sideCall ? { sideCall } : {}),
+              projections: unavailableProjections,
+              platform: this.options.platform,
+              lease: freeze(structuredClone(lease)),
+              log,
+              signal,
+              replayed,
+              ...(context.unattended ? { unattended: true } : {}),
+              ...(context.workspaceHooks
+                ? { workspaceHooks: freeze(structuredClone(context.workspaceHooks)) }
+                : {}),
+              ...(context.workspaceSandbox ? { [WORKSPACE_HOOK_SANDBOX]: context.workspaceSandbox } : {}),
+            })
+            const handler = registration.handler as HookHandler<E>
+            const invoke = async () => {
+              const value = await handler(payload, handlerContext)
+              return value === (HOOK_UNHANDLED as unknown)
+                ? (value as never)
+                : authorHookReturn(event, value, this.options.toolResultMaxBytes)
+            }
+            // Emit dispatches and timeout arbitration may stop awaiting a handler before its raw
+            // promise settles. When a Host-fitted workspace sandbox is present, register that raw
+            // promise with the invocation scope so its lease cannot be released underneath it.
+            return context.workspaceSandbox?.track ? context.workspaceSandbox.track(() => invoke()) : invoke()
+          },
+          close: () => sideCall?.close(),
+        }
+      }),
       context.signal,
       {
         replayed: context.replayed,

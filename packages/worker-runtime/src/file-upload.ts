@@ -25,7 +25,10 @@ export async function sessionFileUpload(session: HostSession, input: FileUploadR
   const upload = store
   const invoke = async (view: Parameters<Parameters<typeof port.run>[0]>[0]) => {
     try {
-      await assertWorkspacePublicRoot(view.root, view.fs())
+      await assertWorkspacePublicRoot(view.root, {
+        stat: view.fs().stat,
+        readScope: view.documentReadScope(),
+      })
       await upload.recover(view.root, view.fs())
       return await upload.request(input, view.root, view.fs())
     } catch (error) {

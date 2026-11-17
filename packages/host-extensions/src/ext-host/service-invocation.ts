@@ -35,7 +35,7 @@ export type PreparedServiceInvocation = Readonly<{
   entry: ServiceRegistration
 }>
 export type ServiceInvocationDeps = {
-  registry: ServiceRegistry
+  registry: Pick<ServiceRegistry, 'resolve'>
   authority?: ServiceAuthority
   principals: SeamImplementations['principals']
   audit: AuditSink

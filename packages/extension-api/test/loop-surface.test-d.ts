@@ -28,7 +28,12 @@ it('takes an optional announce option on execute and batch', () => {
   expectTypeOf<Tools['execute']>().parameter(2).toEqualTypeOf<LoopToolCallOptions | undefined>()
   expectTypeOf<Tools['batch']>().parameter(2).toEqualTypeOf<LoopToolCallOptions | undefined>()
   expectTypeOf<NonNullable<LoopToolCallOptions['announce']>>().toEqualTypeOf<
-    true | { readonly content: Array<{ type: 'text'; text: string } | { type: 'thinking'; text: string }> }
+    | true
+    | {
+        readonly content: Array<
+          { type: 'text'; text: string } | { type: 'thinking'; text: string; signature?: string }
+        >
+      }
   >()
   // An existing two-argument implementation still fits the port.
   const execute: Tools['execute'] = async (_call, _signal) => ({ content: [] })

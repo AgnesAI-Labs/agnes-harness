@@ -460,3 +460,43 @@ it('saves and runs a hot-installed agent through the current worker catalog, ref
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+it('rejects an alias of the legacy root at the common catalog entry point', () => {
+  const tables = sqliteTables()
+  const repo = new JobsRepo(tables.table('jobs'), () => 100)
+  const tasks = scheduledTasks({
+    db: openDaemonScheduleDb(tables.table('schedules')),
+    jobs: repo.scheduleJobs(),
+    clock: () => 100,
+    socketPath: '/unused',
+    serverIdentity: { pid: 1, processStartId: 'test' },
+    sources: {
+      normalize: async (path) => path,
+      workspaces: async () => [],
+      catalog: async () => ({ loops: [], modelAdapters: [] }),
+      presets: () => [],
+    },
+    legacy: {
+      root: '/legacy',
+      repo,
+      authority: {
+        scheduleEligible: () => false,
+        reserveScheduledBinding: () => undefined,
+        commitScheduledBinding: () => undefined,
+        interruptScheduledBinding: () => undefined,
+        revokeSchedule: () => undefined,
+      },
+      create: async () => {
+        throw new Error('must not create')
+      },
+    },
+  })
+  expect(() =>
+    tasks.catalog.create({
+      title: 'Forged',
+      prompt: 'go',
+      selector: { every_seconds: 3600 },
+      target: { kind: 'new-session', cwd: '/legacy/' },
+    }),
+  ).toThrow()
+})

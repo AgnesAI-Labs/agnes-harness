@@ -555,6 +555,42 @@ it('i01: turning full access off in a workspace session prevents a fresh automat
   }
 })
 
+it('a session opened by an input that turned memory writes off cannot write memory in auto mode', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agh-memory-writes-off-'))
+  homes.push(home)
+  const workspace = join(home, 'workspace')
+  await mkdir(workspace)
+  const target = hostMemoryRoot(home, workspace)
+  const { host } = await createTestHost({
+    dataDir: home,
+    workspaceRoot: workspace,
+    disableSessionTitle: true,
+    allowed: ['standard'],
+    packageDirs: { '@agnes/base': fileURLToPath(new URL('../../base', import.meta.url)) },
+    packages: { '@agnes/base': { plugins } },
+    approval: async () => ({
+      verdict: 'allowed-once',
+      answeredBy: { id: 'reviewer', org: 'local', role: 'user', deptPath: [], attrs: {} },
+    }),
+    script: [() => call('write', { path: target, content: 'WRITES_OFF_MEMORY' }), () => done],
+  })
+  try {
+    const inspection = host.memory(workspace, 'human')
+    if (!inspection) throw new Error('Memory unavailable')
+    await inspection.configure({ mode: 'auto' })
+    const session = await host.createSession({ cwd: workspace, preset: 'standard' })
+    await session.enqueue('next-turn', {
+      actor: { ...session.d.actor, attrs: { ...session.d.actor.attrs, memoryWrites: 'off' } },
+      content: [{ type: 'text', text: 'Write the preference' }],
+      origin: 'system',
+    })
+    await session.run({ until: 'turn-end', signal: AbortSignal.timeout(15000) })
+    expect((await inspection.readFile('MEMORY.md')).content).toBe('')
+  } finally {
+    await host.close()
+  }
+})
+
 it('round4: a memory file awaiting its approved response cannot write after the session is narrowed', async () => {
   const home = await mkdtemp(join(tmpdir(), 'agh-memory-permission-review-'))
   homes.push(home)

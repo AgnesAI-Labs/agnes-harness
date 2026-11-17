@@ -21,6 +21,54 @@ export type McpSandboxContext = Readonly<{
   probeExec?: BackendProbeExec
 }>
 const exec = promisify(execFile)
+const connectTimeout = () =>
+  Object.assign(new Error('MCP connection timed out'), { code: 'MCP_CONNECT_TIMEOUT' })
+
+/** Mirrors the existing connectMcp/manager default; callers supply their configured budget. */
+export function mcpConnectionBudget(timeoutMs = 10_000) {
+  const deadline = performance.now() + timeoutMs
+  const remaining = (): number => {
+    const ms = deadline - performance.now()
+    if (ms <= 0) throw connectTimeout()
+    return Math.ceil(ms)
+  }
+  return {
+    remaining,
+    async prepare<T>(signal: AbortSignal, operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+      signal.throwIfAborted()
+      const ms = remaining()
+      const controller = new AbortController()
+      const abort = () => controller.abort(signal.reason)
+      const timer = setTimeout(() => controller.abort(connectTimeout()), ms)
+      signal.addEventListener('abort', abort, { once: true })
+      let onAbort: () => void = () => undefined
+      try {
+        const result = await Promise.race([
+          new Promise<never>((_resolve, reject) => {
+            onAbort = () => reject(controller.signal.reason)
+            controller.signal.addEventListener('abort', onAbort, { once: true })
+          }),
+          Promise.resolve().then(() => {
+            controller.signal.throwIfAborted()
+            return operation(controller.signal)
+          }),
+        ])
+        controller.signal.throwIfAborted()
+        remaining()
+        return result
+      } catch (error) {
+        controller.signal.throwIfAborted()
+        remaining()
+        throw error
+      } finally {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', abort)
+        controller.signal.removeEventListener('abort', onAbort)
+      }
+    },
+  }
+}
+
 const unavailable = () =>
   Object.assign(
     new Error(
@@ -97,6 +145,7 @@ async function hardDenyRoots(workspace: string, readPaths: string[], context: Mc
 const probeExec: BackendProbeExec = async (argv, options) => {
   const command = argv[0]
   if (!command) throw unavailable()
+  options.signal?.throwIfAborted()
   try {
     const result = await exec(command, argv.slice(1), {
       cwd: options.cwd,
@@ -144,10 +193,20 @@ export async function sandboxMcpConfig(
   config: McpServerConfig,
   context: McpSandboxContext | undefined,
   signal: AbortSignal,
+  budget = mcpConnectionBudget(),
 ): Promise<McpServerConfig> {
   signal.throwIfAborted()
   if (config.transport !== 'stdio') return config
   if (config.sandboxProfile === 'off-with-warning') return config
+  return budget.prepare(signal, (signal) => confinedMcpConfig(config, context, signal, budget.remaining))
+}
+
+async function confinedMcpConfig(
+  config: McpServerConfig,
+  context: McpSandboxContext | undefined,
+  signal: AbortSignal,
+  remaining: () => number,
+): Promise<McpServerConfig> {
   if (
     !context?.home ||
     !isAbsolute(context.home) ||
@@ -194,8 +253,9 @@ export async function sandboxMcpConfig(
     const binaries = [executable, ...nodeLibraries.filter((file) => file.endsWith('.dylib'))]
     for (const binary of new Set(binaries)) {
       if (runtimePaths.some((root) => below(root, binary))) continue
+      signal.throwIfAborted()
       const { stdout } = await exec('/usr/bin/otool', ['-L', binary], {
-        timeout: 2000,
+        timeout: remaining(),
         maxBuffer: 1024 * 1024,
         signal,
         encoding: 'utf8',
@@ -248,6 +308,7 @@ export async function sandboxMcpConfig(
     denyPaths: await hardDenyRoots(workspace, readPaths, context),
     network: config.sandboxProfile === 'network' ? ('allow' as const) : ('deny' as const),
   }
+  signal.throwIfAborted()
   const backend = await detectBackend({
     level: 'L1',
     shell: 'posix',

@@ -43,6 +43,8 @@ export const SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
     'test',
     'reconnect',
     'remove',
+    'login',
+    'logout',
   ],
   package: [
     'inspect',
@@ -71,6 +73,7 @@ export const SUBCOMMANDS: Readonly<Record<string, readonly string[]>> = {
     'config',
     'tree',
     'generations',
+    'grants',
   ],
   profile: ['list', 'inspect', 'trust'],
   resources: ['list', 'get', 'operation', 'cancel', 'enable', 'disable'],

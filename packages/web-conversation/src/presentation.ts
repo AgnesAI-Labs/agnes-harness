@@ -24,6 +24,7 @@ export type ComposerActionPresentation = {
 export type KnownSessionModel = {
   route: string
   id: string
+  name?: string
   settings?: ModelSettings
   thinking?: ThinkingLevel
 }
@@ -97,12 +98,13 @@ export function thinkingLevelLabel(level: ThinkingLevel): string {
 
 export function modelSelectLabel(model: KnownSessionModel | undefined, t: Translate): string {
   if (!model) return t('composer.model.select')
-  return model.thinking ? `${model.id} ${thinkingLevelLabel(model.thinking)}` : model.id
+  const name = model.name?.trim() || model.id
+  return model.thinking ? `${name} ${thinkingLevelLabel(model.thinking)}` : name
 }
 
 export function modelSelectAccessibleName(model: KnownSessionModel | undefined, t: Translate): string {
   return model
-    ? t('composer.model.accessible.current', { id: model.id })
+    ? t('composer.model.accessible.current', { id: model.name?.trim() || model.id })
     : t('composer.model.accessible.fallback')
 }
 

@@ -50,7 +50,7 @@ function backend(inspect: (body: Record<string, unknown>) => Response): Fetcher 
   })
 }
 
-async function mount(fetcher: Fetcher, before?: () => void): Promise<void> {
+async function mount(fetcher: Fetcher, before?: () => void) {
   await renderPluginHost()
   before?.()
   history.replaceState(null, '', '/admin/plugins#source-dialog-token')
@@ -64,12 +64,20 @@ async function mount(fetcher: Fetcher, before?: () => void): Promise<void> {
   await vi.waitFor(() =>
     expect((document.querySelector('#plugin-list') as HTMLElement).textContent).not.toContain('正在'),
   )
+  return mounted
 }
 
 const sourceDialog = () => document.getElementById('source-dialog') as HTMLDialogElement
 const sourceType = () => document.getElementById('source-type') as HTMLSelectElement
 const sourceRef = () => document.getElementById('source-ref') as HTMLInputElement
 const sourceError = () => document.getElementById('source-error') as HTMLElement
+const sourceSubmit = () => {
+  const button = document.querySelector<HTMLButtonElement>(
+    '#source-form .dialog-actions button:not(#source-cancel)',
+  )
+  if (!button) throw new Error('Missing source check action')
+  return button
+}
 const inspectCalls = (fetcher: Fetcher) =>
   fetcher.mock.calls.filter(([url]) => String(url).endsWith('/api/inspect'))
 
@@ -93,11 +101,7 @@ function submit(type: string, ref: string): void {
   setNativeValue(sourceType(), type)
   setNativeValue(sourceRef(), ref)
   // happy-dom 的 requestSubmit 触达不了 React 的委托 submit；提交走显式按钮回调。
-  const button = document.querySelector<HTMLButtonElement>(
-    '#source-form .dialog-actions button:not(#source-cancel)',
-  )
-  if (!button) throw new Error('Missing source check action')
-  button.click()
+  sourceSubmit().click()
 }
 
 afterEach(async () => {
@@ -142,18 +146,82 @@ it('shows an example for the selected source type instead of the npm one', async
   await vi.waitFor(() => expect(placeholder()).toMatch(/^npm:/))
 })
 
-it('sends a well-formed source and closes the dialog once the check has been accepted', async () => {
+it.each([
+  ['file', '/path/to/my-plugin.tgz', 'file:/path/to/my-plugin.tgz'],
+  ['file', 'D:\\plugins\\my-plugin.tgz', 'file:D:/plugins/my-plugin.tgz'],
+  ['path', 'D:\\plugins\\my-plugin', 'path:D:/plugins/my-plugin'],
+  ['file', 'file:D:\\plugins\\my-plugin.tgz', 'file:D:/plugins/my-plugin.tgz'],
+])('sends a well-formed %s source %s and closes the accepted dialog', async (type, input, expected) => {
   const fetcher = backend(() => Response.json({ operationId: 'inspect-1', profile: 'local-dev' }))
   await mount(fetcher)
   await openSourceDialog()
 
-  submit('file', '/path/to/my-plugin.tgz')
+  submit(type, input)
 
   await vi.waitFor(() => expect(inspectCalls(fetcher)).toHaveLength(1))
   const sent = JSON.parse(String(inspectCalls(fetcher)[0]?.[1]?.body)) as { source: unknown }
-  expect(sent.source).toEqual({ type: 'file', ref: 'file:/path/to/my-plugin.tgz' })
+  expect(sent.source).toEqual({ type, ref: expected })
   await vi.waitFor(() => expect(sourceDialog().open).toBe(false))
 })
+
+it.each([
+  ['ready', 'button'],
+  ['ready', 'enter'],
+  ['revoked', 'button'],
+  ['offline', 'button'],
+  ['disposed', 'button'],
+] as const)(
+  'gates source submission through an inventory refresh: %s (%s)',
+  async (outcome, method) => {
+    const base = backend(() => Response.json({ operationId: 'inspect-1', profile: 'local-dev' }))
+    let finish!: (response: Response) => void
+    let refreshing = false
+    const fetcher = vi.fn<typeof fetch>((input, init) =>
+      refreshing && String(input).endsWith('/overview')
+        ? new Promise<Response>((resolve) => {
+            finish = resolve
+          })
+        : base(input, init),
+    )
+    const mounted = await mount(fetcher)
+    await openSourceDialog()
+    refreshing = true
+    const refresh = mounted.reload()
+    await vi.waitFor(() => expect(finish).toBeDefined())
+    await vi.waitFor(() => expect(sourceSubmit().disabled).toBe(true))
+    submit('file', '/path/to/my-plugin.tgz')
+    sourceRef().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    expect(inspectCalls(fetcher)).toHaveLength(0)
+    expect(sourceDialog().open).toBe(true)
+    if (outcome === 'disposed') mounted.dispose()
+    const response = await base('/overview')
+    const snapshot = await response.json()
+    if (outcome === 'revoked') snapshot.context.permissions = []
+    finish(outcome === 'offline' ? new Response('{}', { status: 503 }) : Response.json(snapshot))
+    await refresh
+    expect(inspectCalls(fetcher)).toHaveLength(0)
+    expect(sourceDialog().open).toBe(true)
+    if (outcome === 'disposed') return
+    if (outcome !== 'ready') {
+      await vi.waitFor(() => expect(sourceSubmit().disabled).toBe(true))
+      sourceSubmit().click()
+      sourceRef().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      expect(inspectCalls(fetcher)).toHaveLength(0)
+      expect(sourceDialog().open).toBe(true)
+      return
+    }
+    await vi.waitFor(() => expect(sourceSubmit().disabled).toBe(false))
+    expect(inspectCalls(fetcher)).toHaveLength(0)
+    expect(sourceDialog().open).toBe(true)
+    expect(sourceRef().value).toBe('/path/to/my-plugin.tgz')
+    if (method === 'button') sourceSubmit().click()
+    else sourceRef().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await vi.waitFor(() => expect(inspectCalls(fetcher)).toHaveLength(1))
+    const sent = JSON.parse(String(inspectCalls(fetcher)[0]?.[1]?.body)) as { source: unknown }
+    expect(sent.source).toEqual({ type: 'file', ref: 'file:/path/to/my-plugin.tgz' })
+    await vi.waitFor(() => expect(sourceDialog().open).toBe(false))
+  },
+)
 
 it('keeps the dialog open and shows the backend refusal inside it', async () => {
   const fetcher = backend(() =>

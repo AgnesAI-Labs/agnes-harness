@@ -7,6 +7,7 @@
     "./credentials": "./src/credentials.tsx",
     "./credentials-locale": "./src/credentials-locale.ts",
     "./credentials-api": "./src/credentials-api.ts",
+    "./credential-create": "./src/credential-create.tsx",
     "./admin": "./src/admin.tsx",
     "./api": "./src/api.ts",
     "./locale-shell": "./src/locales/shell.ts",

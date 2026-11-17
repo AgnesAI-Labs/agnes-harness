@@ -1,10 +1,16 @@
-import { randomBytes } from 'node:crypto'
-import { createOAuthHttpHandler, type OAuthHttpServerInfo } from '@agnes/resource-control-runtime'
+import { randomBytes, randomUUID } from 'node:crypto'
+import {
+  createOAuthHttpHandler,
+  type McpOAuthCompleteParams,
+  type McpOAuthSummary,
+  type OAuthHttpServerInfo,
+} from '@agnes/resource-control-runtime'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { localPipeFactories } from '../src/boot/pipe-factory.js'
 import type { LocalBackend } from './backend.js'
 
-/** Browser redirects and PKCE belong to the launch origin; credential writes go to the daemon. */
+/** Browser redirects and PKCE belong to the launch origin; the code exchange and the credential
+ * write happen in the daemon, so a static client secret never reaches this process. */
 export function localOAuthAdmin(backend: LocalBackend, baseUrl: URL) {
   if (!backend.web) throw new Error('local Web credential is unavailable')
   const clientId = `oauth-admin-web-${backend.scope.scopeID}`
@@ -44,14 +50,19 @@ export function localOAuthAdmin(backend: LocalBackend, baseUrl: URL) {
     }
   }
 
-  const credentialStore = {
-    async putOAuth(ref: string, credential: import('@agnes/resource-control-runtime').OAuthStoredCredential) {
-      const prefix = 'secret://mcp-oauth/'
-      if (!ref.startsWith(prefix)) throw new Error('OAuth reference is invalid')
+  const profile = backend.scope.profile
+  const login = {
+    async get(serverId: string): Promise<McpOAuthSummary> {
       await initialize()
-      await client.request('_agnes/v1/admin.mcp.oauth.save', {
-        serverId: ref.slice(prefix.length),
-        credential: { ...credential, scope: [...credential.scope] },
+      return client.request('_agnes/v1/admin.mcp.oauth.get', { profile, serverId })
+    },
+    async complete(params: McpOAuthCompleteParams): Promise<void> {
+      await initialize()
+      await client.request('_agnes/v1/admin.mcp.oauth.complete', {
+        ...params,
+        profile,
+        client: { ...params.client },
+        requestedScope: [...params.requestedScope],
       })
     },
   }
@@ -72,12 +83,23 @@ export function localOAuthAdmin(backend: LocalBackend, baseUrl: URL) {
     status: 'authorized' | 'needs-reconnect' | 'error',
   ) => {
     await initialize()
-    await client.mcp.servers.oauth.statusSet({ profile: backend.scope.profile, serverId, status })
+    await client.mcp.servers.oauth.statusSet({ profile, serverId, status })
+    // A new sign-in takes effect without waiting for the next connection: reconnect the server.
+    if (status === 'authorized') {
+      const descriptor = await client.mcp.servers.get({ profile, serverId })
+      await client.mcp.servers.reconnect({
+        profile,
+        serverId,
+        expectedRevision: descriptor.revision,
+        clientId: await client.clientId(),
+        commandId: `mcp-oauth-reconnect-${randomUUID()}`,
+      })
+    }
   }
 
   const handle = createOAuthHttpHandler({
     secret,
-    credentialStore,
+    login,
     baseUrl,
     resolveServer,
     onAuthorizationStatus,

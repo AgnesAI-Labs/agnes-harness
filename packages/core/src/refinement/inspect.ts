@@ -122,6 +122,11 @@ export function readInFull(s: SessionImpl, key: string, version: number, seq: nu
   return read !== undefined && read.version === version && read.seq === seq
 }
 
+/** Whether this session read a saved entry (`ws.` or `user.`, never a cell of its own) in full here. */
+export function readSavedInFull(s: SessionImpl, key: string): boolean {
+  return reads.get(sessionIdentity(s))?.has(key) === true
+}
+
 const isKind = (v: unknown): v is Kind => KINDS.includes(v as Kind)
 const isText = (v: unknown, max: number): v is string =>
   typeof v === 'string' && v.length > 0 && v.length <= max

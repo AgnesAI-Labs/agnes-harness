@@ -34,6 +34,7 @@ export default defineConfig({
     'session-create.spec.ts',
     'session-activity.spec.ts',
     'mcp-management.spec.ts',
+    'mcp-oauth.spec.ts',
     'candidate-review.spec.ts',
     'first-run.spec.ts',
     'business-agents.spec.ts',

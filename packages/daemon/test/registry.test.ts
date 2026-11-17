@@ -476,6 +476,79 @@ describe('Registry<T> extraction (local/sessions.ts SessionRegistry, supervisor/
     expect(pool.acquire).toHaveBeenCalledTimes(2)
   })
 
+  // The discarded open's worker said hello, so it created the session and pinned the append it carried. The
+  // kernel refuses an append to an existing session, so the replacement must reopen without sending it again.
+  it('reopens a session created with a system prompt append without sending the append again', async () => {
+    let releaseFirst: ((link: unknown) => void) | undefined
+    const first = new Promise<unknown>((resolve) => {
+      releaseFirst = resolve
+    })
+    // A ledger that, like the kernel, pins an append only when it creates the session.
+    let pinned: string | undefined
+    let created = false
+    const createOrOpen = (append: string | undefined) => {
+      if (append !== undefined && created)
+        throw Object.assign(new Error('E_ENVELOPE: system prompt append applies only to a new session'), {
+          code: 'E_ENVELOPE',
+          detail: { reason: 'system-prompt-append' },
+        })
+      if (!created) pinned = append
+      created = true
+    }
+    const link = (token: string) => ({
+      alive: true,
+      hello: Promise.resolve({
+        kind: 'hello' as const,
+        token,
+        sessionKey: 'appended-session',
+        writerRunId: token,
+        generation: 1,
+        profileHash: 'sha256-profile',
+        lastSeq: 0,
+      }),
+      onExit: vi.fn(),
+      closeSession: vi.fn(async () => undefined),
+      command: vi.fn(),
+    })
+    const initial = link('old-generation')
+    const replacement = link('new-generation')
+    let acquireCalls = 0
+    const pool = {
+      acquire: vi.fn(async (_key: string, opts: { systemPromptAppend?: string }) => {
+        createOrOpen(opts.systemPromptAppend)
+        return ++acquireCalls === 1 ? first : replacement
+      }),
+      retire: vi.fn(),
+    } as unknown as WorkerPool
+    const registry = new WorkerRegistry(pool)
+    const request = {
+      key: 'appended-session',
+      cwd: '/workspace',
+      binding: await workspaceBinding('appended-session'),
+      systemPromptAppend: 'Work the ticket.',
+    }
+    const opening = registry.open(request)
+    await Promise.resolve()
+
+    registry.noteResourceSnapshotCommitted()
+    releaseFirst?.(initial)
+    const opened = await opening
+
+    expect(opened.session.writerRunId).toBe('new-generation')
+    expect(initial.closeSession).toHaveBeenCalledWith('resource-snapshot-reload')
+    expect(pinned).toBe('Work the ticket.')
+    expect(vi.mocked(pool.acquire).mock.calls.map(([, opts]) => opts.systemPromptAppend)).toEqual([
+      'Work the ticket.',
+      undefined,
+    ])
+    // The same open again is the same session; a different append for it is still refused.
+    await expect(registry.open(request)).resolves.toBe(opened)
+    await expect(registry.open({ ...request, systemPromptAppend: 'Something else.' })).rejects.toMatchObject({
+      data: { code: 'ID_CONFLICT' },
+    })
+    expect(pool.acquire).toHaveBeenCalledTimes(2)
+  })
+
   // The worker's tail replay for the discarded open can still be in flight when the fence trips. Were
   // those frames projected after the entry was gone they would fail the key, and that failure retires
   // whichever channel then holds the key: the replacement, so the open failed as an internal error.
@@ -1192,4 +1265,135 @@ it('fences generation migration by authenticated ownership and releases admissio
   await expect(
     registry.migrateGeneration('closed', 'owner', ownership, async () => 'migrated'),
   ).resolves.toBe('migrated')
+})
+
+it('freezes the entire idle upgrade roster through close and migration, refusing busy and opening entries', async () => {
+  const deferred = () => {
+    let resolve!: () => void
+    const promise = new Promise<void>((done) => {
+      resolve = done
+    })
+    return { promise, resolve }
+  }
+  const closing = deferred()
+  const acquiring = deferred()
+  const pool = {
+    async acquire(key: string) {
+      if (key === 'opening') await acquiring.promise
+      return {
+        alive: true,
+        hello: Promise.resolve({
+          kind: 'hello',
+          token: key,
+          sessionKey: key,
+          writerRunId: key,
+          generation: 1,
+          profileHash: 'fixture',
+          lastSeq: 0,
+        }),
+        onExit() {},
+        closeSession: () => closing.promise,
+        command: async (method: string) => (method === 'scan' ? [] : undefined),
+      }
+    },
+  } as unknown as WorkerPool
+  const registry = new WorkerRegistry(pool)
+  const ownership = { resolve: () => ({ active: true as const, principalId: 'owner' }) }
+  const main = await open(registry, { key: 'main', cwd: '/workspace' })
+  const worker = await open(registry, { key: 'worker', cwd: '/workspace' })
+  const ordinary = await open(registry, { key: 'ordinary', cwd: '/workspace' })
+  const releaseBusy = worker.session.beginActivity()
+  await expect(
+    registry.upgradeIdleSessions(['main', 'worker'], 'owner', ownership, async () => {}),
+  ).rejects.toThrow('E_GENERATION_SESSION_OPEN')
+  expect(registry.get('main')).toBe(main)
+  releaseBusy()
+  const opening = open(registry, { key: 'opening', cwd: '/workspace' })
+  await vi.waitFor(() => expect(registry.holds('opening', 'anything')).toBe(true))
+  await expect(
+    registry.upgradeIdleSessions(['main', 'opening'], 'owner', ownership, async () => {}),
+  ).rejects.toThrow('E_GENERATION_SESSION_OPEN')
+  acquiring.resolve()
+  await opening
+  const migrating = deferred()
+  const entered = deferred()
+  const upgrade = registry.upgradeIdleSessions(['main', 'worker'], 'owner', ownership, async () => {
+    entered.resolve()
+    await migrating.promise
+    throw new Error('E_GENERATION_EXECUTION_UNSETTLED')
+  })
+  for (const key of ['main', 'worker']) {
+    expect(registry.get(key)).toBeUndefined()
+    expect(() => registry.require(key)).toThrow('E_GENERATION_SESSION_OPEN')
+    await expect(open(registry, { key, cwd: '/workspace' })).rejects.toThrow('E_GENERATION_SESSION_OPEN')
+  }
+  expect(registry.get('ordinary')).toBe(ordinary)
+  closing.resolve()
+  await entered.promise
+  await expect(open(registry, { key: 'main', cwd: '/workspace' })).rejects.toThrow(
+    'E_GENERATION_SESSION_OPEN',
+  )
+  migrating.resolve()
+  await expect(upgrade).rejects.toThrow('E_GENERATION_EXECUTION_UNSETTLED')
+  await expect(open(registry, { key: 'main', cwd: '/workspace' })).resolves.toMatchObject({ key: 'main' })
+  await registry.closeAll()
+})
+
+it('asks the worker for outward command rules on every open of a managed key and refuses an open entry without them', async () => {
+  const managed = new Set(['managed-a'])
+  const workerExit: Array<() => void> = []
+  let n = 0
+  const channel = (key: string) => ({
+    alive: true,
+    hello: Promise.resolve({
+      kind: 'hello' as const,
+      token: `${key}-${++n}`,
+      sessionKey: key,
+      writerRunId: `${key}-${n}`,
+      generation: 1,
+      profileHash: 'sha256-profile',
+      lastSeq: 0,
+    }),
+    onExit: (notify: () => void) => void workerExit.push(notify),
+    closeSession: vi.fn(async () => undefined),
+    command: vi.fn(async (method: string) => (method === 'scan' ? [] : undefined)),
+  })
+  const acquire = vi.fn(async (key: string, _options: { outwardCommandRules?: true; resume?: boolean }) =>
+    channel(key),
+  )
+  const registry = new WorkerRegistry({ acquire, retire: vi.fn() } as unknown as WorkerPool, undefined, {
+    outwardCommandRules: (key) => {
+      if (key === 'unreadable') throw new Error('lineage unreadable')
+      return managed.has(key)
+    },
+  })
+  const rules = () => acquire.mock.calls.map(([key, options]) => [key, options.outwardCommandRules === true])
+
+  await open(registry, { key: 'managed-a', cwd: '/workspace' })
+  await open(registry, { key: 'ordinary', cwd: '/workspace' })
+  await open(registry, { key: 'unreadable', cwd: '/workspace' })
+  expect(rules()).toEqual([
+    ['managed-a', true],
+    ['ordinary', false],
+    ['unreadable', true],
+  ])
+
+  // Recovery after the worker exits reopens a watched session; it asks again.
+  registry.subscribe('managed-a', () => undefined)
+  for (const notify of workerExit.splice(0)) notify()
+  await vi.waitFor(() => expect(registry.get('managed-a')?.session.writerRunId).toBe('managed-a-4'))
+  expect(acquire.mock.calls.at(-1)).toMatchObject(['managed-a', { outwardCommandRules: true, resume: true }])
+
+  // A reopen by key after close asks again.
+  await registry.close('managed-a')
+  await open(registry, { key: 'managed-a', cwd: '/workspace', resume: true })
+  expect(rules().at(-1)).toEqual(['managed-a', true])
+
+  // A key that became managed while open without the rules is not handed back.
+  await open(registry, { key: 'late', cwd: '/workspace' })
+  managed.add('late')
+  await expect(open(registry, { key: 'late', cwd: '/workspace' })).rejects.toMatchObject({
+    data: { code: 'CAPABILITY_DENIED', reason: 'OUTWARD_COMMAND_RULES_OFF' },
+  })
+  await registry.closeAll()
 })

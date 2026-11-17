@@ -1,6 +1,10 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { SkillEnvironmentRequirement } from '../gen/ts/package-admin.js'
+import {
+  ExternalPackageDescriptor,
+  McpImportPreview,
+  SkillEnvironmentRequirement,
+} from '../gen/ts/package-admin.js'
 import { checkAdminData } from '../src/admin-contract.js'
 import {
   checkSequence,
@@ -179,6 +183,8 @@ const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown
     validatePackageAdminData('PackageCapabilityDiff' satisfies PackageAdminDataName, x),
   PackageBlocker: (x) => validatePackageAdminData('PackageBlocker' satisfies PackageAdminDataName, x),
   PackageWarning: (x) => validatePackageAdminData('PackageWarning' satisfies PackageAdminDataName, x),
+  PackageBundledOrigin: (x) =>
+    validatePackageAdminData('PackageBundledOrigin' satisfies PackageAdminDataName, x),
   PackageProvenanceParams: (x) => validatePackageAdminData('PackageProvenanceParams', x),
   PackageSourcePolicy: (x) => validatePackageAdminData('PackageSourcePolicy', x),
   PackageProvenance: (x) => validatePackageAdminData('PackageProvenance' satisfies PackageAdminDataName, x),
@@ -254,6 +260,8 @@ const CONFIG_VALIDATORS: Record<string, (x: unknown) => ValidationResult<unknown
   SkillImportParams: (x) => validatePackageAdminData('SkillImportParams' satisfies PackageAdminDataName, x),
   SkillImportResult: (x) => validatePackageAdminData('SkillImportResult' satisfies PackageAdminDataName, x),
   SkillEnvironmentRequirement: (x) => checkAdminData(SkillEnvironmentRequirement, x),
+  McpImportPreview: (x) => checkAdminData(McpImportPreview, x),
+  ExternalPackageDescriptor: (x) => checkAdminData(ExternalPackageDescriptor, x),
   PluginTreeArtifact: (x) => validatePackageAdminData('PluginTreeArtifact' satisfies PackageAdminDataName, x),
   PluginTreeGetParams: (x) => validatePackageAdminData('PackageListParams' satisfies PackageAdminDataName, x),
   PluginTreeListParams: (x) =>

@@ -67,7 +67,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
       'a person edited the paragraph or the file changed meanwhile; nothing was overwritten',
     'timeline.refinementSave.reason.approval-expired': 'the approval request was not answered within 7 days',
     'timeline.refinementSave.reason.user-memory-budget':
-      'user memory has no room for it (about 512 bytes, your own text first); nothing was changed or trimmed',
+      'the user memory file is full; nothing was changed or trimmed',
     'timeline.refinementSave.reason.model-cannot-write-user':
       'an earlier version did not let the model write user memory',
     'timeline.refinementSave.reason.workflow-run-unavailable':
@@ -151,8 +151,7 @@ export const refinementLocaleCatalog: LocaleCatalog = {
     'timeline.refinementSave.reason.unavailable': '现在无法保存（工作区记录或审批列表不可用）',
     'timeline.refinementSave.reason.conflict': '段落被人改过或文件在此期间变了；没有覆盖任何内容',
     'timeline.refinementSave.reason.approval-expired': '审批请求 7 天内没有答复',
-    'timeline.refinementSave.reason.user-memory-budget':
-      '用户记忆放不下它（约 512 字节，你自己写的内容优先）；没有改动或截断任何内容',
+    'timeline.refinementSave.reason.user-memory-budget': '用户记忆文件已写满；没有改动或截断任何内容',
     'timeline.refinementSave.reason.model-cannot-write-user': '早先的版本不允许模型写入用户记忆',
     'timeline.refinementSave.reason.workflow-run-unavailable':
       '它指的工作流运行不在本会话里，没有据此生成技能',

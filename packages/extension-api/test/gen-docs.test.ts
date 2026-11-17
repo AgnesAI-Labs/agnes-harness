@@ -55,6 +55,7 @@ describe('author documentation generation', () => {
       'requiresUser',
       'paths',
       'commandArg',
+      'outward',
     ])
     expect(tools).toContain('`isPresentational` is optional')
     expect(tools).toContain('does not override explicit approval or concurrency flags')

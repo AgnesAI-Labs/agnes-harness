@@ -5,12 +5,14 @@ import * as seamContracts from '@agnes/extension-api/seams'
 import * as typebox from '@sinclair/typebox'
 import * as typeboxCompiler from '@sinclair/typebox/compiler'
 import * as typeboxValue from '@sinclair/typebox/value'
+import * as channelContract from './channel-contract.js'
 import * as deferredContract from './deferred-contract.js'
 import * as author from './index.js'
 
 const builtins: Readonly<Record<string, object>> = Object.freeze({
   '@agnes/plugin-runtime': author,
   '@agnes/plugin-runtime/deferred-contract': deferredContract,
+  '@agnes/plugin-runtime/channel-contract': channelContract,
   '@agnes/extension-api': extensionApi,
   '@agnes/extension-api/seams': seamContracts,
   '@agnes/cordis': cordis,
@@ -69,6 +71,7 @@ export function registerProvidedExternal(specifier: string, namespace: object): 
 export const providedExternalVersions: Readonly<Record<string, string>> = Object.freeze({
   '@agnes/plugin-runtime': '0.0.0',
   '@agnes/plugin-runtime/deferred-contract': '0.0.0',
+  '@agnes/plugin-runtime/channel-contract': '0.0.0',
   '@agnes/extension-api': API_VERSION,
   '@agnes/extension-api/seams': API_VERSION,
   '@agnes/cordis': '0.0.0',

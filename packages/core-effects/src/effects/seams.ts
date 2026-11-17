@@ -1,5 +1,6 @@
 import type { Seq } from '@agnes/core-common/types'
 import type { HarnessEdit } from '@agnes/core-ledger/reduce/shapes'
+import type { WindowsWriteBoundary } from '@agnes/extension-api'
 import type {
   ApprovalGrantQuery,
   ApprovalSeam,
@@ -46,7 +47,11 @@ export type {
   CheckpointWorkspaceBinding,
   CheckpointWorkspaceFs,
 } from '@agnes/extension-api/seams'
-export type Enforcement = { level: 'full' | 'partial' | 'none'; scope: ('file' | 'network' | 'process')[] }
+export type Enforcement = {
+  level: 'full' | 'partial' | 'none'
+  scope: ('file' | 'network' | 'process')[]
+  boundary?: WindowsWriteBoundary
+}
 
 /** Opaque process boundary selected and cached by Host for one canonical workspace. */
 export interface SandboxWorkspaceBackend {
@@ -55,12 +60,25 @@ export interface SandboxWorkspaceBackend {
   ): readonly string[] | Promise<readonly string[]>
 }
 
+/**
+ * A boundary the Host itself applies when it starts a command, instead of argv a provider wraps. It
+ * is bound to the exact contract, the provider that starts the process and the policy digest it was
+ * decided for; a backend carrying it never rewrites argv, and a stale or altered copy is refused.
+ */
+export interface HostSpawnSandboxWorkspaceBackend {
+  readonly enforcementLocation: 'host-spawn'
+  readonly boundary: WindowsWriteBoundary
+  readonly owner: string
+  readonly policyDigest: string
+}
+
 /** Root-bound readiness. Callers cannot resubmit a root, backend id, policy, cache key or probe. */
 export interface SandboxReadinessCapability {
   ready(signal?: AbortSignal): Promise<SandboxWorkspaceBackend>
 }
 
-export type SandboxExecBackend = 'none' | 'l1' | 'remote'
+/** `windows-acl` is the Host-started Windows write restriction: partial, never a full L1 boundary. */
+export type SandboxExecBackend = 'none' | 'l1' | 'remote' | 'windows-acl'
 
 /**
  * Host-owned, already-authorized inputs for fitting a sandbox seam to one session workspace.
@@ -77,6 +95,8 @@ export interface SeamWorkspace {
   readonly shellCommand?: (command: string) => string[]
   readonly execBackend: SandboxExecBackend
   readonly enforcement: Enforcement
+  /** Present exactly when `execBackend` is `windows-acl`: the Host starts the process itself. */
+  readonly hostSpawn?: HostSpawnSandboxWorkspaceBackend
   /** Provider-owned private files require isolation; explicit full-access only prefers it (Host decides). */
   readonly requiredFileIsolation?: boolean
   /**
@@ -98,6 +118,7 @@ export interface SeamWorkspace {
         policyDigest: string
         backend: SandboxExecBackend
         provider?: string
+        hostSpawn?: HostSpawnSandboxWorkspaceBackend
         policy?: import('@agnes/extension-api').SandboxExecutionPolicy
         enforcement?: import('@agnes/extension-api').SandboxEnforcement
       }>

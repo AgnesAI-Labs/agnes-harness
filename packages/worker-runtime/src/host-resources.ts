@@ -2,13 +2,18 @@ import type { HostOptions, ResolvedProfile } from '@agnes/host'
 
 /** Runtime capabilities already bootstrapped for this worker; reuse them without reconnecting. */
 export type WorkerHostSkillResources = Readonly<{
+  channelInteractions?: NonNullable<HostOptions['channelInteractions']>
+  channelRuntime?: NonNullable<HostOptions['channelRuntime']>
+  bundledAppClient?: NonNullable<HostOptions['bundledAppClient']>
   scheduling?: NonNullable<HostOptions['scheduling']>
   decisionsChanged?: NonNullable<HostOptions['decisionsChanged']>
   boundWakes?: NonNullable<HostOptions['boundWakes']>
+  managedSessions?: NonNullable<HostOptions['managedSessions']>
   mcpManage?: NonNullable<HostOptions['mcpManage']>
   pluginManage?: NonNullable<HostOptions['pluginManage']>
   skillInstall?: NonNullable<HostOptions['skillInstall']>
   refinementSave?: NonNullable<HostOptions['refinementSave']>
+  autoTitleEligible?: NonNullable<HostOptions['autoTitleEligible']>
   /** The same bounded, session-scoped artifact reader used by the executable-owned Host path. */
   requestMedia: NonNullable<HostOptions['requestMedia']>
   skillResources?: NonNullable<HostOptions['skillResources']>

@@ -121,18 +121,18 @@ import {
 import { roleAuthority, rolePermissionContext } from '../child/role-authority.js'
 import { type ChildRolePort, type RoleDelegation, roleToolSnapshot } from '../child/roles.js'
 import { unbindChildFactory } from '../child/sessions.js'
-import { sessionCommandFloor } from '../command-table/floor.js'
 import { runDeferred } from '../execution/turn/deferred.js'
 import { restoreToolDisclosure } from '../execution/turn/tool-disclosure.js'
 import { turnWaitEvent } from '../execution/turn-wait.js'
 // A type-only import, erased at compile time, so it is not a runtime cycle back to the kernel.
 import type { CoreDiagName } from '../kernel.js'
+import { Listeners } from '../listeners.js'
 import { LoopChildren } from '../loop/children.js'
 import { SessionControls } from '../loop/controls.js'
 import { LoopEventRegistry, loopEventContext } from '../loop/events.js'
 import { drivenOutcome, isAdmissionEnding, publicOutcome, shouldStopLoop } from '../loop/outcome.js'
 import { createLoopContext, disposeLoopContext } from '../loop/ports.js'
-import { settleSideCalls, sideCallInFlight } from '../loop/side-call-receipts.js'
+import { settleSideCalls } from '../loop/side-call-receipts.js'
 import { drainMaintenance } from '../maintenance/recovery.js'
 import type {
   AuxiliaryVisionAssemblyInput,
@@ -175,12 +175,13 @@ import {
 } from './control.js'
 import { askApprovalAnswer } from './decision-delivery.js'
 import { DecisionCommands, type DecisionSource } from './decisions.js'
+import { claimedInputEvents } from './delivery-marker.js'
 import { assertCurrentDomainDecisions } from './domain-decision.js'
 import { sysEvent } from './events.js'
 import { appendExtensionEvent, prepareExtensionEvent } from './ext-events.js'
 import { compactionSettingsFor, contextWindowFor } from './gate.js'
 import { createChildTraceCache, exportVerifiedRlaf } from './history.js'
-import { claimFrom, type EnqueueMsg, inboxEvent, inputMessageEvents, inputTainted, TRIGGER } from './inbox.js'
+import { claimFrom, type EnqueueMsg, inboxEvent, inputTainted, TRIGGER } from './inbox.js'
 import { discloseTools, resolveModel, runInference } from './inference.js'
 import { LoopScope, stepWithinLoopDeadline } from './loop-deadline.js'
 import { resolvedModelInput, supportsComputerUse, toolNamesForModel, toolsForModel } from './model-tools.js'
@@ -215,7 +216,7 @@ import {
 } from './step-cap.js'
 import { sessionToolCatalog } from './tool-catalog.js'
 import { filteredTools, NO_TOOL_FILTER, type SessionToolFilter, setToolFilter } from './tool-filter.js'
-import { effectiveToolPolicy } from './tool-policy.js'
+import { effectiveToolPolicy, sessionFloor } from './tool-policy.js'
 import { runToolsPhase } from './tools.js'
 import { inboxBudget, rehydratedBudget } from './turn-budget.js'
 import { attend, attendRecovered, rehydratedCallState } from './turn-restore.js'
@@ -426,7 +427,7 @@ export type TurnEndReason =
   | 'interrupted'
 export type TurnOutcome = { reason: TurnEndReason; lastSeq: Seq; error?: RunError }
 
-export type SessionDeps = {
+export type SessionDeps = Pick<import('../kernel.js').SessionOptions, 'outwardCommandRules'> & {
   roleDelegation?: RoleDelegation
   childRoles?: ChildRolePort
   commandPathScope?: import('../command-table/floor.js').CommandPathScope
@@ -907,7 +908,7 @@ export class SessionImpl {
   /** Narrowed only by `setToolFilter`, and rebuilt from the ledger on open. Never widened. */
   toolFilter: SessionToolFilter = NO_TOOL_FILTER
   setToolFilter(request: unknown): Promise<{ seq: Seq; filter: SessionToolFilter }> {
-    return setToolFilter(this, request)
+    return this.listeners.settings.after(setToolFilter(this, request))
   }
 
   /** Read-only catalog from the same model filtering and authorized discovery as this session. */
@@ -942,21 +943,26 @@ export class SessionImpl {
     return this.d.log.lastSeq
   }
   /** Every committed batch, in commit order, as it is committed. */
-  onAppended(fn: (events: Event[]) => void): () => void {
-    return this.d.log.observeCommitted('*', fn)
-  }
+  onAppended = (fn: (events: Event[]) => void): (() => void) => this.d.log.observeCommitted('*', fn)
   /** Streamed model text as it arrives. It is never a ledger row and carries no seq. */
-  onPreview(fn: (p: PreviewDelta) => void): () => void {
-    return this.preview.on(fn)
+  readonly onPreview = (fn: (p: PreviewDelta) => void): (() => void) => this.preview.on(fn)
+  private readonly listeners = {
+    closed: new Listeners(),
+    settings: new Listeners(),
+    cancelled: new Listeners(),
+    runSettled: new Listeners(),
   }
+  /** Called once when `close()` finishes, whether it succeeded or failed. */
+  readonly onClosed = this.listeners.closed.on
+  /** Explicit cancellation and close, independent of the replaceable foreground turn controller. */
+  readonly onCancelled = this.listeners.cancelled.on
+  readonly onRunSettled = this.listeners.runSettled.on
+  /** Called after `setModel`, `setToolFilter` or `setPreset` resolves; never when one rejects. */
+  readonly onSettingsChanged = this.listeners.settings.on
   /** The text every inference still in flight has streamed so far. */
-  previewSnapshot(): PreviewSnapshot[] {
-    return this.preview.snapshot()
-  }
+  readonly previewSnapshot = (): PreviewSnapshot[] => this.preview.snapshot()
   /** Called once if this session's log seals itself; see SessionLogImpl.onFault. */
-  onFault(fn: (e: CoreError) => void): () => void {
-    return this.d.log.onFault(fn)
-  }
+  readonly onFault = (fn: (e: CoreError) => void): (() => void) => this.d.log.onFault(fn)
   get lane(): string {
     return this.d.lane
   }
@@ -995,13 +1001,7 @@ export class SessionImpl {
     // Keep previous instances until close: an in-flight batch may still own one after a preset switch.
     return instance.runtime
   }
-  private readonly commandFloor = sessionCommandFloor(
-    (tool) => this.turn?.snapshot.byName.get(tool)?.meta.commandArg,
-    (input, signal) => this.d.commandPathScope?.(input, signal) ?? Promise.resolve(undefined),
-    // The floor normalizes the `path` argument, so only that declaration can name a reference
-    // outside the workspace (`ToolMeta.paths[].nonWorkspaceSchemes`).
-    (t) => this.turn?.snapshot.byName.get(t)?.meta.paths?.find((p) => p.arg === 'path')?.nonWorkspaceSchemes,
-  )
+  private readonly commandFloor = sessionFloor(this)
   /** The selected policy inside this session's effective command and captured role floors. */
   toolPolicy(selection?: string) {
     return effectiveToolPolicy(this, this.toolPolicies, this.commandFloor, selection)
@@ -1364,7 +1364,7 @@ export class SessionImpl {
   ): Promise<Seq> {
     const expected = this.opSeq()
     const turnNumber = this.op()?.meta.turn ?? 0
-    if (!extra.sideCallsDrained && sideCallInFlight(this)) await settleSideCalls(this, expected)
+    if (!extra.sideCallsDrained) await settleSideCalls(this, expected)
     // Serialize completion with pause admission; whichever fact commits first wins.
     const seqs = await this.locked(async () => {
       if (reason === 'completed' && (await this.controls.paused()))
@@ -1465,7 +1465,7 @@ export class SessionImpl {
           (row) =>
             row.origin === 'system' &&
             row.trust === 'trusted' &&
-            (row.data as Inbox).items.some((item) => item.commandId === msg.commandId),
+            (row.data as Inbox | null)?.items.some((item) => item.commandId === msg.commandId),
         )
         if (original) return original.seq
       }
@@ -1652,7 +1652,7 @@ export class SessionImpl {
       await this.d.log.append(
         [
           inboxEvent(this.lane, this.d.actor, rest),
-          ...inputMessageEvents(item, this.lane),
+          ...(await claimedInputEvents(this, item, this.lane)),
           {
             type: 'turn/start',
             origin: 'system',
@@ -2047,6 +2047,7 @@ export class SessionImpl {
    * that a cancellation outlives the controller that delivered it.
    */
   abort(by: Actor = this.d.actor): Promise<AbortResult> {
+    this.listeners.cancelled.emit()
     this.abortRevision++
     return abortSession(this, by).finally(() => {
       cancelSessionRuntimes(this, [
@@ -2080,7 +2081,10 @@ export class SessionImpl {
     })
     this.running = work
     return work.finally(() => {
-      if (this.running === work) this.running = undefined
+      if (this.running === work) {
+        this.running = undefined
+        this.listeners.runSettled.emit()
+      }
     })
   }
 
@@ -2271,7 +2275,7 @@ export class SessionImpl {
   }
 
   setPreset(view: PresetView): Promise<Seq> {
-    return setPreset(this, view)
+    return this.listeners.settings.after(setPreset(this, view))
   }
 
   setModel(sel: {
@@ -2281,7 +2285,7 @@ export class SessionImpl {
     thinking?: ThinkingLevel | null
     contextWindow?: number | null
   }): Promise<Seq> {
-    return setModel(this, sel)
+    return this.listeners.settings.after(setModel(this, sel))
   }
 
   async setYolo(enabled: boolean, operator: Actor): Promise<Seq> {
@@ -2709,6 +2713,7 @@ export class SessionImpl {
     this.decisions.detach()
     const draining = this.activeWork.size > 0
     unbindChildFactory(this.key)
+    this.listeners.cancelled.emit()
     this.executePermits.close()
     this.ac.abort()
     this.loopChildren?.cancel()
@@ -2744,6 +2749,7 @@ export class SessionImpl {
       if (failures.length > 1) throw new AggregateError(failures, 'session close failed')
       forgetIdleChild(this)
     })
+    this.closePromise = this.closePromise.finally(() => this.listeners.closed.emit())
     return this.closePromise
   }
 }

@@ -1,0 +1,114 @@
+name: Local build sharing benchmark
+on:
+  workflow_call:
+    inputs:
+      runner: { type: string, required: true }
+      native: { type: string, required: true }
+      types: { type: string, required: true }
+    outputs:
+      artifact:
+        value: ${{ jobs.build.outputs.artifact }}
+      metrics:
+        value: ${{ jobs.probe.outputs.metrics }}
+      consumer-faster:
+        value: ${{ jobs.probe.outputs.consumer-faster }}
+permissions: { contents: read }
+env:
+  AGNES_NATIVE_BUILDER: glibc228
+defaults:
+  run: { shell: bash }
+jobs:
+  build:
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 20
+    outputs:
+      artifact: ${{ steps.identity.outputs.artifact }}
+      build-ms: ${{ steps.build.outputs.duration-ms }}
+      pack-ms: ${{ steps.pack.outputs.duration-ms }}
+      upload-ms: ${{ steps.uploaded.outputs.duration-ms }}
+      archive-bytes: ${{ steps.pack.outputs.archive-bytes }}
+    steps:
+      - if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version-file: .node-version, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run doctor:toolchain
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ inputs.native }}
+          path: .agnes-tmp/benchmark-native
+      - name: Restore and load native helpers
+        run: |
+          node tools/ci/prepared-artifact.mjs restore .agnes-tmp/benchmark-native
+          node --input-type=module -e "import setup from './tools/native-test-setup.mjs'; setup()"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ inputs.types }}
+          path: .agnes-tmp/benchmark-types
+      - run: node tools/ci/prepared-artifact.mjs restore .agnes-tmp/benchmark-types
+      - id: build
+        run: node tools/ci/build-sharing-benchmark.mjs measure build tools/e2e-web/ci.mjs prepare --prepared-local .agnes-tmp/benchmark-proof
+      - id: pack
+        run: |
+          node tools/ci/build-sharing-benchmark.mjs measure pack tools/ci/prepared-artifact.mjs pack local .agnes-tmp/benchmark-local
+          node -e 'require("node:fs").appendFileSync(process.env.GITHUB_OUTPUT, `archive-bytes=${require("node:fs").statSync(".agnes-tmp/benchmark-local/payload.tar").size}\n`)'
+      - id: identity
+        env:
+          BENCHMARK_RUNNER: ${{ inputs.runner }}
+        run: node -e 'require("node:fs").appendFileSync(process.env.GITHUB_OUTPUT, `artifact=local-sharing-${process.env.BENCHMARK_RUNNER}-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}\n`)'
+      - id: uploading
+        run: node tools/ci/build-sharing-benchmark.mjs timestamp
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.identity.outputs.artifact }}
+          path: .agnes-tmp/benchmark-local
+          include-hidden-files: true
+          if-no-files-found: error
+          compression-level: 0
+      - id: uploaded
+        env:
+          BENCHMARK_STARTED: ${{ steps.uploading.outputs.started }}
+        run: node tools/ci/build-sharing-benchmark.mjs elapsed "$BENCHMARK_STARTED"
+  probe:
+    needs: build
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 15
+    outputs:
+      metrics: ${{ steps.report.outputs.metrics }}
+      consumer-faster: ${{ steps.report.outputs.consumer-faster }}
+    steps:
+      - if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: { node-version-file: .node-version, cache: pnpm }
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm run doctor:toolchain
+      - id: downloading
+        run: node tools/ci/build-sharing-benchmark.mjs timestamp
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: .agnes-tmp/benchmark-local
+      - id: downloaded
+        env:
+          BENCHMARK_STARTED: ${{ steps.downloading.outputs.started }}
+        run: node tools/ci/build-sharing-benchmark.mjs elapsed "$BENCHMARK_STARTED"
+      - id: restore
+        run: node tools/ci/build-sharing-benchmark.mjs measure restore tools/ci/prepared-artifact.mjs restore .agnes-tmp/benchmark-local
+      - id: report
+        env:
+          BENCHMARK_RUNNER: ${{ inputs.runner }}
+          BENCHMARK_BUILD_MS: ${{ needs.build.outputs.build-ms }}
+          BENCHMARK_PACK_MS: ${{ needs.build.outputs.pack-ms }}
+          BENCHMARK_UPLOAD_MS: ${{ needs.build.outputs.upload-ms }}
+          BENCHMARK_DOWNLOAD_MS: ${{ steps.downloaded.outputs.duration-ms }}
+          BENCHMARK_RESTORE_MS: ${{ steps.restore.outputs.duration-ms }}
+          BENCHMARK_ARCHIVE_BYTES: ${{ needs.build.outputs.archive-bytes }}
+        run: node tools/ci/build-sharing-benchmark.mjs report

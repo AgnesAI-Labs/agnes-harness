@@ -18,6 +18,13 @@ export type OAuthStatePayload = Readonly<{
   codeVerifier: string
   nonce: string
   issuedAt: number
+  /** The credential `epoch` the sign-in started from; a sign-out in between makes it stale. */
+  expectedEpoch: number
+  /** The client the authorization request named. Never a secret: `state` passes through the browser. */
+  client: Readonly<{ clientId: string; tokenEndpointAuthMethod?: string }>
+  requestedScope: readonly string[]
+  /** The token endpoint, issuer and resource the sign-in started with. */
+  authorization: Readonly<{ tokenEndpoint: string; issuer?: string; resource: string }>
   returnTo?: string
 }>
 
@@ -94,7 +101,34 @@ function isOAuthStatePayload(value: unknown): value is OAuthStatePayload {
     typeof v.nonce === 'string' &&
     typeof v.issuedAt === 'number' &&
     Number.isFinite(v.issuedAt) &&
+    Number.isSafeInteger(v.expectedEpoch) &&
+    (v.expectedEpoch as number) >= 0 &&
+    isStateClient(v.client) &&
+    Array.isArray(v.requestedScope) &&
+    v.requestedScope.every((scope) => typeof scope === 'string') &&
+    isStateAuthorization(v.authorization) &&
     (v.returnTo === undefined || typeof v.returnTo === 'string')
+  )
+}
+
+function isStateAuthorization(value: unknown): value is OAuthStatePayload['authorization'] {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    typeof v.tokenEndpoint === 'string' &&
+    typeof v.resource === 'string' &&
+    (v.issuer === undefined || typeof v.issuer === 'string') &&
+    Object.keys(v).every((key) => key === 'tokenEndpoint' || key === 'issuer' || key === 'resource')
+  )
+}
+
+function isStateClient(value: unknown): value is OAuthStatePayload['client'] {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Record<string, unknown>
+  return (
+    typeof v.clientId === 'string' &&
+    (v.tokenEndpointAuthMethod === undefined || typeof v.tokenEndpointAuthMethod === 'string') &&
+    Object.keys(v).every((key) => key === 'clientId' || key === 'tokenEndpointAuthMethod')
   )
 }
 

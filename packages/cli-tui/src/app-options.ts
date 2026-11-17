@@ -2,6 +2,7 @@ import type { Branding, NodeClient, Session } from '@agnes/sdk'
 import type { ExternalEditorConfig } from './external-editor.js'
 import type { TuiExtraOptions } from './extra-options.js'
 import type { Locale } from './locale.js'
+import type { TuiMcpLogin } from './mcp-login-port.js'
 import type { TuiResourceController } from './resource-controller.js'
 import type { Terminal } from './terminal.js'
 import type { WelcomeOptions } from './welcome-controller.js'
@@ -20,6 +21,8 @@ export type TuiAppOptions = {
   branding?: Branding
   locale?: Locale
   controlClient?: NodeClient
+  /** `/mcp login` and `/mcp logout`: the sign-in code, injected by the launcher. Absent where signing in is not possible. */
+  mcpLogin?: TuiMcpLogin
   /** Resource commands use this injected port; the chat/session client has no such authority. */
   resourceController?: TuiResourceController
   /** The CLI has already entered its alternate screen before opening the session. */

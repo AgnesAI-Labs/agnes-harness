@@ -144,6 +144,61 @@ describe('createMcpServerOpener', () => {
     })
   })
 
+  it("an OAuth server's pool key holds no token and stays the same when the token changes", async () => {
+    connectMcp.mockClear()
+    const oauthDefinition = {
+      serverId: 'remote',
+      displayName: 'Remote',
+      transport: { kind: 'http', url: 'https://mcp.example.com/mcp' },
+      secretBinding: { kind: 'oauth' },
+    } as McpServerDefinitionInput
+    let issued = 'at-1'
+    const store = {
+      read: async () => ({
+        version: 2 as const,
+        kind: 'oauth' as const,
+        epoch: 0,
+        rev: issued === 'at-1' ? 1 : 2,
+        client: { clientId: 'c', redirectUri: 'http://localhost:1/callback' },
+        server: {
+          endpoint: 'https://mcp.example.com/mcp',
+          authorizationServer: 'https://auth.example.com/',
+          tokenEndpoint: 'https://auth.example.com/token',
+          resource: 'https://mcp.example.com/mcp',
+        },
+        tokens: { accessToken: issued, expiresAt: Date.now() + 3_600_000, scope: [] },
+        requiredScope: [],
+      }),
+      update: async () => {
+        throw new Error('nothing to write')
+      },
+    }
+    const opener = createMcpServerOpener({
+      resolver: async () => 'unused',
+      oauthStore: () => store,
+      baseEnv: {},
+      stdioPolicy: { allowedExecutables: [] },
+      httpPolicy: {},
+    })
+    const prepare = opener.prepare
+    if (!prepare) throw new Error('missing prepared MCP opener')
+    const signal = new AbortController().signal
+    const first = await prepare(oauthDefinition, signal)
+    issued = 'at-2'
+    const second = await prepare(oauthDefinition, signal)
+    expect(second.key).toBe(first.key)
+    expect(first.key).not.toMatch(/at-/)
+    await first.connect(signal)
+    const [config, , options] = connectMcp.mock.calls[0] as [
+      McpServerConfig,
+      unknown,
+      { authorize?: { headers(): Promise<Record<string, string>> } },
+    ]
+    expect(config.headers).toBeUndefined()
+    // The connection asks per request, so it sends whatever the store holds now.
+    expect(await options.authorize?.headers()).toEqual({ authorization: `Bearer ${issued}` })
+  })
+
   it('rejects a disallowed stdio executable before ever resolving a credential or connecting', async () => {
     connectMcp.mockClear()
     const resolver = vi.fn(async () => 'tok')

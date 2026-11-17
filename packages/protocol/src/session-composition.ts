@@ -32,17 +32,12 @@ export function parseAgentRef(value: unknown): string {
   return value
 }
 
-/** Longest append, the same cap as the system prompt's own `personaSuffix` field. */
+/** Longest append in UTF-16 units, the same cap as the system prompt's own `personaSuffix` field. */
 export const SYSTEM_PROMPT_APPEND_MAX = 8192
 
 /** Owner text appended to one new session's system prompt; never a replacement and never silently cut. */
 export function parseSystemPromptAppend(value: unknown): string {
-  if (
-    typeof value !== 'string' ||
-    !value ||
-    Array.from(value).length > SYSTEM_PROMPT_APPEND_MAX ||
-    value.includes('\0')
-  )
+  if (typeof value !== 'string' || !value || value.length > SYSTEM_PROMPT_APPEND_MAX || value.includes('\0'))
     throw new TypeError('systemPromptAppend must be 1 to 8192 characters without NUL')
   return value
 }

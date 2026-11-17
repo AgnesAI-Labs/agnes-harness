@@ -1,6 +1,7 @@
 import {
   bundledExampleSource,
   bundledPluginSource,
+  DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
   type PackageSource,
 } from '@agnes/package-manager'
@@ -18,7 +19,10 @@ export function packageOrigin(
   return ['file', 'local', 'workspace', 'path'].includes(source.type) ? 'local-source' : 'third-party'
 }
 
-/** Shipped but chosen by the user: marked so the UI offers uninstall, unlike the default-enabled helpers. */
+/** User-removable shipped packages, including defaults that the owner may decline. */
 export function optionalBundled(source: PackageSource): { optional: true } | Record<string, never> {
-  return OPTIONAL_BUNDLED_PACKAGES.some((item) => item.ref === source.ref) ? { optional: true } : {}
+  return OPTIONAL_BUNDLED_PACKAGES.some((item) => item.ref === source.ref) ||
+    DEFAULT_ENABLED_BUNDLED_PACKAGES.some((item) => item.ref === source.ref && item.removable)
+    ? { optional: true }
+    : {}
 }

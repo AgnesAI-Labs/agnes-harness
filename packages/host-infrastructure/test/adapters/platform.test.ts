@@ -156,6 +156,9 @@ describe('platform backends', () => {
     const l1 = w.capability('sandbox.l1')
     expect(l1.level).toBe('unavailable')
     expect(l1.reason).toBeTruthy()
+    // The write restriction exists; the reason must not claim the restricted-token backend is missing.
+    expect(l1.reason).toContain('Windows write restriction')
+    expect(l1.reason).not.toContain('not implemented (v0.x)')
     expect(l1.scope).toEqual([])
     w.recordSandboxBackend({
       name: 'bwrap',

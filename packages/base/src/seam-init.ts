@@ -227,8 +227,6 @@ export type SeamInitContext = {
   childControl?: ChildWorktreePort
   /** Present only after seam assembly; ecosystem extensions must not substitute adapters.exec. */
   sandbox?: SandboxSeam
-  /** The profile's refinement switch, read-only. The host supplies it only to agnes/refine. */
-  refinementSettings?: RefinementSettingsView
   /** Connects the refinement tools to the host's managed refinement; supplied only to agnes/refine. */
   refinementRuns?: ConnectRefinement
   /**
@@ -242,10 +240,5 @@ export type SeamInitContext = {
    */
   provideWorkflowRuns?: (source: WorkflowRunSource) => () => void
 }
-
-/** A read of the profile's refinement settings: the switch and the trigger mode. */
-export type RefinementSettingsView = Readonly<{
-  current(): { settings: { enabled: boolean; mode: 'manual' | 'auto' }; revision: string }
-}>
 
 export type SeamFactory<S = unknown> = (ctx: SeamInitContext) => Promise<S>

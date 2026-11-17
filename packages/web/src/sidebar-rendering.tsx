@@ -22,7 +22,8 @@ import {
 export function workspaceNames(options: SidebarNavigationOptions, t: Translate) {
   const nameOf = (path: string | undefined): string => {
     const workspace = path ? options.workspaces.find((entry) => entry.path === path) : undefined
-    if (workspace?.kind === 'chats') return t('nav.chats')
+    if (workspace?.kind === 'chats')
+      return t(workspace.managedRole === 'legacy' ? 'nav.legacyChats' : 'nav.chats')
     if (workspace) return workspaceLabel(workspace)
     return path?.split(/[\\/]/).filter(Boolean).at(-1) ?? ''
   }
@@ -294,7 +295,8 @@ export function sectionViews(
   const hasRows = (view: SessionGroupView): boolean =>
     view.page ? view.page.total > 0 : view.rows.length > 0
   const pinned = views.find((view) => view.kind === 'pinned')
-  const chats = views.find((view) => view.kind === 'chats')
+  const chats = views.find((view) => view.kind === 'chats' && view.workspace?.managedRole !== 'legacy')
+  const legacyChats = views.find((view) => view.kind === 'chats' && view.workspace?.managedRole === 'legacy')
   const rank = new Map(workspaces.map((workspace, index) => [workspaceKey(workspace), index]))
   // Registered folders stay visible while empty; an empty 「未分类」 bucket has nothing to say.
   const projects = views
@@ -307,6 +309,10 @@ export function sectionViews(
         ? { id: 'pinned', title: t('nav.pinned'), group: pinned, groups: [] }
         : undefined,
     workspaces: { id: 'workspaces', title: t('sidebar.sectionHeading'), groups: projects },
+    'legacy-chats':
+      legacyChats && hasRows(legacyChats)
+        ? { id: 'legacy-chats', title: t('nav.legacyChats'), group: legacyChats, groups: [] }
+        : undefined,
     chats:
       chats && hasRows(chats) ? { id: 'chats', title: t('nav.chats'), group: chats, groups: [] } : undefined,
   }

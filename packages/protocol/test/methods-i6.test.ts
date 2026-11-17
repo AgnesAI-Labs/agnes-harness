@@ -9,7 +9,7 @@ function errorsOf(r: ReturnType<typeof validateMethod>): ValidationError[] {
 const actor = { id: 'u', org: 'local', role: 'member', deptPath: [], attrs: {} }
 const channelCredential = {
   kind: 'channel',
-  channel: 'dingtalk',
+  channel: 'example-im',
   accountId: 'account-1',
   userId: 'u',
   chatId: 'chat-1',

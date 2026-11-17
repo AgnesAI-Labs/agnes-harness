@@ -2,7 +2,7 @@
 export const refineLocaleCatalog = {
   en: {
     'app.refine.off':
-      'Experience refinement (RSI) is not active. Turn it on in Settings; if you just did, restart to apply it.',
+      'Experience refinement (RSI) is not active in this session. Turn it on in Settings; it applies to sessions opened after that, so start a new session.',
     'app.refine.workspace':
       'Experience review queued ({id}). What it keeps is also saved to this workspace, as your own save; each save shows in the conversation.',
     'app.refine.user':
@@ -22,7 +22,8 @@ export const refineLocaleCatalog = {
     'app.refine.reason.unpriced': 'the planning model has no known price',
   },
   'zh-CN': {
-    'app.refine.off': 'RSI（经验复盘）尚未生效。请先在设置中开启；如果刚刚开启，请重启后生效。',
+    'app.refine.off':
+      'RSI（经验复盘）在本会话中未生效。请先在设置中开启；开启后对之后新开的会话生效，请新开一个会话。',
     'app.refine.workspace':
       '已排队一次经验复盘（{id}）。留下的经验也会作为你自己的保存存到这个工作区；每次保存都会显示在对话里。',
     'app.refine.user':

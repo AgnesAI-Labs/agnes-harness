@@ -1,3 +1,4 @@
+import type { PackageSource } from '@agnes/protocol'
 import type { ReactNode } from 'react'
 import { element } from './dom.js'
 import type { PluginAdminViewContext } from './page.js'
@@ -9,6 +10,8 @@ import type { PluginAdminViewContext } from './page.js'
 export type PluginPageSurface = Readonly<{
   host: HTMLElement
   render(view: PluginAdminViewContext): ReactNode
+  /** Offer the shared external import review when a manual source is not an AGH package. */
+  importSource?(source: PackageSource): void
 }>
 
 /** The status hosts of the settings pane markup, which a page surface replaces with its own. */

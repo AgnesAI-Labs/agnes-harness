@@ -18,7 +18,6 @@ import { navigationHistory } from './navigation-history.js'
 import type { SessionListMode } from './session-inventory.js'
 import { isCollapsed, isExpanded, setCollapsed, setExpanded } from './sidebar-collapse.js'
 import {
-  chatsPathOf,
   flatLeadingRows,
   flatMainRows,
   groupInventoryRows,
@@ -84,7 +83,9 @@ function SessionGroupBody({
   preSorted?: boolean
 }) {
   const { page, rows, id } = view
-  const chatsPath = chatsPathOf(options.workspaces)
+  const chatsPaths = new Set(
+    options.workspaces.filter((workspace) => workspace.kind === 'chats').map((workspace) => workspace.path),
+  )
   const expanded = isExpanded(id)
   // Pinned rows are ordered by pin time, not activity; paged rows arrive in server order.
   const sorted = page || view.kind === 'pinned' || preSorted ? rows : sortSessionsByRecency(rows)
@@ -115,7 +116,7 @@ function SessionGroupBody({
           pinnedMark={false}
           archived={false}
           restoring={false}
-          chats={!!chatsPath && row.cwd === chatsPath}
+          chats={chatsPaths.has(row.cwd ?? '')}
         />
       ),
     }
@@ -570,7 +571,9 @@ export function InventorySessions({
   }, [history, view])
   const searching = mode === 'archived'
   const needle = searching ? query.trim().toLocaleLowerCase() : ''
-  const chatsPath = chatsPathOf(options.workspaces)
+  const chatsPaths = new Set(
+    options.workspaces.filter((workspace) => workspace.kind === 'chats').map((workspace) => workspace.path),
+  )
   const workspaces = orderWorkspaces(options.workspaces, snapshot.workspaces)
   const rows = sortSessionsByActivity(
     view.rows.filter(
@@ -609,7 +612,7 @@ export function InventorySessions({
           pinnedMark={!grouped && isPinned(row)}
           archived={archived}
           restoring={view.restoring.includes(row.sessionId)}
-          chats={!!chatsPath && row.cwd === chatsPath}
+          chats={chatsPaths.has(row.cwd ?? '')}
         />
       ),
     }

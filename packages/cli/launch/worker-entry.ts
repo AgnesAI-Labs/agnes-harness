@@ -6,6 +6,7 @@ import {
   runWorkerExecutable,
 } from '@agnes/daemon/worker'
 import { agnesHome } from '@agnes/host'
+import { trimNativeHeap } from '@agnes/system-node'
 import { createPackagedHost } from './packaged-host.js'
 import { workerFailureCode } from './worker-failure.js'
 
@@ -22,9 +23,13 @@ const worker =
           }),
       })
 
-void worker.catch(async (error: unknown) => {
-  await reportWorkerBootFailure(error)
-  // The supervisor receives the nonzero exit; package/provider secrets do not become process logs.
-  process.stderr.write(`packaged worker failed to assemble or connect (${workerFailureCode(error)})\n`)
-  process.exit(1)
-})
+void worker.then(
+  // The worker has been admitted; give back what assembling its Host freed.
+  () => trimNativeHeap(),
+  async (error: unknown) => {
+    await reportWorkerBootFailure(error)
+    // The supervisor receives the nonzero exit; package/provider secrets do not become process logs.
+    process.stderr.write(`packaged worker failed to assemble or connect (${workerFailureCode(error)})\n`)
+    process.exit(1)
+  },
+)

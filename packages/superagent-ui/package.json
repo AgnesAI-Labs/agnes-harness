@@ -1,0 +1,28 @@
+{
+  "name": "@agnes/superagent-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser panel source for the Superagent bundled package",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@agnes/superagent": "workspace:*",
+    "@agnes/web-client": "workspace:*",
+    "@agnes/web-ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "license": "Apache-2.0 AND MIT"
+}

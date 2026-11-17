@@ -37,7 +37,14 @@ function annotate(source: unknown, kind: string): ConfigSchema {
                     'allow-if-unimplemented': 'policy.allowIfUnimplemented',
                   },
                 }
-              : {}),
+              : name === 'windows_mode'
+                ? {
+                    optionKeys: {
+                      'write-restricted': 'windows.writeRestricted',
+                      'require-full': 'windows.requireFull',
+                    },
+                  }
+                : {}),
         },
       },
     ]),

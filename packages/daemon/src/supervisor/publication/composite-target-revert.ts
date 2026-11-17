@@ -6,6 +6,7 @@ import {
   sameTargetContent,
 } from '@agnes/daemon-foundation/composite-desired'
 import type { CompositeTargetStore } from '@agnes/daemon-foundation/storage/composite-target-store'
+import { activeRuntimePinId, isRuntimePackageEligible, type PackageManager } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 
 export type TargetRevertAuditEvent = Readonly<{ kind: string; detail: Readonly<Record<string, unknown>> }>
@@ -17,6 +18,28 @@ export type TargetReverterOptions = Readonly<{
   now?: () => string
   audit?: (event: TargetRevertAuditEvent) => void
 }>
+
+/** Only eligible packages' current active snapshots can be replayed after a failed target. */
+export async function readLoadableSnapshots(
+  manager: Pick<PackageManager, 'inventory' | 'listRuntimePins'>,
+  directory: string,
+): Promise<LoadableSnapshots> {
+  const [inventory, pins] = await Promise.all([
+    manager.inventory(directory),
+    manager.listRuntimePins(directory),
+  ])
+  const eligible = new Set(inventory.packages.filter(isRuntimePackageEligible).map((pkg) => pkg.id))
+  return new Map(
+    pins
+      .filter(
+        (pin) =>
+          pin.purpose === 'active' &&
+          eligible.has(pin.snapshot.packageId) &&
+          pin.pinId === activeRuntimePinId(pin.snapshot),
+      )
+      .map((pin) => [`${pin.snapshot.packageId}@${pin.snapshot.integrity}`, pin.snapshot.integrity]),
+  )
+}
 
 /**
  * Puts the desired target back after the worker reported that it could not apply it.

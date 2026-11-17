@@ -219,6 +219,13 @@ export type TreeUsage = {
 export interface ChildControlStore {
   childControlFormat(): number
   assertWritableFormat(): void
+  /**
+   * Admits a child against `maxFanOut` for its parent and for its root tree, counting active children.
+   * A store may leave out a child in `running`, `waiting_approval`, `recovery_pending` or `cancelling`
+   * whose own session and whose `runtimeOwnerSessionKey` session both hold no live writer lease: a
+   * live instance renews its lease, an idle one runs under a live owner, so with neither the process
+   * that ran it has exited. Counting every active child stays conformant.
+   */
   createDelegatedChild(input: CreateDelegatedChildInput): Promise<CreateDelegatedChildResult>
   lookupByKey(childKey: SessionKey): Promise<ChildTaskRecord | null>
   lookupByCreationId(creationId: string): Promise<ChildTaskRecord | null>
@@ -233,13 +240,31 @@ export interface ChildControlStore {
    * the active set: `failed` for an open that failed, `cancelled` otherwise. It never ran.
    */
   cancelCreatingChild(input: CancelCreatingChildInput): Promise<CancelledChildFact>
-  /** Re-entering execution from idle/interrupted requires atomic parent/root admission. */
+  /**
+   * Re-entering execution from idle/interrupted requires atomic parent/root admission. Slots are
+   * counted as for `createDelegatedChild`.
+   */
   casState(
     childKey: SessionKey,
     expectedRevision: number,
     next: ChildTaskRecord['state'],
     admission?: { maxFanOut: number },
   ): Promise<boolean>
+  /**
+   * Committed children of `parentKey` in `ready`, `running`, `waiting_approval`, `recovery_pending`
+   * or `cancelling` whose own session holds no live writer lease: the candidates of
+   * `settleLostChild`. Optional, together with it.
+   */
+  listLostChildren?(parentKey: SessionKey): Promise<ChildTaskRecord[]>
+  /**
+   * Settles a child that a process which exited left active. When the record still has
+   * `expectedRevision`, is committed, is in `ready`, `running`, `waiting_approval`,
+   * `recovery_pending` or `cancelling`, and its session holds no live writer lease, it moves to
+   * `cancelled` (from `cancelling`) or `failed` in the same write that checked the lease, and that
+   * state is returned. Otherwise nothing changes and the result is null. Optional: without it Core
+   * leaves such records alone.
+   */
+  settleLostChild?(childKey: SessionKey, expectedRevision: number): Promise<'failed' | 'cancelled' | null>
   nextOrdinal(parentKey: SessionKey, effectId: string): Promise<number>
   existsSession(key: SessionKey): Promise<boolean>
   ensureRootScope(rootTaskId: string, capMicro: bigint): Promise<BudgetScopeRecord>

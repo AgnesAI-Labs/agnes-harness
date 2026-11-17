@@ -15,6 +15,10 @@ type CachedContextResult = { ext: string; result: ContextResult; hook?: number }
 import { contextReturnToWire } from './returns.js'
 
 export type SessionHookInputs = {
+  /** Host-owned scope that cancels only this stop decision when new human input is committed. */
+  turnStoppingScope?(
+    run: (signal: AbortSignal) => Promise<Awaited<ReturnType<HookPort['turnStopping']>>>,
+  ): ReturnType<HookPort['turnStopping']>
   discovery?: ResourceDiscoveryInputs
   context(): DispatchContext
   budget(): HookPayloadMap['before_step']['budget']
@@ -136,27 +140,31 @@ export class SessionHookPort implements HookPort {
   async turnStopping(p: Parameters<HookPort['turnStopping']>[0]): ReturnType<HookPort['turnStopping']> {
     const reason = p.proposedReason
     if (reason !== 'completed' && reason !== 'max_steps' && reason !== 'budget') rejected()
-    const result = await this.engine.dispatch(
-      'turn_stopping',
-      () => ({
-        turn: p.turn,
-        step: p.step,
-        proposedReason: reason,
-        ...(p.verifier
-          ? {
-              verifier: {
-                passed: p.verifier.verdict === 'pass',
-                reasons: p.verifier.reasons,
-                tier: this.inputs.verifierTier(),
-              },
-            }
-          : {}),
-      }),
-      this.inputs.context(),
-      { snapshot: this.snapshot(), terminal: (value) => value.action === 'continue' },
-    )
-    if (result.kind === 'rejected') return { action: 'stop' }
-    return result.results.find((entry) => entry.value.action === 'continue')?.value ?? { action: 'stop' }
+    const context = this.inputs.context()
+    const dispatch = async (signal: AbortSignal): ReturnType<HookPort['turnStopping']> => {
+      const result = await this.engine.dispatch(
+        'turn_stopping',
+        () => ({
+          turn: p.turn,
+          step: p.step,
+          proposedReason: reason,
+          ...(p.verifier
+            ? {
+                verifier: {
+                  passed: p.verifier.verdict === 'pass',
+                  reasons: p.verifier.reasons,
+                  tier: this.inputs.verifierTier(),
+                },
+              }
+            : {}),
+        }),
+        { ...context, signal },
+        { snapshot: this.snapshot(), terminal: (value) => value.action === 'continue' },
+      )
+      if (signal.aborted || result.kind === 'rejected') return { action: 'stop' }
+      return result.results.find((entry) => entry.value.action === 'continue')?.value ?? { action: 'stop' }
+    }
+    return this.inputs.turnStoppingScope ? this.inputs.turnStoppingScope(dispatch) : dispatch(context.signal)
   }
 
   async refreshContext(base: PromptSection[]) {

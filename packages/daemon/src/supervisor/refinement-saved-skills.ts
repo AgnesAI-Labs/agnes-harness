@@ -48,8 +48,8 @@ function userChange(
 }
 
 /**
- * Saved skills in the daemon: the installers every request shares, the 30-day review, and the record
- * of what the user takes back on the skills page.
+ * Saved skills in the daemon: the installers every request shares, the 30-day review and the cap on
+ * saved skills in force, and the record of what the user takes back on the skills page.
  *
  * The review runs when a session opens in a workspace (a binding in the workspace catalog) and when
  * refinement is switched on (for the workspaces sessions opened in since the daemon started). There is
@@ -58,7 +58,8 @@ function userChange(
  * `endpoint` is the resource control service the Web and TUI skills pages call. It passes every call
  * through unchanged. When a user removes, or switches back on, a workspace skill that the registry
  * holds as installed by refinement, it also records that: a removal becomes a durable revocation and
- * the record `uninstalled`, switching it back on renews it. These are the user's own decisions, so they
+ * the record `uninstalled`, switching it back on renews it and marks it the person's to keep (the cap
+ * never switches it off again). These are the user's own decisions, so they
  * are recorded whether refinement is on or off; a workspace refinement never saved anything into is
  * never written. The registry is found by the workspace id resource control gives the skill, so
  * nothing in the workspace is read or written on the way. Calls by the installer itself never pass
@@ -108,7 +109,7 @@ export function createSavedSkills(options: {
       const registry = new RefinementRegistry(options.dataDir, root, clock)
       await reviewSkills(
         registry,
-        { disable: (name, expected) => installers(root).disable(name, expected) },
+        { disable: (name, expected, reason) => installers(root).disable(name, expected, reason) },
         clock(),
       )
     })()

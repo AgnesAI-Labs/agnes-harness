@@ -8,11 +8,13 @@ import {
   HeadsUpWatcher,
   inheritFreshSession,
   installKeybindings,
+  mcpSignInNotice,
   mouseFromEnv,
   outcomeLine,
   startedNotices,
   type TimelineFacts,
   TuiApp,
+  type TuiMcpLogin,
   timelineFacts,
   type WorktreeInfo,
   waitingIn,
@@ -44,6 +46,8 @@ export async function runTui(
     registerInterruptGuard?(ignored: () => boolean): void
     signal(): SignalName | undefined
     resourceController?: TuiResourceController
+    /** `/mcp login` and `/mcp logout`; the launcher builds it, as this layer may not reach the sign-in code. */
+    mcpLogin?: TuiMcpLogin
     composerSelectionPath?: string
     historyPath?: string
     /** Personal custom slash commands (`<AGH_HOME>/commands`). */
@@ -192,6 +196,7 @@ export async function runTui(
         ...(io.agnesVersion ? { version: io.agnesVersion } : {}),
       },
       controlClient: booted.client,
+      ...(io.mcpLogin ? { mcpLogin: io.mcpLogin } : {}),
       ...(io.resourceController ? { resourceController: io.resourceController } : {}),
       screenAlreadyEntered: true,
       ...(p.noAltScreen ? { noAltScreen: true } : {}),
@@ -232,6 +237,12 @@ export async function runTui(
       )
     if (io.worktree)
       tui.noteLocal('--worktree', startedNotices(io.worktree, resolveLocale(io.env)).join('\n'))
+    // Not awaited either: a daemon that is slow to list servers must not delay the composer.
+    void mcpSignInNotice(booted.client, booted.profileName, resolveLocale(io.env))
+      .then((text) => {
+        if (text !== undefined && !io.signal()) tui.noteLocal('MCP', text)
+      })
+      .catch(() => undefined)
     if (!opening) timingMark('composer-ready', io.env)
     timingMark('session-ready', io.env)
     if (io.signal()) quit()

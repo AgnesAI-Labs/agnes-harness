@@ -67,7 +67,13 @@ async function workspace(mode: 'off' | 'ask' | 'auto' = 'auto') {
   const clock = () => now.value
   const registry = () => new RefinementRegistry(dataDir, root, clock)
   const open = (sessionKey = 'human-editor') =>
-    provider().open({ home, workspaceRoot: root, sessionKey, validity: registryView(registry(), clock) })
+    provider().open({
+      home,
+      workspaceRoot: root,
+      sessionKey,
+      // As sessions get it: paragraphs in force are delivered through the experience snapshot.
+      validity: registryView(registry(), clock, undefined, 'delivered'),
+    })
   await open().configure({ mode })
   const file = async () => (await open().readFile('MEMORY.md')).content
   const write = async (content: string) => {

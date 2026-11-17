@@ -1,7 +1,7 @@
 import type { KernelOptions, Provider, SandboxSeam } from '@agnes/core'
 import type { Logger } from '@agnes/extension-api'
 import type { TrajectoryAssemblyOptions } from '@agnes/host-artifacts/trajectory-contract'
-import type { ResolvedProfile } from '@agnes/host-common/profile/types'
+import type { ResolvedPackage, ResolvedProfile } from '@agnes/host-common/profile/types'
 import type { HostLockedPackageMutationOptions } from '@agnes/host-computer-use/computer-use/locked-package-mutation-runtime'
 import type { PackageLoader } from '@agnes/host-extensions/assemble/packages'
 import type { ExtensionActivationBarrier } from '@agnes/host-extensions/ext-host/activation-barrier'
@@ -35,6 +35,11 @@ export type AssembleDeps = HostPaths &
     childRoles?: KernelOptions['childRoles']
     referenceLimits?: Partial<import('@agnes/extension-api').ReferenceLimits>
     homeDir?: string
+    /** Daemon-owned channel bridge; absent embedders refuse channel activation. */
+    channelInteractions?: import('@agnes/host-extensions/profile/channel-runtime').ChannelInteractionsFactory
+    channelRuntime?: import('@agnes/host-extensions/profile/channel-runtime').ChannelRuntimeFactory
+    /** Daemon-owned owner client for release-granted bundled applications; absent embedders refuse it. */
+    bundledAppClient?: import('@agnes/host-extensions/profile/bundled-app').BundledAppClientFactory
     loader: PackageLoader
     packageDirs?: Map<string, string>
     extensionLoader?: { import(file: string): Promise<Record<string, unknown>> }
@@ -80,6 +85,12 @@ export type AssembleDeps = HostPaths &
     pluginSnapshots?: PackageSnapshotVerifier
     /** PackageManager-owned immutable snapshots selected for this Host generation. */
     runtimePluginSnapshots?: readonly Readonly<RuntimePluginSnapshot>[]
+    /**
+     * Generation-owned verified package entry for a selected snapshot, read when a row asks for an
+     * optional host grant. It follows in-place publications, so a package enabled or updated after
+     * this container was built is checked as a fresh container would check it. Absent: boot profile.
+     */
+    generationPackage?: (packageId: string, snapshotId: string) => ResolvedPackage | undefined
     /** Maximum simultaneous independent prepares, from 1 to 4. Does not parallelize activation. */
     runtimePrepareConcurrency?: number
     /**
@@ -97,6 +108,8 @@ export type AssembleDeps = HostPaths &
     sessionGeneration?: (sessionKey: string) => string | undefined
     /** Host-private durable generation binding, also reached by Core-created children. */
     onGenerationSessionBinding?: (sessionKey: string) => void
+    /** Host-private notice that a session's capability inputs changed outside its registries (discovered resources). */
+    onCapabilityInputChanged?: (sessionKey: string) => void
     onGenerationBasePackages?: (packageIds: readonly string[]) => void
     developmentPluginDirectories?: ReadonlyMap<string, string>
     restoreGenerationExtension?: (
@@ -126,6 +139,8 @@ export type AssembleDeps = HostPaths &
     /** Request-only daemon bridge. Never a resource-admin client or authority. */
     scheduling?: import('@agnes/extension-api').SchedulingBridge
     boundWakes?: (owner: string, integrity: string) => import('@agnes/extension-api').BoundWakes
+    /** Plugin-managed sessions; the daemon rechecks the row and owns every session fact. */
+    managedSessions?: import('@agnes/host-extensions/profile/managed-sessions').ManagedSessionsFactory
     mcpManage?: import('@agnes/host-extensions/resources/mcp-manage-port').McpManageBridge
     pluginManage?: import('@agnes/host-extensions/resources/plugin-manage-port').PluginManageBridge
     skillInstall?: import('@agnes/host-extensions/resources/skill-install-port').SkillInstallBridge

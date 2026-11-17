@@ -1,6 +1,6 @@
 import { homeNavigation } from '@agnes/web-client'
 
-export const PLUGIN_TABS = ['plugins', 'skills', 'mcp', 'review', 'market'] as const
+export const PLUGIN_TABS = ['plugins', 'channels', 'skills', 'mcp', 'review', 'market'] as const
 export type PluginTab = (typeof PLUGIN_TABS)[number]
 /** Built-in capabilities that are not packages; each opens a detail whose settings tab holds its configuration. */
 export const CAPABILITIES = ['search', 'computer-use', 'subagents'] as const
@@ -51,10 +51,34 @@ export const PLUGIN_VIEW_PARAM = 'view'
  */
 export type PluginPage =
   | Readonly<{ kind: 'capability'; id: Capability }>
-  | Readonly<{ kind: 'plugin' | 'market' | 'skill' | 'mcp' | 'review' | 'run' | 'install'; id: string }>
+  | Readonly<{
+      kind:
+        | 'plugin'
+        | 'external'
+        | 'external-enable'
+        | 'external-disable'
+        | 'market'
+        | 'skill'
+        | 'mcp'
+        | 'review'
+        | 'run'
+        | 'install'
+      id: string
+    }>
   | Readonly<{ kind: 'add-plugin' | 'add-mcp' | 'operations' | 'search-engine' }>
 
-const ITEM_KINDS = ['plugin', 'market', 'skill', 'mcp', 'review', 'run', 'install'] as const
+const ITEM_KINDS = [
+  'plugin',
+  'external',
+  'external-enable',
+  'external-disable',
+  'market',
+  'skill',
+  'mcp',
+  'review',
+  'run',
+  'install',
+] as const
 const FORM_KINDS = ['add-plugin', 'add-mcp', 'operations', 'search-engine'] as const
 
 /** The route segment for a page: `search`, `plugin:<id>`, `add-plugin`. */
@@ -80,6 +104,9 @@ export function pluginPageTab(page: PluginPage): PluginTab | undefined {
   switch (page.kind) {
     case 'capability':
     case 'plugin':
+    case 'external':
+    case 'external-enable':
+    case 'external-disable':
       return 'plugins'
     case 'market':
       return 'market'

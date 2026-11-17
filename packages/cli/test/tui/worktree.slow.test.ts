@@ -5,7 +5,6 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
-  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -14,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createWorktree, defaultWorktreeName, WorktreeKeeper } from '@agnes/cli-tui'
 import { createClient } from '@agnes/sdk'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import { parseArgs } from '../../src/args.js'
 import { UsageError } from '../../src/errors.js'
@@ -26,7 +26,7 @@ import { screenOf } from './harness.js'
 
 const dirs: string[] = []
 const scratch = (): string => {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agh-worktree-')))
+  const dir = nativeRealpathSync(mkdtempSync(join(tmpdir(), 'agh-worktree-')))
   dirs.push(dir)
   return dir
 }

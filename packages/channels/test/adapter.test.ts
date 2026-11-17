@@ -4,7 +4,7 @@ import { type ChannelCredential, sessionKeyFor, whitelistCredential } from '../s
 
 const credential: ChannelCredential = {
   kind: 'channel',
-  channel: 'dingtalk',
+  channel: 'example-im',
   accountId: 'acc',
   userId: 'u1',
   unionId: 'union-1',
@@ -26,33 +26,33 @@ describe('sessionKeyFor', () => {
       sessionKeyFor({
         tenant: 'xinwei',
         agent: 'sales',
-        channel: 'dingtalk',
+        channel: 'example-im',
         chat: { id: 'c1', type: 'dm' },
       }),
-    ).toBe('agnes:xinwei:sales:dingtalk:dm:c1')
+    ).toBe('agnes:xinwei:sales:example-im:dm:c1')
     expect(
       sessionKeyFor({
         tenant: 'xinwei',
         agent: 'sales',
-        channel: 'dingtalk',
+        channel: 'example-im',
         chat: { id: 'c1', type: 'group' },
       }),
-    ).toBe('agnes:xinwei:sales:dingtalk:group:c1')
+    ).toBe('agnes:xinwei:sales:example-im:group:c1')
     expect(
       sessionKeyFor({
         tenant: 'xinwei',
         agent: 'sales',
-        channel: 'dingtalk',
+        channel: 'example-im',
         chat: { id: 'c1', type: 'thread', threadId: 't9' },
       }),
-    ).toBe('agnes:xinwei:sales:dingtalk:group:c1:thread:t9')
+    ).toBe('agnes:xinwei:sales:example-im:group:c1:thread:t9')
   })
 
   it.each([
-    ['tenant', { tenant: 'a:b', agent: 's', channel: 'dingtalk', chat: { id: 'c', type: 'dm' as const } }],
-    ['agent', { tenant: 'a', agent: '', channel: 'dingtalk', chat: { id: 'c', type: 'dm' as const } }],
+    ['tenant', { tenant: 'a:b', agent: 's', channel: 'example-im', chat: { id: 'c', type: 'dm' as const } }],
+    ['agent', { tenant: 'a', agent: '', channel: 'example-im', chat: { id: 'c', type: 'dm' as const } }],
     ['channel', { tenant: 'a', agent: 's', channel: 'ding:talk', chat: { id: 'c', type: 'dm' as const } }],
-    ['chat', { tenant: 'a', agent: 's', channel: 'dingtalk', chat: { id: 'c:1', type: 'dm' as const } }],
+    ['chat', { tenant: 'a', agent: 's', channel: 'example-im', chat: { id: 'c:1', type: 'dm' as const } }],
   ])('rejects an invalid %s segment', (_name, input) => {
     expect(() => sessionKeyFor(input)).toThrow(/session key segment/)
   })
@@ -62,7 +62,7 @@ describe('sessionKeyFor', () => {
       sessionKeyFor({
         tenant: 'a',
         agent: 's',
-        channel: 'dingtalk',
+        channel: 'example-im',
         chat: { id: 'c', type: 'thread' },
       }),
     ).toThrow(/thread/)
@@ -88,7 +88,7 @@ describe('whitelistCredential', () => {
 
     expect(result.cred).toMatchObject({
       kind: 'channel',
-      channel: 'dingtalk',
+      channel: 'example-im',
       accountId: 'acc',
       userId: 'u1',
       unionId: 'union-1',

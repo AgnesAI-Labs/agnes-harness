@@ -2,6 +2,7 @@ import type { JsonValue } from '@agnes/protocol'
 import type { Disposer, Seq } from './common.js'
 import type { ExtensionContext } from './extension.js'
 import type { HookEvent, HookHandler } from './hooks.js'
+import type { HookRegisterOptions } from './plugin-context.js'
 import type { ProjectionDef } from './projections.js'
 import type { ResourceEntry } from './resources.js'
 import type { ServiceAuthorPort } from './service-provider.js'
@@ -21,7 +22,11 @@ export interface ExtensionAPI {
   /** The name carries `capabilities.tools.prefix`; a duplicate is `E_REGISTRY_DUPLICATE` at startup. */
   registerTool(def: ToolDef): Disposer
   /** The event is listed in `capabilities.hooks`. */
-  registerHook<E extends HookEvent>(event: E, handler: NoInfer<HookHandler<E>>): Disposer
+  registerHook<E extends HookEvent>(
+    event: E,
+    handler: NoInfer<HookHandler<E>>,
+    options?: HookRegisterOptions,
+  ): Disposer
   /** The slot is listed in `capabilities.slots`. */
   registerSlot<S extends SlotName>(slot: S, fill: NoInfer<SlotFill<S>>): Disposer
   /** The kind is listed in `capabilities.resources`. */
@@ -36,3 +41,5 @@ export interface ExtensionAPI {
 /** How the Host mounts a bundled extension over its backend port. */
 // biome-ignore lint/suspicious/noConfusingVoidType: a factory may return nothing, a Disposer, or a promise of either
 export type ExtensionFactory = (agnes: ExtensionAPI) => void | Disposer | Promise<void | Disposer>
+
+export { sanitize } from './sanitize.js'

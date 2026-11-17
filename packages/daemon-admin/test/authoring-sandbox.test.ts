@@ -4,7 +4,7 @@ import { join, resolve, sep } from 'node:path'
 import { BWRAP_BACKEND, detectBackend, NONE_BACKEND, SEATBELT_BACKEND } from '@agnes/base/sandbox'
 import { createPlatform } from '@agnes/host'
 import { runIsolatedCommand } from '@agnes/package-isolation'
-import { AGH_DIR } from '@agnes/protocol'
+import { AGH_DIR, permissionEffectAdmission } from '@agnes/protocol'
 import { afterEach, expect, it, vi } from 'vitest'
 import { authoringSandbox } from '../src/packages/authoring-sandbox.js'
 
@@ -125,7 +125,32 @@ it.runIf(posixHost).each(['darwin', 'linux'] as const)(
     }
   },
 )
-it('reports Windows as unisolated and refuses missing POSIX isolation or a remote session', async () => {
+it('runs Windows candidates unisolated with bounded argv execution and the supplied environment', async () => {
+  const root = setup('win32')
+  vi.mocked(detectBackend).mockResolvedValue(NONE_BACKEND)
+  const signal = new AbortController().signal
+  const result = await authoringSandbox({ home: join(root, 'private') }, root, signal)
+  expect(result.isolated).toBe(false)
+  const argv = [process.execPath, '--test', 'test with spaces.mjs']
+  const env = { HOME: root, TMPDIR: root, SystemRoot: 'synthetic-system-root' }
+  expect(
+    await result.sandbox.exec(argv, { cwd: root, env, timeoutMs: 45, maxOutputBytes: 256, signal }),
+  ).toMatchObject({ stdout: 'bounded output' })
+  expect(vi.mocked(runIsolatedCommand).mock.calls.at(-1)).toEqual([
+    process.execPath,
+    argv.slice(1),
+    { cwd: root, env, signal, timeoutMs: 45, maxOutputBytes: 256 },
+  ])
+  await result.sandbox.exec(argv, { cwd: root, signal })
+  expect(vi.mocked(runIsolatedCommand).mock.calls.at(-1)?.[2]).toEqual({
+    cwd: root,
+    env: {},
+    signal,
+    timeoutMs: 60_000,
+    maxOutputBytes: 16384,
+  })
+})
+it('refuses missing POSIX isolation or a remote session', async () => {
   const root = setup('win32')
   vi.mocked(detectBackend).mockResolvedValue(NONE_BACKEND)
   const result = await authoringSandbox({ home: join(root, 'private') }, root, new AbortController().signal)
@@ -143,22 +168,25 @@ it('reports Windows as unisolated and refuses missing POSIX isolation or a remot
   expect(runIsolatedCommand).not.toHaveBeenCalled()
 })
 
-it('rechecks the candidate test lease after sandbox setup before spawning the command', async () => {
-  // The lease check precedes the spawn on every backend; use one this host can compile.
-  const root = setup(posixHost ? 'darwin' : 'win32')
-  vi.mocked(detectBackend).mockResolvedValue(posixHost ? SEATBELT_BACKEND : NONE_BACKEND)
-  let live = true
-  const assertActive = () => {
-    if (!live) throw Error('permission unavailable')
-  }
-  const result = await authoringSandbox(
-    { home: join(root, 'private'), admission: { verify: async () => assertActive(), assertActive } },
-    root,
-    new AbortController().signal,
-  )
-  live = false
-  await expect(
-    result.sandbox.exec(['node', 'test.mjs'], { cwd: root, signal: new AbortController().signal }),
-  ).rejects.toThrow('permission unavailable')
-  expect(runIsolatedCommand).not.toHaveBeenCalled()
-})
+it.each(posixHost ? (['darwin', 'win32'] as const) : (['win32'] as const))(
+  'rechecks revoked candidate authority on %s after setup before spawning',
+  async (os) => {
+    const root = setup(os)
+    vi.mocked(detectBackend).mockResolvedValue(os === 'darwin' ? SEATBELT_BACKEND : NONE_BACKEND)
+    const authority = new AbortController()
+    const admission = permissionEffectAdmission({
+      signals: [authority.signal],
+      unavailable: () => new Error('permission unavailable'),
+    })
+    const result = await authoringSandbox(
+      { home: join(root, 'private'), admission },
+      root,
+      new AbortController().signal,
+    )
+    authority.abort()
+    await expect(
+      result.sandbox.exec(['node', 'test.mjs'], { cwd: root, signal: new AbortController().signal }),
+    ).rejects.toThrow('permission unavailable')
+    expect(runIsolatedCommand).not.toHaveBeenCalled()
+  },
+)

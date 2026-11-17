@@ -141,3 +141,31 @@ describe('JobsRepo', () => {
     await tables.close()
   })
 })
+
+describe('durable scheduled run identity', () => {
+  it('persists one leased identity and preserves it across later dispatch marks', () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 100)
+    repo.insert(row('identity'))
+    repo.claimDue(100, 'owner', 1000, 1)
+    repo.markDispatched('identity', 'owner', { at: 100, sessionKey: 'fresh', runId: 'run_123' })
+    repo.markDispatched('identity', 'owner', { at: 101, sessionKey: 'fresh' })
+    expect(repo.get('identity')?.result).toEqual({
+      dispatched: { at: 101, sessionKey: 'fresh', runId: 'run_123' },
+    })
+    expect(() => repo.markDispatched('identity', 'other', { at: 102 })).toThrow(/lease/)
+    expect(() => repo.markDispatched('identity', 'owner', { at: 1101 })).toThrow(/lease/)
+  })
+  it('interrupts an identified run before stalled limits and regardless of mutable task retry policy', () => {
+    const repo = new JobsRepo(sqliteTables().table('jobs'), () => 100)
+    repo.insert(row('identified'))
+    repo.claimDue(100, 'owner', 10, 1)
+    repo.markDispatched('identified', 'owner', { at: 100, sessionKey: 'fresh', runId: 'run_123' })
+    const result = repo.reclaimStalled(111, 0, undefined, {
+      retryable: () => true,
+      owner: 'next',
+      lockMs: 10,
+    })
+    expect(result.interrupted.map((job) => job.idempotencyKey)).toEqual(['identified'])
+    expect(result.dead).toEqual([])
+  })
+})

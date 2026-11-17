@@ -12,6 +12,7 @@ import {
 } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { NODE_MEMORY_FLAGS } from '@agnes/system-node/node-flags'
 import { build } from 'esbuild'
 import postject from 'postject'
 import { checkGlibc } from '../../../tools/native/check-glibc.mjs'
@@ -137,6 +138,8 @@ async function buildSea(name, entry, destination) {
         output: basename(blob),
         disableExperimentalSEAWarning: true,
         useCodeCache: false,
+        // The CLI's own Node flags; the daemon and worker get theirs when they are spawned.
+        execArgv: NODE_MEMORY_FLAGS,
       },
       null,
       2,

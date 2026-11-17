@@ -27,6 +27,8 @@ function verify(addonPath) {
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
+  // malloc_trim on the worker pool: resolves whether or not glibc had pages to release.
+  api.trimNativeHeap().then((released) => assert.equal(typeof released, 'boolean'))
 }
 
 const { isSea } = require('node:sea')

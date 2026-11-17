@@ -13,10 +13,12 @@ import type { StoresState } from './assembly-stores.js'
 import { createWorkerRequests } from './assembly-worker-requests.js'
 import type { WorkersState } from './assembly-workers.js'
 import { configurationApplication } from './configuration.js'
+import { createLegacyScheduledLauncher } from './legacy-scheduled-launcher.js'
 import { readModelSelectionCatalog, sharedSessionCatalog } from './model-adapter-lookup.js'
 import { createSupervisorProfileServices } from './profile-services.js'
 import { createSavedSkills, type SavedSkills } from './refinement-saved-skills.js'
 import { type ScheduleCatalog, scheduledTasks } from './schedule-sessions.js'
+import type { createScheduledSessionAdmission } from './scheduled-session-admission.js'
 import { keepSharedWorker } from './shared-keeper.js'
 import { startSkillWatcher } from './skill-watcher.js'
 import { persistResolvedProfile } from './storage-adapters.js'
@@ -76,6 +78,8 @@ export async function openSessionServices(
     modelCatalog,
   )
   const jobsRepo = jobTables ? new JobsRepo(jobTables.table('jobs'), clock) : undefined
+  let admissions: ReturnType<typeof createScheduledSessionAdmission> | undefined
+  const legacy = createLegacyScheduledLauncher(state, jobsRepo, () => admissions)
   const schedules =
     jobTables && jobsRepo
       ? scheduledTasks({
@@ -84,6 +88,7 @@ export async function openSessionServices(
           clock,
           socketPath: o.config.socketPath,
           serverIdentity: lock.owner,
+          ...(legacy ? { legacy } : {}),
           sources: {
             workspaces: async () => (await workspaceCatalog.list()).items,
             normalize: async (path) => (await workspaceCatalog.validate(path)).path,
@@ -95,6 +100,7 @@ export async function openSessionServices(
           },
         })
       : undefined
+  admissions = schedules?.admissions
   automationEvents.schedules = schedules
   if (schedules) lifetime.own({ dispose: () => schedules.close() })
   const profilePorts = createSupervisorProfileServices({

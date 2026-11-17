@@ -25,7 +25,9 @@ if (!entry) fail('missing bundled entry\nagh: build it with: pnpm --filter @agne
 
 ensurePackagedNatives(dirname(entry))
 
-const child = spawn(process.execPath, [entry, ...process.argv.slice(2)], {
+// The CLI's Node flags, as in the SEA executable (NODE_MEMORY_FLAGS in @agnes/system-node/node-flags;
+// this file ships alone, so it cannot import them).
+const child = spawn(process.execPath, ['--max-semi-space-size=2', entry, ...process.argv.slice(2)], {
   stdio: 'inherit',
   ...(timing ? { env: { ...process.env, AGH_TIMING_ORIGIN: String(performance.timeOrigin) } } : {}),
 })

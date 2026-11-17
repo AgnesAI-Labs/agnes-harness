@@ -10,6 +10,7 @@ import { ExitCode, UsageError } from '../errors.js'
 import { renderHtml } from '../html/template.js'
 import type { ParsedArgs } from '../types.js'
 import { writeWindowsPrivateExport } from './export-private-file.js'
+import { redactExportEvents } from './export-redaction.js'
 import { bundleOriginals, writeNativeBundle } from './native-bundle.js'
 
 export type LedgerExport = {
@@ -181,7 +182,7 @@ export async function exportSession(p: ParsedArgs, deps: ExportDeps, client: Cli
   const rules = privacyRules(deps)
   const events = p.raw
     ? ledger.events
-    : (redact(sanitizeExportValue(ledger.events), rules) as EventEnvelope[])
+    : redactExportEvents(sanitizeExportValue(ledger.events) as EventEnvelope[], rules)
   const timeline = p.raw
     ? ledger.timeline
     : (redact(sanitizeExportValue(ledger.timeline), rules) as UITimeline)

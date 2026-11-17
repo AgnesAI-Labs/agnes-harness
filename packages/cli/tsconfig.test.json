@@ -53,6 +53,9 @@
       "path": "../daemon"
     },
     {
+      "path": "../daemon/tsconfig.test.json"
+    },
+    {
       "path": "../package-manager"
     },
     {

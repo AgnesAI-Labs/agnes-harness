@@ -64,10 +64,10 @@ it('reduces the official first-call payload and discovers, discloses and execute
     )
   }
   const provider = fakeProvider([
-    toolTurn('job_list', {}),
-    toolTurn('tool_search', { query: 'job_list' }),
-    toolTurn('tool_describe', { name: 'job_list' }),
-    toolTurn('job_list', {}),
+    toolTurn('pty_list', {}),
+    toolTurn('tool_search', { query: 'pty_list' }),
+    toolTurn('tool_describe', { name: 'pty_list' }),
+    toolTurn('pty_list', {}),
     textTurn('done'),
   ])
   const eagerProvider = fakeProvider([textTurn('done')])
@@ -81,8 +81,8 @@ it('reduces the official first-call payload and discovers, discloses and execute
     const first = provider.requests[0]
     const original = eagerProvider.requests[0]
     if (!first || !original) throw new Error('expected first model requests')
-    const jobList = defs.find((tool) => tool.name === 'job_list')
-    if (!jobList) throw new Error('expected job_list definition')
+    const ptyList = defs.find((tool) => tool.name === 'pty_list')
+    if (!ptyList) throw new Error('expected pty_list definition')
     const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength
     const payload = (request: typeof first) => bytes({ system: request.system, tools: request.tools })
     console.info('official tool catalog payload', {
@@ -94,19 +94,29 @@ it('reduces the official first-call payload and discovers, discloses and execute
       deferredSchemaBytes: bytes(first.tools),
     })
     expect(payload(first)).toBeLessThan(payload(original) * 0.8)
-    expect(first.tools.map((tool) => tool.name)).toEqual(['present', 'read', 'tool_describe', 'tool_search'])
+    expect(first.tools.map((tool) => tool.name)).toEqual([
+      'job_kill',
+      'job_list',
+      'job_output',
+      'present',
+      'read',
+      'tool_describe',
+      'tool_search',
+    ])
     expect(defs.length).toBeGreaterThan(20)
     expect(first.tools.find((tool) => tool.name === 'present')).toBeDefined()
     for (const def of defs.filter((tool) => tool.meta.deferLoading === 'auto'))
       expect(first.tools.some((tool) => tool.name === def.name)).toBe(false)
-    expect(first.system).toContain('job_list')
+    expect(first.system).toContain('pty_list')
+    // The background job tools are eager, so the tool list is already stable when the model needs them.
+    expect(first.system).not.toContain('job_list')
     const results = await session.scan({ type: 'tool/result', toSeq: session.lastSeq })
     expect(results[0]?.data).toMatchObject({ code: 'TOOL_NOT_DISCLOSED', isError: true })
-    expect(JSON.stringify(results[1]?.data)).toContain('job_list')
+    expect(JSON.stringify(results[1]?.data)).toContain('pty_list')
     expect(results[3]).toBeDefined()
     expect(results[3]?.data).not.toHaveProperty('isError', true)
-    expect(provider.requests[3]?.tools.find((tool) => tool.name === 'job_list')?.parameters).toEqual(
-      JSON.parse(JSON.stringify(jobList.parameters)),
+    expect(provider.requests[3]?.tools.find((tool) => tool.name === 'pty_list')?.parameters).toEqual(
+      JSON.parse(JSON.stringify(ptyList.parameters)),
     )
   } finally {
     await session.close()

@@ -1,13 +1,18 @@
+import { createHash } from 'node:crypto'
 import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import type { EventEnvelope, HarnessMeta, UITimeline } from '@agnes/protocol'
+import { createTestHost } from '@agnes/host/testkit'
+import { type EventEnvelope, type HarnessMeta, type UITimeline, validateEvent } from '@agnes/protocol'
 import { createClient, memoryJournal } from '@agnes/sdk'
 import { hasPrivateDaclSync } from '@agnes/system-node'
 import { describe, expect, it, vi } from 'vitest'
+import { pendingDecision } from '../../core-ledger/testkit/decision.js'
 import { parseArgs } from '../src/args.js'
 import { exportSession, formatAgnes, readLedger, sanitizeExportValue } from '../src/commands/export.js'
+import { importFile } from '../src/commands/import.js'
 import { FakeEndpoint } from './fake-endpoint.js'
+import { memoryAdmission, openAdmittedSession } from './import-admission.js'
 
 const SESSION_ID = 'agnes:local:default:cli:dm:export'
 const ACTOR = { id: 'u', org: 'local', role: 'owner', deptPath: [], attrs: {} }
@@ -44,6 +49,123 @@ const TIMELINE: UITimeline = {
   opState: null,
   turns: [],
   nodes: [{ id: 'u1', kind: 'user', seq: 1, content: [{ type: 'text', text: 'first' }] }],
+}
+
+// A real SHA-256 and a core-minted ID shape whose numeric runs match privacy patterns.
+const REQUEST_HASH = createHash('sha256').update('legitimate-request-432').digest('hex')
+const OPAQUE_EVENT_ID = '01J6Z14107653646ABCDEFGHJK'
+const TOOL_ID = 't428-493aca471666765577088665b167cd4d'
+function roundTripEvents(): EventEnvelope[] {
+  const pii = `alice@example.com 13800138000 /workspace/private ${REQUEST_HASH} ${TOOL_ID}`
+  const decision = pendingDecision(OPAQUE_EVENT_ID)
+  const nested = { derived_hash: REQUEST_HASH, toolUseId: TOOL_ID, data: { content: pii } }
+  const rows: Array<[string, unknown]> = [
+    [
+      'session/start',
+      {
+        key: SESSION_ID,
+        resolvedProfileHash: `sha256-${REQUEST_HASH}`,
+        resolvedPresetHash: `sha256-${REQUEST_HASH}`,
+        preset: null,
+        agnesVersion: '1',
+      },
+    ],
+    ['turn/start', { turn: 1, trigger: 'prompt' }],
+    [
+      'user/message',
+      {
+        content: [
+          {
+            type: 'text',
+            text: pii,
+            reference: {
+              source: 'test',
+              id: '13800138000',
+              label: pii,
+              hash: REQUEST_HASH,
+              truncated: false,
+            },
+          },
+        ],
+      },
+    ],
+    ['step/start', { turn: 1, step: 1 }],
+    [
+      'request/sent',
+      {
+        derived_hash: REQUEST_HASH,
+        sent_hash: REQUEST_HASH,
+        prompt_prefix_hash: REQUEST_HASH,
+        tool_schema_hash: REQUEST_HASH,
+        parser_version: '1',
+        contract_id: null,
+        model: { route: 'test', id: 'test' },
+        transforms: [],
+      },
+    ],
+    ['tool/call', { toolUseId: TOOL_ID, name: 'read', args: { nested }, ordinal: 428 }],
+    [
+      'tool/result',
+      {
+        toolUseId: TOOL_ID,
+        content: [{ type: 'text', text: pii }],
+        structured: { nested },
+        isError: false,
+        enforcement: { level: 'none', scope: [] },
+        authz: { decisionId: 'alice@example.com' },
+      },
+    ],
+    ['assistant/message', { content: [{ type: 'text', text: 'done' }], stopReason: 'end_turn' }],
+    ['step/end', { turn: 1, step: 1 }],
+    ['turn/end', { reason: 'completed', lastAssistantSeq: 8 }],
+    [
+      'request/header',
+      {
+        derived_hash: REQUEST_HASH,
+        sent_hash: REQUEST_HASH,
+        prompt_prefix_hash: REQUEST_HASH,
+        tool_schema_hash: REQUEST_HASH,
+        parser_version: '1',
+        contract_id: null,
+        model: 'test',
+        envelopeNonce: '493aca471666765577088665b167cd4d',
+      },
+    ],
+    ['format/deviation', { rule: 'test', model: 'test', parserVersion: '1', sampleHash: REQUEST_HASH }],
+    [
+      'decision/state',
+      {
+        ...decision,
+        request: {
+          ...decision.request,
+          subjectDigest: REQUEST_HASH,
+          spec: { ...decision.request.spec, subject: nested },
+        },
+      },
+    ],
+    ['effect/intent', { effectId: `e-${TOOL_ID.split('-')[1]}`, kind: 'inference', replay: 'never' }],
+    [
+      'cost/ledger',
+      {
+        effectId: `e-${TOOL_ID.split('-')[1]}`,
+        purpose: 'inference',
+        model: 'test',
+        tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
+        creditSource: 'estimated',
+      },
+    ],
+    ['x/privacy/fixture', { ...nested, embedded: { type: 'request/sent', data: nested } }],
+  ]
+  return rows.map(
+    ([type, data], index) =>
+      ({
+        ...EVENTS[0],
+        seq: index + 1,
+        id: index === 0 ? OPAQUE_EVENT_ID : `01J6ZM2Q3R4S5T6V7W8X9Y0Z${String(index).padStart(2, '0')}`,
+        type,
+        data,
+      }) as EventEnvelope,
+  )
 }
 
 function endpoint(
@@ -259,26 +381,90 @@ describe('export', () => {
     }
   })
 
-  it('redacts native exports by default through the shared privacy implementation', async () => {
-    const source = EVENTS[0]
-    if (!source) throw new Error('export fixture is empty')
-    const secretEvents: EventEnvelope[] = [
-      {
-        ...source,
-        data: { content: [{ type: 'text' as const, text: 'alice@example.com /workspace/private' }] },
-      },
-    ]
-    const client = await clientFor(endpoint(secretEvents))
+  it('round-trips default native exports without corrupting protocol hashes or tool identities', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agnes-export-import-'))
+    const { host } = await createTestHost({ dataDir: root })
+    const admission = await memoryAdmission(host, root)
+    const events = roundTripEvents()
+    expect(events.every((event) => validateEvent(event).ok)).toBe(true)
+    const client = await clientFor(endpoint(events))
     const io = { stdout: { write: vi.fn() }, stderr: { write: vi.fn() } }
     try {
       await exportSession(parseArgs(['export', SESSION_ID]), { cwd: '/workspace', io }, client)
-      const output = new TextDecoder().decode(io.stdout.write.mock.calls[0]?.[0] as Uint8Array)
-      expect(output).toContain('[REDACTED:email]')
-      expect(output).toContain('<workspace>/private')
+      const bytes = io.stdout.write.mock.calls[0]?.[0] as Uint8Array
+      const output = new TextDecoder().decode(bytes)
+      // These same strings in user content and nested tool JSON remain subject to PII redaction.
       expect(output).not.toContain('alice@example.com')
+      expect(output).not.toContain('13800138000')
+      expect(output).toContain('[REDACTED:phone]')
+      expect(output).toContain('[REDACTED:id]')
+      expect(output).toContain('<workspace>/private')
+      const rows = output
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line) as EventEnvelope)
+      expect(rows.map((row) => validateEvent(row).ok)).toEqual(events.map(() => true))
+      expect(rows[0]?.id).toBe(OPAQUE_EVENT_ID)
+      expect(rows[0]?.data).toMatchObject({
+        resolvedProfileHash: `sha256-${REQUEST_HASH}`,
+        resolvedPresetHash: `sha256-${REQUEST_HASH}`,
+      })
+      expect(rows.find((row) => row.type === 'effect/intent')?.data).toMatchObject({
+        effectId: 'e-493aca471666765577088665b167cd4d',
+      })
+      expect(rows.find((row) => row.type === 'cost/ledger')?.data).toMatchObject({
+        effectId: 'e-493aca471666765577088665b167cd4d',
+      })
+      expect(rows.find((row) => row.type === 'decision/state')?.data).toMatchObject({
+        handle: { id: OPAQUE_EVENT_ID },
+        request: { operationId: OPAQUE_EVENT_ID, spec: { key: OPAQUE_EVENT_ID } },
+      })
+      expect(rows.find((row) => row.type === 'tool/call')?.data).toMatchObject({
+        args: {
+          nested: {
+            derived_hash: expect.stringContaining('[REDACTED:phone]'),
+            toolUseId: expect.stringContaining('[REDACTED:id]'),
+          },
+        },
+      })
+      expect(rows.at(-1)?.data).toMatchObject({ derived_hash: expect.stringContaining('[REDACTED:phone]') })
+      expect(rows.find((row) => row.type === 'request/sent')?.data).toMatchObject({
+        derived_hash: REQUEST_HASH,
+        sent_hash: REQUEST_HASH,
+        tool_schema_hash: REQUEST_HASH,
+      })
+      expect(
+        rows
+          .filter((row) => row.type === 'tool/call' || row.type === 'tool/result')
+          .map((row) => (row.data as { toolUseId: string }).toolUseId),
+      ).toEqual([TOOL_ID, TOOL_ID])
+      await expect(
+        importFile(parseArgs(['import', 'default.jsonl', '--key', 'restored']), {
+          cwd: root,
+          env: {},
+          host,
+          admission,
+          io,
+          readFile: () => bytes,
+        }),
+      ).resolves.toBe(0)
+      const restored = await openAdmittedSession(host, admission, 'restored', root)
+      try {
+        const landed = await restored.scan({ limit: 100 })
+        expect(landed).toHaveLength(events.length)
+        expect(
+          landed
+            .filter((row) => row.type === 'tool/call' || row.type === 'tool/result')
+            .map((row) => (row.data as { toolUseId: string }).toolUseId),
+        ).toEqual([TOOL_ID, TOOL_ID])
+      } finally {
+        await restored.close()
+      }
       expect(io.stderr.write).not.toHaveBeenCalled()
     } finally {
       await client.close()
+      await host.close()
+      rmSync(root, { recursive: true, force: true })
     }
   })
 
@@ -365,6 +551,14 @@ describe('export', () => {
           content: [
             { type: 'text', text: `${FIXTURE_WORKSPACE}/private` },
             { type: 'file', name: 'private.bin', mimeType: 'application/octet-stream', data: media },
+            {
+              type: 'resource_link',
+              uri: 'test:resource',
+              attachment: {
+                artifact: { sha256: REQUEST_HASH, size: 1, mime: 'text/plain' },
+                thumbnail: { sha256: REQUEST_HASH, size: 1, mime: 'image/png' },
+              },
+            },
           ],
         },
       },
@@ -393,6 +587,8 @@ describe('export', () => {
       expect(output).toContain('~/.ssh')
       expect(output).not.toContain(media)
       expect(output).toContain('[OMITTED:file:base64]')
+      expect(output).toContain(REQUEST_HASH)
+      expect(validateEvent(JSON.parse(output.trim())).ok).toBe(true)
       expect(output).not.toContain(FIXTURE_HOME)
     } finally {
       await client.close()

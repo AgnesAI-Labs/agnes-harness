@@ -423,12 +423,13 @@ function ModelPanel({
                     tabIndex={-1}
                     aria-selected={selected}
                     aria-disabled={busy}
+                    title={option.id}
                     data-active={index === activeIndex}
                     onMouseMove={() => setActive(index)}
                     onClick={() => select(option)}
                   >
                     <span className="model-picker-model" translate="no">
-                      {option.id}
+                      {option.name?.trim() || option.id}
                     </span>
                     <span className="model-picker-capacity">
                       {option.contextWindow ? contextBudgetLabel(option.contextWindow) : ''}

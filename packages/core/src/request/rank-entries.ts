@@ -36,17 +36,24 @@ const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0)
 
 /**
  * Orders entries by how many of the query's terms they share: a term found in the title counts two,
- * one found in the content counts one. Ties go to the entry applied most recently, then to kind and
- * id, so the same input always gives the same order. Deterministic and local: no model is called,
- * and nothing about the order depends on the time or on the process.
+ * one found in the content counts one. Terms of `emphasis` (the current request) count once more. Ties
+ * go to the entry applied most recently, then to kind and id, so the same input always gives the same
+ * order. Deterministic and local: no model is called, and nothing about the order depends on the time
+ * or on the process.
  */
-export function rankEntries(entries: readonly EffectiveEntry[], query: string): EffectiveEntry[] {
+export function rankEntries(
+  entries: readonly EffectiveEntry[],
+  query: string,
+  emphasis = '',
+): EffectiveEntry[] {
   const wanted = terms(query)
+  const stressed = terms(emphasis)
   const scored = entries.map((item) => {
     const title = terms(item.entry.title)
     const content = terms(item.entry.content)
     let score = 0
     for (const term of wanted) score += (title.has(term) ? 2 : 0) + (content.has(term) ? 1 : 0)
+    for (const term of stressed) score += (title.has(term) ? 2 : 0) + (content.has(term) ? 1 : 0)
     return { item, score }
   })
   return scored

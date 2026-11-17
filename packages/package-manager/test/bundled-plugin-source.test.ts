@@ -1,21 +1,22 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { afterEach, expect, it, vi } from 'vitest'
+import { provenBundledOrigin, shippedBundledRelease } from '../src/bundled-origin.js'
 import {
   BUNDLED_EXAMPLES,
-  BUNDLED_HELPERS,
   bundledExampleSource,
   bundledPluginSource,
   bundledPluginSourceRoot,
   DEFAULT_ENABLED_BUNDLED_PACKAGES,
   OPTIONAL_BUNDLED_PACKAGES,
 } from '../src/bundled-plugin-source.js'
+import { inspectVerifiedTree } from '../src/inspect.js'
 import { emptyLock, readLock, writeLock } from '../src/lockfile.js'
 import { createPackageManager } from '../src/manager.js'
-import { fetchSource, hashDirectory, parseSource } from '../src/sources.js'
+import { fetchSource, hashDirectory, type PackageSource, parseSource } from '../src/sources.js'
 
 const roots: string[] = []
 afterEach(() => {
@@ -28,7 +29,10 @@ const fixture = () => {
 }
 
 it('keeps the optional catalogue limited to shipped payloads without reserving ordinary workspace sources', () => {
-  expect(OPTIONAL_BUNDLED_PACKAGES.map((item) => item.name)).toEqual(['jev-loop'])
+  expect(OPTIONAL_BUNDLED_PACKAGES.map((item) => item.name)).toEqual(['jev-loop', 'judgment'])
+  const shipped = [...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES]
+  expect(new Set(shipped.map((pkg) => pkg.id)).size).toBe(shipped.length)
+  expect(new Set(shipped.map((pkg) => pkg.ref)).size).toBe(shipped.length)
   expect(bundledPluginSource('file:./bundled-plugins/fixture-optional')).toBeUndefined()
   expect(bundledPluginSourceRoot('file:./bundled-plugins/fixture-optional')).toBeUndefined()
 })
@@ -72,40 +76,157 @@ it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
     if (helper.name === 'skill-helper') expect(existsSync(join(into, 'src', 'sources.mjs'))).toBe(true)
   },
 )
-it.each([...BUNDLED_HELPERS, ...OPTIONAL_BUNDLED_PACKAGES])(
+function offlineManager() {
+  const root = fixture(),
+    profile = join(root, 'profiles', 'local-dev')
+  mkdirSync(profile, { recursive: true })
+  writeLock(profile, {
+    ...emptyLock('local-dev', '0.1.0'),
+    resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
+    seams: Object.fromEntries(
+      ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
+        name,
+        { provider: 'local' },
+      ]),
+    ),
+    policySnapshot: {
+      // Every category an optional bundled package declares, so each one previews without a blocker.
+      capabilityCeiling: [
+        ...['tools', 'ui', 'hooks', 'managedServices', 'services', 'store', 'streams'],
+        ...['autoTitle', 'events', 'filesystem.read', 'projections', 'sessionWork'],
+      ],
+      workspacePackages: 'require-project-trust',
+    },
+  })
+  const exec = vi.fn(async () => {
+    throw new Error('Network forbidden')
+  })
+  const manager = createPackageManager({ dataDir: root, cwd: root, agnesVersion: '0.1.0', exec })
+  return { root, profile, exec, manager }
+}
+
+it.each([...DEFAULT_ENABLED_BUNDLED_PACKAGES, ...OPTIONAL_BUNDLED_PACKAGES])(
   'inspects and installs $id offline without automatic trust or activation',
   async (helper) => {
-    const root = fixture(),
-      profile = join(root, 'profiles', 'local-dev')
-    mkdirSync(profile, { recursive: true })
-    writeLock(profile, {
-      ...emptyLock('local-dev', '0.1.0'),
-      resolvedProfileHash: `sha256-${'0'.repeat(64)}`,
-      seams: Object.fromEntries(
-        ['approval', 'checkpoint', 'billing', 'verifier', 'repair', 'artifacts', 'principals'].map((name) => [
-          name,
-          { provider: 'local' },
-        ]),
-      ),
-      policySnapshot: {
-        capabilityCeiling: ['tools', 'ui', 'hooks', 'managedServices', 'services', 'store', 'streams'],
-        workspacePackages: 'require-project-trust',
-      },
-    })
-    const exec = vi.fn(async () => {
-      throw new Error('Network forbidden')
-    })
-    const manager = createPackageManager({ dataDir: root, cwd: root, agnesVersion: '0.1.0', exec })
+    const { profile, exec, manager } = offlineManager()
     const preview = await manager.inspect(profile, parseSource(helper.ref))
     expect(preview).toMatchObject({ id: helper.id, blockers: [] })
+    // Default activation never substitutes for proof of the canonical shipped bytes.
+    const fact = helper.id === '@agnes/superagent' ? { ownerApplication: true } : {}
+    expect(preview.bundledOrigin).toEqual(fact)
+    expect(preview.provenance.signatureVerified).toBe(false)
     const installed = await manager.add(profile, helper.ref)
     expect(installed.state).toMatchObject({ trusted: null, enabled: false })
     expect(
       readLock(profile, { profile: 'local-dev', agnesVersion: '0.1.0' }).packages[helper.id],
     ).toBeDefined()
+    // The daemon's install path proves the installed tree again from its own verified digest.
+    const other = offlineManager()
+    await other.manager.install(other.profile, parseSource(helper.ref), {
+      expectedIntegrity: preview.integrity,
+    })
+    const row = (await other.manager.inventory(other.profile)).packages.find((item) => item.id === helper.id)
+    expect(row?.bundledOrigin).toEqual(fact)
     expect(exec).not.toHaveBeenCalled()
+    expect(other.exec).not.toHaveBeenCalled()
   },
 )
+
+const superagent = DEFAULT_ENABLED_BUNDLED_PACKAGES.find((item) => item.name === 'superagent')!
+
+/** Inspect a tree as acquisition hands it over: its own digest, claimed under `source`. */
+function inspectCopy(dir: string, source: PackageSource) {
+  const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'))
+  const treeIntegrity = hashDirectory(dir, { exclude: [] })
+  const fetched = {
+    dir,
+    version: manifest.version,
+    integrity: treeIntegrity,
+    license: manifest.license,
+    dependencies: manifest.dependencies ?? {},
+  }
+  return inspectVerifiedTree({ dir, source, fetched }, treeIntegrity).preview
+}
+
+it('gives the bundled-origin fact only to the shipped bytes under the canonical source', async () => {
+  const release = bundledPluginSource(superagent.ref)!
+  const copy = join(fixture(), 'superagent')
+  cpSync(join(release.root, release.path), copy, { recursive: true })
+  const canonical = parseSource(superagent.ref)
+  expect(inspectCopy(copy, canonical).bundledOrigin).toEqual({ ownerApplication: true })
+  // The same name and bytes from any other source are an ordinary package.
+  const external = parseSource(`file:${copy.split(sep).join('/')}`)
+  for (const source of [
+    external,
+    parseSource(`${superagent.ref}/`),
+    parseSource('file:bundled-plugins/superagent'),
+    parseSource(`npm:${superagent.id}@${superagent.version}`),
+  ])
+    expect(inspectCopy(copy, source).bundledOrigin, source.ref).toBeUndefined()
+  const { profile, manager } = offlineManager()
+  const reviewed = await manager.inspect(profile, external)
+  expect(reviewed).toMatchObject({ id: superagent.id, provenance: { signatureVerified: false } })
+  expect(reviewed.bundledOrigin).toBeUndefined()
+  // One changed byte under the canonical source is no longer the shipped copy.
+  writeFileSync(join(copy, 'README.md'), `${readFileSync(join(copy, 'README.md'), 'utf8')} `)
+  expect(inspectCopy(copy, canonical).bundledOrigin).toBeUndefined()
+})
+
+it('refuses the bundled-origin fact on missing, corrupt or mismatched release evidence', () => {
+  const release = bundledPluginSource(superagent.ref)!
+  const payload = join(release.root, release.path)
+  const digest = hashDirectory(payload)
+  const candidate = {
+    id: superagent.id,
+    version: superagent.version,
+    source: parseSource(superagent.ref),
+    treeIntegrity: digest,
+    rows: [{ id: 'ext:agnes.superagent/main', runtime: 'in-process' }],
+  }
+  expect(provenBundledOrigin(candidate)).toEqual({ ownerApplication: true })
+  const shipped = { id: superagent.id, version: superagent.version, digest }
+  expect(provenBundledOrigin(candidate, () => shipped)).toEqual({ ownerApplication: true })
+  for (const evidence of [
+    undefined,
+    { ...shipped, digest: `sha256-${'0'.repeat(64)}` },
+    { ...shipped, version: '9.9.9' },
+    { ...shipped, id: '@agnes/judgment' },
+  ])
+    expect(
+      provenBundledOrigin(candidate, () => evidence),
+      JSON.stringify(evidence),
+    ).toBeUndefined()
+  for (const source of [
+    undefined,
+    { type: 'path', ref: superagent.ref },
+    { type: 'file', ref: superagent.ref, extra: true },
+    { type: 'file', ref: superagent.ref.toUpperCase() },
+  ])
+    expect(provenBundledOrigin({ ...candidate, source }), JSON.stringify(source)).toBeUndefined()
+  expect(provenBundledOrigin({ ...candidate, id: '@agnes/judgment' })).toBeUndefined()
+  expect(provenBundledOrigin({ ...candidate, version: '9.9.9' })).toBeUndefined()
+  expect(provenBundledOrigin({ ...candidate, rows: [] })).toEqual({})
+
+  // A present digest manifest is authoritative: corrupt or partial evidence is never re-derived.
+  const root = fixture()
+  expect(shippedBundledRelease(superagent.ref, () => ({ root, path: 'payload' }))).toBeUndefined()
+  cpSync(payload, join(root, 'payload'), { recursive: true })
+  expect(shippedBundledRelease(superagent.ref, () => ({ root, path: 'payload' }))).toEqual(shipped)
+  for (const manifest of ['invalid', '{}', JSON.stringify({ payload: 'sha256-short' })]) {
+    writeFileSync(join(root, 'bundled-plugin-digests.json'), manifest)
+    expect(
+      shippedBundledRelease(superagent.ref, () => ({ root, path: 'payload' })),
+      manifest,
+    ).toBeUndefined()
+  }
+  const recorded = `sha256-${'1'.repeat(64)}`
+  writeFileSync(join(root, 'bundled-plugin-digests.json'), JSON.stringify({ payload: recorded }))
+  expect(shippedBundledRelease(superagent.ref, () => ({ root, path: 'payload' }))).toEqual({
+    ...shipped,
+    digest: recorded,
+  })
+  expect(shippedBundledRelease('file:./bundled-plugins/unknown')).toBeUndefined()
+})
 
 it.each([
   { family: 'loops', name: 'dag-loop', id: '@agnes-example/dag-loop' },

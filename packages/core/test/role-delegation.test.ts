@@ -1,6 +1,6 @@
 import { presetDefaults } from '@agnes/core-common/step/preset'
 import { MemoryStorage } from '@agnes/core-ledger/log/memory-storage'
-import type { ToolDef } from '@agnes/extension-api'
+import type { MemorySession, ToolDef, ToolMeta } from '@agnes/extension-api'
 import type { ModelRecord } from '@agnes/protocol'
 import { Type } from '@sinclair/typebox'
 import { expect, expectTypeOf, it, vi } from 'vitest'
@@ -12,6 +12,7 @@ import {
   type RoleDelegation,
   roleToolSnapshot,
 } from '../src/child/roles.js'
+import { toolMemoryPort } from '../src/execution/turn/memory-approval.js'
 import { Kernel } from '../src/kernel.js'
 import { defaultLoops } from '../testkit/loops.js'
 import { fakeProvider, textTurn, toolTurn } from './helpers/fake-provider.js'
@@ -550,6 +551,8 @@ it.each([
   { filesystem: undefined },
   { delegatedFullAccess: false },
   { delegatedFullAccess: 'yes' },
+  { windowsWriteRestricted: false },
+  { windowsWriteRestricted: 'yes' },
 ])('i01: incomplete persisted authority refuses reopen: %j', async (patch) => {
   const storage = new MemoryStorage()
   const first = make(storage)
@@ -797,3 +800,64 @@ it('delegated full access: the captured flag survives reopen', async () => {
     await second.close()
   }
 })
+
+it('the Windows write restriction a role inherited survives reopen', async () => {
+  const storage = new MemoryStorage()
+  const first = make(storage)
+  await first.session('child', {
+    ...options,
+    roleDelegation: { ...captured(), windowsWriteRestricted: true },
+  })
+  await first.close()
+  const second = make(storage)
+  try {
+    expect((await second.session('child', options)).d.roleDelegation?.windowsWriteRestricted).toBe(true)
+  } finally {
+    await second.close()
+  }
+})
+
+it.each([
+  ['memory writes off', true],
+  ['the default opening input', false],
+])(
+  'a role child gets a memory port only when its parent opening input allowed one (%s)',
+  async (_label, off) => {
+    const role = captured()
+    let k!: Kernel
+    k = make(new MemoryStorage(), fakeProvider([textTurn('unused')]), {
+      memoryFor: () => ({}) as MemorySession,
+      childRoles: {
+        list: async () => [role.role],
+        resolve: async () => ({
+          role: role.role,
+          open: (key, opts) => k.session(key, { ...options, ...opts, roleDelegation: role }),
+        }),
+      },
+    })
+    try {
+      const parent = await k.session('parent', options)
+      await parent.enqueue('next-turn', {
+        content: [{ type: 'text', text: 'delegate' }],
+        actor: off ? { ...actor, attrs: { memoryWrites: 'off', experience: 'excluded' } } : actor,
+      })
+      await parent.acceptInput()
+      const handle = await parent.d.children.createWithKind!('spawn', {
+        parent: parent.key,
+        cwd: '/w',
+        role: role.role.ref,
+        input: 'Read',
+        resident: true,
+      })
+      const child = k.get(handle.key)
+      if (!child) throw new Error('role child not open')
+      const tool: { name: string; meta: ToolMeta } = writeTool()
+      await child.acceptInput()
+      expect(await toolMemoryPort(child, tool, 0, new AbortController().signal)).toEqual(
+        off ? undefined : expect.anything(),
+      )
+    } finally {
+      await k.close()
+    }
+  },
+)

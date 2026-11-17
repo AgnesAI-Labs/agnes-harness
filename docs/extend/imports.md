@@ -36,9 +36,12 @@ For profile pages, import React from `react` and call your declared backend thro
 
 ## Kind tokens
 
+IM adapter authors use `@agnes/plugin-runtime/channel-contract` and the backend-owned
+`profileRuntime.registerChannel` bridge; see [channel plugins](channel-plugins.md).
+
 A kind is one token made with `defineKind`. It declares whether it supports `ctx.providers.register`, `ctx.providers.bindOwn`, or both (a `bind` option adds binding). `ctx.providers.register(kind, provider)` and `ctx.providers.bindOwn(kind)` take the same token type, and the Host refuses an operation the kind does not declare.
 
-Host-installed provider kinds are exported by `@agnes/extension-api` (and re-exported by `@agnes/plugin-runtime`): `loopKind`, `modelAdapterKind`, `compactionKind`, `persistenceKind`, `sandboxKind`, `toolRuntimeKind`, `toolPolicyKind`, `childAgentKind`, `referenceResolverKind`, `memoryKind`, `systemPromptKind`, `webhookTriggerKind`; the seven seam kinds (`approvalKind`, `principalsKind`, `billingKind`, `checkpointKind`, `artifactsKind`, `verifierKind`, `repairKind`) come from `@agnes/extension-api/seams`.
+Host-installed provider kinds are exported by `@agnes/extension-api` (and re-exported by `@agnes/plugin-runtime`): `loopKind`, `modelAdapterKind`, `compactionKind`, `persistenceKind`, `sandboxKind`, `toolRuntimeKind`, `toolPolicyKind`, `childAgentKind`, `referenceResolverKind`, `memoryKind`, `systemPromptKind`, `webhookTriggerKind`, `channelKind`; the seven seam kinds (`approvalKind`, `principalsKind`, `billingKind`, `checkpointKind`, `artifactsKind`, `verifierKind`, `repairKind`) come from `@agnes/extension-api/seams`.
 
 These are the six bindable kinds in the Host-provided public author namespaces. Import the exact owning path so reloads preserve token identity; do not copy a token or recreate it with `defineKind`.
 

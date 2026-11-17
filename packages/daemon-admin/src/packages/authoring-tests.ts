@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { createRequire, isBuiltin } from 'node:module'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -7,6 +7,7 @@ import { bindProvidedContractModules } from '@agnes/base/provided-contracts'
 import { safeAuthoringOutput } from '@agnes/error-sanitization'
 import type { AuthoringTestRunner } from '@agnes/package-manager'
 import { providedExternalModules } from '@agnes/plugin-runtime/provided-externals'
+import { nativeRealpathSync } from '@agnes/system-node/realpath'
 import type { build as Build } from 'esbuild'
 import {
   type AuthoringSandboxContext,
@@ -21,7 +22,7 @@ async function testCandidate(
   signal: AbortSignal,
   context: AuthoringSandboxContext,
 ): ReturnType<AuthoringTestRunner> {
-  directory = realpathSync(directory)
+  directory = nativeRealpathSync(directory)
   const insideCandidate = (path: string): boolean => {
     if (!path) return false
     const rel = relative(directory, path)
@@ -44,7 +45,7 @@ async function testCandidate(
         })
       )
         throw new Error('invalid static Skill')
-      const document = realpathSync(join(directory, contribution.path))
+      const document = nativeRealpathSync(join(directory, contribution.path))
       if (!insideCandidate(document)) throw new Error('invalid static Skill path')
       signal.throwIfAborted()
       await collectPackageSkillFiles(dirname(document), source)
@@ -172,7 +173,7 @@ async function testCandidate(
                 kind: args.kind,
                 pluginData: { authoringResolved: true },
               })
-              if (resolved.errors.length || !insideCandidate(realpathSync(resolved.path)))
+              if (resolved.errors.length || !insideCandidate(nativeRealpathSync(resolved.path)))
                 throw new Error('Candidate imports must stay inside their source tree')
               if (!files.some((file) => join(directory, file.path) === resolved.path))
                 throw new Error('Candidate import is not part of the hashed source')

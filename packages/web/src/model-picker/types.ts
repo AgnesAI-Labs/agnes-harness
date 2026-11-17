@@ -4,6 +4,7 @@ import type { SessionAuxiliarySnapshot, Translate } from '@agnes/web-ui'
 export type ModelPickerOption = {
   id: string
   route: string
+  name?: string
   input?: readonly ('text' | 'image')[]
   inputLimits?: ModelInputLimits
   label?: string

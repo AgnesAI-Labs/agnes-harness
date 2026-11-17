@@ -20,7 +20,7 @@ import {
   createSecretsFile,
   overlayChildEngineTarget,
 } from '@agnes/host'
-import { activeRuntimePinId, isRuntimePackageEligible, releaseChildEngineOwner } from '@agnes/package-manager'
+import { isRuntimePackageEligible, releaseChildEngineOwner } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { HARNESS_VERSION } from '@agnes/protocol'
 import type { DispatchState } from './assembly-client-dispatch.js'
@@ -31,6 +31,8 @@ import type { StoresState } from './assembly-stores.js'
 import type { WorkersState } from './assembly-workers.js'
 import { describeGenerationSessions } from './generation-sessions.js'
 import { readRunningGenerationStatus } from './generation-status-read.js'
+import { quietGrantPruner, releaseManagedSessions } from './managed-workspace-grants.js'
+import { managedSessionPackages } from './profile-services.js'
 import { createProfileSurfaceController } from './profile-surfaces.js'
 import {
   type CompositeRuntimeDelivery,
@@ -41,7 +43,7 @@ import {
   createCompositeRuntimePins,
   createCompositeTargetActivation,
 } from './publication/composite-target-activation.js'
-import { createTargetReverter } from './publication/composite-target-revert.js'
+import { createTargetReverter, readLoadableSnapshots } from './publication/composite-target-revert.js'
 import { createRuntimePinCoordinator } from './publication/runtime-pin-coordinator.js'
 import { publishProbedRuntimeTarget } from './publication/runtime-target-publisher.js'
 import { createManagementSkillImports } from './skill-install-requests.js'
@@ -272,6 +274,9 @@ async function openRuntimeActivation(
     surfaceInventory,
     pinCoordinator,
     surfaceController,
+    managedSessionRecords,
+    managedSessionInputs,
+    ownerInputHolder,
   } = state
   let latestInventory = surfaceInventory
   // Older desired artifacts predate daemon-owned web rows. Repair this narrow slice before
@@ -289,23 +294,7 @@ async function openRuntimeActivation(
   const targetReverter = runtimeStore
     ? createTargetReverter({
         store: runtimeStore,
-        loadableSnapshots: async () => {
-          const [inventory, pins] = await Promise.all([
-            packageRuntime.manager.inventory(packageProfileDirectory),
-            packageRuntime.manager.listRuntimePins(packageProfileDirectory),
-          ])
-          const eligible = new Set(inventory.packages.filter(isRuntimePackageEligible).map((pkg) => pkg.id))
-          return new Map(
-            pins
-              .filter(
-                (pin) =>
-                  pin.purpose === 'active' &&
-                  eligible.has(pin.snapshot.packageId) &&
-                  pin.pinId === activeRuntimePinId(pin.snapshot),
-              )
-              .map((pin) => [`${pin.snapshot.packageId}@${pin.snapshot.integrity}`, pin.snapshot.integrity]),
-          )
-        },
+        loadableSnapshots: () => readLoadableSnapshots(packageRuntime.manager, packageProfileDirectory),
         audit: (event) => o.audit?.(event),
       })
     : undefined
@@ -329,6 +318,10 @@ async function openRuntimeActivation(
   const compositeActivation = runtimeStore
     ? createCompositeTargetActivation({
         store: runtimeStore,
+        clearChannels: async (packageId) => {
+          const worker = await pool.acquireSharedWorker()
+          await worker.command('channels.clear', { packageId })
+        },
         ...(revertFailedDesired ? { revertFailedDesired } : {}),
         settle: {
           timeoutMs: o.config.limits.workerStartupMs + 45_000,
@@ -344,6 +337,29 @@ async function openRuntimeActivation(
         ...(pinCoordinator ? { collectPins: pinCoordinator.collect } : {}),
         ...(pinCoordinator ? { revokePackage: pinCoordinator.revokePackage } : {}),
         ...(pinCoordinator ? { releaseRetiring: pinCoordinator.releaseRetiring } : {}),
+        ...(managedSessionRecords
+          ? {
+              pruneGrants: quietGrantPruner(
+                managedSessionRecords,
+                () =>
+                  managedSessionPackages({
+                    manager: packageRuntime.manager,
+                    directory: packageProfileDirectory,
+                  }),
+                (message) => o.audit?.({ kind: 'worker.log', sessionKey: '@shared', level: 'warn', message }),
+                (owner) => ownerInputHolder.engine?.withdraw(owner) ?? Promise.resolve(),
+              ),
+              releaseManagedSessions: (packageId: string) =>
+                releaseManagedSessions(
+                  {
+                    records: managedSessionRecords,
+                    ...(managedSessionInputs ? { inputs: managedSessionInputs } : {}),
+                    ...(ownerInputHolder.engine ? { engine: ownerInputHolder.engine } : {}),
+                  },
+                  packageId,
+                ),
+            }
+          : {}),
         generationStatus: async () => {
           const status = await readRunningGenerationStatus(pool, o.config.limits.workerStartupMs)
           const running = (key: string) => registry.get(key)?.session.running === true

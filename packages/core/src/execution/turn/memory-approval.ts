@@ -2,10 +2,28 @@ import { sha256Hex } from '@agnes/core-common/request/hash'
 import { isApprovalReason } from '@agnes/core-effects/effects/approval-answer'
 import type { MemoryApprovalResult, MemoryProposal, ToolMeta } from '@agnes/extension-api'
 import { domainDecisionSource, requestDomainDecision } from '../../step/domain-decision.js'
+import { memoryWritesOff } from '../../step/opening-input.js'
 import type { SessionImpl } from '../../step/session.js'
 import { memoryAdmission } from './memory-admission.js'
 
 /** A file candidate has its own one-shot binding; session grants cannot approve it; the central full-access rule can. */
+/**
+ * The memory port a tool call gets, or none. A provider in `auto` mode writes without asking, so a
+ * session whose opening input turned memory writes off gets no port at all, not only refused approvals.
+ */
+export async function toolMemoryPort(
+  session: SessionImpl,
+  tool: { name: string; meta: ToolMeta },
+  step: number,
+  signal: AbortSignal,
+) {
+  if (!session.d.memory || (await memoryWritesOff(session))) return undefined
+  return {
+    session: session.d.memory,
+    approve: (proposal: MemoryProposal) => approveMemoryFile(session, proposal, tool, step, signal),
+  }
+}
+
 export async function approveMemoryFile(
   session: SessionImpl,
   proposal: MemoryProposal,
@@ -13,6 +31,8 @@ export async function approveMemoryFile(
   step: number,
   signal: AbortSignal,
 ): Promise<MemoryApprovalResult> {
+  // Checked before any decision: full access would otherwise allow the write automatically.
+  if (await memoryWritesOff(session)) return { status: 'rejected' }
   const asked = {
     requestId: session.d.ids.requestId(),
     kind: 'tool' as const,

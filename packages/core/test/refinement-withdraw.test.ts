@@ -272,7 +272,7 @@ describe('entries a snapshot leaves out on purpose', () => {
     expect(await t.say('first task')).toMatchObject({ reason: 'completed' })
     const first = await notes(t)
     expect(first).toHaveLength(1)
-    expect(first[0]).toContain('2 more skill entries are saved')
+    expect(first[0]).toContain('2 more skill entries are not shown here')
     expect(first[0]).toContain('1 entry was left out to fit the context budget')
     // Nothing changed on the ledger: the next request adds no note, and the counts stay true.
     expect(await t.say('second task')).toMatchObject({ reason: 'completed' })

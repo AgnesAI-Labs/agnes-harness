@@ -80,6 +80,9 @@
     },
     {
       "path": "../distribution"
+    },
+    {
+      "path": "../channels"
     }
   ]
 }

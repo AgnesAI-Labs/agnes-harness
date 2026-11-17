@@ -79,9 +79,21 @@ export function createRowServiceHost(
   let ports: KernelPorts | undefined
   const pending = new Set<() => void>()
   const projectionNames = new WeakMap<RowOrigin, Set<string>>()
+  const projectionOwnership = new WeakMap<RowOrigin, () => void>()
   const servicePublication = createRowServicePublication()
 
   return Object.freeze({
+    /** Host-only live ownership view shared with this origin's hook/tool reader. */
+    projectionNames(origin: Readonly<RowOrigin>): readonly string[] {
+      try {
+        const assert = projectionOwnership.get(origin)
+        if (!assert) return []
+        assert()
+        return [...(projectionNames.get(origin) ?? [])]
+      } catch {
+        return []
+      }
+    },
     installRoot(root: Context, origins: RowOriginLookup): void {
       const registerService = servicePublication.install(root)
       if (profileRuntime) installProfileRuntime(root, origins, profileRuntime)
@@ -267,6 +279,7 @@ export function createRowServiceHost(
           alive()
           const owner = pluginRowSource(origin.rowId)
           const projection = adaptProjection(owner, def, capability)
+          projectionOwnership.set(origin, alive)
           return fiber.effect(() => {
             let release: (() => void) | undefined
             let names = projectionNames.get(origin)

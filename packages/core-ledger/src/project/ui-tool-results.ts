@@ -46,12 +46,14 @@ export function applyToolResultEvent(
     4096,
   )
   const details = result.structured
+  // A failed child is an error result that still created a child: it names the child, a refusal
+  // before creation does not. The delegation card follows the child, not the result's success.
   if (
     node.name === 'subagent_spawn' &&
-    !result.isError &&
     details &&
     typeof details === 'object' &&
-    !Array.isArray(details)
+    !Array.isArray(details) &&
+    (!result.isError || (typeof details.childKey === 'string' && details.childKey.length > 0))
   ) {
     const role = details.role
     if (

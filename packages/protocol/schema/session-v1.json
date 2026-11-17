@@ -513,12 +513,29 @@
         "presentation": { "$ref": "#/$defs/SystemInputPresentation" }
       }
     },
+    "InputDeliverer": {
+      "description": "Display only: the server-verified app that delivered this input in place of a person. Stamped by the backend, never accepted from a client and never an authorization fact; it changes neither trust, queueing nor what the model reads.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "appId"],
+      "properties": {
+        "kind": { "const": "bundled-app" },
+        "appId": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
     "UserMessage": {
       "type": "object",
       "additionalProperties": false,
       "required": ["content"],
       "properties": {
+        "commandId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Originating inbox command correlation. Presentation and deduplication only; never grants authority."
+        },
         "system": { "$ref": "#/$defs/SystemInput" },
+        "deliveredBy": { "$ref": "#/$defs/InputDeliverer" },
         "content": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/ContentBlock" } },
         "kind": { "enum": ["prompt", "steer", "follow_up", "runtime_context"] },
         "titleLocale": { "enum": ["en", "zh-CN"] }
@@ -543,7 +560,11 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": ["type", "text"],
-                "properties": { "type": { "const": "thinking" }, "text": { "type": "string" } }
+                "properties": {
+                  "type": { "const": "thinking" },
+                  "text": { "type": "string" },
+                  "signature": { "type": "string", "minLength": 1 }
+                }
               }
             ]
           }
@@ -647,7 +668,19 @@
           "required": ["level", "scope"],
           "properties": {
             "level": { "enum": ["full", "partial", "none"] },
-            "scope": { "type": "array", "items": { "enum": ["file", "network", "process"] } }
+            "scope": { "type": "array", "items": { "enum": ["file", "network", "process"] } },
+            "boundary": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["contract", "fileWrite", "fileRead", "network", "processTree"],
+              "properties": {
+                "contract": { "const": "windows-write-restricted-v1" },
+                "fileWrite": { "const": "acl-partial" },
+                "fileRead": { "const": "unrestricted" },
+                "network": { "const": "unrestricted" },
+                "processTree": { "const": "job-object" }
+              }
+            }
           }
         },
         "authz": {
@@ -1872,6 +1905,7 @@
       "required": ["itemId", "target", "content", "actor", "enqueuedAt"],
       "properties": {
         "system": { "$ref": "#/$defs/SystemInput" },
+        "deliveredBy": { "$ref": "#/$defs/InputDeliverer" },
         "itemId": {
           "type": "string",
           "maxLength": 128
@@ -2225,6 +2259,7 @@
           }
         },
         "endpointHost": { "type": "string", "maxLength": 253 },
+        "caller": { "type": "string", "minLength": 1, "maxLength": 256 },
         "credits": {
           "type": "number",
           "minimum": 0

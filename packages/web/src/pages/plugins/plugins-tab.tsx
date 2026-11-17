@@ -25,6 +25,7 @@ import { type ComponentProps, type ReactNode, useId, useState } from 'react'
 import { isBusinessAgent as sharedBusinessAgent } from '../business-agents.js'
 import type { HomePageData } from '../host.js'
 import type { PluginView } from './admin-view.js'
+import { ExternalPackageRows, filteredExternalPackages } from './external-packages.js'
 import { CAPABILITIES, openPlugins, pluginPageId } from './route.js'
 import type { CapabilitySummaries } from './summaries.js'
 
@@ -211,6 +212,7 @@ export function PluginsTab({
   const [source, setSource] = useState<PluginSource | ''>('')
   const pages = usePushStack()
   const locale = view.locale.getSnapshot()
+  const externalRows = filteredExternalPackages(view, source)
   const nameOf = (item: PackageInstalledDescriptor) =>
     resolvePluginMetadata(item.metadata, locale)?.displayName ?? item.id
   const rows = orderInstalled(
@@ -239,6 +241,9 @@ export function PluginsTab({
           {...pluginListProps(view)}
           filtered={!!source || !!view.kind}
           tab="installed"
+          leading={
+            externalRows.length ? <ExternalPackageRows rows={externalRows} t={t} view={view} /> : undefined
+          }
           rows={rows}
         />
       </div>

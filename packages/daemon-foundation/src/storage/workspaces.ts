@@ -4,6 +4,7 @@ import { rpcError, type WorkspaceEntry } from '@agnes/protocol'
 import type { WorkspaceBindingEnvelope, WorkspaceBindingRecord } from '../workspace-binding.js'
 import { assertNotProtected, canonicalExtraRoots } from './extra-roots.js'
 import type { SessionWorkspacePort } from './lister.js'
+import type { ManagedChatAuthority, ManagedChatRoots } from './managed-chat-authority.js'
 import { ensure, type TableHandle } from './table.js'
 
 export type { WorkspaceEntry } from '@agnes/protocol'
@@ -280,11 +281,16 @@ export class WorkspaceCatalog {
     private readonly clock: () => number = () => Date.now(),
     private readonly bindings: WorkspaceBindingStore = new MemoryWorkspaceBindings(),
     /** Canonical daemon-managed root for chats; listed as `kind: 'chats'` and never removable. */
-    private readonly chatsRoot?: string,
+    private readonly chatsRoot?: string | ManagedChatRoots,
     /** Paths no extra directory may be, contain or lie inside. Without it, extra directories are refused. */
     private readonly extraRootGuard?: Readonly<{ protectedRoots: readonly string[] }>,
+    readonly managedChatAuthority?: ManagedChatAuthority,
   ) {
     this.usedSessionKeys = new Set(bindings.keys())
+  }
+
+  get managedChats(): ManagedChatRoots {
+    return typeof this.chatsRoot === 'string' ? { current: this.chatsRoot } : (this.chatsRoot ?? {})
   }
 
   /** Filesystem normalization only. This method does not grant authority. */
@@ -374,6 +380,8 @@ export class WorkspaceCatalog {
     if (!row) throw this.notRegistered()
     await this.assertFresh(row)
     this.assertListed(row)
+    if (row.path === this.managedChats.legacy && !this.managedChatAuthority?.hasSource(sessionKey, row.path))
+      throw this.notRegistered()
     const extraRoots = await this.admitExtraRoots(row.path, extraPaths)
     const requested: WorkspaceBindingRecord = {
       sessionKey,
@@ -390,7 +398,14 @@ export class WorkspaceCatalog {
       this.store.touch(row.path, new Date(this.clock()).toISOString())
     }
     this.notifyBound(persisted)
-    return issueBinding(persisted)
+    return this.issueBinding(persisted)
+  }
+
+  /** Called only after the backend verified the durable parent/child relationship. */
+  async restoreDerivedBinding(parentKey: string, childKey: string): Promise<WorkspaceBindingEnvelope> {
+    const parent = await this.restoreBinding(parentKey)
+    await this.managedChatAuthority?.bindDerived(parentKey, childKey)
+    return parent
   }
 
   /**
@@ -437,6 +452,11 @@ export class WorkspaceCatalog {
           reason: 'session directories differ from the original request',
         })
     }
+    if (
+      binding.canonicalRoot === this.managedChats.legacy &&
+      !(await this.managedChatAuthority?.authorizeExisting(sessionKey))
+    )
+      throw this.notRegistered()
     // A registry that no longer lists a bound extra directory must not keep granting it.
     for (const extra of binding.extraRoots ?? []) {
       const registered = this.store.rows().find((candidate) => candidate.path === extra)
@@ -449,7 +469,7 @@ export class WorkspaceCatalog {
       await this.assertFresh(registered)
     }
     this.notifyBound(binding)
-    return issueBinding(binding)
+    return this.issueBinding(binding)
   }
 
   async list(): Promise<{ items: WorkspaceEntry[] }> {
@@ -481,7 +501,7 @@ export class WorkspaceCatalog {
   ): { removed: boolean; archivedSessionCount: number } {
     const row = this.store.rows().find((candidate) => candidate.workspaceId === workspaceId)
     if (!row) return { removed: false, archivedSessionCount: 0 }
-    if (row.path === this.chatsRoot)
+    if (row.path === this.managedChats.current || row.path === this.managedChats.legacy)
       throw rpcError('SEMANTIC_REJECTED', {
         code: 'WORKSPACE_MANAGED',
         reason: 'The chats workspace is managed by the daemon and cannot be removed.',
@@ -547,8 +567,23 @@ export class WorkspaceCatalog {
           .at(-1) ?? null,
       sessionCount: fromSessions?.count ?? 0,
       available,
-      ...(row.path === this.chatsRoot ? { kind: 'chats' as const } : {}),
+      ...(row.path === this.managedChats.current
+        ? { kind: 'chats' as const, managedRole: 'current' as const }
+        : row.path === this.managedChats.legacy
+          ? { kind: 'chats' as const, managedRole: 'legacy' as const }
+          : {}),
     }
+  }
+
+  private async issueBinding(binding: WorkspaceBindingRecord): Promise<WorkspaceBindingEnvelope> {
+    const grant = await this.managedChatAuthority?.authorizeExisting(binding.sessionKey)
+    if (
+      binding.canonicalRoot === this.managedChats.legacy &&
+      !grant &&
+      !this.managedChatAuthority?.hasSource(binding.sessionKey, binding.canonicalRoot)
+    )
+      throw this.notRegistered()
+    return issueBinding({ ...binding, ...(grant ? { legacyChatReadGrant: grant } : {}) })
   }
 
   private async assertFresh(row: WorkspaceRow): Promise<void> {

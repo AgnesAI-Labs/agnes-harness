@@ -15,12 +15,13 @@ export function registerManagedServices(
     status(): JsonValue
     reconcile(context: ServiceContext): Promise<JsonValue>
     retry(): Promise<JsonValue>
-    configure(input: JsonValue): Promise<JsonValue>
+    configure(input: JsonValue, expectedRevision?: string): Promise<JsonValue>
     check(input: JsonValue, signal: AbortSignal): Promise<JsonValue>
   },
   settled: () => Promise<void>,
   configSchema: ServiceDef['inputSchema'],
   checkSchema?: ServiceDef['inputSchema'],
+  recovery?: () => JsonValue,
 ) {
   for (const capability of managedServiceCapabilities(id, configSchema, checkSchema)) {
     const method = capability.name.slice(id.length + 1)
@@ -34,8 +35,17 @@ export function registerManagedServices(
         if (method === 'configuration') return handle.configuration()
         if (method === 'reconcile') return handle.reconcile(context)
         if (method === 'retry') return handle.retry()
-        if (method === 'configure') return handle.configure(input)
-        return handle.check(input, context.signal)
+        // The Host binds a stated configuration revision into the operation; the plugin never sees it.
+        if (method === 'configure')
+          return handle.configure(input, context.admission?.prepared.resourceRevision)
+        try {
+          return await handle.check(input, context.signal)
+        } catch (error) {
+          context.signal.throwIfAborted()
+          const status = handle.status() as { state?: string; code?: string }
+          if (!recovery || status.state !== 'failed' || status.code === 'shutdown-unconfirmed') throw error
+          return recovery()
+        }
       },
     })
   }

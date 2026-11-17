@@ -13,6 +13,7 @@ import {
   getApiKeyProvider,
   getSubscriptionProvider,
   isChatModelId,
+  knownModel,
   SUBSCRIPTION_PROVIDER_REGISTRY,
   type SubscriptionProviderEntry,
   subscriptionAuth,
@@ -83,7 +84,9 @@ import {
 } from './configuration-endpoint.js'
 import { ConfigurationError, type ConfigurationErrorCode } from './configuration-error.js'
 import {
+  applyInputOverrides,
   applyModelConfiguration,
+  catalogueInputs,
   configModel,
   configModels,
   normalizeConfigModel,
@@ -360,11 +363,9 @@ function parseSaveInput(value: unknown): {
     ...(input.baseUrl === undefined ? {} : { baseUrl: input.baseUrl }),
     ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
   })
-  // The declared model list and an explicit credential reference exist only for payload-only
-  // providers; a chat account keeps its catalogue-derived models and its account-scoped key.
-  // An OpenAI-compatible account declares its models too, but holds an ordinary key.
-  const declares = compatible.declaresModels(parsed.entry)
-  if ((!declares && input.models !== undefined) || (!isPayloadOnlyEntry(parsed.entry) && input.credentialRef))
+  // Compatible accounts declare models; catalogue accounts may only override known models
+  // through input-only rows. Credential references remain exclusive to payload accounts.
+  if (!isPayloadOnlyEntry(parsed.entry) && input.credentialRef)
     throw new ConfigurationError('CONFIG_INVALID_INPUT')
   if (input.networkTimeouts !== undefined) checkedNetworkTimeouts(input.networkTimeouts)
   const model = parseModel(input.model)
@@ -659,7 +660,7 @@ export function createConfigurationService(
   SessionDefaultsConfigurationService &
   ChildEnginesConfigurationService &
   Required<Pick<ConfigurationService, 'application' | 'saveApplication' | 'modelSlots' | 'saveModelSlots'>> {
-  const chatModels = compatible.chatModelPolicy(isChatModelId)
+  const chatModels = compatible.chatModelPolicy(isChatModelId, knownModel)
   const home = resolve(options.home)
   if (!PROFILE.test(options.profile)) throw new ConfigurationError('CONFIG_INVALID_INPUT')
   const profile = options.profile
@@ -723,6 +724,9 @@ export function createConfigurationService(
     return next
   }
 
+  const catalogInputs = (api: string, address: string) =>
+    catalogueInputs(API_KEY_PROVIDER_REGISTRY, staticCatalogue, api, address)
+
   const readCredential = async (ref: string): Promise<StoredCredential | null> => {
     try {
       return await credentialStore.read(ref)
@@ -777,6 +781,7 @@ export function createConfigurationService(
     const accounts: ConfigAccount[] = await Promise.all(
       state.accounts.map(async (row) => {
         const entry = providerFor(row.id, row.authType)
+        const inputs = await catalogInputs(entry.api, row.baseUrl)
         return {
           accountId: row.accountId,
           label: row.label,
@@ -786,7 +791,7 @@ export function createConfigurationService(
           ...(row.networkTimeouts === undefined ? {} : { networkTimeouts: row.networkTimeouts }),
           model: row.model,
           models: compatible.declaresModels(entry)
-            ? chatModels.models(row.models, isPayloadOnlyEntry(entry))
+            ? chatModels.models(row.models, isPayloadOnlyEntry(entry), inputs)
             : await staticCatalogue(entry)
                 .catch(() => ({ records: [] as ModelRecord[] }))
                 .then(({ records }) =>
@@ -931,7 +936,7 @@ export function createConfigurationService(
     if (compatible.isCompatibleEntry(parsed.entry))
       return chatModels.testCompatibleAccount(
         { entry: parsed.entry, baseUrl, apiKey: parsed.apiKey, row },
-        { list, readCredential },
+        { list, readCredential, catalogInputs },
       )
     const storedCredential =
       row && parsed.apiKey === undefined ? await readCredential(row.credentialRef) : null
@@ -1048,7 +1053,8 @@ export function createConfigurationService(
       existing.id === parsed.entry.id &&
       existing.baseUrl === baseUrl &&
       existing.model === parsed.model &&
-      existing.label !== label
+      existing.label !== label &&
+      parsed.models === undefined
     const result = labelOnlyUpdate
       ? { models: structuredClone(existing?.models ?? []), verified: true }
       : compatible.isCompatibleEntry(entry) && parsed.models !== undefined
@@ -1064,6 +1070,7 @@ export function createConfigurationService(
               baseUrl,
               ...(parsed.apiKey === undefined ? {} : { apiKey: parsed.apiKey }),
             })
+    if (!compatible.declaresModels(entry)) result.models = applyInputOverrides(result.models, parsed.models)
     if (!result.verified) throw new ConfigurationError('CONFIG_TEST_FAILED')
     if (!result.models.some((model) => model.id === parsed.model))
       throw new ConfigurationError('CONFIG_MODEL_UNAVAILABLE')
@@ -1469,7 +1476,8 @@ export function createConfigurationService(
           // A payload-only account has no provider catalogue to resolve against; its declared
           // models render through the fixed payload template instead.
           if (isPayloadOnlyEntry(entry)) return [payloadOnlyRoute(row, entry.api)]
-          if (compatible.isCompatibleEntry(entry)) return [chatModels.compatibleRoute(row, entry.api)]
+          if (compatible.isCompatibleEntry(entry))
+            return [chatModels.compatibleRoute(row, entry.api, await catalogInputs(entry.api, row.baseUrl))]
           const catalogue = await staticCatalogue(entry)
           const byId = new Map(catalogue.records.map((record) => [record.id, record]))
           const records = row.models.map((model) => {

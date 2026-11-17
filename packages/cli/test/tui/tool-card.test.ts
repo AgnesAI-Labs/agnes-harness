@@ -39,6 +39,30 @@ it('collapses by default and expands current protocol details without inventing 
       .join('\n'),
   ).not.toContain('Result:')
 })
+it('keeps repeated frames independent and refreshes headline layout at each width and live state', () => {
+  let facts = { status: 'running', durationMs: 1_000 }
+  const card = new ToolCard(node, { facts: () => facts })
+  const first = card.render(60)
+  expect(card.render(60)).toEqual(first)
+  first[0] = 'changed by caller'
+  first.push('extra row')
+  expect(card.render(60)).toHaveLength(2)
+  expect(card.render(60)[0]).toContain('running · 1.0s')
+  facts = { status: 'failed', durationMs: 1_000 }
+  expect(card.render(60)[0]).toContain('failed · 1.0s')
+  facts = { status: 'failed', durationMs: 2_000 }
+  expect(card.render(60)[0]).toContain('failed · 2.0s')
+  for (const width of [24, 60, 24]) {
+    expect(displayWidth(card.render(width)[0] as string)).toBe(width)
+    expect(card.render(width)[0]).toContain('failed · 2.0s')
+  }
+  card.toggle()
+  expect(card.render(60).join('\n')).toContain('Arguments:')
+  card.toggle()
+  expect(card.render(60)).toHaveLength(2)
+  expect(card.render(60)[0]).toContain('read a file')
+})
+
 it('keeps narrow cards within the available columns and removes untrusted controls', () => {
   const card = new ToolCard({ ...node, resultPreview: 'a\x1b[2Jb' }, { collapsed: false })
   for (const width of [1, 4, 8, 40])
@@ -468,7 +492,11 @@ it('shows +a -b after an edit title and no preview, then the diff when expanded'
   // The fetched record replaces a preview that was cut off.
   const cut = editNode(editArgs, { argsPreview: '{"path":"a.ts","edits":[{"oldT' })
   expect(new ToolCard(cut, { collapsed: false }).render(60).join('\n')).toContain('Arguments:')
-  const fetched: ToolDetailState = { state: 'ready', args: JSON.stringify(editArgs) }
+  let fetched: ToolDetailState | undefined
+  const live = new ToolCard(cut, { detail: () => fetched })
+  expect(live.render(60)[0]).not.toContain('+2 -1')
+  fetched = { state: 'ready', args: JSON.stringify(editArgs) }
+  expect(live.render(60)[0]).toContain('+2 -1')
   expect(new ToolCard(cut, { collapsed: false, detail: () => fetched }).render(60).join('\n')).toContain(
     '3 + three',
   )

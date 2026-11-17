@@ -18,7 +18,7 @@ These addresses are examples; use the address configured on your server. The ada
 
 ## Configure through Web
 
-For a local server that supports OpenAI `/chat/completions`, you can also use **Settings → Models → Add account → OpenAI-compatible endpoint** without installing the optional adapter above. Enter the server URL, list or type its model IDs, test and save, then choose the model in a new conversation. Leave the API key empty only when the server accepts keyless requests: inference sends the placeholder bearer `no-key`; model listing sends no credential. These account models declare text input and native tool calls only. Set a context budget appropriate for your loaded model; a discovered ID alone does not prove its capacity. Use the profile route below when you need explicit capability metadata or the local adapter’s discovery/recording controls.
+For a local server that supports OpenAI `/chat/completions`, you can also use **Settings → Models → Add account → OpenAI-compatible endpoint** without installing the optional adapter above. Enter the server URL, list or type its model IDs, test and save, then choose the model in a new conversation. Leave the API key empty only when the server accepts keyless requests: inference sends the placeholder bearer `no-key`; model listing sends no credential. These account models keep native tool calls; their text/image input types can be configured per model. Set a context budget appropriate for your loaded model; a discovered ID alone does not prove its capacity. Use the profile route below when you need explicit capability metadata or the local adapter’s discovery/recording controls.
 
 ## Profile route
 
@@ -74,3 +74,7 @@ Discovery refuses redirects, userinfo/query/fragment in the URL, invalid/duplica
 Add `compat.recordFile: /absolute/responses.jsonl` to record the local adapter's model replies for [replay](headless.md). The file must not exist. One adapter instance writes one file; use one route when the trace will be replayed. A model record's zero cost denotes local billing configuration, not missing token usage: runtime usage events still populate metrics.
 
 Known Agnes image and video generation IDs are excluded from conversation model lists, including relay accounts. They cannot be saved as chat defaults or auxiliary chat models. If an older account selected one, choose a chat-capable model before starting a session or schedule. Image-input chat models remain available.
+
+### Image-capable models
+
+In the model account, select a model and check **Input types → Image** if the endpoint supports images. Reported input types are filled automatically; an unknown model defaults to text. Each model keeps its own selection, including after fetching the model list again. Keep at least one input type selected. Saving follows the existing new-session configuration behavior.

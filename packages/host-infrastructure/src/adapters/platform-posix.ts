@@ -20,7 +20,7 @@ export type CapabilityLevel = {
   value?: string
 }
 export type SandboxBackendReport = Readonly<{
-  name: 'none' | 'bwrap' | 'seatbelt' | 'remote'
+  name: 'none' | 'bwrap' | 'seatbelt' | 'remote' | 'windows-acl'
   enforcement: Enforcement
 }>
 // `capability` is restated rather than inherited. An intersection with PlatformSeam keeps that

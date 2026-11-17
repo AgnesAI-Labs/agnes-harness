@@ -70,25 +70,40 @@ describe('Channel SDK terminal recovery', () => {
     await supervisor.stop()
   })
 
-  it('waits for in-flight construction before reporting shutdown complete', async () => {
-    const order: string[] = []
-    const late = instance('late', order)
-    let finishConstruction: ((value: typeof late) => void) | undefined
-    const create = vi.fn(() => new Promise<typeof late>((resolve) => (finishConstruction = resolve)))
-    const supervisor = createRunnerSupervisor(create, { warn: vi.fn() })
-    const start = supervisor.start()
-    const stop = supervisor.stop()
-    let stopped = false
-    void stop.then(() => (stopped = true))
-    await Promise.resolve()
-    expect(stopped).toBe(false)
+  it.each([false, true])(
+    'waits for in-flight construction and confirms its cleanup (failure=%s)',
+    async (failure) => {
+      const order: string[] = []
+      const late = instance('late', order)
+      if (failure) late.runner.stop.mockRejectedValue(new Error('uncertain late cleanup'))
+      let finishConstruction: ((value: typeof late) => void) | undefined
+      const create = vi.fn(() => new Promise<typeof late>((resolve) => (finishConstruction = resolve)))
+      const supervisor = createRunnerSupervisor(create, { warn: vi.fn() })
+      const start = supervisor.start()
+      const stop = supervisor.stop()
+      let stopped = false
+      void stop.then(
+        () => (stopped = true),
+        () => {},
+      )
+      await Promise.resolve()
+      expect(stopped).toBe(false)
 
-    finishConstruction?.(late)
-    await Promise.all([start, stop])
-    expect(stopped).toBe(true)
-    expect(late.runner.start).not.toHaveBeenCalled()
-    expect(late.runner.stop).toHaveBeenCalledOnce()
-  })
+      finishConstruction?.(late)
+      if (failure) {
+        await Promise.all([
+          expect(start).rejects.toThrow('shutdown could not be confirmed'),
+          expect(stop).rejects.toThrow('shutdown could not be confirmed'),
+        ])
+        expect(stopped).toBe(false)
+      } else {
+        await Promise.all([start, stop])
+        expect(stopped).toBe(true)
+      }
+      expect(late.runner.start).not.toHaveBeenCalled()
+      expect(late.runner.stop).toHaveBeenCalledOnce()
+    },
+  )
 
   it('does not rebuild while a terminal runner is still starting', async () => {
     const order: string[] = []
@@ -111,3 +126,26 @@ describe('Channel SDK terminal recovery', () => {
     await supervisor.stop()
   })
 })
+
+it.each(['recovery', 'shutdown'] as const)(
+  'refuses replacement and shutdown confirmation after uncertain cleanup (%s)',
+  async (trigger) => {
+    const order: string[] = []
+    const first = instance('first', order),
+      second = instance('second', order)
+    first.runner.stop.mockImplementation(async () => {
+      order.push('first:stop')
+      throw new Error('uncertain platform cleanup')
+    })
+    const create = vi.fn(async () => (create.mock.calls.length === 1 ? first : second))
+    const supervisor = createRunnerSupervisor(create, { warn: vi.fn() }, { wait: async () => undefined })
+    await supervisor.start()
+    if (trigger === 'recovery') {
+      first.client.emit('closed', { reason: 'eof' })
+      await vi.waitFor(() => expect(order).toContain('first:stop'))
+      await expect(supervisor.start()).rejects.toThrow('shutdown could not be confirmed')
+    }
+    await expect(supervisor.stop()).rejects.toThrow('shutdown could not be confirmed')
+    expect(order).not.toContain('second:start')
+  },
+)

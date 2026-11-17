@@ -37,7 +37,7 @@ import type {
   SkillImportResult,
 } from '@agnes/protocol'
 export type PackageAdminRpc = Readonly<{
-  call<T>(method: string, params: unknown): Promise<T>
+  call<T>(method: string, params: unknown, options?: { timeoutMs?: number }): Promise<T>
 }>
 type Disposer = () => void
 
@@ -123,7 +123,9 @@ export function createPackageAdminClient(client: PackageAdminRpc): PackageAdminC
 
   return Object.freeze({
     skillImport: (params: SkillImportParams): Promise<SkillImportResult> =>
-      client.call('_agnes/v1/packages.skillImport', params),
+      params.action === 'prepare'
+        ? client.call('_agnes/v1/packages.skillImport', params, { timeoutMs: 300_000 })
+        : client.call('_agnes/v1/packages.skillImport', params),
     catalog: Object.freeze({
       list: (params: PackageCatalogListParams): Promise<PackageCatalogPage> =>
         client.call('_agnes/v1/packages.catalog.list', params),

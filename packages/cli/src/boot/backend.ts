@@ -23,6 +23,7 @@ import {
   spawnDetachedProcess,
 } from '@agnes/host'
 import { type Client, type CreateClientOptions, createClient, memoryJournal } from '@agnes/sdk'
+import { withNodeMemoryFlags } from '@agnes/system-node/node-flags'
 import { type LaunchResources, resolveLaunchResources } from '../../launch/resources.js'
 import { BootError } from '../errors.js'
 import { connectionScope, validateConnectionSocket } from './connection-scope.js'
@@ -330,10 +331,9 @@ function launchChild(
   if (/\.(?:ts|tsx)$/u.test(entry) && isSea())
     throw new BootError('packaged local startup cannot use a source daemon entry')
 
-  const argv: string[] = []
   // Source mode is explicit and exists only for the repository development launcher. A packaged
   // runtime must provide daemon.mjs next to its immutable build output; it never reaches into src.
-  if (/\.(?:ts|tsx)$/u.test(entry)) argv.push('--import', 'tsx')
+  const argv = withNodeMemoryFlags(/\.(?:ts|tsx)$/u.test(entry) ? ['--import', 'tsx'] : [])
   const workspace = launchWorkspace(scope, options)
   argv.push(entry, '--profile', scope.profile, '--workspace', workspace, '--data-dir', scope.dataDir)
   if (requested) {

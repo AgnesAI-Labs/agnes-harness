@@ -5,25 +5,40 @@ import { presetProvider } from '@agnes/host-common/presets/provider'
 import { resolvePreset } from '@agnes/host-common/presets/resolve'
 import type { PresetDoc } from '@agnes/host-common/presets/types'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
-import { normalizeSandboxStaticConfig } from '@agnes/host-common/workspace-policy'
 import type { PlatformBackend } from '@agnes/host-infrastructure/adapters/platform'
 import type { SessionWorkspaceRuntimeTable } from '@agnes/host-infrastructure/session-workspace-runtime'
+import { RELEASE_DEFAULTS } from '@agnes/package-manager'
 import type { RuntimeSecurityStatus } from '@agnes/protocol'
+import { requestedSandboxConfig } from '../assemble/workspace-readiness.js'
+import { windowsPolicyBoundary } from '../assemble/workspace-windows-acl.js'
 import type { HostSession } from './host.js'
+
+type WorkspaceStatus = RuntimeSecurityStatus['workspaces'][number]
+
+/** What a session's commands may change, read from its tool policy the way its sandbox config is. */
+const sessionAccess = (session: HostSession): NonNullable<WorkspaceStatus['access']> => {
+  const policy = session.preset.approval.policy
+  return policy === 'read-only' ? 'read-only' : policy === 'full-access' ? 'full-access' : 'workspace-write'
+}
 
 /** What a recipe, or a recipe under one permission level, grants: sandbox, approval policy, network. */
 function securityPolicy(
   id: string,
   presets: Record<string, PresetDoc>,
   profile: ResolvedProfile,
+  adapters: Readonly<{ platform: { os: string }; transport?: unknown }>,
   permission?: Permission,
 ) {
+  const providerId = profile.sandbox?.provider ?? 'local'
   // A permission level is shown on the standard recipe; a recipe is shown under its own level.
   const doc = resolvePreset(permission ? 'standard' : id, presets, {
     limits: profile.limits,
     ...(permission ? { permission } : {}),
   }).doc
-  const sandbox = normalizeSandboxStaticConfig(doc)
+  // The config a session on this Host runs under, including a loopback request it cannot serve.
+  const sandbox = requestedSandboxConfig(doc, adapters, providerId === RELEASE_DEFAULTS.sandboxProvider)
+  // On a local Windows Host the opted-in levels run under the partial contract: reads and network open.
+  const boundary = windowsPolicyBoundary(sandbox, providerId, RELEASE_DEFAULTS.sandboxProvider)
   return {
     id,
     level: sandbox.level,
@@ -31,13 +46,14 @@ function securityPolicy(
     onUnavailable: sandbox.onUnavailable,
     approvalPolicy: presetProvider(doc, 'tool-policy') ?? 'default',
     networkMode:
-      sandbox.level === 'L0'
+      sandbox.level === 'L0' || boundary
         ? ('unrestricted' as const)
         : sandbox.loopbackServe
           ? ('loopback-serve' as const)
           : sandbox.networkAllow.length
             ? ('allow-list' as const)
             : ('deny' as const),
+    ...(boundary ? { boundary: { ...boundary } } : {}),
   }
 }
 
@@ -47,8 +63,12 @@ export function adminSecurityStatus(
   presets: Record<string, PresetDoc>,
   sessions: Iterable<HostSession>,
   workspaces: SessionWorkspaceRuntimeTable,
+  /** The Host's remote transport, when commands run on another machine. */
+  transport?: unknown,
 ): RuntimeSecurityStatus {
   const l1 = platform.capability('sandbox.l1')
+  // The same Host facts the workspace runtime derives its sandbox config from.
+  const target = { platform, ...(transport === undefined ? {} : { transport }) }
   return {
     platform: {
       os: platform.os,
@@ -61,13 +81,13 @@ export function adminSecurityStatus(
           }
         : { level: 'unprobed', scope: [] },
     },
-    presetPolicies: profile.presets.allowed.map((id) => securityPolicy(id, presets, profile)),
+    presetPolicies: profile.presets.allowed.map((id) => securityPolicy(id, presets, profile, target)),
     // A catalogue without the permission documents (a hand-built one) has nothing to describe.
     permissionPolicies: allowedPermissions(profile)
       .filter((permission) => presets[overlayName(permission)] !== undefined)
       .flatMap((permission) => {
         try {
-          return [securityPolicy(permission, presets, profile, permission)]
+          return [securityPolicy(permission, presets, profile, target, permission)]
         } catch (error) {
           // Fixed-policy recipes and required isolation can refuse an overlay. Reporting that
           // unavailable choice must not fail the status read or relax session admission.
@@ -83,6 +103,7 @@ export function adminSecurityStatus(
         path: workspace?.root ?? session.workspaceRoot,
         preset: session.preset.name,
         ...(session.preset.permission ? { permission: session.preset.permission } : {}),
+        access: sessionAccess(session),
         provider: profile.sandbox?.provider ?? 'local',
         state: workspace?.state ?? 'unavailable',
         ...(workspace?.policyDigest ? { policyDigest: workspace.policyDigest } : {}),
@@ -91,6 +112,9 @@ export function adminSecurityStatus(
               enforcement: {
                 level: workspace.enforcement.level,
                 scope: [...workspace.enforcement.scope],
+                ...(workspace.enforcement.boundary
+                  ? { boundary: { ...workspace.enforcement.boundary } }
+                  : {}),
               },
             }
           : {}),

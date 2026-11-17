@@ -11,7 +11,7 @@ export type Cut = {
 const isCutPoint = (node: SurfaceNode): boolean =>
   node.type === 'user/message' || node.type === 'assistant/message'
 
-export function estimateTokens(node: SurfaceNode): number {
+export function nodeTokensEstimate(node: SurfaceNode): number {
   const estimate = node.tokensEstimate
   return typeof estimate === 'number' && Number.isFinite(estimate) && estimate >= 0 ? estimate : 64
 }
@@ -61,7 +61,7 @@ export function chooseCut(nodes: readonly SurfaceNode[], keepRecentTokens: numbe
   let thresholdIndex = nodes.length - 1
   let reached = false
   for (; thresholdIndex >= 0; thresholdIndex--) {
-    accumulated += estimateTokens(nodes[thresholdIndex] as SurfaceNode)
+    accumulated += nodeTokensEstimate(nodes[thresholdIndex] as SurfaceNode)
     if (accumulated >= budget) {
       reached = true
       break

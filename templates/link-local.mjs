@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { cp, mkdir, readFile, readlink, symlink, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, readlink, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -19,6 +19,23 @@ async function link(source, target, type) {
     }
     if (resolve(dirname(target), current) !== resolve(dirname(target), source))
       throw new Error(`Cannot link ${target}: it points to a different SDK; choose a fresh destination`)
+  }
+}
+
+async function windowsCompiler(target) {
+  if (/["\r\n]/.test(process.execPath)) throw new Error('Node path cannot be represented in a CMD launcher')
+  const node = process.execPath.replaceAll('%', '%%')
+  // npm's Windows shell needs .cmd; quote both paths and keep ! in paths/arguments literal.
+  const launcher = `@echo off\r\nsetlocal DisableDelayedExpansion\r\n"${node}" "%~dp0..\\typescript\\bin\\tsc" %*\r\n`
+  try {
+    await writeFile(target, launcher, { flag: 'wx' })
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error
+    const current = await lstat(target)
+    if (!current.isFile() || current.nlink !== 1 || (await readFile(target, 'utf8')) !== launcher)
+      throw new Error(
+        `Cannot link ${target}: an existing foreign Windows compiler launcher occupies this path`,
+      )
   }
 }
 export async function linkLocal(destination) {
@@ -76,6 +93,7 @@ export async function linkLocal(destination) {
     await link(join(repo, 'node_modules', name), join(target, 'node_modules', name), 'dir')
   await mkdir(join(target, 'node_modules/.bin'), { recursive: true })
   await link('../typescript/bin/tsc', join(target, 'node_modules/.bin/tsc'))
+  await windowsCompiler(join(target, 'node_modules/.bin/tsc.cmd'))
   return target
 }
 

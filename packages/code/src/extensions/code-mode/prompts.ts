@@ -1,6 +1,7 @@
 import type { OpContext, Operation, PromptSection } from '@agnes/core'
 import { loadPrompt, renderPersona, sectionOrder } from '../../prompts/sections.js'
 import {
+  commandIsolationFact,
   type EnvironmentFacts,
   type RuntimeSnapshotFacts,
   renderEnvironment,
@@ -60,6 +61,14 @@ export function environmentFacts(ctx: OpContext, deps: PromptDeps): EnvironmentF
 export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeSnapshotFacts {
   const platform = deps.adapters.platform
   const extras = ctx.session.d.extraDirectories
+  // The session's own sandbox answer, read now: one Host serves sessions under different boundaries.
+  const policy = ctx.preset.approval.policy
+  const commandIsolation = commandIsolationFact({
+    enforcement: ctx.session.d.runtime.enforcement(),
+    access:
+      policy === 'read-only' ? 'read-only' : policy === 'full-access' ? 'full-access' : 'workspace-write',
+    os: platform.snapshot().os,
+  })
   return {
     // Use the session clock so replay and a fixed-clock test retain their original UTC date.
     date: new Date(ctx.session.d.clock()).toISOString().slice(0, 10),
@@ -73,6 +82,7 @@ export function runtimeSnapshotFacts(ctx: OpContext, deps: PromptDeps): RuntimeS
     cwd: ctx.session.d.cwd,
     // Paths only, never contents; omitted when empty so sessions without extras stay byte-identical.
     ...(extras?.length ? { extraDirectories: [...extras].sort() } : {}),
+    ...(commandIsolation ? { commandIsolation } : {}),
   }
 }
 
@@ -123,8 +133,8 @@ export function createPromptOperation(deps: PromptDeps): Operation {
             'coding-doctrine',
             ctx.preset.tools?.logicalChanges
               ? loadPrompt('coding-doctrine').replace(
-                  '- Change one thing at a time and verify it before moving on. Prefer the smallest edit that works.',
-                  '- Make one logical change at a time; it may span several edits or files. Verify the change as a unit before moving on. Prefer the smallest change that works. Independent reads, searches and checks can be issued together in one reply.',
+                  '- Read the file before editing it.',
+                  '- Read the file before editing it.\n- Make one logical change at a time; it may span several edits or files. Verify the change as a unit before moving on. Prefer the smallest change that works. Independent reads, searches and checks can be issued together in one reply.',
                 )
               : loadPrompt('coding-doctrine'),
           ),

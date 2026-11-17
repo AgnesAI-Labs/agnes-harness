@@ -221,6 +221,62 @@ export function persistenceHostContract(name: string, create: () => PersistenceC
     ).toEqual([{ mode: 'anchor', previousDigest: null, digest: 'a'.repeat(64) }])
     await second.close()
   })
+  it(`${name}: settles a lost child only when its session holds no live writer lease`, async () => {
+    const store = await create().open()
+    try {
+      assertHostPorts(store)
+      const children = store.childControl
+      if (!children.listLostChildren || !children.settleLostChild) return
+      await store.open('parent', { writerRunId: 'r', ttlMs: 60_000 })
+      await children.ensureRootScope('parent', 1_000_000n)
+      for (const id of ['live', 'lost']) {
+        expect(
+          await children.createDelegatedChild({
+            childKey: id,
+            parentKey: 'parent',
+            boundarySeq: 0,
+            creationId: id,
+            attemptId: id,
+            kind: 'spawn',
+            rootTaskId: 'parent',
+            runtimeOwnerSessionKey: 'parent',
+            generationDepth: 1,
+            generationLimit: 2,
+            maxFanOut: 4,
+            inputHash: id,
+            inputText: 'task',
+            cwd: '/synthetic',
+            actorId: 'actor',
+            isolation: 'shared',
+            workspaceId: id,
+            treeCapMicro: 1_000_000n,
+            childCapMicro: null,
+            writerRunId: 'r',
+          }),
+        ).toMatchObject({ status: 'created' })
+        expect(
+          await children.commitCreatingChild({
+            childKey: id,
+            creationId: id,
+            attemptId: id,
+            expectedRevision: 1,
+          }),
+        ).toBe(true)
+        expect(await children.casState(id, 1, 'ready')).toBe(true)
+        expect(await children.casState(id, 2, 'running')).toBe(true)
+      }
+      await store.open('live', { writerRunId: 'live', ttlMs: 60_000 })
+      expect((await children.listLostChildren('parent')).map((row) => row.childKey)).toEqual(['lost'])
+      expect(await children.settleLostChild('live', 3)).toBeNull()
+      expect(await children.settleLostChild('lost', 2)).toBeNull()
+      expect(await children.settleLostChild('lost', 3)).toBe('failed')
+      expect(await children.lookupByKey('lost')).toMatchObject({ state: 'failed' })
+      expect(await children.listLostChildren('parent')).toEqual([])
+    } finally {
+      await store.close()
+    }
+  })
+
   it(`${name}: keeps child identity, CAS and exact tree budgets across reopen`, async () => {
     const factory = create()
     const first = await factory.open()

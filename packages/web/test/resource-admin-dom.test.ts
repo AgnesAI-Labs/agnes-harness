@@ -453,6 +453,84 @@ it.each(['stdio-env', 'http-bearer', 'http-header'])(
   },
 )
 
+it('oauth secret ref goes into clientSecretRef', async () => {
+  byId('mcp-create').click()
+  byId('mcp-method-remote').click()
+  change('mcp-id', 'signed')
+  change('mcp-name', 'Signed MCP')
+  change('mcp-url', 'https://example.com/mcp')
+  const oauth = byId<HTMLInputElement>('mcp-oauth')
+  oauth.checked = true
+  oauth.dispatchEvent(new Event('change', { bubbles: true }))
+  expect(byId('mcp-oauth-secret-row').hidden).toBe(false)
+  // The same limit as the protocol schema's staticClientId.
+  expect(byId<HTMLInputElement>('mcp-oauth-client').maxLength).toBe(512)
+  change('mcp-oauth-secret', 'plain-secret')
+  expect(byId('mcp-error').textContent).not.toBe('')
+  expect(byId<HTMLInputElement>('mcp-oauth-secret').getAttribute('aria-invalid')).toBe('true')
+  change('mcp-oauth-secret', 'secret://dom/client')
+  expect(byId('mcp-error').textContent).not.toBe('')
+  change('mcp-oauth-client', 'client-1')
+  expect(byId('mcp-error').textContent).toBe('')
+  await submitMcpForm()
+  await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
+  expect(submitted('mcp/create')[0]?.body.definition).toMatchObject({
+    transport: { kind: 'http', url: 'https://example.com/mcp' },
+    secretBinding: { kind: 'oauth', staticClientId: 'client-1', clientSecretRef: 'secret://dom/client' },
+  })
+})
+
+it('oauth callback port goes into callbackPort and comes back when the server is edited', async () => {
+  byId('mcp-create').click()
+  byId('mcp-method-remote').click()
+  change('mcp-id', 'ported')
+  change('mcp-name', 'Ported MCP')
+  change('mcp-url', 'https://example.com/mcp')
+  expect(byId('mcp-oauth-port-row').hidden).toBe(true)
+  const oauth = byId<HTMLInputElement>('mcp-oauth')
+  oauth.checked = true
+  oauth.dispatchEvent(new Event('change', { bubbles: true }))
+  expect(byId('mcp-oauth-port-row').hidden).toBe(false)
+  change('mcp-oauth-port', '80')
+  expect(byId('mcp-error').textContent).toContain('1024')
+  expect(byId<HTMLInputElement>('mcp-oauth-port').getAttribute('aria-invalid')).toBe('true')
+  change('mcp-oauth-port', '8765')
+  expect(byId('mcp-error').textContent).toBe('')
+  expect(byId<HTMLInputElement>('mcp-oauth-port').getAttribute('aria-invalid')).toBeNull()
+  await submitMcpForm()
+  await vi.waitFor(() => expect(submitted('mcp/create')).toHaveLength(1))
+  expect(submitted('mcp/create')[0]?.body.definition).toMatchObject({
+    secretBinding: { kind: 'oauth', callbackPort: 8765 },
+  })
+  await vi.waitFor(() => expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(false), {
+    timeout: 5_000,
+  })
+
+  const definition = {
+    serverId: 'fixture',
+    displayName: 'Fixture MCP',
+    transport: { kind: 'http' as const, url: 'https://example.com/mcp' },
+    secretBinding: { kind: 'oauth' as const, staticClientId: 'client-1', callbackPort: 9123 },
+  }
+  current = {
+    ...current,
+    transportKind: 'http',
+    secretBindingKind: 'oauth',
+    authorizationStatus: 'pending',
+    definition,
+  }
+  await resourceMount.sync({ tab: 'mcp' }, { refresh: true })
+  byId('resource-list').querySelector<HTMLElement>('.resource-row')?.click()
+  const edit = [...byId('resource-detail').querySelectorAll('button')].find(
+    (button) => button.textContent === 'Edit',
+  )
+  edit?.click()
+  expect(byId<HTMLDialogElement>('mcp-dialog').open).toBe(true)
+  expect(byId<HTMLInputElement>('mcp-oauth').checked).toBe(true)
+  expect(byId('mcp-oauth-port-row').hidden).toBe(false)
+  expect(byId<HTMLInputElement>('mcp-oauth-port').value).toBe('9123')
+})
+
 it('flags an illegal tool name inline while typing and clears it once fixed', () => {
   byId('mcp-create').click()
   byId('mcp-method-local').click()
@@ -697,6 +775,21 @@ it('resets incompatible SecretRef selection on transport change and cancellation
   byId('mcp-cancel').click()
   expect(submitted('mcp/create')).toHaveLength(0)
 })
+
+it.each([false, true])('keeps an open MCP detail after same-scope sync (refresh=%s)', async (refresh) => {
+  await resourceMount.sync({ tab: 'mcp' }, { refresh })
+  await resourceMount.reload()
+  expect(byId<HTMLDialogElement>('resource-detail').open).toBe(true)
+  expect(byId('resource-detail').textContent).toContain('Fixture MCP')
+})
+
+it.each([{ tab: 'skills' as const }, { tab: 'mcp' as const, workspaceId: 'b'.repeat(64) }])(
+  'closes the previous detail when its resource scope changes to %j',
+  async (scope) => {
+    await resourceMount.sync(scope)
+    expect(byId<HTMLDialogElement>('resource-detail').open).toBe(false)
+  },
+)
 
 it('does not pop a detail modal from merely loading a list', async () => {
   // 上一版详情是常驻的右列，列表载入后会替用户选中第一项。详情改成模态框之后，

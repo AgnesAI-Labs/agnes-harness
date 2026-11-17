@@ -12,6 +12,7 @@ import {
   PackageError,
   type PackageManager,
   parseSource,
+  readRemovedPackageIds,
 } from '@agnes/package-manager'
 import type { RuntimeTargetArtifact } from '@agnes/plugin-runtime/host'
 import { nativeRealpathSync } from '@agnes/system-node/realpath'
@@ -24,6 +25,8 @@ export async function initializeDefaultHelpers(options: {
   initializePolicy(): Promise<void>
 }): Promise<void> {
   await withDefaultHelperState(options.profileDir, async (state, save) => {
+    // A committed remove may still need its audit record appended by transaction recovery.
+    await options.manager.recover(options.profileDir)
     const inventory = existsSync(lockPath(options.profileDir))
       ? await options.manager.inventory(options.profileDir)
       : undefined
@@ -32,6 +35,14 @@ export async function initializeDefaultHelpers(options: {
     const offered = new Set(state?.version === 4 ? state.offered : Object.keys(state?.integrity ?? {}))
     for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES)
       if (inventory?.packages.some((pkg) => pkg.id === helper.id)) offered.add(helper.id)
+    const candidates = DEFAULT_ENABLED_BUNDLED_PACKAGES.filter(
+      (helper) => !offered.has(helper.id) && !(helper.freshOnly && (state || inventory)),
+    )
+    // Consult history only for new offers, and retain only current defaults in this receipt.
+    if (candidates.length) {
+      const removed = new Set(await readRemovedPackageIds(options.profileDir))
+      for (const helper of candidates) if (removed.has(helper.id)) offered.add(helper.id)
+    }
     const unfinished = state?.phase === 'pending' || state?.phase === 'installed' ? state : undefined
     const integrity: Record<string, string> = unfinished ? { ...unfinished.integrity } : {}
     let planned = false
@@ -57,7 +68,6 @@ export async function initializeDefaultHelpers(options: {
     }
     await options.initializePolicy()
     if (state.phase !== 'pending') return
-    await options.manager.recover(options.profileDir)
     // One verified read: helper ids are distinct, so installs in this loop never answer a later lookup.
     const existing = (await options.manager.inventory(options.profileDir)).packages
     for (const helper of DEFAULT_ENABLED_BUNDLED_PACKAGES) {

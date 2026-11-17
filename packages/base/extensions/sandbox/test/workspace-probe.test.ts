@@ -186,3 +186,59 @@ describe('sandboxWorkspaceProbe', () => {
     ).rejects.toMatchObject({ code: 'E_SANDBOX_WORKSPACE' })
   })
 })
+
+describe('Host-started Windows write restriction', () => {
+  const boundary = {
+    contract: 'windows-write-restricted-v1',
+    fileWrite: 'acl-partial',
+    fileRead: 'unrestricted',
+    network: 'unrestricted',
+    processTree: 'job-object',
+  }
+  const offer = { enforcementLocation: 'host-spawn', boundary, owner: 'local', policyDigest: 'a'.repeat(64) }
+  const windows = (overrides: Record<string, unknown> = {}) =>
+    input({
+      level: 'L1',
+      onUnavailable: 'allow-if-unimplemented',
+      platform: 'win32',
+      shell: 'powershell',
+      hostSpawn: offer,
+      ...overrides,
+    })
+
+  it('returns the closed host-spawn branch without compiling or running argv', async () => {
+    const probe = windows()
+    const backend = await sandboxWorkspaceProbe(probe)
+    expect(backend).toMatchObject({
+      name: 'windows-acl',
+      execBackend: 'windows-acl',
+      enforcement: { level: 'partial', scope: ['file'], boundary },
+      hostSpawn: offer,
+      degraded: false,
+      // The full L1 fact for Windows does not change.
+      implementation: 'unimplemented',
+      probeState: 'ready',
+    })
+    expect(probe.probeExec).not.toHaveBeenCalled()
+    expect(() => backend.confine({ argv: ['node'], cwd: '/work/proj' })).toThrow(
+      'E_SANDBOX_HOST_ENFORCEMENT_REQUIRED',
+    )
+  })
+
+  it.each([
+    ['another platform', { platform: 'linux' }],
+    ['a near-miss boundary', { hostSpawn: { ...offer, boundary: { ...boundary, network: 'acl-partial' } } }],
+    ['an extra offer field', { hostSpawn: { ...offer, lease: 'x' } }],
+    ['a bad digest', { hostSpawn: { ...offer, policyDigest: 'nope' } }],
+    ['a required full boundary', { required: true }],
+    ['an L0 request', { level: 'L0', onUnavailable: 'allow' }],
+    [
+      'a network allowlist',
+      { options: { cwd: '/w', allowPaths: [], denyPaths: [], networkAllow: ['example.com'] } },
+    ],
+  ])('refuses %s', async (_name, overrides) => {
+    const probe = windows(overrides)
+    await expect(sandboxWorkspaceProbe(probe)).rejects.toThrow()
+    expect(probe.probeExec).not.toHaveBeenCalled()
+  })
+})

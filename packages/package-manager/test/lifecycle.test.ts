@@ -235,6 +235,9 @@ it.each([
       previous: before.previous,
     })
     expect(await moved.runtimePinRecords(profile)).toEqual(pins)
+    // Pin records, snapshot identity and archive bytes are unchanged. The snapshot carries verified
+    // provenance, and the reviewed move rolls that source forward with the lock entry.
+    const relocated = { ...pin.snapshot, source: nextSource }
     expect(
       (
         await moved.resolveRuntimePin(profile, {
@@ -242,7 +245,7 @@ it.each([
           expectedSnapshotId: pin.snapshot.snapshotId,
         })
       ).snapshot,
-    ).toEqual(pin.snapshot)
+    ).toEqual(relocated)
     const nextPin = await moved.pinRuntimeSnapshot(profile, {
       pinId: 'after-move-installed',
       operationId: 'after-move-installed',
@@ -254,7 +257,7 @@ it.each([
         expectedTreeIntegrity: before.treeIntegrity!,
       },
     })
-    expect(nextPin.snapshot).toEqual(pin.snapshot)
+    expect(nextPin.snapshot).toEqual(relocated)
     const previousPin = await moved.pinRuntimeSnapshot(profile, {
       pinId: 'after-move-previous',
       operationId: 'after-move-previous',
@@ -279,7 +282,10 @@ it.each([
       activation: { expectedInstalledIntegrity: before.integrity, trust },
     })
     expect(load().packages[id]?.previous).toEqual(before.previous)
-    expect((await again.resolveRuntimePin(profile, { pinId: pin.pinId })).snapshot).toEqual(pin.snapshot)
+    expect((await again.resolveRuntimePin(profile, { pinId: pin.pinId })).snapshot).toEqual({
+      ...pin.snapshot,
+      source: thirdSource,
+    })
   },
 )
 it('atomically binds installed and target digests when update or rollback also trusts and enables', async () => {

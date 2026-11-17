@@ -1,3 +1,4 @@
+import { estimateTokens } from '@agnes/extension-api'
 import { describe, expect, it } from 'vitest'
 import {
   ACTION_PREAMBLE,
@@ -5,7 +6,6 @@ import {
   compileQuestions,
   criteriaCharsAt,
   decisionSurface,
-  estimateTokens,
   fitBudget,
   INCLUDE_INSTRUCTIONS,
   LLM_PARAMETERS_TEXT,
@@ -127,10 +127,6 @@ describe('compileQuestions isolation and duplicates', () => {
 })
 
 describe('token budget', () => {
-  it('estimates ceil(utf8 bytes / 3)', () => {
-    expect(estimateTokens('abc')).toBe(2)
-    expect(estimateTokens('中文')).toBe(3)
-  })
   const c = compileQuestions(ALL)
   const budget = { stateTokens: 24_000, requestTokens: 48_000 }
   it('fits a small state at level 0 and a long previous answer at level 3', () => {
@@ -140,8 +136,9 @@ describe('token budget', () => {
     })
     expect(fitBudget(c, state, budget)?.level).toBe(3)
   })
-  it('fits a 30,000-character Chinese goal at level 7', () => {
-    const goal = '中'.repeat(30_000)
+  it('fits a 50,000-character Chinese goal at level 7', () => {
+    // About 29,400 estimated tokens at 1.7 CJK characters a token: over the 24,000 state budget.
+    const goal = '中'.repeat(50_000)
     const fit = fitBudget(
       c,
       (level) => ({ goal: level >= 7 ? `${goal.slice(0, 2000)}\n…\n${goal.slice(-2000)}` : goal }),
@@ -251,7 +248,7 @@ describe('observed targets', () => {
     }
     const at = (level: number) =>
       compileQuestions([...ALL, other], {}, { criteriaChars: criteriaCharsAt(level) })
-    const tight = estimateTokens({ state: {}, questions: at(6).questions })
+    const tight = estimateTokens(JSON.stringify({ state: {}, questions: at(6).questions }))
     const fit = fitBudget(at, () => ({}), { stateTokens: 24_000, requestTokens: tight })
     expect(fit?.level).toBe(6)
     expect(fit?.questions).toEqual(at(6).questions)

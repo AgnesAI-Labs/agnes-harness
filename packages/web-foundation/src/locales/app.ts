@@ -110,6 +110,8 @@ export const appLocaleCatalog: LocaleCatalog = {
       'Click a folder above to switch; the folder picker opens on the computer that runs Agnes.',
     'app.newSession.noPicker':
       'Agnes runs on another computer, so a folder picker cannot open here. Enter a path on that computer.',
+    'app.newSession.currentChatsUnavailable':
+      'The chat folder is unavailable. Choose a project workspace to continue.',
     'app.newSession.pickerFailed':
       'Could not open the system directory picker; type the workspace path instead.',
     'app.newSession.defaultTitle': 'New session',
@@ -291,6 +293,7 @@ export const appLocaleCatalog: LocaleCatalog = {
     'app.newSession.pickMachineList': '单击上面的列表直接切换；选择框会在运行 Agnes 的这台电脑上打开。',
     'app.newSession.noPicker':
       'Agnes 运行在另一台电脑上，没法在这里弹出文件夹选择框。请输入那台电脑上的路径。',
+    'app.newSession.currentChatsUnavailable': '临时会话目录不可用，请选择项目工作区继续。',
     'app.newSession.pickerFailed': '无法打开系统目录选择器，请手动输入工作区路径。',
     'app.newSession.defaultTitle': '新会话',
     'app.session.selectionChanged': '会话选择已改变。',

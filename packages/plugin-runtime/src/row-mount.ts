@@ -236,6 +236,7 @@ function sameRow(left: Readonly<EntryRow>, right: Readonly<EntryRow>): boolean {
     left.mountRevision === right.mountRevision &&
     left.entryRevision === right.entryRevision &&
     left.extrasRevision === right.extrasRevision &&
+    left.configReload === right.configReload &&
     sameValue(left.liveResources, right.liveResources) &&
     left.liveResourceRevision === right.liveResourceRevision &&
     sameValue(left.config, right.config)
@@ -273,7 +274,9 @@ export function normalizePluginExport(
     throw new TypeError('plugin export inject differs from its agnes.plugins entry')
   const inject = deepFreeze(cloneValue(listed ?? own ?? {}))
   const provides = normalizeProvides(exported.provide)
-  const prepared = preparePluginInvocation(exported, inject)
+  // sideCall declares invocation authority; it is never a Cordis apply-time service.
+  const runtimeInject = Object.fromEntries(Object.entries(inject).filter(([name]) => name !== 'sideCall'))
+  const prepared = preparePluginInvocation(exported, runtimeInject)
   return Object.freeze({ prepared, inject, provides })
 }
 
@@ -308,6 +311,7 @@ function snapshotRow(row: Readonly<EntryRow>, normalizedConfig: unknown): Readon
     mountRevision: row.mountRevision,
     entryRevision: row.entryRevision,
     extrasRevision: row.extrasRevision,
+    ...(row.configReload === undefined ? {} : { configReload: row.configReload }),
     ...(row.liveResources === undefined ? {} : { liveResources: Object.freeze([...row.liveResources]) }),
     ...(row.liveResourceRevision === undefined ? {} : { liveResourceRevision: row.liveResourceRevision }),
     ...(row.config === undefined ? {} : { config: normalizedConfig }),
@@ -654,6 +658,7 @@ function originOf(mount: DescriptorSnapshot): Readonly<RowOrigin> {
     packageId: mount.snapshot.packageId,
     snapshotId: mount.snapshot.snapshotId,
     rowRevision: canonicalRowRevision(mount.boundRow),
+    mountIdentity: mount.boundRow.mountIdentity,
     configDigest: pluginConfigDigest(mount.boundRow.config),
     rowId: mount.row.id,
     exportName: mount.snapshot.exportName,
@@ -777,6 +782,7 @@ function createVerifiedRowAdapter(
         return { status: 'removed', cause: new Error('installation is not active'), fatal: true }
       }
       let normalized: unknown
+      let restoreOrigin = () => {}
       try {
         normalized = deepFreeze(normalizePreparedConfig(state.mount.entry.prepared, cloneValue(row.config)))
         // A re-decoded row carries a fresh config object even when nothing changed. Restarting
@@ -785,12 +791,23 @@ function createVerifiedRowAdapter(
           state.rawConfig = row.config
           return { status: 'updated' }
         }
+        // The reloaded plugin registers against the row origin, and activation epochs are keyed by the
+        // new row hash, so the origin moves with the config. A no-op reconciliation keeps it.
+        const bound = gate.origins.lookup(state.fiber)
+        if (bound)
+          restoreOrigin = gate.origins.replace(state.fiber, {
+            ...bound,
+            rowRevision: canonicalRowRevision(snapshotBoundRow(row)),
+            mountIdentity: row.mountIdentity,
+            configDigest: pluginConfigDigest(row.config),
+          })
         await state.fiber.update(normalized)
         await state.fiber.await()
         state.rawConfig = row.config
         state.normalizedConfig = normalized
         return { status: 'updated' }
       } catch (cause) {
+        restoreOrigin()
         try {
           await state.fiber.update(state.normalizedConfig, true)
           await state.fiber.await()

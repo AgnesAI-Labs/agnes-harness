@@ -293,6 +293,12 @@ const specs: readonly ProviderSpec[] = [
 
 const protocolThinkingLevels = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const
 
+/** `T` with `undefined` removed from its optional fields, as JSON carries it. */
+type Defined<T> = T extends object ? { [K in keyof T]: Defined<Exclude<T[K], undefined>> } : T
+
+/** A copy of pi's catalogue data, which types absent fields as `undefined`; the protocol record omits them. */
+const withoutUndefined = <T>(value: T): Defined<T> => JSON.parse(JSON.stringify(value))
+
 function modelCost(model: Model<Api>): ModelRecord['cost'] {
   const tiers = 'tiers' in model.cost && Array.isArray(model.cost.tiers) ? model.cost.tiers : []
   const all = [model.cost, ...tiers]
@@ -332,7 +338,7 @@ export function modelRecord(
     reasoning,
     ...(reasoning && Object.keys(thinkingLevelMap).length > 0 ? { thinkingLevelMap } : {}),
     input: [...model.input],
-    ...(model.inputLimits ? { inputLimits: structuredClone(model.inputLimits) } : {}),
+    ...(model.inputLimits ? { inputLimits: withoutUndefined(model.inputLimits) } : {}),
     cost: modelCost(model),
     contextWindow: model.contextWindow,
     maxTokens: model.maxTokens,

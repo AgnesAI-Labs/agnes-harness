@@ -28,7 +28,7 @@ export default function setup() {
         process.platform === 'darwin'
           ? ['deletePrivateArtifact', 'syncDescriptor', 'openUnixListener']
           : process.platform === 'linux'
-            ? ['deletePrivateArtifact', 'openCanonicalFile', 'landlockAbi']
+            ? ['deletePrivateArtifact', 'openCanonicalFile', 'landlockAbi', 'trimNativeHeap']
             : ['deletePrivateArtifact', 'processStartTime', 'createProcessJob']
       if (native.abiVersion !== 1 || methods.some((name) => typeof native[name] !== 'function'))
         missing.add(system)

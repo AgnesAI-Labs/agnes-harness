@@ -5,6 +5,8 @@ export type SkillInstallRequest =
   | Readonly<{
       action: 'prepare-bundle'
       sourceDirectory: string
+      /** An installation coordinator may only publish a new directory, never adopt existing bytes. */
+      exclusive?: boolean
       scope: 'workspace' | 'user'
       enable: boolean
     }>

@@ -43,7 +43,7 @@ function oauthEntry(serverId: string): McpServerSnapshotEntry {
 const fakeOpener = { connect: vi.fn(async () => ({ id: 'x' }) as never) }
 
 describe('mcpServerRowsFromDefinitions', () => {
-  it('derives one row per non-oauth definition, id shaped ext:agnes/mcp-<slug>-<hash8>', () => {
+  it('derives one row per definition, id shaped ext:agnes/mcp-<slug>-<hash8>', () => {
     const { rows, skipped } = mcpServerRowsFromDefinitions(
       [stdioEntry('gh'), stdioEntry('linear')],
       fakeOpener,
@@ -97,13 +97,16 @@ describe('mcpServerRowsFromDefinitions', () => {
     expect(after?.spec.revision).not.toBe(before?.spec.revision)
   })
 
-  it('skips an oauth-bound definition instead of turning it into a row (D105/D109)', () => {
+  it('turns an OAuth-bound definition into a row like any other', () => {
     const { rows, skipped } = mcpServerRowsFromDefinitions(
       [stdioEntry('gh'), oauthEntry('remote')],
       fakeOpener,
     )
-    expect(rows.map((r) => r.spec.id)).toEqual([expect.stringMatching(/^agnes\/mcp-gh-/)])
-    expect(skipped).toEqual([{ serverId: 'remote', reason: expect.stringContaining('oauth') }])
+    expect(rows.map((r) => r.spec.id)).toEqual([
+      expect.stringMatching(/^agnes\/mcp-gh-/),
+      expect.stringMatching(/^agnes\/mcp-remote-/),
+    ])
+    expect(skipped).toEqual([])
   })
 
   it('becomes a row only when enabled and trusted -- the same servers the resource manager would connect', () => {

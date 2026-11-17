@@ -39,12 +39,18 @@ export function capabilityAtoms(value: PluginCapabilities | undefined): string[]
     ...(['read', 'write'] as const).flatMap((key) =>
       (value.filesystem?.[key] ?? []).map((scope) => `filesystem.${key}:${scope}`),
     ),
-    ...(['model', 'childAgents', 'ui', 'device', 'wake', 'store'] as const).filter(
-      (key) => value[key] === true,
-    ),
+    ...(
+      ['model', 'childAgents', 'ui', 'device', 'wake', 'store', 'sessionWork', 'autoTitle'] as const
+    ).filter((key) => value[key] === true),
     ...(value.uiData ?? []).map((permission) => `uiData:${permission}`),
     ...(value.streams ?? []).map((stream) => `streams:${stream.scope}:${stream.name}:${stream.lane}`),
     ...(value.managedServices ?? []).map((service) => `managedServices:${service.scope}:${service.id}`),
+    ...(value.managedServices ?? [])
+      .filter((service) => service.sessions === true)
+      .map((service) => `managedSessions:${service.scope}:${service.id}`),
+    ...(value.managedServices ?? [])
+      .filter((service) => service.channelTargets === true)
+      .map((service) => `channelTargets:${service.scope}:${service.id}`),
   ].sort()
 }
 
@@ -159,7 +165,16 @@ export function capabilityPolicyBlockers(
 }
 
 const AUTHORITY_LISTS = ['network', 'exec', 'secrets', 'credentials', 'uiData'] as const
-const AUTHORITY_FLAGS = ['model', 'device', 'childAgents', 'ui', 'store', 'wake'] as const
+const AUTHORITY_FLAGS = [
+  'model',
+  'device',
+  'childAgents',
+  'ui',
+  'store',
+  'wake',
+  'sessionWork',
+  'autoTitle',
+] as const
 
 /**
  * The package-level view of its plugins' capabilities: the authority a package needs is the union of

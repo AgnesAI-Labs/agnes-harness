@@ -235,3 +235,33 @@ it('retains owned Projection cache and quarantine across restore, then retires t
   expect(live.failures()).toEqual([])
   expect(live.cacheLine('s', key)).toBeUndefined()
 })
+
+it('notifies once per live-set change and not on reads or finalize', () => {
+  const table = new OwnedRegistryTable<string>(true)
+  const seen: number[] = []
+  const off = table.onChange(() => seen.push(table.size))
+  const dispose = table.add('fixture/a', 'k1', 'v1')
+  table.get('k1')
+  table.values()
+  dispose()
+  const candidate = new OwnedRegistryTable<string>(true)
+  candidate.add('fixture/b', 'k2', 'v2')
+  const prepared = table.prepare('fixture/b', candidate)
+  prepared.commit()
+  prepared.restore()
+  const again = table.prepare('fixture/b', candidate)
+  again.commit()
+  again.finalize()
+  off()
+  table.add('fixture/c', 'k3', 'v3')
+  expect(seen).toEqual([1, 0, 1, 0, 1])
+})
+
+it('keeps working when a listener throws', () => {
+  const table = new OwnedRegistryTable<string>(true)
+  table.onChange(() => {
+    throw new Error('boom')
+  })
+  expect(() => table.add('o', 'k', 'v')).not.toThrow()
+  expect(table.size).toBe(1)
+})

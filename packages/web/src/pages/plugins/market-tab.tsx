@@ -25,6 +25,7 @@ import {
   CommunityCard,
   CommunityDetails,
   type CommunityRepository,
+  communityText,
   useCommunityDiscovery,
 } from './community-market.js'
 import { matchesPluginFilters, type PluginSource, PluginSourceFilter, PluginToolbar } from './plugins-tab.js'
@@ -152,6 +153,7 @@ function MarketCard({
 
 /** Today's plugin catalog; a real marketplace later replaces the data source, not the page. */
 export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
+  const { locale } = useUiText(PLUGIN_PRESENTATION_NAMESPACE, pluginPresentationCatalog)
   const [importSource, setImportSource] = useState<string | null>(null)
   const [source, setSource] = useState<PluginSource | ''>('')
   const { snapshot, failed } = useCommunityDiscovery(view)
@@ -174,7 +176,7 @@ export function MarketTab({ view, t }: { view: PluginView; t: Text }) {
       ? (snapshot?.items ?? []).filter(
           (row) =>
             !view.kind &&
-            `${row.fullName} ${row.description} ${row.topics.join(' ')}`
+            `${row.name ?? ''} ${communityText(row.title, locale)} ${communityText(row.summary, locale)} ${row.fullName} ${row.description} ${row.author ?? ''}`
               .toLowerCase()
               .includes(view.query.toLowerCase()),
         )

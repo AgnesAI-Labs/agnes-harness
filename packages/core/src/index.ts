@@ -210,13 +210,14 @@ export {
 export { DEFAULT_LOOP } from '@agnes/extension-api'
 export type { Provider } from '@agnes/protocol'
 export { WORKSPACE_SECRET_DIRS } from '@agnes/protocol'
+export { childFailureSuffix } from './child/failure.js'
 export {
   type IdleChildRetirementOptions,
   type IdleChildRetirementResult,
   retireIdleChildren,
 } from './child/idle-retirement.js'
 export { bindChildAgentSession } from './child/loop-port.js'
-export { type ChildModelScope, setChildModelScope } from './child/model-scope.js'
+export { type ChildModelExclusion, type ChildModelScope, setChildModelScope } from './child/model-scope.js'
 export type { InProcessChildBackend, ResidentStart, ResidentTurn } from './child/provider.js'
 export {
   IN_PROCESS_CHILD_CAPABILITIES,
@@ -229,6 +230,7 @@ export { type DispatchContext, HOOK_UNHANDLED, HookEngine, WORKSPACE_HOOK_SANDBO
 export { type SessionHookInputs, SessionHookPort } from './hooks/port.js'
 export type { CoreDiagName, KernelOptions, SessionOptions } from './kernel.js'
 export { CORE_DIAG_NAMES, Kernel, KernelChildren } from './kernel.js'
+export { createSessionWorkSideCall } from './loop/background-side-call.js'
 export { LoopEventRegistry } from './loop/events.js'
 export {
   AUXILIARY_VISION_MAX_EDGE,
@@ -260,9 +262,11 @@ export {
   executeAuxiliaryVision,
 } from './orchestrator/auxiliary-vision-executor.js'
 export { REQUEST_MEDIA_ARTIFACT_RECLAIMED } from './orchestrator/request-media-surface.js'
+export type { SideCallExecutionSource } from './orchestrator/side-call-executor.js'
 export type { ApplyLimits } from './refine/apply.js'
 // Applying a refinement is the facade's job alone, between turns under the session lock.
 export { rollbackRefine } from './refine/apply.js'
+export { newSessionVisibleTools, sessionVisibleTools } from './refinement/capture.js'
 export {
   type DirectProposal,
   type InspectAnswer,
@@ -308,12 +312,18 @@ export {
   type WorkspaceSaveRequest,
   workspaceSaveRequest,
 } from './refinement/workspace.js'
-export type { RefinementWorkspaceRefs, WorkspaceReference } from './refinement/workspace-refs.js'
+export type { RefinementWorkspaceRefs, SavedEntry, WorkspaceReference } from './refinement/workspace-refs.js'
 export { HookRegistry, type HookSnapshot } from './registry/hooks.js'
 export { type RegisteredResource, ResourceRegistry } from './registry/resources.js'
 export { type RuntimeSlotFill, SlotRegistry } from './registry/slots.js'
 export type { ResolvedToolPolicyEnvelope } from './registry/tool-policy.js'
-export { resolveValidatedToolCallPolicy } from './registry/tool-policy.js'
+export {
+  hasAuthenticToolPolicyHash,
+  hasCompleteToolPolicyEnvelope,
+  hasTrustedToolCallProvenance,
+  resolveValidatedToolCallPolicy,
+  toolPolicyBindingProblem,
+} from './registry/tool-policy.js'
 export type {
   ExecutionDomain,
   RegisteredTool,

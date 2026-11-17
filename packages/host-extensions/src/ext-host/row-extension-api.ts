@@ -8,16 +8,19 @@ import {
   HOOK_TABLE,
   type HookEvent,
   type HookHandler,
+  type HookRegisterOptions,
   type ToolDef,
 } from '@agnes/extension-api'
 import type { ExtensionAPI } from '@agnes/extension-api/host'
 import { inspectJsonData, isHookEvent, type PluginCapabilities } from '@agnes/protocol'
 import { observePluginCapabilities } from '../plugin-capability-observer.js'
 import { refusedForParameters } from '../resources/management-refusal.js'
+import { hookTimeout } from './hook-options.js'
 import type { Lease } from './lease.js'
 import { pluginManageForCall } from './plugin-manage-binding.js'
 import type { KernelPorts, RegMeta } from './ports.js'
 import { projectionReader } from './projection-reader.js'
+import { sideModelsPort } from './side-models.js'
 import { invalidToolMessage } from './tool-def-message.js'
 
 const SAFE_REPLAY_NEEDS_READ_ONLY = 'meta.replay: safe requires isReadOnly'
@@ -41,6 +44,16 @@ export const OBSERVE_HOOK_EVENTS: readonly HookEvent[] = Object.freeze(
 )
 
 export type RowExtensionApiInput = {
+  assertCurrent?: () => void
+  rowId?: string
+  /** Names currently registered by this exact live RowOrigin; supplied only by Host. */
+  projectionNames?: () => readonly string[]
+  hostGrants?: () => import('@agnes/package-manager').HostCapabilityGrant
+  sessionWorkDeclared?: boolean
+  sessionWorkAuthority?: () => import('./ports.js').SessionWorkAuthority & { dispose(): void }
+  sideCallDeclared?: boolean
+  sideModels?: () => readonly import('@agnes/extension-api').SideModelEntry[]
+  subscribeSideModels?: (listener: () => void) => () => void
   store?: () => import('@agnes/extension-api').OwnedStore
   bindWake?: (
     session: import('@agnes/extension-api').ToolContext['session'],
@@ -102,6 +115,7 @@ export type RowExtensionApi = Readonly<{
   tools: import('@agnes/extension-api').ToolRegistrationPort
   registerHook: ExtensionAPI['registerHook']
   events: ExtensionAPI['events']
+  sessionWork: import('@agnes/extension-api').PluginSessionWorkPort
 }>
 
 export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionApi {
@@ -109,11 +123,15 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
   const meta: RegMeta = Object.freeze({
     source,
     trust: 'trusted',
+    ...(input.rowId ? { pluginRowId: input.rowId } : {}),
+    ...(input.sideCallDeclared && input.hostGrants?.().sideCall ? { sideCall: true as const } : {}),
     ...(input.hookRank === undefined ? {} : { hookRank: input.hookRank }),
   })
   const toolMeta: RegMeta = Object.freeze({
     source,
     trust: 'trusted',
+    ...(input.rowId ? { pluginRowId: input.rowId } : {}),
+    ...(input.sideCallDeclared && input.hostGrants?.().sideCall ? { sideCall: true as const } : {}),
     packageIdentity: input.packageIdentity,
     packageVersion: input.packageVersion,
     ...(input.executionBinding ? { executionBinding: input.executionBinding } : {}),
@@ -128,13 +146,23 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
     throw new ExtensionError('E_CAPABILITY_UNDECLARED', message, { extId: source })
   }
   const alive = () => {
+    input.assertCurrent?.()
     lease.assertAlive('execute')
     if (signal.aborted) throw new ExtensionError('E_LEASE_EXPIRED', 'extension is closed', { extId: source })
   }
   // Registration is open for as long as the row is mounted: a Cordis restart re-runs apply without
   // any lifecycle state that marks the window, and everything registered dies with the row anyway.
   const registering = alive
+  const sideModels = sideModelsPort(
+    () => input.hostGrants?.(),
+    input.sideCallDeclared,
+    input.sideModels,
+    alive,
+    input.subscribeSideModels,
+    signal,
+  )
   const ctx: ExtensionContext = Object.freeze({
+    ...(sideModels ? { sideModels } : {}),
     extId: source,
     version: input.version,
     trust: 'trusted',
@@ -150,6 +178,73 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
   })
   const api = {
     ctx,
+    sessionWork: {
+      register(registration: import('@agnes/extension-api').SessionWorkRegistration) {
+        const check = () => {
+          alive()
+          if (!input.rowId || !input.sessionWorkDeclared || !input.hostGrants?.().sessionWork)
+            refuse('session work not granted')
+        }
+        check()
+        if (
+          !/^[a-z][a-z0-9._-]{0,63}$/.test(registration.name) ||
+          typeof registration.observe !== 'function' ||
+          typeof registration.run !== 'function'
+        )
+          return refuse('invalid session work registration')
+        const observe = registration.observe.bind(registration)
+        const run = registration.run.bind(registration)
+        return input.attach('hook', `session-work:${registration.name}`, (ports) => {
+          if (!ports.sessionWork || !input.sessionWorkAuthority) return refuse('session work not granted')
+          const authority = input.sessionWorkAuthority()
+          const current = () => {
+            check()
+            if (!authority.check())
+              throw new ExtensionError('E_LEASE_EXPIRED', 'background authority revoked', { extId: source })
+          }
+          try {
+            const projections = projectionReader(
+              ports.projections,
+              meta,
+              lease,
+              current,
+              input.projectionNames ?? [],
+            )
+            const off = ports.sessionWork.register(
+              {
+                name: registration.name,
+                observe(event) {
+                  current()
+                  observe(event)
+                },
+                async run(context) {
+                  current()
+                  const signal = AbortSignal.any([context.signal, input.signal, authority.signal])
+                  await run({ ...context, projections, signal })
+                },
+              },
+              {
+                ...meta,
+                authority,
+                ...(input.hostGrants?.().autoTitle && input.declaredCapabilities?.autoTitle
+                  ? { autoTitle: true as const }
+                  : {}),
+              },
+            )
+            return () => {
+              try {
+                off()
+              } finally {
+                authority.dispose()
+              }
+            }
+          } catch (error) {
+            authority.dispose()
+            throw error
+          }
+        })
+      },
+    },
     tools: {
       register(def: ToolDef) {
         registering()
@@ -185,7 +280,13 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
         if (!lease.allows('toolPrefix', copy.name)) refuse('tool outside lease scope')
         const execute = copy.execute.bind(copy)
         return input.attach('tool', copy.name, (ports) => {
-          const projections = projectionReader(ports.projections, meta, lease, alive, [])
+          const projections = projectionReader(
+            ports.projections,
+            meta,
+            lease,
+            alive,
+            input.projectionNames ?? [],
+          )
           const wrapped: ToolDef = {
             ...copy,
             execute: async (args, tctx) => {
@@ -311,11 +412,22 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
         return ports.extEvents.append(type, data.value, meta)
       },
     }),
-    registerHook<E extends HookEvent>(event: E, handler: NoInfer<HookHandler<E>>) {
+    registerHook<E extends HookEvent>(
+      event: E,
+      handler: NoInfer<HookHandler<E>>,
+      options?: HookRegisterOptions,
+    ) {
       registering()
       if (typeof handler !== 'function' || !isHookEvent(event)) return refuse('invalid hook registration')
+      const timeoutMs = hookTimeout(event, options, input.hostGrants?.(), log)
       return input.attach('hook', event, (ports) => {
-        const projections = projectionReader(ports.projections, meta, lease, alive, [])
+        const projections = projectionReader(
+          ports.projections,
+          meta,
+          lease,
+          alive,
+          input.projectionNames ?? [],
+        )
         // Unlike `on` above, the handler's real return value reaches the kernel: this is what lets a
         // transform/intercept-category event actually chain or short-circuit, not just observe.
         const wrapped = (payload: Parameters<HookHandler<E>>[0], hctx: Parameters<HookHandler<E>>[1]) => {
@@ -331,7 +443,11 @@ export function buildRowExtensionAPI(input: RowExtensionApiInput): RowExtensionA
             }),
           )
         }
-        return ports.hooks.on(event, wrapped as unknown as HookHandler<E>, meta)
+        return ports.hooks.on(
+          event,
+          wrapped as unknown as HookHandler<E>,
+          timeoutMs === undefined ? meta : { ...meta, hookTimeoutMs: timeoutMs },
+        )
       })
     },
   }

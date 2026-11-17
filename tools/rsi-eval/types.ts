@@ -241,9 +241,16 @@ export type RunRecord = {
   progress?: PromptProgress[]
   /** AGH runs: where the trap was hit and where the context was compacted, per session (ledger seqs). */
   trapEvents?: { session: number; hits: number[]; compactions: number[] }[]
+  /**
+   * AGH runs: per session, from its first task-experience snapshot row, whether there was one, how many
+   * saved entries (workspace and user memory) it could choose from and how many it carried to the model.
+   */
+  experienceAtStart?: ExperienceAtStart[]
   onProtocol?: OnProtocol
   frozenFrom?: FrozenSeed
 }
+
+export type ExperienceAtStart = { session: number; snapshot: boolean; saved: number; savedIncluded: number }
 
 /** What the run had spent when one of its prompts ended, and whether that prompt's milestone passed. */
 export type PromptProgress = {

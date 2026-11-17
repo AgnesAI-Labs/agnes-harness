@@ -27,11 +27,15 @@ export type ViewChange = Readonly<{ inForce: number; expired: number }>
  * `changed`, when given, hears each time this view's answers differ from the ones it gave before (never
  * on the first read), so the session the view serves can record that its memory note changed because of
  * saved paragraphs. It is called after the answers are taken, outside the provider's call.
+ *
+ * `inForce: 'delivered'` answers a paragraph in force as `delivered`: the Host gives it to the model in
+ * the task-experience snapshot, so memory leaves it out of its note and still shows it on read.
  */
 export function registryView(
   registry: RefinementRegistry,
   clock: () => number,
   changed?: (change: ViewChange) => void,
+  inForce: 'valid' | 'delivered' = 'valid',
 ): MemoryValidityView {
   let held: Answers | undefined
   let given: string | undefined
@@ -66,6 +70,7 @@ export function registryView(
     return held
   }
   return Object.freeze({
+    delivers: inForce === 'delivered',
     revision(): string {
       try {
         return answers().revision
@@ -75,7 +80,8 @@ export function registryView(
     },
     validity(paragraphId: string): MemoryParagraphValidity {
       try {
-        return answers().byId.get(paragraphId) ?? 'unknown'
+        const answer = answers().byId.get(paragraphId) ?? 'unknown'
+        return answer === 'valid' ? inForce : answer
       } catch {
         return 'unknown'
       }

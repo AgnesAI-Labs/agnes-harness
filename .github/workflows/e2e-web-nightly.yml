@@ -20,7 +20,7 @@ jobs:
         run: |
           gh workflow run ci.yml --repo "$GH_REPO" --ref develop --field browsers=true
           echo "Dispatched full CI + Web E2E to develop. Check its result at https://github.com/$GH_REPO/actions/workflows/ci.yml?query=branch%3Adevelop+event%3Aworkflow_dispatch" >> "$GITHUB_STEP_SUMMARY"
-  narrow:
+  browsers:
     if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/e2e-web.yml
-    with: { suite: narrow-nightly }
+    with: { suite: nightly }

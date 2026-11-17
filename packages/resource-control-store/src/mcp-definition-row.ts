@@ -8,6 +8,14 @@ function onlyDisclosureChanged(before: McpServerDefinitionInput, after: McpServe
   return (was ?? 'auto') !== (now ?? 'auto') && jcs(restBefore) === jcs(restAfter)
 }
 
+/** True when the only change is from no credential to a plain OAuth sign-in (no client settings):
+ * what runs and where it connects stay the same; only the user's sign-in is sent along. */
+function onlySignInAdded(before: McpServerDefinitionInput, after: McpServerDefinitionInput): boolean {
+  const { secretBinding: was, ...restBefore } = before
+  const { secretBinding: now, ...restAfter } = after
+  return was.kind === 'none' && jcs(now) === jcs({ kind: 'oauth' }) && jcs(restBefore) === jcs(restAfter)
+}
+
 /**
  * An update that changed only the tool loading mode succeeds even when the server cannot connect:
  * the mode is a preference, and rolling it back would not make the server connect. The connection
@@ -26,8 +34,8 @@ export function disclosureOnlyUpdate(
 /**
  * The journal row a create or update writes. Any edit needs review again, so the row starts
  * untrusted and disabled -- except an update that changes only how tools reach
- * the model: nothing that runs or connects changed, so trust, enablement and a local start approval
- * carry over to the new revision.
+ * the model, or only switches a server without credentials to OAuth sign-in: nothing that runs or
+ * connects changed, so trust, enablement and a local start approval carry over to the new revision.
  */
 export function definedRow(
   /** The current row on update; a create never has one. */
@@ -36,7 +44,10 @@ export function definedRow(
   revision: string,
   unavailable: McpStatus,
 ): McpRow {
-  if (prior && onlyDisclosureChanged(prior.definition, definition))
+  if (
+    prior &&
+    (onlyDisclosureChanged(prior.definition, definition) || onlySignInAdded(prior.definition, definition))
+  )
     return {
       ...prior,
       definition,

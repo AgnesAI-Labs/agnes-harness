@@ -48,13 +48,15 @@ export const PROMPT_SECTIONS: ReadonlyArray<PromptSectionSpec> = validateSection
   { id: 'environment', order: 110, source: 'dynamic', owner: 'code' },
   { id: 'workflow:receipts', order: 113, source: 'dynamic', owner: 'base' },
   { id: 'tools-available', order: 115, source: 'dynamic', owner: 'code' },
+  // Background jobs that ended since the model was last told, from the official jobs extension.
+  { id: 'jobs:completed', order: 117, source: 'dynamic', owner: 'base' },
   // Live repository rules contributed by the official context-rules extension.
   { id: 'agents-md', order: 120, source: 'dynamic', owner: 'base' },
   { id: 'coding-doctrine', order: 130, source: 'file', owner: 'code' },
   { id: 'code-doctrine', order: 140, source: 'file', owner: 'code' },
   { id: 'tools:sdk', order: 150, source: 'dynamic', owner: 'code' },
   // Skill routing catalog. It is a context-hook section, not additionalContext: the shared
-  // additionalContext channel is capped at 8192 bytes by the hook schema.
+  // additionalContext channel is capped at 8192 characters (UTF-16 units) by the hook schema.
   { id: 'skills', order: 160, source: 'dynamic', owner: 'base' },
   { id: 'plan-mode', order: 162, source: 'dynamic', owner: 'base' },
   { id: 'persistent-goal', order: 164, source: 'dynamic', owner: 'base' },

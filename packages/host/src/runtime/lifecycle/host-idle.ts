@@ -1,5 +1,5 @@
 import { HostError } from '@agnes/host-common/errors'
-import type { Host } from './host.js'
+import type { Host, HostOptions } from './host.js'
 
 // Private ownership metadata, deliberately absent from the Host facade's method dispatch surface.
 const probes = new WeakMap<Host, () => boolean>()
@@ -72,4 +72,65 @@ export async function collectIdleContainers<T extends { host: Host }>(
     }
   }
   if (errors.length) throw new AggregateError(errors, 'composition collection failed')
+}
+
+/**
+ * Collection on one timer for the earliest idle deadline, as in the generation Host, with no periodic
+ * work. A container's idle period starts when it opens or loses its last live session; one that
+ * collection finds busy (its calls still draining) is checked again within a second.
+ */
+export function createIdleCollection<T extends { host: Host }>(
+  input: Readonly<{
+    containers: Map<string, T>
+    keep: () => T
+    idleSince: Map<T, number>
+    idleMs: number
+    enqueue: (run: () => Promise<void>) => Promise<void>
+    closed: () => boolean
+    log: HostOptions['log']
+    afterCollect: () => void
+  }>,
+) {
+  const { containers, idleSince, idleMs } = input
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const sessionless = (container: T) =>
+    container !== input.keep() &&
+    ![...container.host.kernel.sessions.values()].some((session) => !session.closingOrClosed)
+  const arm = () => {
+    if (timer) clearTimeout(timer)
+    timer = undefined
+    const busy = [...containers.values()].some(
+      (container) => !idleSince.has(container) && sessionless(container),
+    )
+    if (input.closed() || (!idleSince.size && !busy)) return
+    const next = Math.min(...idleSince.values()) + idleMs - Date.now()
+    timer = setTimeout(
+      () => {
+        timer = undefined
+        void input
+          .enqueue(collect)
+          .catch((error) => input.log.warn('Composition collection failed', { error: String(error) }))
+      },
+      Math.min(2_147_483_647, Math.max(1, Math.min(next, busy ? 1000 : Infinity))),
+    )
+    timer.unref()
+  }
+  const collect = () =>
+    collectIdleContainers(containers, input.keep(), idleSince, idleMs).finally(() => {
+      input.afterCollect()
+      arm()
+    })
+  return {
+    /** Collects now; the caller serializes admission. */
+    collect,
+    idleNow(): void {
+      for (const container of containers.values())
+        if (!idleSince.has(container) && sessionless(container)) idleSince.set(container, Date.now())
+      arm()
+    },
+    stop(): void {
+      if (timer) clearTimeout(timer)
+      timer = undefined
+    },
+  }
 }

@@ -72,6 +72,7 @@ export type ResourceControlClient = Readonly<{
       oauth: Readonly<{
         status(params: McpServerGetParams): Promise<McpOAuthStatusResult>
         statusSet(params: McpOAuthStatusSetParams): Promise<McpOAuthStatusResult>
+        signOut(params: McpServerReconnectParams): Promise<ResourceOperationReceipt>
       }>
     }>
   }>
@@ -136,6 +137,8 @@ export function createResourceControlClient(client: ResourceControlRpc): Resourc
             client.call('_agnes/v1/mcp.servers.oauth.status', params),
           statusSet: (params: McpOAuthStatusSetParams): Promise<McpOAuthStatusResult> =>
             client.call('_agnes/v1/mcp.servers.oauth.status.set', params),
+          signOut: (params: McpServerReconnectParams): Promise<ResourceOperationReceipt> =>
+            client.call('_agnes/v1/mcp.servers.oauth.signOut', params),
         }),
       }),
     }),

@@ -1,7 +1,11 @@
 import type { ExtensionManifest } from '@agnes/extension-api'
 import { EXT_ROW_EXTENSION_IDS } from '@agnes/host-extensions/assemble/ext-rows'
 import type { ExtensionSpec } from '@agnes/host-extensions/ext-host/index'
-import { readAuthorManifest, readBundledExtensionDirs } from '@agnes/host-extensions/ext-host/manifest'
+import {
+  readAuthorManifest,
+  readBuiltinPluginDeclaration,
+  readBundledExtensionDirs,
+} from '@agnes/host-extensions/ext-host/manifest'
 import type { AssemblyContext } from './context.js'
 import type { ExtensionHost } from './extension-host.js'
 import type { PackageSet } from './packages.js'
@@ -55,6 +59,7 @@ export function createBundledExtensions(
         packageDirectory: string
         extensionDirectory: string
         embedded?: ExtensionManifest
+        declaration?: ReturnType<typeof readBuiltinPluginDeclaration>
       }
     | undefined => {
     for (const pkg of ctx.profile.packages) {
@@ -78,11 +83,13 @@ export function createBundledExtensions(
           packageId: pkg.id,
           packageDirectory,
           extensionDirectory,
+          declaration: readBuiltinPluginDeclaration(extensionDirectory),
         }
       }
       // Packaged builds embed the reviewed builtin manifest.
       const embedded = modules.get(pkg.id)?.embeddedExtensions?.find((m) => m.id === id)
-      if (embedded && pkg.trust === 'builtin')
+      if (embedded && pkg.trust === 'builtin') {
+        const { hostPlugin, ...authorManifest } = embedded
         return {
           spec: {
             id: embedded.id,
@@ -97,8 +104,10 @@ export function createBundledExtensions(
           packageId: pkg.id,
           packageDirectory,
           extensionDirectory: packageDirectory,
-          embedded,
+          embedded: authorManifest,
+          declaration: hostPlugin,
         }
+      }
     }
     return undefined
   }

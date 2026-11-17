@@ -28,12 +28,12 @@ export function createWin32Platform(): PlatformBackend {
     sandboxProbed: () => sandboxProbed,
     recordSandboxBackend() {
       sandboxProbed = true
-      // This backend has no Windows process-creation primitive. Never let a report turn argv identity
-      // into a restricted-token claim; HostExec must implement and prove that boundary first.
+      // Full L1 isolation does not exist on Windows. The write restriction is a separate, partial
+      // contract reported per session; never let a platform report turn it into an L1 claim.
       caps['sandbox.l1'] = {
         level: 'unavailable',
         scope: [],
-        reason: 'restricted token backend not implemented (v0.x)',
+        reason: 'full L1 isolation is not implemented; commands can run under the Windows write restriction',
       }
       caps['sandbox.network'] = { level: 'unavailable', scope: [], reason: 'not implemented' }
     },
@@ -56,7 +56,7 @@ export function createWin32Platform(): PlatformBackend {
       caps['sandbox.l1'] = {
         level: 'unavailable',
         scope: [],
-        reason: 'restricted token backend not implemented (v0.x)',
+        reason: 'full L1 isolation is not implemented; commands can run under the Windows write restriction',
       }
       caps['sandbox.network'] = { level: 'unavailable', scope: [], reason: 'not implemented' }
       caps['terminal.truecolor'] = { level: 'full', scope: [], reason: 'ConPTY renders 24-bit colour' }

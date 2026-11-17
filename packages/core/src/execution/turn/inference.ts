@@ -10,7 +10,7 @@ import { type OpStateObj, withPhase } from '@agnes/core-common/step/op-state'
 import { CoreError, type Event, type EventInput, type Seq } from '@agnes/core-common/types'
 import { withTimeout } from '@agnes/core-effects/effects/wrap'
 import { scanAll } from '@agnes/core-ledger/log/scan-pages'
-import { isNestedCall } from '@agnes/core-ledger/project/surface'
+import { isNestedCall, type SurfaceNode } from '@agnes/core-ledger/project/surface'
 import type { BudgetState } from '@agnes/core-ledger/reduce/shapes'
 import type { InferenceEvent, ModelRecord, RequestBody as WireBody } from '@agnes/protocol'
 import { childReceiptNarrative } from '../../child/receipts.js'
@@ -55,7 +55,7 @@ import {
   SKILL_LOADED_PREFIX,
   TURN_TIME_PREFIX,
 } from '../../request/derive.js'
-import { experienceChanged, messageText, withExperienceDiag } from '../../request/experience.js'
+import { experienceChanged, messageText, withExperienceRows } from '../../request/experience.js'
 import { experienceCommitCheck } from '../../request/experience-dispatch.js'
 import { experienceForRequest } from '../../request/experience-room.js'
 import { inlineImageMediaSurface } from '../../request/inline-images.js'
@@ -82,6 +82,7 @@ import { beforeStepGate, builtinBudgetPreflight, contextBudgetError } from './ga
 import { appendHookData } from './hook-data-note.js'
 import { settleInferenceFailure } from './inference-failure.js'
 import { planModelToolCalls } from './inference-tools.js'
+import { surfaceProducers } from './message-producers.js'
 import { progressCheckNote } from './progress-check.js'
 import { bindToolAvailability, disclosureRestriction, prepareToolAvailability } from './tool-availability.js'
 import { loadedToolNames, restoreToolDisclosure } from './tool-disclosure.js'
@@ -163,8 +164,12 @@ function auxiliaryAxSomText(events: readonly Event[], media: LedgerPreparedReque
   return text
 }
 
-/** Upper bound on the wire body that will be sent, or null when a field has no supported bound. */
-export function boundWireInputTokens(wire: WireBody): number | null {
+/**
+ * Conservative upper bound on the input tokens of the wire body that will be sent: one per serialized
+ * UTF-16 unit, so a reservation made from it is never short. Not an estimate (that is
+ * `estimateTokens`). Null when a field has no supported bound.
+ */
+export function wireInputUpperBound(wire: WireBody): number | null {
   for (const message of wire.messages) {
     for (const block of message.content) {
       if (block.type !== 'text' && block.type !== 'thinking') return null
@@ -511,6 +516,17 @@ export async function surfaceToolCalls(s: SessionImpl): Promise<NonNullable<Deri
   return out
 }
 
+/**
+ * What the ledger says about the history a request renders, beyond the rows themselves: which
+ * assistant message asked for each tool use, and which model produced each signed message.
+ */
+async function historyFacts(
+  s: SessionImpl,
+  surface: readonly SurfaceNode[],
+): Promise<Pick<DeriveInput, 'toolCalls' | 'producers'>> {
+  return { toolCalls: await surfaceToolCalls(s), producers: await surfaceProducers(s, surface) }
+}
+
 /** The options of the primary turn's own request, told apart from a loop's by identity. */
 const PRIMARY: import('@agnes/extension-api').LoopRequestOptions = Object.freeze({})
 
@@ -694,7 +710,7 @@ export async function prepareInferenceRequest(
     merged,
     surface,
     disclosed,
-    toolCalls: await surfaceToolCalls(s),
+    ...(await historyFacts(s, surface)),
     model: {
       slot,
       ...target,
@@ -723,7 +739,7 @@ export async function prepareInferenceRequest(
     ...(turnTime ? { requestNotes: [{ prefix: TURN_TIME_PREFIX, text: turnTime }] } : {}),
     ...(tailNote ? { tailNote } : {}),
   })
-  out = withExperienceDiag(s, out)
+  out = withExperienceRows(s, out)
   if (attachmentOmittedThrough(s)) out.header.attachmentImagesOmittedThrough = attachmentOmittedThrough(s)
   if (slot === 'primary' && s.preset.model.maxTokens !== undefined) {
     const { request, derivedHash } = remintRequestWithMaxTokens(
@@ -814,7 +830,7 @@ export async function admitInferenceRequest(
     }
   }
   if (await treeBudgetApplies(s)) {
-    const inputTokens = imageInputTokens ?? boundWireInputTokens(wire)
+    const inputTokens = imageInputTokens ?? wireInputUpperBound(wire)
     if (inputTokens === null) {
       await s.endTurn('budget')
       return { phase: 'terminal', reason: 'budget' }
@@ -1266,7 +1282,15 @@ export async function runInference(s: SessionImpl): Promise<StepOutcome> {
     // provider on the next request as part of the assistant turn, and a provider that rejects empty
     // text blocks refuses the whole request over a block core invented.
     const content = [
-      ...(thinking ? [{ type: 'thinking' as const, text: thinking }] : []),
+      ...(thinking
+        ? [
+            {
+              type: 'thinking' as const,
+              text: thinking,
+              ...(done?.thinkingSignature ? { signature: done.thinkingSignature } : {}),
+            },
+          ]
+        : []),
       ...(text ? [{ type: 'text' as const, text }] : []),
     ]
     const stopReason = truncated ? 'max_tokens' : calls.length ? 'tool_use' : 'end_turn'

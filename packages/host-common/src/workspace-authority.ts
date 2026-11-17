@@ -1,6 +1,14 @@
 import { createHash } from 'node:crypto'
 import { posix, win32 } from 'node:path'
 
+export type LegacyChatReadGrant = Readonly<{
+  sessionKey: string
+  workspaceId: string
+  root: string
+  source: 'existing' | 'derived' | 'schedule'
+  directoryIdentity?: string
+}>
+
 declare const workspaceBindingBrand: unique symbol
 
 /** Nominal Host authority. Structural lookalikes are rejected by assertWorkspaceBinding(). */
@@ -9,6 +17,8 @@ export type WorkspaceBinding = Readonly<{
   workspaceId: string
   authorityRevision: number
   canonicalRoot: string
+  /** Authenticated document-only authority, never part of the file fence. */
+  legacyChatReadGrant?: LegacyChatReadGrant
   /** Canonical extra directories admitted into this session's file fence; empty when none. */
   extraRoots: readonly string[]
   readonly [workspaceBindingBrand]: true
@@ -20,6 +30,7 @@ export type AuthenticatedWorkspaceBindingEnvelope = Readonly<{
   workspaceId: string
   revision: number
   canonicalRoot: string
+  legacyChatReadGrant?: LegacyChatReadGrant
   /** Absent on bindings written before extra directories existed: no extra directories. */
   extraRoots?: readonly string[]
 }>
@@ -63,6 +74,7 @@ function issue(input: {
   workspaceId: string
   authorityRevision: number
   canonicalRoot: string
+  legacyChatReadGrant?: LegacyChatReadGrant
   extraRoots: readonly string[]
 }): WorkspaceBinding {
   const binding = Object.freeze({ ...input }) as WorkspaceBinding
@@ -87,7 +99,31 @@ export class WorkspaceBindingAuthority {
       throw fault('invalid workspace authority id')
     if (!Number.isSafeInteger(envelope.revision) || envelope.revision < 1)
       throw fault('invalid workspace authority revision')
+    const grant = envelope.legacyChatReadGrant
+    if (
+      grant !== undefined &&
+      (!grant ||
+        typeof grant !== 'object' ||
+        grant.sessionKey !== sessionKey ||
+        grant.workspaceId !== envelope.workspaceId ||
+        checkedRoot(grant.root) !== envelope.canonicalRoot ||
+        !['existing', 'derived', 'schedule'].includes(grant.source) ||
+        (grant.directoryIdentity !== undefined &&
+          (typeof grant.directoryIdentity !== 'string' || !/^\d+:\d+$/.test(grant.directoryIdentity))))
+    )
+      throw fault('invalid legacy document grant')
     return issue({
+      ...(grant
+        ? {
+            legacyChatReadGrant: Object.freeze({
+              sessionKey: grant.sessionKey,
+              workspaceId: grant.workspaceId,
+              root: grant.root,
+              source: grant.source,
+              ...(grant.directoryIdentity ? { directoryIdentity: grant.directoryIdentity } : {}),
+            }),
+          }
+        : {}),
       sessionKey,
       workspaceId: envelope.workspaceId,
       authorityRevision: envelope.revision,
@@ -104,6 +140,7 @@ export function sameWorkspaceBindingAuthority(left: WorkspaceBinding, right: Wor
     left.workspaceId === right.workspaceId &&
     left.authorityRevision === right.authorityRevision &&
     left.canonicalRoot === right.canonicalRoot &&
+    JSON.stringify(left.legacyChatReadGrant) === JSON.stringify(right.legacyChatReadGrant) &&
     left.extraRoots.length === right.extraRoots.length &&
     left.extraRoots.every((root, index) => root === right.extraRoots[index])
   )
@@ -113,6 +150,15 @@ export function sameWorkspaceBindingAuthority(left: WorkspaceBinding, right: Wor
 export function inheritWorkspaceBinding(parent: WorkspaceBinding, childSessionKey: string): WorkspaceBinding {
   assertWorkspaceBinding(parent)
   return issue({
+    ...(parent.legacyChatReadGrant
+      ? {
+          legacyChatReadGrant: Object.freeze({
+            ...parent.legacyChatReadGrant,
+            sessionKey: checkedSessionKey(childSessionKey),
+            source: 'derived' as const,
+          }),
+        }
+      : {}),
     sessionKey: checkedSessionKey(childSessionKey),
     workspaceId: parent.workspaceId,
     authorityRevision: parent.authorityRevision,
@@ -140,6 +186,7 @@ export function extendsWorkspaceBinding(
     child.workspaceId === parent.workspaceId &&
     child.authorityRevision === parent.authorityRevision &&
     child.canonicalRoot === parent.canonicalRoot &&
+    Boolean(child.legacyChatReadGrant) === Boolean(parent.legacyChatReadGrant) &&
     child.extraRoots.length > parent.extraRoots.length &&
     isSubsequence(parent.extraRoots, child.extraRoots)
   )

@@ -447,6 +447,68 @@ describe('S5 service worker boundary', () => {
     })
   }, 20_000)
 
+  it("sends a managed-session request on the shared session worker's profile lane", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agnes-managed-lane-'))
+    cleanup.push(() => rmSync(dir, { recursive: true, force: true }))
+    const pkg = join(dir, 'service-package')
+    mkdirSync(pkg, { recursive: true })
+    writeFileSync(
+      join(pkg, 'package.json'),
+      JSON.stringify({
+        name: servicePackageId,
+        version: '1.0.0',
+        type: 'module',
+        exports: './index.mjs',
+        agnes: { plugins: [{ apiRange: '^5.0.0', id: serviceRowId, export: 'main' }] },
+      }),
+    )
+    writeFileSync(join(pkg, 'index.mjs'), 'export const main = { apply() {} }\n')
+    const profile = {
+      name: 'local-dev',
+      hash: 'service-profile-hash',
+      dataDir: dir,
+      cacheDir: join(dir, 'cache'),
+    } as ResolvedProfile
+    const profileFile = join(dir, 'profile.json')
+    writeFileSync(profileFile, JSON.stringify(profile))
+    const config: DaemonConfig = {
+      profileName: 'local-dev',
+      dataDir: dir,
+      ...socketPaths(dir),
+      limits: { ...DEFAULT_LIMITS, workerStartupMs: 10_000 },
+    }
+    vi.stubEnv('AGNES_FAKE_MANAGED_SESSION_PROBE', '1')
+    cleanup.push(() => {
+      vi.unstubAllEnvs()
+    })
+    const seen: unknown[] = []
+    const pool = new WorkerPool({
+      config,
+      profile,
+      profileFile,
+      execPath: process.execPath,
+      execArgv: ['--import', 'tsx'],
+      workerEntry: fileURLToPath(new URL('./fake-service-worker-entry.ts', import.meta.url)),
+      clock: Date.now,
+      onEvent: () => undefined,
+      onRequest: async (sessionKey, frame, _signal, sharedWorker) => {
+        if (frame.method === 'managed-session') seen.push({ sessionKey, sharedWorker })
+        return []
+      },
+      notices: { emit() {} },
+    })
+    const server = await listenUnix(config.workersSocketPath, (socket) => pool.adopt(socket))
+    cleanup.push(async () => {
+      await pool.closeAll(2_000).catch(() => undefined)
+      pool.killAll()
+      await server.close()
+    })
+    await pool.acquireSharedWorker()
+    await vi.waitFor(() => expect(seen).toEqual([{ sessionKey: '@profile', sharedWorker: true }]), {
+      timeout: 10_000,
+    })
+  })
+
   it('keeps entered effects uncertain across real worker timeout, cancellation and process crash', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'agnes-service-effect-failures-'))
     cleanup.push(() => rmSync(dir, { recursive: true, force: true }))

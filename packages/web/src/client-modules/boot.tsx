@@ -5,7 +5,6 @@
  * Without a real roster source, the reconciler stays idle and loads no modules (fail-closed).
  */
 import { Context } from '@agnes/cordis'
-import { registerRefinementSettingsSection } from '@agnes/web-admin/settings/refinement'
 import {
   type AgnesClient,
   AgnesClientService,
@@ -97,6 +96,7 @@ import type { VoiceController } from '../voice/controller.js'
 import { installVoice } from '../voice/install.js'
 import { type ClientReconciler, createReconciler, type RosterSource } from './reconcile.js'
 export interface ClientModulesRuntime {
+  requestProfileApproval(result: unknown): void
   ctx: Context
   registry: SlotRegistry
   session: SessionService
@@ -209,17 +209,6 @@ export async function startClientModules(options: {
     ctx.effect(() => voice.bindSession(session))
     ctx.effect(() => () => voice.dispose())
   }
-  // The experience-refinement section reads and saves the daemon's switch over this connection.
-  ctx.effect(() =>
-    registerRefinementSettingsSection({
-      read: () => options.agnes.refinement.get(),
-      save: (settings, expectedRevision) => options.agnes.refinement.save({ settings, expectedRevision }),
-      savedSkills: {
-        workspaces: async () => (await options.agnes.workspace.list()).items,
-        skills: (input) => options.agnes.refinement.skills(input),
-      },
-    }),
-  )
   const storedLocale = readLocalePreference(safeThemeStorage())
   applyDocumentLocale(document.documentElement, storedLocale)
   const locale = new LocaleService(ctx, storedLocale)
@@ -604,6 +593,7 @@ export async function startClientModules(options: {
     locale,
     commands,
     reconciler,
+    requestProfileApproval: (result: unknown) => attention.receive(result, () => true),
     builtinUnits,
     actualSlots(packageId) {
       return [...new Set(registry.entriesByOwner(packageId).map((entry) => entry.name))]

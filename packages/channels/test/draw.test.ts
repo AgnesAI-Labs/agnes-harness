@@ -14,8 +14,48 @@ const caps: ChannelCapabilities = {
 const context = { costLine: true, caps }
 
 describe('whatToDraw', () => {
-  it('does not echo user, partial assistant, compaction, or sidebar nodes', () => {
+  it('forwards correlated human input but omits legacy input, channel echoes, partial answers and internal nodes', () => {
     expect(whatToDraw({ kind: 'user', id: 'u', seq: 1, content: [] }, context)).toBeNull()
+    const input: UINode = {
+      kind: 'user',
+      id: 'typed',
+      seq: 2,
+      commandId: 'web-input',
+      content: [{ type: 'text', text: 'hello' }],
+    }
+    expect(whatToDraw(input, context)).toEqual({
+      blocks: [{ kind: 'text', markdown: '来自 AGH 的用户消息：\n\nhello' }],
+    })
+    expect(whatToDraw({ ...input, commandId: `channel:${'a'.repeat(64)}` }, context)).toBeNull()
+    expect(whatToDraw({ ...input, origin: 'system' }, context)).toBeNull()
+    expect(
+      whatToDraw(
+        { ...input, content: [{ type: 'image', data: 'private-bytes', mimeType: 'image/png' }] },
+        context,
+      ),
+    ).toEqual({ blocks: [{ kind: 'text', markdown: '来自 AGH 的用户消息：\n\n[附件请在 AGH 中查看]' }] })
+    expect(
+      whatToDraw(
+        {
+          ...input,
+          content: [
+            {
+              type: 'text',
+              text: 'private reference',
+              reference: {
+                source: 'file',
+                id: 'private',
+                label: 'private',
+                hash: 'a'.repeat(64),
+                truncated: false,
+              },
+            },
+          ],
+        },
+        context,
+      ),
+    ).toBeNull()
+
     expect(
       whatToDraw({ kind: 'assistant', id: 'a', seq: 2, text: 'partial', streaming: true }, context),
     ).toBeNull()
@@ -205,9 +245,9 @@ describe('whatToDraw', () => {
 })
 
 it('renders numbered surface choices with an authenticated Web fallback and no permission buttons', async () => {
-  const { questionSurface } = await import('../../base/extensions/interaction/src/question.js')
+  const { choiceSurface } = await import('../testkit/choice-surface.js')
   const record = {
-    surface: questionSurface('questions', [{ id: 'pick', question: 'Choose', options: ['A', 'B'] }]),
+    surface: choiceSurface('questions'),
     status: 'open' as const,
     owner: 'agnes/intelligent-ui',
     lane: 'main',
@@ -231,4 +271,68 @@ it('renders numbered surface choices with an authenticated Web fallback and no p
   expect(JSON.stringify(message)).toContain('认证 Web')
   expect(message.blocks).toHaveLength(1)
   expect(message.blocks[0]?.kind).toBe('text')
+})
+
+it('projects all collector answer modes and closes the same surface without actions', async () => {
+  const { choiceSurface } = await import('../testkit/choice-surface.js')
+  const surface = choiceSurface('q')
+  const form = surface.components.at(0)
+  if (!form || form.kind !== 'form' || 'fallback' in form) throw new Error('form fixture missing')
+  form.schema = {
+    type: 'object',
+    required: ['single', 'multi', 'text'],
+    properties: {
+      single: { type: 'string', title: 'One', enum: ['A', 'B'] },
+      multi: {
+        type: 'array',
+        title: 'Many',
+        items: { type: 'string', enum: ['A', 'B'] },
+        minItems: 1,
+        maxItems: 2,
+      },
+      text: { type: 'string', title: 'Details', maxLength: 8192 },
+      custom: { type: 'array', title: 'Custom', items: { type: 'string' }, 'x-ui-choices': ['C'] },
+    },
+  }
+  const record = {
+    surface,
+    status: 'open' as const,
+    owner: 'agnes/intelligent-ui',
+    lane: 'main',
+    taskId: 't',
+    createdSeq: 1,
+    updatedSeq: 1,
+  }
+  const block = drawSurfaceMessage(record, 's', 'https://web.example', true).blocks.at(0)
+  expect(block).toMatchObject({
+    kind: 'surface',
+    sessionId: 's',
+    surfaceId: 'q',
+    form: {
+      state: 'open',
+      fields: [
+        {
+          kind: 'single',
+          name: 'single',
+          inputKey: 'answers',
+          required: true,
+          options: [{ value: 'A' }, { value: 'B' }],
+        },
+        { kind: 'multi', name: 'multi', minItems: 1, maxItems: 2 },
+        { kind: 'text', name: 'text', maxLength: 8192 },
+        { kind: 'multi', name: 'custom', allowFreeText: true, options: [{ value: 'C' }] },
+      ],
+    },
+  })
+  expect(
+    drawSurfaceMessage({ ...record, status: 'closed' }, 's', undefined, true).blocks.at(0),
+  ).toMatchObject({ kind: 'surface', form: { state: 'closed' } })
+  surface.components.push({
+    id: 'custom-widget',
+    kind: 'example/view@1',
+    dataKey: 'draft',
+    fallback: 'Use Web',
+    actionIds: [],
+  })
+  expect(drawSurfaceMessage(record, 's', undefined, true).blocks.at(0)?.kind).toBe('text')
 })

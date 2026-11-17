@@ -82,6 +82,14 @@ export type McpLifecycleAdapter = Readonly<{
     definition: McpServerDefinitionInput
     signal: AbortSignal
   }): Promise<{ status: McpStatus; tools?: McpToolCatalogPage; error?: SafeError }>
+  /** Closes the server's active connection after a sign-out and starts no candidate, so the old
+   *  token is not kept alive by a connection that stays open. Returns the status left behind. */
+  signOut?(input: {
+    profile: string
+    serverId: string
+    definition: McpServerDefinitionInput
+    signal: AbortSignal
+  }): Promise<{ status: McpStatus; error?: SafeError }>
   /** Reads the Host's current catalog page only; it neither reconnects nor invokes a tool. */
   tools(input: {
     profile: string

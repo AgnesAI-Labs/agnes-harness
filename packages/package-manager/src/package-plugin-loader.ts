@@ -69,6 +69,7 @@ export function runtimePluginSnapshotsFromInventory(
       Object.freeze({
         snapshot: Object.freeze({
           snapshotId: installedRuntimeSnapshotId(pkg),
+          ...(pkg.entry.source ? { source: structuredClone(pkg.entry.source) } : {}),
           profile: inventory.profile,
           packageId: pkg.id,
           version: pkg.entry.version,
@@ -92,6 +93,7 @@ export function runtimePluginSnapshotsFromInventory(
         Object.freeze({
           snapshot: Object.freeze({
             snapshotId: previous.integrity,
+            source: structuredClone(previous.source),
             profile: inventory.profile,
             packageId: pkg.id,
             version: previous.version,

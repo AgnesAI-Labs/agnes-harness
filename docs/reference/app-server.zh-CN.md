@@ -30,7 +30,7 @@ workspace 必须通过 `_agnes/v1/workspace.add` 登记，客户端提供 `cwd` 
 
 浏览器 WebSocket 保留 loopback、Origin、bearer 和会话权限检查。本地 BFF HTTP 保留同源和固定 scope 检查，通过私有 Node SDK 连接访问 daemon；浏览器拿不到本地 daemon 凭据。source-auth、portal 和渠道继续使用服务端授予的权限，client label 不是权限。
 
-`_agnes/v1/admin.*` 管理 daemon 侧设置：`bundles.get`、`bundles.save`、`composition.get`、`search.get`、`search.save`、`search.test`、`context`、`history.search`、`plan`、`mcp.oauth.save`。这些方法要求本地管理员授权；写入要求 activation 权限，context 和 plan 只检查已登记且可用的 workspace。bundle 保存返回 `restart-required`。已有 package、resource 和 config 方法也属于同一合同。
+`_agnes/v1/admin.*` 管理 daemon 侧设置：`bundles.get`、`bundles.save`、`composition.get`、`search.get`、`search.save`、`search.test`、`context`、`history.search`、`plan`、`mcp.oauth.get`、`mcp.oauth.complete`、`mcp.oauth.refresh`、`mcp.oauth.logout`。这些方法要求本地管理员授权；写入要求 activation 权限，context 和 plan 只检查已登记且可用的 workspace。bundle 保存返回 `restart-required`。已有 package、resource 和 config 方法也属于同一合同。
 
 `/admin/plugins/api/*`、`/admin/resources/api/*`、`/api/context`、`/api/history-search`、`/api/plan-mode` 与 client-module service/effect HTTP 路径保留为兼容适配器。原生 workspace picker 和浏览器 OAuth redirect 是客户端传输能力；最终的 workspace 登记和凭据操作由 daemon 管理。
 
@@ -89,6 +89,6 @@ ACP 初始化版本仍为 1，AGH 扩展仍使用 `_agnes/v1`。v1 客户端应�
 
 ## 会话进程任务
 
-`_agnes/v1/session.jobs.read({sessionId, jobId?})` 返回有上限的任务快照。`_agnes/v1/session.jobs.control({sessionId, commandId, operation, ...})` 经既有服务命令 journal 执行终端副作用。两者校验会话所有权；控制操作拒绝另一会话或 agent 所有的任务。打开终端、运行命令和输入遵守会话权限策略；打开时使用已准入 cwd 与会话 sandbox。`operation: "run"` 接受 `command`（1 到 8 KiB，不含 NUL）和可选的 `timeoutMs`（1 秒到 10 分钟，默认 120 秒），在会话 cwd 里经与 `open` 相同的 sandbox 与授权，把它作为非交互 shell 任务执行一次，并返回属主为 human 的 `SessionJob`；用 `session.jobs.read({sessionId, jobId})` 轮询输出和退出码，用 `signal` 或 `kill` 取消。超时先发 SIGTERM，2 秒后 SIGKILL，状态为 `killed`。run 任务不会进入模型的「Jobs completed」上下文。关闭 dock 和分离会话不会结束任务。见[工作台面板](../extend/workbench-panels.zh-CN.md)。
+`_agnes/v1/session.jobs.read({sessionId, jobId?})` 返回有上限的任务快照。`_agnes/v1/session.jobs.control({sessionId, commandId, operation, ...})` 经既有服务命令 journal 执行终端副作用。两者校验会话所有权；控制操作拒绝另一会话的任务；对本会话 agent 所有的任务只接受 `kill`。打开终端、运行命令和输入遵守会话权限策略；打开时使用已准入 cwd 与会话 sandbox。`operation: "run"` 接受 `command`（1 到 8 KiB，不含 NUL）和可选的 `timeoutMs`（1 秒到 10 分钟，默认 120 秒），在会话 cwd 里经与 `open` 相同的 sandbox 与授权，把它作为非交互 shell 任务执行一次，并返回属主为 human 的 `SessionJob`；用 `session.jobs.read({sessionId, jobId})` 轮询输出和退出码，用 `signal` 或 `kill` 取消。超时先发 SIGTERM，2 秒后 SIGKILL，状态为 `killed`。run 任务不会进入模型的「Jobs completed」上下文。关闭 dock 和分离会话不会结束任务。见[工作台面板](../extend/workbench-panels.zh-CN.md)。
 
 `_agnes/v1/admin.feedback`: `list`, `put`, `withdraw`, `generate`. [反馈服务](../extend/feedback.zh-CN.md).

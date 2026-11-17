@@ -147,6 +147,8 @@ export async function startSupervisor(
       listenClients({ ...ready, ...sessions, ...endpoints }, owner),
     )
     if (listener.failure.error) throw listener.failure.error
+    // Sessions can be opened over the client socket from here on, so a startup sweep may begin.
+    clients.idle.started()
     return {
       ...listening.health,
       activationBarrier: stores.activationBarrier,

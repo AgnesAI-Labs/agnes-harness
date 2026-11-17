@@ -89,7 +89,7 @@ Print output is chosen with `--mode text|json|stream-json`. Waiting for approval
 
 Packages: `package status|list|catalog|inspect|add|trust|enable|disable|rollback|remove|operation|cancel|source-policy` (the last prints the allowed package sources); `install SOURCE` aliases add, and `packages pins inspect|release` manages retained references. Updates use Web, TUI `/package update ID SOURCE INTEGRITY`, or SDK. The TUI update submits the specified hash directly: inspect first, without assuming an extra preview/confirmation wizard.
 
-Resources: `resources list|get|operation|cancel|enable|disable`; `skills refresh|trust`; `mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools`. Writes commonly need expected revision and interactive confirmation. See [Skills](../guide/skills.md) and [MCP](../guide/mcp.md).
+Resources: `resources list|get|operation|cancel|enable|disable`; `skills refresh|trust`; `mcp list|get|add|update|remove|test|trust|enable|disable|status|reconnect|tools|login|logout` (`mcp login|logout <id>` signs an HTTP server in or out with OAuth). Writes commonly need expected revision and interactive confirmation. See [Skills](../guide/skills.md) and [MCP](../guide/mcp.md).
 
 Permanent Skill deletion and priority actions use Web or the Node SDK. Shell/TUI Skills syntax remains the existing refresh/trust commands. Guessed `skills remove` and `skills priority` commands are invalid; see [Skills](../guide/skills.md).
 
@@ -116,6 +116,7 @@ Authoritative syntax: [args/usage](../../packages/cli/src/args.ts), [package](..
 | `agh plugins tree [list]` / `tree show` / `plugins generations [--json]` | Read the plugin tree (`show --json` includes the artifact) / the runtime generations |
 | `agh plugins tree apply --file ARTIFACT.json\|- [--yes]` / `tree rollback [--yes]` | Apply a tree artifact / roll back to the previous one; without `--yes` only print what would happen and send nothing |
 | `agh plugins publication-status [--json]` | Read per-container convergence results |
+| `agh plugins grants [list [PACKAGE]]` / `grants grant\|revoke PACKAGE WORKSPACE [--json]` | List / grant / revoke the registered workspaces a plugin's [managed sessions](../extend/managed-sessions.md#authorize-a-workspace) may open in; owner only, never the plugin |
 | `agh sessions migrate KEY [--json]` | Explicitly migrate a closed compatible session; refuses an open session |
 | `agh app show [--json]` / `app preview PACKAGE#APP` | Show the current application and candidates / the consent preview before adopting |
 | `agh app adopt PACKAGE#APP [--yes]` | Adopt an application; without `--yes` prints the preview and sends nothing |

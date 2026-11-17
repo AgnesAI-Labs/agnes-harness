@@ -1,7 +1,13 @@
 import { canonicalJson, sha256Hex } from '@agnes/core-common/request/hash'
 import { CoreError, type Disposer, type Seq } from '@agnes/core-common/types'
 import { OwnedRegistryTable } from '@agnes/core-ledger/registry/owner-batch'
-import { checkToolDef, TOOL_DESCRIPTION_MAX_LENGTH, type ToolDef, type ToolMeta } from '@agnes/extension-api'
+import {
+  checkToolDef,
+  estimateTokens,
+  TOOL_DESCRIPTION_MAX_LENGTH,
+  type ToolDef,
+  type ToolMeta,
+} from '@agnes/extension-api'
 import { sanitize } from '../request/derive.js'
 import { prepareToolSchema } from '../request/tool-schema.js'
 
@@ -16,6 +22,10 @@ export type ToolExecutionBinding = Readonly<{
 }>
 export type ToolSource = {
   source: string
+  /** Canonical installed row identity supplied only by Host assembly, distinct from internal owner. */
+  pluginRowId?: string
+  /** Invocation-scoped port authorized by Host; never copied from a tool definition. */
+  sideCall?: true
   trust: TrustTier
   /** Host-attested package identity and manifest version; never copied from classifier output. */
   packageIdentity?: string
@@ -31,6 +41,8 @@ export type ToolSource = {
    * registration order. Meaningless for tool registrations; only `HookRegistry` reads it.
    */
   hookRank?: number
+  /** Per-registration time limit validated and supplied only by Host assembly. */
+  hookTimeoutMs?: number
   /** Host-attested permission to convert context hook refusal into a blocked turn. */
   contextBlocking?: boolean
 }
@@ -59,6 +71,11 @@ export class ToolRegistry {
 
   get size(): number {
     return this.#table.size
+  }
+
+  /** Called after every change to the live tool set; returns the unsubscribe function. */
+  onChange(listener: () => void): () => void {
+    return this.#table.onChange(listener)
   }
 
   add(def: ToolDef, meta: ToolSource): Disposer {
@@ -109,9 +126,14 @@ export class ToolRegistry {
       throw new CoreError('E_REGISTRY_DUPLICATE', registeredDefinition.name)
     const entry: RegisteredTool = Object.freeze({
       ...registeredDefinition,
-      // Keep the long-standing public source shape stable. Package provenance is separate
+      // Scope authorization comes only from Host metadata. Package provenance remains separate
       // attestation data and must not leak into hook/resource registrations that share ToolSource.
-      source: Object.freeze({ source: registeredSource.source, trust: registeredSource.trust }),
+      source: Object.freeze({
+        source: registeredSource.source,
+        trust: registeredSource.trust,
+        ...(registeredSource.pluginRowId ? { pluginRowId: registeredSource.pluginRowId } : {}),
+        ...(registeredSource.sideCall === true ? { sideCall: true as const } : {}),
+      }),
       ...(registeredSource.packageIdentity === undefined
         ? {}
         : { packageIdentity: registeredSource.packageIdentity }),
@@ -178,9 +200,9 @@ export const AUTO_DEFER_MAX_TOOLS = 15
 /** ...and up to this many estimated schema tokens, so a few huge schemas also defer. */
 export const AUTO_DEFER_MAX_TOKENS = 4000
 
-/** Rough schema size of one tool as the model would receive it, about four characters a token. */
+/** Estimated schema size of one tool as the model would receive it. */
 function schemaTokens(def: ToolDef): number {
-  return Math.ceil((def.name.length + def.description.length + JSON.stringify(def.parameters).length) / 4)
+  return estimateTokens(def.name + def.description + JSON.stringify(def.parameters))
 }
 
 /**
@@ -275,6 +297,7 @@ function snapshotToolMeta(meta: ToolMeta): ToolMeta {
     ...(meta.requiresImageInput === undefined ? {} : { requiresImageInput: meta.requiresImageInput }),
     ...(meta.requiresUser === true ? { requiresUser: true } : {}),
     ...(meta.commandArg === undefined ? {} : { commandArg: meta.commandArg }),
+    ...(meta.outward === true ? { outward: true } : {}),
     ...(meta.paths
       ? {
           paths: Object.freeze(

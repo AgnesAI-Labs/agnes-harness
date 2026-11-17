@@ -1,0 +1,86 @@
+/** Settings tab shell routing between stage settings (Sources, Eval, Execution), Prompts, and Deployment. */
+import type { StateView } from './api.js'
+import { Select } from './controls.js'
+import { DeploymentPage } from './deployment.js'
+import { EvalSettings } from './eval.js'
+import { ExecutionSettings } from './execution.js'
+import { PromptsPage } from './prompts.js'
+import { usePanel } from './provider.js'
+import { SETTINGS_GROUPS, type SettingsGroup, settingsRoute } from './route.js'
+import { SettingsProvider } from './settings-kit.js'
+import { SourceSettings } from './source.js'
+
+const STAGE_GROUPS: readonly SettingsGroup[] = ['source', 'eval', 'execution']
+export function SettingsPage({
+  group,
+  query,
+  state,
+}: {
+  group: SettingsGroup
+  query: { source?: string | undefined; version?: string | undefined }
+  state: StateView
+}) {
+  const { t, navigate } = usePanel()
+  const content = (() => {
+    switch (group) {
+      case 'source':
+        return (
+          <SettingsProvider>
+            <SourceSettings {...(query.source ? { focus: query.source } : {})} />
+          </SettingsProvider>
+        )
+      case 'eval':
+        return (
+          <SettingsProvider>
+            <EvalSettings version={query.version} />
+          </SettingsProvider>
+        )
+      case 'execution':
+        return (
+          <SettingsProvider>
+            <ExecutionSettings />
+          </SettingsProvider>
+        )
+      case 'prompts':
+        return <PromptsPage />
+      case 'deployment':
+        return <DeploymentPage setup={state.setup} />
+    }
+  })()
+  const open = (value: SettingsGroup) => navigate(settingsRoute(value), true)
+  return (
+    <div className="dt-settings">
+      <nav className="dt-settings-nav" aria-label={t('tab.settings')}>
+        {SETTINGS_GROUPS.map((value) => (
+          <button
+            key={value}
+            type="button"
+            className="dt-settings-link"
+            data-stage={STAGE_GROUPS.includes(value) || undefined}
+            aria-current={value === group ? 'page' : undefined}
+            onClick={() => open(value)}
+          >
+            {t(`settingsGroup.${value}`)}
+          </button>
+        ))}
+      </nav>
+      {/* A narrow panel has no room for the side list: the same groups as one picker above the page. */}
+      <Select
+        className="dt-settings-picker"
+        aria-label={t('tab.settings')}
+        value={group}
+        onChange={(event) => open(event.target.value as SettingsGroup)}
+      >
+        {SETTINGS_GROUPS.map((value) => (
+          <option key={value} value={value}>
+            {t(`settingsGroup.${value}`)}
+          </option>
+        ))}
+      </Select>
+      <div className="dt-settings-body">
+        <h2 className="dt-settings-title">{t(`settingsGroup.${group}`)}</h2>
+        {content}
+      </div>
+    </div>
+  )
+}

@@ -27,7 +27,7 @@ const save = (dataDir: string, settings: { enabled: boolean; mode: 'manual' | 'a
 const planner = { buildPrompt: () => ({}) as never, parseOutput: () => ({ error: 'unused' }) }
 
 describe('the host side of refinement', () => {
-  it('Core sees the switch only while it is on both at assembly and now', () => {
+  it('Core reads the switch as it is now, whatever it was at assembly', () => {
     const dataDir = scratch()
     save(dataDir, { enabled: true, mode: 'auto' })
     const on = createRefinementHost(dataDir, PROFILE)
@@ -38,12 +38,15 @@ describe('the host side of refinement', () => {
     expect(on.kernelOptions.refinementTriggers.accepts?.('k')).toBe(false)
     save(dataDir, { enabled: false, mode: 'manual' })
     expect(on.kernelOptions.refinementEnabled()).toBe(false)
-    // The tools keep the value read at assembly.
-    expect(on.view.current().settings.enabled).toBe(true)
 
-    const off = createRefinementHost(scratch(), PROFILE)
-    expect(off.view.current().settings.enabled).toBe(false)
+    // Off at assembly: turning it on is seen at once (Core applies it to the sessions opened afterwards).
+    const offDir = scratch()
+    const off = createRefinementHost(offDir, PROFILE)
     expect(off.kernelOptions.refinementEnabled()).toBe(false)
+    save(offDir, { enabled: true, mode: 'auto' })
+    expect(off.kernelOptions.refinementEnabled()).toBe(true)
+    expect(off.kernelOptions.refinement.settings()).toMatchObject({ enabled: true, mode: 'auto' })
+    expect(off.kernelOptions.refinementTriggers.accepts?.('k')).toBe(true)
   })
 
   it('a read that throws is off, never an error', () => {

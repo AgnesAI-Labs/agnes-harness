@@ -21,6 +21,7 @@ export class OwnedRegistryTable<T> {
   private readonly owners = new Set<string>()
   private readonly names = new Set<string>()
   private readonly sealed = new Set<RecordEntry<T>>()
+  private readonly listeners = new Set<() => void>()
 
   constructor(
     private readonly unique = false,
@@ -39,12 +40,31 @@ export class OwnedRegistryTable<T> {
     return this.records.size
   }
 
+  /** Called synchronously after each live-set change; a throwing listener is ignored. */
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+
+  private changed(): void {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener()
+      } catch {
+        // Observers must not break registry operations.
+      }
+    }
+  }
+
   add(owner: string, key: string, value: T): () => void {
     if (this.owners.has(owner) || (this.unique && (this.names.has(key) || this.get(key) !== undefined)))
       throw new CoreError('E_REGISTRY_DUPLICATE', 'registration conflicts with live or prepared owner')
     const record = { owner, key, value, table: this }
     this.records.add(record)
     if (this.unique) this.index.set(key, record)
+    this.changed()
     return () => record.table.release(record)
   }
 
@@ -54,6 +74,7 @@ export class OwnedRegistryTable<T> {
     if (this.records.delete(record)) {
       if (this.index.get(record.key) === record) this.index.delete(record.key)
       this.removed(record.value)
+      this.changed()
     }
   }
 
@@ -127,6 +148,7 @@ export class OwnedRegistryTable<T> {
         // The candidate is now live and its identity-bound disposer must remain usable. Owner/name
         // reservations stay held until restore/finalize so a third mutation cannot interleave.
         for (const record of next) candidate.sealed.delete(record)
+        this.changed()
         return previous
       },
       restore: () => {
@@ -152,6 +174,7 @@ export class OwnedRegistryTable<T> {
         }
         state = 'restored'
         unlock()
+        this.changed()
       },
       finalize: () => {
         if (state === 'finalized') return

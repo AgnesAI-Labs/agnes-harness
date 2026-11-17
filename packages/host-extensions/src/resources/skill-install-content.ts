@@ -19,11 +19,19 @@ export function parseInstallInput(value: unknown): SkillInstallRequest {
   const input = value as Record<string, unknown>
   const keys =
     input.action === 'prepare' || input.action === 'prepare-bundle'
-      ? ['action', 'sourceDirectory', 'scope', 'enable']
+      ? [
+          'action',
+          'sourceDirectory',
+          'scope',
+          'enable',
+          ...(input.action === 'prepare-bundle' && Object.hasOwn(input, 'exclusive') ? ['exclusive'] : []),
+        ]
       : input.action === 'prepare-content'
         ? ['action', 'name', 'files', 'scope', 'enable']
         : ['action', 'proposalId']
   if (Object.keys(input).length !== keys.length || Object.keys(input).some((key) => !keys.includes(key)))
+    throw installError('SKILL_INSTALL_INVALID')
+  if (Object.hasOwn(input, 'exclusive') && typeof input.exclusive !== 'boolean')
     throw installError('SKILL_INSTALL_INVALID')
   if (input.action === 'prepare' || input.action === 'prepare-bundle' || input.action === 'prepare-content') {
     if ((input.scope !== 'workspace' && input.scope !== 'user') || typeof input.enable !== 'boolean')
