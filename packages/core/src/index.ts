@@ -322,6 +322,7 @@ export {
   hasCompleteToolPolicyEnvelope,
   hasTrustedToolCallProvenance,
   resolveValidatedToolCallPolicy,
+  toolPolicyBindingProblem,
 } from './registry/tool-policy.js'
 export type {
   ExecutionDomain,

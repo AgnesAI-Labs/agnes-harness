@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ScriptedProvider } from '@agnes/ai/testkit'
 import { defaultLoopPlugin, memoryPlugin } from '@agnes/base'
-import { defaultIds, type EventInput, hasChildControl, SessionLogImpl } from '@agnes/core'
+import { defaultIds, type EventInput, hasChildControl, MemoryStorage, SessionLogImpl } from '@agnes/core'
 import type { ResolvedProfile } from '@agnes/host-common/profile/types'
 import { CompositionSessionStore } from '@agnes/host-providers/profile/composition-state'
 import { buildCompleteRuntimeTarget } from '@agnes/host-providers/runtime-target-builder'
@@ -711,7 +711,23 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
       await required(host.releaseSessionGeneration)(key)
     }
     // A cancelled read-only wait is terminal when its durable policy and effect agree.
-    for (const mode of ['safe', 'write', 'bad-hash', 'missing-policy', 'unsafe-replay', 'unknown']) {
+    for (const mode of [
+      'safe',
+      'write',
+      'bad-hash',
+      'missing-policy',
+      'unsafe-replay',
+      'unknown',
+      'state-match',
+      'state-policy',
+      'state-effect',
+      'state-name',
+      'state-args',
+      'state-pending',
+      'state-other',
+      'state-compaction',
+      'other-unknown',
+    ]) {
       const key = `migration-cancel-${mode}`
       const storage = host.kernel.o.storage
       const log = await SessionLogImpl.open({
@@ -785,6 +801,37 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
           type: 'effect/settled',
           data: { effectId: 'wait-effect', outcome: mode === 'unknown' ? 'unknown' : 'aborted' },
         },
+        ...(mode === 'other-unknown'
+          ? [
+              {
+                type: 'tool/call',
+                origin: 'model',
+                data: { toolUseId: 'other', name: 'fixture_write', args: {}, ordinal: 1 },
+              },
+              {
+                type: 'effect/intent',
+                data: {
+                  effectId: 'other-effect',
+                  kind: 'tool',
+                  replay: 'never',
+                  argsSeq: 7,
+                  tool: { toolUseId: 'other', name: 'fixture_write' },
+                },
+              },
+              {
+                type: 'tool/result',
+                data: {
+                  toolUseId: 'other',
+                  code: 'TOOL_OUTCOME_UNKNOWN',
+                  isError: true,
+                  content: [],
+                  enforcement: { level: 'none', scope: [] },
+                  authz: { decisionId: 'fixture' },
+                },
+              },
+              { type: 'effect/settled', data: { effectId: 'other-effect', outcome: 'unknown' } },
+            ]
+          : []),
         { type: 'step/end', data: { turn: 1, step: 1 } },
       ]
       await log.append(
@@ -798,9 +845,71 @@ it('keeps an in-flight turn on old plugin code across update, close and cold res
         })),
       )
       await log.close()
-      const settled = assertMigrationSettled(storage, key, 'fixture-generation')
-      if (mode === 'safe') await expect(settled).resolves.toBeUndefined()
-      else await expect(settled).rejects.toMatchObject({ code: 'E_GENERATION_EXECUTION_UNSETTLED' })
+      const rows = await storage.scan(key, { order: 'asc', toSeq: log.lastSeq })
+      const stateCall = {
+        ordinal: 0,
+        toolUseId: mode === 'state-other' ? 'other' : 'wait',
+        name: mode === 'state-name' ? 'other' : 'fixture_wait',
+        argsSeq: mode === 'state-args' ? 2 : 3,
+        status: mode === 'state-pending' ? 'dispatched' : 'completed',
+        effectId: mode === 'state-effect' || mode === 'state-compaction' ? 'other-effect' : 'wait-effect',
+        replay: 'safe',
+        resolvedPolicy: policy,
+        policyHash: '98eae655d46b0b7f23316813965df674f18e235e396fc26d8a864c2bb3a5e4d8',
+        definitionFingerprint: (mode === 'state-policy' ? '2' : '1').repeat(64),
+        executionDomain: 'workspace',
+      }
+      const fixtureStorage = mode.startsWith('state-')
+        ? MemoryStorage.fromEvents(key, rows, {
+            opCells: [
+              {
+                register: 'op.state',
+                key: 'main',
+                seq: rows.length,
+                data: {
+                  meta: {
+                    turn: 1,
+                    lane: 'main',
+                    acceptedAt: '2026-09-16T00:00:00Z',
+                    triggerSeq: 1,
+                    presetName: 'default',
+                    profileHash: null,
+                    depthLimit: 3,
+                  },
+                  control: { status: 'running' },
+                  step: 1,
+                  latestAssistantSeq: null,
+                  taint: false,
+                  phase:
+                    mode === 'state-compaction'
+                      ? {
+                          kind: 'compaction',
+                          reason: 'requested',
+                          resumeAfter: { kind: 'tools', batch: { assistantSeq: 1, calls: [stateCall] } },
+                        }
+                      : { kind: 'tools', batch: { assistantSeq: 1, calls: [stateCall] } },
+                },
+              } as never,
+            ],
+          })
+        : storage
+      const settled = assertMigrationSettled(fixtureStorage, key, 'fixture-generation')
+      if (mode === 'safe' || mode === 'state-match' || mode === 'state-other')
+        await expect(settled).resolves.toBeUndefined()
+      else
+        await expect(settled).rejects.toMatchObject({
+          code: 'E_GENERATION_EXECUTION_UNSETTLED',
+          ...(mode === 'other-unknown'
+            ? {
+                detail: {
+                  reasons: expect.arrayContaining([
+                    expect.objectContaining({ kind: 'unknown-external-outcome', id: 'other-effect' }),
+                    expect.objectContaining({ kind: 'unknown-external-outcome', id: 'tool:other' }),
+                  ]),
+                },
+              }
+            : {}),
+        })
     }
     // A formal, consumed human reconciliation acknowledges one exact unknown call, without
     // rewriting history or clearing a different effect merely because it has the same tool name.

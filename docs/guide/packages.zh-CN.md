@@ -251,7 +251,7 @@ node agnes.mjs packages pins inspect
 
 候选加载、依赖与激活超时仍可能导致激活失败，旧 generation 继续服务已绑定的会话。浏览器自行加载 bundle 名册，Host active 不等于浏览器已加载。
 
-特权 generation 迁移要求会话连接已关闭，并在修改 pin 的同一串行守卫内检查持久执行事实。待审批、待用户回答、停泊的工具续程、未完成后台任务或子代理、延迟调用、外部效果未知及资源恢复屏障均返回 `E_GENERATION_EXECUTION_UNSETTLED`；`detail.reasons` 列出具体种类、绑定与账本序号。拒绝保留 pin 和账本；关闭或取消不能证明未知的外部结果。已验证的持久只读、非破坏、可安全重放策略对应的部分取消调用，若其匹配效果已中止，本身不视为外部结果未知；独立未完成的后台任务仍会阻塞迁移。没有执行绑定的普通未完成聊天不阻塞迁移。后台任务工具保存结构化状态回执；旧格式的后台启动回执在有持久终态之前仍会阻塞。
+特权 generation 迁移要求会话连接已关闭，并在修改 pin 的同一串行守卫内检查持久执行事实。待审批、待用户回答、停泊的工具续程、未完成后台任务或子代理、延迟调用、外部效果未知及资源恢复屏障均返回 `E_GENERATION_EXECUTION_UNSETTLED`；`detail.reasons` 列出具体种类、绑定与账本序号。拒绝保留 pin 和账本；关闭或取消不能证明未知的外部结果。已验证的持久只读、非破坏、可安全重放策略对应的部分取消调用，若其匹配效果已中止，且该调用的现存操作状态已完成并与绑定一致，本身不视为外部结果未知；独立未完成的后台任务仍会阻塞迁移。没有执行绑定的普通未完成聊天不阻塞迁移。后台任务工具保存结构化状态回执；旧格式的后台启动回执在有持久终态之前仍会阻塞。
 
 实现依据：[shell 命令](../../packages/cli/src/commands/package.ts)、[SDK](../../packages/sdk/src/package-admin.node.ts)、[Web 管理](../../packages/web-admin/src/admin/plugins/admin.tsx)、[EntryTree](../../packages/cordis-loader/src/entry-tree.ts)、[Host 发布](../../packages/host-providers/src/runtime-target-publisher.ts)。
 

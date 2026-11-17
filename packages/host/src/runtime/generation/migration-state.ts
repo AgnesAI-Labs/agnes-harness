@@ -10,6 +10,7 @@ import {
   type OpStateObj,
   type StorageAdapter,
   scanAll,
+  toolPolicyBindingProblem,
 } from '@agnes/core'
 import { HostError } from '@agnes/host-common/errors'
 import { DEFERRED_INVOCATION_EVENT } from '@agnes/host-providers/assemble/deferred-invocations'
@@ -79,6 +80,7 @@ export async function assertMigrationSettled(
     const [head] = await storage.scan(key, { order: 'desc', limit: 1 })
     const rows = await scanAll((query) => storage.scan(key, query), { order: 'asc', toSeq: head?.seq ?? 0 })
     const state = foldEvents(rows)
+    const registers = await storage.registers(key)
     const rowsBySeq = new Map(rows.map((row) => [row.seq, row]))
     const add = (kind: string, id: string, seq?: number) =>
       reasons.push({ kind, id, sessionKey: key, ...(seq === undefined ? {} : { seq }) })
@@ -254,7 +256,31 @@ export async function assertMigrationSettled(
       const effectSettlements = settlements.filter((row) => row.effectId === effectId)
       const receipt = receipts[0]
       const settlement = effectSettlements[0]
+      const stateCalls = registers.flatMap((cell) => {
+        if (cell.register !== 'op.state' || cell.data === null) return []
+        const op = cell.data as OpStateObj
+        // Compaction can park a tools phase in resumeAfter.
+        const phase =
+          op.phase.kind === 'compaction' ? (op.phase.resumeAfter as OpStateObj['phase']) : op.phase
+        return phase?.kind === 'tools'
+          ? phase.batch.calls
+              .filter((candidate) => candidate.toolUseId === intent.toolUseId)
+              .map((candidate) => ({ cell, candidate }))
+          : []
+      })
+      const stateMatches = stateCalls.every(
+        ({ cell, candidate }) =>
+          call &&
+          cell.key === call.lane &&
+          candidate.status === 'completed' &&
+          candidate.name === call.name &&
+          candidate.argsSeq === call.seq &&
+          candidate.effectId === effectId &&
+          candidate.replay === 'safe' &&
+          toolPolicyBindingProblem(candidate, callData) === undefined,
+      )
       if (
+        stateMatches &&
         matchingIntents.length === 1 &&
         intentRow &&
         intent.kind === 'tool' &&
@@ -334,7 +360,7 @@ export async function assertMigrationSettled(
       const surface = 'card-' + createHash('sha256').update(id).digest('hex').slice(0, 48)
       if (!closedSurfaces.has(surface)) add('pending-user-answer', id, seq)
     }
-    for (const cell of await storage.registers(key)) {
+    for (const cell of registers) {
       if (cell.register !== 'op.state' || cell.data === null) continue
       const op = cell.data as OpStateObj
       if (op.phase.kind === 'deferred') add('unfinished-background-job', cell.key, cell.seq)
